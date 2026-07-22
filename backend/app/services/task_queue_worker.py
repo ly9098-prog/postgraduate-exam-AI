@@ -260,6 +260,9 @@ async def run_pipeline_worker(
 
     Dequeues tasks, processes them with heartbeat, and handles
     completion/failure with retries.
+
+    Handles ``CancelledError`` gracefully and resets the running
+    flag in a ``finally`` block.
     """
     global _worker_running
     _worker_running = True
@@ -274,39 +277,50 @@ async def run_pipeline_worker(
 
     logger.info("Pipeline worker started: polling every %ss", poll_interval)
 
-    while _worker_running:
-        processed = False
-        for task_type in task_types:
-            try:
-                task = await task_queue.dequeue(task_type, lease_sec=lease_sec)
-            except Exception as e:
-                logger.warning("Dequeue failed for %s: %s", task_type, e)
-                continue
+    try:
+        while _worker_running:
+            processed = False
+            for task_type in task_types:
+                try:
+                    task = await task_queue.dequeue(task_type, lease_sec=lease_sec)
+                except Exception as e:
+                    logger.warning("Dequeue failed for %s: %s", task_type, e)
+                    continue
 
-            if task is None:
-                continue
+                if task is None:
+                    continue
 
-            processed = True
-            heartbeat_task = asyncio.create_task(
-                _heartbeat_loop(task, lease_sec)
-            )
-
-            try:
-                await _process_task(task)
-                await task_queue.complete(task)
-                logger.info(
-                    "Task completed successfully: task_id=%s", task.task_id
+                processed = True
+                heartbeat_task = asyncio.create_task(
+                    _heartbeat_loop(task, lease_sec)
                 )
-            except Exception as e:
-                logger.exception(
-                    "Task failed: task_id=%s type=%s", task.task_id, task_type
-                )
-                await task_queue.fail(task, str(e))
-            finally:
-                heartbeat_task.cancel()
 
-        if not processed:
-            await asyncio.sleep(poll_interval)
+                try:
+                    await _process_task(task)
+                    await task_queue.complete(task)
+                    logger.info(
+                        "Task completed successfully: task_id=%s", task.task_id
+                    )
+                except Exception as e:
+                    logger.exception(
+                        "Task failed: task_id=%s type=%s", task.task_id, task_type
+                    )
+                    await task_queue.fail(task, str(e))
+                finally:
+                    heartbeat_task.cancel()
+                    try:
+                        await heartbeat_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
+            if not processed:
+                await asyncio.sleep(poll_interval)
+    except asyncio.CancelledError:
+        logger.info("Pipeline worker cancelled")
+        raise
+    finally:
+        _worker_running = False
+        logger.info("Pipeline worker stopped")
 
 
 async def _heartbeat_loop(task: Task, lease_sec: int) -> None:
@@ -338,7 +352,11 @@ async def run_reaper_loop(
     task_types: list[str] | None = None,
     interval: int = 60,
 ) -> None:
-    """Run the reaper loop: reclaim expired leases."""
+    """Run the reaper loop: reclaim expired leases.
+
+    Handles ``CancelledError`` gracefully and resets the running
+    flag in a ``finally`` block.
+    """
     global _reaper_running
     _reaper_running = True
 
@@ -350,12 +368,18 @@ async def run_reaper_loop(
         TASK_TYPE_FORMULA_BATCH,
     ]
 
-    while _reaper_running:
-        try:
-            await task_queue.run_reaper(types)
-        except Exception as e:
-            logger.warning("Reaper cycle failed: %s", e)
-        await asyncio.sleep(interval)
+    try:
+        while _reaper_running:
+            try:
+                await task_queue.run_reaper(types)
+            except Exception as e:
+                logger.warning("Reaper cycle failed: %s", e)
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        logger.info("Reaper cancelled")
+        raise
+    finally:
+        _reaper_running = False
 
 
 async def stop_reaper() -> None:
