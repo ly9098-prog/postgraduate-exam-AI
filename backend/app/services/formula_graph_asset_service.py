@@ -1,8 +1,10 @@
 """Formula graph asset service — query, upload, replace, delete with idempotency."""
 
+import asyncio
 import logging
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from io import BytesIO
 
@@ -13,6 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.formula import FormulaCard, FormulaGraphAsset
 from app.services.storage_backend import get_storage
+
+# Dedicated executor for CPU-bound image processing (PIL operations)
+_image_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="img_proc")
 
 logger = logging.getLogger(__name__)
 
@@ -239,13 +244,20 @@ async def upload_graph_asset(
     """Upload or replace a graph asset for a function_graph card.
 
     Returns (asset, is_new). Idempotent: same checksum → return existing.
+    PIL operations are offloaded to a dedicated thread pool.
     """
-    # Validate image
-    img, mime_type = _validate_image(file_data, filename)
+    loop = asyncio.get_running_loop()
 
-    # Process image
-    image_bytes = _process_image(img)
-    thumbnail_bytes = _create_thumbnail(img)
+    # Validate and process image in executor (off event loop)
+    img, mime_type = await loop.run_in_executor(
+        _image_executor, _validate_image, file_data, filename,
+    )
+    image_bytes = await loop.run_in_executor(
+        _image_executor, _process_image, img,
+    )
+    thumbnail_bytes = await loop.run_in_executor(
+        _image_executor, _create_thumbnail, img,
+    )
 
     # Compute checksum
     import hashlib
