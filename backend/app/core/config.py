@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     APP_ENV: str = "development"
     APP_SECRET: str = "change-me-in-production"
+    PROCESS_ROLE: str = "web"  # "web" | "worker" | "scheduler" | "all"
     JWT_EXPIRE_DAYS: int = 30
     DATABASE_URL: str = "sqlite+aiosqlite:///./postgraduate.db"
 
@@ -61,7 +62,7 @@ class Settings(BaseSettings):
     OCR_MAX_QUEUE_SIZE: int = 10        # max waiting tasks before fast-fail
     OCR_TASK_TIMEOUT_SEC: int = 600     # per-task timeout
     OCR_LANGUAGE: str = "ch"
-    OCR_USE_GPU: bool = False
+    OCR_USE_GPU: bool = True
     OCR_DET_DB_THRESH: float = 0.2
     OCR_DET_DB_BOX_THRESH: float = 0.4
     OCR_DET_DB_UNCLIP_RATIO: float = 1.8
@@ -77,7 +78,7 @@ class Settings(BaseSettings):
     CODE_DETECTOR_ENABLED: bool = True
 
     # --- PaddleX Remote OCR ---
-    OCR_EXECUTION_BACKEND: str = "local_process"  # "local_process" | "paddlex_http" | "disabled"
+    OCR_EXECUTION_BACKEND: str = "paddlex_http"  # "local_process" | "paddlex_http" | "disabled"
     OCR_REMOTE_URL: str = "http://127.0.0.1:8080/ocr"
     OCR_REMOTE_CONNECT_TIMEOUT_SEC: float = 5.0
     OCR_REMOTE_READ_TIMEOUT_SEC: float = 600.0

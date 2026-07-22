@@ -78,6 +78,7 @@ def validate_production_config() -> None:
     _check_cors(errors)
     _check_directories(errors)
     _check_deployment_profile(errors)
+    _check_process_role(errors)
     _check_ocr_production_rules(errors)
     _check_ocr_no_local_deps(errors)
 
@@ -145,6 +146,15 @@ def _check_directories(errors: list[str]) -> None:
                 errors.append(f"目录不可写: {path}")
         except OSError as exc:
             errors.append(f"目录创建/检查失败: {path}: {exc}")
+
+
+def _check_process_role(errors: list[str]) -> None:
+    """Validate PROCESS_ROLE is a known value."""
+    role = settings.PROCESS_ROLE
+    if role not in ("web", "worker", "scheduler", "all"):
+        errors.append(
+            f"PROCESS_ROLE={role!r} 无效，必须为 'web', 'worker', 'scheduler' 或 'all'"
+        )
 
 
 def _check_deployment_profile(errors: list[str]) -> None:
