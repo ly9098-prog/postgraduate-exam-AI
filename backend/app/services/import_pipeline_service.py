@@ -145,10 +145,19 @@ def _build_ocr_text_diagnostics(raw_ocr_text: str, cleaned_text: str) -> dict:
 
 
 def _build_ocr_runtime_diagnostics() -> dict:
-    return {
+    result: dict = {
         "ocr_enabled": settings.OCR_ENABLED,
-        "paddleocr_available": importlib.util.find_spec("paddleocr") is not None,
     }
+    # Only check local PaddleOCR availability in local_import mode
+    try:
+        from app.services.production_config_validator import detect_deployment_profile
+        if detect_deployment_profile() != "cloud_api":
+            result["paddleocr_available"] = importlib.util.find_spec("paddleocr") is not None
+        else:
+            result["paddleocr_available"] = False
+    except Exception:
+        result["paddleocr_available"] = importlib.util.find_spec("paddleocr") is not None
+    return result
 
 
 # ImportPipeline uses the shared OCR executor service
@@ -515,7 +524,9 @@ async def start_import_pipeline(
             raise ValueError("图片 Content-Type 不支持")
         if not settings.OCR_ENABLED:
             raise ValueError("图片 OCR 功能未启用")
-        if importlib.util.find_spec("paddleocr") is None:
+        # 云端使用外部 OCR API，无需本地 PaddleOCR
+        from app.services.production_config_validator import detect_deployment_profile
+        if detect_deployment_profile() != "cloud_api" and importlib.util.find_spec("paddleocr") is None:
             raise ValueError("OCR 依赖未安装：paddleocr")
 
         image_width, image_height, image_format = _validate_image_path(file_path)

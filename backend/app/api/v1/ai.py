@@ -74,11 +74,10 @@ async def prewarm_analysis(
         if wq.ai_analysis and isinstance(wq.ai_analysis, dict) and len(wq.ai_analysis) > 0:
             skipped.append(wq_id)
             continue
-        # 优先使用 Redis 可靠队列，不可用时降级为 asyncio.create_task
+        # 优先使用 Redis 可靠队列；不可用时跳过预热（不降级为 create_task）
         queued_ok = await enqueue_prewarm(wq_id, current_user.id)
         if not queued_ok:
-            import asyncio
-            asyncio.create_task(prewarm_wrong_question_analysis(wq_id, current_user.id))
+            logger.warning("Prewarm queue unavailable (Redis?), skipped wq_id=%d", wq_id)
         queued.append(wq_id)
 
     return AiPrewarmResponse(queued=queued, skipped=skipped)
