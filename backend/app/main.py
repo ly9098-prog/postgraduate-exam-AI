@@ -117,6 +117,12 @@ async def lifespan(app: FastAPI):
     _ocr_gateway = None
     _pipeline_worker_task: asyncio.Task | None = None
     _reaper_task: asyncio.Task | None = None
+    _lag_monitor_task: asyncio.Task | None = None
+
+    # Event-loop lag monitor (always runs — lightweight, all roles)
+    _lag_monitor_task = asyncio.create_task(
+        _event_loop_lag_monitor(), name="event-loop-lag-monitor"
+    )
 
     # ── Role: web — HTTP + enqueue + token cleanup ──
     if role in ("web", "all"):
@@ -199,9 +205,16 @@ async def lifespan(app: FastAPI):
         logger.info("=== Shutdown sequence started (role=%s) ===", role)
 
         # 1. Stop receiving new background work
-        #    (nothing explicit needed — lifespan yield ending prevents new requests)
 
-        # 2. Stop pipeline worker + reaper (if running in this role)
+        # 2. Stop event-loop lag monitor
+        if _lag_monitor_task and not _lag_monitor_task.done():
+            _lag_monitor_task.cancel()
+            try:
+                await _lag_monitor_task
+            except asyncio.CancelledError:
+                pass
+
+        # 3. Stop pipeline worker + reaper (if running in this role)
         if role in ("worker", "all"):
             try:
                 from app.services.task_queue_worker import stop_worker, stop_reaper
@@ -457,7 +470,41 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     return response
 
 
-# --- 健康检查 ---
+# --- 健康检查和可观测性 ---
+
+# Event-loop lag monitor (driven by lifespan task)
+_elapsed_monitor_event_loop_lag_ms: float = 0.0
+
+
+async def _event_loop_lag_monitor(interval: float = 1.0) -> None:
+    """Measure event-loop scheduling delay by scheduling a callback.
+
+    The actual delay between scheduled and actual wake-up time is a
+    proxy for event-loop congestion. Updated in a module-level global.
+    """
+    global _elapsed_monitor_event_loop_lag_ms
+    while True:
+        scheduled = time.perf_counter()
+        await asyncio.sleep(interval)
+        actual = time.perf_counter()
+        _elapsed_monitor_event_loop_lag_ms = round((actual - scheduled - interval) * 1000, 2)
+
+
+def _get_db_pool_metrics() -> dict:
+    """Return SQLAlchemy async engine pool status (sync, for health endpoint)."""
+    try:
+        from app.core.database import engine
+
+        sync_engine = engine.sync_engine
+        pool = sync_engine.pool
+        return {
+            "size": pool.size(),
+            "checked_in": pool.checkedin(),
+            "checked_out": pool.checkedout(),
+            "overflow": pool.overflow(),
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @app.get("/health")
@@ -479,9 +526,9 @@ async def live_health():
 async def ready_health():
     """Readiness probe — checks all critical dependencies are healthy.
 
-    Returns 503 (via status_code override in JSONResponse) when any
-    critical dependency is unavailable. Suitable for container readiness
-    checks and load balancer health checks.
+    Returns 503 (via JSONResponse status_code) when any critical
+    dependency is unavailable. Now includes DB pool metrics and
+    event-loop lag.
     """
     db_ok = False
     redis_ok = False
@@ -506,6 +553,8 @@ async def ready_health():
 
     checks = {
         "database": "ok" if db_ok else "unavailable",
+        "db_pool": _get_db_pool_metrics(),
+        "event_loop_lag_ms": _elapsed_monitor_event_loop_lag_ms,
     }
     if settings.REDIS_URL:
         checks["redis"] = "ok" if redis_ok else "unavailable"
