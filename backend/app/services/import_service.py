@@ -412,69 +412,75 @@ async def import_pdf(
     await db.commit()
 
     if settings.MATH_IMAGE_RENDER_ENABLED and background_tasks is not None:
-        background_tasks.add_task(_run_math_pipeline, batch_id, tmp_path, db)
+        background_tasks.add_task(_run_math_pipeline, batch_id, tmp_path)
     else:
         os.unlink(tmp_path)
 
     return batch_id, len(raw_rows)
 
 
-async def _run_math_pipeline(batch_id: str, tmp_pdf_path: str, db: AsyncSession) -> None:
-    """后台任务：对批次中每道题运行数学区域检测 + 截图上传 + 混合内容构建。"""
-    import fitz
-    from sqlalchemy import select as sa_select
-    from app.services.math_region_detector import detect_page
-    from app.services.formula_image_cropper import crop_and_upload
-    from app.services.hybrid_content_builder import build as build_content
-    from app.services.storage_backend import get_storage
+async def _run_math_pipeline(batch_id: str, tmp_pdf_path: str) -> None:
+    """后台任务：对批次中每道题运行数学区域检测 + 截图上传 + 混合内容构建。
 
-    doc = None
-    try:
-        doc = fitz.open(tmp_pdf_path)
-        result = await db.execute(
-            sa_select(QuestionImport).where(QuestionImport.batch_id == batch_id)
-        )
-        imports = list(result.scalars().all())
-        storage = get_storage()
+    使用独立数据库 Session，不依赖请求作用域。
+    """
+    from app.core.database import async_session
 
-        for qi in imports:
-            page_num = (qi.raw_data or {}).get("page_num")
-            if page_num is None or page_num < 0 or page_num >= len(doc):
-                continue
+    async with async_session() as db:
+        import fitz
+        from sqlalchemy import select as sa_select
+        from app.services.math_region_detector import detect_page
+        from app.services.formula_image_cropper import crop_and_upload
+        from app.services.hybrid_content_builder import build as build_content
+        from app.services.storage_backend import get_storage
 
-            try:
-                page = doc[page_num]
-                regions = detect_page(page)
-                if not regions:
+        doc = None
+        try:
+            doc = fitz.open(tmp_pdf_path)
+            result = await db.execute(
+                sa_select(QuestionImport).where(QuestionImport.batch_id == batch_id)
+            )
+            imports = list(result.scalars().all())
+            storage = get_storage()
+
+            for qi in imports:
+                page_num = (qi.raw_data or {}).get("page_num")
+                if page_num is None or page_num < 0 or page_num >= len(doc):
                     continue
 
-                regions = await crop_and_upload(doc, regions, storage, import_id=qi.id)
-                content = build_content(
-                    text=(qi.parsed_content or {}).get("text", ""),
-                    regions=regions,
-                )
-                await db.execute(
-                    sa_select(QuestionImport).where(QuestionImport.id == qi.id)
-                )
-                qi.math_regions = [asdict(r) for r in regions]
-                qi.parsed_content = content
-            except Exception as e:
-                logger.warning("math pipeline 单题失败 import_id=%s: %s", qi.id, e)
+                try:
+                    page = doc[page_num]
+                    regions = detect_page(page)
+                    if not regions:
+                        continue
 
-        await db.commit()
-    except Exception as e:
-        logger.warning("math pipeline 失败 batch=%s: %s", batch_id, e)
-        try:
-            await db.rollback()
-        except Exception:
-            pass
-    finally:
-        if doc is not None:
-            doc.close()
-        try:
-            os.unlink(tmp_pdf_path)
-        except OSError:
-            pass
+                    regions = await crop_and_upload(doc, regions, storage, import_id=qi.id)
+                    content = build_content(
+                        text=(qi.parsed_content or {}).get("text", ""),
+                        regions=regions,
+                    )
+                    await db.execute(
+                        sa_select(QuestionImport).where(QuestionImport.id == qi.id)
+                    )
+                    qi.math_regions = [asdict(r) for r in regions]
+                    qi.parsed_content = content
+                except Exception as e:
+                    logger.warning("math pipeline 单题失败 import_id=%s: %s", qi.id, e)
+
+            await db.commit()
+        except Exception as e:
+            logger.warning("math pipeline 失败 batch=%s: %s", batch_id, e)
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+        finally:
+            if doc is not None:
+                doc.close()
+            try:
+                os.unlink(tmp_pdf_path)
+            except OSError:
+                pass
 
 
 async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Question:
