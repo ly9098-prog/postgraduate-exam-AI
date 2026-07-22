@@ -10,11 +10,8 @@ from __future__ import annotations
 
 import concurrent.futures
 import multiprocessing
-import os
-import signal
 import threading
-import time
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -22,11 +19,6 @@ import pytest
 # Module-level helper for ProcessPoolExecutor (must be picklable)
 def _return_42():
     return 42
-
-
-def _sleep_forever():
-    while True:
-        time.sleep(10)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -42,6 +34,9 @@ def _reset_formula_pool_state():
     """
     import app.services.formula_graph_spec_renderer as rnd
 
+    # Shut down any orphaned pool from a previous test before nulling
+    if rnd._process_pool is not None:
+        rnd.shutdown_formula_render_pool(wait=False, cancel_futures=True)
     rnd._process_pool = None
     rnd._pool_stopping = False
     rnd._pool_generation = 0
