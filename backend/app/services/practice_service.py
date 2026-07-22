@@ -1822,10 +1822,7 @@ async def submit_answer(
             from app.services.ai_prewarm_worker import enqueue_prewarm
             queued = await enqueue_prewarm(wq_id_for_prewarm, user_id)
             if not queued:
-                # Redis 不可用时降级为 asyncio.create_task
-                import asyncio
-                from app.services.ai_service import prewarm_wrong_question_analysis
-                asyncio.create_task(prewarm_wrong_question_analysis(wq_id_for_prewarm, user_id))
+                logger.warning("Prewarm queue unavailable (Redis?), skipped wq_id=%d uid=%d", wq_id_for_prewarm, user_id)
         except Exception:
             logger.warning("AI 预生成调度失败（不影响答题）id=%d uid=%d", wq_id_for_prewarm, user_id, exc_info=True)
 

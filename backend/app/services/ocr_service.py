@@ -162,6 +162,7 @@ def reset_ocr_engine() -> None:
     Call this after an OCR failure to force worker pool recreation.
     Next OCR call will spawn fresh workers with a clean PaddleOCR instance.
     """
+    _reject_cloud_legacy("reset_ocr_engine")
     logger.info("reset_ocr_engine() called — recycling process pool workers")
     from app.core.ocr_process_pool import ocr_process_pool
     ocr_process_pool._shutdown_nonblocking()
@@ -227,8 +228,27 @@ def get_last_transform_tracker():
 # ── Internal: legacy fallback paths ─────────────────────────────────────────
 
 
+def _is_cloud_api() -> bool:
+    """Check if the current deployment profile is cloud_api."""
+    try:
+        from app.services.production_config_validator import detect_deployment_profile
+        return detect_deployment_profile() == "cloud_api"
+    except Exception:
+        return False
+
+
+def _reject_cloud_legacy(name: str) -> None:
+    """Refuse to call legacy OCR path in cloud_api deployment."""
+    if _is_cloud_api():
+        raise RuntimeError(
+            f"{name} refused: cloud_api deployment must not use legacy OCR path. "
+            "Use OCRGateway.recognize_pages() instead."
+        )
+
+
 def _legacy_ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
     """Legacy OCR pages path via executor service."""
+    _reject_cloud_legacy("_legacy_ocr_pages")
     from app.services.ocr_executor_service import ocr_executor
 
     try:
@@ -243,6 +263,7 @@ def _legacy_ocr_pages_with_boxes(
     skip_rotation: bool = False,
 ) -> dict[int, OcrPageResult]:
     """Legacy OCR pages with boxes path via executor service."""
+    _reject_cloud_legacy("_legacy_ocr_pages_with_boxes")
     from app.services.ocr_executor_service import ocr_executor
 
     try:
@@ -274,6 +295,7 @@ def _legacy_ocr_pages_with_boxes(
 
 def _legacy_ocr_raw_text(image_bytes: bytes) -> str:
     """Legacy raw OCR path."""
+    _reject_cloud_legacy("_legacy_ocr_raw_text")
     from app.core.ocr_process_pool import ocr_process_pool
 
     try:

@@ -196,22 +196,26 @@ def _check_ocr_production_rules(errors: list[str]) -> None:
 
 
 def _check_ocr_no_local_deps(errors: list[str]) -> None:
-    """Cloud must not check local PaddleOCR package."""
+    """Warn if PaddleOCR is installed in cloud_api — not a fatal error.
+
+    The real enforcement is in the backend configuration (no local_process
+    backend, no local adapter registration). Having paddleocr installed as
+    a package doesn't mean it will be loaded or used.
+    """
     profile = detect_deployment_profile()
     if profile != "cloud_api":
         return
 
-    # Check that paddleocr is not importable at startup
     try:
         import importlib.util
 
         if importlib.util.find_spec("paddleocr") is not None:
-            errors.append(
-                "生产环境 (cloud_api) 不应安装 paddleocr。"
-                " 如已安装请卸载，或确保 DEPLOYMENT_PROFILE=local_import 仅用于本地开发"
+            logger.warning(
+                "cloud_api 部署检测到 paddleocr 已安装，这不影响运行（云端不会加载本地 OCR），"
+                "但建议在部署时卸载以节省空间"
             )
     except Exception:
-        pass  # find_spec is safe — no import happens
+        pass  # find_spec is safe
 
 
 # ── async checks ──
