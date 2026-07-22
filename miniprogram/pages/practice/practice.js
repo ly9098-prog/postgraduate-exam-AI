@@ -34,6 +34,7 @@ Page({
 
     // computed
     progressPercent: 0,
+    errorText: '',
 
     // 题目列表
     questions: [],
@@ -531,6 +532,7 @@ Page({
       results: [],
       submitted: false,
       wrongCount: 0,
+      errorText: '',
       feedbackVisible: false,
       feedbackType: '',
       feedbackTitle: '',
@@ -610,10 +612,46 @@ Page({
       })
       this._practiceSession.comboCount = 0
       this._practiceSession.requestId = res.request_id || ''
-      this.setData({ questions, totalQuestions: questions.length, loading: false })
+
+      // Build first question's render model synchronously, with error fallback
+      var firstQuestion = null
+      var firstIndex = 0
       if (questions.length > 0) {
-        this._showQuestion(0)
-      } else {
+        try {
+          var cfg = { enableMathImage: config.enableMathImage || false, DEV: config.DEV }
+          if (this._practiceSession.safeModeActive) cfg.SAFE_MODE = true
+          var q0 = questions[0]
+          var opts = q0.options && Object.keys(q0.options).length > 0 ? q0.options : null
+          var renderModel = buildRenderModel(q0, opts, cfg)
+          firstQuestion = Object.assign({}, q0, { _renderModel: renderModel, _opts: opts })
+        } catch (renderErr) {
+          console.error('首题渲染失败', renderErr)
+          this._clearTimer()
+          this.setData({
+            loading: false,
+            started: false,
+            questions: [],
+            totalQuestions: 0,
+            currentQuestion: null,
+            errorText: '题目解析失败，可重试或返回选题',
+          })
+          return
+        }
+      }
+
+      this.setData({
+        questions,
+        totalQuestions: questions.length,
+        currentIndex: firstIndex,
+        currentQuestion: firstQuestion,
+        loading: false,
+      })
+      if (questions.length > 0 && firstQuestion) {
+        this._practiceSession.optionKeys = firstQuestion._opts ? Object.keys(firstQuestion._opts) : []
+        this._practiceSession.currentQuestionStartedAt = Date.now()
+        this._updateComputedFields()
+        this._checkRenderInvariant(firstQuestion._renderModel)
+      } else if (questions.length === 0) {
         const name = this.data.selectedSubjectName || String(subjectId)
         this._clearTimer()
         this.setData({ started: false, loading: false, questions: [], totalQuestions: 0, currentQuestion: null })
@@ -676,7 +714,14 @@ Page({
     // 统一渲染模型 — 题干渲染的唯一入口
     var renderCfg = { enableMathImage: config.enableMathImage || false, DEV: config.DEV }
     if (this._practiceSession.safeModeActive) renderCfg.SAFE_MODE = true
-    const renderModel = buildRenderModel(q, opts, renderCfg)
+    var renderModel
+    try {
+      renderModel = buildRenderModel(q, opts, renderCfg)
+    } catch (renderErr) {
+      console.error('切题渲染失败 index=' + index + ' id=' + q.id, renderErr)
+      wx.showToast({ title: '题目渲染失败，已保留上一题', icon: 'none' })
+      return
+    }
     // 不直接突变 q，创建新对象避免 _renderModel 引用持久化
     const currentQuestion = Object.assign({}, q, {
       _renderModel: renderModel,

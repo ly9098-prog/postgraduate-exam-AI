@@ -25,6 +25,15 @@
     <button class="fr-back-link" hover-class="fr-control-pressed" bindtap="goBack">返回公式库</button>
   </view>
 
+  <!-- 非加载、非错误但没有有效卡片 -->
+  <view class="fr-error" wx:elif="{{!currentCard}}">
+    <view class="fr-error-mark">?</view>
+    <text class="fr-state-title">公式内容暂不可用</text>
+    <text class="fr-state-desc">该公式可能存在格式问题或已被移除</text>
+    <button class="fr-retry" hover-class="fr-control-pressed" bindtap="retryLoad">重新加载</button>
+    <button class="fr-back-link" hover-class="fr-control-pressed" bindtap="goBack">返回公式库</button>
+  </view>
+
   <scroll-view
     wx:else
     class="fr-card-scroll"

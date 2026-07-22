@@ -41,10 +41,11 @@ const wxssSource = fs.readFileSync(WXSS_FILE, 'utf-8')
 console.log('=== URL 和 API 调用 ===')
 
 // Check that loadFormulas always uses /formulas (not favorites/list)
-const favoritesListUsage = jsSource.match(/\/formulas\/favorites\/list/g)
+// Note: the URL may appear in other methods like _getFavoriteIds — that's OK
+var loadFormulasMatch = jsSource.match(/loadFormulas[\s\S]{1,2000}?\/formulas\/favorites\/list/)
 assert(
-  !favoritesListUsage || favoritesListUsage.length === 0,
-  `loadFormulas 不直接使用 /formulas/favorites/list（出现 ${favoritesListUsage ? favoritesListUsage.length : 0} 次）`
+  !loadFormulasMatch,
+  'loadFormulas 不直接使用 /formulas/favorites/list'
 )
 
 // Still allowed for other purposes (e.g. loadFavoriteIds)

@@ -311,26 +311,40 @@ Component({
       type: Object,
       value: {},
       observer(nextCard, previousCard) {
-        var renderKey = formulaContent.createRenderKey(nextCard)
-        var idChanged = !nextCard || !previousCard || String(nextCard.id) !== String(previousCard.id)
-        var patch = {}
+        try {
+          var renderKey = formulaContent.createRenderKey(nextCard)
+          var idChanged = !nextCard || !previousCard || String(nextCard.id) !== String(previousCard.id)
+          var patch = {}
 
-        if (renderKey !== this.data.cardRenderKey) {
-          patch.cardRenderKey = renderKey
-          patch.formulaBlocks = prepareFormulaBlocks(nextCard)
-          patch.content = prepareContent(nextCard)
+          if (renderKey !== this.data.cardRenderKey) {
+            patch.cardRenderKey = renderKey
+            patch.formulaBlocks = prepareFormulaBlocks(nextCard)
+            patch.content = prepareContent(nextCard)
+          }
+
+          if (idChanged) {
+            patch.showSymbolNotes = false
+            patch.showSecondary = false
+            patch.showErrorTips = true
+            patch.showExamples = false
+            patch.graphLoadError = false
+            patch.graphLoaded = false
+          }
+
+          if (Object.keys(patch).length) this.setData(patch)
+        } catch (e) {
+          console.error('[formula-card] observer error', e)
+          // Fallback: set empty data so the component renders as plain text
+          this.setData({
+            cardRenderKey: '',
+            formulaBlocks: [],
+            content: {
+              titleNodes: [],
+              summaryNodes: [],
+              formulaNodes: [],
+            },
+          })
         }
-
-        if (idChanged) {
-          patch.showSymbolNotes = false
-          patch.showSecondary = false
-          patch.showErrorTips = true
-          patch.showExamples = false
-          patch.graphLoadError = false
-          patch.graphLoaded = false
-        }
-
-        if (Object.keys(patch).length) this.setData(patch)
       },
     },
     graphImageUrl: { type: String, value: '' },

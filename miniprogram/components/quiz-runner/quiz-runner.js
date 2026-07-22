@@ -4,6 +4,12 @@
  * Unified quiz-taking UI used by practice, review-today, and wrong-detail.
  * The visual language follows the practice setup page: deep ink green,
  * fluorescent lime accents, restrained cards, and large numeric progress.
+ *
+ * State management:
+ *   loading=true → spinner shown
+ *   errorText set → error card with retry event
+ *   currentQuestion=null and !loading → empty text shown
+ *   currentQuestion._renderModel missing/unknown → fallback plain text
  */
 
 Component({
@@ -40,13 +46,18 @@ Component({
     customNavigation: { type: Boolean, value: false },
 
     swipeEnabled: { type: Boolean, value: true },
-    // 仅由需要的页面显式开启：允许从选项区域横滑切题，同时保留轻点选项。
     swipeThroughOptions: { type: Boolean, value: false },
     allowSwipeInReadonly: { type: Boolean, value: false },
     compactReviewMode: { type: Boolean, value: false },
 
     flowLayout: { type: Boolean, value: false },
     compactBottom: { type: Boolean, value: false },
+
+    // State fallback properties
+    loading: { type: Boolean, value: false },
+    errorText: { type: String, value: '' },
+    emptyText: { type: String, value: '' },
+    renderErrorText: { type: String, value: '' },
   },
 
   data: {
@@ -65,6 +76,8 @@ Component({
     _questionImages: [],
     _blankOptionGroups: [],
     _hasBlankOptionGroups: false,
+    _renderUnknownMode: false,
+    _renderFallbackText: '',
   },
 
   created: function () {
@@ -74,7 +87,7 @@ Component({
   observers: {
     currentQuestion: function (q) {
       if (!q) {
-        this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [], _blankOptionGroups: [], _hasBlankOptionGroups: false })
+        this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [], _blankOptionGroups: [], _hasBlankOptionGroups: false, _renderUnknownMode: false, _renderFallbackText: '' })
         this._lastRenderModel = null
         return
       }
@@ -90,7 +103,7 @@ Component({
         var codeLines = model.mode === 'CODE' ? this._splitCodeLines(model.rawText) : []
         var mixedBlocks = model.mode === 'MIXED' ? this._decorateMixedBlocks(model.blocks) : []
 
-        // Extract image URLs — use adapter for dedup against inline-rendered segments
+        // Extract image URLs
         var images = []
         var adapter
         try { adapter = require('../../utils/question-runner-adapter') } catch (e) {}
@@ -104,10 +117,22 @@ Component({
           images = q.content.image_url.filter(function (u) { return u && typeof u === 'string' })
         }
 
+        // Detect unknown render mode or missing render model
+        var knownModes = { SEGMENTS: true, RICH_TEXT: true, CODE: true, LATEX: true, MIXED: true }
+        var unknownMode = !model.mode || !knownModes[model.mode]
+        var fallbackText = ''
+        if (unknownMode) {
+          // Fall back to plain text
+          fallbackText = q.content && (q.content.text || q.content.stem) || ''
+          if (!fallbackText) fallbackText = '该题内容暂时无法显示'
+        }
+
         data._qTypeLabel = label
         data._codeLines = codeLines
         data._mixedBlocks = mixedBlocks
         data._questionImages = images
+        data._renderUnknownMode = unknownMode
+        data._renderFallbackText = fallbackText
       }
 
       // Always update blank option groups (change on every selection)
@@ -117,7 +142,6 @@ Component({
       this.setData(data)
     },
     currentIndex: function () {
-      // 新题回到阅读起点，并恢复紧凑完整顶部；向下阅读后再自动收起。
       var self = this
       this.setData({ heroCollapsed: false, questionScrollTop: 1 }, function () {
         self.setData({ questionScrollTop: 0 })
@@ -159,7 +183,6 @@ Component({
 
     selectOption: function (e) {
       if (this.data._animating || this.data.readonly || this.data.submitted) return
-      // 仅拦截滑动结束后紧邻产生的合成 tap，不再吞掉用户随后真正的第一次点击。
       if (this.data._swipeTapLockUntil && Date.now() < this.data._swipeTapLockUntil) return
 
       this.triggerEvent('selectoption', {
@@ -219,7 +242,6 @@ Component({
       this.setData({ animClass: dir === 'left' ? 'slide-out-left' : 'slide-out-right' })
       setTimeout(function () {
         self.triggerEvent(dir === 'left' ? 'next' : 'prev', { index: nextIdx })
-        // 新题挂载后立即解除选项点击锁；视觉入场动画继续播放，但不再吞掉第一次作答。
         self.setData({ animClass: 'slide-in' }, function () {
           self.data._animating = false
         })
@@ -239,7 +261,6 @@ Component({
       var target = e && e.target ? e.target : {}
       var dataset = target.dataset || {}
       if (dataset.swipeBlock === true || dataset.swipeBlock === 'true' || dataset.swipeBlock === '1') {
-        // 新的一次选项触摸是真实用户操作，可立即解除上次 swipe 的合成 tap 锁。
         this.data._swipeTapLockUntil = 0
         this.data._touchX = undefined
         this.data._touchY = undefined
@@ -267,8 +288,6 @@ Component({
       var absDx = Math.abs(dx)
       var absDy = Math.abs(dy)
 
-      // 只有明确的横向手势才切题：横向至少 44px，且大于纵向位移。
-      // 阈值适当降低，保证在选项卡片区域也能自然触发；轻点仍交给选项 tap。
       if (absDx < 44 || absDx <= absDy * 1.10) {
         this.data._touchX = undefined
         this.data._touchY = undefined
@@ -277,7 +296,6 @@ Component({
 
       this.data._touchX = undefined
       this.data._touchY = undefined
-      // 某些基础库会在 swipe 的 touchend 后补发 tap，只短暂拦截该合成事件。
       this.data._swipeTapLockUntil = Date.now() + 100
 
       if (dx < 0) this.goNext()
@@ -327,6 +345,12 @@ Component({
       })
     },
 
+    /* ==================== Retry ==================== */
+
+    onRetry: function () {
+      this.triggerEvent('retry', {})
+    },
+
     /* ==================== Image preview ==================== */
 
     previewQuestionImage: function (e) {
@@ -336,10 +360,6 @@ Component({
       wx.previewImage({ current: src || urls[0], urls: urls })
     },
 
-    /**
-     * Preview an option image. Collects all option image URLs from the current
-     * question so the user can swipe through them in full-screen mode.
-     */
     previewOptionImage: function (e) {
       var src = e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.src
       if (!src) return

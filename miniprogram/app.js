@@ -39,6 +39,42 @@ function _onAnimLoaded() {
   _ANIM_CALLBACKS = []
 }
 
+/**
+ * Get safe (non-sensitive) page route info for error diagnostics.
+ * Skips: token, user answers, full questions, AI analysis, PII.
+ */
+function _safePageInfo() {
+  try {
+    var pages = getCurrentPages()
+    if (!pages || !pages.length) return ''
+    var top = pages[pages.length - 1]
+    if (!top) return ''
+    var route = top.route || ''
+    var info = 'route:' + route
+    var opts = top.options || {}
+    var paramKeys = Object.keys(opts)
+    if (paramKeys.length > 0) {
+      info += ' paramCount:' + paramKeys.length
+    }
+    return info
+  } catch (_) {
+    return ''
+  }
+}
+
+/**
+ * Strip sensitive data from error log context.
+ */
+function _sanitizeStack(stack) {
+  if (!stack || typeof stack !== 'string') return ''
+  var lines = stack.split('\n')
+  if (lines.length > 5) {
+    lines = lines.slice(0, 5)
+    lines.push('    (...truncated)')
+  }
+  return lines.join('\n')
+}
+
 App({
   onLaunch() {
     // 不在启动时加载动画分包，改为在首次播放时由 getApp().loadRewardAnimationPackage() 按需加载
@@ -49,6 +85,52 @@ App({
   onShow() {
     this._tryRestoreLogin()
   },
+
+  onError(err) {
+    try {
+      var sdkVersion = ''
+      try { sdkVersion = wx.getSystemInfoSync ? (wx.getSystemInfoSync().SDKVersion || '') : '' } catch (_) {}
+      var ctx = [
+        'type:runtime',
+        'SDK:' + sdkVersion,
+        _safePageInfo(),
+      ].filter(Boolean).join(' | ')
+      var msg = typeof err === 'string' ? err : (err && err.message) || ''
+      console.error('[GLOBAL_ERROR]', ctx, msg)
+      if (err && err.stack) {
+        console.error('[GLOBAL_ERROR] stack:', _sanitizeStack(err.stack))
+      }
+    } catch (_) {}
+  },
+
+  onUnhandledRejection(err) {
+    try {
+      var reason = err && (err.reason || err.message || err)
+      var sdkVersion = ''
+      try { sdkVersion = wx.getSystemInfoSync ? (wx.getSystemInfoSync().SDKVersion || '') : '' } catch (_) {}
+      var ctx = [
+        'type:rejection',
+        'SDK:' + sdkVersion,
+        _safePageInfo(),
+      ].filter(Boolean).join(' | ')
+      var msg = typeof reason === 'string' ? reason : (reason && reason.message) || ''
+      console.error('[GLOBAL_UNHANDLED]', ctx, msg)
+    } catch (_) {}
+  },
+
+  onPageNotFound(res) {
+    try {
+      console.warn('[PAGE_NOT_FOUND]', res && res.path)
+    } catch (_) {}
+    // Safe redirect: never redirect to the same path to avoid loops
+    wx.reLaunch({ url: '/pages/home/home' })
+  },
+
+  getGlobalData() {
+    return this._globalData || (this._globalData = {})
+  },
+
+  _globalData: null,
 
   async _tryRestoreLogin() {
     const storage = require('./utils/storage')

@@ -86,6 +86,7 @@ Page({
     // Tags
     tags: [],
     activeTags: [],
+    _shownActiveTags: [],
 
     // Search
     searchValue: '',
@@ -200,10 +201,30 @@ Page({
   async loadTags() {
     try {
       const data = await api.request('GET', '/formulas/tags')
-      this.setData({ tags: data?.items || [] })
+      this.setData({ tags: data?.items || [] }, () => {
+        this._syncTagFlags()
+      })
     } catch (e) {
       console.error('Failed to load formula tags', e)
     }
+  },
+
+  _syncTagFlags() {
+    const { tags, activeTags } = this.data
+    var activeMap = {}
+    for (var i = 0; i < activeTags.length; i++) {
+      activeMap[activeTags[i]] = true
+    }
+    var shown = []
+    for (var j = 0; j < tags.length; j++) {
+      var t = tags[j]
+      t._active = !!activeMap[t.id]
+      if (t._active) shown.push(t)
+    }
+    this.setData({
+      tags: tags.slice(),
+      _shownActiveTags: shown,
+    })
   },
 
   updateChapters() {
@@ -251,6 +272,7 @@ Page({
       showSubjectPicker: false,
       showMoreSheet: false,
     })
+    this._syncTagFlags()
     this.loadCatalog()
     this.loadFormulas(true)
   },
@@ -306,6 +328,7 @@ Page({
       showMoreSheet: false,
       showTagPicker: false,
     })
+    this._syncTagFlags()
     this.loadFormulas(true)
   },
 
@@ -396,6 +419,7 @@ Page({
       formulas: [],
       hasMore: true,
     })
+    this._syncTagFlags()
     this.loadFormulas(true)
   },
 

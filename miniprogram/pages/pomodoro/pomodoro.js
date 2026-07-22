@@ -1,5 +1,6 @@
 const api = require('../../utils/api')
 const config = require('../../config')
+const { safeDecodeURIComponent } = require('../../utils/route-params')
 
 const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
 
@@ -204,7 +205,7 @@ Page({
       this.setData({ fromSubjectId: Number(opts.subject_id) })
     }
     if (opts.chapterId) this.setData({ fromChapterId: opts.chapterId })
-    if (opts.chapterName) this.setData({ fromChapterName: decodeURIComponent(opts.chapterName) })
+    if (opts.chapterName) this.setData({ fromChapterName: safeDecodeURIComponent(opts.chapterName, '') })
   },
 
   async onShow() {

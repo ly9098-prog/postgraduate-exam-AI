@@ -1,5 +1,6 @@
 const api = require('../../utils/api')
 const config = require('../../config')
+const { safeDecodeURIComponent } = require('../../utils/route-params')
 const { toPlainInlineMathText } = require('../../utils/stem-render')
 const storage = require('../../utils/storage')
 const aiCache = require('../../utils/ai-diagnosis-cache')
@@ -105,8 +106,8 @@ Page({
   onLoad(options) {
     this.setData({ enableMathImage: config.enableMathImage || false })
     // 从 dashboard 跳转携带 subject 或 topic 参数
-    const subject = options.subject ? decodeURIComponent(options.subject) : ''
-    const topic = options.topic ? decodeURIComponent(options.topic) : ''
+    const subject = safeDecodeURIComponent(options.subject, '')
+    const topic = safeDecodeURIComponent(options.topic, '')
     if (subject) {
       this.setData({ selectedSubject: subject })
     }
