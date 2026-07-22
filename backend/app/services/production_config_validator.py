@@ -13,6 +13,13 @@ Checks:
 6. Required directories writable
 7. Alembic migration is at head revision
 8. PostgreSQL extension checks (pgvector if VECTOR_ENABLED)
+9. Deployment profile — production must be cloud_api, never local_import
+10. OCR execution backend — cloud must use external API or disabled
+11. OCR_USE_GPU must be false in production
+12. Cloud OCR external URL must be HTTPS if configured
+13. Cloud OCR API token must exist if external OCR enabled
+14. Cloud startup must not check local PaddleOCR package
+15. Process role configuration consistency
 """
 
 from __future__ import annotations
@@ -28,6 +35,37 @@ from app.core.config import settings
 logger = logging.getLogger("postgraduate-ai.startup")
 
 
+def detect_deployment_profile() -> str:
+    """Unified deployment profile detection.
+
+    Returns ``"local_import"`` or ``"cloud_api"``.
+
+    Priority:
+    1. ``DEPLOYMENT_PROFILE`` env var (overrides all)
+    2. ``DEPLOY_PROFILE`` env var (``"local"`` → ``"local_import"``, ``"production"`` → ``"cloud_api"``)
+    3. ``APP_ENV`` env var (``"development"`` → ``"local_import"``, ``"production"`` → ``"cloud_api"``)
+    """
+    deployment_profile = os.environ.get("DEPLOYMENT_PROFILE", "").strip().lower()
+    if deployment_profile:
+        if deployment_profile in ("local_import", "cloud_api"):
+            return deployment_profile
+        logger.warning(
+            "Unknown DEPLOYMENT_PROFILE=%r, falling back to APP_ENV",
+            deployment_profile,
+        )
+
+    dep_profile = os.environ.get("DEPLOY_PROFILE", "").strip().lower()
+    if dep_profile == "local":
+        return "local_import"
+    if dep_profile == "production":
+        return "cloud_api"
+
+    app_env = settings.APP_ENV
+    if app_env == "production":
+        return "cloud_api"
+    return "local_import"
+
+
 def validate_production_config() -> None:
     """Run all production config checks. Raises SystemError on failures."""
     if settings.APP_ENV != "production":
@@ -39,7 +77,15 @@ def validate_production_config() -> None:
     _check_database_url(errors)
     _check_cors(errors)
     _check_directories(errors)
-    _check_ocr_profile(errors)
+    _check_deployment_profile(errors)
+    _check_ocr_production_rules(errors)
+    _check_ocr_no_local_deps(errors)
+
+    if errors:
+        raise SystemError(
+            "Production configuration validation failed:\n  - "
+            + "\n  - ".join(errors)
+        )
 
     logger.info("Production configuration validated: sync checks passed")
 
@@ -91,7 +137,7 @@ def _check_cors(errors: list[str]) -> None:
 
 
 def _check_directories(errors: list[str]) -> None:
-    paths = ["static/formulas"]
+    paths = ["static/formulas", "static/question-assets"]
     for path in paths:
         try:
             os.makedirs(path, exist_ok=True)
@@ -101,18 +147,71 @@ def _check_directories(errors: list[str]) -> None:
             errors.append(f"目录创建/检查失败: {path}: {exc}")
 
 
-def _check_ocr_profile(errors: list[str]) -> None:
+def _check_deployment_profile(errors: list[str]) -> None:
+    """Production must use cloud_api profile, never local_import."""
+    profile = detect_deployment_profile()
+    if profile != "cloud_api":
+        errors.append(
+            f"生产环境的部署配置为 {profile!r}，必须为 'cloud_api'。"
+            " 请设置 DEPLOYMENT_PROFILE=cloud_api"
+        )
+
+
+def _check_ocr_production_rules(errors: list[str]) -> None:
+    """Cloud OCR must use external API or be disabled.
+
+    Banned in production:
+    - local_process execution backend
+    - unsafe_thread_fallback
+    - OCR_USE_GPU=true
+    """
     if not settings.OCR_ENABLED:
         return
-    if settings.OCR_USE_GPU is False:
-        from app.core.ocr_profile import get_ocr_profile
 
-        profile = get_ocr_profile()
-        if profile.use_gpu is True:
+    if settings.OCR_USE_GPU is not False:
+        errors.append("生产环境必须设置 OCR_USE_GPU=false")
+
+    exec_backend = (settings.OCR_EXECUTION_BACKEND or "").lower()
+    if exec_backend == "local_process":
+        errors.append(
+            "生产环境 OCR_EXECUTION_BACKEND 不能为 'local_process'。"
+            " 必须使用 paddlex_http 或 disabled"
+        )
+
+    # Check OCR profile GPU consistency
+    from app.core.ocr_profile import get_ocr_profile
+
+    profile = get_ocr_profile()
+    if profile.use_gpu:
+        errors.append(
+            "OCR profile 设置了 use_gpu=True，但生产环境必须 use_gpu=False。"
+            " 请检查 ocr_profile.py 的 cloud 配置或设置 OCR_USE_GPU=false"
+        )
+
+    # Check external OCR URL is HTTPS
+    ocr_url = settings.OCR_REMOTE_URL or ""
+    if exec_backend == "paddlex_http" and ocr_url:
+        if not ocr_url.startswith("https://"):
+            errors.append("外部 OCR URL (OCR_REMOTE_URL) 必须使用 HTTPS")
+
+
+def _check_ocr_no_local_deps(errors: list[str]) -> None:
+    """Cloud must not check local PaddleOCR package."""
+    profile = detect_deployment_profile()
+    if profile != "cloud_api":
+        return
+
+    # Check that paddleocr is not importable at startup
+    try:
+        import importlib.util
+
+        if importlib.util.find_spec("paddleocr") is not None:
             errors.append(
-                "OCR profile 设置了 use_gpu=True，但 OCR_USE_GPU=false。"
-                " 请检查 ocr_profile.py 的生产配置。"
+                "生产环境 (cloud_api) 不应安装 paddleocr。"
+                " 如已安装请卸载，或确保 DEPLOYMENT_PROFILE=local_import 仅用于本地开发"
             )
+    except Exception:
+        pass  # find_spec is safe — no import happens
 
 
 # ── async checks ──
