@@ -144,6 +144,7 @@ Page({
     groupCorrect: 0,
     groupWrong: 0,
     _groupSkipped: 0,
+    groupAccuracyPercent: 0,
     showGroupDetails: false,
 
     /* ====== Dialog / undo ====== */
@@ -420,6 +421,7 @@ Page({
         groupCorrect: 0,
         groupWrong: 0,
         _groupSkipped: 0,
+        groupAccuracyPercent: 0,
         showGroupDetails: false,
 
         masterConfirmId: null,
@@ -1127,6 +1129,7 @@ Page({
         groupCorrect,
         groupWrong,
         _groupSkipped: groupSkipped,
+        groupAccuracyPercent: Math.round(groupQuestions.length > 0 ? groupCorrect / groupQuestions.length * 100 : 0),
         showGroupDetails: false,
         submittingGroup: false,
         _groupProgressStyle: 'width: ' + Math.round((this.data.currentGroupIdx + 1) / Math.max(1, newGroups.length) * 100) + '%',
@@ -1165,6 +1168,7 @@ Page({
         groupWrongResults: [],
         groupCorrect: 0,
         groupWrong: 0,
+        groupAccuracyPercent: 0,
         showGroupDetails: false,
         resultTransitioning: false,
       })
@@ -1201,6 +1205,7 @@ Page({
             groupWrongResults: [],
             groupCorrect: 0,
             groupWrong: 0,
+            groupAccuracyPercent: 0,
             showGroupDetails: false,
             resultTransitioning: false,
           })

@@ -107,13 +107,12 @@
       </view>
     </scroll-view>
 
-    <view class="fl-active-tags" wx:if="{{activeTags.length}}">
+    <view class="fl-active-tags" wx:if="{{_shownActiveTags.length}}">
       <text class="fl-active-tags-label">当前标签</text>
       <view
         class="fl-active-tag"
-        wx:for="{{tags}}"
+        wx:for="{{_shownActiveTags}}"
         wx:key="id"
-        wx:if="{{activeTags.includes(item.id)}}"
         data-id="{{item.id}}"
         bindtap="onTagSelect"
       >
@@ -310,7 +309,7 @@
       </view>
       <view class="fl-tag-grid">
         <view
-          class="fl-tag-item {{activeTags.includes(t.id) ? 'active' : ''}}"
+          class="fl-tag-item {{t._active ? 'active' : ''}}"
           wx:for="{{tags}}"
           wx:for-item="t"
           wx:key="id"
@@ -319,7 +318,7 @@
           bindtap="onTagSelect"
         >
           <text>{{t.name}}</text>
-          <text class="line-icon icon-check" wx:if="{{activeTags.includes(t.id)}}"></text>
+          <text class="line-icon icon-check" wx:if="{{t._active}}"></text>
         </view>
       </view>
       <view class="fl-sheet-done" hover-class="fl-pressed" bindtap="toggleTagPicker">完成筛选</view>

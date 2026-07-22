@@ -70,9 +70,39 @@
     bindtouchend="onTouchEnd"
     bindtouchcancel="onTouchCancel"
   >
+    <!-- ===== Loading State ===== -->
+    <view class="runner-state-card" wx:if="{{loading}}">
+      <view class="runner-loading-ring"></view>
+      <text class="runner-state-text">加载中...</text>
+    </view>
+
+    <!-- ===== Error State ===== -->
+    <view class="runner-state-card" wx:elif="{{errorText}}">
+      <text class="runner-state-icon">⚠</text>
+      <text class="runner-state-text">{{errorText}}</text>
+      <button class="runner-state-btn" bindtap="onRetry">重试</button>
+    </view>
+
+    <!-- ===== Empty / No Question ===== -->
+    <view class="runner-state-card" wx:elif="{{!currentQuestion}}">
+      <text class="runner-state-text">{{emptyText || '暂无题目'}}</text>
+    </view>
+
+    <!-- ===== Render Fallback (unknown mode or missing _renderModel) ===== -->
+    <view class="runner-q-wrap {{animClass}}" wx:elif="{{_renderUnknownMode}}">
+      <view class="runner-q-card-head">
+        <view class="runner-q-labels">
+          <text class="runner-q-badge">{{_qTypeLabel}}</text>
+        </view>
+        <text class="runner-compact-counter" wx:if="{{compactReviewMode}}">{{currentIndex + 1}} / {{totalCount || 0}}</text>
+      </view>
+      <view class="runner-fallback-text">{{_renderFallbackText}}</view>
+    </view>
+
+    <!-- ===== Normal Question Rendering ===== -->
     <view
       class="runner-q-wrap {{animClass}}"
-      wx:if="{{currentQuestion}}"
+      wx:else
       bindtouchstart="onTouchStart"
       bindtouchend="onTouchEnd"
       bindtouchcancel="onTouchCancel"

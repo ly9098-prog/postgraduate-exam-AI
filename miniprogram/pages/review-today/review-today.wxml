@@ -205,7 +205,7 @@
 
       <view class="result-score-row">
         <view class="result-score-main">
-          <text class="result-score-num">{{groupQuestions.length > 0 ? Math.round(groupCorrect / groupQuestions.length * 100) : 0}}</text>
+          <text class="result-score-num">{{groupAccuracyPercent}}</text>
           <text class="result-score-unit">%</text>
         </view>
         <view class="result-score-copy">

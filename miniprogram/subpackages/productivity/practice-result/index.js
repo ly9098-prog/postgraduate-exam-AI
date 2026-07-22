@@ -1,4 +1,5 @@
 const api = require('../../../utils/api')
+const { safeDecodeURIComponent } = require('../../../utils/route-params')
 const { formatInlineMathText } = require('../../../utils/math-format')
 const {
   toPlainInlineMathText,
@@ -341,7 +342,7 @@ Page({
       passRate,
       accuracyRingStyle,
       subject: options.subject_id || '',
-      subjectDisplay: decodeURIComponent(options.subject_name || '') || '练习',
+      subjectDisplay: safeDecodeURIComponent(options.subject_name, '') || '练习',
       results,
       compactResults,
       reviewResults,

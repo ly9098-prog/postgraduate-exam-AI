@@ -31,7 +31,7 @@ function loadAnimationPackage() {
   }).then(function () {
     // 分包已就绪，同步 require 不再触发警告
     try {
-      _lottieModule = require('../../subpackages/animation/lottie-loader.js')
+      _lottieModule = require('../subpackages/animation/lottie-loader.js')
     } catch (_) {
       _lottieModule = null
     }

@@ -14,7 +14,13 @@
   <view class="setup" wx:if="{{!started}}">
     <premium-nav title="刷题" variant="light" bind:back="goBack" />
 
-    <view class="setup-content">
+    <view class="setup-error-card" wx:if="{{errorText}}">
+      <text class="setup-error-icon">⚠</text>
+      <text class="setup-error-text">{{errorText}}</text>
+      <button class="setup-error-retry" bindtap="startPractice">重试</button>
+    </view>
+
+    <view class="setup-content" wx:if="{{!errorText}}">
       <view class="practice-hero">
         <view class="hero-grid hero-grid-a"></view>
         <view class="hero-grid hero-grid-b"></view>
