@@ -1,8 +1,10 @@
+import asyncio
 import io
 import logging
 import os
 import posixpath
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image
 
@@ -11,8 +13,10 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 # Resolve backend root directory for consistent relative path handling.
-# __file__ is at backend/app/services/storage_backend.py
 _BACKEND_ROOT = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+# Dedicated executor for storage I/O (off event loop)
+_storage_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="storage")
 
 
 # ── Image compression ────────────────────────────────────────────────────
@@ -79,60 +83,65 @@ class LocalFileStorage(StorageBackend):
         self._prefix = prefix
 
     async def upload(self, filename: str, data: bytes) -> str:
-        # filename 形如 "YYYYMM/import_id_page_hash.png" or "question-assets/..."
+        loop = asyncio.get_running_loop()
         filepath = os.path.join(_BACKEND_ROOT, self._prefix, filename)
+        await loop.run_in_executor(
+            _storage_executor, self._sync_upload, filepath, data,
+        )
+        url_prefix = self._prefix.rstrip("/")
+        return f"{settings.PUBLIC_BASE_URL}/{url_prefix}/{filename}"
+
+    @staticmethod
+    def _sync_upload(filepath: str, data: bytes) -> None:
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "wb") as f:
             f.write(data)
-        # Build URL relative to the prefix directory
-        url_prefix = self._prefix.rstrip("/")
-        # if prefix is "static/formulas", URL path is /static/formulas
-        # if prefix is "static/question-assets", URL path is /static/question-assets
-        return f"{settings.PUBLIC_BASE_URL}/{url_prefix}/{filename}"
 
     async def delete(self, url_or_key: str) -> bool:
-        """删除本地文件。
+        """删除本地文件。（路径解析快速完成，文件 I/O 在 executor 中执行）"""
+        rel = self._resolve_delete_path(url_or_key)
+        if rel is None:
+            return False
 
-        安全限制：
-        - 只能删除 self._prefix 命名空间下的文件
-        - 防止路径穿越（.. 和以 / 开头的绝对路径）
-        - 文件不存在时视为成功（幂等）
-        """
-        # 从 URL 提取相对路径，或直接使用 key
+        filepath = os.path.join(_BACKEND_ROOT, rel)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _storage_executor, self._sync_delete, filepath,
+        )
+
+    def _resolve_delete_path(self, url_or_key: str) -> str | None:
+        """Resolve URL or key to a relative path, with path traversal protection."""
         if url_or_key.startswith("http"):
-            # 尝试解析出 /static/... 之后的路径部分
             if settings.PUBLIC_BASE_URL and url_or_key.startswith(settings.PUBLIC_BASE_URL):
                 rel = url_or_key[len(settings.PUBLIC_BASE_URL):].lstrip("/")
             elif "/static/" in url_or_key:
                 rel = url_or_key.split("/static/", 1)[1]
             else:
                 logger.warning("Cannot extract path from URL outside public base: %s", url_or_key)
-                return False
+                return None
         else:
             rel = url_or_key
 
-        # 路径穿越防护
         normalized = posixpath.normpath(rel)
         if normalized.startswith(".."):
             logger.warning("Path traversal rejected: %s", url_or_key)
-            return False
-        # Allow URL paths starting with / (e.g. /static/question-assets/file.png)
+            return None
         if normalized.startswith("/"):
             normalized = normalized.lstrip("/")
-            # 确保在 prefix 命名空间内
             prefix_normalized = self._prefix.lstrip("/")
             if not normalized.startswith(prefix_normalized + "/"):
                 logger.warning("Delete rejected: path %s outside prefix %s", normalized, self._prefix)
-                return False
+                return None
         else:
-            # 确保在 prefix 命名空间内
             if not normalized.startswith(self._prefix.lstrip("/") + "/"):
                 logger.warning("Delete rejected: path %s outside prefix %s", normalized, self._prefix)
-                return False
+                return None
+        return normalized
 
-        filepath = os.path.join(_BACKEND_ROOT, normalized)
+    @staticmethod
+    def _sync_delete(filepath: str) -> bool:
         if not os.path.exists(filepath):
-            return True  # 幂等：不存在视为成功
+            return True
         try:
             os.remove(filepath)
             return True
