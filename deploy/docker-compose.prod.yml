@@ -52,6 +52,7 @@ services:
         condition: service_healthy
     environment:
       APP_ENV: production
+      PROCESS_ROLE: ${PROCESS_ROLE:-all}  # "all" | "web" | "worker" | "scheduler"
       APP_SECRET: ${APP_SECRET:?必须设置 APP_SECRET}
       DATABASE_URL: ${DATABASE_URL:?必须设置 DATABASE_URL}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
@@ -63,6 +64,9 @@ services:
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?必须设置 WECHAT_APP_SECRET}
       OCR_ENABLED: ${OCR_ENABLED:-false}
       OCR_MAX_WORKERS: ${OCR_MAX_WORKERS:-1}
+      # Production: local CPU OCR (no GPU available on 2C2G server)
+      OCR_USE_GPU: ${OCR_USE_GPU:-false}
+      OCR_EXECUTION_BACKEND: ${OCR_EXECUTION_BACKEND:-local_process}
       OMP_NUM_THREADS: 1
       MKL_NUM_THREADS: 1
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}

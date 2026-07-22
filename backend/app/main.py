@@ -49,7 +49,10 @@ async def _periodic_token_cleanup():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── Startup ──
+    role = settings.PROCESS_ROLE
+    is_dev = settings.APP_ENV == "development"
+
+    # ── Common startup (all roles) ──
     try:
         validate_production_config()
     except SystemError as e:
@@ -65,8 +68,9 @@ async def lifespan(app: FastAPI):
     from app.core.ocr_profile import get_ocr_profile
     profile = get_ocr_profile()
     logger.info(
-        "Starting 2240AI — env=%s, ocr_profile=%s (gpu=%s, workers=%d, max_pdf_pages=%d)",
-        settings.APP_ENV, profile.name, profile.use_gpu, profile.max_workers, profile.max_pdf_pages,
+        "Starting 2240AI — env=%s role=%s ocr_profile=%s (gpu=%s, workers=%d, max_pdf_pages=%d)",
+        settings.APP_ENV, role, profile.name, profile.use_gpu,
+        profile.max_workers, profile.max_pdf_pages,
     )
     os.makedirs("static/formulas", exist_ok=True)
     os.makedirs("static/question-assets", exist_ok=True)
@@ -81,7 +85,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Development super admin init failed (non-fatal): %s", e)
 
-    # --- AI 模型配置启动自检 ---
+    # AI model config self-check (common)
     try:
         from app.core.database import async_session
         from app.services.health_check_service import check_ai_model_config
@@ -108,68 +112,82 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("AI model config self-check failed (non-fatal, DB may not be ready): %s", e)
 
-    cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
-
+    # ── Resource references (initialized to None, populated by role) ──
+    cleanup_task: asyncio.Task | None = None
     _ocr_gateway = None
-
-    try:
-        await pomodoro_scheduler.start()
-    except Exception as e:
-        logger.warning("Pomodoro scheduler start failed (non-fatal): %s", e)
-
-    try:
-        from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
-        await audit_log_cleanup_scheduler.start()
-    except Exception as e:
-        logger.warning("Audit log cleanup scheduler start failed (non-fatal): %s", e)
-
-    try:
-        from app.services.ai_prewarm_worker import start_worker
-        await start_worker()
-    except Exception as e:
-        logger.warning("AI prewarm worker start failed (non-fatal): %s", e)
-
-    # Initialize OCR Gateway
-    try:
-        from app.core.ocr_runtime_config import get_runtime_config
-        from app.features.ocr_gateway import OCRGateway
-        from app.services.ocr_worker_client import create_ocr_worker_client
-
-        cfg = get_runtime_config()
-        if cfg.enabled:
-            worker_client = create_ocr_worker_client(cfg)
-            _ocr_gateway = OCRGateway(
-                mode="gateway",
-                worker_client=worker_client,
-            )
-            from app.services.ocr_service import set_gateway
-            set_gateway(_ocr_gateway)
-            logger.info(
-                "OCR Gateway initialized (mode=gateway exec_backend=%s profile=%s env=%s)",
-                cfg.execution_backend, cfg.profile, cfg.environment,
-            )
-        else:
-            logger.info("OCR not enabled, skipping Gateway initialization")
-    except Exception as e:
-        logger.warning("OCR Gateway init failed (non-fatal): %s", e)
-
-    # Start pipeline worker + reaper (background task processing)
     _pipeline_worker_task: asyncio.Task | None = None
     _reaper_task: asyncio.Task | None = None
-    try:
-        from app.services.task_queue_worker import run_pipeline_worker
-        _pipeline_worker_task = asyncio.create_task(
-            run_pipeline_worker(), name="pipeline-worker"
-        )
-    except Exception as e:
-        logger.warning("Pipeline worker start failed (non-fatal): %s", e)
-    try:
-        from app.services.task_queue_worker import run_reaper_loop
-        _reaper_task = asyncio.create_task(
-            run_reaper_loop(), name="task-reaper"
-        )
-    except Exception as e:
-        logger.warning("Reaper start failed (non-fatal): %s", e)
+
+    # ── Role: web — HTTP + enqueue + token cleanup ──
+    if role in ("web", "all"):
+        cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
+
+        # Initialize OCR Gateway (needed for API enqueue endpoints)
+        try:
+            from app.core.ocr_runtime_config import get_runtime_config
+            from app.features.ocr_gateway import OCRGateway
+            from app.services.ocr_worker_client import create_ocr_worker_client
+
+            cfg = get_runtime_config()
+            if cfg.enabled:
+                worker_client = create_ocr_worker_client(cfg)
+                _ocr_gateway = OCRGateway(
+                    mode="gateway",
+                    worker_client=worker_client,
+                )
+                from app.services.ocr_service import set_gateway
+                set_gateway(_ocr_gateway)
+                logger.info(
+                    "OCR Gateway initialized (role=%s mode=gateway exec_backend=%s profile=%s env=%s)",
+                    role, cfg.execution_backend, cfg.profile, cfg.environment,
+                )
+            else:
+                logger.info("OCR not enabled, skipping Gateway initialization")
+        except Exception as e:
+            logger.warning("OCR Gateway init failed (non-fatal): %s", e)
+
+    # ── Role: worker — pipeline processing ──
+    if role in ("worker", "all"):
+        try:
+            from app.services.task_queue_worker import run_pipeline_worker
+            _pipeline_worker_task = asyncio.create_task(
+                run_pipeline_worker(), name="pipeline-worker"
+            )
+        except Exception as e:
+            logger.warning("Pipeline worker start failed (non-fatal): %s", e)
+        try:
+            from app.services.task_queue_worker import run_reaper_loop
+            _reaper_task = asyncio.create_task(
+                run_reaper_loop(), name="task-reaper"
+            )
+        except Exception as e:
+            logger.warning("Reaper start failed (non-fatal): %s", e)
+
+    # ── Role: scheduler — periodic background tasks ──
+    if role in ("scheduler", "all"):
+        try:
+            await pomodoro_scheduler.start()
+            logger.info("Pomodoro scheduler started")
+        except Exception as e:
+            logger.warning("Pomodoro scheduler start failed (non-fatal): %s", e)
+
+        try:
+            from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
+            await audit_log_cleanup_scheduler.start()
+            logger.info("Audit log cleanup scheduler started")
+        except Exception as e:
+            logger.warning("Audit log cleanup scheduler start failed (non-fatal): %s", e)
+
+        try:
+            from app.services.ai_prewarm_worker import start_worker
+            await start_worker()
+            logger.info("AI prewarm worker started")
+        except Exception as e:
+            logger.warning("AI prewarm worker start failed (non-fatal): %s", e)
+
+        # Scheduler also needs token cleanup if web role isn't running
+        if role == "scheduler" and cleanup_task is None:
+            cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
 
     # ── Yield — application serves requests ──
     try:
@@ -178,18 +196,19 @@ async def lifespan(app: FastAPI):
         # ══════════════════════════════════════════
         # Shutdown — ordered, resilient, logged
         # ══════════════════════════════════════════
-        logger.info("=== Shutdown sequence started ===")
+        logger.info("=== Shutdown sequence started (role=%s) ===", role)
 
         # 1. Stop receiving new background work
         #    (nothing explicit needed — lifespan yield ending prevents new requests)
 
-        # 2. Stop pipeline worker + reaper
-        try:
-            from app.services.task_queue_worker import stop_worker, stop_reaper
-            stop_worker()
-            stop_reaper()
-        except Exception as e:
-            logger.warning("Worker/reaper stop signal failed: %s", e)
+        # 2. Stop pipeline worker + reaper (if running in this role)
+        if role in ("worker", "all"):
+            try:
+                from app.services.task_queue_worker import stop_worker, stop_reaper
+                stop_worker()
+                stop_reaper()
+            except Exception as e:
+                logger.warning("Worker/reaper stop signal failed: %s", e)
 
         # 3. Cancel and await background asyncio tasks
         _shutdown_tasks = []
@@ -212,28 +231,29 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning("Task %s: cancel error: %s", name, e)
 
-        # 4. Stop schedulers and workers that run on their own tasks
-        try:
-            await pomodoro_scheduler.stop()
-            logger.info("Pomodoro scheduler stopped")
-        except Exception as e:
-            logger.warning("Pomodoro scheduler stop error: %s", e)
+        # 4. Stop schedulers (if running in this role)
+        if role in ("scheduler", "all"):
+            try:
+                await pomodoro_scheduler.stop()
+                logger.info("Pomodoro scheduler stopped")
+            except Exception as e:
+                logger.warning("Pomodoro scheduler stop error: %s", e)
 
-        try:
-            from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
-            await audit_log_cleanup_scheduler.stop()
-            logger.info("Audit log cleanup scheduler stopped")
-        except Exception as e:
-            logger.warning("Audit log cleanup scheduler stop error: %s", e)
+            try:
+                from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
+                await audit_log_cleanup_scheduler.stop()
+                logger.info("Audit log cleanup scheduler stopped")
+            except Exception as e:
+                logger.warning("Audit log cleanup scheduler stop error: %s", e)
 
-        try:
-            from app.services.ai_prewarm_worker import stop_worker
-            await stop_worker()
-            logger.info("AI prewarm worker stopped")
-        except Exception as e:
-            logger.warning("AI prewarm worker stop error: %s", e)
+            try:
+                from app.services.ai_prewarm_worker import stop_worker
+                await stop_worker()
+                logger.info("AI prewarm worker stopped")
+            except Exception as e:
+                logger.warning("AI prewarm worker stop error: %s", e)
 
-        # 5. Shutdown formula render ProcessPoolExecutor
+        # 5. Shutdown formula render ProcessPoolExecutor (common)
         try:
             from app.services.formula_graph_spec_renderer import shutdown_formula_render_pool
             await asyncio.wait_for(
@@ -254,7 +274,7 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("Formula render pool shutdown error")
 
-        # 6. Shutdown OCR executor (process pool)
+        # 6. Shutdown OCR executor (process pool) — common
         try:
             from app.services.ocr_executor_service import ocr_executor
             await asyncio.wait_for(
@@ -274,7 +294,7 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("OCR executor shutdown error")
 
-        # 7. Shutdown OCR Gateway
+        # 7. Shutdown OCR Gateway (if initialized)
         try:
             if _ocr_gateway is not None:
                 await _ocr_gateway.shutdown()
@@ -282,7 +302,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("OCR Gateway shutdown error: %s", e)
 
-        # 8. Shutdown PDF renderer (thread pool)
+        # 8. Shutdown PDF renderer (thread pool) — common
         try:
             from app.services.pdf_renderer_service import pdf_renderer
             await pdf_renderer.shutdown()
@@ -291,7 +311,7 @@ async def lifespan(app: FastAPI):
             logger.warning("PDF renderer shutdown error: %s", e)
 
         # ── Diagnostics ──
-        logger.info("=== Shutdown sequence completed ===")
+        logger.info("=== Shutdown sequence completed (role=%s) ===", role)
         try:
             import multiprocessing
             children = multiprocessing.active_children()
