@@ -134,7 +134,16 @@ class _OcrExecutorService:
     # --- lifecycle ---
 
     async def shutdown(self, wait: bool = True) -> None:
+        """Shut down the OCR process pool.
+
+        If *wait* is True (default), waits for running tasks to finish.
+        After shutdown, new submissions raise ``RuntimeError``.
+        """
         self._shutdown = True
+        from app.core.ocr_process_pool import ocr_process_pool
+
+        await asyncio.to_thread(ocr_process_pool.shutdown)
+        logger.info("OCR executor shut down (wait=%s)", wait)
 
     @property
     def stats(self) -> dict:

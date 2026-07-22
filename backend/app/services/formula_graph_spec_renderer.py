@@ -5,12 +5,12 @@ Renders graph_spec JSON to 1600x1000 PNG bytes in a subprocess.
 """
 
 import asyncio
-import atexit
 import concurrent.futures
 import io
 import logging
 import math
 import os
+import threading
 
 import matplotlib
 matplotlib.use("Agg")
@@ -817,11 +817,73 @@ def check_quality(png_bytes: bytes, spec: dict, render_meta: dict) -> dict:
     return {"errors": errors, "warnings": warnings, "passed": passed}
 
 
-# ── Subprocess pool ──
+# ── Subprocess pool (lazy, thread-safe) ──
 
-_process_pool = concurrent.futures.ProcessPoolExecutor(max_workers=2)
-atexit.register(_process_pool.shutdown, wait=False)
+_process_pool: concurrent.futures.ProcessPoolExecutor | None = None
+_process_pool_lock = threading.Lock()
+_pool_stopping = False
+_pool_generation = 0
 RENDER_TIMEOUT = 30
+
+
+def get_formula_render_pool() -> concurrent.futures.ProcessPoolExecutor:
+    """Get or create the formula render process pool (lazy, thread-safe)."""
+    global _process_pool, _pool_generation
+    if _process_pool is not None:
+        return _process_pool
+    with _process_pool_lock:
+        if _process_pool is not None:
+            return _process_pool
+        if _pool_stopping:
+            raise RuntimeError("Formula render pool is shutting down")
+        _process_pool = concurrent.futures.ProcessPoolExecutor(max_workers=2)
+        _pool_generation += 1
+        logger.info(
+            "Formula render pool created (generation=%d, pid=%d)",
+            _pool_generation, os.getpid(),
+        )
+        return _process_pool
+
+
+def shutdown_formula_render_pool(
+    *,
+    wait: bool = True,
+    cancel_futures: bool = True,
+) -> None:
+    """Shut down the formula render process pool (idempotent).
+
+    Once shut down, new submissions will raise ``RuntimeError`` until
+    :func:`reset_formula_render_pool` is called (if ever).
+
+    Args:
+        wait: If True, wait for running tasks to finish.
+            If False, return immediately (non-blocking).
+        cancel_futures: If True, cancel pending futures.
+    """
+    global _process_pool, _pool_stopping
+    if _process_pool is None:
+        return
+    _pool_stopping = True
+    pool = _process_pool
+    _process_pool = None
+    try:
+        pool.shutdown(wait=wait, cancel_futures=cancel_futures)
+        logger.info(
+            "Formula render pool shut down (wait=%s, cancel_futures=%s)",
+            wait, cancel_futures,
+        )
+    except Exception as exc:
+        logger.warning("Formula render pool shutdown error: %s", exc)
+
+
+def reset_formula_render_pool() -> None:
+    """Reset the pool stopping flag so a new pool can be created.
+
+    Call after shutdown if the application continues running (e.g.,
+    after a timeout-triggered pool replacement).
+    """
+    global _pool_stopping
+    _pool_stopping = False
 
 
 async def render_spec(spec: dict, timeout: int = RENDER_TIMEOUT) -> tuple[bytes, dict]:
@@ -829,15 +891,29 @@ async def render_spec(spec: dict, timeout: int = RENDER_TIMEOUT) -> tuple[bytes,
 
     Returns ``(png_bytes, metadata_dict)``.
 
-    Raises ``ValueError`` for spec/expression errors and ``TimeoutError``
-    for rendering that exceeds the timeout.
+    Raises ``ValueError`` for spec/expression errors, ``TimeoutError``
+    for rendering that exceeds the timeout, and ``RuntimeError``
+    if the pool is shut down.
     """
+    pool = get_formula_render_pool()
+    gen = _pool_generation
     loop = asyncio.get_running_loop()
-    future = loop.run_in_executor(_process_pool, _render_spec_sync, spec)
+    future = loop.run_in_executor(pool, _render_spec_sync, spec)
 
     try:
         png, metadata = await asyncio.wait_for(future, timeout=timeout)
     except asyncio.TimeoutError:
+        # Pool generation hasn't changed — this pool is still healthy.
+        # Only escalate to forced shutdown if we see repeated timeouts
+        # by checking whether the pool was already replaced.
+        if _process_pool is pool:
+            logger.warning(
+                "Graph rendering timed out after %ds (generation=%d), "
+                "recycling pool",
+                timeout, gen,
+            )
+            shutdown_formula_render_pool(wait=False, cancel_futures=True)
+            reset_formula_render_pool()
         raise TimeoutError(f"Graph rendering timed out after {timeout}s")
 
     return png, metadata

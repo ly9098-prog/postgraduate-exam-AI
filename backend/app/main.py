@@ -49,7 +49,7 @@ async def _periodic_token_cleanup():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Production configuration fail-fast check (sync part)
+    # ── Startup ──
     try:
         validate_production_config()
     except SystemError as e:
@@ -57,7 +57,6 @@ async def lifespan(app: FastAPI):
         raise
     except Exception as e:
         logger.warning("Production config validation error (non-fatal): %s", e)
-    # Async production config checks (Redis ping, DB type, Alembic head)
     try:
         await validate_production_config_async()
     except SystemError as e:
@@ -111,7 +110,6 @@ async def lifespan(app: FastAPI):
 
     cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
 
-    # Initialize OCR Gateway (must be before yield for shutdown access)
     _ocr_gateway = None
 
     try:
@@ -131,7 +129,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("AI prewarm worker start failed (non-fatal): %s", e)
 
-    # Initialize OCR Gateway with worker client (local process or remote)
+    # Initialize OCR Gateway
     try:
         from app.core.ocr_runtime_config import get_runtime_config
         from app.features.ocr_gateway import OCRGateway
@@ -144,7 +142,6 @@ async def lifespan(app: FastAPI):
                 mode="gateway",
                 worker_client=worker_client,
             )
-            # Set global gateway singleton for backward compat callers
             from app.services.ocr_service import set_gateway
             set_gateway(_ocr_gateway)
             logger.info(
@@ -156,57 +153,132 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("OCR Gateway init failed (non-fatal): %s", e)
 
-    # Start the durable task queue pipeline worker (background task processing)
+    # Start pipeline worker + reaper (background task processing)
     _pipeline_worker_task: asyncio.Task | None = None
+    _reaper_task: asyncio.Task | None = None
     try:
         from app.services.task_queue_worker import run_pipeline_worker, run_reaper_loop
         _pipeline_worker_task = asyncio.create_task(
             run_pipeline_worker(), name="pipeline-worker"
         )
-        asyncio.create_task(
+        _reaper_task = asyncio.create_task(
             run_reaper_loop(), name="task-reaper"
         )
     except Exception as e:
         logger.warning("Pipeline worker start failed (non-fatal): %s", e)
 
-    yield
+    # ── Yield — application serves requests ──
+    try:
+        yield
+    finally:
+        # ══════════════════════════════════════════
+        # Shutdown — ordered, resilient, logged
+        # ══════════════════════════════════════════
+        logger.info("=== Shutdown sequence started ===")
 
-    cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
-    try:
-        await pomodoro_scheduler.stop()
-    except Exception:
-        logger.exception("Pomodoro scheduler stop failed")
-    try:
-        from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
-        await audit_log_cleanup_scheduler.stop()
-    except Exception:
-        logger.exception("Audit log cleanup scheduler stop failed")
-    try:
-        from app.services.ai_prewarm_worker import stop_worker
-        await stop_worker()
-    except Exception:
-        logger.exception("AI prewarm worker stop failed")
-    try:
-        from app.services.ocr_executor_service import ocr_executor
-        await ocr_executor.shutdown(wait=False)
-    except Exception:
-        logger.exception("OCR executor shutdown failed")
-    try:
-        if _ocr_gateway is not None:
-            await _ocr_gateway.shutdown()
-            logger.info("OCR Gateway shut down")
-    except Exception:
-        logger.exception("OCR Gateway shutdown failed")
-    try:
-        from app.services.pdf_renderer_service import pdf_renderer
-        await pdf_renderer.shutdown()
-    except Exception:
-        logger.exception("PDF renderer shutdown failed")
-    logger.info("Shutting down 2240AI")
+        # 1. Stop receiving new background work
+        #    (nothing explicit needed — lifespan yield ending prevents new requests)
+
+        # 2. Stop pipeline worker + reaper
+        try:
+            from app.services.task_queue_worker import stop_worker, stop_reaper
+            stop_worker()
+            stop_reaper()
+        except Exception as e:
+            logger.warning("Worker/reaper stop signal failed: %s", e)
+
+        # 3. Cancel and await background asyncio tasks
+        _shutdown_tasks = []
+        if cleanup_task and not cleanup_task.done():
+            cleanup_task.cancel()
+            _shutdown_tasks.append(("token-cleanup", cleanup_task))
+        if _pipeline_worker_task and not _pipeline_worker_task.done():
+            _pipeline_worker_task.cancel()
+            _shutdown_tasks.append(("pipeline-worker", _pipeline_worker_task))
+        if _reaper_task and not _reaper_task.done():
+            _reaper_task.cancel()
+            _shutdown_tasks.append(("task-reaper", _reaper_task))
+
+        for name, task in _shutdown_tasks:
+            try:
+                await task
+                logger.info("Task %s: completed after cancel", name)
+            except asyncio.CancelledError:
+                logger.info("Task %s: cancelled", name)
+            except Exception as e:
+                logger.warning("Task %s: cancel error: %s", name, e)
+
+        # 4. Stop schedulers and workers that run on their own tasks
+        try:
+            await pomodoro_scheduler.stop()
+            logger.info("Pomodoro scheduler stopped")
+        except Exception as e:
+            logger.warning("Pomodoro scheduler stop error: %s", e)
+
+        try:
+            from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
+            await audit_log_cleanup_scheduler.stop()
+            logger.info("Audit log cleanup scheduler stopped")
+        except Exception as e:
+            logger.warning("Audit log cleanup scheduler stop error: %s", e)
+
+        try:
+            from app.services.ai_prewarm_worker import stop_worker
+            await stop_worker()
+            logger.info("AI prewarm worker stopped")
+        except Exception as e:
+            logger.warning("AI prewarm worker stop error: %s", e)
+
+        # 5. Shutdown formula render ProcessPoolExecutor
+        try:
+            from app.services.formula_graph_spec_renderer import shutdown_formula_render_pool
+            await asyncio.to_thread(
+                shutdown_formula_render_pool,
+                wait=True,
+                cancel_futures=True,
+            )
+            logger.info("Formula render pool shut down")
+        except Exception as e:
+            logger.warning("Formula render pool shutdown error: %s", e)
+
+        # 6. Shutdown OCR executor (process pool)
+        try:
+            from app.services.ocr_executor_service import ocr_executor
+            await ocr_executor.shutdown(wait=True)
+            logger.info("OCR executor shut down")
+        except Exception as e:
+            logger.warning("OCR executor shutdown error: %s", e)
+
+        # 7. Shutdown OCR Gateway
+        try:
+            if _ocr_gateway is not None:
+                await _ocr_gateway.shutdown()
+                logger.info("OCR Gateway shut down")
+        except Exception as e:
+            logger.warning("OCR Gateway shutdown error: %s", e)
+
+        # 8. Shutdown PDF renderer (thread pool)
+        try:
+            from app.services.pdf_renderer_service import pdf_renderer
+            await pdf_renderer.shutdown()
+            logger.info("PDF renderer shut down")
+        except Exception as e:
+            logger.warning("PDF renderer shutdown error: %s", e)
+
+        # ── Diagnostics ──
+        logger.info("=== Shutdown sequence completed ===")
+        try:
+            import multiprocessing
+            children = multiprocessing.active_children()
+            if children:
+                logger.warning(
+                    "Active child processes after shutdown: %s",
+                    [c.pid for c in children],
+                )
+            else:
+                logger.info("No active child processes after shutdown")
+        except Exception as e:
+            logger.warning("Active children check failed: %s", e)
 
 
 app = FastAPI(title="2240AI", version="0.1.0", lifespan=lifespan)
