@@ -152,19 +152,20 @@ async def get_today_review(
         q = questions_map.get(s.question_id)
         if not q:
             continue
-        stem = ""
-        if isinstance(q.content, dict):
-            stem = q.content.get("text", "")
-        elif isinstance(q.content, str):
-            stem = q.content
+        content = q.content
+        if isinstance(content, str):
+            content = {"text": content}
+        elif not isinstance(content, dict):
+            content = {}
+        subject = q.subject_ref.code if q.subject_ref else s.subject
         questions.append({
             "schedule_id": s.id,
             "question_id": s.question_id,
-            "subject": q.subject_ref.code if q.subject_ref else None,
+            "subject": subject,
             "question_type": q.question_type,
-            "stem": stem,
+            "stem": content.get("text", "") if isinstance(content, dict) else "",
             "options": q.options or {},
-            "content": q.content,
+            "content": content,
             "image_url": q.image_url,
             "interval": s.interval,
             "repetitions": s.repetitions,
@@ -534,17 +535,29 @@ async def get_today_review_overview(
     """获取今日复习任务概览（入口页数据）。"""
     today_start, today_end = shanghai_today_boundaries()
 
-    # today_due_count: all non-mastered schedules with next_review_at <= today_end
-    due_q = await db.execute(
-        select(func.count(ReviewSchedule.id)).where(
+    # Fetch all due schedules first, then cross-check with existing questions
+    all_schedules_q = await db.execute(
+        select(ReviewSchedule).where(
             ReviewSchedule.user_id == user_id,
             ReviewSchedule.mastered == False,
             ReviewSchedule.next_review_at <= today_end,
-        )
+        ).order_by(ReviewSchedule.next_review_at.asc(), ReviewSchedule.id.asc())
     )
-    today_due_count = due_q.scalar() or 0
+    all_schedules = list(all_schedules_q.scalars().all())
 
-    # today_completed_count: distinct questions reviewed today
+    # Filter out schedules pointing to non-existent questions
+    schedule_question_ids = list(set(s.question_id for s in all_schedules))
+    valid_question_ids = set()
+    if schedule_question_ids:
+        valid_q = await db.execute(
+            select(Question.id).where(Question.id.in_(schedule_question_ids))
+        )
+        valid_question_ids = {r[0] for r in valid_q.all()}
+
+    valid_schedules = [s for s in all_schedules if s.question_id in valid_question_ids]
+    today_due_count = len(valid_schedules)
+
+    # Completed today: distinct questions reviewed today, limited to the due set
     completed_q = await db.execute(
         select(func.count(func.distinct(ReviewRecord.question_id))).where(
             ReviewRecord.user_id == user_id,
@@ -552,19 +565,26 @@ async def get_today_review_overview(
             ReviewRecord.reviewed_at <= today_end,
         )
     )
-    today_completed_count = completed_q.scalar() or 0
+    raw_completed_count = completed_q.scalar() or 0
+
+    # Only count completions for questions that are in the due set
+    completed_set = set()
+    if valid_question_ids:
+        completed_q2 = await db.execute(
+            select(func.distinct(ReviewRecord.question_id)).where(
+                ReviewRecord.user_id == user_id,
+                ReviewRecord.reviewed_at >= today_start,
+                ReviewRecord.reviewed_at <= today_end,
+                ReviewRecord.question_id.in_(valid_question_ids),
+            )
+        )
+        completed_set = {r[0] for r in completed_q2.all()}
+    today_completed_count = len(completed_set)
 
     today_remaining_count = max(0, today_due_count - today_completed_count)
 
-    # overdue: next_review_at < today_start (already overdue by Shanghai time)
-    overdue_q = await db.execute(
-        select(func.count(ReviewSchedule.id)).where(
-            ReviewSchedule.user_id == user_id,
-            ReviewSchedule.mastered == False,
-            ReviewSchedule.next_review_at < today_start,
-        )
-    )
-    today_overdue_count = overdue_q.scalar() or 0
+    # overdue: schedules with next_review_at < today_start, among valid schedules
+    today_overdue_count = sum(1 for s in valid_schedules if s.next_review_at < today_start)
     today_new_due_count = max(0, today_due_count - today_overdue_count)
 
     batch_size = 10
@@ -572,38 +592,13 @@ async def get_today_review_overview(
     remaining_batch_count = max(1, (today_remaining_count + batch_size - 1) // batch_size) if today_remaining_count > 0 else 0
     estimated_minutes = min(120, max(1, (today_remaining_count + 1) // 2))
 
-    # All question IDs that should be reviewed today
-    all_q_result = await db.execute(
-        select(ReviewSchedule.id, ReviewSchedule.question_id).where(
-            ReviewSchedule.user_id == user_id,
-            ReviewSchedule.mastered == False,
-            ReviewSchedule.next_review_at <= today_end,
-        ).order_by(ReviewSchedule.next_review_at.asc(), ReviewSchedule.id.asc())
-    )
-    all_rows = list(all_q_result.all())
-    all_ids = [r.id for r in all_rows]
+    # All valid schedule IDs
+    all_ids = [s.id for s in valid_schedules]
 
-    # Completed question IDs today
-    completed_q_result = await db.execute(
-        select(func.distinct(ReviewRecord.question_id)).where(
-            ReviewRecord.user_id == user_id,
-            ReviewRecord.reviewed_at >= today_start,
-            ReviewRecord.reviewed_at <= today_end,
-        )
-    )
-    completed_question_ids = {r[0] for r in completed_q_result.all()}
-
-    # Not all schedule rows map to distinct question_ids in the due set,
-    # so completed_question_ids refers to question-level uniqueness.
-    # For remaining_question_ids we return schedule-level IDs for the
-    # subset that haven't been reviewed today.
-    remaining_question_ids = []
-    for r in all_rows:
-        if r.question_id not in completed_question_ids:
-            remaining_question_ids.append(r.id)
+    # Remaining question IDs (not yet completed today) — at schedule level
+    remaining_question_ids = [s.id for s in valid_schedules if s.question_id not in completed_set]
 
     current_batch_no = 1
-    # Estimate current batch number from completed count
     if today_completed_count > 0:
         current_batch_no = (today_completed_count // batch_size) + 1
         if current_batch_no > total_batch_count:
@@ -622,7 +617,7 @@ async def get_today_review_overview(
         "total_batch_count": total_batch_count,
         "remaining_batch_count": remaining_batch_count,
         "all_question_ids": all_ids,
-        "completed_question_ids": sorted(completed_question_ids),
+        "completed_question_ids": sorted(completed_set),
         "remaining_question_ids": remaining_question_ids,
         "has_due_review": today_due_count > 0,
         "is_completed": today_due_count > 0 and today_remaining_count == 0,
@@ -637,17 +632,7 @@ async def get_next_today_review_batch(
     """获取今日下一组待复习题。"""
     today_start, today_end = shanghai_today_boundaries()
 
-    # Get questions already reviewed today (by question_id)
-    done_q_result = await db.execute(
-        select(func.distinct(ReviewRecord.question_id)).where(
-            ReviewRecord.user_id == user_id,
-            ReviewRecord.reviewed_at >= today_start,
-            ReviewRecord.reviewed_at <= today_end,
-        )
-    )
-    done_question_ids = {r[0] for r in done_q_result.all()}
-
-    # Query due schedules excluding already-reviewed
+    # Query due schedules
     conditions = [
         ReviewSchedule.user_id == user_id,
         ReviewSchedule.mastered == False,
@@ -662,8 +647,29 @@ async def get_next_today_review_batch(
     result = await db.execute(q)
     all_schedules = list(result.scalars().all())
 
+    # Cross-check with existing questions (filter out schedules pointing to deleted questions)
+    schedule_question_ids = list(set(s.question_id for s in all_schedules))
+    valid_question_ids = set()
+    if schedule_question_ids:
+        valid_q = await db.execute(
+            select(Question.id).where(Question.id.in_(schedule_question_ids))
+        )
+        valid_question_ids = {r[0] for r in valid_q.all()}
+    valid_schedules = [s for s in all_schedules if s.question_id in valid_question_ids]
+
+    # Get questions already reviewed today (by question_id), scoped to due set
+    done_q_result = await db.execute(
+        select(func.distinct(ReviewRecord.question_id)).where(
+            ReviewRecord.user_id == user_id,
+            ReviewRecord.reviewed_at >= today_start,
+            ReviewRecord.reviewed_at <= today_end,
+            ReviewRecord.question_id.in_(valid_question_ids) if valid_question_ids else True,
+        )
+    )
+    done_question_ids = {r[0] for r in done_q_result.all()}
+
     # Filter out already-reviewed questions
-    pending = [s for s in all_schedules if s.question_id not in done_question_ids]
+    pending = [s for s in valid_schedules if s.question_id not in done_question_ids]
     batch = pending[:batch_size]
 
     # Build question data (same as get_today_review)
@@ -680,32 +686,33 @@ async def get_next_today_review_batch(
         q = questions_map.get(s.question_id)
         if not q:
             continue
-        stem = ""
-        if isinstance(q.content, dict):
-            stem = q.content.get("text", "")
-        elif isinstance(q.content, str):
-            stem = q.content
+        content = q.content
+        if isinstance(content, str):
+            content = {"text": content}
+        elif not isinstance(content, dict):
+            content = {}
+        subject = q.subject_ref.code if q.subject_ref else s.subject
         questions.append({
             "schedule_id": s.id,
             "question_id": s.question_id,
-            "subject": q.subject_ref.code if q.subject_ref else None,
+            "subject": subject,
             "question_type": q.question_type,
-            "stem": stem,
+            "stem": content.get("text", "") if isinstance(content, dict) else "",
             "options": q.options or {},
-            "content": q.content,
+            "content": content,
             "image_url": q.image_url,
             "interval": s.interval,
             "repetitions": s.repetitions,
             "ease_factor": s.ease_factor,
         })
 
-    due_count = len(all_schedules)
+    due_count = len(valid_schedules)
     completed_count = len(done_question_ids)
     remaining_count = max(0, due_count - completed_count)
     total_batch_count = max(1, (due_count + batch_size - 1) // batch_size) if due_count > 0 else 1
 
     # Calculate current batch_no
-    completed_before = len([s for s in all_schedules if s.question_id in done_question_ids])
+    completed_before = len([s for s in valid_schedules if s.question_id in done_question_ids])
     batch_no = (completed_before // batch_size) + 1
     if batch_no > total_batch_count:
         batch_no = total_batch_count

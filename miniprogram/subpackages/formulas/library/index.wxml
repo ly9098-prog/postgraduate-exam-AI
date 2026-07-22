@@ -103,7 +103,7 @@
           data-id="{{c.id}}"
           hover-class="fl-pressed"
           bindtap="onChapterSelect"
-        >{{c.name}}</view>
+        >{{c.name}}<text wx:if="{{c.available_count > 0}}" class="fl-chapter-count"> {{c.available_count}}</text></view>
       </view>
     </scroll-view>
 

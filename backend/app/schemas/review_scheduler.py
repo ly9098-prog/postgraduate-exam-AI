@@ -6,11 +6,12 @@ from pydantic import BaseModel, Field
 class ReviewQuestion(BaseModel):
     schedule_id: int
     question_id: int
-    subject: str
+    subject: str | None = None
     question_type: str
     stem: str
     options: dict = {}
-    content: dict | None = None
+    content: dict = {}
+    image_url: list[str] | str | None = None
     interval: int
     repetitions: int
     ease_factor: float
