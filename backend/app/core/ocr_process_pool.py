@@ -170,7 +170,7 @@ class OcrProcessPool:
         """
         try:
             future = self._ensure().submit(_run_one_page, image_bytes, page_index)
-        except (BrokenProcessPool, RuntimeError):
+        except BrokenProcessPool:
             self._total_crashes += 1
             logger.warning(
                 "OCR process pool broken, recreating (crash=%d)",
@@ -178,6 +178,9 @@ class OcrProcessPool:
             )
             self._shutdown_nonblocking()
             future = self._ensure().submit(_run_one_page, image_bytes, page_index)
+        except RuntimeError:
+            # From _ensure() during shutdown — do not retry, do not count as crash
+            raise
 
         self._total_submitted += 1
         return future
@@ -232,12 +235,14 @@ class OcrProcessPool:
             future = self._ensure().submit(
                 _run_one_page_with_boxes, image_bytes, page_index, skip_rotation,
             )
-        except (BrokenProcessPool, RuntimeError):
+        except BrokenProcessPool:
             self._total_crashes += 1
             self._shutdown_nonblocking()
             future = self._ensure().submit(
                 _run_one_page_with_boxes, image_bytes, page_index, skip_rotation,
             )
+        except RuntimeError:
+            raise
 
         self._total_submitted += 1
         try:
@@ -266,12 +271,14 @@ class OcrProcessPool:
             future = self._ensure().submit(
                 _run_lightweight_ocr, image_bytes, page_index,
             )
-        except (BrokenProcessPool, RuntimeError):
+        except BrokenProcessPool:
             self._total_crashes += 1
             self._shutdown_nonblocking()
             future = self._ensure().submit(
                 _run_lightweight_ocr, image_bytes, page_index,
             )
+        except RuntimeError:
+            raise
 
         self._total_submitted += 1
         try:
@@ -304,8 +311,11 @@ class OcrProcessPool:
                 logger.warning("OCR process pool shutdown error: %s", exc)
             self._executor = None
 
-    def shutdown(self) -> None:
-        """Graceful shutdown (waits for running tasks).
+    def shutdown(self, wait: bool = True) -> None:
+        """Graceful shutdown.
+
+        If *wait* is True (default), waits for running tasks to finish.
+        If False, returns immediately (non-blocking, cancels pending futures).
 
         After shutdown, new submissions raise ``RuntimeError``.
         Call ``reset()`` to re-enable if needed.
@@ -313,7 +323,7 @@ class OcrProcessPool:
         self._shut_down = True
         if self._executor is not None:
             try:
-                self._executor.shutdown(wait=True)
+                self._executor.shutdown(wait=wait, cancel_futures=not wait)
             except Exception as exc:
                 logger.warning("OCR process pool graceful shutdown error: %s", exc)
             self._executor = None

@@ -135,6 +135,12 @@ async def generate_preview(
             card.graph_last_error = str(e)
             await db.flush()
             raise ValueError(str(e))
+        except RuntimeError as e:
+            # Pool is shutting down — card not at fault
+            card.graph_status = "failed"
+            card.graph_last_error = str(e)
+            await db.flush()
+            raise ValueError(str(e))
         except ValueError as e:
             card.graph_status = "failed"
             card.graph_last_error = str(e)

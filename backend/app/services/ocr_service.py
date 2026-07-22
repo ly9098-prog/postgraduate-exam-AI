@@ -164,7 +164,7 @@ def reset_ocr_engine() -> None:
     """
     logger.info("reset_ocr_engine() called — recycling process pool workers")
     from app.core.ocr_process_pool import ocr_process_pool
-    ocr_process_pool._shutdown_now()
+    ocr_process_pool._shutdown_nonblocking()
 
 
 def ocr_is_available() -> bool:

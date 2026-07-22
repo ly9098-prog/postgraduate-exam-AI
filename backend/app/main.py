@@ -157,15 +157,19 @@ async def lifespan(app: FastAPI):
     _pipeline_worker_task: asyncio.Task | None = None
     _reaper_task: asyncio.Task | None = None
     try:
-        from app.services.task_queue_worker import run_pipeline_worker, run_reaper_loop
+        from app.services.task_queue_worker import run_pipeline_worker
         _pipeline_worker_task = asyncio.create_task(
             run_pipeline_worker(), name="pipeline-worker"
         )
+    except Exception as e:
+        logger.warning("Pipeline worker start failed (non-fatal): %s", e)
+    try:
+        from app.services.task_queue_worker import run_reaper_loop
         _reaper_task = asyncio.create_task(
             run_reaper_loop(), name="task-reaper"
         )
     except Exception as e:
-        logger.warning("Pipeline worker start failed (non-fatal): %s", e)
+        logger.warning("Reaper start failed (non-fatal): %s", e)
 
     # ── Yield — application serves requests ──
     try:
@@ -232,22 +236,43 @@ async def lifespan(app: FastAPI):
         # 5. Shutdown formula render ProcessPoolExecutor
         try:
             from app.services.formula_graph_spec_renderer import shutdown_formula_render_pool
-            await asyncio.to_thread(
-                shutdown_formula_render_pool,
-                wait=True,
-                cancel_futures=True,
+            await asyncio.wait_for(
+                asyncio.to_thread(
+                    shutdown_formula_render_pool,
+                    wait=True,
+                    cancel_futures=False,
+                ),
+                timeout=30,
             )
             logger.info("Formula render pool shut down")
-        except Exception as e:
-            logger.warning("Formula render pool shutdown error: %s", e)
+        except asyncio.TimeoutError:
+            logger.warning("Formula render pool shutdown timed out, forcing non-blocking")
+            try:
+                shutdown_formula_render_pool(wait=False, cancel_futures=True)
+            except Exception as exc2:
+                logger.exception("Formula render pool forced shutdown error: %s", exc2)
+        except Exception:
+            logger.exception("Formula render pool shutdown error")
 
         # 6. Shutdown OCR executor (process pool)
         try:
             from app.services.ocr_executor_service import ocr_executor
-            await ocr_executor.shutdown(wait=True)
+            await asyncio.wait_for(
+                ocr_executor.shutdown(wait=True),
+                timeout=30,
+            )
             logger.info("OCR executor shut down")
-        except Exception as e:
-            logger.warning("OCR executor shutdown error: %s", e)
+        except asyncio.TimeoutError:
+            logger.warning("OCR executor shutdown timed out, forcing non-blocking")
+            try:
+                from app.core.ocr_process_pool import ocr_process_pool
+                await asyncio.to_thread(
+                    ocr_process_pool.shutdown, wait=False,
+                )
+            except Exception as exc2:
+                logger.exception("OCR executor forced shutdown error: %s", exc2)
+        except Exception:
+            logger.exception("OCR executor shutdown error")
 
         # 7. Shutdown OCR Gateway
         try:

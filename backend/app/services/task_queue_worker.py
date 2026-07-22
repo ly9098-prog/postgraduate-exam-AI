@@ -310,8 +310,10 @@ async def run_pipeline_worker(
                     heartbeat_task.cancel()
                     try:
                         await heartbeat_task
-                    except (asyncio.CancelledError, Exception):
+                    except asyncio.CancelledError:
                         pass
+                    except Exception as e:
+                        logger.warning("Heartbeat task raised after cancel: %s", e)
 
             if not processed:
                 await asyncio.sleep(poll_interval)

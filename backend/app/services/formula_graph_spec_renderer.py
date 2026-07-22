@@ -5,6 +5,7 @@ Renders graph_spec JSON to 1600x1000 PNG bytes in a subprocess.
 """
 
 import asyncio
+import atexit
 import concurrent.futures
 import io
 import logging
@@ -861,11 +862,12 @@ def shutdown_formula_render_pool(
         cancel_futures: If True, cancel pending futures.
     """
     global _process_pool, _pool_stopping
-    if _process_pool is None:
-        return
-    _pool_stopping = True
-    pool = _process_pool
-    _process_pool = None
+    with _process_pool_lock:
+        if _process_pool is None:
+            return
+        _pool_stopping = True
+        pool = _process_pool
+        _process_pool = None
     try:
         pool.shutdown(wait=wait, cancel_futures=cancel_futures)
         logger.info(
@@ -874,6 +876,13 @@ def shutdown_formula_render_pool(
         )
     except Exception as exc:
         logger.warning("Formula render pool shutdown error: %s", exc)
+
+
+# Last-ditch fallback: if the process exits without going through
+# lifespan shutdown (e.g. sys.exit() during a request), at least
+# shut down non-blockingly so child processes aren't orphaned.
+# Idempotent — safe because shutdown() early-returns on None.
+atexit.register(shutdown_formula_render_pool, wait=False, cancel_futures=True)
 
 
 def reset_formula_render_pool() -> None:
@@ -912,7 +921,7 @@ async def render_spec(spec: dict, timeout: int = RENDER_TIMEOUT) -> tuple[bytes,
                 "recycling pool",
                 timeout, gen,
             )
-            shutdown_formula_render_pool(wait=False, cancel_futures=True)
+            shutdown_formula_render_pool(wait=False, cancel_futures=False)
             reset_formula_render_pool()
         raise TimeoutError(f"Graph rendering timed out after {timeout}s")
 
