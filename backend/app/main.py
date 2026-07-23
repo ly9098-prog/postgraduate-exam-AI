@@ -47,6 +47,19 @@ async def _periodic_token_cleanup():
             logger.warning("Refresh token cleanup failed (non-fatal): %s", e)
 
 
+async def _periodic_staging_cleanup():
+    """Background task: clean up expired staging files hourly."""
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            from app.services.staging_storage import cleanup_orphans
+            removed = cleanup_orphans()
+            if removed:
+                logger.info("Staging cleanup removed %d expired objects", removed)
+        except Exception as e:
+            logger.warning("Staging cleanup failed (non-fatal): %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     role = settings.PROCESS_ROLE
