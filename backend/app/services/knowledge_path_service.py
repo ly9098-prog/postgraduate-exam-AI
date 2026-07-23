@@ -334,6 +334,30 @@ async def get_user_path_recommendations(
 # ── 内部辅助函数 ──
 
 
+async def _batch_get_mastery(
+    db: AsyncSession,
+    user_id: int,
+    kp_ids: list[int],
+) -> dict[int, dict]:
+    """批量获取用户对多个知识点的掌握度（替代 N+1 循环调用 _get_mastery_for_kp）。"""
+    if not kp_ids:
+        return {}
+    result = await db.execute(
+        select(UserKnowledgeState).where(
+            UserKnowledgeState.user_id == user_id,
+            UserKnowledgeState.knowledge_point_id.in_(kp_ids),
+        )
+    )
+    states = {s.knowledge_point_id: s for s in result.scalars().all()}
+    return {
+        kp_id: {
+            "mastery_score": states[kp_id].mastery_score if kp_id in states else None,
+            "weakness_level": states[kp_id].weakness_level if kp_id in states else "unknown",
+        }
+        for kp_id in kp_ids
+    }
+
+
 async def _get_mastery_for_kp(
     db: AsyncSession,
     user_id: int,
