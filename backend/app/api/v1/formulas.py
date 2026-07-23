@@ -71,28 +71,38 @@ async def _get_active_categories(db: AsyncSession) -> list[FormulaCategory]:
     return list(result.scalars().all())
 
 
-async def _card_to_response(db: AsyncSession, card: FormulaCard, graph_asset: FormulaGraphAsset | None = None) -> dict:
+async def _card_to_response(
+    db: AsyncSession,
+    card: FormulaCard,
+    graph_asset: FormulaGraphAsset | None = None,
+    *,
+    tags_map: dict[int, list[dict]] | None = None,
+    specs_map: dict[int, list[dict]] | None = None,
+) -> dict:
     """Convert a formula card to the user-facing response dict.
 
     Args:
-        graph_asset: Pre-resolved effective graph asset (pass None for single-card calls).
+        graph_asset: Pre-resolved effective graph asset.
+        tags_map: Pre-loaded tags keyed by card_id (avoids N+1 in list endpoints).
+        specs_map: Pre-loaded graph specs keyed by card_id (avoids N+1).
     """
-    tags_result = await db.execute(
-        select(FormulaTag)
-        .join(FormulaCardTag, FormulaCardTag.tag_id == FormulaTag.id)
-        .where(FormulaCardTag.formula_card_id == card.id)
-    )
-    tags = [
-        {"id": t.id, "code": t.code, "name": t.name, "sort_order": t.sort_order}
-        for t in tags_result.scalars().all()
-    ]
+    tags = (tags_map or {}).get(card.id)
+    if tags is None:
+        tags_result = await db.execute(
+            select(FormulaTag)
+            .join(FormulaCardTag, FormulaCardTag.tag_id == FormulaTag.id)
+            .where(FormulaCardTag.formula_card_id == card.id)
+        )
+        tags = [
+            {"id": t.id, "code": t.code, "name": t.name, "sort_order": t.sort_order}
+            for t in tags_result.scalars().all()
+        ]
 
     # Graph asset response (never expose file paths)
     graph_asset_resp = None
     if graph_asset:
         graph_asset_resp = FormulaGraphAssetResponse.model_validate(graph_asset)
     elif card.card_type != "pure_formula":
-        # Single-card fallback: load the effective asset (for function_graph or auto)
         from app.services.formula_graph_asset_service import (
             get_effective_graph_asset_for_card,
         )
@@ -101,12 +111,14 @@ async def _card_to_response(db: AsyncSession, card: FormulaCard, graph_asset: Fo
             graph_asset_resp = FormulaGraphAssetResponse.model_validate(effective)
 
     # Load multi-graph specs (FormulaGraphSpec)
-    specs_result = await db.execute(
-        select(FormulaGraphSpec).where(
-            FormulaGraphSpec.formula_card_id == card.id
-        ).order_by(FormulaGraphSpec.sort_order, FormulaGraphSpec.id)
-    )
-    graph_specs = [_graph_spec_to_dict(s) for s in specs_result.scalars().all()]
+    graph_specs = (specs_map or {}).get(card.id)
+    if graph_specs is None:
+        specs_result = await db.execute(
+            select(FormulaGraphSpec).where(
+                FormulaGraphSpec.formula_card_id == card.id
+            ).order_by(FormulaGraphSpec.sort_order, FormulaGraphSpec.id)
+        )
+        graph_specs = [_graph_spec_to_dict(s) for s in specs_result.scalars().all()]
 
     return {
         "id": card.id,
@@ -259,6 +271,47 @@ async def get_formula_catalog(
             ]
 
     return {"items": tree}
+
+
+# ── Batch loading helpers (eliminate N+1) ──
+
+
+async def _batch_load_tags(db: AsyncSession, card_ids: list[int]) -> dict[int, list[dict]]:
+    """Load tags for all card_ids at once. Returns {card_id: [tag_dict, ...]}."""
+    if not card_ids:
+        return {}
+    result = await db.execute(
+        select(FormulaCardTag.formula_card_id, FormulaTag.id, FormulaTag.code, FormulaTag.name, FormulaTag.sort_order)
+        .join(FormulaTag, FormulaCardTag.tag_id == FormulaTag.id)
+        .where(FormulaCardTag.formula_card_id.in_(card_ids))
+    )
+    tags_by_card: dict[int, list[dict]] = {}
+    for row in result.all():
+        cid = row.formula_card_id
+        if cid not in tags_by_card:
+            tags_by_card[cid] = []
+        tags_by_card[cid].append({
+            "id": row.id, "code": row.code, "name": row.name, "sort_order": row.sort_order,
+        })
+    return tags_by_card
+
+
+async def _batch_load_specs(db: AsyncSession, card_ids: list[int]) -> dict[int, list[dict]]:
+    """Load graph specs for all card_ids at once. Returns {card_id: [spec_dict, ...]}."""
+    if not card_ids:
+        return {}
+    result = await db.execute(
+        select(FormulaGraphSpec)
+        .where(FormulaGraphSpec.formula_card_id.in_(card_ids))
+        .order_by(FormulaGraphSpec.sort_order, FormulaGraphSpec.id)
+    )
+    specs_by_card: dict[int, list[dict]] = {}
+    for spec in result.scalars().all():
+        cid = spec.formula_card_id
+        if cid not in specs_by_card:
+            specs_by_card[cid] = []
+        specs_by_card[cid].append(_graph_spec_to_dict(spec))
+    return specs_by_card
 
 
 # ── Tags ──
@@ -434,11 +487,16 @@ async def list_formulas(
     # Batch-load graph assets
     card_ids = [c.id for c in cards]
     assets_map = await load_graph_assets_map(db, card_ids)
+    tags_map = await _batch_load_tags(db, card_ids)
+    specs_map = await _batch_load_specs(db, card_ids)
 
     items = []
     for card in cards:
         effective = choose_effective_graph_asset(assets_map.get(card.id, []))
-        items.append(await _card_to_response(db, card, graph_asset=effective))
+        items.append(await _card_to_response(
+            db, card, graph_asset=effective,
+            tags_map=tags_map, specs_map=specs_map,
+        ))
 
     return paginated_response(items, total, page, page_size)
 
@@ -508,14 +566,19 @@ async def list_favorite_formulas(
     result = await db.execute(query)
     cards = list(result.scalars().all())
 
-    # Batch-load graph assets
+    # Batch-load graph assets, tags, and specs (eliminate N+1)
     card_ids = [c.id for c in cards]
     assets_map = await load_graph_assets_map(db, card_ids)
+    tags_map = await _batch_load_tags(db, card_ids)
+    specs_map = await _batch_load_specs(db, card_ids)
 
     items = []
     for card in cards:
         effective = choose_effective_graph_asset(assets_map.get(card.id, []))
-        items.append(await _card_to_response(db, card, graph_asset=effective))
+        items.append(await _card_to_response(
+            db, card, graph_asset=effective,
+            tags_map=tags_map, specs_map=specs_map,
+        ))
 
     return paginated_response(items, total, page, page_size)
 
