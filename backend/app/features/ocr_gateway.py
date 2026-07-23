@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.module_result import ModuleError, ModuleResult
+from app.core.deployment_profile import detect_deployment_profile
 from app.core.ocr_request import OCRRequest
 from app.core.ocr_types import STABLE_ERROR_CODES, OcrPageResult, WorkerResult
 from app.features.page_stream import RenderedPage
@@ -110,7 +111,7 @@ class OCRGateway:
         worker_client: Any = None,
     ) -> None:
         self._mode = mode or _OCR_GATEWAY_MODE
-        self._profile = profile or os.environ.get("DEPLOYMENT_PROFILE", "local_import")
+        self._profile = profile or detect_deployment_profile().value
         self._registry = registry or AdapterRegistry()
         self._selector = selector or AdapterSelector(self._registry)
 

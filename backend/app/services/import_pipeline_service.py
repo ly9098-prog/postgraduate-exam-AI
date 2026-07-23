@@ -13,6 +13,9 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.resource_guard import resource_guard
+from app.services.staging_storage import store_file, retrieve_file
+
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import async_session
@@ -491,6 +494,12 @@ async def start_import_pipeline(
     if not filename:
         raise ValueError("文件名不能为空")
 
+    # System-level resource check
+    ok, reason = resource_guard.can_accept_work()
+    if not ok:
+        from app.core.resource_guard import RESOURCE_PRESSURE, ResourceGuardError
+        raise ResourceGuardError(RESOURCE_PRESSURE, reason)
+
     # Validate file exists and is non-empty
     file_size = os.path.getsize(file_path)
     if file_size == 0:
@@ -575,6 +584,7 @@ async def start_import_pipeline(
     if is_excel:
         pipeline_id = f"xl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
+        staging_obj = store_file(file_path, original_name=filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         await _set_pipeline_store(pipeline_id, {
             "pipeline_id": pipeline_id,
             "status": "parsing",
@@ -585,6 +595,7 @@ async def start_import_pipeline(
             "errors": [],
             "started_at": datetime.now().isoformat(),
             "_file_path": file_path,
+            "staging_object_id": staging_obj.object_id,
         })
 
         from app.services.task_queue_worker import enqueue_excel_pipeline
@@ -637,6 +648,10 @@ async def start_import_pipeline(
     options["_trace_id"] = ctx.get("trace_id")
     options["_request_id"] = ctx.get("request_id")
 
+    # Stage file to persistent storage before enqueuing task
+    mime = content_type or ("application/pdf" if is_pdf else "text/plain")
+    staging_obj = store_file(file_path, original_name=filename, mime=mime)
+
     store_data: dict = {
         "pipeline_id": pipeline_id,
         "status": "processing",
@@ -647,7 +662,8 @@ async def start_import_pipeline(
         "stats": {},
         "errors": [],
         "started_at": datetime.now().isoformat(),
-        "_file_path": file_path,
+        "_file_path": file_path,  # Keep for backward compat during rollout
+        "staging_object_id": staging_obj.object_id,
     }
     if page_range:
         store_data["page_range"] = page_range.model_dump()

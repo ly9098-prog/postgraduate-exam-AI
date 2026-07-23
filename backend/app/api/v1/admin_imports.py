@@ -1161,33 +1161,55 @@ async def stream_batch_image_job(
 
     async def event_generator():
         last_event_id = _resolve_last_event_id()
+        queue: asyncio.Queue = asyncio.Queue()
+        subscribed = False
+
+        async def on_event(event_type: str, data: dict):
+            await queue.put((event_type, data))
+
+        async def on_done():
+            await queue.put(("done", {}))
+
+        async def poll_db():
+            async with async_session() as db:
+                events = await batch_svc.poll_trace_events(
+                    db, job_id, since_id=last_event_id
+                )
+                return [
+                    {"type": "done" if ev.get("status") in ("completed", "failed") else "trace",
+                     "data": ev}
+                    for ev in events
+                ]
+
+        # Try Redis Pub/Sub subscription with DB polling fallback
+        sub_task = asyncio.create_task(
+            _run_sse_subscribe(job_id, on_event, on_done, poll_db)
+        )
+        subscribed = True
+
         while True:
             try:
-                async with async_session() as db:
-                    events = await batch_svc.poll_trace_events(
-                        db, job_id, since_id=last_event_id
-                    )
-                    for ev in events:
-                        last_event_id = ev["id"]
-                        yield f"id: {ev['id']}\nevent: trace\ndata: {json.dumps(ev, ensure_ascii=False)}\n\n"
-
-                    summary = await batch_svc.poll_job_summary(db, job_id)
-                    if summary and summary["status"] in ("completed", "failed"):
-                        yield f"event: done\ndata: {json.dumps(summary, ensure_ascii=False)}\n\n"
-                        return
+                event_type, data = await asyncio.wait_for(
+                    queue.get(), timeout=2.0
+                )
+                if event_type == "done":
+                    yield f"event: done\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    return
+                yield f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+            except asyncio.TimeoutError:
+                # Heartbeat — no events in 2s
+                yield ": heartbeat\n\n"
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.exception("batch image SSE stream error: job_id=%s", job_id)
-                payload = {"message": str(exc), "job_id": job_id}
-                yield f"event: error\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                yield f"event: error\ndata: {json.dumps({'message': str(exc)}, ensure_ascii=False)}\n\n"
                 return
-
-            if not events:
-                yield ": heartbeat\n\n"
-                await asyncio.sleep(1.5)
-            else:
-                await asyncio.sleep(0.5)
+            finally:
+                if subscribed and sub_task.done() and sub_task.exception() is not None:
+                    sub_task = asyncio.create_task(
+                        _run_sse_subscribe(job_id, on_event, on_done, poll_db)
+                    )
 
     return StreamingResponse(
         event_generator(),
@@ -1198,6 +1220,27 @@ async def stream_batch_image_job(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+async def _run_sse_subscribe(
+    job_id: str,
+    on_event,
+    on_done,
+    poll_fn,
+):
+    """Run Pub/Sub subscription with DB polling fallback in background."""
+    try:
+        from app.services.sse_pubsub import subscribe_job
+        await subscribe_job(
+            job_id=int(job_id) if str(job_id).isdigit() else 0,
+            on_event=on_event,
+            on_done=on_done,
+            poll_fn=poll_fn,
+            poll_interval=2.0,
+            timeout=3600,
+        )
+    except Exception:
+        logger.warning("SSE subscribe failed for job %s, using direct poll", job_id)
 
 
 @router.post("/batch-image/items/{item_id}/reparse", response_model=BatchImageReparseResponse)

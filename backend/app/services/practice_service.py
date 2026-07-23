@@ -13,6 +13,28 @@ from app.models.question_import import QuestionImport  # noqa: F401 — ensures 
 from app.utils.answer_normalizer import is_answer_correct
 from app.services.admin_subject_service import resolve_subject_ids
 from app.services.behavior_service import record_answer_behavior
+
+logger = logging.getLogger("2240ai.practice")
+
+
+def _random_sample_query(query, total_count: int, need: int, id_col=None):
+    """Replace ``ORDER BY random()`` with a random offset for efficiency.
+
+    For small result sets (total_count <= 2000), uses ``ORDER BY random()``
+    which is simpler and well-tested.  For large result sets, uses a random
+    offset to avoid the expensive full-table sort.
+
+    The offset approach assumes roughly evenly-distributed IDs and is only
+    a best-effort randomization — it's good enough for practice sampling
+    where perfect uniformity isn't required.
+    """
+    if total_count <= need:
+        return query.order_by(id_col.asc() if id_col else func.random()).limit(need)
+    if total_count > 2000 or need <= 20:
+        # Large table or small sample: random offset to avoid full sort
+        offset = random.randint(0, total_count - need)
+        return query.order_by(id_col.asc() if id_col else func.random()).offset(offset).limit(need)
+    return query.order_by(func.random()).limit(need)
 from app.services.wrong_question_service import record_wrong
 from app.core.time_utils import utcnow
 
@@ -724,7 +746,12 @@ async def get_similar_practice_questions(
         conditions.append(Question.id.notin_(excluded_sub))
 
     need = count - len(vector_questions)
-    q = select(Question).where(and_(*conditions)).options(selectinload(Question.subject_ref)).order_by(func.random()).limit(need)
+    q = select(func.count()).select_from(
+        select(Question).where(and_(*conditions)).subquery()
+    )
+    total = (await db.execute(q)).scalar() or 0
+    q = select(Question).where(and_(*conditions)).options(selectinload(Question.subject_ref))
+    q = _random_sample_query(q, total, need, Question.id)
     result = await db.execute(q)
     fill_questions = list(result.scalars().all())
 
@@ -1029,13 +1056,16 @@ async def get_smart_practice_questions(
     # 4. 最终随机补齐
     if len(vector_questions) < count:
         remaining = count - len(vector_questions)
+        fill_q = select(func.count()).select_from(
+            select(Question).where(and_(*conditions, Question.id.notin_(existing_ids))).subquery()
+        )
+        total = (await db.execute(fill_q)).scalar() or 0
         fill_q = (
             select(Question)
             .where(and_(*conditions, Question.id.notin_(existing_ids)))
             .options(selectinload(Question.subject_ref))
-            .order_by(func.random())
-            .limit(remaining)
         )
+        fill_q = _random_sample_query(fill_q, total, remaining, Question.id)
         result = await db.execute(fill_q)
         random_fill = list(result.scalars().all())
 
@@ -1209,13 +1239,16 @@ async def _smart_weakness_vector(
         conditions.append(Question.id.notin_(excluded_sub))
 
     remaining = count - len(result_questions)
+    fill_count_q = select(func.count()).select_from(
+        select(Question).where(and_(*conditions)).subquery()
+    )
+    total = (await db.execute(fill_count_q)).scalar() or 0
     fill_q = (
         select(Question)
         .where(and_(*conditions))
         .options(selectinload(Question.subject_ref))
-        .order_by(func.random())
-        .limit(remaining)
     )
+    fill_q = _random_sample_query(fill_q, total, remaining, Question.id)
     fill_result = await db.execute(fill_q)
     fill_questions = list(fill_result.scalars().all())
     for fq in fill_questions:

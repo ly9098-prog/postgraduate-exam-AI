@@ -31,39 +31,9 @@ import re
 import sys
 
 from app.core.config import settings
+from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
 
 logger = logging.getLogger("postgraduate-ai.startup")
-
-
-def detect_deployment_profile() -> str:
-    """Unified deployment profile detection.
-
-    Returns ``"local_import"`` or ``"cloud_api"``.
-
-    Priority:
-    1. ``DEPLOYMENT_PROFILE`` env var (overrides all)
-    2. ``DEPLOY_PROFILE`` env var (``"local"`` → ``"local_import"``, ``"production"`` → ``"cloud_api"``)
-    3. ``APP_ENV`` env var (``"development"`` → ``"local_import"``, ``"production"`` → ``"cloud_api"``)
-    """
-    deployment_profile = os.environ.get("DEPLOYMENT_PROFILE", "").strip().lower()
-    if deployment_profile:
-        if deployment_profile in ("local_import", "cloud_api"):
-            return deployment_profile
-        logger.warning(
-            "Unknown DEPLOYMENT_PROFILE=%r, falling back to APP_ENV",
-            deployment_profile,
-        )
-
-    dep_profile = os.environ.get("DEPLOY_PROFILE", "").strip().lower()
-    if dep_profile == "local":
-        return "local_import"
-    if dep_profile == "production":
-        return "cloud_api"
-
-    app_env = settings.APP_ENV
-    if app_env == "production":
-        return "cloud_api"
-    return "local_import"
 
 
 def validate_production_config() -> None:
@@ -159,11 +129,9 @@ def _check_process_role(errors: list[str]) -> None:
 
 def _check_deployment_profile(errors: list[str]) -> None:
     """Production must use cloud_api profile, never local_import."""
-    profile = detect_deployment_profile()
-    if profile != "cloud_api":
+    if detect_deployment_profile() != DeploymentProfile.CLOUD_API:
         errors.append(
-            f"生产环境的部署配置为 {profile!r}，必须为 'cloud_api'。"
-            " 请设置 DEPLOYMENT_PROFILE=cloud_api"
+            f"生产环境的部署配置不是 cloud_api，必须设置 DEPLOYMENT_PROFILE=cloud_api"
         )
 
 
@@ -213,7 +181,7 @@ def _check_ocr_no_local_deps(errors: list[str]) -> None:
     a package doesn't mean it will be loaded or used.
     """
     profile = detect_deployment_profile()
-    if profile != "cloud_api":
+    if profile != DeploymentProfile.CLOUD_API:
         return
 
     try:

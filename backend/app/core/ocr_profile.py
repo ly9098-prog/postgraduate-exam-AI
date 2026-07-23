@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 
 from app.core.config import settings
+from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
 
 
 @dataclass(frozen=True)
@@ -51,8 +52,7 @@ _PRODUCTION_PROFILE = OCRProfile(
 
 @lru_cache(maxsize=1)
 def get_ocr_profile() -> OCRProfile:
-    env = settings.DEPLOY_PROFILE or settings.APP_ENV
-    if env in ("local", "development"):
+    if detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT:
         profile = _LOCAL_PROFILE
     else:
         profile = _PRODUCTION_PROFILE

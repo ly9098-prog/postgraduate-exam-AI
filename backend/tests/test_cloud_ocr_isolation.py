@@ -37,33 +37,37 @@ class TestCloudProfileDetection:
 
     def test_cloud_api_when_env_set(self):
         from app.services.production_config_validator import detect_deployment_profile
+        from app.core.deployment_profile import DeploymentProfile
 
         with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "cloud_api"}, clear=False):
-            assert detect_deployment_profile() == "cloud_api"
+            assert detect_deployment_profile() == DeploymentProfile.CLOUD_API
 
     def test_local_import_when_env_set(self):
         from app.services.production_config_validator import detect_deployment_profile
+        from app.core.deployment_profile import DeploymentProfile
 
         with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "local_import"}, clear=False):
-            assert detect_deployment_profile() == "local_import"
+            assert detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT
 
     def test_cloud_api_when_app_env_production(self):
         from app.services.production_config_validator import detect_deployment_profile
+        from app.core.deployment_profile import DeploymentProfile
         from app.core.config import settings
 
         original = settings.APP_ENV
         settings.APP_ENV = "production"
         try:
             with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "", "DEPLOY_PROFILE": ""}, clear=False):
-                assert detect_deployment_profile() == "cloud_api"
+                assert detect_deployment_profile() == DeploymentProfile.CLOUD_API
         finally:
             settings.APP_ENV = original
 
     def test_local_import_when_app_env_development(self):
         from app.services.production_config_validator import detect_deployment_profile
+        from app.core.deployment_profile import DeploymentProfile
 
         with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "", "DEPLOY_PROFILE": ""}, clear=False):
-            assert detect_deployment_profile() == "local_import"
+            assert detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT
 
 
 class TestCloudOcrLegacyFunctionsRejected:

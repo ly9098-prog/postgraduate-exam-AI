@@ -32,7 +32,7 @@ from app.features.coordinators import (
 from app.features.page_stream import PageRenderer, PageStream, RenderedPage
 from app.core.deployment_profile import DeploymentProfile
 from app.core.module_result import ModuleError, ModuleResult
-from app.features.resource_guard import ResourceGuard
+from app.core.resource_guard import ResourceGuard
 
 logger = logging.getLogger(__name__)
 

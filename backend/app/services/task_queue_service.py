@@ -38,6 +38,7 @@ from enum import Enum
 from typing import Any
 
 from app.core.config import settings
+from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
 
 logger = logging.getLogger("postgraduate-ai.task-queue")
 
@@ -56,6 +57,7 @@ _DEFAULT_MAX_RETRIES = 3
 _DEFAULT_RETRY_BASE_DELAY = 10  # seconds
 _REAPER_INTERVAL_SEC = 60
 _LOCAL_TASK_MAX = 100           # bounded local fallback
+_DEAD_MAX = 1000                # max dead-letter entries
 
 
 class TaskStatus(str, Enum):
@@ -112,80 +114,98 @@ class Task:
 
 # ── Lua scripts ──
 
-# CLAIM: pop task_id from queue → push to processing ZSET → write hash → set heartbeat TTL
-# KEYS: [queue_key, processing_key, task_hash_key, heartbeat_key]
-# ARGS: [task_id, lease_sec, task_json]
+# CLAIM: pop task_id from ready queue → ZADD processing ZSET → HGET payload → SETEX heartbeat
+# KEYS: [queue_key, processing_key, heartbeat_prefix, task_hash_prefix]
+# ARGS: [lease_sec]
+# Returns: task JSON string (or nil if empty)
 _LUA_CLAIM = """
-local task_id = ARGV[1]
-local task_json = ARGV[3]
--- Remove from queue list (rightmost → pop)
-local removed = redis.call("RPOP", KEYS[1])
-if not removed then
+local task_id = redis.call("RPOP", KEYS[1])
+if not task_id then
     return nil
 end
--- Add to processing ZSET (score = lease expiry)
-redis.call("ZADD", KEYS[2], ARGV[2], task_id)
--- Store task payload as Hash
-redis.call("HSET", KEYS[3], "data", task_json)
--- Set heartbeat TTL
-redis.call("SETEX", KEYS[4], tonumber(ARGV[2]), "1")
-return task_json
+redis.call("ZADD", KEYS[2], tonumber(ARGV[1]), task_id)
+local raw = redis.call("HGET", KEYS[4] .. ":" .. task_id, "data")
+if not raw then
+    redis.call("ZREM", KEYS[2], task_id)
+    return nil
+end
+redis.call("SETEX", KEYS[3] .. ":" .. task_id, tonumber(ARGV[1]), "1")
+return raw
 """
 
-# COMPLETE: remove from processing + delete hash + delete heartbeat + delete idempotent
-# KEYS: [processing_key, task_hash_key, heartbeat_key, idempotent_key]
+# COMPLETE: ZREM processing → DEL hash → DEL heartbeat → DEL idempotent
+# KEYS: [processing_key, task_hash_prefix, heartbeat_prefix, idempotent_prefix]
 # ARGS: [task_id]
 _LUA_COMPLETE = """
-redis.call("ZREM", KEYS[1], ARGV[1])
-redis.call("DEL", KEYS[2])
-redis.call("DEL", KEYS[3])
-redis.call("DEL", KEYS[4])
+local task_id = ARGV[1]
+redis.call("ZREM", KEYS[1], task_id)
+redis.call("DEL", KEYS[2] .. ":" .. task_id)
+redis.call("DEL", KEYS[3] .. ":" .. task_id)
+redis.call("DEL", KEYS[4] .. ":" .. task_id)
 return 1
 """
 
-# FAIL (retry): remove from processing → add to retry ZSET → delete heartbeat
-# KEYS: [processing_key, retry_key, heartbeat_key]
+# FAIL (retry): ZREM processing → ZADD retry ZSET → HSET task hash → DEL heartbeat
+# KEYS: [processing_key, retry_key, task_hash_prefix, heartbeat_prefix]
 # ARGS: [task_id, retry_at, task_json]
 _LUA_FAIL_RETRY = """
-redis.call("ZREM", KEYS[1], ARGV[1])
-redis.call("ZADD", KEYS[2], tonumber(ARGV[2]), ARGV[1])
-redis.call("HSET", KEYS[3], "data", ARGV[3])
-redis.call("DEL", KEYS[4])
+local task_id = ARGV[1]
+redis.call("ZREM", KEYS[1], task_id)
+redis.call("ZADD", KEYS[2], tonumber(ARGV[2]), task_id)
+redis.call("HSET", KEYS[3] .. ":" .. task_id, "data", ARGV[3])
+redis.call("DEL", KEYS[4] .. ":" .. task_id)
 return 1
 """
 
-# FAIL (dead): remove from processing → push to dead list → delete hash/heartbeat/idempotent
-# KEYS: [processing_key, dead_key, task_hash_key, heartbeat_key, idempotent_key]
+# FAIL (dead): ZREM processing → LPUSH dead → HSET hash → DEL heartbeat → DEL idempotent
+# Dead list trimmed to 1000 to prevent unbounded growth.
+# KEYS: [processing_key, dead_key, task_hash_prefix, heartbeat_prefix, idempotent_prefix]
 # ARGS: [task_id, task_json]
 _LUA_FAIL_DEAD = """
-redis.call("ZREM", KEYS[1], ARGV[1])
-redis.call("LPUSH", KEYS[2], ARGV[1])
-redis.call("HSET", KEYS[3], "data", ARGV[2])
-redis.call("DEL", KEYS[4])
-redis.call("DEL", KEYS[5])
+local task_id = ARGV[1]
+redis.call("ZREM", KEYS[1], task_id)
+redis.call("LPUSH", KEYS[2], task_id)
+redis.call("LTRIM", KEYS[2], 0, 999)
+redis.call("HSET", KEYS[3] .. ":" .. task_id, "data", ARGV[2])
+redis.call("DEL", KEYS[4] .. ":" .. task_id)
+redis.call("DEL", KEYS[5] .. ":" .. task_id)
 return 1
 """
 
 # REAPER: scan processing ZSET for expired, move back to queue
-# KEYS: [processing_key, queue_key]
+# KEYS: [processing_key, queue_key, heartbeat_prefix]
 # ARGS: [now_timestamp, batch_size]
 # Returns: count of reclaimed tasks
 _LUA_REAPER = """
 local now = tonumber(ARGV[1])
 local limit = tonumber(ARGV[2]) or 100
--- Get expired tasks from processing ZSET
 local expired = redis.call("ZRANGEBYSCORE", KEYS[1], 0, now, "LIMIT", 0, limit)
 local count = 0
 for _, task_id in ipairs(expired) do
-    -- Remove from processing
     redis.call("ZREM", KEYS[1], task_id)
-    -- Push back to queue
     redis.call("RPUSH", KEYS[2], task_id)
-    -- Delete heartbeat
     redis.call("DEL", KEYS[3] .. ":" .. task_id)
     count = count + 1
 end
 return count
+"""
+
+# RETRY_CLAIM: pop from retry ZSET → push to processing ZSET → SETEX heartbeat
+# KEYS: [retry_key, processing_key, heartbeat_prefix]
+# ARGS: [now_timestamp, lease_sec]
+# Returns: task_id (or nil)
+_LUA_RETRY_CLAIM = """
+local now = tonumber(ARGV[1])
+local lease = tonumber(ARGV[2])
+local candidates = redis.call("ZRANGEBYSCORE", KEYS[1], 0, now, "LIMIT", 0, 1)
+if #candidates == 0 then
+    return nil
+end
+local task_id = candidates[1]
+redis.call("ZREM", KEYS[1], task_id)
+redis.call("ZADD", KEYS[2], lease, task_id)
+redis.call("SETEX", KEYS[3] .. ":" .. task_id, lease, "1")
+return task_id
 """
 
 
@@ -252,6 +272,7 @@ class DurableTaskQueue:
         self._lua_fail_retry = None
         self._lua_fail_dead = None
         self._lua_reaper = None
+        self._lua_retry_claim = None
 
     async def _get_client(self):
         """获取或创建持久 Redis 连接（复用)."""
@@ -291,6 +312,7 @@ class DurableTaskQueue:
         self._lua_fail_retry = await client.script_load(_LUA_FAIL_RETRY)
         self._lua_fail_dead = await client.script_load(_LUA_FAIL_DEAD)
         self._lua_reaper = await client.script_load(_LUA_REAPER)
+        self._lua_retry_claim = await client.script_load(_LUA_RETRY_CLAIM)
 
     async def close(self) -> None:
         """关闭持久 Redis 连接。"""
@@ -368,6 +390,12 @@ class DurableTaskQueue:
                 await client.aclose()
                 logger.info("Task enqueued: task_id=%s type=%s", tid, task_type)
             except Exception as e:
+                if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
+                    logger.error(
+                        "Redis unavailable in cloud mode, rejecting task_id=%s: %s",
+                        tid, e,
+                    )
+                    return tid
                 logger.warning("Redis enqueue failed, falling back to local: %s", e)
                 if len(self._local_tasks) < _LOCAL_TASK_MAX:
                     self._local_tasks[tid] = task
@@ -404,7 +432,7 @@ class DurableTaskQueue:
 
                 await self._load_scripts(client)
 
-                # 1. Try ready queue
+                # 1. Try ready queue via atomic Lua (RPOP → ZADD → HGET → SETEX)
                 q_key = _q_key(task_type)
                 p_key = _p_key(task_type)
                 lease_expiry = time.time() + lease_sec
@@ -412,52 +440,32 @@ class DurableTaskQueue:
                 raw = await client.evalsha(
                     self._lua_claim,
                     4,
-                    q_key,
-                    p_key,
-                    _task_hash_key("_"),  # placeholder, real key below
-                    _heartbeat_key("_"),
-                    "",  # placeholder task_id
-                    str(lease_expiry),
-                    "",  # placeholder task_json
+                    q_key,                                  # KEYS[1]: queue_key
+                    p_key,                                  # KEYS[2]: processing_key
+                    _HEARTBEAT_PREFIX,                      # KEYS[3]: heartbeat_prefix
+                    _TASK_PREFIX,                           # KEYS[4]: task_hash_prefix
+                    str(lease_expiry),                      # ARGV[1]: lease_sec
                 )
 
-                # Need to handle the Lua script differently since we
-                # compute task_id and task_json at runtime. Fall back
-                # to two-step RPOP + ZADD.
-                # Actually — Lua script needs dynamic task info.
-                # Use inline EVAL for the claim with dynamic args.
-                pass  # fall through to RPOPLPUSH path below
-            except Exception as e:
-                logger.warning("Redis dequeue failed: %s", e)
-                return None
+                if raw is not None:
+                    # Lua script returned the task JSON — same path as below
+                    task = Task.from_dict(json.loads(raw))
+                    task.status = TaskStatus.PROCESSING
+                    task.lease_expires_at = lease_expiry
+                    task.updated_at = time.time()
+                    logger.info(
+                        "Task dequeued (lua): task_id=%s type=%s lease=%ds",
+                        task.task_id, task_type, lease_sec,
+                    )
+                    return task
 
-        # For now, use the same RPOPLPUSH approach but with task_id-based
-        # processing list (store only task_id, task payload in hash).
-        # This eliminates the full-JSON-in-list problem.
-        if self._redis_enabled:
-            try:
-                client = await self._get_client()
-                if client is None:
-                    return None
-
-                # Try ready queue first
-                task_id = await client.rpoplpush(
-                    _q_key(task_type),
-                    _p_key(task_type),
-                )
-
-                # If ready queue is empty, try retry ZSET (fix: consume retry)
-                if task_id is None:
-                    task_id = await self._dequeue_retry(client, task_type)
-
+                # 2. Ready queue empty — try retry ZSET
+                task_id = await self._dequeue_retry(client, task_type, lease_sec)
                 if task_id is None:
                     return None
 
-                # Load task payload from hash
                 raw = await client.hget(_task_hash_key(task_id), "data")
                 if raw is None:
-                    # Corrupted state — clean up
-                    await client.lrem(_p_key(task_type), 1, task_id)
                     return None
 
                 task = Task.from_dict(json.loads(raw))
@@ -465,11 +473,8 @@ class DurableTaskQueue:
                 task.lease_expires_at = time.time() + lease_sec
                 task.updated_at = time.time()
 
-                # Set heartbeat TTL
-                await client.expire(_heartbeat_key(task.task_id), lease_sec)
-
                 logger.info(
-                    "Task dequeued: task_id=%s type=%s lease=%ds",
+                    "Task dequeued (retry): task_id=%s type=%s lease=%ds",
                     task.task_id, task_type, lease_sec,
                 )
                 return task
@@ -485,85 +490,138 @@ class DurableTaskQueue:
                 return t
         return None
 
-    async def _dequeue_retry(self, client, task_type: str) -> str | None:
-        """Consume from retry ZSET — tasks whose retry_at has passed."""
+    async def _dequeue_retry(self, client, task_type: str, lease_sec: int) -> str | None:
+        """Consume from retry ZSET via atomic Lua — tasks whose retry_at has passed.
+
+        Uses Lua to atomically ZRANGEBYSCORE retry → ZREM retry → ZADD processing → SETEX heartbeat.
+        """
         now = time.time()
-        retry_key = _retry_key(task_type)
-        # Get due retry tasks (score <= now)
-        results = await client.zrangebyscore(
-            retry_key, 0, now, start=0, num=1, withscores=False,
+        lease_expiry = now + lease_sec
+        return await client.evalsha(
+            self._lua_retry_claim,
+            3,
+            _retry_key(task_type),      # KEYS[1]: retry ZSET
+            _p_key(task_type),           # KEYS[2]: processing ZSET
+            _HEARTBEAT_PREFIX,           # KEYS[3]: heartbeat_prefix
+            str(now),                    # ARGV[1]: now timestamp
+            str(lease_expiry),           # ARGV[2]: lease expiry score
         )
-        if not results:
-            return None
-        task_id = results[0]
-        # Atomically remove from retry and push to processing
-        # (use Lua for atomicity)
-        await client.zrem(retry_key, task_id)
-        await client.rpush(_p_key(task_type), task_id)
-        return task_id
 
     # ── heartbeat ──
 
-    async def heartbeat(self, task: Task, lease_sec: int = _DEFAULT_LEASE_SEC) -> None:
-        """Extend the lease for a task (called periodically by the worker)."""
+    async def heartbeat(
+        self,
+        task_or_id: Task | str,
+        task_type: str | None = None,
+        *,
+        lease_sec: int = _DEFAULT_LEASE_SEC,
+    ) -> bool:
+        """Extend the lease for a task (called periodically by the worker).
+
+        Accepts a ``Task`` object or ``(task_id, task_type)`` pair.
+        Returns True if heartbeat was sent.
+        """
+        if isinstance(task_or_id, Task):
+            task_id = task_or_id.task_id
+        else:
+            task_id = task_or_id
+        if not task_id:
+            return False
+
         if self._redis_enabled:
             try:
                 client = await self._get_script_client()
                 if client is None:
-                    return
-                await client.expire(_heartbeat_key(task.task_id), lease_sec)
+                    return False
+                await client.expire(_heartbeat_key(task_id), lease_sec)
                 await client.aclose()
-                task.lease_expires_at = time.time() + lease_sec
+                if isinstance(task_or_id, Task):
+                    task_or_id.lease_expires_at = time.time() + lease_sec
+                return True
             except Exception:
-                pass  # best-effort
+                return False
+        return False
 
     # ── complete ──
 
-    async def complete(self, task: Task) -> None:
-        """Mark a task as completed and remove from processing."""
+    async def complete(
+        self,
+        task_or_id: Task | str,
+        task_type: str | None = None,
+    ) -> None:
+        """Mark a task as completed and remove from processing.
+
+        Accepts a ``Task`` object or ``(task_id, task_type)`` pair.
+        Uses atomic Lua: ZREM processing → DEL hash → DEL heartbeat → DEL idempotent.
+        """
+        if isinstance(task_or_id, Task):
+            task_id = task_or_id.task_id
+            tt = task_or_id.task_type
+        else:
+            task_id = task_or_id
+            tt = task_type or ""
+        if not task_id:
+            return
+
         if self._redis_enabled:
             try:
                 client = await self._get_script_client()
                 if client is None:
                     return
 
-                p_key = _p_key(task.task_type)
-
-                # Remove task_id from processing list
-                # (LREM by value on a short list of task_ids, not full JSON)
-                await client.lrem(p_key, 1, task.task_id)
-                # Delete task hash
-                await client.delete(_task_hash_key(task.task_id))
-                # Delete heartbeat and idempotent keys
-                await client.delete(_heartbeat_key(task.task_id))
-                await client.delete(_idempotent_key(task.task_id))
+                p_key = _p_key(tt)
+                await client.evalsha(
+                    self._lua_complete,
+                    4,
+                    p_key,                              # KEYS[1]: processing_key
+                    _TASK_PREFIX,                       # KEYS[2]: task_hash_prefix
+                    _HEARTBEAT_PREFIX,                  # KEYS[3]: heartbeat_prefix
+                    _IDEMPOTENCY_PREFIX,                # KEYS[4]: idempotent_prefix
+                    task_id,                            # ARGV[1]: task_id
+                )
                 await client.aclose()
             except Exception as e:
                 logger.warning("Task complete failed: %s", e)
         else:
-            self._local_tasks.pop(task.task_id, None)
+            if isinstance(task_or_id, Task):
+                self._local_tasks.pop(task_id, None)
 
-        logger.info("Task completed: task_id=%s type=%s", task.task_id, task.task_type)
+        logger.info("Task completed: task_id=%s", task_id)
 
     # ── fail ──
 
     async def fail(
         self,
-        task: Task,
+        task_or_id: Task | str,
         error: str,
+        task_type: str | None = None,
         *,
         lease_sec: int = _DEFAULT_LEASE_SEC,
     ) -> None:
         """Handle task failure.
 
-        If retry_count < max_retries, re-enqueue with exponential backoff.
-        Otherwise, move to dead-letter queue.
+        Accepts a ``Task`` object or ``(task_id, task_type)`` pair.
+        When given a Task object, tracks retry_count; with just IDs,
+        skips retry and moves directly to dead-letter.
         """
-        task.retry_count += 1
-        task.error = error
-        task.updated_at = time.time()
+        if isinstance(task_or_id, Task):
+            task = task_or_id
+            task_id = task.task_id
+            tt = task.task_type
+        else:
+            task_id = task_or_id
+            tt = task_type or ""
 
-        if task.retry_count < task.max_retries:
+        if not task_id or not tt:
+            return
+
+        if isinstance(task_or_id, Task):
+            task.retry_count += 1
+            task.error = error
+            task.updated_at = time.time()
+
+        # Retry path (requires Task object for retry tracking)
+        if isinstance(task_or_id, Task) and task.retry_count < task.max_retries:
             delay = _DEFAULT_RETRY_BASE_DELAY * (2 ** (task.retry_count - 1))
             task.status = TaskStatus.FAILED
 
@@ -572,17 +630,20 @@ class DurableTaskQueue:
                     client = await self._get_script_client()
                     if client is None:
                         return
-                    p_key = _p_key(task.task_type)
-                    # Remove from processing list
-                    await client.lrem(p_key, 1, task.task_id)
-                    # Add to retry sorted set
+                    p_key = _p_key(tt)
                     retry_at = time.time() + delay
-                    await client.zadd(
-                        _retry_key(task.task_type),
-                        {task.task_id: retry_at},
+                    task_json = json.dumps(task.to_dict(), default=str)
+                    await client.evalsha(
+                        self._lua_fail_retry,
+                        4,
+                        p_key,                              # KEYS[1]: processing_key
+                        _retry_key(tt),                     # KEYS[2]: retry_key
+                        _TASK_PREFIX,                       # KEYS[3]: task_hash_prefix
+                        _HEARTBEAT_PREFIX,                  # KEYS[4]: heartbeat_prefix
+                        task_id,                            # ARGV[1]: task_id
+                        str(retry_at),                      # ARGV[2]: retry_at
+                        task_json,                          # ARGV[3]: task_json
                     )
-                    # Delete heartbeat
-                    await client.delete(_heartbeat_key(task.task_id))
                     await client.aclose()
                 except Exception as e:
                     logger.warning("Task fail/retry Redis error: %s", e)
@@ -593,39 +654,46 @@ class DurableTaskQueue:
             logger.warning(
                 "Task failed (retry %d/%d, +%ds): task_id=%s error=%s",
                 task.retry_count, task.max_retries, delay,
-                task.task_id, error[:200],
+                task_id, error[:200],
             )
+            return
+
+        # Dead-letter path (no more retries or no Task object)
+        if self._redis_enabled:
+            try:
+                client = await self._get_script_client()
+                if client is None:
+                    return
+                p_key = _p_key(tt)
+                task_json = json.dumps(task.to_dict(), default=str) if isinstance(task_or_id, Task) else "{}"
+                await client.evalsha(
+                    self._lua_fail_dead,
+                    5,
+                    p_key,                              # KEYS[1]: processing_key
+                    _dead_key(tt),                      # KEYS[2]: dead_key
+                    _TASK_PREFIX,                       # KEYS[3]: task_hash_prefix
+                    _HEARTBEAT_PREFIX,                  # KEYS[4]: heartbeat_prefix
+                    _IDEMPOTENCY_PREFIX,                # KEYS[5]: idempotent_prefix
+                    task_id,                            # ARGV[1]: task_id
+                    task_json,                          # ARGV[2]: task_json
+                )
+                await client.aclose()
+            except Exception as e:
+                logger.warning("Task dead-letter Redis error: %s", e)
         else:
-            task.status = TaskStatus.DEAD
+            self._local_tasks.pop(task_id, None)
 
-            if self._redis_enabled:
-                try:
-                    client = await self._get_script_client()
-                    if client is None:
-                        return
-                    p_key = _p_key(task.task_type)
-                    await client.lrem(p_key, 1, task.task_id)
-                    # Push task_id (not full JSON) to dead list
-                    await client.lpush(_dead_key(task.task_type), task.task_id)
-                    await client.delete(_heartbeat_key(task.task_id))
-                    await client.delete(_idempotent_key(task.task_id))
-                    await client.aclose()
-                except Exception as e:
-                    logger.warning("Task dead-letter Redis error: %s", e)
-            else:
-                self._local_tasks.pop(task.task_id, None)
-
-            logger.error(
-                "Task moved to dead-letter (max retries): task_id=%s type=%s error=%s",
-                task.task_id, task.task_type, error[:200],
-            )
+        logger.error(
+            "Task moved to dead-letter: task_id=%s type=%s error=%s",
+            task_id, tt, error[:200],
+        )
 
     # ── reaper ──
 
     async def _reclaim_expired(self, task_type: str) -> int:
         """Re-enqueue tasks whose lease has expired (worker crashed).
 
-        Uses LRANGE (O(n)) to scan processing list for expired task_ids.
+        Uses atomic Lua: ZRANGEBYSCORE processing → ZREM → RPUSH queue → DEL heartbeat.
         Returns the number of reclaimed tasks.
         """
         if not self._redis_enabled:
@@ -639,22 +707,18 @@ class DurableTaskQueue:
 
             p_key = _p_key(task_type)
             q_key = _q_key(task_type)
-
-            # Get all task_ids from processing list
-            task_ids = await client.lrange(p_key, 0, -1)
             now = time.time()
 
-            for task_id in task_ids:
-                # Check heartbeat TTL — if key is gone, lease expired
-                alive = await client.exists(_heartbeat_key(task_id))
-                if not alive and task_id:
-                    # Lease expired — re-enqueue
-                    await client.lrem(p_key, 1, task_id)
-                    await client.rpush(q_key, task_id)
-                    reclaimed += 1
-                    logger.info(
-                        "Task reclaimed (lease expired): task_id=%s", task_id,
-                    )
+            reclaimed = await client.evalsha(
+                self._lua_reaper,
+                3,
+                p_key,                    # KEYS[1]: processing_key
+                q_key,                    # KEYS[2]: queue_key
+                _HEARTBEAT_PREFIX,        # KEYS[3]: heartbeat_prefix
+                str(now),                 # ARGV[1]: now
+                "100",                    # ARGV[2]: batch_size
+            ) or 0
+            reclaimed = int(reclaimed)
 
             await client.aclose()
         except Exception as e:
@@ -692,7 +756,7 @@ class DurableTaskQueue:
                 client = await self._get_script_client()
                 if client is None:
                     return 0
-                length = await client.llen(_p_key(task_type))
+                length = await client.zcard(_p_key(task_type))
                 await client.aclose()
                 return length
             except Exception:
@@ -724,6 +788,70 @@ class DurableTaskQueue:
             except Exception:
                 pass
         return 0
+
+    # ── Dead-letter management ──
+
+    async def list_dead(self, task_type: str, limit: int = 100) -> list[dict]:
+        """List dead-letter entries for a task type (newest first)."""
+        if not self._redis_enabled:
+            return []
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return []
+            task_ids = await client.lrange(_dead_key(task_type), 0, limit - 1)
+            result = []
+            for tid in task_ids:
+                raw = await client.hget(_task_hash_key(tid), "data")
+                if raw:
+                    try:
+                        task_dict = json.loads(raw)
+                        result.append(task_dict)
+                    except json.JSONDecodeError:
+                        result.append({"task_id": tid, "error": "corrupt_payload"})
+                else:
+                    result.append({"task_id": tid})
+            await client.aclose()
+            return result
+        except Exception as e:
+            logger.warning("Failed to list dead tasks: %s", e)
+            return []
+
+    async def purge_dead(self, task_type: str, max_age_sec: int = 86400 * 7) -> int:
+        """Remove dead-letter entries older than *max_age_sec*.
+
+        Returns count of purged entries.
+        """
+        if not self._redis_enabled:
+            return 0
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return 0
+            dk = _dead_key(task_type)
+            task_ids = await client.lrange(dk, 0, -1)
+            now = time.time()
+            purged = 0
+            for tid in task_ids:
+                raw = await client.hget(_task_hash_key(tid), "data")
+                if raw:
+                    try:
+                        task_dict = json.loads(raw)
+                        updated = task_dict.get("updated_at", 0)
+                        if now - updated > max_age_sec:
+                            await client.lrem(dk, 1, tid)
+                            await client.delete(_task_hash_key(tid))
+                            purged += 1
+                    except json.JSONDecodeError:
+                        await client.lrem(dk, 1, tid)
+                        purged += 1
+            await client.aclose()
+            if purged:
+                logger.info("Purged %d old dead tasks for %s", purged, task_type)
+            return purged
+        except Exception as e:
+            logger.warning("Failed to purge dead tasks: %s", e)
+            return 0
 
 
 # Process-wide singleton
