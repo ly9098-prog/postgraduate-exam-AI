@@ -161,6 +161,10 @@ class Settings(BaseSettings):
     PUBLIC_BASE_URL: str = "http://localhost:8000"
     STORAGE_BACKEND: str = "local"  # "local" 或 "cos"
 
+    # Staging storage for durable task files (Docker volume in prod)
+    STAGING_STORAGE_DIR: str = "/opt/2240ai-v2/staging"
+    STAGING_DISK_QUOTA: int = 2 * 1024 * 1024 * 1024  # 2 GB
+
     # COS (Tencent Cloud Object Storage)
     COS_BUCKET: str = ""
     COS_REGION: str = ""

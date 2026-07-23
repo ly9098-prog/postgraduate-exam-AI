@@ -1,9 +1,21 @@
-"""Resource guard — production server resource monitoring and protection.
+"""Resource Guard — unified production resource protection.
 
-Design:
-- Monitors RSS, available memory, event-loop lag, active post-OCR jobs.
-- Hard limits prevent OOM on the 2C/2G production server.
-- When resources are low, new post-OCR jobs are not accepted.
+Combines system-level monitoring (RSS, memory, event-loop lag) with
+per-pipeline budgeting (input size, pages, pixels, OCR calls, artifacts).
+
+Usage::
+
+    from app.core.resource_guard import resource_guard
+
+    # System-level check (before starting any pipeline)
+    ok, reason = resource_guard.can_accept_work()
+    if not ok:
+        return {"error": "resource_pressure", "detail": reason}
+
+    # Pipeline-level check (per-pipeline limits)
+    guard = ResourceGuard.for_profile(profile)
+    guard.check_input_bytes(file_size)
+    guard.check_page_count(page_count)
 """
 
 from __future__ import annotations
@@ -14,133 +26,236 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-logger = logging.getLogger("postgraduate-ai.core.resource_guard")
+from app.core.deployment_profile import DeploymentProfile
+
+logger = logging.getLogger("postgraduate-ai.resource_guard")
+
+
+# ── Error Codes ──
+
+RESOURCE_PRESSURE = "RESOURCE_PRESSURE"
+INPUT_TOO_LARGE = "INPUT_TOO_LARGE"
+PAGE_LIMIT_EXCEEDED = "PAGE_LIMIT_EXCEEDED"
+PIXEL_BUDGET_EXCEEDED = "PIXEL_BUDGET_EXCEEDED"
+CONCURRENCY_LIMIT_EXCEEDED = "CONCURRENCY_LIMIT_EXCEEDED"
+REMOTE_OCR_CALL_BUDGET_EXCEEDED = "REMOTE_OCR_CALL_BUDGET_EXCEEDED"
+ARTIFACT_SIZE_LIMIT_EXCEEDED = "ARTIFACT_SIZE_LIMIT_EXCEEDED"
+PIPELINE_TIMEOUT = "PIPELINE_TIMEOUT"
+PAGE_TIMEOUT = "PAGE_TIMEOUT"
+
+
+class ResourceGuardError(ValueError):
+    """Raised when a resource guard limit is exceeded."""
+    def __init__(self, code: str, message: str):
+        self.code = code
+        super().__init__(message)
+
+
+# ── System-level thresholds ──
 
 
 @dataclass
-class ResourceMetrics:
-    """Snapshot of current resource usage."""
+class SystemThresholds:
+    """System resource thresholds that trigger protective actions."""
+    max_rss_mb: float = 1024
+    min_available_memory_mb: float = 256
+    max_event_loop_lag_ms: float = 500
+    max_active_pipelines: int = 1
+    max_temp_disk_mb: float = 512
+
+
+@dataclass
+class SystemMetrics:
+    """Snapshot of current system resource usage."""
     rss_mb: float = 0.0
     available_memory_mb: float = 0.0
     event_loop_lag_ms: float = 0.0
-    active_post_ocr_jobs: int = 0
-    open_fds: int = 0
+    active_pipelines: int = 0
     temp_disk_usage_mb: float = 0.0
-    artifact_streaming_count: int = 0
 
 
-@dataclass
-class ResourceThresholds:
-    """Resource thresholds that trigger protective actions."""
-    max_rss_mb: float = 1024  # Max RSS before refusing new work
-    min_available_memory_mb: float = 256  # Min available RAM
-    max_event_loop_lag_ms: float = 500  # Max event loop delay
-    max_post_ocr_jobs: int = 1  # Max concurrent post-OCR jobs
-    max_artifact_streaming: int = 2  # Max concurrent artifact streams
-    max_temp_disk_mb: float = 512  # Max temp disk usage
+# ── Unified ResourceGuard ──
 
 
 class ResourceGuard:
-    """Production server resource guard.
+    """Combined system-level + per-pipeline resource guard.
 
-    Usage:
-        guard = ResourceGuard()
-        if guard.can_accept_work():
-            # proceed
-        else:
-            # return RESOURCE_PRESSURE
+    Provides:
+    - ``can_accept_work()`` — system-level check before accepting new jobs
+    - ``check_*()`` — per-pipeline budget checks
+    - ``for_profile()`` — factory with profile-appropriate defaults
     """
+
+    # ── Class-level active pipeline counter (cross-instance) ──
+    _active_pipeline_count: int = 0
+
+    # ── Construction ──
 
     def __init__(
         self,
-        thresholds: ResourceThresholds | None = None,
-        metrics_provider: Callable[[], ResourceMetrics] | None = None,
-    ) -> None:
-        self._thresholds = thresholds or ResourceThresholds()
-        self._metrics_provider = metrics_provider or self._collect_metrics
+        thresholds: SystemThresholds | None = None,
+        metrics_provider: Callable[[], SystemMetrics] | None = None,
+    ):
+        # System-level
+        self._thresholds = thresholds or SystemThresholds()
+        self._metrics_provider = metrics_provider or self._collect_system_metrics
+
+        # Per-pipeline limits (default: production cloud_api)
+        self.max_input_bytes: int = 10 * 1024 * 1024
+        self.max_pages: int = 50
+        self.max_pixel_budget: int = 4000 * 4000 * 50
+        self.max_concurrent_documents: int = 1
+        self.max_concurrent_pages: int = 1
+        self.max_remote_ocr_calls: int = 100
+        self.max_artifact_bytes: int = 50 * 1024 * 1024
+        self.max_pipeline_seconds: int = 1800
+        self.max_page_seconds: int = 120
+
+        # Per-pipeline mutable state
+        self._render_pixels_consumed: int = 0
+        self._remote_ocr_calls: int = 0
+        self._artifact_bytes_written: int = 0
+
+    @classmethod
+    def for_profile(cls, profile: DeploymentProfile) -> ResourceGuard:
+        """Create a ResourceGuard with defaults for the deployment profile."""
+        guard = cls()
+        if profile == DeploymentProfile.CLOUD_API:
+            guard.max_input_bytes = 10 * 1024 * 1024
+            guard.max_pages = 50
+            guard.max_pixel_budget = 4000 * 4000 * 50
+            guard.max_remote_ocr_calls = 100
+            guard.max_artifact_bytes = 50 * 1024 * 1024
+            guard.max_pipeline_seconds = 1800
+            guard.max_page_seconds = 120
+            guard._thresholds = SystemThresholds(
+                max_active_pipelines=1,
+            )
+        else:
+            guard.max_input_bytes = 200 * 1024 * 1024
+            guard.max_pages = 600
+            guard.max_pixel_budget = 4000 * 4000 * 600
+            guard.max_concurrent_pages = 3
+            guard.max_remote_ocr_calls = 500
+            guard.max_artifact_bytes = 500 * 1024 * 1024
+            guard.max_pipeline_seconds = 7200
+            guard.max_page_seconds = 600
+            guard._thresholds = SystemThresholds(
+                max_active_pipelines=3,
+                max_rss_mb=3072,
+            )
+        return guard
+
+    # ── System-level check ──
 
     def can_accept_work(self) -> tuple[bool, str | None]:
-        """Check if the server can accept new post-OCR work.
+        """Check if the server can accept new pipeline work.
 
         Returns (True, None) if OK, or (False, reason) if resource pressure.
         """
         metrics = self._metrics_provider()
-        return self._evaluate(metrics)
 
-    def _evaluate(self, m: ResourceMetrics) -> tuple[bool, str | None]:
-        """Evaluate metrics against thresholds."""
-        if m.rss_mb > self._thresholds.max_rss_mb:
-            return False, f"RSS {m.rss_mb:.0f}MB exceeds limit {self._thresholds.max_rss_mb}MB"
+        if metrics.rss_mb > self._thresholds.max_rss_mb:
+            return False, f"RSS {metrics.rss_mb:.0f}MB exceeds limit {self._thresholds.max_rss_mb}MB"
 
-        if m.available_memory_mb > 0 and m.available_memory_mb < self._thresholds.min_available_memory_mb:
-            return False, (
-                f"Available memory {m.available_memory_mb:.0f}MB "
-                f"below minimum {self._thresholds.min_available_memory_mb}MB"
-            )
+        if metrics.available_memory_mb > 0 and metrics.available_memory_mb < self._thresholds.min_available_memory_mb:
+            return False, f"Available memory {metrics.available_memory_mb:.0f}MB below minimum {self._thresholds.min_available_memory_mb}MB"
 
-        if m.event_loop_lag_ms > self._thresholds.max_event_loop_lag_ms:
-            return False, (
-                f"Event loop lag {m.event_loop_lag_ms:.0f}ms "
-                f"exceeds limit {self._thresholds.max_event_loop_lag_ms}ms"
-            )
+        if metrics.event_loop_lag_ms > self._thresholds.max_event_loop_lag_ms:
+            return False, f"Event loop lag {metrics.event_loop_lag_ms:.0f}ms exceeds limit {self._thresholds.max_event_loop_lag_ms}ms"
 
-        if m.active_post_ocr_jobs >= self._thresholds.max_post_ocr_jobs:
-            return False, (
-                f"Active post-OCR jobs {m.active_post_ocr_jobs} "
-                f"at limit {self._thresholds.max_post_ocr_jobs}"
-            )
+        active = ResourceGuard._active_pipeline_count
+        if active >= self._thresholds.max_active_pipelines:
+            return False, f"Active pipelines {active} at limit {self._thresholds.max_active_pipelines}"
 
-        if m.artifact_streaming_count >= self._thresholds.max_artifact_streaming:
-            return False, (
-                f"Artifact streams {m.artifact_streaming_count} "
-                f"at limit {self._thresholds.max_artifact_streaming}"
-            )
-
-        if m.temp_disk_usage_mb > self._thresholds.max_temp_disk_mb:
-            return False, (
-                f"Temp disk {m.temp_disk_usage_mb:.0f}MB "
-                f"exceeds limit {self._thresholds.max_temp_disk_mb}MB"
-            )
+        if metrics.temp_disk_usage_mb > self._thresholds.max_temp_disk_mb:
+            return False, f"Temp disk {metrics.temp_disk_usage_mb:.0f}MB exceeds limit {self._thresholds.max_temp_disk_mb}MB"
 
         return True, None
 
     @staticmethod
-    def _collect_metrics() -> ResourceMetrics:
+    def _collect_system_metrics() -> SystemMetrics:
         """Collect real resource metrics from the system."""
-        m = ResourceMetrics()
+        m = SystemMetrics()
 
-        # RSS via /proc/self/status
         try:
             with open("/proc/self/status") as f:
                 for line in f:
                     if line.startswith("VmRSS:"):
                         m.rss_mb = int(line.split()[1]) / 1024
                         break
-        except (OSError, IndexError, ValueError):
+        except OSError:
             pass
 
-        # Available memory via /proc/meminfo
         try:
             with open("/proc/meminfo") as f:
                 for line in f:
                     if line.startswith("MemAvailable:"):
                         m.available_memory_mb = int(line.split()[1]) / 1024
                         break
-        except (OSError, IndexError, ValueError):
-            pass
-
-        # Open file descriptors
-        try:
-            m.open_fds = len(os.listdir(f"/proc/{os.getpid()}/fd"))
         except OSError:
             pass
 
+        m.active_pipelines = ResourceGuard._active_pipeline_count
+
         return m
 
-    def get_metrics(self) -> ResourceMetrics:
-        """Return current resource metrics snapshot."""
+    def get_system_metrics(self) -> SystemMetrics:
         return self._metrics_provider()
 
+    # ── Pipeline count tracking ──
 
-# Module-level singleton for production use
+    @classmethod
+    def increment_pipeline_count(cls) -> None:
+        cls._active_pipeline_count += 1
+
+    @classmethod
+    def decrement_pipeline_count(cls) -> None:
+        cls._active_pipeline_count = max(0, cls._active_pipeline_count - 1)
+
+    # ── Per-pipeline budget checks ──
+
+    def check_input_bytes(self, size: int) -> None:
+        if size > self.max_input_bytes:
+            raise ResourceGuardError(
+                INPUT_TOO_LARGE,
+                f"Input {size} bytes exceeds limit {self.max_input_bytes}",
+            )
+
+    def check_page_count(self, count: int) -> None:
+        if count > self.max_pages:
+            raise ResourceGuardError(
+                PAGE_LIMIT_EXCEEDED,
+                f"Page count {count} exceeds limit {self.max_pages}",
+            )
+
+    def check_render_pixels(self, pixels: int) -> None:
+        new_total = self._render_pixels_consumed + pixels
+        if new_total > self.max_pixel_budget:
+            raise ResourceGuardError(
+                PIXEL_BUDGET_EXCEEDED,
+                f"Render pixel budget {new_total} exceeds limit {self.max_pixel_budget}",
+            )
+        self._render_pixels_consumed = new_total
+
+    def check_remote_ocr_call(self) -> None:
+        if self._remote_ocr_calls >= self.max_remote_ocr_calls:
+            raise ResourceGuardError(
+                REMOTE_OCR_CALL_BUDGET_EXCEEDED,
+                f"Remote OCR calls {self._remote_ocr_calls} exceeds limit {self.max_remote_ocr_calls}",
+            )
+        self._remote_ocr_calls += 1
+
+    def check_artifact_bytes(self, size: int) -> None:
+        new_total = self._artifact_bytes_written + size
+        if new_total > self.max_artifact_bytes:
+            raise ResourceGuardError(
+                ARTIFACT_SIZE_LIMIT_EXCEEDED,
+                f"Artifact size {new_total} exceeds limit {self.max_artifact_bytes}",
+            )
+        self._artifact_bytes_written = new_total
+
+
+# ── Module-level singleton ──
+
 resource_guard = ResourceGuard()

@@ -67,6 +67,15 @@ async def lifespan(app: FastAPI):
         raise
     from app.core.ocr_profile import get_ocr_profile
     profile = get_ocr_profile()
+
+    # Staging storage: sweep stale temp files on startup
+    try:
+        from app.services.staging_storage import sweep_temp_files
+        swept = sweep_temp_files()
+        if swept:
+            log_event(logger, "staging.sweep", count=swept)
+    except Exception:
+        logger.warning("Staging temp sweep failed (non-fatal)", exc_info=True)
     logger.info(
         "Starting 2240AI — env=%s role=%s ocr_profile=%s (gpu=%s, workers=%d, max_pdf_pages=%d)",
         settings.APP_ENV, role, profile.name, profile.use_gpu,
@@ -114,6 +123,7 @@ async def lifespan(app: FastAPI):
 
     # ── Resource references (initialized to None, populated by role) ──
     cleanup_task: asyncio.Task | None = None
+    _staging_cleanup_task: asyncio.Task | None = None
     _ocr_gateway = None
     _pipeline_worker_task: asyncio.Task | None = None
     _reaper_task: asyncio.Task | None = None
@@ -124,9 +134,12 @@ async def lifespan(app: FastAPI):
         _event_loop_lag_monitor(), name="event-loop-lag-monitor"
     )
 
-    # ── Role: web — HTTP + enqueue + token cleanup ──
+    # ── Role: web — HTTP + enqueue + token cleanup + staging cleanup ──
     if role in ("web", "all"):
         cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
+        _staging_cleanup_task = asyncio.create_task(
+            _periodic_staging_cleanup(), name="staging-cleanup"
+        )
 
         # Initialize OCR Gateway (needed for API enqueue endpoints)
         try:
@@ -234,6 +247,9 @@ async def lifespan(app: FastAPI):
         if _reaper_task and not _reaper_task.done():
             _reaper_task.cancel()
             _shutdown_tasks.append(("task-reaper", _reaper_task))
+        if _staging_cleanup_task and not _staging_cleanup_task.done():
+            _staging_cleanup_task.cancel()
+            _shutdown_tasks.append(("staging-cleanup", _staging_cleanup_task))
 
         for name, task in _shutdown_tasks:
             try:

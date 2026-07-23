@@ -96,13 +96,12 @@ class PomodoroScheduler:
         # Redis 锁：多 worker / 多实例下同一时刻只允许一个 tick
         lock_value = f"{os.getpid()}-{int(time.time())}"
         got_lock = await cache.acquire_lock(_TICK_LOCK_KEY, lock_value, ttl=_TICK_LOCK_TTL)
-        # Redis 不可用（cache._enabled 为 false）时 acquire_lock 直接返回 False，
-        # 此时单 worker 部署下也允许继续执行（生产 GUNICORN_WORKERS=1）
+        if not got_lock:
+            return  # Another instance holds the lock — skip this tick entirely
         try:
             await self._do_tick()
         finally:
-            if got_lock:
-                await cache.release_lock(_TICK_LOCK_KEY, lock_value)
+            await cache.release_lock(_TICK_LOCK_KEY, lock_value)
 
     async def _do_tick(self) -> None:
         now = utcnow()

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
+from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
 
 logger = logging.getLogger("postgraduate-ai.database")
 
@@ -258,7 +259,7 @@ async def _ensure_pomodoro_table(conn):
 
         # Development-only: add missing columns for schema drift
         import os
-        if os.environ.get("APP_ENV") == "production":
+        if os.environ.get("APP_ENV") == "production" or detect_deployment_profile() == DeploymentProfile.CLOUD_API:
             return
 
         existing = {c["name"] for c in inspector.get_columns("pomodoro_sessions")}
@@ -296,7 +297,7 @@ async def _ensure_vector_schema(conn):
             return
 
         # 生产环境不做 runtime DDL，应使用 Alembic migration
-        if settings.APP_ENV == "production":
+        if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
             return
 
         dim = int(settings.EMBEDDING_DIM)
@@ -377,7 +378,7 @@ async def _repair_postgres_sequences(conn):
 
 
 async def init_db():
-    if settings.APP_ENV == "production":
+    if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
         return
 
     from app.models.refresh_token import RefreshToken  # noqa: F401 — register model for create_all
