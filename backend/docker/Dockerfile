@@ -3,11 +3,13 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com -r requirements.txt
+RUN PIPOPT="pip install --no-cache-dir --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com" && \
+    $PIPOPT -r requirements.txt
 COPY requirements-ocr.txt .
 # Install OCR deps + paddleocr without its opencv deps (replaced by headless)
-RUN pip install --no-cache-dir --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com -r requirements-ocr.txt && \
-    pip install --no-cache-dir --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com --no-deps paddleocr
+RUN PIPOPT="pip install --no-cache-dir --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com" && \
+    $PIPOPT -r requirements-ocr.txt && \
+    $PIPOPT --no-deps paddleocr
 
 # Pre-download PaddleOCR models to ~/.paddleocr/ (PaddleOCR default model dir).
 RUN python3 <<'PYEOF'
@@ -75,5 +77,6 @@ CMD gunicorn app.main:app \
     -k uvicorn.workers.UvicornWorker \
     -w ${GUNICORN_WORKERS:-2} \
     --bind 0.0.0.0:8000 \
+    --forwarded-allow-ips=* \
     --access-logfile - \
     --error-logfile -
