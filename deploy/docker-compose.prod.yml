@@ -64,9 +64,9 @@ services:
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?必须设置 WECHAT_APP_SECRET}
       OCR_ENABLED: ${OCR_ENABLED:-false}
       OCR_MAX_WORKERS: ${OCR_MAX_WORKERS:-1}
-      # Production: local CPU OCR (no GPU available on 2C2G server)
+      # Production: local OCR not allowed — use disabled or paddlex_http
       OCR_USE_GPU: ${OCR_USE_GPU:-false}
-      OCR_EXECUTION_BACKEND: ${OCR_EXECUTION_BACKEND:-local_process}
+      OCR_EXECUTION_BACKEND: ${OCR_EXECUTION_BACKEND:-disabled}
       OMP_NUM_THREADS: 1
       MKL_NUM_THREADS: 1
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
