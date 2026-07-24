@@ -11,26 +11,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, require_app_permission
-from app.models.user import User
-from app.schemas.question_import import (
-    ImportBatchDetailResponse,
-    ImportBatchResponse,
-    QuestionImportResponse,
-)
 from app.features import question_pipeline as svc
 from app.features.import_mode import ImportMode
-from app.services.upload_validator import get_upload_validator
-from app.services.import_pipeline_service import (
-    get_pipeline_status as svc_get_pipeline_status,
-    start_import_pipeline as svc_start_import_pipeline,
-)
-from app.services.streaming_upload_handler import stream_to_temp
-from app.services.task_queue_worker import enqueue_resume_pipeline
+from app.models.user import User
 from app.schemas.import_review import (
     PipelineResumeResponse,
     PipelineStatusResponse,
     PipelineUploadResponse,
 )
+from app.schemas.question_import import (
+    ImportBatchDetailResponse,
+    ImportBatchResponse,
+    QuestionImportResponse,
+)
+from app.services.import_pipeline_service import (
+    get_pipeline_status as svc_get_pipeline_status,
+)
+from app.services.import_pipeline_service import (
+    start_import_pipeline as svc_start_import_pipeline,
+)
+from app.services.streaming_upload_handler import stream_to_temp
+from app.services.task_queue_worker import enqueue_resume_pipeline
+from app.services.upload_validator import get_upload_validator
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/import")
@@ -146,7 +148,6 @@ def _validate_resume_pdf_sync(
     Returns (uploaded_pages, uploaded_sha256_hex).
     """
     import fitz
-    import hashlib
 
     with fitz.open(file_path) as doc:
         uploaded_pages = len(doc)

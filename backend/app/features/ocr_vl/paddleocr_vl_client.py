@@ -13,16 +13,13 @@ import codecs
 import ipaddress
 import json
 import logging
-import os
 import random
 import socket
 import time
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
-
-from urllib.parse import urljoin
 
 logger = logging.getLogger(__name__)
 

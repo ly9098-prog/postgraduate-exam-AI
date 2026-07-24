@@ -4,7 +4,6 @@ import random
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.features.question_pipeline import normalizer
 from app.models.question import Question
 from app.services.admin_subject_service import resolve_subject_ids
 

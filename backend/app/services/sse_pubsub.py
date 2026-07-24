@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 logger = logging.getLogger("postgraduate-ai.pubsub")
 

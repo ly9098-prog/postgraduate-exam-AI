@@ -1,12 +1,8 @@
-import hashlib
-import json
 import random
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.security import get_current_user
@@ -19,14 +15,14 @@ from app.models.formula import (
     FormulaTag,
     UserFormulaFavorite,
 )
+from app.models.user import User
+from app.schemas.common import paginated_response
+from app.schemas.formula import FormulaGraphAssetResponse
 from app.services.formula_graph_asset_service import (
     choose_effective_graph_asset,
     is_function_graph,
     load_graph_assets_map,
 )
-from app.models.user import User
-from app.schemas.common import paginated_response
-from app.schemas.formula import FormulaCardResponse, FormulaCategoryResponse, FormulaGraphAssetResponse, FormulaTagResponse
 
 router = APIRouter(prefix="/api/v1/formulas", tags=["formulas"])
 

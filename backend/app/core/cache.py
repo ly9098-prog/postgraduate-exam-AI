@@ -2,8 +2,9 @@ import hashlib
 import json
 import logging
 import random
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable
+from typing import Any
 
 from app.core.config import settings
 
