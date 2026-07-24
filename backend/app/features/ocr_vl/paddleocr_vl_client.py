@@ -13,6 +13,8 @@ import codecs
 import ipaddress
 import json
 import logging
+import os
+import random
 import socket
 import time
 from typing import Any
@@ -149,11 +151,14 @@ _DEFAULT_POLL_INTERVAL = 5.0  # seconds between polls (官方建议 ≥5s)
 _DEFAULT_POLL_TIMEOUT = 120  # max total poll time
 _MAX_RETRIES = 3
 _RETRY_DELAY = 2.0  # seconds between retries
+_OCR_VL_SEM_KEY = "semaphore:ocr_vl"
+_OCR_VL_SEM_MAX = 2  # max concurrent remote OCR calls across all processes
 
 # SSRF and size limits for result URL download
 _MAX_CONTENT_LENGTH_HEADER_BYTES = 50 * 1024 * 1024  # 50 MB (wire / Content-Length)
 _MAX_DECODED_DOWNLOAD_BYTES = 100 * 1024 * 1024     # 100 MB after decoding
 _MAX_JSONL_LINES = 50_000
+_MAX_JSONL_LINE_LENGTH = 200_000  # 200 KB per line — any longer line rejects the download
 _RESULT_DOWNLOAD_TIMEOUT = 60  # seconds
 
 
@@ -169,14 +174,16 @@ def _extract_from_entry(
     Shared by the streaming loop and final-line handler so extraction logic
     is identical regardless of where the entry was parsed.
     """
-    result_data = entry.get("result") or entry
+    result_data = entry.get("result")
+    if not isinstance(result_data, dict):
+        result_data = entry
     layout_results = result_data.get("layoutParsingResults") if isinstance(result_data, dict) else None
     if isinstance(layout_results, list):
         for lr in layout_results:
             if not isinstance(lr, dict):
                 continue
 
-            md = lr.get("markdown") if isinstance(lr, dict) else None
+            md = lr.get("markdown")
             md_text = md.get("text") if isinstance(md, dict) else None
             if md_text:
                 text_parts.append(str(md_text))
@@ -203,10 +210,28 @@ def _extract_from_entry(
     if entry_text:
         text_parts.append(str(entry_text))
 
-    entry_conf = entry.get("confidence") or entry.get("score")
+    entry_conf = entry.get("confidence")
+    if entry_conf is None:
+        entry_conf = entry.get("score")
     if entry_conf is not None:
         try:
             confidences.append(float(entry_conf))
+        except (ValueError, TypeError):
+            pass
+
+
+def _check_content_length(response: httpx.Response) -> None:
+    """Raise ResultDownloadError if Content-Length exceeds the limit.
+
+    No-op when the header is missing or unparseable.
+    """
+    cl = response.headers.get("Content-Length")
+    if cl:
+        try:
+            if int(cl) > _MAX_CONTENT_LENGTH_HEADER_BYTES:
+                raise ResultDownloadError(
+                    f"Content-Length {cl} exceeds {_MAX_CONTENT_LENGTH_HEADER_BYTES}"
+                )
         except (ValueError, TypeError):
             pass
 
@@ -490,6 +515,46 @@ class PaddleOCRVLClient:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+        await self._release_semaphore()
+
+    async def _acquire_semaphore(self) -> bool:
+        """Acquire a Redis semaphore slot for cross-process OCR concurrency.
+
+        Uses INCR with TTL for a counting semaphore (not a binary lock).
+        Returns True if acquired or Redis is unavailable (best-effort).
+        """
+        if not _OCR_VL_SEM_KEY:
+            return True
+        try:
+            from app.core.cache import cache
+            client = await cache._ensure_client()
+            if client is None:
+                return True
+            count = await client.incr(_OCR_VL_SEM_KEY)
+            if count == 1:
+                await client.expire(_OCR_VL_SEM_KEY, 300)
+            if count <= _OCR_VL_SEM_MAX:
+                return True
+            await client.decr(_OCR_VL_SEM_KEY)
+            return False
+        except Exception:
+            return True  # Redis unavailable — allow (best-effort)
+
+    async def _release_semaphore(self) -> None:
+        """Release the Redis semaphore slot if held."""
+        try:
+            from app.core.cache import cache
+            client = await cache._ensure_client()
+            if client is not None:
+                await client.decr(_OCR_VL_SEM_KEY)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _jitter_delay(base: float, attempt: int, max_delay: float = 30.0) -> float:
+        """Exponential backoff with jitter: base * 2^attempt + random(0, 1)."""
+        delay = min(base * (2 ** attempt) + random.random(), max_delay)
+        return delay
 
     def _get_client(self) -> httpx.AsyncClient:
         """Lazy-initialize and return the shared HTTP client."""
@@ -640,6 +705,7 @@ class PaddleOCRVLClient:
 
     async def _submit_with_retry(self, image_bytes: bytes, filename: str) -> str:
         """Submit job with retry. Returns job_id or raises."""
+        await self._acquire_semaphore()
         return await self._retry_submit(
             lambda: self._submit_job(image_bytes, filename),
             "file submit",
@@ -647,6 +713,7 @@ class PaddleOCRVLClient:
 
     async def _submit_url_with_retry(self, file_url: str) -> str:
         """Submit URL job with retry."""
+        await self._acquire_semaphore()
         return await self._retry_submit(
             lambda: self._submit_url_job(file_url),
             "URL submit",
@@ -684,7 +751,7 @@ class PaddleOCRVLClient:
                 )
 
                 if attempt < self._max_retries - 1:
-                    retry_delay = _RETRY_DELAY * (attempt + 1)
+                    retry_delay = self._jitter_delay(_RETRY_DELAY, attempt)
                     # 429 with Retry-After from actual response header
                     if exc.retry_after is not None:
                         retry_delay = min(exc.retry_after, 30.0)
@@ -697,7 +764,7 @@ class PaddleOCRVLClient:
                     desc, attempt + 1, self._max_retries, exc,
                 )
                 if attempt < self._max_retries - 1:
-                    await asyncio.sleep(_RETRY_DELAY * (attempt + 1))
+                    await asyncio.sleep(self._jitter_delay(_RETRY_DELAY, attempt))
 
         logger.error(
             "PaddleOCR-VL %s exhausted retries=%d last_error=%s",
@@ -818,15 +885,7 @@ class PaddleOCRVLClient:
         # Disable auto-redirect: validate each hop manually before connecting
         async with client.stream("GET", url, follow_redirects=False) as response:
             # Content-Length pre-check
-            cl = response.headers.get("Content-Length")
-            if cl:
-                try:
-                    if int(cl) > _MAX_CONTENT_LENGTH_HEADER_BYTES:
-                        raise ResultDownloadError(
-                            f"Content-Length {cl} exceeds {_MAX_CONTENT_LENGTH_HEADER_BYTES}"
-                        )
-                except (ValueError, TypeError):
-                    pass
+            _check_content_length(response)
 
             if response.status_code in (301, 302, 303, 307, 308):
                 redirect_url = str(response.headers.get("location", ""))
@@ -836,6 +895,8 @@ class PaddleOCRVLClient:
                 _validate_result_url(redirect_url)
                 async with client.stream("GET", redirect_url, follow_redirects=False) as final_resp:
                     final_resp.raise_for_status()
+                    # Content-Length pre-check on final response too
+                    _check_content_length(final_resp)
                     raw_text, confidence, layout_blocks, raw_entries = await self._stream_and_parse(final_resp)
             else:
                 response.raise_for_status()
@@ -909,6 +970,12 @@ class PaddleOCRVLClient:
                 # Normalize CRLF: strip trailing \r
                 if line_text.endswith("\r"):
                     line_text = line_text[:-1]
+                # Enforce per-line length limit -- reject, do not skip
+                if len(line_text) > _MAX_JSONL_LINE_LENGTH:
+                    raise ResultDownloadError(
+                        f"JSONL line {line_count + 1} length {len(line_text)} "
+                        f"exceeds limit of {_MAX_JSONL_LINE_LENGTH}"
+                    )
 
                 stripped = line_text.strip()
                 if not stripped:
@@ -942,6 +1009,12 @@ class PaddleOCRVLClient:
                 line_text = line_text[1:]
             if line_text.endswith("\r"):
                 line_text = line_text[:-1]
+            # Enforce per-line length limit -- reject, do not skip
+            if len(line_text) > _MAX_JSONL_LINE_LENGTH:
+                raise ResultDownloadError(
+                    f"JSONL final line length {len(line_text)} "
+                    f"exceeds limit of {_MAX_JSONL_LINE_LENGTH}"
+                )
 
             stripped = line_text.strip()
             if stripped:
