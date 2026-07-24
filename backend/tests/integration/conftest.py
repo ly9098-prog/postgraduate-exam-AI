@@ -5,7 +5,12 @@ Usage:
     python -m pytest tests/integration/ -x --run-integration
 
 Requires ``--run-integration`` to avoid accidental use in CI/dev environments.
+
+Note: pytest-asyncio 1.3.0 doesn't support async fixtures in conftest.
+All fixtures here are sync. Tests handle async setup async/await inline.
 """
+
+from __future__ import annotations
 
 import os
 import pytest
@@ -44,52 +49,64 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_integration)
 
 
-# ── PostgreSQL fixtures ─────────────────────────────────────────────────────
+# ── PostgreSQL fixtures (sync — pytest-asyncio 1.3.0 compat) ──
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def pg_engine():
-    """Create a PostgreSQL engine (session-scoped)."""
+    """Create a PostgreSQL engine (function-scoped)."""
     engine = create_async_engine(TEST_POSTGRES_URL, echo=False)
     yield engine
 
 
 @pytest.fixture
-async def pg_session(pg_engine):
-    """Yield a standalone PostgreSQL session per test with full DDL + teardown."""
-    from app.models import Base
+def pg_session(pg_engine):
+    """Return an AsyncSession with DDL applied. Sync fixture for pytest-asyncio 1.3.0 compat."""
+    import asyncio
+    from app.core.database import Base
 
-    async with pg_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async with async_sessionmaker(pg_engine, class_=AsyncSession, expire_on_commit=False)() as session:
-        yield session
-    async with pg_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def _setup():
+        async with pg_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        return async_sessionmaker(pg_engine, class_=AsyncSession, expire_on_commit=False)()
+
+    session = loop.run_until_complete(_setup())
+    loop.close()
+    return session
 
 
-# ── Redis fixtures ──────────────────────────────────────────────────────────
+# ── Redis fixtures (sync — pytest-asyncio 1.3.0 compat) ──
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def redis_client():
-    """Create a Redis client (session-scoped). ``from_url`` is synchronous."""
+    """Return a Redis client. ``from_url`` is synchronous."""
     import redis.asyncio as aioredis
 
     return aioredis.from_url(TEST_REDIS_URL, decode_responses=True)
 
 
 @pytest.fixture
-async def redis_session(redis_client):
-    """Flush the test DB before each test."""
-    await redis_client.flushdb()
+def redis_session(redis_client):
+    """Flush the test DB before each test. Returns the client."""
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    loop.run_until_complete(redis_client.flushdb())
     yield redis_client
-    await redis_client.flushdb()
+    loop.run_until_complete(redis_client.flushdb())
 
 
-# ── Combined fixture ────────────────────────────────────────────────────────
+# ── Combined fixture (sync) ──
 
 
 @pytest.fixture
-async def integration_env(pg_session, redis_session):
-    """Both a PG session and a clean Redis client."""
+def integration_env(pg_session, redis_session):
+    """Both a sessionmaker and a clean Redis client."""
     return {"pg": pg_session, "redis": redis_session}
