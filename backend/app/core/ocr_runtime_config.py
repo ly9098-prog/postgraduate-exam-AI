@@ -15,6 +15,7 @@ import logging
 from dataclasses import dataclass, field
 
 from app.core.config import settings
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 from app.core.ocr_profile import get_ocr_profile
 
 logger = logging.getLogger(__name__)
@@ -180,20 +181,15 @@ def _build_runtime_config() -> OcrRuntimeConfig:
     import os
 
     profile = get_ocr_profile()
-    env = os.environ.get("APP_ENV", os.environ.get("DEPLOY_PROFILE", "development"))
+    dep_profile = detect_deployment_profile()
 
-    # Map old env names to "development" / "production"
-    if env in ("local_import", "local", "development"):
-        environment = "development"
-    elif env in ("cloud_api", "production"):
-        environment = "production"
-    else:
-        environment = "development"
+    # Use deployment profile for environment classification
+    environment = "production" if dep_profile == DeploymentProfile.CLOUD_API else "development"
 
     return OcrRuntimeConfig(
         # Environment
         environment=environment,
-        profile=env,
+        profile=dep_profile.value if dep_profile else "",
 
         # Engine
         enabled=settings.OCR_ENABLED,

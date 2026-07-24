@@ -240,9 +240,18 @@ async def resume_pipeline(
 
         log_event(logger, "import.resume.accepted", pipeline_id=pipeline_id, resumed_chunks=resumed_chunks)
 
+        # Stage the file to persistent storage before enqueuing
+        from app.services.staging_storage import async_store_file
+        _resume_staging = await async_store_file(
+            tmp.path,
+            original_name=f"resume_{pipeline_id}",
+            mime="application/octet-stream",
+        )
+
         await enqueue_resume_pipeline(
             pipeline_id=pipeline_id,
             file_path=tmp.path,
+            staging_object_id=_resume_staging.object_id,
             subject=subject,
             subject_id=None,
             options=options,

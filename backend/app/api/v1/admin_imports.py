@@ -4,7 +4,7 @@ import os
 
 import json
 
-from fastapi import BackgroundTasks, APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -157,7 +157,6 @@ _RESUMABLE_STATUSES = {"failed", "paused", "interrupted"}
 async def admin_resume_pipeline(
     pipeline_id: str,
     file: UploadFile,
-    background_tasks: BackgroundTasks,
     enable_ai_repair: bool | None = None,
     enable_ocr_correction: bool | None = None,
     confidence_threshold: float | None = None,
@@ -251,77 +250,27 @@ async def admin_resume_pipeline(
         "page_range": existing_store.get("page_range"),
     })
 
-    # 后台任务
-    async def _run_resume():
-        try:
-            from app.core.database import async_session
-            from app.features.pipeline_coordinator_entry import (
-                run_pipeline,
-            )
-            from app.features.pipeline_orchestrator import (
-                _pipeline_store as _ps,
-            )
+    # Stage the re-uploaded file to persistent storage
+    from app.services.staging_storage import async_store_file
+    resume_staging = await async_store_file(
+        tmp_path,
+        original_name=file.filename or f"resume_{pipeline_id}",
+        mime="application/pdf" if source_type == "pdf" else "text/plain",
+    )
 
-            async def _progress(stages_dict, current_stage, errors):
-                existing_store = _ps.get(pipeline_id, {})
-                await _set_pipeline_store(pipeline_id, {
-                    "pipeline_id": pipeline_id,
-                    "status": "processing",
-                    "source_type": source_type,
-                    "current_stage": current_stage,
-                    "stages": stages_dict,
-                    "stats": {},
-                    "errors": errors,
-                    "started_at": existing_store.get("started_at", ""),
-                    "page_range": existing_store.get("page_range"),
-                })
+    # Enqueue via durable queue — replaces asyncio.create_task(_run_resume)
+    from app.services.task_queue_worker import enqueue_admin_resume
+    await enqueue_admin_resume(
+        pipeline_id=pipeline_id,
+        staging_object_id=resume_staging.object_id,
+        source_type=source_type,
+        source_file=source_file,
+        subject=subject,
+        subject_id=subject_id,
+        options=opts,
+    )
 
-            async with async_session() as resume_db:
-                result = await run_pipeline(
-                    file_path=tmp_path,
-                    source_type=source_type,
-                    source_file=source_file,
-                    subject=subject,
-                    subject_id=subject_id,
-                    options=opts,
-                    db=resume_db,
-                    progress_callback=_progress,
-                    pipeline_id=pipeline_id,
-                    # P3-3: 传入 checkpoint 让 pipeline 跳过已完成 stage
-                    resume_from_checkpoint=ckpt,
-                )
-                # Preserve page_range through resume (may have been set by
-                # the initial upload and stored in the existing store).
-                existing_page_range = _ps.get(pipeline_id, {}).get("page_range")
-                if existing_page_range and "page_range" not in result:
-                    result["page_range"] = existing_page_range
-                await _set_pipeline_store(pipeline_id, result)
-        except Exception as exc:
-            logger.exception("Admin resume pipeline %s failed", pipeline_id)
-            existing_page_range = _pipeline_store.get(pipeline_id, {}).get("page_range")
-            await _set_pipeline_store(pipeline_id, {
-                "pipeline_id": pipeline_id,
-                "status": "failed",
-                "source_type": source_type,
-                "errors": [f"恢复导入失败: {exc}"],
-                "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
-                "finished_at": datetime.now().isoformat(),
-                "page_range": existing_page_range,
-            })
-        finally:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.unlink(tmp_path)
-                except OSError:
-                    pass
-
-    # Note: admin resume uses inline create_task (not DurableTaskQueue) because
-    # _run_resume captures _pipeline_store for SSE progress updates and uses
-    # run_import_pipeline (not resume_pipeline_background) with progress_callback.
-    # The admin pipeline store is in-memory, so queue durability adds no value here.
-    asyncio.create_task(_run_resume())
-
-    # Detach temp file — _run_resume takes ownership and cleans up in its finally block
+    # Detach temp file — staging storage owns the data now
     tmp.detach()
 
     failed_stage = (ckpt or {}).get("failed_stage")
@@ -926,7 +875,6 @@ _BATCH_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 @router.post("/batch-image/upload", response_model=BatchImageUploadResponse)
 async def batch_image_upload(
     files: list[UploadFile],
-    background_tasks: BackgroundTasks,
     subject: str | None = None,
     subject_id: int | None = None,
     concurrency: int | None = None,
@@ -1040,8 +988,25 @@ async def batch_image_upload(
             sources.append(source_obj)
             sources_with_sha.append((source_obj, source_sha256_hex, per_image_id))
 
-            # Detach — the batch job service takes ownership
+            # Detach — the temp file persists but will be staged below
             tmp.detach()
+
+        # Stage all source files to persistent storage for cross-process access
+        from app.services.staging_storage import async_store_file
+        staging_object_ids: list[str] = []
+        for src in sources:
+            try:
+                staging_obj = await async_store_file(
+                    src.temp_path,
+                    original_name=src.source_file,
+                    mime="image/png",
+                )
+                staging_object_ids.append(staging_obj.object_id)
+            except Exception:
+                logger.warning(
+                    "Failed to stage batch image %s, marking as failed", src.source_file,
+                )
+                staging_object_ids.append("")
     except Exception:
         # Clean up temp files on error
         for src in sources:
@@ -1098,10 +1063,11 @@ async def batch_image_upload(
             duplicate=True,
         )
 
-    background_tasks.add_task(
-        batch_svc.run_batch_job,
+    # Enqueue via durable queue — replaces BackgroundTasks (P0-3)
+    from app.services.task_queue_worker import enqueue_batch_image_job
+    await enqueue_batch_image_job(
         job_id=job_id,
-        sources=sources,
+        staging_object_ids=staging_object_ids,
         subject=subject,
         subject_id=subject_id,
         options=options,
