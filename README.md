@@ -527,6 +527,7 @@ GET  /api/admin/v1/health/ready
 | `APP_ENV` | `development` | 运行环境。生产设为 `production` |
 | `APP_SECRET` | — | **必填**。应用密钥，生产必须使用强随机字符串 |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./postgraduate.db` | 数据库连接（生产使用 PostgreSQL） |
+| `DEPLOYMENT_PROFILE` | 空 | 显式覆盖部署画像：`local_import` | `cloud_api` |
 | `CORS_ORIGINS` | `["http://localhost:3000"]` | 管理端跨域白名单 |
 | `LOG_LEVEL` | `INFO` | 应用日志级别 |
 
@@ -561,6 +562,11 @@ GET  /api/admin/v1/health/ready
 | `OCR_LANGUAGE` | `ch` | OCR 语言 |
 | `OCR_MAX_WORKERS` | `1` | OCR 并发线程数 |
 | `MAX_OCR_PAGES` | `0` | 最大页数，0 不限 |
+| `OCR_EXECUTION_BACKEND` | `disabled` | OCR 执行后端：`disabled` | `local_process` | `paddlex_http` |
+| `OCR_REMOTE_URL` | 空 | 远程 OCR 服务 URL（paddlex_http 模式） |
+| `OCR_REMOTE_TOKEN` | 空 | 远程 OCR 服务鉴权 Token |
+| `OCR_REMOTE_CONNECT_TIMEOUT_SEC` | `5` | 远程 OCR 连接超时（秒） |
+| `OCR_REMOTE_READ_TIMEOUT_SEC` | `600` | 远程 OCR 读取超时（秒） |
 
 **OCR 模型配置**（通过后台 AI 设置页面配置，非环境变量）：
 
@@ -573,7 +579,7 @@ GET  /api/admin/v1/health/ready
 
 | 变量 | 默认值 | 说明 |
 |---|---:|---|
-| `REDIS_URL` | 空 | Redis 地址。生产必需（缓存、番茄钟调度锁） |
+| `REDIS_URL` | 空 | Redis 地址。生产必需（缓存、番茄钟调度锁、DurableTaskQueue）|
 
 ### 向量检索
 
@@ -590,7 +596,13 @@ GET  /api/admin/v1/health/ready
 
 | 变量 | 默认值 | 说明 |
 |---|---:|---|
+| `PROCESS_ROLE` | `web` | 进程角色：`web` | `worker` | `scheduler` | `all`（仅开发）|
 | `GUNICORN_WORKERS` | `2` | Gunicorn worker 数 |
+| `DB_POOL_SIZE_WEB` | `3` | Web 进程 DB 连接池大小（最大溢出 +5）|
+| `DB_POOL_SIZE_WORKER` | `2` | Worker 进程 DB 连接池大小（最大溢出 +3）|
+| `DB_POOL_SIZE_SCHEDULER` | `1` | Scheduler 进程 DB 连接池大小（最大溢出 +2）|
+| `ALLOW_IN_MEMORY_TASK_QUEUE` | `false` | 允许内存队列回退（仅开发调试）|
+| `COS_ALLOW_LOCAL_FALLBACK` | `false` | 允许 COS 存储回退本地文件（生产需显式启用）|
 | `POSTGRES_USER` | `pguser` | PostgreSQL 用户 |
 | `POSTGRES_PASSWORD` | — | PostgreSQL 密码 |
 | `POSTGRES_DB` | `postgraduate` | PostgreSQL 数据库名 |
@@ -649,16 +661,16 @@ rsync -az --exclude-from=".deployignore" \
   -e "ssh -i loginkey.pem -o BatchMode=yes" \
   ./ root@8.163.56.109:/opt/2240ai-v2/
 
-# 更新后端
+# 构建镜像并替换 app（含健康检查）
 ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh update"
 
-# 更新管理端
-ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh update-admin"
+# 如包含新 migration，app 启动会因"迁移落后"检查失败，
+# 需先停 app → 迁移 → 重启：
+ssh root@8.163.56.109 "cd /opt/2240ai-v2 && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml stop app"
+ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh migrate"
+ssh root@8.163.56.109 "cd /opt/2240ai-v2 && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml start app"
 
-# 查看状态
-ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh status"
-
-# 显式执行数据库迁移
+# 或仅执行显式迁移（无新 migration 时）
 ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh migrate"
 ```
 
