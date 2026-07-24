@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select, text
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 class TestPostgresConnectivity:
@@ -33,12 +33,10 @@ class TestPostgresConnectivity:
         """Insert a User row and read it back."""
         from app.models.user import User
 
-        from app.core.security import get_password_hash
-
         user = User(
             openid="test_openid_001",
             username="testuser_pg",
-            hashed_password=get_password_hash("dummy"),
+            hashed_password="dummy_hash",
         )
         pg_session.add(user)
         await pg_session.commit()

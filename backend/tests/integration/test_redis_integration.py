@@ -6,7 +6,7 @@ Verifies Redis connectivity and cache operations used by the app.
 import pytest
 
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 class TestRedisConnectivity:
