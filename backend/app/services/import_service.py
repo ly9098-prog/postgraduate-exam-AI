@@ -1,20 +1,23 @@
 import io
 import logging
 import os
+import re
 import tempfile
 import uuid
 from dataclasses import asdict
 from datetime import datetime
 
-import re
-
 from openpyxl import Workbook, load_workbook
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
 from app.core.config import settings
-from app.features.question_type import normalize_question_type, is_canonical, QT_SINGLE_CHOICE, QT_FILL_BLANK
+from app.core.time_utils import utcnow
+from app.features.question_type import (
+    QT_FILL_BLANK,
+    QT_SINGLE_CHOICE,
+    normalize_question_type,
+)
 from app.models.question import Question
 from app.models.question_import import QuestionImport
 
@@ -201,8 +204,8 @@ def _guess_subject(text: str) -> str | None:
 
 def _extract_pdf_text(pdf_path: str) -> str:
     """双通道提取 PDF 全文：文本型直接提取，图片型页面走 OCR。"""
+    from app.services.ocr_service import clean_ocr_text, ocr_pages
     from app.services.pdf_classifier import classify_pages, get_pixmap
-    from app.services.ocr_service import ocr_pages, clean_ocr_text
 
     with open(pdf_path, "rb") as f:
         content = f.read()
@@ -429,9 +432,10 @@ async def _run_math_pipeline(batch_id: str, tmp_pdf_path: str) -> None:
     async with async_session() as db:
         import fitz
         from sqlalchemy import select as sa_select
-        from app.services.math_region_detector import detect_page
+
         from app.services.formula_image_cropper import crop_and_upload
         from app.services.hybrid_content_builder import build as build_content
+        from app.services.math_region_detector import detect_page
         from app.services.storage_backend import get_storage
 
         doc = None

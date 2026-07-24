@@ -6,7 +6,6 @@
 
 import re
 
-
 # 题号模式
 _QUESTION_PATTERN_LIST = [
     r"^\s*\d+\s*[.．、)）]",         # 1. / 1．/ 1、/ 1) / 1）

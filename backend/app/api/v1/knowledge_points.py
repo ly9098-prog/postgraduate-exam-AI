@@ -5,7 +5,7 @@ from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-from app.schemas.tag import TagCreate, TagResponse, TagSubjectGroup, TagTreeNode
+from app.schemas.tag import TagCreate, TagResponse, TagSubjectGroup
 from app.services import knowledge_service as svc
 
 router = APIRouter(prefix="/api/v1/knowledge-points")

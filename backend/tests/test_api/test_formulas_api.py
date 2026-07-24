@@ -169,6 +169,69 @@ class TestFormulaList:
         assert exc.type.__name__ == "HTTPException"
         assert exc.value.status_code == 400
 
+    def test_list_with_tags(self, monkeypatch):
+        """_apply_list_filters handles tags filter without error."""
+        from app.api.v1.formulas import _apply_list_filters
+        from sqlalchemy import select
+        from app.models.formula import FormulaCard
+
+        db = MagicMock()
+        db.execute = AsyncMock()
+
+        # Tags parameter (comma-separated tag codes)
+        query = _apply_list_filters(
+            select(FormulaCard),
+            subject_code=None, chapter_id=None, category_id=None,
+            tags="basic,advanced", q=None,
+        )
+        # Should not raise — the query is valid SQL even if it references subqueries
+        assert query is not None
+
+    def test_list_with_search(self, monkeypatch):
+        """_apply_list_filters handles search (q) filter without error."""
+        from app.api.v1.formulas import _apply_list_filters
+        from sqlalchemy import select
+        from app.models.formula import FormulaCard
+
+        db = MagicMock()
+        db.execute = AsyncMock()
+
+        # Search query
+        query = _apply_list_filters(
+            select(FormulaCard),
+            subject_code=None, chapter_id=None, category_id=None,
+            tags=None, q="极限",
+        )
+        assert query is not None
+
+    def test_list_with_function_graph(self, monkeypatch):
+        """_apply_library_type_filter handles function_graph without error."""
+        from app.api.v1.formulas import _apply_library_type_filter
+        from sqlalchemy import select
+        from app.models.formula import FormulaCard
+
+        db = MagicMock()
+        db.execute = AsyncMock()
+
+        query = _apply_library_type_filter(
+            select(FormulaCard),
+            library_type="function_graph",
+        )
+        assert query is not None
+
+    def test_list_subject_code_and_chapter_combined(self, monkeypatch):
+        """_apply_list_filters handles subject_code + chapter_id combined."""
+        from app.api.v1.formulas import _apply_list_filters
+        from sqlalchemy import select
+        from app.models.formula import FormulaCard
+
+        query = _apply_list_filters(
+            select(FormulaCard),
+            subject_code="math2_high_math", chapter_id=10, category_id=None,
+            tags=None, q=None,
+        )
+        assert query is not None
+
 
 class TestFormulaFavoritesList:
     """GET /formulas/favorites/list — should support all filter params."""

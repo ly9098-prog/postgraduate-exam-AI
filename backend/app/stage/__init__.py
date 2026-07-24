@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from enum import Enum
 
-
 # Allowed platform tags for GPU wheel download (fail-fast filter)
 _WHEEL_ALLOWED_PLATFORMS: list[str] = [
     "manylinux_2_28_x86_64",

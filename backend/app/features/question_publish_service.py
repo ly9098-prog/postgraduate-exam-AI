@@ -5,7 +5,6 @@ from __future__ import annotations
 import difflib
 import logging
 import re
-from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +12,6 @@ from sqlalchemy.orm import load_only
 
 from app.features.question_pipeline import (
     _find_duplicate_by_hash,
-    _get_qi,
     process_question_pipeline,
 )
 from app.models.question import Question
@@ -402,10 +400,10 @@ async def approve_and_publish(
 
 
 async def get_publish_history(
-    db: "AsyncSession",
+    db: AsyncSession,
     page: int = 1,
     page_size: int = 20,
-) -> "PublishHistoryResponse":
+) -> PublishHistoryResponse:
     """查询发布历史：按 batch_id 聚合 question_imports 中已发布的记录。"""
     from app.schemas.question_publish import PublishHistoryItem, PublishHistoryResponse
 

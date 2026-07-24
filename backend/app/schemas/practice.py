@@ -2,7 +2,6 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-
 # --- GET /practice/questions ---
 
 class PracticeQuestion(BaseModel):

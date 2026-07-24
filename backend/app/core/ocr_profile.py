@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 
 from app.core.config import settings
-from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 
 
 @dataclass(frozen=True)

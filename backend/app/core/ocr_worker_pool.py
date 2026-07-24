@@ -15,14 +15,13 @@ import logging
 import time
 import uuid
 from collections import deque
-from typing import Any, Callable
+from typing import Any
 
 from app.core.ocr_types import (
     STABLE_ERROR_CODES,
     WorkerPoolMetrics,
     WorkerRequest,
     WorkerResult,
-    _PROTOCOL_VERSION,
 )
 from app.core.ocr_worker_process import OcrWorkerProcess
 
@@ -118,7 +117,7 @@ class OcrWorkerPool:
                 timeout=1.0,  # short wait for queue space
             )
             self._metrics.accepted += 1
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._metrics.queue_full += 1
             return WorkerResult(
                 request_id=req.request_id,
@@ -139,7 +138,7 @@ class OcrWorkerPool:
                 timeout=self._config.total_deadline,
             )
             return result
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._metrics.queue_wait_timeout += 1
             self._active_tasks.pop(req.request_id, None)
             self._metrics.queued -= 1
@@ -237,7 +236,7 @@ class OcrWorkerPool:
                     self._pending.get(),
                     timeout=1.0,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue  # Re-check _stopped flag
 
             self._metrics.queued -= 1
@@ -298,7 +297,7 @@ class OcrWorkerPool:
                     self._metrics.failed += 1
                 self._set_future_result(result.request_id, result)
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._metrics.timed_out += 1
                 logger.warning(
                     "Worker[%d] execution timeout (%ds), killing",

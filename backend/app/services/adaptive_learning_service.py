@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.core.time_utils import utcnow
 from app.models.knowledge_edge import KnowledgeEdge
 from app.models.knowledge_point import KnowledgePoint
+from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.user_adaptive_profile import UserAdaptiveProfile
@@ -26,7 +27,6 @@ from app.models.user_knowledge_state import UserKnowledgeState
 from app.models.user_question_difficulty_state import UserQuestionDifficultyState
 from app.models.user_question_state import UserQuestionState
 from app.models.user_recommend_preference import UserRecommendPreference
-from app.models.practice_record import PracticeRecord
 
 logger = logging.getLogger(__name__)
 

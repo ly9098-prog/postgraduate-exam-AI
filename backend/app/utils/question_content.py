@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 
 def extract_image_urls_from_content(content: dict | None) -> list[str] | None:
     """从 segments 中提取 display=True 的图片 URL 列表。

@@ -10,7 +10,6 @@ math_image_bbox_missing — no full-page upload is performed.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from app.features.math_import_profile import (
     apply_math_risk_flags,
@@ -145,9 +144,10 @@ async def run_math_detect_stage(
                         coordinate_space=CoordinateSpace.PDF_POINTS,
                     )
 
-                    from app.services.storage_backend import get_storage
                     import hashlib
                     from datetime import datetime
+
+                    from app.services.storage_backend import get_storage
 
                     content_hash = hashlib.md5(png_bytes).hexdigest()[:12]
                     month = datetime.now().strftime("%Y%m")

@@ -12,28 +12,24 @@
 - 审计日志
 """
 
-import asyncio
 import hashlib
 import json
 import logging
 import re
 import secrets
-from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, func, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
 from app.core.time_utils import utcnow
 from app.features.question_type import (
-    CANONICAL_TYPES,
-    QT_SINGLE_CHOICE,
     QT_MULTIPLE_CHOICE,
+    QT_SINGLE_CHOICE,
     QT_TRUE_FALSE,
     normalize_question_type,
 )

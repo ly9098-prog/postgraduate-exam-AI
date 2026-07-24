@@ -1,5 +1,5 @@
-from datetime import date, datetime, timedelta
 import json
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -429,7 +429,6 @@ async def get_dashboard_v2(
 ) -> dict:
     """dashboard-v2 聚合接口，整合学习总览、推荐、趋势、学科、遗忘、成长、自适应、年度摘要。"""
     from app.core.cache import cache
-    from app.models.subject_resolver import get_subject_label
 
     cache_key = f"stats:dashboard_v2:{user_id}:{trend_days}:{include_yearly_summary}:{include_growth}:{include_adaptive}"
     cached = await cache.get(cache_key)
@@ -633,7 +632,7 @@ def _build_recommendation(ov: dict, forgetting: dict, weak_subj: dict | None) ->
     if due > 0:
         return {
             "priority": "review",
-            "title": f"优先复习到期题",
+            "title": "优先复习到期题",
             "desc": f"建议先完成 {due} 道到期复习，再进行新题练习。",
             "tags": ["待复习", "优先处理"],
             "cta_text": "去复习",
@@ -653,7 +652,7 @@ def _build_recommendation(ov: dict, forgetting: dict, weak_subj: dict | None) ->
     if weak_subj and weak_subj["accuracy"] < 0.5 and weak_subj["total_questions"] >= 3:
         return {
             "priority": "subject",
-            "title": f"巩固薄弱学科",
+            "title": "巩固薄弱学科",
             "desc": f"{weak_subj['label']}正确率仅{round(weak_subj['accuracy'] * 100)}%，建议优先复盘该学科错题。",
             "tags": ["薄弱学科", "需要补强"],
             "cta_text": "查看学科错题",
@@ -959,7 +958,7 @@ def _rule_based_dashboard_analysis(payload: dict, now, trend_days: int) -> dict:
         actions.append({"type": "wrong", "title": f"复盘{hf}道高频遗忘错题", "desc": "针对高频遗忘点做专项巩固。"})
     if weak_label:
         findings.append(f"薄弱学科：{weak_label}。")
-        actions.append({"type": "subject", "title": f"重点看{weak_label}错题", "desc": f"该学科正确率偏低，建议优先复盘。"})
+        actions.append({"type": "subject", "title": f"重点看{weak_label}错题", "desc": "该学科正确率偏低，建议优先复盘。"})
     if top_topics:
         topics_str = "、".join(t["topic"] for t in top_topics[:3])
         risks.append(f"高频遗忘知识点：{topics_str}。")

@@ -6,29 +6,26 @@ Extracted from ``question_pipeline.py`` (P5-3).
 from __future__ import annotations
 
 import io
-import json
 import logging
 import re
 import uuid
 from datetime import datetime
-from typing import Any
 
 from openpyxl import Workbook, load_workbook
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
 from app.core.config import settings
+from app.core.time_utils import utcnow
 from app.features.question_pipeline import (
     _QI_PARSED_FIELDS,
     _find_duplicate_by_hash,
     _find_import_duplicate_by_hash,
-    normalizer,
     process_question_pipeline,
 )
 from app.features.question_splitter import split_questions
+from app.features.question_type import QT_FILL_BLANK, QT_SINGLE_CHOICE, QT_TRUE_FALSE
 from app.models.question import Question
-from app.features.question_type import QT_SINGLE_CHOICE, QT_TRUE_FALSE, QT_FILL_BLANK
 from app.models.question_import import QuestionImport
 
 logger = logging.getLogger(__name__)
@@ -140,8 +137,8 @@ def _guess_subject(text: str, *, min_score: int = 2) -> str | None:
 
 
 def _extract_pdf_text(content: bytes) -> str:
+    from app.services.ocr_service import clean_ocr_text, ocr_pages
     from app.services.pdf_classifier import classify_pages, get_pixmap
-    from app.services.ocr_service import ocr_pages, clean_ocr_text
 
     classified = classify_pages(content)
     page_texts: dict[int, str] = {}

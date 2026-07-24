@@ -84,6 +84,33 @@ export function getQuestionTypeLabel(
   return formatUnknownType(input);
 }
 
+// ── 题型简写映射（用于 /imports/review 表格视图） ──
+
+export const QUESTION_TYPE_SHORT_LABELS: Record<QuestionTypeCode, string> = {
+  single_choice: "单选",
+  multiple_choice: "多选",
+  true_false: "判断",
+  fill_blank: "填空",
+  multi_blank_choice: "多空",
+  subjective: "问答",
+};
+
+/**
+ * 获取题型的简写名称（表格视图用）。
+ *
+ * 规范 code → 返回对应简写（如 "单选"、"多选"）。
+ * 未知值 → 保持现有兜底展示（不返回空字符串）。
+ */
+export function getQuestionTypeShortLabel(
+  input: string | null | undefined,
+): string {
+  if (!input) return "未识别";
+  if (input in QUESTION_TYPE_SHORT_LABELS) {
+    return QUESTION_TYPE_SHORT_LABELS[input as QuestionTypeCode];
+  }
+  return formatUnknownType(input);
+}
+
 /**
  * 格式化未知题型显示文本
  */

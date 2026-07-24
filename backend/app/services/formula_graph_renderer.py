@@ -6,9 +6,9 @@ No eval/exec. Only known template types are supported.
 import io
 import logging
 import math
-from enum import Enum
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np

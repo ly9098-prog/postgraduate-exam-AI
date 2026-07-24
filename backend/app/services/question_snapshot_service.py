@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +217,7 @@ def build_ocr_lines(normalized_blocks: list[dict]) -> list[dict]:
     return ocr_lines
 
 
-def build_ocr_lines_from_ir(doc: "DocumentIR") -> list[dict]:
+def build_ocr_lines_from_ir(doc: DocumentIR) -> list[dict]:
     """从 DocumentIR 构造页面 OCR 行列表。
 
     与 build_ocr_lines 输出格式一致，但以 DocumentIR 为输入。
@@ -229,7 +228,7 @@ def build_ocr_lines_from_ir(doc: "DocumentIR") -> list[dict]:
     return _build_ocr_lines_ir(doc)
 
 
-def _build_ocr_lines_ir(doc: "DocumentIR") -> list[dict]:
+def _build_ocr_lines_ir(doc: DocumentIR) -> list[dict]:
     """DocumentIR-native OCR line builder (internal)."""
     from app.features.wangdao_preprocessor import classify_zone
 
@@ -835,7 +834,7 @@ def compute_question_bboxes(
 
 def compute_question_bboxes_from_ir(
     raw_questions: list[dict],
-    doc: "DocumentIR | None",
+    doc: DocumentIR | None,
     *,
     visual_regions: list[dict] | None = None,
 ) -> list[dict]:
@@ -856,7 +855,7 @@ def compute_question_bboxes_from_ir(
 
 def _compute_question_bboxes_ir(
     raw_questions: list[dict],
-    doc: "DocumentIR | None",
+    doc: DocumentIR | None,
     *,
     visual_regions: list[dict] | None = None,
 ) -> list[dict]:

@@ -5,8 +5,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
-from app.schemas.admin_dashboard import AdminDashboardDailyPoint, AdminDashboardOverview, AdminDashboardQuestionStats
-from app.services.admin_dashboard_service import get_dashboard_daily, get_dashboard_overview, get_dashboard_question_stats
+from app.schemas.admin_dashboard import (
+    AdminDashboardDailyPoint,
+    AdminDashboardOverview,
+    AdminDashboardQuestionStats,
+)
+from app.services.admin_dashboard_service import (
+    get_dashboard_daily,
+    get_dashboard_overview,
+    get_dashboard_question_stats,
+)
 
 router = APIRouter(prefix="/api/admin/v1/dashboard", tags=["admin-dashboard"])
 

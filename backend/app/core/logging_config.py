@@ -15,7 +15,7 @@ import json
 import logging
 import logging.config
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _USE_JSON = os.environ.get("LOG_FORMAT", "").lower() == "json"
@@ -85,7 +85,7 @@ class _JsonFormatter(logging.Formatter):
             record.asctime = self.formatTime(record, self.datefmt)
 
         output: dict = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "name": record.name,
             "message": record.message,

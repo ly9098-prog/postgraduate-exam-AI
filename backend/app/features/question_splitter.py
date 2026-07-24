@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 # 不允许本模块单独维护题号正则 (OCR-103)
 from app.features.question_numbering import (
     NumberingType,
+    _is_false_question_number,
     extract_first_question_label,
     parse_numbering,
-    _is_false_question_number,
 )
 
 # Legacy exports for backward compatibility
@@ -37,9 +37,11 @@ _OCR_Q_PATTERN = re.compile(r"^([lI])\s*[.、)）]")
 # 用于避免把行首子项 "I." 误当成题号 "1." 而把一道多选题切成两题。
 # Constants imported from shared module (single source of truth)
 from app.features.roman_schema import (  # noqa: E402
-    _ROMAN_SUBITEM_TOKEN, _RE_ROMAN_SUBITEM_MARKER, has_roman_subitem_list as _has_roman_subitem_list,
+    _RE_ROMAN_SUBITEM_MARKER,
 )
-
+from app.features.roman_schema import (
+    has_roman_subitem_list as _has_roman_subitem_list,
+)
 
 # 选项模式
 _CIRCLED_OPTION_CHARS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"

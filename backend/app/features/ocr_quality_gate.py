@@ -8,8 +8,8 @@
 - next 指针语义断裂
 """
 
-import re
 import logging
+import re
 
 from app.features.code_integrity import (
     _RE_CONSECUTIVE_CONSONANTS,

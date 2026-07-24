@@ -19,7 +19,6 @@ Data contract (see prompts/tasks/current_task.md §二):
 from __future__ import annotations
 
 import re
-from typing import Any
 
 # ── Slot ID extraction ───────────────────────────────────────────
 

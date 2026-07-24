@@ -11,7 +11,6 @@ import hashlib
 import io
 import logging
 from datetime import datetime
-from typing import Any
 
 from app.services.visual_region_types import (
     CoordinateSpace,
@@ -313,7 +312,6 @@ async def crop_and_upload_region(
         region.risk_flags.append("visual_region_bbox_missing")
         return region
 
-    from app.services.storage_backend import get_storage
 
     try:
         png_bytes = crop_region(

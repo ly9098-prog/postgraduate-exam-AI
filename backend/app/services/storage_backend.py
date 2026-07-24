@@ -3,8 +3,6 @@ import io
 import logging
 import os
 import posixpath
-
-from app.core.config import settings
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 

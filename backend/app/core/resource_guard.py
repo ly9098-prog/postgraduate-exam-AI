@@ -12,6 +12,12 @@ Usage::
     if not ok:
         return {"error": "resource_pressure", "detail": reason}
 
+    # Async context manager (preferred — atomic acquire/release)
+    async with resource_guard.acquire_pipeline() as acquired:
+        if not acquired:
+            return JSONResponse({"error": "resource_pressure"}, status_code=503)
+        # ... pipeline work ...
+
     # Pipeline-level check (per-pipeline limits)
     guard = ResourceGuard.for_profile(profile)
     guard.check_input_bytes(file_size)
@@ -20,14 +26,14 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import os
-import time
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
 from app.core.config import settings
-from app.core.deployment_profile import DeploymentProfile
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 
 logger = logging.getLogger("postgraduate-ai.resource_guard")
 
@@ -50,18 +56,22 @@ _RESOURCE_PREFIX = "resource:active_pipelines"
 _RESOURCE_SEM_KEY = f"{_RESOURCE_PREFIX}:semaphore"
 _RESOURCE_TTL = 3600  # 1 hour max pipeline lifetime (safety net for crashes)
 
-# Lua: atomic check-and-increment
+# Lua: atomic check-and-increment (rejects when at capacity)
 # KEYS: [semaphore_key]
-# ARGS: [ttl_sec]
-# Returns: current_count on success (>0), -1 if at capacity, -2 if Redis unavailable
+# ARGS: [max_concurrent, ttl_sec]
+# Returns: new_count on success (>0), -1 if at capacity
 _LUA_ACQUIRE_SEM = """
 local key = KEYS[1]
-local ttl = tonumber(ARGV[1])
+local max = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
 local current = redis.call("GET", key)
 if current then
     current = tonumber(current)
 else
     current = 0
+end
+if current >= max then
+    return -1
 end
 redis.call("INCR", key)
 redis.call("EXPIRE", key, ttl)
@@ -215,9 +225,10 @@ class ResourceGuard:
             return True
         try:
             sha = client.script_load(_LUA_ACQUIRE_SEM)
-            result = client.evalsha(sha, 1, _RESOURCE_SEM_KEY, str(_RESOURCE_TTL))
+            result = client.evalsha(sha, 1, _RESOURCE_SEM_KEY,
+                                    str(max_concurrent), str(_RESOURCE_TTL))
             count = int(result) if result else 0
-            return count <= max_concurrent
+            return count > 0
         except Exception:
             current = ResourceGuard._active_pipeline_count
             if current >= max_concurrent:
@@ -251,18 +262,138 @@ class ResourceGuard:
             except Exception:
                 pass
 
+    # ── Async Redis semaphore (preferred path for async callers) ──
+
+    @staticmethod
+    async def _get_async_redis_client():
+        """Create an async Redis client for semaphore operations."""
+        if not settings.REDIS_URL:
+            return None
+        try:
+            import redis.asyncio as redis_async
+            return redis_async.from_url(
+                settings.REDIS_URL,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                decode_responses=True,
+            )
+        except Exception:
+            return None
+
+    def _is_restricted(self) -> bool:
+        """Check if we're in a restricted environment (fail-closed on Redis failure)."""
+        if settings.APP_ENV == "production":
+            return True
+        try:
+            return detect_deployment_profile() == DeploymentProfile.CLOUD_API
+        except Exception:
+            return True  # fail closed
+
+    async def _redis_acquire_async(self, max_concurrent: int) -> bool:
+        """Try to acquire Redis semaphore (async). True if under capacity.
+
+        In production/cloud_api, Redis failure fails closed (returns False).
+        In dev/local, falls back to process-local counting.
+        """
+        client = await self._get_async_redis_client()
+        if client is None:
+            if self._is_restricted():
+                return False
+            current = ResourceGuard._active_pipeline_count
+            if current >= max_concurrent:
+                return False
+            ResourceGuard._active_pipeline_count += 1
+            return True
+        try:
+            sha = await client.script_load(_LUA_ACQUIRE_SEM)
+            result = await client.evalsha(sha, 1, _RESOURCE_SEM_KEY,
+                                          str(max_concurrent), str(_RESOURCE_TTL))
+            count = int(result) if result else 0
+            return count > 0
+        except Exception:
+            if self._is_restricted():
+                return False
+            current = ResourceGuard._active_pipeline_count
+            if current >= max_concurrent:
+                return False
+            ResourceGuard._active_pipeline_count += 1
+            return True
+        finally:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+
+    async def _redis_release_async(self) -> None:
+        """Release Redis semaphore (async). Safe to call even on failed acquire."""
+        client = await self._get_async_redis_client()
+        if client is None:
+            ResourceGuard._active_pipeline_count = max(
+                0, ResourceGuard._active_pipeline_count - 1
+            )
+            return
+        try:
+            sha = await client.script_load(_LUA_RELEASE_SEM)
+            await client.evalsha(sha, 1, _RESOURCE_SEM_KEY)
+        except Exception:
+            ResourceGuard._active_pipeline_count = max(
+                0, ResourceGuard._active_pipeline_count - 1
+            )
+        finally:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+
+    # ── Async context manager (preferred API) ──
+
+    @asynccontextmanager
+    async def acquire_pipeline(self, *, timeout: float = 5.0):
+        """Async context manager for pipeline admission.
+
+        Atomically acquires a pipeline slot. Yields True on success,
+        False if at capacity or Redis unavailable (production).
+
+        Automatically releases on exit, exception, or cancellation.
+
+        Usage::
+
+            async with resource_guard.acquire_pipeline() as acquired:
+                if not acquired:
+                    return JSONResponse(
+                        {"error": "RESOURCE_PRESSURE"},
+                        status_code=503,
+                        headers={"Retry-After": "30"},
+                    )
+                # ... pipeline work ...
+        """
+        acquired = False
+        try:
+            acquired = await asyncio.wait_for(
+                self._redis_acquire_async(self._thresholds.max_active_pipelines),
+                timeout=timeout,
+            )
+            yield acquired
+        except TimeoutError:
+            yield False
+        finally:
+            if acquired:
+                await self._redis_release_async()
+
     @classmethod
     def for_profile(cls, profile: DeploymentProfile) -> ResourceGuard:
         """Create a ResourceGuard with defaults for the deployment profile."""
         guard = cls()
         if profile == DeploymentProfile.CLOUD_API:
-            guard.max_input_bytes = 10 * 1024 * 1024
-            guard.max_pages = 50
-            guard.max_pixel_budget = 4000 * 4000 * 50
-            guard.max_remote_ocr_calls = 100
+            guard.max_input_bytes = 5 * 1024 * 1024   # 5MB (per task doc)
+            guard.max_pages = 30                       # 30 pages (per task doc)
+            guard.max_pixel_budget = 4000 * 4000 * 30
+            guard.max_remote_ocr_calls = 60            # ~2 calls/page for 30 pages
             guard.max_artifact_bytes = 50 * 1024 * 1024
             guard.max_pipeline_seconds = 1800
             guard.max_page_seconds = 120
+            guard.max_concurrent_documents = 1
+            guard.max_concurrent_pages = 1
             guard._thresholds = SystemThresholds(
                 max_active_pipelines=1,
             )

@@ -74,7 +74,7 @@ def _call_vl_sync(image_bytes: bytes, vl_config: dict) -> str:
     base_url = vl_config.get("base_url", _DEFAULT_VL_BASE_URL)
     model = vl_config.get("model", _DEFAULT_VL_MODEL)
 
-    from app.features.ocr_fix.router import OCRFixRouter, STRATEGY_MANUAL
+    from app.features.ocr_fix.router import STRATEGY_MANUAL, OCRFixRouter
 
     router = OCRFixRouter()
     router.configure({

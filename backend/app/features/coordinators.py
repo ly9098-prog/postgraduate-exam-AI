@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.module_result import ModuleError, ModuleResult
@@ -127,7 +126,6 @@ class OCRCoordinator:
 
         try:
             from app.features.ocr_gateway import OCRGateway
-            from app.core.ocr_request import OCRRequest
 
             # Extract VL config from context if available
             vl_api_token = ""

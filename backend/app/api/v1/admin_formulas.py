@@ -1,11 +1,10 @@
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
@@ -21,7 +20,20 @@ from app.models.formula import (
     FormulaImportItem,
     FormulaImportJob,
     FormulaTag,
-    UserFormulaFavorite,
+)
+from app.schemas.common import paginated_response
+from app.schemas.formula import (
+    FormulaBatchReview,
+    FormulaCardCreate,
+    FormulaCardUpdate,
+    FormulaCategoryCreate,
+    FormulaCategoryUpdate,
+    FormulaGraphAssetResponse,
+    FormulaImportItemReview,
+    FormulaReviewAction,
+    GraphAssetUpdate,
+    GraphConfirmRequest,
+    GraphSpec,
 )
 from app.services.formula_graph_asset_service import (
     MAX_IMAGE_SIZE,
@@ -33,33 +45,13 @@ from app.services.formula_graph_asset_service import (
 )
 from app.services.formula_graph_spec_service import (
     confirm_preview,
-    delete_generated_asset as delete_spec_generated_asset,
     generate_preview,
     get_batch_status,
     regenerate_asset,
     start_batch_generate,
 )
-from app.schemas.common import paginated_response
-from app.schemas.formula import (
-    FormulaBatchReview,
-    FormulaCardCreate,
-    FormulaCardResponse,
-    FormulaCardUpdate,
-    FormulaCategoryCreate,
-    FormulaCategoryUpdate,
-    FormulaGraphAssetResponse,
-    FormulaImportItemResponse,
-    FormulaImportItemReview,
-    FormulaImportJobResponse,
-    FormulaReviewAction,
-    GraphConfirmRequest,
-    GraphConfirmResponse,
-    GraphPreviewResponse,
-    GraphSpec,
-    QualityCheckResult,
-    GraphAssetUpdate,
-    GraphBatchGenerateResponse,
-    GraphBatchJobStatus,
+from app.services.formula_graph_spec_service import (
+    delete_generated_asset as delete_spec_generated_asset,
 )
 
 router = APIRouter(prefix="/api/admin/v1/formulas", tags=["admin-formulas"])

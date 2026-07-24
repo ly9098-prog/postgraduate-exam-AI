@@ -1,6 +1,5 @@
 import logging
 import re
-from datetime import datetime
 from math import ceil
 from uuid import uuid4
 
@@ -8,9 +7,9 @@ from fastapi import Request
 from sqlalchemy import String, case, cast, delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
 from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
+from app.core.time_utils import utcnow
 from app.features import question_pipeline
 from app.models.question_import import QuestionImport
 from app.schemas.admin_imports import (
@@ -1386,8 +1385,8 @@ async def list_subject_options(db: AsyncSession) -> list[dict]:
         return result_list
 
     # Fallback: extract distinct subject_ids from existing import data
-    from app.models.question_import import QuestionImport
     from app.models.admin import Subject
+    from app.models.question_import import QuestionImport
     fb = await db.execute(
         select(Subject.id, Subject.code, Subject.name)
         .join(QuestionImport, QuestionImport.subject_id == Subject.id)

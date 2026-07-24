@@ -15,7 +15,8 @@ with zero impact on return values.
 import difflib
 import re
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 _RE_STANDALONE_TOKEN = re.compile(r"(?<!\w)([ABCD])(?!\w)")
 _RE_BROKEN_ARROW_DASH = re.compile(r"[−–—]\s*>")

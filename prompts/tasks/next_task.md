@@ -1,448 +1,625 @@
-不要执行 A6“全量 apply 28 题”。下一步先完成 Audit Acceptance Gate、候选集收敛和分批迁移准备。当前仍然禁止修改正式数据库和正式存储。
+你是一名资深 Python/FastAPI、PostgreSQL、Redis 和分布式任务系统工程师。请直接审计并修复当前项目后端代码，不要只输出建议或伪代码。
 
-# ==================== 一、先复核当前审计报告中的三个异常
+## 一、项目运行约束
 
-当前 run：
+项目是 FastAPI + SQLAlchemy Async + PostgreSQL + Redis 的刷题与题库管理系统，生产服务器约为：
 
-artifacts/backfill/ds_sc/visual-v2.1/run_20260716_221101/legacy-audit/
+- CPU：2 核
+- 内存：约 1.8GB
+- Gunicorn + Uvicorn Worker
+- PostgreSQL、Redis、FastAPI、Nginx、管理端运行在同一台或同等级资源服务器上
 
-请读取并交叉核对：
+必须优先保证：
 
-- records.json
-- records.csv
-- segments.csv
-- assets.csv
-- summary.json
-- published-diff.json
-- approval.json
-- run-manifest.json
+1. 长期连续运行稳定。
+2. 不阻塞 FastAPI 事件循环。
+3. 不发生重复导入、重复发布、重复 OCR、重复 AI 调用。
+4. 服务发布和进程重启后任务状态可恢复。
+5. 队列、临时文件、Redis key、数据库日志不会无限增长。
+6. 资源不足时快速拒绝新任务，不允许通过无限排队导致 OOM。
 
-必须首先解释并修正以下问题。
+## 二、OCR 强制部署规则
 
-1. migration_eligible=510 明显过宽
+这是不可违反的硬约束：
 
-当前数据中有：
+### 本地环境 `local_import`
 
-- current=2
-- legacy=19
-- not_applicable=492
-- frozen=3
-- migration_eligible=510
+本地开发机可以使用：
 
-纯文字、无需 content image 的 not_applicable 记录不应是迁移候选。
+- PaddleOCR / PP-OCRv4
+- 本地 CPU 或 GPU
+- 本地 OCR 进程池
+- 外部轻量 OCR API
+- AI 纠错
 
-请区分：
+### 云端环境 `cloud_api` / `production`
 
-- migration_candidate：
-  未来确实存在视觉迁移动作的记录。
-- migration_eligible：
-  已通过所有阻断条件、预览和审批，可进入某个迁移批次的记录。
-- no_action：
-  不需要迁移的正常记录。
+云端服务器只能使用轻量外部 OCR API。
 
-建议规则：
+云端严禁：
 
-- visual_schema_state=not_applicable：
-  migration_candidate=false
-  migration_eligible=false
-  suggested_actions=[no_action]
-- visual_schema_state=current 且无漂移：
-  migration_candidate=false
-  migration_eligible=false
-  suggested_actions=[no_action]
-- legacy/missing/mixed/published_diverged：
-  才可能 migration_candidate=true。
-- 尚未生成预览、尚未审批、存在 blocker：
-  migration_eligible=false。
+- 导入或初始化 `paddleocr`
+- 导入或初始化 `paddle`
+- 加载任何本地 OCR 模型
+- 下载本地 OCR 模型
+- 创建本地 OCR 子进程或进程池
+- 使用本地 GPU OCR
+- 外部 OCR 失败后回退到本地 OCR
+- 为了通过依赖检查而要求安装 `requirements-ocr.txt`
 
-修正后重新生成 summary，不能再使用“所有非 frozen 记录都 eligible”的逻辑。
+云端外部 OCR 失败后只能：
 
-1. 复核 4 条 placeholder-only
+1. 按有限次数和指数退避重试外部 OCR；
+2. 使用轻量文本规则、已有 PDF 文本层或 AI 文本纠错；
+3. 标记为需要人工审核；
+4. 返回明确可重试错误。
 
-逐条检查：
+绝不允许静默回退到本地 PaddleOCR。
 
-- import_id=302
-- import_id=320
-- import_id=433
-- import_id=449
+请为此编写自动化测试，保证在 `APP_ENV=production` 或 `DEPLOYMENT_PROFILE=cloud_api` 时：
 
-输出每条记录的：
+- `sys.modules` 中不存在 `paddleocr`、`paddle`；
+- 不创建 OCR 子进程；
+- 不实例化本地 OCR adapter；
+- 图片导入和 PDF OCR 不检查本地 PaddleOCR 是否安装；
+- 外部 OCR 失败时也不会进入 legacy local OCR；
+- 启动配置不符合规则时应用直接启动失败。
 
-- 题干；
-- parsed_options；
-- Question.options，如已发布；
-- placeholder 命中 field_path；
-- requires_content_image；
-- visual_schema_state；
-- visual_kind；
-- page；
-- 是否存在可恢复的原始图形区域；
-- 推荐动作。
+## 三、必须优先修复的 P0 问题
 
-若 placeholder 表示图形选项被替换为文本占位符，则不得判定为：
+### P0-1：重写 DurableTaskQueue 的状态模型
 
-requires_content_image=false
-visual_schema_state=not_applicable
+当前任务队列的 processing list、lease、heartbeat、ack 和 reaper 使用不同版本的 JSON，可能造成任务重复执行和 processing 列表无限增长。
 
-应根据证据判定为：
+不要在 Redis list 中保存会被修改的完整 Task JSON，并依赖 `LREM` 精确匹配。
 
-requires_content_image=true
-visual_schema_state=missing
-visual_kind=option_images
+优先采用以下任一可靠方案：
 
-或在证据不足时：
+方案 A：Redis Streams + Consumer Group。
 
-requires_content_image=unknown
-visual_schema_state=unknown
-suggested_actions=[manual_review]
+方案 B：使用原子 Lua 脚本实现：
 
-不得仅因为没有 image segment 就认为题目是纯文字题。
+- ready queue 只存 task_id；
+- task payload/state 存 Hash；
+- processing lease 存 Sorted Set，score 为 lease 到期时间；
+- claim 原子完成 ready → processing；
+- heartbeat 原子更新 lease；
+- complete 原子删除 processing 和任务状态；
+- fail 原子增加 retry_count，并进入 retry ZSET 或 dead-letter；
+- reaper 只回收 lease 确实过期的 task_id；
+- 所有终态必须清理 processing；
+- 幂等 key 与入队必须在同一个原子操作中完成。
 
-1. 解释 19 条 legacy 的完整去向
+必须保证：
 
-当前报告称 legacy=19，但下一阶段只提到：
-
-“one pending legacy stem_diagram”
-
-请输出完整的 19 条 legacy 清单，每条包括：
-
-- import_id；
-- question_id；
-- page；
-- source_question_no；
-- visual_kind；
-- 当前 segment 数；
-- 当前 URL；
-- asset_state；
-- 是否已发布；
-- 是否与 placeholder 记录重叠；
-- 是否已有 visual-v2.1 候选 bbox；
-- suggested_actions；
-- blocker；
-- 建议迁移批次。
-
-不得使用模糊汇总隐藏其余 18 条记录。
-
-# ==================== 二、重新定义本次迁移候选集合
-
-生成：
-
-migration-candidate-review.json
-migration-candidate-review.csv
-
-候选集必须从真实审计维度动态推导，不得硬编码 28。
-
-至少分为：
-
-A. published_broken_assets
-
-当前预期包括：
-
-- import_id=407 → Question id=1
-- import_id=480 → Question id=3
-
-条件：
-
-- 已发布；
-- 学生端 content image 为 legacy；
-- 当前文件缺失或不可解码。
-
-优先级：P1。
-
-B. placeholder_missing_visuals
-
-当前待复核：
-
-- 302
-- 320
-- 433
-- 449
-
-只有确认它们确实需要图形选项后，才进入候选。
-
-优先级：P1 或 P2。
-
-C. remaining_legacy_content_images
-
-除 frozen Canary 以外的其他 legacy records。
-
-需要进一步区分：
-
-- stem_diagram；
-- option_images；
-- table；
-- code_or_formula；
-- source_snapshot_misuse；
-- unknown。
-
-D. frozen
-
-- 450
-- 452
-- 461
-
-只用于回归对照，不进入任何 apply 批次。
-
-E. no_action
-
-- 纯文字题；
-- current 且健康的题；
-- 不需要视觉迁移的题。
-
-每条候选必须包含：
-
-{
-"question_import_id": 0,
-"question_id": null,
-"candidate_group": "...",
-"priority": 0,
-"requires_content_image": true,
-"visual_kind": "...",
-"current_state": "...",
-"target_state": "visual-v2.1",
-"suggested_actions": [],
-"blockers": [],
-"preview_required": true,
-"approval_required": true,
-"migration_candidate": true,
-"migration_eligible": false
-}
-
-# ==================== 三、生成真实预览审批包
-
-在不更新数据库、不上传正式存储的前提下，为全部 migration_candidate 生成本地预览。
-
-若当前审计脚本已有 --generate-previews，则使用它；否则补齐该功能。
-
-每条需要视觉迁移的题至少生成：
-
-1. full-page-overlay
-
-整页低分辨率预览，绘制：
-
-- 当前 content bbox；
-- proposed content bbox；
-- question/source snapshot bbox；
-- 下一题边界；
-- 页眉排除区域。
-
-1. current-content-image
-
-当前学生端展示图片；文件缺失时显示明确诊断卡。
-
-1. proposed-content-image
-
-仅包含学生答题必需的：
-
-- 图；
-- 树；
-- 表；
-- 图形选项。
-
-不得包含：
-
-- 品牌页眉；
-- 完整题干，除非视觉本身不可与题干分割；
-- 下一道题；
-- 大面积空白。
-
-1. proposed-source-snapshot
-
-包含：
-
-- 当前题完整题干；
-- 所有题图；
-- 全部选项；
-- 合理安全边距。
-
-不得包含下一题和品牌页眉。
-
-1. published-render-preview
-
-对于已发布题，模拟最终 Question.content 的学生端渲染顺序，验证：
-
-题干 → content image → 选项
-
-不能只查看单张裁剪 PNG。
-
-输出：
-
-- review.html；
-- review-contact-sheet.html 或 PNG；
-- candidate-previews.json；
-- approval.json。
-
-每个候选必须有独立审批项：
-
-- requires_content_image_approval；
-- content_bbox_approval；
-- content_image_approval；
-- source_snapshot_approval；
-- segment_placement_approval；
-- published_sync_approval；
-- final_approval。
-
-所有审批默认 pending。
-
-# ==================== 四、增加真实数据验收测试
-
-现有 17 个测试通过后，再补充真实数据库回归测试。
-
-至少增加：
-
-1. 492 条 not_applicable 记录不得成为 migration_candidate 或 migration_eligible。
-2. current 且无漂移的记录不得成为 migration_candidate。
-3. 302、320、433、449 不得仅因为无 image segment 被自动判定为纯文字题。
-4. 所有 19 条 legacy 必须出现在 migration candidate 报告或带有明确的排除原因。
-5. migration_candidate 数量应等于候选明细数量，不能使用历史固定值 28。
-6. migration_eligible 只允许出现在：
-   - 无 blocker；
-   - preview quality gates 全部通过；
-   - 所有 required approvals 已 approved；
-     的记录中。
-7. approval 全部 pending 时，migration_eligible 必须为 0。
-8. frozen Canary 的 migration_candidate 和 migration_eligible 均为 false。
-9. published broken asset 407、480 必须为 P1。
-10. source snapshot 不得被当作 student-visible content image。
-11. 对候选脚本连续运行两次，候选明细和排序保持确定性。
-
-# ==================== 五、完成审批后再创建独立迁移脚本
-
-审计脚本不得获得 apply 能力。
-
-后续迁移必须使用独立脚本，例如：
-
-scripts/migrate_approved_question_visuals.py
-
-该脚本只允许读取：
-
-- 某个固定 audit run；
-- 对应 approval.json；
-- 对应 migration-candidate-review.json。
-
-迁移脚本必须检查：
-
-- run_id 一致；
-- DB hash 一致；
-- PDF hash 一致；
-- config hash 一致；
-- final_approval=approved；
-- 所有 applicable 子审批已 approved；
-- migration_candidate=true；
-- blockers 为空；
-- 非 frozen。
-
-任一不满足就拒绝执行。
-
-迁移脚本默认 --dry-run，只有显式 --apply 才允许写入。
-
-# ==================== 六、按批次迁移，禁止一次全量
-
-审批完成后按以下顺序实施。
-
-Batch 1：已发布且资源失效
-
-优先只处理：
-
-- import_id=407
-- import_id=480
+- 同一个 task_id 在任意时刻最多只有一个有效 owner；
+- heartbeat 可以真正延长 lease；
+- complete 后 reaper 永远不能重新入队；
+- Worker 崩溃后任务可恢复；
+- task 超过 lease 时间但 heartbeat 正常时不得被回收；
+- dead-letter 有上限、保留时间和管理接口；
+- processing、retry、dead 队列都有长度指标；
+- Redis 不可用时生产环境直接拒绝长任务，不得降级为进程内队列；
+- 本地开发模式才允许显式启用内存队列。
+
+增加以下测试：
+
+1. claim 后 processing 状态正确；
+2. heartbeat 延长 lease；
+3. complete 后 processing 为空；
+4. 运行时间超过初始 lease 但 heartbeat 正常时不重复执行；
+5. Worker 崩溃后 reaper 只恢复一次；
+6. 两个 Worker 并发 claim 同一任务时只有一个成功；
+7. 重复 enqueue 同一 task_id 只产生一个任务；
+8. retry 和 dead-letter 状态正确；
+9. Redis 重连后状态不丢失；
+10. processing 列表或 ZSET 不会随已完成任务增长。
+
+### P0-2：把导题 Worker 从 Web Worker 中拆出
+
+不要在每个 Gunicorn Web Worker 的 lifespan 中直接启动导题、PDF、OCR、公式批处理等长任务 Worker。
+
+请建立明确的进程角色，例如：
+
+- `PROCESS_ROLE=web`
+- `PROCESS_ROLE=worker`
+- `PROCESS_ROLE=scheduler`
 
 要求：
 
-- 生成新的 visual-v2.1 content image；
-- 生成完整 source snapshot；
-- 更新 QuestionImport.parsed_content；
-- 同步 Question.content；
-- Question.image_url 指向第一张学生可见 content image；
-- 普通题目接口可以看到新 content image；
-- 普通接口不得泄漏 source_snapshot_url；
-- 管理端审核接口可见 source snapshot；
-- 旧失效 URL 从学生可见内容中移除；
-- 旧数据保存在备份和迁移报告中。
+- web 进程只处理 HTTP、鉴权、轻量 DB 查询和任务入队；
+- worker 进程处理导题、外部 OCR、AI 修复、公式生成；
+- scheduler 进程处理定时任务，或者使用严格 leader election；
+- 在资源有限时 worker 并发默认只能为 1；
+- Web Worker 不得执行重型 pipeline；
+- worker 必须支持 SIGTERM：停止领取新任务，等待当前任务在规定时间内结束，不能结束则安全释放 lease；
+- 所有 `asyncio.create_task()` 必须保存引用、捕获异常、关闭时 cancel 并 await；
+- task reaper、pipeline worker、AI prewarm worker 都必须有明确的 start/stop；
+- 应用关闭时关闭 Redis、httpx、数据库 engine 和所有 executor。
 
-完成后停止，执行全量回归，不得立即继续 Batch 2。
+### P0-3：修复生产配置 fail-fast
 
-Batch 2：placeholder-only
+修复 `services/production_config_validator.py`。
 
-仅处理已人工确认需要 option_images 的：
+同步检查必须在存在错误时抛出 `SystemError`，不能只记录日志。
 
-- 302
-- 320
-- 433
-- 449
+生产环境至少验证：
 
-必须逐题确认：
+- `APP_SECRET` 长度和默认值；
+- PostgreSQL + asyncpg；
+- Redis 可连接；
+- Alembic 在 head；
+- CORS 无通配符、localhost；
+- OCR deployment profile 合法；
+- `OCR_USE_GPU=false`；
+- `OCR_EXECUTION_BACKEND` 必须为允许的外部 API backend 或 disabled；
+- 云端禁止 `local_process`；
+- 云端禁止 unsafe thread fallback；
+- 云端禁止 remote failure 回退到 local；
+- 外部 OCR URL 必须为配置的 HTTPS 地址，除非明确允许内网 HTTP；
+- 外部 OCR token 必须存在；
+- 云端启动时不得检测本地 PaddleOCR 包；
+- 生产临时目录、静态目录和持久存储可写；
+- worker 和 web 角色配置一致。
 
-- 每个图形选项是否分别裁剪；
-- 选项 A/B/C/D 与图片对应关系；
-- 是否需要多 region；
-- 前端最终排列是否正确。
+增加启动配置参数化测试，非法组合必须启动失败。
 
-Batch 3：其余 approved legacy
+### P0-4：修复请求作用域 Session 被后台任务复用
 
-按 visual_kind 分组，每批建议不超过 5～10 题：
+检查所有 FastAPI BackgroundTasks 和 `asyncio.create_task()`。
 
-- stem_diagram；
-- option_images；
-- table；
-- 其他。
+禁止把请求依赖提供的 `AsyncSession` 传入响应之后执行的后台任务。
 
-每批完成后：
+例如数学图片处理任务必须：
 
-- 重新运行完整 audit；
-- 检查 baseline diff；
-- 检查 published diff；
-- 检查幂等；
-- 人工抽查；
-- 再允许进入下一批。
+```python
+async with async_session() as db:
+    ...
+```
 
-严禁直接执行“全量 apply 28 题”。
+自行创建、提交、回滚和关闭 Session。
 
-# ==================== 七、Batch 1 迁移前必须提交 dry-run 报告
+所有后台任务必须只接收可序列化 ID、文件对象引用和配置，不接收：
 
-下一次交付只做到 Batch 1 dry-run，不要正式 apply。
+- request 对象；
+- UploadFile；
+- 请求作用域 Session；
+- ORM 实例；
+- 内存闭包中的 pipeline store。
 
-输出：
+## 四、OCR 架构修复
 
-batch-1-dry-run/
-├── manifest.json
-├── targets.json
-├── before.json
-├── after-proposed.json
-├── db-diff.json
-├── file-plan.json
-├── rollback-plan.json
-├── previews/
-├── review.html
-└── approval.json
+### 1. 统一 profile 检测
 
-dry-run 必须保证：
+所有模块必须调用同一个：
 
-- 不修改 DB；
-- 不上传正式存储；
-- 不修改正式静态文件；
-- 只在 run 输出目录写预览；
-- 显示拟生成的 storage key；
-- 显示 QuestionImport 和 Question 的 before/after；
-- 显示 segments 的插入位置；
-- 显示 image_url 的拟更新值；
-- 显示 source snapshot 是否保持后台专用；
-- 显示回滚所需的完整旧值。
+```python
+detect_deployment_profile()
+```
 
-# ==================== 八、当前阶段完成标准
+禁止各自使用不同的：
 
-本阶段完成后报告：
+- `APP_ENV`
+- `DEPLOY_PROFILE`
+- `DEPLOYMENT_PROFILE`
+- 默认 `"local_import"`
 
-1. 修正后的 migration_candidate 数量。
-2. 修正后的 migration_eligible 数量。
-3. 492 条 not_applicable 是否全部排除。
-4. 4 条 placeholder 的逐题判定。
-5. 19 条 legacy 的完整候选/排除清单。
-6. published broken assets 407、480 的预览。
-7. 所有候选的 preview quality gate。
-8. 所有待审批项数量。
-9. 新增测试命令和结果。
-10. Batch 1 dry-run 报告路径。
-11. 确认没有执行任何 DB 或正式 storage 写操作。
+`OCRGateway` 构造时必须显式传入已解析的 profile，不能自行默认成 `local_import`。
 
-完成这些内容后停止，等待人工批准 Batch 1。不要执行正式 apply，不要开始 Batch 2 或 Batch 3。
+### 2. 云端移除本地依赖检查
+
+修复图片导入中无条件执行的：
+
+```python
+importlib.util.find_spec("paddleocr")
+```
+
+只有 `local_process` backend 才检查本地 OCR 依赖。
+
+外部 API backend 只检查：
+
+- URL；
+- token；
+- timeout；
+- 健康状态；
+- 配额和并发。
+
+### 3. 删除云端 legacy local fallback
+
+审计并修改：
+
+- `services/ocr_service.py`
+- `services/ocr_executor_service.py`
+- `features/pipeline_orchestrator.py`
+- `features/ocr_gateway.py`
+- `core/ocr_process_pool.py`
+- 所有 `reset_ocr_engine()` 调用
+
+在 cloud profile 中：
+
+- Gateway 失败后不得调用 legacy executor；
+- 不得调用 `reset_ocr_engine()`；
+- 不得导入 `ocr_process_pool`；
+- 不得尝试本地文字 fallback；
+- fallback chain 必须在执行前和执行后都校验；
+- 发现本地 backend 时记录安全错误并终止该 OCR 路由。
+
+### 4. 外部 OCR 客户端
+
+外部 OCR 客户端必须：
+
+- 复用单例 `httpx.AsyncClient`；
+- 设置 connect、read、write、pool timeout；
+- 设置最大连接数；
+- 使用全局并发信号量；
+- 有有限重试、指数退避和随机抖动；
+- 仅对连接失败、429、502、503、504 重试；
+- 不对业务 4xx 无限重试；
+- 有 circuit breaker；
+- 有请求大小限制；
+- 有响应大小限制；
+- token 不出现在 URL、日志和异常中；
+- shutdown 时关闭客户端。
+
+云端总 OCR 并发必须是跨 Web/Worker 进程可控的，必要时使用 Redis semaphore，而不是只有进程内 Semaphore。
+
+## 五、任务输入和文件持久化
+
+当前 durable task 不得依赖本地 `/tmp` 路径或 24 小时缓存中的 `_file_path`。
+
+改为：
+
+1. 上传时流式写入受控 staging storage；
+2. 生成不可变对象 ID、SHA-256、大小和 MIME；
+3. task payload 只保存 object_id；
+4. worker 根据 object_id 获取文件；
+5. 完成、失败超过保留期或取消后统一清理；
+6. 重启和容器重建后文件仍可读取；
+7. 定期清理 orphan staging objects；
+8. 临时文件目录设置磁盘配额和最大年龄；
+9. 启动时清理超过安全年龄的遗留临时文件；
+10. 不允许用户提供任意服务器路径。
+
+如果生产暂时使用本地磁盘，则必须使用 Docker volume 中的持久目录，而不是容器 `/tmp`。
+
+## 六、PDF 和图片内存治理
+
+重构 `pdf_renderer_service`：
+
+- 不允许一次把所有页面 PNG 保存在 `dict[int, bytes]`；
+- 使用 page window 或 async iterator，每次最多保留 1 页，云端默认 1；
+- 页面处理完成立即释放 bytes、Pixmap 和临时文件；
+- 需要跨阶段使用时保存对象引用，不保存全量 bytes；
+- `ThreadPoolExecutor` 必须真正传给 `run_in_executor`，或者删除无效 executor；
+- PDF 渲染、PIL 解码、压缩、PyMuPDF 操作必须在受限 executor 中运行；
+- executor 队列必须有上限，队列满返回 429/503；
+- 避免同时在内存和磁盘保存完整副本；
+- 处理后明确关闭 PIL Image、PyMuPDF Document 和 BytesIO；
+- 防止 decompression bomb；
+- 校验文件 magic、页数、像素、尺寸、文件大小和压缩比。
+
+云端建议默认限制：
+
+- 单文件 5MB，可配置但不得默认 200MB；
+- PDF 最多 30 页；
+- 同时处理文档数 1；
+- 同时渲染页面数 1；
+- 单页像素预算；
+- 外部 OCR 调用总数预算；
+- pipeline 总超时；
+- 临时磁盘总预算。
+
+不要只依赖 OCRProfile；所有上传入口、resume、后台管理入口和内部接口都必须走同一套校验。
+
+## 七、消除事件循环阻塞
+
+审计全部 `async def`，重点修复：
+
+- PIL `Image.open/resize/save`
+- PyMuPDF `fitz.open/get_pixmap`
+- 本地 `open/read/write/remove`
+- 哈希大文件
+- 腾讯 COS 同步 SDK
+- Excel 解析
+- 图片压缩
+- 公式渲染
+- 大型 JSON 序列化
+- CPU 密集文本拆题和规则分析
+
+处理原则：
+
+- 小型异步文件 I/O 可用 aiofiles；
+- CPU 或阻塞 SDK 放入专用、受限 executor；
+- 不得使用无限制默认线程池承接所有重任务；
+- 不得在持有数据库事务时执行外部 API、文件上传或 CPU 重任务；
+- 外部网络请求完成后再开启短事务写库；
+- 对 executor 任务增加 timeout 和取消策略。
+
+修复 `storage_backend.py`：
+
+- LocalFileStorage 的 async 方法不得直接同步写文件；
+- COS SDK 调用必须 offload 或改用异步客户端；
+- 图片压缩不得在路由事件循环中直接运行；
+- 上传失败后的 local fallback 必须由配置控制，生产 COS 失败时不得静默写入容器本地磁盘。
+
+## 八、Redis 和 AI 预热修复
+
+AI prewarm 不能继续使用无确认语义的 `BLPOP`。
+
+统一复用可靠任务队列，至少支持：
+
+- processing 状态；
+- ack；
+- lease；
+- heartbeat；
+- crash recovery；
+- retry；
+- dead-letter；
+- 幂等；
+- 限流。
+
+禁止 Redis 不可用时降级到裸 `asyncio.create_task()`。
+
+AI 调用增加：
+
+- 进程内并发上限；
+- 跨进程并发上限；
+- 用户级、功能级和全局限流；
+- 每日/月度 Token 限额必须原子计数；
+- circuit breaker；
+- 超时；
+- 请求取消；
+- 429 重试；
+- 缓存；
+- 避免 stampede；
+- shutdown 时关闭共享 httpx client。
+
+## 九、Scheduler 修复
+
+修复番茄钟锁逻辑：
+
+```python
+if not got_lock:
+    return
+```
+
+不要在未获得锁时继续执行扫描。
+
+所有 scheduler 应采用以下一种方式：
+
+- 独立 scheduler 进程；
+- PostgreSQL advisory lock；
+- 可续租的 Redis leader lock。
+
+要求：
+
+- 锁 TTL 小于任务最长时间时必须续租；
+- 未获得锁立即退出；
+- 调度任务必须有批次上限；
+- 调度器不能在每个 Web Worker 中无条件启动；
+- refresh token cleanup 也必须有 leader 或数据库幂等批处理；
+- 审计清理任务运行超过锁 TTL 时不能被第二实例重入；
+- 增加 scheduler duration、skipped、failed、processed 指标。
+
+## 十、数据库性能修复
+
+根据 2 核、1.8GB 约束重新计算连接预算。
+
+Gunicorn Worker 数、后台 Worker 数、scheduler 和运维连接的总和必须不超过 PostgreSQL 安全连接预算。
+
+建议从较小值开始，例如每个 Web Worker：
+
+- pool_size 2～3；
+- max_overflow 1～2；
+- 较短 pool_timeout；
+- 总连接数写入启动日志。
+
+具体值必须通过压测确定。
+
+批量消除以下 N+1：
+
+- 知识路径逐节点掌握度查询；
+- mastery 更新逐知识点查询；
+- practice 跨学科循环查询；
+- AI prewarm 逐错题查询；
+- review 逐题查询；
+- 批量知识点 get-or-create；
+- 导入逐题 flush/refresh；
+- 公式批量逐条 get。
+
+使用：
+
+- 一次性 `IN` 查询；
+- JOIN；
+- selectinload；
+- PostgreSQL upsert；
+- bulk insert/update；
+- 批量返回映射；
+- 必要的唯一索引。
+
+审计所有 `ORDER BY random()`，大表改用：
+
+- 随机 ID 范围；
+- 预计算随机桶；
+- TABLESAMPLE；
+- 候选集合随机；
+- 缓存候选池。
+
+对以下查询执行 PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)`：
+
+- 今日复习；
+- 错题列表和统计；
+- practice 推荐；
+- 知识状态；
+- pipeline 状态；
+- audit log cleanup；
+- pomodoro 到期扫描；
+- task 管理查询；
+- question import review queue。
+
+缺失索引通过 Alembic migration 增加，不能只修改 ORM 模型。
+
+## 十一、SSE 和轮询
+
+当前批量图片 SSE 会按 0.5～1.5 秒为每个客户端建立新数据库 Session 并查询。
+
+修复为：
+
+- Redis Pub/Sub、Streams 或 PostgreSQL LISTEN/NOTIFY 推送；
+- 无新事件时降低查询频率；
+- 限制单用户并发 SSE 连接数；
+- 设置连接最长时间；
+- 反向代理断开后立即取消 generator；
+- heartbeat 不触发数据库查询；
+- 终态后及时关闭；
+- 记录 active SSE connections。
+
+## 十二、资源保护必须真正接入主路径
+
+项目中存在多套 ResourceGuard，但当前生产 legacy pipeline 并未可靠使用。
+
+请合并为一个实现并接入所有导入入口。
+
+至少检查：
+
+- RSS；
+- 系统可用内存；
+- 临时磁盘；
+- 当前 pipeline 数；
+- OCR 调用并发；
+- 页面像素预算；
+- 外部 API 调用预算；
+- 队列长度；
+- DB pool 使用率；
+- event-loop lag。
+
+资源不足时：
+
+- 不再接收新导入任务；
+- 返回稳定错误码和 Retry-After；
+- 不允许先入无限队列再等待；
+- 不影响登录、刷题、答题提交等核心轻量接口。
+
+## 十三、可观测性和健康检查
+
+增加指标和结构化日志：
+
+- event-loop lag；
+- HTTP p50/p95/p99；
+- DB pool checked-out/wait；
+- 慢 SQL；
+- task ready/processing/retry/dead；
+- task execution duration；
+- lease renewal failure；
+- duplicate execution prevented；
+- pipeline stage duration；
+- OCR external request duration、429、timeout、circuit state；
+- AI duration、token、timeout；
+- RSS、内存和临时磁盘；
+- active SSE；
+- scheduler lock acquired/skipped；
+- orphan temp files cleaned。
+
+`/health/live` 只表示进程存活。
+
+`/health/ready` 必须检查：
+
+- PostgreSQL；
+- Redis；
+- Alembic；
+- 当前角色依赖；
+- worker queue；
+- 云端 OCR 外部 API 配置；
+- 磁盘可写和剩余容量；
+- 生产 OCR 隔离规则。
+
+不要让外部 OCR 短暂抖动直接杀死 Web readiness，可区分 degraded 和 not-ready。
+
+## 十四、测试和验收标准
+
+必须新增测试目录和自动化测试。
+
+### 单元测试
+
+- 配置 profile 判定；
+- 云端 OCR 禁止本地 fallback；
+- TaskQueue claim/heartbeat/ack/reaper；
+- scheduler lock；
+- 文件清理；
+- PDF 页窗口；
+- ResourceGuard；
+- 批量 SQL 行为。
+
+### 集成测试
+
+使用真实 Redis 和 PostgreSQL：
+
+- 双 Worker 并发 claim；
+- Worker 在执行中被 kill；
+- lease 恢复；
+- complete 后不重复；
+- Redis 短暂断连；
+- PostgreSQL 连接池耗尽；
+- 外部 OCR timeout/429/500；
+- 服务 SIGTERM；
+- 容器重启后任务恢复。
+
+### 云端 OCR 隔离测试
+
+启动 cloud_api 配置后：
+
+- monkeypatch `__import__`，任何 `paddle` 或 `paddleocr` 导入立即让测试失败；
+- 检查没有 OCR 子进程；
+- 检查没有 GPU 初始化；
+- 外部 OCR 返回失败时任务进入 review 或明确失败；
+- 不安装 OCR requirements 时服务仍能正常启动和调用外部 OCR。
+
+### 压力测试
+
+在接近 2 核、1.8GB 的容器限制下测试：
+
+1. 普通 API 并发；
+2. 一个 PDF 导题任务同时处理普通请求；
+3. 多个导入请求快速提交；
+4. 外部 OCR 延迟和失败；
+5. SSE 长连接；
+6. 数据库达到百万级练习记录后的核心查询。
+
+验收要求：
+
+- 不发生 OOM；
+- Web API 不被导题任务长期阻塞；
+- event-loop lag 在明确阈值以内；
+- 同一 task_id 执行次数始终为 1，除非前一次明确失败并进入 retry；
+- processing、retry、临时文件不会持续增长；
+- graceful shutdown 后无未回收 task；
+- cloud_api 环境未加载任何本地 OCR 模型；
+- 所有新增测试通过；
+- `compileall`、lint、类型检查通过。
+
+## 十五、输出要求
+
+请按以下顺序工作并输出结果：
+
+1. 先列出确认的问题及代码路径；
+2. 先修复所有 P0，再处理 P1；
+3. 直接修改实际代码；
+4. 给出新增或修改的环境变量；
+5. 给出 Alembic migration；
+6. 给出完整测试；
+7. 给出旧配置兼容和回滚方案；
+8. 给出生产部署步骤；
+9. 给出压测方法和验收结果；
+10. 最后列出仍未解决的风险。
+
+禁止：
+
+- 只写 TODO；
+- 只提供设计说明而不改代码；
+- 用 `except Exception: pass` 隐藏问题；
+- 通过增加超时掩盖死锁或阻塞；
+- 通过扩大内存和 Worker 数掩盖架构问题；
+- 在生产环境降级为内存队列；
+- 在云端静默回退到本地 OCR；
+- 把同步重任务直接放进 FastAPI 事件循环；
+- 声称“durable”但仍依赖临时文件或进程内状态。

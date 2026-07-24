@@ -272,7 +272,7 @@ class DocumentValidator:
                 if isinstance(link, dict):
                     if not link.get("target_page_id") or not link.get("source_page_id"):
                         warnings.append(
-                            f"INCOMPLETE_CROSS_PAGE_LINK: missing source or target"
+                            "INCOMPLETE_CROSS_PAGE_LINK: missing source or target"
                         )
         except Exception:
             pass

@@ -78,6 +78,11 @@ def _is_restricted_environment() -> bool:
             APP_ENV == "production"
             or detect_deployment_profile() == DeploymentProfile.CLOUD_API
         )
+
+    When APP_ENV is explicitly set to production, we always validate.
+    When profile detection itself fails, we log a warning but do NOT
+    silently skip validation — a corrupted profile should not bypass
+    production safety checks.
     """
     if settings.APP_ENV == "production":
         return True
@@ -85,7 +90,11 @@ def _is_restricted_environment() -> bool:
         profile = detect_deployment_profile()
         return profile == DeploymentProfile.CLOUD_API
     except Exception:
-        return False
+        logger.warning(
+            "Deployment profile detection failed — assuming restricted environment "
+            "to avoid skipping production safety checks"
+        )
+        return True  # fail closed: validate when uncertain
 
 
 # ── sync checks ──
@@ -184,11 +193,11 @@ def _check_ocr_production_rules(errors: list[str]) -> None:
         errors.append("生产环境必须设置 OCR_USE_GPU=false")
 
     exec_backend = (settings.OCR_EXECUTION_BACKEND or "").lower()
-    ALLOWED_CLOUD_BACKENDS = {"paddlex_http", "disabled"}
-    if exec_backend not in ALLOWED_CLOUD_BACKENDS:
+    allowed_cloud_backends = {"paddlex_http", "disabled"}
+    if exec_backend not in allowed_cloud_backends:
         errors.append(
             f"生产环境 OCR_EXECUTION_BACKEND='{exec_backend}' 不允许。"
-            f" 必须为以下之一: {', '.join(sorted(ALLOWED_CLOUD_BACKENDS))}"
+            f" 必须为以下之一: {', '.join(sorted(allowed_cloud_backends))}"
         )
 
     # Check OCR profile GPU consistency
@@ -240,27 +249,28 @@ def _check_ocr_production_rules(errors: list[str]) -> None:
 
 
 def _check_ocr_no_local_deps(errors: list[str]) -> None:
-    """Fail startup if PaddleOCR is installed in cloud_api deployment.
+    """Fail startup if local OCR modules are loaded in cloud_api deployment.
 
     In cloud_api, the process must never import or initialize local OCR
-    packages. Having paddleocr/paddle installed represents a configuration
-    hazard that could lead to accidental local fallback on failure.
+    packages. We check sys.modules for already-loaded banned modules,
+    but never probe for their availability (no find_spec / import attempt).
+
+    Config-level OCR checks (backend, GPU, fallback flags) are handled
+    separately by _check_ocr_production_rules.
     """
+    import sys
+
     profile = detect_deployment_profile()
     if profile != DeploymentProfile.CLOUD_API:
         return
 
     banned_modules = ["paddleocr", "paddle"]
-    for mod in banned_modules:
-        try:
-            import importlib.util
-            if importlib.util.find_spec(mod) is not None:
-                errors.append(
-                    f"cloud_api 部署检测到 {mod} 已安装。"
-                    f" 云端部署不得包含本地 OCR 包。请卸载: pip uninstall {mod}"
-                )
-        except Exception:
-            pass
+    loaded = [mod for mod in banned_modules if mod in sys.modules]
+    if loaded:
+        errors.append(
+            f"cloud_api 部署检测到已加载的本地 OCR 模块: {loaded}。"
+            f" 云端部署不得包含本地 OCR 包。请卸载: pip uninstall {' '.join(loaded)}"
+        )
 
 
 def _check_staging_production(errors: list[str]) -> None:

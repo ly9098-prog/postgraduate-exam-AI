@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -121,8 +121,8 @@ class GlobalHashIndex:
           ``QuestionImport``（同批次内 chunk 间互查 / P2-5 resume 跨多个
           已成功 chunk 互查）。``batch_ids`` 优先于 ``batch_id``。
         """
-        from app.models.question import Question
         from app.models.admin import Subject
+        from app.models.question import Question
 
         self._recent_days = _resolve_recent_days(recent_days)
         self._max_size = _resolve_max_size()
@@ -133,7 +133,7 @@ class GlobalHashIndex:
             Question.question_hash.isnot(None),
         ]
         if self._recent_days > 0:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=self._recent_days)
+            cutoff = datetime.now(UTC) - timedelta(days=self._recent_days)
             question_filter.append(Question.created_at >= cutoff)
 
         # 阈值检查（只 count，不真的取行）。SQL fallback 下两个 index 都

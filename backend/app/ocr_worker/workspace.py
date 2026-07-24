@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -112,7 +112,7 @@ class JobWorkspace:
         """Update specific manifest fields and return the full manifest."""
         manifest = self.read_manifest() or {}
         manifest.update(fields)
-        manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+        manifest["updated_at"] = datetime.now(UTC).isoformat()
         self.write_manifest(manifest)
         return manifest
 

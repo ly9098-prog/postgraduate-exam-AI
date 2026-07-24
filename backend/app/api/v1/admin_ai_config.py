@@ -3,8 +3,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_roles
 from app.core.database import get_db
-from app.schemas.admin_ai_config import AdminAiModelConfigCreateRequest, AdminAiModelConfigPatchRequest, AdminAiModelConfigResponse, AdminAiConfigsPatchRequest, AdminAiConfigsResponse, ModelTestConnectionRequest, ModelTestConnectionResponse
-from app.services.admin_ai_config_service import create_model, delete_model, get_all_configs, list_models, patch_configs, patch_model, test_model_connection
+from app.schemas.admin_ai_config import (
+    AdminAiConfigsPatchRequest,
+    AdminAiConfigsResponse,
+    AdminAiModelConfigCreateRequest,
+    AdminAiModelConfigPatchRequest,
+    AdminAiModelConfigResponse,
+    ModelTestConnectionRequest,
+    ModelTestConnectionResponse,
+)
+from app.services.admin_ai_config_service import (
+    create_model,
+    delete_model,
+    get_all_configs,
+    list_models,
+    patch_configs,
+    patch_model,
+    test_model_connection,
+)
 
 router = APIRouter(prefix="/api/admin/v1", tags=["admin-ai-config"])
 

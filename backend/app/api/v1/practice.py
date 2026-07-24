@@ -10,7 +10,7 @@ from app.core.database import get_db
 
 logger = logging.getLogger(__name__)
 from app.core.security import get_current_user
-from app.models.question import Question
+from app.features.text_normalizer import _split_inline_roman_subitems
 from app.models.user import User
 from app.schemas.common import paginated_response
 from app.schemas.practice import (
@@ -18,13 +18,12 @@ from app.schemas.practice import (
     AnswerSubmit,
     BatchSubmitRequest,
     BatchSubmitResponse,
-    PracticeQuestionsResponse,
     PracticeQuestion,
+    PracticeQuestionsResponse,
     PracticeRecordItem,
     PracticeStatsResponse,
 )
 from app.services import practice_service as svc
-from app.features.text_normalizer import _split_inline_roman_subitems
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 
 # Regex: lines ending with a trailing operator (OCR-split code expressions)
@@ -501,6 +500,7 @@ async def list_records(
     current_user: User = Depends(get_current_user),
 ):
     from sqlalchemy import and_, func, select
+
     from app.models.practice_record import PracticeRecord as PR
 
     conds = [PR.user_id == current_user.id]
@@ -542,12 +542,12 @@ async def get_knowledge_states(
 
     可选 status 过滤：weak / normal / good / mastered / observing / possible_weak / possible_mastered。
     """
-    from app.services import mastery_service
+    from sqlalchemy import select as sa_select
 
     # 获取所有科目的状态（跨科目汇总）
     # 先获取用户有记录的科目列表
     from app.models.user_knowledge_state import UserKnowledgeState
-    from sqlalchemy import select as sa_select
+    from app.services import mastery_service
 
     subjects_result = await db.execute(
         sa_select(UserKnowledgeState.subject)
@@ -604,10 +604,10 @@ async def get_weak_knowledge_points(
 
     主要为 V4 智能推荐提供数据基础。
     """
-    from app.services import mastery_service
+    from sqlalchemy import select as sa_select
+
     from app.models.user_knowledge_state import UserKnowledgeState
-    from app.models.knowledge_point import KnowledgePoint
-    from sqlalchemy import select as sa_select, or_
+    from app.services import mastery_service
 
     # 获取用户有记录的科目
     subjects_result = await db.execute(

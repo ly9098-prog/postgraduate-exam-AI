@@ -1,14 +1,13 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.cache import cache, make_cache_key
+from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.ai_diagnosis import AiDiagnosis
 from app.schemas.dashboard_insights import DashboardInsightsResponse
 from app.schemas.dashboard_llm import DashboardLlmAnalysisRequest, DashboardLlmAnalysisResponse
-from app.schemas.stats_v2 import DashboardV2Response
 from app.schemas.growth import GrowthProfile
 from app.schemas.stats import (
     BehaviorStats,
@@ -18,6 +17,7 @@ from app.schemas.stats import (
     SubjectStats,
     TrendPoint,
 )
+from app.schemas.stats_v2 import DashboardV2Response
 from app.services import stats_service as svc
 
 router = APIRouter(prefix="/api/v1/stats")

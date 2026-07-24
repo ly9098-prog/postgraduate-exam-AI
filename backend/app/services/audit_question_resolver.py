@@ -10,13 +10,11 @@ Priority chain (highest first):
 """
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin import Subject
 from app.models.question import Question
 from app.schemas.admin_audit import QuestionAuditDetail
-
 
 # ── Content text extraction ──
 

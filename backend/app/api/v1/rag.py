@@ -3,7 +3,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.security import get_current_user
 from app.models.user import User
 from rag.context_builder import build_context
-from rag.retriever import smart_retrieve
 
 router = APIRouter(prefix="/api/v1/rag")
 

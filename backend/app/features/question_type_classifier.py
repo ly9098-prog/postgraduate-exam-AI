@@ -64,10 +64,6 @@ _STRICT_BROAD_OPTION = re.compile(
 # Question type constants (from unified definition)
 from app.features.question_type import (
     QT_SINGLE_CHOICE,
-    QT_MULTIPLE_CHOICE,
-    QT_TRUE_FALSE,
-    QT_FILL_BLANK,
-    QT_SUBJECTIVE,
 )
 
 

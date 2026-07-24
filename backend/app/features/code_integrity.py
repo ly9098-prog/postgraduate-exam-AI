@@ -770,7 +770,7 @@ def _get_unfenced_remaining_text(text: str, fenced_result: dict) -> str:
 
 
 # ── Garbled code block detection (P0: Problem A from audit) ──
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

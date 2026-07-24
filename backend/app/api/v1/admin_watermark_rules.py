@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
 from app.core.admin_security import require_permissions
+from app.core.database import get_db
 from app.services import watermark_service
 
 router = APIRouter(prefix="/api/admin/v1/watermark-rules")

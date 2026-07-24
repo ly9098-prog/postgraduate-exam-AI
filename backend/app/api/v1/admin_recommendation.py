@@ -23,7 +23,6 @@ from app.schemas.recommendation import (
     SeedStrategiesResponse,
     StrategyConfigCreate,
     StrategyConfigResponse,
-    StrategyConfigUpdate,
     VariantComparisonResponse,
 )
 

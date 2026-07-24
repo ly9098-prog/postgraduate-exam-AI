@@ -27,12 +27,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 from app.core.module_result import ModuleError, ModuleResult
-from app.core.deployment_profile import detect_deployment_profile
 from app.core.ocr_request import OCRRequest
-from app.core.ocr_types import STABLE_ERROR_CODES, OcrPageResult, WorkerResult
+from app.core.ocr_types import STABLE_ERROR_CODES, WorkerResult
+from app.features.ocr_adapter import AdapterRegistry, AdapterSelector
 from app.features.page_stream import RenderedPage
-from app.features.ocr_adapter import AdapterRegistry, AdapterSelector, OcrAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class OCRGateway:
         selector: AdapterSelector | None = None,
         mode: str = "",
         *,
-        profile: str = "",
+        profile: DeploymentProfile | str | None = None,
         capabilities: dict | None = None,
         # Remote adapter config (from DB resolution, Sprint 4D)
         vl_api_token: str = "",
@@ -111,7 +111,17 @@ class OCRGateway:
         worker_client: Any = None,
     ) -> None:
         self._mode = mode or _OCR_GATEWAY_MODE
-        self._profile = profile or detect_deployment_profile().value
+        # Normalize profile to enum
+        if profile is None:
+            self._profile = detect_deployment_profile()
+        elif isinstance(profile, DeploymentProfile):
+            self._profile = profile
+        else:
+            # Accept string for backward compatibility
+            try:
+                self._profile = DeploymentProfile(profile)
+            except ValueError:
+                self._profile = detect_deployment_profile()
         self._registry = registry or AdapterRegistry()
         self._selector = selector or AdapterSelector(self._registry)
 
@@ -358,7 +368,7 @@ class OCRGateway:
         images: list[tuple[int, bytes]],
     ) -> list[WorkerResult]:
         """Legacy OCR path via thread pool (dev only, unsafe_thread_fallback)."""
-        from app.services.ocr_service import ocr_pages_with_boxes, ocr_pages
+        from app.services.ocr_service import ocr_pages_with_boxes
 
         try:
             results = ocr_pages_with_boxes(images, skip_rotation=True)
@@ -489,7 +499,7 @@ class OCRGateway:
                     "OCRGateway: %s failed (recoverable=%s), trying next",
                     backend_name, result.error.recoverable if result.error else "?",
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("OCRGateway: %s timed out after %ds", backend_name, _OCR_TIMEOUT_SECONDS)
             except Exception as e:
                 logger.warning("OCRGateway: %s error: %s", backend_name, e, exc_info=True)
@@ -532,13 +542,13 @@ class OCRGateway:
         try:
             from app.features.ocr_adapter import PaddleOCRLocalAdapter
 
-            if self._profile == "local_import":
+            if self._profile == DeploymentProfile.LOCAL_IMPORT:
                 self._registry.register_ocr(PaddleOCRLocalAdapter(engine="paddleocr"))
-                logger.info("OCRGateway[%s]: registered PaddleOCRLocalAdapter", self._profile)
+                logger.info("OCRGateway[%s]: registered PaddleOCRLocalAdapter", self._profile.value)
             else:
                 logger.info(
                     "OCRGateway[%s]: skipping PaddleOCRLocalAdapter (cloud profile)",
-                    self._profile,
+                    self._profile.value,
                 )
         except Exception as e:
             logger.debug("OCRGateway: could not register local adapter: %s", e)
@@ -562,7 +572,7 @@ class OCRGateway:
             ))
             logger.info(
                 "OCRGateway[%s]: registered PaddleOCRVLDocumentAdapter (token=%s endpoint=%s)",
-                self._profile,
+                self._profile.value,
                 "present" if self._vl_api_token else "empty",
                 self._vl_base_url or "default",
             )
@@ -573,7 +583,7 @@ class OCRGateway:
 
     def _get_forbidden_fallback(self) -> list[str]:
         """Return backends that are forbidden as fallback for the current profile."""
-        if self._profile == "cloud_api":
+        if self._profile == DeploymentProfile.CLOUD_API:
             # cloud_api must never fall back to local full PaddleOCR.
             # paddleocr-vl is a REMOTE API adapter — it IS allowed.
             return ["paddleocr", "rule_fallback"]  # rule_fallback is local-only
@@ -586,7 +596,7 @@ class OCRGateway:
         if filtered != fallback_chain:
             logger.warning(
                 "OCRGateway[%s]: removed forbidden fallbacks %s → %s",
-                self._profile,
+                self._profile.value,
                 [b for b in fallback_chain if b in forbidden],
                 filtered,
             )

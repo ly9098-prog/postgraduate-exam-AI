@@ -1,7 +1,7 @@
 """推荐日志服务 — 记录推荐→作答反馈闭环。"""
 import logging
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow

@@ -21,10 +21,8 @@ from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass, field
-from typing import Any
 
 from app.core.document_ir import BBox, PageIR, RegionIR, RegionType
-
 
 # ---------------------------------------------------------------------------
 # Exceptions

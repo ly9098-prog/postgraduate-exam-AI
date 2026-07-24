@@ -6,9 +6,8 @@ read server CPU/memory/GPU state directly — always go through this context.
 
 from __future__ import annotations
 
-import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile

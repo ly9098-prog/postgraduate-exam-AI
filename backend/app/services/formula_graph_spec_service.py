@@ -6,22 +6,21 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.formula import FormulaCard, FormulaGraphAsset, FormulaGraphPreview
-from app.services.storage_backend import get_storage
 from app.services.formula_graph_spec_renderer import (
-    RENDERER_VERSION,
     GRAPH_THEME,
-    check_quality,
-    render_and_check,
-    _resize_to_canvas,
+    RENDERER_VERSION,
     _create_thumbnail,
+    _resize_to_canvas,
+    render_and_check,
 )
+from app.services.storage_backend import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +189,7 @@ async def generate_preview(
 
         # Create new preview
         preview_token = uuid.uuid4().hex
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=PREVIEW_TTL_MINUTES)
+        expires_at = datetime.now(UTC) + timedelta(minutes=PREVIEW_TTL_MINUTES)
 
         preview = FormulaGraphPreview(
             formula_card_id=card.id,
@@ -336,7 +335,7 @@ async def confirm_preview(
         new_thumbnail_url = await storage.upload(thumb_path, thumb_data) if thumb_data else (preview.thumbnail_url or "")
 
         # 3. Create new generated asset
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         asset = FormulaGraphAsset(
             formula_card_id=card.id,
             source_type="generated",
@@ -548,8 +547,8 @@ async def start_batch_generate(
         "failed": 0,
         "skipped": 0,
         "errors": [],
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
+        "started_at": datetime.now(UTC).isoformat(),
         "finished_at": None,
     }
     card_ids = [c.id for c in cards]
@@ -640,7 +639,7 @@ async def _process_batch(job_id: str, cards: list[FormulaCard], admin_id: int) -
         job["status"] = "failed"
     else:
         job["status"] = "completed"
-    job["finished_at"] = datetime.now(timezone.utc).isoformat()
+    job["finished_at"] = datetime.now(UTC).isoformat()
 
     # Cleanup old jobs (keep last 10)
     _cleanup_old_jobs()

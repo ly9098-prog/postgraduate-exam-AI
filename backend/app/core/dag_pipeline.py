@@ -10,9 +10,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any, Callable
+from typing import Any
 
 from app.core.immutable_regions import TextRegions
 from app.core.mutation_guard import guard as apply_guard

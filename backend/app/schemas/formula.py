@@ -5,7 +5,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-
 # ── Category ──
 
 class FormulaCategoryCreate(BaseModel):
@@ -38,7 +37,7 @@ class FormulaCategoryResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
-    children: list["FormulaCategoryResponse"] = []
+    children: list[FormulaCategoryResponse] = []
 
     model_config = {"from_attributes": True}
 

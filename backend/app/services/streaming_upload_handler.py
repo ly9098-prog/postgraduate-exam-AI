@@ -27,7 +27,6 @@ import struct
 import tempfile
 from dataclasses import dataclass, field
 
-
 logger = logging.getLogger("postgraduate-ai.upload")
 
 # Magic bytes for file type validation

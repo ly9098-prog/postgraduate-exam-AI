@@ -12,18 +12,16 @@ import logging
 import os
 import signal
 import time
-from multiprocessing import connection
-from multiprocessing.context import BaseContext
 from multiprocessing.connection import Connection
+from multiprocessing.context import BaseContext
 from multiprocessing.process import BaseProcess
 from typing import Any
 
 from app.core.ocr_types import (
-    HandshakeMessage,
+    _PROTOCOL_VERSION,
     STABLE_ERROR_CODES,
     WorkerRequest,
     WorkerResult,
-    _PROTOCOL_VERSION,
 )
 
 logger = logging.getLogger(__name__)

@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,7 +65,7 @@ async def verify_credential(
     Uses constant-time comparison per credential. Returns the matching
     credential (or None if no match).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     result = await db.execute(
         select(WorkerCredential).where(
@@ -101,7 +100,7 @@ async def rotate_credential(
 
     # Disable old credential
     old.is_active = False
-    old.rotated_at = datetime.now(timezone.utc)
+    old.rotated_at = datetime.now(UTC)
 
     # Create new credential for same worker
     return await create_credential(db, old.worker_id)

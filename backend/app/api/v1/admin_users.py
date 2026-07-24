@@ -3,7 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
-from app.schemas.admin_users import AdminUserCreateRequest, AdminUserDetail, AdminUserListItem, AdminUserPatchRequest, AdminUserResetPasswordRequest
+from app.schemas.admin_users import (
+    AdminUserCreateRequest,
+    AdminUserDetail,
+    AdminUserListItem,
+    AdminUserPatchRequest,
+    AdminUserResetPasswordRequest,
+)
 from app.schemas.common import paginated_response
 from app.services.admin_user_service import (
     create_admin_user,

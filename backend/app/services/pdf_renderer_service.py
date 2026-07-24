@@ -10,13 +10,12 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 import os
 import tempfile
+from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
 
 from app.core.config import settings
 
@@ -49,7 +48,6 @@ def _validate_pdf(pdf_source: bytes | str, is_path: bool) -> None:
 
     Raises ``ValueError`` with a descriptive message if any check fails.
     """
-    import struct
 
     if is_path:
         size = os.path.getsize(pdf_source)

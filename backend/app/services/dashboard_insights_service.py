@@ -11,7 +11,6 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
-from app.models.answer_behavior import AnswerBehavior
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
@@ -550,7 +549,7 @@ async def compute_new_vs_review(db: AsyncSession, user_id: int) -> dict | None:
         if diff > 0.15:
             summary = f"复习题正确率高出{round(diff * 100)}%，复习效果明显"
         elif diff < -0.15:
-            summary = f"新题正确率更高，可以适当增加新题练习"
+            summary = "新题正确率更高，可以适当增加新题练习"
         else:
             summary = "新题和复习题表现接近，节奏均衡"
     elif new_count >= 5:

@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 _RESUME_KEY_PREFIX = "pipeline_resume:"
 
 

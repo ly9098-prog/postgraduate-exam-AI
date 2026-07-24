@@ -1,13 +1,12 @@
 """Phase 4 — 推荐质量 + 知识图谱质量报告服务。"""
 import logging
-from datetime import date, timedelta
+from datetime import timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge_edge import KnowledgeEdge
 from app.models.knowledge_point import KnowledgePoint
-from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.recommendation_log import RecommendationLog
 

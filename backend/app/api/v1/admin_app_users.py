@@ -5,9 +5,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions, require_roles
 from app.core.database import get_db
-from app.schemas.admin_app_users import AdminAppUserBanRequest, AdminAppUserBindAdminRequest, AdminAppUserBindAdminResponse, AdminAppUserDetail, AdminAppUserListItem, AdminAppUserUpdateRequest
+from app.schemas.admin_app_users import (
+    AdminAppUserBanRequest,
+    AdminAppUserBindAdminRequest,
+    AdminAppUserBindAdminResponse,
+    AdminAppUserDetail,
+    AdminAppUserListItem,
+    AdminAppUserUpdateRequest,
+)
 from app.schemas.common import paginated_response
-from app.services.admin_app_user_service import ban_app_user, bind_app_user_admin, get_app_user_detail, list_app_users, unban_app_user, unbind_app_user_admin, update_app_user
+from app.services.admin_app_user_service import (
+    ban_app_user,
+    bind_app_user_admin,
+    get_app_user_detail,
+    list_app_users,
+    unban_app_user,
+    unbind_app_user_admin,
+    update_app_user,
+)
 
 router = APIRouter(prefix="/api/admin/v1/app-users", tags=["admin-app-users"])
 

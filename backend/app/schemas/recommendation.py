@@ -1,9 +1,7 @@
 """Phase 4 — 推荐策略配置 + A/B 实验 + 指标 + 质量报告 Schema。"""
 from datetime import date, datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field
-
 
 # ── 策略配置 ──
 
@@ -11,7 +9,7 @@ from pydantic import BaseModel, Field
 class StrategyConfigCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     display_name: str = Field("", max_length=128)
-    description: Optional[str] = Field(None, max_length=512)
+    description: str | None = Field(None, max_length=512)
     scene: str = Field(..., pattern="^(practice_smart|similar|knowledge_path|wrong_variant)$")
     is_active: bool = True
     is_default: bool = False
@@ -21,28 +19,28 @@ class StrategyConfigCreate(BaseModel):
     weight_mastery_gap: float = Field(0.1, ge=0.0, le=1.0)
     weight_path_priority: float = Field(0.1, ge=0.0, le=1.0)
     exploration_ratio: float = Field(0.1, ge=0.0, le=1.0)
-    config_json: Optional[dict] = None
+    config_json: dict | None = None
 
 
 class StrategyConfigUpdate(BaseModel):
-    display_name: Optional[str] = None
-    description: Optional[str] = None
-    is_active: Optional[bool] = None
-    is_default: Optional[bool] = None
-    weight_vector_similarity: Optional[float] = Field(None, ge=0.0, le=1.0)
-    weight_knowledge_overlap: Optional[float] = Field(None, ge=0.0, le=1.0)
-    weight_difficulty_match: Optional[float] = Field(None, ge=0.0, le=1.0)
-    weight_mastery_gap: Optional[float] = Field(None, ge=0.0, le=1.0)
-    weight_path_priority: Optional[float] = Field(None, ge=0.0, le=1.0)
-    exploration_ratio: Optional[float] = Field(None, ge=0.0, le=1.0)
-    config_json: Optional[dict] = None
+    display_name: str | None = None
+    description: str | None = None
+    is_active: bool | None = None
+    is_default: bool | None = None
+    weight_vector_similarity: float | None = Field(None, ge=0.0, le=1.0)
+    weight_knowledge_overlap: float | None = Field(None, ge=0.0, le=1.0)
+    weight_difficulty_match: float | None = Field(None, ge=0.0, le=1.0)
+    weight_mastery_gap: float | None = Field(None, ge=0.0, le=1.0)
+    weight_path_priority: float | None = Field(None, ge=0.0, le=1.0)
+    exploration_ratio: float | None = Field(None, ge=0.0, le=1.0)
+    config_json: dict | None = None
 
 
 class StrategyConfigResponse(BaseModel):
     id: int
     name: str
     display_name: str
-    description: Optional[str] = None
+    description: str | None = None
     scene: str
     is_active: bool
     is_default: bool
@@ -52,9 +50,9 @@ class StrategyConfigResponse(BaseModel):
     weight_mastery_gap: float
     weight_path_priority: float
     exploration_ratio: float
-    config_json: Optional[dict] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    config_json: dict | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -71,14 +69,14 @@ class ExperimentVariant(BaseModel):
 class ExperimentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     scene: str = Field(..., pattern="^(practice_smart|similar|knowledge_path)$")
-    description: Optional[str] = Field(None, max_length=512)
-    start_at: Optional[datetime] = None
-    end_at: Optional[datetime] = None
+    description: str | None = Field(None, max_length=512)
+    start_at: datetime | None = None
+    end_at: datetime | None = None
     traffic_ratio: float = Field(1.0, ge=0.0, le=1.0)
     variants: list[ExperimentVariant] = Field(..., min_length=2)
     max_traffic_percent: float = Field(100.0, ge=0.0, le=100.0)
-    fallback_strategy_name: Optional[str] = Field(None, max_length=64)
-    auto_pause_on_error_rate: Optional[float] = Field(None, ge=0.0, le=1.0)
+    fallback_strategy_name: str | None = Field(None, max_length=64)
+    auto_pause_on_error_rate: float | None = Field(None, ge=0.0, le=1.0)
     min_sample_size: int = Field(100, ge=0)
 
 
@@ -90,14 +88,14 @@ class ExperimentResponse(BaseModel):
     id: int
     name: str
     scene: str
-    description: Optional[str] = None
+    description: str | None = None
     status: str
-    start_at: Optional[datetime] = None
-    end_at: Optional[datetime] = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
     traffic_ratio: float
-    variants: Optional[list[dict]] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    variants: list[dict] | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -106,14 +104,14 @@ class ExperimentResponse(BaseModel):
 
 
 class MetricsAggregateRequest(BaseModel):
-    date: Optional[date] = None
-    subject: Optional[str] = None
+    date: date | None = None
+    subject: str | None = None
 
 
 class MetricsAggregateResponse(BaseModel):
     aggregated_rows: int
     target_date: str
-    subject: Optional[str] = None
+    subject: str | None = None
 
 
 class MetricsDailyResponse(BaseModel):
@@ -121,7 +119,7 @@ class MetricsDailyResponse(BaseModel):
     subject: str
     scene: str
     strategy: str
-    variant_key: Optional[str] = None
+    variant_key: str | None = None
     exposure_count: int
     click_count: int
     answer_count: int
@@ -129,9 +127,9 @@ class MetricsDailyResponse(BaseModel):
     wrong_count: int
     avg_recommend_score: float
     avg_similarity: float
-    avg_mastery_before: Optional[float] = None
-    avg_mastery_after: Optional[float] = None
-    avg_mastery_delta: Optional[float] = None
+    avg_mastery_before: float | None = None
+    avg_mastery_after: float | None = None
+    avg_mastery_delta: float | None = None
     completion_rate: float
     accuracy: float
     ctr: float
@@ -177,7 +175,7 @@ class SeedStrategiesResponse(BaseModel):
 
 class SafetyCheckResponse(BaseModel):
     paused: bool
-    reason: Optional[str] = None
+    reason: str | None = None
     metrics: dict
 
 
@@ -187,7 +185,7 @@ class SafetyCheckResponse(BaseModel):
 class MetricsBackfillRequest(BaseModel):
     date_from: date
     date_to: date
-    subject: Optional[str] = None
+    subject: str | None = None
 
 
 class MetricsBackfillResponse(BaseModel):
@@ -221,19 +219,19 @@ class ExperimentResponseExtended(BaseModel):
     id: int
     name: str
     scene: str
-    description: Optional[str] = None
+    description: str | None = None
     status: str
-    start_at: Optional[datetime] = None
-    end_at: Optional[datetime] = None
+    start_at: datetime | None = None
+    end_at: datetime | None = None
     traffic_ratio: float
-    variants: Optional[list[dict]] = None
+    variants: list[dict] | None = None
     max_traffic_percent: float = 100.0
-    fallback_strategy_name: Optional[str] = None
-    auto_pause_on_error_rate: Optional[float] = None
+    fallback_strategy_name: str | None = None
+    auto_pause_on_error_rate: float | None = None
     min_sample_size: int = 100
-    started_at: Optional[datetime] = None
-    ended_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}

@@ -3,7 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
-from app.schemas.admin_subjects import AdminSubjectCreateRequest, AdminSubjectResponse, AdminSubjectTreeNode, AdminSubjectUpdateRequest
+from app.schemas.admin_subjects import (
+    AdminSubjectCreateRequest,
+    AdminSubjectResponse,
+    AdminSubjectTreeNode,
+    AdminSubjectUpdateRequest,
+)
 from app.services.admin_subject_service import (
     SubjectConflictError,
     create_subject,

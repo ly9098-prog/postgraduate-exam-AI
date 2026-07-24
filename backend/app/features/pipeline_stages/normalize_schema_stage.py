@@ -10,12 +10,11 @@ import logging
 from typing import Any
 
 from app.features.batch_validation import validate_batch_structure
-from app.features.question_normalizer import dedup_batch, normalize_questions
 from app.features.pipeline_stages._helpers import (
-    _blank_option_group_summary,
     _count_risk_flags,
     _log_multi_blank_stage,
 )
+from app.features.question_normalizer import dedup_batch, normalize_questions
 
 logger = logging.getLogger(__name__)
 

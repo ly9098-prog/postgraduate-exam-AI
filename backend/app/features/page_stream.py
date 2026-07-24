@@ -22,10 +22,9 @@ import logging
 import os
 import shutil
 import tempfile
-import time
 import uuid
-from dataclasses import dataclass, field
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 from app.features.input_gateway import InputDocument
 

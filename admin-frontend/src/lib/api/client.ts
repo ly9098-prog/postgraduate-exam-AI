@@ -175,7 +175,7 @@ export async function apiRequest<T>(
   const signal = fetchInit.signal ?? undefined;
 
   try {
-    const response = await requestWithTimeout(url, { ...fetchInit, headers }, timeoutMs, signal);
+    const response = await requestWithTimeout(url, { ...fetchInit, headers, credentials: "include" }, timeoutMs, signal);
     return (await handleResponse(response)) as T;
   } catch (error) {
     // If it's a 401, try refresh and retry once
@@ -186,7 +186,7 @@ export async function apiRequest<T>(
         const retryHeaders = new Headers(headers);
         retryHeaders.set("Authorization", `Bearer ${newToken}`);
         try {
-          const retryResponse = await requestWithTimeout(url, { ...fetchInit, headers: retryHeaders }, timeoutMs, signal);
+          const retryResponse = await requestWithTimeout(url, { ...fetchInit, headers: retryHeaders, credentials: "include" }, timeoutMs, signal);
           return (await handleResponse(retryResponse)) as T;
         } catch (retryError) {
           if (retryError instanceof ApiError && retryError.status === 401) {

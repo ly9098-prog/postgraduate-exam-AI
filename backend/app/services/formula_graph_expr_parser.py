@@ -8,7 +8,6 @@ import ast
 import logging
 
 import sympy as sp
-from numpy import inf, nan
 
 logger = logging.getLogger(__name__)
 

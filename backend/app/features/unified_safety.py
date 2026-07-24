@@ -16,11 +16,8 @@ UNIFIED_SAFETY_MODE:
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass, field
 from typing import Any
-
-from app.core.module_result import ModuleResult
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +228,6 @@ class UnifiedSafetyEvaluator:
         """Gate 4: Cross-page link integrity."""
         reason_codes: list[str] = []
         try:
-            import json
             links = getattr(doc_ir, "cross_page_links", [])
             if links:
                 # Validate link format

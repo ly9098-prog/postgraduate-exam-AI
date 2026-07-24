@@ -16,12 +16,10 @@
 
 from __future__ import annotations
 
-import dataclasses
 import hashlib
 import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
-
 
 # ---------------------------------------------------------------------------
 # Stable ID helpers
@@ -493,7 +491,7 @@ class _SerializableBBox(BBox):
         return {"x0": self.x0, "y0": self.y0, "x1": self.x1, "y1": self.y1}
 
     @staticmethod
-    def from_dict(d: dict) -> "_SerializableBBox":
+    def from_dict(d: dict) -> _SerializableBBox:
         return _SerializableBBox(d["x0"], d["y0"], d["x1"], d["y1"])
 
 
@@ -508,7 +506,7 @@ class _SerializablePoint:
         return {"x": self.x, "y": self.y}
 
     @staticmethod
-    def from_dict(d: dict) -> "_SerializablePoint":
+    def from_dict(d: dict) -> _SerializablePoint:
         return _SerializablePoint(d["x"], d["y"])
 
 
@@ -526,7 +524,7 @@ class _SerializablePolygon:
         return {"points": [p.to_dict() if hasattr(p, "to_dict") else p for p in self._points]}
 
     @staticmethod
-    def from_dict(d: dict) -> "_SerializablePolygon":
+    def from_dict(d: dict) -> _SerializablePolygon:
         pts = [_SerializablePoint.from_dict(p) if isinstance(p, dict) else p for p in d.get("points", [])]
         return _SerializablePolygon(pts)
 

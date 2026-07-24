@@ -70,11 +70,11 @@ async def create_knowledge_edge(
     db: AsyncSession = Depends(get_db),
 ):
     """人工创建知识点关系。"""
-    from app.services import knowledge_graph_service
+    from sqlalchemy import select
 
     # 需要先查 subject（从 source_kp 获取）
     from app.models.knowledge_point import KnowledgePoint
-    from sqlalchemy import select
+    from app.services import knowledge_graph_service
     kp_result = await db.execute(
         select(KnowledgePoint).where(KnowledgePoint.id == data.source_knowledge_point_id)
     )

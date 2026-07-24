@@ -3,7 +3,7 @@
 import json
 import logging
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -11,9 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.client import deepseek
-from app.services.admin_subject_service import resolve_subject_ids
 from app.ai.fallback import (
-    get_fallback_analysis,
     get_fallback_explain,
     get_fallback_mistake_analysis,
     get_fallback_report,
@@ -27,7 +25,7 @@ from app.core.config import settings
 from app.models.ai_chat import AiChat
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
-
+from app.services.admin_subject_service import resolve_subject_ids
 
 # ============================================================
 # Token 用量控制
@@ -42,7 +40,7 @@ async def _check_token_limit(db: AsyncSession, user_id: int, tokens_needed: int 
     if daily_limit <= 0 and monthly_limit <= 0:
         return True
 
-    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     first_of_month = today.replace(day=1)
 
     result = await db.execute(
@@ -430,7 +428,7 @@ async def generate_learning_report(
 ) -> dict:
     """生成 AI 学习报告。"""
 
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+    since = datetime.now(UTC) - timedelta(days=days)
 
     # 查询该时间段内用户的做题记录
     records_result = await db.execute(

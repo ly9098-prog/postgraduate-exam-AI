@@ -9,11 +9,11 @@ import atexit
 import concurrent.futures
 import io
 import logging
-import math
 import os
 import threading
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
@@ -766,7 +766,6 @@ def _resize_to_canvas(png_bytes: bytes, width: int, height: int) -> bytes:
 
 def _create_thumbnail(png_bytes: bytes) -> bytes:
     """Create a 600x450 letterbox thumbnail."""
-    from PIL import Image
     w, h = GRAPH_THEME["thumbnail_size"]
     return _resize_to_canvas(png_bytes, w, h)
 
@@ -911,7 +910,7 @@ async def render_spec(spec: dict, timeout: int = RENDER_TIMEOUT) -> tuple[bytes,
 
     try:
         png, metadata = await asyncio.wait_for(future, timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # Pool generation hasn't changed — this pool is still healthy.
         # Only escalate to forced shutdown if we see repeated timeouts
         # by checking whether the pool was already replaced.
