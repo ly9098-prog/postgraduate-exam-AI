@@ -61,21 +61,8 @@ def pg_engine():
 
 @pytest.fixture
 def pg_session(pg_engine):
-    """Return an AsyncSession with DDL applied. Sync fixture for pytest-asyncio 1.3.0 compat."""
-    import asyncio
-    from app.core.database import Base
-
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    async def _setup():
-        async with pg_engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        return async_sessionmaker(pg_engine, class_=AsyncSession, expire_on_commit=False)()
-
-    session = loop.run_until_complete(_setup())
-    loop.close()
-    return session
+    """Return an async_sessionmaker. Tests create sessions with ``async with``."""
+    return async_sessionmaker(pg_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 # ── Redis fixtures (sync — pytest-asyncio 1.3.0 compat) ──
