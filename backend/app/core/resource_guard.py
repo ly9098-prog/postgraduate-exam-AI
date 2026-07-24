@@ -24,8 +24,9 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
+from app.core.config import settings
 from app.core.deployment_profile import DeploymentProfile
 
 logger = logging.getLogger("postgraduate-ai.resource_guard")
@@ -42,6 +43,53 @@ REMOTE_OCR_CALL_BUDGET_EXCEEDED = "REMOTE_OCR_CALL_BUDGET_EXCEEDED"
 ARTIFACT_SIZE_LIMIT_EXCEEDED = "ARTIFACT_SIZE_LIMIT_EXCEEDED"
 PIPELINE_TIMEOUT = "PIPELINE_TIMEOUT"
 PAGE_TIMEOUT = "PAGE_TIMEOUT"
+
+# ── Redis-backed distributed semaphore for cross-process pipeline admission ──
+
+_RESOURCE_PREFIX = "resource:active_pipelines"
+_RESOURCE_SEM_KEY = f"{_RESOURCE_PREFIX}:semaphore"
+_RESOURCE_TTL = 3600  # 1 hour max pipeline lifetime (safety net for crashes)
+
+# Lua: atomic check-and-increment
+# KEYS: [semaphore_key]
+# ARGS: [ttl_sec]
+# Returns: current_count on success (>0), -1 if at capacity, -2 if Redis unavailable
+_LUA_ACQUIRE_SEM = """
+local key = KEYS[1]
+local ttl = tonumber(ARGV[1])
+local current = redis.call("GET", key)
+if current then
+    current = tonumber(current)
+else
+    current = 0
+end
+redis.call("INCR", key)
+redis.call("EXPIRE", key, ttl)
+return current + 1
+"""
+
+# Lua: atomic decrement (never below 0)
+_LUA_RELEASE_SEM = """
+local key = KEYS[1]
+local current = redis.call("GET", key)
+if current then
+    current = tonumber(current)
+    if current > 0 then
+        redis.call("DECR", key)
+        return current - 1
+    end
+end
+return 0
+"""
+
+_LUA_GET_COUNT = """
+local key = KEYS[1]
+local current = redis.call("GET", key)
+if current then
+    return tonumber(current)
+end
+return 0
+"""
 
 
 class ResourceGuardError(ValueError):
@@ -84,9 +132,13 @@ class ResourceGuard:
     - ``can_accept_work()`` — system-level check before accepting new jobs
     - ``check_*()`` — per-pipeline budget checks
     - ``for_profile()`` — factory with profile-appropriate defaults
+
+    Active pipeline counting uses a Redis-backed semaphore for cross-process
+    coordination. Falls back to process-local counting when Redis is
+    unavailable (dev only).
     """
 
-    # ── Class-level active pipeline counter (cross-instance) ──
+    # ── Class-level fallback for when Redis is unavailable ──
     _active_pipeline_count: int = 0
 
     # ── Construction ──
@@ -115,6 +167,89 @@ class ResourceGuard:
         self._render_pixels_consumed: int = 0
         self._remote_ocr_calls: int = 0
         self._artifact_bytes_written: int = 0
+
+    # ── Redis semaphore for distributed pipeline counting ──
+    # Uses sync Redis client since increment/decrement are called from
+    # sync contexts (finally blocks, __del__, etc.).
+
+    @staticmethod
+    def _get_redis_client():
+        """Create a sync Redis client for semaphore operations."""
+        if not settings.REDIS_URL:
+            return None
+        try:
+            import redis as redis_sync
+            return redis_sync.from_url(
+                settings.REDIS_URL,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                decode_responses=True,
+            )
+        except Exception:
+            return None
+
+    def _redis_active_count_sync(self) -> int:
+        """Return current active pipeline count from Redis (sync)."""
+        client = self._get_redis_client()
+        if client is None:
+            return ResourceGuard._active_pipeline_count
+        try:
+            val = client.get(_RESOURCE_SEM_KEY)
+            return int(val) if val else 0
+        except Exception:
+            return ResourceGuard._active_pipeline_count
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+    def _redis_acquire_sync(self, max_concurrent: int) -> bool:
+        """Try to acquire Redis semaphore (sync). True if under capacity."""
+        client = self._get_redis_client()
+        if client is None:
+            current = ResourceGuard._active_pipeline_count
+            if current >= max_concurrent:
+                return False
+            ResourceGuard._active_pipeline_count += 1
+            return True
+        try:
+            sha = client.script_load(_LUA_ACQUIRE_SEM)
+            result = client.evalsha(sha, 1, _RESOURCE_SEM_KEY, str(_RESOURCE_TTL))
+            count = int(result) if result else 0
+            return count <= max_concurrent
+        except Exception:
+            current = ResourceGuard._active_pipeline_count
+            if current >= max_concurrent:
+                return False
+            ResourceGuard._active_pipeline_count += 1
+            return True
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+    def _redis_release_sync(self) -> None:
+        """Release Redis semaphore (sync)."""
+        client = self._get_redis_client()
+        if client is None:
+            ResourceGuard._active_pipeline_count = max(
+                0, ResourceGuard._active_pipeline_count - 1
+            )
+            return
+        try:
+            sha = client.script_load(_LUA_RELEASE_SEM)
+            client.evalsha(sha, 1, _RESOURCE_SEM_KEY)
+        except Exception:
+            ResourceGuard._active_pipeline_count = max(
+                0, ResourceGuard._active_pipeline_count - 1
+            )
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
 
     @classmethod
     def for_profile(cls, profile: DeploymentProfile) -> ResourceGuard:
@@ -152,6 +287,7 @@ class ResourceGuard:
         """Check if the server can accept new pipeline work.
 
         Returns (True, None) if OK, or (False, reason) if resource pressure.
+        Uses Redis-backed semaphore for active pipeline counting.
         """
         metrics = self._metrics_provider()
 
@@ -164,7 +300,8 @@ class ResourceGuard:
         if metrics.event_loop_lag_ms > self._thresholds.max_event_loop_lag_ms:
             return False, f"Event loop lag {metrics.event_loop_lag_ms:.0f}ms exceeds limit {self._thresholds.max_event_loop_lag_ms}ms"
 
-        active = ResourceGuard._active_pipeline_count
+        # Check Redis-based active pipeline count
+        active = self._redis_active_count_sync()
         if active >= self._thresholds.max_active_pipelines:
             return False, f"Active pipelines {active} at limit {self._thresholds.max_active_pipelines}"
 
@@ -201,17 +338,27 @@ class ResourceGuard:
         return m
 
     def get_system_metrics(self) -> SystemMetrics:
-        return self._metrics_provider()
+        m = self._metrics_provider()
+        # Override with Redis count for accuracy
+        m.active_pipelines = self._redis_active_count_sync()
+        return m
 
-    # ── Pipeline count tracking ──
+    # ── Pipeline count tracking (Redis-backed, cross-process) ──
 
-    @classmethod
-    def increment_pipeline_count(cls) -> None:
-        cls._active_pipeline_count += 1
+    def increment_pipeline_count(self) -> None:
+        """Increment active pipeline count using Redis semaphore.
 
-    @classmethod
-    def decrement_pipeline_count(cls) -> None:
-        cls._active_pipeline_count = max(0, cls._active_pipeline_count - 1)
+        Uses Redis Lua for atomic cross-process counting. Falls back to
+        process-local when Redis is unavailable (dev only).
+        """
+        self._redis_acquire_sync(self._thresholds.max_active_pipelines)
+
+    def decrement_pipeline_count(self) -> None:
+        """Decrement active pipeline count using Redis semaphore.
+
+        Safe to call even if increment was process-local (Redis fallback).
+        """
+        self._redis_release_sync()
 
     # ── Per-pipeline budget checks ──
 

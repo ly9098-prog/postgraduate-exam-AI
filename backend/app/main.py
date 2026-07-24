@@ -78,6 +78,28 @@ async def lifespan(app: FastAPI):
     except SystemError as e:
         logger.critical("Production async configuration validation FAILED: %s", e)
         raise
+
+    # Check sys.modules for banned OCR packages in cloud_api
+    try:
+        from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
+        if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
+            banned = {"paddle", "paddleocr"}
+            loaded = {mod for mod in banned if mod in sys.modules}
+            if loaded:
+                logger.critical(
+                    "cloud_api deployment detected banned modules in sys.modules: %s. "
+                    "The process must not import local OCR packages.",
+                    loaded,
+                )
+                raise SystemError(
+                    f"Banned modules loaded in cloud_api: {loaded}. "
+                    "Remove paddle/paddleocr from the deployment image."
+                )
+    except SystemError:
+        raise
+    except Exception as e:
+        logger.warning("OCR module isolation check failed: %s", e)
+
     from app.core.ocr_profile import get_ocr_profile
     profile = get_ocr_profile()
 
@@ -163,8 +185,10 @@ async def lifespan(app: FastAPI):
             cfg = get_runtime_config()
             if cfg.enabled:
                 worker_client = create_ocr_worker_client(cfg)
+                from app.core.deployment_profile import detect_deployment_profile
                 _ocr_gateway = OCRGateway(
                     mode="gateway",
+                    profile=detect_deployment_profile().value,
                     worker_client=worker_client,
                 )
                 from app.services.ocr_service import set_gateway
@@ -231,7 +255,12 @@ async def lifespan(app: FastAPI):
         # ══════════════════════════════════════════
         logger.info("=== Shutdown sequence started (role=%s) ===", role)
 
-        # 1. Stop receiving new background work
+        # 1. Set draining — stop claiming new work
+        try:
+            from app.services.task_queue_worker import set_draining
+            set_draining()
+        except Exception:
+            pass
 
         # 2. Stop event-loop lag monitor
         if _lag_monitor_task and not _lag_monitor_task.done():
@@ -241,16 +270,16 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
 
-        # 3. Stop pipeline worker + reaper (if running in this role)
+        # 3. Signal worker + reaper to stop (graceful, no cancel yet)
         if role in ("worker", "all"):
             try:
                 from app.services.task_queue_worker import stop_worker, stop_reaper
-                stop_worker()
-                stop_reaper()
+                await stop_worker()
+                await stop_reaper()
             except Exception as e:
                 logger.warning("Worker/reaper stop signal failed: %s", e)
 
-        # 3. Cancel and await background asyncio tasks
+        # 4. Cancel and await background asyncio tasks with grace timeout
         _shutdown_tasks = []
         if cleanup_task and not cleanup_task.done():
             cleanup_task.cancel()
@@ -267,10 +296,12 @@ async def lifespan(app: FastAPI):
 
         for name, task in _shutdown_tasks:
             try:
-                await task
+                await asyncio.wait_for(task, timeout=30)
                 logger.info("Task %s: completed after cancel", name)
             except asyncio.CancelledError:
                 logger.info("Task %s: cancelled", name)
+            except asyncio.TimeoutError:
+                logger.warning("Task %s: did not stop within 30s grace period", name)
             except Exception as e:
                 logger.warning("Task %s: cancel error: %s", name, e)
 
@@ -335,9 +366,8 @@ async def lifespan(app: FastAPI):
 
             try:
                 from app.features.ocr_gateway import OCRGateway
-                # _ocr_gateway is defined above in the lifespan scope
                 if _ocr_gateway is not None:
-                    await _ocr_gateway_instance.shutdown()
+                    await _ocr_gateway.shutdown()
                     logger.info("OCR Gateway shut down")
             except Exception as e:
                 logger.warning("OCR Gateway shutdown error: %s", e)
@@ -357,6 +387,14 @@ async def lifespan(app: FastAPI):
             logger.info("Task queue Redis client closed")
         except Exception as e:
             logger.warning("Task queue close error: %s", e)
+
+        # 9. Dispose SQLAlchemy engine
+        try:
+            from app.core.database import engine
+            await engine.dispose()
+            logger.info("SQLAlchemy engine disposed")
+        except Exception as e:
+            logger.warning("Engine dispose error: %s", e)
 
         # ── Diagnostics ──
         logger.info("=== Shutdown sequence completed (role=%s) ===", role)

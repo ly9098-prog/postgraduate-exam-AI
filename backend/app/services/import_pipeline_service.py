@@ -545,6 +545,14 @@ async def start_import_pipeline(
         image_width, image_height, image_format = _validate_image_path(file_path)
         image_hash = _sha256_of_file(file_path)
         pipeline_id = f"img_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{image_hash[:8]}"
+
+        # Stage the image to persistent storage before enqueuing
+        staging_obj = await async_store_file(
+            file_path,
+            original_name=filename,
+            mime=content_type or "image/png",
+        )
+
         options = {
             "enable_ai_repair": enable_ai_repair,
             "confidence_threshold": confidence_threshold,
@@ -563,6 +571,7 @@ async def start_import_pipeline(
                 "image_width": image_width,
                 "image_height": image_height,
                 "image_format": image_format,
+                "staging_object_id": staging_obj.object_id,
             },
             stages={"upload": {"status": "completed"}, "ocr": {"status": "pending"}},
         )
@@ -571,6 +580,7 @@ async def start_import_pipeline(
         await enqueue_image_pipeline(
             pipeline_id=pipeline_id,
             image_path=file_path,
+            staging_object_id=staging_obj.object_id,
             source_file=filename,
             subject=subject,
             subject_id=subject_id,
@@ -598,7 +608,6 @@ async def start_import_pipeline(
             "stats": {},
             "errors": [],
             "started_at": datetime.now().isoformat(),
-            "_file_path": file_path,
             "staging_object_id": staging_obj.object_id,
         })
 
@@ -606,6 +615,7 @@ async def start_import_pipeline(
         await enqueue_excel_pipeline(
             pipeline_id=pipeline_id,
             file_path=file_path,
+            staging_object_id=staging_obj.object_id,
             source_file=filename,
         )
 
@@ -666,7 +676,6 @@ async def start_import_pipeline(
         "stats": {},
         "errors": [],
         "started_at": datetime.now().isoformat(),
-        "_file_path": file_path,  # Keep for backward compat during rollout
         "staging_object_id": staging_obj.object_id,
     }
     if page_range:
@@ -678,6 +687,7 @@ async def start_import_pipeline(
     await enqueue_import_pipeline(
         pipeline_id=pipeline_id,
         file_path=file_path,
+        staging_object_id=staging_obj.object_id,
         source_type=source_type,
         source_file=filename,
         subject=subject,

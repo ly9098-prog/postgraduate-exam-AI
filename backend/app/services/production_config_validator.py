@@ -179,10 +179,11 @@ def _check_ocr_production_rules(errors: list[str]) -> None:
         errors.append("生产环境必须设置 OCR_USE_GPU=false")
 
     exec_backend = (settings.OCR_EXECUTION_BACKEND or "").lower()
-    if exec_backend == "local_process":
+    ALLOWED_CLOUD_BACKENDS = {"paddlex_http", "disabled"}
+    if exec_backend not in ALLOWED_CLOUD_BACKENDS:
         errors.append(
-            "生产环境 OCR_EXECUTION_BACKEND 不能为 'local_process'。"
-            " 必须使用 paddlex_http 或 disabled"
+            f"生产环境 OCR_EXECUTION_BACKEND='{exec_backend}' 不允许。"
+            f" 必须为以下之一: {', '.join(sorted(ALLOWED_CLOUD_BACKENDS))}"
         )
 
     # Check OCR profile GPU consistency
@@ -222,26 +223,27 @@ def _check_ocr_production_rules(errors: list[str]) -> None:
 
 
 def _check_ocr_no_local_deps(errors: list[str]) -> None:
-    """Warn if PaddleOCR is installed in cloud_api — not a fatal error.
+    """Fail startup if PaddleOCR is installed in cloud_api deployment.
 
-    The real enforcement is in the backend configuration (no local_process
-    backend, no local adapter registration). Having paddleocr installed as
-    a package doesn't mean it will be loaded or used.
+    In cloud_api, the process must never import or initialize local OCR
+    packages. Having paddleocr/paddle installed represents a configuration
+    hazard that could lead to accidental local fallback on failure.
     """
     profile = detect_deployment_profile()
     if profile != DeploymentProfile.CLOUD_API:
         return
 
-    try:
-        import importlib.util
-
-        if importlib.util.find_spec("paddleocr") is not None:
-            logger.warning(
-                "cloud_api 部署检测到 paddleocr 已安装，这不影响运行（云端不会加载本地 OCR），"
-                "但建议在部署时卸载以节省空间"
-            )
-    except Exception:
-        pass  # find_spec is safe
+    banned_modules = ["paddleocr", "paddle"]
+    for mod in banned_modules:
+        try:
+            import importlib.util
+            if importlib.util.find_spec(mod) is not None:
+                errors.append(
+                    f"cloud_api 部署检测到 {mod} 已安装。"
+                    f" 云端部署不得包含本地 OCR 包。请卸载: pip uninstall {mod}"
+                )
+        except Exception:
+            pass
 
 
 # ── async checks ──

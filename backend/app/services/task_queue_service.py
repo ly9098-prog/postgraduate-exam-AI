@@ -48,9 +48,9 @@ _DEFAULT_RETRY_BASE_DELAY = 10  # seconds
 _REAPER_INTERVAL_SEC = 60
 _LOCAL_TASK_MAX = 100           # bounded local fallback (dev only)
 _DEAD_MAX = 1000                # max dead-letter entries
-_IDEMPOTENT_TTL = 86400         # 24h
-_COMPLETED_TTL = 86400          # 24h retention for completed task hashes
-_DEAD_HASH_TTL = 86400 * 7      # 7d retention for dead task hashes
+_IDEMPOTENT_TTL = 86400 * 7      # 7d — matches dead hash TTL, ensures idempotency outlives all terminal states
+_COMPLETED_TTL = 86400            # 24h retention for completed task hashes
+_DEAD_HASH_TTL = 86400 * 7        # 7d retention for dead task hashes
 
 
 class TaskStatus(str, Enum):
@@ -75,6 +75,7 @@ class Task:
     lease_expires_at: float = 0.0
     owner_token: str = ""
     error: str = ""
+    generation: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -89,6 +90,7 @@ class Task:
             "lease_expires_at": self.lease_expires_at,
             "owner_token": self.owner_token,
             "error": self.error,
+            "generation": self.generation,
         }
 
     @classmethod
@@ -105,6 +107,7 @@ class Task:
             lease_expires_at=d.get("lease_expires_at", 0.0),
             owner_token=d.get("owner_token", ""),
             error=d.get("error", ""),
+            generation=d.get("generation", 0),
         )
 
 
@@ -209,10 +212,12 @@ redis.call("EXPIRE", KEYS[2] .. ":" .. task_id, lease_ttl)
 return 1
 """
 
-# COMPLETE: verify owner_token → ZREM processing → HSET completed → DEL heartbeat/idempotent
-# KEYS: [processing_key, task_hash_prefix, heartbeat_prefix, idempotent_prefix]
+# COMPLETE: verify owner_token → ZREM processing → HSET completed → DEL heartbeat (preserve idempotent)
+# KEYS: [processing_key, task_hash_prefix, heartbeat_prefix]
 # ARGS: [task_id, owner_token, completed_ttl]
 # Returns: 1 on success, 0 on owner mismatch
+# NOTE: idempotent key is NOT deleted — terminal task retains idempotency
+# so that duplicate enqueue returns existing task_id during retention period.
 _LUA_COMPLETE = """
 local task_id = ARGV[1]
 local owner_token = ARGV[2]
@@ -231,9 +236,8 @@ redis.call("ZREM", KEYS[1], task_id)
 redis.call("HSET", KEYS[2] .. ":" .. task_id, "status", "completed")
 redis.call("EXPIRE", KEYS[2] .. ":" .. task_id, ttl)
 
--- Clean up heartbeat and idempotent
+-- Clean up heartbeat only (idempotent key preserved for dedup)
 redis.call("DEL", KEYS[3] .. ":" .. task_id)
-redis.call("DEL", KEYS[4] .. ":" .. task_id)
 
 return 1
 """
@@ -269,9 +273,9 @@ redis.call("DEL", KEYS[4] .. ":" .. task_id)
 return 1
 """
 
-# FAIL_DEAD: verify owner_token → ZREM processing → LPUSH dead → LTRIM → HSET hash → DEL heartbeat/idempotent
+# FAIL_DEAD: verify owner_token → ZREM processing → LPUSH dead → LTRIM → HSET hash → DEL heartbeat (preserve idempotent)
 # Task hash gets a 7d TTL so dead entries self-expire regardless of list trim.
-# KEYS: [processing_key, dead_key, task_hash_prefix, idempotent_prefix, heartbeat_prefix]
+# KEYS: [processing_key, dead_key, task_hash_prefix, heartbeat_prefix]
 # ARGS: [task_id, task_json, owner_token, dead_max]
 # Returns: 1 on success, 0 on owner mismatch
 _LUA_FAIL_DEAD = """
@@ -281,7 +285,7 @@ local owner_token = ARGV[3]
 local dead_max = tonumber(ARGV[4]) or 1000
 
 -- Verify owner
-local stored = redis.call("GET", KEYS[5] .. ":" .. task_id)
+local stored = redis.call("GET", KEYS[4] .. ":" .. task_id)
 if not stored or stored ~= owner_token then
     return 0
 end
@@ -299,17 +303,18 @@ redis.call("HSET", KEYS[3] .. ":" .. task_id, "data", task_json)
 -- TTL on hash handles cleanup of entries trimmed by LTRIM
 redis.call("EXPIRE", KEYS[3] .. ":" .. task_id, 604800)
 
--- Delete heartbeat and idempotent
-redis.call("DEL", KEYS[5] .. ":" .. task_id)
+-- Delete heartbeat only (idempotent key preserved for dedup)
 redis.call("DEL", KEYS[4] .. ":" .. task_id)
 
 return 1
 """
 
-# REAPER: scan processing ZSET → heartbeat still alive? → if dead, ZREM + RPUSH ready
-# Re-checks heartbeat key before reclaiming — a worker may have extended it
-# without updating the ZSET score (legacy race, or during transition).
-# KEYS: [processing_key, queue_key, heartbeat_prefix]
+# REAPER: scan processing ZSET → heartbeat still alive? → check task status → if safe, re-enqueue
+# Re-checks heartbeat key AND task hash status before reclaiming:
+# 1. If heartbeat key exists → worker still alive, skip
+# 2. If task status is completed/dead → stale ZSET entry, skip
+# 3. Otherwise → ZREM + RPUSH ready
+# KEYS: [processing_key, queue_key, heartbeat_prefix, task_hash_prefix]
 # ARGS: [now_timestamp, batch_size]
 # Returns: count of reclaimed tasks
 _LUA_REAPER = """
@@ -321,23 +326,32 @@ for _, task_id in ipairs(expired) do
     -- Check if worker is still alive via heartbeat key
     local hb_exists = redis.call("EXISTS", KEYS[3] .. ":" .. task_id)
     if hb_exists == 0 then
-        redis.call("ZREM", KEYS[1], task_id)
-        redis.call("RPUSH", KEYS[2], task_id)
-        count = count + 1
+        -- Check task hash status — skip if terminal (stale ZSET entry)
+        local status = redis.call("HGET", KEYS[4] .. ":" .. task_id, "status")
+        if status and (status == "completed" or status == "dead") then
+            -- Stale ZSET entry for already-terminal task — clean up ZSET only
+            redis.call("ZREM", KEYS[1], task_id)
+        else
+            redis.call("ZREM", KEYS[1], task_id)
+            redis.call("RPUSH", KEYS[2], task_id)
+            count = count + 1
+        end
     end
 end
 return count
 """
 
-# RETRY_CLAIM: ZRANGEBYSCORE retry → ZREM → ZADD processing + SETEX heartbeat + owner_token
-# KEYS: [retry_key, processing_key, heartbeat_prefix]
-# ARGS: [now_timestamp, lease_expiry_abs, lease_ttl_rel, owner_token]
+# RETRY_CLAIM: ZRANGEBYSCORE retry → ZREM → ZADD processing + SETEX heartbeat + update hash
+# Also updates task hash with new owner_token, status, and lease.
+# KEYS: [retry_key, processing_key, heartbeat_prefix, task_hash_prefix]
+# ARGS: [now_timestamp, lease_expiry_abs, lease_ttl_rel, owner_token, task_json]
 # Returns: {task_id, owner_token} or nil
 _LUA_RETRY_CLAIM = """
 local now = tonumber(ARGV[1])
 local lease_expiry = tonumber(ARGV[2])
 local lease_ttl = tonumber(ARGV[3])
 local owner_token = ARGV[4]
+local task_json = ARGV[5]
 
 local candidates = redis.call("ZRANGEBYSCORE", KEYS[1], 0, now, "LIMIT", 0, 1)
 if #candidates == 0 then
@@ -348,6 +362,14 @@ local task_id = candidates[1]
 redis.call("ZREM", KEYS[1], task_id)
 redis.call("ZADD", KEYS[2], lease_expiry, task_id)
 redis.call("SETEX", KEYS[3] .. ":" .. task_id, lease_ttl, owner_token)
+
+-- Update task hash with new owner and lease
+if task_json and task_json ~= "" then
+    redis.call("HSET", KEYS[4] .. ":" .. task_id, "data", task_json)
+end
+-- Always update status field for reaper safety
+redis.call("HSET", KEYS[4] .. ":" .. task_id, "owner_token", owner_token)
+redis.call("HSET", KEYS[4] .. ":" .. task_id, "status", "processing")
 
 return {task_id, owner_token}
 """
@@ -375,6 +397,21 @@ def _dead_key(task_type: str) -> str:
 
 def _retry_key(task_type: str) -> str:
     return f"{_RETRY_PREFIX}:{task_type}"
+
+
+# ── Queue metrics ──
+
+queue_metrics: dict[str, int] = {
+    "ready": 0,
+    "processing": 0,
+    "retry": 0,
+    "dead": 0,
+    "execution_duration": 0,
+    "lease_renewal_failure": 0,
+    "duplicate_enqueue_prevented": 0,
+    "reaper_reclaimed": 0,
+    "owner_fencing_rejected": 0,
+}
 
 
 # ── DurableTaskQueue ──
@@ -423,9 +460,9 @@ class DurableTaskQueue:
         """
         self._redis_url = redis_url or settings.REDIS_URL
         self._redis_enabled = bool(self._redis_url)
-        self._is_restricted = detect_deployment_profile() in (
-            DeploymentProfile.CLOUD_API,
-            DeploymentProfile.LOCAL_IMPORT,  # also restricted if APP_ENV=production
+        self._is_restricted = (
+            detect_deployment_profile() == DeploymentProfile.CLOUD_API
+            or settings.APP_ENV == "production"
         )
         self._local_tasks: dict[str, Task] = {}
         self._redis = None  # lazy persistent connection for dequeue
@@ -493,8 +530,8 @@ class DurableTaskQueue:
         if self._redis is not None:
             try:
                 await self._redis.aclose()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Error closing task queue Redis connection: %s", e)
             self._redis = None
 
     # ── NOSCRIPT recovery ──
@@ -582,6 +619,7 @@ class DurableTaskQueue:
 
                 if result is None:
                     logger.info("Duplicate task rejected (idempotent): task_id=%s", tid)
+                    queue_metrics["duplicate_enqueue_prevented"] += 1
                     return tid
 
                 logger.info("Task enqueued: task_id=%s type=%s", tid, task_type)
@@ -719,14 +757,16 @@ class DurableTaskQueue:
         owner_token = uuid.uuid4().hex
 
         result = await self._evalsha_or_reload(
-            client, "_lua_retry_claim", 3,
+            client, "_lua_retry_claim", 4,
             _retry_key(task_type),      # KEYS[1]: retry ZSET
             _p_key(task_type),           # KEYS[2]: processing ZSET
             _HEARTBEAT_PREFIX,           # KEYS[3]: heartbeat_prefix
+            _TASK_PREFIX,               # KEYS[4]: task_hash_prefix
             str(now),                    # ARGV[1]: now timestamp
             str(lease_expiry),           # ARGV[2]: lease_expiry (abs)
             str(lease_sec),              # ARGV[3]: lease_ttl (rel)
             owner_token,                 # ARGV[4]: owner_token
+            "",                          # ARGV[5]: task_json (empty — hash updated by caller after read)
         )
 
         if result is not None:
@@ -739,8 +779,8 @@ class DurableTaskQueue:
     async def heartbeat(
         self,
         task_or_id: Task | str,
-        task_type: str | None = None,
         *,
+        task_type: str | None = None,
         lease_sec: int = _DEFAULT_LEASE_SEC,
     ) -> bool:
         """Extend the lease for a task.
@@ -791,6 +831,8 @@ class DurableTaskQueue:
                         logger.warning(
                             "Heartbeat rejected (owner mismatch): task_id=%s", task_id,
                         )
+                        queue_metrics["lease_renewal_failure"] += 1
+                        queue_metrics["owner_fencing_rejected"] += 1
                         return False
 
                     # Update in-memory Task object if available
@@ -815,6 +857,7 @@ class DurableTaskQueue:
     async def complete(
         self,
         task_or_id: Task | str,
+        *,
         task_type: str | None = None,
     ) -> bool:
         """Mark a task as completed.
@@ -846,11 +889,10 @@ class DurableTaskQueue:
 
                 p_key = _p_key(tt)
                 result = await self._evalsha_or_reload(
-                    client, "_lua_complete", 4,
+                    client, "_lua_complete", 3,
                     p_key,                    # KEYS[1]: processing_key
                     _TASK_PREFIX,             # KEYS[2]: task_hash_prefix
                     _HEARTBEAT_PREFIX,        # KEYS[3]: heartbeat_prefix
-                    _IDEMPOTENCY_PREFIX,      # KEYS[4]: idempotent_prefix
                     task_id,                  # ARGV[1]: task_id
                     token,                    # ARGV[2]: owner_token
                     str(_COMPLETED_TTL),      # ARGV[3]: completed_ttl
@@ -861,6 +903,7 @@ class DurableTaskQueue:
                     logger.warning(
                         "Complete rejected (owner mismatch, fencing): task_id=%s", task_id,
                     )
+                    queue_metrics["owner_fencing_rejected"] += 1
                     return False
 
                 logger.info("Task completed: task_id=%s", task_id)
@@ -880,8 +923,8 @@ class DurableTaskQueue:
         self,
         task_or_id: Task | str,
         error: str,
-        task_type: str | None = None,
         *,
+        task_type: str | None = None,
         lease_sec: int = _DEFAULT_LEASE_SEC,
     ) -> bool:
         """Handle task failure with owner fencing.
@@ -943,6 +986,7 @@ class DurableTaskQueue:
                         logger.warning(
                             "Fail/retry rejected (owner mismatch): task_id=%s", task_id,
                         )
+                        queue_metrics["owner_fencing_rejected"] += 1
                         return False
 
                 except Exception as e:
@@ -975,12 +1019,11 @@ class DurableTaskQueue:
                 )
 
                 result = await self._evalsha_or_reload(
-                    client, "_lua_fail_dead", 5,
+                    client, "_lua_fail_dead", 4,
                     p_key,                    # KEYS[1]: processing_key
                     _dead_key(tt),            # KEYS[2]: dead_key
                     _TASK_PREFIX,             # KEYS[3]: task_hash_prefix
-                    _IDEMPOTENCY_PREFIX,      # KEYS[4]: idempotent_prefix
-                    _HEARTBEAT_PREFIX,        # KEYS[5]: heartbeat_prefix
+                    _HEARTBEAT_PREFIX,        # KEYS[4]: heartbeat_prefix
                     task_id,                  # ARGV[1]: task_id
                     task_json,                # ARGV[2]: task_json
                     token,                    # ARGV[3]: owner_token
@@ -992,6 +1035,7 @@ class DurableTaskQueue:
                     logger.warning(
                         "Fail/dead rejected (owner mismatch): task_id=%s", task_id,
                     )
+                    queue_metrics["owner_fencing_rejected"] += 1
                     return False
 
             except Exception as e:
@@ -1030,10 +1074,11 @@ class DurableTaskQueue:
             now = time.time()
 
             reclaimed = await self._evalsha_or_reload(
-                client, "_lua_reaper", 3,
+                client, "_lua_reaper", 4,
                 p_key,                    # KEYS[1]: processing_key
                 q_key,                    # KEYS[2]: queue_key
                 _HEARTBEAT_PREFIX,        # KEYS[3]: heartbeat_prefix
+                _TASK_PREFIX,             # KEYS[4]: task_hash_prefix
                 str(now),                 # ARGV[1]: now
                 "100",                    # ARGV[2]: batch_size
             ) or 0
@@ -1043,6 +1088,7 @@ class DurableTaskQueue:
 
             if reclaimed:
                 logger.info("Reclaimed %d expired tasks for %s", reclaimed, task_type)
+                queue_metrics["reaper_reclaimed"] += reclaimed
 
             return reclaimed
 
@@ -1116,6 +1162,31 @@ class DurableTaskQueue:
         return 0
 
     # ── Dead-letter management ──
+
+    async def get_metrics(self, task_types: list[str] | None = None) -> dict[str, Any]:
+        """Return current queue metrics including live Redis state.
+
+        Returns both cumulative counters and current queue length snapshots.
+        """
+        results = dict(queue_metrics)
+        types = task_types or []
+
+        ready = 0
+        processing = 0
+        retry_count = 0
+        dead = 0
+
+        for tt in types:
+            ready += await self.queue_length(tt)
+            processing += await self.processing_length(tt)
+            retry_count += await self.retry_length(tt)
+            dead += await self.dead_length(tt)
+
+        results["ready"] = ready
+        results["processing"] = processing
+        results["retry"] = retry_count
+        results["dead"] = dead
+        return results
 
     async def list_dead(self, task_type: str, limit: int = 100) -> list[dict]:
         """List dead-letter entries for a task type (newest first)."""
