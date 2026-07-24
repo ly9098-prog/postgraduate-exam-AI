@@ -388,6 +388,7 @@ async def run_reaper_loop(
         TASK_TYPE_EXCEL_PIPELINE,
         TASK_TYPE_RESUME_PIPELINE,
         TASK_TYPE_FORMULA_BATCH,
+        TASK_TYPE_PREWARM_ANALYSIS,
     ]
 
     try:

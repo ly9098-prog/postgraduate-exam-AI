@@ -178,7 +178,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("OCR Gateway init failed (non-fatal): %s", e)
 
-    # ── Role: worker — pipeline processing ──
+    # ── Role: worker — pipeline processing + AI prewarm ──
     if role in ("worker", "all"):
         try:
             from app.services.task_queue_worker import run_pipeline_worker
@@ -195,6 +195,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Reaper start failed (non-fatal): %s", e)
 
+        # AI prewarm worker — uses DurableTaskQueue (moved from scheduler per P0-2)
+        try:
+            from app.services.ai_prewarm_worker import start_worker
+            await start_worker()
+            logger.info("AI prewarm worker started")
+        except Exception as e:
+            logger.warning("AI prewarm worker start failed (non-fatal): %s", e)
+
     # ── Role: scheduler — periodic background tasks ──
     if role in ("scheduler", "all"):
         try:
@@ -209,13 +217,6 @@ async def lifespan(app: FastAPI):
             logger.info("Audit log cleanup scheduler started")
         except Exception as e:
             logger.warning("Audit log cleanup scheduler start failed (non-fatal): %s", e)
-
-        try:
-            from app.services.ai_prewarm_worker import start_worker
-            await start_worker()
-            logger.info("AI prewarm worker started")
-        except Exception as e:
-            logger.warning("AI prewarm worker start failed (non-fatal): %s", e)
 
         # Scheduler also needs token cleanup if web role isn't running
         if role == "scheduler" and cleanup_task is None:
@@ -288,6 +289,8 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning("Audit log cleanup scheduler stop error: %s", e)
 
+        # 4b. Stop AI prewarm worker (runs in worker role, not scheduler)
+        if role in ("worker", "all"):
             try:
                 from app.services.ai_prewarm_worker import stop_worker
                 await stop_worker()
