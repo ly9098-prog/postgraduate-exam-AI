@@ -52,7 +52,7 @@ services:
         condition: service_healthy
     environment:
       APP_ENV: production
-      PROCESS_ROLE: ${PROCESS_ROLE:-all}  # "all" | "web" | "worker" | "scheduler"
+      PROCESS_ROLE: ${PROCESS_ROLE:-web}  # "all" | "web" | "worker" | "scheduler"
       APP_SECRET: ${APP_SECRET:?必须设置 APP_SECRET}
       DATABASE_URL: ${DATABASE_URL:?必须设置 DATABASE_URL}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
@@ -67,6 +67,10 @@ services:
       # Production: local OCR not allowed — use disabled or paddlex_http
       OCR_USE_GPU: ${OCR_USE_GPU:-false}
       OCR_EXECUTION_BACKEND: ${OCR_EXECUTION_BACKEND:-disabled}
+      OCR_REMOTE_URL: ${OCR_REMOTE_URL:-}
+      OCR_REMOTE_TOKEN: ${OCR_REMOTE_TOKEN:-}
+      OCR_REMOTE_CONNECT_TIMEOUT_SEC: ${OCR_REMOTE_CONNECT_TIMEOUT_SEC:-5}
+      OCR_REMOTE_READ_TIMEOUT_SEC: ${OCR_REMOTE_READ_TIMEOUT_SEC:-600}
       OMP_NUM_THREADS: 1
       MKL_NUM_THREADS: 1
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}

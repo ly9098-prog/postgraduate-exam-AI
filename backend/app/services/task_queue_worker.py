@@ -18,14 +18,14 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.services.staging_storage import retrieve_file
+from app.services.staging_storage import async_retrieve_file
 
 from app.services.task_queue_service import Task, task_queue
 
 logger = logging.getLogger("postgraduate-ai.task-worker")
 
 
-def _resolve_file_path(store: dict | None) -> str:
+async def _resolve_file_path(store: dict | None) -> str:
     """Resolve file path from pipeline store, preferring staging storage.
 
     If a ``staging_object_id`` is present, retrieves the file from staging.
@@ -35,7 +35,7 @@ def _resolve_file_path(store: dict | None) -> str:
         return ""
     staging_id = store.get("staging_object_id")
     if staging_id:
-        staged_path = retrieve_file(staging_id)
+        staged_path = await async_retrieve_file(staging_id)
         if staged_path:
             return staged_path
         logger.warning("Staging object %s not found, falling back to _file_path", staging_id)
@@ -190,10 +190,7 @@ async def _process_task(task: Task) -> None:
         from app.features.pipeline_orchestrator import _get_pipeline_store
 
         store = await _get_pipeline_store(pipeline_id)
-        file_path = _resolve_file_path(store)
-
-        store = await _get_pipeline_store(pipeline_id)
-        file_path = _resolve_file_path(store)
+        file_path = await _resolve_file_path(store)
         await _run_pipeline_with_db(
             pipeline_id=pipeline_id,
             file_path=file_path,
@@ -210,7 +207,7 @@ async def _process_task(task: Task) -> None:
         from app.features.pipeline_orchestrator import _get_pipeline_store
 
         store = await _get_pipeline_store(pipeline_id)
-        image_path = _resolve_file_path(store)
+        image_path = await _resolve_file_path(store)
         await _run_image_pipeline_with_db(
             pipeline_id=pipeline_id,
             image_path=image_path,
@@ -224,7 +221,7 @@ async def _process_task(task: Task) -> None:
         from app.features.pipeline_orchestrator import run_excel_pipeline_background, _get_pipeline_store
 
         store = await _get_pipeline_store(pipeline_id)
-        file_path = _resolve_file_path(store)
+        file_path = await _resolve_file_path(store)
         # Read file content from disk for the pipeline function
         if file_path:
             with open(file_path, "rb") as _fh:

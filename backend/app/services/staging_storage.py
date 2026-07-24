@@ -14,6 +14,7 @@ Features:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -265,3 +266,35 @@ def sweep_temp_files() -> int:
     if removed:
         logger.info("Temp sweep removed %d stale files", removed)
     return removed
+
+
+# ── Async wrappers (move sync I/O off the event loop) ──
+
+
+async def async_store_file(
+    source_path: str | Path,
+    original_name: str = "",
+    mime: str = "application/octet-stream",
+) -> StagingObject:
+    """Async wrapper for store_file — runs in executor to avoid blocking."""
+    return await asyncio.to_thread(store_file, source_path, original_name, mime)
+
+
+async def async_retrieve_file(object_id: str) -> str | None:
+    """Async wrapper for retrieve_file."""
+    return await asyncio.to_thread(retrieve_file, object_id)
+
+
+async def async_delete_object(object_id: str) -> bool:
+    """Async wrapper for delete_object."""
+    return await asyncio.to_thread(delete_object, object_id)
+
+
+async def async_cleanup_orphans(max_age_sec: int | None = None) -> int:
+    """Async wrapper for cleanup_orphans."""
+    return await asyncio.to_thread(cleanup_orphans, max_age_sec)
+
+
+async def async_sweep_temp_files() -> int:
+    """Async wrapper for sweep_temp_files."""
+    return await asyncio.to_thread(sweep_temp_files)
