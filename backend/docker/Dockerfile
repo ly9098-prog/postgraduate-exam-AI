@@ -66,6 +66,9 @@ COPY --chown=app:app . .
 ENV PATH=/home/app/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
 
+# Pre-create staging dir for durable task files (Docker volume mount point)
+RUN mkdir -p /opt/2240ai-v2/staging && chown app:app /opt/2240ai-v2/staging && chmod 700 /opt/2240ai-v2/staging
+
 USER app
 
 EXPOSE 8000
