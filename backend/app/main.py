@@ -52,8 +52,8 @@ async def _periodic_staging_cleanup():
     while True:
         await asyncio.sleep(3600)
         try:
-            from app.services.staging_storage import cleanup_orphans
-            removed = cleanup_orphans()
+            from app.services.staging_storage import async_cleanup_orphans
+            removed = await async_cleanup_orphans()
             if removed:
                 logger.info("Staging cleanup removed %d expired objects", removed)
         except Exception as e:
@@ -83,8 +83,8 @@ async def lifespan(app: FastAPI):
 
     # Staging storage: sweep stale temp files on startup
     try:
-        from app.services.staging_storage import sweep_temp_files
-        swept = sweep_temp_files()
+        from app.services.staging_storage import async_sweep_temp_files
+        swept = await async_sweep_temp_files()
         if swept:
             log_event(logger, "staging.sweep", count=swept)
     except Exception:

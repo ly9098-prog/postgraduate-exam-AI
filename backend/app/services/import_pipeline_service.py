@@ -14,7 +14,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.resource_guard import resource_guard
-from app.services.staging_storage import store_file, retrieve_file
+from app.services.staging_storage import async_store_file, async_retrieve_file
 
 from app.core.cache import cache
 from app.core.config import settings
@@ -588,7 +588,7 @@ async def start_import_pipeline(
     if is_excel:
         pipeline_id = f"xl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
-        staging_obj = store_file(file_path, original_name=filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        staging_obj = await async_store_file(file_path, original_name=filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         await _set_pipeline_store(pipeline_id, {
             "pipeline_id": pipeline_id,
             "status": "parsing",
@@ -654,7 +654,7 @@ async def start_import_pipeline(
 
     # Stage file to persistent storage before enqueuing task
     mime = content_type or ("application/pdf" if is_pdf else "text/plain")
-    staging_obj = store_file(file_path, original_name=filename, mime=mime)
+    staging_obj = await async_store_file(file_path, original_name=filename, mime=mime)
 
     store_data: dict = {
         "pipeline_id": pipeline_id,
