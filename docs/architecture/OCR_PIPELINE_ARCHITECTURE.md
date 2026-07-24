@@ -3,7 +3,7 @@
 > 维护时间：2026-07-19
 > 审计参考：`docs/audit/OCR_PIPELINE_AUDIT_RECORDS.md`、`prompts/tasks/fix_task.md`
 >
-> **修复进展：Sprint 0 ✅ | Sprint 1 ✅ | Sprint 2 ✅ | Sprint 3 (4/5 ✅ 1 ⏳)**
+> **修复进展：Sprint 0 ✅ | Sprint 1 ✅ | Sprint 2 ✅ | Sprint 3 ✅**
 
 ---
 
@@ -355,12 +355,12 @@ Input → Type/Safety → Native Text Probe → Page Renderer/Stream
 | 分领域质量门（文本/代码/数学/表格） | S2-4.8 | ✅ code_language_noise_layer + math_detect + table_detect |
 | 结构冻结绑定 region/line ID | S2 | ✅ structure_freeze_stage.py 正则 SSOT |
 
-### Sprint 3：基准、灰度和规模化（部分完成）
+### Sprint 3：基准、灰度和规模化（✅ 全部完成）
 
 | 工作项 | fix_task 编号 | 状态 |
 |--------|-------------|------|
 | 建立"题库 OCR Bench" | S3 | ✅ tests/ocr_regression/ (17 cases) + tests/ocr_acceptance/ (10 类) |
-| 持久任务队列 + page group + 幂等 | S3 | ✅ task_queue_service (Redis + 本地回退) |
+| 持久任务队列 + page group + 幂等 | S3 | ✅ DurableTaskQueue (Redis Lua + 本地回退)、owner fencing、生产验证 |
 | 多 GPU/多模型 router | S3 | ✅ OCRGateway (local/remote VL), OCRFixRouter (多模型降级链) |
 | 版本灰度与自动回滚 | S3 | ✅ ocr_canary + rollout_policy + pipeline_fingerprint |
 | 人工审核 → 主动学习 | S3 | ✅ scripts/export_review_hard_cases.py 硬案例导出 |
