@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 
 def utcnow() -> datetime:
@@ -11,7 +11,7 @@ def utcnow() -> datetime:
     When converting to ISO 8601 for API output, use ``utcnow().isoformat() + "Z"``
     or :func:`utcnow_aware` instead.
     """
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def utcnow_aware() -> datetime:
@@ -21,7 +21,7 @@ def utcnow_aware() -> datetime:
     timezone awareness is expected.  Convert to naive before writing to DB
     columns without ``timezone=True``.
     """
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def normalize_to_naive_utc(value: datetime) -> datetime:
@@ -33,7 +33,7 @@ def normalize_to_naive_utc(value: datetime) -> datetime:
     - Raises TypeError for non-datetime input.
     """
     if value.tzinfo is not None:
-        return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value.astimezone(UTC).replace(tzinfo=None)
     return value
 
 
@@ -48,10 +48,10 @@ def serialize_utc_datetime(value: datetime) -> str:
     - Never double-append ``Z``.
     """
     if value.tzinfo is not None:
-        value = value.astimezone(timezone.utc)
+        value = value.astimezone(UTC)
     else:
         # Naive — treat as UTC
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=UTC)
 
     iso = value.isoformat()
     # Remove any trailing "+00:00" to replace with "Z"

@@ -28,7 +28,6 @@ from app.schemas.ocr_job import (
 )
 from app.services import ocr_job_service as svc
 from app.services.worker_credential_service import (
-    constant_time_compare,
     hash_key,
     verify_credential,
 )

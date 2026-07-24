@@ -281,7 +281,6 @@ class OcrEngine:
 
     def _try_rotation(self, img, initial_result) -> Any:
         """Try 90/180/270 degree rotations if initial result is poor."""
-        from app.core.transform_tracker import TransformTracker
 
         if self._score_result(initial_result) >= 8:
             return initial_result
@@ -306,7 +305,7 @@ class OcrEngine:
 
     def _prepare_image(self, image_bytes: bytes, tracker=None):
         """Full preprocessing pipeline: load → crop → deskew → resize → enhance."""
-        from PIL import Image, ImageOps
+        from PIL import Image
 
         img = self._load_image(image_bytes)
         orig_w, orig_h = img.size if tracker is None else (0, 0)

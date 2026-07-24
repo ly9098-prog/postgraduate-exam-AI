@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Iterator, Literal, Sequence
+from typing import Literal
 
 RegionType = Literal["code", "text", "option"]
 

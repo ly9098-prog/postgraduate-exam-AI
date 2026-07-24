@@ -7,7 +7,6 @@
 crop_from_page_ref 委托给 visual_region_cropper 实现，保持向后兼容。
 """
 import hashlib
-import io
 import logging
 from datetime import datetime
 

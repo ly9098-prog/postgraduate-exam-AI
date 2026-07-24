@@ -1,14 +1,20 @@
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, time, timedelta
 
 from fastapi import Request
 from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
 from app.core.admin_security import AdminPrincipal
+from app.core.time_utils import utcnow
 from app.models.admin import AdminAISettings, AdminAIUsageMonthly, Role
 from app.models.ai_generation_log import AiGenerationLog
-from app.schemas.admin_ai_settings import AdminAISettingsPatchRequest, AdminAISettingsResponse, AdminAIUsageMonthlyResponse, AdminAIStatsResponse, DailyTrendPoint
+from app.schemas.admin_ai_settings import (
+    AdminAISettingsPatchRequest,
+    AdminAISettingsResponse,
+    AdminAIStatsResponse,
+    AdminAIUsageMonthlyResponse,
+    DailyTrendPoint,
+)
 from app.services.admin_audit_service import write_admin_audit
 
 DEFAULT_MONTHLY_CALL_LIMIT = 1000

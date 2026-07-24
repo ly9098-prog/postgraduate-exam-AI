@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
-import json
 import logging
 import uuid
 from typing import Any

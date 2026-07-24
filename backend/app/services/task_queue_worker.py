@@ -19,7 +19,6 @@ import asyncio
 import logging
 
 from app.services.staging_storage import async_retrieve_file
-
 from app.services.task_queue_service import Task, task_queue
 
 logger = logging.getLogger("postgraduate-ai.task-worker")
@@ -286,7 +285,6 @@ async def _process_task(task: Task) -> None:
 
     if task_type == TASK_TYPE_IMPORT_PIPELINE:
         from app.services.import_pipeline_service import _run_pipeline_with_db
-        from app.services.staging_storage import async_retrieve_file
 
         staging_id = payload.get("staging_object_id", "")
         file_path = await _resolve_staging_path(staging_id) if staging_id else ""
@@ -303,7 +301,6 @@ async def _process_task(task: Task) -> None:
 
     elif task_type == TASK_TYPE_IMAGE_PIPELINE:
         from app.services.import_pipeline_service import _run_image_pipeline_with_db
-        from app.services.staging_storage import async_retrieve_file
 
         staging_id = payload.get("staging_object_id", "")
         image_path = await _resolve_staging_path(staging_id) if staging_id else ""
@@ -387,10 +384,11 @@ async def _process_task(task: Task) -> None:
             logger.warning("Failed to store admin resume result for %s", pipeline_id)
 
     elif task_type == TASK_TYPE_FORMULA_BATCH:
-        from app.services.formula_graph_spec_service import _process_batch
-        from app.models.formula import FormulaCard
-        from app.core.database import async_session
         from sqlalchemy import select
+
+        from app.core.database import async_session
+        from app.models.formula import FormulaCard
+        from app.services.formula_graph_spec_service import _process_batch
 
         card_ids = payload.get("card_ids", [])
         admin_id = payload.get("admin_id", 0)

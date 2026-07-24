@@ -1,8 +1,7 @@
+import logging
 import random
 from datetime import date, datetime, timedelta
-import re
 
-import logging
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -10,11 +9,13 @@ from sqlalchemy.orm import selectinload
 from app.core.time_utils import utcnow
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
-from app.models.question_import import QuestionImport  # noqa: F401 — ensures Subject mapper resolves
-from app.utils.answer_normalizer import is_answer_correct
+from app.models.question_import import (
+    QuestionImport,  # noqa: F401 — ensures Subject mapper resolves
+)
 from app.services.admin_subject_service import resolve_subject_ids
 from app.services.behavior_service import record_answer_behavior
 from app.services.wrong_question_service import record_wrong
+from app.utils.answer_normalizer import is_answer_correct
 
 logger = logging.getLogger(__name__)
 
@@ -1108,6 +1109,7 @@ async def _finalize_smart(
     """smart 模式统一收尾：写推荐日志（best-effort），返回结果。"""
     try:
         from collections import Counter
+
         from app.services import recommendation_log_service
 
         recs = [
@@ -1417,9 +1419,9 @@ async def get_smart_scored_questions(
     降级链:
       高分候选 → 放宽多样性 → 随机补齐(含24h内) → 放弃24h限制重查 → 最终随机
     """
-    from app.models.user_question_state import UserQuestionState
-    from app.models.user_knowledge_state import UserKnowledgeState
     from app.models.question_knowledge_point import QuestionKnowledgePoint
+    from app.models.user_knowledge_state import UserKnowledgeState
+    from app.models.user_question_state import UserQuestionState
 
     now = utcnow()
     metadata: dict[int, dict] = {}

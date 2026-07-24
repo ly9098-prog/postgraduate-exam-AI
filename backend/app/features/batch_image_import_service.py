@@ -24,12 +24,11 @@
 """
 
 import asyncio
-import json
 import logging
 import os
 import uuid
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,10 +42,14 @@ from app.models.import_batch_job import (
     ImportBatchJobItem,
 )
 from app.models.pipeline_enums import (
-    guard_item_transition as _guard_item_transition,
-    guard_job_transition as _guard_job_transition,
     TraceEventStatus,
     TraceStep,
+)
+from app.models.pipeline_enums import (
+    guard_item_transition as _guard_item_transition,
+)
+from app.models.pipeline_enums import (
+    guard_job_transition as _guard_job_transition,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,7 +102,7 @@ class _TraceData:
 
 def _now() -> datetime:
     """Return naive UTC datetime for DB storage (compatible with DateTime columns without timezone=True)."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def clamp_concurrency(value: int | None) -> int:
@@ -759,7 +762,6 @@ async def _run_single_image(
     )
 
     async with async_session() as pdb:
-        from app.features.pipeline_orchestrator import run_import_pipeline
 
         # API 模式：VL 已产出高质量文本，跳过 pipeline 的 ocr_correction 阶段
         pipeline_opts = {**options, "skip_ocr_correction": skip_ocr_correction, "_original_raw_text": raw_ocr_text}
@@ -871,8 +873,9 @@ async def _process_source(
             # ── 回填 source_image_seq / source_image_name ──
             if pipeline_ok and review_batch_id:
                 try:
-                    from app.models.question_import import QuestionImport as _QI
                     from sqlalchemy import update as _sa_update
+
+                    from app.models.question_import import QuestionImport as _QI
                     async with async_session() as _db:
                         await _db.execute(
                             _sa_update(_QI)

@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import difflib
-import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -148,7 +147,7 @@ def _detect_hallucination(text: str, original: str) -> list[str]:
     emails = re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", text)
     for email in emails:
         if email.lower() not in origin_lower:
-            issues.append(f"new_email")
+            issues.append("new_email")
 
     # Phone numbers (Chinese mobile)
     phones = re.findall(r"1[3-9]\d{9}", text)

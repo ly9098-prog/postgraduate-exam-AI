@@ -23,7 +23,11 @@ from typing import Any
 
 import httpx
 
-from app.core.ocr_runtime_config import OcrRuntimeConfig, sanitize_url, sanitize_url_strip_credentials
+from app.core.ocr_runtime_config import (
+    OcrRuntimeConfig,
+    sanitize_url,
+    sanitize_url_strip_credentials,
+)
 from app.core.ocr_types import STABLE_ERROR_CODES, WorkerResult
 
 logger = logging.getLogger(__name__)

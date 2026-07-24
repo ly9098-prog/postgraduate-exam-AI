@@ -22,7 +22,7 @@ import os
 import signal
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +31,7 @@ import httpx
 from app.ocr_worker.client import WorkerAPIClient, WorkerClientError
 from app.ocr_worker.config import OCRWorkerConfig
 from app.ocr_worker.executor import ExecutorError, OcrExecutorProcess
-from app.ocr_worker.workspace import JobWorkspace, WorkspaceError
+from app.ocr_worker.workspace import JobWorkspace
 
 logger = logging.getLogger("postgraduate-ai.ocr-worker.daemon")
 
@@ -174,7 +174,7 @@ class OcrWorkerDaemon:
             "status": "downloading",
             "completed_pages": [],
             "input_artifact_key": claimed.input_artifact_key,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         })
 
         # Download input
@@ -244,7 +244,7 @@ class OcrWorkerDaemon:
             worker_fingerprint=f"worker-{self._config.WORKER_ID}",
         )
 
-        ws.update_manifest(status="completed", completed_at=datetime.now(timezone.utc).isoformat())
+        ws.update_manifest(status="completed", completed_at=datetime.now(UTC).isoformat())
         logger.info("Job %s completed successfully", claimed.job_id)
 
     def _report_failure(self, job_id: str, lease_token: str, error: Exception) -> None:

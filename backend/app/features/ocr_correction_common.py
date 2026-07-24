@@ -344,7 +344,6 @@ def _line_is_option_like(line: str) -> bool:
     if first_word in code_keywords or stripped.startswith("#"):
         return False
     # 包含中文（题干/说明行）→ 不算 bare option
-    import unicodedata
     if any("一" <= c <= "鿿" or "　" <= c <= "〿" for c in stripped):
         return False
     # 看起来像自然语言选项
@@ -374,7 +373,9 @@ def repair_option_structure(text: str) -> str:
     text = _repair_latex_options(text)
 
     # Step 3: 如果已经有 detectable options，无需进一步修复
-    from app.features.question_type_classifier import detect_options_from_text, extract_options_from_text
+    from app.features.question_type_classifier import (
+        detect_options_from_text,
+    )
     if detect_options_from_text(text):
         return text
 

@@ -15,7 +15,6 @@ that prevents stale workers from modifying tasks claimed by another owner.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
@@ -28,7 +27,7 @@ import redis.asyncio as redis_async
 import redis.exceptions as redis_exc
 
 from app.core.config import settings
-from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 
 logger = logging.getLogger("postgraduate-ai.task-queue")
 

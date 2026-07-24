@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.models.user import User
 from app.models.question import Question
+from app.models.user import User
 from app.schemas.review_scheduler import (
     BatchGradeRequest,
     BatchGradeResponse,
@@ -16,12 +16,16 @@ from app.schemas.review_scheduler import (
     NextBatchRequest,
     NextBatchResponse,
     ReviewHistoryResponse,
-    ReviewStatsResponse as ScheduleStatsResponse,
     ReviewSubmit,
-    ReviewSubmitResponse as ScheduleSubmitResponse,
     TodayReviewOverviewResponse,
     TodayReviewResponse,
     TodayReviewResultResponse,
+)
+from app.schemas.review_scheduler import (
+    ReviewStatsResponse as ScheduleStatsResponse,
+)
+from app.schemas.review_scheduler import (
+    ReviewSubmitResponse as ScheduleSubmitResponse,
 )
 from app.services import review_scheduler
 from app.utils.answer_normalizer import is_answer_correct

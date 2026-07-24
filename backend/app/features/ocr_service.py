@@ -8,7 +8,6 @@ PaddleOCR-VL 调用已收敛至 ocr_fix/router.py（唯一入口），
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from app.core.config import settings
 

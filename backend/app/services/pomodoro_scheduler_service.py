@@ -28,10 +28,10 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import joinedload
 
-from app.core.time_utils import utcnow
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import async_session
+from app.core.time_utils import utcnow
 from app.models.pomodoro import PomodoroSession
 from app.services import wechat_notify_service as wechat
 

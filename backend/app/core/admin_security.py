@@ -1,22 +1,94 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import jwt
+from fastapi import Depends, HTTPException, Request, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.time_utils import utcnow
 from app.models.admin import AdminUser, Permission, Role, RolePermission
 
 admin_security = HTTPBearer()
 password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# ── Refresh Token Cookie Config ──
+
+REFRESH_COOKIE_KEY = "admin_refresh_token"
+_REFRESH_COOKIE_PATH = "/api/admin/v1/auth"
+
+
+def _resolve_refresh_cookie_secure(request: Request | None = None) -> bool:
+    """Determine whether the refresh cookie should carry the ``Secure`` flag.
+
+    Priority:
+        1. ``request.url.scheme == "https"`` (direct HTTPS connection).
+        2. ``X-Forwarded-Proto: https`` header set by nginx reverse proxy.
+        3. ``settings.APP_ENV == "production"`` — production always uses HTTPS.
+    """
+    if request is not None:
+        if request.url.scheme == "https":
+            return True
+        forwarded = request.headers.get("x-forwarded-proto", "")
+        return forwarded == "https"
+    return settings.APP_ENV == "production"
+
+
+def set_refresh_cookie(
+    response: Response,
+    value: str,
+    request: Request | None = None,
+    *,
+    secure: bool | None = None,
+) -> None:
+    """Set the admin refresh token cookie with consistent attributes.
+
+    All call sites (login, refresh, logout) must use this helper so
+    every Set-Cookie carries the same ``HttpOnly`` / ``SameSite`` /
+    ``Secure`` / ``Path`` values.
+    """
+    if secure is None:
+        secure = _resolve_refresh_cookie_secure(request)
+    response.set_cookie(
+        key=REFRESH_COOKIE_KEY,
+        value=value,
+        httponly=True,
+        samesite="none" if secure else "lax",
+        secure=secure,
+        path=_REFRESH_COOKIE_PATH,
+        max_age=7 * 24 * 60 * 60,
+    )
+
+
+def delete_refresh_cookie(
+    response: Response,
+    request: Request | None = None,
+    *,
+    secure: bool | None = None,
+) -> None:
+    """Delete the admin refresh token cookie.
+
+    Uses ``response.set_cookie`` with ``max_age=0`` instead of Starlette's
+    ``delete_cookie`` to ensure the deletion cookie carries the same
+    ``HttpOnly`` / ``SameSite`` / ``Secure`` flags as the original.
+    """
+    if secure is None:
+        secure = _resolve_refresh_cookie_secure(request)
+    response.set_cookie(
+        key=REFRESH_COOKIE_KEY,
+        value="",
+        httponly=True,
+        samesite="none" if secure else "lax",
+        secure=secure,
+        path=_REFRESH_COOKIE_PATH,
+        max_age=0,
+    )
 
 # bcrypt 协议硬限制：超过 72 bytes 会抛异常或被截断
 BCRYPT_MAX_BYTES = 72
@@ -62,7 +134,7 @@ async def set_admin_user_nbf(user_id: int, timestamp: int | None = None) -> None
 
 
 def create_admin_token(admin_user: AdminUser) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(admin_user.id),
         "type": "admin",
@@ -75,7 +147,7 @@ def create_admin_token(admin_user: AdminUser) -> str:
 
 
 def create_admin_refresh_token(admin_user: AdminUser) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(admin_user.id),
         "type": "admin_refresh",

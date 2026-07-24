@@ -4,7 +4,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-from app.schemas.ai import AiChatRecord, AiFeedbackRequest, AiPrewarmRequest, AiPrewarmResponse, AiResponse, ErrorAnalysisRequest, StudyAdviceRequest
+from app.schemas.ai import (
+    AiFeedbackRequest,
+    AiPrewarmRequest,
+    AiPrewarmResponse,
+    AiResponse,
+    ErrorAnalysisRequest,
+    StudyAdviceRequest,
+)
 from app.schemas.ai_learning import (
     AIExplainRequest,
     AIExplainResponse,
@@ -18,7 +25,8 @@ from app.schemas.ai_learning import (
     StrongPoint,
     WeakPoint,
 )
-from app.services import ai_learning_service, ai_service as svc
+from app.services import ai_learning_service
+from app.services import ai_service as svc
 
 router = APIRouter(prefix="/api/v1/ai")
 
@@ -52,10 +60,10 @@ async def prewarm_analysis(
     current_user: User = Depends(get_current_user),
 ):
     """批量预生成错题 AI 分析。已缓存的跳过，未生成的后台任务处理。"""
-    from app.services.ai_prewarm_worker import enqueue_prewarm
-    from app.services.ai_service import prewarm_wrong_question_analysis
-    from app.models.wrong_question import WrongQuestion
     from sqlalchemy import select
+
+    from app.models.wrong_question import WrongQuestion
+    from app.services.ai_prewarm_worker import enqueue_prewarm
 
     queued: list[int] = []
     skipped: list[int] = []

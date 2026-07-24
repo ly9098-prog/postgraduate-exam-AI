@@ -15,7 +15,7 @@ Redis 失败仅打日志，不影响主流程。
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select, update
@@ -32,7 +32,7 @@ _CHECKPOINT_TTL = 86400  # 24h，与 _PIPELINE_STATUS_TTL 对齐
 
 def _utcnow() -> datetime:
     """timezone-aware UTC now（避免 datetime.utcnow 的 deprecation warning）。"""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 # ---------------------------------------------------------------------------

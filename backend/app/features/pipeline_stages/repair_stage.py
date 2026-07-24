@@ -7,7 +7,6 @@ Extracted from ``pipeline_orchestrator.py:_run_repair`` and
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from app.features.ai_repair import repair_questions
 from app.features.ai_validation import validate_ai_results

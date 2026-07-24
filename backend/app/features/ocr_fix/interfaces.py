@@ -41,6 +41,7 @@ class OCRFixResult:
     duration_ms: int | None = None
     risk_flags: list[str] = field(default_factory=list)
     safety: dict | None = None
+    source: str = "unknown"
 
 
 @runtime_checkable

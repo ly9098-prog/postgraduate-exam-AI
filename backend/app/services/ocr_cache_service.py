@@ -16,8 +16,7 @@ import logging
 import os
 import sys
 import time
-from dataclasses import dataclass, field, asdict
-from typing import Any
+from dataclasses import asdict, dataclass, field
 
 from app.core.config import settings
 
@@ -105,7 +104,7 @@ def make_cache_key(image_bytes: bytes) -> tuple[str, str]:
 def _load_entry(path: str) -> OcrCacheEntry | None:
     """从文件加载缓存条目，损坏或超时时返回 None（超时的条目会顺便删除）。"""
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         age = time.time() - os.path.getmtime(path)
         if _TTL_SECONDS > 0 and age > _TTL_SECONDS:

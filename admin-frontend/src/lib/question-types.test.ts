@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
   getQuestionTypeLabel,
+  getQuestionTypeShortLabel,
   formatUnknownType,
   isValidQuestionType,
   QUESTION_TYPE_OPTIONS,
   QUESTION_TYPE_LABELS,
+  QUESTION_TYPE_SHORT_LABELS,
   QUESTION_TYPE_CODES,
   type QuestionTypeCode,
 } from "./question-types";
@@ -67,6 +69,57 @@ describe("getQuestionTypeLabel", () => {
 
   it('returns "历史未知题型(xxx)" for truly unknown value', () => {
     expect(getQuestionTypeLabel("foobar_type")).toBe("历史未知题型(foobar_type)");
+  });
+});
+
+// ── QUESTION_TYPE_SHORT_LABELS ──
+
+describe("QUESTION_TYPE_SHORT_LABELS", () => {
+  it("single_choice → 单选", () => {
+    expect(QUESTION_TYPE_SHORT_LABELS.single_choice).toBe("单选");
+  });
+
+  it("multiple_choice → 多选", () => {
+    expect(QUESTION_TYPE_SHORT_LABELS.multiple_choice).toBe("多选");
+  });
+
+  it("true_false → 判断", () => {
+    expect(QUESTION_TYPE_SHORT_LABELS.true_false).toBe("判断");
+  });
+
+  it("fill_blank → 填空", () => {
+    expect(QUESTION_TYPE_SHORT_LABELS.fill_blank).toBe("填空");
+  });
+
+  it("multi_blank_choice → 多空", () => {
+    expect(QUESTION_TYPE_SHORT_LABELS.multi_blank_choice).toBe("多空");
+  });
+
+  it("subjective → 问答", () => {
+    expect(QUESTION_TYPE_SHORT_LABELS.subjective).toBe("问答");
+  });
+});
+
+// ── getQuestionTypeShortLabel ──
+
+describe("getQuestionTypeShortLabel", () => {
+  it("returns short label for canonical code", () => {
+    expect(getQuestionTypeShortLabel("single_choice")).toBe("单选");
+    expect(getQuestionTypeShortLabel("multiple_choice")).toBe("多选");
+    expect(getQuestionTypeShortLabel("true_false")).toBe("判断");
+    expect(getQuestionTypeShortLabel("fill_blank")).toBe("填空");
+    expect(getQuestionTypeShortLabel("multi_blank_choice")).toBe("多空");
+    expect(getQuestionTypeShortLabel("subjective")).toBe("问答");
+  });
+
+  it('returns "未识别" for null/undefined/empty', () => {
+    expect(getQuestionTypeShortLabel(null)).toBe("未识别");
+    expect(getQuestionTypeShortLabel(undefined)).toBe("未识别");
+    expect(getQuestionTypeShortLabel("")).toBe("未识别");
+  });
+
+  it('returns "历史未知题型(xxx)" for truly unknown value', () => {
+    expect(getQuestionTypeShortLabel("foobar_type")).toBe("历史未知题型(foobar_type)");
   });
 });
 

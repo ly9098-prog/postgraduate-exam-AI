@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from concurrent.futures import Future, ProcessPoolExecutor, TimeoutError
 from concurrent.futures.process import BrokenProcessPool
 
@@ -93,9 +92,11 @@ def _run_lightweight_ocr(image_bytes: bytes, page_index: int) -> dict:
     cls=False for speed.
     Runs in child ProcessPoolExecutor worker.
     """
-    from PIL import Image, ImageOps
     import io
+
     import numpy as np
+    from PIL import Image, ImageOps
+
     from app.core.ocr_engine import create_engine_for_child
 
     engine = create_engine_for_child()

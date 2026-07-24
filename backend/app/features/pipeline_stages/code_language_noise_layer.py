@@ -22,14 +22,16 @@ import logging
 import re
 from typing import Any
 
+from app.features.code_integrity import contains_code
 from app.features.pipeline_stages.code_language_noise_metrics import (
     NoiseMetrics,
     NoiseMetricsCollector,
     format_metrics_summary,
 )
-from app.features.code_integrity import contains_code
 from app.features.pipeline_stages.noise_drift_detector import detect_drift
-from app.features.pipeline_stages.noise_rule_governor import evaluate_policy as evaluate_noise_policy
+from app.features.pipeline_stages.noise_rule_governor import (
+    evaluate_policy as evaluate_noise_policy,
+)
 
 logger = logging.getLogger(__name__)
 

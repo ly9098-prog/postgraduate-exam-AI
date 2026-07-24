@@ -4,11 +4,11 @@ from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.time_utils import shanghai_today_boundaries, utcnow
 from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.wrong_question import WrongQuestion
 from app.services.sm2_service import calc_sm2
-from app.core.time_utils import shanghai_today_boundaries, utcnow
 
 # Asia/Shanghai = UTC+8, no DST
 _SHANGHAI_TZ = timezone(timedelta(hours=8))
@@ -200,7 +200,7 @@ async def submit_review(
     if not schedule:
         raise ValueError(f"复习记录不存在: {schedule_id}")
     if schedule.question_id != question_id:
-        raise ValueError(f"题目与复习记录不匹配")
+        raise ValueError("题目与复习记录不匹配")
 
     sm2_result = calc_sm2(
         quality=rating,

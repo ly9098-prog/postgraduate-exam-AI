@@ -18,9 +18,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from app.core.module_result import (
@@ -36,8 +35,9 @@ logger = logging.getLogger(__name__)
 def _get_image_dimensions(source: bytes) -> tuple[int, int]:
     """Get image width and height from bytes (fast, no Paddle/OCR)."""
     try:
-        from PIL import Image
         import io
+
+        from PIL import Image
         with Image.open(io.BytesIO(source)) as img:
             return img.size
     except Exception:
@@ -586,7 +586,7 @@ class PaddleOCRVLDocumentAdapter:
                 confidence_method="model",
                 raw=result.raw if result.raw else None,
                 trace_id=trace_id,
-                model_fingerprint=f"paddleocr-vl-1.6",
+                model_fingerprint="paddleocr-vl-1.6",
                 backend="paddleocr-vl",
                 latency_ms=latency_ms,
             )
@@ -598,10 +598,10 @@ class PaddleOCRVLDocumentAdapter:
 
             # Classify error
             from app.features.ocr_vl.paddleocr_vl_client import (
-                JobSubmissionError,
-                JobPollingError,
-                ResultDownloadError,
                 ContractError,
+                JobPollingError,
+                JobSubmissionError,
+                ResultDownloadError,
             )
 
             category = "system"
@@ -645,11 +645,10 @@ class PaddleOCRVLDocumentAdapter:
         """
         from app.core.document_ir import (
             BBox,
-            DocumentIR,
             LineIR,
             PageIR,
-            Polygon,
             Point,
+            Polygon,
             Provenance,
             RegionIR,
             make_line_id,

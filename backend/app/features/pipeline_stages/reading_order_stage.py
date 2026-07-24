@@ -1,7 +1,6 @@
 """Reading Order Stage — integrates ReadingOrderResolver into the pipeline."""
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from app.features.reading_order import ReadingOrderResolver, apply_reading_order
@@ -56,7 +55,7 @@ def run_reading_order_stage_v2(
     Measuring latency from the caller side is recommended for accuracy;
     internal timing in this function is for the ModuleResult envelope.
     """
-    from app.core.module_result import ModuleResult, ModuleError
+    from app.core.module_result import ModuleError, ModuleResult
 
     warnings: list[str] = []
     resolver = ReadingOrderResolver()
@@ -76,7 +75,6 @@ def run_reading_order_stage_v2(
             latency_ms=0.0,
         )
 
-    from app.core.document_ir import DocumentIR
 
     for page in doc_ir.pages:
         result = apply_reading_order(page, resolver=resolver)

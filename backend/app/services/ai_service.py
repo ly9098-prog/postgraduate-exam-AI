@@ -2,14 +2,14 @@ import asyncio
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.client import deepseek
 from app.ai.context import build_error_context
-from app.ai.fallback import get_fallback_analysis, get_fallback_advice
+from app.ai.fallback import get_fallback_advice, get_fallback_analysis
 from app.ai.prompts import AI_ANALYSIS_PROMPT_VERSION, build_error_analysis, build_study_advice
 from app.models.ai_chat import AiChat
 from app.models.question import Question
@@ -268,7 +268,7 @@ async def analyze_error(
         try:
             async with asyncio.timeout(timeout_sec):
                 result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             old_cache = build_any_cached_error_analysis_response(wq)
             logger.warning(
                 "ai.error_analysis.timeout wq_id=%s force=%s timeout_sec=%s has_old_cache=%s",
@@ -340,7 +340,7 @@ async def analyze_error(
         # 附加元信息
         parsed["_meta"] = {
             "model": result.get("model", model_name or ""),
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "version": AI_ANALYSIS_PROMPT_VERSION,
             "from_fallback": False,
             "force_regenerated": force_regenerate,

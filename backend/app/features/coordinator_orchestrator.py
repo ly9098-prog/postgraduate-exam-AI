@@ -14,11 +14,12 @@ Design:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from typing import Any
 
+from app.core.module_result import ModuleError, ModuleResult
+from app.core.resource_guard import ResourceGuard
 from app.features.coordinators import (
     CorrectionCoordinator,
     DocumentStructureCoordinator,
@@ -29,10 +30,7 @@ from app.features.coordinators import (
     ReviewCoordinator,
     ValidationCoordinator,
 )
-from app.features.page_stream import PageRenderer, PageStream, RenderedPage
-from app.core.deployment_profile import DeploymentProfile
-from app.core.module_result import ModuleError, ModuleResult
-from app.core.resource_guard import ResourceGuard
+from app.features.page_stream import PageStream, RenderedPage
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +238,7 @@ class CoordinatorPipeline:
         try:
             pages = await self.run_page_stream(input_result.data)
             stages_summary["pages"] = len(pages)
-        except Exception as e:
+        except Exception:
             stages_summary["page_stream"] = "failed"
             return self._finalize(start, stages_summary, "page_stream_failed")
 

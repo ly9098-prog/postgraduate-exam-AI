@@ -20,11 +20,18 @@ _EXPECTED_OPTION_KEYS = {"A", "B", "C", "D"}
 # 罗马数字枚举检测 — 用于验证题干中 I./II./III. 序列的完整性
 # Constants imported from shared module (single source of truth)
 from app.features.roman_schema import (  # noqa: E402
-    _ROMAN_SUBITEM_TOKEN, _RE_ROMAN_SUBITEM_MARKER, _ROMAN_TO_VALUE, _VALUE_TO_ROMAN,
-    has_roman_subitem_list, classify_roman_issue, build_roman_anomaly,
-    generate_duplicate_candidates, generate_gap_candidates,
+    _RE_ROMAN_SUBITEM_MARKER,
+    _ROMAN_SUBITEM_TOKEN,
+    _ROMAN_TO_VALUE,
+    DUPLICATE,
+    GAP,
+    OCR_DIGIT_CONFUSION,
+    SEQUENCE_BREAK,
+    build_roman_anomaly,
+    classify_roman_issue,
     generate_digit_confusion_candidates,
-    DUPLICATE, GAP, OCR_DIGIT_CONFUSION, SEQUENCE_BREAK,
+    generate_duplicate_candidates,
+    generate_gap_candidates,
 )
 
 

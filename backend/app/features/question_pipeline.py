@@ -11,46 +11,35 @@ ai_import_service、ai_import_helpers。所有入口（Excel / PDF / OCR / AI）
 """
 from __future__ import annotations
 
-import asyncio
 import difflib
 import hashlib
 import io
 import json
 import logging
 import re
-import uuid
-from datetime import datetime
 from typing import Any
 
-from openpyxl import Workbook, load_workbook
-from sqlalchemy import case, func, select
+from openpyxl import load_workbook
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import fallback
 from app.ai.client import deepseek
-from app.ai.prompts import (
-    build_batch_complete_question,
-    build_complete_question,
-    build_enrich_question,
-    build_generate_questions,
-    build_repair_question,
-)
-from app.core.time_utils import utcnow
 from app.core.config import settings
+from app.features.question_normalizer import run_ocr_quality_gate
+from app.features.question_splitter import split_questions
+from app.features.question_type import (
+    CANONICAL_TYPES,
+    QT_FILL_BLANK,
+    QT_SINGLE_CHOICE,
+    QT_TRUE_FALSE,
+)
+from app.features.question_type import (
+    normalize_question_type as _unified_normalize_type,
+)
+from app.features.roman_schema import _RE_ROMAN_SUBITEM_MARKER
 from app.models.ai_generation_log import AiGenerationLog
 from app.models.question import Question
 from app.models.question_import import QuestionImport
-from app.features.question_type import (
-    CANONICAL_TYPES,
-    normalize_question_type as _unified_normalize_type,
-    is_canonical,
-    QT_SINGLE_CHOICE,
-    QT_TRUE_FALSE,
-    QT_FILL_BLANK,
-)
-from app.features.question_normalizer import run_ocr_quality_gate
-from app.features.question_splitter import split_questions
-from app.features.roman_schema import _RE_ROMAN_SUBITEM_MARKER
 from app.utils.trace.debug import debug_log, save_debug_snapshot
 
 logger = logging.getLogger(__name__)
@@ -319,9 +308,9 @@ class QuestionNormalizer:
                 values = [v for v in re.split(r"[,，、/\s]+", text.upper()) if v]
             elif question_type == "multi_blank_choice":
                 from app.features.multi_blank_choice import (
+                    extract_blank_slots,
                     parse_multi_blank_answer,
                     serialize_multi_blank_answer,
-                    extract_blank_slots,
                 )
                 slot_ids = extract_blank_slots(text)
                 if slot_ids:
@@ -518,7 +507,9 @@ class QuestionNormalizer:
                 elif len(options) < 2:
                     warnings.append("options_too_few")
                 # 单选题必须包含全部 A/B/C/D 选项（共享校验逻辑）
-                from app.features.question_normalizer import check_option_completeness as _check_opts
+                from app.features.question_normalizer import (
+                    check_option_completeness as _check_opts,
+                )
                 _, opt_errors = _check_opts(question.get("question_type"), options)
                 errors.extend(opt_errors)
         if question.get("question_type") == "multi_blank_choice":
@@ -1200,8 +1191,8 @@ def _guess_subject(text: str, *, min_score: int = 2) -> str | None:
 
 def _extract_pdf_text(content: bytes) -> str:
     """双通道提取 PDF 全文：文本型直接提取，图片型页面走 OCR。"""
+    from app.services.ocr_service import clean_ocr_text, ocr_pages
     from app.services.pdf_classifier import classify_pages, get_pixmap
-    from app.services.ocr_service import ocr_pages, clean_ocr_text
 
     classified = classify_pages(content)
     page_texts: dict[int, str] = {}
@@ -1559,14 +1550,22 @@ async def list_logs(
 
 # question_import_writer MUST be imported first — question_draft_generator
 # depends on _create_question_import which is re-exported from here.
+from app.features.question_ai_complete import (  # noqa: E402, F401
+    _has_complete_answer_risk,
+    batch_complete_questions,
+    complete_import,
+    complete_import_with_strategy,
+)
+from app.features.question_ai_enrich import enrich_batch, enrich_import  # noqa: E402, F401
+from app.features.question_draft_generator import generate_drafts  # noqa: E402, F401
 from app.features.question_import_writer import (  # noqa: E402, F401
+    _apply_duplicate_fields,
     _build_import_duplicate_fields,
     _create_question_import,
     _guess_subject,
     _parse_excel,
     _parse_pdf,
     _refresh_import_duplicate_status,
-    _apply_duplicate_fields,
     approve_question,
     batch_approve,
     generate_template,
@@ -1575,13 +1574,4 @@ from app.features.question_import_writer import (  # noqa: E402, F401
     import_pdf,
     list_batches,
     reject_question,
-)
-
-from app.features.question_draft_generator import generate_drafts  # noqa: E402, F401
-from app.features.question_ai_enrich import enrich_import, enrich_batch  # noqa: E402, F401
-from app.features.question_ai_complete import (  # noqa: E402, F401
-    _has_complete_answer_risk,
-    batch_complete_questions,
-    complete_import,
-    complete_import_with_strategy,
 )

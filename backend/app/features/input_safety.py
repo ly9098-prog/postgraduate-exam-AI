@@ -20,10 +20,8 @@ All checks raise ValueError with descriptive messages.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 logger = logging.getLogger(__name__)
 

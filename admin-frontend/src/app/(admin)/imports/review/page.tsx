@@ -15,7 +15,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { hasVisualSegments, isImageSegmentType, getSegmentTypeLabel, reorderSegmentUp, reorderSegmentDown, moveSegment, deleteSegmentAtIndex, updateSegOptionKey, updateSegUrl } from "@/lib/segment-utils";
-import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, getQuestionTypeLabel, formatUnknownType } from "@/lib/question-types";
+import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, getQuestionTypeLabel, getQuestionTypeShortLabel, formatUnknownType } from "@/lib/question-types";
 import type { SelectOption } from "@/components/ui/custom-select";
 import type { AdminImportCompleteResponse, BatchAnswerImageApplyResponse, BatchAnswerImagePreviewResponse, BatchAnswerPreviewResponse, BatchAnswerApplyResponse, BatchCompleteResponse, ImportActionResponse, ImportBatchListItem, ImportQuestionItem, PaginatedResponse } from "@/lib/api/types";
 import {
@@ -1538,6 +1538,7 @@ export default function ImportReviewPage() {
                         const sourceLocator = getSourceLocator(item);
                         const stemText = item.content_preview || textFromImport(item) || "—";
                         const typeLabel = getQuestionTypeLabel(item.question_type);
+                        const shortTypeLabel = getQuestionTypeShortLabel(item.question_type);
                         return (
                           <tr key={item.id} className={`border-b border-[var(--color-border)]/40 transition-colors hover:bg-[var(--color-bg-input)]/30 ${index % 2 === 0 ? "bg-white" : "bg-[var(--color-bg-input)]/20"}`}>
                             <td className="px-2.5 py-2">
@@ -1558,7 +1559,7 @@ export default function ImportReviewPage() {
                               <span className="block min-w-0 truncate text-[11px] text-[var(--ink)]" title={stemText}>{stemText}</span>
                             </td>
                             <td className="w-[60px] px-2 py-2 text-center">
-                              <span className="block min-w-0 truncate text-[10px] text-[var(--color-text-hint)]" title={typeLabel}>{typeLabel}</span>
+                              <span className="block min-w-0 truncate text-[10px] text-[var(--color-text-hint)]" title={typeLabel}>{shortTypeLabel}</span>
                             </td>
                             <td className="w-[132px] px-2 py-2 text-center">
                               {isSingleChoice ? (

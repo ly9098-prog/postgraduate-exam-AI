@@ -5,7 +5,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-
 # --- submit_to_review ---
 
 class Stage5Question(BaseModel):

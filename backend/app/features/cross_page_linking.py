@@ -112,8 +112,7 @@ REASON_AMBIGUOUS = "CROSS_PAGE_AMBIGUOUS"
 REASON_NEW_QN_TERMINATES = "CROSS_PAGE_NEW_QN_TERMINATES"
 REASON_HEADER_FOOTER_EXCLUDED = "CROSS_PAGE_HEADER_FOOTER_EXCLUDED"
 
-from app.features.question_numbering import NumberingType, has_new_question_number
-
+from app.features.question_numbering import has_new_question_number
 
 # Re-export as internal name for backward compatibility
 _has_new_question_number = has_new_question_number
@@ -151,7 +150,7 @@ def _get_last_region_text(page: Any) -> str:
         return ""
     body_regions = [
         r for r in page.regions
-        if not getattr(r, "region_type", "") in ("header", "footer", "watermark")
+        if getattr(r, "region_type", "") not in ("header", "footer", "watermark")
     ]
     if not body_regions:
         return ""
@@ -165,7 +164,7 @@ def _get_first_region_text(page: Any) -> str:
         return ""
     body_regions = [
         r for r in page.regions
-        if not getattr(r, "region_type", "") in ("header", "footer", "watermark")
+        if getattr(r, "region_type", "") not in ("header", "footer", "watermark")
     ]
     if not body_regions:
         return ""
@@ -180,7 +179,7 @@ def _is_near_bottom(page: Any) -> bool:
     page_h = getattr(page, "height", 1000) or 1000
     body_regions = [
         r for r in page.regions
-        if not getattr(r, "region_type", "") in ("header", "footer", "watermark")
+        if getattr(r, "region_type", "") not in ("header", "footer", "watermark")
     ]
     if not body_regions:
         return False
@@ -333,12 +332,12 @@ def _evaluate_page_pair(
     if hasattr(current_page, "regions"):
         source_region_ids = [
             getattr(r, "region_id", "") for r in current_page.regions
-            if not getattr(r, "region_type", "") in ("header", "footer", "watermark")
+            if getattr(r, "region_type", "") not in ("header", "footer", "watermark")
         ]
     if hasattr(next_page, "regions"):
         target_region_ids = [
             getattr(r, "region_id", "") for r in next_page.regions
-            if not getattr(r, "region_type", "") in ("header", "footer", "watermark")
+            if getattr(r, "region_type", "") not in ("header", "footer", "watermark")
         ]
 
     # Determine link type

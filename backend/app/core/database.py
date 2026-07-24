@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
-from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 
 logger = logging.getLogger("postgraduate-ai.database")
 
@@ -396,18 +396,10 @@ async def init_db():
     if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
         return
 
-    from app.models.refresh_token import RefreshToken  # noqa: F401 — register model for create_all
-    from app.models.knowledge_point import KnowledgePoint  # noqa: F401
-    from app.models.question_knowledge_point import QuestionKnowledgePoint  # noqa: F401
-    from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
-    from app.models.recommendation_log import RecommendationLog  # noqa: F401
-    from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401 — Phase 3
+    from app.models.admin_vector_config import (
+        AdminVectorConfig,  # noqa: F401 — Phase 5 vector config
+    )
     from app.models.ai_feedback_log import AiFeedbackLog  # noqa: F401
-    from app.models.recommendation_strategy_config import RecommendationStrategyConfig  # noqa: F401 — Phase 4
-    from app.models.recommendation_experiment import RecommendationExperiment  # noqa: F401 — Phase 4
-    from app.models.recommendation_experiment_assignment import RecommendationExperimentAssignment  # noqa: F401 — Phase 4
-    from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401 — Phase 4
-    from app.models.admin_vector_config import AdminVectorConfig  # noqa: F401 — Phase 5 vector config
     from app.models.formula import (  # noqa: F401
         FormulaCard,
         FormulaCardTag,
@@ -421,6 +413,24 @@ async def init_db():
         FormulaTag,
         UserFormulaFavorite,
     )
+    from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401 — Phase 3
+    from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+    from app.models.question_knowledge_point import QuestionKnowledgePoint  # noqa: F401
+    from app.models.recommendation_experiment import (
+        RecommendationExperiment,  # noqa: F401 — Phase 4
+    )
+    from app.models.recommendation_experiment_assignment import (
+        RecommendationExperimentAssignment,  # noqa: F401 — Phase 4
+    )
+    from app.models.recommendation_log import RecommendationLog  # noqa: F401
+    from app.models.recommendation_metrics_daily import (
+        RecommendationMetricsDaily,  # noqa: F401 — Phase 4
+    )
+    from app.models.recommendation_strategy_config import (
+        RecommendationStrategyConfig,  # noqa: F401 — Phase 4
+    )
+    from app.models.refresh_token import RefreshToken  # noqa: F401 — register model for create_all
+    from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
 
     async with engine.begin() as conn:
         await _repair_sqlite_admin_bigint_pk(conn)

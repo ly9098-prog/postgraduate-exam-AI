@@ -1,828 +1,744 @@
-# MemoGrad 多空选择题支持：Claude Code 分阶段执行 Prompt
+你是一名资深 Python/FastAPI、SQLAlchemy Async、PostgreSQL、Redis、分布式任务队列和 OCR 架构工程师。请在当前后端仓库中直接完成审计、修复、迁移、自动化测试和部署说明。不要只输出建议、TODO、伪代码或示例补丁。
 
-> 适用项目：FastAPI 后端 + Next.js 管理端 + 原生微信小程序。
->
-> 目标示例：
->
-> 题干：一个有 n 个顶点的图用邻接矩阵 A 表示，若图为有向图，顶点 vᵢ 的入度是（ ）；若图为无向图，顶点 vᵢ 的度是（ ）。
->
-> 公共选项：A / B / C / D
->
-> 原始答案：`①B、②D`
->
-> 当前错误结果：被导入成 `single_choice`，只能选一个答案。
->
-> 目标结果：识别为 `multi_blank_choice`，第 1 空选 B、第 2 空选 D。
+# 一、任务目标
 
----
+当前仓库是一个 FastAPI + SQLAlchemy Async + PostgreSQL + Redis 的刷题和题库导入系统。生产资源约为 2 核 CPU、1.8GB 内存，FastAPI、PostgreSQL、Redis、Nginx 和管理端可能运行在同一台服务器。
 
-## 一、开始前必须遵守的原则
+本次静态审计已经确认：当前代码只完成了部分结构性改造，尚未满足 `next_task.md` 的生产验收标准，不可直接上线。
 
-你正在 MemoGrad 项目中工作。先阅读：
+你必须重新验证并修复每一个问题。不得因为类名、注释或文件名包含 durable、bounded、cloud safe、resource guard 等字样就认为实现已经正确。
 
-- `CLAUDE.md`
-- `README.md`
-- 与本任务相关的后端、管理端、小程序代码
-- 当前 `git status`
+必须优先保证：
 
-不要直接重写现有答题系统。项目中已经存在部分 `multi_blank_choice` 支持，应以补齐和统一为主。
+1. 不阻塞 FastAPI 事件循环。
+2. 不发生重复导入、重复发布、重复 OCR 或重复 AI 调用。
+3. 进程重启、Worker 崩溃后任务可恢复。
+4. processing、retry、dead、Redis key、临时文件和日志不会无限增长。
+5. 资源不足时在入队前快速拒绝，不允许无限排队。
+6. cloud_api/production 永远不导入、初始化、检查或回退本地 PaddleOCR。
 
-已知相关位置可能包括：
+# 二、先输出审计矩阵
 
-### 后端
+开始修改前，输出一份审计矩阵，至少包含：
 
-- `backend/app/features/question_splitter.py`
-- `backend/app/features/question_normalizer.py`
-- `backend/app/features/question_pipeline.py`
-- `backend/app/features/answer_matcher.py`
-- `backend/app/features/text_question_parser.py`
-- `backend/app/features/question_import_writer.py`
-- `backend/app/features/question_publish_service.py`
-- `backend/app/utils/answer_normalizer.py`
-- `backend/app/services/practice_service.py`
-- `backend/app/schemas/practice.py`
-- `backend/app/schemas/admin_imports.py`
-- `backend/app/api/v1/practice.py`
-- `backend/app/api/v1/admin_imports.py`
-- `backend/app/ai/prompts.py`
+- 文档要求。
+- 当前状态：已实现、部分实现、未实现、实现错误。
+- 代码路径和行号。
+- 可复现方式。
+- 生产风险。
+- 修复方案。
+- 对应测试。
 
-### 管理端
+然后直接修改代码，不要停留在审计报告阶段。
 
-- `admin-frontend/src/app/(admin)/imports/review/page.tsx`
-- `admin-frontend/src/app/(admin)/imports/questions/page.tsx`
-- `admin-frontend/src/app/(admin)/questions/page.tsx`
-- `admin-frontend/src/lib/api/types.ts`
+# 三、必须首先修复的 P0
 
-### 微信小程序
-
-- `miniprogram/utils/answer.js`
-- `miniprogram/utils/question-runner-adapter.js`
-- `miniprogram/components/quiz-runner/quiz-runner.js`
-- `miniprogram/components/quiz-runner/quiz-runner.wxml`
-- `miniprogram/pages/practice/practice.js`
-- `miniprogram/pages/practice/practice.wxml`
-- `miniprogram/pages/review-today/review-today.js`
-- `miniprogram/pages/wrong-detail/wrong-detail.js`
-- `miniprogram/pages/practice-result/practice-result.js`
-
-要求：
-
-1. 不改无关功能。
-2. 尽量不新增数据库列。本功能可以利用现有 JSON `content`、`parsed_content` 和文本 `answer` 字段实现。
-3. 保持旧单选、多选、判断、填空、主观题完全兼容。
-4. 保持已有“每个空有独立选项组”的多空题兼容。
-5. 所有答案判定必须以后端为最终事实来源。
-6. 规则解析优先，AI 只做结构化兜底，不允许 AI 猜答案。
-7. 每个阶段完成后停止，输出：
-   - 修改文件
-   - 核心设计
-   - 测试命令及结果
-   - 尚未处理的问题
-8. 不自动提交 Git commit。
-
----
-
-## 二、统一数据契约
-
-不要为这类题继续使用 `single_choice`。
-
-统一题型：
-
-```json
-{
-  "question_type": "multi_blank_choice"
-}
-```
-
-正式题目建议存储为：
-
-```json
-{
-  "content": {
-    "text": "一个有 n 个顶点的图用邻接矩阵 A 表示，若图为有向图，顶点 vᵢ 的入度是（ ）；若图为无向图，顶点 vᵢ 的度是（ ）。",
-    "blank_option_groups": [
-      {
-        "id": "①",
-        "options": [
-          {"key": "A", "text": "..."},
-          {"key": "B", "text": "..."},
-          {"key": "C", "text": "..."},
-          {"key": "D", "text": "..."}
-        ]
-      },
-      {
-        "id": "②",
-        "options": [
-          {"key": "A", "text": "..."},
-          {"key": "B", "text": "..."},
-          {"key": "C", "text": "..."},
-          {"key": "D", "text": "..."}
-        ]
-      }
-    ]
-  },
-  "options": null,
-  "answer": "①:B;②:D"
-}
-```
-
-说明：
-
-- 即使原题只展示一次 A-D 公共选项，也将公共选项复制到每个 `blank_option_groups` 中。
-- 这是为了兼容项目中已有的小程序多空选项渲染模型，避免新增数据库结构。
-- `blank_option_groups` 顺序就是空位顺序。
-- `id` 优先保留原题显式标记，例如 `①`、`②`、`(1)`、`(2)`。
-- 题干只有多个匿名 `（ ）` 时：
-  - 优先使用答案中的标记，如原答案 `①B、②D`，则生成 `①`、`②`；
-  - 没有标记时生成 `"1"`、`"2"`。
-- 正确答案必须序列化为稳定格式：
-  - `①:B;②:D`
-  - 分隔符固定为英文分号；
-  - 槽位和值之间固定为英文冒号；
-  - 顺序严格跟随 `blank_option_groups`。
-- 数据库存储的 `options` 字段对 `multi_blank_choice` 设为 `null`，分组选项放在 `content.blank_option_groups`。
-- 审核暂存区对应放在 `parsed_content.blank_option_groups`。
-- 不允许只存 `A,B` 作为最终标准答案，因为这会丢失槽位含义；但导入兼容层可以在已知槽位顺序时接受 `A,B`。
-
----
-
-# 阶段 1 Prompt：后端数据契约、答案解析与判题
-
-请只完成后端基础能力，不修改管理端和小程序 UI。
-
-## 任务目标
-
-建立多空选择题的唯一后端工具层，使导入、发布、练习判题共用相同规则。
-
-## 1. 新建或整理统一工具模块
-
-优先新增：
-
-```text
-backend/app/features/multi_blank_choice.py
-```
-
-提供纯函数，至少包括：
-
-```python
-extract_blank_slots(stem: str, answer: str | None = None) -> list[str]
-parse_multi_blank_answer(
-    answer: str | list | dict | None,
-    slot_ids: list[str] | None = None,
-    allow_positional: bool = True,
-) -> dict[str, str]
-serialize_multi_blank_answer(
-    answer_map: dict[str, str],
-    slot_ids: list[str],
-) -> str
-build_blank_option_groups(
-    slot_ids: list[str],
-    shared_options: list[dict] | dict,
-) -> list[dict]
-validate_multi_blank_question(
-    groups: list[dict],
-    answer: str | dict | None,
-) -> tuple[bool, list[str]]
-detect_shared_option_multi_blank(
-    stem: str,
-    options: list[dict] | dict,
-    answer: str | None,
-    explicit_question_type: str | None = None,
-) -> dict
-```
-
-函数名可以根据项目风格调整，但职责必须集中，不能继续在多个文件复制正则。
-
-## 2. 答案兼容格式
-
-解析器至少兼容：
-
-```text
-①:B;②:D
-①B、②D
-① B，② D
-(1)B、(2)D
-1:B,2:D
-第1空B，第2空D
-A,B
-B,D
-```
-
-规则：
-
-- `A,B` 这种位置型答案只有在已经知道 `slot_ids` 且答案数等于空位数时才接受。
-- 答案字母统一大写。
-- 过滤重复槽位、未知槽位和非法选项时不能静默吞错，应返回可用于审核的错误。
-- 禁止从题目知识内容推测答案。
-- 只解析明确给出的答案文本。
-- 支持 A-H，不只限定 A-D。
-
-## 3. 精确判题
-
-修改：
-
-```text
-backend/app/utils/answer_normalizer.py
-```
-
-让 `multi_blank_choice` 使用统一工具。
-
-正确判定必须满足：
-
-- 用户答案包含所有要求槽位；
-- 不能缺少槽位；
-- 不能多出未知槽位；
-- 每个槽位答案完全一致；
-- 槽位顺序不影响判定；
-- 大小写及中英文标点不影响；
-- 空答案或解析失败返回错误。
-
-以下结果必须正确：
-
-```text
-标准：①:B;②:D
-
-①:B;②:D       => true
-②:D;①:B       => true
-①B、②D         => true
-①:B            => false
-①:B;②:C        => false
-①:B;②:D;③:A    => false
-B,D             => true（仅在题目槽位顺序已知的调用路径中）
-```
-
-检查并删除或复用 `practice_service.py` 中重复的多空答案处理逻辑，保证只有一处事实来源。
-
-## 4. 后端校验规则
-
-修复当前多空题可能“无答案也通过”的问题。
-
-`multi_blank_choice` 发布前必须满足：
-
-- 至少 2 个空；
-- `blank_option_groups` 存在；
-- group id 非空且唯一；
-- 每组至少 2 个选项；
-- 每组选项 key 唯一；
-- 正确答案覆盖所有 group id；
-- 无额外答案槽位；
-- 每个答案字母存在于对应组的选项中。
-
-导入暂存可以允许缺答案，但必须：
-
-- `answer_status = missing`；
-- `is_valid` 或发布校验不能误判为可直接发布；
-- 审核页显示明确风险；
-- 发布接口拒绝缺答案或槽位不匹配的数据。
-
-## 5. Hash 与去重
-
-当前多空题可能把普通 `options` 清空，因此 question hash 可能遗漏分组选项。
-
-修改 hash 逻辑：
-
-- 对 `multi_blank_choice` 将 `blank_option_groups` 的 id、option key、option text 按稳定顺序加入 hash；
-- 答案使用规范化后的槽位映射加入 hash；
-- 相同题目不同分组选项不能产生相同 hash；
-- 旧题型 hash 行为不改变。
-
-## 6. Schema/API 兼容
-
-保持现有 `AnswerSubmit.user_answer: str`，不要强制数据库迁移。
-
-在服务层规范化字符串即可。
-
-检查：
-
-- `/api/v1/practice/questions`
-- `/api/v1/practice/submit`
-- `/api/v1/practice/batch-submit`
-- 复习提交
-- 错题详情
-- AI 讲解上下文
-
-确保 `content.blank_option_groups` 不会被序列化丢失。
-
-## 7. 测试
-
-新增单元测试，覆盖：
-
-- 所有兼容答案格式；
-- 缺槽位、多槽位、错选项；
-- 顺序变化；
-- shared options 构造；
-- hash 包含 group options；
-- 旧单选、多选判题不回归。
-
-先运行最小测试，再运行后端相关测试集。
-
-完成后停止，不做阶段 2。
-
----
-
-# 阶段 2 Prompt：导入识别、审核与发布
-
-阶段 1 已完成。现在只实现导入链路和管理端审核，不修改小程序答题 UI。
-
-## 任务目标
-
-让下面这种“多个空共用一套选项”的题目自动识别为 `multi_blank_choice`：
-
-```text
-一个有 n 个顶点的图用邻接矩阵 A 表示，
-若图为有向图，顶点 vᵢ 的入度是（ ）；
-若图为无向图，顶点 vᵢ 的度是（ ）。
-
-A. ...
-B. ...
-C. ...
-D. ...
-
-答案：①B、②D
-```
-
-## 1. 调查现有导入链路
-
-先追踪并记录实际入口，不要凭文件名猜测：
-
-- 图片/OCR 导入；
-- PDF 导入；
-- 文本导入；
-- AI/VL 结构化；
-- `question_imports` 写入；
-- 审核更新；
-- 发布到 `questions`。
-
-找到所有可能绕过统一 normalizer 的路径，并统一接入阶段 1 的 helper。
-
-## 2. 识别“公共选项多空题”
-
-在普通 A-D 选项已被提取后、最终题型落定前，执行共享选项多空检测。
-
-强信号：
-
-- 题干部分存在至少两个空位；
-- 已提取一套至少两个普通选项；
-- 答案能解析出至少两个槽位答案；
-- 或输入显式标注“多空选择题”。
-
-需要支持的空位：
-
-```text
-（ ）
-( )
-____
-___
-①（ ）
-②（ ）
-(1)（ ）
-(2)（ ）
-```
-
-注意：
-
-- 只扫描题干，不扫描选项文字、解析、代码块。
-- 避免把数学区间 `(0,1)`、函数调用、代码括号当成空。
-- 匿名 `（ ）` 的数量必须与答案数量一致，否则进入人工审核。
-- 只有多个空但没有结构化选择答案时，不要武断改成多空选择题，可能是普通填空题。
-- 有两空 + 一套选项 + `①B、②D` 是确定的多空选择题。
-
-识别成功后：
-
-```python
-question_type = "multi_blank_choice"
-options = []
-blank_option_groups = build_blank_option_groups(slot_ids, shared_options)
-answer = serialize_multi_blank_answer(...)
-```
-
-## 3. 保留现有“每空独立选项组”
-
-现有如下结构必须继续工作：
-
-```text
-① A... B... C... D...
-② A... B... C... D...
-```
-
-不要因为新增共享选项检测而破坏它。
-
-两类输入最终统一成相同 `blank_option_groups` 数据契约。
-
-## 4. 答案提取
-
-修改答案匹配逻辑，使：
-
-```text
-答案：①B、②D
-```
-
-不会被旧正则截成单个 `B` 或识别失败。
+## P0-1：修复 DurableTaskQueue 状态机
 
 重点检查：
 
-- `answer_matcher.py`
-- OCR 内联答案提取；
-- 分离答案页按题号匹配；
-- `_ANSWER_LETTERS` 一类只允许字母的正则；
-- 文本导入答案规范化；
-- AI 输出校验。
+- `app/services/task_queue_service.py`
+- `app/services/task_queue_worker.py`
+- `app/services/ai_prewarm_worker.py`
 
-AI prompt 可以要求输出结构，但必须：
+已确认缺陷：
 
-- 原文没有答案时输出空，不得猜测；
-- 输出 `question_type=multi_blank_choice`；
-- 输出完整 `blank_option_groups`；
-- 答案输出 canonical string 或结构化 map；
-- 后端再次规则校验 AI 输出。
+1. `DurableTaskQueue.heartbeat()` 在接收 `Task` 时没有自动使用 `task.task_type`，而是更新 `_p_key(task_type or "")`。
+2. 这会写入错误的 `taskq:processing:` ZSET，正确 processing lease 没有延长，错误 ZSET 会持续增长。
+3. retry claim 在确认 task hash 和 payload 存在前就进入 processing，payload 缺失可能留下脏 processing/heartbeat。
+4. reaper 没有可靠更新 generation、attempt、status 和 owner fencing。
+5. owner 丢失后，旧 Worker 仍可能继续执行写数据库、发布或上传等副作用。
+6. ready queue 没有原子容量控制。
+7. 内存队列满时部分路径仍返回 task_id，调用方会误判成功。
+8. SIGTERM 时仅设置 draining 后立即 cancel，没有等待当前任务和安全释放 lease。
+9. 未知 task type 可能被当成成功完成。
+10. AI prewarm 使用相同的错误 heartbeat，延迟和幂等语义也不完整。
 
-## 5. 修复审核区数据
+修复要求：
 
-审核暂存应为：
-
-```json
-{
-  "question_type": "multi_blank_choice",
-  "parsed_content": {
-    "text": "...",
-    "blank_option_groups": [...]
-  },
-  "parsed_options": null,
-  "parsed_answer": "①:B;②:D"
-}
-```
-
-风险场景：
-
-- 空位数与答案数不一致；
-- 某个答案不在选项中；
-- 只有部分空有答案；
-- 识别到多个空但没有答案；
-- OCR 把 `①` 识别成 `1`。
-
-这些记录保留在审核池，增加明确 `risk_flags` / `warnings`，禁止静默降级为单选题。
-
-## 6. 管理端审核 UI
-
-修改管理端审核页面。
-
-当前多空题不能只显示一个自由文本答案框，也不能提示“用 A,B 表示”。
-
-实现结构化编辑：
-
-- 显示每个空位；
-- 每个空位展示对应选项；
-- 每个空只能选择一个选项；
-- 不同空可以选择相同字母；
-- 支持新增/删除空位；
-- 支持编辑 group id；
-- 支持编辑选项文本；
-- 对共享选项提供“复制到所有空”或自动同步能力；
-- 保存时生成 canonical answer；
-- 保存 `parsed_content.blank_option_groups`；
-- `parsed_options` 对该题型设为 null；
-- 切换题型时避免意外丢失数据，应二次确认或保留草稿。
-
-答案展示应为：
+- 使用 Redis Hash 保存 task payload/state。
+- ready queue 只保存 task_id。
+- processing 和 retry 使用 ZSET。
+- 所有 enqueue、claim、heartbeat、complete、fail、retry、dead、reaper 操作必须通过原子 Lua 或 Redis Streams Consumer Group 完成。
+- task state 至少包含：
 
 ```text
-①：B
-②：D
+task_id
+task_type
+payload
+status
+retry_count
+max_retries
+owner_token
+generation
+lease_until
+created_at
+updated_at
+last_error
 ```
 
-而不是普通多选标签。
-
-## 7. 发布链路
-
-验证审核通过和发布后：
-
-- `questions.question_type = multi_blank_choice`
-- `questions.content.blank_option_groups` 完整
-- `questions.options IS NULL`
-- `questions.answer` 为 canonical string
-- 发布前再次严格校验
-- 版本记录和审计日志保留结构变化
-
-## 8. 回归样例
-
-添加一个精确回归测试，文本至少包含：
+- enqueue、幂等 key 和容量检查必须在同一个原子操作中完成。
+- 队列达到上限时不能修改任何 Redis 状态，返回稳定的 429/503 错误和 Retry-After。
+- claim 必须先确认 task hash 和 payload 存在，再进入 processing。
+- 每次 claim 生成新的 owner_token 和 generation。
+- heartbeat 必须原子校验 task_id、task_type、owner_token 和 generation，并更新正确 processing ZSET 的 score。
+- complete、fail 和 reaper 必须使用同样的 fencing 条件。
+- 所有终态必须清理 processing、heartbeat 和 owner 状态。
+- reaper 只能恢复真实过期且未续租的任务，并且只能恢复一次。
+- 旧 owner 在 lease 丢失后不得继续执行副作用步骤。
+- 增加显式的 `release_or_requeue_on_shutdown()`。
+- Worker 收到 SIGTERM 后执行：
 
 ```text
-一个有 n 个顶点的图用邻接矩阵 A 表示，若图为有向图，顶点 vᵢ 的入度是（ ）；若图为无向图，顶点 vᵢ 的度是（ ）。
-A. ∑...
-B. ∑...
-C. ∑...
-D. ...
-答案：①B、②D
+停止 claim 新任务
+继续为当前任务 heartbeat
+等待当前任务在 grace timeout 内完成
+超时则原子释放或重新入队
+关闭 Redis、DB、httpx 和 executor
 ```
 
-断言：
+- dead-letter 必须有容量、TTL、查询、重试、删除接口和指标。
+- production/cloud_api Redis 不可用时拒绝长任务。
+- 只有 local_import 且显式配置时才允许使用有界内存队列。
+
+必须新增测试：
+
+1. claim 后 processing 正确。
+2. heartbeat 延长对应 task_type 的 lease。
+3. 禁止生成空 task_type processing ZSET。
+4. complete 后 processing 为空。
+5. heartbeat 正常时，运行超过初始 lease 不会重复执行。
+6. Worker 崩溃后只恢复一次。
+7. 两个 Worker 并发 claim 只有一个成功。
+8. 重复 enqueue 同一个 task_id 只产生一个任务。
+9. retry/dead 状态正确。
+10. Redis 重连后状态保留。
+11. complete 后 reaper 永不重新入队。
+12. processing/retry/dead 不随已完成任务无限增长。
+13. owner_lost 后旧 Worker 不再执行写库或发布操作。
+14. 队列满时 Redis 状态完全不变。
+
+## P0-2：彻底隔离云端 OCR
+
+重点检查：
+
+- `app/services/ocr_service.py`
+- `app/services/ocr_executor_service.py`
+- `app/features/ocr_gateway.py`
+- `app/features/ocr_adapter.py`
+- `app/services/ocr_worker_client.py`
+- `app/services/ocr_paddlex_http_client.py`
+- `app/services/import_pipeline_service.py`
+- `app/features/exercise_region_detector.py`
+- `app/core/ocr_process_pool.py`
+- `app/main.py`
+
+已确认缺陷：
+
+1. `ocr_service._is_cloud_api()` 将 `DeploymentProfile` 枚举与字符串 `"cloud_api"` 比较，结果恒为 False。
+2. `import_pipeline_service.py` 也使用相同的错误比较。
+3. Gateway 失败后，`ocr_pages`、`ocr_pages_with_boxes` 和 `ocr_raw_text` 会进入 legacy executor。
+4. legacy executor 会导入 `app.core.ocr_process_pool`。
+5. `ocr_executor_service.py` 使用 `run_in_executor(None, ...)`。
+6. `OCRGateway` 构造函数允许不显式传 profile。
+7. Gateway 注册 backend 时过早导入本地 adapter。
+8. worker client factory 没有独立的 cloud fail-closed 防线。
+9. shutdown 可能为了关闭 executor 而导入本地 OCR pool。
+10. `main.py` 使用 `sys.modules` 却没有导入 `sys`。
+11. 外部 OCR client 没有完整重试、退避、熔断、跨进程并发和大小限制。
+12. `OCR_REMOTE_TOKEN` 没有明确安全地放入请求头。
+13. OCR 请求构造存在同步文件读取。
+
+修复要求：
+
+- 所有模块只从 `app.core.deployment_profile` 导入统一的：
+
+```python
+detect_deployment_profile()
+DeploymentProfile
+```
+
+- 所有判断使用枚举，不允许与字符串直接比较。
+- `OCRGateway` 必须强制：
+
+```python
+OCRGateway(profile: DeploymentProfile, ...)
+```
+
+不得自动默认为 local_import。
+
+- cloud_api/production 的实际 import graph 中不得触碰：
 
 ```text
-question_type == multi_blank_choice
-len(blank_option_groups) == 2
-两个 group 都有 A-D
-parsed_options is None
-parsed_answer == "①:B;②:D"
+paddle
+paddleocr
+PaddleOCRLocalAdapter
+ocr_process_pool
+ocr_local_worker_client
+ocr_worker/executor.py
 ```
 
-完成后停止，不做阶段 3。
-
----
-
-# 阶段 3 Prompt：微信小程序答题、复习和错题模式
-
-阶段 1、2 已完成。现在只完善小程序多空答题体验及相关结果页。
-
-## 任务目标
-
-复用现有 `quiz-runner` 和 adapter，不新建一套独立答题页面。
-
-项目中已有部分：
-
-- `multi_blank_choice` 类型标签；
-- `_blankOptionGroups`；
-- `selectBlankOption`；
-- `serializeBlankAnswer`；
-- 只读正确/错误状态。
-
-先验证现有代码，再补缺口。
-
-## 1. 数据适配
-
-保证以下响应可以直接渲染：
-
-```json
-{
-  "id": 352,
-  "question_type": "multi_blank_choice",
-  "content": {
-    "text": "...",
-    "blank_option_groups": [
-      {"id": "①", "options": [...]},
-      {"id": "②", "options": [...]}
-    ]
-  }
-}
-```
-
-兼容：
-
-- options 为数组；
-- options 为对象；
-- group id 为数字、普通字符串、圈号；
-- 旧数据 answer 为 `①B、②D`；
-- 新数据 answer 为 `①:B;②:D`。
-
-## 2. 答题交互
-
-每个空位显示独立选项组：
+- 删除云端的所有 legacy local fallback。
+- 删除云端 `reset_ocr_engine()` 路径。
+- 云端不得调用 `find_spec("paddle")` 或 `find_spec("paddleocr")`。
+- Gateway、client factory 和 executor 三层都要检查 profile 并 fail closed。
+- 检测到 local backend 时记录结构化安全错误并停止该 OCR 路由。
+- 外部 OCR 失败后只能：
 
 ```text
-① 请选择该空答案
-A ...
-B ...
-C ...
-D ...
-
-② 请选择该空答案
-A ...
-B ...
-C ...
-D ...
+有限次数重试远端
+使用已有 PDF 文本层
+使用轻量文本规则
+使用 AI 文本纠错
+进入人工审核
+返回明确可重试错误
 ```
 
-要求：
+不得进入本地 OCR。
 
-- 每个空单选；
-- 两个空可以同时选 B；
-- 点击当前已选项可以取消；
-- 选择某空时不影响其他空；
-- 页面返回上一题后选择状态恢复；
-- 切换题目、横滑、答题卡跳转不丢状态；
-- 选项中的公式和富文本继续正常渲染；
-- 无障碍/点击区域与普通选项一致。
+外部 OCR client 必须：
 
-## 3. “已作答”定义
+- 复用共享 `httpx.AsyncClient`。
+- 设置 connect、read、write、pool timeout。
+- 设置连接数上限。
+- 使用有界的进程内并发控制。
+- 使用 Redis 实现跨进程并发控制。
+- 获取并发许可时有超时或立即拒绝，不能无限等待。
+- 仅重试连接错误、429、502、503、504。
+- 使用有限次数指数退避和随机抖动。
+- 业务 4xx 不重试。
+- 实现 circuit breaker。
+- 限制原始请求大小、base64 后大小和响应流大小。
+- token 只能放入安全请求头。
+- token 不得出现在 URL、日志、异常、response preview 或监控标签中。
+- shutdown 只关闭真实创建过的远端 client。
 
-多空题只有所有空都选择后才算已作答。
+必须新增 cloud isolation 测试：
 
-检查并修复类似以下错误逻辑：
+- 设置 `APP_ENV=production` 或 `DEPLOYMENT_PROFILE=cloud_api`。
+- monkeypatch `builtins.__import__`，导入任何 `paddle`、`paddleocr` 或本地 OCR 模块立即失败。
+- monkeypatch `importlib.util.find_spec`，查询 paddle/paddleocr 立即失败。
+- 断言 `sys.modules` 中不存在 paddle 和 paddleocr。
+- 断言不创建 OCR 子进程或进程池。
+- 断言不实例化 local adapter。
+- 外部 OCR 失败时进入 review 或明确失败。
+- 不安装 OCR requirements 时，云端仍能启动并调用外部 OCR。
+- shutdown 不导入任何 local OCR 模块。
 
-```js
-const answered = !!newAnswer
-```
+## P0-3：修复生产配置 fail-fast
 
-它会在只答一个空时错误地标为已作答。
+重点检查：
 
-统一使用：
+- `app/services/production_config_validator.py`
+- `app/main.py`
+- `app/core/config.py`
+- `app/core/ocr_runtime_config.py`
 
-```js
-adapter.isQuestionAnswered(question, answerMap, keyField)
-```
+已确认缺陷：
 
-检查：
+1. `_check_ocr_no_local_deps()` 在 cloud 中主动执行 `find_spec`，违反硬约束。
+2. 使用 `except Exception: pass` 隐藏配置检查错误。
+3. profile 解析失败时 `_is_restricted_environment()` 可能返回 False，从而跳过生产校验。
+4. `main.py` 将部分生产校验异常记录为非致命 warning。
+5. paddlex_http URL 为空时，URL/token 组合可能漏检。
+6. queue capacity 校验读取了错误位置的 `_DEAD_MAX`。
+7. DB 连接预算没有覆盖真实实例数和 PostgreSQL 保留连接。
+8. `main.py` 存在缺少 `sys`、早期使用未导入 `log_event` 等运行时问题。
 
-- practice 页面；
-- review-today；
-- 答题卡；
-- answeredCount；
-- 提交按钮；
-- 未答题确认弹窗；
-- 进度条。
+修复要求：
 
-## 4. 提交格式
-
-提交仍使用字符串：
-
-```json
-{
-  "question_id": 352,
-  "user_answer": "①:B;②:D"
-}
-```
-
-序列化顺序严格跟随 group 顺序。
-
-不直接把临时 JS 对象发送给后端。
-
-## 5. 本地答案工具一致性
-
-修改 `miniprogram/utils/answer.js`：
-
-- 解析规则和后端保持一致；
-- `isAnswerCorrect` 必须精确比较槽位集合；
-- 当前仅检查标准槽位是否都存在、但不拒绝多余槽位的逻辑要修复；
-- 旧答案格式兼容；
-- 位置型 `B,D` 只有在传入 slot ids 时才能解析。
-
-本地判题只用于展示，最终结果以后端返回为准。
-
-## 6. 结果展示
-
-提交后逐空展示：
-
-- 用户选项；
-- 正确选项；
-- 选对：绿色；
-- 选错：用户选项红色，正确选项绿色；
-- 未选：正确选项绿色，并标记“未作答”；
-- 页面顶部显示整题正确/错误；
-- 可选地显示“答对 1/2 空”，但不要改变当前整题计分规则。
-
-整题规则：
+- APP_ENV、profile 或配置解析失败时必须 fail closed。
+- production/cloud_api 的任何同步或异步校验异常都必须抛 `SystemError`。
+- 不允许在生产启动路径使用 `except Exception` 后继续启动。
+- 云端不检查 Paddle 是否安装，只验证当前配置和 import graph 不会使用本地 OCR。
+- 完整校验：
 
 ```text
-所有空都正确 => 正确
-任一空错误或缺失 => 错误
+APP_SECRET
+PostgreSQL + asyncpg
+Redis 连接
+Alembic head
+CORS
+PROCESS_ROLE
+OCR profile
+OCR backend
+OCR_USE_GPU=false
+unsafe thread fallback=false
+remote-to-local fallback=false
+OCR URL
+OCR token
+经显式允许的内网 HTTP 例外
+staging/static/persistent storage 可写
+磁盘剩余空间
+DB 连接预算
+队列容量
+角色配置一致性
 ```
 
-## 7. 错题本和复习
+- 为所有非法配置组合增加参数化启动测试。
+- 非法组合必须导致 lifespan 启动失败。
+- 修复所有 NameError、未定义符号和被异常吞掉的启动检查。
 
-验证：
-
-- 错题记录保存 canonical user_answer；
-- wrong-detail 能逐空回显；
-- 今日复习能重新作答；
-- 复习结果按整题正确性统计；
-- AI 错因分析收到易读答案，例如：
-  - 用户答案：①B、②C
-  - 正确答案：①B、②D
-
-## 8. 小程序测试
-
-若项目无正式测试框架，至少增加 Node 可运行的纯函数测试脚本，覆盖：
-
-- parse / serialize；
-- 部分作答不算已作答；
-- 选择/取消；
-- 同一选项可用于多个空；
-- 多余槽位判错；
-- 旧格式兼容。
-
-完成后停止，不做阶段 4。
-
----
-
-# 阶段 4 Prompt：历史数据修复、端到端测试与收尾
-
-阶段 1～3 已完成。现在做历史数据修复和完整回归，不新增功能。
-
-## 1. 历史数据修复脚本
-
-新增一个幂等脚本，例如：
+安全默认值至少调整为：
 
 ```text
-backend/scripts/backfill_multi_blank_choice.py
+cloud 单文件：5MB
+cloud PDF 页数：30
+同时处理文档：1
+同时渲染页面：1
+PDF page window：1
+worker 并发：1
+OCR GPU：false
 ```
 
-默认 dry-run，只有显式 `--apply` 才写库。
+## P0-4：真正拆分 web、worker 和 scheduler
 
-扫描：
+重点检查 `app/main.py` 及部署命令。
 
-- `question_imports`
-- `questions`
+当前 web role 仍启动 token cleanup 和 staging cleanup，违反角色隔离。
 
-候选条件：
+修复要求：
 
-- 当前题型为 `single_choice`、`choice` 或 `unknown`；
-- 题干存在至少两个可靠空位；
-- 有一套至少两个选项；
-- 答案能解析为多个槽位答案。
-
-例如数据库中可能存在：
+- `PROCESS_ROLE=web`：
 
 ```text
-question_type = single_choice
-stem = "...入度是（ ）；...度是（ ）。"
-answer = "①B、②D"
+HTTP
+鉴权
+轻量数据库查询
+上传到 staging
+资源准入
+可靠入队
 ```
 
-转换为统一数据契约。
+不得执行 pipeline、OCR、AI、公式、定时清理或 reaper。
 
-要求：
-
-- 不处理有歧义记录；
-- 输出候选 id、原类型、新类型、空位数、答案映射、风险；
-- 每条修改可追踪；
-- `--apply` 前提示备份；
-- 事务失败整体回滚或按安全批次提交；
-- 重复执行不产生二次变化；
-- 正式题库修改时同步版本/审计机制，不能绕开项目既有治理逻辑；
-- 修复后重算 question hash 和 duplicate status。
-
-## 2. 管理端维护入口（可选）
-
-若项目已有导入维护页面，可以增加：
-
-- “扫描疑似多空题”
-- dry-run 结果列表
-- 人工勾选
-- 执行转换
-
-不要为了这个可选功能新建复杂系统；脚本优先。
-
-## 3. 端到端测试
-
-至少覆盖：
-
-### 导入
+- `PROCESS_ROLE=worker`：
 
 ```text
-OCR/文本
-→ question_imports
-→ 管理端审核
-→ 发布
-→ questions
+导题
+PDF
+外部 OCR
+AI 修复
+公式任务
+task heartbeat/retry/dead
 ```
 
-### 答题
+默认并发 1。
+
+- `PROCESS_ROLE=scheduler`：
 
 ```text
-GET practice questions
-→ 小程序选择两个空
-→ submit
-→ 后端判题
-→ practice_records
-→ 错题/复习
+番茄钟
+refresh token cleanup
+audit cleanup
+staging orphan cleanup
+其他定时任务
 ```
 
-### 用例矩阵
+- 为三个角色提供独立启动命令、Docker Compose/systemd/supervisor 示例和健康检查。
+- 所有 `asyncio.create_task()` 保存引用并添加 done callback。
+- 关键任务异常退出时，production 进程必须退出或进入 not-ready，不能静默停止。
+- 每个组件有明确 `start()`、`stop()`、`drain()`。
+- shutdown 顺序正确关闭共享 httpx、Redis、SQLAlchemy engine 和 executor。
+- web role 不初始化重型 OCR client。
+- worker role 初始化自己需要的 OCR Gateway 和共享远端 client。
 
-1. 两空共用 A-D，答案 `①B、②D`。
-2. 两空共用 A-D，答案 `B,D`。
-3. 两空各自不同选项组。
-4. 两空答案顺序交换输入。
-5. 只答一个空。
-6. 多提交一个不存在的空。
-7. 答案字母不在选项中。
-8. 三空题。
-9. 普通单选含多个数学括号，不应误判。
-10. 普通填空有两个空但无选择答案，不应误判。
-11. 旧单选、多选、判断题完整回归。
+## P0-5：重写 ResourceGuard 原子准入
 
-## 4. 文档
+重点检查：
 
-补充项目文档：
+- `app/core/resource_guard.py`
+- `app/services/import_pipeline_service.py`
+- 所有上传、resume、后台管理和内部导入入口
 
-- 题型枚举；
-- JSON 数据结构；
-- 答案 canonical 格式；
-- 导入识别规则；
-- 审核规则；
-- API 提交示例；
-- 历史数据修复方式。
+已确认缺陷：
 
-## 5. 最终验收输出
+1. Redis acquire Lua 超过容量后仍然 `INCR`。
+2. `can_accept_work()` 和 `increment_pipeline_count()` 分离，存在竞态。
+3. increment 忽略 acquire 返回值。
+4. async 路径调用同步 Redis client。
+5. Redis 失败时 production 也可能降级为进程内计数。
+6. 校验期间抛异常可能泄漏 pipeline count。
+7. module singleton 未按 deployment profile 配置。
+8. event-loop lag、临时磁盘和 DB pool 等指标没有真实接入。
 
-最后输出：
+修复要求：
 
-- 完整变更文件清单；
-- 数据契约；
-- 后端测试结果；
-- 管理端构建结果；
-- 小程序纯函数测试结果；
-- dry-run 修复统计；
-- 尚存风险；
-- 建议人工验收步骤。
+- 使用异步 Redis Lua 实现原子的：
 
+```python
+async with resource_guard.acquire_pipeline(...):
+    ...
+```
+
+- 超限时不能修改计数。
+- 使用 owner token + lease/ZSET 或等价结构支持续租和 crash cleanup。
+- 不要使用单个整数加固定 TTL 表达活动任务。
+- production Redis 失败时 fail closed。
+- local_import 只有显式配置时允许本地有界 fallback。
+- 任何异常或取消都必须在 context manager 中释放。
+- admission 至少检查：
+
+```text
+RSS
+系统可用内存
+临时磁盘
+当前 pipeline 数
+OCR 并发
+页面像素预算
+远端 API 调用预算
+队列长度
+DB pool 使用率
+event-loop lag
+```
+
+- 所有导入入口必须在入队前调用同一 guard。
+- 资源不足返回稳定错误码、503/429 和 Retry-After。
+- 登录、刷题和答题提交等轻量接口不能被长任务 admission 阻塞。
+
+## P0-6：将 staging 生命周期绑定到 durable task
+
+重点检查：
+
+- `app/services/staging_storage.py`
+- `app/services/task_queue_worker.py`
+- `app/services/import_pipeline_service.py`
+- `app/services/import_service.py`
+- 所有上传入口
+
+修复要求：
+
+- 上传时直接分块流式写入 staging volume。
+- 写入过程中计算 SHA-256、size 和 MIME/magic。
+- 使用原子 rename 提交对象和 metadata。
+- task payload 只保存 object_id。
+- 不保存服务器路径、`UploadFile`、请求 Session、ORM 实例或内存闭包。
+- enqueue、claim、heartbeat 应创建或续租 object lease。
+- completed、failed、cancelled 和 dead 状态按 retention policy 释放 lease。
+- cleanup 只能删除：
+
+```text
+无有效 lease
+无 ready/processing/retry task 引用
+超过保留期
+```
+
+- 正确使用 `ttl_sec`。
+- 删除 object 时同时清理 metadata 和 lease。
+- quota 必须并发安全，不能每次依靠 O(n) 目录扫描。
+- production 使用持久 Docker volume，不允许 durable task 依赖 `/tmp`。
+- 删除 resume payload 中的 `file_path`。
+- 将旧的 `/tmp` + FastAPI BackgroundTasks 导入路径迁移到 durable queue。
+
+## P0-7：PDF 和图片改为严格单页流式处理
+
+重点检查：
+
+- `app/services/pdf_renderer_service.py`
+- `app/features/pipeline_orchestrator.py`
+- `app/core/config.py`
+- 图片压缩和上传路径
+
+已确认缺陷：
+
+1. `PdfRenderResult` 保存全部页面 bytes。
+2. 可能同时保存全部内存和磁盘副本。
+3. `PDF_RENDER_PAGE_WINDOW` 默认 0。
+4. cloud 默认仍为 200MB、600 页和并发 5。
+5. semaphore 没有限制 executor 等待队列。
+6. chunk 路径仍会积累多页。
+7. `ckpt` 存在先使用后导入的运行时错误。
+
+修复要求：
+
+- 生产主路径不得返回全量 `dict[int, bytes]`。
+- 提供 `AsyncIterator[RenderedPage]`。
+- cloud 同时最多持有一页：
+
+```text
+render
+校验
+文本层/OCR
+解析
+持久化
+释放 bytes/Pixmap/PIL/BytesIO
+删除临时页
+下一页
+```
+
+- 跨阶段保存 object/artifact 引用，不保存全量 bytes。
+- 专用 executor 有固定 worker 数和有界提交队列。
+- 队列满立即返回 429/503。
+- 全部 PyMuPDF、PIL、Excel、图片压缩、公式渲染、大文件哈希、同步 SDK 调用必须 offload。
+- 不得在持有数据库事务时等待外部 API、上传或 CPU 操作。
+- 增加以下校验：
+
+```text
+文件 magic
+MIME
+文件大小
+页数
+页面尺寸
+单页像素
+压缩比
+decompression bomb
+总 OCR 请求数
+pipeline 总超时
+临时磁盘预算
+```
+
+## P0-8：修复 scheduler 分布式锁
+
+重点检查：
+
+- `app/services/pomodoro_scheduler_service.py`
+- `app/services/audit_cleanup_scheduler.py`
+- `app/core/cache.py`
+- token/staging cleanup
+
+修复要求：
+
+- 不得使用会在 Redis 故障时自动降级本地锁的 cache API。
+- 建立 strict distributed lock。
+- 锁包含唯一 owner token。
+- 使用 Lua compare-and-expire 续租。
+- 使用 Lua compare-and-delete 释放。
+- owner 丢失后立即停止任务。
+- 长任务必须在 TTL 到期前续租。
+- audit cleanup 超过初始 TTL 时仍不能被第二实例重入。
+- refresh-token 和 staging cleanup 只在 scheduler 角色运行。
+- 每批有处理上限和数据库幂等条件。
+- 增加 acquired、skipped、failed、duration、processed 指标。
+
+# 四、继续完成 P1/P2
+
+## 1. BackgroundTasks 和事件循环
+
+- 删除重型 `/tmp` BackgroundTasks 主路径。
+- 后台任务只接收序列化 ID/object_id。
+- 每个后台任务自行建立、提交、回滚和关闭 AsyncSession。
+- 不得传请求 Session、UploadFile、ORM 实例或 Request。
+- 审计所有 `asyncio.create_task()`。
+- 未跟踪的 SSE publish task 必须改为可靠管理、直接 await 或 outbox。
+- async 路由中的 `compress_image()` 必须 offload。
+- 审计 PIL、fitz、openpyxl、文件 I/O、同步 COS SDK、公式渲染和大型 JSON。
+
+## 2. SSE
+
+- 保留 Redis Pub/Sub/Streams 主路径。
+- DB fallback 在无事件时指数退避，不能固定每两秒查询。
+- 限制单用户并发连接和总连接数。
+- 跨进程统计 active SSE，或至少提供可聚合 Prometheus 指标。
+- heartbeat 不访问数据库。
+- terminal 后立即关闭。
+- Nginx/客户端断开后立即 cancel generator 和 subscription。
+- 修复 subscription 异常重启抖动及 task 泄漏。
+
+## 3. Readiness 和可观测性
+
+- Redis readiness 使用 strict Redis PING，不能通过本地 cache fallback。
+- `/health/live` 只表示进程存活。
+- `/health/ready` 检查：
+
+```text
+PostgreSQL
+strict Redis
+Alembic head
+当前角色依赖
+worker queue
+staging writable/free space
+draining
+OCR profile/backend/URL/token
+cloud OCR 隔离
+```
+
+- 外部 OCR 短暂故障可以 degraded。
+- 非法 OCR 配置必须 not-ready。
+- 增加 Prometheus 指标：
+
+```text
+event-loop lag
+HTTP p50/p95/p99
+DB pool checked-out/wait
+慢 SQL
+task ready/processing/retry/dead
+task duration
+lease renewal failure
+duplicate execution prevented
+pipeline stage duration
+OCR duration/429/timeout/circuit
+AI duration/token/timeout
+RSS/available memory/temp disk
+active SSE
+scheduler acquired/skipped
+orphan files cleaned
+```
+
+## 4. 数据库性能
+
+必须实际执行并保存修复前后的：
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+```
+
+覆盖：
+
+- 今日复习。
+- 错题列表和统计。
+- practice 推荐。
+- 知识状态。
+- pipeline 状态。
+- audit log cleanup。
+- pomodoro 到期扫描。
+- task 管理查询。
+- question import review queue。
+
+修复：
+
+- 逐知识点 mastery 查询。
+- practice 跨学科循环。
+- AI prewarm 逐错题查询。
+- review 逐题查询。
+- 批量知识点 get-or-create。
+- 导入逐题 flush/refresh。
+- 公式逐条 get。
+- 大表 `ORDER BY random()`。
+
+使用 JOIN、IN、selectinload、PostgreSQL upsert、bulk insert/update 和必要唯一索引。
+
+所有索引修改必须提供 Alembic upgrade 和 downgrade。
+
+按实际 web、worker、scheduler 实例数重新计算连接预算，并为 PostgreSQL 管理和运维连接保留余量。
+
+# 五、强制测试
+
+当前仓库没有测试目录。必须新增真实、可执行的测试。
+
+## 单元测试
+
+1. profile 解析和非法配置 fail-fast。
+2. cloud OCR 禁止本地 import/find_spec/subprocess/adapter/fallback。
+3. 外部 OCR retry、backoff、jitter、4xx、circuit、大小限制和 token 脱敏。
+4. queue 全状态机和 fencing。
+5. heartbeat 正确 ZSET。
+6. queue capacity 原子性。
+7. SIGTERM graceful drain。
+8. scheduler strict lock。
+9. staging lease 和 cleanup。
+10. PDF 单页窗口。
+11. ResourceGuard 原子准入和异常释放。
+12. SSE 关闭、取消、heartbeat 和退避。
+13. 批量 SQL 查询次数断言。
+
+## 集成测试：真实 Redis + PostgreSQL
+
+1. 两个 Worker 同时 claim，仅一个成功。
+2. Worker 执行中被 kill。
+3. lease 过期后只恢复一次。
+4. heartbeat 正常时不恢复。
+5. complete 后永不重新入队。
+6. Redis 断连和重连。
+7. production 不降级内存队列。
+8. PostgreSQL pool 耗尽。
+9. OCR timeout、429、500 和 circuit。
+10. SIGTERM。
+11. staging volume 和容器重启后恢复。
+12. 多 scheduler 实例只有一个执行。
+
+## 压力测试
+
+在 2 核、1.8GB 容器限制下测试：
+
+- 普通 API 并发。
+- 一个 PDF pipeline 同时处理普通请求。
+- 多个导入请求快速提交。
+- OCR 高延迟、429 和失败。
+- SSE 长连接。
+- 百万级练习记录核心查询。
+
+记录：
+
+```text
+RSS
+available memory
+event-loop lag
+HTTP p95/p99
+queue length
+processing/retry/dead
+DB pool
+temp disk
+OCR concurrency
+duplicate execution count
+```
+
+# 六、仓库清理
+
+- 移除交付包中的：
+
+```text
+app/dev.db
+app/data/dev.db
+app/postgraduate.db
+```
+
+- 加入 `.gitignore`。
+- 补充根级依赖、测试、lint、类型检查和运行配置。
+- 不得提交 token、密码或生产数据库文件。
+
+# 七、工作顺序
+
+严格执行：
+
+1. 输出审计矩阵。
+2. 修复所有 P0。
+3. 每修复一个 P0 模块立即增加并运行测试。
+4. 处理事件循环、SSE、观测和数据库性能。
+5. 给出新增或修改的环境变量与 `.env.example`。
+6. 提供 Alembic migration 和 downgrade。
+7. 提供旧配置兼容、数据迁移和回滚方案。
+8. 提供 web、worker、scheduler 独立部署步骤。
+9. 运行并粘贴真实命令结果。
+10. 最后列出仍未解决的风险。
+
+至少运行：
+
+```bash
+python -m compileall app
+pytest -q
+ruff check .
+mypy app
+```
+
+根据仓库实际工具调整命令，但不得伪造未运行的结果。
+
+# 八、禁止事项
+
+禁止：
+
+- 只写 TODO、建议、设计说明或伪代码。
+- 使用 `except Exception: pass` 隐藏关键错误。
+- 仅增加 timeout 掩盖死锁。
+- 增加内存、线程或 Worker 数掩盖架构问题。
+- production 降级进程内队列或本地分布式锁。
+- cloud_api 检查、导入或执行本地 PaddleOCR。
+- 外部 OCR 失败后回退本地 OCR。
+- 把同步重任务放进 FastAPI 事件循环。
+- durable task 依赖 `/tmp`、请求 Session、UploadFile、ORM 实例或进程内闭包。
+- 在 owner lease 已失效时继续写库、上传或发布。
+- 声称测试通过但没有测试文件和命令输出。
+
+# 九、最终输出格式
+
+最终按以下顺序输出：
+
+1. 已确认问题和代码路径。
+2. 修复后的架构及关键不变量。
+3. 实际修改文件清单和关键 diff 摘要。
+4. 新增或修改的环境变量。
+5. Alembic migration。
+6. 完整测试和真实执行结果。
+7. 旧配置兼容与回滚方案。
+8. web、worker、scheduler 生产部署步骤。
+9. 压测方法、数据和验收结论。
+10. 仍未解决的风险、影响和后续动作。

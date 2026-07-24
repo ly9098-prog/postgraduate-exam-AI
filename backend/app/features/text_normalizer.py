@@ -6,7 +6,6 @@
 
 import os
 import re
-from typing import Set as TypedSet
 
 # 已知 OCR 箭头乱码模式（PaddleOCR 特定字体/排版将 -> 误识为 <- + 随机字母前缀）
 # 支持环境变量覆盖：OCR_ARROW_GARBLED_PATTERNS="xau,axau,xeu,Aaxd"
@@ -48,7 +47,10 @@ _RE_OPTION_LINE = re.compile(
 
 # Roman numeral constants imported from shared module (single source of truth)
 from app.features.roman_schema import (  # noqa: E402
-    _ROMAN_SUBITEM_TOKEN, _RE_ROMAN_SUBITEM_MARKER, _ROMAN_TO_VALUE, _VALUE_TO_ROMAN,
+    _RE_ROMAN_SUBITEM_MARKER,
+    _ROMAN_SUBITEM_TOKEN,
+    _ROMAN_TO_VALUE,
+    _VALUE_TO_ROMAN,
 )
 
 # 结构标记行：不应被合并到上行的模式
@@ -204,7 +206,7 @@ def preprocess_ocr_noise(text: str) -> str:
 def _clean_text_regions(
     text: str,
     *,
-    enabled_strategies: TypedSet[str] | None = None,
+    enabled_strategies: set[str] | None = None,
     extra_watermark_patterns: list | None = None,
 ) -> str:
     """P2: 区域化文本清洗（code regions 只读）。
@@ -319,7 +321,7 @@ def normalize_ocr_text(
     text: str,
     *,
     trace_id: str = "",
-    enabled_strategies: TypedSet[str] | None = None,
+    enabled_strategies: set[str] | None = None,
     extra_watermark_patterns: list | None = None,
 ) -> str:
     """OCR 文本标准化 — 全管线统一入口。
@@ -349,7 +351,7 @@ def normalize_ocr_text(
     # ================================================================
     # P1: 代码块围栏保护（必须最早，基于原始文本）
     # ================================================================
-    from app.features.code_detector import wrap_code_fences, repair_unclosed_fences
+    from app.features.code_detector import repair_unclosed_fences, wrap_code_fences
     text = wrap_code_fences(text, trace_id=trace_id)
     text = repair_unclosed_fences(text, trace_id=trace_id)
 
@@ -843,7 +845,7 @@ class ImportTextNormalizer:
     def __init__(
         self,
         extra_watermark_patterns: list | None = None,
-        enabled_strategies: TypedSet[str] | None = None,
+        enabled_strategies: set[str] | None = None,
     ):
         self._extra_watermark_patterns = extra_watermark_patterns or []
         self._enabled_strategies = enabled_strategies

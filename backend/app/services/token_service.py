@@ -1,13 +1,12 @@
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.refresh_token import RefreshToken
 from app.core.time_utils import utcnow
-
+from app.models.refresh_token import RefreshToken
 
 REFRESH_TOKEN_DAYS = 90
 

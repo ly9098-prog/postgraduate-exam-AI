@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 
 from cryptography.fernet import Fernet
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, func, JSON
+from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.config import settings

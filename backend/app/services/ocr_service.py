@@ -13,7 +13,7 @@ import asyncio
 import logging
 import warnings
 
-from app.core.ocr_types import OcrCandidateResult, OcrPageResult, WorkerResult
+from app.core.ocr_types import OcrPageResult
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +24,7 @@ logger = logging.getLogger(__name__)
 def _get_gateway():
     """Get the OCRGateway singleton (lazy)."""
     try:
-        from app.features.ocr_gateway import OCRGateway
-        # Use a module-level singleton or create fresh
+        import app.features.ocr_gateway  # noqa: F401
         return _gateway_singleton
     except ImportError:
         return None
@@ -184,7 +183,7 @@ def ocr_is_available() -> bool:
         # Check backend-specific reachability.
         backend = metrics.get("backend", "")
         if backend == "paddlex_http":
-            return metrics.get("configured", False) and not metrics.get("reachable") is False
+            return metrics.get("configured", False) and metrics.get("reachable") is not False
         return False
     return False
 
@@ -231,8 +230,8 @@ def get_last_transform_tracker():
 def _is_cloud_api() -> bool:
     """Check if the current deployment profile is cloud_api."""
     try:
-        from app.services.production_config_validator import detect_deployment_profile
-        return detect_deployment_profile() == "cloud_api"
+        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        return detect_deployment_profile() == DeploymentProfile.CLOUD_API
     except Exception:
         return False
 

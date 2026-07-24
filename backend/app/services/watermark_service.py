@@ -2,7 +2,6 @@
 
 import re
 import time
-from typing import Optional
 
 from fastapi import Request
 from sqlalchemy import select
@@ -128,10 +127,10 @@ async def create_rule(
 async def update_rule(
     db: AsyncSession,
     rule_id: int,
-    pattern: Optional[str] = None,
-    rule_type: Optional[str] = None,
-    description: Optional[str] = None,
-    is_active: Optional[bool] = None,
+    pattern: str | None = None,
+    rule_type: str | None = None,
+    description: str | None = None,
+    is_active: bool | None = None,
     operator: AdminPrincipal | None = None,
     request: Request | None = None,
 ) -> dict | None:

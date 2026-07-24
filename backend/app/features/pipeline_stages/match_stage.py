@@ -41,7 +41,7 @@ def run_match_stage(
 
 def run_match_stage_from_ir(
     raw_questions: list[dict],
-    doc: "DocumentIR",
+    doc: DocumentIR,
     structure: dict | None = None,
 ) -> dict:
     """DocumentIR entry point for run_match_stage."""

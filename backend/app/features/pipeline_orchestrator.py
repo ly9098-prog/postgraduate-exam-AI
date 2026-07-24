@@ -21,30 +21,36 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from app.core.log_context import bind_log_context, log_event, safe_text_preview
 from app.features.import_mode import ImportMode, detect_import_mode, get_strategy
+from app.features.ocr_alert_rules import evaluate_alerts as _evaluate_alerts
 from app.features.ocr_correction_common import (
-    TIER_HIGH_THRESHOLD,
-    _detect_noise, _detect_structure_abnormal, _filter_sensitive, _should_correct,
+    _detect_noise,
+    _detect_structure_abnormal,
+    _filter_sensitive,
+    _should_correct,
 )
 from app.features.page_classifier import classify_pages, filter_blocks_by_classification
 from app.features.pipeline_artifacts import (
-    cleanup_artifacts as _pipeline_cleanup_artifacts,
-    find_resumable_stage as _find_resumable_stage,
     list_artifacts as _list_artifacts,
+)
+from app.features.pipeline_artifacts import (
     load_artifact as _load_artifact,
+)
+from app.features.pipeline_artifacts import (
     save_artifact as _save_artifact,
+)
+from app.features.pipeline_artifacts import (
     save_completed_marker as _save_completed_marker,
+)
+from app.features.pipeline_artifacts import (
     save_failed_marker as _save_failed_marker,
 )
-from app.features.ocr_alert_rules import evaluate_alerts as _evaluate_alerts
-from app.features.question_splitter import split_questions
-from app.features.question_type_classifier import detect_options_from_text as _detect_options_from_text
-from app.features.similarity_matcher import match_similar_questions
-from app.features.structure_analyzer import analyze_structure
-from app.features.text_normalizer import ImportTextNormalizer
-from app.schemas.import_review import PdfPageRangeInfo
-from app.utils.sentry_utils import capture_exception, set_tag, start_span
-from app.core.log_context import bind_log_context, log_event, safe_text_preview
+from app.features.pipeline_stages._helpers import _log_multi_blank_stage
+from app.features.pipeline_stages.code_language_noise_layer import (
+    run_code_language_noise_clean_stage,
+)
+from app.features.pipeline_stages.code_structure_stage import run_code_structure_stage
 
 # P5-2: extracted stage implementations
 from app.features.pipeline_stages.match_stage import run_match_stage
@@ -58,14 +64,18 @@ from app.features.pipeline_stages.repair_stage import (
     run_ai_validation_stage,
     run_repair_stage,
 )
-from app.features.pipeline_stages.code_language_noise_layer import (
-    run_code_language_noise_clean_stage,
-)
-from app.features.pipeline_stages.code_structure_stage import run_code_structure_stage
 from app.features.pipeline_stages.review_stage import run_review_stage
 from app.features.pipeline_stages.structure_freeze_stage import run_structure_freeze_stage
 from app.features.pipeline_stages.table_detect_stage import run_table_detect_stage
-from app.features.pipeline_stages._helpers import _log_multi_blank_stage
+from app.features.question_splitter import split_questions
+from app.features.question_type_classifier import (
+    detect_options_from_text as _detect_options_from_text,
+)
+from app.features.similarity_matcher import match_similar_questions
+from app.features.structure_analyzer import analyze_structure
+from app.features.text_normalizer import ImportTextNormalizer
+from app.schemas.import_review import PdfPageRangeInfo
+from app.utils.sentry_utils import capture_exception, set_tag, start_span
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +326,7 @@ def _apply_frozen_options(
 # ---------------------------------------------------------------------------
 
 
-def _get_blocks_document_ir(blocks: list[dict]) -> "DocumentIR | None":
+def _get_blocks_document_ir(blocks: list[dict]) -> DocumentIR | None:
     """Get DocumentIR from blocks, building if needed.
 
     Tries in order:
@@ -343,7 +353,7 @@ def _compare_freeze_results(
     legacy_result: dict,
     ir_result: dict,
     legacy_registry: dict[str, dict[str, str]],
-    ir_registry: dict[str, list["FrozenOptionEntry"]],
+    ir_registry: dict[str, list[FrozenOptionEntry]],
 ) -> dict:
     """Compare legacy and IR freeze results for dual mode diagnostics.
 
@@ -1306,7 +1316,7 @@ def _blocks_to_document_ir(
     pipeline_id: str = "",
     engine: str = "paddleocr",
     source_bytes: bytes | None = None,
-) -> "DocumentIR | None":
+) -> DocumentIR | None:
     """Convert OCR blocks into a DocumentIR.
 
     Delegates to ``document_ir_builder.blocks_to_document_ir()``.
@@ -1321,7 +1331,7 @@ def _blocks_to_document_ir(
 # ---------------------------------------------------------------------------
 
 
-def get_document_ir(blocks: list[dict]) -> "DocumentIR | None":
+def get_document_ir(blocks: list[dict]) -> DocumentIR | None:
     """Retrieve the DocumentIR from OCR blocks, if available.
 
     This is the canonical way for downstream consumers to access the
@@ -1341,7 +1351,7 @@ def get_document_ir(blocks: list[dict]) -> "DocumentIR | None":
     return blocks[0].get("_document_ir")
 
 
-def document_ir_to_json(doc_ir: "DocumentIR") -> dict:
+def document_ir_to_json(doc_ir: DocumentIR) -> dict:
     """Serialize DocumentIR to a JSON-compatible dict.
 
     Uses ``app.core.document_ir.document_ir_to_dict`` when available.
@@ -1354,7 +1364,7 @@ def document_ir_to_json(doc_ir: "DocumentIR") -> dict:
         return {}
 
 
-def document_ir_from_json(data: dict) -> "DocumentIR | None":
+def document_ir_from_json(data: dict) -> DocumentIR | None:
     """Deserialize a dict back to DocumentIR.
 
     Uses ``app.core.document_ir.document_ir_from_dict`` when available.
@@ -2364,6 +2374,8 @@ def _restore_from_artifacts(
     """
     from app.features.pipeline_artifacts import (
         artifact_exists as _artifact_exists,
+    )
+    from app.features.pipeline_artifacts import (
         check_artifact_compatibility,
         stages_before,
     )
@@ -2861,7 +2873,7 @@ class ImportPipeline:
                 return None
 
             # 通过 OCRFixRouter 调用 PaddleOCR-VL（唯一入口）
-            from app.features.ocr_fix.router import OCRFixRouter, STRATEGY_MANUAL
+            from app.features.ocr_fix.router import STRATEGY_MANUAL, OCRFixRouter
 
             router = OCRFixRouter()
             router.configure({
@@ -2918,7 +2930,8 @@ class ImportPipeline:
             # ── Dual-source strategy: PP-OCRv4 primary, VL fallback ──
             from app.features.ocr_correction_common import repair_option_structure
             from app.features.question_type_classifier import (
-                detect_options_from_text, extract_options_from_text,
+                detect_options_from_text,
+                extract_options_from_text,
             )
 
             for page_idx, png_bytes, pw, ph in page_batches:
@@ -3162,7 +3175,8 @@ class ImportPipeline:
         )
 
         # Phase 2: concurrent fix (same pattern as legacy path)
-        from app.features.token_budget import estimate_tokens as _est, check_token_limit, record_token_usage
+        from app.features.token_budget import check_token_limit, record_token_usage
+        from app.features.token_budget import estimate_tokens as _est
 
         sem = asyncio.Semaphore(3)
 
@@ -3267,7 +3281,11 @@ class ImportPipeline:
                     try:
                         from app.features.quality_gate import (
                             CompositeQualityGate,
+                        )
+                        from app.features.quality_gate import (
                             QualityContext as QGateContext,
+                        )
+                        from app.features.quality_gate import (
                             record_shadow_decision as _record_qgate,
                         )
                         _qgate = CompositeQualityGate()
@@ -3443,8 +3461,8 @@ class ImportPipeline:
         if db:
             try:
                 from app.services.model_config_resolver import (
-                    AIModelConfigResolver,
                     AICapability,
+                    AIModelConfigResolver,
                 )
 
                 resolver = AIModelConfigResolver(db)
@@ -3630,6 +3648,8 @@ class ImportPipeline:
             try:
                 from app.features.pipeline_stages.structure_freeze_stage import (
                     freeze_from_document_ir as _ir_freeze,
+                )
+                from app.features.pipeline_stages.structure_freeze_stage import (
                     freeze_registry_to_block_format as _ir_to_legacy,
                 )
 
@@ -3664,6 +3684,8 @@ class ImportPipeline:
             # Convert IR registry to legacy-compatible format
             from app.features.pipeline_stages.structure_freeze_stage import (
                 _freeze_deep_freeze,
+            )
+            from app.features.pipeline_stages.structure_freeze_stage import (
                 freeze_registry_to_block_format as _ir_to_legacy,
             )
 
@@ -3739,7 +3761,6 @@ class ImportPipeline:
                 return result
 
             # IR-driven result with dual comparison
-            import types
             from app.features.pipeline_stages.structure_freeze_stage import (
                 _freeze_deep_freeze,
             )
@@ -4047,7 +4068,9 @@ class ImportPipeline:
                 has_boxes = any(b.get("boxes") for b in normalized_blocks)
                 if has_boxes:
                     try:
-                        from app.features.visual_boundary_detector import detect_visual_boundaries_from_ir
+                        from app.features.visual_boundary_detector import (
+                            detect_visual_boundaries_from_ir,
+                        )
 
                         doc_ir = _get_blocks_document_ir(split_blocks)
                         if doc_ir is not None:
@@ -4635,7 +4658,8 @@ class ImportPipeline:
 
                 # Reconstruct VisualRegion and crop
                 from app.services.visual_region_types import (
-                    CoordinateSpace, VisualRegionType, AssignmentMethod,
+                    CoordinateSpace,
+                    VisualRegionType,
                 )
 
                 bbox = vr_dict.get("bbox")
@@ -5942,8 +5966,9 @@ async def run_pipeline_background(
                 qr = result.get("quality_report")
                 al = result.get("alerts")
                 if qr or al:
-                    from app.models.import_pipeline import ImportPipeline as ImportPipelineRow
                     from sqlalchemy import update
+
+                    from app.models.import_pipeline import ImportPipeline as ImportPipelineRow
                     await db.execute(
                         update(ImportPipelineRow)
                         .where(ImportPipelineRow.pipeline_id == pipeline_id)
@@ -6048,13 +6073,16 @@ async def resume_pipeline_background(
           之间调整规则导致 hash 漂移。NULL（历史 paused pipeline）仍
           fallback 到旧路径。
     """
+    from sqlalchemy import select
+
     from app.features import pipeline_checkpoint as ckpt
     from app.features.global_hash_index import GlobalHashIndex
     from app.models.import_pipeline import (
         ImportPipeline as ImportPipelineRow,
+    )
+    from app.models.import_pipeline import (
         ImportPipelineChunk,
     )
-    from sqlalchemy import select
 
     opts = dict(options) if options else {}
 

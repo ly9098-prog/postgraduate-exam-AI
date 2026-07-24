@@ -2,9 +2,9 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.router import public_api_router
 from app.api.admin.router import admin_api_router
 from app.api.internal.ocr_worker import router as ocr_worker_router
+from app.api.v1.router import public_api_router
 
 api_router = APIRouter()
 

@@ -8,7 +8,6 @@ import asyncio
 import json
 import logging
 import re
-import time
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,11 +51,12 @@ _RISK_FLAGS_REQUIRE_REPAIR = frozenset({
 })
 
 # 内存 token 计数器（共享模块，与 ocr_correction 同一预算池）
-from app.features.code_integrity import contains_code, is_code_question, detect_code_block_integrity
+from app.features.code_integrity import contains_code, detect_code_block_integrity, is_code_question
 from app.features.token_budget import (
-    estimate_tokens, check_token_limit, record_token_usage, get_token_usage_snapshot,
+    check_token_limit,
+    estimate_tokens,
+    record_token_usage,
 )
-from app.features.token_budget import _token_usage  # re-export for test access
 
 _estimate_tokens = estimate_tokens  # backward-compat alias
 
@@ -512,7 +512,8 @@ async def _call_ai_for_repair(
 
     if db is not None and api_key is None:
         from app.services.model_config_resolver import (
-            AIModelConfigResolver, AICapability,
+            AICapability,
+            AIModelConfigResolver,
         )
         try:
             resolver = AIModelConfigResolver(db)
@@ -573,7 +574,8 @@ async def _call_ai_for_batch_repair(
     api_key = base_url = model_name = None
     if db is not None:
         from app.services.model_config_resolver import (
-            AIModelConfigResolver, AICapability,
+            AICapability,
+            AIModelConfigResolver,
         )
         try:
             resolver = AIModelConfigResolver(db)
@@ -690,7 +692,8 @@ async def _call_ai_for_roman_decision(
 
     if db is not None:
         from app.services.model_config_resolver import (
-            AIModelConfigResolver, AICapability,
+            AICapability,
+            AIModelConfigResolver,
         )
         try:
             resolver = AIModelConfigResolver(db)

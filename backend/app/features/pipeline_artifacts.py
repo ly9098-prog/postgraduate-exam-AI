@@ -39,7 +39,8 @@ import shutil
 import sys
 import time
 import uuid
-from datetime import datetime, date, time as dtime
+from datetime import date, datetime
+from datetime import time as dtime
 from decimal import Decimal
 from typing import Any
 
@@ -635,7 +636,7 @@ def _write_json(path: str, data: Any) -> None:
 
 
 def _read_json(path: str) -> Any:
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 

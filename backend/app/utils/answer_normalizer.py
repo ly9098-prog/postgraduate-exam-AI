@@ -5,16 +5,18 @@ Multi-blank choice logic is delegated to app.features.multi_blank_choice.
 """
 
 import re
-from typing import List
 
-from app.features.question_type import (
-    is_multi_blank_type as _is_multi_blank_type,
-    is_multiple_choice_type as _is_multiple_choice_type,
-    is_true_false_type as _is_true_false_type,
-)
 from app.features.multi_blank_choice import (
     parse_multi_blank_answer,
-    serialize_multi_blank_answer,
+)
+from app.features.question_type import (
+    is_multi_blank_type as _is_multi_blank_type,
+)
+from app.features.question_type import (
+    is_multiple_choice_type as _is_multiple_choice_type,
+)
+from app.features.question_type import (
+    is_true_false_type as _is_true_false_type,
 )
 
 _TRUE_FALSE_TRUE = {"a", "true", "对", "是", "正确", "t", "yes", "1"}
@@ -33,7 +35,7 @@ def is_multi_blank_type(question_type: str) -> bool:
     return _is_multi_blank_type(question_type)
 
 
-def normalize_choice_answer(answer: str) -> List[str]:
+def normalize_choice_answer(answer: str) -> list[str]:
     """Normalize a choice answer to a sorted, deduplicated list of option letters.
 
     Supports: "A,C", "C,A", "AC", "A C", "A；C", "A，C", "a,c"

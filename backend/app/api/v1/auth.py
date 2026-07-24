@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -6,9 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import create_token, get_current_user
-from app.models.refresh_token import RefreshToken
 from app.models.user import User
-from app.schemas.user import DeletionResponse, RefreshRequest, TokenResponse, UserResponse, UserUpdate, WechatLogin
+from app.schemas.user import (
+    DeletionResponse,
+    RefreshRequest,
+    TokenResponse,
+    UserResponse,
+    UserUpdate,
+    WechatLogin,
+)
 from app.services import token_service, user_service
 
 router = APIRouter(prefix="/api/v1")
@@ -112,7 +118,7 @@ async def request_deletion(
     if current_user.deleted_at:
         raise HTTPException(status_code=400, detail="账号已注销")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     current_user.deleted_at = now
     await db.commit()
 

@@ -1,15 +1,23 @@
 import time
-from datetime import datetime
 from urllib.parse import urljoin
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
 from app.core.admin_security import AdminPrincipal
 from app.core.config import settings
-from app.models.admin_ai_config import AdminAiConfig, AdminAiModelConfig, decrypt_api_key, encrypt_api_key
-from app.schemas.admin_ai_config import AdminAiModelConfigCreateRequest, AdminAiModelConfigResponse, AdminAiModelConfigPatchRequest
+from app.core.time_utils import utcnow
+from app.models.admin_ai_config import (
+    AdminAiConfig,
+    AdminAiModelConfig,
+    decrypt_api_key,
+    encrypt_api_key,
+)
+from app.schemas.admin_ai_config import (
+    AdminAiModelConfigCreateRequest,
+    AdminAiModelConfigPatchRequest,
+    AdminAiModelConfigResponse,
+)
 from app.services.admin_audit_service import write_admin_audit
 
 # ---------------------------------------------------------------------------
@@ -503,9 +511,7 @@ async def test_model_connection(
 
     若提供 model_id + db，优先使用数据库中已加密存储的凭证（忽略前端的掩码 key）。
     """
-    import time
 
-    import httpx
 
     # 确定 provider / features：优先参数，其次 DB
     effective_provider = provider
@@ -513,8 +519,8 @@ async def test_model_connection(
     if feature and feature not in effective_features:
         effective_features.append(feature)
     if model_id is not None and db is not None:
-        from app.models.admin_ai_config import AdminAiModelConfig
         from app.core.config import settings as app_settings
+        from app.models.admin_ai_config import AdminAiModelConfig
 
         model = await db.get(AdminAiModelConfig, model_id)
         if model is not None:

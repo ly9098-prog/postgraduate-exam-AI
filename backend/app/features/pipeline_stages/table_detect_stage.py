@@ -6,10 +6,9 @@ Extracted from ``pipeline_orchestrator.py:_run_table_detect`` (P5-2).
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-from app.features.table_region_detector import detect_table_candidate
 from app.features.pipeline_stages._helpers import _count_risk_flags
+from app.features.table_region_detector import detect_table_candidate
 
 logger = logging.getLogger(__name__)
 

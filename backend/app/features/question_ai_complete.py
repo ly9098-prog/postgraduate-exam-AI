@@ -37,8 +37,9 @@ logger = logging.getLogger(__name__)
 
 async def _get_active_subjects(db: AsyncSession) -> list[dict]:
     """Load active subjects for AI prompt context."""
-    from app.models.admin import Subject
     from sqlalchemy import select
+
+    from app.models.admin import Subject
     try:
         result = await db.execute(
             select(Subject.id, Subject.code, Subject.name)
@@ -643,8 +644,8 @@ async def batch_complete_questions(
                 item["error"] = "DEEPSEEK_API_KEY 未配置"
                 return item
             if not skip_budget_check:
-                from app.features.token_budget import check_token_limit, estimate_tokens
                 from app.core.config import settings
+                from app.features.token_budget import check_token_limit, estimate_tokens
                 _estimated = estimate_tokens(json.dumps(item["messages"], ensure_ascii=False)) * 3
                 if not await check_token_limit(_estimated, {
                     "daily_token_limit": settings.AI_DAILY_TOKEN_LIMIT,

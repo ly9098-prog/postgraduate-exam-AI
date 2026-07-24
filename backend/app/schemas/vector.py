@@ -1,12 +1,11 @@
 """向量功能相关 Pydantic 模型。"""
 
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
 
 class EmbeddingBackfillRequest(BaseModel):
-    subject: Optional[str] = None
+    subject: str | None = None
     limit: int = Field(default=100, ge=1, le=1000)
     force: bool = False
     after_id: int = Field(default=0, ge=0, description="游标：从此 question_id 之后开始")
@@ -25,7 +24,7 @@ class EmbeddingBackfillResponse(BaseModel):
     skipped: int
     failed: int
     errors: list = Field(default_factory=list)
-    next_cursor: Optional[int] = None
+    next_cursor: int | None = None
     has_more: bool = False
 
 
@@ -39,8 +38,8 @@ class EmbeddingStatusResponse(BaseModel):
     table_exists: bool
     index_exists: bool
     configured_dimension: int
-    database_dimension: Optional[int] = None
-    dimension_matches: Optional[bool] = None
+    database_dimension: int | None = None
+    dimension_matches: bool | None = None
     embedding_model: str
     embedding_api_configured: bool
     allowlist_configured: bool

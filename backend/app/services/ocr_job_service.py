@@ -12,11 +12,9 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-import time
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ocr_job import OCRJob
@@ -59,7 +57,7 @@ def _hash_token(token: str) -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _compute_retry_at(attempt: int) -> datetime:

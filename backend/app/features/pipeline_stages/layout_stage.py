@@ -90,7 +90,7 @@ def run_layout_reconstruction_stage(
 
 
 def run_layout_reconstruction_stage_from_ir(
-    doc: "DocumentIR",
+    doc: DocumentIR,
     **kwargs: Any,
 ) -> dict:
     """DocumentIR entry point for run_layout_reconstruction_stage."""

@@ -1,26 +1,45 @@
 {
   "schema_version": "1.0",
-  "phase": "gpu_compatibility_probe",
+  "phase": "gpu_ocr_smoke_passed",
   "wsl_config_written": true,
   "wsl_restart_verified": true,
-  "wsl_config": {
-    "wsl2.memory": "16GB",
-    "wsl2.processors": 6,
-    "wsl2.swap": "8GB",
-    "wsl2.localhostForwarding": true,
-    "experimental.autoMemoryReclaim": "gradual",
-    "effective_memory_gib": 15,
-    "effective_processors": 6,
-    "effective_swap_gib": 8
+  "gpu_probe_passed": true,
+  "wheel_downloaded": true,
+  "wheel_installed": true,
+  "wheel": {
+    "path": "/home/lmh/wheelhouse/paddle-cu126-330/paddlepaddle_gpu-3.3.0-cp312-cp312-linux_x86_64.whl",
+    "version": "3.3.0",
+    "sha256": "ad894d36ebe72b78f7b61f8796d40f97278ba3003ae3c138aa4516d9af0604e5"
   },
-  "wslconfig_path": "/mnt/c/Users/Devil/.wslconfig",
-  "gpu_probe_passed": false,
-  "wheel_downloaded": false,
-  "wheel_installed": false,
-  "paddle_run_check_passed": false,
-  "model_load_passed": false,
-  "live_ocr_passed": false,
-  "last_command": "wsl_audit_complete",
+  "paddle_run_check_passed": true,
+  "paddle_gpu_preflight": {
+    "compiled_with_cuda": true,
+    "cuda_version": "12.6",
+    "cudnn_version": "9.5.1",
+    "device": "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+    "run_check": "passed"
+  },
+  "model_load_passed": true,
+  "model_load": {
+    "cold_start_s": 2.7,
+    "PaddleOCR_version": "2.7.3"
+  },
+  "live_ocr_passed": true,
+  "live_ocr_summary": {
+    "cold_adapter_ms": 4270,
+    "warm_adapter_ms": 623,
+    "runs": 3,
+    "adapter_mode": "cpu (config use_gpu=False in ocr_service.py, not GPU env issue)"
+  },
+  "last_command": "gpu_smoke_complete",
   "last_error": null,
-  "artifacts": ["/mnt/c/Users/Devil/.wslconfig"]
+  "artifacts": [
+    "reports/sprint4e/wheel_manifest.json",
+    "reports/sprint4e/paddle_install_plan.json",
+    "reports/sprint4e/paddle_gpu_preflight.json",
+    "reports/sprint4e/live_gpu_ocr_smoke.json",
+    "reports/sprint4e/install_log/paddle-install.log",
+    "reports/sprint4e/install_log/paddleocr-install.log",
+    "reports/sprint4e/install_log/claude_wsl_gpu_diagnosis.md"
+  ]
 }

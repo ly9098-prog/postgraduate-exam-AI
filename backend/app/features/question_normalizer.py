@@ -6,17 +6,21 @@
 """
 
 import copy
-import re
 import hashlib
 import logging
+import re
 import time
 from dataclasses import dataclass
 
 from app.features.question_type_classifier import (
     QT_SINGLE_CHOICE,
-    classify as _classify_type,
-    detect_options_from_text as _detect_options_from_text,
     extract_options_from_text,
+)
+from app.features.question_type_classifier import (
+    classify as _classify_type,
+)
+from app.features.question_type_classifier import (
+    detect_options_from_text as _detect_options_from_text,
 )
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 from app.utils.trace.stage_tracer import StageTracer
@@ -24,14 +28,14 @@ from app.utils.trace.stage_tracer import StageTracer
 logger = logging.getLogger(__name__)
 
 from app.features.question_type import (
-    QT_SINGLE_CHOICE,
-    QT_MULTIPLE_CHOICE,
-    QT_TRUE_FALSE,
     QT_FILL_BLANK,
     QT_MULTI_BLANK_CHOICE,
+    QT_MULTIPLE_CHOICE,
+    QT_SINGLE_CHOICE,
     QT_SUBJECTIVE,
-    is_canonical,
+    QT_TRUE_FALSE,
 )
+
 _OPTION_LINE_RE = re.compile(r"^(?:[?？]|[①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳])?\s*[A-Ha-h][.、:：)）\s]")
 # 增强选项检测模式：A. A) ①. (A) 等，用于从 raw_text 中二次检测选项
 _OPTION_PATTERN = re.compile(r"^\s*([A-D]|[①②③④]|\(\s*[A-D]\s*\))\s*[.、\)]")
@@ -936,7 +940,11 @@ def normalize_question(
             warnings.append(f"parse_extra_options: parsed has extra {missing_opts}")
 
     # --- 代码块完整性检测 (BUGS Task 1: stem 中的代码块) ---
-    from app.features.code_integrity import contains_code, detect_code_block_integrity, detect_code_regression
+    from app.features.code_integrity import (
+        contains_code,
+        detect_code_block_integrity,
+        detect_code_regression,
+    )
     code_risk_flags: list[str] = []
     stem_has_code = tracer.run("code_detection", "rule", "stem", "noise_filtering",
                                contains_code, stem)
@@ -1079,7 +1087,7 @@ def normalize_question(
             from app.features.vision_fallback import needs_vision_fallback
 
             if needs_vision_fallback(code_risk_flags):
-                from app.features.vision_fallback import _call_vl_sync, _build_vl_config
+                from app.features.vision_fallback import _build_vl_config, _call_vl_sync
 
                 vl_config = _build_vl_config(raw_question.get("vl_config"))
                 vl_text = _call_vl_sync(page_image, vl_config)
@@ -1113,7 +1121,9 @@ def normalize_question(
                         result["vision_fallback_engine"] = "paddleocr_vl"
                         result["vision_fallback_reason"] = list(code_risk_flags)
                         result["pre_fallback_code_flags"] = list(code_risk_flags)
-                        from app.features.code_integrity import detect_code_block_integrity as _detect_code
+                        from app.features.code_integrity import (
+                            detect_code_block_integrity as _detect_code,
+                        )
                         result["post_fallback_code_flags"] = list(
                             _detect_code(vl_text).get("flags", [])
                         )

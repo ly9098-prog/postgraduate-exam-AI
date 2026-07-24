@@ -25,10 +25,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-import importlib.util
-
 from app.core.config import settings
-from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 
 logger = logging.getLogger("postgraduate-ai.staging")
 
@@ -284,7 +282,7 @@ def _load_metadata(object_id: str) -> StagingObject:
     """Load metadata from JSON file."""
     import json
     mp = _metadata_path(object_id)
-    with open(mp, "r") as f:
+    with open(mp) as f:
         data = json.load(f)
     return StagingObject(**data)
 

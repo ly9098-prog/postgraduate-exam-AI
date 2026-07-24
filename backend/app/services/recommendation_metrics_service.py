@@ -5,9 +5,9 @@ from datetime import date, timedelta
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.recommendation_log import RecommendationLog
 from app.models.recommendation_experiment import RecommendationExperiment
 from app.models.recommendation_experiment_assignment import RecommendationExperimentAssignment
+from app.models.recommendation_log import RecommendationLog
 from app.models.recommendation_metrics_daily import RecommendationMetricsDaily
 
 logger = logging.getLogger(__name__)

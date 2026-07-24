@@ -8,13 +8,13 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import text, select, func, and_
+from sqlalchemy import and_, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.cache import cache
-from app.models.question import Question
+from app.core.config import settings
 from app.models.practice_record import PracticeRecord
+from app.models.question import Question
 from app.services import embedding_service
 from app.services.admin_subject_service import resolve_subject_ids
 
@@ -707,6 +707,7 @@ async def search_similar_questions(
         if exclude_answered_active:
             if no_repeat_days:
                 from datetime import timedelta
+
                 from app.core.time_utils import utcnow
                 cutoff = utcnow() - timedelta(days=no_repeat_days)
                 sql = text("""
@@ -945,6 +946,7 @@ async def vector_recall_by_text(
         if exclude_answered_active:
             if no_repeat_days:
                 from datetime import timedelta
+
                 from app.core.time_utils import utcnow
                 cutoff = utcnow() - timedelta(days=no_repeat_days)
                 sql = text("""

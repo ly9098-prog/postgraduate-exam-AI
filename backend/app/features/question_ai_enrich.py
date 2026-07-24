@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import fallback
 from app.ai.client import deepseek
 from app.ai.prompts import build_enrich_question
+from app.features.question_ai_complete import _has_complete_answer_risk
 from app.features.question_pipeline import (
     SUBJECT_VALUES,
     _build_log,
@@ -23,7 +24,6 @@ from app.features.question_pipeline import (
     _get_qi,
     _qi_to_dict,
 )
-from app.features.question_ai_complete import _has_complete_answer_risk
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +175,7 @@ async def enrich_batch(
     """批量 AI 丰富。分三阶段：顺序预读 → 并发 LLM → 顺序落 DB。"""
     _start_time = datetime.now()
     from sqlalchemy import select
+
     from app.models.question_import import QuestionImport
 
     res = await db.execute(
@@ -230,8 +231,8 @@ async def enrich_batch(
             if not (_api_key or deepseek.is_available()):
                 item["error"] = "DEEPSEEK_API_KEY 未配置"
                 return item
-            from app.features.token_budget import check_token_limit, estimate_tokens
             from app.core.config import settings
+            from app.features.token_budget import check_token_limit, estimate_tokens
             _estimated = estimate_tokens(json.dumps(item["messages"], ensure_ascii=False)) * 3
             if not await check_token_limit(_estimated, {
                 "daily_token_limit": settings.AI_DAILY_TOKEN_LIMIT,

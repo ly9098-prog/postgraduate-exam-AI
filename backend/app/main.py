@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import sys
 import time
 from contextlib import asynccontextmanager
 
@@ -82,7 +83,6 @@ def _report_startup_failure(component: str, exc: Exception) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     role = settings.PROCESS_ROLE
-    is_dev = settings.APP_ENV == "development"
 
     # ── Common startup (all roles) ──
     try:
@@ -100,7 +100,7 @@ async def lifespan(app: FastAPI):
 
     # Check sys.modules for banned OCR packages in cloud_api
     try:
-        from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
+        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
         if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
             banned = {"paddle", "paddleocr"}
             loaded = {mod for mod in banned if mod in sys.modules}
@@ -124,6 +124,7 @@ async def lifespan(app: FastAPI):
 
     # Staging storage: sweep stale temp files on startup
     try:
+        from app.core.log_context import log_event
         from app.services.staging_storage import async_sweep_temp_files
         swept = await async_sweep_temp_files()
         if swept:
@@ -207,7 +208,7 @@ async def lifespan(app: FastAPI):
                 from app.core.deployment_profile import detect_deployment_profile
                 _ocr_gateway = OCRGateway(
                     mode="gateway",
-                    profile=detect_deployment_profile().value,
+                    profile=detect_deployment_profile(),
                     worker_client=worker_client,
                 )
                 from app.services.ocr_service import set_gateway
@@ -293,7 +294,7 @@ async def lifespan(app: FastAPI):
         # 3. Signal worker + reaper to stop (graceful, no cancel yet)
         if role in ("worker", "all"):
             try:
-                from app.services.task_queue_worker import stop_worker, stop_reaper
+                from app.services.task_queue_worker import stop_reaper, stop_worker
                 await stop_worker()
                 await stop_reaper()
             except Exception as e:
@@ -320,7 +321,7 @@ async def lifespan(app: FastAPI):
                 logger.info("Task %s: completed after cancel", name)
             except asyncio.CancelledError:
                 logger.info("Task %s: cancelled", name)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Task %s: did not stop within 30s grace period", name)
             except Exception as e:
                 logger.warning("Task %s: cancel error: %s", name, e)
@@ -361,7 +362,7 @@ async def lifespan(app: FastAPI):
                 timeout=30,
             )
             logger.info("Formula render pool shut down")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Formula render pool shutdown timed out, forcing non-blocking")
             try:
                 shutdown_formula_render_pool(wait=False, cancel_futures=True)
@@ -379,7 +380,7 @@ async def lifespan(app: FastAPI):
                     timeout=30,
                 )
                 logger.info("OCR executor shut down")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("OCR executor shutdown timed out")
             except Exception:
                 logger.exception("OCR executor shutdown error")

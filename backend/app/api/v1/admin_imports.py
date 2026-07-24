@@ -1,34 +1,31 @@
 import asyncio
+import json
 import logging
 import os
 
-import json
-
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.config import settings
 from app.core.database import get_db
-from app.schemas.common import paginated_response
-from app.services.admin_import_service import (
-    approve_import_batch,
-    approve_low_risk_questions,
-    approve_import_question,
-    batch_complete_import_questions,
-    complete_import_question,
-    create_enrich_task,
-    delete_import_batch,
-    delete_import_question,
-    get_enrich_status,
-    get_import_batch_detail,
-    list_import_batches,
-    list_review_queue,
-    list_subject_options,
-    reject_import_batch,
-    reject_import_question,
-    update_import_question,
+from app.features import question_publish_service as publish_svc
+from app.features.import_mode import ImportMode
+from app.features.pipeline_orchestrator import (
+    _get_stage_checkpoint,
+    _set_pipeline_store,
 )
 from app.schemas.admin_imports import (
     AdminImportActionResponse,
@@ -57,17 +54,30 @@ from app.schemas.admin_imports import (
     TextParseRequest,
     TextParseResponse,
 )
+from app.schemas.common import paginated_response
 from app.schemas.import_review import PipelineStatusResponse, PipelineUploadResponse
 from app.schemas.question_publish import PublishResponse
-from app.features.import_mode import ImportMode
+from app.services.admin_import_service import (
+    approve_import_batch,
+    approve_import_question,
+    approve_low_risk_questions,
+    batch_complete_import_questions,
+    complete_import_question,
+    create_enrich_task,
+    delete_import_batch,
+    delete_import_question,
+    get_enrich_status,
+    get_import_batch_detail,
+    list_import_batches,
+    list_review_queue,
+    list_subject_options,
+    reject_import_batch,
+    reject_import_question,
+    update_import_question,
+)
 from app.services.import_pipeline_service import get_pipeline_status as svc_get_pipeline_status
 from app.services.import_pipeline_service import start_import_pipeline as svc_start_import_pipeline
 from app.services.streaming_upload_handler import stream_to_temp
-from app.features.pipeline_orchestrator import (
-    _get_stage_checkpoint,
-    _set_pipeline_store,
-)
-from app.features import question_publish_service as publish_svc
 
 logger = logging.getLogger(__name__)
 
@@ -172,10 +182,9 @@ async def admin_resume_pipeline(
     """
     from datetime import datetime
 
-    from app.features.pipeline_orchestrator import _pipeline_store
-
     # 检查当前状态 — use pipeline_store directly for non-DB pipelines
     from app.features.pipeline_orchestrator import _get_pipeline_store as _get_ps
+    from app.features.pipeline_orchestrator import _pipeline_store
     status_data = await _get_ps(pipeline_id)
     if status_data is None:
         # check image pipeline store
@@ -577,7 +586,8 @@ async def import_text_questions(
     """将解析后的文本题目写入 question_imports 暂存区。"""
     import uuid
     from datetime import datetime
-    from app.features.question_pipeline import process_question_pipeline, _create_question_import
+
+    from app.features.question_pipeline import _create_question_import, process_question_pipeline
 
     batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     items: list[TextImportResultItem] = []
@@ -672,7 +682,7 @@ async def batch_answer_preview(
     db: AsyncSession = Depends(get_db),
 ):
     """解析答案串，生成预览（不写入数据库）。"""
-    from app.services.batch_answer_service import generate_preview, BusinessError
+    from app.services.batch_answer_service import BusinessError, generate_preview
 
     if len(data.raw_text) > _MAX_RAW_TEXT_LENGTH:
         raise HTTPException(status_code=422, detail={"error_code": "TEXT_TOO_LONG", "detail": "答案文本过长"})
@@ -699,7 +709,7 @@ async def batch_answer_apply(
     db: AsyncSession = Depends(get_db),
 ):
     """确认预览结果，写入答案到数据库。"""
-    from app.services.batch_answer_service import apply_preview, BusinessError
+    from app.services.batch_answer_service import BusinessError, apply_preview
 
     try:
         result = await apply_preview(db, batch_id, data.preview_token, current_admin, request=request)
@@ -756,7 +766,7 @@ async def batch_answer_image_preview(
     - mode=answer_analysis 同时提取答案和解析
     - 不写入数据库，返回预览结果
     """
-    from app.services.batch_answer_image_service import generate_image_preview, BusinessError
+    from app.services.batch_answer_image_service import BusinessError, generate_image_preview
 
     if not files:
         raise HTTPException(status_code=400, detail={"error_code": "NO_FILES", "detail": "未上传任何图片"})
@@ -825,7 +835,7 @@ async def batch_answer_image_apply(
     db: AsyncSession = Depends(get_db),
 ):
     """确认图片预览结果，写入答案/解析到数据库。"""
-    from app.services.batch_answer_image_service import apply_image_preview, BusinessError
+    from app.services.batch_answer_image_service import BusinessError, apply_image_preview
 
     try:
         result = await apply_image_preview(
@@ -1221,7 +1231,7 @@ async def stream_batch_image_job(
                         yield f"event: done\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
                         return
                     yield f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Heartbeat — no events in 2s (no DB access)
                     yield ": heartbeat\n\n"
                 except asyncio.CancelledError:
@@ -1366,8 +1376,9 @@ async def list_pipelines(
     不新增 DB migration；quality_report 仅对近期 pipeline 可用（内存 store 有上限）。
     历史 pipeline 返回基础字段。
     """
+    from sqlalchemy import desc, func, select
+
     from app.models.import_pipeline import ImportPipeline
-    from sqlalchemy import select, func, desc
 
     # Whitelist sort_by to avoid getattr on arbitrary model attributes
     _ALLOWED_SORT = {"started_at", "finished_at", "status", "source_type", "total_pages", "pipeline_id"}
@@ -1522,9 +1533,10 @@ async def admin_export_failure_case(
     expected_template 所有字段为空，必须人工填写。
     不导出完整 PDF/图片，raw_data 截断至 2000 字符。
     """
+    from sqlalchemy import select
+
     from app.features.ocr_case_exporter import export_failure_case
     from app.models.question_import import QuestionImport
-    from sqlalchemy import select
 
     row = (await db.execute(
         select(QuestionImport).where(QuestionImport.id == import_id)
@@ -1572,9 +1584,10 @@ async def admin_export_batch_failure_cases(
 
     failure_type 可选：仅导出指定失败类型的题目。
     """
+    from sqlalchemy import select
+
     from app.features.ocr_case_exporter import export_failure_cases_batch
     from app.models.question_import import QuestionImport
-    from sqlalchemy import select
 
     rows = (await db.execute(
         select(QuestionImport)

@@ -4,7 +4,6 @@ import json
 
 from app.features.question_type import QT_SINGLE_CHOICE
 
-
 # 当前 AI 错题分析 prompt 版本。
 # 修改 prompt 后递增此版本号，已缓存旧版本分析会在下次读取时触发重新生成。
 AI_ANALYSIS_PROMPT_VERSION = "v2"

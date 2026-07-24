@@ -540,7 +540,7 @@ def _freeze_deep_freeze(registry: dict) -> dict[str, dict[str, str]]:
 
 
 def run_structure_freeze_stage_from_ir(
-    doc: "DocumentIR",
+    doc: DocumentIR,
     **kwargs: Any,
 ) -> dict:
     """DocumentIR entry point for run_structure_freeze_stage."""

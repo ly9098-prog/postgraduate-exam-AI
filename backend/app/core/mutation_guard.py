@@ -9,7 +9,8 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Any, Callable, Iterator
+from collections.abc import Callable, Iterator
+from typing import Any
 
 from app.core.immutable_regions import Region, TextRegions
 

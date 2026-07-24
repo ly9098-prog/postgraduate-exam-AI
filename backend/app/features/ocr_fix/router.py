@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from app.features.ocr_fix.interfaces import (
-    OCRFixResult,
     CandidateDecision,
     CandidateEvaluation,
+    OCRFixResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,8 @@ def _evaluate_adapter_output(
     """
     from app.features.candidate_evaluator import (
         CandidateDecision as CE_Decision,
+    )
+    from app.features.candidate_evaluator import (
         evaluate_candidate,
     )
 

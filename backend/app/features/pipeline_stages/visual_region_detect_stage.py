@@ -15,11 +15,9 @@ Key behaviors:
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from app.features.pipeline_stages._helpers import _count_risk_flags
 from app.services.visual_region_types import (
-    AssignmentMethod,
     VisualRegion,
     VisualRegionType,
 )
