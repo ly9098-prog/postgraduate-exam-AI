@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     OCR_REMOTE_USE_DOC_UNWARPING: bool = False
     OCR_REMOTE_USE_TEXTLINE_ORIENTATION: bool = False
 
+    # Remote OCR authentication
+    OCR_REMOTE_TOKEN: str = ""
+
     # Artifact migration
     REJECT_LEGACY_ARTIFACTS: bool = False  # reject artifacts without metadata wrapper
 
@@ -164,6 +167,9 @@ class Settings(BaseSettings):
     # Staging storage for durable task files (Docker volume in prod)
     STAGING_STORAGE_DIR: str = "/opt/2240ai-v2/staging"
     STAGING_DISK_QUOTA: int = 2 * 1024 * 1024 * 1024  # 2 GB
+
+    # Task queue — in-memory fallback guard
+    ALLOW_IN_MEMORY_TASK_QUEUE: bool = False
 
     # COS (Tencent Cloud Object Storage)
     COS_BUCKET: str = ""

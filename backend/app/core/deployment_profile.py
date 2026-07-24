@@ -38,7 +38,10 @@ def detect_deployment_profile() -> DeploymentProfile:
         try:
             return DeploymentProfile(explicit)
         except ValueError:
-            pass
+            raise ValueError(
+                f"无效的 DEPLOYMENT_PROFILE={explicit!r}，"
+                f"必须为 {[p.value for p in DeploymentProfile]}"
+            )
 
     # 2. DEPLOY_PROFILE setting
     deploy = settings.DEPLOY_PROFILE

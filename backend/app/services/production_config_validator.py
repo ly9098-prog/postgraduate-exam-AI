@@ -37,8 +37,12 @@ logger = logging.getLogger("postgraduate-ai.startup")
 
 
 def validate_production_config() -> None:
-    """Run all production config checks. Raises SystemError on failures."""
-    if settings.APP_ENV != "production":
+    """Run all production config checks. Raises SystemError on failures.
+
+    Runs when APP_ENV=production OR DeploymentProfile=CLOUD_API
+    (whichever is more restrictive).
+    """
+    if not _is_restricted_environment():
         return
 
     errors: list[str] = []
@@ -59,6 +63,24 @@ def validate_production_config() -> None:
         )
 
     logger.info("Production configuration validated: sync checks passed")
+
+
+def _is_restricted_environment() -> bool:
+    """Check if the current deployment is production or cloud_api.
+
+    Per current_task.md spec:
+        is_restricted_environment = (
+            APP_ENV == "production"
+            or detect_deployment_profile() == DeploymentProfile.CLOUD_API
+        )
+    """
+    if settings.APP_ENV == "production":
+        return True
+    try:
+        profile = detect_deployment_profile()
+        return profile == DeploymentProfile.CLOUD_API
+    except Exception:
+        return False
 
 
 # ── sync checks ──
@@ -119,11 +141,17 @@ def _check_directories(errors: list[str]) -> None:
 
 
 def _check_process_role(errors: list[str]) -> None:
-    """Validate PROCESS_ROLE is a known value."""
+    """Validate PROCESS_ROLE. Restricted environments must not use 'all'."""
     role = settings.PROCESS_ROLE
-    if role not in ("web", "worker", "scheduler", "all"):
+    valid_roles = ("web", "worker", "scheduler")
+    if role == "all":
         errors.append(
-            f"PROCESS_ROLE={role!r} 无效，必须为 'web', 'worker', 'scheduler' 或 'all'"
+            f"PROCESS_ROLE=all is forbidden in production/cloud_api. "
+            f"Must be one of: {', '.join(valid_roles)}"
+        )
+    elif role not in valid_roles + ("all",):
+        errors.append(
+            f"PROCESS_ROLE={role!r} is invalid, must be one of: {', '.join(valid_roles + ('all',))}"
         )
 
 
@@ -138,14 +166,15 @@ def _check_deployment_profile(errors: list[str]) -> None:
 def _check_ocr_production_rules(errors: list[str]) -> None:
     """Cloud OCR must use external API or be disabled.
 
+    Even when OCR is disabled, we check GPU and backend settings to
+    prevent unsafe configuration drift.
+
     Banned in production:
     - local_process execution backend
     - unsafe_thread_fallback
     - OCR_USE_GPU=true
     """
-    if not settings.OCR_ENABLED:
-        return
-
+    # Always check GPU setting (must be false in restricted environments)
     if settings.OCR_USE_GPU is not False:
         errors.append("生产环境必须设置 OCR_USE_GPU=false")
 
@@ -159,18 +188,37 @@ def _check_ocr_production_rules(errors: list[str]) -> None:
     # Check OCR profile GPU consistency
     from app.core.ocr_profile import get_ocr_profile
 
-    profile = get_ocr_profile()
-    if profile.use_gpu:
-        errors.append(
-            "OCR profile 设置了 use_gpu=True，但生产环境必须 use_gpu=False。"
-            " 请检查 ocr_profile.py 的 cloud 配置或设置 OCR_USE_GPU=false"
-        )
+    try:
+        profile = get_ocr_profile()
+        if profile.use_gpu:
+            errors.append(
+                "OCR profile 设置了 use_gpu=True，但生产环境必须 use_gpu=False。"
+                " 请检查 ocr_profile.py 的 cloud 配置或设置 OCR_USE_GPU=false"
+            )
+    except Exception as exc:
+        errors.append(f"OCR profile 检查失败: {exc}")
 
+    if not settings.OCR_ENABLED:
+        # When OCR is disabled, the above checks on backend/GPU are sufficient
+        # Additional check: ensure no remote-to-local fallback config
+        if settings.OCR_REMOTE_URL and exec_backend == "disabled":
+            logger.warning(
+                "OCR_REMOTE_URL set but OCR_EXECUTION_BACKEND=disabled — "
+                "remote URL config is unused but harmless"
+            )
+        return
+
+    # OCR enabled — additional checks
     # Check external OCR URL is HTTPS
     ocr_url = settings.OCR_REMOTE_URL or ""
     if exec_backend == "paddlex_http" and ocr_url:
         if not ocr_url.startswith("https://"):
             errors.append("外部 OCR URL (OCR_REMOTE_URL) 必须使用 HTTPS")
+        if not settings.OCR_REMOTE_TOKEN:
+            errors.append(
+                "外部 OCR 已启用 (OCR_EXECUTION_BACKEND=paddlex_http) "
+                "但 OCR_REMOTE_TOKEN 未设置"
+            )
 
 
 def _check_ocr_no_local_deps(errors: list[str]) -> None:
@@ -201,7 +249,7 @@ def _check_ocr_no_local_deps(errors: list[str]) -> None:
 
 async def validate_production_config_async() -> None:
     """Run all async production config checks. Raises SystemError on failures."""
-    if settings.APP_ENV != "production":
+    if not _is_restricted_environment():
         return
 
     errors: list[str] = []
