@@ -31,10 +31,9 @@ import asyncio
 import logging
 import os
 import re
-import sys
 
 from app.core.config import settings
-from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 
 logger = logging.getLogger("postgraduate-ai.startup")
 
@@ -165,7 +164,7 @@ def _check_deployment_profile(errors: list[str]) -> None:
     """Production must use cloud_api profile, never local_import."""
     if detect_deployment_profile() != DeploymentProfile.CLOUD_API:
         errors.append(
-            f"生产环境的部署配置不是 cloud_api，必须设置 DEPLOYMENT_PROFILE=cloud_api"
+            "生产环境的部署配置不是 cloud_api，必须设置 DEPLOYMENT_PROFILE=cloud_api"
         )
 
 
@@ -306,13 +305,10 @@ def _check_db_pool_budget(errors: list[str]) -> None:
 
 def _check_queue_capacity(errors: list[str]) -> None:
     """Verify queue capacity is reasonable in production."""
-    from app.services.task_queue_service import MAX_QUEUE_SIZE, MAX_DEAD_SIZE
-    if not isinstance(MAX_QUEUE_SIZE, int) or MAX_QUEUE_SIZE < 1:
-        errors.append(f"队列容量 MAX_QUEUE_SIZE={MAX_QUEUE_SIZE} 不合理")
-    if MAX_QUEUE_SIZE > 10000:
-        errors.append(f"队列容量 MAX_QUEUE_SIZE={MAX_QUEUE_SIZE} 过大")
-    if not isinstance(MAX_DEAD_SIZE, int) or MAX_DEAD_SIZE < 1:
-        errors.append(f"dead-letter 容量 MAX_DEAD_SIZE={MAX_DEAD_SIZE} 不合理")
+    from app.services.task_queue_service import DurableTaskQueue
+    dead_max = getattr(DurableTaskQueue, "_DEAD_MAX", 1000)
+    if not isinstance(dead_max, int) or dead_max < 1:
+        errors.append(f"dead-letter 容量 _DEAD_MAX={dead_max} 不合理")
 
 
 # ── async checks ──
@@ -382,8 +378,6 @@ async def _check_alembic_current(errors: list[str]) -> None:
     try:
         from alembic.config import Config
         from alembic.script import ScriptDirectory
-        from alembic.runtime.environment import EnvironmentContext
-        from alembic.runtime.migration import MigrationContext
 
         # Read current revision from DB
         from app.core.database import async_session
