@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -820,6 +820,85 @@ async def _check_queue() -> str | None:
 
 
 # --- 路由（聚合 Router） ---
+
+
+@app.get("/health/metrics")
+async def metrics_endpoint():
+    """Prometheus-compatible metrics endpoint.
+
+    Returns text/plain metrics for scraping by Prometheus or similar.
+    Aggregates: task queue state, system resources, event-loop lag,
+    DB pool, SSE connections, scheduler stats.
+    """
+    from app.core.resource_guard import resource_guard
+    from app.services.task_queue_service import queue_metrics
+
+    lines: list[str] = []
+    _append = lines.append
+
+    # ── Task queue metrics ──
+    task_types = ["import_pipeline", "image_pipeline", "excel_pipeline"]
+    try:
+        from app.services.task_queue_service import task_queue
+        for tt in task_types:
+            ready = await task_queue.queue_length(tt)
+            processing = await task_queue.processing_length(tt)
+            retry_count = await task_queue.retry_length(tt)
+            dead = await task_queue.dead_length(tt)
+            _append(f'task_queue_ready{{type="{tt}"}} {ready}')
+            _append(f'task_queue_processing{{type="{tt}"}} {processing}')
+            _append(f'task_queue_retry{{type="{tt}"}} {retry_count}')
+            _append(f'task_queue_dead{{type="{tt}"}} {dead}')
+    except Exception:
+        for tt in task_types:
+            _append(f'task_queue_ready{{type="{tt}"}} 0')
+            _append(f'task_queue_processing{{type="{tt}"}} 0')
+            _append(f'task_queue_retry{{type="{tt}"}} 0')
+            _append(f'task_queue_dead{{type="{tt}"}} 0')
+
+    # Cumulative counters from queue_metrics dict
+    for key in ("lease_renewal_failure", "duplicate_enqueue_prevented",
+                "reaper_reclaimed", "owner_fencing_rejected"):
+        _append(f'task_queue_{key} {queue_metrics.get(key, 0)}')
+
+    # ── System resource metrics ──
+    sys_metrics = resource_guard.get_system_metrics()
+    _append(f'system_rss_mb {sys_metrics.rss_mb:.1f}')
+    _append(f'system_available_memory_mb {sys_metrics.available_memory_mb:.1f}')
+    _append(f'system_active_pipelines {sys_metrics.active_pipelines}')
+    _append(f'system_event_loop_lag_ms {_elapsed_monitor_event_loop_lag_ms:.2f}')
+
+    # ── DB pool metrics ──
+    pool_stats = _get_db_pool_metrics()
+    for k, v in pool_stats.items():
+        if isinstance(v, (int, float)):
+            _append(f'db_pool_{k} {v}')
+
+    # ── Process info ──
+    _append(f'process_info{{role="{settings.PROCESS_ROLE}",env="{settings.APP_ENV}"}} 1')
+    _append(f'process_uptime_seconds {time.time() - _startup_ts:.0f}')
+
+    # ── SSE connections ──
+    try:
+        from app.api.v1 import admin_imports as _admin_imports_mod
+        _active_sse = getattr(_admin_imports_mod, "_active_sse_connections", 0)
+        _append(f'sse_active_connections {_active_sse}')
+    except Exception:
+        _append("sse_active_connections 0")
+
+    # ── Draining status ──
+    try:
+        from app.services.task_queue_worker import is_draining
+        _append(f'worker_draining {1 if is_draining() else 0}')
+    except Exception:
+        _append("worker_draining 0")
+
+    # Prometheus text format requires trailing newline
+    lines.append("")
+    return Response(content="\n".join(lines), media_type="text/plain; version=0.0.4")
+
+
+_startup_ts: float = time.time()
 
 app.include_router(api_router)
 
