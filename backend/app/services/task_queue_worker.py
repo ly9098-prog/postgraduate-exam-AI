@@ -598,6 +598,14 @@ async def set_draining() -> None:
     logger.info("Pipeline worker draining — no new tasks will be claimed")
 
 
+def is_draining() -> bool:
+    """Return whether the worker is in draining mode.
+
+    Used by the readiness probe to return 503 when draining.
+    """
+    return _worker_draining
+
+
 async def stop_worker() -> None:
     """Signal the worker loop to stop."""
     global _worker_running
