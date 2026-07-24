@@ -14,16 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import fallback
 from app.ai.prompts import build_generate_questions
-from app.features.question_pipeline import (
-    SUBJECT_VALUES,
-    TYPE_VALUES,
-    _build_log,
-    _call_or_fallback,
-    _create_question_import,
-    _extract_json,
-    normalizer,
-    process_question_pipeline,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +31,17 @@ async def generate_drafts(
     subject_id: int | None = None,
 ) -> dict:
     """AI 批量生成草稿题目，进入暂存区。绝不直接进入正式题库。"""
+    from app.features.question_pipeline import (
+        SUBJECT_VALUES,
+        TYPE_VALUES,
+        _build_log,
+        _call_or_fallback,
+        _create_question_import,
+        _extract_json,
+        normalizer,
+        process_question_pipeline,
+    )
+
     # Resolve subject: prefer subject_id (DB lookup), fall back to subject string
     if subject_id:
         from app.models.admin import Subject
