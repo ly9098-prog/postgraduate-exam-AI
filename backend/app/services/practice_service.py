@@ -7,14 +7,16 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.time_utils import utcnow
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.question_import import QuestionImport  # noqa: F401 — ensures Subject mapper resolves
 from app.utils.answer_normalizer import is_answer_correct
 from app.services.admin_subject_service import resolve_subject_ids
 from app.services.behavior_service import record_answer_behavior
+from app.services.wrong_question_service import record_wrong
 
-logger = logging.getLogger("2240ai.practice")
+logger = logging.getLogger(__name__)
 
 
 def _random_sample_query(query, total_count: int, need: int, id_col=None):
@@ -35,10 +37,6 @@ def _random_sample_query(query, total_count: int, need: int, id_col=None):
         offset = random.randint(0, total_count - need)
         return query.order_by(id_col.asc() if id_col else func.random()).offset(offset).limit(need)
     return query.order_by(func.random()).limit(need)
-from app.services.wrong_question_service import record_wrong
-from app.core.time_utils import utcnow
-
-logger = logging.getLogger(__name__)
 
 
 async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
@@ -635,7 +633,12 @@ async def _get_questions_v1_fallback(
 
         q = select(Question).where(and_(*conds)).options(selectinload(Question.subject_ref))
         if mode == "random":
-            q = q.order_by(func.random())
+            # Use count + random offset instead of ORDER BY random() on large tables
+            total_q = select(func.count()).select_from(
+                select(Question).where(and_(*conds)).subquery()
+            )
+            total = (await db.execute(total_q)).scalar() or 0
+            q = _random_sample_query(q, total, limit or count, Question.id)
         else:
             q = q.order_by(Question.id.asc())
         q = q.limit(limit if limit is not None else count)
@@ -1773,7 +1776,9 @@ async def submit_answer(
         logger.debug("向量缓存清理失败（不影响答题）uid=%d", user_id, exc_info=True)
 
     # ── Phase 2: 最佳效果后置操作（不影响答题主流程）──
-    # 以下全部在 db.commit() 之后执行，失败不影响核心数据
+    # 以下全部在 db.commit() 之后执行，失败不影响核心数据。
+    # 注意：此时已在新的隐式事务中，catch 块不做 db.rollback()
+    # 以免回滚其他并行的 best-effort 操作。
     is_wrong_added = False
     wq_id_for_prewarm = None
     try:
@@ -1783,7 +1788,6 @@ async def submit_answer(
             wq_id_for_prewarm = wq_obj.id
     except Exception:
         logger.warning("错题记录失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
-        await db.rollback()
 
     try:
         await record_answer_behavior(
@@ -1801,7 +1805,6 @@ async def submit_answer(
         )
     except Exception:
         logger.warning("答题行为记录失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
-        await db.rollback()
 
     # ── Phase 3: 掌握度更新 + 推荐反馈（best-effort）──
     try:
@@ -1811,7 +1814,6 @@ async def submit_answer(
         )
     except Exception:
         logger.warning("掌握度更新失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
-        await db.rollback()
 
     try:
         from app.services import recommendation_log_service
@@ -1820,7 +1822,6 @@ async def submit_answer(
         )
     except Exception:
         logger.warning("推荐日志标记失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
-        await db.rollback()
 
     # ── V2: Leitner 盒子状态更新（best-effort）──
     try:
@@ -1833,7 +1834,6 @@ async def submit_answer(
             "Leitner 状态更新失败（不影响答题）qid=%d uid=%d",
             question_id, user_id, exc_info=True,
         )
-        await db.rollback()
 
     # ── V6: 个性化调度状态更新（best-effort）──
     try:
@@ -1875,6 +1875,7 @@ async def batch_submit_answers(
     user_id: int,
     answers: list[dict],
 ) -> dict:
+    """批量提交答案，使用单个事务减少 commit 次数。"""
     question_ids = [a["question_id"] for a in answers]
     result = await db.execute(
         select(Question).where(
@@ -1887,27 +1888,89 @@ async def batch_submit_answers(
     if missing:
         raise ValueError(f"题目不存在: {missing}")
 
-    results = []
+    now = utcnow()
+    records = []
     total_correct = 0
     total_wrong = 0
 
     for a in answers:
-        r = await submit_answer(
-            db=db,
-            user_id=user_id,
-            question_id=a["question_id"],
-            user_answer=a.get("user_answer", a.get("answer", "")),
-            used_time=a.get("used_time"),
-            request_id=a.get("request_id"),
+        q = questions[a["question_id"]]
+        user_answer = a.get("user_answer", a.get("answer", "")).strip()
+        is_correct = is_answer_correct(
+            user_answer, q.answer or "", q.question_type or "",
         )
-        results.append(r)
-        if r["is_correct"]:
+
+        record = PracticeRecord(
+            user_id=user_id,
+            question_id=q.id,
+            subject=q.subject_ref.code if q.subject_ref else "",
+            question_type=q.question_type,
+            user_answer=user_answer,
+            is_correct=is_correct,
+            used_time=a.get("used_time"),
+            answered_at=now,
+        )
+        db.add(record)
+        records.append((record, q, is_correct, user_answer))
+        if is_correct:
             total_correct += 1
         else:
             total_wrong += 1
 
+    await db.commit()
+
+    # 全部 commit 后，逐个执行 best-effort 后置操作
+    # （错题、行为、掌握度等 — 不影响主流程结果）
+    for record, q, is_correct, user_answer in records:
+        if not is_correct:
+            try:
+                from app.services.wrong_question_service import record_wrong
+
+                wq = await record_wrong(db, user_id, q.id, user_answer)
+                try:
+                    from app.services.ai_prewarm_worker import enqueue_prewarm
+                    await enqueue_prewarm(wq.id, user_id)
+                except Exception:
+                    pass
+            except Exception:
+                logger.warning("批量错题记录失败 qid=%d uid=%d", q.id, user_id, exc_info=True)
+
+        try:
+            from app.services.behavior_service import record_answer_behavior
+            await record_answer_behavior(
+                db=db, user_id=user_id, question_id=q.id,
+                practice_record_id=record.id,
+                time_spent_sec=a.get("used_time", 0),
+                is_first_correct=is_correct,
+                is_final_correct=is_correct,
+                user_answer=user_answer,
+                correct_answer=q.answer,
+                subject=q.subject_ref.code if q.subject_ref else "",
+                session_type="practice",
+            )
+        except Exception:
+            logger.warning("批量行为记录失败 qid=%d uid=%d", q.id, user_id, exc_info=True)
+
+        try:
+            from app.services import mastery_service
+            await mastery_service.update_user_knowledge_state_after_answer(
+                db, user_id, q.id, is_correct, used_time=a.get("used_time"),
+            )
+        except Exception:
+            logger.warning("批量掌握度更新失败 qid=%d uid=%d", q.id, user_id, exc_info=True)
+
     return {
-        "results": results,
+        "results": [
+            {
+                "record_id": r.id,
+                "question_id": q.id,
+                "is_correct": c,
+                "correct_answer": q.answer,
+                "analysis": q.analysis,
+                "knowledge_points": q.knowledge_points or [],
+            }
+            for r, q, c, _ in records
+        ],
         "total_correct": total_correct,
         "total_wrong": total_wrong,
     }

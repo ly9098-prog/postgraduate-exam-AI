@@ -232,18 +232,23 @@ async def update_user_knowledge_state_after_answer(
     subject = row[0]
     difficulty = row[1]
 
+    # 批量查询现有 UserKnowledgeState（替代每 KP 一次 SELECT）
+    kp_ids = [kp.id for _, kp in mappings]
+    states_result = await db.execute(
+        select(UserKnowledgeState).where(
+            UserKnowledgeState.user_id == user_id,
+            UserKnowledgeState.knowledge_point_id.in_(kp_ids),
+        )
+    )
+    existing_states = {
+        s.knowledge_point_id: s for s in states_result.scalars().all()
+    }
+
     updated = 0
     created = 0
 
     for _qkp, kp in mappings:
-        # 查找或创建 UserKnowledgeState
-        state_result = await db.execute(
-            select(UserKnowledgeState).where(
-                UserKnowledgeState.user_id == user_id,
-                UserKnowledgeState.knowledge_point_id == kp.id,
-            )
-        )
-        state = state_result.scalar_one_or_none()
+        state = existing_states.get(kp.id)
 
         if not state:
             state = UserKnowledgeState(
@@ -262,7 +267,6 @@ async def update_user_knowledge_state_after_answer(
                 recent_wrong_count=0,
             )
             db.add(state)
-            await db.flush()
             created += 1
 
         # V3: 计算掌握度增量

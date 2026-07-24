@@ -14,7 +14,7 @@ class ReviewSchedule(Base):
         Integer, ForeignKey("users.id"), nullable=False, index=True
     )
     question_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("questions.id"), nullable=False
+        Integer, ForeignKey("questions.id"), nullable=False, index=True
     )
     subject: Mapped[str | None] = mapped_column(String(16), nullable=True)
     interval: Mapped[int] = mapped_column(Integer, default=0)
@@ -37,7 +37,7 @@ class ReviewRecord(Base):
         Integer, ForeignKey("users.id"), nullable=False, index=True
     )
     question_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("questions.id"), nullable=False
+        Integer, ForeignKey("questions.id"), nullable=False, index=True
     )
     schedule_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("review_schedules.id"), nullable=True

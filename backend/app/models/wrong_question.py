@@ -14,7 +14,7 @@ class WrongQuestion(Base):
         Integer, ForeignKey("users.id"), nullable=False, index=True
     )
     question_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("questions.id"), nullable=False
+        Integer, ForeignKey("questions.id"), nullable=False, index=True
     )
     wrong_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_type: Mapped[str] = mapped_column(String(32), default="other")

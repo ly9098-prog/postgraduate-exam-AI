@@ -28,8 +28,9 @@ async def build_user_knowledge_path(
     逻辑:
     1. 确定起点（传入的 start_kp 或最薄弱点）
     2. 查 prerequisites / next / related 节点
-    3. 计算 priority 排序
-    4. 返回节点列表
+    3. 批量查询掌握度，减少 N+1
+    4. 计算 priority 排序
+    5. 返回节点列表
 
     返回: {"start_kp": dict, "nodes": list[dict], "strategy": str}
     """
@@ -46,14 +47,12 @@ async def build_user_knowledge_path(
         )
         start_kp_model = kp_result.scalar_one_or_none()
         if start_kp_model:
-            # 获取掌握度
-            mastery = await _get_mastery_for_kp(db, user_id, start_kp_model.id)
             start_kp = {
                 "knowledge_point_id": start_kp_model.id,
                 "name": start_kp_model.name,
                 "subject": start_kp_model.subject,
-                "mastery_score": mastery.get("mastery_score"),
-                "weakness_level": mastery.get("weakness_level"),
+                "mastery_score": None,
+                "weakness_level": "unknown",
             }
 
     if not start_kp:
@@ -100,7 +99,7 @@ async def build_user_knowledge_path(
     if not start_kp:
         return {"start_kp": None, "nodes": [], "strategy": "empty"}
 
-    # 2. 查各方向节点
+    # 2. 查各方向节点（不含掌握度，稍后批量查询）
     nodes = []
 
     # 当前起点
@@ -112,13 +111,9 @@ async def build_user_knowledge_path(
             db, start_kp["knowledge_point_id"], max_depth=1,
         )
         for p in prereqs[:3]:
-            mastery = await _get_mastery_for_kp(db, user_id, p["knowledge_point_id"])
-            node = _build_node(
-                {**p, **mastery},
-                path_role="prerequisite",
-                priority=0.0,
-            )
-            nodes.append(node)
+            nodes.append(_build_node(
+                p, path_role="prerequisite", priority=0.0,
+            ))
     except Exception:
         logger.warning("get_prerequisites failed for kp=%d", start_kp["knowledge_point_id"], exc_info=True)
 
@@ -128,13 +123,9 @@ async def build_user_knowledge_path(
             db, start_kp["knowledge_point_id"], max_depth=1,
         )
         for n in nexts[:3]:
-            mastery = await _get_mastery_for_kp(db, user_id, n["knowledge_point_id"])
-            node = _build_node(
-                {**n, **mastery},
-                path_role="next",
-                priority=0.0,
-            )
-            nodes.append(node)
+            nodes.append(_build_node(
+                n, path_role="next", priority=0.0,
+            ))
     except Exception:
         logger.warning("get_next_nodes failed for kp=%d", start_kp["knowledge_point_id"], exc_info=True)
 
@@ -144,20 +135,31 @@ async def build_user_knowledge_path(
             db, start_kp["knowledge_point_id"], limit=3,
         )
         for r in relateds[:3]:
-            mastery = await _get_mastery_for_kp(db, user_id, r["knowledge_point_id"])
-            node = _build_node(
-                {**r, **mastery},
-                path_role="related",
-                priority=0.0,
-            )
-            nodes.append(node)
+            nodes.append(_build_node(
+                r, path_role="related", priority=0.0,
+            ))
     except Exception:
         logger.warning("get_related_nodes failed for kp=%d", start_kp["knowledge_point_id"], exc_info=True)
 
-    # 3. 计算 priority
+    # 3. 批量查询掌握度（替代每次循环调 N+1 次 _get_mastery_for_kp）
+    all_kp_ids = list({n["knowledge_point_id"] for n in nodes if n.get("knowledge_point_id")})
+    mastery_map = await _batch_get_mastery(db, user_id, all_kp_ids) if all_kp_ids else {}
+    for node in nodes:
+        kp_id = node["knowledge_point_id"]
+        if kp_id in mastery_map:
+            node["mastery_score"] = mastery_map[kp_id]["mastery_score"]
+            node["weakness_level"] = mastery_map[kp_id]["weakness_level"]
+
+    # 3b. 起点若尚未填充掌握度（从 weak_kps 来的可能已有），从 mastery_map 刷新
+    start_kp_id = start_kp["knowledge_point_id"]
+    if start_kp.get("mastery_score") is None and start_kp_id in mastery_map:
+        start_kp["mastery_score"] = mastery_map[start_kp_id]["mastery_score"]
+        start_kp["weakness_level"] = mastery_map[start_kp_id]["weakness_level"]
+
+    # 4. 计算 priority
     _compute_priorities(nodes, start_kp)
 
-    # 4. 排序：priority DESC，去重
+    # 5. 排序：priority DESC，去重
     seen_ids = set()
     unique_nodes = []
     for n in sorted(nodes, key=lambda x: -x["priority"]):
