@@ -1,7 +1,13 @@
 """PostgreSQL integration tests — requires ``--run-integration``.
 
 Verifies that the app's models work against a real PostgreSQL database.
+Tests create async sessions inline from the sessionmaker fixture to avoid
+pytest-asyncio 1.3.0 "attached to a different loop" error.
+
+Each test uses a unique UUID in test data to avoid cross-test contamination.
 """
+
+import uuid
 
 import pytest
 from sqlalchemy import select, text
@@ -33,81 +39,81 @@ class TestPostgresConnectivity:
         """Insert a User row and read it back."""
         from app.models.user import User
 
-        user = User(
-            openid="test_openid_001",
-            username="testuser_pg",
-            hashed_password="dummy_hash",
-        )
-        pg_session.add(user)
-        await pg_session.commit()
-        await pg_session.refresh(user)
+        uid = uuid.uuid4().hex[:12]
 
-        assert user.id is not None
-        assert user.openid == "test_openid_001"
+        async with pg_session() as session:
+            user = User(
+                openid=f"test_openid_{uid}",
+                nickname="testuser_pg",
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
 
-        result = await pg_session.execute(
-            select(User).where(User.openid == "test_openid_001")
-        )
-        fetched = result.scalar_one()
-        assert fetched.username == "testuser_pg"
+            assert user.id is not None
+            assert user.openid == f"test_openid_{uid}"
+
+            result = await session.execute(
+                select(User).where(User.openid == f"test_openid_{uid}")
+            )
+            fetched = result.scalar_one()
+            assert fetched.nickname == "testuser_pg"
 
     @pytest.mark.asyncio
     async def test_import_pipeline_crud(self, pg_session):
         """Create an ImportPipeline row, update status, read back."""
-        from datetime import datetime
         from app.models.import_pipeline import ImportPipeline
 
-        pipeline = ImportPipeline(
-            pipeline_id="pl_integration_001",
-            source_type="pdf",
-            source_file="test_integration.pdf",
-            status="processing",
-            total_pages=10,
-            created_at=datetime.utcnow(),
-        )
-        pg_session.add(pipeline)
-        await pg_session.commit()
+        pid = f"pl_int_{uuid.uuid4().hex[:8]}"
 
-        pipeline.status = "completed"
-        await pg_session.commit()
-
-        result = await pg_session.execute(
-            select(ImportPipeline).where(
-                ImportPipeline.pipeline_id == "pl_integration_001"
+        async with pg_session() as session:
+            pipeline = ImportPipeline(
+                pipeline_id=pid,
+                source_type="pdf",
+                source_file="test_integration.pdf",
+                status="running",
+                total_pages=10,
             )
-        )
-        fetched = result.scalar_one()
-        assert fetched.status == "completed"
-        assert fetched.total_pages == 10
+            session.add(pipeline)
+            await session.commit()
+
+            pipeline.status = "completed"
+            await session.commit()
+
+            result = await session.execute(
+                select(ImportPipeline).where(ImportPipeline.pipeline_id == pid)
+            )
+            fetched = result.scalar_one()
+            assert fetched.status == "completed"
+            assert fetched.total_pages == 10
 
     @pytest.mark.asyncio
     async def test_question_import_crud(self, pg_session):
         """Create a QuestionImport row with JSON fields."""
-        from datetime import datetime
         from app.models.question_import import QuestionImport
 
-        qi = QuestionImport(
-            batch_id="batch_integration_001",
-            question_type="single_choice",
-            stem="What is 1+1?",
-            options={"A": "1", "B": "2", "C": "3"},
-            answer="B",
-            source_type="pdf",
-            source_order=1,
-            review_status="pending",
-            created_at=datetime.utcnow(),
-        )
-        pg_session.add(qi)
-        await pg_session.commit()
-        await pg_session.refresh(qi)
+        bid = f"batch_int_{uuid.uuid4().hex[:8]}"
 
-        assert qi.id is not None
-        assert qi.options["B"] == "2"
-
-        result = await pg_session.execute(
-            select(QuestionImport).where(
-                QuestionImport.batch_id == "batch_integration_001"
+        async with pg_session() as session:
+            qi = QuestionImport(
+                batch_id=bid,
+                question_type="single_choice",
+                source_type="pdf",
+                raw_data={"stem": "What is 1+1?"},
+                parsed_options={"A": "1", "B": "2", "C": "3"},
+                parsed_answer="B",
+                status="pending",
+                source_order_index=1,
             )
-        )
-        rows = result.scalars().all()
-        assert len(rows) == 1
+            session.add(qi)
+            await session.commit()
+            await session.refresh(qi)
+
+            assert qi.id is not None
+            assert qi.parsed_options["B"] == "2"
+
+            result = await session.execute(
+                select(QuestionImport).where(QuestionImport.batch_id == bid)
+            )
+            rows = result.scalars().all()
+            assert len(rows) == 1
