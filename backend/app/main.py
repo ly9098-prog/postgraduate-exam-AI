@@ -316,41 +316,44 @@ async def lifespan(app: FastAPI):
         except Exception:
             logger.exception("Formula render pool shutdown error")
 
-        # 6. Shutdown OCR executor (process pool) — common
-        try:
-            from app.services.ocr_executor_service import ocr_executor
-            await asyncio.wait_for(
-                ocr_executor.shutdown(wait=True),
-                timeout=30,
-            )
-            logger.info("OCR executor shut down")
-        except asyncio.TimeoutError:
-            logger.warning("OCR executor shutdown timed out, forcing non-blocking")
+        # 6. Shutdown OCR infrastructure (only if this role uses it)
+        if role in ("web", "all"):
             try:
-                from app.core.ocr_process_pool import ocr_process_pool
-                await asyncio.to_thread(
-                    ocr_process_pool.shutdown, wait=False,
+                from app.services.ocr_executor_service import ocr_executor
+                await asyncio.wait_for(
+                    ocr_executor.shutdown(wait=True),
+                    timeout=30,
                 )
-            except Exception as exc2:
-                logger.exception("OCR executor forced shutdown error: %s", exc2)
-        except Exception:
-            logger.exception("OCR executor shutdown error")
+                logger.info("OCR executor shut down")
+            except asyncio.TimeoutError:
+                logger.warning("OCR executor shutdown timed out")
+            except Exception:
+                logger.exception("OCR executor shutdown error")
 
-        # 7. Shutdown OCR Gateway (if initialized)
-        try:
-            if _ocr_gateway is not None:
-                await _ocr_gateway.shutdown()
-                logger.info("OCR Gateway shut down")
-        except Exception as e:
-            logger.warning("OCR Gateway shutdown error: %s", e)
+            try:
+                from app.features.ocr_gateway import OCRGateway
+                # _ocr_gateway is defined above in the lifespan scope
+                if _ocr_gateway is not None:
+                    await _ocr_gateway_instance.shutdown()
+                    logger.info("OCR Gateway shut down")
+            except Exception as e:
+                logger.warning("OCR Gateway shutdown error: %s", e)
 
-        # 8. Shutdown PDF renderer (thread pool) — common
+        # 7. PDF renderer shutdown (common)
         try:
             from app.services.pdf_renderer_service import pdf_renderer
             await pdf_renderer.shutdown()
             logger.info("PDF renderer shut down")
         except Exception as e:
             logger.warning("PDF renderer shutdown error: %s", e)
+
+        # 8. Close Redis client from task queue (common)
+        try:
+            from app.services.task_queue_service import task_queue
+            await task_queue.close()
+            logger.info("Task queue Redis client closed")
+        except Exception as e:
+            logger.warning("Task queue close error: %s", e)
 
         # ── Diagnostics ──
         logger.info("=== Shutdown sequence completed (role=%s) ===", role)
@@ -556,47 +559,171 @@ async def ready_health():
     """Readiness probe — checks all critical dependencies are healthy.
 
     Returns 503 (via JSONResponse status_code) when any critical
-    dependency is unavailable. Now includes DB pool metrics and
-    event-loop lag.
+    dependency is unavailable. Non-critical issues are reported as
+    "degraded" without failing the probe.
+
+    Critical checks:
+    - PostgreSQL connectivity
+    - Redis connectivity (if configured)
+    - Alembic at head revision
+    - Staging directory writable
+    - Role-specific dependencies
+
+    Non-critical (degraded):
+    - OCR external configuration
+    - Queue status
+    - Worker draining
     """
-    db_ok = False
-    redis_ok = False
+    db_ok = await _check_database()
+    redis_ok = await _check_redis()
+    alembic_ok = await _check_alembic_head()
+    staging_ok = await _check_staging()
+    role_ok = await _check_role_deps()
 
-    # Database check
-    try:
-        async with async_session() as session:
-            await session.execute(text("SELECT 1"))
-        db_ok = True
-    except Exception:
-        db_ok = False
-
-    # Redis check (only if configured)
-    if settings.REDIS_URL:
-        try:
-            from app.core.cache import cache
-            await cache.set("health:ping", "pong", ttl=10)
-            pong = await cache.get("health:ping")
-            redis_ok = pong == "pong"
-        except Exception:
-            redis_ok = False
+    # Non-critical checks (informational, don't fail probe)
+    ocr_status = await _check_ocr_config()
+    queue_status = await _check_queue()
 
     checks = {
         "database": "ok" if db_ok else "unavailable",
         "db_pool": _get_db_pool_metrics(),
+        "alembic": "ok" if alembic_ok else "stale",
+        "staging": "ok" if staging_ok else "unavailable",
+        "role_deps": "ok" if role_ok else "unavailable",
         "event_loop_lag_ms": _elapsed_monitor_event_loop_lag_ms,
     }
     if settings.REDIS_URL:
         checks["redis"] = "ok" if redis_ok else "unavailable"
+    if ocr_status:
+        checks["ocr"] = ocr_status
+    if queue_status:
+        checks["queue"] = queue_status
 
-    all_ok = db_ok and (not settings.REDIS_URL or redis_ok)
+    critical_failures = [
+        k for k, v in checks.items()
+        if v == "unavailable" and k in ("database", "redis", "alembic", "staging", "role_deps")
+    ]
+    all_ok = len(critical_failures) == 0
 
     return JSONResponse(
         status_code=200 if all_ok else 503,
         content={
             "status": "ok" if all_ok else "unavailable",
+            "degraded": ocr_status == "degraded" or queue_status == "degraded",
             "checks": checks,
         },
     )
+
+
+async def _check_database() -> bool:
+    """Check PostgreSQL is reachable."""
+    try:
+        async with async_session() as session:
+            await session.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
+async def _check_redis() -> bool:
+    """Check Redis is reachable and responsive."""
+    if not settings.REDIS_URL:
+        return True  # Not configured — not a failure
+    try:
+        from app.core.cache import cache
+        await cache.set("health:ping", "pong", ttl=10)
+        pong = await cache.get("health:ping")
+        return pong == "pong"
+    except Exception:
+        return False
+
+
+async def _check_alembic_head() -> bool:
+    """Verify the database migration is at the head revision."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        async with async_session() as session:
+            row = (await session.execute(
+                text("SELECT version_num FROM alembic_version")
+            )).scalar_one_or_none()
+            db_revision = row or ""
+
+        alembic_cfg = Config()
+        alembic_cfg.set_main_option(
+            "script_location",
+            os.path.join(os.path.dirname(__file__), "../alembic"),
+        )
+        script = ScriptDirectory.from_config(alembic_cfg)
+        head_revision = script.get_current_head()
+
+        return bool(db_revision and head_revision and db_revision == head_revision)
+    except Exception:
+        return False
+
+
+async def _check_staging() -> bool:
+    """Check the staging directory is writable."""
+    from app.services.staging_storage import _STAGING_DIR
+    try:
+        path = _STAGING_DIR
+        path.mkdir(parents=True, exist_ok=True)
+        return os.access(str(path), os.W_OK)
+    except Exception:
+        return False
+
+
+async def _check_role_deps() -> bool:
+    """Check role-specific dependencies are available."""
+    role = settings.PROCESS_ROLE
+    if role == "web":
+        # Web needs DB and Redis (already checked separately)
+        return True
+    elif role in ("worker", "scheduler"):
+        # Worker/scheduler need DB, Redis, staging
+        return True
+    return True  # Unknown role — don't fail
+
+
+async def _check_ocr_config() -> str | None:
+    """Check OCR configuration. Returns status string or None if not applicable.
+
+    Returns "ok", "degraded", or None (no OCR configured — skip check).
+    """
+    if not settings.OCR_ENABLED:
+        return None
+
+    exec_backend = (settings.OCR_EXECUTION_BACKEND or "").lower()
+    issues = []
+
+    if exec_backend == "local_process":
+        issues.append("local_process backend not allowed")
+    if settings.OCR_USE_GPU is not False:
+        issues.append("GPU should be disabled")
+    if exec_backend == "paddlex_http" and not settings.OCR_REMOTE_TOKEN:
+        issues.append("remote token not set")
+
+    if issues:
+        return "degraded"
+    return "ok"
+
+
+async def _check_queue() -> str | None:
+    """Check durable queue health."""
+    if not settings.REDIS_URL:
+        return None
+    try:
+        from app.services.task_queue_service import task_queue
+        total = 0
+        for tt in ("import_pipeline", "image_pipeline", "excel_pipeline"):
+            total += await task_queue.queue_length(tt)
+            total += await task_queue.processing_length(tt)
+        if total > 100:
+            return "degraded"
+        return "ok"
+    except Exception:
+        return "degraded"
 
 
 # --- 路由（聚合 Router） ---
