@@ -106,6 +106,7 @@ class Settings(BaseSettings):
     PDF_MAX_PAGE_PIXELS: int = 4096 * 4096              # max width*height per page
     PDF_RENDER_DPI: int = 150
     PDF_MAX_RENDER_PAGES_CONCURRENT: int = 5            # pages rendered per batch
+    PDF_RENDER_PAGE_WINDOW: int = 0                      # 0 = all, N = max pages held in memory at once
 
     # Exercise Region Detection
     EXERCISE_DETECTION_ENABLED: bool = True
