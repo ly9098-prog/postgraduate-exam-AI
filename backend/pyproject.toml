@@ -42,7 +42,6 @@ ignore = [
 
 [tool.ruff.format]
 quote-style = "double"
-indent-width = 4
 
 [tool.mypy]
 python_version = "3.11"
