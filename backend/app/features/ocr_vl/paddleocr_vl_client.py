@@ -643,6 +643,62 @@ class PaddleOCRVLClient:
             logger.info("[PaddleOCR-VL] ocr_image cancelled")
             raise
 
+    async def batch_ocr(
+        self,
+        images: list[tuple[bytes, str]],
+        *,
+        max_concurrency: int = 2,
+        progress_callback: callable | None = None,
+    ) -> list[PaddleOCRVLResult | None]:
+        """Submit multiple images for OCR with bounded concurrency.
+
+        Args:
+            images: List of ``(image_bytes, filename)`` tuples.
+            max_concurrency: Max concurrent OCR submissions (semaphore).
+            progress_callback: Optional ``(done, total)`` callback after
+                each image completes.
+
+        Returns:
+            List of results in the same order as ``images``.  ``None`` entries
+            indicate individual failures (other images continue processing).
+        """
+        sem = asyncio.Semaphore(max_concurrency)
+        results: list[PaddleOCRVLResult | None] = [None] * len(images)
+        completed = 0
+
+        async def _process_one(idx: int, data: bytes, name: str) -> None:
+            nonlocal completed
+            try:
+                async with sem:
+                    result = await self.ocr_image(image_bytes=data, filename=name)
+                    results[idx] = result
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "[PaddleOCR-VL] batch_ocr image %d/%d failed: %s",
+                    idx + 1, len(images), exc,
+                )
+                results[idx] = None
+            finally:
+                completed += 1
+                if progress_callback:
+                    progress_callback(completed, len(images))
+
+        tasks = [
+            asyncio.create_task(_process_one(i, data, name), name=f"ocr-batch-{i}")
+            for i, (data, name) in enumerate(images)
+        ]
+        try:
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
+
+        return results
+
     async def ocr_image_url(
         self,
         file_url: str,

@@ -577,7 +577,7 @@ def _merge_cross_page_blocks(
     except Exception as exc:
         logger.warning("[CROSS-PAGE] detection failed: %s", exc)
         warnings.append(f"cross_page_error: {exc}")
-        return blocks, cross_page_links, warnings
+        return blocks, cross_page_links, warnings, merge_results
 
 
 def _apply_cross_page_block_merge(
@@ -1442,14 +1442,31 @@ _DEFAULT_CHUNK_SIZE = 40
 
 
 def _resolve_chunk_size() -> int:
-    """Read chunk size from env, default 40. 0 disables chunking."""
+    """Read chunk size from env, default 40. 0 disables chunking.
+
+    When ``PDF_RENDER_PAGE_WINDOW > 0`` and is smaller than the env value,
+    the page window becomes the effective chunk size (ensures rendered pages
+    fit within the memory budget).
+    """
+    from app.core.config import settings
+
+    page_window = settings.PDF_RENDER_PAGE_WINDOW
     raw = os.environ.get("IMPORT_PIPELINE_CHUNK_SIZE")
     if raw is None:
-        return _DEFAULT_CHUNK_SIZE
-    try:
-        return int(raw)
-    except ValueError:
-        return _DEFAULT_CHUNK_SIZE
+        env_size = _DEFAULT_CHUNK_SIZE
+    else:
+        try:
+            env_size = int(raw)
+        except ValueError:
+            env_size = _DEFAULT_CHUNK_SIZE
+
+    if page_window > 0 and page_window < env_size:
+        logger.info(
+            "Chunk size capped by PDF_RENDER_PAGE_WINDOW=%d (env value was %d)",
+            page_window, env_size,
+        )
+        return page_window
+    return env_size
 
 
 _DEFAULT_CHUNK_OVERLAP = 3
@@ -2238,6 +2255,8 @@ class PipelineStage:
                     exc,
                     tags={"pipeline.stage": self.name, "stage": _STAGE_BUSINESS_MAP.get(self.name, "unknown")},
                 )
+
+                logger.exception("Pipeline stage '%s' failed: %s", self.name, exc)
 
                 log_event(
                     _pipe_logger, "pipeline.stage.error",
@@ -4833,15 +4852,19 @@ class ImportPipeline:
         render_page_end = opts.get("page_end")
 
         # Pre-render page images once (expensive — reused across chunks)
-        # Eliminates previous double-rendering: each page is rendered exactly
-        # once, producing both bytes (for OCR) and temp file refs (for cropping).
-        # All rendering is offloaded to a thread pool (never blocks event loop).
+        # When PDF_RENDER_PAGE_WINDOW > 0, skip pre-render — each chunk
+        # renders its own window via iter_pages() in _execute_chunk.
+        from app.core.config import settings
+
+        page_window = settings.PDF_RENDER_PAGE_WINDOW
+        pre_render = page_window <= 0  # skip pre-render when window is set
+
         from app.services.pdf_renderer_service import pdf_renderer
 
         page_images: dict[int, bytes] | None = None
         page_image_refs: dict[int, str] | None = None
         pdf_render_result = None
-        if page_images is None and source_type == "pdf":
+        if pre_render and source_type == "pdf":
             pdf_render_result = await pdf_renderer.render_pages(
                 file_content=file_content,
                 file_path=file_path,
@@ -5361,9 +5384,27 @@ class ImportPipeline:
         The returned dict matches the per-chunk diagnostics shape consumed by
         ``diagnostics.chunks`` in the pipeline-level result.
         """
-        from app.features import pipeline_checkpoint as ckpt
+        from app.core.config import settings
+        from app.services.pdf_renderer_service import pdf_renderer
+
+        # When PDF_RENDER_PAGE_WINDOW > 0, render only this chunk's pages
+        # using iter_pages() streaming — avoids holding all pages in memory.
+        page_window = settings.PDF_RENDER_PAGE_WINDOW
+        if page_window > 0 and source_type == "pdf" and page_images is None:
+            chunk_page_images: dict[int, bytes] = {}
+            async for page_num, png_bytes in pdf_renderer.iter_pages(
+                file_content=file_content,
+                file_path=file_path,
+                source_type=source_type,
+                page_start=page_start,
+                page_end=logical_end,
+            ):
+                chunk_page_images[page_num] = png_bytes
+            if chunk_page_images:
+                page_images = chunk_page_images
 
         await ckpt.mark_chunk_running(db, self.pipeline_id, chunk_index)
+        from app.features import pipeline_checkpoint as ckpt
         await ckpt.invalidate_progress_cache(self.pipeline_id)
 
         _chunk_logger = logging.getLogger("app.pipeline")
