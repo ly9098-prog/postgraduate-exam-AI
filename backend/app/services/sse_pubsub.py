@@ -19,20 +19,22 @@ _CHANNEL_PREFIX = "sse:job:"
 async def publish_event(job_id: int, event_type: str, data: dict) -> None:
     """Publish an event to the job's Redis channel.
 
+    Uses the shared cache client to avoid creating a new connection per event.
     Falls back to logging when Redis is unavailable (non-fatal).
     """
     try:
-        import redis.asyncio as redis
-        from app.core.config import settings
+        from app.core.cache import cache
 
-        if not settings.REDIS_URL:
+        if not cache.is_enabled():
             return
 
-        r = redis.from_url(settings.REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
+        client = await cache._ensure_client()
+        if client is None:
+            return
+
         channel = f"{_CHANNEL_PREFIX}{job_id}"
         payload = json.dumps({"type": event_type, "data": data}, ensure_ascii=False, default=str)
-        await r.publish(channel, payload)
-        await r.aclose()
+        await client.publish(channel, payload)
     except Exception:
         pass  # Pub/Sub is best-effort
 
@@ -47,6 +49,8 @@ async def subscribe_job(
 ) -> None:
     """Subscribe to a job's Redis channel, or poll as fallback.
 
+    Uses the shared cache client to avoid creating a new connection.
+
     Args:
         job_id: The job to subscribe to.
         on_event: Called with (event_type, data) for each event.
@@ -56,14 +60,16 @@ async def subscribe_job(
         timeout: Max subscription duration in seconds.
     """
     try:
-        import redis.asyncio as redis
-        from app.core.config import settings
+        from app.core.cache import cache
 
-        if not settings.REDIS_URL:
+        if not cache.is_enabled():
             raise ConnectionError("No Redis configured")
 
-        r = redis.from_url(settings.REDIS_URL, socket_connect_timeout=2, socket_timeout=5)
-        async with r.pubsub() as pubsub:
+        client = await cache._ensure_client()
+        if client is None:
+            raise ConnectionError("Redis client unavailable")
+
+        async with client.pubsub() as pubsub:
             channel = f"{_CHANNEL_PREFIX}{job_id}"
             await pubsub.subscribe(channel)
 

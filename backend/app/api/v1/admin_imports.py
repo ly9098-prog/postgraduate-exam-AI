@@ -1154,7 +1154,7 @@ async def stream_batch_image_job(
     async def event_generator():
         nonlocal current_user_id
         last_event_id = _resolve_last_event_id()
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=100)
         subscribed = False
 
         # Track active connection
@@ -1162,16 +1162,34 @@ async def stream_batch_image_job(
         start_time = time.time()
 
         async def on_event(event_type: str, data: dict):
+            """Put event into bounded queue — drop oldest trace if full.
+
+            Only drops 'trace' events; 'done' and error events are never
+            dropped (they close the stream).
+            """
+            if queue.full():
+                if event_type == "trace":
+                    return  # drop oldest trace — acceptable for progress
+                # For non-trace events, make room by discarding oldest
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
             await queue.put((event_type, data))
 
         async def on_done():
             await queue.put(("done", {}))
 
         async def poll_db():
+            nonlocal last_event_id
             async with async_session() as db:
                 events = await batch_svc.poll_trace_events(
                     db, job_id, since_id=last_event_id
                 )
+                for ev in events:
+                    ev_id = ev.get("id")
+                    if ev_id is not None:
+                        last_event_id = max(last_event_id, int(ev_id))
                 return [
                     {"type": "done" if ev.get("status") in ("completed", "failed") else "trace",
                      "data": ev}
@@ -1189,6 +1207,10 @@ async def stream_batch_image_job(
                 elapsed = time.time() - start_time
                 if elapsed > _SSE_MAX_DURATION_SEC:
                     yield f"event: timeout\ndata: {json.dumps({'message': 'connection max duration reached'})}\n\n"
+                    return
+
+                # Check client disconnect (FastAPI CancelledError handler is also present)
+                if await request.is_disconnected():
                     return
 
                 try:

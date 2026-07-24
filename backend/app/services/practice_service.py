@@ -1039,22 +1039,30 @@ async def get_smart_practice_questions(
         for kp in kp_names:
             kp_conditions.append(Question.knowledge_points.like(f'%"{kp}"%'))
         kp_cond = or_(*kp_conditions)
-        kp_q = select(Question).where(and_(*conditions, kp_cond)).options(selectinload(Question.subject_ref)).order_by(func.random())
-        result = await db.execute(kp_q)
-        kp_fill = list(result.scalars().all())
+        # Count first, then use random offset to avoid ORDER BY random() on large tables
+        kp_count_q = select(func.count()).select_from(
+            select(Question).where(and_(*conditions, kp_cond)).subquery()
+        )
+        kp_total = (await db.execute(kp_count_q)).scalar() or 0
+        kp_remaining = count - len(vector_questions)
+        if kp_total > 0 and kp_remaining > 0:
+            kp_q = select(Question).where(and_(*conditions, kp_cond)).options(selectinload(Question.subject_ref))
+            kp_q = _random_sample_query(kp_q, kp_total, min(kp_remaining, kp_total), Question.id)
+            result = await db.execute(kp_q)
+            kp_fill = list(result.scalars().all())
 
-        for fq in kp_fill:
-            if fq.id not in existing_ids:
-                existing_ids.add(fq.id)
-                vector_questions.append(fq)
-                metadata[fq.id] = {
-                    "recommend_reason": f"薄弱知识点补齐：{'、'.join(kp_names[:3])}",
-                    "recommend_score": None,
-                    "strategy": "kp_fallback",
-                    "similarity": None,
-                }
-                if len(vector_questions) >= count:
-                    break
+            for fq in kp_fill:
+                if fq.id not in existing_ids:
+                    existing_ids.add(fq.id)
+                    vector_questions.append(fq)
+                    metadata[fq.id] = {
+                        "recommend_reason": f"薄弱知识点补齐：{'、'.join(kp_names[:3])}",
+                        "recommend_score": None,
+                        "strategy": "kp_fallback",
+                        "similarity": None,
+                    }
+                    if len(vector_questions) >= count:
+                        break
 
     # 4. 最终随机补齐
     if len(vector_questions) < count:
