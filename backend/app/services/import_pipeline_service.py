@@ -371,6 +371,7 @@ async def _run_image_pipeline_with_db(
         capture_exception(exc, tags={"pipeline_id": pipeline_id, "source_file": source_file, "stage": "ocr"})
         await _fail_image_pipeline(pipeline_id, str(exc))
     finally:
+        resource_guard.decrement_pipeline_count()
         if image_path and os.path.exists(image_path):
             try:
                 os.unlink(image_path)
@@ -464,6 +465,7 @@ async def _run_pipeline_with_db(
             "finished_at": "",
         })
     finally:
+        resource_guard.decrement_pipeline_count()
         if file_path and os.path.exists(file_path):
             try:
                 os.unlink(file_path)
@@ -499,6 +501,8 @@ async def start_import_pipeline(
     if not ok:
         from app.core.resource_guard import RESOURCE_PRESSURE, ResourceGuardError
         raise ResourceGuardError(RESOURCE_PRESSURE, reason)
+
+    resource_guard.increment_pipeline_count()
 
     # Validate file exists and is non-empty
     file_size = os.path.getsize(file_path)
