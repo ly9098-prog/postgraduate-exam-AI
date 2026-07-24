@@ -1,5 +1,6 @@
 import hashlib
 import json
+import random
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -690,7 +691,7 @@ async def get_random_formula(
         raise HTTPException(status_code=404, detail="No formulas available")
 
     random_card = (
-        base_query.order_by(func.random()).limit(1)
+        base_query.order_by(FormulaCard.id.asc()).offset(random.randint(0, total - 1)).limit(1)
     )
     result = await db.execute(random_card)
     card = result.scalar_one_or_none()

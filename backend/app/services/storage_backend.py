@@ -197,7 +197,11 @@ class COSStorage(StorageBackend):
 
         key = self._build_key(filename)
         try:
-            client.put_object(Bucket=self._bucket, Body=data, Key=key)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                _storage_executor,
+                lambda: client.put_object(Bucket=self._bucket, Body=data, Key=key),
+            )
             return f"https://{self._bucket}.cos.{self._region}.myqcloud.com/{key}"
         except Exception:
             if settings.COS_ALLOW_LOCAL_FALLBACK:
@@ -233,7 +237,11 @@ class COSStorage(StorageBackend):
             return False
 
         try:
-            client.delete_object(Bucket=self._bucket, Key=key)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                _storage_executor,
+                lambda: client.delete_object(Bucket=self._bucket, Key=key),
+            )
             return True
         except Exception as e:
             logger.error("COS delete failed for %s: %s", key, e)

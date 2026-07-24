@@ -1,4 +1,6 @@
 """题目 CRUD（保持精简，业务流转见 features.question_pipeline）。"""
+import random
+
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -100,7 +102,11 @@ async def get_random(
         conditions.extend(_type_conditions(question_type))
     if exclude_ids:
         conditions.append(Question.id.notin_(exclude_ids))
-    res = await db.execute(
-        select(Question).where(and_(*conditions)).order_by(func.random()).limit(1)
-    )
+    base = select(Question).where(and_(*conditions))
+    count_q = select(func.count()).select_from(base.subquery())
+    total = (await db.execute(count_q)).scalar() or 0
+    if total == 0:
+        return None
+    offset = random.randint(0, total - 1)
+    res = await db.execute(base.order_by(Question.id.asc()).offset(offset).limit(1))
     return res.scalar_one_or_none()

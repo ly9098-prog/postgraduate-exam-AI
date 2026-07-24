@@ -183,6 +183,22 @@ class CacheClient:
         except Exception:
             pass
 
+    async def expire(self, key: str, ttl: int) -> bool:
+        """Extend TTL for an existing key.
+
+        Does NOT verify ownership — the caller must ensure it is safe
+        to extend (e.g. the lock was acquired by this process).
+        """
+        if not self._enabled:
+            return False
+        try:
+            client = await self._ensure_client()
+            if client is None:
+                return False
+            return bool(await client.expire(key, ttl))
+        except Exception:
+            return False
+
     async def delete(self, pattern: str) -> int:
         """按模式删除缓存，返回删除的 key 数量。
 

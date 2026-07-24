@@ -1,6 +1,8 @@
+import asyncio
 import hashlib
 import logging
 import os
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -134,6 +136,34 @@ async def pipeline_status(
 _RESUMABLE_PIPELINE_STATUSES = {"paused", "failed"}
 
 
+def _validate_resume_pdf_sync(
+    file_path: str,
+    total_pages: int | None,
+    validator: Any,
+) -> tuple[int, str]:
+    """Validate a re-uploaded PDF file in a thread (fitz + hashlib are sync).
+
+    Returns (uploaded_pages, uploaded_sha256_hex).
+    """
+    import fitz
+    import hashlib
+
+    with fitz.open(file_path) as doc:
+        uploaded_pages = len(doc)
+        validator.validate_pdf_pages(uploaded_pages)
+
+    if total_pages is not None and uploaded_pages != total_pages:
+        raise ValueError(
+            f"PDF 页数不匹配（原始 {total_pages} 页，上传 {uploaded_pages} 页）",
+        )
+
+    uploaded_sha256 = hashlib.sha256()
+    with open(file_path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            uploaded_sha256.update(chunk)
+    return uploaded_pages, uploaded_sha256.hexdigest()
+
+
 @router.post(
     "/pipelines/{pipeline_id}/resume",
     response_model=PipelineResumeResponse,
@@ -193,21 +223,13 @@ async def resume_pipeline(
         validator = get_upload_validator()
         validator.validate_file(file.filename, tmp.size, file.content_type)
 
-        import fitz
-        with fitz.open(tmp.path) as doc:
-            uploaded_pages = len(doc)
-            validator.validate_pdf_pages(uploaded_pages)
-
-        if pipeline_row.total_pages is not None and uploaded_pages != pipeline_row.total_pages:
-            raise ValueError(
-                f"PDF 页数不匹配（原始 {pipeline_row.total_pages} 页，上传 {uploaded_pages} 页）",
-            )
-
-        uploaded_sha256 = hashlib.sha256()
-        with open(tmp.path, "rb") as fh:
-            for chunk in iter(lambda: fh.read(65536), b""):
-                uploaded_sha256.update(chunk)
-        uploaded_sha256_hex = uploaded_sha256.hexdigest()
+        # Run fitz + hashlib in a thread to avoid blocking the event loop
+        uploaded_pages, uploaded_sha256_hex = await asyncio.to_thread(
+            _validate_resume_pdf_sync,
+            tmp.path,
+            pipeline_row.total_pages,
+            validator,
+        )
         if pipeline_row.source_sha256 is None:
             logger.warning(
                 "legacy pipeline without source_sha256, skipping content identity check "
