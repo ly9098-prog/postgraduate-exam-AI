@@ -10,6 +10,16 @@ from app.core.deployment_profile import detect_deployment_profile, DeploymentPro
 
 logger = logging.getLogger("postgraduate-ai.database")
 
+# Per-role connection pool configuration
+_POOL_BY_ROLE = {
+    "web": (settings.DB_POOL_SIZE_WEB, settings.DB_MAX_OVERFLOW_WEB),
+    "worker": (settings.DB_POOL_SIZE_WORKER, settings.DB_MAX_OVERFLOW_WORKER),
+    "scheduler": (settings.DB_POOL_SIZE_SCHEDULER, settings.DB_MAX_OVERFLOW_SCHEDULER),
+    "all": (settings.DB_POOL_SIZE, settings.DB_MAX_OVERFLOW),
+}
+_role = getattr(settings, "PROCESS_ROLE", "web")
+_pool_size, _max_overflow = _POOL_BY_ROLE.get(_role, (settings.DB_POOL_SIZE, settings.DB_MAX_OVERFLOW))
+
 _connect_args = {}
 _engine_kwargs: dict = {
     "echo": settings.SQL_ECHO,
@@ -21,9 +31,14 @@ _engine_kwargs: dict = {
 if "sqlite" in settings.DATABASE_URL:
     _connect_args = {"check_same_thread": False}
 else:
-    _engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
-    _engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
+    _engine_kwargs["pool_size"] = _pool_size
+    _engine_kwargs["max_overflow"] = _max_overflow
     _engine_kwargs["pool_timeout"] = settings.DB_POOL_TIMEOUT
+
+logger.info(
+    "DB pool configured: role=%s pool_size=%d max_overflow=%d total_connections=%d",
+    _role, _pool_size, _max_overflow, _pool_size + _max_overflow,
+)
 
 engine = create_async_engine(
     settings.DATABASE_URL,

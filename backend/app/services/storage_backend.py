@@ -3,6 +3,8 @@ import io
 import logging
 import os
 import posixpath
+
+from app.core.config import settings
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 
@@ -188,16 +190,21 @@ class COSStorage(StorageBackend):
     async def upload(self, filename: str, data: bytes) -> str:
         client = self._get_client()
         if client is None:
-            logger.error("COS backend not configured, falling back to local storage")
-            return await LocalFileStorage(self._prefix).upload(filename, data)
+            if settings.COS_ALLOW_LOCAL_FALLBACK:
+                logger.error("COS backend not configured, falling back to local storage")
+                return await LocalFileStorage(self._prefix).upload(filename, data)
+            raise RuntimeError("COS backend not configured and local fallback is disabled")
 
         key = self._build_key(filename)
         try:
             client.put_object(Bucket=self._bucket, Body=data, Key=key)
             return f"https://{self._bucket}.cos.{self._region}.myqcloud.com/{key}"
         except Exception:
-            logger.exception("COS upload failed, falling back to local storage")
-            return await LocalFileStorage(self._prefix).upload(filename, data)
+            if settings.COS_ALLOW_LOCAL_FALLBACK:
+                logger.exception("COS upload failed, falling back to local storage")
+                return await LocalFileStorage(self._prefix).upload(filename, data)
+            logger.exception("COS upload failed and local fallback is disabled")
+            raise
 
     async def delete(self, url_or_key: str) -> bool:
         """删除 COS 对象。
