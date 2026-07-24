@@ -158,6 +158,7 @@ class TestProductionConfigValidatorOcr:
             "OCR_USE_GPU": False,
             "OCR_EXECUTION_BACKEND": "paddlex_http",
             "OCR_REMOTE_URL": "https://ocr.example.com/api",
+            "OCR_REMOTE_TOKEN": "test-token-123",
         }
         env_vals.update({k: str(v) for k, v in overrides.items() if k in ("DEPLOYMENT_PROFILE",)})
         set_vals.update({k: v for k, v in overrides.items() if k not in ("DEPLOYMENT_PROFILE",)})
@@ -167,10 +168,11 @@ class TestProductionConfigValidatorOcr:
             with patch.object(settings, "OCR_ENABLED", set_vals["OCR_ENABLED"]):
                 with patch.object(settings, "OCR_USE_GPU", set_vals["OCR_USE_GPU"]):
                     with patch.object(settings, "OCR_EXECUTION_BACKEND", set_vals["OCR_EXECUTION_BACKEND"]):
-                        with patch.object(settings, "OCR_REMOTE_URL", set_vals["OCR_REMOTE_URL"]):
-                            validator._check_deployment_profile(errors)
-                            validator._check_ocr_production_rules(errors)
-                            validator._check_ocr_no_local_deps(errors)
+                        with patch.object(settings, "OCR_REMOTE_URL", set_vals.get("OCR_REMOTE_URL", "")):
+                            with patch.object(settings, "OCR_REMOTE_TOKEN", set_vals.get("OCR_REMOTE_TOKEN", "")):
+                                validator._check_deployment_profile(errors)
+                                validator._check_ocr_production_rules(errors)
+                                validator._check_ocr_no_local_deps(errors)
         return errors
 
     def test_valid_cloud_config_passes(self):
@@ -190,4 +192,58 @@ class TestProductionConfigValidatorOcr:
     def test_local_process_backend_fails(self):
         errors = self._run_checks(OCR_EXECUTION_BACKEND="local_process")
         backend_errors = [e for e in errors if "local_process" in e.lower()]
+        assert len(backend_errors) > 0, f"Expected local_process error. Errors: {errors}"
+
+    def test_missing_remote_token_fails_when_ocr_enabled(self):
+        """OCR_REMOTE_TOKEN must be set when external OCR is enabled."""
+        errors = self._run_checks(
+            OCR_ENABLED=True,
+            OCR_EXECUTION_BACKEND="paddlex_http",
+            OCR_REMOTE_URL="https://ocr.example.com/api",
+            OCR_REMOTE_TOKEN="",
+        )
+        token_errors = [e for e in errors if "TOKEN" in e or "token" in e]
+        assert len(token_errors) > 0, f"Expected token error. Errors: {errors}"
+
+    def test_invalid_explicit_profile_fails(self):
+        """Invalid DEPLOYMENT_PROFILE raises ValueError."""
+        import os
+        from unittest.mock import patch
+        with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "invalid_profile"}, clear=False):
+            from app.core.deployment_profile import detect_deployment_profile
+            import pytest
+            with pytest.raises(ValueError, match="无效的 DEPLOYMENT_PROFILE"):
+                detect_deployment_profile()
+
+
+class TestCloudOcrNoImportFallback:
+    """Verify cloud_api never falls back to local OCR imports."""
+
+    def test_no_local_adapter_import_on_cloud_profile(self):
+        """cloud_api profile does NOT import paddleocr adapter modules."""
+        import os
+        from unittest.mock import patch
+        with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "cloud_api"}, clear=False):
+            from app.core.deployment_profile import detect_deployment_profile, DeploymentProfile
+            profile = detect_deployment_profile()
+            assert profile == DeploymentProfile.CLOUD_API
+
+    def test_startup_rejects_local_backend_and_gpu_combination(self):
+        """Config validator rejects local_process + GPU in restricted env."""
+        from app.services import production_config_validator as validator
+        from app.core.config import settings
+        from unittest.mock import patch
+
+        def _check():
+            errors = []
+            with patch.object(settings, "OCR_ENABLED", True):
+                with patch.object(settings, "OCR_USE_GPU", True):
+                    with patch.object(settings, "OCR_EXECUTION_BACKEND", "local_process"):
+                        validator._check_ocr_production_rules(errors)
+            return errors
+
+        errors = _check()
+        gpu_errors = [e for e in errors if "GPU" in e]
+        backend_errors = [e for e in errors if "local_process" in e]
+        assert len(gpu_errors) > 0, f"Expected GPU error. Errors: {errors}"
         assert len(backend_errors) > 0, f"Expected local_process error. Errors: {errors}"
