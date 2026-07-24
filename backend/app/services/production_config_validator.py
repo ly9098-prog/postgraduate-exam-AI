@@ -20,6 +20,9 @@ Checks:
 13. Cloud OCR API token must exist if external OCR enabled
 14. Cloud startup must not check local PaddleOCR package
 15. Process role configuration consistency
+16. Staging directory writable with sufficient free space
+17. DB connection pool budget within MAX_CONNECTIONS
+18. Queue capacity limits are reasonable
 """
 
 from __future__ import annotations
@@ -55,6 +58,9 @@ def validate_production_config() -> None:
     _check_process_role(errors)
     _check_ocr_production_rules(errors)
     _check_ocr_no_local_deps(errors)
+    _check_staging_production(errors)
+    _check_db_pool_budget(errors)
+    _check_queue_capacity(errors)
 
     if errors:
         raise SystemError(
@@ -201,13 +207,25 @@ def _check_ocr_production_rules(errors: list[str]) -> None:
 
     if not settings.OCR_ENABLED:
         # When OCR is disabled, the above checks on backend/GPU are sufficient
-        # Additional check: ensure no remote-to-local fallback config
         if settings.OCR_REMOTE_URL and exec_backend == "disabled":
             logger.warning(
                 "OCR_REMOTE_URL set but OCR_EXECUTION_BACKEND=disabled — "
                 "remote URL config is unused but harmless"
             )
         return
+
+    # OCR enabled — check fallback flags (must be false in production)
+    if os.environ.get("OCR_REMOTE_FALLBACK_ENABLED") == "1":
+        errors.append(
+            "生产环境禁止设置 OCR_REMOTE_FALLBACK_ENABLED=1。"
+            " OCR 失败不得回退到本地处理。"
+        )
+
+    if os.environ.get("OCR_UNSAFE_THREAD_FALLBACK_ENABLED") == "1":
+        errors.append(
+            "生产环境禁止设置 OCR_UNSAFE_THREAD_FALLBACK_ENABLED=1。"
+            " OCR 必须使用进程隔离 worker。"
+        )
 
     # OCR enabled — additional checks
     # Check external OCR URL is HTTPS
@@ -244,6 +262,57 @@ def _check_ocr_no_local_deps(errors: list[str]) -> None:
                 )
         except Exception:
             pass
+
+
+def _check_staging_production(errors: list[str]) -> None:
+    """Verify staging directory exists, is writable, and has free space."""
+    staging_dir = settings.STAGING_STORAGE_DIR or ""
+    if not staging_dir:
+        errors.append("STAGING_STORAGE_DIR is not set — staging is required in production")
+        return
+    try:
+        os.makedirs(staging_dir, exist_ok=True)
+        if not os.access(staging_dir, os.W_OK):
+            errors.append(f"STAGING_STORAGE_DIR 不可写: {staging_dir}")
+            return
+        st = os.statvfs(staging_dir)
+        free_bytes = st.f_frsize * st.f_bavail
+        min_free = settings.STAGING_DISK_QUOTA // 2
+        if free_bytes < min_free:
+            errors.append(
+                f"STAGING_STORAGE_DIR 剩余空间不足: "
+                f"{free_bytes / (1024*1024):.0f}MB free, need at least {min_free / (1024*1024):.0f}MB"
+            )
+    except OSError as exc:
+        errors.append(f"STAGING_STORAGE_DIR 检查失败: {staging_dir}: {exc}")
+
+
+def _check_db_pool_budget(errors: list[str]) -> None:
+    """Verify DB pool size * Gunicorn workers does not exceed MAX_CONNECTIONS."""
+    workers = settings.GUNICORN_WORKERS or 1
+    web_per_worker = settings.DB_POOL_SIZE_WEB + settings.DB_MAX_OVERFLOW_WEB
+    web_total = web_per_worker * workers
+    worker_total = settings.DB_POOL_SIZE_WORKER + settings.DB_MAX_OVERFLOW_WORKER
+    scheduler_total = settings.DB_POOL_SIZE_SCHEDULER + settings.DB_MAX_OVERFLOW_SCHEDULER
+    worst_case = web_total + worker_total + scheduler_total
+    max_connections = settings.MAX_CONNECTIONS
+    if worst_case > max_connections:
+        errors.append(
+            f"DB 连接预算超限: 预估最大 {worst_case} 连接 "
+            f"(web={web_total} worker={worker_total} scheduler={scheduler_total}), "
+            f"但 MAX_CONNECTIONS={max_connections}"
+        )
+
+
+def _check_queue_capacity(errors: list[str]) -> None:
+    """Verify queue capacity is reasonable in production."""
+    from app.services.task_queue_service import MAX_QUEUE_SIZE, MAX_DEAD_SIZE
+    if not isinstance(MAX_QUEUE_SIZE, int) or MAX_QUEUE_SIZE < 1:
+        errors.append(f"队列容量 MAX_QUEUE_SIZE={MAX_QUEUE_SIZE} 不合理")
+    if MAX_QUEUE_SIZE > 10000:
+        errors.append(f"队列容量 MAX_QUEUE_SIZE={MAX_QUEUE_SIZE} 过大")
+    if not isinstance(MAX_DEAD_SIZE, int) or MAX_DEAD_SIZE < 1:
+        errors.append(f"dead-letter 容量 MAX_DEAD_SIZE={MAX_DEAD_SIZE} 不合理")
 
 
 # ── async checks ──

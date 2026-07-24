@@ -60,6 +60,25 @@ async def _periodic_staging_cleanup():
             logger.warning("Staging cleanup failed (non-fatal): %s", e)
 
 
+def _report_startup_failure(component: str, exc: Exception) -> None:
+    """Log component startup failure.
+
+    In production, any core component startup failure is fatal.
+    """
+    from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+    try:
+        is_prod = (
+            detect_deployment_profile() == DeploymentProfile.CLOUD_API
+            or settings.APP_ENV == "production"
+        )
+    except Exception:
+        is_prod = False
+    if is_prod:
+        logger.critical("%s start failed — fatal in production", component)
+        raise SystemError(f"{component} start failed: {exc}") from exc
+    logger.warning("%s start failed (non-fatal): %s", component, exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     role = settings.PROCESS_ROLE
@@ -200,7 +219,7 @@ async def lifespan(app: FastAPI):
             else:
                 logger.info("OCR not enabled, skipping Gateway initialization")
         except Exception as e:
-            logger.warning("OCR Gateway init failed (non-fatal): %s", e)
+            _report_startup_failure("OCR Gateway", e)
 
     # ── Role: worker — pipeline processing + AI prewarm ──
     if role in ("worker", "all"):
@@ -210,14 +229,15 @@ async def lifespan(app: FastAPI):
                 run_pipeline_worker(), name="pipeline-worker"
             )
         except Exception as e:
-            logger.warning("Pipeline worker start failed (non-fatal): %s", e)
+            _report_startup_failure("Pipeline worker", e)
+
         try:
             from app.services.task_queue_worker import run_reaper_loop
             _reaper_task = asyncio.create_task(
                 run_reaper_loop(), name="task-reaper"
             )
         except Exception as e:
-            logger.warning("Reaper start failed (non-fatal): %s", e)
+            _report_startup_failure("Reaper", e)
 
         # AI prewarm worker — uses DurableTaskQueue (moved from scheduler per P0-2)
         try:
@@ -225,7 +245,7 @@ async def lifespan(app: FastAPI):
             await start_worker()
             logger.info("AI prewarm worker started")
         except Exception as e:
-            logger.warning("AI prewarm worker start failed (non-fatal): %s", e)
+            _report_startup_failure("AI prewarm worker", e)
 
     # ── Role: scheduler — periodic background tasks ──
     if role in ("scheduler", "all"):
@@ -258,7 +278,7 @@ async def lifespan(app: FastAPI):
         # 1. Set draining — stop claiming new work
         try:
             from app.services.task_queue_worker import set_draining
-            set_draining()
+            await set_draining()
         except Exception:
             pass
 
@@ -603,17 +623,18 @@ async def ready_health():
     dependency is unavailable. Non-critical issues are reported as
     "degraded" without failing the probe.
 
-    Critical checks:
+    Critical checks (→ 503 on failure):
     - PostgreSQL connectivity
-    - Redis connectivity (if configured)
+    - Redis connectivity (mandatory in production, optional in dev)
     - Alembic at head revision
     - Staging directory writable
     - Role-specific dependencies
+    - OCR configuration (in production — illegal config is a probe failure)
+    - Worker draining (stop the load balancer)
 
-    Non-critical (degraded):
-    - OCR external configuration
+    Non-critical (degraded, does not fail probe):
+    - OCR external configuration (development only)
     - Queue status
-    - Worker draining
     """
     db_ok = await _check_database()
     redis_ok = await _check_redis()
@@ -625,6 +646,13 @@ async def ready_health():
     ocr_status = await _check_ocr_config()
     queue_status = await _check_queue()
 
+    # Draining is critical — stop the load balancer from sending requests
+    try:
+        from app.services.task_queue_worker import is_draining
+        draining = is_draining()
+    except Exception:
+        draining = False
+
     checks = {
         "database": "ok" if db_ok else "unavailable",
         "db_pool": _get_db_pool_metrics(),
@@ -632,8 +660,9 @@ async def ready_health():
         "staging": "ok" if staging_ok else "unavailable",
         "role_deps": "ok" if role_ok else "unavailable",
         "event_loop_lag_ms": _elapsed_monitor_event_loop_lag_ms,
+        "draining": "ok" if not draining else "draining",
     }
-    if settings.REDIS_URL:
+    if settings.REDIS_URL or settings.APP_ENV == "production":
         checks["redis"] = "ok" if redis_ok else "unavailable"
     if ocr_status:
         checks["ocr"] = ocr_status
@@ -642,8 +671,13 @@ async def ready_health():
 
     critical_failures = [
         k for k, v in checks.items()
-        if v == "unavailable" and k in ("database", "redis", "alembic", "staging", "role_deps")
+        if v == "unavailable" and k in (
+            "database", "redis", "alembic", "staging", "role_deps", "ocr",
+        )
     ]
+    # Draining is also critical — produces 503 even though value is "draining"
+    if draining:
+        critical_failures.append("draining")
     all_ok = len(critical_failures) == 0
 
     return JSONResponse(
@@ -667,9 +701,18 @@ async def _check_database() -> bool:
 
 
 async def _check_redis() -> bool:
-    """Check Redis is reachable and responsive."""
+    """Check Redis is reachable and responsive.
+
+    In production, Redis is mandatory — returns False if not configured.
+    """
     if not settings.REDIS_URL:
-        return True  # Not configured — not a failure
+        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        try:
+            if detect_deployment_profile() == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production":
+                return False
+        except Exception:
+            return False
+        return True  # Not configured in dev — not a failure
     try:
         from app.core.cache import cache
         await cache.set("health:ping", "pong", ttl=10)
@@ -724,13 +767,14 @@ async def _check_role_deps() -> bool:
     elif role in ("worker", "scheduler"):
         # Worker/scheduler need DB, Redis, staging
         return True
-    return True  # Unknown role — don't fail
+    return False  # Unknown role → fail probe
 
 
 async def _check_ocr_config() -> str | None:
     """Check OCR configuration. Returns status string or None if not applicable.
 
-    Returns "ok", "degraded", or None (no OCR configured — skip check).
+    Returns "ok", "degraded", "unavailable", or None (no OCR configured).
+    In production, illegal OCR config returns "unavailable" (fails probe).
     """
     if not settings.OCR_ENABLED:
         return None
@@ -745,9 +789,16 @@ async def _check_ocr_config() -> str | None:
     if exec_backend == "paddlex_http" and not settings.OCR_REMOTE_TOKEN:
         issues.append("remote token not set")
 
-    if issues:
-        return "degraded"
-    return "ok"
+    if not issues:
+        return "ok"
+
+    from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+    try:
+        if detect_deployment_profile() == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production":
+            return "unavailable"
+    except Exception:
+        pass
+    return "degraded"
 
 
 async def _check_queue() -> str | None:
