@@ -16,7 +16,7 @@ import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, AsyncIterator
 
 from app.core.config import settings
 
@@ -158,6 +158,43 @@ def _render_sync(
     return result
 
 
+def _count_pdf_pages(pdf_source: bytes | str, is_path: bool) -> int:
+    """Open a PDF and return page count. Runs in executor."""
+    import fitz
+    doc = fitz.open(pdf_source) if is_path else fitz.open(stream=pdf_source, filetype="pdf")
+    count = len(doc)
+    doc.close()
+    return count
+
+
+def _render_one_page(
+    pdf_source: bytes | str,
+    is_path: bool,
+    page_num: int,
+    max_dimension: int,
+    dpi: int,
+) -> bytes | None:
+    """Render a single PDF page to PNG bytes. Runs in executor."""
+    import fitz
+    doc = fitz.open(pdf_source) if is_path else fitz.open(stream=pdf_source, filetype="pdf")
+    try:
+        if page_num < 1 or page_num > len(doc):
+            return None
+        page = doc[page_num - 1]
+        pix = page.get_pixmap(dpi=dpi)
+        pixel_count = pix.width * pix.height
+        if pixel_count > _MAX_PAGE_PIXELS:
+            logger.warning("Page %d exceeds pixel limit (%d > %d)", page_num, pixel_count, _MAX_PAGE_PIXELS)
+            return None
+        render_pix = pix
+        if max(render_pix.width, render_pix.height) > max_dimension:
+            scale = max_dimension / max(render_pix.width, render_pix.height)
+            render_pix = page.get_pixmap(dpi=int(dpi * scale))
+        return render_pix.tobytes("png")
+    finally:
+        doc.close()
+
+
 class _PdfRenderer:
     """Bounded, validated PDF renderer.
 
@@ -215,6 +252,56 @@ class _PdfRenderer:
                 effective_dpi,
             )
         return result
+
+    async def iter_pages(
+        self,
+        *,
+        file_content: bytes | None = None,
+        file_path: str | None = None,
+        source_type: str = "pdf",
+        page_start: int = 1,
+        page_end: int | None = None,
+        max_dimension: int = 2048,
+        dpi: int | None = None,
+    ) -> AsyncIterator[tuple[int, bytes]]:
+        """Stream pages one at a time from a PDF.
+
+        Yields ``(page_number, png_bytes)`` tuples.  Only one page is held
+        in memory at a time, making this suitable for low-memory deployments
+        (e.g. page_window=1 on cloud_api).
+
+        All fitz calls run via ``run_in_executor`` — never blocks the event loop.
+        """
+        if source_type != "pdf":
+            return
+
+        pdf_source = file_path or file_content
+        if pdf_source is None:
+            return
+
+        effective_dpi = dpi or _DEFAULT_DPI
+        is_path = isinstance(pdf_source, str)
+
+        async with self._semaphore:
+            loop = asyncio.get_running_loop()
+            total_pages = await loop.run_in_executor(
+                self._executor, _count_pdf_pages, pdf_source, is_path,
+            )
+            if total_pages == 0:
+                return
+            if total_pages > _MAX_PAGES:
+                raise RuntimeError(f"PDF 页数过多: {total_pages} (上限 {_MAX_PAGES})")
+
+            start_idx = max(0, (page_start or 1) - 1)
+            end_idx = min(total_pages, page_end or total_pages)
+
+            for page_num in range(start_idx + 1, end_idx + 1):
+                png_bytes = await loop.run_in_executor(
+                    self._executor,
+                    _render_one_page, pdf_source, is_path, page_num, max_dimension, effective_dpi,
+                )
+                if png_bytes is not None:
+                    yield page_num, png_bytes
 
     async def cleanup(self, result: PdfRenderResult) -> None:
         """Remove temporary files created by a render operation."""
