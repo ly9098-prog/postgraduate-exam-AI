@@ -1,5 +1,5 @@
 """Phase 4 — 推荐策略配置 + A/B 实验 + 指标 + 质量报告 Schema。"""
-from datetime import date, datetime
+from datetime import date as date_cls, datetime
 
 from pydantic import BaseModel, Field
 
@@ -104,7 +104,7 @@ class ExperimentResponse(BaseModel):
 
 
 class MetricsAggregateRequest(BaseModel):
-    date: date | None = None
+    date: date_cls | None = None
     subject: str | None = None
 
 
@@ -115,7 +115,7 @@ class MetricsAggregateResponse(BaseModel):
 
 
 class MetricsDailyResponse(BaseModel):
-    date: date
+    date: date_cls
     subject: str
     scene: str
     strategy: str
@@ -183,8 +183,8 @@ class SafetyCheckResponse(BaseModel):
 
 
 class MetricsBackfillRequest(BaseModel):
-    date_from: date
-    date_to: date
+    date_from: date_cls
+    date_to: date_cls
     subject: str | None = None
 
 
