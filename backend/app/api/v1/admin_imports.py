@@ -1137,17 +1137,43 @@ async def get_batch_image_job(
 @router.get("/batch-image/{job_id}/stream")
 async def stream_batch_image_job(
     job_id: str,
+    request: Request,
     last_event_id_query: int = Query(0, alias="lastEventId"),
     last_event_id_header: str | None = Header(None, alias="Last-Event-ID"),
-    _=Depends(require_permissions("import:read")),
+    admin_user=Depends(require_permissions("import:read")),
 ):
     """SSE 流：增量推送 trace events，job 终态时发送 done event 后关闭。
 
     lastEventId query 参数与 Last-Event-ID header 均可指定增量游标。
     Last-Event-ID header 仅在 query 未传值时生效（EventSource 自动重连行为）。
+
+    安全约束：
+    - 单用户最多 _SSE_MAX_CONNECTIONS_PER_USER 个并发连接
+    - 单连接最长 _SSE_MAX_DURATION_SEC 秒后自动关闭
+    - 客户端断开时自动清理
     """
     from app.core.database import async_session
     from app.features import batch_image_import_service as batch_svc
+
+    # ── Connection limits ──
+    _SSE_MAX_CONNECTIONS_PER_USER = 5
+    _SSE_MAX_DURATION_SEC = 7200  # 2 hours max
+
+    # Active SSE connections metric (module-level dict: user_id -> count)
+    if not hasattr(batch_svc, "_active_sse_connections"):
+        batch_svc._active_sse_connections = {}
+    active_conns = batch_svc._active_sse_connections
+    current_user_id = admin_user.get("id") if isinstance(admin_user, dict) else getattr(admin_user, "id", 0)
+    user_count = active_conns.get(current_user_id, 0)
+    if user_count >= _SSE_MAX_CONNECTIONS_PER_USER:
+        logger.warning(
+            "SSE connection limit reached for user %s: %d active",
+            current_user_id, user_count,
+        )
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many SSE connections", "code": "SSE_LIMIT"},
+        )
 
     def _resolve_last_event_id() -> int:
         if last_event_id_query:
@@ -1160,9 +1186,14 @@ async def stream_batch_image_job(
         return 0
 
     async def event_generator():
+        nonlocal current_user_id
         last_event_id = _resolve_last_event_id()
         queue: asyncio.Queue = asyncio.Queue()
         subscribed = False
+
+        # Track active connection
+        active_conns[current_user_id] = active_conns.get(current_user_id, 0) + 1
+        start_time = time.time()
 
         async def on_event(event_type: str, data: dict):
             await queue.put((event_type, data))
@@ -1187,29 +1218,46 @@ async def stream_batch_image_job(
         )
         subscribed = True
 
-        while True:
-            try:
-                event_type, data = await asyncio.wait_for(
-                    queue.get(), timeout=2.0
-                )
-                if event_type == "done":
-                    yield f"event: done\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+        try:
+            while True:
+                elapsed = time.time() - start_time
+                if elapsed > _SSE_MAX_DURATION_SEC:
+                    yield f"event: timeout\ndata: {json.dumps({'message': 'connection max duration reached'})}\n\n"
                     return
-                yield f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-            except asyncio.TimeoutError:
-                # Heartbeat — no events in 2s
-                yield ": heartbeat\n\n"
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.exception("batch image SSE stream error: job_id=%s", job_id)
-                yield f"event: error\ndata: {json.dumps({'message': str(exc)}, ensure_ascii=False)}\n\n"
-                return
-            finally:
-                if subscribed and sub_task.done() and sub_task.exception() is not None:
-                    sub_task = asyncio.create_task(
-                        _run_sse_subscribe(job_id, on_event, on_done, poll_db)
+
+                try:
+                    event_type, data = await asyncio.wait_for(
+                        queue.get(), timeout=2.0
                     )
+                    if event_type == "done":
+                        yield f"event: done\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+                        return
+                    yield f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+                except asyncio.TimeoutError:
+                    # Heartbeat — no events in 2s (no DB access)
+                    yield ": heartbeat\n\n"
+                except asyncio.CancelledError:
+                    # Client disconnect
+                    yield f"event: done\ndata: {json.dumps({'message': 'disconnected'})}\n\n"
+                    return
+                except Exception as exc:
+                    logger.exception("batch image SSE stream error: job_id=%s", job_id)
+                    yield f"event: error\ndata: {json.dumps({'message': str(exc)}, ensure_ascii=False)}\n\n"
+                    return
+                finally:
+                    if subscribed and sub_task.done() and sub_task.exception() is not None:
+                        sub_task = asyncio.create_task(
+                            _run_sse_subscribe(job_id, on_event, on_done, poll_db)
+                        )
+        finally:
+            # Cleanup: decrement active connection count, cancel subscription
+            active_conns[current_user_id] = max(0, active_conns.get(current_user_id, 0) - 1)
+            if subscribed and not sub_task.done():
+                sub_task.cancel()
+                try:
+                    await sub_task
+                except (asyncio.CancelledError, Exception):
+                    pass
 
     return StreamingResponse(
         event_generator(),
