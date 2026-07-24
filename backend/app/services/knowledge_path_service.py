@@ -64,17 +64,30 @@ async def build_user_knowledge_path(
         if weak_kps:
             start_kp = weak_kps[0]
         else:
-            # 没有任何掌握度数据，随机选一个知识点
-            kp_result = await db.execute(
-                select(KnowledgePoint)
+            # 没有任何掌握度数据，随机选一个知识点（random offset avoids ORDER BY random())
+            count_result = await db.execute(
+                select(func.count(KnowledgePoint.id))
                 .where(
                     KnowledgePoint.subject == subject,
                     KnowledgePoint.is_active == True,
                 )
-                .order_by(func.random())
-                .limit(1)
             )
-            random_kp = kp_result.scalar_one_or_none()
+            total = count_result.scalar() or 0
+            if total == 0:
+                random_kp = None
+            else:
+                import random
+                offset = random.randint(0, total - 1)
+                kp_result = await db.execute(
+                    select(KnowledgePoint)
+                    .where(
+                        KnowledgePoint.subject == subject,
+                        KnowledgePoint.is_active == True,
+                    )
+                    .offset(offset)
+                    .limit(1)
+                )
+                random_kp = kp_result.scalar_one_or_none()
             if random_kp:
                 start_kp = {
                     "knowledge_point_id": random_kp.id,
@@ -190,7 +203,7 @@ async def attach_recommended_questions_to_path(
         kp_id = node["knowledge_point_id"]
         recommended = []
 
-        # 1. 从 question_knowledge_points 找题
+        # 1. 从 question_knowledge_points 找题（random offset avoids ORDER BY random())
         conditions = [
             QuestionKnowledgePoint.knowledge_point_id == kp_id,
             Question.is_active == True,
@@ -200,17 +213,37 @@ async def attach_recommended_questions_to_path(
         if global_seen_ids:
             conditions.append(Question.id.notin_(global_seen_ids))
 
-        q_result = await db.execute(
-            select(Question.id, Question.difficulty)
+        need = questions_per_node * 3
+
+        # Count matching questions
+        count_result = await db.execute(
+            select(func.count(Question.id))
             .join(
                 QuestionKnowledgePoint,
                 QuestionKnowledgePoint.question_id == Question.id,
             )
             .where(and_(*conditions))
-            .order_by(func.random())
-            .limit(questions_per_node * 3)
         )
-        candidates = q_result.all()
+        total = count_result.scalar() or 0
+
+        if total > 0:
+            import random
+            # Fetch a randomized sample using random offset
+            max_offset = max(0, total - need)
+            offset = random.randint(0, max_offset)
+            q_result = await db.execute(
+                select(Question.id, Question.difficulty)
+                .join(
+                    QuestionKnowledgePoint,
+                    QuestionKnowledgePoint.question_id == Question.id,
+                )
+                .where(and_(*conditions))
+                .offset(offset)
+                .limit(need)
+            )
+            candidates = q_result.all()
+        else:
+            candidates = []
 
         for q_id, q_diff in candidates:
             recommended.append(q_id)

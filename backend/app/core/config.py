@@ -141,6 +141,14 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 3600
     DB_POOL_PRE_PING: bool = True
 
+    # Per-role connection pool overrides (set individually for production)
+    DB_POOL_SIZE_WEB: int = 3
+    DB_MAX_OVERFLOW_WEB: int = 5
+    DB_POOL_SIZE_WORKER: int = 2
+    DB_MAX_OVERFLOW_WORKER: int = 3
+    DB_POOL_SIZE_SCHEDULER: int = 1
+    DB_MAX_OVERFLOW_SCHEDULER: int = 2
+
     # SQLAlchemy logging
     SQL_ECHO: bool = False
     SQL_LOG_LEVEL: str = "WARNING"
@@ -178,6 +186,7 @@ class Settings(BaseSettings):
     COS_SECRET_KEY: str = ""
     COS_ENDPOINT: str = ""  # 可选，通常自动从 region 推导
     COS_PREFIX: str = "static/formulas/"  # 对象存储前缀（模拟目录）
+    COS_ALLOW_LOCAL_FALLBACK: bool = False  # production: must be explicit
 
     # 部署
     WORKERS: int = 2

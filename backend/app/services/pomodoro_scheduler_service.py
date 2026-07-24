@@ -98,9 +98,31 @@ class PomodoroScheduler:
         got_lock = await cache.acquire_lock(_TICK_LOCK_KEY, lock_value, ttl=_TICK_LOCK_TTL)
         if not got_lock:
             return  # Another instance holds the lock — skip this tick entirely
+
+        # Background lease renewal: extend lock TTL every 30s while tick runs
+        renew_stop = asyncio.Event()
+
+        async def _renew_loop():
+            while not renew_stop.is_set():
+                try:
+                    await asyncio.sleep(30)
+                    await cache.expire(_TICK_LOCK_KEY, _TICK_LOCK_TTL)
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    pass  # best-effort renewal
+
+        renew_task = asyncio.create_task(_renew_loop())
+
         try:
             await self._do_tick()
         finally:
+            renew_stop.set()
+            renew_task.cancel()
+            try:
+                await renew_task
+            except asyncio.CancelledError:
+                pass
             await cache.release_lock(_TICK_LOCK_KEY, lock_value)
 
     async def _do_tick(self) -> None:
