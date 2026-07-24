@@ -20,26 +20,18 @@ TEST_REDIS_URL = os.environ.get("TEST_REDIS_URL", "redis://localhost:6380/1")
 
 @pytest.fixture
 def q():
-    """Create a fresh DurableTaskQueue for each test."""
-    from app.services.task_queue_service import DurableTaskQueue
+    """Create a fresh DurableTaskQueue for each test, with clean Redis."""
+    import redis
 
+    r = redis.from_url(TEST_REDIS_URL, decode_responses=True)
+    keys = r.keys("taskq:*")
+    if keys:
+        r.delete(*keys)
+    r.close()
+
+    from app.services.task_queue_service import DurableTaskQueue
     queue = DurableTaskQueue(redis_url=TEST_REDIS_URL)
     return queue
-
-
-@pytest.fixture(autouse=True)
-async def cleanup(q):
-    """Clean up all test keys after each test."""
-    yield
-    try:
-        import redis.asyncio as redis_async
-        r = redis_async.from_url(TEST_REDIS_URL, decode_responses=True)
-        keys = await r.keys("taskq:*")
-        if keys:
-            await r.delete(*keys)
-        await r.aclose()
-    except Exception:
-        pass
 
 
 class TestDurableTaskQueueBasic:
@@ -119,11 +111,14 @@ class TestDurableTaskQueueFencing:
         assert task_a is not None
         token_a = task_a.owner_token
 
-        # Simulate reaper reclaim (force lease expiry + reclaim)
+        # Simulate reaper reclaim (force ZSET score + heartbeat expiry)
         import redis.asyncio as redis_async
         r = redis_async.from_url(TEST_REDIS_URL, decode_responses=True)
+        # Force ZSET score to past so reaper will find it
+        await r.zadd("taskq:processing:test_fence", {"test_fence_001": time.time() - 60})
         # Delete the heartbeat to simulate crash
         await r.delete(f"taskq:heartbeat:test_fence_001")
+        await r.aclose()
         # Reclaim via reaper
         reclaimed = await q._reclaim_expired("test_fence")
         assert reclaimed >= 1
@@ -147,9 +142,10 @@ class TestDurableTaskQueueFencing:
         task_a = await q.dequeue("test_fence2", lease_sec=30)
         token_a = task_a.owner_token
 
-        # Force reclaim
+        # Force reclaim (ZSET score to past + delete heartbeat)
         import redis.asyncio as redis_async
         r = redis_async.from_url(TEST_REDIS_URL, decode_responses=True)
+        await r.zadd("taskq:processing:test_fence2", {"test_fence_002": time.time() - 60})
         await r.delete(f"taskq:heartbeat:test_fence_002")
         await r.aclose()
         await q._reclaim_expired("test_fence2")
@@ -173,6 +169,7 @@ class TestDurableTaskQueueFencing:
         # Force reclaim
         import redis.asyncio as redis_async
         r = redis_async.from_url(TEST_REDIS_URL, decode_responses=True)
+        await r.zadd("taskq:processing:test_fence3", {"test_fence_003": time.time() - 60})
         await r.delete(f"taskq:heartbeat:test_fence_003")
         await r.aclose()
         await q._reclaim_expired("test_fence3")
@@ -273,8 +270,8 @@ class TestDurableTaskQueueFailRetry:
         rlen = await q.retry_length("test_retry")
         assert rlen >= 1
 
-        # Wait a moment for retry delay
-        await asyncio.sleep(2)
+        # Wait for retry delay (base delay is 10s, exponential backoff)
+        await asyncio.sleep(12)
 
         # Should be able to claim the retried task
         task2 = await q.dequeue("test_retry", lease_sec=30)
@@ -287,12 +284,12 @@ class TestDurableTaskQueueFailRetry:
     @pytest.mark.asyncio
     async def test_fail_exhausts_retries_goes_to_dead(self, q):
         """Task that exhausts retries lands in dead-letter."""
-        await q.enqueue("test_dead", {}, task_id="test_dead_001", max_retries=1)
+        await q.enqueue("test_dead", {}, task_id="test_dead_001", max_retries=2)
 
         task = await q.dequeue("test_dead", lease_sec=30)
         await q.fail(task, "error 1")
 
-        await asyncio.sleep(2)
+        await asyncio.sleep(12)
         task2 = await q.dequeue("test_dead", lease_sec=30)
         assert task2 is not None
         await q.fail(task2, "error 2")
