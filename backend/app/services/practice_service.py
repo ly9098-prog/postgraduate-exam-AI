@@ -1623,13 +1623,34 @@ async def get_smart_scored_questions(
             subject_cond,
             Question.id.notin_(cand_ids | selected_ids),
         ]
-        fill_q = (
-            select(Question)
-            .where(and_(*fill_cond))
-            .options(selectinload(Question.subject_ref))
-            .order_by(func.random())
-            .limit(remaining)
-        )
+        # Use random offset to avoid ORDER BY random() on potentially large table
+        fill_count_q = select(func.count(Question.id)).where(and_(*fill_cond))
+        fill_total = (await db.execute(fill_count_q)).scalar() or 0
+        if fill_total <= remaining:
+            fill_q = (
+                select(Question)
+                .where(and_(*fill_cond))
+                .options(selectinload(Question.subject_ref))
+                .order_by(Question.id.asc())
+            )
+        elif fill_total <= 2000:
+            fill_q = (
+                select(Question)
+                .where(and_(*fill_cond))
+                .options(selectinload(Question.subject_ref))
+                .order_by(func.random())
+                .limit(remaining)
+            )
+        else:
+            offset = random.randint(0, fill_total - remaining)
+            fill_q = (
+                select(Question)
+                .where(and_(*fill_cond))
+                .options(selectinload(Question.subject_ref))
+                .order_by(Question.id.asc())
+                .offset(offset)
+                .limit(remaining)
+            )
         fill_result = await db.execute(fill_q)
         for fq in fill_result.scalars().all():
             selected.append(fq)

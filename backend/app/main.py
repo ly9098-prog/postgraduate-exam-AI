@@ -85,18 +85,8 @@ async def lifespan(app: FastAPI):
     role = settings.PROCESS_ROLE
 
     # ── Common startup (all roles) ──
-    try:
-        validate_production_config()
-    except SystemError as e:
-        logger.critical("Production configuration validation FAILED: %s", e)
-        raise
-    except Exception as e:
-        logger.warning("Production config validation error (non-fatal): %s", e)
-    try:
-        await validate_production_config_async()
-    except SystemError as e:
-        logger.critical("Production async configuration validation FAILED: %s", e)
-        raise
+    validate_production_config()
+    await validate_production_config_async()
 
     # Check sys.modules for banned OCR packages in cloud_api
     try:
@@ -180,6 +170,25 @@ async def lifespan(app: FastAPI):
     cleanup_task: asyncio.Task | None = None
     _staging_cleanup_task: asyncio.Task | None = None
     _ocr_gateway = None
+
+    # ── Role-aware BoundedExecutors ──
+    try:
+        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.executors import init_executors_for_role
+        from app.core.executor_registry import init_executor_registry
+
+        _deploy_profile = detect_deployment_profile()
+        _executors = init_executors_for_role(
+            role,
+            is_production=(_deploy_profile == DeploymentProfile.CLOUD_API),
+        )
+        init_executor_registry(_executors)
+        logger.info(
+            "Executors initialized for role=%s: %s",
+            role, {k: v.name for k, v in _executors.items()},
+        )
+    except Exception as e:
+        _report_startup_failure("Executors", e)
     _pipeline_worker_task: asyncio.Task | None = None
     _reaper_task: asyncio.Task | None = None
     _lag_monitor_task: asyncio.Task | None = None
@@ -279,8 +288,8 @@ async def lifespan(app: FastAPI):
         try:
             from app.services.task_queue_worker import set_draining
             await set_draining()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("set_draining failed during shutdown: %s", e)
 
         # 2. Stop event-loop lag monitor
         if _lag_monitor_task and not _lag_monitor_task.done():
@@ -392,7 +401,17 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning("OCR Gateway shutdown error: %s", e)
 
-        # 7. PDF renderer shutdown (common)
+        # 7. BoundedExecutors shutdown
+        try:
+            from app.core.executor_registry import get_all_executors, clear_executor_registry
+            from app.core.executors import shutdown_executors
+            await shutdown_executors(get_all_executors())
+            clear_executor_registry()
+            logger.info("BoundedExecutors shut down")
+        except Exception as e:
+            logger.warning("BoundedExecutor shutdown error: %s", e)
+
+        # 8. PDF renderer shutdown (common)
         try:
             from app.services.pdf_renderer_service import pdf_renderer
             await pdf_renderer.shutdown()
@@ -844,20 +863,27 @@ async def metrics_endpoint():
             processing = await task_queue.processing_length(tt)
             retry_count = await task_queue.retry_length(tt)
             dead = await task_queue.dead_length(tt)
+            corrupt = await task_queue.corrupt_length(tt)
+            oldest_age = await task_queue.oldest_ready_age(tt)
             _append(f'task_queue_ready{{type="{tt}"}} {ready}')
             _append(f'task_queue_processing{{type="{tt}"}} {processing}')
             _append(f'task_queue_retry{{type="{tt}"}} {retry_count}')
             _append(f'task_queue_dead{{type="{tt}"}} {dead}')
+            _append(f'task_queue_corrupt{{type="{tt}"}} {corrupt}')
+            _append(f'task_queue_oldest_ready_age_seconds{{type="{tt}"}} {oldest_age}')
     except Exception:
         for tt in task_types:
             _append(f'task_queue_ready{{type="{tt}"}} 0')
             _append(f'task_queue_processing{{type="{tt}"}} 0')
             _append(f'task_queue_retry{{type="{tt}"}} 0')
             _append(f'task_queue_dead{{type="{tt}"}} 0')
+            _append(f'task_queue_corrupt{{type="{tt}"}} 0')
+            _append(f'task_queue_oldest_ready_age_seconds{{type="{tt}"}} 0')
 
     # Cumulative counters from queue_metrics dict
     for key in ("lease_renewal_failure", "duplicate_enqueue_prevented",
-                "reaper_reclaimed", "owner_fencing_rejected"):
+                "reaper_reclaimed", "owner_fencing_rejected",
+                "enqueue_rejected", "dead_purge_count", "corrupt_cleaned"):
         _append(f'task_queue_{key} {queue_metrics.get(key, 0)}')
 
     # ── System resource metrics ──
@@ -866,6 +892,36 @@ async def metrics_endpoint():
     _append(f'system_available_memory_mb {sys_metrics.available_memory_mb:.1f}')
     _append(f'system_active_pipelines {sys_metrics.active_pipelines}')
     _append(f'system_event_loop_lag_ms {_elapsed_monitor_event_loop_lag_ms:.2f}')
+
+    # ── OCR Gateway / circuit breaker metrics ──
+    try:
+        from app.services.ocr_service import get_gateway
+        gateway = get_gateway()
+        if gateway is not None:
+            wm = gateway.worker_metrics
+            _append(f'ocr_circuit_state{{backend="{wm.get("backend","?")}"}} 1')
+            state = wm.get("circuit_state", "unknown")
+            _append(f'ocr_circuit{{backend="{wm.get("backend","?")}",state="{state}"}} 1')
+            _append(f'ocr_circuit_breaker_rejected_total '
+                    f'{wm.get("circuit_breaker_rejected", 0)}')
+            _append(f'ocr_circuit_breaker_trips_total '
+                    f'{wm.get("circuit_breaker_trips", 0)}')
+            _append(f'ocr_accepted_total {wm.get("accepted", 0)}')
+            _append(f'ocr_failed_total {wm.get("failed", 0)}')
+            _append(f'ocr_timed_out_total {wm.get("timed_out", 0)}')
+            _append(f'ocr_connection_errors_total {wm.get("connection_errors", 0)}')
+    except Exception:
+        _append('ocr_circuit 0')
+
+    # ── Staging storage metrics ──
+    try:
+        from app.services.staging_storage import get_metrics
+        sm = get_metrics()
+        _append(f'staging_disk_usage_bytes {sm.get("disk_usage_bytes", 0)}')
+        _append(f'staging_object_count {sm.get("object_count", 0)}')
+        _append(f'staging_leased_count {sm.get("leased_count", 0)}')
+    except Exception:
+        _append('staging_disk_usage_bytes 0')
 
     # ── DB pool metrics ──
     pool_stats = _get_db_pool_metrics()
@@ -878,12 +934,21 @@ async def metrics_endpoint():
     _append(f'process_uptime_seconds {time.time() - _startup_ts:.0f}')
 
     # ── SSE connections ──
+    # ── SSE connections ──
     try:
-        from app.api.v1 import admin_imports as _admin_imports_mod
-        _active_sse = getattr(_admin_imports_mod, "_active_sse_connections", 0)
-        _append(f'sse_active_connections {_active_sse}')
+        from app.features import batch_image_import_service as _batch_svc_mod
+        _active_sse = getattr(_batch_svc_mod, "_active_sse_connections", {})
+        _total_sse = sum(_active_sse.values()) if isinstance(_active_sse, dict) else 0
+        _append(f"sse_active_connections {_total_sse}")
     except Exception:
         _append("sse_active_connections 0")
+    try:
+        from app.api.v1.admin_imports import _sse_metrics as _sse_m
+        if isinstance(_sse_m, dict):
+            for _sk, _sv in _sse_m.items():
+                _append(f"sse_{_sk} {_sv}")
+    except Exception:
+        pass
 
     # ── Draining status ──
     try:

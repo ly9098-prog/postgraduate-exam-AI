@@ -57,7 +57,7 @@ async def enqueue_prewarm(
         idempotent=(delay_seconds == 0),
     )
 
-    if result is None:
+    if not result.accepted:
         logger.warning(
             "[prewarm] queue rejected wq_id=%d uid=%d retries=%d (Redis unavailable)",
             wq_id, user_id, retries,

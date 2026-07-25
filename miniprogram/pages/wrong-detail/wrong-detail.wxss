@@ -197,7 +197,7 @@ button::after { border: none; }
 .decision-actions { margin-top: 28rpx; display: grid; grid-template-columns: 1fr 1fr; gap: 13rpx; }
 .decision-primary,
 .decision-secondary,
-.decision-danger { min-height: 84rpx; border-radius: 21rpx; font-size: 26rpx; font-weight: 900; }
+.decision-danger { height: 84rpx; min-height: 84rpx; padding: 0 20rpx; border-radius: 21rpx; display: flex; align-items: center; justify-content: center; font-size: 26rpx; font-weight: 900; line-height: 1; }
 .decision-primary { background: #B7E82A; color: #10251A; }
 .decision-secondary { background: #ECEFE8; color: #445249; }
 .decision-danger { background: #C25F4A; color: #FFFFFF; }
@@ -208,9 +208,9 @@ button::after { border: none; }
 .more-item-arrow { font-family: Arial,sans-serif; font-size: 44rpx; color: #B65B46; }
 .more-cancel { width: 100%; min-height: 82rpx; margin-top: 14rpx; border-radius: 21rpx; background: #ECEFE8; color: #46534A; font-size: 26rpx; font-weight: 900; }
 
-.undo-toast { position: fixed; left: 24rpx; right: 24rpx; bottom: calc(124rpx + env(safe-area-inset-bottom)); z-index: 160; min-height: 84rpx; padding: 0 22rpx; border-radius: 22rpx; background: #10251A; color: #FFFFFF; display: flex; align-items: center; transform: translateY(160%); opacity: 0; pointer-events: none; transition: transform .22s ease, opacity .22s ease; box-shadow: 0 18rpx 42rpx rgba(16,37,26,.26); }
-.undo-toast.show { transform: translateY(0); opacity: 1; pointer-events: auto; }
-.undo-toast-text { min-width: 0; flex: 1; font-size: 22rpx; line-height: 1.4; color: rgba(255,255,255,.78); }
+.undo-toast { position: fixed; left: 50%; right: auto; bottom: calc(124rpx + env(safe-area-inset-bottom)); z-index: 160; width: auto; max-width: calc(100vw - 48rpx); min-height: 76rpx; padding: 0 30rpx 0 22rpx; border-radius: 999rpx; background: #10251A; color: #FFFFFF; display: inline-flex; align-items: center; box-sizing: border-box; transform: translate(-50%, 160%); opacity: 0; pointer-events: none; transition: transform .22s ease, opacity .22s ease; box-shadow: 0 18rpx 42rpx rgba(16,37,26,.26); }
+.undo-toast.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.undo-toast-text { min-width: 0; flex: none; white-space: nowrap; font-size: 22rpx; line-height: 1.4; color: rgba(255,255,255,.78); }
 .undo-divider { width: 1rpx; height: 36rpx; margin: 0 18rpx; background: rgba(255,255,255,.14); }
 .undo-action { flex-shrink: 0; font-size: 24rpx; font-weight: 900; color: #B7E82A; }
 

@@ -61,6 +61,12 @@ class ImportBatchJob(Base):
     merge_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     merge_finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # P0-1 fencing: execution generation prevents stale workers from writing
+    execution_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    current_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    current_owner_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    execution_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
 
 class ImportBatchJobItem(Base):
     __tablename__ = "import_batch_job_items"

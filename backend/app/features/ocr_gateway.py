@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+from app.core.deployment_profile import DeploymentProfile
 from app.core.module_result import ModuleError, ModuleResult
 from app.core.ocr_request import OCRRequest
 from app.core.ocr_types import STABLE_ERROR_CODES, WorkerResult
@@ -101,7 +101,7 @@ class OCRGateway:
         selector: AdapterSelector | None = None,
         mode: str = "",
         *,
-        profile: DeploymentProfile | str | None = None,
+        profile: DeploymentProfile,
         capabilities: dict | None = None,
         # Remote adapter config (from DB resolution, Sprint 4D)
         vl_api_token: str = "",
@@ -111,17 +111,7 @@ class OCRGateway:
         worker_client: Any = None,
     ) -> None:
         self._mode = mode or _OCR_GATEWAY_MODE
-        # Normalize profile to enum
-        if profile is None:
-            self._profile = detect_deployment_profile()
-        elif isinstance(profile, DeploymentProfile):
-            self._profile = profile
-        else:
-            # Accept string for backward compatibility
-            try:
-                self._profile = DeploymentProfile(profile)
-            except ValueError:
-                self._profile = detect_deployment_profile()
+        self._profile = profile
         self._registry = registry or AdapterRegistry()
         self._selector = selector or AdapterSelector(self._registry)
 
@@ -258,57 +248,12 @@ class OCRGateway:
                 for idx, _ in images
             ]
 
-        # Production check: no automatic thread fallback
-        cfg = self._get_runtime_config()
-        if cfg.environment == "production" and not cfg.unsafe_thread_fallback_enabled:
-            if self._worker_client is None:
-                self._worker_client = self._init_worker_client()
-            if self._worker_client is None:
-                return [
-                    WorkerResult(
-                        request_id="", page_index=idx,
-                        status="failed",
-                        stable_error_code=STABLE_ERROR_CODES["ENGINE_NOT_AVAILABLE"],
-                        error_type="No worker client — execution backend is disabled",
-                    )
-                    for idx, _ in images
-                ]
-            return await self._worker_client.recognize_batch(images)
-
-        # Development: use worker client if available, else legacy path
+        # Initialize worker client for gateway mode
         if self._worker_client is None:
             try:
                 self._worker_client = self._init_worker_client()
             except Exception as exc:
-                logger.warning("Worker client init failed (dev mode): %s", exc)
-                if not cfg.unsafe_thread_fallback_enabled:
-                    return [
-                        WorkerResult(
-                            request_id="",
-                            page_index=idx,
-                            status="failed",
-                            stable_error_code=STABLE_ERROR_CODES["ENGINE_NOT_AVAILABLE"],
-                            error_type=f"Worker unavailable: {exc}",
-                        )
-                        for idx, _ in images
-                    ]
-                # Thread fallback only with explicit opt-in (dev mode) and
-                # only for the local_process backend.  paddlex_http must
-                # never fall back to a local thread pool.
-                if cfg.execution_backend == "paddlex_http":
-                    logger.warning(
-                        "unsafe_thread_fallback is ignored for paddlex_http backend"
-                    )
-                    return [
-                        WorkerResult(
-                            request_id="", page_index=idx,
-                            status="failed",
-                            stable_error_code=STABLE_ERROR_CODES["ENGINE_NOT_AVAILABLE"],
-                            error_type="paddlex_http backend unavailable, thread fallback forbidden",
-                        )
-                        for idx, _ in images
-                    ]
-                return await self._legacy_recognize_pages(images)
+                logger.warning("Worker client init failed: %s", exc)
 
         if self._worker_client is None:
             return [
@@ -316,7 +261,7 @@ class OCRGateway:
                     request_id="", page_index=idx,
                     status="failed",
                     stable_error_code=STABLE_ERROR_CODES["ENGINE_NOT_AVAILABLE"],
-                    error_type="No worker client available",
+                    error_type="No worker client — execution backend is disabled",
                 )
                 for idx, _ in images
             ]
@@ -362,57 +307,6 @@ class OCRGateway:
         from app.services.ocr_worker_client import create_ocr_worker_client
         cfg = self._get_runtime_config()
         return create_ocr_worker_client(cfg)
-
-    async def _legacy_recognize_pages(
-        self,
-        images: list[tuple[int, bytes]],
-    ) -> list[WorkerResult]:
-        """Legacy OCR path via thread pool (dev only, unsafe_thread_fallback)."""
-        from app.services.ocr_service import ocr_pages_with_boxes
-
-        try:
-            results = ocr_pages_with_boxes(images, skip_rotation=True)
-        except Exception as exc:
-            logger.warning("Legacy OCR failed: %s", exc)
-            return [
-                WorkerResult(
-                    request_id="", page_index=idx,
-                    status="failed", stable_error_code="LEGACY_ERROR",
-                    error_type=str(exc),
-                )
-                for idx, _ in images
-            ]
-
-        worker_results: list[WorkerResult] = []
-        for idx, _ in images:
-            r = results.get(idx)
-            if r is None or r.failed:
-                worker_results.append(WorkerResult(
-                    request_id="",
-                    page_index=idx,
-                    status="failed",
-                    stable_error_code="LEGACY_ERROR",
-                    error_type=r.error if r else "No result",
-                ))
-            else:
-                worker_results.append(WorkerResult(
-                    request_id="",
-                    page_index=idx,
-                    status="success",
-                    result={
-                        "page_index": idx,
-                        "text": r.text,
-                        "boxes": r.boxes or [],
-                        "lines": [],
-                        "confidence": 0.0,
-                        "transforms": r.transforms,
-                        "coordinate_space": "image",
-                        "engine_fingerprint": "",
-                        "failed": False,
-                        "error": None,
-                    },
-                ))
-        return worker_results
 
     async def route_page(
         self,

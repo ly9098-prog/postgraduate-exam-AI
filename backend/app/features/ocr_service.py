@@ -80,31 +80,6 @@ def is_scanned_pdf(content: bytes, min_text_length: int = _MIN_TEXT_LENGTH) -> b
 # ---------------------------------------------------------------------------
 
 
-def _pdf_to_images(content: bytes, dpi: int = _OCR_DPI) -> list[dict]:
-    """PDF 每页渲染为 PNG 图片。
-
-    Returns:
-        [{"page": int, "image": bytes, "format": "png"}, ...]
-    """
-    import fitz
-
-    doc = fitz.open(stream=content, filetype="pdf")
-    images: list[dict] = []
-    try:
-        for i, page in enumerate(doc):
-            pix = page.get_pixmap(dpi=dpi)
-            images.append({
-                "page": i + 1,
-                "image": pix.tobytes("png"),
-                "format": "png",
-            })
-    finally:
-        doc.close()
-
-    if not images:
-        raise ValueError("PDF 中没有可渲染的页面")
-
-    return images
 
 
 # ---------------------------------------------------------------------------

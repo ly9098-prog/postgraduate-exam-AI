@@ -180,4 +180,5 @@ STABLE_ERROR_CODES = {
     "REMOTE_SERVICE_ERROR": "ocr.remote_service_error",
     "REMOTE_CLOSED": "ocr.remote_closed",
     "REMOTE_CANCELLED": "ocr.remote_cancelled",
+    "REMOTE_CIRCUIT_OPEN": "ocr.remote_circuit_open",
 }

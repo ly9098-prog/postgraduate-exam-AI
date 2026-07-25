@@ -57,6 +57,7 @@ def validate_production_config() -> None:
     _check_process_role(errors)
     _check_ocr_production_rules(errors)
     _check_ocr_no_local_deps(errors)
+    _check_pdf_production_rules(errors)
     _check_staging_production(errors)
     _check_db_pool_budget(errors)
     _check_queue_capacity(errors)
@@ -273,6 +274,32 @@ def _check_ocr_no_local_deps(errors: list[str]) -> None:
         )
 
 
+def _check_pdf_production_rules(errors: list[str]) -> None:
+    """Fail startup if PDF settings violate production constraints.
+
+    In cloud_api deployment, unbounded or high-memory PDF settings are
+    rejected to prevent OOM and resource exhaustion.
+    """
+    profile = detect_deployment_profile()
+    if profile != DeploymentProfile.CLOUD_API:
+        return
+
+    if settings.PDF_RENDER_PAGE_WINDOW == 0:
+        errors.append(
+            "PDF_RENDER_PAGE_WINDOW=0 在 cloud_api 部署中不允许。"
+            " 必须设置为 >0 (推荐 1) 以启用流式逐页渲染。"
+        )
+    if settings.PDF_MAX_RENDER_PAGES_CONCURRENT > 1:
+        errors.append(
+            f"PDF_MAX_RENDER_PAGES_CONCURRENT={settings.PDF_MAX_RENDER_PAGES_CONCURRENT}"
+            f" 在 cloud_api 部署中不允许。必须设置为 1。"
+        )
+    if settings.PDF_MAX_PAGES > 30:
+        errors.append(
+            f"PDF_MAX_PAGES={settings.PDF_MAX_PAGES} 超过 cloud_api 上限 30。"
+        )
+
+
 def _check_staging_production(errors: list[str]) -> None:
     """Verify staging directory exists, is writable, and has free space."""
     staging_dir = settings.STAGING_STORAGE_DIR or ""
@@ -315,10 +342,13 @@ def _check_db_pool_budget(errors: list[str]) -> None:
 
 def _check_queue_capacity(errors: list[str]) -> None:
     """Verify queue capacity is reasonable in production."""
-    from app.services.task_queue_service import DurableTaskQueue
-    dead_max = getattr(DurableTaskQueue, "_DEAD_MAX", 1000)
+    dead_max = settings.TASK_QUEUE_MAX_DEAD
     if not isinstance(dead_max, int) or dead_max < 1:
-        errors.append(f"dead-letter 容量 _DEAD_MAX={dead_max} 不合理")
+        errors.append(f"TASK_QUEUE_MAX_DEAD={dead_max} 不合理")
+    for name in ("IMPORT", "OCR", "AI", "FORMULA", "BATCH_IMAGE"):
+        val = getattr(settings, f"TASK_QUEUE_MAX_READY_{name}", None)
+        if val is not None and (not isinstance(val, int) or val < 0):
+            errors.append(f"TASK_QUEUE_MAX_READY_{name}={val} 不合理")
 
 
 # ── async checks ──

@@ -137,8 +137,10 @@ async def run_math_detect_stage(
                     continue
 
                 try:
-                    # Crop using the valid bbox — produces a region, not full page
-                    png_bytes = crop_region(
+                    from app.core.executor_registry import get_executor
+
+                    png_bytes = await get_executor("image").run(
+                        crop_region,
                         page_path,
                         tuple(bbox),
                         coordinate_space=CoordinateSpace.PDF_POINTS,

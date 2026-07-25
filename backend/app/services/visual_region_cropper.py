@@ -12,6 +12,7 @@ import io
 import logging
 from datetime import datetime
 
+from app.core.executor_registry import get_executor
 from app.services.visual_region_types import (
     CoordinateSpace,
     VisualRegion,
@@ -314,7 +315,8 @@ async def crop_and_upload_region(
 
 
     try:
-        png_bytes = crop_region(
+        png_bytes = await get_executor("image").run(
+            crop_region,
             page_path,
             region.bbox,
             coordinate_space=region.coordinate_space,

@@ -4,7 +4,24 @@
 
 ---
 
-## 2026-07-16
+## 2026-07-25
+
+- **后端生产强化修复（P0/P1 安全审计）**
+  - **任务队列 fencing**：`execution_generation` 递增后旧 worker 写操作被自动拒绝；owner loss 后 worker 立即取消处理，任务回队。
+  - **Enqueue 回滚链修复**：全部 7 个 enqueue 调用点检查 `EnqueueResult.accepted`，拒绝时回滚 pipeline 状态并返回 503。
+  - **BoundedExecutor**：新增有界线程池执行器，支持 atomic 准入控制、per-call 超时、异常安全 metrics（17 项单元测试覆盖全部路径）。
+  - **PDF 流式内存治理**：`iter_pages()` 逐页渲染 + `RenderedPage.aclose()` 释放；`render_pages()` 全量接口在 cloud 部署中拒绝；`PdfResourceLimitError` 结构化错误码映射 HTTP 413/422/429/503/507。
+  - **SSE 连接控制**：per-user 上限 5、全局上限 50；idle timeout 300s（从末次业务事件计算，heartbeat 不刷新）；低基数 Prometheus 计数器（无 user_id label）；指数退避 fallback polling（2s → 60s）。
+  - **数据库连接池角色隔离**：web (pool 3 / overflow 5) × workers + worker (pool 2 / overflow 3) + scheduler (pool 1 / overflow 2)；启动时校验总预算 ≤ MAX_CONNECTIONS。
+  - **ORDER BY random() 修复**：practice 补全题在表 >2000 行时改用 count + random offset。
+  - **复合索引 v10**：5 个 composite btree 索引（CONCURRENTLY 创建），覆盖 due questions / pipeline 过滤 / practice 历史 / review 队列。
+  - **Alembic chain**：`v10_performance_indexes` 继承 `v9_formula_approved_to_published_migration`。
+  - **启动自检增强**：新增 PDF 规则检查（cloud: window>0, concurrency=1, pages≤30）和 DB 连接预算检查。
+  - **生产配置 validator**修复：`set_draining` 异常处理从 `pass` 改为 `logger.warning`。
+  - **测试**：17 项 BoundedExecutor 单元测试新增通过；73 项现有测试通过（1 项预存 OCR 测试失败，无关）。
+  - **部署文档同步**：DEPLOY_PLAN.md 新增 Section 7（新增 env vars、部署顺序、回滚方案、启动自检清单）。
+
+---
 
 - **多空选择题前端性能审计与修复（Phase 6 完成）**
   - **quiz-runner 局部 setData 优化**：observer 通过 `_lastRenderModel` 引用比较区分题目切换与空选项更新；选项点击仅更新 `_blankOptionGroups` 路径，避免重新解析题干、代码块和图片。
