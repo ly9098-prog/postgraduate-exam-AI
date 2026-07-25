@@ -10,7 +10,7 @@
 7. WrongQuestion 不存在任何 SM-2 字段读写
 """
 import asyncio
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -98,7 +98,7 @@ def _make_schedule_mock(schedule_id=1, user_id=1, question_id=1, subject="数学
     s.interval = 0
     s.ease_factor = 2.5
     s.repetitions = 0
-    s.next_review_at = datetime.utcnow()
+    s.next_review_at = datetime.now(UTC)
     s.last_reviewed_at = None
     s.mastered = False
     return s
@@ -158,7 +158,7 @@ class TestE2EWrongToReviewFlow:
         db = _make_mock_db()
         q = _make_question_mock()
         schedule = _make_schedule_mock()
-        schedule.next_review_at = datetime.utcnow() - timedelta(hours=1)  # 已到期
+        schedule.next_review_at = datetime.now(UTC) - timedelta(hours=1)  # 已到期
 
         # get_today_review 内部 3 次 db.execute:
         # 1. count query → scalar
@@ -317,8 +317,8 @@ class TestAutoGradeRatingMapping:
         """rating=4 的增长比 rating=5 保守（efactor 更低）。"""
         from app.services.sm2_service import calc_sm2
 
-        r4 = calc_sm2(quality=4, efactor=2.5, interval=6, repetitions=2, review_date=datetime.utcnow().date())
-        r5 = calc_sm2(quality=5, efactor=2.5, interval=6, repetitions=2, review_date=datetime.utcnow().date())
+        r4 = calc_sm2(quality=4, efactor=2.5, interval=6, repetitions=2, review_date=datetime.now(UTC).date())
+        r5 = calc_sm2(quality=5, efactor=2.5, interval=6, repetitions=2, review_date=datetime.now(UTC).date())
 
         # rating=5 应该获得更高的 efactor
         assert r5["efactor"] > r4["efactor"]
@@ -330,8 +330,8 @@ class TestAutoGradeRatingMapping:
         """rating=1 的惩罚比 rating=0 轻（efactor 更高）。"""
         from app.services.sm2_service import calc_sm2
 
-        r0 = calc_sm2(quality=0, efactor=2.5, interval=6, repetitions=2, review_date=datetime.utcnow().date())
-        r1 = calc_sm2(quality=1, efactor=2.5, interval=6, repetitions=2, review_date=datetime.utcnow().date())
+        r0 = calc_sm2(quality=0, efactor=2.5, interval=6, repetitions=2, review_date=datetime.now(UTC).date())
+        r1 = calc_sm2(quality=1, efactor=2.5, interval=6, repetitions=2, review_date=datetime.now(UTC).date())
 
         # 两者都重置 interval=1，但 efactor 降低幅度不同
         assert r0["interval"] == 1

@@ -57,7 +57,7 @@ def _make_schedule_mock(id=1, user_id=1, question_id=10, subject="math2",
     s.interval = interval
     s.ease_factor = ease_factor
     s.repetitions = repetitions
-    s.next_review_at = next_review_at or datetime.utcnow() - timedelta(days=1)
+    s.next_review_at = next_review_at or datetime.now(UTC) - timedelta(days=1)
     s.last_reviewed_at = None
     return s
 
@@ -161,7 +161,7 @@ class TestSM2Algorithm:
 class TestGetTodayReview:
     def test_returns_due_reviews(self):
         db = _make_mock_db()
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         schedules = [
             _make_schedule_mock(id=1, question_id=10, next_review_at=now - timedelta(days=2)),
             _make_schedule_mock(id=2, question_id=11, next_review_at=now - timedelta(hours=1)),
@@ -201,7 +201,7 @@ class TestGetTodayReview:
 
     def test_subject_filter(self):
         db = _make_mock_db()
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         schedules = [
             _make_schedule_mock(id=1, question_id=10, subject="math2", next_review_at=now - timedelta(days=1)),
             _make_schedule_mock(id=2, question_id=11, subject="english", next_review_at=now - timedelta(days=1)),
@@ -222,7 +222,7 @@ class TestGetTodayReview:
 
     def test_limit(self):
         db = _make_mock_db()
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         schedules = [
             _make_schedule_mock(id=i, question_id=10 + i, next_review_at=now - timedelta(days=i))
             for i in range(1, 6)
@@ -241,7 +241,7 @@ class TestGetTodayReview:
 
     def test_stem_from_string_content(self):
         db = _make_mock_db()
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         schedules = [_make_schedule_mock(id=1, question_id=10, next_review_at=now - timedelta(days=1))]
         q = _make_question_mock(id=10, content="Plain text stem")
         _mock_execute_sequence(
@@ -264,7 +264,7 @@ class TestSubmitReview:
         db = _make_mock_db()
         schedule = _make_schedule_mock(
             id=1, question_id=10, interval=5, ease_factor=2.5, repetitions=2,
-            next_review_at=datetime.utcnow() - timedelta(days=1),
+            next_review_at=datetime.now(UTC) - timedelta(days=1),
         )
         # First execute: get schedule
         # commit/refresh don't need execute results
@@ -300,7 +300,7 @@ class TestSubmitReview:
         db = _make_mock_db()
         schedule = _make_schedule_mock(
             id=1, question_id=10, interval=30, ease_factor=2.5, repetitions=5,
-            next_review_at=datetime.utcnow() - timedelta(days=1),
+            next_review_at=datetime.now(UTC) - timedelta(days=1),
         )
         db.execute.return_value = _make_execute_result(scalar_one_or_none=schedule)
 
@@ -322,7 +322,7 @@ class TestSubmitReview:
         db.add.side_effect = _add
         schedule = _make_schedule_mock(
             id=1, question_id=10, interval=5, ease_factor=2.5, repetitions=2,
-            next_review_at=datetime.utcnow() - timedelta(days=1),
+            next_review_at=datetime.now(UTC) - timedelta(days=1),
         )
         db.execute.return_value = _make_execute_result(scalar_one_or_none=schedule)
 
@@ -419,7 +419,7 @@ class TestAutoScheduleWrongQuestion:
         db = _make_mock_db()
         existing = _make_schedule_mock(
             id=1, question_id=10, interval=30, ease_factor=2.8, repetitions=10,
-            next_review_at=datetime.utcnow() + timedelta(days=30),
+            next_review_at=datetime.now(UTC) + timedelta(days=30),
         )
         db.execute.return_value = _make_execute_result(scalar_one_or_none=existing)
 
@@ -508,9 +508,9 @@ class TestReviewHistory:
 
         records = [
             ReviewRecord(user_id=1, question_id=10, schedule_id=1, rating=4,
-                        interval_after=6, reviewed_at=datetime.utcnow()),
+                        interval_after=6, reviewed_at=datetime.now(UTC)),
             ReviewRecord(user_id=1, question_id=11, schedule_id=2, rating=2,
-                        interval_after=1, reviewed_at=datetime.utcnow() - timedelta(days=1)),
+                        interval_after=1, reviewed_at=datetime.now(UTC) - timedelta(days=1)),
         ]
         _mock_execute_sequence(
             db,

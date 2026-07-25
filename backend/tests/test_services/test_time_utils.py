@@ -1,5 +1,5 @@
 """Tests for time_utils: UTC serialization, naive/aware handling, date range."""
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timezone, timedelta
 
 import pytest
 

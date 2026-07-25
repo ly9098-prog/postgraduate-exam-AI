@@ -13,7 +13,7 @@
 10. feature flag 关闭时 update_adaptive_state_after_answer 不执行
 """
 import asyncio
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -392,7 +392,7 @@ class TestFeatureFlag:
         mock_settings.ADAPTIVE_LEARNING_ENABLED = False
 
         db = _make_db([])
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
 
         _run(update_adaptive_state_after_answer(
             db, user_id=1, question_id=1,
@@ -522,11 +522,11 @@ class TestSmartScorePathDimensions:
         blocked_kps = {20: [{"knowledge_point_id": 10, "name": "基础", "mastery_score": 35.0}]}
 
         score_blocked, reasons_blocked = calculate_smart_score(
-            q, None, kp_ids, kp_mastery, set(), datetime.utcnow(),
+            q, None, kp_ids, kp_mastery, set(), datetime.now(UTC),
             blocked_kps=blocked_kps,
         )
         score_no_block, reasons_no_block = calculate_smart_score(
-            q, None, kp_ids, kp_mastery, set(), datetime.utcnow(),
+            q, None, kp_ids, kp_mastery, set(), datetime.now(UTC),
             blocked_kps={},
         )
 
@@ -544,7 +544,7 @@ class TestSmartScorePathDimensions:
         blocked_kps = {}  # 空 = 没有阻塞
 
         score, reasons = calculate_smart_score(
-            q, None, kp_ids, kp_mastery, set(), datetime.utcnow(),
+            q, None, kp_ids, kp_mastery, set(), datetime.now(UTC),
             blocked_kps=blocked_kps,
         )
 
@@ -558,7 +558,7 @@ class TestSmartScorePathDimensions:
         kp_mastery = {20: (45.0, 0.5)}
 
         score, reasons = calculate_smart_score(
-            q, None, kp_ids, kp_mastery, set(), datetime.utcnow(),
+            q, None, kp_ids, kp_mastery, set(), datetime.now(UTC),
             blocked_kps=None,
         )
 
@@ -664,18 +664,18 @@ class TestSmartScoreWithWeights:
         """due_weight=2.0 时，到期分数翻倍。"""
         from app.services.practice_service import calculate_smart_score
         q = self._make_question()
-        q.next_review_at = datetime.utcnow() - timedelta(hours=1)  # 到期
+        q.next_review_at = datetime.now(UTC) - timedelta(hours=1)  # 到期
 
         # 无权重
         score_default, _ = calculate_smart_score(
-            q, q, [], {}, set(), datetime.utcnow(),
+            q, q, [], {}, set(), datetime.now(UTC),
         )
 
         # due_weight=2.0
         weights = default_weights()
         weights["due_weight"] = 2.0
         score_weighted, _ = calculate_smart_score(
-            q, q, [], {}, set(), datetime.utcnow(), weights=weights,
+            q, q, [], {}, set(), datetime.now(UTC), weights=weights,
         )
 
         # 到期基础分 40，default 总分 = 40 + 20(new) = 60
@@ -689,11 +689,11 @@ class TestSmartScoreWithWeights:
         q = self._make_question()
 
         score_none, reasons_none = calculate_smart_score(
-            q, None, [1], {1: (50.0, 0.5)}, set(), datetime.utcnow(),
+            q, None, [1], {1: (50.0, 0.5)}, set(), datetime.now(UTC),
             weights=None,
         )
         score_default, reasons_default = calculate_smart_score(
-            q, None, [1], {1: (50.0, 0.5)}, set(), datetime.utcnow(),
+            q, None, [1], {1: (50.0, 0.5)}, set(), datetime.now(UTC),
             weights=default_weights(),
         )
 

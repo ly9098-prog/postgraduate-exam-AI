@@ -16,7 +16,7 @@ def test_audit_range_defaults_to_recent_six_months():
 
 def test_audit_range_rejects_more_than_one_year():
     with pytest.raises(ValueError, match="不能超过 1 年"):
-        _normalize_audit_range(datetime.utcnow() - timedelta(days=366), datetime.utcnow())
+        _normalize_audit_range(datetime.now(UTC) - timedelta(days=366), datetime.now(UTC))
 
 
 def test_dashboard_daily_range_defaults_to_seven_days():

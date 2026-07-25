@@ -15,7 +15,7 @@ import asyncio
 import os
 import tempfile
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -150,7 +150,7 @@ async def _insert(db, *, user_id: int, openid: str, due_offset_sec: int,
                  status: str = "running", work: int = 25,
                  paused_at: datetime | None = None):
     from app.models.pomodoro import PomodoroSession
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     s = PomodoroSession(
         user_id=user_id, chapter_id=None, preset="standard",
         work_duration=work, break_duration=5,
@@ -339,7 +339,7 @@ class TestSchedulerClaiming:
             uid = await _make_user(db, "u_paused")
             sid = await _insert(
                 db, user_id=uid, openid="u_paused",
-                due_offset_sec=-30, paused_at=datetime.utcnow() - timedelta(seconds=60),
+                due_offset_sec=-30, paused_at=datetime.now(UTC) - timedelta(seconds=60),
             )
             await db.commit()
 
@@ -461,7 +461,7 @@ class TestServiceLayer:
             await db.execute(
                 update(PomodoroSession)
                 .where(PomodoroSession.id == sid)
-                .values(paused_at=datetime.utcnow() - timedelta(seconds=90))
+                .values(paused_at=datetime.now(UTC) - timedelta(seconds=90))
             )
             await db.commit()
 
