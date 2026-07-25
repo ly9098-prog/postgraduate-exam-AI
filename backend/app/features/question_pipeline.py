@@ -985,7 +985,7 @@ async def _find_duplicate_by_hash(
 ) -> Question | None:
     if not question_hash:
         return None
-    conditions = [Question.question_hash == question_hash, Question.is_active == True]
+    conditions = [Question.question_hash == question_hash, Question.is_active]
     if subject_id is not None:
         conditions.append(Question.subject_id == subject_id)
     elif subject:
@@ -1050,7 +1050,7 @@ async def find_duplicate_question(
         return None
     result = await db.execute(
         select(Question).where(
-            Question.subject_id == resolved_id, Question.is_active == True
+            Question.subject_id == resolved_id, Question.is_active
         )
     )
     target_hash = normalizer.stem_hash(stem)

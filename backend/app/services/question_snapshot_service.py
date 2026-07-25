@@ -407,13 +407,13 @@ def compute_question_bbox(
         - question_bbox_diagnostics: dict
     """
     # Extract question metadata
-    page_start = raw_question.get("page_start", page)
+    raw_question.get("page_start", page)
     source_qno = raw_question.get("source_question_no")
     source_label = raw_question.get("source_question_label", "")
     raw_text = raw_question.get("raw_question_text", "")
     option_lines = raw_question.get("option_lines") or {}
     expected_keys = _extract_expected_option_keys(raw_question)
-    next_q_start = raw_question.get("_next_question_page_start")
+    raw_question.get("_next_question_page_start")
 
     # Filter OCR lines to the target page
     page_lines = [l for l in ocr_lines if l.get("page") == page]

@@ -14,10 +14,40 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
+
+
+@asynccontextmanager
+async def _always_lock(*args, **kwargs):
+    """Replacement for DistributedLock.acquire_and_renew that always succeeds."""
+    yield True
+
+
+class _MockLock:
+    """Replaces DistributedLock in tests — lock always acquired."""
+    def __init__(self, *args, **kwargs):
+        self.acquire_and_renew = _always_lock
+        self.acquired = 0
+        self.skipped = 0
+        self.failed = 0
+        self.duration_ms = 0.0
+
+    async def acquire(self, ttl=60):
+        return True
+
+    async def renew(self, ttl=60):
+        return True
+
+    async def release(self):
+        return True
+
+    async def close(self):
+        pass
 
 
 @pytest.fixture(scope="module")
@@ -35,6 +65,10 @@ async def isolated_db(monkeypatch_module):
     monkeypatch_module.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp.name}")
     monkeypatch_module.setenv("REDIS_URL", "")
     monkeypatch_module.setenv("POMODORO_NOTIFY_ENABLED", "true")
+
+    # Mock DistributedLock so tests don't need Redis
+    import app.services.pomodoro_scheduler_service as ssvc
+    monkeypatch_module.setattr(ssvc, "DistributedLock", _MockLock)
 
     # 强制重新加载 settings 以应用 env
     import importlib

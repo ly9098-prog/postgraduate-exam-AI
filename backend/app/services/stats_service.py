@@ -26,10 +26,10 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
         select(
             func.count(PracticeRecord.id),
             func.coalesce(
-                func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0
+                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(
-                func.sum(case((PracticeRecord.is_correct == False, 1), else_=0)), 0
+                func.sum(case((not PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         ).where(PracticeRecord.user_id == user_id)
@@ -41,7 +41,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
         select(
             func.count(PracticeRecord.id),
             func.coalesce(
-                func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0
+                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         ).where(
@@ -57,7 +57,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
         select(
             func.count(WrongQuestion.id),
             func.coalesce(
-                func.sum(case((WrongQuestion.mastered == True, 1), else_=0)), 0
+                func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0
             ),
         ).where(WrongQuestion.user_id == user_id)
     )
@@ -66,7 +66,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
     due_count = await db.execute(
         select(func.count(ReviewSchedule.id)).where(
             ReviewSchedule.user_id == user_id,
-            ReviewSchedule.mastered == False,
+            not ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= utcnow(),
         )
     )
@@ -115,10 +115,10 @@ async def get_subject_stats(db: AsyncSession, user_id: int) -> list[dict]:
             PracticeRecord.subject,
             func.count(PracticeRecord.id),
             func.coalesce(
-                func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0
+                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(
-                func.sum(case((PracticeRecord.is_correct == False, 1), else_=0)), 0
+                func.sum(case((not PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         )
@@ -163,10 +163,10 @@ async def get_trends(
             func.date(PracticeRecord.answered_at),
             func.count(PracticeRecord.id),
             func.coalesce(
-                func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0
+                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(
-                func.sum(case((PracticeRecord.is_correct == False, 1), else_=0)), 0
+                func.sum(case((not PracticeRecord.is_correct, 1), else_=0)), 0
             ),
         )
         .where(
@@ -205,7 +205,7 @@ async def get_behavior_stats(db: AsyncSession, user_id: int) -> dict:
             func.count(AnswerBehavior.id),
             func.coalesce(func.sum(AnswerBehavior.view_answer_count), 0),
             func.coalesce(
-                func.sum(case((AnswerBehavior.is_abandoned == True, 1), else_=0)), 0
+                func.sum(case((AnswerBehavior.is_abandoned, 1), else_=0)), 0
             ),
         ).where(
             AnswerBehavior.user_id == user_id,
@@ -259,7 +259,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     stuck = await db.execute(
         select(func.count(WrongQuestion.id)).where(
             WrongQuestion.user_id == user_id,
-            WrongQuestion.mastered == False,
+            not WrongQuestion.mastered,
             WrongQuestion.review_count >= 3,
         )
     )
@@ -281,7 +281,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
         )
         .where(
             WrongQuestion.user_id == user_id,
-            WrongQuestion.mastered == True,
+            WrongQuestion.mastered,
             WrongQuestion.review_count >= 1,
             ReviewSchedule.next_review_at <= datetime.combine(
                 today + timedelta(days=3), datetime.min.time()
@@ -306,7 +306,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     long_unmastered = await db.execute(
         select(func.count(ReviewSchedule.id)).where(
             ReviewSchedule.user_id == user_id,
-            ReviewSchedule.mastered == False,
+            not ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= datetime.combine(
                 today - timedelta(days=7), datetime.min.time()
             ),
@@ -319,7 +319,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
         .join(WrongQuestion, WrongQuestion.question_id == Question.id)
         .where(
             WrongQuestion.user_id == user_id,
-            WrongQuestion.mastered == False,
+            not WrongQuestion.mastered,
         )
     )
     kp_counter: dict[str, int] = {}
@@ -348,7 +348,7 @@ async def get_growth_profile(db: AsyncSession, user_id: int) -> dict:
     streak = overview["consecutive_days"]
     mastered = overview["mastered_count"]
     today_q = overview["today_questions"]
-    due = overview["due_review_count"]
+    overview["due_review_count"]
 
     total_exp = total_q * 10 + mastered * 20 + streak * 5
     if accuracy >= 0.7 and total_q >= 10:
@@ -703,7 +703,7 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
             Subject.code,
             func.count(WrongQuestion.id),
             func.coalesce(
-                func.sum(case((WrongQuestion.mastered == True, 1), else_=0)), 0
+                func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0
             ),
         )
         .join(Question, WrongQuestion.question_id == Question.id)
@@ -940,7 +940,7 @@ def _rule_based_dashboard_analysis(payload: dict, now, trend_days: int) -> dict:
     active_days = tr.get("active_days", 0)
     avg_acc = tr.get("avg_accuracy", 0)
     hf = rr.get("high_forget_count", 0)
-    stuck = rr.get("stuck_questions", 0)
+    rr.get("stuck_questions", 0)
     weak_label = sb.get("weakest")
     top_topics = rr.get("top_topics", [])
 

@@ -382,7 +382,6 @@ def repair_option_structure(text: str) -> str:
     # Step 4: 尝试在无前缀行前恢复 A./B./C./D.
     # 策略：找到连续4行类似选项的文字，按顺序标记为 A/B/C/D
     lines = text.split("\n")
-    repaired_lines = []
     bare_option_block: list[int] = []  # 连续无前缀但像选项的行索引
 
     for i, line in enumerate(lines):
@@ -416,7 +415,7 @@ def repair_option_structure(text: str) -> str:
         stripped = line.strip()
         if stripped in _COMMON_OPTION_STEMS:
             idx = _COMMON_OPTION_STEMS.index(stripped)
-            group_idx = idx // 4
+            idx // 4
             opt_idx = idx % 4
             keys = ["A", "B", "C", "D"]
             lines[i] = f"{keys[opt_idx]}. {stripped}"

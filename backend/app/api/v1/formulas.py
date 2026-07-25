@@ -62,7 +62,7 @@ def _build_category_tree(categories: list[FormulaCategory]) -> list[dict]:
 async def _get_active_categories(db: AsyncSession) -> list[FormulaCategory]:
     result = await db.execute(
         select(FormulaCategory)
-        .where(FormulaCategory.is_active == True)
+        .where(FormulaCategory.is_active)
         .order_by(FormulaCategory.sort_order.asc())
     )
     return list(result.scalars().all())
@@ -338,7 +338,7 @@ async def _validate_chapter(db: AsyncSession, chapter_id: int, subject_code: str
     result = await db.execute(
         select(FormulaCategory).where(
             FormulaCategory.id == chapter_id,
-            FormulaCategory.is_active == True,
+            FormulaCategory.is_active,
             FormulaCategory.node_type == "chapter",
         )
     )
@@ -353,7 +353,7 @@ async def _validate_chapter(db: AsyncSession, chapter_id: int, subject_code: str
     if subject_code:
         subject_result = await db.execute(
             select(FormulaCategory).where(
-                FormulaCategory.is_active == True,
+                FormulaCategory.is_active,
                 FormulaCategory.code == subject_code,
                 FormulaCategory.node_type == "subject",
             )
@@ -375,7 +375,7 @@ def _apply_list_filters(query, subject_code, chapter_id, category_id, tags, q):
         groups_subq = (
             select(FormulaCategory.id)
             .where(
-                FormulaCategory.is_active == True,
+                FormulaCategory.is_active,
                 FormulaCategory.code == subject_code,
                 FormulaCategory.node_type == "subject",
             )
@@ -385,7 +385,7 @@ def _apply_list_filters(query, subject_code, chapter_id, category_id, tags, q):
             select(FormulaCategory.id)
             .where(
                 FormulaCategory.parent_id == groups_subq.c.id,
-                FormulaCategory.is_active == True,
+                FormulaCategory.is_active,
             )
             .cte("list_chapters_cte")
         )
@@ -393,7 +393,7 @@ def _apply_list_filters(query, subject_code, chapter_id, category_id, tags, q):
             select(FormulaCategory.id)
             .where(
                 FormulaCategory.parent_id == chapters_subq.c.id,
-                FormulaCategory.is_active == True,
+                FormulaCategory.is_active,
             )
         )
         query = query.where(FormulaCard.category_id.in_(group_ids_subq))
@@ -403,7 +403,7 @@ def _apply_list_filters(query, subject_code, chapter_id, category_id, tags, q):
             select(FormulaCategory.id)
             .where(
                 FormulaCategory.parent_id == chapter_id,
-                FormulaCategory.is_active == True,
+                FormulaCategory.is_active,
             )
         )
         query = query.where(FormulaCard.category_id.in_(group_ids_subq))
@@ -609,7 +609,7 @@ async def get_random_formula(
         groups_subq = (
             select(FormulaCategory.id)
             .where(
-                FormulaCategory.is_active == True,
+                FormulaCategory.is_active,
                 FormulaCategory.code == subject_code,
                 FormulaCategory.node_type == "subject",
             )
@@ -619,7 +619,7 @@ async def get_random_formula(
             select(FormulaCategory.id)
             .where(
                 FormulaCategory.parent_id == groups_subq.c.id,
-                FormulaCategory.is_active == True,
+                FormulaCategory.is_active,
             )
             .cte("random_chapters_cte")
         )
@@ -627,7 +627,7 @@ async def get_random_formula(
             select(FormulaCategory.id)
             .where(
                 FormulaCategory.parent_id == chapters_subq.c.id,
-                FormulaCategory.is_active == True,
+                FormulaCategory.is_active,
             )
         )
         base_query = base_query.where(FormulaCard.category_id.in_(group_ids_subq))
@@ -637,7 +637,7 @@ async def get_random_formula(
             select(FormulaCategory.id)
             .where(
                 FormulaCategory.parent_id == chapter_id,
-                FormulaCategory.is_active == True,
+                FormulaCategory.is_active,
             )
         )
         base_query = base_query.where(FormulaCard.category_id.in_(group_ids_subq))

@@ -1367,7 +1367,7 @@ def normalize_output(question: dict) -> dict:
     # Ensure options are in list[dict] format.
     # Layer 0/3: preserve original order, NO re-sorting A→D, NO padding.
     raw_options = question.get("options", [])
-    question_type = question.get("question_type", "")
+    question.get("question_type", "")
     is_frozen = bool(question.get("is_frozen", False))
 
     if is_frozen:

@@ -490,7 +490,7 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
 
     # Legend
     if legend_labels:
-        leg = ax.legend(
+        ax.legend(
             legend_handles, legend_labels,
             loc="upper right", fontsize=theme["font"]["size"]["legend"],
             framealpha=0.9, edgecolor=theme["axis"]["color"],
@@ -543,7 +543,7 @@ def _render_single_function(spec: dict) -> tuple[plt.Figure, list, list]:
     """Single axes with all panels overlaid (standard use: 1 panel)."""
     theme = GRAPH_THEME
     panels = spec.get("panels", [])
-    layout = spec.get("layout", {"rows": 1, "columns": 1})
+    spec.get("layout", {"rows": 1, "columns": 1})
     fig, ax = plt.subplots(
         figsize=(theme["width"] / theme["dpi"], theme["height"] / theme["dpi"]),
         dpi=theme["dpi"],

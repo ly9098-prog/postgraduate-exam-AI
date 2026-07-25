@@ -27,7 +27,7 @@ async def load_rules(db: AsyncSession) -> list[re.Pattern]:
     if _cache.get("rules") and (now - _cache_ts) < _CACHE_TTL:
         return _cache["rules"]
 
-    stmt = select(WatermarkRule).where(WatermarkRule.is_active == True)
+    stmt = select(WatermarkRule).where(WatermarkRule.is_active)
     result = await db.execute(stmt)
     rules = result.scalars().all()
 

@@ -291,7 +291,7 @@ class AIModelConfigResolver:
         # Query all enabled models
         result = await self._db.execute(
             select(AdminAiModelConfig)
-            .where(AdminAiModelConfig.is_enabled == True)
+            .where(AdminAiModelConfig.is_enabled)
             .order_by(
                 AdminAiModelConfig.is_default.desc(),
                 AdminAiModelConfig.sort_order.asc(),
@@ -521,7 +521,7 @@ async def resolve_active_model(db: AsyncSession, feature: str | None = None) -> 
     # 查出所有已启用模型，在 Python 层按序匹配
     result = await db.execute(
         select(AdminAiModelConfig)
-        .where(AdminAiModelConfig.is_enabled == True)
+        .where(AdminAiModelConfig.is_enabled)
         .order_by(
             AdminAiModelConfig.is_default.desc(),
             AdminAiModelConfig.sort_order.asc(),

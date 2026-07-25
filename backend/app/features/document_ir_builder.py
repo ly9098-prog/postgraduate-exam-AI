@@ -107,7 +107,7 @@ def blocks_to_document_ir(
                     provenance=Provenance(engine=engine),
                 ))
 
-            source = b.get("source", "ocr")
+            b.get("source", "ocr")
             region_flags: set[str] = set()
             if b.get("has_boxes"):
                 region_flags.add("has_boxes")

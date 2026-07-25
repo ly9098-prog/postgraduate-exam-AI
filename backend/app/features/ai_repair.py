@@ -472,7 +472,6 @@ def _parse_batch_ai_response(content: str) -> list[dict] | None:
 
     # 按行扫描，逐题提取每个 {...}
     items: list[dict] = []
-    depth = 0
     current_start = -1
     brace_count = 0
     for i, ch in enumerate(text):

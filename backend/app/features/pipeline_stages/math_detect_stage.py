@@ -71,7 +71,7 @@ async def run_math_detect_stage(
         segments: list[dict] = list(q.get("segments") or [])
         if diagnosis["has_complex_formula"] or diagnosis.get("low_confidence"):
             source_page = q.get("page_start") or 1
-            has_visual_ref = contains_visual_reference(full_text)
+            contains_visual_reference(full_text)
             math_segment: dict = {
                 "type": "math_image",
                 "url": None,

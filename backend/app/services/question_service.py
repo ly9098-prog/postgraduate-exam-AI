@@ -46,7 +46,7 @@ async def create(
 
 async def get_by_id(db: AsyncSession, question_id: int) -> Question | None:
     result = await db.execute(
-        select(Question).where(Question.id == question_id, Question.is_active == True)
+        select(Question).where(Question.id == question_id, Question.is_active)
     )
     return result.scalar_one_or_none()
 
@@ -68,7 +68,7 @@ async def list_questions(
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[Question], int]:
-    conditions = [Question.is_active == True]
+    conditions = [Question.is_active]
     if subject:
         conditions.append(Question.subject_id.in_(await resolve_subject_ids(db, subject)))
     if question_type:
@@ -94,7 +94,7 @@ async def get_random(
     question_type: str | None = None,
     exclude_ids: list[int] | None = None,
 ) -> Question | None:
-    conditions = [Question.is_active == True]
+    conditions = [Question.is_active]
     if subject:
         conditions.append(Question.subject_id.in_(await resolve_subject_ids(db, subject)))
     if question_type:

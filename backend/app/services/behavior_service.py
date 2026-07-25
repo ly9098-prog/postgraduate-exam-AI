@@ -87,7 +87,7 @@ async def get_behavior_stats(
     # 正确率
     correct_q = select(func.count(AnswerBehavior.id)).where(
         AnswerBehavior.user_id == user_id,
-        AnswerBehavior.is_final_correct == True,
+        AnswerBehavior.is_final_correct,
     )
     correct = (await db.execute(correct_q)).scalar() or 0
 

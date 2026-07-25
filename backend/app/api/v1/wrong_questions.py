@@ -150,7 +150,7 @@ async def _enrich_single_wq_extra(
         select(ReviewSchedule.next_review_at).where(
             ReviewSchedule.question_id == wq.question_id,
             ReviewSchedule.user_id == user_id,
-            ReviewSchedule.mastered == False,
+            not ReviewSchedule.mastered,
         ).order_by(ReviewSchedule.next_review_at.asc().nulls_last()).limit(1)
     )
 

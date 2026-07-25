@@ -491,10 +491,9 @@ def render_formula_graph(
     """
     fig, ax = _setup_plot(viewport, width, height)
 
-    y_min, y_max = viewport.get("y_min", -6), viewport.get("y_max", 6)
+    _y_min, _y_max = viewport.get("y_min", -6), viewport.get("y_max", 6)
 
     # Draw asymptotes from annotations first
-    asymptotes_drawn = False
     if annotations:
         for ann in annotations:
             if ann.get("type") == "asymptote":
@@ -502,7 +501,6 @@ def render_formula_graph(
                 y = ann.get("y")
                 if x is not None or y is not None:
                     _draw_asymptote(ax, x, y, ax.get_xlim(), ax.get_ylim())
-                    asymptotes_drawn = True
 
     # Draw curves
     labels = []

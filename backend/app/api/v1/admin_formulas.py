@@ -832,7 +832,6 @@ async def batch_review_formulas(
                 results.append({"id": card_id, "status": "not_found"})
                 continue
 
-            old_status = card.status
             try:
                 new_status = _apply_formula_action(
                     card, data.action, admin.id,

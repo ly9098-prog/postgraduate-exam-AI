@@ -160,7 +160,7 @@ async def resolve_practice_subject_scope(
     # 获取全部启用科目以构建树
     all_result = await db.execute(
         select(Subject)
-        .where(Subject.is_active == True)
+        .where(Subject.is_active)
         .order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
     )
     all_subjects = list(all_result.scalars().all())
@@ -302,7 +302,7 @@ async def get_aggregated_random_questions(
 
     for sid in subject_ids:
         # 为每个精确 subject_id 构建独立查询条件
-        conds = [Question.is_active == True, Question.subject_id == sid]
+        conds = [Question.is_active, Question.subject_id == sid]
         if knowledge_points:
             for kp in knowledge_points:
                 conds.append(Question.knowledge_points.like(f'%"{kp}"%'))
@@ -456,7 +456,7 @@ async def get_practice_questions(
     else:
         ids = await resolve_subject_ids(db, subject)
     subject_cond = Question.subject_id.in_(ids)
-    base_conditions = [Question.is_active == True, subject_cond]
+    base_conditions = [Question.is_active, subject_cond]
 
     if knowledge_points:
         for kp in knowledge_points:
@@ -710,7 +710,7 @@ async def get_similar_practice_questions(
             rec_ids = [r["question_id"] for r in result["recommendations"]]
             if rec_ids:
                 q_result = await db.execute(
-                    select(Question).where(Question.id.in_(rec_ids), Question.is_active == True).options(selectinload(Question.subject_ref))
+                    select(Question).where(Question.id.in_(rec_ids), Question.is_active).options(selectinload(Question.subject_ref))
                 )
                 q_map = {q.id: q for q in q_result.scalars().all()}
                 for rec in result["recommendations"]:
@@ -736,7 +736,7 @@ async def get_similar_practice_questions(
     ids = await resolve_subject_ids(db, subject)
     subject_cond = Question.subject_id.in_(ids)
     conditions = [
-        Question.is_active == True,
+        Question.is_active,
         subject_cond,
         Question.id.notin_(existing_ids),
     ]
@@ -879,7 +879,7 @@ async def get_smart_practice_questions(
                 q_result = await db.execute(
                     select(Question).where(
                         Question.id.in_(path_qids[:count]),
-                        Question.is_active == True,
+                        Question.is_active,
                     ).options(selectinload(Question.subject_ref))
                 )
                 q_map = {q.id: q for q in q_result.scalars().all()}
@@ -934,14 +934,13 @@ async def get_smart_practice_questions(
 
     # 1. 获取薄弱知识点（Phase 2 优先使用掌握度画像）
     weak_kps: list[dict] = []
-    weak_source = "unknown"
     try:
         from app.services import mastery_service
         weak_kps = await mastery_service.get_user_weak_knowledge_points(
             db, user_id, subject, limit=5,
         )
         if weak_kps:
-            weak_source = "knowledge_state"
+            pass
     except Exception:
         logger.warning("mastery_service.get_user_weak_knowledge_points failed, fallback", exc_info=True)
 
@@ -949,7 +948,7 @@ async def get_smart_practice_questions(
         # Fallback: Phase 1 的临时统计
         weak_kps = await _compute_weak_knowledge_points(db, user_id, subject)
         if weak_kps:
-            weak_source = "practice_record"
+            pass
 
     if not weak_kps:
         # 没有足够的做题记录来判断薄弱点，退化为随机
@@ -994,7 +993,7 @@ async def get_smart_practice_questions(
         if recalls:
             rec_ids = [r["question_id"] for r in recalls]
             q_result = await db.execute(
-                select(Question).where(Question.id.in_(rec_ids), Question.is_active == True).options(selectinload(Question.subject_ref))
+                select(Question).where(Question.id.in_(rec_ids), Question.is_active).options(selectinload(Question.subject_ref))
             )
             q_map = {q.id: q for q in q_result.scalars().all()}
             for rec in recalls:
@@ -1021,7 +1020,7 @@ async def get_smart_practice_questions(
     scope_ids = subject_ids if subject_ids is not None else await resolve_subject_ids(db, subject)
     subject_cond = Question.subject_id.in_(scope_ids)
     conditions = [
-        Question.is_active == True,
+        Question.is_active,
         subject_cond,
         Question.id.notin_(existing_ids),
     ]
@@ -1214,7 +1213,7 @@ async def _smart_weakness_vector(
             rec_ids = [r["question_id"] for r in recalls if r["question_id"] not in exclude_ids]
             if rec_ids:
                 q_result = await db.execute(
-                    select(Question).where(Question.id.in_(rec_ids), Question.is_active == True).options(selectinload(Question.subject_ref))
+                    select(Question).where(Question.id.in_(rec_ids), Question.is_active).options(selectinload(Question.subject_ref))
                 )
                 q_map = {q.id: q for q in q_result.scalars().all()}
                 for rec in recalls:
@@ -1238,7 +1237,7 @@ async def _smart_weakness_vector(
     scope_ids = subject_ids if subject_ids is not None else await resolve_subject_ids(db, subject)
     subject_cond = Question.subject_id.in_(scope_ids)
     conditions = [
-        Question.is_active == True,
+        Question.is_active,
         subject_cond,
         Question.id.notin_(existing_ids),
     ]
@@ -1431,7 +1430,7 @@ async def get_smart_scored_questions(
     candidate_limit = max(count * 5, 50)
     scope_ids = subject_ids if subject_ids is not None else await resolve_subject_ids(db, subject)
     subject_cond = Question.subject_id.in_(scope_ids)
-    conditions: list = [Question.is_active == True, subject_cond]
+    conditions: list = [Question.is_active, subject_cond]
 
     excluded_sub = _build_excluded_question_subquery(
         user_id=user_id,
@@ -1620,7 +1619,7 @@ async def get_smart_scored_questions(
         fallback_level = max(fallback_level, 3)
         remaining = count - len(selected)
         fill_cond = [
-            Question.is_active == True,
+            Question.is_active,
             subject_cond,
             Question.id.notin_(cand_ids | selected_ids),
         ]
@@ -1647,7 +1646,7 @@ async def get_smart_scored_questions(
         fallback_level = max(fallback_level, 4)
         remaining = count - len(selected)
         fill_cond2 = [
-            Question.is_active == True,
+            Question.is_active,
             subject_cond,
             Question.id.notin_(selected_ids),
         ]
@@ -1755,7 +1754,7 @@ async def submit_answer(
 ) -> dict:
     result = await db.execute(
         select(Question).where(
-            Question.id == question_id, Question.is_active == True
+            Question.id == question_id, Question.is_active
         )
     )
     question = result.scalar_one_or_none()
@@ -1889,7 +1888,7 @@ async def batch_submit_answers(
     question_ids = [a["question_id"] for a in answers]
     result = await db.execute(
         select(Question).where(
-            Question.id.in_(question_ids), Question.is_active == True
+            Question.id.in_(question_ids), Question.is_active
         )
     )
     questions = {q.id: q for q in result.scalars().all()}
@@ -1994,7 +1993,7 @@ async def get_practice_stats(
     base = select(
         func.count(PracticeRecord.id),
         func.coalesce(
-            func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0
+            func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
         ),
     ).where(PracticeRecord.user_id == user_id)
 
@@ -2009,7 +2008,7 @@ async def get_practice_stats(
             PracticeRecord.subject,
             func.count(PracticeRecord.id),
             func.coalesce(
-                func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0
+                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
             ),
         )
         .where(PracticeRecord.user_id == user_id)
@@ -2032,7 +2031,7 @@ async def get_practice_stats(
             func.date(PracticeRecord.answered_at),
             func.count(PracticeRecord.id),
             func.coalesce(
-                func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0
+                func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
             ),
         )
         .where(
