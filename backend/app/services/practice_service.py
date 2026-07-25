@@ -1774,9 +1774,9 @@ async def submit_answer(
     request_id: str | None = None,
 ) -> dict:
     result = await db.execute(
-        select(Question).where(
-            Question.id == question_id, Question.is_active
-        )
+        select(Question)
+        .options(selectinload(Question.subject_ref))
+        .where(Question.id == question_id, Question.is_active)
     )
     question = result.scalar_one_or_none()
     if not question:
@@ -1908,9 +1908,9 @@ async def batch_submit_answers(
     """批量提交答案，使用单个事务减少 commit 次数。"""
     question_ids = [a["question_id"] for a in answers]
     result = await db.execute(
-        select(Question).where(
-            Question.id.in_(question_ids), Question.is_active
-        )
+        select(Question)
+        .options(selectinload(Question.subject_ref))
+        .where(Question.id.in_(question_ids), Question.is_active)
     )
     questions = {q.id: q for q in result.scalars().all()}
 

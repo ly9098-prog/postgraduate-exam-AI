@@ -109,10 +109,18 @@ async def _calc_consecutive_days(db: AsyncSession, user_id: int) -> int:
 
 
 async def get_subject_stats(db: AsyncSession, user_id: int) -> list[dict]:
-    """学科维度统计"""
+    """学科维度统计。
+
+    优先通过 PracticeRecord.question_id -> Question.subject_id -> Subject.code
+    解析真实科目，兼容历史上因 Question.subject_ref 未预加载而写入空 subject
+    的练习记录；仅在题目关系缺失时回退到 PracticeRecord.subject。
+    """
+    from app.models.admin import Subject
+
+    subject_expr = func.coalesce(Subject.code, func.nullif(PracticeRecord.subject, ""))
     result = await db.execute(
         select(
-            PracticeRecord.subject,
+            subject_expr.label("subject"),
             func.count(PracticeRecord.id),
             func.coalesce(
                 func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
@@ -122,8 +130,13 @@ async def get_subject_stats(db: AsyncSession, user_id: int) -> list[dict]:
             ),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         )
-        .where(PracticeRecord.user_id == user_id)
-        .group_by(PracticeRecord.subject)
+        .outerjoin(Question, PracticeRecord.question_id == Question.id)
+        .outerjoin(Subject, Question.subject_id == Subject.id)
+        .where(
+            PracticeRecord.user_id == user_id,
+            subject_expr.is_not(None),
+        )
+        .group_by(subject_expr)
     )
     rows = []
     for r in result.all():
