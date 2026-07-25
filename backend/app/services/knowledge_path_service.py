@@ -192,72 +192,74 @@ async def attach_recommended_questions_to_path(
     - 每个节点挂 recommended_question_ids
     - 总题目去重
     """
-    global_seen_ids = set()
+    from app.services import vector_retrieval_service
 
-    # 构建已做题子查询（用于 SQL 端过滤，避免加载全部已做题 ID 到内存）
+    kp_ids = [n["knowledge_point_id"] for n in nodes]
+    need = questions_per_node * 3
+
+    # Build answered subquery once
     answered_sub = (
         select(PracticeRecord.question_id)
         .where(PracticeRecord.user_id == user_id)
         .distinct()
     ) if exclude_answered else None
 
+    # ── Batch load all candidate questions for all KPs in one query ──
+    # Returns (knowledge_point_id, question_id, difficulty) tuples
+    conditions = [
+        QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids),
+        Question.is_active,
+    ]
+    if answered_sub is not None:
+        conditions.append(Question.id.notin_(answered_sub))
+
+    batch_result = await db.execute(
+        select(
+            QuestionKnowledgePoint.knowledge_point_id,
+            Question.id,
+            Question.difficulty,
+        )
+        .join(
+            QuestionKnowledgePoint,
+            QuestionKnowledgePoint.question_id == Question.id,
+        )
+        .where(and_(*conditions))
+    )
+    # Group candidates by kp_id: {kp_id: [(q_id, difficulty), ...]}
+    candidates_by_kp: dict[int, list[tuple[int, float | None]]] = {}
+    for row in batch_result.all():
+        candidates_by_kp.setdefault(row.knowledge_point_id, []).append(
+            (row.id, row.difficulty)
+        )
+
+    # ── For each node, select from pre-fetched candidates ──
+    global_seen_ids: set[int] = set()
+    import random
+
     for node in nodes:
         kp_id = node["knowledge_point_id"]
-        recommended = []
+        recommended: list[int] = []
 
-        # 1. 从 question_knowledge_points 找题（random offset avoids ORDER BY random())
-        conditions = [
-            QuestionKnowledgePoint.knowledge_point_id == kp_id,
-            Question.is_active,
-        ]
-        if answered_sub is not None:
-            conditions.append(Question.id.notin_(answered_sub))
-        if global_seen_ids:
-            conditions.append(Question.id.notin_(global_seen_ids))
+        # Get pre-fetched candidates for this KP (copy so mutation is per-node)
+        kp_candidates = list(candidates_by_kp.get(kp_id, []))
 
-        need = questions_per_node * 3
+        # Shuffle to get random sample (avoids ORDER BY random() on DB side)
+        random.shuffle(kp_candidates)
 
-        # Count matching questions
-        count_result = await db.execute(
-            select(func.count(Question.id))
-            .join(
-                QuestionKnowledgePoint,
-                QuestionKnowledgePoint.question_id == Question.id,
-            )
-            .where(and_(*conditions))
-        )
-        total = count_result.scalar() or 0
-
-        if total > 0:
-            import random
-            # Fetch a randomized sample using random offset
-            max_offset = max(0, total - need)
-            offset = random.randint(0, max_offset)
-            q_result = await db.execute(
-                select(Question.id, Question.difficulty)
-                .join(
-                    QuestionKnowledgePoint,
-                    QuestionKnowledgePoint.question_id == Question.id,
-                )
-                .where(and_(*conditions))
-                .offset(offset)
-                .limit(need)
-            )
-            candidates = q_result.all()
-        else:
-            candidates = []
-
-        for q_id, q_diff in candidates:
+        for q_id, q_diff in kp_candidates:
+            if q_id in global_seen_ids:
+                continue
             recommended.append(q_id)
             global_seen_ids.add(q_id)
-            if len(recommended) >= questions_per_node:
+            if len(recommended) >= need:
                 break
 
-        # 2. 不足时向量补齐
+        # Trim to questions_per_node (we fetched 3x, but only need 1x)
+        recommended = recommended[:questions_per_node]
+
+        # 2. Vector recall fallback if still short
         if len(recommended) < questions_per_node:
             try:
-                from app.services import vector_retrieval_service
-
                 recalls = await vector_retrieval_service.vector_recall_by_text(
                     db=db,
                     user_id=user_id,
