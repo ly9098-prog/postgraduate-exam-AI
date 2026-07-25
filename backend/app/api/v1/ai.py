@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +28,8 @@ from app.schemas.ai_learning import (
 )
 from app.services import ai_learning_service
 from app.services import ai_service as svc
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/ai")
 
