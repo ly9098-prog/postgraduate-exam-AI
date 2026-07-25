@@ -618,12 +618,9 @@ Page({
       var firstIndex = 0
       if (questions.length > 0) {
         try {
-          var cfg = { enableMathImage: config.enableMathImage || false, DEV: config.DEV }
-          if (this._practiceSession.safeModeActive) cfg.SAFE_MODE = true
-          var q0 = questions[0]
-          var opts = q0.options && Object.keys(q0.options).length > 0 ? q0.options : null
-          var renderModel = buildRenderModel(q0, opts, cfg)
-          firstQuestion = Object.assign({}, q0, { _renderModel: renderModel, _opts: opts })
+          var viewModelResult = this._buildQuestionViewModel(questions[0])
+          if (!viewModelResult) throw new Error('_buildQuestionViewModel returned null')
+          firstQuestion = viewModelResult.question
         } catch (renderErr) {
           console.error('首题渲染失败', renderErr)
           this._clearTimer()
@@ -647,7 +644,7 @@ Page({
         loading: false,
       })
       if (questions.length > 0 && firstQuestion) {
-        this._practiceSession.optionKeys = firstQuestion._opts ? Object.keys(firstQuestion._opts) : []
+        this._practiceSession.optionKeys = viewModelResult.optionKeys
         this._practiceSession.currentQuestionStartedAt = Date.now()
         this._updateComputedFields()
         this._checkRenderInvariant(firstQuestion._renderModel)
@@ -679,6 +676,45 @@ Page({
     }
   },
 
+  /**
+   * Unified ViewModel builder for quiz-runner rendering.
+   * Used by both _loadQuestions (first question) and _showQuestion (switching).
+   * Returns { question, optionKeys } or null if q is falsy.
+   */
+  _buildQuestionViewModel(q) {
+    if (!q) return null
+
+    const isBlankChoice = adapter.isMultiBlankChoice(q)
+    const answer = this._practiceSession.answerMap[String(q.id)] || ''
+    const blankOptionGroups = isBlankChoice
+      ? adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), answer)
+      : []
+    const isTrueFalse = q.question_type === 'true_false' || q.question_type === 'judgement'
+    const opts = !isBlankChoice && q.options && Object.keys(q.options).length > 0
+      ? q.options
+      : (!isBlankChoice && isTrueFalse ? { A: '正确', B: '错误' } : null)
+    const optionKeys = opts ? Object.keys(opts) : []
+    const isMulti = q.question_type === 'multiple_choice'
+    const selectedFlags = {}
+    for (const key of optionKeys) {
+      selectedFlags[key] = isMulti ? answer.split(',').indexOf(key) >= 0 : answer === key
+    }
+    const renderCfg = { enableMathImage: config.enableMathImage || false, DEV: config.DEV }
+    if (this._practiceSession.safeModeActive) renderCfg.SAFE_MODE = true
+    const renderModel = buildRenderModel(q, opts, renderCfg)
+
+    return {
+      question: Object.assign({}, q, {
+        _renderModel: renderModel,
+        _opts: opts,
+        _optionList: adapter.buildOptionListFromFlags(opts, optionKeys, selectedFlags),
+        _blankOptionGroups: blankOptionGroups,
+        _hasBlankOptionGroups: blankOptionGroups.length > 0,
+      }),
+      optionKeys,
+    }
+  },
+
   _settleQuestionTime() {
     const { currentIndex, questions } = this.data
     const { currentQuestionStartedAt, questionTimeMap } = this._practiceSession
@@ -698,46 +734,29 @@ Page({
 
     const q = this.data.questions[index]
     if (!q) return
-    const isBlankChoice = adapter.isMultiBlankChoice(q)
-    const answer = this._practiceSession.answerMap[String(q.id)] || ''
-    const blankOptionGroups = isBlankChoice ? adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), answer) : []
-    const isTrueFalse = q.question_type === 'true_false' || q.question_type === 'judgement'
-    const opts = !isBlankChoice && q.options && Object.keys(q.options).length > 0
-      ? q.options
-      : (!isBlankChoice && isTrueFalse ? { A: '正确', B: '错误' } : null)
-    const optionKeys = opts ? Object.keys(opts) : []
-    const isMulti = q.question_type === 'multiple_choice'
-    const selectedFlags = {}
-    for (const key of optionKeys) {
-      selectedFlags[key] = isMulti ? answer.split(',').indexOf(key) >= 0 : answer === key
-    }
-    // 统一渲染模型 — 题干渲染的唯一入口
-    var renderCfg = { enableMathImage: config.enableMathImage || false, DEV: config.DEV }
-    if (this._practiceSession.safeModeActive) renderCfg.SAFE_MODE = true
-    var renderModel
+    var viewModelResult
     try {
-      renderModel = buildRenderModel(q, opts, renderCfg)
+      viewModelResult = this._buildQuestionViewModel(q)
     } catch (renderErr) {
       console.error('切题渲染失败 index=' + index + ' id=' + q.id, renderErr)
       wx.showToast({ title: '题目渲染失败，已保留上一题', icon: 'none' })
       return
     }
-    // 不直接突变 q，创建新对象避免 _renderModel 引用持久化
-    const currentQuestion = Object.assign({}, q, {
-      _renderModel: renderModel,
-      _opts: opts,
-      _optionList: adapter.buildOptionListFromFlags(opts, optionKeys, selectedFlags),
-      _blankOptionGroups: blankOptionGroups,
-      _hasBlankOptionGroups: blankOptionGroups.length > 0,
-    })
+    if (!viewModelResult) {
+      console.error('切题渲染失败 index=' + index + ' id=' + q.id)
+      wx.showToast({ title: '题目渲染失败，已保留上一题', icon: 'none' })
+      return
+    }
+    const currentQuestion = viewModelResult.question
+    const optionKeys = viewModelResult.optionKeys
 
     if (shouldDebugQuestion(q.id)) {
       debugLog(this._practiceSession.traceId || q.trace_id, 'BEFORE_RENDER', {
         questionId: q.id,
         index,
         optionKeys,
-        blankGroupCount: blankOptionGroups.length,
-        renderMode: renderModel.mode,
+        blankGroupCount: (currentQuestion._blankOptionGroups || []).length,
+        renderMode: (currentQuestion._renderModel || {}).mode,
         sourceLen: ((q.content && (q.content.stem || q.content.text)) || '').length,
       })
     }
