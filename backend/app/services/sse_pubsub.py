@@ -111,22 +111,28 @@ async def subscribe_job(
     except Exception:
         logger.info("PubSub unavailable for job %d, using polling fallback", job_id)
 
-    # Fallback: call poll_fn periodically
+    # Fallback: call poll_fn periodically with exponential backoff
     if poll_fn is not None:
         deadline = asyncio.get_event_loop().time() + timeout
+        backoff = poll_interval
+        max_backoff = min(30.0, poll_interval * 16)
         while asyncio.get_event_loop().time() < deadline:
             try:
                 events = await poll_fn()
                 if events:
+                    # Reset backoff on successful poll with data
+                    backoff = poll_interval
                     for ev in events:
                         await on_event(ev.get("type", "trace"), ev.get("data", {}))
                         if ev.get("type") == "done":
                             await on_done()
                             return
                 else:
-                    await asyncio.sleep(poll_interval)
+                    await asyncio.sleep(backoff)
+                    backoff = min(backoff * 2, max_backoff)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.warning("Poll fallback error for job %d", job_id)
-                await asyncio.sleep(poll_interval)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
