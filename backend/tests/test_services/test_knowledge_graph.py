@@ -571,9 +571,18 @@ class TestAttachRecommendedQuestions:
         q1 = _make_question(id=100)
         q2 = _make_question(id=101)
 
-        # 新实现使用 SQL NOT IN 子查询，每个节点只需 1 次 DB 调用
-        # 返回候选题目（已做题和 global_seen_ids 过滤在 SQL 端完成）
-        db.execute.return_value = _make_execute_result(all=[(100, 3), (101, 2)])
+        # 新实现使用 batch SELECT ... WHERE kp_id IN (...) 预取全部候选，内存中去重和排序
+        # 返回候选行包含 knowledge_point_id, question_id, difficulty
+        class _FakeRow:
+            def __init__(self, knowledge_point_id, id, difficulty):
+                self.knowledge_point_id = knowledge_point_id
+                self.id = id
+                self.difficulty = difficulty
+
+        db.execute.return_value = _make_execute_result(all=[
+            _FakeRow(20, 100, 3),
+            _FakeRow(20, 101, 2),
+        ])
 
         result = _run(attach_recommended_questions_to_path(
             db, user_id=1, subject="exam408-ds", nodes=nodes, questions_per_node=2,

@@ -192,9 +192,9 @@ async def attach_recommended_questions_to_path(
     - 每个节点挂 recommended_question_ids
     - 总题目去重
     """
-    from app.services import vector_retrieval_service
-
-    kp_ids = [n["knowledge_point_id"] for n in nodes]
+    kp_ids = [n.get("knowledge_point_id") for n in nodes if n.get("knowledge_point_id")]
+    if not kp_ids:
+        return nodes
     need = questions_per_node * 3
 
     # Build answered subquery once
@@ -205,7 +205,8 @@ async def attach_recommended_questions_to_path(
     ) if exclude_answered else None
 
     # ── Batch load all candidate questions for all KPs in one query ──
-    # Returns (knowledge_point_id, question_id, difficulty) tuples
+    # Returns (knowledge_point_id, question_id, difficulty) tuples.
+    # Limit to need × nodes to avoid unbounded result sets.
     conditions = [
         QuestionKnowledgePoint.knowledge_point_id.in_(kp_ids),
         Question.is_active,
@@ -224,6 +225,7 @@ async def attach_recommended_questions_to_path(
             QuestionKnowledgePoint.question_id == Question.id,
         )
         .where(and_(*conditions))
+        .limit(need * max(1, len(kp_ids)))
     )
     # Group candidates by kp_id: {kp_id: [(q_id, difficulty), ...]}
     candidates_by_kp: dict[int, list[tuple[int, float | None]]] = {}
@@ -236,17 +238,22 @@ async def attach_recommended_questions_to_path(
     global_seen_ids: set[int] = set()
     import random
 
-    for node in nodes:
+    # Shuffle node order so first-enumerated nodes don't get unfair priority
+    shuffled_nodes = list(nodes)
+    random.shuffle(shuffled_nodes)
+
+    for node in shuffled_nodes:
         kp_id = node["knowledge_point_id"]
         recommended: list[int] = []
 
         # Get pre-fetched candidates for this KP (copy so mutation is per-node)
         kp_candidates = list(candidates_by_kp.get(kp_id, []))
 
-        # Shuffle to get random sample (avoids ORDER BY random() on DB side)
-        random.shuffle(kp_candidates)
+        # Sort by difficulty closeness to user mastery (docstring: "优先 difficulty 接近用户水平")
+        mastery = node.get("mastery_score") or 0.5
+        kp_candidates.sort(key=lambda x: abs((x[1] or 0.5) - mastery))
 
-        for q_id, q_diff in kp_candidates:
+        for q_id, _q_diff in kp_candidates:
             if q_id in global_seen_ids:
                 continue
             recommended.append(q_id)
@@ -260,6 +267,8 @@ async def attach_recommended_questions_to_path(
         # 2. Vector recall fallback if still short
         if len(recommended) < questions_per_node:
             try:
+                from app.services import vector_retrieval_service
+
                 recalls = await vector_retrieval_service.vector_recall_by_text(
                     db=db,
                     user_id=user_id,
@@ -395,27 +404,6 @@ async def _batch_get_mastery(
     }
 
 
-async def _get_mastery_for_kp(
-    db: AsyncSession,
-    user_id: int,
-    knowledge_point_id: int,
-) -> dict:
-    """获取用户对某知识点的掌握度。"""
-    result = await db.execute(
-        select(UserKnowledgeState).where(
-            UserKnowledgeState.user_id == user_id,
-            UserKnowledgeState.knowledge_point_id == knowledge_point_id,
-        )
-    )
-    state = result.scalar_one_or_none()
-    if state:
-        return {
-            "mastery_score": state.mastery_score,
-            "weakness_level": state.weakness_level,
-        }
-    return {"mastery_score": None, "weakness_level": "unknown"}
-
-
 def _build_node(kp_data: dict, path_role: str, priority: float) -> dict:
     """构建一个路径节点。"""
     return {
@@ -446,7 +434,6 @@ def _compute_priorities(nodes: list[dict], start_kp: dict):
     - next 排在起点之后
     - related 只作补充
     """
-    start_kp.get("mastery_score") or 0.5
 
     for node in nodes:
         kp_id = node["knowledge_point_id"]

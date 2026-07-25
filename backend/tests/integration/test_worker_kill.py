@@ -32,7 +32,7 @@ def _redis_url() -> str:
 
 @pytest.fixture
 def test_suffix() -> str:
-    return f"killtest_{int(time.time())}"
+    return f"killtest_{time.time_ns()}"
 
 
 @pytest.mark.asyncio
