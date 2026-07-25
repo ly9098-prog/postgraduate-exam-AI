@@ -797,13 +797,15 @@ class DurableTaskQueue:
         if isinstance(task_or_id, Task):
             task_id = task_or_id.task_id
             token = task_or_id.owner_token
+            task_type = task_or_id.task_type
         elif isinstance(task_or_id, tuple):
-            task_id, _, token = task_or_id
+            task_id, tt_hint, token = task_or_id
+            task_type = task_type or tt_hint
         else:
             task_id = task_or_id
             token = ""
 
-        if not task_id:
+        if not task_id or not task_type:
             return False
 
         if self._redis_enabled:

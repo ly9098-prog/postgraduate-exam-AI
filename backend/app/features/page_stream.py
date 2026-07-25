@@ -26,6 +26,7 @@ import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
+from app.core.deployment_profile import DeploymentProfile
 from app.features.input_gateway import InputDocument
 
 logger = logging.getLogger(__name__)
@@ -194,7 +195,7 @@ class PageStream:
     @classmethod
     def for_profile(
         cls,
-        profile: str = "local_import",
+        profile: DeploymentProfile = DeploymentProfile.LOCAL_IMPORT,
         *,
         renderer: PageRenderer | None = None,
         mode: str = "",
@@ -204,7 +205,7 @@ class PageStream:
         """Create a PageStream with defaults matching the deployment profile.
 
         Args:
-            profile: Deployment profile ("local_import" or "cloud_api").
+            profile: Deployment profile enum.
             renderer: Optional PageRenderer override.
             mode: Optional mode override.
             window_size: Override profile default window size.
@@ -213,7 +214,7 @@ class PageStream:
         Returns:
             Configured PageStream.
         """
-        if profile == "cloud_api":
+        if profile == DeploymentProfile.CLOUD_API:
             ws = window_size or 1
             ov = overlap or 0
         else:
