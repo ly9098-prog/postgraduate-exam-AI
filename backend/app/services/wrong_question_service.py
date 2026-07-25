@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from sqlalchemy import Float, String, and_, case, cast, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.time_utils import shanghai_today_boundaries, utcnow
 from app.models.admin import Subject
@@ -304,6 +305,7 @@ async def list_wrong_enriched(
             mastery_pct_sub.label("mastery_pct"),
         )
         .outerjoin(Question, WrongQuestion.question_id == Question.id)
+        .options(selectinload(Question.subject_ref))
         .where(and_(*conditions))
     )
 
