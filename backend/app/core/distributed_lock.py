@@ -24,6 +24,7 @@ import logging
 import os
 import time
 import uuid
+from contextlib import asynccontextmanager
 
 import redis.asyncio as redis_async
 import redis.exceptions as redis_exc
@@ -290,6 +291,7 @@ class DistributedLock:
             except Exception as e:
                 logger.warning("distlock %s: renew_loop error: %s", self._name, e)
 
+    @asynccontextmanager
     async def acquire_and_renew(
         self,
         ttl: int = 60,
