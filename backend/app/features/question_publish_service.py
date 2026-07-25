@@ -101,7 +101,7 @@ async def _find_duplicate_by_stem_similarity(
     result = await db.execute(
         select(Question).where(
             Question.subject_id == subject_id,
-            Question.is_active == True,
+            Question.is_active,
         )
     )
     for q in result.scalars().all():

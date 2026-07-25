@@ -160,7 +160,6 @@ def _extract_entries(text: str, mode: str) -> list[dict]:
 
 def _normalize_single_answer(answer: str, question_type: str | None) -> tuple[str | None, list[str]]:
     """标准化单个答案（复用 Phase 1 逻辑的简化版）。"""
-    errors: list[str] = []
     normalized = answer.strip().upper()
     if not normalized:
         return None, ["答案为空"]

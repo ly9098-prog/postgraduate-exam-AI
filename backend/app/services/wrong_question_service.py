@@ -61,7 +61,7 @@ async def list_wrong(
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[WrongQuestion], int]:
-    conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active == True]
+    conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
     if error_type:
         conditions.append(WrongQuestion.error_type == error_type)
 
@@ -102,7 +102,7 @@ async def get_by_id(db: AsyncSession, user_id: int, wq_id: int) -> WrongQuestion
         select(WrongQuestion).where(
             WrongQuestion.id == wq_id,
             WrongQuestion.user_id == user_id,
-            WrongQuestion.is_active == True,
+            WrongQuestion.is_active,
         )
     )
     return result.scalar_one_or_none()
@@ -122,7 +122,7 @@ async def update_wrong(
 
 
 async def get_stats(db: AsyncSession, user_id: int) -> dict:
-    conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active == True]
+    conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
     total_q = select(func.count(WrongQuestion.id)).where(and_(*conditions))
     total = (await db.execute(total_q)).scalar()
 
@@ -146,22 +146,22 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
 
     unmastered_q = select(func.count(WrongQuestion.id)).where(
         WrongQuestion.user_id == user_id,
-        WrongQuestion.is_active == True,
-        WrongQuestion.mastered == False,
+        WrongQuestion.is_active,
+        not WrongQuestion.mastered,
     )
     unmastered = (await db.execute(unmastered_q)).scalar() or 0
 
     mastered_q = select(func.count(WrongQuestion.id)).where(
         WrongQuestion.user_id == user_id,
-        WrongQuestion.is_active == True,
-        WrongQuestion.mastered == True,
+        WrongQuestion.is_active,
+        WrongQuestion.mastered,
     )
     mastered = (await db.execute(mastered_q)).scalar() or 0
 
     hf_q = select(func.count(WrongQuestion.id)).where(
         WrongQuestion.user_id == user_id,
-        WrongQuestion.is_active == True,
-        WrongQuestion.mastered == False,
+        WrongQuestion.is_active,
+        not WrongQuestion.mastered,
         WrongQuestion.review_count >= 3,
     )
     high_frequency_count = (await db.execute(hf_q)).scalar() or 0
@@ -171,12 +171,12 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
     today_due_q = await db.execute(
         select(func.count(func.distinct(ReviewSchedule.question_id))).where(
             ReviewSchedule.user_id == user_id,
-            ReviewSchedule.mastered == False,
+            not ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= today_end,
             ReviewSchedule.question_id.in_(
                 select(WrongQuestion.question_id).where(
                     WrongQuestion.user_id == user_id,
-                    WrongQuestion.is_active == True,
+                    WrongQuestion.is_active,
                 )
             ),
         )
@@ -245,7 +245,7 @@ async def list_wrong_enriched(
 ) -> tuple[list[dict], int]:
     """Enhanced WQ list avoiding N+1 via correlated scalar subqueries."""
 
-    conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active == True]
+    conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
     if error_type:
         conditions.append(WrongQuestion.error_type == error_type)
 
@@ -262,7 +262,7 @@ async def list_wrong_enriched(
         select(ReviewSchedule.next_review_at)
         .where(ReviewSchedule.question_id == WrongQuestion.question_id)
         .where(ReviewSchedule.user_id == WrongQuestion.user_id)
-        .where(ReviewSchedule.mastered == False)
+        .where(not ReviewSchedule.mastered)
         .correlate(WrongQuestion)
         .order_by(ReviewSchedule.next_review_at.asc().nulls_last())
         .limit(1)
@@ -525,7 +525,7 @@ async def get_task_flow(
     mastered: list[dict] = []
 
     for item in all_items:
-        wq_id = item["id"]
+        item["id"]
 
         if item["next_review_at"] and item["next_review_at"] <= today_end and not item["is_mastered"]:
             today_due.append(item)

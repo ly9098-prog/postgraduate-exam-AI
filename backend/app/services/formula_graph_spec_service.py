@@ -595,7 +595,6 @@ async def _process_batch(job_id: str, cards: list[FormulaCard], admin_id: int) -
                         continue
 
                     retries = 0
-                    last_error = None
                     while retries <= MAX_RETRIES:
                         try:
                             preview = await generate_preview(
@@ -612,7 +611,7 @@ async def _process_batch(job_id: str, cards: list[FormulaCard], admin_id: int) -
                             break
                         except ValueError as e:
                             retries += 1
-                            last_error = str(e)
+                            str(e)
                             if retries > MAX_RETRIES:
                                 raise
                             await asyncio.sleep(1)

@@ -98,7 +98,7 @@ def _render_sync(
 
     start_idx = max(0, (page_start or 1) - 1)
     end_idx = min(total_pages, page_end or total_pages)
-    page_count = end_idx - start_idx
+    end_idx - start_idx
 
     temp_dir: str | None = None
     result = PdfRenderResult(total_pages=total_pages)

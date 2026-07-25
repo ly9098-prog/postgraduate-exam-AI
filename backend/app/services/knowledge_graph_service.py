@@ -50,7 +50,7 @@ async def create_knowledge_edge(
     kp_result = await db.execute(
         select(KnowledgePoint).where(
             KnowledgePoint.id.in_([source_id, target_id]),
-            KnowledgePoint.is_active == True,
+            KnowledgePoint.is_active,
         )
     )
     kps = {kp.id: kp for kp in kp_result.scalars().all()}
@@ -209,7 +209,7 @@ async def _get_prerequisite_sources(
         .where(
             KnowledgeEdge.target_knowledge_point_id == target_kp_id,
             KnowledgeEdge.relation_type == "prerequisite",
-            KnowledgeEdge.is_active == True,
+            KnowledgeEdge.is_active,
         )
         .order_by(KnowledgeEdge.weight.desc())
     )
@@ -247,7 +247,7 @@ async def get_next_nodes(
         .where(
             KnowledgeEdge.source_knowledge_point_id == knowledge_point_id,
             KnowledgeEdge.relation_type == "next",
-            KnowledgeEdge.is_active == True,
+            KnowledgeEdge.is_active,
         )
         .order_by(KnowledgeEdge.weight.desc())
         .limit(10)
@@ -284,7 +284,7 @@ async def get_related_nodes(
     result = await db.execute(
         select(KnowledgeEdge)
         .where(
-            KnowledgeEdge.is_active == True,
+            KnowledgeEdge.is_active,
             KnowledgeEdge.relation_type == "related",
             or_(
                 KnowledgeEdge.source_knowledge_point_id == knowledge_point_id,
@@ -362,7 +362,7 @@ async def infer_simple_edges_from_names(
         select(KnowledgePoint)
         .where(
             KnowledgePoint.subject == subject,
-            KnowledgePoint.is_active == True,
+            KnowledgePoint.is_active,
         )
         .order_by(KnowledgePoint.id)
         .limit(limit)
@@ -456,7 +456,7 @@ async def get_edge_status(
     active_result = await db.execute(
         select(func.count(KnowledgeEdge.id)).where(
             KnowledgeEdge.subject == subject,
-            KnowledgeEdge.is_active == True,
+            KnowledgeEdge.is_active,
         )
     )
     active = active_result.scalar() or 0

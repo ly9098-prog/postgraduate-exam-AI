@@ -42,7 +42,7 @@ async def build_user_knowledge_path(
         kp_result = await db.execute(
             select(KnowledgePoint).where(
                 KnowledgePoint.id == start_knowledge_point_id,
-                KnowledgePoint.is_active == True,
+                KnowledgePoint.is_active,
             )
         )
         start_kp_model = kp_result.scalar_one_or_none()
@@ -68,7 +68,7 @@ async def build_user_knowledge_path(
                 select(func.count(KnowledgePoint.id))
                 .where(
                     KnowledgePoint.subject == subject,
-                    KnowledgePoint.is_active == True,
+                    KnowledgePoint.is_active,
                 )
             )
             total = count_result.scalar() or 0
@@ -81,7 +81,7 @@ async def build_user_knowledge_path(
                     select(KnowledgePoint)
                     .where(
                         KnowledgePoint.subject == subject,
-                        KnowledgePoint.is_active == True,
+                        KnowledgePoint.is_active,
                     )
                     .offset(offset)
                     .limit(1)
@@ -208,7 +208,7 @@ async def attach_recommended_questions_to_path(
         # 1. 从 question_knowledge_points 找题（random offset avoids ORDER BY random())
         conditions = [
             QuestionKnowledgePoint.knowledge_point_id == kp_id,
-            Question.is_active == True,
+            Question.is_active,
         ]
         if answered_sub is not None:
             conditions.append(Question.id.notin_(answered_sub))
@@ -444,7 +444,7 @@ def _compute_priorities(nodes: list[dict], start_kp: dict):
     - next 排在起点之后
     - related 只作补充
     """
-    start_mastery = start_kp.get("mastery_score") or 0.5
+    start_kp.get("mastery_score") or 0.5
 
     for node in nodes:
         kp_id = node["knowledge_point_id"]

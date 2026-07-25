@@ -82,7 +82,7 @@ async def create_knowledge_edge(
     if not source_kp:
         raise HTTPException(status_code=400, detail="source_knowledge_point_id 不存在")
 
-    result = await knowledge_graph_service.create_knowledge_edge(
+    await knowledge_graph_service.create_knowledge_edge(
         db=db,
         subject=source_kp.subject,
         source_id=data.source_knowledge_point_id,

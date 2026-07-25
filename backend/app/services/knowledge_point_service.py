@@ -144,7 +144,7 @@ async def backfill_question_knowledge_points(
 
     subject 支持精确匹配或前缀匹配（如 exam408 → exam408、exam408-ds）。
     """
-    conditions = [Question.is_active == True]
+    conditions = [Question.is_active]
     if subject:
         ids = await resolve_subject_ids(db, subject)
         conditions.append(Question.subject_id.in_(ids))
@@ -198,7 +198,7 @@ async def get_knowledge_status(db: AsyncSession) -> dict:
     # 总活跃题目数
     total_questions = (
         await db.execute(
-            select(func.count(Question.id)).where(Question.is_active == True)
+            select(func.count(Question.id)).where(Question.is_active)
         )
     ).scalar() or 0
 

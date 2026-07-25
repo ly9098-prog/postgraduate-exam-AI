@@ -519,7 +519,7 @@ def _check_artifact(
     failures: list[dict] = []
 
     stage_diffs = (diagnostics or {}).get("stage_diffs") or {}
-    ai_repair_stats = stage_diffs.get("ai_repair_stats") or {}
+    stage_diffs.get("ai_repair_stats") or {}
 
     # Artifact restore failure indicators: empty results after resume
     # Look for patterns in diagnostics that suggest artifact issues

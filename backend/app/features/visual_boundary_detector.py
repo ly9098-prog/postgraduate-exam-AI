@@ -149,7 +149,7 @@ def detect_visual_boundaries(normalized_blocks: list[dict]) -> list[dict]:
     for block in normalized_blocks:
         boxes = block.get("boxes")
         page_w = block.get("page_width", 0)
-        page_h = block.get("page_height", 0)
+        block.get("page_height", 0)
         text = block.get("normalized_text") or block.get("text", "")
 
         if not boxes or len(boxes) < 4 or not page_w:

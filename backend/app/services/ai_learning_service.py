@@ -151,7 +151,7 @@ async def ai_explain(
     """AI 题目讲解。"""
 
     q = await db.execute(
-        select(Question).where(Question.id == question_id, Question.is_active == True)
+        select(Question).where(Question.id == question_id, Question.is_active)
     )
     q = q.scalar_one_or_none()
     if not q:
@@ -233,7 +233,7 @@ async def ai_analyze_mistake(
     """AI 错因分析。"""
 
     q = await db.execute(
-        select(Question).where(Question.id == question_id, Question.is_active == True)
+        select(Question).where(Question.id == question_id, Question.is_active)
     )
     q = q.scalar_one_or_none()
     if not q:
@@ -341,7 +341,7 @@ async def recommend_similar_questions(
     # ── 规则推荐（原有逻辑） ──
 
     q = await db.execute(
-        select(Question).where(Question.id == question_id, Question.is_active == True)
+        select(Question).where(Question.id == question_id, Question.is_active)
     )
     q = q.scalar_one_or_none()
     if not q:
@@ -360,7 +360,7 @@ async def recommend_similar_questions(
     candidates_result = await db.execute(
         select(Question).where(
             Question.subject_id.in_(await resolve_subject_ids(db, q.subject_ref.code if q.subject_ref else "")),
-            Question.is_active == True,
+            Question.is_active,
             Question.review_status == "approved",
         )
     )

@@ -449,11 +449,10 @@ async def backfill_question_embeddings(
         }
 
     limit = min(max(1, limit), 1000)
-    model = _vs.emb.model
 
     # 构建查询条件
     conditions: list = [
-        Question.is_active == True,
+        Question.is_active,
         Question.review_status == "approved",
         Question.id > after_id,
     ]
@@ -655,7 +654,7 @@ async def search_similar_questions(
 
     # 获取源题
     source = await db.execute(
-        select(Question).where(Question.id == question_id, Question.is_active == True)
+        select(Question).where(Question.id == question_id, Question.is_active)
     )
     source_q = source.scalar_one_or_none()
     if not source_q:
@@ -826,7 +825,7 @@ async def search_similar_questions(
     # 二次排序
     scored = []
     for row in candidates:
-        cid, c_subject, c_type, c_hash, similarity = row[0], row[1], row[2], row[3], row[4]
+        cid, c_subject, c_type, _c_hash, similarity = row[0], row[1], row[2], row[3], row[4]
         q = questions_map.get(cid)
         if not q:
             continue
@@ -1076,7 +1075,7 @@ async def get_embedding_status(db: AsyncSession) -> dict:
     """
     dialect_name = db.bind.dialect.name if db.bind else "unknown"
     mode = resolve_vector_mode()
-    decision = decide_vector_access(infra_available=False)  # 仅获取 mode 信息
+    decide_vector_access(infra_available=False)  # 仅获取 mode 信息
 
     info: dict[str, Any] = {
         "configured": _vs.vec.enabled,
@@ -1130,7 +1129,7 @@ async def get_embedding_status(db: AsyncSession) -> dict:
 
             # 检查实际维度
             try:
-                dim_result = await db.execute(text(
+                await db.execute(text(
                     "SELECT character_maximum_length "
                     "FROM information_schema.columns "
                     "WHERE table_name = 'question_embeddings' AND column_name = 'embedding'"
@@ -1184,7 +1183,7 @@ async def get_embedding_status(db: AsyncSession) -> dict:
     try:
         result = await db.execute(
             select(func.count(Question.id)).where(
-                Question.is_active == True,
+                Question.is_active,
                 Question.review_status == "approved",
             )
         )

@@ -70,7 +70,7 @@ async def verify_credential(
     result = await db.execute(
         select(WorkerCredential).where(
             WorkerCredential.worker_id == worker_id,
-            WorkerCredential.is_active == True,
+            WorkerCredential.is_active,
             or_(
                 WorkerCredential.expires_at.is_(None),
                 WorkerCredential.expires_at > now,
@@ -116,7 +116,7 @@ async def list_credentials(
     if worker_id is not None:
         query = query.where(WorkerCredential.worker_id == worker_id)
     if active_only:
-        query = query.where(WorkerCredential.is_active == True)
+        query = query.where(WorkerCredential.is_active)
     query = query.order_by(WorkerCredential.created_at.desc())
 
     result = await db.execute(query)
