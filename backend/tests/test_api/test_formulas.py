@@ -23,6 +23,10 @@ from app.models.user import User
 client = TestClient(app)
 
 
+def _mock_user():
+    return User(id=1, openid="test", session_key="test", nickname="test")
+
+
 # ── Helpers ──
 
 
@@ -145,7 +149,11 @@ def _tag(**kw):
 
 
 class TestCatalog:
+    def _setup(self):
+        app.dependency_overrides[get_current_user] = lambda: _mock_user()
+
     def test_get_catalog(self):
+        self._setup()
         cat = _category()
         app.dependency_overrides[get_db] = _db_lambda(cat)
         try:
@@ -158,6 +166,7 @@ class TestCatalog:
         assert data["items"][0]["id"] == 1
 
     def test_get_catalog_empty(self):
+        self._setup()
         app.dependency_overrides[get_db] = _db_lambda()
         try:
             resp = client.get("/api/v1/formulas/catalog")
@@ -168,6 +177,7 @@ class TestCatalog:
 
     def test_catalog_nested_tree(self):
         """Subjects should have children (chapters)."""
+        self._setup()
         subject = _category(id=1, parent_id=None, code="math2_high_math", node_type="subject")
         chapter = _category(id=2, parent_id=1, code="chapter1", node_type="chapter")
         app.dependency_overrides[get_db] = _db_lambda([subject, chapter])
@@ -183,6 +193,7 @@ class TestCatalog:
         assert items[0]["children"][0]["id"] == 2
 
     def test_catalog_sorted_by_sort_order(self):
+        self._setup()
         cat1 = _category(id=1, parent_id=None, sort_order=2, code="b")
         cat2 = _category(id=2, parent_id=None, sort_order=1, code="a")
         app.dependency_overrides[get_db] = _db_lambda([cat1, cat2])
