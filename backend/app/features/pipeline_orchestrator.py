@@ -5427,8 +5427,9 @@ class ImportPipeline:
             if chunk_page_images:
                 page_images = chunk_page_images
 
-        await ckpt.mark_chunk_running(db, self.pipeline_id, chunk_index)
         from app.features import pipeline_checkpoint as ckpt
+
+        await ckpt.mark_chunk_running(db, self.pipeline_id, chunk_index)
         await ckpt.invalidate_progress_cache(self.pipeline_id)
 
         _chunk_logger = logging.getLogger("app.pipeline")
