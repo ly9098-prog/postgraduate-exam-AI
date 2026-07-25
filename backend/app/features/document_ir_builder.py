@@ -34,7 +34,6 @@ def blocks_to_document_ir(
     try:
         from app.core.document_ir import (
             BBox,
-            DocumentIR,
             LineIR,
             PageIR,
             Provenance,

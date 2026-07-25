@@ -795,14 +795,19 @@ async def get_dashboard_insights(
         return val
 
     idx = 0
-    today_quality = safe_get(idx); idx += 1
-    weekly_consistency = safe_get(idx); idx += 1
+    today_quality = safe_get(idx)
+    idx += 1
+    weekly_consistency = safe_get(idx)
+    idx += 1
     weak_topics = safe_get(idx) if include_topics else None
     if include_topics:
         idx += 1
-    repeat_wrong = safe_get(idx); idx += 1
-    speed_accuracy = safe_get(idx); idx += 1
-    new_vs_review = safe_get(idx); idx += 1
+    repeat_wrong = safe_get(idx)
+    idx += 1
+    speed_accuracy = safe_get(idx)
+    idx += 1
+    new_vs_review = safe_get(idx)
+    idx += 1
     input_output = safe_get(idx) if include_subjects else None
 
     # Get overview for action plan (due_review_count)

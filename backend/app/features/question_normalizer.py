@@ -31,7 +31,6 @@ from app.features.question_type import (
     QT_FILL_BLANK,
     QT_MULTI_BLANK_CHOICE,
     QT_MULTIPLE_CHOICE,
-    QT_SINGLE_CHOICE,
     QT_SUBJECTIVE,
     QT_TRUE_FALSE,
 )
