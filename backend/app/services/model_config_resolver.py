@@ -26,7 +26,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,7 +46,7 @@ except ImportError:  # pragma: no cover
 # Capability constants
 # ---------------------------------------------------------------------------
 
-class AICapability(str, Enum):
+class AICapability(StrEnum):
     """AI capability identifiers for model config resolution."""
     OCR_LIGHTWEIGHT = "ocr_lightweight"
     OCR_VL = "ocr_vl"
@@ -62,7 +62,7 @@ class AICapability(str, Enum):
 # Stable error codes
 # ---------------------------------------------------------------------------
 
-class AIConfigErrorCode(str, Enum):
+class AIConfigErrorCode(StrEnum):
     """Stable error codes for AI configuration failures."""
     AI_CONFIG_NOT_FOUND = "AI_CONFIG_NOT_FOUND"
     AI_CONFIG_DISABLED = "AI_CONFIG_DISABLED"

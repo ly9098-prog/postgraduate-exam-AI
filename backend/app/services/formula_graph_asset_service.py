@@ -5,7 +5,7 @@ import logging
 import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import UTC, datetime
 from io import BytesIO
 
 from PIL import Image, ImageOps
@@ -308,7 +308,7 @@ async def upload_graph_asset(
         existing.height = height
         existing.file_size = len(image_bytes)
         existing.checksum = checksum
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = datetime.now(UTC)
         db.add(existing)
         await db.flush()
 

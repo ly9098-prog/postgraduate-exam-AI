@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 
-class CandidateDecision(str, enum.Enum):
+class CandidateDecision(enum.StrEnum):
     """Validator decision for a single adapter candidate.
 
     ``ACCEPT`` — candidate passed all checks, use it.

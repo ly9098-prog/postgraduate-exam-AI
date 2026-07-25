@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.features.question_type import QT_SINGLE_CHOICE
 
@@ -58,8 +58,7 @@ class AiLogItem(BaseModel):
     error_message: str | None = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AiLogListResponse(BaseModel):

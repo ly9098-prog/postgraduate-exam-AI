@@ -6,10 +6,10 @@
 - EXAM: 试卷/真题模式（题目+答案+解析）
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class ImportMode(str, Enum):
+class ImportMode(StrEnum):
     AUTO = "auto"
     BOOK = "book"
     EXAM = "exam"

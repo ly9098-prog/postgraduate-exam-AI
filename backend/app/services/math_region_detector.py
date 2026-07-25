@@ -5,7 +5,7 @@
 import logging
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 import fitz
 
@@ -47,7 +47,7 @@ _RE_DISPLAY_MATH = re.compile(r"\$\$([\s\S]*?)\$\$")
 
 # ── 枚举 / 数据类 ─────────────────────────────────────────────────────────────
 
-class MathRegionType(str, Enum):
+class MathRegionType(StrEnum):
     INLINE = "inline"
     DISPLAY = "display"
     MIXED = "mixed"

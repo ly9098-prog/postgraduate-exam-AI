@@ -17,7 +17,7 @@ import json
 import logging
 import re
 import secrets
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -63,7 +63,7 @@ _NUMBERED_ANSWER_PATTERN = re.compile(
 )
 
 
-class ImagePreviewMode(str, Enum):
+class ImagePreviewMode(StrEnum):
     """图片导入模式。"""
     ANSWER_ONLY = "answer_only"
     ANSWER_ANALYSIS = "answer_analysis"

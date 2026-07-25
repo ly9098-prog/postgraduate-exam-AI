@@ -28,7 +28,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ _LEASE_DURATION = 60
 _RETRY_BACKOFF_BASE = 2.0
 
 
-class OutboxStatus(str, Enum):
+class OutboxStatus(StrEnum):
     PENDING = "pending"
     LEASED = "leased"
     PROCESSING = "processing"

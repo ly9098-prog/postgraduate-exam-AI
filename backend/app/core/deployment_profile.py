@@ -7,12 +7,12 @@ Profile is frozen at pipeline creation time and cannot change mid-pipeline.
 from __future__ import annotations
 
 import os
-from enum import Enum
+from enum import StrEnum
 
 from app.core.config import settings
 
 
-class DeploymentProfile(str, Enum):
+class DeploymentProfile(StrEnum):
     LOCAL_IMPORT = "local_import"
     CLOUD_API = "cloud_api"
 

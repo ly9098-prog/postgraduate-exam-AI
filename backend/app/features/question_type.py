@@ -27,7 +27,7 @@ from typing import Any
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-class QuestionType(str, enum.Enum):
+class QuestionType(enum.StrEnum):
     """标准题型枚举。
 
     成员值是数据库存储的规范 code。

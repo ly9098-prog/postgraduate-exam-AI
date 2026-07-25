@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.features.question_type import QT_SINGLE_CHOICE, validate_question_type
 
@@ -43,5 +43,4 @@ class QuestionResponse(BaseModel):
     year: int | None = None
     image_url: list | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

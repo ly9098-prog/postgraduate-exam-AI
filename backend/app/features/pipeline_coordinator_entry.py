@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 _PIPELINE_COORDINATOR_MODE = os.environ.get("PIPELINE_COORDINATOR_MODE", "shadow")
 
 
-class PipelineCoordinatorMode(str, Enum):
+class PipelineCoordinatorMode(StrEnum):
     LEGACY = "legacy"
     SHADOW = "shadow"
     COORDINATOR = "coordinator"
