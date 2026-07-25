@@ -781,6 +781,8 @@ async def _run_single_image(
 
         pipeline_start = _now()
         try:
+            from app.features.pipeline_coordinator_entry import run_pipeline
+
             result = await run_pipeline(
                 file_content=cleaned_text.encode("utf-8"),
                 file_path=_tmp_img_path,
