@@ -892,6 +892,35 @@ async def metrics_endpoint():
     except Exception:
         _append("worker_draining 0")
 
+    # ── Distributed lock metrics (scheduler role) ──
+    try:
+        from app.services.pomodoro_scheduler_service import pomodoro_scheduler
+        _lock = getattr(pomodoro_scheduler, "_lock", None)
+        if _lock is not None:
+            _append(f'distlock_acquired_total{{name="pomodoro:tick"}} {_lock.acquired}')
+            _append(f'distlock_skipped_total{{name="pomodoro:tick"}} {_lock.skipped}')
+            _append(f'distlock_failed_total{{name="pomodoro:tick"}} {_lock.failed}')
+            _append(f'distlock_duration_ms_total{{name="pomodoro:tick"}} {_lock.duration_ms:.0f}')
+    except Exception:
+        _append(f'distlock_acquired_total{{name="pomodoro:tick"}} 0')
+        _append(f'distlock_skipped_total{{name="pomodoro:tick"}} 0')
+        _append(f'distlock_failed_total{{name="pomodoro:tick"}} 0')
+        _append(f'distlock_duration_ms_total{{name="pomodoro:tick"}} 0')
+
+    try:
+        from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
+        _lock = getattr(audit_log_cleanup_scheduler, "_lock", None)
+        if _lock is not None:
+            _append(f'distlock_acquired_total{{name="audit:cleanup"}} {_lock.acquired}')
+            _append(f'distlock_skipped_total{{name="audit:cleanup"}} {_lock.skipped}')
+            _append(f'distlock_failed_total{{name="audit:cleanup"}} {_lock.failed}')
+            _append(f'distlock_duration_ms_total{{name="audit:cleanup"}} {_lock.duration_ms:.0f}')
+    except Exception:
+        _append(f'distlock_acquired_total{{name="audit:cleanup"}} 0')
+        _append(f'distlock_skipped_total{{name="audit:cleanup"}} 0')
+        _append(f'distlock_failed_total{{name="audit:cleanup"}} 0')
+        _append(f'distlock_duration_ms_total{{name="audit:cleanup"}} 0')
+
     # Prometheus text format requires trailing newline
     lines.append("")
     return Response(content="\n".join(lines), media_type="text/plain; version=0.0.4")
