@@ -18,6 +18,7 @@ import logging
 import time
 from typing import Any
 
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 from app.core.module_result import ModuleError, ModuleResult
 from app.core.resource_guard import ResourceGuard
 from app.features.coordinators import (
@@ -64,14 +65,21 @@ class CoordinatorPipeline:
         self._results: list[dict[str, Any]] = []
 
     @property
-    def profile(self) -> str:
+    def profile(self) -> DeploymentProfile:
         if self._context and hasattr(self._context, "deployment_profile"):
-            return self._context.deployment_profile
-        return "local_import"
+            val = self._context.deployment_profile
+            if isinstance(val, DeploymentProfile):
+                return val
+            if isinstance(val, str):
+                try:
+                    return DeploymentProfile(val)
+                except ValueError:
+                    pass
+        return detect_deployment_profile()
 
     @property
     def is_cloud(self) -> bool:
-        return self.profile == "cloud_api"
+        return self.profile == DeploymentProfile.CLOUD_API
 
     async def run_input_stage(
         self,

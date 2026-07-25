@@ -189,13 +189,10 @@ async def lifespan(app: FastAPI):
         _event_loop_lag_monitor(), name="event-loop-lag-monitor"
     )
 
-    # ── Role: web — HTTP + enqueue + token cleanup + staging cleanup ──
+    # ── Role: web — HTTP + enqueue ──
+    # Periodic cleanup tasks (token, staging) belong exclusively to the
+    # scheduler role. The web role only handles request serving and enqueue.
     if role in ("web", "all"):
-        cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
-        _staging_cleanup_task = asyncio.create_task(
-            _periodic_staging_cleanup(), name="staging-cleanup"
-        )
-
         # Initialize OCR Gateway (needed for API enqueue endpoints)
         try:
             from app.core.ocr_runtime_config import get_runtime_config
@@ -263,9 +260,11 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Audit log cleanup scheduler start failed (non-fatal): %s", e)
 
-        # Scheduler also needs token cleanup if web role isn't running
-        if role == "scheduler" and cleanup_task is None:
-            cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
+        # Periodic cleanup tasks belong in the scheduler role only
+        cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
+        _staging_cleanup_task = asyncio.create_task(
+            _periodic_staging_cleanup(), name="staging-cleanup"
+        )
 
     # ── Yield — application serves requests ──
     try:

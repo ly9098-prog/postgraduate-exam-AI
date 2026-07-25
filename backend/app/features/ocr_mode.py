@@ -19,6 +19,7 @@ import logging
 from typing import Literal
 
 from app.core.config import settings
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,13 @@ def resolve_ocr_mode(mode: str | None) -> Literal["local", "api"]:
     Returns a Literal["local", "api"].
     Raises ValueError if the mode is not recognised.
     """
-    resolved = (mode or "local").strip().lower()
+    resolved = (mode or "").strip().lower()
+    if not resolved:
+        # cloud_api defaults to "api"; local_import defaults to "local"
+        if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
+            resolved = "api"
+        else:
+            resolved = "local"
     if resolved not in VALID_OCR_MODES:
         raise ValueError(
             f"Invalid OCR mode: {mode!r}. Must be one of: {', '.join(sorted(VALID_OCR_MODES))}"
@@ -50,6 +57,9 @@ def validate_ocr_mode_dependencies(mode: str) -> None:
                      is missing. Does NOT return a value — raises on first failure.
     """
     if mode == "local":
+        # Cloud API mode must never use local OCR
+        if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
+            raise RuntimeError("cloud_api 环境不允许使用本地 OCR")
         if not settings.OCR_ENABLED:
             raise RuntimeError(
                 "图片本地 OCR 功能未启用：请设置环境变量 OCR_ENABLED=true 或使用 ocr_mode=api"

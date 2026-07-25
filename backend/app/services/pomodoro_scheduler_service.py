@@ -11,14 +11,12 @@
 
 容错：
 - 进程重启后第一次 tick 自然吸收停机期间漏发的提醒。
-- Redis 锁防止多 worker 同时扫描；Redis 不可用时降级为单进程串行。
+- Redis 锁防止多 worker 同时扫描；Redis 不可用时无竞争（严格锁，不降级）。
 - PostgreSQL 用 FOR UPDATE SKIP LOCKED 行级互斥；SQLite 自动降级为普通 select（开发环境）。
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
 import time
 from datetime import datetime
 from typing import Any
@@ -28,16 +26,15 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import joinedload
 
-from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import async_session
+from app.core.distributed_lock import DistributedLock
 from app.core.time_utils import utcnow
 from app.models.pomodoro import PomodoroSession
 from app.services import wechat_notify_service as wechat
 
 logger = logging.getLogger("2240ai.pomodoro_scheduler")
 
-_TICK_LOCK_KEY = "pomodoro:scheduler:tick"
 _TICK_LOCK_TTL = 70  # 大于扫描间隔，防止重叠
 
 _SUBJECT_LABELS = {
@@ -55,6 +52,7 @@ class PomodoroScheduler:
     def __init__(self) -> None:
         self._scheduler: AsyncIOScheduler | None = None
         self._running = False
+        self._lock = DistributedLock("pomodoro:tick", ttl=_TICK_LOCK_TTL)
 
     async def start(self) -> None:
         if self._running:
@@ -93,37 +91,12 @@ class PomodoroScheduler:
             logger.exception("番茄钟调度器 tick 失败")
 
     async def tick(self) -> None:
-        # Redis 锁：多 worker / 多实例下同一时刻只允许一个 tick
-        lock_value = f"{os.getpid()}-{int(time.time())}"
-        got_lock = await cache.acquire_lock(_TICK_LOCK_KEY, lock_value, ttl=_TICK_LOCK_TTL)
-        if not got_lock:
-            return  # Another instance holds the lock — skip this tick entirely
-
-        # Background lease renewal: extend lock TTL every 30s while tick runs
-        renew_stop = asyncio.Event()
-
-        async def _renew_loop():
-            while not renew_stop.is_set():
-                try:
-                    await asyncio.sleep(30)
-                    await cache.expire(_TICK_LOCK_KEY, _TICK_LOCK_TTL)
-                except asyncio.CancelledError:
-                    break
-                except Exception:
-                    pass  # best-effort renewal
-
-        renew_task = asyncio.create_task(_renew_loop())
-
-        try:
+        # Strict Redis lock: only one instance may tick at a time.
+        # acquire_and_renew handles background lease renewal and cleanup.
+        async with self._lock.acquire_and_renew(ttl=_TICK_LOCK_TTL, renew_interval=30) as held:
+            if not held:
+                return
             await self._do_tick()
-        finally:
-            renew_stop.set()
-            renew_task.cancel()
-            try:
-                await renew_task
-            except asyncio.CancelledError:
-                pass
-            await cache.release_lock(_TICK_LOCK_KEY, lock_value)
 
     async def _do_tick(self) -> None:
         now = utcnow()
