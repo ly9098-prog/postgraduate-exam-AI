@@ -11,7 +11,7 @@ from __future__ import annotations
 import enum
 
 
-class BatchJobStatus(str, enum.Enum):
+class BatchJobStatus(enum.StrEnum):
     """ImportBatchJob.status values."""
     QUEUED = "queued"
     RUNNING = "running"
@@ -21,7 +21,7 @@ class BatchJobStatus(str, enum.Enum):
     FAILED = "failed"
 
 
-class BatchItemStatus(str, enum.Enum):
+class BatchItemStatus(enum.StrEnum):
     """ImportBatchJobItem.status values."""
     PENDING = "pending"
     PROCESSING = "processing"
@@ -30,7 +30,7 @@ class BatchItemStatus(str, enum.Enum):
     REPROCESSING = "reprocessing"
 
 
-class TraceEventStatus(str, enum.Enum):
+class TraceEventStatus(enum.StrEnum):
     """BatchJobTraceEvent.status — NOT the same as job/item status.
 
     Only these values are valid in trace events.
@@ -41,7 +41,7 @@ class TraceEventStatus(str, enum.Enum):
     WARNING = "warning"
 
 
-class TraceStep(str, enum.Enum):
+class TraceStep(enum.StrEnum):
     """BatchJobTraceEvent.step — processing step name."""
     UPLOAD = "upload"
     WAITING = "waiting"
@@ -53,7 +53,7 @@ class TraceStep(str, enum.Enum):
     CONFIG = "config"
 
 
-class OCRJobStatus(str, enum.Enum):
+class OCRJobStatus(enum.StrEnum):
     """OCRJob.status values — database-backed OCR job control plane.
 
     State machine (guarded by guard_ocr_job_transition):

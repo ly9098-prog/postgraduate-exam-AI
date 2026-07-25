@@ -6,7 +6,7 @@ import logging
 import re
 import secrets
 from dataclasses import asdict, dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -76,13 +76,13 @@ def _is_answer_empty(val: str | None) -> bool:
     return val.strip() == ""
 
 
-class AnswerParseMode(str, Enum):
+class AnswerParseMode(StrEnum):
     """答案输入解析模式。"""
     MULTI_CHOICE_DELIMITED = "multi_choice_delimited"  # 多选题显式分隔格式
     SINGLE_CHOICE_PLAIN = "single_choice_plain"  # 连续的单选题答案串
 
 
-class PreviewStatus(str, Enum):
+class PreviewStatus(StrEnum):
     """预览中每道题的处理状态。"""
     WILL_UPDATE = "will_update"                # 将写入
     SKIP_EXISTING = "skip_existing"            # 已有答案，跳过

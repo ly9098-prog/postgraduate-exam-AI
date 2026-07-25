@@ -1,6 +1,6 @@
 """AI 学习引擎相关 Pydantic 模型。"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # ============================================================
 # Request Models
@@ -56,8 +56,7 @@ class Recommendation(BaseModel):
     similarity: float | None = None
     recommend_score: float | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AIRecommendResponse(BaseModel):

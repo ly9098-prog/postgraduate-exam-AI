@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 # --- GET /practice/questions ---
 
@@ -98,8 +98,7 @@ class QuestionDetailResponse(BaseModel):
     knowledge_points: list | None = None
     image_url: list | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # --- GET /practice/records (history) ---
@@ -114,5 +113,4 @@ class PracticeRecordItem(BaseModel):
     used_time: int | None
     answered_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -1,7 +1,7 @@
 """Stage management for Sprint 4D: Stage 1A (CPU Worker) / Stage 1B (GPU Worker) split."""
 from __future__ import annotations
 
-from enum import Enum
+from enum import Enum, StrEnum
 
 # Allowed platform tags for GPU wheel download (fail-fast filter)
 _WHEEL_ALLOWED_PLATFORMS: list[str] = [
@@ -12,14 +12,14 @@ _WHEEL_ALLOWED_PLATFORMS: list[str] = [
 ]
 
 
-class Stage1AStatus(str, Enum):
+class Stage1AStatus(StrEnum):
     NOT_STARTED = "stage_1a_not_started"
     RUNNING = "stage_1a_running"
     COMPLETED = "stage_1a_completed"
     FAILED = "stage_1a_failed"
 
 
-class Stage1BStatus(str, Enum):
+class Stage1BStatus(StrEnum):
     GPU_ENVIRONMENT_BLOCKED = "stage_1b_gpu_environment_blocked"
     GPU_PREFLIGHT_PASSED = "stage_1b_gpu_preflight_passed"
     RUNNING = "stage_1b_running"
@@ -27,7 +27,7 @@ class Stage1BStatus(str, Enum):
     FAILED = "stage_1b_failed"
 
 
-class ExecutionMode(str, Enum):
+class ExecutionMode(StrEnum):
     LEGACY = "legacy"
     EXTERNAL_LOCAL_WORKER = "external_local_worker"
 

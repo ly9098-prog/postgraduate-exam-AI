@@ -13,7 +13,7 @@ logger = logging.getLogger("postgraduate-ai.ocr-worker.device")
 _PADDLE_UNAVAILABLE = object()
 
 
-class OCRDevice(str, enum.Enum):
+class OCRDevice(enum.StrEnum):
     CPU = "cpu"
     GPU = "gpu"
     AUTO = "auto"

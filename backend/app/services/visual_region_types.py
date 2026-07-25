@@ -14,21 +14,21 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
 
 
-class CoordinateSpace(str, Enum):
+class CoordinateSpace(StrEnum):
     PDF_POINTS = "pdf_points"
     IMAGE_PIXELS = "image_pixels"
     NORMALIZED_1000 = "normalized_1000"
     NORMALIZED_1 = "normalized_1"
 
 
-class VisualRegionType(str, Enum):
+class VisualRegionType(StrEnum):
     DIAGRAM = "diagram"
     CHART = "chart"
     TABLE = "table"
@@ -39,7 +39,7 @@ class VisualRegionType(str, Enum):
     UNKNOWN = "unknown"
 
 
-class SegmentType(str, Enum):
+class SegmentType(StrEnum):
     TEXT = "text"
     IMAGE = "image"
     MATH_IMAGE = "math_image"
@@ -48,7 +48,7 @@ class SegmentType(str, Enum):
     NEWLINE = "newline"
 
 
-class AssignmentMethod(str, Enum):
+class AssignmentMethod(StrEnum):
     """How a visual region is assigned to a question/option."""
     BETWEEN_QUESTIONS = "between_questions"
     BBOX_OVERLAP = "bbox_overlap"

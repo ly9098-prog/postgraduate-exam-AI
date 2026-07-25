@@ -20,7 +20,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import redis.asyncio as redis_async
@@ -52,7 +52,7 @@ _COMPLETED_TTL = 86400            # 24h retention for completed task hashes
 _DEAD_HASH_TTL = 86400 * 7        # 7d retention for dead task hashes
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"

@@ -1,12 +1,12 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
 # ── 枚举 ──
 
 
-class BatchAction(str, Enum):
+class BatchAction(StrEnum):
     ADD_TO_REVIEW = "add_to_review"
     MARK_MASTERED = "mark_mastered"
     UNMARK_MASTERED = "unmark_mastered"

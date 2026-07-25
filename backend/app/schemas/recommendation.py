@@ -1,5 +1,6 @@
 """Phase 4 — 推荐策略配置 + A/B 实验 + 指标 + 质量报告 Schema。"""
-from datetime import date as date_cls, datetime
+from datetime import date as date_cls
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 

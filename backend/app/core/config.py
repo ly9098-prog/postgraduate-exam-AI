@@ -1,7 +1,8 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env")
     APP_ENV: str = "development"
     APP_SECRET: str = "change-me-in-production"
     PROCESS_ROLE: str = "web"  # "web" | "worker" | "scheduler" | "all"

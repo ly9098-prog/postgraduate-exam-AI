@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -474,7 +474,7 @@ class BatchAnswerApplyResponse(BaseModel):
 # ── 快速补充答案 — 图片导入（Phase 2） ──
 
 
-class BatchAnswerImagePreviewMode(str, Enum):
+class BatchAnswerImagePreviewMode(StrEnum):
     ANSWER_ONLY = "answer_only"
     ANSWER_ANALYSIS = "answer_analysis"
 

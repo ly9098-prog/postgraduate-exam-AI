@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # ===================================================================
 
 
-class NumberingType(str, Enum):
+class NumberingType(StrEnum):
     """Classification of a detected numbering marker."""
 
     MAIN_QUESTION = "main_question"
