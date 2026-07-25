@@ -594,7 +594,6 @@ class PaddleOCRVLClient:
         try:
             from app.services.model_config_resolver import (
                 AICapability,
-                AIModelConfigResolver,
             )
             resolved = await resolver.resolve_for_capability(
                 AICapability.OCR_VL

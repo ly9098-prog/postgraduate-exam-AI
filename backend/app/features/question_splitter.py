@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 # 不允许本模块单独维护题号正则 (OCR-103)
 from app.features.question_numbering import (
     NumberingType,
-    _is_false_question_number,
     extract_first_question_label,
     parse_numbering,
 )
