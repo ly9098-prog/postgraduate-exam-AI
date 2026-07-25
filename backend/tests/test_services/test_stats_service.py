@@ -33,19 +33,19 @@ class TestCalcConsecutiveDays:
         assert streak == 0
 
     def test_only_today(self):
-        db = _make_db_with_dates([datetime.utcnow().date()])
+        db = _make_db_with_dates([datetime.now(UTC).date()])
         streak = _run(_calc_consecutive_days(db, user_id=1))
         assert streak == 1
 
     def test_consecutive_3_days(self):
-        today = datetime.utcnow().date()
+        today = datetime.now(UTC).date()
         dates = [today - timedelta(days=i) for i in range(3)]
         db = _make_db_with_dates(dates)
         streak = _run(_calc_consecutive_days(db, user_id=1))
         assert streak == 3
 
     def test_gap_breaks_streak(self):
-        today = datetime.utcnow().date()
+        today = datetime.now(UTC).date()
         # today and 2 days ago, but not yesterday
         dates = [today, today - timedelta(days=2)]
         db = _make_db_with_dates(dates)
@@ -54,14 +54,14 @@ class TestCalcConsecutiveDays:
 
     def test_only_old_dates(self):
         # no recent dates — streak should be 0
-        old = datetime.utcnow().date() - timedelta(days=5)
+        old = datetime.now(UTC).date() - timedelta(days=5)
         db = _make_db_with_dates([old])
         streak = _run(_calc_consecutive_days(db, user_id=1))
         assert streak == 0
 
     def test_date_objects_and_string_dates_both_work(self):
         """DB 可能返回 date 对象或字符串，应都能处理。"""
-        today = datetime.utcnow().date()
+        today = datetime.now(UTC).date()
         # SQLite returns strings, PostgreSQL returns date objects
         db_str = _make_db_with_dates([today.isoformat()])
         db_obj = _make_db_with_dates([today])

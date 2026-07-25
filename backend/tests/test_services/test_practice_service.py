@@ -518,7 +518,7 @@ class TestGetWrongQuestions:
         wq.wrong_answer = "B"
         wq.review_count = 2
         wq.mastered = False
-        wq.last_review_at = datetime.utcnow()
+        wq.last_review_at = datetime.now(UTC)
 
         q = _make_question(10, answer="A")
         db.execute.side_effect = [

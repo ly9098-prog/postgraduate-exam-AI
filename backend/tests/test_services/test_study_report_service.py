@@ -14,7 +14,7 @@
 """
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -203,7 +203,7 @@ class TestGetReviewPlan:
 
     def test_with_due_items(self):
         """场景 4：有逾期题目，验证 priority 和 overdue_days。"""
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         overdue_date = now - timedelta(days=3)
 
         db = _make_db([

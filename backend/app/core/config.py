@@ -224,8 +224,5 @@ class Settings(BaseSettings):
     ADAPTIVE_WEIGHT_ENABLED: bool = True
     ADAPTIVE_DRY_RUN: bool = False
 
-    class Config:
-        env_file = ".env"
-
 
 settings = Settings()

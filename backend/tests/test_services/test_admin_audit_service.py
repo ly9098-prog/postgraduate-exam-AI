@@ -1,5 +1,5 @@
 """Comprehensive tests for the admin audit logging system."""
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import Column, DateTime, Integer, JSON, String, Text, Table, MetaData, func, select

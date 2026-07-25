@@ -166,8 +166,8 @@ class TestStagingEdgeCases:
 
     def test_retrieve_nonexistent_id(self):
         """Retrieving a non-existent ID returns None."""
-        assert retrieve_file("nonexistent_id") is None
+        assert retrieve_file("stg_00000000000000000000000000000000") is None
 
     def test_delete_nonexistent_id(self):
         """Deleting a non-existent ID returns False."""
-        assert delete_object("nonexistent_id") is False
+        assert delete_object("stg_00000000000000000000000000000000") is False
