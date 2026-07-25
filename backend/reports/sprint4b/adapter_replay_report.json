@@ -1,0 +1,552 @@
+{
+  "report_type": "Stage 0 Adapter Replay",
+  "timestamp": "2026-07-17T08:47:04Z",
+  "total_cases": 10,
+  "passed": 10,
+  "failed": 0,
+  "fixture_sources": {
+    "cache_fixtures": 5,
+    "synthetic_fixtures": 5,
+    "total": 10
+  },
+  "results": [
+    {
+      "name": "001600599b3001997312797d6d41df63e4e94fa0",
+      "passed": true,
+      "metric_count": 6,
+      "discrepancy_count": 0,
+      "discrepancies": [],
+      "metrics": [
+        {
+          "name": "page_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "region_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "line_count",
+          "match": true,
+          "legacy_value": "10",
+          "adapter_value": "10",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "p0_text_match",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "document_ir_round_trip",
+          "match": true,
+          "legacy_value": "round-trip OK",
+          "adapter_value": "round-trip OK",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "stable_id_determinism",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        }
+      ]
+    },
+    {
+      "name": "00a5b2b037f3851c5c3e36887ceec58154303333",
+      "passed": true,
+      "metric_count": 6,
+      "discrepancy_count": 0,
+      "discrepancies": [],
+      "metrics": [
+        {
+          "name": "page_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "region_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "line_count",
+          "match": true,
+          "legacy_value": "7",
+          "adapter_value": "7",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "p0_text_match",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "document_ir_round_trip",
+          "match": true,
+          "legacy_value": "round-trip OK",
+          "adapter_value": "round-trip OK",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "stable_id_determinism",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        }
+      ]
+    },
+    {
+      "name": "00c68566d44cc2de4e0a7625212fb44154b12695",
+      "passed": true,
+      "metric_count": 6,
+      "discrepancy_count": 0,
+      "discrepancies": [],
+      "metrics": [
+        {
+          "name": "page_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "region_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "line_count",
+          "match": true,
+          "legacy_value": "8",
+          "adapter_value": "8",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "p0_text_match",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "document_ir_round_trip",
+          "match": true,
+          "legacy_value": "round-trip OK",
+          "adapter_value": "round-trip OK",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "stable_id_determinism",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        }
+      ]
+    },
+    {
+      "name": "01170298bd2b0c367ae8b167c05aa6af600d081b",
+      "passed": true,
+      "metric_count": 6,
+      "discrepancy_count": 0,
+      "discrepancies": [],
+      "metrics": [
+        {
+          "name": "page_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "region_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "line_count",
+          "match": true,
+          "legacy_value": "10",
+          "adapter_value": "10",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "p0_text_match",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "document_ir_round_trip",
+          "match": true,
+          "legacy_value": "round-trip OK",
+          "adapter_value": "round-trip OK",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "stable_id_determinism",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        }
+      ]
+    },
+    {
+      "name": "01e34eb4bf47f78ac356b14df852916d8029e6a0",
+      "passed": true,
+      "metric_count": 6,
+      "discrepancy_count": 0,
+      "discrepancies": [],
+      "metrics": [
+        {
+          "name": "page_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "region_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "line_count",
+          "match": true,
+          "legacy_value": "6",
+          "adapter_value": "6",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "p0_text_match",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "document_ir_round_trip",
+          "match": true,
+          "legacy_value": "round-trip OK",
+          "adapter_value": "round-trip OK",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "stable_id_determinism",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        }
+      ]
+    },
+    {
+      "name": "synth_single_page_simple",
+      "passed": true,
+      "metric_count": 6,
+      "discrepancy_count": 0,
+      "discrepancies": [],
+      "metrics": [
+        {
+          "name": "page_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "region_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "line_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "p0_text_match",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "document_ir_round_trip",
+          "match": true,
+          "legacy_value": "round-trip OK",
+          "adapter_value": "round-trip OK",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "stable_id_determinism",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        }
+      ]
+    },
+    {
+      "name": "synth_single_block_multi_line",
+      "passed": true,
+      "metric_count": 6,
+      "discrepancy_count": 0,
+      "discrepancies": [],
+      "metrics": [
+        {
+          "name": "page_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "region_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "line_count",
+          "match": true,
+          "legacy_value": "5",
+          "adapter_value": "5",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "p0_text_match",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "document_ir_round_trip",
+          "match": true,
+          "legacy_value": "round-trip OK",
+          "adapter_value": "round-trip OK",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "stable_id_determinism",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        }
+      ]
+    },
+    {
+      "name": "synth_two_page_double_block",
+      "passed": true,
+      "metric_count": 7,
+      "discrepancy_count": 0,
+      "discrepancies": [],
+      "metrics": [
+        {
+          "name": "page_count",
+          "match": true,
+          "legacy_value": "2",
+          "adapter_value": "2",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "region_count",
+          "match": true,
+          "legacy_value": "3",
+          "adapter_value": "3",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "line_count",
+          "match": true,
+          "legacy_value": "6",
+          "adapter_value": "6",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "p0_text_match",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "p1_text_match",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "document_ir_round_trip",
+          "match": true,
+          "legacy_value": "round-trip OK",
+          "adapter_value": "round-trip OK",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "stable_id_determinism",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        }
+      ]
+    },
+    {
+      "name": "synth_low_confidence_box",
+      "passed": true,
+      "metric_count": 6,
+      "discrepancy_count": 0,
+      "discrepancies": [],
+      "metrics": [
+        {
+          "name": "page_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "region_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "line_count",
+          "match": true,
+          "legacy_value": "1",
+          "adapter_value": "1",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "p0_text_match",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "document_ir_round_trip",
+          "match": true,
+          "legacy_value": "round-trip OK",
+          "adapter_value": "round-trip OK",
+          "expected_mismatch": false,
+          "explanation": ""
+        },
+        {
+          "name": "stable_id_determinism",
+          "match": true,
+          "legacy_value": null,
+          "adapter_value": null,
+          "expected_mismatch": false,
+          "explanation": ""
+        }
+      ]
+    },
+    {
+      "name": "synth_empty_blocks",
+      "passed": true,
+      "metric_count": 1,
+      "discrepancy_count": 0,
+      "discrepancies": [],
+      "metrics": [
+        {
+          "name": "empty_blocks_handling",
+          "match": true,
+          "legacy_value": "True",
+          "adapter_value": "True",
+          "expected_mismatch": false,
+          "explanation": ""
+        }
+      ]
+    }
+  ]
+}

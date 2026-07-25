@@ -1,0 +1,257 @@
+{
+  "document_id": "ecfc11e4a516d268",
+  "source_hash": "",
+  "pages": [
+    {
+      "page_id": "ae97642eacaf",
+      "page_index": 0,
+      "width": 1240,
+      "height": 1754,
+      "original_image_ref": "",
+      "transforms": [],
+      "regions": [
+        {
+          "region_id": "3fb850daa193e25a",
+          "region_type": "text",
+          "polygon": null,
+          "bbox": {
+            "x0": 0,
+            "y0": 0,
+            "x1": 1240,
+            "y1": 1754
+          },
+          "confidence": 1.0,
+          "reading_order": 0,
+          "lines": [
+            {
+              "line_id": "ccbde20e61668f37",
+              "text": "风中易小生·24考研计算机WD操作系统做题本【选择题】",
+              "polygon": null,
+              "bbox": {
+                "x0": 67.0,
+                "y0": 40.0,
+                "x1": 1056.0,
+                "y1": 78.0
+              },
+              "confidence": 0.9984070658683777,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "ef7f75ee729b3577",
+              "text": "9.解除死锁通常不采用的方法是()。",
+              "polygon": null,
+              "bbox": {
+                "x0": 28.0,
+                "y0": 125.0,
+                "x1": 584.0,
+                "y1": 168.0
+              },
+              "confidence": 0.9917662739753723,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "20cb825babd22a9a",
+              "text": "B.终止所有死锁进程",
+              "polygon": null,
+              "bbox": {
+                "x0": 739.0,
+                "y0": 196.0,
+                "x1": 1045.0,
+                "y1": 234.0
+              },
+              "confidence": 0.9996106028556824,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "a33e596a3c20c4d2",
+              "text": "A.终止一个死锁进程",
+              "polygon": null,
+              "bbox": {
+                "x0": 92.0,
+                "y0": 199.0,
+                "x1": 394.0,
+                "y1": 233.0
+              },
+              "confidence": 0.9984763860702515,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "be6a2c11e1d32cc8",
+              "text": "C.从死锁进程处抢夺资源",
+              "polygon": null,
+              "bbox": {
+                "x0": 92.0,
+                "y0": 268.0,
+                "x1": 461.0,
+                "y1": 301.0
+              },
+              "confidence": 0.9974960684776306,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "9e06d4bc1fc73793",
+              "text": "D.从非死锁进程处抢夺资源",
+              "polygon": null,
+              "bbox": {
+                "x0": 742.0,
+                "y0": 268.0,
+                "x1": 1147.0,
+                "y1": 301.0
+              },
+              "confidence": 0.9985512495040894,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "b0cfb869da5d1317",
+              "text": "2.4死锁",
+              "polygon": null,
+              "bbox": {
+                "x0": 695.0,
+                "y0": 1119.0,
+                "x1": 804.0,
+                "y1": 1165.0
+              },
+              "confidence": 0.9997855424880981,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            }
+          ],
+          "children": [],
+          "provenance": {
+            "engine": "paddleocr",
+            "model_version": "",
+            "adapter": "",
+            "ai_modified": false,
+            "original_text": "",
+            "diff": "",
+            "rule_version": "",
+            "trace_id": "",
+            "timestamp": 0.0
+          },
+          "flags": [],
+          "revision": 0,
+          "source_region_ids": [],
+          "parent_region_id": ""
+        }
+      ],
+      "reading_order": [],
+      "reading_order_confidence": null,
+      "reading_order_flags": []
+    }
+  ],
+  "pipeline_fingerprint": "replay-test",
+  "created_at": 1784278024.9869654,
+  "schema_version": "1.0",
+  "cross_page_links": []
+}

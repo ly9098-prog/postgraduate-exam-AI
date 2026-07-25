@@ -1,0 +1,74 @@
+[
+  {
+    "id": 461,
+    "qno": 380,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "下图所示是一棵(05 10",
+      "render_mode": "segments",
+      "segments": [
+        {
+          "type": "text",
+          "text": "下图所示是一棵(05 10"
+        },
+        {
+          "type": "image",
+          "url": "http://localhost:8000/static/question-assets/202607/visual-v2_ds_05602595d5c4_content.png",
+          "display": true,
+          "alt": "图380-q380_manual",
+          "region_type": "q380_manual",
+          "region_id": "q380_manual",
+          "semantic_role": "content_image",
+          "source_page": 380,
+          "bbox": [
+            240.0,
+            115.0,
+            360.0,
+            190.0
+          ],
+          "original_bbox": [
+            240.0,
+            115.0,
+            360.0,
+            190.0
+          ],
+          "coordinate_space": "pdf_points",
+          "crop_version": "visual-v2",
+          "bbox_source": "manual_bbox_config",
+          "asset_hash": "05dad6fa686f7d2e8476dc8e067c7d5d3fc28f7aa2f2d513de89924043ca78f8",
+          "confidence": 0.77,
+          "requires_review": true,
+          "generated_at": "2026-07-16T09:43:34.638884"
+        }
+      ],
+      "source_snapshot_url": "http://localhost:8000/static/question-assets/202607/visual-v2_ds_1ccc738ef806_snapshot.png",
+      "source_snapshot_full_page": false,
+      "source_snapshot_page": 380,
+      "source_snapshot_bbox": [
+        230.0,
+        110.0,
+        370.0,
+        330.0
+      ],
+      "source_snapshot_coordinate_space": "pdf_points",
+      "source_snapshot_strategy": "region_extended",
+      "source_snapshot_coverage": 0.7,
+      "content_visual_bbox": [
+        240.0,
+        115.0,
+        360.0,
+        190.0
+      ],
+      "content_visual_coordinate_space": "pdf_points",
+      "content_crop_version": "visual-v2",
+      "question_bbox": [
+        230.0,
+        110.0,
+        370.0,
+        330.0
+      ],
+      "question_bbox_coordinate_space": "pdf_points"
+    }
+  }
+]

@@ -1,0 +1,1699 @@
+{
+  "modules": {
+    "app/features/ai_repair.py": "features",
+    "app/features/ai_safety.py": "features",
+    "app/features/ai_validation.py": "features",
+    "app/features/answer_matcher.py": "features",
+    "app/features/batch_image_import_service.py": "features",
+    "app/features/batch_validation.py": "features",
+    "app/features/candidate_evaluator.py": "features",
+    "app/features/code_detector.py": "features",
+    "app/features/code_integrity.py": "features",
+    "app/features/code_structure_reconstructor.py": "features",
+    "app/features/control_plane.py": "features",
+    "app/features/coordinator_orchestrator.py": "features",
+    "app/features/coordinators.py": "features",
+    "app/features/cross_page_linking.py": "features",
+    "app/features/document_validator.py": "features",
+    "app/features/exercise_region_detector.py": "features",
+    "app/features/global_hash_index.py": "features",
+    "app/features/import_mode.py": "features",
+    "app/features/input_gateway.py": "features",
+    "app/features/input_safety.py": "features",
+    "app/features/layout_reconstruction.py": "features",
+    "app/features/layout_router.py": "features",
+    "app/features/llm_text_structurer.py": "features",
+    "app/features/math_import_profile.py": "features",
+    "app/features/multi_blank_choice.py": "features",
+    "app/features/native_text_probe.py": "features",
+    "app/features/ocr_adapter.py": "features",
+    "app/features/ocr_alert_rules.py": "features",
+    "app/features/ocr_canary.py": "features",
+    "app/features/ocr_case_exporter.py": "features",
+    "app/features/ocr_correction.py": "features",
+    "app/features/ocr_correction_common.py": "features",
+    "app/features/ocr_failure_analyzer.py": "features",
+    "app/features/ocr_gateway.py": "features",
+    "app/features/ocr_mode.py": "features",
+    "app/features/ocr_pipeline_dag.py": "features",
+    "app/features/ocr_quality_gate.py": "features",
+    "app/features/ocr_service.py": "features",
+    "app/features/page_classifier.py": "features",
+    "app/features/page_stream.py": "features",
+    "app/features/pipeline_artifacts.py": "features",
+    "app/features/pipeline_checkpoint.py": "features",
+    "app/features/pipeline_coordinator_entry.py": "features",
+    "app/features/pipeline_fingerprint.py": "features",
+    "app/features/pipeline_orchestrator.py": "features",
+    "app/features/quality_gate.py": "features",
+    "app/features/question_ai_complete.py": "features",
+    "app/features/question_ai_enrich.py": "features",
+    "app/features/question_draft_generator.py": "features",
+    "app/features/question_import_writer.py": "features",
+    "app/features/question_normalizer.py": "features",
+    "app/features/question_numbering.py": "features",
+    "app/features/question_pipeline.py": "features",
+    "app/features/question_publish_service.py": "features",
+    "app/features/question_splitter.py": "features",
+    "app/features/question_type.py": "features",
+    "app/features/question_type_classifier.py": "features",
+    "app/features/reading_order.py": "features",
+    "app/features/resource_guard.py": "features",
+    "app/features/review_service.py": "features",
+    "app/features/roman_schema.py": "features",
+    "app/features/runtime_capabilities.py": "features",
+    "app/features/similarity_matcher.py": "features",
+    "app/features/structure_analyzer.py": "features",
+    "app/features/sync_merge_service.py": "features",
+    "app/features/table_region_detector.py": "features",
+    "app/features/text_normalizer.py": "features",
+    "app/features/text_question_parser.py": "features",
+    "app/features/token_budget.py": "features",
+    "app/features/unified_safety.py": "features",
+    "app/features/vision_fallback.py": "features",
+    "app/features/visual_boundary_detector.py": "features",
+    "app/features/wangdao_preprocessor.py": "features",
+    "app/core/admin_security.py": "core",
+    "app/core/cache.py": "core",
+    "app/core/config.py": "core",
+    "app/core/dag_pipeline.py": "core",
+    "app/core/database.py": "core",
+    "app/core/deployment_profile.py": "core",
+    "app/core/document_ir.py": "core",
+    "app/core/immutable_regions.py": "core",
+    "app/core/log_context.py": "core",
+    "app/core/logging_config.py": "core",
+    "app/core/module_result.py": "core",
+    "app/core/mutation_guard.py": "core",
+    "app/core/ocr_process_pool.py": "core",
+    "app/core/ocr_profile.py": "core",
+    "app/core/ocr_request.py": "core",
+    "app/core/ocr_runtime_config.py": "core",
+    "app/core/resource_guard.py": "core",
+    "app/core/security.py": "core",
+    "app/core/sentry.py": "core",
+    "app/core/time_utils.py": "core",
+    "app/core/transform_tracker.py": "core"
+  },
+  "edges": [
+    {
+      "source": "app/features/ai_repair.py",
+      "target": "app/features/code_integrity.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ai_repair.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ai_repair.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ai_repair.py",
+      "target": "app/services/model_config_resolver.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ai_repair.py",
+      "target": "app/services/model_config_resolver.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ai_repair.py",
+      "target": "app/services/model_config_resolver.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ai_repair.py",
+      "target": "app/features/roman_schema.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ai_repair.py",
+      "target": "app/services/pdf_text_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ai_repair.py",
+      "target": "app/features/ai_safety.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ai_validation.py",
+      "target": "app/features/code_integrity.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/core/database.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/core/log_context.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/core/log_context.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/services/health_check_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/features/pipeline_orchestrator.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/services/model_config_resolver.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/features/ocr_vl.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/services/ocr_executor_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/features/pipeline_orchestrator.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/services/model_config_resolver.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_image_import_service.py",
+      "target": "app/features/pipeline_orchestrator.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/batch_validation.py",
+      "target": "app/features/roman_schema.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/code_detector.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/code_structure_reconstructor.py",
+      "target": "app/features/code_structure_reconstructor.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/control_plane.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/control_plane.py",
+      "target": "app/features/pipeline_fingerprint.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/coordinator_orchestrator.py",
+      "target": "app/features/coordinators.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/coordinator_orchestrator.py",
+      "target": "app/features/page_stream.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/coordinator_orchestrator.py",
+      "target": "app/core/deployment_profile.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/coordinator_orchestrator.py",
+      "target": "app/core/module_result.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/coordinator_orchestrator.py",
+      "target": "app/features/resource_guard.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/coordinators.py",
+      "target": "app/core/module_result.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/coordinators.py",
+      "target": "app/features/input_gateway.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/coordinators.py",
+      "target": "app/features/input_safety.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/coordinators.py",
+      "target": "app/features/ocr_gateway.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/coordinators.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/coordinators.py",
+      "target": "app/features/cross_page_linking.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/cross_page_linking.py",
+      "target": "app/features/question_numbering.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/exercise_region_detector.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/global_hash_index.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/global_hash_index.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/llm_text_structurer.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/llm_text_structurer.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/llm_text_structurer.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/llm_text_structurer.py",
+      "target": "app/services/model_config_resolver.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/native_text_probe.py",
+      "target": "app/features/input_gateway.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_adapter.py",
+      "target": "app/core/module_result.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_adapter.py",
+      "target": "app/core/ocr_request.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_adapter.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_adapter.py",
+      "target": "app/ocr_worker/device.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_adapter.py",
+      "target": "app/features/pipeline_orchestrator.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_adapter.py",
+      "target": "app/features/pipeline_orchestrator.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_adapter.py",
+      "target": "app/core/document_ir.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_adapter.py",
+      "target": "app/features/ocr_vl.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_adapter.py",
+      "target": "app/core/document_ir.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_adapter.py",
+      "target": "app/features/ocr_vl.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_adapter.py",
+      "target": "app/core/document_ir.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_correction.py",
+      "target": "app/features/ocr_correction_common.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_correction.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_correction.py",
+      "target": "app/features/ocr_correction_common.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_correction.py",
+      "target": "app/features/ocr_fix.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_correction.py",
+      "target": "app/features/ocr_fix.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_correction.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_correction.py",
+      "target": "app/features/ai_safety.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_correction_common.py",
+      "target": "app/features/code_integrity.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_correction_common.py",
+      "target": "app/features/question_type_classifier.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_gateway.py",
+      "target": "app/core/module_result.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_gateway.py",
+      "target": "app/core/ocr_request.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_gateway.py",
+      "target": "app/features/page_stream.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_gateway.py",
+      "target": "app/features/ocr_adapter.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_gateway.py",
+      "target": "app/features/ocr_adapter.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_gateway.py",
+      "target": "app/features/ocr_adapter.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_mode.py",
+      "target": "app/features/ocr_mode.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_mode.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_pipeline_dag.py",
+      "target": "app/features/ocr_pipeline_dag.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_pipeline_dag.py",
+      "target": "app/core/dag_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_pipeline_dag.py",
+      "target": "app/features/code_detector.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_pipeline_dag.py",
+      "target": "app/features/text_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_quality_gate.py",
+      "target": "app/features/code_integrity.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_quality_gate.py",
+      "target": "app/features/code_integrity.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/ocr_service.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/page_stream.py",
+      "target": "app/features/input_gateway.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/page_stream.py",
+      "target": "app/services/pdf_renderer_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_artifacts.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_artifacts.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_checkpoint.py",
+      "target": "app/core/cache.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_checkpoint.py",
+      "target": "app/core/cache.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_checkpoint.py",
+      "target": "app/core/cache.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_coordinator_entry.py",
+      "target": "app/core/module_result.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_coordinator_entry.py",
+      "target": "app/features/coordinator_orchestrator.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_coordinator_entry.py",
+      "target": "app/features/coordinator_orchestrator.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_coordinator_entry.py",
+      "target": "app/features/pipeline_orchestrator.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_fingerprint.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_fingerprint.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/import_mode.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/ocr_correction_common.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/page_classifier.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_artifacts.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/ocr_alert_rules.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/question_splitter.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/question_type_classifier.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/similarity_matcher.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/structure_analyzer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/text_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/log_context.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/cross_page_linking.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/cross_page_linking.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/cache.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/cache.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/cache.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/cache.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/cache.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/cache.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/cache.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/ocr_profile.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/ocr_process_pool.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/document_ir.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/document_ir.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/document_ir.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/question_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/question_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/database.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_artifacts.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/exercise_region_detector.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/wangdao_preprocessor.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/layout_router.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/ocr_fix.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/ocr_correction_common.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/question_type_classifier.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/admin_ai_config_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/admin_ai_config_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/ocr_fix.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/ocr_fix.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/ocr_fix.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/candidate_evaluator.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/quality_gate.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/model_config_resolver.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/admin_ai_config_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/ocr_canary.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/visual_boundary_detector.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/visual_boundary_detector.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/question_splitter.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/question_snapshot_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/pipeline_stages.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/storage_backend.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/visual_region_cropper.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/visual_region_types.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/visual_region_types.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/watermark_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/watermark_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/pdf_renderer_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/model_config_resolver.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/global_hash_index.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/features/global_hash_index.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/watermark_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/services/watermark_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/pipeline_orchestrator.py",
+      "target": "app/core/database.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_complete.py",
+      "target": "app/features/question_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_complete.py",
+      "target": "app/services/admin_ai_config_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_complete.py",
+      "target": "app/features/ai_safety.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_complete.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_complete.py",
+      "target": "app/services/pdf_text_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_complete.py",
+      "target": "app/services/admin_ai_config_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_complete.py",
+      "target": "app/services/model_config_resolver.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_complete.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_complete.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_complete.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_enrich.py",
+      "target": "app/features/question_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_enrich.py",
+      "target": "app/features/question_ai_complete.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_enrich.py",
+      "target": "app/features/question_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_enrich.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_enrich.py",
+      "target": "app/features/ai_safety.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_enrich.py",
+      "target": "app/services/model_config_resolver.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_enrich.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_enrich.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_enrich.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_enrich.py",
+      "target": "app/features/ai_safety.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_ai_enrich.py",
+      "target": "app/features/token_budget.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_draft_generator.py",
+      "target": "app/features/question_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_import_writer.py",
+      "target": "app/core/time_utils.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_import_writer.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_import_writer.py",
+      "target": "app/features/question_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_import_writer.py",
+      "target": "app/features/question_splitter.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_import_writer.py",
+      "target": "app/features/question_type.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_import_writer.py",
+      "target": "app/services/pdf_classifier.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_import_writer.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_import_writer.py",
+      "target": "app/services/formula_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_import_writer.py",
+      "target": "app/services/formula_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_import_writer.py",
+      "target": "app/services/pdf_text_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_normalizer.py",
+      "target": "app/features/question_type_classifier.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_normalizer.py",
+      "target": "app/services/pdf_text_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_normalizer.py",
+      "target": "app/features/question_type.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_normalizer.py",
+      "target": "app/features/ocr_quality_gate.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_normalizer.py",
+      "target": "app/features/ocr_quality_gate.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_normalizer.py",
+      "target": "app/features/code_integrity.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_normalizer.py",
+      "target": "app/features/vision_fallback.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_normalizer.py",
+      "target": "app/features/vision_fallback.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_normalizer.py",
+      "target": "app/features/vision_fallback.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_normalizer.py",
+      "target": "app/features/code_integrity.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/core/time_utils.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/question_type.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/question_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/question_splitter.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/roman_schema.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/formula_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/multi_blank_choice.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/multi_blank_choice.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/formula_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/pdf_text_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/question_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/multi_blank_choice.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/question_import_writer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/pdf_classifier.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/formula_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/formula_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/pdf_text_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/services/model_config_resolver.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/question_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/question_import_writer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/question_draft_generator.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/question_ai_enrich.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_pipeline.py",
+      "target": "app/features/question_ai_complete.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_publish_service.py",
+      "target": "app/features/question_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_splitter.py",
+      "target": "app/features/question_numbering.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_splitter.py",
+      "target": "app/features/roman_schema.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_splitter.py",
+      "target": "app/features/question_numbering.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_splitter.py",
+      "target": "app/features/question_type_classifier.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_splitter.py",
+      "target": "app/features/question_type_classifier.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/question_type_classifier.py",
+      "target": "app/features/question_type.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/reading_order.py",
+      "target": "app/core/document_ir.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/resource_guard.py",
+      "target": "app/core/deployment_profile.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/review_service.py",
+      "target": "app/features/question_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/review_service.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/review_service.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/review_service.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/review_service.py",
+      "target": "app/services/pdf_text_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/runtime_capabilities.py",
+      "target": "app/core/deployment_profile.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/similarity_matcher.py",
+      "target": "app/features/global_hash_index.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/similarity_matcher.py",
+      "target": "app/features/question_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/similarity_matcher.py",
+      "target": "app/services/admin_subject_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/text_normalizer.py",
+      "target": "app/features/roman_schema.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/text_normalizer.py",
+      "target": "app/core/immutable_regions.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/text_normalizer.py",
+      "target": "app/services/formula_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/text_normalizer.py",
+      "target": "app/features/code_detector.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/text_question_parser.py",
+      "target": "app/features/question_pipeline.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/text_question_parser.py",
+      "target": "app/services/formula_normalizer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/text_question_parser.py",
+      "target": "app/features/llm_text_structurer.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/unified_safety.py",
+      "target": "app/core/module_result.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/unified_safety.py",
+      "target": "app/core/document_ir.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/unified_safety.py",
+      "target": "app/features/code_integrity.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/unified_safety.py",
+      "target": "app/features/quality_gate.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/vision_fallback.py",
+      "target": "app/features/code_integrity.py",
+      "type": "import"
+    },
+    {
+      "source": "app/features/vision_fallback.py",
+      "target": "app/features/ocr_fix.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/admin_security.py",
+      "target": "app/core/time_utils.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/admin_security.py",
+      "target": "app/core/cache.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/admin_security.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/admin_security.py",
+      "target": "app/core/database.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/admin_security.py",
+      "target": "app/core/log_context.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/cache.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/dag_pipeline.py",
+      "target": "app/core/immutable_regions.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/dag_pipeline.py",
+      "target": "app/core/mutation_guard.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/database.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/database.py",
+      "target": "app/core/log_context.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/deployment_profile.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/document_ir.py",
+      "target": "app/core/module_result.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/immutable_regions.py",
+      "target": "app/features/code_detector.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/log_context.py",
+      "target": "app/core/log_context.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/logging_config.py",
+      "target": "app/core/log_context.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/mutation_guard.py",
+      "target": "app/core/immutable_regions.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/ocr_process_pool.py",
+      "target": "app/core/ocr_process_pool.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/ocr_process_pool.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/ocr_process_pool.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/ocr_process_pool.py",
+      "target": "app/services/ocr_service.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/ocr_profile.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/ocr_runtime_config.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/ocr_runtime_config.py",
+      "target": "app/core/ocr_profile.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/security.py",
+      "target": "app/core/time_utils.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/security.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/security.py",
+      "target": "app/core/database.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/security.py",
+      "target": "app/core/log_context.py",
+      "type": "import"
+    },
+    {
+      "source": "app/core/sentry.py",
+      "target": "app/core/config.py",
+      "type": "import"
+    }
+  ],
+  "stats": {
+    "total_modules": 94,
+    "total_edges": 319
+  }
+}

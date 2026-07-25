@@ -1,0 +1,41 @@
+[
+  {
+    "qno": 379,
+    "question_import_id": 460,
+    "source_question_no": 379,
+    "batch_id": "REVIEW_20260715_112847_3cc311",
+    "is_published": false,
+    "db_source_page": 379,
+    "configured_pdf_page": null,
+    "resolved_pdf_page": 379,
+    "page_resolution_strategy": "db_page_no_json",
+    "page_confidence": 0.5,
+    "bbox_source": "auto_localized",
+    "content_preview": "【2021统考真题】给定平衡二叉树如下图所示，插入关键字 23后，根中的关键字是(",
+    "page": 379,
+    "record_id": 460,
+    "strategy": "auto_localized",
+    "confidence": 0.7,
+    "requires_review": true,
+    "num_regions": 1,
+    "snapshot_ok": true,
+    "warnings": [],
+    "stem_cleaned": true,
+    "num_excluded_visual_text": 5,
+    "visual_bbox": [
+      200.65989847715736,
+      75.0,
+      330.0,
+      165.0
+    ],
+    "question_bbox": [
+      190.0,
+      70.0,
+      340.0,
+      305.0
+    ],
+    "content_quality_issues": [],
+    "crop_version": "visual-v2",
+    "visual_gate_failures": []
+  }
+]

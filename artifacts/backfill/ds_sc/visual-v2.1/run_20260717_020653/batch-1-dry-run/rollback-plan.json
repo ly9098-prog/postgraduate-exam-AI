@@ -1,0 +1,65 @@
+{
+  "run_id": null,
+  "generated_at": "2026-07-17T02:07:00",
+  "targets": {
+    "Q147_s200": {
+      "type": "missing_image",
+      "rollback_actions": [
+        "DELETE proposed content image from static/question-assets/202607/ds_sc/",
+        "DELETE proposed source snapshot from static/question-assets/202607/ds_sc/",
+        "RESTORE Question content to before-state (text-only without segments)",
+        "RESTORE Question image_url to empty array",
+        "RESTORE QuestionImport parsed_content to before-state"
+      ],
+      "db_rollback": "UPDATE questions SET content='<before-content>', image_url='[]' WHERE id=147",
+      "db_qi_rollback": "UPDATE question_imports SET parsed_content='<before-pc>' WHERE id=301"
+    },
+    "Q152_s205": {
+      "type": "missing_image",
+      "rollback_actions": [
+        "DELETE proposed content image",
+        "DELETE proposed source snapshot",
+        "RESTORE Question content",
+        "RESTORE Question image_url"
+      ],
+      "db_rollback": "UPDATE questions SET content='<before-content>', image_url='[]' WHERE id=152",
+      "db_qi_rollback": "UPDATE question_imports SET parsed_content='<before-pc>' WHERE id=306"
+    },
+    "Q154_s207": {
+      "type": "missing_image",
+      "rollback_actions": [
+        "DELETE proposed content image",
+        "DELETE proposed source snapshot",
+        "RESTORE Question content",
+        "RESTORE Question image_url"
+      ],
+      "db_rollback": "UPDATE questions SET content='<before-content>', image_url='[]' WHERE id=154",
+      "db_qi_rollback": "UPDATE question_imports SET parsed_content='<before-pc>' WHERE id=308"
+    },
+    "Q294_s369": {
+      "type": "url_fix",
+      "rollback_actions": [
+        "RESTORE Question.content segments URL from proposed back to localhost",
+        "RESTORE Question.image_url from proposed back to localhost",
+        "RESTORE QuestionImport.parsed_content segments URL from proposed back to localhost"
+      ],
+      "db_rollback": "UPDATE questions SET content='<before-content>', image_url='<before-url>' WHERE id=294",
+      "db_qi_rollback": "UPDATE question_imports SET parsed_content='<before-pc>' WHERE id=450"
+    },
+    "Q305_s380": {
+      "type": "url_fix",
+      "rollback_actions": [
+        "RESTORE Question.content segments URL from proposed back to localhost",
+        "RESTORE Question.image_url from proposed back to localhost",
+        "RESTORE QuestionImport.parsed_content segments URL from proposed back to localhost"
+      ],
+      "db_rollback": "UPDATE questions SET content='<before-content>', image_url='<before-url>' WHERE id=305",
+      "db_qi_rollback": "UPDATE question_imports SET parsed_content='<before-pc>' WHERE id=461"
+    },
+    "Q296_s371": {
+      "type": "text_only_confirm",
+      "rollback_actions": ["NO_CHANGE_NEEDED"],
+      "notes": "Confirmed text-only. No migration required."
+    }
+  }
+}

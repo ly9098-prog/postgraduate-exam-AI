@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-07-16T16:12:10.247063+00:00",
+  "migration": "q229_option_group",
+  "target": {
+    "import_id": 320,
+    "source_question_no": "229"
+  },
+  "verification": {
+    "db_state_hash": "36309b4a1ac3799fbb7d177d0005960b73f863b082a2ddac59a34b964d870b3c",
+    "db_before": {
+      "parsed_content": {
+        "text": "给定整数集合 {3,5,6,9,12}，与之对应的哈夫曼树是（ ）。",
+        "segments": [
+          {
+            "type": "text",
+            "text": "给定整数集合 {3,5,6,9,12}，与之对应的哈夫曼树是（ ）。"
+          },
+          {
+            "type": "image",
+            "url": "/static/question-assets/202607/ds_sc/q_229_p229_option_group.png",
+            "display": true,
+            "alt": "图229-q229_option_group",
+            "region_type": "option_group",
+            "region_id": "q229_option_group",
+            "semantic_role": "content_image",
+            "placement": "before_options",
+            "source_page": 229,
+            "bbox": [
+              0.0,
+              82.0,
+              567.0,
+              158.0
+            ],
+            "coordinate_space": "pdf_points",
+            "crop_version": "visual-v2.1",
+            "expected_option_count": 4,
+            "detected_option_count": 4,
+            "asset_hash": "4cfac0e1e4545f84e6e94c92882adbec49ba3b68cc28bbce20c5847225c1ef60",
+            "requires_review": false,
+            "generated_at": "2026-07-16T16:07:21.321643+00:00"
+          }
+        ],
+        "render_mode": "segments",
+        "legacy_option_placeholders": {
+          "A": "[图片选项A，原题图已内嵌]",
+          "B": "[图片选项B，原题图已内嵌]",
+          "C": "[图片选项C，原题图已内嵌]",
+          "D": "[图片选项D，原题图已内嵌]"
+        }
+      },
+      "parsed_options": {
+        "A": "",
+        "B": "",
+        "C": "",
+        "D": ""
+      },
+      "answer": "C"
+    },
+    "image": {
+      "path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/ds_sc/q_229_p229_option_group.png",
+      "valid": true,
+      "size": 119804,
+      "sha256": "f63a9640d78f2ba13e3f838a5d18251689b81ee90fa92d47a76cc09f487b41f8",
+      "width": 1575,
+      "height": 239
+    },
+    "pdf_sha256": null,
+    "bbox": [
+      0.0,
+      72.0,
+      567.0,
+      158.0
+    ],
+    "bbox_sha256": "9f0097bd531cfee89c9fa3953a66951a59559f216a0a9c3c143d63f1c5f38524"
+  },
+  "approval_required_fields": [
+    "image must show complete A-D Huffman trees",
+    "all node weights and edges must be visible",
+    "answer=C must be unchanged",
+    "A-D order must be unchanged"
+  ]
+}

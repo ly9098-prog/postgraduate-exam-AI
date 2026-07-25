@@ -1,0 +1,1508 @@
+{
+  "summary": {
+    "total_violations": 8,
+    "total_legacy_sites": 179,
+    "high_severity": 8,
+    "medium_severity": 0
+  },
+  "ssot_violations": [
+    {
+      "file": "app/features/exercise_region_detector.py",
+      "line": 346,
+      "pattern": "_ocr_scanned_pdf",
+      "text": "from _ocr_scanned_pdf instead of running a separate lightweight scan.",
+      "severity": "HIGH",
+      "type": "direct_raw_access"
+    },
+    {
+      "file": "app/features/ocr_correction.py",
+      "line": 59,
+      "pattern": "OCRFixResult",
+      "text": "from app.features.ocr_fix.interfaces import OCRFixResult",
+      "severity": "HIGH",
+      "type": "direct_raw_access"
+    },
+    {
+      "file": "app/features/ocr_correction.py",
+      "line": 97,
+      "pattern": "OCRFixResult",
+      "text": "return idx, OCRFixResult(",
+      "severity": "HIGH",
+      "type": "direct_raw_access"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 323,
+      "pattern": "_ocr_scanned_pdf",
+      "text": "1. ``blocks[0][\"_document_ir\"]`` (set by ``_ocr_scanned_pdf``)",
+      "severity": "HIGH",
+      "type": "direct_raw_access"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 1104,
+      "pattern": "_ocr_scanned_pdf",
+      "text": "def _ocr_scanned_pdf(",
+      "severity": "HIGH",
+      "type": "direct_raw_access"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2530,
+      "pattern": "_ocr_scanned_pdf",
+      "text": "Single OCR pass: _ocr_scanned_pdf runs once at full quality. Exercise",
+      "severity": "HIGH",
+      "type": "direct_raw_access"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2561,
+      "pattern": "_ocr_scanned_pdf",
+      "text": "# Single OCR pass: _ocr_scanned_pdf at normal DPI with full",
+      "severity": "HIGH",
+      "type": "direct_raw_access"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2580,
+      "pattern": "_ocr_scanned_pdf",
+      "text": "ocr_blocks = _ocr_scanned_pdf(",
+      "severity": "HIGH",
+      "type": "direct_raw_access"
+    }
+  ],
+  "legacy_call_sites": [
+    {
+      "file": "app/core/ocr_types.py",
+      "line": 29,
+      "pattern": "OcrPageResult",
+      "text": "class OcrPageResult:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/answer_matcher.py",
+      "line": 210,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/answer_matcher.py",
+      "line": 216,
+      "pattern": "normalized_blocks",
+      "text": "answer_text = _collect_page_text(normalized_blocks, answer_pages)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/answer_matcher.py",
+      "line": 262,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/answer_matcher.py",
+      "line": 267,
+      "pattern": "normalized_blocks",
+      "text": "expl_text = _collect_page_text(normalized_blocks, explanation_pages)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/answer_matcher.py",
+      "line": 325,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/answer_matcher.py",
+      "line": 332,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: stage1 输出的标准化块",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/answer_matcher.py",
+      "line": 396,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks, answer_pages, qnum, idx",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/answer_matcher.py",
+      "line": 407,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks, explanation_pages, qnum",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 534,
+      "pattern": "ocr_cleaned_text",
+      "text": "ImportBatchJobItem.ocr_cleaned_text.isnot(None),",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 553,
+      "pattern": "ocr_cleaned_text",
+      "text": "merged_text = \"\\n\\n\".join(r.ocr_cleaned_text for r in rows if r.ocr_cleaned_text)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 727,
+      "pattern": "ocr_raw_text",
+      "text": "fields={\"ocr_raw_text\": raw_ocr_text, \"ocr_cleaned_text\": cleaned_text},",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 727,
+      "pattern": "ocr_cleaned_text",
+      "text": "fields={\"ocr_raw_text\": raw_ocr_text, \"ocr_cleaned_text\": cleaned_text},",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 740,
+      "pattern": "ocr_raw_text",
+      "text": "fields={\"ocr_raw_text\": raw_ocr_text, \"ocr_cleaned_text\": cleaned_text},",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 740,
+      "pattern": "ocr_cleaned_text",
+      "text": "fields={\"ocr_raw_text\": raw_ocr_text, \"ocr_cleaned_text\": cleaned_text},",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 812,
+      "pattern": "ocr_raw_text",
+      "text": "result[\"_ocr_raw_text\"] = raw_ocr_text",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 813,
+      "pattern": "ocr_cleaned_text",
+      "text": "result[\"_ocr_cleaned_text\"] = cleaned_text",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 1176,
+      "pattern": "ocr_raw_text",
+      "text": "\"has_ocr_cache\": bool(item.ocr_cleaned_text or item.ocr_raw_text),",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 1176,
+      "pattern": "ocr_cleaned_text",
+      "text": "\"has_ocr_cache\": bool(item.ocr_cleaned_text or item.ocr_raw_text),",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 1316,
+      "pattern": "ocr_cleaned_text",
+      "text": "用于 AI 解析失败 / Prompt 调整后重新解析。复用 ocr_cleaned_text；",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 1338,
+      "pattern": "ocr_cleaned_text",
+      "text": "cleaned = item.ocr_cleaned_text",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 1339,
+      "pattern": "ocr_raw_text",
+      "text": "if not cleaned and item.ocr_raw_text:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/batch_image_import_service.py",
+      "line": 1341,
+      "pattern": "ocr_raw_text",
+      "text": "cleaned = clean_ocr_text(item.ocr_raw_text)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 126,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 128,
+      "pattern": "normalized_blocks",
+      "text": "\"\"\"从 normalized_blocks 中按 page 收集带 bbox 的行。\"\"\"",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 132,
+      "pattern": "normalized_blocks",
+      "text": "for block in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 375,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 383,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: 标准化块列表。",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 398,
+      "pattern": "normalized_blocks",
+      "text": "if not normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 411,
+      "pattern": "normalized_blocks",
+      "text": "pages_lines = _collect_lines_from_blocks(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 451,
+      "pattern": "normalized_blocks",
+      "text": "_enrich_blocks_with_layout(normalized_blocks, pages_layout)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 454,
+      "pattern": "normalized_blocks",
+      "text": "\"layout_blocks\": normalized_blocks,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 466,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 469,
+      "pattern": "normalized_blocks",
+      "text": "\"\"\"就地 enrich normalized_blocks，添加 layout_info 字段。\"\"\"",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/layout_reconstruction.py",
+      "line": 470,
+      "pattern": "normalized_blocks",
+      "text": "for block in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/ocr_gateway.py",
+      "line": 32,
+      "pattern": "OcrPageResult",
+      "text": "from app.core.ocr_types import STABLE_ERROR_CODES, OcrPageResult, WorkerResult",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/page_classifier.py",
+      "line": 234,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/page_classifier.py",
+      "line": 240,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: blocks with normalized_text, page fields",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/page_classifier.py",
+      "line": 248,
+      "pattern": "normalized_blocks",
+      "text": "for block in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/page_classifier.py",
+      "line": 293,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/page_classifier.py",
+      "line": 297,
+      "pattern": "normalized_blocks",
+      "text": "\"\"\"Filter normalized_blocks to only include pages with allowed labels.",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/page_classifier.py",
+      "line": 300,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: full block list",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/page_classifier.py",
+      "line": 315,
+      "pattern": "normalized_blocks",
+      "text": "return [b for b in normalized_blocks if b.get(\"page\", 1) in allowed_pages]",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 191,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict] | None = None,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 204,
+      "pattern": "normalized_blocks",
+      "text": "``normalized_blocks`` source), then looks up ``page:block_index`` keys",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 238,
+      "pattern": "normalized_blocks",
+      "text": "if normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 239,
+      "pattern": "normalized_blocks",
+      "text": "for b in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 258,
+      "pattern": "normalized_blocks",
+      "text": "# come from the same normalized_blocks source.",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 308,
+      "pattern": "normalized_blocks",
+      "text": "len(normalized_blocks or []),",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 1766,
+      "pattern": "normalized_blocks",
+      "text": "stage.output_count = len(result.get(\"normalized_blocks\") or [])",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 1769,
+      "pattern": "normalized_blocks",
+      "text": "stage.input_count = len(data.get(\"normalized_blocks\") or [])",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 1770,
+      "pattern": "normalized_blocks",
+      "text": "stage.output_count = len(result.get(\"normalized_blocks\") or [])",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 1782,
+      "pattern": "normalized_blocks",
+      "text": "stage.input_count = len(data.get(\"normalized_blocks\") or [])",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 1786,
+      "pattern": "normalized_blocks",
+      "text": "stage.input_count = len(data.get(\"normalized_blocks\") or [])",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 1791,
+      "pattern": "normalized_blocks",
+      "text": "stage.input_count = len(data.get(\"normalized_blocks\") or [])",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 1838,
+      "pattern": "normalized_blocks",
+      "text": "stage.input_count = len(data.get(\"normalized_blocks\") or [])",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2727,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks = normalizer.normalize(raw_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2729,
+      "pattern": "normalized_blocks",
+      "text": "for b in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2741,
+      "pattern": "normalized_blocks",
+      "text": "empty_count = sum(1 for b in normalized_blocks if not b.get(\"normalized_text\"))",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2745,
+      "pattern": "normalized_blocks",
+      "text": "return {\"normalized_blocks\": normalized_blocks, \"warnings\": warnings}",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2749,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2766,
+      "pattern": "normalized_blocks",
+      "text": "doc_ir = _get_blocks_document_ir(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2770,
+      "pattern": "normalized_blocks",
+      "text": "result = run_layout_reconstruction_stage(normalized_blocks=normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2775,
+      "pattern": "normalized_blocks",
+      "text": "# Enrich normalized_blocks with layout_info (done in-place by reconstruct_layout)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2776,
+      "pattern": "normalized_blocks",
+      "text": "enriched_blocks = result.get(\"layout_blocks\", normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2796,
+      "pattern": "normalized_blocks",
+      "text": "\"normalized_blocks\": enriched_blocks,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2854,
+      "pattern": "normalized_blocks",
+      "text": "页面（PDF 或图片）重新识别文字，输出与 normalized_blocks 兼容的格式。",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2858,
+      "pattern": "normalized_blocks",
+      "text": "original_blocks: 当前 normalized_blocks（用于获取 page_width/page_height）。",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2952,
+      "pattern": "ocr_raw_text",
+      "text": "from app.services.ocr_service import ocr_raw_text",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 2954,
+      "pattern": "ocr_raw_text",
+      "text": "pp_text = ocr_raw_text(png_bytes)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3101,
+      "pattern": "normalized_blocks",
+      "text": "async def _run_ocr_correction(self, normalized_blocks: list[dict], options: dict | None = None, **_kw) -> dict:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3110,
+      "pattern": "normalized_blocks",
+      "text": "len(normalized_blocks),",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3112,
+      "pattern": "normalized_blocks",
+      "text": "return {\"normalized_blocks\": normalized_blocks, \"ocr_correction_diagnostics\": {}}",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3116,
+      "pattern": "normalized_blocks",
+      "text": "len(normalized_blocks),",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3120,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks, opts, db, **kw,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3124,
+      "pattern": "normalized_blocks",
+      "text": "self, normalized_blocks: list[dict], opts: dict, db, **_kw,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3142,
+      "pattern": "normalized_blocks",
+      "text": "corrected_blocks: list[dict] = [None] * len(normalized_blocks)  # type: ignore",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3144,
+      "pattern": "normalized_blocks",
+      "text": "\"total_blocks\": len(normalized_blocks),",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3154,
+      "pattern": "normalized_blocks",
+      "text": "for idx, block in enumerate(normalized_blocks):",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3400,
+      "pattern": "normalized_blocks",
+      "text": "corrected_blocks[idx] = normalized_blocks[idx]",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3433,
+      "pattern": "normalized_blocks",
+      "text": "\"normalized_blocks\": corrected_blocks,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3532,
+      "pattern": "normalized_blocks",
+      "text": "async def _run_analyze_structure(self, normalized_blocks: list[dict], **_kw) -> dict:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3538,
+      "pattern": "normalized_blocks",
+      "text": "for b in (normalized_blocks or [])",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3541,
+      "pattern": "normalized_blocks",
+      "text": "doc_ir = _get_blocks_document_ir(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3546,
+      "pattern": "normalized_blocks",
+      "text": "structure = analyze_structure(normalized_blocks, features=features)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3548,
+      "pattern": "normalized_blocks",
+      "text": "structure = analyze_structure(normalized_blocks, features=features)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3565,
+      "pattern": "normalized_blocks",
+      "text": "def _run_classify_pages(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3574,
+      "pattern": "normalized_blocks",
+      "text": "doc_ir = _get_blocks_document_ir(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3581,
+      "pattern": "normalized_blocks",
+      "text": "page_classifications = classify_pages(normalized_blocks, section_markers=section_markers)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3594,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks, page_classifications, allowed_labels=allowed_labels,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3598,
+      "pattern": "normalized_blocks",
+      "text": "removed_pages = len(normalized_blocks) - len(filtered)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3609,
+      "pattern": "normalized_blocks",
+      "text": "\"normalized_blocks\": filtered,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3616,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3640,
+      "pattern": "normalized_blocks",
+      "text": "legacy_result = run_structure_freeze_stage(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3647,
+      "pattern": "normalized_blocks",
+      "text": "doc_ir = _get_blocks_document_ir(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3827,
+      "pattern": "normalized_blocks",
+      "text": "def _run_split(self, normalized_blocks: list[dict], structure: dict | None = None, **_kw) -> dict:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3862,
+      "pattern": "normalized_blocks",
+      "text": "split_blocks = normalized_blocks",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3884,
+      "pattern": "normalized_blocks",
+      "text": "and any(b.get(\"boxes\") for b in normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3889,
+      "pattern": "normalized_blocks",
+      "text": "doc_ir = _get_blocks_document_ir(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3893,
+      "pattern": "normalized_blocks",
+      "text": "split_blocks, layout_filter_diagnostics = normalized_blocks, {\"error\": \"no_document_ir\"}",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3914,
+      "pattern": "normalized_blocks",
+      "text": "file_path, normalized_blocks, vl_config,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 3982,
+      "pattern": "normalized_blocks",
+      "text": "\"normalized_block_count\": len(normalized_blocks),",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4071,
+      "pattern": "normalized_blocks",
+      "text": "has_boxes = any(b.get(\"boxes\") for b in normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4132,
+      "pattern": "normalized_blocks",
+      "text": "elif len(raw_questions) < len(normalized_blocks):",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4133,
+      "pattern": "normalized_blocks",
+      "text": "warnings.append(f\"{len(normalized_blocks) - len(raw_questions)} blocks produced no questions\")",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4214,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks=split_blocks,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4244,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict] | None = None,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4256,
+      "pattern": "normalized_blocks",
+      "text": "if not normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4257,
+      "pattern": "normalized_blocks",
+      "text": "logger.warning(\"question_bbox stage: no normalized_blocks available\")",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4258,
+      "pattern": "normalized_blocks",
+      "text": "return {\"raw_questions\": raw_questions, \"warnings\": [\"no_normalized_blocks\"]}",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4261,
+      "pattern": "normalized_blocks",
+      "text": "doc_ir = _get_blocks_document_ir(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4276,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4283,
+      "pattern": "normalized_blocks",
+      "text": "for b in (normalized_blocks or [])",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4286,
+      "pattern": "normalized_blocks",
+      "text": "doc_ir = _get_blocks_document_ir(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4290,
+      "pattern": "normalized_blocks",
+      "text": "return run_match_stage(raw_questions, normalized_blocks, structure=structure)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4547,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list | None = None,",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4559,
+      "pattern": "normalized_blocks",
+      "text": "# Build layout_blocks_by_page from normalized_blocks when available",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4562,
+      "pattern": "normalized_blocks",
+      "text": "if normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 4565,
+      "pattern": "normalized_blocks",
+      "text": "for block in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 5102,
+      "pattern": "normalized_blocks",
+      "text": "\"normalized_blocks\": [],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 5210,
+      "pattern": "normalized_blocks",
+      "text": "# 隐患① 修复：每次 stage 写入 normalized_blocks 都同步更新",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 5214,
+      "pattern": "normalized_blocks",
+      "text": "if \"normalized_blocks\" in result:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 5215,
+      "pattern": "normalized_blocks",
+      "text": "data[\"normalized_block_count\"] = len(result[\"normalized_blocks\"])",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 5219,
+      "pattern": "normalized_blocks",
+      "text": "# 一起驻留内存。400 页扫描 PDF 下，OCR 后的 normalized_blocks",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 5225,
+      "pattern": "normalized_blocks",
+      "text": "# raw_blocks 已并入 normalized_blocks，无后续消费者",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 5254,
+      "pattern": "normalized_blocks",
+      "text": "# match 后无人再读 normalized_blocks，count 已在写入时缓存",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/pipeline_orchestrator.py",
+      "line": 5255,
+      "pattern": "normalized_blocks",
+      "text": "data.pop(\"normalized_blocks\", None)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/question_splitter.py",
+      "line": 1154,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/question_splitter.py",
+      "line": 1165,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: stage1 输出的标准化块列表",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/question_splitter.py",
+      "line": 1187,
+      "pattern": "normalized_blocks",
+      "text": "if not normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/question_splitter.py",
+      "line": 1216,
+      "pattern": "normalized_blocks",
+      "text": "for block in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/question_splitter.py",
+      "line": 1479,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/question_splitter.py",
+      "line": 1485,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: 标准化后的 blocks（含 normalized_text）",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/question_splitter.py",
+      "line": 1496,
+      "pattern": "normalized_blocks",
+      "text": "for block in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 116,
+      "pattern": "normalized_blocks",
+      "text": "def _detect_section_markers(normalized_blocks: list[dict]) -> list[dict]:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 122,
+      "pattern": "normalized_blocks",
+      "text": "for block in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 200,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 212,
+      "pattern": "normalized_blocks",
+      "text": "all_pages = sorted(set(b.get(\"page\", 0) for b in normalized_blocks))",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 226,
+      "pattern": "normalized_blocks",
+      "text": "for b in normalized_blocks",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 234,
+      "pattern": "normalized_blocks",
+      "text": "for b in normalized_blocks",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 246,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 263,
+      "pattern": "normalized_blocks",
+      "text": "total_blocks = len(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 293,
+      "pattern": "normalized_blocks",
+      "text": "section_markers = _detect_section_markers(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 300,
+      "pattern": "normalized_blocks",
+      "text": "for block in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 369,
+      "pattern": "normalized_blocks",
+      "text": "a_pages = _expand_answer_pages(normalized_blocks, a_pages, q_pages)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/structure_analyzer.py",
+      "line": 372,
+      "pattern": "normalized_blocks",
+      "text": "all_pages = sorted(set(b.get(\"page\", 0) for b in normalized_blocks))",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/table_region_detector.py",
+      "line": 164,
+      "pattern": "normalized_blocks",
+      "text": "blocks: pipeline 中的 normalized_blocks / 文本块列表",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/text_normalizer.py",
+      "line": 858,
+      "pattern": "normalized_blocks",
+      "text": "\"\"\"标准化文本块，返回 normalized_blocks。",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/visual_boundary_detector.py",
+      "line": 30,
+      "pattern": "normalized_blocks",
+      "text": "def filter_book_layout_blocks(normalized_blocks: list[dict]) -> tuple[list[dict], dict]:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/visual_boundary_detector.py",
+      "line": 40,
+      "pattern": "normalized_blocks",
+      "text": "for block in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/visual_boundary_detector.py",
+      "line": 132,
+      "pattern": "normalized_blocks",
+      "text": "def detect_visual_boundaries(normalized_blocks: list[dict]) -> list[dict]:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/visual_boundary_detector.py",
+      "line": 141,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: 经过 normalize 的 blocks，需含 boxes/page_width/page_height",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/features/visual_boundary_detector.py",
+      "line": 149,
+      "pattern": "normalized_blocks",
+      "text": "for block in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "line": 291,
+      "pattern": "ocr_raw_text",
+      "text": "\"ocr_raw_text\": raw_ocr_text[:1000],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "line": 292,
+      "pattern": "ocr_cleaned_text",
+      "text": "\"ocr_cleaned_text\": raw_text[:1000],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "line": 335,
+      "pattern": "ocr_raw_text",
+      "text": "\"ocr_raw_text\": raw_ocr_text[:1000],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "line": 336,
+      "pattern": "ocr_cleaned_text",
+      "text": "\"ocr_cleaned_text\": raw_text[:1000],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 16,
+      "pattern": "OcrPageResult",
+      "text": "from app.core.ocr_types import OcrCandidateResult, OcrPageResult, WorkerResult",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 99,
+      "pattern": "OcrPageResult",
+      "text": ") -> dict[int, OcrPageResult]:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 133,
+      "pattern": "ocr_raw_text",
+      "text": "def ocr_raw_text(image_bytes: bytes) -> str:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 139,
+      "pattern": "ocr_raw_text",
+      "text": "\"ocr_service.ocr_raw_text() is deprecated.\",",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 156,
+      "pattern": "ocr_raw_text",
+      "text": "return _legacy_ocr_raw_text(image_bytes)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 238,
+      "pattern": "OcrPageResult",
+      "text": ") -> dict[int, OcrPageResult]:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 248,
+      "pattern": "OcrPageResult",
+      "text": "result: dict[int, OcrPageResult] = {}",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 252,
+      "pattern": "OcrPageResult",
+      "text": "result[idx] = OcrPageResult(page_index=idx, text=\"\", boxes=[])",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 254,
+      "pattern": "OcrPageResult",
+      "text": "result[idx] = OcrPageResult(",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 266,
+      "pattern": "OcrPageResult",
+      "text": "return {idx: OcrPageResult(page_index=idx, text=\"\", boxes=[]) for idx, _ in page_images}",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 269,
+      "pattern": "ocr_raw_text",
+      "text": "def _legacy_ocr_raw_text(image_bytes: bytes) -> str:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 280,
+      "pattern": "OcrPageResult",
+      "text": "def _worker_result_to_page_result(r) -> OcrPageResult:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 281,
+      "pattern": "OcrPageResult",
+      "text": "\"\"\"Convert a WorkerResult (or similar) from Gateway to OcrPageResult.\"\"\"",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 283,
+      "pattern": "OcrPageResult",
+      "text": "return OcrPageResult(page_index=0, text=\"\", boxes=[], failed=True, error=\"No result\")",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 287,
+      "pattern": "OcrPageResult",
+      "text": "return OcrPageResult(",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 296,
+      "pattern": "OcrPageResult",
+      "text": "return OcrPageResult(",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/question_snapshot_service.py",
+      "line": 4,
+      "pattern": "normalized_blocks",
+      "text": "1. 从 normalized_blocks 构造页面 OCR 行（含 bbox/zone）",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/question_snapshot_service.py",
+      "line": 155,
+      "pattern": "normalized_blocks",
+      "text": "def build_ocr_lines(normalized_blocks: list[dict]) -> list[dict]:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/question_snapshot_service.py",
+      "line": 156,
+      "pattern": "normalized_blocks",
+      "text": "\"\"\"[Legacy] 从 normalized_blocks 构造页面 OCR 行列表。",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/question_snapshot_service.py",
+      "line": 178,
+      "pattern": "normalized_blocks",
+      "text": "for block in normalized_blocks:",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/question_snapshot_service.py",
+      "line": 803,
+      "pattern": "normalized_blocks",
+      "text": "normalized_blocks: list[dict],",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    },
+    {
+      "file": "app/services/question_snapshot_service.py",
+      "line": 813,
+      "pattern": "normalized_blocks",
+      "text": "ocr_lines = build_ocr_lines(normalized_blocks)",
+      "severity": "MEDIUM",
+      "type": "legacy_blocks_reference"
+    }
+  ]
+}

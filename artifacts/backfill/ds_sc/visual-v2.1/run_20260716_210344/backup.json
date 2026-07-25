@@ -1,0 +1,218 @@
+[
+  {
+    "id": 450,
+    "qno": 369,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "【2009统考真题】下列二叉排序树中，满足平衡二叉树定义的是（ ）。",
+      "segments": [
+        {
+          "type": "text",
+          "text": "【2009统考真题】下列二叉排序树中，满足平衡二叉树定义的是（ ）。"
+        },
+        {
+          "type": "image",
+          "url": "http://localhost:8000/static/question-assets/202607/visual-v2_ds_62e7310d3c4e_content.png",
+          "display": true,
+          "alt": "图369-q369_option_group",
+          "region_type": "q369_option_group",
+          "region_id": "q369_option_group",
+          "semantic_role": "content_image",
+          "source_page": 369,
+          "bbox": [
+            170.0,
+            72.0,
+            420.0,
+            155.0
+          ],
+          "original_bbox": [
+            170.0,
+            72.0,
+            420.0,
+            155.0
+          ],
+          "coordinate_space": "pdf_points",
+          "crop_version": "visual-v2",
+          "bbox_source": "manifest_json",
+          "asset_hash": "2b59181e41069bb00ef53eccb0dd6ce08e2cd929cd2a42605c893a94ff81dad4",
+          "confidence": 0.57,
+          "requires_review": false,
+          "generated_at": "2026-07-16T09:46:12.494032"
+        }
+      ],
+      "render_mode": "segments",
+      "source_snapshot_url": "http://localhost:8000/static/question-assets/202607/visual-v2_ds_b63d209deaf3_snapshot.png",
+      "source_snapshot_full_page": false,
+      "source_snapshot_page": 369,
+      "source_snapshot_bbox": [
+        160.0,
+        67.0,
+        430.0,
+        295.0
+      ],
+      "source_snapshot_coordinate_space": "pdf_points",
+      "source_snapshot_strategy": "region_extended",
+      "source_snapshot_coverage": 0.7,
+      "content_visual_bbox": [
+        170.0,
+        72.0,
+        420.0,
+        155.0
+      ],
+      "content_visual_coordinate_space": "pdf_points",
+      "content_crop_version": "visual-v2",
+      "question_bbox": [
+        160.0,
+        67.0,
+        430.0,
+        295.0
+      ],
+      "question_bbox_coordinate_space": "pdf_points"
+    }
+  },
+  {
+    "id": 452,
+    "qno": 371,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "【2011 统考真题】对下列关键字序列，不可能构成某二叉排序树中一条查找路径的是（ ）。",
+      "segments": [
+        {
+          "type": "text",
+          "text": "【2011 统考真题】对下列关键字序列，不可能构成某二叉排序树中一条查找路径的是（ ）。"
+        },
+        {
+          "type": "image",
+          "url": "http://localhost:8000/static/question-assets/202607/visual-v2_ds_8cef1d75e480_content.png",
+          "display": true,
+          "alt": "图371-q371_manual",
+          "region_type": "q371_manual",
+          "region_id": "q371_manual",
+          "semantic_role": "content_image",
+          "source_page": 371,
+          "bbox": [
+            94.0,
+            32.0,
+            283.3,
+            110.0
+          ],
+          "original_bbox": [
+            94.0,
+            32.0,
+            283.3,
+            110.0
+          ],
+          "coordinate_space": "pdf_points",
+          "crop_version": "visual-v2",
+          "bbox_source": "manual_bbox_config",
+          "asset_hash": "5697d9b708d80b9b8b7f57c292a444d657b5145073638a03c44f8dcbba76e387",
+          "confidence": 0.89,
+          "requires_review": false,
+          "generated_at": "2026-07-16T09:40:48.844157"
+        }
+      ],
+      "render_mode": "segments",
+      "source_snapshot_url": "http://localhost:8000/static/question-assets/202607/visual-v2_ds_8c2d05464ebc_snapshot.png",
+      "source_snapshot_full_page": false,
+      "source_snapshot_page": 371,
+      "source_snapshot_bbox": [
+        84.0,
+        27.0,
+        293.3,
+        250.0
+      ],
+      "source_snapshot_coordinate_space": "pdf_points",
+      "source_snapshot_strategy": "region_extended",
+      "source_snapshot_coverage": 0.7,
+      "content_visual_bbox": [
+        94.0,
+        32.0,
+        283.3,
+        110.0
+      ],
+      "content_visual_coordinate_space": "pdf_points",
+      "content_crop_version": "visual-v2",
+      "question_bbox": [
+        84.0,
+        27.0,
+        293.3,
+        250.0
+      ],
+      "question_bbox_coordinate_space": "pdf_points"
+    }
+  },
+  {
+    "id": 461,
+    "qno": 380,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "下图所示是一棵(05 10",
+      "render_mode": "segments",
+      "segments": [
+        {
+          "type": "text",
+          "text": "下图所示是一棵(05 10"
+        },
+        {
+          "type": "image",
+          "url": "http://localhost:8000/static/question-assets/202607/visual-v2_ds_05602595d5c4_content.png",
+          "display": true,
+          "alt": "图380-q380_manual",
+          "region_type": "q380_manual",
+          "region_id": "q380_manual",
+          "semantic_role": "content_image",
+          "source_page": 380,
+          "bbox": [
+            240.0,
+            115.0,
+            360.0,
+            190.0
+          ],
+          "original_bbox": [
+            240.0,
+            115.0,
+            360.0,
+            190.0
+          ],
+          "coordinate_space": "pdf_points",
+          "crop_version": "visual-v2",
+          "bbox_source": "manual_bbox_config",
+          "asset_hash": "05dad6fa686f7d2e8476dc8e067c7d5d3fc28f7aa2f2d513de89924043ca78f8",
+          "confidence": 0.77,
+          "requires_review": true,
+          "generated_at": "2026-07-16T09:43:34.638884"
+        }
+      ],
+      "source_snapshot_url": "http://localhost:8000/static/question-assets/202607/visual-v2_ds_1ccc738ef806_snapshot.png",
+      "source_snapshot_full_page": false,
+      "source_snapshot_page": 380,
+      "source_snapshot_bbox": [
+        230.0,
+        110.0,
+        370.0,
+        330.0
+      ],
+      "source_snapshot_coordinate_space": "pdf_points",
+      "source_snapshot_strategy": "region_extended",
+      "source_snapshot_coverage": 0.7,
+      "content_visual_bbox": [
+        240.0,
+        115.0,
+        360.0,
+        190.0
+      ],
+      "content_visual_coordinate_space": "pdf_points",
+      "content_crop_version": "visual-v2",
+      "question_bbox": [
+        230.0,
+        110.0,
+        370.0,
+        330.0
+      ],
+      "question_bbox_coordinate_space": "pdf_points"
+    }
+  }
+]

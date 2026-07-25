@@ -1,0 +1,93 @@
+<!DOCTYPE html><html><head><meta charset='utf-8'>
+<title>题目补图审核报告</title><style>
+body{font-family:sans-serif;margin:20px;background:#f5f5f5}
+.card{background:#fff;border-radius:8px;padding:16px;margin:16px 0;box-shadow:0 2px 4px rgba(0,0,0,.1)}
+h2{color:#333} .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:bold}
+.ok{background:#d4edda;color:#155724} .fail{background:#f8d7da;color:#721c24}
+.review{background:#fff3cd;color:#856404}
+img{max-width:100%;border:1px solid #ddd;margin:4px}
+table{border-collapse:collapse;width:100%} td,th{border:1px solid #ddd;padding:8px}
+.meta{font-size:13px;color:#666} .warn{background:#fff3cd;color:#856404;padding:4px 8px}
+</style></head><body>
+<h1>题目补图审核报告</h1>
+<p>2026-07-16T21:01:45.469281 | 3 题 | 需审核: 2</p>
+<div class='card'><h2>题369 (P369) <span class='badge review'>需审核</span></h2>
+<p class='meta'>策略:manifest_bbox 置信度:0.57 记录ID:450 QuestionID:N/A crop:visual-v2.1</p>
+<p><b>Visual bbox:</b> [80.0, 55.0, 430.0, 175.0] | <b>Question bbox:</b> [70.0, 50.0, 440.0, 315.0]</p>
+<div style='display:flex;gap:16px'>
+<div style='flex:1'>
+<h3>Content Image (visual_bbox)</h3>
+<table><tr><th>预览</th><th>Visual Bbox</th><th>尺寸</th><th>状态</th></tr>
+<tr><td><img src='file:///home/lmh/projects/postgraduate-ai/scripts/../artifacts/backfill/ds_sc/visual-v2.1/run_20260716_210145/content-images/202607_visual-v2.1_ds_b187f5f61cbb_content.png' height='120'></td><td>[80.0, 55.0, 430.0, 175.0]</td><td>1070x367</td><td>✅ 🔍</td></tr>
+</table>
+<div class='warn'>质量问题: foreground_edge_touch(520px)</div>
+</div>
+<div style='flex:1'>
+<h3>Source Snapshot (question_bbox)</h3><p class='meta'>bbox:[70.0, 50.0, 440.0, 315.0] 策略:region_extended 置信度:0.7 尺寸:1180x859</p>
+<img src='file:///home/lmh/projects/postgraduate-ai/scripts/../artifacts/backfill/ds_sc/visual-v2.1/run_20260716_210145/source-snapshots/202607_visual-v2.1_ds_ebcaf69000b5_snapshot.png' height='200'>
+</div>
+</div>
+<div style='margin-top:8px;background:#f8f9fa;padding:8px;border-radius:4px'>
+<p><b>原始题干:</b> <code>【2009统考真题】下列二叉排序树中，满足平衡二叉树定义的是（ ）。</code></p>
+</div>
+<div style='margin-top:8px;padding:8px;background:#e8f5e9;border-radius:4px'>
+<b>审核清单 (三项均通过后才可 apply):</b><br>
+ 清理题干: OK | Content Image: OK | Source Snapshot: OK
+</div>
+</div>
+<div class='card'><h2>题371 (P371) <span class='badge ok'>自动</span></h2>
+<p class='meta'>策略:manifest_bbox 置信度:0.89 记录ID:452 QuestionID:N/A crop:visual-v2.1</p>
+<div style='display:flex;gap:16px'>
+<div style='flex:1'>
+<h3>Content Image (visual_bbox)</h3>
+</div>
+<div style='flex:1'>
+<h3>Source Snapshot (question_bbox)</h3><p class='meta'>bbox:[28.35, 21.266999816894533, 538.65, 361.538996887207] 策略:page_body 置信度:0.4 尺寸:1609x1045</p>
+<img src='file:///home/lmh/projects/postgraduate-ai/scripts/../artifacts/backfill/ds_sc/visual-v2.1/run_20260716_210145/source-snapshots/202607_visual-v2.1_ds_6ccc7a36f0b1_snapshot.png' height='200'>
+</div>
+</div>
+<div style='margin-top:8px;background:#f8f9fa;padding:8px;border-radius:4px'>
+<p><b>原始题干:</b> <code>【2011 统考真题】对下列关键字序列，不可能构成某二叉排序树中一条查找路径的是（ ）。</code></p>
+</div>
+<div style='margin-top:8px;padding:8px;background:#e8f5e9;border-radius:4px'>
+<b>审核清单 (三项均通过后才可 apply):</b><br>
+ 清理题干: OK | Content Image: FAIL | Source Snapshot: OK
+</div>
+</div>
+<div class='card'><h2>题380 (P380) <span class='badge review'>需审核</span></h2>
+<p class='meta'>策略:manifest_bbox 置信度:0.77 记录ID:461 QuestionID:N/A crop:visual-v2.1</p>
+<p><b>Visual bbox:</b> [170.0, 107.0, 370.0, 193.0] | <b>Question bbox:</b> [160.0, 102.0, 380.0, 333.0]</p>
+<div style='display:flex;gap:16px'>
+<div style='flex:1'>
+<h3>Content Image (visual_bbox)</h3>
+<table><tr><th>预览</th><th>Visual Bbox</th><th>尺寸</th><th>状态</th></tr>
+<tr><td><img src='file:///home/lmh/projects/postgraduate-ai/scripts/../artifacts/backfill/ds_sc/visual-v2.1/run_20260716_210145/content-images/202607_visual-v2.1_ds_b2b2cb997344_content.png' height='120'></td><td>[170.0, 107.0, 370.0, 193.0]</td><td>612x264</td><td>✅ 🔍</td></tr>
+</table>
+</div>
+<div style='flex:1'>
+<h3>Source Snapshot (question_bbox)</h3><p class='meta'>bbox:[160.0, 102.0, 380.0, 333.0] 策略:region_extended 置信度:0.7 尺寸:722x755</p>
+<img src='file:///home/lmh/projects/postgraduate-ai/scripts/../artifacts/backfill/ds_sc/visual-v2.1/run_20260716_210145/source-snapshots/202607_visual-v2.1_ds_370ebefc3a9f_snapshot.png' height='200'>
+</div>
+</div>
+<div style='margin-top:8px;background:#f8f9fa;padding:8px;border-radius:4px'>
+<p><b>原始题干:</b> <code>下图所示是一棵(05 10</code></p>
+<p><b>清理后题干:</b> <code>下图所示是一棵(05</code></p>
+<p><b>排除的 visual_text (9):</b></p>
+<ul>
+<li><code>12</code> overlap=1.000 bbox=(247.5228426395939, 122.27925486602267, 262.39340101522845, 134.74694359746027)</li>
+<li><code>25</code> overlap=1.000 bbox=(272.46700507614213, 122.75878135569334, 288.29695431472084, 135.22647008713096)</li>
+<li><code>05</code> overlap=1.000 bbox=(183.24365482233503, 166.87521840539563, 199.0736040609137, 179.8224336265039)</li>
+<li><code>10</code> overlap=1.000 bbox=(206.748730964467, 166.87521840539563, 222.0989847715736, 179.8224336265039)</li>
+<li><code>15</code> overlap=1.000 bbox=(242.7258883248731, 166.87521840539563, 258.55583756345175, 179.34290713683325)</li>
+<li><code>19</code> overlap=1.000 bbox=(260.9543147208122, 167.35474489506632, 276.3045685279188, 179.34290713683325)</li>
+<li><code>22</code> overlap=1.000 bbox=(277.74365482233503, 167.35474489506632, 294.53299492385787, 179.8224336265039)</li>
+<li><code>26</code> overlap=1.000 bbox=(313.24111675126903, 166.87521840539563, 329.07106598984774, 179.8224336265039)</li>
+<li><code>28</code> overlap=1.000 bbox=(338.66497461928935, 167.35474489506632, 354.494923857868, 179.8224336265039)</li>
+</ul>
+</div>
+<div style='margin-top:8px;padding:8px;background:#e8f5e9;border-radius:4px'>
+<b>审核清单 (三项均通过后才可 apply):</b><br>
+ 清理题干: OK | Content Image: OK | Source Snapshot: OK
+</div>
+</div>
+</body></html>

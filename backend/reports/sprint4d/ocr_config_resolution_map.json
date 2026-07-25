@@ -1,0 +1,330 @@
+{
+  "config_flow": {
+    "ocr_gateway_remote_adapter": "OCRGateway._register_remote_adapter() creates PaddleOCRVLDocumentAdapter() with NO arguments. The adapter defaults to empty api_token and hardcoded base_url. This means it will always fail with VL_NOT_CONFIGURED at call time.",
+    "ocr_fix_router_config": "OCRFixRouter receives a config dict from pipeline_orchestrator. The config dict is populated from admin_ai_model_configs table and admin_ai_configs key-value table. Keys: deepseek_api_key, deepseek_base_url, paddleocr_vl_api_token, paddleocr_vl_base_url, paddleocr_vl_model.",
+    "model_config_resolver": "model_config_resolver.py has resolve_active_model(db, feature) which queries admin_ai_model_configs by feature capability. Already supports feature-based model resolution but is NOT wired into OCRGateway.",
+    "existing_defaults": "admin_ai_config_service has _DEFAULT_MODELS with a single deepseek-v4-flash entry. No OCR-specific default model exists in seed data."
+  },
+  "capabilities": {
+    "ocr_lightweight_capability": "Not explicitly defined in DB. Users can tag models with 'ocr' in features. No lightweight OCR model seeded.",
+    "ocr_vl_capability": "Not explicitly defined. PaddleOCR-VL-1.6 would be tagged with 'vision' or 'ocr' in features.",
+    "ocr_fix_capability": "Managed via admin_ai_configs key ocr_fix_model. Not a model_config feature tag.",
+    "ai_repair_capability": "Managed via admin_ai_configs key completion_auto_*. Not a model_config feature tag."
+  },
+  "gaps": [
+    "OCRGateway creates remote adapter with empty config — no DB config resolution",
+    "No AIModelConfigResolver class — only module-level resolve_active_model function",
+    "No config snapshot in PipelineExecutionContext — config not frozen at pipeline start",
+    "No OCR_LIGHTWEIGHT / OCR_VL capability distinction in model_config_resolver",
+    "OCRFixRouter config dict populated ad-hoc in pipeline_orchestrator, not through unified resolver",
+    "No cache for model config queries (admin_ai_configs has TTL cache, but model_configs don't)"
+  ],
+  "hardcoded_findings": {
+    "hardcoded_endpoints": [
+      {
+        "file": "backend/app/features/batch_image_import_service.py",
+        "line": 659,
+        "snippet": "base_url = resolved.get(\"api_base_url\", \"https://paddleocr.aistudio-app.com\")"
+      },
+      {
+        "file": "backend/app/features/ocr_adapter.py",
+        "line": 414,
+        "snippet": "base_url: str = \"https://paddleocr.aistudio-app.com\","
+      },
+      {
+        "file": "backend/app/features/ocr_adapter.py",
+        "line": 1083,
+        "snippet": "vl_base_url: str = \"https://paddleocr.aistudio-app.com\","
+      },
+      {
+        "file": "backend/app/features/ocr_vl/paddleocr_vl_adapter.py",
+        "line": 32,
+        "snippet": "base_url: str = \"https://paddleocr.aistudio-app.com\","
+      },
+      {
+        "file": "backend/app/features/ocr_vl/paddleocr_vl_client.py",
+        "line": 152,
+        "snippet": "_DEFAULT_BASE_URL = \"https://paddleocr.aistudio-app.com\""
+      },
+      {
+        "file": "backend/app/features/pipeline_orchestrator.py",
+        "line": 3007,
+        "snippet": "base_url = vl_config.get(\"api_base_url\") or \"https://paddleocr.aistudio-app.com\""
+      },
+      {
+        "file": "backend/app/features/vision_fallback.py",
+        "line": 29,
+        "snippet": "_DEFAULT_VL_BASE_URL = \"https://paddleocr.aistudio-app.com\""
+      }
+    ],
+    "hardcoded_model_names": [
+      {
+        "file": "backend/app/features/batch_image_import_service.py",
+        "line": 660,
+        "snippet": "model = resolved.get(\"model_name\", \"PaddleOCR-VL-1.6\")"
+      },
+      {
+        "file": "backend/app/features/ocr_adapter.py",
+        "line": 415,
+        "snippet": "model: str = \"PaddleOCR-VL-1.6\","
+      },
+      {
+        "file": "backend/app/features/ocr_fix/router.py",
+        "line": 246,
+        "snippet": "model = self._config.get(\"paddleocr_vl_model\", \"PaddleOCR-VL-1.6\")"
+      },
+      {
+        "file": "backend/app/features/ocr_vl/paddleocr_vl_adapter.py",
+        "line": 33,
+        "snippet": "model: str = \"PaddleOCR-VL-1.6\","
+      },
+      {
+        "file": "backend/app/features/ocr_vl/paddleocr_vl_client.py",
+        "line": 336,
+        "snippet": "model: str = \"PaddleOCR-VL-1.6\","
+      },
+      {
+        "file": "backend/app/features/pipeline_orchestrator.py",
+        "line": 3008,
+        "snippet": "model = vl_config.get(\"model_name\") or \"PaddleOCR-VL-1.6\""
+      },
+      {
+        "file": "backend/app/features/vision_fallback.py",
+        "line": 30,
+        "snippet": "_DEFAULT_VL_MODEL = \"PaddleOCR-VL-1.6\""
+      }
+    ],
+    "empty_config_instantiations": [
+      {
+        "file": "backend/app/features/ocr_gateway.py",
+        "line": 337,
+        "snippet": "self._registry.register_ocr(PaddleOCRVLDocumentAdapter())"
+      }
+    ],
+    "env_var_config_access": [
+      {
+        "file": "backend/app/core/deployment_profile.py",
+        "line": 81,
+        "snippet": "env_val = os.environ.get(key, settings.model_dump().get(key.split(\"_\")[0].lower(), \"\"))"
+      },
+      {
+        "file": "backend/app/features/ocr_canary.py",
+        "line": 154,
+        "snippet": "val = _os.environ.get(key, \"\")"
+      },
+      {
+        "file": "backend/app/features/ocr_canary.py",
+        "line": 162,
+        "snippet": "val = _os.environ.get(key, \"\")"
+      },
+      {
+        "file": "backend/app/features/pipeline_orchestrator.py",
+        "line": 3636,
+        "snippet": "config[\"deepseek_api_key\"] = os.environ.get(\"DEEPSEEK_API_KEY\", \"\")"
+      },
+      {
+        "file": "backend/app/ocr_worker/config.py",
+        "line": 42,
+        "snippet": "API_KEY: str = os.environ.get(\"OCR_WORKER_API_KEY\", \"\")"
+      }
+    ],
+    "db_config_access": [
+      {
+        "file": "backend/app/features/ai_repair.py",
+        "line": 514,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/features/ai_repair.py",
+        "line": 515,
+        "snippet": "creds = await ensure_db_model_configured(db)"
+      },
+      {
+        "file": "backend/app/features/ai_repair.py",
+        "line": 569,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/features/ai_repair.py",
+        "line": 570,
+        "snippet": "creds = await ensure_db_model_configured(db)"
+      },
+      {
+        "file": "backend/app/features/ai_repair.py",
+        "line": 681,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/features/ai_repair.py",
+        "line": 682,
+        "snippet": "creds = await ensure_db_model_configured(db)"
+      },
+      {
+        "file": "backend/app/features/batch_image_import_service.py",
+        "line": 648,
+        "snippet": "from app.services.model_config_resolver import resolve_active_model"
+      },
+      {
+        "file": "backend/app/features/batch_image_import_service.py",
+        "line": 652,
+        "snippet": "resolved = await resolve_active_model(db, feature=\"ocr\")"
+      },
+      {
+        "file": "backend/app/features/batch_image_import_service.py",
+        "line": 1009,
+        "snippet": "from app.services.model_config_resolver import resolve_active_model"
+      },
+      {
+        "file": "backend/app/features/batch_image_import_service.py",
+        "line": 1011,
+        "snippet": "_resolved_ocr_config = await resolve_active_model(db, feature=\"ocr\")"
+      },
+      {
+        "file": "backend/app/features/llm_text_structurer.py",
+        "line": 386,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/features/llm_text_structurer.py",
+        "line": 387,
+        "snippet": "_creds = await ensure_db_model_configured(db)"
+      },
+      {
+        "file": "backend/app/features/pipeline_orchestrator.py",
+        "line": 3590,
+        "snippet": "from app.services.model_config_resolver import resolve_active_model"
+      },
+      {
+        "file": "backend/app/features/pipeline_orchestrator.py",
+        "line": 3593,
+        "snippet": "ocr_model = await resolve_active_model(db, feature=\"ocr\")"
+      },
+      {
+        "file": "backend/app/features/pipeline_orchestrator.py",
+        "line": 3610,
+        "snippet": "ds_model = await resolve_active_model(db, feature=None)"
+      },
+      {
+        "file": "backend/app/features/pipeline_orchestrator.py",
+        "line": 5141,
+        "snippet": "from app.services.model_config_resolver import resolve_active_model"
+      },
+      {
+        "file": "backend/app/features/pipeline_orchestrator.py",
+        "line": 5143,
+        "snippet": "resolved = await resolve_active_model(db, feature=\"vision\")"
+      },
+      {
+        "file": "backend/app/features/pipeline_stages/code_structure_stage.py",
+        "line": 96,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/features/pipeline_stages/code_structure_stage.py",
+        "line": 97,
+        "snippet": "creds = await ensure_db_model_configured(db)"
+      },
+      {
+        "file": "backend/app/features/question_ai_complete.py",
+        "line": 590,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/features/question_ai_complete.py",
+        "line": 591,
+        "snippet": "creds = await ensure_db_model_configured(db, feature=\"completion\")"
+      },
+      {
+        "file": "backend/app/features/question_ai_enrich.py",
+        "line": 193,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/features/question_ai_enrich.py",
+        "line": 194,
+        "snippet": "creds = await ensure_db_model_configured(db, feature=\"completion\")"
+      },
+      {
+        "file": "backend/app/features/question_pipeline.py",
+        "line": 1488,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/features/question_pipeline.py",
+        "line": 1489,
+        "snippet": "creds = await ensure_db_model_configured(db, feature=\"completion\")"
+      },
+      {
+        "file": "backend/app/services/ai_learning_service.py",
+        "line": 100,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/services/ai_learning_service.py",
+        "line": 101,
+        "snippet": "creds = await ensure_db_model_configured(db, feature=\"analysis\")"
+      },
+      {
+        "file": "backend/app/services/ai_service.py",
+        "line": 238,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/services/ai_service.py",
+        "line": 239,
+        "snippet": "creds = await ensure_db_model_configured(db, feature=\"analysis\")"
+      },
+      {
+        "file": "backend/app/services/ai_service.py",
+        "line": 428,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/services/ai_service.py",
+        "line": 429,
+        "snippet": "creds = await ensure_db_model_configured(db, feature=\"analysis\")"
+      },
+      {
+        "file": "backend/app/services/model_config_resolver.py",
+        "line": 3,
+        "snippet": "Call ``ensure_db_model_configured(db, feature)`` before any AI call that"
+      },
+      {
+        "file": "backend/app/services/model_config_resolver.py",
+        "line": 53,
+        "snippet": "async def resolve_active_model(db: AsyncSession, feature: str | None = None) -> dict | None:"
+      },
+      {
+        "file": "backend/app/services/model_config_resolver.py",
+        "line": 119,
+        "snippet": "async def ensure_db_model_configured("
+      },
+      {
+        "file": "backend/app/services/model_config_resolver.py",
+        "line": 130,
+        "snippet": "config = await resolve_active_model(db, feature=feature)"
+      },
+      {
+        "file": "backend/app/services/stats_service.py",
+        "line": 769,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/services/stats_service.py",
+        "line": 770,
+        "snippet": "_creds = await ensure_db_model_configured(db)"
+      },
+      {
+        "file": "backend/app/services/stats_service.py",
+        "line": 869,
+        "snippet": "from app.services.model_config_resolver import ensure_db_model_configured"
+      },
+      {
+        "file": "backend/app/services/stats_service.py",
+        "line": 870,
+        "snippet": "creds = await ensure_db_model_configured(db, feature=\"analysis\")"
+      }
+    ],
+    "config_resolvers": []
+  }
+}

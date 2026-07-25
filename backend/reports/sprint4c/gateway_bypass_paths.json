@@ -1,0 +1,152 @@
+{
+  "total_bypass_sites": 23,
+  "violations_outside_adapter_boundary": 16,
+  "allowed_calls_in_adapter_boundary": 7,
+  "violations": [
+    {
+      "file": "app/features/ocr_correction.py",
+      "line": 97,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_fix/deepseek_adapter.py",
+      "line": 54,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_fix/deepseek_adapter.py",
+      "line": 60,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_fix/deepseek_adapter.py",
+      "line": 158,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_fix/deepseek_adapter.py",
+      "line": 88,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_fix/deepseek_adapter.py",
+      "line": 97,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_fix/deepseek_adapter.py",
+      "line": 145,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_fix/deepseek_adapter.py",
+      "line": 173,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_fix/deepseek_adapter.py",
+      "line": 124,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_fix/router.py",
+      "line": 417,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_fix/router.py",
+      "line": 366,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_fix/rule_adapter.py",
+      "line": 37,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_vl/paddleocr_vl_adapter.py",
+      "line": 67,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_vl/paddleocr_vl_adapter.py",
+      "line": 76,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_vl/paddleocr_vl_adapter.py",
+      "line": 103,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    },
+    {
+      "file": "app/features/ocr_vl/paddleocr_vl_adapter.py",
+      "line": 116,
+      "call": "ocrfixresult",
+      "in_allowed_zone": false
+    }
+  ],
+  "allowed_calls": [
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 296,
+      "call": "ocrpageresult",
+      "in_allowed_zone": true
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 283,
+      "call": "ocrpageresult",
+      "in_allowed_zone": true
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 287,
+      "call": "ocrpageresult",
+      "in_allowed_zone": true
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 252,
+      "call": "ocrpageresult",
+      "in_allowed_zone": true
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 266,
+      "call": "ocrpageresult",
+      "in_allowed_zone": true
+    },
+    {
+      "file": "app/services/ocr_service.py",
+      "line": 254,
+      "call": "ocrpageresult",
+      "in_allowed_zone": true
+    },
+    {
+      "file": "app/features/ocr_gateway.py",
+      "line": 442,
+      "call": "adapter.process",
+      "in_allowed_zone": true
+    }
+  ],
+  "bypass_pattern_summary": {
+    "direct_adapter_process": 1,
+    "raw_ocr_fix_result": 22
+  },
+  "assessment": "FOUND 16 gateway bypass sites outside adapter boundary. These must go through OCRGateway."
+}

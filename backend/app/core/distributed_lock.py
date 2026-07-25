@@ -330,10 +330,6 @@ class DistributedLock:
             self.duration_ms += (time.time() - start) * 1000
 
     def __del__(self) -> None:
-        if self._client is not None:
-            try:
-                import asyncio
-                if asyncio.get_running_loop() is not None:
-                    pass  # Can't safely close in __del__ — depends on GC
-            except RuntimeError:
-                pass
+        client = getattr(self, "_client", None)
+        if client is not None:
+            pass  # Redis client GC is handled by redis-py

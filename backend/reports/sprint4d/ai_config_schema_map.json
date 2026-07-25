@@ -1,0 +1,13 @@
+{
+  "admin_ai_model_configs": {
+    "table_name": "admin_ai_model_configs",
+    "model_class": "AdminAiModelConfig",
+    "fields": []
+  },
+  "admin_ai_configs": {
+    "table_name": "admin_ai_configs",
+    "model_class": "AdminAiConfig",
+    "fields": []
+  },
+  "relationship": "admin_ai_configs is a flat key-value store config_key→config_value. admin_ai_model_configs stores per-model config with provider, endpoint, keys. There is NO foreign key relationship between the two tables — they are independent. admin_ai_configs keys (ocr_strategy_*, completion_*) are loaded by pipeline_orchestrator and question_ai_complete via get_all_configs(). admin_ai_model_configs is queried by model_config_resolver.resolve_active_model() for per-feature model resolution."
+}

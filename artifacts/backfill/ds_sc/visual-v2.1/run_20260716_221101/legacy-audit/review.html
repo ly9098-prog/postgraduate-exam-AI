@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-src 'none'; object-src 'none'">
+<title>Legacy Visual Audit — Review</title>
+<style>
+body{font-family:sans-serif;margin:20px;background:#f5f5f5;color:#333}
+h1{color:#222}
+table{border-collapse:collapse;width:100%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;font-size:13px}
+th{background:#f2f2f2;position:sticky;top:0}
+tr:hover{background:#f0f7ff}
+.tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:bold;margin:1px}
+.tag-current{background:#d4edda;color:#155724}
+.tag-legacy{background:#fff3cd;color:#856404}
+.tag-mixed{background:#f8d7da;color:#721c24}
+.tag-missing{background:#f8d7da;color:#721c24}
+.tag-unknown{background:#e2e3e5;color:#383d41}
+.tag-not_applicable{background:#d6d8db;color:#383d41}
+.tag-frozen{background:#cce5ff;color:#004085}
+.tag-placeholder{background:#ffcccc;color:#990000}
+.tag-drift{background:#ffe0cc;color:#994d00}
+.tag-conflict{background:#ffd6cc;color:#992200}
+.summary-box{background:#fff;border-radius:6px;padding:12px 16px;margin:12px 0;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.summary-grid{display:flex;gap:12px;flex-wrap:wrap}
+.summary-item{background:#f8f9fa;padding:8px 12px;border-radius:4px;min-width:120px}
+.summary-num{font-size:24px;font-weight:bold;color:#222}
+.summary-label{font-size:11px;color:#666;text-transform:uppercase}
+.footer{font-size:11px;color:#999;margin-top:20px;text-align:center}
+</style>
+</head>
+<body>
+<h1>Legacy Visual Audit — Review</h1>
+<p>Generated: 2026-07-16T22:10:15.972812 | 23 records shown</p>
+
+<div class="summary-box">
+<div class="summary-grid">
+<div class="summary-item"><div class="summary-num">23</div><div class="summary-label">Records Flagged</div></div>
+<div class="summary-item"><div class="summary-num">P0:0 P1:0 P2:23 P3:0 P4:0</div><div class="summary-label">Priority Distribution</div></div>
+<div class="summary-item"><div class="summary-num">510</div><div class="summary-label">Migration Eligible</div></div>
+<div class="summary-item"><div class="summary-num">3</div><div class="summary-label">Frozen Blocked</div></div>
+</div>
+</div>
+
+<div style="overflow-x:auto">
+<table>
+<thead><tr>
+<th>Q.No</th><th>Import ID</th><th>Q.ID</th><th>Page</th><th>Schema</th><th>Assets</th><th>Flags</th><th>Primary</th><th>Actions</th><th>Eligible</th><th>Pri</th>
+</tr></thead>
+<tbody>
+<tr>
+            <td>108</td>
+            <td>229</td>
+            <td></td>
+            <td>108</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>201</td>
+            <td>302</td>
+            <td></td>
+            <td>201</td>
+            <td><span class="tag tag-not_applicable">not_applicable</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td><span class="tag tag-placeholder">PLACEHOLDER</span></td>
+            <td>manual_review</td>
+            <td>manual_review</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>229</td>
+            <td>320</td>
+            <td></td>
+            <td>229</td>
+            <td><span class="tag tag-not_applicable">not_applicable</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td><span class="tag tag-placeholder">PLACEHOLDER</span></td>
+            <td>manual_review</td>
+            <td>manual_review</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>286</td>
+            <td>369</td>
+            <td></td>
+            <td>286</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>288</td>
+            <td>371</td>
+            <td></td>
+            <td>288</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>295</td>
+            <td>378</td>
+            <td></td>
+            <td>295</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>297</td>
+            <td>380</td>
+            <td></td>
+            <td>297</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>307</td>
+            <td>388</td>
+            <td></td>
+            <td>307</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>314</td>
+            <td>395</td>
+            <td></td>
+            <td>314</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>316</td>
+            <td>397</td>
+            <td></td>
+            <td>316</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>319</td>
+            <td>400</td>
+            <td></td>
+            <td>319</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>321</td>
+            <td>402</td>
+            <td></td>
+            <td>321</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>324</td>
+            <td>405</td>
+            <td></td>
+            <td>324</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>326</td>
+            <td>407</td>
+            <td>1</td>
+            <td>326</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>330</td>
+            <td>411</td>
+            <td></td>
+            <td>330</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>331</td>
+            <td>412</td>
+            <td></td>
+            <td>331</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>352</td>
+            <td>433</td>
+            <td></td>
+            <td>352</td>
+            <td><span class="tag tag-not_applicable">not_applicable</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td><span class="tag tag-placeholder">PLACEHOLDER</span></td>
+            <td>manual_review</td>
+            <td>manual_review</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>368</td>
+            <td>449</td>
+            <td></td>
+            <td>368</td>
+            <td><span class="tag tag-not_applicable">not_applicable</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td><span class="tag tag-placeholder">PLACEHOLDER</span></td>
+            <td>manual_review</td>
+            <td>manual_review</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>370</td>
+            <td>451</td>
+            <td></td>
+            <td>370</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>376</td>
+            <td>457</td>
+            <td></td>
+            <td>376</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>379</td>
+            <td>460</td>
+            <td></td>
+            <td>379</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>391</td>
+            <td>472</td>
+            <td></td>
+            <td>391</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr><tr>
+            <td>399</td>
+            <td>480</td>
+            <td>3</td>
+            <td>399</td>
+            <td><span class="tag tag-legacy">legacy</span></td>
+            <td>H0/D0/M0/I0</td>
+            <td></td>
+            <td>replace_legacy_content_image</td>
+            <td>replace_legacy_content_image</td>
+            <td>True</td>
+            <td>2</td>
+        </tr>
+</tbody>
+</table>
+</div>
+
+<div class="footer">
+This report contains no remote resources. All data sourced from audit snapshot. |
+Audit records: 513 total | 0 errors
+</div>
+</body>
+</html>

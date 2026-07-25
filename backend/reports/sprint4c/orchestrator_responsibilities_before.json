@@ -1,0 +1,110 @@
+{
+  "file": "app/features/pipeline_orchestrator.py",
+  "total_lines_before": 6409,
+  "code_lines_before": 5220,
+  "responsibilities": {
+    "ai_repair": [
+      {
+        "line": 4539,
+        "call": "run_repair_stage"
+      }
+    ],
+    "document_ir_construction": [
+      {
+        "line": 334,
+        "call": "get_document_ir"
+      },
+      {
+        "line": 339,
+        "call": "_blocks_to_document_ir"
+      },
+      {
+        "line": 1295,
+        "call": "_blocks_to_document_ir"
+      },
+      {
+        "line": 537,
+        "call": "_get_blocks_document_ir"
+      },
+      {
+        "line": 1471,
+        "call": "document_ir_to_dict"
+      },
+      {
+        "line": 1484,
+        "call": "document_ir_from_dict"
+      },
+      {
+        "line": 3737,
+        "call": "_get_blocks_document_ir"
+      }
+    ],
+    "page_rendering": [
+      {
+        "line": 4957,
+        "call": "pdf_renderer.render_pages"
+      },
+      {
+        "line": 5011,
+        "call": "pdf_renderer.cleanup"
+      }
+    ],
+    "persistence": [
+      {
+        "line": 2433,
+        "call": "_save_artifact"
+      },
+      {
+        "line": 2441,
+        "call": "_save_artifact"
+      },
+      {
+        "line": 2448,
+        "call": "_save_artifact"
+      },
+      {
+        "line": 2452,
+        "call": "_save_artifact"
+      },
+      {
+        "line": 2456,
+        "call": "_save_artifact"
+      },
+      {
+        "line": 2460,
+        "call": "_save_artifact"
+      }
+    ],
+    "question_splitting": [
+      {
+        "line": 4053,
+        "call": "split_questions"
+      }
+    ],
+    "review_artifact": [
+      {
+        "line": 4836,
+        "call": "run_review_stage"
+      }
+    ],
+    "storage_delete": [
+      {
+        "line": 4710,
+        "call": "get_storage"
+      },
+      {
+        "line": 4808,
+        "call": "storage.upload"
+      }
+    ]
+  },
+  "responsibility_counts": {
+    "ai_repair": 1,
+    "document_ir_construction": 7,
+    "page_rendering": 2,
+    "persistence": 6,
+    "question_splitting": 1,
+    "review_artifact": 1,
+    "storage_delete": 2
+  }
+}

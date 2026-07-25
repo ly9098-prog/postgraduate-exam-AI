@@ -1,0 +1,228 @@
+{
+  "document_id": "9178415c5a335f54",
+  "source_hash": "",
+  "pages": [
+    {
+      "page_id": "d56ae852fe9f",
+      "page_index": 0,
+      "width": 1240,
+      "height": 1754,
+      "original_image_ref": "",
+      "transforms": [],
+      "regions": [
+        {
+          "region_id": "76f363a02667608e",
+          "region_type": "text",
+          "polygon": null,
+          "bbox": {
+            "x0": 0,
+            "y0": 0,
+            "x1": 1240,
+            "y1": 1754
+          },
+          "confidence": 1.0,
+          "reading_order": 0,
+          "lines": [
+            {
+              "line_id": "a0278ac568162660",
+              "text": "风中易小生·24考研计算机WD数据结构做题本【选择题】",
+              "polygon": null,
+              "bbox": {
+                "x0": 67.0,
+                "y0": 39.0,
+                "x1": 1056.0,
+                "y1": 77.0
+              },
+              "confidence": 0.9941726922988892,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "8516547d6aec2573",
+              "text": "17.假定一棵三叉树的结点数为 50，则它的最小高度为(",
+              "polygon": null,
+              "bbox": {
+                "x0": 31.0,
+                "y0": 126.0,
+                "x1": 847.0,
+                "y1": 166.0
+              },
+              "confidence": 0.9831129312515259,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "8d18be8c0ddb5394",
+              "text": "B.4",
+              "polygon": null,
+              "bbox": {
+                "x0": 322.0,
+                "y0": 191.0,
+                "x1": 383.0,
+                "y1": 231.0
+              },
+              "confidence": 0.9999287724494934,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "dedd3d792c4f59bc",
+              "text": "C.5",
+              "polygon": null,
+              "bbox": {
+                "x0": 561.0,
+                "y0": 191.0,
+                "x1": 619.0,
+                "y1": 232.0
+              },
+              "confidence": 0.9925456047058105,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "356828692cd41868",
+              "text": "A.3",
+              "polygon": null,
+              "bbox": {
+                "x0": 59.0,
+                "y0": 190.0,
+                "x1": 122.0,
+                "y1": 234.0
+              },
+              "confidence": 0.9993939995765686,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "2cfda5a9fda41ffa",
+              "text": "D.6",
+              "polygon": null,
+              "bbox": {
+                "x0": 795.0,
+                "y0": 190.0,
+                "x1": 859.0,
+                "y1": 234.0
+              },
+              "confidence": 0.999814510345459,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            }
+          ],
+          "children": [],
+          "provenance": {
+            "engine": "paddleocr",
+            "model_version": "",
+            "adapter": "",
+            "ai_modified": false,
+            "original_text": "",
+            "diff": "",
+            "rule_version": "",
+            "trace_id": "",
+            "timestamp": 0.0
+          },
+          "flags": [],
+          "revision": 0,
+          "source_region_ids": [],
+          "parent_region_id": ""
+        }
+      ],
+      "reading_order": [],
+      "reading_order_confidence": null,
+      "reading_order_flags": []
+    }
+  ],
+  "pipeline_fingerprint": "replay-test",
+  "created_at": 1784278024.9922388,
+  "schema_version": "1.0",
+  "cross_page_links": []
+}

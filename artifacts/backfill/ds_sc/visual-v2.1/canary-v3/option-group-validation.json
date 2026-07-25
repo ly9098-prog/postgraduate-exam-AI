@@ -1,0 +1,72 @@
+{
+  "q369": {
+    "plan": "B",
+    "expected_option_count": 4,
+    "detected_option_count": 4,
+    "option_keys_after_clear": [
+      "A",
+      "B",
+      "C",
+      "D"
+    ],
+    "option_values_after_clear": {
+      "A": "",
+      "B": "",
+      "C": "",
+      "D": ""
+    },
+    "answer_preserved": "B",
+    "image_region_type": "option_group",
+    "image_bbox": [
+      80.0,
+      55.0,
+      430.0,
+      175.0
+    ],
+    "image_coverage": "4 BST diagrams at 1070x367px (220 DPI)",
+    "foreground_edge_touch": true,
+    "assertions": {
+      "expected_option_count == 4": true,
+      "detected_option_count == 4": true,
+      "option_keys_are_A_B_C_D": true,
+      "foreground_component_touches_border": true,
+      "plan_b_placeholder_clear_applied": true
+    }
+  },
+  "q371": {
+    "plan": "none (text-only)",
+    "requires_content_image": false,
+    "content_image_reason": "none",
+    "option_texts_preserved": true,
+    "option_count": 4,
+    "answer": "A"
+  },
+  "q380": {
+    "plan": "stem_diagram",
+    "requires_content_image": true,
+    "content_image_reason": "stem_diagram",
+    "image_bbox": [
+      170.0,
+      107.0,
+      370.0,
+      193.0
+    ],
+    "expected_nodes": [
+      "05",
+      "10",
+      "12",
+      "15",
+      "19",
+      "22",
+      "25",
+      "26",
+      "28"
+    ],
+    "image_resolution": "612x264px at ~8pt padding from visual_bbox",
+    "foreground_edge_touch": false,
+    "visual_text_coverage": 1.0,
+    "stem_cleaning": "manual fix applied",
+    "option_count": 4,
+    "answer": "A"
+  }
+}

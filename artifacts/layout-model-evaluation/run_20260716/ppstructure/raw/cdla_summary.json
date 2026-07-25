@@ -1,0 +1,22 @@
+{
+  "total_pages": 28,
+  "pages_by_region_count": {
+    "2": 18,
+    "6": 1,
+    "3": 7,
+    "4": 2
+  },
+  "label_distribution": {
+    "text": 29,
+    "title": 27,
+    "footer": 1,
+    "equation": 5,
+    "header": 4,
+    "figure": 3,
+    "reference": 2
+  },
+  "avg_layout_time": 0.117,
+  "avg_structure_time": 1.493,
+  "total_layout_time": 3.282,
+  "total_structure_time": 41.809
+}

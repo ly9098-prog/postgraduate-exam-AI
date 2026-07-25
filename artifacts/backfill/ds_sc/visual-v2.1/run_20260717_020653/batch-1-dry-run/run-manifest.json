@@ -1,0 +1,52 @@
+{
+  "run_id": "run_20260717_020653",
+  "generated_at": "2026-07-17T02:06:55.289437",
+  "output_dir": "/home/lmh/projects/postgraduate-ai/artifacts/backfill/ds_sc/visual-v2.1/run_20260717_020653/batch-1-dry-run",
+  "source_pdf": "/home/lmh/projects/postgraduate-ai/artifacts/data-structure-import/source/ds_sc.pdf",
+  "source_pdf_sha256": "0ede22748f2a00c3f36ef67c792d0de9ce004c3d046260e83835638af45893fb",
+  "targets": [
+    {
+      "id": "Q147_s200",
+      "source_question_no": 200,
+      "type": "missing_image",
+      "question_id": 147,
+      "qi_id": 301
+    },
+    {
+      "id": "Q152_s205",
+      "source_question_no": 205,
+      "type": "missing_image",
+      "question_id": 152,
+      "qi_id": 306
+    },
+    {
+      "id": "Q154_s207",
+      "source_question_no": 207,
+      "type": "missing_image",
+      "question_id": 154,
+      "qi_id": 308
+    },
+    {
+      "id": "Q294_s369",
+      "source_question_no": 369,
+      "type": "url_fix",
+      "question_id": 294,
+      "qi_id": 450
+    },
+    {
+      "id": "Q296_s371",
+      "source_question_no": 371,
+      "type": "text_only_confirm",
+      "question_id": 296,
+      "qi_id": 452
+    },
+    {
+      "id": "Q305_s380",
+      "source_question_no": 380,
+      "type": "url_fix",
+      "question_id": 305,
+      "qi_id": 461
+    }
+  ],
+  "record_mapping_ok": true
+}
