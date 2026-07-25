@@ -1,0 +1,199 @@
+{
+  "document_id": "5c71d0c982059377",
+  "source_hash": "",
+  "pages": [
+    {
+      "page_id": "5b8e7ca70450",
+      "page_index": 0,
+      "width": 1240,
+      "height": 1754,
+      "original_image_ref": "",
+      "transforms": [],
+      "regions": [
+        {
+          "region_id": "b503d4d61856a4f1",
+          "region_type": "text",
+          "polygon": null,
+          "bbox": {
+            "x0": 0,
+            "y0": 0,
+            "x1": 1240,
+            "y1": 1754
+          },
+          "confidence": 1.0,
+          "reading_order": 0,
+          "lines": [
+            {
+              "line_id": "da47f6656558bd77",
+              "text": "2. 栈和队列的共同点是( )。",
+              "polygon": null,
+              "bbox": {
+                "x0": 50,
+                "y0": 100,
+                "x1": 900,
+                "y1": 140
+              },
+              "confidence": 0.98,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "b74e84d35d9f81ea",
+              "text": "A. 都是先进先出",
+              "polygon": null,
+              "bbox": {
+                "x0": 80,
+                "y0": 160,
+                "x1": 500,
+                "y1": 190
+              },
+              "confidence": 0.97,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "5fed3eb764e1aa3a",
+              "text": "B. 都是先进后出",
+              "polygon": null,
+              "bbox": {
+                "x0": 80,
+                "y0": 200,
+                "x1": 500,
+                "y1": 230
+              },
+              "confidence": 0.99,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "14a49a4182ac069a",
+              "text": "C. 只允许在端点处插入和删除",
+              "polygon": null,
+              "bbox": {
+                "x0": 80,
+                "y0": 240,
+                "x1": 600,
+                "y1": 270
+              },
+              "confidence": 0.96,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "13ddbc15fdc1b967",
+              "text": "D. 没有共同点",
+              "polygon": null,
+              "bbox": {
+                "x0": 80,
+                "y0": 280,
+                "x1": 400,
+                "y1": 310
+              },
+              "confidence": 0.95,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            }
+          ],
+          "children": [],
+          "provenance": {
+            "engine": "paddleocr",
+            "model_version": "",
+            "adapter": "",
+            "ai_modified": false,
+            "original_text": "",
+            "diff": "",
+            "rule_version": "",
+            "trace_id": "",
+            "timestamp": 0.0
+          },
+          "flags": [],
+          "revision": 0,
+          "source_region_ids": [],
+          "parent_region_id": ""
+        }
+      ],
+      "reading_order": [],
+      "reading_order_confidence": null,
+      "reading_order_flags": []
+    }
+  ],
+  "pipeline_fingerprint": "replay-test",
+  "created_at": 1784278024.9941466,
+  "schema_version": "1.0",
+  "cross_page_links": []
+}

@@ -1,0 +1,18 @@
+{
+  "v2_files_in_orphaned_assets": {
+    "q369": "visual-v2_ds_62e7310d3c4e_content.png",
+    "q371": "visual-v2_ds_8cef1d75e480_content.png",
+    "q380": "visual-v2_ds_05602595d5c4_content.png"
+  },
+  "current_db_references": {
+    "q369": "visual-v2.1_ds_b187f5f61cbb_content.png (new, not orphaned)",
+    "q371": "None (source_image_name cleared)",
+    "q380": "visual-v2.1_ds_b2b2cb997344_content.png (new, not orphaned)"
+  },
+  "rollback_algorithm_notes": [
+    "Previous rollback mistakenly moved v2 files still referenced by DB",
+    "Fix: when rolling back, first restore DB references, then collect all referenced URLs, only remove files with zero references",
+    "After apply, all 3 canary DB records reference new v2.1 files - no dangling references",
+    "Orphaned v2 files are safe to archive but not needed for current operation"
+  ]
+}

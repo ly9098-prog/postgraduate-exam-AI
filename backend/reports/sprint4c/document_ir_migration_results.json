@@ -1,0 +1,16 @@
+{
+  "total_legacy_sites": 53,
+  "migrated_this_sprint": 0,
+  "remaining": 53,
+  "production_write_violations": 13,
+  "production_read_sites": 10,
+  "adapter_internal_legitimate": 4,
+  "test_compat": 26,
+  "ssot_violations_after_migration": 13,
+  "legacy_removal_prerequisites": [
+    "All production write paths must use DocumentIR APIs",
+    "All production read paths must use DocumentIR accessors",
+    "Review/Persistence must consume DocumentIR, not blocks",
+    "Orchestrator must not reference legacy block structures"
+  ]
+}

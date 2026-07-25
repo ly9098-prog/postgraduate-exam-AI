@@ -1,0 +1,58 @@
+{
+  "experiment": "layout-model-evaluation",
+  "date": "2026-07-16",
+  "pdf": "ds_sc.pdf",
+  "pdf_pages": 513,
+  "target_pages": 28,
+  "baselines": {
+    "visual_v2": {
+      "diagram_detection_rate": 1.0,
+      "auto_approval_rate": 0.036,
+      "avg_inference_time_s": 4.0,
+      "header_bleed_rate": 0.0
+    },
+    "cdla_layout": {
+      "diagram_detection_rate": 0.107,
+      "auto_approval_rate": 0.107,
+      "avg_inference_time_s": 0.117,
+      "label_distribution": {
+        "text": 29, "title": 27, "equation": 5,
+        "header": 4, "figure": 3, "reference": 2, "footer": 1
+      }
+    },
+    "publaynet_layout": {
+      "diagram_detection_rate": 0.0,
+      "auto_approval_rate": 0.0,
+      "avg_inference_time_s": 0.12,
+      "label_distribution": {
+        "text": 19, "list": 7, "table": 1
+      }
+    }
+  },
+  "pseudo_labels": {
+    "total_images": 28,
+    "total_annotations": 61,
+    "by_category": {
+      "header": 28,
+      "diagram": 32,
+      "option_image": 1
+    }
+  },
+  "manual_annotation_plan": {
+    "recommended_pages": 12,
+    "coverage_categories": 8,
+    "format": "COCO + YOLO"
+  },
+  "recommendation": {
+    "ppstructure_replace_visual_v2": false,
+    "must_train_own": ["diagram", "option_image"],
+    "recommend_train": ["question_stem", "answer_block", "formula"],
+    "pages_100_sufficient": false,
+    "pages_100_for_baseline": true,
+    "estimated_auto_approval_rate_trained": "30-50%",
+    "gpu_vram_required_gb": 2,
+    "inference_time_gpu_s": "0.1-0.3",
+    "license_compatible": true,
+    "stop_visual_v2_now": false
+  }
+}

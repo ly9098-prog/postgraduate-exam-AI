@@ -52,7 +52,7 @@ class PomodoroScheduler:
     def __init__(self) -> None:
         self._scheduler: AsyncIOScheduler | None = None
         self._running = False
-        self._lock = DistributedLock("pomodoro:tick", ttl=_TICK_LOCK_TTL)
+        self._lock = DistributedLock("pomodoro:tick")
 
     async def start(self) -> None:
         if self._running:

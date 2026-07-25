@@ -1,0 +1,11 @@
+{
+  "paddle_version": "3.3.0",
+  "compiled_with_cuda": true,
+  "cuda_device_count": 1,
+  "cuda_device_name": "NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+  "cuda_version": "12.6",
+  "cudnn_version": "9.5.1",
+  "compute_capability": "8.6",
+  "driver_api_version": "12.7",
+  "run_check": "passed"
+}

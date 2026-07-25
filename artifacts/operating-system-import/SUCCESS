@@ -1,0 +1,18 @@
+{
+  "status": "SUCCESS",
+  "timestamp": "2026-07-19T18:30:00",
+  "pdf_pages": 500,
+  "covered_pages": 497,
+  "questions_imported": 575,
+  "questions_published": 0,
+  "auto_fixes": 2,
+  "reimported_missing_pages": 134,
+  "fixed_contaminated_questions": 5,
+  "known_issues": {
+    "subjective_questions": 10,
+    "null_page_questions": 3,
+    "multi_question_pages": 72,
+    "all_answer_status_missing": true
+  },
+  "report": "artifacts/operating-system-import/reports/final-import-audit.md"
+}

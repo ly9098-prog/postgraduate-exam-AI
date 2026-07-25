@@ -1,0 +1,760 @@
+{
+  "entry_points": {
+    "public_import_api": "app/api/v1/imports.py",
+    "admin_import_api": "app/api/v1/admin_imports.py",
+    "import_pipeline_service": "app/services/import_pipeline_service.py"
+  },
+  "app_router_includes": [
+    "auth_router",
+    "questions_router",
+    "practice_router",
+    "wrong_questions_router",
+    "ai_router",
+    "rag_router",
+    "imports_router",
+    "behavior_router",
+    "review_router",
+    "stats_router",
+    "knowledge_points_router",
+    "ai_import_router",
+    "cache_router",
+    "health_router",
+    "pomodoro_router",
+    "sync_router",
+    "knowledge_mastery_router",
+    "knowledge_path_router",
+    "study_report_router",
+    "adaptive_learning_router",
+    "formulas_router"
+  ],
+  "api_endpoint_calls": [
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "import": "from app.features.pipeline_orchestrator import _set_pipeline_store",
+      "line": 20
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "import": "from app.features.pipeline_orchestrator import get_pipeline_status",
+      "line": 20
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "import": "from app.features.pipeline_orchestrator import resolve_pdf_page_range",
+      "line": 20
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "import": "from app.features.pipeline_orchestrator import resume_pipeline_background",
+      "line": 20
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "import": "from app.features.pipeline_orchestrator import run_import_pipeline",
+      "line": 20
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "import": "from app.features.pipeline_orchestrator import run_pipeline_background",
+      "line": 20
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_image_pipeline_store.setdefault",
+      "line": 69
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_prune_image_pipeline_store",
+      "line": 85
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_image_pipeline_store.get",
+      "line": 107
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "PipelineUploadResponse",
+      "line": 664
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "PipelineStatusResponse",
+      "line": 677
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_image_pipeline_store.pop",
+      "line": 64
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_prune_image_pipeline_store",
+      "line": 105
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_set_image_pipeline_status",
+      "line": 204
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_build_ocr_runtime_diagnostics",
+      "line": 250
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "clean_ocr_text",
+      "line": 258
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_build_ocr_text_diagnostics",
+      "line": 259
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_classify_image_pipeline_result",
+      "line": 313
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "PipelineUploadResponse",
+      "line": 562
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "PipelineUploadResponse",
+      "line": 586
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_set_pipeline_store",
+      "line": 644
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "enqueue_import_pipeline",
+      "line": 647
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_orchestrator_get_pipeline_status",
+      "line": 672
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "raw_ocr_text.splitlines",
+      "line": 133
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "importlib.util.find_spec",
+      "line": 150
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "ocr_executor.run_ocr",
+      "line": 165
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_get_image_pipeline_status",
+      "line": 189
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_set_image_pipeline_status",
+      "line": 251
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_run_ocr_in_thread",
+      "line": 257
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_set_image_pipeline_status",
+      "line": 284
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_set_image_pipeline_status",
+      "line": 343
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "importlib.util.find_spec",
+      "line": 518
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_set_image_pipeline_status",
+      "line": 534
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "enqueue_image_pipeline",
+      "line": 547
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_set_pipeline_store",
+      "line": 567
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "enqueue_excel_pipeline",
+      "line": 580
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_get_image_pipeline_status",
+      "line": 674
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_image_pipeline_key",
+      "line": 88
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_image_pipeline_key",
+      "line": 99
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_set_image_pipeline_status",
+      "line": 261
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "run_import_pipeline",
+      "line": 300
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_get_image_pipeline_status",
+      "line": 341
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_fail_image_pipeline",
+      "line": 360
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "run_pipeline_background",
+      "line": 415
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_set_pipeline_store",
+      "line": 446
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "resume_pipeline_background",
+      "line": 695
+    },
+    {
+      "file": "app/services/import_pipeline_service.py",
+      "call": "_image_pipeline_store[pid].get",
+      "line": 61
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "import": "from app.services.import_pipeline_service import get_pipeline_status",
+      "line": 21
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "import": "from app.services.import_pipeline_service import start_import_pipeline",
+      "line": 21
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "import": "from app.models.import_pipeline import ImportPipeline",
+      "line": 151
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "call": "ImportBatchDetailResponse",
+      "line": 72
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "call": "(await db.execute(sa_select(ImportPipeline).where(ImportPipeline.pipeline_id == pipeline_id))).scalar_one_or_none",
+      "line": 153
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "import": "from app.features.pipeline_checkpoint import get_pending_chunks",
+      "line": 219
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "call": "PipelineResumeResponse",
+      "line": 253
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "call": "ImportBatchResponse",
+      "line": 57
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "call": "svc_start_import_pipeline",
+      "line": 100
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "call": "svc_get_pipeline_status",
+      "line": 129
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "call": "PipelineResumeResponse",
+      "line": 226
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "call": "enqueue_resume_pipeline",
+      "line": 243
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "call": "sa_select(QuestionImport).where",
+      "line": 275
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "call": "QuestionImportResponse.model_validate",
+      "line": 76
+    },
+    {
+      "file": "app/api/v1/imports.py",
+      "call": "sa_select(ImportPipeline).where",
+      "line": 155
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.services.import_pipeline_service import get_pipeline_status",
+      "line": 63
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.services.import_pipeline_service import start_import_pipeline",
+      "line": 64
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.pipeline_orchestrator import _get_stage_checkpoint",
+      "line": 66
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.pipeline_orchestrator import _set_pipeline_store",
+      "line": 66
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.pipeline_orchestrator import _pipeline_store",
+      "line": 176
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.pipeline_orchestrator import _get_pipeline_store",
+      "line": 179
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.question_pipeline import process_question_pipeline",
+      "line": 629
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.question_pipeline import _create_question_import",
+      "line": 629
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.pipeline_artifacts import cleanup_artifacts",
+      "line": 1233
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.pipeline_artifacts import cleanup_expired",
+      "line": 1254
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.models.import_pipeline import ImportPipeline",
+      "line": 1288
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.pipeline_orchestrator import _pipeline_store",
+      "line": 1316
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.pipeline_artifacts import cleanup_expired",
+      "line": 1382
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.services.import_pipeline_service import _get_image_pipeline_status",
+      "line": 183
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.pipeline_artifacts import list_artifacts",
+      "line": 209
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_pipeline_store.get",
+      "line": 241
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "TextImportResponse",
+      "line": 699
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "(await db.execute(select(QuestionImport).where(QuestionImport.id == import_id))).scalar_one_or_none",
+      "line": 1448
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "(await db.execute(select(QuestionImport).where(QuestionImport.batch_id == batch_id).order_by(QuestionImport.id))).scalars().all",
+      "line": 1498
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_set_pipeline_store",
+      "line": 242
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.pipeline_orchestrator import _pipeline_store",
+      "line": 258
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "import": "from app.features.pipeline_orchestrator import run_import_pipeline",
+      "line": 258
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "AdminImportActionResponse",
+      "line": 450
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "AdminImportActionResponse",
+      "line": 466
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "AdminImportActionResponse",
+      "line": 481
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "AdminImportActionResponse",
+      "line": 512
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "AdminImportDeleteResponse",
+      "line": 539
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "AdminImportDeleteResponse",
+      "line": 554
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "list_import_batches",
+      "line": 570
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "resolve_ocr_mode",
+      "line": 963
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "validate_ocr_mode_dependencies",
+      "line": 964
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_pipeline_store.get",
+      "line": 1333
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "svc_start_import_pipeline",
+      "line": 98
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "svc_get_pipeline_status",
+      "line": 148
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_get_image_pipeline_status",
+      "line": 184
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "get_import_question_detail",
+      "line": 383
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 385
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "update_import_question",
+      "line": 396
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 401
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "complete_import_question",
+      "line": 412
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 417
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "batch_complete_import_questions",
+      "line": 431
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 436
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "approve_import_question",
+      "line": 448
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 453
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "reject_import_question",
+      "line": 464
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 469
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "approve_import_batch",
+      "line": 479
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 484
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 499
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "reject_import_batch",
+      "line": 510
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 515
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 527
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "delete_import_question",
+      "line": 537
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 542
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "delete_import_batch",
+      "line": 552
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 557
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "AdminImportBatchListItem.model_validate",
+      "line": 571
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "get_import_batch_detail",
+      "line": 584
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 586
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 602
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "process_question_pipeline",
+      "line": 651
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_raise_import_error",
+      "line": 913
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_cleanup_ocr_cache",
+      "line": 1404
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "(await db.execute(select(QuestionImport).where(QuestionImport.batch_id == batch_id).order_by(QuestionImport.id))).scalars",
+      "line": 1498
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_ps.get(pipeline_id, {}).get",
+      "line": 293
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_pipeline_store.get(pipeline_id, {}).get",
+      "line": 299
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "TextImportResultItem",
+      "line": 684
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_set_pipeline_store",
+      "line": 265
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "run_import_pipeline",
+      "line": 278
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_set_pipeline_store",
+      "line": 296
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_set_pipeline_store",
+      "line": 300
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "TextImportResultItem",
+      "line": 658
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_create_question_import",
+      "line": 667
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "TextImportResultItem",
+      "line": 677
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "TextImportResultItem",
+      "line": 691
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "select(QuestionImport).where",
+      "line": 1449
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_pipeline_store.get",
+      "line": 299
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_pipeline_store.get(pipeline_id, {}).get",
+      "line": 305
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "select(QuestionImport).where(QuestionImport.batch_id == batch_id).order_by",
+      "line": 1499
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "_pipeline_store.get",
+      "line": 305
+    },
+    {
+      "file": "app/api/v1/admin_imports.py",
+      "call": "select(QuestionImport).where",
+      "line": 1499
+    }
+  ],
+  "orchestrator_is_main_entry": false,
+  "coordinator_pipeline_called_from_production": false,
+  "pipeline_orchestrator_exists": true,
+  "import_pipeline_service_exists": true,
+  "coordinator_pipeline_exists": true,
+  "import_service_uses_orchestrator": true,
+  "import_service_uses_coordinator": false,
+  "coordinator_pipeline_only_in_tests": true
+}

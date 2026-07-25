@@ -1,0 +1,85 @@
+{
+  "document_id": "8ba48995328d4d89",
+  "source_hash": "",
+  "pages": [
+    {
+      "page_id": "a432dc58b5c1",
+      "page_index": 0,
+      "width": 1240,
+      "height": 1754,
+      "original_image_ref": "",
+      "transforms": [],
+      "regions": [
+        {
+          "region_id": "9f829078a50de443",
+          "region_type": "text",
+          "polygon": null,
+          "bbox": {
+            "x0": 0,
+            "y0": 0,
+            "x1": 1240,
+            "y1": 1754
+          },
+          "confidence": 1.0,
+          "reading_order": 0,
+          "lines": [
+            {
+              "line_id": "c8fab3e1839afb29",
+              "text": "6. 排序算法中，最坏情况下时间复杂度最低的是( )。",
+              "polygon": null,
+              "bbox": {
+                "x0": 50,
+                "y0": 100,
+                "x1": 950,
+                "y1": 140
+              },
+              "confidence": 0.35,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [
+                "low_conf"
+              ],
+              "revision": 0
+            }
+          ],
+          "children": [],
+          "provenance": {
+            "engine": "paddleocr",
+            "model_version": "",
+            "adapter": "",
+            "ai_modified": false,
+            "original_text": "",
+            "diff": "",
+            "rule_version": "",
+            "trace_id": "",
+            "timestamp": 0.0
+          },
+          "flags": [],
+          "revision": 0,
+          "source_region_ids": [],
+          "parent_region_id": ""
+        }
+      ],
+      "reading_order": [],
+      "reading_order_confidence": null,
+      "reading_order_flags": []
+    }
+  ],
+  "pipeline_fingerprint": "replay-test",
+  "created_at": 1784278024.9973996,
+  "schema_version": "1.0",
+  "cross_page_links": []
+}

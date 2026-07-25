@@ -1,0 +1,212 @@
+{
+  "Q294_s369": {
+    "target_id": "Q294_s369",
+    "localhost_urls_found": [
+      {
+        "source": "question.image_url",
+        "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+        "file_info": {
+          "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "path_part": "question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "static_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "ds_sc_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/ds_sc/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "exists_in_static": false,
+          "exists_in_ds_sc": false,
+          "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png"
+        }
+      },
+      {
+        "source": "question.content.segments[image]",
+        "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+        "segment_idx": 1,
+        "file_info": {
+          "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "path_part": "question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "static_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "ds_sc_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/ds_sc/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "exists_in_static": false,
+          "exists_in_ds_sc": false,
+          "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png"
+        }
+      },
+      {
+        "source": "qi.parsed_content.segments[image]",
+        "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+        "file_info": {
+          "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "path_part": "question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "static_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "ds_sc_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/ds_sc/visual-v2.1_ds_b187f5f61cbb_content.png",
+          "exists_in_static": false,
+          "exists_in_ds_sc": false,
+          "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png"
+        }
+      },
+      {
+        "source": "question.content.source_snapshot_url",
+        "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+        "file_info": {
+          "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+          "path_part": "question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+          "static_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+          "ds_sc_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/ds_sc/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+          "exists_in_static": false,
+          "exists_in_ds_sc": false,
+          "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png"
+        }
+      },
+      {
+        "source": "qi.parsed_content.source_snapshot_url",
+        "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+        "file_info": {
+          "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+          "path_part": "question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+          "static_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+          "ds_sc_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/ds_sc/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+          "exists_in_static": false,
+          "exists_in_ds_sc": false,
+          "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png"
+        }
+      }
+    ],
+    "non_localhost_urls": [],
+    "all_files_exist": false,
+    "fix_proposals": [
+      {
+        "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+        "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+        "file_sha256": null,
+        "source": "question.image_url"
+      },
+      {
+        "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+        "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+        "file_sha256": null,
+        "source": "question.content.segments[image]"
+      },
+      {
+        "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+        "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+        "file_sha256": null,
+        "source": "qi.parsed_content.segments[image]"
+      },
+      {
+        "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+        "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+        "file_sha256": null,
+        "source": "question.content.source_snapshot_url"
+      },
+      {
+        "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+        "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+        "file_sha256": null,
+        "source": "qi.parsed_content.source_snapshot_url"
+      }
+    ]
+  },
+  "Q305_s380": {
+    "target_id": "Q305_s380",
+    "localhost_urls_found": [
+      {
+        "source": "question.image_url",
+        "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+        "file_info": {
+          "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+          "path_part": "question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+          "static_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+          "ds_sc_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/ds_sc/visual-v2.1_ds_b2b2cb997344_content.png",
+          "exists_in_static": false,
+          "exists_in_ds_sc": false,
+          "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png"
+        }
+      },
+      {
+        "source": "question.content.segments[image]",
+        "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+        "segment_idx": 1,
+        "file_info": {
+          "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+          "path_part": "question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+          "static_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+          "ds_sc_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/ds_sc/visual-v2.1_ds_b2b2cb997344_content.png",
+          "exists_in_static": false,
+          "exists_in_ds_sc": false,
+          "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png"
+        }
+      },
+      {
+        "source": "qi.parsed_content.segments[image]",
+        "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+        "file_info": {
+          "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+          "path_part": "question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+          "static_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+          "ds_sc_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/ds_sc/visual-v2.1_ds_b2b2cb997344_content.png",
+          "exists_in_static": false,
+          "exists_in_ds_sc": false,
+          "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png"
+        }
+      },
+      {
+        "source": "question.content.source_snapshot_url",
+        "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+        "file_info": {
+          "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+          "path_part": "question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+          "static_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+          "ds_sc_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/ds_sc/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+          "exists_in_static": false,
+          "exists_in_ds_sc": false,
+          "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png"
+        }
+      },
+      {
+        "source": "qi.parsed_content.source_snapshot_url",
+        "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+        "file_info": {
+          "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+          "path_part": "question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+          "static_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+          "ds_sc_local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/ds_sc/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+          "exists_in_static": false,
+          "exists_in_ds_sc": false,
+          "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png"
+        }
+      }
+    ],
+    "non_localhost_urls": [],
+    "all_files_exist": false,
+    "fix_proposals": [
+      {
+        "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+        "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+        "file_sha256": null,
+        "source": "question.image_url"
+      },
+      {
+        "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+        "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+        "file_sha256": null,
+        "source": "question.content.segments[image]"
+      },
+      {
+        "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+        "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+        "file_sha256": null,
+        "source": "qi.parsed_content.segments[image]"
+      },
+      {
+        "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+        "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+        "file_sha256": null,
+        "source": "question.content.source_snapshot_url"
+      },
+      {
+        "original_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+        "proposed_url": "/static/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+        "file_sha256": null,
+        "source": "qi.parsed_content.source_snapshot_url"
+      }
+    ]
+  }
+}

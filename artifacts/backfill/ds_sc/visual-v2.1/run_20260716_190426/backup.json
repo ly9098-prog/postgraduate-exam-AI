@@ -1,0 +1,514 @@
+[
+  {
+    "id": 320,
+    "qno": 229,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "给定整数集合 {3,5,6,9,12}，与之对应的哈夫曼树是（ ）。"
+    }
+  },
+  {
+    "id": 418,
+    "qno": 337,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "在一个顺序存储的有序线性表.上查找一个数据时，既可以采用折半查找，也可以采用顺序查找， 但前者比后者的查找速度（ ）。"
+    }
+  },
+  {
+    "id": 424,
+    "qno": 343,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "已知一个长度为16的顺序表，其元素按关键字有序排列，若采用折半查找算法查找一个不存在 的元素，则比较的次数至少是（ ），至多是（ ）。"
+    }
+  },
+  {
+    "id": 426,
+    "qno": 345,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "采用分块查找时，数据的组织方式为（ ）。"
+    }
+  },
+  {
+    "id": 427,
+    "qno": 346,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "对有 2500 个记录的索引顺序表（分块表）进行查找，最理想的块长为（ ）。"
+    }
+  },
+  {
+    "id": 428,
+    "qno": 347,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "设顺序存储的某线性表共有123个元素，按分块查找的要求等分为3块。若对索引表采用顺序 查找法来确定子块，且在确定的子块中也采用顺序查找法，则在等概率情况下,分块查找成功的平 均查找长度为（ ）。"
+    }
+  },
+  {
+    "id": 446,
+    "qno": 365,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "下列关于红黑树和 AVL 树的描述中，不正确的是（ ）。"
+    }
+  },
+  {
+    "id": 450,
+    "qno": 369,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "【2009统考真题】下列二叉排序树中，满足平衡二叉树定义的是（ ）。",
+      "segments": [
+        {
+          "type": "text",
+          "text": "【2009统考真题】下列二叉排序树中，满足平衡二叉树定义的是（ ）。"
+        },
+        {
+          "type": "image",
+          "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_50e19e8d8c61_content.png",
+          "display": true,
+          "alt": "图369-q369_option_group",
+          "region_type": "q369_option_group",
+          "region_id": "q369_option_group",
+          "semantic_role": "content_image",
+          "source_page": 369,
+          "bbox": [
+            170.0,
+            72.0,
+            420.0,
+            155.0
+          ],
+          "original_bbox": [
+            170.0,
+            72.0,
+            420.0,
+            155.0
+          ],
+          "coordinate_space": "pdf_points",
+          "crop_version": "visual-v2.1",
+          "bbox_source": "manifest_json",
+          "asset_hash": "2b59181e41069bb00ef53eccb0dd6ce08e2cd929cd2a42605c893a94ff81dad4",
+          "confidence": 0.57,
+          "requires_review": false,
+          "generated_at": "2026-07-16T11:04:08.702567"
+        }
+      ],
+      "render_mode": "segments",
+      "source_snapshot_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b2ae2392a0bd_snapshot.png",
+      "source_snapshot_full_page": false,
+      "source_snapshot_page": 369,
+      "source_snapshot_bbox": [
+        160.0,
+        67.0,
+        430.0,
+        295.0
+      ],
+      "source_snapshot_coordinate_space": "pdf_points",
+      "source_snapshot_strategy": "region_extended",
+      "source_snapshot_coverage": 0.7,
+      "content_visual_bbox": [
+        170.0,
+        72.0,
+        420.0,
+        155.0
+      ],
+      "content_visual_coordinate_space": "pdf_points",
+      "content_crop_version": "visual-v2.1",
+      "question_bbox": [
+        160.0,
+        67.0,
+        430.0,
+        295.0
+      ],
+      "question_bbox_coordinate_space": "pdf_points"
+    }
+  },
+  {
+    "id": 452,
+    "qno": 371,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "【2011 统考真题】对下列关键字序列，不可能构成某二叉排序树中一条查找路径的是（ ）。",
+      "segments": [
+        {
+          "type": "text",
+          "text": "【2011 统考真题】对下列关键字序列，不可能构成某二叉排序树中一条查找路径的是（ ）。"
+        },
+        {
+          "type": "image",
+          "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_db0d06ede1cc_content.png",
+          "display": true,
+          "alt": "图371-q371_manual",
+          "region_type": "q371_manual",
+          "region_id": "q371_manual",
+          "semantic_role": "content_image",
+          "source_page": 371,
+          "bbox": [
+            94.0,
+            34.0,
+            283.3,
+            110.0
+          ],
+          "original_bbox": [
+            94.0,
+            34.0,
+            283.3,
+            110.0
+          ],
+          "coordinate_space": "pdf_points",
+          "crop_version": "visual-v2.1",
+          "bbox_source": "manual_bbox_config",
+          "asset_hash": "c4dff23666135a6385982a33c3d2bf23eeecb2be9bd51236c0678fdca14a58bf",
+          "confidence": 0.89,
+          "requires_review": false,
+          "generated_at": "2026-07-16T11:04:08.702567"
+        }
+      ],
+      "render_mode": "segments",
+      "source_snapshot_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_847fe8ef5fc1_snapshot.png",
+      "source_snapshot_full_page": false,
+      "source_snapshot_page": 371,
+      "source_snapshot_bbox": [
+        84.0,
+        29.0,
+        293.3,
+        250.0
+      ],
+      "source_snapshot_coordinate_space": "pdf_points",
+      "source_snapshot_strategy": "region_extended",
+      "source_snapshot_coverage": 0.7,
+      "content_visual_bbox": [
+        94.0,
+        34.0,
+        283.3,
+        110.0
+      ],
+      "content_visual_coordinate_space": "pdf_points",
+      "content_crop_version": "visual-v2.1",
+      "question_bbox": [
+        84.0,
+        29.0,
+        293.3,
+        250.0
+      ],
+      "question_bbox_coordinate_space": "pdf_points"
+    }
+  },
+  {
+    "id": 459,
+    "qno": 378,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "【2020统考真题】下列给定的关键字输入序列中，不能生成下边二叉排序树的是（ （ ）。。"
+    }
+  },
+  {
+    "id": 460,
+    "qno": 379,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "【2021统考真题】给定平衡二叉树如下图所示，插入关键字 23后，根中的关键字是( 20 16 30 25 40",
+      "render_mode": "segments",
+      "segments": [
+        {
+          "type": "text",
+          "text": "【2021统考真题】给定平衡二叉树如下图所示，插入关键字 23后，根中的关键字是( 20 16 30 25 40"
+        },
+        {
+          "type": "image",
+          "url": "http://localhost:8000/static/question-assets/202607/ds_sc/q_460_p379_8bdb55b12cef.png",
+          "alt": "题目原图",
+          "region_type": "illustration",
+          "source_page": 379,
+          "bbox": [
+            186.5,
+            1.4,
+            349.2,
+            197.6
+          ],
+          "coordinate_space": "pdf_points",
+          "confidence": 1.0,
+          "requires_review": false,
+          "display": true,
+          "asset_kind": "question_figure",
+          "checksum": "8bdb55b12cef",
+          "crop_mode": "manual_bbox"
+        }
+      ]
+    }
+  },
+  {
+    "id": 461,
+    "qno": 380,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "下图所示是一棵(05 10",
+      "render_mode": "segments",
+      "segments": [
+        {
+          "type": "text",
+          "text": "下图所示是一棵(05 10"
+        },
+        {
+          "type": "image",
+          "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_44d569b3bb6b_content.png",
+          "display": true,
+          "alt": "图380-q380_manual",
+          "region_type": "q380_manual",
+          "region_id": "q380_manual",
+          "semantic_role": "content_image",
+          "source_page": 380,
+          "bbox": [
+            240.0,
+            115.0,
+            360.0,
+            190.0
+          ],
+          "original_bbox": [
+            240.0,
+            115.0,
+            360.0,
+            190.0
+          ],
+          "coordinate_space": "pdf_points",
+          "crop_version": "visual-v2.1",
+          "bbox_source": "manual_bbox_config",
+          "asset_hash": "05dad6fa686f7d2e8476dc8e067c7d5d3fc28f7aa2f2d513de89924043ca78f8",
+          "confidence": 0.77,
+          "requires_review": true,
+          "generated_at": "2026-07-16T11:04:08.702567"
+        }
+      ],
+      "source_snapshot_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_89678d726584_snapshot.png",
+      "source_snapshot_full_page": false,
+      "source_snapshot_page": 380,
+      "source_snapshot_bbox": [
+        230.0,
+        110.0,
+        370.0,
+        330.0
+      ],
+      "source_snapshot_coordinate_space": "pdf_points",
+      "source_snapshot_strategy": "region_extended",
+      "source_snapshot_coverage": 0.7,
+      "content_visual_bbox": [
+        240.0,
+        115.0,
+        360.0,
+        190.0
+      ],
+      "content_visual_coordinate_space": "pdf_points",
+      "content_crop_version": "visual-v2.1",
+      "question_bbox": [
+        230.0,
+        110.0,
+        370.0,
+        330.0
+      ],
+      "question_bbox_coordinate_space": "pdf_points"
+    }
+  },
+  {
+    "id": 469,
+    "qno": 388,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "已知一棵3阶 B 树中有 2047 个关键字，则此 B 树的最大高度为（ ( ),最小高度为（ ）。"
+    }
+  },
+  {
+    "id": 476,
+    "qno": 395,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "【2017统考真题】下列应用中，适合使用B+树的是（ ）。"
+    }
+  },
+  {
+    "id": 478,
+    "qno": 397,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "【2020统考真题】依次将关键字5，6，9，13，8，2，12，15插入初始为空的4阶B 树后，根 结点中包含的关键字是（ ）。"
+    }
+  },
+  {
+    "id": 691,
+    "qno": 400,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "只能在顺序存储结构.上进行的查找方法是（ ）。"
+    }
+  },
+  {
+    "id": 481,
+    "qno": 402,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "下列关于散列表的说法中，正确的是（ ）。 I若散列表的填装因子α<l，则可避免碰撞的产生 II.散列查找中不需要任何关键字的比较 III.散列表在查找成功时平均查找长度与表长有关 IV.若在散列表中删除一个元素，不能简单地将该元素删除"
+    }
+  },
+  {
+    "id": 484,
+    "qno": 405,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "设有一个含有200个表项的散列表，用线性探测法解决冲突，按关键字查询时找到一个表项的平 均探测次数不超过 1.5，则散列表项应能够容纳（ ）个表项(设查找成功的平均查找长度为 ASL= [1+1/(1-α)]/2，其中α为装填因子)。"
+    }
+  },
+  {
+    "id": 486,
+    "qno": 407,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "对包含 n 个元素的散列表进行查找，平均查找长度（ ）。"
+    }
+  },
+  {
+    "id": 487,
+    "qno": 408,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "采用开放定址法解决冲突的散列查找中，发生聚集的原因主要是(（ ）。"
+    }
+  },
+  {
+    "id": 490,
+    "qno": 411,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "若采用链地址法构造散列表，散列函数为 H(key)=key MOD 17，则需（①）个链表。这些链的链首指针构成一个指针数组，数组的下标范围为（②）。",
+      "blank_option_groups": [
+        {
+          "id": "①",
+          "options": [
+            {
+              "key": "A",
+              "text": "17"
+            },
+            {
+              "key": "B",
+              "text": "13"
+            },
+            {
+              "key": "C",
+              "text": "16"
+            },
+            {
+              "key": "D",
+              "text": "任意"
+            }
+          ]
+        },
+        {
+          "id": "②",
+          "options": [
+            {
+              "key": "A",
+              "text": "0~17"
+            },
+            {
+              "key": "B",
+              "text": "1~17"
+            },
+            {
+              "key": "C",
+              "text": "0~16"
+            },
+            {
+              "key": "D",
+              "text": "1~16"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": 491,
+    "qno": 412,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "设散列表长 m=14,散列函数为 H(key)=key%11,表中仅有 4 个结点 H(15)=4,H(38)=5,H(61)=6, H(84)=7，若采用线性探测法处理冲突，则关键字为 49 的结点地址是（ ）。"
+    }
+  },
+  {
+    "id": 527,
+    "qno": 451,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "对下列4个序列，以第一个关键字为基准用快速排序算法进行排序，在第一趟过程中移动记录 次数最多的是（ ）。"
+    }
+  },
+  {
+    "id": 533,
+    "qno": 457,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "【2014统考真题】下列选项中，不可能是快速排序第2趟排序结果的是(（ ）。"
+    }
+  },
+  {
+    "id": 536,
+    "qno": 460,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "简单选择排序算法的比较次数和移动次数分别为（ ）。"
+    }
+  },
+  {
+    "id": 537,
+    "qno": 461,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "设线性表中每个元素有两个数据项 k₁ 和 k₂，现对线性表按以下规则进行排序：先看数据项 k₁，k₁ 值小的元素在前，大的元素在后；在 k₁ 值相同的情况下，再看 k₂，k₂ 值小的在前，大的元素在后。满足这种要求的排序方法是（ ）。"
+    }
+  },
+  {
+    "id": 548,
+    "qno": 472,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "【2015统考真题】已知小根堆为 8,15,10,21,34,16,12，删除关键字 8 之后需重建堆，在此过程中，关键字之间的比较次数是（ ）。"
+    }
+  },
+  {
+    "id": 554,
+    "qno": 480,
+    "status": "pending",
+    "question_id": null,
+    "parsed_content": {
+      "text": "2 路归并排序中，归并趟数的数量级是（ ）。"
+    }
+  }
+]

@@ -1,0 +1,8 @@
+{
+  "scan_time": "2026-07-18T20:25:03.687031",
+  "db": "postgraduate.db",
+  "since_days": 30,
+  "hard_cases_found": 0,
+  "export_dir": "tests/ocr_regression/cases/hard_cases",
+  "exported": []
+}

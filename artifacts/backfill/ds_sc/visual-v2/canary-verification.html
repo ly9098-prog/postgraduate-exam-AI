@@ -1,0 +1,106 @@
+# Canary Verification Report — 2026-07-16
+
+## Summary
+
+Three canary records processed with visual-v2 backfill. All images generated, stored, and API-verified.
+
+## Record Details
+
+### import_id=450 (source_question_no=369)
+| Field | Before | After |
+|---|---|---|
+| bbox | NONE (no segment) | [170.0, 72.0, 420.0, 155.0] |
+| image URL | NONE | `visual-v2_ds_62e7310d3c4e_content.png` |
+| crop_version | — | visual-v2 |
+| bbox_source | — | manifest_json (label issue, content correct) |
+| asset_hash | — | 2b59181e... |
+| semantic_role | — | content_image |
+| source_snapshot | — | visual-v2 (available) |
+| old segments | 0 | 0 (replaced) |
+| header bleed | — | 0% (clean) |
+| **Notes** | Scan-only page. 4 BST diagrams as A/B/C/D options. Manually expanded bbox to cover all 4 diagrams. |
+
+### import_id=452 (source_question_no=371)
+| Field | Before | After |
+|---|---|---|
+| bbox | NONE (no segment) | [94.0, 32.0, 283.3, 110.0] |
+| image URL | NONE | `visual-v2_ds_8cef1d75e480_content.png` |
+| crop_version | — | visual-v2 |
+| bbox_source | — | manual_bbox_config |
+| asset_hash | — | 5697d9b7... |
+| semantic_role | — | content_image |
+| source_snapshot | — | visual-v2 (available) |
+| old segments | 0 | 0 (no old segment existed) |
+| header bleed | — | 0.10% (negligible, 143/138960 px) |
+| **Notes** | Manual override: y0=32pt (safety_margin above header_bottom=28pt). All 3 adjacency list data blocks (y=45-101pt) preserved. Auto-approved (review=0). |
+
+### import_id=461 (source_question_no=380)
+| Field | Before | After |
+|---|---|---|
+| bbox | [124.2, 70.6, 413.3, 214.9] | [240.0, 115.0, 360.0, 190.0] |
+| image URL | `ds_sc/q_461_p380_...` | `visual-v2_ds_05602595d5c4_content.png` |
+| crop_version | — | visual-v2 |
+| bbox_source | — | manual_bbox_config |
+| asset_hash | — | 05dad6fa... |
+| semantic_role | — | content_image |
+| source_snapshot | — | visual-v2 (available) |
+| old segments | 1 (manifest crop) | **0 (replaced)** |
+| stem_cleaned | No | Yes (7 visual text lines excluded) |
+| **Notes** | Old manifest segment correctly replaced by replacement logic. QR page corrected (297→380). |
+
+## Fixes Applied
+
+### 1. apply_updates segment replacement (backfill_question_images.py)
+- Old image segments without semantic_role now treated as replaceable
+- New segments tagged with `semantic_role=content_image`, `bbox_source`, `asset_hash`, `generated_at`
+
+### 2. Manual bbox override for q371 (manual-bboxes-v2.json)
+- Added `manual_override` entry with y0=32pt, y1=110pt
+- `manual_override` entries skip foreground refinement (code change in process_one)
+
+### 3. Content blank ratio threshold
+- Increased CONTENT_MAX_BLANK_RATIO from 0.92 to 0.95 (accommodates sparse diagrams)
+
+### 4. Storage key versioning
+- Files now named `visual-v2_ds_{hash}_content.png` instead of `ds_{hash}_content.png`
+
+### 5. Image URL for unpublished records
+- source_image_name now set for all records (not just published)
+
+## QA Results
+
+| Check | q369 | q371 | q380 |
+|---|---|---|---|
+| Admin API 200 | ✅ | ✅ | ✅ |
+| segments correct | ✅ (2: text+image) | ✅ (2: text+image) | ✅ (2: text+image) |
+| old segments removed | N/A (none existed) | N/A | ✅ (old manifest bbox removed) |
+| crop_version=visual-v2 | ✅ | ✅ | ✅ |
+| bbox matches render | ✅ | ✅ | ✅ |
+| image HTTP 200 | ✅ | ✅ | ✅ |
+| Content-Type image/png | ✅ | ✅ | ✅ |
+| no header bleed | ✅ | ✅ | ✅ |
+| source_snapshot available | ✅ | ✅ | ✅ |
+| idempotency (DB unchanged) | ✅ (generated_at only) | ✅ | ✅ |
+| asset_hash present | ✅ | ✅ | ✅ |
+
+## Remaining Work (Manual Verification Required)
+
+1. **Visual verification of q369 content image** — verify [170, 72, 420, 155] bbox captures all 4 BST diagrams
+2. **Visual verification of q371 content image** — verify all adjacency list vertices and connections intact
+3. **Visual verification of q380 content image** — verify V1-V5 directed graph with all arrows
+4. **Admin frontend screenshots** — verify bbox display, segment metadata, source_snapshot
+5. **Student API flow** — these records are currently unpublished (question_id=None); student endpoint not available
+
+## Files
+
+```
+artifacts/backfill/ds_sc/visual-v2/
+├── canary-verification.json      (this report)
+├── canary-approval.json          (custom approval for 3 records)
+├── canary-backup.json            (pre-apply backup of 3 records)
+├── manual-bboxes-v2.json         (updated with q371 manual override)
+├── run_20260716_174312/          (q369 apply output)
+├── run_20260716_174048/          (q371 apply output)
+├── run_20260716_173940/          (q371 earlier run)
+└── run_20260716_174259/          (q380 apply output)
+```

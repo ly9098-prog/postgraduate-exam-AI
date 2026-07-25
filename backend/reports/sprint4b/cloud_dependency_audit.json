@@ -1,0 +1,24 @@
+{
+  "violations": [],
+  "guarded_imports": [
+    {
+      "file": "app/services/ocr_service.py",
+      "module": "paddleocr",
+      "scope": "guarded",
+      "level": 1
+    },
+    {
+      "file": "app/ocr_worker/device.py",
+      "module": "paddle",
+      "scope": "guarded",
+      "level": 1
+    }
+  ],
+  "entry_point_imports": [],
+  "summary": {
+    "top_level_violations": 0,
+    "guarded_imports": 2,
+    "entry_point_violations": 0
+  },
+  "assessment": "No top-level blocked imports found. Cloud profile dependency isolation is clean."
+}

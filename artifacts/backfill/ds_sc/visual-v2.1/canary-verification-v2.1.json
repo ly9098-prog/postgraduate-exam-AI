@@ -1,0 +1,79 @@
+{
+  "run_id": "canary_369_371_380_v2.1",
+  "crop_version": "visual-v2.1",
+  "created": "2026-07-16T19:06:23.606264",
+  "pdf_sha256": "0ede22748f2a00c3f36ef67c792d0de9ce004c3d046260e83835638af45893fb",
+  "config_sha256": "cc45c336171f62b001392ce678639bb25d1d11fddba9fe16cfaf70c5553a9610",
+  "git_commit": "24921f31e9b4eb7a1a78f058c0e3ebc6d8520e66",
+  "records": [
+    {
+      "question_import_id": 450,
+      "source_question_no": 369,
+      "image_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_50e19e8d8c61_content.png",
+      "file": {
+        "path": "backend/static/question-assets/202607/visual-v2.1_ds_50e19e8d8c61_content.png",
+        "size_bytes": 65743,
+        "sha256": "2b59181e4106"
+      },
+      "segments": [
+        {
+          "semantic_role": null,
+          "crop_version": null,
+          "url": ""
+        },
+        {
+          "semantic_role": "content_image",
+          "crop_version": "visual-v2.1",
+          "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_50e19e8d8c61_"
+        }
+      ],
+      "note": "4 BST diagrams, manual_override, scan-only page"
+    },
+    {
+      "question_import_id": 452,
+      "source_question_no": 371,
+      "image_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_db0d06ede1cc_content.png",
+      "file": {
+        "path": "backend/static/question-assets/202607/visual-v2.1_ds_db0d06ede1cc_content.png",
+        "size_bytes": 70587,
+        "sha256": "c4dff2366613"
+      },
+      "segments": [
+        {
+          "semantic_role": null,
+          "crop_version": null,
+          "url": ""
+        },
+        {
+          "semantic_role": "content_image",
+          "crop_version": "visual-v2.1",
+          "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_db0d06ede1cc_"
+        }
+      ],
+      "note": "Adjacency list, manual_override, y0 fix 32→34"
+    },
+    {
+      "question_import_id": 461,
+      "source_question_no": 380,
+      "image_url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_44d569b3bb6b_content.png",
+      "file": {
+        "path": "backend/static/question-assets/202607/visual-v2.1_ds_44d569b3bb6b_content.png",
+        "size_bytes": 37765,
+        "sha256": "05dad6fa686f"
+      },
+      "segments": [
+        {
+          "semantic_role": null,
+          "crop_version": null,
+          "url": ""
+        },
+        {
+          "semantic_role": "content_image",
+          "crop_version": "visual-v2.1",
+          "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_44d569b3bb6b_"
+        }
+      ],
+      "note": "B+ tree, manual calibration, page 297→380 fix"
+    }
+  ]
+}

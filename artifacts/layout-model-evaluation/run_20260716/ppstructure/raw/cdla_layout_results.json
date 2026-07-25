@@ -1,0 +1,2338 @@
+{
+  "229": {
+    "page": 229,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.186,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            56.1,
+            90.3,
+            633.7,
+            115.5
+          ],
+          "score": 0.9383
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            81.4,
+            21.8,
+            783.9,
+            56.0
+          ],
+          "score": 0.6804
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.484,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            56,
+            90,
+            633,
+            115
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "2.给定整数集合{3,5,6,9,12}，与之对应的哈夫曼树是("
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            81,
+            21,
+            783,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "337": {
+    "page": 337,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.107,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            54.8,
+            89.2,
+            1103.1,
+            239.0
+          ],
+          "score": 0.8102
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            85.8,
+            21.2,
+            780.4,
+            56.1
+          ],
+          "score": 0.8168
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 2.333,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            54,
+            89,
+            1103,
+            238
+          ],
+          "confidence": null,
+          "text_count": 6,
+          "text_preview": [
+            "6.在一个顺序存储的有序线性表.上查找一个数据时，既可以采用折半查找，也可以采用顺序查找，",
+            "但前者比后者的查找速度（)。",
+            "A.必然快",
+            "B.取决于表是递增还是递减",
+            "C.在大部分情况下要快"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            85,
+            21,
+            780,
+            56
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "343": {
+    "page": 343,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.111,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            58.6,
+            88.8,
+            1077.7,
+            154.0
+          ],
+          "score": 0.9613
+        },
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            517.8,
+            170.6,
+            553.2,
+            187.8
+          ],
+          "score": 0.6597
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            86.4,
+            21.1,
+            779.4,
+            55.4
+          ],
+          "score": 0.8202
+        },
+        {
+          "label": "footer",
+          "label_id": 7,
+          "bbox": [
+            728.7,
+            170.6,
+            762.9,
+            187.6
+          ],
+          "score": 0.6431
+        },
+        {
+          "label": "equation",
+          "label_id": 9,
+          "bbox": [
+            309.0,
+            171.2,
+            345.2,
+            187.6
+          ],
+          "score": 0.6972
+        },
+        {
+          "label": "equation",
+          "label_id": 9,
+          "bbox": [
+            79.4,
+            170.7,
+            117.3,
+            187.6
+          ],
+          "score": 0.6207
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.366,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            58,
+            88,
+            1077,
+            153
+          ],
+          "confidence": null,
+          "text_count": 2,
+          "text_preview": [
+            "12.已知一个长度为16的顺序表，其元素按关键字有序排列，若采用折半查找算法查找一个不存在",
+            "的元素，则比较的次数至少是()，至多是()。"
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [
+            517,
+            170,
+            553,
+            187
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "C.6"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            86,
+            21,
+            779,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        },
+        {
+          "type": "footer",
+          "bbox": [
+            728,
+            170,
+            762,
+            187
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "D.7"
+          ]
+        },
+        {
+          "type": "equation",
+          "bbox": [
+            308,
+            171,
+            345,
+            187
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "B.5"
+          ]
+        },
+        {
+          "type": "equation",
+          "bbox": [
+            79,
+            170,
+            117,
+            187
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "A.4"
+          ]
+        }
+      ]
+    }
+  },
+  "345": {
+    "page": 345,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.114,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            73.9,
+            89.8,
+            1087.4,
+            335.5
+          ],
+          "score": 0.9075
+        },
+        {
+          "label": "header",
+          "label_id": 6,
+          "bbox": [
+            80.3,
+            21.3,
+            786.1,
+            54.7
+          ],
+          "score": 0.7423
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.627,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            73,
+            89,
+            1087,
+            335
+          ],
+          "confidence": null,
+          "text_count": 7,
+          "text_preview": [
+            "14.采用分块查找时，数据的组织方式为(",
+            ")。",
+            "A.数据分成若千块，每块内数据有序",
+            "B.数据分成若干块，每块内数据不必有序，但块间必须有序，每块内最大(或最小)的数据组成索",
+            "引块"
+          ]
+        },
+        {
+          "type": "header",
+          "bbox": [
+            80,
+            21,
+            786,
+            54
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "346": {
+    "page": 346,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.11,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            58.5,
+            90.3,
+            847.0,
+            165.4
+          ],
+          "score": 0.9599
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            81.8,
+            21.6,
+            782.3,
+            56.0
+          ],
+          "score": 0.8075
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.352,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            58,
+            90,
+            847,
+            165
+          ],
+          "confidence": null,
+          "text_count": 5,
+          "text_preview": [
+            "15.对有2500个记录的索引顺序表(分块表)进行查找，最理想的块长为(",
+            "A.50",
+            "B.125",
+            "C.500",
+            "D.「1og22500]"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            81,
+            21,
+            782,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "347": {
+    "page": 347,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.129,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            55.8,
+            90.1,
+            1077.5,
+            217.2
+          ],
+          "score": 0.944
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            84.9,
+            21.3,
+            781.5,
+            55.7
+          ],
+          "score": 0.8417
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.589,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            55,
+            90,
+            1077,
+            217
+          ],
+          "confidence": null,
+          "text_count": 7,
+          "text_preview": [
+            "16.设顺序存储的某线性表共有123个元素，按分块查找的要求等分为3块。若对索引表采用顺序",
+            "查找法来确定子块，且在确定的子块中也采用顺序查找法，则在等概率情况下,分块查找成功的平",
+            "均查找长度为()。",
+            "A.21",
+            "B.23"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            84,
+            21,
+            781,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "365": {
+    "page": 365,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.116,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            68.2,
+            90.2,
+            995.6,
+            299.6
+          ],
+          "score": 0.8138
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            82.2,
+            21.1,
+            782.3,
+            56.0
+          ],
+          "score": 0.7925
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 2.197,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            68,
+            90,
+            995,
+            299
+          ],
+          "confidence": null,
+          "text_count": 5,
+          "text_preview": [
+            "13.下列关于红黑树和AVL树的描述中，不正确的是（)。",
+            "A.两者都属于自平衡的二义树",
+            "B.两者查找、插入、删除的时间复杂度都相同",
+            "C.红黑树插入和删除过程至多有2次旋转操作",
+            "D.红黑树的任意一个结点的左右子树高度（含叶节点）之比不超过2"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            82,
+            21,
+            782,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "369": {
+    "page": 369,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.107,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            59.0,
+            90.1,
+            784.2,
+            114.0
+          ],
+          "score": 0.8606
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            81.3,
+            21.8,
+            782.7,
+            55.9
+          ],
+          "score": 0.6459
+        },
+        {
+          "label": "figure",
+          "label_id": 2,
+          "bbox": [
+            205.3,
+            134.4,
+            870.1,
+            340.2
+          ],
+          "score": 0.841
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.058,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            58,
+            90,
+            784,
+            114
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "17.【2009统考真题】下列二叉排序树中，满足平衡二叉树定义的是("
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            81,
+            21,
+            782,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        },
+        {
+          "type": "figure",
+          "bbox": [
+            205,
+            134,
+            870,
+            340
+          ],
+          "confidence": null,
+          "text_count": 2,
+          "text_preview": [
+            "B.",
+            "D."
+          ]
+        }
+      ]
+    }
+  },
+  "371": {
+    "page": 371,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.114,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            62.6,
+            90.5,
+            1071.4,
+            202.5
+          ],
+          "score": 0.9606
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            86.2,
+            21.1,
+            780.8,
+            56.2
+          ],
+          "score": 0.8159
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.38,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            62,
+            90,
+            1071,
+            202
+          ],
+          "confidence": null,
+          "text_count": 5,
+          "text_preview": [
+            "19.【2011统考真题】对下列关键字序列，不可能构成某二叉排序树中一条查找路径的是（)。",
+            "A.95,22,91,24,94,71",
+            "B.92,20,91,34,88,35",
+            "C.21,89,77,29,36,38",
+            "D.12,25,71,68,33,34"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            86,
+            21,
+            780,
+            56
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "378": {
+    "page": 378,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.124,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            55.7,
+            90.1,
+            1014.6,
+            114.5
+          ],
+          "score": 0.7354
+        },
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            80.2,
+            342.6,
+            584.4,
+            409.8
+          ],
+          "score": 0.6015
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            85.8,
+            21.4,
+            781.3,
+            56.7
+          ],
+          "score": 0.6058
+        },
+        {
+          "label": "figure",
+          "label_id": 2,
+          "bbox": [
+            460.6,
+            140.3,
+            664.8,
+            297.8
+          ],
+          "score": 0.6496
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.346,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            55,
+            90,
+            1014,
+            114
+          ],
+          "confidence": null,
+          "text_count": 2,
+          "text_preview": [
+            "26.【2020统考真题】下列给定的关键字输入序列中，不能生成下边二叉排序树的是（",
+            "D。"
+          ]
+        },
+        {
+          "type": "text",
+          "bbox": [
+            80,
+            342,
+            584,
+            409
+          ],
+          "confidence": null,
+          "text_count": 4,
+          "text_preview": [
+            "A.4，5，2，1，3",
+            "B.4，5，1，2，3",
+            "C.4，2，5，3，1",
+            "D.4，2，1，3，5"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            85,
+            21,
+            781,
+            56
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        },
+        {
+          "type": "figure",
+          "bbox": [
+            460,
+            140,
+            664,
+            297
+          ],
+          "confidence": null,
+          "text_count": 0,
+          "text_preview": []
+        }
+      ]
+    }
+  },
+  "379": {
+    "page": 379,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.107,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            54.4,
+            90.0,
+            1034.1,
+            114.4
+          ],
+          "score": 0.9105
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            85.6,
+            21.5,
+            781.3,
+            56.4
+          ],
+          "score": 0.6032
+        },
+        {
+          "label": "figure",
+          "label_id": 2,
+          "bbox": [
+            403.2,
+            144.1,
+            657.9,
+            324.1
+          ],
+          "score": 0.647
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 2.398,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            54,
+            89,
+            1034,
+            114
+          ],
+          "confidence": null,
+          "text_count": 2,
+          "text_preview": [
+            "27.【2021统考真题】给定平衡二叉树如下图所示，插入关键字23后，根中的关键字是（",
+            "）"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            85,
+            21,
+            781,
+            56
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        },
+        {
+          "type": "figure",
+          "bbox": [
+            403,
+            144,
+            657,
+            324
+          ],
+          "confidence": null,
+          "text_count": 5,
+          "text_preview": [
+            "20",
+            "16",
+            "30",
+            "25",
+            "40"
+          ]
+        }
+      ]
+    }
+  },
+  "380": {
+    "page": 380,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.106,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            55.5,
+            140.2,
+            486.4,
+            212.1
+          ],
+          "score": 0.7539
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            64.1,
+            90.6,
+            229.7,
+            113.0
+          ],
+          "score": 0.9468
+        },
+        {
+          "label": "header",
+          "label_id": 6,
+          "bbox": [
+            81.1,
+            20.6,
+            786.7,
+            54.4
+          ],
+          "score": 0.7247
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.192,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            55,
+            140,
+            486,
+            212
+          ],
+          "confidence": null,
+          "text_count": 2,
+          "text_preview": [
+            "一、单项选择题（本部分答案在书P293）",
+            "1.下图所示是一棵（"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            64,
+            90,
+            229,
+            113
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "7.4B树和B+树"
+          ]
+        },
+        {
+          "type": "header",
+          "bbox": [
+            81,
+            20,
+            786,
+            54
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "388": {
+    "page": 388,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.116,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            54.9,
+            89.9,
+            979.5,
+            157.1
+          ],
+          "score": 0.9626
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            82.0,
+            21.6,
+            782.6,
+            55.3
+          ],
+          "score": 0.7825
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 0.987,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            54,
+            89,
+            979,
+            157
+          ],
+          "confidence": null,
+          "text_count": 6,
+          "text_preview": [
+            "9.已知一棵3阶B树中有2047个关键字，则此B树的最大高度为（",
+            "（)最小高度为(",
+            "A. 11",
+            "B.10",
+            "C.8"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            82,
+            21,
+            782,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "395": {
+    "page": 395,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.11,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            58.5,
+            90.5,
+            809.3,
+            206.3
+          ],
+          "score": 0.9539
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            82.1,
+            21.9,
+            782.4,
+            55.5
+          ],
+          "score": 0.8166
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.217,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            58,
+            90,
+            809,
+            206
+          ],
+          "confidence": null,
+          "text_count": 5,
+          "text_preview": [
+            "16.【2017统考真题】下列应用中，适合使用B+树的是（)。",
+            "A.编译器中的词法分析",
+            "B.关系数据库系统中的索引",
+            "C.网络中的路由表快速查找",
+            "D.操作系统的磁盘空闲块管理"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            82,
+            21,
+            782,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "397": {
+    "page": 397,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.12,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            91.7,
+            91.0,
+            923.5,
+            148.0
+          ],
+          "score": 0.5161
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            85.3,
+            21.1,
+            779.8,
+            55.6
+          ],
+          "score": 0.6607
+        },
+        {
+          "label": "reference",
+          "label_id": 8,
+          "bbox": [
+            476.2,
+            171.9,
+            809.6,
+            190.2
+          ],
+          "score": 0.5691
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.361,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            91,
+            91,
+            923,
+            148
+          ],
+          "confidence": null,
+          "text_count": 2,
+          "text_preview": [
+            "18.【2020统考真题】依次将关键字5，6，9，13，8，2，12，15插入初始为空的4阶B树后，根",
+            "结点中包含的关键字是（)。"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            85,
+            21,
+            779,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        },
+        {
+          "type": "reference",
+          "bbox": [
+            476,
+            171,
+            809,
+            190
+          ],
+          "confidence": null,
+          "text_count": 2,
+          "text_preview": [
+            "C.8,13",
+            "D.9，12."
+          ]
+        }
+      ]
+    }
+  },
+  "400": {
+    "page": 400,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.116,
+      "regions": [
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            63.7,
+            90.4,
+            178.1,
+            113.1
+          ],
+          "score": 0.9376
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            55.6,
+            140.5,
+            488.6,
+            163.1
+          ],
+          "score": 0.6107
+        },
+        {
+          "label": "header",
+          "label_id": 6,
+          "bbox": [
+            80.0,
+            20.9,
+            786.7,
+            54.3
+          ],
+          "score": 0.7529
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 0.979,
+      "regions": [
+        {
+          "type": "title",
+          "bbox": [
+            63,
+            90,
+            178,
+            113
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "7.5散列表"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            55,
+            140,
+            488,
+            163
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "一、单项选择题（本部分答案在书P304）"
+          ]
+        },
+        {
+          "type": "header",
+          "bbox": [
+            80,
+            20,
+            786,
+            54
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "402": {
+    "page": 402,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.112,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            71.3,
+            90.7,
+            1109.3,
+            348.9
+          ],
+          "score": 0.8772
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            82.2,
+            21.7,
+            782.8,
+            55.7
+          ],
+          "score": 0.7088
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.556,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            71,
+            90,
+            1109,
+            348
+          ],
+          "confidence": null,
+          "text_count": 9,
+          "text_preview": [
+            "3.下列关于散列表的说法中，正确的是（)。",
+            "I若散列表的填装因子α<1，则可避免碰撞的产生",
+            "I1.散列查找中不需要任何关键字的比较",
+            "ImI.散列表在查找成功时平均查找长度与表长有关",
+            "IV.若在散列表中删除一个元素，不能简单地将该元素删除"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            82,
+            21,
+            782,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "405": {
+    "page": 405,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.11,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            57.9,
+            90.2,
+            1079.9,
+            180.9
+          ],
+          "score": 0.9598
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            85.1,
+            21.3,
+            781.9,
+            56.2
+          ],
+          "score": 0.8333
+        },
+        {
+          "label": "reference",
+          "label_id": 8,
+          "bbox": [
+            75.8,
+            203.6,
+            627.3,
+            221.6
+          ],
+          "score": 0.8492
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.616,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            57,
+            90,
+            1079,
+            180
+          ],
+          "confidence": null,
+          "text_count": 3,
+          "text_preview": [
+            "6.设有一个含有200个表项的散列表，用线性探测法解决冲突，按关键字查询时找到一个表项的平",
+            "均探测次数不超过1.5，则散列表项应能够容纳（)个表项(设查找成功的平均查找长度为ASL=",
+            "[1+1/(1-α)]/2，其中α为装填因子)。"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            85,
+            21,
+            781,
+            56
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        },
+        {
+          "type": "reference",
+          "bbox": [
+            75,
+            203,
+            627,
+            221
+          ],
+          "confidence": null,
+          "text_count": 4,
+          "text_preview": [
+            "A.400",
+            "B.526",
+            "C.624",
+            "D.676"
+          ]
+        }
+      ]
+    }
+  },
+  "407": {
+    "page": 407,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.112,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            54.9,
+            89.8,
+            818.9,
+            161.8
+          ],
+          "score": 0.9215
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            81.9,
+            21.8,
+            783.5,
+            55.6
+          ],
+          "score": 0.7218
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.194,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            54,
+            89,
+            818,
+            161
+          ],
+          "confidence": null,
+          "text_count": 6,
+          "text_preview": [
+            "8.对包含n个元素的散列表进行查找，平均查找长度(",
+            "D。",
+            "A.为0（log2n)",
+            "B.为0(1)",
+            "C.不直接依赖于n"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            81,
+            21,
+            783,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "408": {
+    "page": 408,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.131,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            54.7,
+            90.6,
+            803.7,
+            206.9
+          ],
+          "score": 0.9663
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            85.6,
+            21.3,
+            780.5,
+            56.2
+          ],
+          "score": 0.8339
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.251,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            54,
+            90,
+            803,
+            206
+          ],
+          "confidence": null,
+          "text_count": 5,
+          "text_preview": [
+            "9.采用开放定址法解决冲突的散列查找中，发生聚集的原因主要是（)。",
+            "A.数据元素过多",
+            "B.负载因子过大",
+            "C.散列函数选择不当",
+            "D.解决冲突的方法选择不当"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            85,
+            21,
+            780,
+            56
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "411": {
+    "page": 411,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.119,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            57.3,
+            184.8,
+            768.6,
+            254.4
+          ],
+          "score": 0.8791
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            84.8,
+            20.6,
+            782.1,
+            56.8
+          ],
+          "score": 0.8513
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.397,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            57,
+            184,
+            768,
+            254
+          ],
+          "confidence": null,
+          "text_count": 8,
+          "text_preview": [
+            "①A.17",
+            "B.13",
+            "C.16",
+            "D.任意",
+            "②A.0~17"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            84,
+            20,
+            782,
+            56
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "412": {
+    "page": 412,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.118,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            57.1,
+            90.2,
+            1060.9,
+            153.8
+          ],
+          "score": 0.8916
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            85.7,
+            21.0,
+            779.8,
+            56.3
+          ],
+          "score": 0.8235
+        },
+        {
+          "label": "equation",
+          "label_id": 9,
+          "bbox": [
+            729.0,
+            170.3,
+            761.7,
+            187.6
+          ],
+          "score": 0.7474
+        },
+        {
+          "label": "equation",
+          "label_id": 9,
+          "bbox": [
+            311.0,
+            170.1,
+            343.3,
+            187.6
+          ],
+          "score": 0.5688
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.44,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            57,
+            90,
+            1060,
+            153
+          ],
+          "confidence": null,
+          "text_count": 2,
+          "text_preview": [
+            "13.设散列表长m=14，散列函数为H(key)=key%11，表中仅有4个结点H(15)=4,H(38)=5，H(61)=6，",
+            "H(84)=7，若采用线性探测法处理冲突，则关键字为 49 的结点地址是（)。"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            85,
+            20,
+            779,
+            56
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        },
+        {
+          "type": "equation",
+          "bbox": [
+            728,
+            170,
+            761,
+            187
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "D.9"
+          ]
+        },
+        {
+          "type": "equation",
+          "bbox": [
+            311,
+            170,
+            343,
+            187
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "B.3"
+          ]
+        }
+      ]
+    }
+  },
+  "451": {
+    "page": 451,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.116,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            62.8,
+            90.3,
+            1085.2,
+            235.1
+          ],
+          "score": 0.9215
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            85.8,
+            21.5,
+            781.4,
+            56.2
+          ],
+          "score": 0.8044
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.362,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            62,
+            90,
+            1085,
+            235
+          ],
+          "confidence": null,
+          "text_count": 6,
+          "text_preview": [
+            "10.对下列4个序列，以第一个关键字为基准用快速排序算法进行排序，在第一趟过程中移动记录",
+            "次数最多的是（)。",
+            "A.92,96,88,42,30,35,110,100",
+            "B.92,96,100,110,42,35,30,88",
+            "C.100,96,92,35,30,110,88,42"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            85,
+            21,
+            781,
+            56
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "457": {
+    "page": 457,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.112,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            70.0,
+            91.1,
+            1107.9,
+            202.8
+          ],
+          "score": 0.9176
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            87.1,
+            20.9,
+            780.9,
+            55.9
+          ],
+          "score": 0.6547
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 3.002,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            69,
+            91,
+            1107,
+            202
+          ],
+          "confidence": null,
+          "text_count": 5,
+          "text_preview": [
+            "16.【2014统考真题】下列选项中，不可能是快速排序第2趟排序结果的是（",
+            "A.2,3,5,4,6,7, 9",
+            "B.2,7,5,6,4,3,9",
+            "C.3,2,5,4,7,6,9",
+            "D.4,2,3,5,7,6, 9"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            87,
+            20,
+            780,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "460": {
+    "page": 460,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.121,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            91.7,
+            91.5,
+            923.2,
+            167.9
+          ],
+          "score": 0.7146
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            81.6,
+            21.9,
+            783.1,
+            55.9
+          ],
+          "score": 0.7787
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.128,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            91,
+            91,
+            923,
+            167
+          ],
+          "confidence": null,
+          "text_count": 6,
+          "text_preview": [
+            "2.简单选择排序算法的比较次数和移动次数分别为（",
+            ")。",
+            "A.O(n),O(logn)",
+            "B.O(log2n),O(n²)",
+            "C.0(n²),0(n)"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            81,
+            21,
+            783,
+            55
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "461": {
+    "page": 461,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.115,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            78.3,
+            158.5,
+            661.2,
+            394.2
+          ],
+          "score": 0.796
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            86.1,
+            21.3,
+            782.8,
+            56.2
+          ],
+          "score": 0.8831
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.566,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            78,
+            158,
+            661,
+            394
+          ],
+          "confidence": null,
+          "text_count": 5,
+          "text_preview": [
+            "足这种要求的排序方法是（)。[微信公众号：风中易小生]",
+            "A.先按k进行直接插入排序，再按k,进行简单选择排序",
+            "B.先按k,进行直接插入排序，再按k进行简单选择排序",
+            "C.先按k进行简单选择排序，再按k,进行直接插入排序",
+            "D.先按k,进行简单选择排序，再按k进行直接插入排序"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            86,
+            21,
+            782,
+            56
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  },
+  "472": {
+    "page": 472,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.11,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            58.9,
+            89.7,
+            1080.4,
+            153.1
+          ],
+          "score": 0.8789
+        },
+        {
+          "label": "title",
+          "label_id": 1,
+          "bbox": [
+            85.5,
+            20.7,
+            783.0,
+            56.2
+          ],
+          "score": 0.7678
+        },
+        {
+          "label": "equation",
+          "label_id": 9,
+          "bbox": [
+            602.2,
+            170.9,
+            638.7,
+            187.3
+          ],
+          "score": 0.7187
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.402,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            58,
+            89,
+            1080,
+            153
+          ],
+          "confidence": null,
+          "text_count": 2,
+          "text_preview": [
+            "14.【2015统考真题】已知小根堆为8,15,10,21,34,16,12，删除关键字8之后需重建堆，在此过",
+            "程中，关键字之间的比较次数是（）"
+          ]
+        },
+        {
+          "type": "title",
+          "bbox": [
+            85,
+            20,
+            782,
+            56
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        },
+        {
+          "type": "equation",
+          "bbox": [
+            602,
+            170,
+            638,
+            187
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "D.4"
+          ]
+        }
+      ]
+    }
+  },
+  "480": {
+    "page": 480,
+    "image_size": {
+      "w": 1134,
+      "h": 851
+    },
+    "cdla_layout": {
+      "timing_s": 0.113,
+      "regions": [
+        {
+          "label": "text",
+          "label_id": 0,
+          "bbox": [
+            56.2,
+            90.9,
+            520.3,
+            164.5
+          ],
+          "score": 0.6491
+        },
+        {
+          "label": "header",
+          "label_id": 6,
+          "bbox": [
+            91.5,
+            22.1,
+            782.5,
+            54.8
+          ],
+          "score": 0.635
+        }
+      ]
+    },
+    "ppstructure": {
+      "timing_s": 1.029,
+      "regions": [
+        {
+          "type": "text",
+          "bbox": [
+            56,
+            90,
+            520,
+            164
+          ],
+          "confidence": null,
+          "text_count": 3,
+          "text_preview": [
+            "5.2路归并排序中，归并趟数的数量级是(",
+            "A.O(n)",
+            "B.O(log2 n)"
+          ]
+        },
+        {
+          "type": "header",
+          "bbox": [
+            91,
+            22,
+            782,
+            54
+          ],
+          "confidence": null,
+          "text_count": 1,
+          "text_preview": [
+            "风中易小生·24考研计算机WD数据结构做题本【选择题】"
+          ]
+        }
+      ]
+    }
+  }
+}

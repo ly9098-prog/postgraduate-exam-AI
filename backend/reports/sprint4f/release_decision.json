@@ -1,0 +1,89 @@
+{
+  "sprint": "4F",
+  "generated_at": "2026-07-18T01:55+08:00",
+  "gpu_runtime": {
+    "approved": true,
+    "evidence": [
+      "paddlepaddle-gpu==3.3.0 installed in .venv-ocr-gpu-330",
+      "paddle.is_compiled_with_cuda() = True",
+      "paddle.utils.run_check() = passed (1 GPU, RTX 3050 Ti)",
+      "CUDA 12.6, cuDNN 9.5.1 detected",
+      "GPU tensor [2048,2048] matmul verified"
+    ],
+    "note": "Verified after wsl --shutdown recovery"
+  },
+  "gpu_ocr_execution": {
+    "approved": true,
+    "evidence": [
+      "3 consecutive GPU OCR runs through PaddleOCRLocalAdapter, all with is_success=true",
+      "Stable IDs verified: same input produces same document_id across 3 runs",
+      "Cold adapter latency: ~1895ms",
+      "Warm adapter latency: ~1726ms",
+      "DocumentIR output produced with consistent region/line counts",
+      "GPU device propagation: adapter._resolved_device == gpu verified"
+    ]
+  },
+  "gpu_soak": {
+    "approved": true,
+    "evidence": [
+      "30 consecutive GPU OCR runs through PaddleOCRLocalAdapter, 30/30 success",
+      "Average ~2.3s per run (includes PDF render + PaddleOCR GPU inference)",
+      "No crash, memory leak, or performance degradation detected"
+    ]
+  },
+  "stable_ids": {
+    "approved": true,
+    "evidence": [
+      "document_id uses sha256(source_hash)[:16] instead of time.monotonic_ns()",
+      "source_bytes passed through _blocks_to_document_ir() → new_document()",
+      "Verified: 3 consecutive runs produce identical document_id"
+    ]
+  },
+  "wsl_crash_diagnosis": {
+    "completed": true,
+    "root_cause": "WSL 6.18.33.2 dxgkrnl GPU sync field-spanning-write WARN",
+    "evidence": [
+      "dxgvmb_send_wait_sync_object_gpu+0x271/0x290 at drivers/hv/dxgkrnl/dxgvmbus.c:3095",
+      "memcpy: detected field-spanning write (size 4) of single field 'current_pos' (size 0)",
+      "No OOM, kernel panic, EXT4 error, or systemd correlation found",
+      "GPU passthrough recovered after wsl --shutdown"
+    ],
+    "report": "backend/reports/sprint4f/wsl_crash_diagnosis.md",
+    "recovery_steps": ["wsl --shutdown (Windows PowerShell)", "wsl ~"],
+    "note": "GPU stable in current boot after restart"
+  },
+  "device_resolver": {
+    "completed": true,
+    "tests": 11,
+    "tests_passed": 11
+  },
+  "stage_1a": {
+    "approved": true,
+    "regression": "10/10 e2e + 24/24 fault = 0 regression",
+    "e2e_tests": 10,
+    "e2e_skipped": 2,
+    "fault_injection_tests": 24
+  },
+  "stage_1b": {
+    "approved": true,
+    "tests": [
+      {"group": "GPU environment pre-check", "tests": 3, "passed": 3},
+      {"group": "GPU OCR E2E (3 consecutive runs)", "tests": 2, "passed": 2},
+      {"group": "GPU fault injection (mock)", "tests": 3, "passed": 3},
+      {"group": "GPU device propagation", "tests": 1, "passed": 1},
+      {"group": "GPU soak (30 runs)", "tests": 1, "passed": 1}
+    ],
+    "total_tests": 10,
+    "total_passed": 10,
+    "total_skipped": 0,
+    "test_file": "tests/test_stage1b_gpu_worker.py"
+  },
+  "production_default_switch": {
+    "approved": false,
+    "blockers": [
+      "GPU-only feature, production is 2c2g CPU-only",
+      "Thin server resource verification not applicable (no GPU on production)"
+    ],
+    "note": "GPU Worker is for local development only. Production remains CPU-only."
+  }
+}

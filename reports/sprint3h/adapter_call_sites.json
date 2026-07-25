@@ -1,0 +1,85 @@
+{
+  "commit": "cc452bb",
+  "generated_at": "2026-07-17",
+  "total_new_files": 71,
+  "total_new_lines": 20081,
+  "production_call_sites": {
+    "DocumentIR": {
+      "status": "INTEGRATED",
+      "production_files": [
+        "app/features/pipeline_orchestrator.py",
+        "app/features/pipeline_stages/structure_freeze_stage.py",
+        "app/features/pipeline_stages/reading_order_stage.py",
+        "app/features/cross_page_linking.py",
+        "app/features/pipeline_fingerprint.py",
+        "app/features/ocr_adapter.py",
+        "app/core/transform_tracker.py",
+        "app/core/document_ir.py"
+      ],
+      "notes": "DocumentIR is the only object fully wired into the production pipeline"
+    },
+    "ModuleResult": {
+      "status": "NOT_INTEGRATED",
+      "production_files": ["app/core/module_result.py", "app/core/document_ir.py", "app/features/ocr_adapter.py", "app/features/pipeline_stages/reading_order_stage.py"],
+      "notes": "Created in document_ir and ocr_adapter but NOT consumed by pipeline_orchestrator or main stages"
+    },
+    "OcrAdapter": {
+      "status": "NOT_INTEGRATED",
+      "production_files": ["app/features/ocr_adapter.py"],
+      "notes": "Protocol defined but never called from production OCR paths"
+    },
+    "DocumentTransformAdapter": {
+      "status": "NOT_INTEGRATED",
+      "production_files": ["app/features/ocr_adapter.py"],
+      "notes": "Protocol defined but never called from production transform paths"
+    },
+    "OCRRequest": {
+      "status": "NOT_INTEGRATED",
+      "production_files": ["app/features/ocr_adapter.py"],
+      "notes": "Defined but never used by any OCR caller"
+    },
+    "AdapterRegistry": {
+      "status": "NOT_INTEGRATED",
+      "production_files": ["app/features/ocr_adapter.py"],
+      "notes": "Defined but never queried by pipeline"
+    },
+    "AdapterSelector": {
+      "status": "NOT_INTEGRATED",
+      "production_files": ["app/features/ocr_adapter.py"],
+      "notes": "Defined but never called by pipeline"
+    },
+    "AdapterCapabilities": {
+      "status": "NOT_INTEGRATED",
+      "production_files": ["app/core/module_result.py", "app/features/ocr_adapter.py"],
+      "notes": "Defined but never evaluated outside own module"
+    },
+    "CircuitBreaker": {
+      "status": "NOT_INTEGRATED",
+      "production_files": [],
+      "notes": "Defined but NEVER used anywhere in the codebase"
+    },
+    "BenchmarkRunner": {
+      "status": "NOT_INTEGRATED",
+      "production_files": [],
+      "notes": "Only used in scripts"
+    }
+  },
+  "legacy_private_field_violations": {
+    "dt_polys": ["app/features/ocr_adapter.py"],
+    "rec_texts": ["app/features/ocr_adapter.py"],
+    "errorMsg": ["app/features/ocr_vl/paddleocr_vl_client.py"],
+    "layoutParsingResults": ["app/features/ocr_vl/paddleocr_vl_client.py"]
+  },
+  "critical_findings": [
+    "Pipeline orchestrator uses DocumentIR but NOT OcrAdapter, ModuleResult, or AdapterSelector",
+    "structure_freeze_stage uses DocumentIR but NOT new adapter contracts",
+    "No production path calls AdapterRegistry.select() or AdapterSelector.select()",
+    "CircuitBreaker is completely unused",
+    "ModuleResult instances in reading_order_stage not consumed by pipeline",
+    "Adapter implementations exist but are never instantiated in production code"
+  ],
+  "modes": {
+    "ADAPTER_SELECTION_MODE": "NOT_IMPLEMENTED",
+    "current_selector_mode": "hardcoded (legacy path only)"
+  }
+}

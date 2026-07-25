@@ -1,0 +1,1419 @@
+{
+  "generated_at": "2026-07-17T01:54:25.832413",
+  "summary": {
+    "total_questions": 513,
+    "total_images_on_disk": 127,
+    "referenced_images": 25,
+    "orphaned_images": 102,
+    "orphaned_non_snapshot": 80,
+    "questions_with_images": 25,
+    "questions_with_issues": 6,
+    "questions_needing_review": 89,
+    "high_severity": 3,
+    "medium_severity": 3,
+    "low_severity": 0,
+    "issue_types": {
+      "hint_but_no_image": 3,
+      "image_file_issue": 2,
+      "text_only_segments": 1
+    }
+  },
+  "issues": [
+    {
+      "qid": 147,
+      "source_no": "200",
+      "import_id": 301,
+      "question_type": "single_choice",
+      "problem": {
+        "type": "hint_but_no_image",
+        "severity": "high",
+        "detail": "text suggests image needed (右图) but no image found",
+        "images": []
+      },
+      "text_preview": "【2009统考真题】给定二叉树如右图所示。设N代表二叉树的根，L代表根结点的左子树，R 代表根结点的右子树。若遍历后的结点序列是3175624，则其遍历方式是（ ）。"
+    },
+    {
+      "qid": 152,
+      "source_no": "205",
+      "import_id": 306,
+      "question_type": "single_choice",
+      "problem": {
+        "type": "hint_but_no_image",
+        "severity": "high",
+        "detail": "text suggests image needed (右图) but no image found",
+        "images": []
+      },
+      "text_preview": "【2014统考真题】若对右图所示的二叉树进行中序线索化，则结点X的左、右线索指向的结点 分别是（ ）。 a"
+    },
+    {
+      "qid": 154,
+      "source_no": "207",
+      "import_id": 308,
+      "question_type": "single_choice",
+      "problem": {
+        "type": "hint_but_no_image",
+        "severity": "high",
+        "detail": "text suggests image needed (右图) but no image found",
+        "images": []
+      },
+      "text_preview": "【2017 统考真题】某二叉树的树形如右图所示，其后序序列为 e,a,c,b,d,g,f,树中与结点 a 同层的 结点是（ ）。"
+    },
+    {
+      "qid": 294,
+      "source_no": "369",
+      "import_id": 450,
+      "question_type": "single_choice",
+      "problem": {
+        "type": "image_file_issue",
+        "severity": "medium",
+        "detail": "1/1 images have issues",
+        "images": [
+          {
+            "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+            "local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+            "file_exists": true,
+            "png_valid": true,
+            "width": 1070,
+            "height": 367,
+            "size_bytes": 100421,
+            "issues": [
+              "localhost_url_not_production_safe"
+            ]
+          }
+        ]
+      },
+      "text_preview": "【2009统考真题】下列二叉排序树中，满足平衡二叉树定义的是（ ）。"
+    },
+    {
+      "qid": 296,
+      "source_no": "371",
+      "import_id": 452,
+      "question_type": "single_choice",
+      "problem": {
+        "type": "text_only_segments",
+        "severity": "medium",
+        "detail": "render_mode=segments contains only text segments, no image — may indicate lost image",
+        "images": []
+      },
+      "text_preview": "【2011 统考真题】对下列关键字序列，不可能构成某二叉排序树中一条查找路径的是（ ）。"
+    },
+    {
+      "qid": 305,
+      "source_no": "380",
+      "import_id": 461,
+      "question_type": "single_choice",
+      "problem": {
+        "type": "image_file_issue",
+        "severity": "medium",
+        "detail": "1/1 images have issues",
+        "images": [
+          {
+            "url": "http://localhost:8000/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+            "local_path": "/home/lmh/projects/postgraduate-ai/backend/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png",
+            "file_exists": true,
+            "png_valid": true,
+            "width": 612,
+            "height": 264,
+            "size_bytes": 52416,
+            "issues": [
+              "localhost_url_not_production_safe"
+            ]
+          }
+        ]
+      },
+      "text_preview": "下图所示是一棵（ ）。"
+    }
+  ],
+  "review_list": [
+    {
+      "qid": 100,
+      "source_no": "152",
+      "detail": "topic hint: 下列关于二叉树的说法中，正确的是"
+    },
+    {
+      "qid": 118,
+      "source_no": "171",
+      "detail": "topic hint: 该二叉树中叶结点的个数是"
+    },
+    {
+      "qid": 120,
+      "source_no": "173",
+      "detail": "topic hint: 该二叉树需要的存储单元数量至少是"
+    },
+    {
+      "qid": 121,
+      "source_no": "174",
+      "detail": "topic hint: 下列关于二叉树遍历的说法中，正确的是"
+    },
+    {
+      "qid": 129,
+      "source_no": "182",
+      "detail": "topic hint: 该二叉树一定满足"
+    },
+    {
+      "qid": 130,
+      "source_no": "183",
+      "detail": "topic hint: 该二叉树的先序遍历序列中 X 在 Y 之前，而在其后序遍历序列中 X 在 Y 之后，则 X 和 Y 的关系是"
+    },
+    {
+      "qid": 133,
+      "source_no": "186",
+      "detail": "topic hint: 下列序列中，不能唯一地确定一棵二叉树的是"
+    },
+    {
+      "qid": 146,
+      "source_no": "199",
+      "detail": "topic hint: 该二叉树一定是"
+    },
+    {
+      "qid": 158,
+      "source_no": "214",
+      "detail": "topic hint: 森林 T=(T₁,T₂,…,Tₘ) 转化为二叉树"
+    },
+    {
+      "qid": 161,
+      "source_no": "219",
+      "detail": "topic hint: 森林的二叉树"
+    },
+    {
+      "qid": 162,
+      "source_no": "220",
+      "detail": "topic hint: 森林中的每棵树都可以转换为二叉树"
+    },
+    {
+      "qid": 165,
+      "source_no": "228",
+      "detail": "topic hint: 哈夫曼树"
+    },
+    {
+      "qid": 168,
+      "source_no": "232",
+      "detail": "topic hint: 哈夫曼树"
+    },
+    {
+      "qid": 169,
+      "source_no": "233",
+      "detail": "topic hint: 哈夫曼树"
+    },
+    {
+      "qid": 170,
+      "source_no": "234",
+      "detail": "topic hint: 哈夫曼树"
+    },
+    {
+      "qid": 173,
+      "source_no": "238",
+      "detail": "topic hint: 哈夫曼树"
+    },
+    {
+      "qid": 174,
+      "source_no": "240",
+      "detail": "topic hint: 哈夫曼树"
+    },
+    {
+      "qid": 189,
+      "source_no": "261",
+      "detail": "topic hint: 拓扑序列"
+    },
+    {
+      "qid": 190,
+      "source_no": "262",
+      "detail": "topic hint: 邻接矩阵 A 如下所示，各顶点的度依次是"
+    },
+    {
+      "qid": 196,
+      "source_no": "268",
+      "detail": "topic hint: 邻接矩阵存储"
+    },
+    {
+      "qid": 197,
+      "source_no": "269",
+      "detail": "topic hint: 邻接矩阵 A 表示，若图为有向图，顶点 vᵢ 的入度是（ ）；若图为无向图，顶点 vᵢ 的度是"
+    },
+    {
+      "qid": 198,
+      "source_no": "270",
+      "detail": "topic hint: 邻接矩阵是"
+    },
+    {
+      "qid": 199,
+      "source_no": "271",
+      "detail": "topic hint: 邻接矩阵 A=[[0,1,0],[1,0,1],[0,1,0]] 可以看出，该图共有（①）个顶点；若是有向图，则该图共有（②）条弧；若是"
+    },
+    {
+      "qid": 201,
+      "source_no": "273",
+      "detail": "topic hint: 邻接表法存储"
+    },
+    {
+      "qid": 203,
+      "source_no": "275",
+      "detail": "topic hint: 邻接表存储结构中，顶点在边表中出现的次数是"
+    },
+    {
+      "qid": 205,
+      "source_no": "277",
+      "detail": "topic hint: 邻接表表示"
+    },
+    {
+      "qid": 206,
+      "source_no": "278",
+      "detail": "topic hint: 邻接表的叙述中，（ ）是"
+    },
+    {
+      "qid": 210,
+      "source_no": "282",
+      "detail": "topic hint: DFS"
+    },
+    {
+      "qid": 211,
+      "source_no": "283",
+      "detail": "topic hint: DFS, 邻接表表示"
+    },
+    {
+      "qid": 212,
+      "source_no": "284",
+      "detail": "topic hint: DFS, 邻接矩阵表示"
+    },
+    {
+      "qid": 215,
+      "source_no": "287",
+      "detail": "topic hint: 邻接表存储"
+    },
+    {
+      "qid": 218,
+      "source_no": "290",
+      "detail": "topic hint: 拓扑排序"
+    },
+    {
+      "qid": 219,
+      "source_no": "291",
+      "detail": "topic hint: DFS"
+    },
+    {
+      "qid": 222,
+      "source_no": "294",
+      "detail": "topic hint: 邻接表存储的有向图进行广度优先遍历，其算法的时间复杂度是"
+    },
+    {
+      "qid": 224,
+      "source_no": "296",
+      "detail": "topic hint: 深度优先遍历，则可能得到的 不同遍历序列"
+    },
+    {
+      "qid": 226,
+      "source_no": "298",
+      "detail": "topic hint: 最小生成树"
+    },
+    {
+      "qid": 227,
+      "source_no": "299",
+      "detail": "topic hint: Prim 算法和Kruskal算法构造图的最小生成树，所得到的最小生成树, 最小生成树"
+    },
+    {
+      "qid": 230,
+      "source_no": "303",
+      "detail": "topic hint: 拓扑排序"
+    },
+    {
+      "qid": 232,
+      "source_no": "306",
+      "detail": "topic hint: 拓扑序列"
+    },
+    {
+      "qid": 234,
+      "source_no": "308",
+      "detail": "topic hint: 拓扑排序"
+    },
+    {
+      "qid": 235,
+      "source_no": "309",
+      "detail": "topic hint: 最小生成树, 拓扑序列, 邻接矩阵一定是对称矩阵，有向图的邻接矩阵一定是"
+    },
+    {
+      "qid": 238,
+      "source_no": "312",
+      "detail": "topic hint: 关键路径上活动的时间延长多少，整个工程的时间"
+    },
+    {
+      "qid": 239,
+      "source_no": "313",
+      "detail": "topic hint: DFS"
+    },
+    {
+      "qid": 241,
+      "source_no": "315",
+      "detail": "topic hint: 拓扑排序"
+    },
+    {
+      "qid": 243,
+      "source_no": "317",
+      "detail": "topic hint: AOE网"
+    },
+    {
+      "qid": 244,
+      "source_no": "318",
+      "detail": "topic hint: 拓扑序列, 邻接矩阵存储有向图，矩阵中主对角线以下的元素均为零，则关于该图 拓扑序列的结论是"
+    },
+    {
+      "qid": 248,
+      "source_no": "322",
+      "detail": "topic hint: 拓扑排序, 邻接表存储，则拓扑排序算法的时间复 杂度是"
+    },
+    {
+      "qid": 249,
+      "source_no": "323",
+      "detail": "topic hint: 拓扑序列"
+    },
+    {
+      "qid": 252,
+      "source_no": "327",
+      "detail": "topic hint: DFS"
+    },
+    {
+      "qid": 253,
+      "source_no": "328",
+      "detail": "topic hint: AOE 网"
+    },
+    {
+      "qid": 263,
+      "source_no": "338",
+      "detail": "topic hint: 判定树"
+    },
+    {
+      "qid": 267,
+      "source_no": "342",
+      "detail": "topic hint: 判定树"
+    },
+    {
+      "qid": 283,
+      "source_no": "358",
+      "detail": "topic hint: 下列序列构造二叉排序树，与用其他3 个序列所构造的结果不同的是, 排序树，与用其他3 个序列所构造的结果"
+    },
+    {
+      "qid": 289,
+      "source_no": "364",
+      "detail": "topic hint: 下列关于红黑树的说法中，不正确的是"
+    },
+    {
+      "qid": 290,
+      "source_no": "365",
+      "detail": "topic hint: 下列关于红黑树和 AVL 树的描述中，不正确的是"
+    },
+    {
+      "qid": 291,
+      "source_no": "366",
+      "detail": "topic hint: 下列关于红黑树的说法中，正确的是"
+    },
+    {
+      "qid": 300,
+      "source_no": "375",
+      "detail": "topic hint: 下列关于该平衡二叉树的叙述中，正确的是"
+    },
+    {
+      "qid": 302,
+      "source_no": "377",
+      "detail": "topic hint: 删除某结点 v 之后形成平衡二叉树 T₂，再将 v 插入 T₂ 形成平衡二叉树"
+    },
+    {
+      "qid": 303,
+      "source_no": "378",
+      "detail": "topic hint: 下列给定的关键字输入序列中，不能生成下边二叉排序树的是"
+    },
+    {
+      "qid": 314,
+      "source_no": "389",
+      "detail": "topic hint: 下列关于 B 树和 B+树的叙述中，不正确的是"
+    },
+    {
+      "qid": 320,
+      "source_no": "395",
+      "detail": "topic hint: 下列应用中，适合使用B+树的是"
+    },
+    {
+      "qid": 350,
+      "source_no": "430",
+      "detail": "topic hint: 排序方法排序，经一趟"
+    },
+    {
+      "qid": 354,
+      "source_no": "434",
+      "detail": "topic hint: 排序算法在每趟排序过程"
+    },
+    {
+      "qid": 357,
+      "source_no": "437",
+      "detail": "topic hint: 排序方法之一得到的 第二趟排序后的结果"
+    },
+    {
+      "qid": 359,
+      "source_no": "439",
+      "detail": "topic hint: 排序方法对一个数据序列进行排序时,若第1趟排序结果"
+    },
+    {
+      "qid": 361,
+      "source_no": "441",
+      "detail": "topic hint: 排序。若第一趟排序结 果为(1,3,7,5,2,6,4,9,11,10,8)，第二趟排序结果"
+    },
+    {
+      "qid": 364,
+      "source_no": "445",
+      "detail": "topic hint: 排序的方法，以第一个记录为基准，从小 到大得到的一次划分结果"
+    },
+    {
+      "qid": 370,
+      "source_no": "451",
+      "detail": "topic hint: 排序算法进行排序，在第一趟过程"
+    },
+    {
+      "qid": 373,
+      "source_no": "454",
+      "detail": "topic hint: 排序，若前3趟排序结果如下 第一趟排序结果:2,12,16,5,10,88 第二趟排序结果:2,12,5,10,16,88. 第三趟排序结果"
+    },
+    {
+      "qid": 376,
+      "source_no": "457",
+      "detail": "topic hint: 排序第2趟排序结果"
+    },
+    {
+      "qid": 377,
+      "source_no": "458",
+      "detail": "topic hint: 排序过程中，对尚未确定最终位置的所有元素进行一遍处理称为一“趟”。下 列序列中，不可能是快速排序第二趟结果"
+    },
+    {
+      "qid": 390,
+      "source_no": "471",
+      "detail": "topic hint: 排序方法中，排序过程"
+    },
+    {
+      "qid": 396,
+      "source_no": "479",
+      "detail": "topic hint: 排序方法中，排序过程"
+    },
+    {
+      "qid": 400,
+      "source_no": "483",
+      "detail": "topic hint: 排序方法对该序列进行第二趟归并后的结果"
+    },
+    {
+      "qid": 402,
+      "source_no": "485",
+      "detail": "topic hint: 排序，一趟排序的结果"
+    },
+    {
+      "qid": 405,
+      "source_no": "489",
+      "detail": "topic hint: 排序将S排列成升序序列。第一趟"
+    },
+    {
+      "qid": 411,
+      "source_no": "497",
+      "detail": "topic hint: 排序过程"
+    },
+    {
+      "qid": 414,
+      "source_no": "500",
+      "detail": "topic hint: 排序过程中，对尚未确定最终位置的所有元素进行一遍处理称为一趟"
+    },
+    {
+      "qid": 418,
+      "source_no": "504",
+      "detail": "topic hint: 排序过程"
+    },
+    {
+      "qid": 424,
+      "source_no": "510",
+      "detail": "topic hint: 排序过程"
+    },
+    {
+      "qid": 425,
+      "source_no": "511",
+      "detail": "topic hint: 排序的过程"
+    },
+    {
+      "qid": 485,
+      "source_no": "212",
+      "detail": "topic hint: 森林F 中有 3 棵树，第一、第二、第三棵树的结点个数分别为M,M,和M。与森林F对应的 二叉树"
+    },
+    {
+      "qid": 486,
+      "source_no": "213",
+      "detail": "topic hint: 森林 F 对应的二叉树"
+    },
+    {
+      "qid": 487,
+      "source_no": "215",
+      "detail": "topic hint: 森林，B 是由 F变换来的二叉树"
+    },
+    {
+      "qid": 489,
+      "source_no": "221",
+      "detail": "topic hint: 该树对应的二叉树中无 右孩子的结点个数是"
+    },
+    {
+      "qid": 490,
+      "source_no": "222",
+      "detail": "topic hint: 森林F转换为对应的二叉树"
+    },
+    {
+      "qid": 493,
+      "source_no": "226",
+      "detail": "topic hint: 森林 F 对应的二叉树"
+    },
+    {
+      "qid": 498,
+      "source_no": "243",
+      "detail": "topic hint: 哈夫曼树"
+    },
+    {
+      "qid": 502,
+      "source_no": "304",
+      "detail": "topic hint: 拓扑序列"
+    }
+  ],
+  "orphaned": [
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_02c788274d2f_snapshot.png",
+      "size": 150302,
+      "width": 801,
+      "height": 892,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_04f2521a989d_snapshot.png",
+      "size": 88269,
+      "width": 995,
+      "height": 1103,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_077697c3dedb_content.png",
+      "size": 62117,
+      "width": 973,
+      "height": 115,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_077ace09bc2f_snapshot.png",
+      "size": 67622,
+      "width": 874,
+      "height": 829,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_09e71f4b7caa_content.png",
+      "size": 32650,
+      "width": 524,
+      "height": 97,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_0c14dff1b4ed_snapshot.png",
+      "size": 18653,
+      "width": 967,
+      "height": 737,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_122213745759_content.png",
+      "size": 18321,
+      "width": 765,
+      "height": 154,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_13e2f46d469c_content.png",
+      "size": 22073,
+      "width": 520,
+      "height": 129,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_16f5c297e00f_snapshot.png",
+      "size": 158482,
+      "width": 956,
+      "height": 971,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_1ea1f363c25a_content.png",
+      "size": 131449,
+      "width": 1594,
+      "height": 192,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_2254c5e3e370_content.png",
+      "size": 57915,
+      "width": 633,
+      "height": 153,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_273e91ef2643_content.png",
+      "size": 98105,
+      "width": 678,
+      "height": 651,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_2dad0040dc45_content.png",
+      "size": 76666,
+      "width": 796,
+      "height": 154,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_2e1a24bb871a_content.png",
+      "size": 12016,
+      "width": 704,
+      "height": 100,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_370ebefc3a9f_snapshot.png",
+      "size": 80988,
+      "width": 722,
+      "height": 755,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_389b2d6f12e6_content.png",
+      "size": 11413,
+      "width": 857,
+      "height": 245,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_3db270440db4_content.png",
+      "size": 41428,
+      "width": 704,
+      "height": 140,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_42381e27e66d_content.png",
+      "size": 59120,
+      "width": 824,
+      "height": 423,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_45640a94d78a_snapshot.png",
+      "size": 17595,
+      "width": 538,
+      "height": 768,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_46220ae5a73b_content.png",
+      "size": 31583,
+      "width": 1106,
+      "height": 585,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_4ae1c2cb1f61_snapshot.png",
+      "size": 63923,
+      "width": 814,
+      "height": 813,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_5471f42048bc_content.png",
+      "size": 77795,
+      "width": 885,
+      "height": 651,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_5736d6c31636_content.png",
+      "size": 104673,
+      "width": 736,
+      "height": 634,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_5a27d05dde45_content.png",
+      "size": 76465,
+      "width": 884,
+      "height": 151,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_5c32aa0eb7be_snapshot.png",
+      "size": 118522,
+      "width": 788,
+      "height": 1103,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_5e70a88a2809_snapshot.png",
+      "size": 63262,
+      "width": 784,
+      "height": 813,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_6ccc7a36f0b1_snapshot.png",
+      "size": 167938,
+      "width": 1609,
+      "height": 1045,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_6d4cf0a12378_content.png",
+      "size": 108572,
+      "width": 846,
+      "height": 114,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_6ec2da9b32a4_snapshot.png",
+      "size": 66955,
+      "width": 508,
+      "height": 768,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_72005108326b_snapshot.png",
+      "size": 130847,
+      "width": 899,
+      "height": 927,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_7b7161325883_content.png",
+      "size": 112464,
+      "width": 789,
+      "height": 475,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_85baa098f395_snapshot.png",
+      "size": 121711,
+      "width": 846,
+      "height": 1086,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_86bb48841f25_content.png",
+      "size": 57903,
+      "width": 396,
+      "height": 276,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_8b255e84f1e8_content.png",
+      "size": 10998,
+      "width": 741,
+      "height": 149,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_8bd4004349f6_snapshot.png",
+      "size": 77727,
+      "width": 710,
+      "height": 971,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_9e274eb159ad_snapshot.png",
+      "size": 68456,
+      "width": 934,
+      "height": 875,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_a059986cc955_content.png",
+      "size": 19615,
+      "width": 397,
+      "height": 142,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_a38f3603ea15_snapshot.png",
+      "size": 208557,
+      "width": 1704,
+      "height": 1059,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_afd442aa1086_snapshot.png",
+      "size": 95704,
+      "width": 1083,
+      "height": 1002,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_b11302f40bb8_snapshot.png",
+      "size": 37941,
+      "width": 1216,
+      "height": 1037,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_b8fd238583b4_snapshot.png",
+      "size": 55218,
+      "width": 814,
+      "height": 845,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_bb409b6ab68d_snapshot.png",
+      "size": 270179,
+      "width": 994,
+      "height": 933,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_c02ae33c82b0_snapshot.png",
+      "size": 46612,
+      "width": 875,
+      "height": 875,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_c25945e2d8fb_snapshot.png",
+      "size": 28126,
+      "width": 814,
+      "height": 829,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_c648ed1ae227_content.png",
+      "size": 8354,
+      "width": 428,
+      "height": 276,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_cc6a8febdb5d_snapshot.png",
+      "size": 58147,
+      "width": 829,
+      "height": 835,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_ce9440f2dce3_snapshot.png",
+      "size": 127579,
+      "width": 1016,
+      "height": 919,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_cf0ed05b5657_snapshot.png",
+      "size": 182020,
+      "width": 906,
+      "height": 844,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_dad184ab2608_content.png",
+      "size": 63466,
+      "width": 600,
+      "height": 519,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_ebcaf69000b5_snapshot.png",
+      "size": 155447,
+      "width": 1180,
+      "height": 859,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_f0a757175508_content.png",
+      "size": 116297,
+      "width": 906,
+      "height": 467,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_f0b078055d98_snapshot.png",
+      "size": 29291,
+      "width": 554,
+      "height": 783,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2.1_ds_fc21e3d2e3a5_content.png",
+      "size": 21026,
+      "width": 704,
+      "height": 149,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2_ds_204b50c7cf55_content.png",
+      "size": 72464,
+      "width": 579,
+      "height": 622,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2_ds_39d39a3ff48f_snapshot.png",
+      "size": 93296,
+      "width": 689,
+      "height": 1086,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2_ds_4f6610a01f58_content.png",
+      "size": 26074,
+      "width": 451,
+      "height": 129,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2_ds_b7e29e8d0d3d_content.png",
+      "size": 46515,
+      "width": 579,
+      "height": 137,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2_ds_d0af00d303b0_content.png",
+      "size": 73617,
+      "width": 579,
+      "height": 634,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2_ds_d9d2ef35609c_snapshot.png",
+      "size": 66461,
+      "width": 561,
+      "height": 753,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/visual-v2_ds_ff998e1faf90_snapshot.png",
+      "size": 93296,
+      "width": 689,
+      "height": 1086,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_229_p108_50bb26183f33.png",
+      "size": 435699,
+      "width": 1448,
+      "height": 552,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_369_p286_3b118e4fa031.png",
+      "size": 99711,
+      "width": 410,
+      "height": 501,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_371_p288_73dac60e2a2a.png",
+      "size": 175561,
+      "width": 525,
+      "height": 650,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_378_p295_c7e3872cdf14.png",
+      "size": 232088,
+      "width": 1433,
+      "height": 562,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_380_p297_745c3f13aca4.png",
+      "size": 114043,
+      "width": 418,
+      "height": 553,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_388_p307_0a0da031849d.png",
+      "size": 121752,
+      "width": 748,
+      "height": 438,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_395_p314_5b960420d5f1.png",
+      "size": 147635,
+      "width": 717,
+      "height": 505,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_397_p316_f5c05507ed2f.png",
+      "size": 194758,
+      "width": 883,
+      "height": 470,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_400_p319_b268c5e4c682.png",
+      "size": 136338,
+      "width": 543,
+      "height": 545,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_402_p321_435975c196c7.png",
+      "size": 95113,
+      "width": 629,
+      "height": 368,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_405_p324_bdc51110ea1d.png",
+      "size": 120602,
+      "width": 768,
+      "height": 440,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_407_p326_73e8570b2a44.png",
+      "size": 234226,
+      "width": 803,
+      "height": 658,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_411_p330_13bd1d2b9620.png",
+      "size": 202340,
+      "width": 617,
+      "height": 642,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_412_p331_536e128c3456.png",
+      "size": 159894,
+      "width": 823,
+      "height": 480,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_451_p370_2791af36be30.png",
+      "size": 188533,
+      "width": 669,
+      "height": 650,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_457_p376_c0ab157e96e2.png",
+      "size": 106828,
+      "width": 477,
+      "height": 573,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_460_p379_8bdb55b12cef.png",
+      "size": 106230,
+      "width": 451,
+      "height": 545,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_461_p380_ad4f13dcb1ff.png",
+      "size": 79868,
+      "width": 803,
+      "height": 400,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_472_p391_1170e42df1d6.png",
+      "size": 212058,
+      "width": 1005,
+      "height": 605,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/q_480_p399_90bf6b232546.png",
+      "size": 163700,
+      "width": 1165,
+      "height": 298,
+      "png_valid": true,
+      "is_snapshot": false
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q229_p108_visual-v2.1.png",
+      "size": 464432,
+      "width": 1527,
+      "height": 544,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q302_p201_visual-v2.1.png",
+      "size": 212631,
+      "width": 1550,
+      "height": 567,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q369_p286_visual-v2.1.png",
+      "size": 111278,
+      "width": 1527,
+      "height": 432,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q371_p288_visual-v2.1.png",
+      "size": 267994,
+      "width": 1527,
+      "height": 566,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q378_p295_visual-v2.1.png",
+      "size": 136930,
+      "width": 1527,
+      "height": 494,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q380_p297_visual-v2.1.png",
+      "size": 122532,
+      "width": 1527,
+      "height": 474,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q388_p307_visual-v2.1.png",
+      "size": 90323,
+      "width": 1527,
+      "height": 374,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q395_p314_visual-v2.1.png",
+      "size": 109365,
+      "width": 1527,
+      "height": 422,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q397_p316_visual-v2.1.png",
+      "size": 254810,
+      "width": 1527,
+      "height": 490,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q400_p319_visual-v2.1.png",
+      "size": 139929,
+      "width": 1527,
+      "height": 464,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q402_p321_visual-v2.1.png",
+      "size": 155933,
+      "width": 1527,
+      "height": 394,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q405_p324_visual-v2.1.png",
+      "size": 166370,
+      "width": 1527,
+      "height": 460,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q407_p326_visual-v2.1.png",
+      "size": 406511,
+      "width": 1611,
+      "height": 688,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q411_p330_visual-v2.1.png",
+      "size": 252739,
+      "width": 1527,
+      "height": 582,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q412_p331_visual-v2.1.png",
+      "size": 119378,
+      "width": 1527,
+      "height": 414,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q433_p352_visual-v2.1.png",
+      "size": 205294,
+      "width": 1550,
+      "height": 597,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q449_p368_visual-v2.1.png",
+      "size": 341637,
+      "width": 1550,
+      "height": 734,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q451_p370_visual-v2.1.png",
+      "size": 191759,
+      "width": 1527,
+      "height": 570,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q457_p376_visual-v2.1.png",
+      "size": 105714,
+      "width": 1527,
+      "height": 494,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q460_p379_visual-v2.1.png",
+      "size": 114614,
+      "width": 1527,
+      "height": 466,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q472_p391_visual-v2.1.png",
+      "size": 179667,
+      "width": 1527,
+      "height": 522,
+      "png_valid": true,
+      "is_snapshot": true
+    },
+    {
+      "file": "backend/static/question-assets/202607/ds_sc/snapshot_q480_p399_visual-v2.1.png",
+      "size": 356965,
+      "width": 1672,
+      "height": 551,
+      "png_valid": true,
+      "is_snapshot": true
+    }
+  ],
+  "referenced_files": [
+    "backend/static/question-assets/202607/ds_sc/q_229_p108_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_229_p229_option_group.png",
+    "backend/static/question-assets/202607/ds_sc/q_302_p201_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_369_p286_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_371_p288_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_378_p295_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_380_p297_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_388_p307_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_395_p314_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_397_p316_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_400_p319_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_402_p321_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_405_p324_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_407_p326_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_411_p330_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_412_p331_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_433_p352_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_449_p368_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_451_p370_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_457_p376_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_460_p379_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_472_p391_visual-v2.1.png",
+    "backend/static/question-assets/202607/ds_sc/q_480_p399_visual-v2.1.png",
+    "backend/static/question-assets/202607/visual-v2.1_ds_b187f5f61cbb_content.png",
+    "backend/static/question-assets/202607/visual-v2.1_ds_b2b2cb997344_content.png"
+  ]
+}

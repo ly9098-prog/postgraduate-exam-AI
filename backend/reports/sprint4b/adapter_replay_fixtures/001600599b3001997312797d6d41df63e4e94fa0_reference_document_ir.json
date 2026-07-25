@@ -1,0 +1,344 @@
+{
+  "document_id": "565c6561bed4111c",
+  "source_hash": "",
+  "pages": [
+    {
+      "page_id": "ccd3e5775073",
+      "page_index": 0,
+      "width": 1240,
+      "height": 1754,
+      "original_image_ref": "",
+      "transforms": [],
+      "regions": [
+        {
+          "region_id": "38960ab2c1806749",
+          "region_type": "text",
+          "polygon": null,
+          "bbox": {
+            "x0": 0,
+            "y0": 0,
+            "x1": 1240,
+            "y1": 1754
+          },
+          "confidence": 1.0,
+          "reading_order": 0,
+          "lines": [
+            {
+              "line_id": "73c7d8349312a400",
+              "text": "风中易小生·24考研计算机WD数据结构做题本【选择题】",
+              "polygon": null,
+              "bbox": {
+                "x0": 66.0,
+                "y0": 37.0,
+                "x1": 1058.0,
+                "y1": 79.0
+              },
+              "confidence": 0.994111180305481,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "c1eea560bd5b194e",
+              "text": "26.【2017统考真题】下列关于栈的叙述中，错误的是（)。",
+              "polygon": null,
+              "bbox": {
+                "x0": 28.0,
+                "y0": 121.0,
+                "x1": 944.0,
+                "y1": 171.0
+              },
+              "confidence": 0.9763085842132568,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "8646506aa935a4f7",
+              "text": "1.采用非递归方式重写递归程序时必须使用栈",
+              "polygon": null,
+              "bbox": {
+                "x0": 89.0,
+                "y0": 195.0,
+                "x1": 753.0,
+                "y1": 231.0
+              },
+              "confidence": 0.9889137744903564,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "c15c89a2092f5d51",
+              "text": "II.函数调用时，系统要用栈保存必要的信息",
+              "polygon": null,
+              "bbox": {
+                "x0": 92.0,
+                "y0": 260.0,
+                "x1": 727.0,
+                "y1": 296.0
+              },
+              "confidence": 0.9821354150772095,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "03a2c5a838e51819",
+              "text": "III.只要确定了入栈次序，即可确定出栈次序",
+              "polygon": null,
+              "bbox": {
+                "x0": 94.0,
+                "y0": 331.0,
+                "x1": 739.0,
+                "y1": 362.0
+              },
+              "confidence": 0.9531199932098389,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "5d5d0e9e053dc132",
+              "text": "IV.栈是一种受限的线性表，允许在其两端进行操作",
+              "polygon": null,
+              "bbox": {
+                "x0": 92.0,
+                "y0": 397.0,
+                "x1": 838.0,
+                "y1": 428.0
+              },
+              "confidence": 0.9965553283691406,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "12cb1e1aadd27abf",
+              "text": "B.仅 I、II、IⅢI",
+              "polygon": null,
+              "bbox": {
+                "x0": 328.0,
+                "y0": 462.0,
+                "x1": 556.0,
+                "y1": 498.0
+              },
+              "confidence": 0.9381347298622131,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "7b0b369896d9bd08",
+              "text": "D.仅 II、III、IV",
+              "polygon": null,
+              "bbox": {
+                "x0": 1036.0,
+                "y0": 460.0,
+                "x1": 1291.0,
+                "y1": 501.0
+              },
+              "confidence": 0.9020196199417114,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "972793a7ff23e296",
+              "text": "A.仅 I",
+              "polygon": null,
+              "bbox": {
+                "x0": 66.0,
+                "y0": 460.0,
+                "x1": 175.0,
+                "y1": 502.0
+              },
+              "confidence": 0.9752714037895203,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            },
+            {
+              "line_id": "992f0bb728427861",
+              "text": "C.仅 I、III、IV",
+              "polygon": null,
+              "bbox": {
+                "x0": 684.0,
+                "y0": 464.0,
+                "x1": 905.0,
+                "y1": 499.0
+              },
+              "confidence": 0.9442596435546875,
+              "tokens": [],
+              "language": "",
+              "script": "",
+              "reading_order": 0,
+              "provenance": {
+                "engine": "paddleocr",
+                "model_version": "",
+                "adapter": "",
+                "ai_modified": false,
+                "original_text": "",
+                "diff": "",
+                "rule_version": "",
+                "trace_id": "",
+                "timestamp": 0.0
+              },
+              "flags": [],
+              "revision": 0
+            }
+          ],
+          "children": [],
+          "provenance": {
+            "engine": "paddleocr",
+            "model_version": "",
+            "adapter": "",
+            "ai_modified": false,
+            "original_text": "",
+            "diff": "",
+            "rule_version": "",
+            "trace_id": "",
+            "timestamp": 0.0
+          },
+          "flags": [],
+          "revision": 0,
+          "source_region_ids": [],
+          "parent_region_id": ""
+        }
+      ],
+      "reading_order": [],
+      "reading_order_confidence": null,
+      "reading_order_flags": []
+    }
+  ],
+  "pipeline_fingerprint": "replay-test",
+  "created_at": 1784278024.984696,
+  "schema_version": "1.0",
+  "cross_page_links": []
+}

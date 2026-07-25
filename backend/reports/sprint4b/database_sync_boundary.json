@@ -1,0 +1,22 @@
+{
+  "existing_sync_entries": [
+    "app.api.v1.sync.import_sync_package",
+    "app.features.sync_merge_service.SyncReport",
+    "app.features.sync_merge_service.merge_sync_package",
+    "app.schemas.sync.SyncPackage"
+  ],
+  "existing_sync_usages": [
+    {
+      "file": "app/api/v1/sync.py",
+      "import": "app.features.sync_merge_service.merge_sync_package",
+      "line": 8
+    },
+    {
+      "file": "app/api/v1/sync.py",
+      "import": "app.schemas.sync.SyncPackage",
+      "line": 13
+    }
+  ],
+  "new_sync_implementations": [],
+  "new_sync_count": 0
+}

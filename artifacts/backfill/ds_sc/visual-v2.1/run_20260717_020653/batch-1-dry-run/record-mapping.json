@@ -1,0 +1,44 @@
+{
+  "Q147_s200": {
+    "mapping_ok": true,
+    "issues": [],
+    "qi_id": 301,
+    "q_id": 147,
+    "qi_question_id": 147
+  },
+  "Q152_s205": {
+    "mapping_ok": true,
+    "issues": [],
+    "qi_id": 306,
+    "q_id": 152,
+    "qi_question_id": 152
+  },
+  "Q154_s207": {
+    "mapping_ok": true,
+    "issues": [],
+    "qi_id": 308,
+    "q_id": 154,
+    "qi_question_id": 154
+  },
+  "Q294_s369": {
+    "mapping_ok": true,
+    "issues": [],
+    "qi_id": 450,
+    "q_id": 294,
+    "qi_question_id": 294
+  },
+  "Q296_s371": {
+    "mapping_ok": true,
+    "issues": [],
+    "qi_id": 452,
+    "q_id": 296,
+    "qi_question_id": 296
+  },
+  "Q305_s380": {
+    "mapping_ok": true,
+    "issues": [],
+    "qi_id": 461,
+    "q_id": 305,
+    "qi_question_id": 305
+  }
+}

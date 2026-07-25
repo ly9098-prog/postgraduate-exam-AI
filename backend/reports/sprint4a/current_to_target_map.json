@@ -1,0 +1,458 @@
+{
+  "ControlPlaneFacade": {
+    "type": "coordinator",
+    "status": "exists",
+    "description": "Logical Control Plane — job creation/resume, quota, idempotency, rollout",
+    "current_files": [
+      {
+        "file": "app/features/ocr_canary.py",
+        "reason": "canary/rollout configuration"
+      },
+      {
+        "file": "app/features/pipeline_fingerprint.py",
+        "reason": "fingerprint used for run identity"
+      },
+      {
+        "file": "app/features/pipeline_orchestrator.py",
+        "reason": "orchestrator contains the current job/task orchestration logic"
+      }
+    ],
+    "mode_switches": {
+      "CONTROL_PLANE_MODE": [
+        "legacy",
+        "facade"
+      ]
+    },
+    "gap": "exists"
+  },
+  "PipelineExecutionContext": {
+    "type": "dataclass",
+    "status": "exists",
+    "description": "Unified context carrying pipeline_id, fingerprint, quota, feature flags, trace/metrics collectors",
+    "current_files": [
+      {
+        "file": "app/features/pipeline_fingerprint.py",
+        "reason": "fingerprint is a core context component"
+      },
+      {
+        "file": "app/core/config.py",
+        "reason": "global config — context freezes a snapshot"
+      },
+      {
+        "file": "app/core/logging_config.py",
+        "reason": "global config — context freezes a snapshot"
+      },
+      {
+        "file": "app/core/ocr_runtime_config.py",
+        "reason": "runtime config reads env vars that context should carry"
+      },
+      {
+        "file": "app/ocr_worker/config.py",
+        "reason": "global config — context freezes a snapshot"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  },
+  "InputGateway": {
+    "type": "gateway",
+    "status": "exists",
+    "description": "Unified input entry — type detection, safety validation, file persistence",
+    "current_files": [
+      {
+        "file": "app/features/ocr_service.py",
+        "reason": "current input entry point"
+      },
+      {
+        "file": "app/core/ocr_request.py",
+        "reason": "OCRRequest defines the input contract"
+      },
+      {
+        "file": "app/services/import_pipeline_service.py",
+        "reason": "import pipeline entry point"
+      },
+      {
+        "file": "app/services/ocr_service.py",
+        "reason": "current input entry point"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  },
+  "InputSafetyValidator": {
+    "type": "validator",
+    "status": "exists",
+    "description": "File type/MIME consistency, magic bytes, size, compression bomb, encryption, path traversal",
+    "current_files": [
+      {
+        "file": "app/features/resource_guard.py",
+        "reason": "resource limit guarding exists"
+      },
+      {
+        "file": "app/core/admin_security.py",
+        "reason": "security checks exist"
+      },
+      {
+        "file": "app/core/resource_guard.py",
+        "reason": "resource limit guarding exists"
+      },
+      {
+        "file": "app/core/security.py",
+        "reason": "security checks exist"
+      },
+      {
+        "file": "app/services/upload_validator.py",
+        "reason": "file upload validation exists"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  },
+  "NativeTextProbe": {
+    "type": "probe",
+    "status": "exists",
+    "description": "Per-page text layer analysis with route recommendation",
+    "current_files": [
+      {
+        "file": "app/features/page_classifier.py",
+        "reason": "page classification exists"
+      },
+      {
+        "file": "app/services/pdf_text_normalizer.py",
+        "reason": "PDF text layer extraction exists"
+      }
+    ],
+    "mode_switches": {
+      "NATIVE_TEXT_ROUTING_MODE": [
+        "off",
+        "shadow"
+      ]
+    },
+    "gap": "exists"
+  },
+  "PageRenderer": {
+    "type": "renderer",
+    "status": "exists",
+    "description": "PDF page → image rendering with DPI control",
+    "current_files": [
+      {
+        "file": "app/services/pdf_renderer_service.py",
+        "reason": "PDF rendering exists"
+      },
+      {
+        "file": "app/services/visual_region_cropper.py",
+        "reason": "region cropping exists"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  },
+  "PageStream": {
+    "type": "stream",
+    "status": "exists",
+    "description": "Windowed page iteration with atomic disk persistence, resume, bounded memory",
+    "current_files": [
+      {
+        "file": "app/features/pipeline_artifacts.py",
+        "reason": "artifact workspace supports staged persistence"
+      },
+      {
+        "file": "app/features/pipeline_checkpoint.py",
+        "reason": "checkpoint/resume infrastructure exists"
+      },
+      {
+        "file": "app/ocr_worker/workspace.py",
+        "reason": "worker workspace manages temp files"
+      }
+    ],
+    "mode_switches": {
+      "PAGE_STREAM_MODE": [
+        "legacy",
+        "stream"
+      ]
+    },
+    "gap": "exists"
+  },
+  "OCRGateway": {
+    "type": "gateway",
+    "status": "exists",
+    "description": "Production OCR entry — capability routing, circuit breaker, quota, fallback",
+    "current_files": [
+      {
+        "file": "app/features/ocr_adapter.py",
+        "reason": "OcrAdapter + AdapterRegistry + AdapterSelector are the gateway internals"
+      },
+      {
+        "file": "app/features/ocr_mode.py",
+        "reason": "OCR mode switching exists"
+      },
+      {
+        "file": "app/features/ocr_service.py",
+        "reason": "OCR service dispatches to backends"
+      },
+      {
+        "file": "app/services/ocr_service.py",
+        "reason": "OCR service dispatches to backends"
+      }
+    ],
+    "mode_switches": {
+      "OCR_GATEWAY_MODE": [
+        "legacy",
+        "shadow",
+        "gateway"
+      ]
+    },
+    "gap": "exists"
+  },
+  "AdapterRegistry": {
+    "type": "registry",
+    "status": "exists",
+    "description": "Adapter registration and lookup (ALREADY EXISTS)",
+    "current_files": [
+      {
+        "file": "app/features/ocr_adapter.py",
+        "reason": "AdapterRegistry class at line 831"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  },
+  "AdapterSelector": {
+    "type": "selector",
+    "status": "exists",
+    "description": "Capability/health/circuit-breaker aware adapter selection (ALREADY EXISTS)",
+    "current_files": [
+      {
+        "file": "app/features/ocr_adapter.py",
+        "reason": "AdapterSelector class at line 901"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  },
+  "DocumentIR": {
+    "type": "model",
+    "status": "exists",
+    "description": "Canonical document intermediate representation (ALREADY EXISTS — full implementation)",
+    "current_files": [
+      {
+        "file": "app/core/document_ir.py",
+        "reason": "DocumentIR with full IR hierarchy, stable IDs, serialization"
+      }
+    ],
+    "mode_switches": {
+      "DOCUMENT_IR_SSOT_MODE": [
+        "dual",
+        "ir"
+      ]
+    },
+    "gap": "exists"
+  },
+  "ReadingOrderCoordinator": {
+    "type": "coordinator",
+    "status": "exists",
+    "description": "Reading order resolution for all pages (PARTIALLY EXISTS as reading_order.py + reading_order_stage.py)",
+    "current_files": [
+      {
+        "file": "app/features/reading_order.py",
+        "reason": "ReadingOrderResolver exists"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  },
+  "DomainParsingCoordinator": {
+    "type": "coordinator",
+    "status": "exists",
+    "description": "Question/option/answer parsing, cross-page linking, compound structure (PARTIALLY EXISTS)",
+    "current_files": [
+      {
+        "file": "app/features/answer_matcher.py",
+        "reason": "answer matching exists"
+      },
+      {
+        "file": "app/features/cross_page_linking.py",
+        "reason": "cross-page linking exists"
+      },
+      {
+        "file": "app/features/exercise_region_detector.py",
+        "reason": "exercise region detection exists"
+      },
+      {
+        "file": "app/features/question_normalizer.py",
+        "reason": "question normalization exists"
+      },
+      {
+        "file": "app/features/question_numbering.py",
+        "reason": "numbering parser exists"
+      },
+      {
+        "file": "app/features/question_splitter.py",
+        "reason": "question splitting exists"
+      },
+      {
+        "file": "app/features/structure_analyzer.py",
+        "reason": "structure analysis exists"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  },
+  "CorrectionCoordinator": {
+    "type": "coordinator",
+    "status": "exists",
+    "description": "OCR correction, AI repair, rule fallback coordination (PARTIALLY EXISTS)",
+    "current_files": [
+      {
+        "file": "app/features/ai_repair.py",
+        "reason": "AI repair exists"
+      },
+      {
+        "file": "app/features/code_detector.py",
+        "reason": "code detection exists"
+      },
+      {
+        "file": "app/features/code_integrity.py",
+        "reason": "code integrity exists"
+      },
+      {
+        "file": "app/features/code_structure_reconstructor.py",
+        "reason": "code structure reconstruction exists"
+      },
+      {
+        "file": "app/features/layout_reconstruction.py",
+        "reason": "layout reconstruction exists"
+      },
+      {
+        "file": "app/features/ocr_correction.py",
+        "reason": "OCR correction exists"
+      },
+      {
+        "file": "app/features/vision_fallback.py",
+        "reason": "vision fallback exists"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  },
+  "UnifiedSafetyEvaluator": {
+    "type": "evaluator",
+    "status": "exists",
+    "description": "Aggregate all safety/quality gates into a unified decision",
+    "current_files": [
+      {
+        "file": "app/features/ai_safety.py",
+        "reason": "AI safety evaluation exists"
+      },
+      {
+        "file": "app/features/candidate_evaluator.py",
+        "reason": "candidate evaluation exists"
+      },
+      {
+        "file": "app/features/ocr_quality_gate.py",
+        "reason": "domain quality gate exists"
+      },
+      {
+        "file": "app/features/quality_gate.py",
+        "reason": "domain quality gate exists"
+      }
+    ],
+    "mode_switches": {
+      "UNIFIED_SAFETY_MODE": [
+        "off",
+        "shadow"
+      ]
+    },
+    "gap": "exists"
+  },
+  "DocumentValidator": {
+    "type": "validator",
+    "status": "exists",
+    "description": "Cross-question validation — numbering, option keys, dedup, binding integrity",
+    "current_files": [
+      {
+        "file": "app/features/ai_validation.py",
+        "reason": "AI validation exists"
+      },
+      {
+        "file": "app/features/batch_validation.py",
+        "reason": "batch validation exists"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  },
+  "ReviewArtifactBuilder": {
+    "type": "builder",
+    "status": "exists",
+    "description": "Build comprehensive review artifact with all pipeline metadata",
+    "current_files": [
+      {
+        "file": "app/features/pipeline_artifacts.py",
+        "reason": "pipeline artifact building exists"
+      },
+      {
+        "file": "app/features/review_service.py",
+        "reason": "review service builds review data"
+      },
+      {
+        "file": "app/services/question_review_service.py",
+        "reason": "review service builds review data"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  },
+  "TransactionalPersistenceCoordinator": {
+    "type": "coordinator",
+    "status": "exists",
+    "description": "Transactional DB persistence across questions, reviews, artifacts",
+    "current_files": [
+      {
+        "file": "app/features/batch_image_import_service.py",
+        "reason": "import service manages writes"
+      },
+      {
+        "file": "app/features/question_import_writer.py",
+        "reason": "question import DB writing exists"
+      },
+      {
+        "file": "app/services/admin_import_service.py",
+        "reason": "import service manages writes"
+      },
+      {
+        "file": "app/services/import_pipeline_service.py",
+        "reason": "import pipeline manages DB persistence"
+      },
+      {
+        "file": "app/services/import_service.py",
+        "reason": "import service manages writes"
+      }
+    ],
+    "mode_switches": {
+      "PERSISTENCE_MODE": [
+        "legacy",
+        "transactional_shadow",
+        "transactional"
+      ]
+    },
+    "gap": "exists"
+  },
+  "AssetOutbox": {
+    "type": "outbox",
+    "status": "exists",
+    "description": "Reliable outbox for asset operations (delete, confirm) with retry",
+    "current_files": [
+      {
+        "file": "app/services/asset_reference_service.py",
+        "reason": "asset reference management exists"
+      },
+      {
+        "file": "app/services/storage_backend.py",
+        "reason": "storage backend exists"
+      }
+    ],
+    "mode_switches": {},
+    "gap": "exists"
+  }
+}

@@ -1,0 +1,36 @@
+[
+  {
+    "qno": 371,
+    "question_import_id": 452,
+    "source_question_no": 371,
+    "batch_id": "REVIEW_20260715_112847_3cc311",
+    "is_published": false,
+    "db_source_page": 371,
+    "configured_pdf_page": 288,
+    "resolved_pdf_page": 371,
+    "page_resolution_strategy": "db_page_has_content",
+    "page_confidence": 0.8,
+    "bbox_source": "manifest_json",
+    "content_preview": "【2011 统考真题】对下列关键字序列，不可能构成某二叉排序树中一条查找路径的是（ ）。",
+    "page": 371,
+    "record_id": 452,
+    "strategy": "manifest_bbox",
+    "confidence": 0.89,
+    "requires_review": false,
+    "num_regions": 0,
+    "snapshot_ok": true,
+    "warnings": [],
+    "stem_cleaned": false,
+    "num_excluded_visual_text": 0,
+    "visual_bbox": null,
+    "question_bbox": [
+      28.35,
+      21.266999816894533,
+      538.65,
+      361.538996887207
+    ],
+    "content_quality_issues": [],
+    "crop_version": "visual-v2.1",
+    "visual_gate_failures": []
+  }
+]
