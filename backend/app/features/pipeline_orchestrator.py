@@ -2750,6 +2750,7 @@ class ImportPipeline:
         Pure rule-based — no LLM dependency.
         """
         from app.features.pipeline_stages.layout_stage import (
+            run_layout_reconstruction_stage,
             run_layout_reconstruction_stage_from_ir,
         )
 
@@ -4722,6 +4723,8 @@ class ImportPipeline:
                 if page_path:
                     q_bbox = q.get("question_bbox")
                     if q_bbox and len(q_bbox) == 4:
+                        from app.services.visual_region_cropper import crop_region
+
                         png_bytes = crop_region(
                             page_path, tuple(q_bbox),
                             coordinate_space=CoordinateSpace.IMAGE_PIXELS,

@@ -25,7 +25,7 @@ class CacheClient:
     """
 
     def __init__(self):
-        self._client: "redis.Redis | None" = None
+        self._client: "Redis | None" = None  # noqa: F821
         self._enabled = bool(settings.REDIS_URL)
         self._stats: dict[str, int] = {"hits": 0, "misses": 0}
         # 进程内缓存后备（Redis 不可用时使用）
