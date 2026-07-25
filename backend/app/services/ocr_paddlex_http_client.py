@@ -50,7 +50,17 @@ def _compute_engine_fingerprint(config: OcrRuntimeConfig) -> str:
 
 
 class PaddleXHttpOcrWorkerClient:
-    """HTTP client for the PaddleX General OCR Basic Serving API."""
+    """HTTP client for the PaddleX General OCR Basic Serving API.
+
+    Includes circuit breaker: after ``_circuit_failure_threshold`` consecutive
+    failures, the circuit opens and all calls are fast-rejected for
+    ``_circuit_recovery_timeout`` seconds, then a single probe (half-open)
+    determines whether to close the circuit again.
+    """
+
+    # Circuit breaker defaults (per-instance config, 5 failures / 30s recovery)
+    _circuit_failure_threshold: int = 5
+    _circuit_recovery_timeout: float = 30.0
 
     def __init__(self, config: OcrRuntimeConfig) -> None:
         self._config = config
@@ -58,6 +68,13 @@ class PaddleXHttpOcrWorkerClient:
         self._fingerprint = _compute_engine_fingerprint(config)
         self._semaphore = asyncio.Semaphore(config.remote_max_concurrency)
         self._health_url = _derive_health_url(config.remote_url)
+
+        # Circuit breaker state
+        self._circuit_state = "closed"  # closed | open | half-open
+        self._circuit_failures = 0
+        self._circuit_last_failure = 0.0
+        self._circuit_last_success = 0.0
+        self._circuit_total_trips = 0
 
         # Metrics
         self._metrics = {
@@ -73,6 +90,9 @@ class PaddleXHttpOcrWorkerClient:
             "http_errors": 0,
             "protocol_errors": 0,
             "service_errors": 0,
+            "circuit_breaker_rejected": 0,
+            "circuit_breaker_trips": 0,
+            "circuit_state": "closed",
             "max_concurrency": config.remote_max_concurrency,
             "last_success_time": 0.0,
             "last_error_code": "",
@@ -110,6 +130,18 @@ class PaddleXHttpOcrWorkerClient:
                 "Client is shut down",
             )
 
+        # Circuit breaker check
+        if not self._circuit_may_attempt():
+            self._metrics["accepted"] += 1
+            self._metrics["failed"] += 1
+            self._metrics["circuit_breaker_rejected"] += 1
+            return self._make_error(
+                page_index, STABLE_ERROR_CODES["REMOTE_CIRCUIT_OPEN"],
+                f"OCR circuit breaker open "
+                f"(failures={self._circuit_failures}, "
+                f"recovery in {max(0.0, self._circuit_recovery_timeout - (time.time() - self._circuit_last_failure)):.0f}s)",
+            )
+
         self._metrics["accepted"] += 1
 
         request_id = uuid.uuid4().hex[:16]
@@ -128,16 +160,19 @@ class PaddleXHttpOcrWorkerClient:
                     self._metrics["running"] -= 1
         except asyncio.CancelledError:
             self._metrics["failed"] += 1
+            self._record_failure()
             raise
 
         elapsed = time.monotonic() - start
         if result.status == "success":
             self._metrics["finished"] += 1
             self._metrics["last_success_time"] = time.time()
+            self._record_success()
             result.started_monotonic = start
             result.finished_monotonic = start + elapsed
         else:
             self._metrics["failed"] += 1
+            self._record_failure()
 
         return result
 
@@ -195,6 +230,60 @@ class PaddleXHttpOcrWorkerClient:
         return dict(self._metrics)
 
     # ── Internal ──────────────────────────────────────────────────────────────
+
+    # ── Circuit breaker ──
+
+    def _circuit_may_attempt(self) -> bool:
+        """Check if a request is allowed through the circuit breaker.
+
+        Closed: always allowed.
+        Open: allowed after recovery timeout (transitions to half-open).
+        Half-open: only one probe allowed (prevent thundering herd).
+        """
+        now = time.time()
+        if self._circuit_state == "closed":
+            return True
+
+        if self._circuit_state == "open":
+            if now - self._circuit_last_failure >= self._circuit_recovery_timeout:
+                self._circuit_state = "half-open"
+                self._circuit_failures = 0
+                logger.info("OCR circuit half-open — probing remote endpoint")
+                return True
+            self._metrics["circuit_breaker_rejected"] += 1
+            return False
+
+        # Half-open: allow the single probe (already in flight)
+        return True
+
+    def _record_success(self) -> None:
+        """Record a successful OCR call — resets circuit breaker."""
+        self._circuit_failures = 0
+        self._circuit_last_success = time.time()
+        if self._circuit_state == "half-open":
+            self._circuit_state = "closed"
+            logger.info("OCR circuit closed — remote endpoint recovered")
+            self._metrics["circuit_state"] = "closed"
+
+    def _record_failure(self) -> None:
+        """Record an OCR failure — may trip circuit breaker."""
+        self._circuit_failures += 1
+        self._circuit_last_failure = time.time()
+        threshold = self._circuit_failure_threshold
+        if self._circuit_failures >= threshold:
+            was_open = self._circuit_state == "open"
+            self._circuit_state = "open"
+            self._metrics["circuit_state"] = "open"
+            if not was_open:
+                self._circuit_total_trips += 1
+                self._metrics["circuit_breaker_trips"] = self._circuit_total_trips
+                logger.warning(
+                    "OCR circuit OPEN after %d consecutive failures "
+                    "(recovery in %.0fs)",
+                    self._circuit_failures, self._circuit_recovery_timeout,
+                )
+
+    # ── Request execution ──
 
     async def _do_recognize(
         self,

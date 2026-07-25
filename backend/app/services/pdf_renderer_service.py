@@ -1,8 +1,10 @@
 """PDF rendering service — offloaded, once-only, bounded, validated.
 
 * All PyMuPDF calls run via a dedicated bounded executor (never the event loop).
-* Each page is rendered *once*; results served as bytes and optional file refs.
+* Pages streamed one-at-a-time via ``iter_pages()`` (cloud path).
+* ``render_pages()`` returning a full ``dict[int, bytes]`` is **deprecated** (local-only).
 * File validation (magic, page count, dimensions, decompression safety) before render.
+* Resource limits raise ``PdfResourceLimitError`` — never silently skip.
 * Bounded concurrency: max concurrent renders set by config.
 * Cleanup always: temp files removed via tracked executor task.
 """
@@ -13,11 +15,13 @@ import asyncio
 import logging
 import os
 import tempfile
+import warnings
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from app.core.config import settings
+from app.core.pdf_error import PdfResourceLimitError
 
 logger = logging.getLogger("postgraduate-ai.pdf-renderer")
 
@@ -35,12 +39,33 @@ class PdfRenderResult:
 
     Each page is rendered once and stored both as in-memory bytes and
     an optional temp-file path.
+
+    Deprecated: prefer ``iter_pages()`` for streaming access.
     """
     page_images: dict[int, bytes] = field(default_factory=dict)
     page_file_refs: dict[int, str] = field(default_factory=dict)
     total_pages: int = 0
     rendered_count: int = 0
     temp_dir: str | None = None
+    accumulated_bytes: int = 0     # total bytes of all page_images
+
+
+@dataclass
+class RenderedPage:
+    """A single rendered PDF page with resource accounting.
+
+    Callers **must** call ``aclose()`` after processing to release the
+    underlying PNG bytes and allow memory reclamation before the next page.
+    """
+    page_number: int
+    width: int
+    height: int
+    decoded_bytes: int           # w × h × 4 (RGBA) — raw pixmap estimate
+    png_bytes: bytes
+
+    async def aclose(self) -> None:
+        """Release the PNG byte buffer."""
+        self.png_bytes = b""
 
 
 def _validate_pdf(pdf_source: bytes | str, is_path: bool) -> None:
@@ -92,13 +117,13 @@ def _render_sync(
 
     if total_pages > _MAX_PAGES:
         doc.close()
-        raise RuntimeError(
-            f"PDF 页数过多: {total_pages} (上限 {_MAX_PAGES})"
+        raise PdfResourceLimitError(
+            "too_many_pages",
+            details={"actual": total_pages, "limit": _MAX_PAGES},
         )
 
     start_idx = max(0, (page_start or 1) - 1)
     end_idx = min(total_pages, page_end or total_pages)
-    end_idx - start_idx
 
     temp_dir: str | None = None
     result = PdfRenderResult(total_pages=total_pages)
@@ -112,14 +137,32 @@ def _render_sync(
             try:
                 pix = page.get_pixmap(dpi=dpi)
 
-                # Enforce pixel budget (decompression bomb protection)
+                # Decompression bomb protection: pixel budget
                 pixel_count = pix.width * pix.height
                 if pixel_count > _MAX_PAGE_PIXELS:
-                    logger.warning(
-                        "Page %d exceeds pixel limit (%d > %d), skipping",
-                        i + 1, pixel_count, _MAX_PAGE_PIXELS,
+                    doc.close()
+                    raise PdfResourceLimitError(
+                        "page_pixel_limit",
+                        details={
+                            "page": i + 1,
+                            "actual_pixels": pixel_count,
+                            "limit": _MAX_PAGE_PIXELS,
+                        },
                     )
-                    continue
+
+                # Decoded memory budget (RGBA: w × h × 4)
+                decoded_bytes = pix.width * pix.height * 4
+                max_decoded = settings.PDF_MAX_DECODED_BYTES
+                if decoded_bytes > max_decoded:
+                    doc.close()
+                    raise PdfResourceLimitError(
+                        "decoded_memory_limit",
+                        details={
+                            "page": i + 1,
+                            "actual_decoded_bytes": decoded_bytes,
+                            "limit": max_decoded,
+                        },
+                    )
 
                 # Resize if exceeds max dimension
                 render_pix = pix
@@ -131,8 +174,8 @@ def _render_sync(
                 png = render_pix.tobytes("png")
                 page_num = i + 1
 
-                # Store bytes (single page in memory at a time is fine)
                 result.page_images[page_num] = png
+                result.accumulated_bytes += len(png)
                 result.rendered_count += 1
 
                 # Write temp file if needed
@@ -171,19 +214,47 @@ def _render_one_page(
     page_num: int,
     max_dimension: int,
     dpi: int,
-) -> bytes | None:
-    """Render a single PDF page to PNG bytes. Runs in executor."""
+) -> bytes:
+    """Render a single PDF page to PNG bytes. Runs in executor.
+
+    Raises PdfResourceLimitError on resource violations.
+    """
     import fitz
     doc = fitz.open(pdf_source) if is_path else fitz.open(stream=pdf_source, filetype="pdf")
     try:
         if page_num < 1 or page_num > len(doc):
-            return None
+            raise PdfResourceLimitError(
+                "too_many_pages",
+                details={"page": page_num, "total": len(doc)},
+            )
         page = doc[page_num - 1]
         pix = page.get_pixmap(dpi=dpi)
+
+        # Decompression bomb protection
         pixel_count = pix.width * pix.height
         if pixel_count > _MAX_PAGE_PIXELS:
-            logger.warning("Page %d exceeds pixel limit (%d > %d)", page_num, pixel_count, _MAX_PAGE_PIXELS)
-            return None
+            raise PdfResourceLimitError(
+                "page_pixel_limit",
+                details={
+                    "page": page_num,
+                    "actual_pixels": pixel_count,
+                    "limit": _MAX_PAGE_PIXELS,
+                },
+            )
+
+        # Decoded memory budget
+        decoded_bytes = pix.width * pix.height * 4
+        max_decoded = settings.PDF_MAX_DECODED_BYTES
+        if decoded_bytes > max_decoded:
+            raise PdfResourceLimitError(
+                "decoded_memory_limit",
+                details={
+                    "page": page_num,
+                    "actual_decoded_bytes": decoded_bytes,
+                    "limit": max_decoded,
+                },
+            )
+
         render_pix = pix
         if max(render_pix.width, render_pix.height) > max_dimension:
             scale = max_dimension / max(render_pix.width, render_pix.height)
@@ -191,6 +262,23 @@ def _render_one_page(
         return render_pix.tobytes("png")
     finally:
         doc.close()
+
+
+def _guess_png_size(png_bytes: bytes) -> tuple[int, int] | None:
+    """Extract width and height from a PNG IHDR chunk without PIL.
+
+    PNG format: 8-byte signature, then IHDR chunk (13 bytes fixed).
+    IHDR: 4 bytes length (always \\x00\\x00\\x00\\x0d), 4 bytes 'IHDR',
+    4 bytes width (big-endian), 4 bytes height (big-endian).
+    """
+    if len(png_bytes) < 33 or png_bytes[:8] != b'\x89PNG\r\n\x1a\n':
+        return None
+    try:
+        w = (png_bytes[16] << 24) | (png_bytes[17] << 16) | (png_bytes[18] << 8) | png_bytes[19]
+        h = (png_bytes[20] << 24) | (png_bytes[21] << 16) | (png_bytes[22] << 8) | png_bytes[23]
+        return w, h
+    except (IndexError, ValueError):
+        return None
 
 
 class _PdfRenderer:
@@ -224,9 +312,28 @@ class _PdfRenderer:
     ) -> PdfRenderResult:
         """Render PDF pages via the dedicated executor.
 
-        Applies pre-render validation in the executor (not event loop).
-        Returns a ``PdfRenderResult`` with page images and optional file refs.
+        Returns a ``PdfRenderResult`` with **all** page images in memory.
+
+        .. deprecated::
+            Use ``iter_pages()`` for streaming access. This method keeps
+            all rendered pages in memory simultaneously and will raise
+            ``PdfResourceLimitError`` if the deployment profile forbids it.
         """
+        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+
+        if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
+            raise PdfResourceLimitError(
+                "decoded_memory_limit",
+                retryable=False,
+                details={"message": "render_pages() is forbidden in cloud_api. Use iter_pages() for streaming."},
+            )
+
+        warnings.warn(
+            "render_pages() is deprecated. Use iter_pages() for streaming.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         if source_type != "pdf":
             return PdfRenderResult()
 
@@ -236,7 +343,6 @@ class _PdfRenderer:
 
         effective_dpi = dpi or _DEFAULT_DPI
 
-        # Acquire concurrency slot before submitting to executor
         async with self._semaphore:
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
@@ -261,14 +367,17 @@ class _PdfRenderer:
         page_end: int | None = None,
         max_dimension: int = 2048,
         dpi: int | None = None,
-    ) -> AsyncIterator[tuple[int, bytes]]:
-        """Stream pages one at a time from a PDF.
+    ) -> AsyncIterator[RenderedPage]:
+        """Stream rendered pages one at a time from a PDF.
 
-        Yields ``(page_number, png_bytes)`` tuples.  Only one page is held
+        Yields ``RenderedPage`` objects.  Only one page is held
         in memory at a time, making this suitable for low-memory deployments
         (e.g. page_window=1 on cloud_api).
 
         All fitz calls run via ``run_in_executor`` — never blocks the event loop.
+
+        Raises:
+            PdfResourceLimitError: on page count / pixel / decoded memory violations.
         """
         if source_type != "pdf":
             return
@@ -288,7 +397,10 @@ class _PdfRenderer:
             if total_pages == 0:
                 return
             if total_pages > _MAX_PAGES:
-                raise RuntimeError(f"PDF 页数过多: {total_pages} (上限 {_MAX_PAGES})")
+                raise PdfResourceLimitError(
+                    "too_many_pages",
+                    details={"actual": total_pages, "limit": _MAX_PAGES},
+                )
 
             start_idx = max(0, (page_start or 1) - 1)
             end_idx = min(total_pages, page_end or total_pages)
@@ -298,8 +410,17 @@ class _PdfRenderer:
                     self._executor,
                     _render_one_page, pdf_source, is_path, page_num, max_dimension, effective_dpi,
                 )
-                if png_bytes is not None:
-                    yield page_num, png_bytes
+                # Estimate decoded bytes from PNG size (conservative: PNG is
+                # typically 10-30% of raw RGBA, multiply by 4 as a safe factor).
+                width, height = _guess_png_size(png_bytes) or (0, 0)
+                decoded_estimate = width * height * 4
+                yield RenderedPage(
+                    page_number=page_num,
+                    width=width,
+                    height=height,
+                    decoded_bytes=decoded_estimate,
+                    png_bytes=png_bytes,
+                )
 
     async def cleanup(self, result: PdfRenderResult) -> None:
         """Remove temporary files created by a render operation."""

@@ -1,6 +1,6 @@
 # 部署方案
 
-> 更新时间：2026-06-28
+> 更新时间：2026-07-25
 > 生产入口：`deploy/docker-compose.prod.yml` + `deploy/scripts/deploy.sh`
 
 ---
@@ -313,3 +313,77 @@ RUN pip install --no-cache-dir --user \
   → 初始化 subjects 种子数据
   → 已验证：生产 question_imports 和 questions 表结构 100% 兼容
 ```
+
+---
+
+## 7. 本次生产强化部署说明（2026-07-25）
+
+### 7.1 新增环境变量
+
+| 变量名 | 类型 | 必填 | 默认值 | 生产推荐值 | 敏感 | 非法启动行为 |
+|--------|------|------|--------|-----------|------|------------|
+| `PROCESS_ROLE` | 字符串 | 否 | `web` | `web` / `worker` / `scheduler` | 否 | 生产禁止 `all`，否则启动失败 |
+| `PDF_MAX_FILE_SIZE_BYTES` | 整数 | 否 | 200MB | 5MB (5242880) | 否 | — |
+| `PDF_MAX_PAGES` | 整数 | 否 | 600 | 30 | 否 | 超过 cloud 上限 30 导致启动失败 |
+| `PDF_MAX_PAGE_PIXELS` | 整数 | 否 | 4096×4096 | 4096×4096 | 否 | — |
+| `PDF_MAX_DECODED_BYTES` | 整数 | 否 | 50MB | 50MB | 否 | — |
+| `PDF_RENDER_DPI` | 整数 | 否 | 150 | 150 | 否 | — |
+| `PDF_MAX_RENDER_PAGES_CONCURRENT` | 整数 | 否 | 5 | 1 | 否 | cloud 超过 1 导致启动失败 |
+| `PDF_RENDER_PAGE_WINDOW` | 整数 | 否 | 0（全部） | 1 | 否 | cloud 为 0 导致启动失败 |
+| `DB_POOL_SIZE_WEB` | 整数 | 否 | 3 | 3 | 否 | 总预算超过 MAX_CONNECTIONS 导致启动失败 |
+| `DB_MAX_OVERFLOW_WEB` | 整数 | 否 | 5 | 5 | 否 | 同上 |
+| `DB_POOL_SIZE_WORKER` | 整数 | 否 | 2 | 2 | 否 | 同上 |
+| `DB_MAX_OVERFLOW_WORKER` | 整数 | 否 | 3 | 3 | 否 | 同上 |
+| `DB_POOL_SIZE_SCHEDULER` | 整数 | 否 | 1 | 1 | 否 | 同上 |
+| `DB_MAX_OVERFLOW_SCHEDULER` | 整数 | 否 | 2 | 2 | 否 | 同上 |
+
+> **总预算计算**：`(DB_POOL_SIZE_WEB + DB_MAX_OVERFLOW_WEB) × GUNICORN_WORKERS + DB_POOL_SIZE_WORKER + DB_MAX_OVERFLOW_WORKER + DB_POOL_SIZE_SCHEDULER + DB_MAX_OVERFLOW_SCHEDULER ≤ MAX_CONNECTIONS`（默认 50）
+
+### 7.2 部署顺序（含角色隔离）
+
+本次引入 `PROCESS_ROLE` 和 `BoundedExecutor`，推荐按以下顺序部署：
+
+1. **停止新导入** — 前端灰度停止或 API 返回 503（可选，非必需）
+2. **备份** — `bash deploy/scripts/backup.sh` + Redis RDB（`redis-cli SAVE`）
+3. **数据库迁移**：
+   ```bash
+   cd /opt/2240ai-v2
+   bash deploy/scripts/deploy.sh migrate
+   ```
+   v10 迁移创建 5 个复合索引（带 `CONCURRENTLY`），不阻塞生产读写。
+4. **部署 scheduler** — `PROCESS_ROLE=scheduler` 容器，启动后验证 /health
+5. **部署 worker** — `PROCESS_ROLE=worker` 容器，启动后验证 readiness
+6. **部署 web** — `PROCESS_ROLE=web` 容器，启动后验证 readiness
+7. **恢复流量** — 验证 SSE、导入、OCR 核心链路功能正常
+
+### 7.3 回滚方案
+
+| 组件 | 回滚操作 | 说明 |
+|------|---------|------|
+| 应用代码 | 回滚代码 → 重新 `deploy.sh update` | 不执行 `down` 或删除 volume |
+| 数据库 | `alembic downgrade v9`（仅临时数据库） | **生产禁止 downgrade**，v10 索引非破坏性变更，保留无害 |
+| Redis 队列 | 新旧 enqueue payload 兼容 | 新 worker 可读旧 payload，旧 worker 忽略新字段 |
+| Fencing generation | 新 worker 写新 generation，旧 worker 隔离 | `execution_generation` 递增后旧 worker 写操作被 fencing |
+| SSE | 平滑降级 | Web 端无 SSE 时轮询 /batch-image/{job_id} 终态 |
+| OCR | 禁止回滚到 legacy OCR | 旧 OCR 代码（本地 PaddleOCR 进程）已删除 |
+
+### 7.4 启动自检清单
+
+生产启动时 `production_config_validator` 自动执行以下检查，失败则拒绝启动：
+
+| 检查项 | 条件 | 失败后果 |
+|--------|------|---------|
+| APP_SECRET 强度 | 长度≥32 且非默认值 | 启动失败 |
+| DATABASE_URL | postgresql+asyncpg | 启动失败 |
+| CORS_ORIGINS | 非通配符 / 非 localhost | 启动失败 |
+| REDIS_URL | 设置且 PING 可达（异步） | 启动失败 |
+| PROCESS_ROLE | web/worker/scheduler 之一，非 all | 启动失败 |
+| 部署 profile | cloud_api（生产必须） | 启动失败 |
+| PDF 规则 | window>0, concurrency=1, pages≤30 | 启动失败（cloud） |
+| DB 连接预算 | ≤ MAX_CONNECTIONS | 启动失败 |
+| OCR 规则 | GPU=false, backend=paddlex_http/disabled | 启动失败 |
+| 迁移版本 | alembic at head（异步） | 启动失败 |
+| 目录可写 | staging, static 目录 | 启动失败 |
+
+> 自检在 `lifespan` startup 阶段执行，约 3-5 秒完成（含 Redis PING 和 DB 查询）。
+> 失败日志格式：`Production configuration validation failed:` 后逐行列明原因。

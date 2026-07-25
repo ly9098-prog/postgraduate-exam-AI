@@ -1342,6 +1342,49 @@
   box-shadow: 0 10rpx 28rpx rgba(16,37,26,0.055);
 }
 
+/* ==================== wrong-detail scoped fixes ==================== */
+/* Keep the embedded wrong-detail surface continuous with its page background. */
+.runner-mode-wrong-detail {
+  background: #F4F4EE;
+}
+
+.runner-mode-wrong-detail .runner-bottom-bar {
+  border-top: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* The shared line icons use a 30rpx drawing canvas. Re-center them inside the
+ * smaller readonly answer indicator without changing other quiz-runner modes. */
+.runner-mode-wrong-detail .runner-option-indicator .runner-check-mark {
+  width: 24rpx;
+  height: 24rpx;
+}
+
+.runner-mode-wrong-detail .runner-option-indicator .runner-check-mark.icon-check::before {
+  left: 50%;
+  top: 50%;
+  width: 7rpx;
+  height: 12rpx;
+  transform: translate(-50%, -56%) rotate(45deg);
+}
+
+.runner-mode-wrong-detail .runner-option-indicator .runner-check-mark.icon-exclamation::before {
+  left: 50%;
+  top: 4rpx;
+  width: 4rpx;
+  height: 11rpx;
+  transform: translateX(-50%);
+}
+
+.runner-mode-wrong-detail .runner-option-indicator .runner-check-mark.icon-exclamation::after {
+  left: 50%;
+  top: 17rpx;
+  width: 4rpx;
+  height: 4rpx;
+  transform: translateX(-50%);
+}
+
 /* ==================== Question Images ==================== */
 
 .runner-question-images {

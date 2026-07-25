@@ -35,12 +35,28 @@ class _OcrExecutorService:
         self._shutdown = False
         self._task_timeout: int = settings.OCR_TASK_TIMEOUT_SEC
 
+    @staticmethod
+    def _ensure_not_cloud() -> None:
+        """Raise RuntimeError if called in cloud_api deployment.
+
+        The _OcrExecutorService uses local PaddleOCR, which must never
+        be imported or initialized in cloud_api / production deployments.
+        """
+        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+
+        if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
+            raise RuntimeError(
+                "_OcrExecutorService is forbidden in cloud_api deployment. "
+                "Use OCRGateway.recognize_pages() instead."
+            )
+
     async def run_ocr(
         self,
         image_bytes: bytes,
         timeout: int | None = None,
     ) -> str:
         """OCR a single image via process-isolated worker."""
+        self._ensure_not_cloud()
         from app.core.ocr_process_pool import ocr_process_pool
 
         effective_timeout = timeout if timeout is not None else self._task_timeout
@@ -59,6 +75,7 @@ class _OcrExecutorService:
         timeout: int | None = None,
     ) -> dict[int, str]:
         """OCR multiple pages via process-isolated workers."""
+        self._ensure_not_cloud()
         if not page_images:
             return {}
 
@@ -87,6 +104,7 @@ class _OcrExecutorService:
         timeout: int | None = None,
     ) -> dict:
         """OCR pages with detection boxes via process-isolated workers."""
+        self._ensure_not_cloud()
         if not page_images:
             return {}
 

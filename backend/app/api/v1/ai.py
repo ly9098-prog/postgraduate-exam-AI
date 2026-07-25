@@ -72,14 +72,17 @@ async def prewarm_analysis(
     queued: list[int] = []
     skipped: list[int] = []
 
-    for wq_id in data.wrong_question_ids:
-        result = await db.execute(
-            select(WrongQuestion).where(
-                WrongQuestion.id == wq_id,
-                WrongQuestion.user_id == current_user.id,
-            )
+    # Batch load all wrong questions in one query to avoid N+1
+    result = await db.execute(
+        select(WrongQuestion).where(
+            WrongQuestion.id.in_(data.wrong_question_ids),
+            WrongQuestion.user_id == current_user.id,
         )
-        wq = result.scalar_one_or_none()
+    )
+    wq_map = {wq.id: wq for wq in result.scalars().all()}
+
+    for wq_id in data.wrong_question_ids:
+        wq = wq_map.get(wq_id)
         if not wq:
             skipped.append(wq_id)
             continue

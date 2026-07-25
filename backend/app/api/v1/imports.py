@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -271,7 +271,7 @@ async def resume_pipeline(
             mime="application/octet-stream",
         )
 
-        await enqueue_resume_pipeline(
+        result = await enqueue_resume_pipeline(
             pipeline_id=pipeline_id,
             file_path=tmp.path,
             staging_object_id=_resume_staging.object_id,
@@ -279,6 +279,12 @@ async def resume_pipeline(
             subject_id=None,
             options=options,
         )
+        if not result:
+            tmp.close()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"任务队列已满，请稍后重试: {result.reason}",
+            )
 
         # Detach — the background worker (run_resume_background) takes ownership
         tmp.detach()

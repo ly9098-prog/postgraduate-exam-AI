@@ -168,16 +168,13 @@ def _build_ocr_runtime_diagnostics() -> dict:
     return result
 
 
-# ImportPipeline uses the shared OCR executor service
-from app.services.ocr_executor_service import ocr_executor
-
-
 async def _run_ocr_in_thread(image_bytes: bytes) -> str:
     """Run ocr_image in the shared bounded executor.
 
     Uses a process-wide executor with semaphore, queue limit, and timeout.
     Raises TimeoutError if OCR exceeds OCR_TIMEOUT_SECONDS.
     """
+    from app.services.ocr_executor_service import ocr_executor
     try:
         text = await ocr_executor.run_ocr(image_bytes, timeout=settings.OCR_TIMEOUT_SECONDS)
         return text
@@ -507,7 +504,9 @@ async def start_import_pipeline(
         from app.core.resource_guard import RESOURCE_PRESSURE, ResourceGuardError
         raise ResourceGuardError(RESOURCE_PRESSURE, reason)
 
-    resource_guard.increment_pipeline_count()
+    if not resource_guard.increment_pipeline_count():
+        from app.core.resource_guard import RESOURCE_PRESSURE, ResourceGuardError
+        raise ResourceGuardError(RESOURCE_PRESSURE, "并发管道数已达上限")
 
     # Validate file exists and is non-empty
     file_size = os.path.getsize(file_path)
@@ -583,7 +582,7 @@ async def start_import_pipeline(
         )
 
         from app.services.task_queue_worker import enqueue_image_pipeline
-        await enqueue_image_pipeline(
+        result = await enqueue_image_pipeline(
             pipeline_id=pipeline_id,
             image_path=file_path,
             staging_object_id=staging_obj.object_id,
@@ -592,6 +591,9 @@ async def start_import_pipeline(
             subject_id=subject_id,
             options=options,
         )
+        if not result:
+            await _set_image_pipeline_status(pipeline_id, status="failed", errors=[f"Queue rejected: {result.reason}"])
+            raise ValueError(f"任务队列已满: {result.reason}")
 
         log_event(
             logger, "import.upload.accepted",
@@ -618,12 +620,15 @@ async def start_import_pipeline(
         })
 
         from app.services.task_queue_worker import enqueue_excel_pipeline
-        await enqueue_excel_pipeline(
+        result = await enqueue_excel_pipeline(
             pipeline_id=pipeline_id,
             file_path=file_path,
             staging_object_id=staging_obj.object_id,
             source_file=filename,
         )
+        if not result:
+            await _set_pipeline_store(pipeline_id, {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]})
+            raise ValueError(f"任务队列已满: {result.reason}")
 
         return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type="excel")
 
@@ -690,7 +695,7 @@ async def start_import_pipeline(
     await _set_pipeline_store(pipeline_id, store_data)
 
     from app.services.task_queue_worker import enqueue_import_pipeline
-    await enqueue_import_pipeline(
+    result = await enqueue_import_pipeline(
         pipeline_id=pipeline_id,
         file_path=file_path,
         staging_object_id=staging_obj.object_id,
@@ -701,6 +706,9 @@ async def start_import_pipeline(
         options=options,
         created_by=created_by,
     )
+    if not result:
+        await _set_pipeline_store(pipeline_id, {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]})
+        raise ValueError(f"任务队列已满: {result.reason}")
 
     log_event(
         logger, "import.upload.accepted",

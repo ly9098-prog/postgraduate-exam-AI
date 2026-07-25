@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.executor_registry import get_executor
 from app.models.formula import FormulaCard, FormulaGraphAsset, FormulaGraphPreview
 from app.services.formula_graph_spec_renderer import (
     GRAPH_THEME,
@@ -157,8 +158,11 @@ async def generate_preview(
         thumb_path = _storage_path(card.id, "preview", checksum, "-thumb")
 
         # Resize to canvas dimensions
-        png_final = _resize_to_canvas(png_bytes, GRAPH_THEME["width"], GRAPH_THEME["height"])
-        thumb_bytes = _create_thumbnail(png_bytes)
+        from app.core.executor_registry import get_executor
+        png_final = await get_executor("image").run(
+            _resize_to_canvas, png_bytes, GRAPH_THEME["width"], GRAPH_THEME["height"],
+        )
+        thumb_bytes = await get_executor("image").run(_create_thumbnail, png_bytes)
 
         # Upload with compensation
         try:
@@ -419,6 +423,17 @@ def _safe_delete_file_later(file_url: str | None) -> None:
         logger.warning("Failed to delete file: %s", file_url, exc_info=True)
 
 
+async def _safe_delete_file_async(file_url: str | None) -> None:
+    """Async wrapper for file deletion via file_io executor."""
+    if not file_url:
+        return
+    from app.services.formula_graph_asset_service import _safe_delete_file
+    try:
+        await get_executor("file_io").run(_safe_delete_file, file_url)
+    except Exception:
+        logger.warning("Failed to delete file (async): %s", file_url, exc_info=True)
+
+
 def _auto_alt_text(card: FormulaCard, preview: FormulaGraphPreview) -> str:
     """Auto-generate alt text from card title and spec."""
     title = card.title or ""
@@ -557,7 +572,11 @@ async def start_batch_generate(
     # Launch background processing via durable queue
     from app.services.task_queue_worker import enqueue_formula_batch
 
-    await enqueue_formula_batch(job_id, card_ids, admin_id)
+    result = await enqueue_formula_batch(job_id, card_ids, admin_id)
+    if not result:
+        logger.warning("Formula batch %s rejected by queue: %s", job_id, result.reason)
+        job["status"] = "failed"
+        raise RuntimeError(f"任务队列已满: {result.reason}")
 
     return job_id
 

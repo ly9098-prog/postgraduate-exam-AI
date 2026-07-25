@@ -1,4 +1,4 @@
-<view class="quiz-runner runner-theme-{{theme}} {{compactReviewMode ? 'runner-compact' : ''}} {{flowLayout ? 'runner-flow' : ''}} {{compactBottom ? 'runner-bottom-compact' : ''}} {{customNavigation ? 'runner-custom-navigation' : ''}} {{readonly ? 'runner-readonly' : ''}}">
+<view class="quiz-runner runner-theme-{{theme}} runner-mode-{{mode}} {{compactReviewMode ? 'runner-compact' : ''}} {{flowLayout ? 'runner-flow' : ''}} {{compactBottom ? 'runner-bottom-compact' : ''}} {{customNavigation ? 'runner-custom-navigation' : ''}} {{readonly ? 'runner-readonly' : ''}}">
   <!-- ==================== 深色数字化顶部 ==================== -->
   <view class="runner-hero {{heroCollapsed ? 'runner-hero-collapsed' : ''}}" wx:if="{{!compactReviewMode}}">
     <view class="runner-hero-glow"></view>

@@ -380,6 +380,12 @@ class FormulaImportJob(Base):
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
+    # P0-1 fencing: execution generation prevents stale workers from writing
+    execution_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    current_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    current_owner_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    execution_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
 
 class FormulaImportItem(Base):
     __tablename__ = "formula_import_items"

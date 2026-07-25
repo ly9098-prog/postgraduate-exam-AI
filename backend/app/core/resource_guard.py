@@ -215,9 +215,15 @@ class ResourceGuard:
                 pass
 
     def _redis_acquire_sync(self, max_concurrent: int) -> bool:
-        """Try to acquire Redis semaphore (sync). True if under capacity."""
+        """Try to acquire Redis semaphore (sync). True if under capacity.
+
+        In production/cloud_api, Redis failure fails closed (returns False).
+        In dev/local, falls back to process-local counting.
+        """
         client = self._get_redis_client()
         if client is None:
+            if self._is_restricted():
+                return False
             current = ResourceGuard._active_pipeline_count
             if current >= max_concurrent:
                 return False
@@ -230,6 +236,8 @@ class ResourceGuard:
             count = int(result) if result else 0
             return count > 0
         except Exception:
+            if self._is_restricted():
+                return False
             current = ResourceGuard._active_pipeline_count
             if current >= max_concurrent:
                 return False
@@ -476,13 +484,16 @@ class ResourceGuard:
 
     # ── Pipeline count tracking (Redis-backed, cross-process) ──
 
-    def increment_pipeline_count(self) -> None:
+    def increment_pipeline_count(self) -> bool:
         """Increment active pipeline count using Redis semaphore.
 
-        Uses Redis Lua for atomic cross-process counting. Falls back to
-        process-local when Redis is unavailable (dev only).
+        Uses Redis Lua for atomic cross-process counting.
+        In production/cloud_api, Redis failure fails closed (returns False).
+        In dev/local, falls back to process-local counting.
+
+        Returns True if the count was successfully incremented (under capacity).
         """
-        self._redis_acquire_sync(self._thresholds.max_active_pipelines)
+        return self._redis_acquire_sync(self._thresholds.max_active_pipelines)
 
     def decrement_pipeline_count(self) -> None:
         """Decrement active pipeline count using Redis semaphore.

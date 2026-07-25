@@ -235,9 +235,19 @@ async def _batch_merge_commit(
     if job is None:
         return 0
 
+    # Batch load all items in one query to avoid N+1
+    from sqlalchemy import select as sa_select
+    item_ids = [r.id for r in items]
+    result = await db.execute(
+        sa_select(ImportBatchJobItem).where(
+            ImportBatchJobItem.id.in_(item_ids),
+        )
+    )
+    item_map = {it.id: it for it in result.scalars().all()}
+
     superseded_count = 0
     for r in items:
-        item = await db.get(ImportBatchJobItem, r.id)
+        item = item_map.get(r.id)
         if item:
             item.review_batch_id = merged_batch_id
             item.question_count = 0

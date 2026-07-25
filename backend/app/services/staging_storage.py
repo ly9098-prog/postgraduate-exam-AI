@@ -90,15 +90,23 @@ def lease_object(object_id: str, ttl_sec: int = _DEFAULT_LEASE_SEC) -> None:
     worker holding the task, and released when the task reaches a
     terminal state.
 
-    Creates a lease file with an mtime-based expiry check.
+    Creates a lease file with an absolute expires_at timestamp (JSON),
+    which is more robust than mtime-based expiry — the lease is
+    preserved across filesystem operations and clock drift is bounded
+    to the worker's own clock.
     """
+    import json
+
     validate_object_id(object_id)
     lp = _lease_path(object_id)
     _ensure_dir(lp.parent)
-    # Use mtime + ttl as the expiry check
-    lp.touch()
-    # Update mtime to now (for TTL calculation)
-    os.utime(str(lp), None)
+    expires_at = time.time() + ttl_sec
+    tmp = lp.with_suffix(".lease.tmp")
+    with open(tmp, "w") as f:
+        json.dump({"expires_at": expires_at, "ttl_sec": ttl_sec}, f)
+        f.flush()
+        os.fsync(f.fileno())
+    tmp.replace(lp)
 
 
 def release_object(object_id: str) -> None:
@@ -119,13 +127,25 @@ def release_object(object_id: str) -> None:
 def is_object_leased(object_id: str, max_lease_sec: int = _DEFAULT_LEASE_SEC) -> bool:
     """Check if a staging object has an active lease.
 
-    A lease is considered active if the lease file exists and its mtime
-    is within *max_lease_sec* of now. Expired leases (stale from a
-    crashed worker) are treated as inactive.
+    Reads the ``expires_at`` timestamp from the lease file (JSON).
+    Falls back to mtime-based check for legacy lease files that were
+    written before the expires_at JSON format was introduced.
     """
+    import json
+
     lp = _lease_path(object_id)
     if not lp.exists():
         return False
+    try:
+        with open(lp) as f:
+            data = json.load(f)
+        expires_at = data.get("expires_at")
+        if expires_at is not None:
+            return time.time() < expires_at
+    except (json.JSONDecodeError, OSError, ValueError):
+        pass
+
+    # Legacy fallback: mtime-based check
     try:
         age = time.time() - lp.stat().st_mtime
         return age < max_lease_sec
@@ -412,6 +432,37 @@ async def async_lease_object(object_id: str, ttl_sec: int = _DEFAULT_LEASE_SEC) 
     return await asyncio.to_thread(lease_object, object_id, ttl_sec)
 
 
+async def async_extend_lease(object_id: str, ttl_sec: int = _DEFAULT_LEASE_SEC) -> None:
+    """Extend the lease on a staging object without re-creating from scratch."""
+    return await asyncio.to_thread(lease_object, object_id, ttl_sec)
+
+
 async def async_release_object(object_id: str) -> None:
     """Async wrapper for release_object."""
     return await asyncio.to_thread(release_object, object_id)
+
+
+def get_metrics() -> dict:
+    """Return staging storage metrics: disk usage, object count, lease count."""
+    obj_dir = _staging_object_dir()
+    disk_usage = 0
+    object_count = 0
+    leased_count = 0
+    if obj_dir.is_dir():
+        for entry in obj_dir.iterdir():
+            if entry.suffix == ".data":
+                object_count += 1
+                disk_usage += entry.stat().st_size
+            elif entry.suffix == _LEASE_SUFFIX:
+                oid = entry.stem
+                try:
+                    validate_object_id(oid)
+                    if is_object_leased(oid):
+                        leased_count += 1
+                except ValueError:
+                    pass
+    return {
+        "disk_usage_bytes": disk_usage,
+        "object_count": object_count,
+        "leased_count": leased_count,
+    }

@@ -28,6 +28,18 @@ from app.features.pipeline_orchestrator import (
     _get_stage_checkpoint,
     _set_pipeline_store,
 )
+
+# ── SSE low-cardinality metrics ──
+# Counters; no user_id label (high cardinality).
+# Per-user connection counts stored in batch_image_import_service._active_sse_connections.
+_sse_metrics = {
+    "active": 0,
+    "per_user_rejected": 0,
+    "global_rejected": 0,
+    "disconnected": 0,
+    "max_duration_closed": 0,
+    "max_idle_closed": 0,
+}
 from app.schemas.admin_imports import (
     AdminImportActionResponse,
     AdminImportBatchCompleteRequest,
@@ -270,7 +282,7 @@ async def admin_resume_pipeline(
 
     # Enqueue via durable queue — replaces asyncio.create_task(_run_resume)
     from app.services.task_queue_worker import enqueue_admin_resume
-    await enqueue_admin_resume(
+    result = await enqueue_admin_resume(
         pipeline_id=pipeline_id,
         staging_object_id=resume_staging.object_id,
         source_type=source_type,
@@ -279,6 +291,17 @@ async def admin_resume_pipeline(
         subject_id=subject_id,
         options=opts,
     )
+    if not result:
+        # Enqueue rejected — set pipeline to failed so it doesn't hang forever
+        await _set_pipeline_store(pipeline_id, {
+            **existing_store,
+            "status": "failed",
+            "errors": existing_store.get("errors", []) + [f"Queue rejected: {result.reason}"],
+        })
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"任务队列已满，请稍后重试: {result.reason}",
+        )
 
     # Detach temp file — staging storage owns the data now
     tmp.detach()
@@ -1076,7 +1099,7 @@ async def batch_image_upload(
 
     # Enqueue via durable queue — replaces BackgroundTasks (P0-3)
     from app.services.task_queue_worker import enqueue_batch_image_job
-    await enqueue_batch_image_job(
+    result = await enqueue_batch_image_job(
         job_id=job_id,
         staging_object_ids=staging_object_ids,
         subject=subject,
@@ -1084,6 +1107,11 @@ async def batch_image_upload(
         options=options,
         concurrency=concurrency,
     )
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"任务队列已满，请稍后重试: {result.reason}",
+        )
 
     return BatchImageUploadResponse(
         job_id=job_id,
@@ -1134,17 +1162,34 @@ async def stream_batch_image_job(
 
     # ── Connection limits ──
     _SSE_MAX_CONNECTIONS_PER_USER = 5
+    _SSE_MAX_GLOBAL_CONNECTIONS = 50
     _SSE_MAX_DURATION_SEC = 7200  # 2 hours max
+    _SSE_MAX_IDLE_SEC = 300  # 5 min without business event
 
     # Active SSE connections metric (module-level dict: user_id -> count)
     if not hasattr(batch_svc, "_active_sse_connections"):
         batch_svc._active_sse_connections = {}
     active_conns = batch_svc._active_sse_connections
     current_user_id = admin_user.get("id") if isinstance(admin_user, dict) else getattr(admin_user, "id", 0)
+
+    # Global connection limit
+    total_active = sum(active_conns.values())
+    if total_active >= _SSE_MAX_GLOBAL_CONNECTIONS:
+        _sse_metrics["global_rejected"] += 1
+        logger.warning(
+            "SSE global connection limit reached: %d active", total_active,
+        )
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Server at SSE capacity", "code": "SSE_GLOBAL_LIMIT"},
+        )
+
+    # Per-user connection limit
     user_count = active_conns.get(current_user_id, 0)
     if user_count >= _SSE_MAX_CONNECTIONS_PER_USER:
+        _sse_metrics["per_user_rejected"] += 1
         logger.warning(
-            "SSE connection limit reached for user %s: %d active",
+            "SSE per-user limit reached for user %s: %d active",
             current_user_id, user_count,
         )
         return JSONResponse(
@@ -1170,14 +1215,18 @@ async def stream_batch_image_job(
 
         # Track active connection
         active_conns[current_user_id] = active_conns.get(current_user_id, 0) + 1
+        _sse_metrics["active"] = sum(active_conns.values())
         start_time = time.time()
+        last_business_event_time = start_time  # for idle timeout
 
         async def on_event(event_type: str, data: dict):
             """Put event into bounded queue — drop oldest trace if full.
-
             Only drops 'trace' events; 'done' and error events are never
             dropped (they close the stream).
             """
+            nonlocal last_business_event_time
+            if event_type != "heartbeat":
+                last_business_event_time = time.time()
             if queue.full():
                 if event_type == "trace":
                     return  # drop oldest trace — acceptable for progress
@@ -1217,11 +1266,20 @@ async def stream_batch_image_job(
             while True:
                 elapsed = time.time() - start_time
                 if elapsed > _SSE_MAX_DURATION_SEC:
+                    _sse_metrics["max_duration_closed"] += 1
                     yield f"event: timeout\ndata: {json.dumps({'message': 'connection max duration reached'})}\n\n"
+                    return
+
+                # Idle timeout — no business events within threshold
+                idle_sec = time.time() - last_business_event_time
+                if idle_sec > _SSE_MAX_IDLE_SEC:
+                    _sse_metrics["max_idle_closed"] += 1
+                    yield f"event: idle_timeout\ndata: {json.dumps({'message': 'connection idle timeout'})}\n\n"
                     return
 
                 # Check client disconnect (FastAPI CancelledError handler is also present)
                 if await request.is_disconnected():
+                    _sse_metrics["disconnected"] += 1
                     return
 
                 try:

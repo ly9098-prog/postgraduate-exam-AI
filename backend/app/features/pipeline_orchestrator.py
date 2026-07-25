@@ -1146,8 +1146,16 @@ def _ocr_scanned_pdf(
     import fitz  # noqa: F401
 
     from app.core.config import settings
+    from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
     from app.core.ocr_profile import get_ocr_profile
     from app.services.ocr_service import ocr_pages, ocr_pages_with_boxes
+
+    # Production safety: cloud_api must never call _ocr_scanned_pdf
+    if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
+        raise RuntimeError(
+            "_ocr_scanned_pdf is forbidden in cloud_api deployment. "
+            "Use OCRGateway.recognize_pages() instead."
+        )
 
     profile = get_ocr_profile()
     max_pages = settings.MAX_OCR_PAGES
@@ -2929,31 +2937,36 @@ class ImportPipeline:
                 page_batches.append((1, image_bytes, pw, ph))
 
             # ── Dual-source strategy: PP-OCRv4 primary, VL fallback ──
+            from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
             from app.features.ocr_correction_common import repair_option_structure
             from app.features.question_type_classifier import (
                 detect_options_from_text,
                 extract_options_from_text,
             )
 
+            _is_cloud_vl = detect_deployment_profile() == DeploymentProfile.CLOUD_API
+
             for page_idx, png_bytes, pw, ph in page_batches:
                 best_text = ""
                 pp_opt_count = 0
 
-                # Phase 1: Run PP-OCRv6 locally (structure primary)
-                try:
-                    from app.services.ocr_service import ocr_raw_text
+                # Phase 1: Run PP-OCRv4 locally (structure primary)
+                # Skipped in cloud_api — cloud uses VL API as primary, not fallback
+                if not _is_cloud_vl:
+                    try:
+                        from app.services.ocr_service import ocr_raw_text
 
-                    pp_text = ocr_raw_text(png_bytes)
+                        pp_text = ocr_raw_text(png_bytes)
 
-                    if detect_options_from_text(pp_text):
-                        best_text = pp_text
-                        pp_opt_count = len(extract_options_from_text(pp_text))
-                        logger.info(
-                            "VL_REBUILD page %d: PP-OCRv4 (%d chars, %d options detected)",
-                            page_idx, len(pp_text), pp_opt_count,
-                        )
-                except Exception as exc:
-                    logger.warning("VL_REBUILD PP-OCRv4 failed page %d: %s", page_idx, exc)
+                        if detect_options_from_text(pp_text):
+                            best_text = pp_text
+                            pp_opt_count = len(extract_options_from_text(pp_text))
+                            logger.info(
+                                "VL_REBUILD page %d: PP-OCRv4 (%d chars, %d options detected)",
+                                page_idx, len(pp_text), pp_opt_count,
+                            )
+                    except Exception as exc:
+                        logger.warning("VL_REBUILD PP-OCRv4 failed page %d: %s", page_idx, exc)
 
                 # Phase 2: Call VL when PP-OCR has fewer than 4 options
                 # (PP-OCR re-run on raw image can miss options that VL recovers)
@@ -4723,17 +4736,23 @@ class ImportPipeline:
                 if page_path:
                     q_bbox = q.get("question_bbox")
                     if q_bbox and len(q_bbox) == 4:
+                        from app.core.executor_registry import get_executor
                         from app.services.visual_region_cropper import crop_region
 
-                        png_bytes = crop_region(
+                        png_bytes = await get_executor("image").run(
+                            crop_region,
                             page_path, tuple(q_bbox),
                             coordinate_space=CoordinateSpace.IMAGE_PIXELS,
                         )
                         is_full_page = False
                     else:
                         # No question bbox — use full page as snapshot
+                        from app.core.executor_registry import get_executor
                         from pathlib import Path
-                        png_bytes = Path(page_path).read_bytes()
+
+                        png_bytes = await get_executor("file_io").run(
+                            Path(page_path).read_bytes,
+                        )
                         is_full_page = True
 
                     if png_bytes and len(png_bytes) > 0:
@@ -5419,14 +5438,15 @@ class ImportPipeline:
         page_window = settings.PDF_RENDER_PAGE_WINDOW
         if page_window > 0 and source_type == "pdf" and page_images is None:
             chunk_page_images: dict[int, bytes] = {}
-            async for page_num, png_bytes in pdf_renderer.iter_pages(
+            async for page in pdf_renderer.iter_pages(
                 file_content=file_content,
                 file_path=file_path,
                 source_type=source_type,
                 page_start=page_start,
                 page_end=logical_end,
             ):
-                chunk_page_images[page_num] = png_bytes
+                chunk_page_images[page.page_number] = page.png_bytes
+                await page.aclose()
             if chunk_page_images:
                 page_images = chunk_page_images
 

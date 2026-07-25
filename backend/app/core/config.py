@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     PDF_MAX_FILE_SIZE_BYTES: int = 200 * 1024 * 1024   # 200MB
     PDF_MAX_PAGES: int = 600
     PDF_MAX_PAGE_PIXELS: int = 4096 * 4096              # max width*height per page
+    PDF_MAX_DECODED_BYTES: int = 50 * 1024 * 1024       # 50MB per-page decoded memory budget
     PDF_RENDER_DPI: int = 150
     PDF_MAX_RENDER_PAGES_CONCURRENT: int = 5            # pages rendered per batch
     PDF_RENDER_PAGE_WINDOW: int = 0                      # 0 = all, N = max pages held in memory at once
@@ -180,6 +181,16 @@ class Settings(BaseSettings):
 
     # Task queue — in-memory fallback guard
     ALLOW_IN_MEMORY_TASK_QUEUE: bool = False
+
+    # ── Task queue capacity limits ──
+    TASK_QUEUE_MAX_READY_IMPORT: int = 50
+    TASK_QUEUE_MAX_READY_OCR: int = 50
+    TASK_QUEUE_MAX_READY_AI: int = 20
+    TASK_QUEUE_MAX_READY_BATCH_IMAGE: int = 10
+    TASK_QUEUE_MAX_READY_FORMULA: int = 20
+    TASK_QUEUE_MAX_RETRY: int = 500
+    TASK_QUEUE_MAX_DEAD: int = 1000
+    TASK_QUEUE_MAX_READY_DEFAULT: int = 50
 
     # COS (Tencent Cloud Object Storage)
     COS_BUCKET: str = ""

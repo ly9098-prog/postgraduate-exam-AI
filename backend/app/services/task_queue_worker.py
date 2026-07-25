@@ -18,27 +18,32 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.services.staging_storage import async_retrieve_file
-from app.services.task_queue_service import Task, task_queue
+from app.services.staging_storage import async_lease_object, async_retrieve_file
+from app.services.task_queue_service import EnqueueResult, Task, task_queue
 
 logger = logging.getLogger("postgraduate-ai.task-worker")
 
 
-async def _resolve_staging_path(staging_object_id: str) -> str:
+async def _resolve_staging_path(staging_object_id: str) -> EnqueueResult:
     """Resolve a staging object ID to a local file path.
 
     Raises FileNotFoundError if the staging object does not exist.
     The returned path is read-only; the caller must not delete it.
+
+    Automatically acquires a lease on the staging object to prevent
+    cleanup from deleting it while the worker is processing the task.
     """
     if not staging_object_id:
         raise FileNotFoundError("staging_object_id is empty")
     staged_path = await async_retrieve_file(staging_object_id)
     if not staged_path:
         raise FileNotFoundError(f"Staging object {staging_object_id} not found")
+    # Acquire lease to prevent cleanup during processing
+    await async_lease_object(staging_object_id)
     return staged_path
 
 
-async def _resolve_file_path(store: dict | None) -> str:
+async def _resolve_file_path(store: dict | None) -> EnqueueResult:
     """Resolve file path from pipeline store, preferring staging storage.
 
     Legacy fallback from ``_file_path`` has been removed — all production
@@ -83,7 +88,7 @@ async def enqueue_import_pipeline(
     subject_id: int | None,
     options: dict,
     created_by: str | None = None,
-) -> str:
+) -> EnqueueResult:
     """Enqueue an import pipeline task via the durable queue."""
     payload = {
         "pipeline_id": pipeline_id,
@@ -110,7 +115,7 @@ async def enqueue_resume_pipeline(
     subject: str | None,
     subject_id: int | None,
     options: dict,
-) -> str:
+) -> EnqueueResult:
     """Enqueue a pipeline resume task."""
     payload = {
         "pipeline_id": pipeline_id,
@@ -136,7 +141,7 @@ async def enqueue_image_pipeline(
     subject: str | None,
     subject_id: int | None,
     options: dict,
-) -> str:
+) -> EnqueueResult:
     """Enqueue an image OCR pipeline task."""
     payload = {
         "pipeline_id": pipeline_id,
@@ -159,7 +164,7 @@ async def enqueue_excel_pipeline(
     file_path: str,
     staging_object_id: str,
     source_file: str,
-) -> str:
+) -> EnqueueResult:
     """Enqueue an Excel import pipeline task."""
     payload = {
         "pipeline_id": pipeline_id,
@@ -178,7 +183,7 @@ async def enqueue_formula_batch(
     job_id: str,
     card_ids: list[int],
     admin_id: int,
-) -> str:
+) -> EnqueueResult:
     """Enqueue a formula batch generation task."""
     payload = {
         "job_id": job_id,
@@ -201,7 +206,7 @@ async def enqueue_admin_resume(
     subject: str | None,
     subject_id: int | None,
     options: dict,
-) -> str:
+) -> EnqueueResult:
     """Enqueue an admin resume pipeline task via the durable queue.
 
     Differs from ``enqueue_resume_pipeline`` in that it uses the full
@@ -231,7 +236,7 @@ async def enqueue_batch_image_job(
     subject_id: int | None,
     options: dict,
     concurrency: int = 2,
-) -> str:
+) -> EnqueueResult:
     """Enqueue a batch image import job via the durable queue.
 
     Each image's staging_object_id is passed in the payload so the
@@ -504,15 +509,31 @@ async def run_pipeline_worker(
                     _heartbeat_loop(task, lease_sec, owner_lost)
                 )
 
-                try:
-                    await _process_task(task)
+                # Wrap processing in a cancellable task so owner loss terminates it
+                processing_task = asyncio.create_task(_process_task(task))
+                cancel_monitor = asyncio.create_task(
+                    _cancel_on_owner_loss(processing_task, owner_lost)
+                )
 
-                    if owner_lost.is_set():
+                try:
+                    try:
+                        await processing_task
+                    except asyncio.CancelledError:
                         logger.warning(
-                            "Owner lost during processing, skipping complete: task_id=%s",
+                            "Processing cancelled (owner lost): task_id=%s",
                             task.task_id,
                         )
                         queue_metrics["owner_fencing_rejected"] += 1
+
+                    was_cancelled = processing_task.cancelled()
+
+                    if was_cancelled or owner_lost.is_set():
+                        logger.warning(
+                            "Owner lost, skipping complete/fail: task_id=%s",
+                            task.task_id,
+                        )
+                        if was_cancelled:
+                            queue_metrics["owner_fencing_rejected"] += 1
                     else:
                         ok = await task_queue.complete(task)
                         if ok:
@@ -526,6 +547,8 @@ async def run_pipeline_worker(
                                 task.task_id,
                             )
                             queue_metrics["owner_fencing_rejected"] += 1
+                except asyncio.CancelledError:
+                    raise
                 except Exception as e:
                     logger.exception(
                         "Task failed: task_id=%s type=%s", task.task_id, task_type
@@ -545,6 +568,11 @@ async def run_pipeline_worker(
                             )
                             queue_metrics["owner_fencing_rejected"] += 1
                 finally:
+                    cancel_monitor.cancel()
+                    try:
+                        await cancel_monitor
+                    except asyncio.CancelledError:
+                        pass
                     heartbeat_task.cancel()
                     try:
                         await heartbeat_task
@@ -552,6 +580,13 @@ async def run_pipeline_worker(
                         pass
                     except Exception as e:
                         logger.warning("Heartbeat task raised after cancel: %s", e)
+
+                    if not processing_task.done():
+                        processing_task.cancel()
+                        try:
+                            await processing_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
 
             if not processed:
                 await asyncio.sleep(poll_interval)
@@ -561,6 +596,23 @@ async def run_pipeline_worker(
     finally:
         _worker_running = False
         logger.info("Pipeline worker stopped")
+
+
+async def _cancel_on_owner_loss(
+    processing_task: asyncio.Task,
+    owner_lost: asyncio.Event,
+) -> None:
+    """Wait for owner loss, then cancel the processing task.
+
+    This ensures that when heartbeat fails (owner token mismatch),
+    the in-flight processing is terminated rather than allowed to
+    continue and potentially write stale results.
+    """
+    try:
+        await owner_lost.wait()
+        processing_task.cancel()
+    except asyncio.CancelledError:
+        pass
 
 
 async def _heartbeat_loop(task: Task, lease_sec: int, owner_lost: asyncio.Event | None = None) -> None:

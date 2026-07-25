@@ -36,6 +36,7 @@ _QUEUE_PREFIX = "taskq:queue"
 _PROCESSING_PREFIX = "taskq:processing"
 _DEAD_PREFIX = "taskq:dead"
 _RETRY_PREFIX = "taskq:retry"
+_CORRUPT_PREFIX = "taskq:corrupt"
 _TASK_PREFIX = "taskq:task"
 _IDEMPOTENCY_PREFIX = "taskq:idempotent"
 _HEARTBEAT_PREFIX = "taskq:heartbeat"
@@ -47,6 +48,7 @@ _DEFAULT_RETRY_BASE_DELAY = 10  # seconds
 _REAPER_INTERVAL_SEC = 60
 _LOCAL_TASK_MAX = 100           # bounded local fallback (dev only)
 _DEAD_MAX = 1000                # max dead-letter entries
+_CORRUPT_MAX = 100              # max corrupt entries
 _IDEMPOTENT_TTL = 86400 * 7      # 7d — matches dead hash TTL, ensures idempotency outlives all terminal states
 _COMPLETED_TTL = 86400            # 24h retention for completed task hashes
 _DEAD_HASH_TTL = 86400 * 7        # 7d retention for dead task hashes
@@ -58,6 +60,26 @@ class TaskStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     DEAD = "dead"
+    CORRUPT = "corrupt"
+
+
+@dataclass
+class EnqueueResult:
+    """Result of an enqueue attempt.
+
+    Attributes:
+        accepted: True if the task was accepted into the queue.
+        task_id: The task ID (None if not accepted and no task was created).
+        reason: Machine-readable reason code for rejection.
+        retry_after: Recommended seconds before the caller should retry.
+    """
+    accepted: bool = True
+    task_id: str | None = None
+    reason: str = ""
+    retry_after: int = 0
+
+    def __bool__(self) -> bool:
+        return self.accepted
 
 
 @dataclass
@@ -110,31 +132,58 @@ class Task:
         )
 
 
+def _get_max_ready(task_type: str) -> int:
+    """Get max ready queue length for a task type from settings."""
+    mapping = {
+        "import_pipeline": settings.TASK_QUEUE_MAX_READY_IMPORT,
+        "image_pipeline": settings.TASK_QUEUE_MAX_READY_IMPORT,
+        "excel_pipeline": settings.TASK_QUEUE_MAX_READY_IMPORT,
+        "resume_pipeline": settings.TASK_QUEUE_MAX_READY_IMPORT,
+        "admin_resume": settings.TASK_QUEUE_MAX_READY_IMPORT,
+        "ocr_pipeline": settings.TASK_QUEUE_MAX_READY_OCR,
+        "prewarm_analysis": settings.TASK_QUEUE_MAX_READY_AI,
+        "formula_batch": settings.TASK_QUEUE_MAX_READY_FORMULA,
+        "batch_image": settings.TASK_QUEUE_MAX_READY_BATCH_IMAGE,
+    }
+    return mapping.get(task_type, settings.TASK_QUEUE_MAX_READY_DEFAULT)
+
+
 # ── Lua scripts ──
 
-# ENQUEUE (idempotent): check idempotent key → set key → HSET payload → RPUSH ready
-# All in one atomic script to prevent task loss on partial failure.
+# ENQUEUE with idempotency check AND ready queue capacity limit.
 # KEYS: [queue_key, task_hash_prefix, idempotent_prefix]
-# ARGS: [task_id, task_json, idempotent_ttl_sec]
-# Returns: task_id on success, nil if duplicate idempotent key exists
+# ARGS: [task_id, task_json, idempotent_ttl_sec, max_ready]
+# Returns: task_id on success, "__duplicate__" if idempotent exists,
+#          "__queue_full__" if at capacity, nil on error
 _LUA_ENQUEUE = """
 local task_id = ARGV[1]
 local task_json = ARGV[2]
 local idem_ttl = tonumber(ARGV[3])
+local max_ready = tonumber(ARGV[4])
 
--- Check idempotent key
+-- 1. Check idempotent key
 local exists = redis.call("EXISTS", KEYS[3] .. ":" .. task_id)
 if exists == 1 then
-    return nil
+    return "__duplicate__"
 end
 
--- Set idempotent guard first (prevents races on concurrent enqueue)
+-- 2. Check ready queue capacity
+local ready_len = redis.call("LLEN", KEYS[1])
+if max_ready > 0 and ready_len >= max_ready then
+    return "__queue_full__"
+end
+
+-- 3. Set idempotent guard first (prevents races on concurrent enqueue)
 redis.call("SETEX", KEYS[3] .. ":" .. task_id, idem_ttl, "1")
 
--- Write task payload
-redis.call("HSET", KEYS[2] .. ":" .. task_id, "data", task_json)
+-- 4. Write task payload + authoritative fields
+redis.call("HSET", KEYS[2] .. ":" .. task_id, "data", task_json,
+    "status", "pending",
+    "owner_token", "",
+    "generation", 0,
+    "retry_count", 0)
 
--- Push to ready queue
+-- 5. Push to ready queue
 redis.call("RPUSH", KEYS[1], task_id)
 
 return task_id
@@ -146,17 +195,26 @@ return task_id
 _LUA_ENQUEUE_NON_IDEMPOTENT = """
 local task_id = ARGV[1]
 local task_json = ARGV[2]
+local max_ready = tonumber(ARGV[3])
 
-redis.call("HSET", KEYS[2] .. ":" .. task_id, "data", task_json)
+-- Check ready queue capacity
+local ready_len = redis.call("LLEN", KEYS[1])
+if max_ready > 0 and ready_len >= max_ready then
+    return "__queue_full__"
+end
+
+redis.call("HSET", KEYS[2] .. ":" .. task_id, "data", task_json,
+    "status", "pending")
 redis.call("RPUSH", KEYS[1], task_id)
 
 return task_id
 """
 
-# CLAIM: RPOP ready → ZADD processing (abs score) → HGET payload → SETEX heartbeat (rel TTL)
+# CLAIM: RPOP ready → ZADD processing → HGET payload → SETEX heartbeat + update hash
+# Returns payload, owner_token, and generation.
 # KEYS: [queue_key, processing_key, heartbeat_prefix, task_hash_prefix]
-# ARGS: [lease_expiry_abs, lease_ttl_rel, owner_token]
-# Returns: {raw_payload, owner_token} as multi-bulk, or nil if empty
+# ARGS: [lease_expiry_abs, lease_ttl_rel, owner_token, execution_generation]
+# Returns: {raw_payload, owner_token, generation} or nil
 _LUA_CLAIM = """
 local task_id = redis.call("RPOP", KEYS[1])
 if not task_id then
@@ -164,26 +222,32 @@ if not task_id then
 end
 
 local owner_token = ARGV[3]
+local generation = tonumber(ARGV[4]) or 1
 local lease_expiry = tonumber(ARGV[1])
 local lease_ttl = tonumber(ARGV[2])
-
--- Add to processing ZSET with absolute lease expiry
-redis.call("ZADD", KEYS[2], lease_expiry, task_id)
 
 -- Read payload
 local raw = redis.call("HGET", KEYS[4] .. ":" .. task_id, "data")
 if not raw then
-    redis.call("ZREM", KEYS[2], task_id)
+    -- Payload missing — don't requeue, mark as corrupt
+    redis.call("HSET", KEYS[4] .. ":" .. task_id, "status", "corrupt")
     return nil
 end
+
+-- Add to processing ZSET with absolute lease expiry
+redis.call("ZADD", KEYS[2], lease_expiry, task_id)
 
 -- Set heartbeat key with relative TTL and owner_token as value
 redis.call("SETEX", KEYS[3] .. ":" .. task_id, lease_ttl, owner_token)
 
--- Store owner_token in task hash (for reaper recovery)
-redis.call("HSET", KEYS[4] .. ":" .. task_id, "owner_token", owner_token)
+-- Update authoritative state fields in task hash
+redis.call("HSET", KEYS[4] .. ":" .. task_id,
+    "owner_token", owner_token,
+    "generation", generation,
+    "status", "processing",
+    "lease_expires_at", lease_expiry)
 
-return {raw, owner_token}
+return {raw, owner_token, tostring(generation)}
 """
 
 # HEARTBEAT: verify owner_token → update processing ZSET score → extend heartbeat TTL
@@ -211,19 +275,16 @@ redis.call("EXPIRE", KEYS[2] .. ":" .. task_id, lease_ttl)
 return 1
 """
 
-# COMPLETE: verify owner_token → ZREM processing → HSET completed → DEL heartbeat (preserve idempotent)
-# KEYS: [processing_key, task_hash_prefix, heartbeat_prefix]
+# COMPLETE: verify owner_token → ZREM processing → ZREM retry → HSET completed → DEL heartbeat
+# KEYS: [processing_key, retry_key, task_hash_prefix, heartbeat_prefix]
 # ARGS: [task_id, owner_token, completed_ttl]
-# Returns: 1 on success, 0 on owner mismatch
-# NOTE: idempotent key is NOT deleted — terminal task retains idempotency
-# so that duplicate enqueue returns existing task_id during retention period.
 _LUA_COMPLETE = """
 local task_id = ARGV[1]
 local owner_token = ARGV[2]
 local ttl = tonumber(ARGV[3])
 
 -- Verify owner via heartbeat key
-local stored = redis.call("GET", KEYS[3] .. ":" .. task_id)
+local stored = redis.call("GET", KEYS[4] .. ":" .. task_id)
 if not stored or stored ~= owner_token then
     return 0
 end
@@ -231,25 +292,29 @@ end
 -- Remove from processing
 redis.call("ZREM", KEYS[1], task_id)
 
--- Set completed status and retention TTL
-redis.call("HSET", KEYS[2] .. ":" .. task_id, "status", "completed")
-redis.call("EXPIRE", KEYS[2] .. ":" .. task_id, ttl)
+-- Clean up retry ZSET (in case it was re-enqueued)
+redis.call("ZREM", KEYS[2], task_id)
 
--- Clean up heartbeat only (idempotent key preserved for dedup)
-redis.call("DEL", KEYS[3] .. ":" .. task_id)
+-- Set authoritative status to completed
+redis.call("HSET", KEYS[3] .. ":" .. task_id, "status", "completed")
+redis.call("EXPIRE", KEYS[3] .. ":" .. task_id, ttl)
+
+-- Delete heartbeat only (idempotent key preserved for dedup)
+redis.call("DEL", KEYS[4] .. ":" .. task_id)
 
 return 1
 """
 
-# FAIL_RETRY: verify owner_token → ZREM processing → ZADD retry → HSET hash → DEL heartbeat
+# FAIL_RETRY: verify owner_token → ZREM processing → ZADD retry → update status fields → DEL heartbeat
 # KEYS: [processing_key, retry_key, task_hash_prefix, heartbeat_prefix]
-# ARGS: [task_id, retry_at, task_json, owner_token]
-# Returns: 1 on success, 0 on owner mismatch
+# ARGS: [task_id, retry_at, task_json, owner_token, retry_count, error]
 _LUA_FAIL_RETRY = """
 local task_id = ARGV[1]
 local retry_at = tonumber(ARGV[2])
 local task_json = ARGV[3]
 local owner_token = ARGV[4]
+local retry_count = tonumber(ARGV[5]) or 1
+local error_msg = ARGV[6] or ""
 
 -- Verify owner
 local stored = redis.call("GET", KEYS[4] .. ":" .. task_id)
@@ -263,8 +328,11 @@ redis.call("ZREM", KEYS[1], task_id)
 -- Add to retry ZSET
 redis.call("ZADD", KEYS[2], retry_at, task_id)
 
--- Update task hash
-redis.call("HSET", KEYS[3] .. ":" .. task_id, "data", task_json)
+-- Update task hash (JSON data for backward compat + authoritative fields)
+redis.call("HSET", KEYS[3] .. ":" .. task_id, "data", task_json,
+    "status", "failed",
+    "retry_count", retry_count,
+    "error", error_msg)
 
 -- Delete heartbeat (idempotent stays for dedup)
 redis.call("DEL", KEYS[4] .. ":" .. task_id)
@@ -272,11 +340,9 @@ redis.call("DEL", KEYS[4] .. ":" .. task_id)
 return 1
 """
 
-# FAIL_DEAD: verify owner_token → ZREM processing → LPUSH dead → LTRIM → HSET hash → DEL heartbeat (preserve idempotent)
-# Task hash gets a 7d TTL so dead entries self-expire regardless of list trim.
+# FAIL_DEAD: verify owner → ZREM processing → LPUSH dead → LTRIM → HSET status=dead + TTL → DEL heartbeat
 # KEYS: [processing_key, dead_key, task_hash_prefix, heartbeat_prefix]
 # ARGS: [task_id, task_json, owner_token, dead_max]
-# Returns: 1 on success, 0 on owner mismatch
 _LUA_FAIL_DEAD = """
 local task_id = ARGV[1]
 local task_json = ARGV[2]
@@ -296,10 +362,9 @@ redis.call("ZREM", KEYS[1], task_id)
 redis.call("LPUSH", KEYS[2], task_id)
 redis.call("LTRIM", KEYS[2], 0, dead_max - 1)
 
--- Update task hash
+-- Update task hash (data + authoritative status = dead)
 redis.call("HSET", KEYS[3] .. ":" .. task_id, "data", task_json)
-
--- TTL on hash handles cleanup of entries trimmed by LTRIM
+redis.call("HSET", KEYS[3] .. ":" .. task_id, "status", "dead")
 redis.call("EXPIRE", KEYS[3] .. ":" .. task_id, 604800)
 
 -- Delete heartbeat only (idempotent key preserved for dedup)
@@ -308,11 +373,7 @@ redis.call("DEL", KEYS[4] .. ":" .. task_id)
 return 1
 """
 
-# REAPER: scan processing ZSET → heartbeat still alive? → check task status → if safe, re-enqueue
-# Re-checks heartbeat key AND task hash status before reclaiming:
-# 1. If heartbeat key exists → worker still alive, skip
-# 2. If task status is completed/dead → stale ZSET entry, skip
-# 3. Otherwise → ZREM + RPUSH ready
+# REAPER: scan processing ZSET → heartbeat alive? → check status/payload → reclaim or mark corrupt
 # KEYS: [processing_key, queue_key, heartbeat_prefix, task_hash_prefix]
 # ARGS: [now_timestamp, batch_size]
 # Returns: count of reclaimed tasks
@@ -327,30 +388,36 @@ for _, task_id in ipairs(expired) do
     if hb_exists == 0 then
         -- Check task hash status — skip if terminal (stale ZSET entry)
         local status = redis.call("HGET", KEYS[4] .. ":" .. task_id, "status")
-        if status and (status == "completed" or status == "dead") then
-            -- Stale ZSET entry for already-terminal task — clean up ZSET only
+        if status and (status == "completed" or status == "dead" or status == "corrupt") then
             redis.call("ZREM", KEYS[1], task_id)
         else
-            redis.call("ZREM", KEYS[1], task_id)
-            redis.call("RPUSH", KEYS[2], task_id)
-            count = count + 1
+            -- Check payload exists before reclaiming
+            local payload_exists = redis.call("HEXISTS", KEYS[4] .. ":" .. task_id, "data")
+            if payload_exists == 1 then
+                redis.call("ZREM", KEYS[1], task_id)
+                redis.call("RPUSH", KEYS[2], task_id)
+                count = count + 1
+            else
+                redis.call("ZREM", KEYS[1], task_id)
+                redis.call("HSET", KEYS[4] .. ":" .. task_id, "status", "corrupt")
+            end
         end
     end
 end
 return count
 """
 
-# RETRY_CLAIM: ZRANGEBYSCORE retry → ZREM → ZADD processing + SETEX heartbeat + update hash
-# Also updates task hash with new owner_token, status, and lease.
+# RETRY_CLAIM: ZRANGEBYSCORE retry → validate payload/status → ZADD processing + heartbeat
+# Returns payload inline — no separate HGET needed.
 # KEYS: [retry_key, processing_key, heartbeat_prefix, task_hash_prefix]
-# ARGS: [now_timestamp, lease_expiry_abs, lease_ttl_rel, owner_token, task_json]
-# Returns: {task_id, owner_token} or nil
+# ARGS: [now_timestamp, lease_expiry_abs, lease_ttl_rel, owner_token, execution_generation]
+# Returns: {task_id, owner_token, generation, raw_payload} or nil
 _LUA_RETRY_CLAIM = """
 local now = tonumber(ARGV[1])
 local lease_expiry = tonumber(ARGV[2])
 local lease_ttl = tonumber(ARGV[3])
 local owner_token = ARGV[4]
-local task_json = ARGV[5]
+local generation = tonumber(ARGV[5]) or 1
 
 local candidates = redis.call("ZRANGEBYSCORE", KEYS[1], 0, now, "LIMIT", 0, 1)
 if #candidates == 0 then
@@ -358,19 +425,34 @@ if #candidates == 0 then
 end
 
 local task_id = candidates[1]
+
+-- Validate payload exists before moving
+local raw = redis.call("HGET", KEYS[4] .. ":" .. task_id, "data")
+if not raw then
+    redis.call("ZREM", KEYS[1], task_id)
+    redis.call("HSET", KEYS[4] .. ":" .. task_id, "status", "corrupt")
+    return nil
+end
+
+-- Check if task is in terminal state (stale retry entry)
+local status = redis.call("HGET", KEYS[4] .. ":" .. task_id, "status")
+if status and (status == "completed" or status == "dead") then
+    redis.call("ZREM", KEYS[1], task_id)
+    return nil
+end
+
 redis.call("ZREM", KEYS[1], task_id)
 redis.call("ZADD", KEYS[2], lease_expiry, task_id)
 redis.call("SETEX", KEYS[3] .. ":" .. task_id, lease_ttl, owner_token)
 
--- Update task hash with new owner and lease
-if task_json and task_json ~= "" then
-    redis.call("HSET", KEYS[4] .. ":" .. task_id, "data", task_json)
-end
--- Always update status field for reaper safety
-redis.call("HSET", KEYS[4] .. ":" .. task_id, "owner_token", owner_token)
-redis.call("HSET", KEYS[4] .. ":" .. task_id, "status", "processing")
+-- Update authoritative state fields
+redis.call("HSET", KEYS[4] .. ":" .. task_id,
+    "owner_token", owner_token,
+    "generation", generation,
+    "status", "processing",
+    "lease_expires_at", lease_expiry)
 
-return {task_id, owner_token}
+return {task_id, owner_token, tostring(generation), raw}
 """
 
 
@@ -397,6 +479,9 @@ def _dead_key(task_type: str) -> str:
 def _retry_key(task_type: str) -> str:
     return f"{_RETRY_PREFIX}:{task_type}"
 
+def _corrupt_key(task_type: str) -> str:
+    return f"{_CORRUPT_PREFIX}:{task_type}"
+
 
 # ── Queue metrics ──
 
@@ -405,11 +490,15 @@ queue_metrics: dict[str, int] = {
     "processing": 0,
     "retry": 0,
     "dead": 0,
+    "corrupt": 0,
     "execution_duration": 0,
     "lease_renewal_failure": 0,
     "duplicate_enqueue_prevented": 0,
     "reaper_reclaimed": 0,
     "owner_fencing_rejected": 0,
+    "enqueue_rejected": 0,
+    "dead_purge_count": 0,
+    "corrupt_cleaned": 0,
 }
 
 
@@ -568,15 +657,11 @@ class DurableTaskQueue:
         task_id: str | None = None,
         max_retries: int = _DEFAULT_MAX_RETRIES,
         idempotent: bool = True,
-    ) -> str | None:
-        """Enqueue a task. Returns task_id, or None if rejected.
+    ) -> EnqueueResult:
+        """Enqueue a task. Returns EnqueueResult with accepted/reason.
 
-        In production/cloud_api mode, returns None (caller should return 503
-        with Retry-After) when Redis is unavailable.
-
-        When *idempotent* is True (default), the same task_id won't be
-        enqueued twice. For idempotent tasks, provide a deterministic
-        task_id (e.g. ``f"pipeline:{pipeline_id}"``).
+        In production/cloud_api mode, returns ``EnqueueResult(accepted=False)``
+        with an appropriate reason when Redis is unavailable or at capacity.
         """
         tid = task_id or f"task_{uuid.uuid4().hex}"
 
@@ -588,11 +673,13 @@ class DurableTaskQueue:
         )
         task_json = json.dumps(task.to_dict(), default=str)
 
+        max_ready = _get_max_ready(task_type)
+
         if self._redis_enabled:
             try:
                 client = await self._get_script_client()
                 if client is None:
-                    return None
+                    return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
                 await self._load_scripts(client)
 
                 if idempotent and task_id:
@@ -604,6 +691,7 @@ class DurableTaskQueue:
                         tid,                       # ARGV[1]: task_id
                         task_json,                 # ARGV[2]: task_json
                         str(_IDEMPOTENT_TTL),      # ARGV[3]: idempotent_ttl
+                        str(max_ready),            # ARGV[4]: max_ready
                     )
                 else:
                     result = await self._evalsha_or_reload(
@@ -612,44 +700,55 @@ class DurableTaskQueue:
                         _TASK_PREFIX,              # KEYS[2]: task_hash_prefix
                         tid,                       # ARGV[1]: task_id
                         task_json,                 # ARGV[2]: task_json
+                        str(max_ready),            # ARGV[3]: max_ready
                     )
 
                 await client.aclose()
 
-                if result is None:
+                if result == "__duplicate__":
                     logger.info("Duplicate task rejected (idempotent): task_id=%s", tid)
                     queue_metrics["duplicate_enqueue_prevented"] += 1
-                    return tid
+                    return EnqueueResult(accepted=True, task_id=tid, reason="duplicate")
+
+                if result == "__queue_full__":
+                    logger.warning("Queue full, rejected: task_id=%s type=%s", tid, task_type)
+                    queue_metrics["enqueue_rejected"] += 1
+                    return EnqueueResult(accepted=False, task_id=None, reason="queue_full", retry_after=30)
+
+                if result is None:
+                    logger.error("Enqueue failed (nil result): task_id=%s type=%s", tid, task_type)
+                    queue_metrics["enqueue_rejected"] += 1
+                    return EnqueueResult(accepted=False, task_id=None, reason="internal_error", retry_after=30)
 
                 logger.info("Task enqueued: task_id=%s type=%s", tid, task_type)
-                return tid
+                return EnqueueResult(accepted=True, task_id=tid)
 
             except redis_exc.ConnectionError:
                 if not self._allow_local_fallback:
-                    logger.error(
-                        "Redis connection error in restricted environment, "
-                        "rejecting enqueue task_id=%s", tid,
-                    )
-                    return None
+                    logger.error("Redis connection error, rejecting enqueue task_id=%s", tid)
+                    queue_metrics["enqueue_rejected"] += 1
+                    return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
                 logger.warning("Redis enqueue failed, fallen back to local: task_id=%s", tid)
 
             except Exception as e:
                 if not self._allow_local_fallback:
                     logger.error("Redis enqueue failed (no fallback): %s", e)
-                    return None
+                    queue_metrics["enqueue_rejected"] += 1
+                    return EnqueueResult(accepted=False, task_id=None, reason="enqueue_failed", retry_after=30)
                 logger.warning("Redis enqueue failed, falling back to local: %s", e)
 
         # Local fallback (dev only, bounded)
         if self._allow_local_fallback:
             if tid in self._local_tasks:
-                return tid
+                return EnqueueResult(accepted=True, task_id=tid)
             if len(self._local_tasks) >= _LOCAL_TASK_MAX:
                 logger.error("Local task queue full, rejected task_id=%s", tid)
-                return tid
+                queue_metrics["enqueue_rejected"] += 1
+                return EnqueueResult(accepted=False, task_id=None, reason="queue_full", retry_after=30)
             self._local_tasks[tid] = task
-            return tid
+            return EnqueueResult(accepted=True, task_id=tid)
 
-        return None
+        return EnqueueResult(accepted=False, task_id=None, reason="no_backend")
 
     # ── dequeue ──
 
@@ -662,7 +761,7 @@ class DurableTaskQueue:
         """Atomically claim a task from the queue.
 
         Tries the ready queue first, then the retry ZSET.
-        Uses atomic Lua with owner_token generation.
+        Uses atomic Lua with owner_token and execution_generation.
 
         Returns None if queue is empty or Redis unavailable.
         """
@@ -673,11 +772,12 @@ class DurableTaskQueue:
                     return None
                 await self._load_scripts(client)
 
-                # 1. Try ready queue via atomic Lua
+                # 1. Try ready queue
                 q_key = _q_key(task_type)
                 p_key = _p_key(task_type)
                 lease_expiry = time.time() + lease_sec
                 owner_token = uuid.uuid4().hex
+                generation = int(time.time() * 1000)  # monotonic generation
 
                 result = await self._evalsha_or_reload(
                     client, "_lua_claim", 4,
@@ -685,45 +785,44 @@ class DurableTaskQueue:
                     p_key,                    # KEYS[2]: processing_key
                     _HEARTBEAT_PREFIX,        # KEYS[3]: heartbeat_prefix
                     _TASK_PREFIX,             # KEYS[4]: task_hash_prefix
-                    str(lease_expiry),        # ARGV[1]: lease_expiry (abs)
-                    str(lease_sec),           # ARGV[2]: lease_ttl (rel)
+                    str(lease_expiry),        # ARGV[1]: lease_expiry
+                    str(lease_sec),           # ARGV[2]: lease_ttl
                     owner_token,              # ARGV[3]: owner_token
+                    str(generation),          # ARGV[4]: execution_generation
                 )
 
                 if result is not None:
-                    raw_payload, stored_token = result
+                    raw_payload, stored_token, stored_gen = result
                     task = Task.from_dict(json.loads(raw_payload))
                     task.status = TaskStatus.PROCESSING
                     task.lease_expires_at = lease_expiry
                     task.owner_token = stored_token or owner_token
+                    task.generation = int(stored_gen or generation)
                     task.updated_at = time.time()
                     logger.info(
-                        "Task dequeued: task_id=%s type=%s lease=%ds",
-                        task.task_id, task_type, lease_sec,
+                        "Task dequeued: task_id=%s type=%s lease=%ds gen=%d",
+                        task.task_id, task_type, lease_sec, task.generation,
                     )
                     return task
 
-                # 2. Ready queue empty — try retry ZSET
-                task_id, rtoken = await self._dequeue_retry(
-                    client, task_type, lease_sec,
+                # 2. Retry ZSET (payload returned inline from Lua)
+                retry_data = await self._dequeue_retry(
+                    client, task_type, lease_sec, generation,
                 )
-                if task_id is None:
+                if retry_data is None:
                     return None
 
-                raw = await client.hget(_task_hash_key(task_id), "data")
-                if raw is None:
-                    # Hash may have expired — skip
-                    return None
-
-                task = Task.from_dict(json.loads(raw))
+                raw_payload, task_id, rtoken, rgen = retry_data
+                task = Task.from_dict(json.loads(raw_payload))
                 task.status = TaskStatus.PROCESSING
                 task.lease_expires_at = time.time() + lease_sec
                 task.owner_token = rtoken
+                task.generation = int(rgen or generation)
                 task.updated_at = time.time()
 
                 logger.info(
-                    "Task dequeued (retry): task_id=%s type=%s lease=%ds",
-                    task.task_id, task_type, lease_sec,
+                    "Task dequeued (retry): task_id=%s type=%s lease=%ds gen=%d",
+                    task.task_id, task_type, lease_sec, task.generation,
                 )
                 return task
 
@@ -745,11 +844,12 @@ class DurableTaskQueue:
         return None
 
     async def _dequeue_retry(
-        self, client, task_type: str, lease_sec: int,
-    ) -> tuple[str | None, str]:
+        self, client, task_type: str, lease_sec: int, generation: int,
+    ) -> tuple[str, str, str, str] | None:
         """Atomically claim from retry ZSET.
 
-        Returns (task_id, owner_token) or (None, "").
+        Returns (raw_payload, task_id, owner_token, gen) or None.
+        Payload is validated inside Lua to avoid ghosts.
         """
         now = time.time()
         lease_expiry = now + lease_sec
@@ -761,17 +861,17 @@ class DurableTaskQueue:
             _p_key(task_type),           # KEYS[2]: processing ZSET
             _HEARTBEAT_PREFIX,           # KEYS[3]: heartbeat_prefix
             _TASK_PREFIX,               # KEYS[4]: task_hash_prefix
-            str(now),                    # ARGV[1]: now timestamp
-            str(lease_expiry),           # ARGV[2]: lease_expiry (abs)
-            str(lease_sec),              # ARGV[3]: lease_ttl (rel)
+            str(now),                    # ARGV[1]: now
+            str(lease_expiry),           # ARGV[2]: lease_expiry
+            str(lease_sec),              # ARGV[3]: lease_ttl
             owner_token,                 # ARGV[4]: owner_token
-            "",                          # ARGV[5]: task_json (empty — hash updated by caller after read)
+            str(generation),             # ARGV[5]: execution_generation
         )
 
         if result is not None:
-            task_id, rtoken = result
-            return task_id, rtoken or owner_token
-        return None, ""
+            task_id, rtoken, rgen, raw_payload = result
+            return raw_payload, task_id, rtoken or owner_token, rgen or str(generation)
+        return None
 
     # ── heartbeat ──
 
@@ -889,11 +989,13 @@ class DurableTaskQueue:
                 await self._load_scripts(client)
 
                 p_key = _p_key(tt)
+                r_key = _retry_key(tt)
                 result = await self._evalsha_or_reload(
-                    client, "_lua_complete", 3,
+                    client, "_lua_complete", 4,
                     p_key,                    # KEYS[1]: processing_key
-                    _TASK_PREFIX,             # KEYS[2]: task_hash_prefix
-                    _HEARTBEAT_PREFIX,        # KEYS[3]: heartbeat_prefix
+                    r_key,                    # KEYS[2]: retry_key
+                    _TASK_PREFIX,             # KEYS[3]: task_hash_prefix
+                    _HEARTBEAT_PREFIX,        # KEYS[4]: heartbeat_prefix
                     task_id,                  # ARGV[1]: task_id
                     token,                    # ARGV[2]: owner_token
                     str(_COMPLETED_TTL),      # ARGV[3]: completed_ttl
@@ -980,6 +1082,8 @@ class DurableTaskQueue:
                         str(retry_at),            # ARGV[2]: retry_at
                         task_json,                # ARGV[3]: task_json
                         token,                    # ARGV[4]: owner_token
+                        str(task.retry_count),    # ARGV[5]: retry_count
+                        error[:200],              # ARGV[6]: error
                     )
                     await client.aclose()
 
@@ -1161,6 +1265,42 @@ class DurableTaskQueue:
             except Exception:
                 pass
         return 0
+
+    async def corrupt_length(self, task_type: str) -> int:
+        if self._redis_enabled:
+            try:
+                client = await self._get_script_client()
+                if client is None:
+                    return 0
+                length = await client.llen(_corrupt_key(task_type))
+                await client.aclose()
+                return length
+            except Exception:
+                pass
+        return 0
+
+    async def oldest_ready_age(self, task_type: str) -> float:
+        """Return age in seconds of the oldest ready task, or 0 if empty."""
+        if not self._redis_enabled:
+            return 0.0
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return 0.0
+            task_id = await client.lindex(_q_key(task_type), 0)
+            if not task_id:
+                await client.aclose()
+                return 0.0
+            raw = await client.hget(_task_hash_key(task_id), "data")
+            await client.aclose()
+            if raw:
+                task_data = json.loads(raw)
+                created_at = task_data.get("created_at", 0)
+                if created_at:
+                    return time.time() - created_at
+            return 0.0
+        except Exception:
+            return 0.0
 
     # ── Dead-letter management ──
 

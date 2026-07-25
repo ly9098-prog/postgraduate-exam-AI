@@ -74,6 +74,10 @@ async def subscribe_job(
             await pubsub.subscribe(channel)
 
             deadline = asyncio.get_event_loop().time() + timeout
+            # Exponential backoff for DB polling fallback
+            initial_backoff = poll_interval
+            max_backoff = 60.0  # cap at 60 seconds
+            backoff = initial_backoff
             while asyncio.get_event_loop().time() < deadline:
                 try:
                     msg = await pubsub.get_message(
@@ -92,6 +96,7 @@ async def subscribe_job(
                             logger.warning("Invalid PubSub message for job %d", job_id)
 
                     # When no message and poll_fn available, use fallback
+                    # with exponential backoff between empty polls.
                     if poll_fn and msg is None:
                         events = await poll_fn()
                         if events:
@@ -100,6 +105,10 @@ async def subscribe_job(
                                 if ev.get("type") == "done":
                                     await on_done()
                                     return
+                            backoff = initial_backoff  # reset on success
+                        else:
+                            await asyncio.sleep(backoff)
+                            backoff = min(backoff * 2, max_backoff)
                 except asyncio.CancelledError:
                     raise
                 except Exception:
