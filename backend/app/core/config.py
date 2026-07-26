@@ -259,6 +259,11 @@ class Settings(BaseSettings):
     PRODUCT_NAME: str = "MemoGrad"
     GENERATOR_VERSION: str = "2.0"  # v2 = DOCX support added
 
+    # ── Export feature flags (gray release) ──
+    EXPORT_FEATURE_ENABLED: bool = True
+    EXPORT_DOCX_ENABLED: bool = True
+    EXPORT_WEBSOCKET_ENABLED: bool = True
+
     # ── Adaptive Learning ──
     ADAPTIVE_LEARNING_ENABLED: bool = True
     ADAPTIVE_INTERVAL_ENABLED: bool = True
