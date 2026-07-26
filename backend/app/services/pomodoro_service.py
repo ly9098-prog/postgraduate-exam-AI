@@ -262,6 +262,51 @@ async def resume_session(
     return session
 
 
+async def pause_session(db: AsyncSession, session_id: int, user_id: int) -> PomodoroSession | None:
+    """暂停 running 会话。已暂停时返回原状（幂等）。
+
+    暂停期间 expected_end_time 保持不动；scheduler 通过 paused_at IS NOT NULL 跳过。
+    """
+    result = await db.execute(
+        select(PomodoroSession).where(
+            PomodoroSession.id == session_id,
+            PomodoroSession.user_id == user_id,
+            PomodoroSession.status == "running",
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        return None
+    if session.paused_at is None:
+        session.paused_at = datetime.utcnow()
+        await db.flush()
+    await db.refresh(session)
+    return session
+
+
+async def resume_session(db: AsyncSession, session_id: int, user_id: int) -> PomodoroSession | None:
+    """恢复暂停中的会话；将暂停时长加到 expected_end_time，清空 paused_at。"""
+    result = await db.execute(
+        select(PomodoroSession).where(
+            PomodoroSession.id == session_id,
+            PomodoroSession.user_id == user_id,
+            PomodoroSession.status == "running",
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        return None
+    if session.paused_at is not None:
+        now = datetime.utcnow()
+        paused_for = now - session.paused_at
+        if session.expected_end_time is not None and paused_for.total_seconds() > 0:
+            session.expected_end_time = session.expected_end_time + paused_for
+        session.paused_at = None
+        await db.flush()
+    await db.refresh(session)
+    return session
+
+
 async def get_active_session(db: AsyncSession, user_id: int) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)

@@ -118,6 +118,34 @@ async def resume_session(
     return PomodoroSessionResponse.from_orm_with_subject(session)
 
 
+@router.post("/{session_id}/pause", response_model=PomodoroSessionResponse)
+async def pause_session(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    session = await svc.pause_session(db, session_id, current_user.id)
+    if not session:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="No running session found")
+    await db.commit()
+    return session
+
+
+@router.post("/{session_id}/resume", response_model=PomodoroSessionResponse)
+async def resume_session(
+    session_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    session = await svc.resume_session(db, session_id, current_user.id)
+    if not session:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="No running session found")
+    await db.commit()
+    return session
+
+
 @router.get("/active", response_model=PomodoroSessionResponse | None)
 async def get_active(
     db: AsyncSession = Depends(get_db),
