@@ -92,12 +92,12 @@ class PomodoroScheduler:
     async def tick(self) -> None:
         # Strict Redis lock: only one instance may tick at a time.
         # acquire_and_renew handles background lease renewal and cleanup.
-        async with self._lock.acquire_and_renew(ttl=_TICK_LOCK_TTL, renew_interval=30) as held:
-            if not held:
+        async with self._lock.acquire_and_renew(ttl=_TICK_LOCK_TTL, renew_interval=30) as handle:
+            if not handle.is_still_held():
                 return
-            await self._do_tick()
+            await self._do_tick(handle)
 
-    async def _do_tick(self) -> None:
+    async def _do_tick(self, handle) -> None:
         now = utcnow()
         async with async_session() as db:
             sessions = await self._claim_due_sessions(db, now)
@@ -108,7 +108,14 @@ class PomodoroScheduler:
             logger.info("番茄钟调度器认领到 %d 个待通知任务", len(sessions))
 
         # 释放认领事务后，逐个发通知（避免长事务）
+        # 在 session 之间检查 lease 是否丢失；若丢失则停止发送，避免孤立的 Redis 操作
         for sess_data in sessions:
+            if not handle.is_still_held():
+                logger.warning(
+                    "番茄钟调度器 lease 已丢失，停止发送剩余 %d 个通知",
+                    len(sessions) - sessions.index(sess_data),
+                )
+                break
             await self._send_one(sess_data)
 
     async def _claim_due_sessions(self, db, now: datetime) -> list[dict[str, Any]]:
@@ -136,7 +143,7 @@ class PomodoroScheduler:
         try:
             stmt = stmt.with_for_update(skip_locked=True)
         except Exception:
-            pass
+            logger.debug("_claim_due_sessions: with_for_update(skip_locked=True) not supported (likely SQLite)")
 
         try:
             result = await db.execute(stmt)

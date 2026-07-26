@@ -21,6 +21,7 @@ import logging
 import time
 from typing import Any
 
+from app.core.deployment_profile import DeploymentProfile
 from app.core.module_result import ModuleError, ModuleResult
 
 logger = logging.getLogger(__name__)
@@ -103,8 +104,8 @@ class OCRCoordinator:
       OCRGateway, AdapterRegistry, AdapterSelector
     """
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, profile: DeploymentProfile | None = None) -> None:
+        self._profile = profile
 
     async def run(
         self,
@@ -125,6 +126,7 @@ class OCRCoordinator:
         start = time.monotonic()
 
         try:
+            from app.core.deployment_profile import detect_deployment_profile
             from app.features.ocr_gateway import OCRGateway
 
             # Extract VL config from context if available
@@ -143,7 +145,9 @@ class OCRCoordinator:
                             vl_base_url = endpoint
                         break
 
+            profile = self._profile or detect_deployment_profile()
             gateway = OCRGateway(
+                profile=profile,
                 vl_api_token=vl_api_token,
                 vl_base_url=vl_base_url,
                 vl_model=vl_model,
@@ -260,7 +264,7 @@ class DomainParsingCoordinator:
             from app.features.cross_page_linking import detect_cross_page_links
 
             links = detect_cross_page_links(doc_ir)
-            doc_ir.cross_page_links = [l.to_dict() for l in links]
+            doc_ir.cross_page_links = [lnk.to_dict() for lnk in links]
 
             return ModuleResult.success(
                 data=doc_ir,

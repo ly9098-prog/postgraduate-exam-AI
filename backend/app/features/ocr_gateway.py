@@ -45,6 +45,12 @@ _OCR_TIMEOUT_SECONDS = 120
 _PREFERRED_BACKENDS = ["paddleocr", "paddleocr-vl", "rule_fallback"]
 
 
+def _read_file_bytes(path: str) -> bytes:
+    """Synchronous file read — run via asyncio.to_thread to avoid blocking."""
+    with open(path, "rb") as f:
+        return f.read()
+
+
 # ---------------------------------------------------------------------------
 # Required capabilities
 # ---------------------------------------------------------------------------
@@ -160,7 +166,7 @@ class OCRGateway:
             ModuleResult with DocumentIR data (or error).
         """
         start = time.monotonic()
-        req = request or self._build_request(page)
+        req = request or await self._build_request(page)
         caps = requirements or RequiredOCRCapabilities()
 
         # Resolve routing
@@ -316,7 +322,7 @@ class OCRGateway:
     ) -> GatewayRouteDecision:
         """Only compute the route decision (no OCR). Useful for shadow comparison."""
         caps = requirements or RequiredOCRCapabilities()
-        req = self._build_request(page)
+        req = await self._build_request(page)
         return self._resolve_route(req, caps)
 
     # ── Private ──
@@ -377,6 +383,16 @@ class OCRGateway:
         start = time.monotonic()
 
         for backend_name in route.fallback_chain:
+            # Defence-in-depth: cloud profile must never execute local backends
+            if self._profile == DeploymentProfile.CLOUD_API:
+                if backend_name in ("paddleocr", "rule_fallback"):
+                    logger.error(
+                        "CLOUD_LOCAL_OCR_BLOCKED: profile=%s attempted backend=%s "
+                        "(fallback_chain=%s)",
+                        self._profile.value, backend_name, route.fallback_chain,
+                    )
+                    continue  # skip — do NOT attempt this backend
+
             adapter = self._registry.get_ocr(backend_name)
             if adapter is None:
                 continue
@@ -411,12 +427,13 @@ class OCRGateway:
             latency_ms=latency,
         )
 
-    def _build_request(self, page: RenderedPage) -> OCRRequest:
+    async def _build_request(self, page: RenderedPage) -> OCRRequest:
         """Build an OCRRequest from a RenderedPage."""
         source = b""
         if page.image_path and os.path.exists(page.image_path):
-            with open(page.image_path, "rb") as f:
-                source = f.read()
+            source = await asyncio.to_thread(
+                _read_file_bytes, page.image_path,
+            )
 
         return OCRRequest(
             source=source or b" ",

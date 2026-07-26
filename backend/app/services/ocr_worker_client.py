@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Protocol, runtime_checkable
 
+import httpx
+
 from app.core.ocr_runtime_config import OcrRuntimeConfig, sanitize_url
 
 logger = logging.getLogger(__name__)
@@ -49,11 +51,18 @@ class OcrWorkerClient(Protocol):
         ...
 
 
-def create_ocr_worker_client(config: OcrRuntimeConfig) -> OcrWorkerClient | None:
+def create_ocr_worker_client(
+    config: OcrRuntimeConfig,
+    *,
+    http_client: httpx.AsyncClient | None = None,
+) -> OcrWorkerClient | None:
     """Factory: create the appropriate worker client for the given config.
 
     Args:
         config: Resolved runtime config.
+        http_client: Optional shared ``httpx.AsyncClient``.  If provided, the
+            client will use this instance and will **not** close it on
+            ``shutdown()`` (ownership remains with the caller).
 
     Returns:
         An ``OcrWorkerClient`` instance, or ``None`` if the backend is disabled.
@@ -87,7 +96,7 @@ def create_ocr_worker_client(config: OcrRuntimeConfig) -> OcrWorkerClient | None
             "Creating PaddleXHttpOcrWorkerClient (url=%s, concurrency=%d)",
             sanitize_url(config.remote_url), config.remote_max_concurrency,
         )
-        return PaddleXHttpOcrWorkerClient(config)
+        return PaddleXHttpOcrWorkerClient(config, http_client=http_client)
 
     raise ValueError(
         f"Unrecognised OCR execution_backend '{backend}'. "

@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from app.features.ocr_gateway import OCRGateway, RequiredOCRCapabilities
+from app.core.deployment_profile import DeploymentProfile
 from app.features.page_stream import RenderedPage
 
 
@@ -17,7 +18,7 @@ class TestOCRGatewayShadowEquivalence:
     @pytest.mark.asyncio
     async def test_same_routing_for_same_input(self):
         """Same input should produce same routing decision each time."""
-        gateway = OCRGateway(mode="shadow")
+        gateway = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
         page = RenderedPage(page_index=0, page_id="p0000")
 
         route1 = await gateway.route_page(page)
@@ -29,7 +30,7 @@ class TestOCRGatewayShadowEquivalence:
     @pytest.mark.asyncio
     async def test_different_pages_same_routing(self):
         """Different pages with same requirements should route the same."""
-        gateway = OCRGateway(mode="shadow")
+        gateway = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
         p0 = RenderedPage(page_index=0, page_id="p0000")
         p1 = RenderedPage(page_index=1, page_id="p0001")
 
@@ -41,7 +42,7 @@ class TestOCRGatewayShadowEquivalence:
     @pytest.mark.asyncio
     async def test_shadow_never_calls_real_ocr(self):
         """Shadow mode routing must never make real OCR calls."""
-        gateway = OCRGateway(mode="shadow")
+        gateway = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
         page = RenderedPage(page_index=0, page_id="p0000")
 
         result = await gateway.recognize_page(page, trace_id="shadow-eq")

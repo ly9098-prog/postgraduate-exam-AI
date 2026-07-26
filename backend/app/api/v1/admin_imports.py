@@ -1257,8 +1257,10 @@ async def stream_batch_image_job(
                 ]
 
         # Try Redis Pub/Sub subscription with DB polling fallback
-        sub_task = asyncio.create_task(
-            _run_sse_subscribe(job_id, on_event, on_done, poll_db)
+        from app.core.background_tasks import create_background_task
+        sub_task = create_background_task(
+            _run_sse_subscribe(job_id, on_event, on_done, poll_db),
+            name=f"sse-sub-{job_id}",
         )
         subscribed = True
 
@@ -1303,8 +1305,9 @@ async def stream_batch_image_job(
                     return
                 finally:
                     if subscribed and sub_task.done() and sub_task.exception() is not None:
-                        sub_task = asyncio.create_task(
-                            _run_sse_subscribe(job_id, on_event, on_done, poll_db)
+                        sub_task = create_background_task(
+                            _run_sse_subscribe(job_id, on_event, on_done, poll_db),
+                            name=f"sse-sub-{job_id}",
                         )
         finally:
             # Cleanup: decrement active connection count, cancel subscription
@@ -1314,7 +1317,7 @@ async def stream_batch_image_job(
                 try:
                     await sub_task
                 except (asyncio.CancelledError, Exception):
-                    pass
+                    logger.debug("SSE subscriber task cleanup for job %s", job_id)
 
     return StreamingResponse(
         event_generator(),

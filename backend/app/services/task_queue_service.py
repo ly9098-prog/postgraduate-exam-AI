@@ -31,7 +31,23 @@ from app.core.deployment_profile import DeploymentProfile, detect_deployment_pro
 
 logger = logging.getLogger("postgraduate-ai.task-queue")
 
-# Redis key prefixes
+
+class QueueHealthError(Exception):
+    """Raised when a queue health check fails due to Redis being unavailable.
+
+    Used by v2 queue health methods to distinguish "empty queue" from
+    "cannot determine queue state" — the latter is a health failure.
+    """
+
+
+class QueueFencingError(Exception):
+    """Raised when owner or generation fencing check fails.
+
+    Indicates a stale worker is trying to modify a task it no longer owns.
+    """
+
+
+# v1 Redis key prefixes (legacy — used for drain/migration)
 _QUEUE_PREFIX = "taskq:queue"
 _PROCESSING_PREFIX = "taskq:processing"
 _DEAD_PREFIX = "taskq:dead"
@@ -40,6 +56,19 @@ _CORRUPT_PREFIX = "taskq:corrupt"
 _TASK_PREFIX = "taskq:task"
 _IDEMPOTENCY_PREFIX = "taskq:idempotent"
 _HEARTBEAT_PREFIX = "taskq:heartbeat"
+
+# v2 Redis key namespace (production — fencing generation via HINCRBY)
+# The v2 namespace adds a fencing_key that is NEVER deleted — the HINCRBY
+# counter is monotonic for the entire lifetime of a task_id.
+_V2_QUEUE_PREFIX = "taskq:v2:ready"
+_V2_PROCESSING_PREFIX = "taskq:v2:processing"
+_V2_DEAD_PREFIX = "taskq:v2:dead"
+_V2_RETRY_PREFIX = "taskq:v2:retry"
+_V2_CORRUPT_PREFIX = "taskq:v2:corrupt"
+_V2_TASK_PREFIX = "taskq:v2:task"
+_V2_IDEMPOTENCY_PREFIX = "taskq:v2:idempotent"
+_V2_HEARTBEAT_PREFIX = "taskq:v2:heartbeat"
+_V2_FENCING_PREFIX = "taskq:v2:fencing"  # HINCRBY monotonic counter — NEVER deleted
 
 # Defaults
 _DEFAULT_LEASE_SEC = 300       # 5 minutes
@@ -456,6 +485,340 @@ return {task_id, owner_token, tostring(generation), raw}
 """
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# v2 Lua Scripts — Fencing Generation via HINCRBY
+#
+# v2 key namespace: taskq:v2:{ready|processing|retry|dead|corrupt}:{type}
+# v2 task hash:     taskq:v2:task:{task_id}
+# v2 fencing key:   taskq:v2:fencing:{task_id}  — HINCRBY counter, NEVER deleted
+# v2 heartbeat:     taskq:v2:heartbeat:{task_id}
+# v2 idempotent:    taskq:v2:idempotent:{task_id}
+#
+# Generation is a HINCRBY monotonic counter stored in the fencing key.
+# It is NEVER reset — not by reaper, retry, complete, purge, or re-enqueue.
+# All v2 heartbeat/complete/fail scripts verify BOTH owner_token AND generation.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ENQUEUE_V2 with idempotency and capacity limit (v2 keys)
+# KEYS: [queue_key, task_hash_prefix, idempotent_prefix]
+# ARGS: [task_id, task_json, idempotent_ttl_sec, max_ready]
+_LUA_ENQUEUE_V2 = """
+local task_id = ARGV[1]
+local task_json = ARGV[2]
+local idem_ttl = tonumber(ARGV[3])
+local max_ready = tonumber(ARGV[4])
+
+local exists = redis.call("EXISTS", KEYS[3] .. ":" .. task_id)
+if exists == 1 then
+    return "__duplicate__"
+end
+
+local ready_len = redis.call("LLEN", KEYS[1])
+if max_ready > 0 and ready_len >= max_ready then
+    return "__queue_full__"
+end
+
+redis.call("SETEX", KEYS[3] .. ":" .. task_id, idem_ttl, "1")
+
+redis.call("HSET", KEYS[2] .. ":" .. task_id, "data", task_json,
+    "status", "pending",
+    "owner_token", "",
+    "generation", 0,
+    "retry_count", 0)
+
+redis.call("RPUSH", KEYS[1], task_id)
+return task_id
+"""
+
+# ENQUEUE_NON_IDEMPOTENT_V2 (v2 keys)
+# KEYS: [queue_key, task_hash_prefix]
+# ARGS: [task_id, task_json, max_ready]
+_LUA_ENQUEUE_NON_IDEMPOTENT_V2 = """
+local task_id = ARGV[1]
+local task_json = ARGV[2]
+local max_ready = tonumber(ARGV[3])
+
+local ready_len = redis.call("LLEN", KEYS[1])
+if max_ready > 0 and ready_len >= max_ready then
+    return "__queue_full__"
+end
+
+redis.call("HSET", KEYS[2] .. ":" .. task_id, "data", task_json,
+    "status", "pending")
+redis.call("RPUSH", KEYS[1], task_id)
+return task_id
+"""
+
+# CLAIM_V2 — HINCRBY generation, NEVER reset.
+# KEYS: [queue_key, processing_key, heartbeat_prefix, task_hash_prefix, fencing_prefix]
+# ARGS: [task_id_placeholder_not_used, lease_expiry_abs, lease_ttl_rel, owner_token]
+# The task_id comes from RPOP of the queue (not ARGV).
+# Returns: {raw_payload, owner_token, generation} or nil.
+_LUA_CLAIM_V2 = """
+local task_id = redis.call("RPOP", KEYS[1])
+if not task_id then
+    return nil
+end
+
+local owner_token = ARGV[4]
+local lease_expiry = tonumber(ARGV[2])
+local lease_ttl = tonumber(ARGV[3])
+
+local raw = redis.call("HGET", KEYS[4] .. ":" .. task_id, "data")
+if not raw then
+    redis.call("HSET", KEYS[4] .. ":" .. task_id, "status", "corrupt")
+    return nil
+end
+
+-- HINCRBY generation — monotonic, NEVER reset
+local generation = redis.call("HINCRBY", KEYS[5] .. ":" .. task_id, "gen", 1)
+
+redis.call("ZADD", KEYS[2], lease_expiry, task_id)
+redis.call("SETEX", KEYS[3] .. ":" .. task_id, lease_ttl, owner_token)
+
+redis.call("HSET", KEYS[4] .. ":" .. task_id,
+    "owner_token", owner_token,
+    "generation", generation,
+    "status", "processing",
+    "lease_expires_at", lease_expiry)
+
+return {raw, owner_token, tostring(generation)}
+"""
+
+# HEARTBEAT_V2 — verify BOTH owner_token AND generation
+# KEYS: [processing_key, heartbeat_prefix, task_hash_prefix, fencing_prefix]
+# ARGS: [task_id, new_lease_expiry, lease_ttl, owner_token]
+# Returns: 1 on success, 0 on owner mismatch, -1 on generation mismatch
+_LUA_HEARTBEAT_V2 = """
+local task_id = ARGV[1]
+local new_expiry = tonumber(ARGV[2])
+local lease_ttl = tonumber(ARGV[3])
+local owner_token = ARGV[4]
+
+-- Verify owner via heartbeat
+local stored = redis.call("GET", KEYS[2] .. ":" .. task_id)
+if not stored or stored ~= owner_token then
+    return 0
+end
+
+-- Verify generation matches fencing key (stale claim detection)
+local stored_gen = redis.call("HGET", KEYS[3] .. ":" .. task_id, "generation")
+local fencing_gen = redis.call("HGET", KEYS[4] .. ":" .. task_id, "gen")
+if not fencing_gen or not stored_gen or tostring(stored_gen) ~= tostring(fencing_gen) then
+    return -1
+end
+
+redis.call("ZADD", KEYS[1], new_expiry, task_id)
+redis.call("EXPIRE", KEYS[2] .. ":" .. task_id, lease_ttl)
+
+return 1
+"""
+
+# COMPLETE_V2 — verify owner_token AND generation
+# KEYS: [processing_key, retry_key, task_hash_prefix, heartbeat_prefix, fencing_prefix]
+# ARGS: [task_id, owner_token, completed_ttl]
+# Returns: 1 on success, 0 on owner mismatch, -1 on generation mismatch
+_LUA_COMPLETE_V2 = """
+local task_id = ARGV[1]
+local owner_token = ARGV[2]
+local ttl = tonumber(ARGV[3])
+
+local stored = redis.call("GET", KEYS[4] .. ":" .. task_id)
+if not stored or stored ~= owner_token then
+    return 0
+end
+
+local stored_gen = redis.call("HGET", KEYS[3] .. ":" .. task_id, "generation")
+local fencing_gen = redis.call("HGET", KEYS[5] .. ":" .. task_id, "gen")
+if not fencing_gen or not stored_gen or tostring(stored_gen) ~= tostring(fencing_gen) then
+    return -1
+end
+
+redis.call("ZREM", KEYS[1], task_id)
+redis.call("ZREM", KEYS[2], task_id)
+redis.call("HSET", KEYS[3] .. ":" .. task_id, "status", "completed")
+redis.call("EXPIRE", KEYS[3] .. ":" .. task_id, ttl)
+redis.call("DEL", KEYS[4] .. ":" .. task_id)
+
+return 1
+"""
+
+# FAIL_RETRY_V2 — verify owner+generation, retry-full atomic → dead-letter.
+# KEYS: [processing_key, retry_key, dead_key, task_hash_prefix, heartbeat_prefix, fencing_prefix]
+# ARGS: [task_id, retry_at, task_json, owner_token, retry_count, error, retry_max, dead_max]
+# Returns: 1 (retry), 2 (dead-letter due to full), 0 (owner mismatch), -1 (gen mismatch)
+_LUA_FAIL_RETRY_V2 = """
+local task_id = ARGV[1]
+local retry_at = tonumber(ARGV[2])
+local task_json = ARGV[3]
+local owner_token = ARGV[4]
+local retry_count = tonumber(ARGV[5]) or 1
+local error_msg = ARGV[6] or ""
+local retry_max = tonumber(ARGV[7]) or 500
+local dead_max = tonumber(ARGV[8]) or 1000
+
+local stored = redis.call("GET", KEYS[5] .. ":" .. task_id)
+if not stored or stored ~= owner_token then
+    return 0
+end
+
+local stored_gen = redis.call("HGET", KEYS[4] .. ":" .. task_id, "generation")
+local fencing_gen = redis.call("HGET", KEYS[6] .. ":" .. task_id, "gen")
+if not fencing_gen or not stored_gen or tostring(stored_gen) ~= tostring(fencing_gen) then
+    return -1
+end
+
+redis.call("ZREM", KEYS[1], task_id)
+
+-- Check retry capacity before adding
+local retry_zcard = redis.call("ZCARD", KEYS[2])
+if retry_max > 0 and retry_zcard >= retry_max then
+    -- Retry ZSET full — atomically transition to dead-letter
+    redis.call("LPUSH", KEYS[3], task_id)
+    redis.call("LTRIM", KEYS[3], 0, dead_max - 1)
+    redis.call("HSET", KEYS[4] .. ":" .. task_id, "data", task_json,
+        "status", "dead",
+        "error", error_msg)
+    redis.call("EXPIRE", KEYS[4] .. ":" .. task_id, 604800)
+    redis.call("DEL", KEYS[5] .. ":" .. task_id)
+    return 2
+end
+
+redis.call("ZADD", KEYS[2], retry_at, task_id)
+redis.call("HSET", KEYS[4] .. ":" .. task_id, "data", task_json,
+    "status", "failed",
+    "retry_count", retry_count,
+    "error", error_msg)
+redis.call("DEL", KEYS[5] .. ":" .. task_id)
+return 1
+"""
+
+# FAIL_DEAD_V2 — verify owner+generation → ZREM processing → LPUSH dead → HSET status=dead
+# KEYS: [processing_key, dead_key, task_hash_prefix, heartbeat_prefix, fencing_prefix]
+# ARGS: [task_id, task_json, owner_token, dead_max]
+# Returns: 1 on success, 0 on owner mismatch, -1 on generation mismatch
+_LUA_FAIL_DEAD_V2 = """
+local task_id = ARGV[1]
+local task_json = ARGV[2]
+local owner_token = ARGV[3]
+local dead_max = tonumber(ARGV[4]) or 1000
+
+local stored = redis.call("GET", KEYS[4] .. ":" .. task_id)
+if not stored or stored ~= owner_token then
+    return 0
+end
+
+local stored_gen = redis.call("HGET", KEYS[3] .. ":" .. task_id, "generation")
+local fencing_gen = redis.call("HGET", KEYS[5] .. ":" .. task_id, "gen")
+if not fencing_gen or not stored_gen or tostring(stored_gen) ~= tostring(fencing_gen) then
+    return -1
+end
+
+redis.call("ZREM", KEYS[1], task_id)
+redis.call("LPUSH", KEYS[2], task_id)
+redis.call("LTRIM", KEYS[2], 0, dead_max - 1)
+redis.call("HSET", KEYS[3] .. ":" .. task_id, "data", task_json)
+redis.call("HSET", KEYS[3] .. ":" .. task_id, "status", "dead")
+redis.call("EXPIRE", KEYS[3] .. ":" .. task_id, 604800)
+redis.call("DEL", KEYS[4] .. ":" .. task_id)
+return 1
+"""
+
+# REAPER_V2 — reclaim expired tasks (v2 keys)
+# KEYS: [processing_key, queue_key, heartbeat_prefix, task_hash_prefix]
+# ARGS: [now_timestamp, batch_size]
+# Returns: count of reclaimed tasks
+_LUA_REAPER_V2 = """
+local now = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2]) or 100
+local expired = redis.call("ZRANGEBYSCORE", KEYS[1], 0, now, "LIMIT", 0, limit)
+local count = 0
+for _, task_id in ipairs(expired) do
+    local hb_exists = redis.call("EXISTS", KEYS[3] .. ":" .. task_id)
+    if hb_exists == 0 then
+        local status = redis.call("HGET", KEYS[4] .. ":" .. task_id, "status")
+        if status and (status == "completed" or status == "dead" or status == "corrupt") then
+            redis.call("ZREM", KEYS[1], task_id)
+        else
+            local payload_exists = redis.call("HEXISTS", KEYS[4] .. ":" .. task_id, "data")
+            if payload_exists == 1 then
+                redis.call("ZREM", KEYS[1], task_id)
+                redis.call("RPUSH", KEYS[2], task_id)
+                count = count + 1
+            else
+                redis.call("ZREM", KEYS[1], task_id)
+                redis.call("HSET", KEYS[4] .. ":" .. task_id, "status", "corrupt")
+            end
+        end
+    end
+end
+return count
+"""
+
+# RETRY_CLAIM_V2 — HINCRBY generation from retry ZSET
+# KEYS: [retry_key, processing_key, heartbeat_prefix, task_hash_prefix, fencing_prefix]
+# ARGS: [now_timestamp, lease_expiry_abs, lease_ttl_rel, owner_token, execution_generation_unused]
+# Returns: {task_id, owner_token, generation, raw_payload} or nil
+_LUA_RETRY_CLAIM_V2 = """
+local now = tonumber(ARGV[1])
+local lease_expiry = tonumber(ARGV[2])
+local lease_ttl = tonumber(ARGV[3])
+local owner_token = ARGV[4]
+
+local candidates = redis.call("ZRANGEBYSCORE", KEYS[1], 0, now, "LIMIT", 0, 1)
+if #candidates == 0 then
+    return nil
+end
+
+local task_id = candidates[1]
+local raw = redis.call("HGET", KEYS[4] .. ":" .. task_id, "data")
+if not raw then
+    redis.call("ZREM", KEYS[1], task_id)
+    redis.call("HSET", KEYS[4] .. ":" .. task_id, "status", "corrupt")
+    return nil
+end
+
+local status = redis.call("HGET", KEYS[4] .. ":" .. task_id, "status")
+if status and (status == "completed" or status == "dead") then
+    redis.call("ZREM", KEYS[1], task_id)
+    return nil
+end
+
+-- HINCRBY generation — monotonic, NEVER reset
+local generation = redis.call("HINCRBY", KEYS[5] .. ":" .. task_id, "gen", 1)
+
+redis.call("ZREM", KEYS[1], task_id)
+redis.call("ZADD", KEYS[2], lease_expiry, task_id)
+redis.call("SETEX", KEYS[3] .. ":" .. task_id, lease_ttl, owner_token)
+
+redis.call("HSET", KEYS[4] .. ":" .. task_id,
+    "owner_token", owner_token,
+    "generation", generation,
+    "status", "processing",
+    "lease_expires_at", lease_expiry)
+
+return {task_id, owner_token, tostring(generation), raw}
+"""
+
+# MARK_CORRUPT_V2 — atomically remove from processing, add to corrupt ZSET
+# KEYS: [processing_key, corrupt_key, task_hash_prefix, heartbeat_prefix]
+# ARGS: [task_id, error_summary, corrupt_max]
+_LUA_MARK_CORRUPT_V2 = """
+local task_id = ARGV[1]
+local error_summary = ARGV[2] or ""
+local corrupt_max = tonumber(ARGV[3]) or 100
+
+redis.call("ZREM", KEYS[1], task_id)
+redis.call("ZADD", KEYS[2], redis.call("TIME")[1], task_id)
+redis.call("ZREMRANGEBYRANK", KEYS[2], 0, -(corrupt_max + 1))
+redis.call("HSET", KEYS[3] .. ":" .. task_id,
+    "status", "corrupt",
+    "error", error_summary,
+    "discovered_at", redis.call("TIME")[1])
+redis.call("DEL", KEYS[4] .. ":" .. task_id)
+return 1
+"""
+
 # ── Helpers ──
 
 def _task_hash_key(task_id: str) -> str:
@@ -481,6 +844,45 @@ def _retry_key(task_type: str) -> str:
 
 def _corrupt_key(task_type: str) -> str:
     return f"{_CORRUPT_PREFIX}:{task_type}"
+
+
+# ── v2 key helpers ──
+
+
+def _v2_q_key(task_type: str) -> str:
+    return f"{_V2_QUEUE_PREFIX}:{task_type}"
+
+
+def _v2_p_key(task_type: str) -> str:
+    return f"{_V2_PROCESSING_PREFIX}:{task_type}"
+
+
+def _v2_dead_key(task_type: str) -> str:
+    return f"{_V2_DEAD_PREFIX}:{task_type}"
+
+
+def _v2_retry_key(task_type: str) -> str:
+    return f"{_V2_RETRY_PREFIX}:{task_type}"
+
+
+def _v2_corrupt_key(task_type: str) -> str:
+    return f"{_V2_CORRUPT_PREFIX}:{task_type}"
+
+
+def _v2_task_hash_key(task_id: str) -> str:
+    return f"{_V2_TASK_PREFIX}:{task_id}"
+
+
+def _v2_heartbeat_key(task_id: str) -> str:
+    return f"{_V2_HEARTBEAT_PREFIX}:{task_id}"
+
+
+def _v2_fencing_key(task_id: str) -> str:
+    return f"{_V2_FENCING_PREFIX}:{task_id}"
+
+
+def _v2_idempotent_key(task_id: str) -> str:
+    return f"{_V2_IDEMPOTENCY_PREFIX}:{task_id}"
 
 
 # ── Queue metrics ──
@@ -563,6 +965,17 @@ class DurableTaskQueue:
         self._lua_fail_dead = None
         self._lua_reaper = None
         self._lua_retry_claim = None
+        # v2 Lua script SHA caches
+        self._lua_enqueue_v2 = None
+        self._lua_enqueue_non_idempotent_v2 = None
+        self._lua_claim_v2 = None
+        self._lua_heartbeat_v2 = None
+        self._lua_complete_v2 = None
+        self._lua_fail_retry_v2 = None
+        self._lua_fail_dead_v2 = None
+        self._lua_reaper_v2 = None
+        self._lua_retry_claim_v2 = None
+        self._lua_mark_corrupt_v2 = None
 
     @property
     def _allow_local_fallback(self) -> bool:
@@ -601,7 +1014,7 @@ class DurableTaskQueue:
 
     async def _load_scripts(self, client) -> None:
         """Load Lua scripts into Redis and cache SHA hashes."""
-        if self._lua_enqueue is not None:
+        if self._lua_enqueue is not None and self._lua_enqueue_v2 is not None:
             return
         self._lua_enqueue = await client.script_load(_LUA_ENQUEUE)
         self._lua_enqueue_non_idempotent = await client.script_load(_LUA_ENQUEUE_NON_IDEMPOTENT)
@@ -612,6 +1025,17 @@ class DurableTaskQueue:
         self._lua_fail_dead = await client.script_load(_LUA_FAIL_DEAD)
         self._lua_reaper = await client.script_load(_LUA_REAPER)
         self._lua_retry_claim = await client.script_load(_LUA_RETRY_CLAIM)
+        # v2 scripts
+        self._lua_enqueue_v2 = await client.script_load(_LUA_ENQUEUE_V2)
+        self._lua_enqueue_non_idempotent_v2 = await client.script_load(_LUA_ENQUEUE_NON_IDEMPOTENT_V2)
+        self._lua_claim_v2 = await client.script_load(_LUA_CLAIM_V2)
+        self._lua_heartbeat_v2 = await client.script_load(_LUA_HEARTBEAT_V2)
+        self._lua_complete_v2 = await client.script_load(_LUA_COMPLETE_V2)
+        self._lua_fail_retry_v2 = await client.script_load(_LUA_FAIL_RETRY_V2)
+        self._lua_fail_dead_v2 = await client.script_load(_LUA_FAIL_DEAD_V2)
+        self._lua_reaper_v2 = await client.script_load(_LUA_REAPER_V2)
+        self._lua_retry_claim_v2 = await client.script_load(_LUA_RETRY_CLAIM_V2)
+        self._lua_mark_corrupt_v2 = await client.script_load(_LUA_MARK_CORRUPT_V2)
 
     async def close(self) -> None:
         """Close the persistent Redis connection."""
@@ -643,6 +1067,16 @@ class DurableTaskQueue:
             self._lua_fail_dead = None
             self._lua_reaper = None
             self._lua_retry_claim = None
+            self._lua_enqueue_v2 = None
+            self._lua_enqueue_non_idempotent_v2 = None
+            self._lua_claim_v2 = None
+            self._lua_heartbeat_v2 = None
+            self._lua_complete_v2 = None
+            self._lua_fail_retry_v2 = None
+            self._lua_fail_dead_v2 = None
+            self._lua_reaper_v2 = None
+            self._lua_retry_claim_v2 = None
+            self._lua_mark_corrupt_v2 = None
             await self._load_scripts(client)
             sha = getattr(self, sha_name, None)
             return await client.evalsha(sha, num_keys, *args)
@@ -1395,5 +1829,765 @@ class DurableTaskQueue:
             return 0
 
 
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # v2 Fencing Methods (HINCRBY-based generation)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    async def enqueue_v2(
+        self,
+        task_type: str,
+        payload: dict[str, Any],
+        *,
+        task_id: str | None = None,
+        max_retries: int = _DEFAULT_MAX_RETRIES,
+        idempotent: bool = True,
+    ) -> EnqueueResult:
+        """Enqueue a task into the v2 key namespace.
+
+        Same semantics as ``enqueue()`` but uses v2 Redis keys
+        (``taskq:v2:*`` namespace).
+        """
+        tid = task_id or f"task_{uuid.uuid4().hex}"
+        task = Task(
+            task_id=tid,
+            task_type=task_type,
+            payload=payload,
+            max_retries=max_retries,
+        )
+        task_json = json.dumps(task.to_dict(), default=str)
+        max_ready = _get_max_ready(task_type)
+
+        if not self._redis_enabled:
+            return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
+            await self._load_scripts(client)
+
+            if idempotent and task_id:
+                result = await self._evalsha_or_reload(
+                    client, "_lua_enqueue_v2", 3,
+                    _v2_q_key(task_type),
+                    _V2_TASK_PREFIX,
+                    _V2_IDEMPOTENCY_PREFIX,
+                    tid,
+                    task_json,
+                    str(_IDEMPOTENT_TTL),
+                    str(max_ready),
+                )
+            else:
+                result = await self._evalsha_or_reload(
+                    client, "_lua_enqueue_non_idempotent_v2", 2,
+                    _v2_q_key(task_type),
+                    _V2_TASK_PREFIX,
+                    tid,
+                    task_json,
+                    str(max_ready),
+                )
+
+            await client.aclose()
+
+            if result == "__duplicate__":
+                logger.info("v2 Duplicate task: task_id=%s", tid)
+                queue_metrics["duplicate_enqueue_prevented"] += 1
+                return EnqueueResult(accepted=True, task_id=tid, reason="duplicate")
+            if result == "__queue_full__":
+                logger.warning("v2 Queue full: task_id=%s type=%s", tid, task_type)
+                queue_metrics["enqueue_rejected"] += 1
+                return EnqueueResult(accepted=False, task_id=None, reason="queue_full", retry_after=30)
+            if result is None:
+                logger.error("v2 Enqueue nil: task_id=%s type=%s", tid, task_type)
+                return EnqueueResult(accepted=False, task_id=None, reason="internal_error", retry_after=30)
+
+            return EnqueueResult(accepted=True, task_id=tid)
+        except (redis_exc.ConnectionError, redis_exc.TimeoutError) as e:
+            logger.error("v2 Enqueue Redis error: %s", e)
+            return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
+
+    async def dequeue_v2(
+        self,
+        task_type: str,
+        *,
+        lease_sec: int = _DEFAULT_LEASE_SEC,
+    ) -> Task | None:
+        """Claim a task from the v2 queue.
+
+        Uses HINCRBY for monotonic generation fencing. Generation is
+        NEVER reset — not by reaper, retry, complete, or purge.
+
+        Tries the ready queue first, then the retry ZSET.
+        """
+        if not self._redis_enabled:
+            return None
+        try:
+            client = await self._get_client()
+            if client is None:
+                return None
+            await self._load_scripts(client)
+
+            lease_expiry = time.time() + lease_sec
+            owner_token = uuid.uuid4().hex
+
+            # 1. Try ready queue (v2 keys)
+            result = await self._evalsha_or_reload(
+                client, "_lua_claim_v2", 5,
+                _v2_q_key(task_type),
+                _v2_p_key(task_type),
+                _V2_HEARTBEAT_PREFIX,
+                _V2_TASK_PREFIX,
+                _V2_FENCING_PREFIX,
+                "",  # ARGV[1]: task_id (unused, from RPOP)
+                str(lease_expiry),  # ARGV[2]
+                str(lease_sec),  # ARGV[3]
+                owner_token,  # ARGV[4]
+            )
+
+            if result is not None:
+                raw_payload, stored_token, stored_gen = result
+                task = Task.from_dict(json.loads(raw_payload))
+                task.status = TaskStatus.PROCESSING
+                task.lease_expires_at = lease_expiry
+                task.owner_token = stored_token or owner_token
+                task.generation = int(stored_gen or 0)
+                task.updated_at = time.time()
+                logger.info(
+                    "v2 Dequeued: task_id=%s type=%s gen=%d",
+                    task.task_id, task_type, task.generation,
+                )
+                return task
+
+            # 2. Retry ZSET
+            retry_result = await self._dequeue_retry_v2(client, task_type, lease_sec)
+            if retry_result is None:
+                return None
+
+            raw_payload, task_id, rtoken, rgen = retry_result
+            task = Task.from_dict(json.loads(raw_payload))
+            task.status = TaskStatus.PROCESSING
+            task.lease_expires_at = time.time() + lease_sec
+            task.owner_token = rtoken
+            task.generation = int(rgen or 0)
+            task.updated_at = time.time()
+            logger.info(
+                "v2 Dequeued (retry): task_id=%s type=%s gen=%d",
+                task.task_id, task_type, task.generation,
+            )
+            return task
+
+        except (redis_exc.ConnectionError, redis_exc.TimeoutError) as e:
+            logger.warning("v2 Dequeue Redis error: %s", e)
+            return None
+
+    async def _dequeue_retry_v2(
+        self, client, task_type: str, lease_sec: int,
+    ) -> tuple[str, str, str, str] | None:
+        """Claim from v2 retry ZSET with HINCRBY generation."""
+        now = time.time()
+        lease_expiry = now + lease_sec
+        owner_token = uuid.uuid4().hex
+
+        result = await self._evalsha_or_reload(
+            client, "_lua_retry_claim_v2", 5,
+            _v2_retry_key(task_type),
+            _v2_p_key(task_type),
+            _V2_HEARTBEAT_PREFIX,
+            _V2_TASK_PREFIX,
+            _V2_FENCING_PREFIX,
+            str(now),
+            str(lease_expiry),
+            str(lease_sec),
+            owner_token,
+            "",  # ARGV[5]: generation (unused — HINCRBY handles it)
+        )
+
+        if result is not None:
+            task_id, rtoken, rgen, raw_payload = result
+            return raw_payload, task_id, rtoken or owner_token, rgen or "0"
+        return None
+
+    async def heartbeat_v2(
+        self,
+        task_or_id: Task | str,
+        *,
+        task_type: str | None = None,
+        lease_sec: int = _DEFAULT_LEASE_SEC,
+    ) -> int:
+        """Extend task lease with v2 owner+generation fencing.
+
+        Returns:
+            1 — heartbeat accepted
+            0 — owner mismatch (stale worker)
+           -1 — generation mismatch (claim superseded)
+        """
+        if isinstance(task_or_id, Task):
+            task_id = task_or_id.task_id
+            token = task_or_id.owner_token
+            task_type = task_or_id.task_type
+        elif isinstance(task_or_id, tuple):
+            task_id, tt_hint, token = task_or_id
+            task_type = task_type or tt_hint
+        else:
+            task_id = task_or_id
+            token = ""
+
+        if not task_id or not task_type or not token:
+            return 0
+
+        if not self._redis_enabled:
+            return 0
+
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return 0
+            await self._load_scripts(client)
+
+            new_expiry = time.time() + lease_sec
+            result = await self._evalsha_or_reload(
+                client, "_lua_heartbeat_v2", 4,
+                _v2_p_key(task_type),
+                _V2_HEARTBEAT_PREFIX,
+                _V2_TASK_PREFIX,
+                _V2_FENCING_PREFIX,
+                task_id,
+                str(new_expiry),
+                str(lease_sec),
+                token,
+            )
+            await client.aclose()
+
+            result = int(result) if result is not None else 0
+            if result == 0:
+                logger.warning(
+                    "v2 Heartbeat owner mismatch: task_id=%s", task_id,
+                )
+                queue_metrics["owner_fencing_rejected"] += 1
+            elif result == -1:
+                logger.warning(
+                    "v2 Heartbeat generation mismatch: task_id=%s", task_id,
+                )
+                queue_metrics["owner_fencing_rejected"] += 1
+            elif result == 1 and isinstance(task_or_id, Task):
+                task_or_id.lease_expires_at = new_expiry
+
+            return result
+
+        except (redis_exc.ConnectionError, redis_exc.TimeoutError):
+            return 0
+
+    async def complete_v2(
+        self,
+        task_or_id: Task | str,
+        *,
+        task_type: str | None = None,
+    ) -> int:
+        """Mark v2 task completed with owner+generation fencing.
+
+        Returns:
+            1 — success
+            0 — owner mismatch
+           -1 — generation mismatch (stale claim)
+        """
+        if isinstance(task_or_id, Task):
+            task_id = task_or_id.task_id
+            tt = task_or_id.task_type
+            token = task_or_id.owner_token
+        else:
+            task_id = task_or_id
+            tt = task_type or ""
+            token = ""
+
+        if not task_id or not tt or not token:
+            return 0
+
+        if not self._redis_enabled:
+            return 0
+
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return 0
+            await self._load_scripts(client)
+
+            result = await self._evalsha_or_reload(
+                client, "_lua_complete_v2", 5,
+                _v2_p_key(tt),
+                _v2_retry_key(tt),
+                _V2_TASK_PREFIX,
+                _V2_HEARTBEAT_PREFIX,
+                _V2_FENCING_PREFIX,
+                task_id,
+                token,
+                str(_COMPLETED_TTL),
+            )
+            await client.aclose()
+
+            result = int(result) if result is not None else 0
+            if result == 0:
+                logger.warning("v2 Complete owner mismatch: task_id=%s", task_id)
+                queue_metrics["owner_fencing_rejected"] += 1
+            elif result == -1:
+                logger.warning("v2 Complete generation mismatch: task_id=%s", task_id)
+                queue_metrics["owner_fencing_rejected"] += 1
+            else:
+                logger.info("v2 Task completed: task_id=%s", task_id)
+
+            return result
+
+        except Exception as e:
+            logger.warning("v2 Complete error: %s", e)
+            return 0
+
+    async def fail_v2(
+        self,
+        task_or_id: Task | str,
+        error: str,
+        *,
+        task_type: str | None = None,
+        lease_sec: int = _DEFAULT_LEASE_SEC,
+    ) -> int:
+        """Handle task failure with v2 owner+generation fencing.
+
+        If retry ZSET is full, transitions directly to dead-letter
+        (returns 2). Otherwise enqueues for retry (returns 1).
+
+        Returns:
+            1 — retry enqueued
+            2 — dead-letter (retry full or exhausted)
+            0 — owner mismatch
+           -1 — generation mismatch
+        """
+        if isinstance(task_or_id, Task):
+            task = task_or_id
+            task_id = task.task_id
+            tt = task.task_type
+            token = task.owner_token
+        else:
+            task_id = task_or_id
+            tt = task_type or ""
+            token = ""
+
+        if not task_id or not tt or not token:
+            return 0
+
+        if not self._redis_enabled:
+            return 0
+
+        retry_count = 0
+        max_retries = _DEFAULT_MAX_RETRIES
+        if isinstance(task_or_id, Task):
+            task.retry_count += 1
+            task.error = error
+            task.updated_at = time.time()
+            retry_count = task.retry_count
+            max_retries = task.max_retries
+
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return 0
+            await self._load_scripts(client)
+
+            if isinstance(task_or_id, Task) and retry_count < max_retries:
+                delay = _DEFAULT_RETRY_BASE_DELAY * (2 ** (retry_count - 1))
+                retry_at = time.time() + delay
+                task_json = json.dumps(task.to_dict(), default=str)
+
+                result = await self._evalsha_or_reload(
+                    client, "_lua_fail_retry_v2", 6,
+                    _v2_p_key(tt),
+                    _v2_retry_key(tt),
+                    _v2_dead_key(tt),
+                    _V2_TASK_PREFIX,
+                    _V2_HEARTBEAT_PREFIX,
+                    _V2_FENCING_PREFIX,
+                    task_id,
+                    str(retry_at),
+                    task_json,
+                    token,
+                    str(retry_count),
+                    error[:200],
+                    str(settings.TASK_QUEUE_RETRY_MAX),
+                    str(settings.TASK_QUEUE_DEAD_MAX),
+                )
+                await client.aclose()
+
+                result = int(result) if result is not None else 0
+                if result == 1:
+                    logger.warning(
+                        "v2 Fail/retry (%d/%d, +%ds): task_id=%s",
+                        retry_count, max_retries, delay, task_id,
+                    )
+                elif result == 2:
+                    logger.warning(
+                        "v2 Fail/retry-full dead: task_id=%s (retry ZSET full)", task_id,
+                    )
+                elif result == 0:
+                    logger.warning("v2 Fail/retry owner mismatch: task_id=%s", task_id)
+                    queue_metrics["owner_fencing_rejected"] += 1
+                elif result == -1:
+                    logger.warning("v2 Fail/retry gen mismatch: task_id=%s", task_id)
+                    queue_metrics["owner_fencing_rejected"] += 1
+                return result
+
+            # Dead-letter path
+            task_json = json.dumps(
+                task.to_dict() if isinstance(task_or_id, Task) else {"task_id": task_id},
+                default=str,
+            )
+            result = await self._evalsha_or_reload(
+                client, "_lua_fail_dead_v2", 5,
+                _v2_p_key(tt),
+                _v2_dead_key(tt),
+                _V2_TASK_PREFIX,
+                _V2_HEARTBEAT_PREFIX,
+                _V2_FENCING_PREFIX,
+                task_id,
+                task_json,
+                token,
+                str(settings.TASK_QUEUE_DEAD_MAX),
+            )
+            await client.aclose()
+
+            result = int(result) if result is not None else 0
+            if result == 1:
+                logger.error("v2 Dead-letter: task_id=%s type=%s", task_id, tt)
+            elif result == 0:
+                logger.warning("v2 Fail/dead owner mismatch: task_id=%s", task_id)
+                queue_metrics["owner_fencing_rejected"] += 1
+            elif result == -1:
+                logger.warning("v2 Fail/dead gen mismatch: task_id=%s", task_id)
+                queue_metrics["owner_fencing_rejected"] += 1
+            return result
+
+        except Exception as e:
+            logger.warning("v2 Fail error: %s", e)
+            return 0
+
+    async def mark_corrupt_v2(
+        self,
+        task_id: str,
+        task_type: str,
+        error_summary: str = "",
+    ) -> bool:
+        """Atomically move a task from processing to corrupt collection."""
+        if not self._redis_enabled:
+            return False
+
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return False
+            await self._load_scripts(client)
+
+            result = await self._evalsha_or_reload(
+                client, "_lua_mark_corrupt_v2", 4,
+                _v2_p_key(task_type),
+                _v2_corrupt_key(task_type),
+                _V2_TASK_PREFIX,
+                _V2_HEARTBEAT_PREFIX,
+                task_id,
+                error_summary,
+                str(settings.TASK_QUEUE_CORRUPT_MAX),
+            )
+            await client.aclose()
+            return bool(result)
+
+        except Exception as e:
+            logger.warning("v2 Mark corrupt error: %s", e)
+            return False
+
+    async def _reclaim_expired_v2(self, task_type: str) -> int:
+        """Reclaim expired v2 tasks whose worker heartbeat is gone."""
+        if not self._redis_enabled:
+            return 0
+
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return 0
+
+            reclaimed = await self._evalsha_or_reload(
+                client, "_lua_reaper_v2", 4,
+                _v2_p_key(task_type),
+                _v2_q_key(task_type),
+                _V2_HEARTBEAT_PREFIX,
+                _V2_TASK_PREFIX,
+                str(time.time()),
+                "100",
+            ) or 0
+            reclaimed = int(reclaimed)
+            await client.aclose()
+
+            if reclaimed:
+                logger.info("v2 Reclaimed %d expired tasks for %s", reclaimed, task_type)
+                queue_metrics["reaper_reclaimed"] += reclaimed
+
+            return reclaimed
+
+        except Exception as e:
+            logger.warning("v2 Reclaim failed for %s: %s", task_type, e)
+            return 0
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # v2 Queue Health Methods (raise QueueHealthError on Redis error)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    async def queue_length_v2(self, task_type: str) -> int:
+        """v2 ready queue length. Raises QueueHealthError on Redis error."""
+        if not self._redis_enabled:
+            raise QueueHealthError("Redis is not configured")
+        client = await self._get_script_client()
+        if client is None:
+            raise QueueHealthError("Cannot obtain Redis client")
+        try:
+            length = await client.llen(_v2_q_key(task_type))
+            return length or 0
+        except redis_exc.RedisError as e:
+            raise QueueHealthError(f"Redis error: {e}") from e
+        finally:
+            await client.aclose()
+
+    async def processing_length_v2(self, task_type: str) -> int:
+        """v2 processing ZSET cardinality. Raises QueueHealthError on Redis error."""
+        if not self._redis_enabled:
+            raise QueueHealthError("Redis is not configured")
+        client = await self._get_script_client()
+        if client is None:
+            raise QueueHealthError("Cannot obtain Redis client")
+        try:
+            return await client.zcard(_v2_p_key(task_type)) or 0
+        except redis_exc.RedisError as e:
+            raise QueueHealthError(f"Redis error: {e}") from e
+        finally:
+            await client.aclose()
+
+    async def dead_length_v2(self, task_type: str) -> int:
+        """v2 dead-letter list length. Raises QueueHealthError on Redis error."""
+        if not self._redis_enabled:
+            raise QueueHealthError("Redis is not configured")
+        client = await self._get_script_client()
+        if client is None:
+            raise QueueHealthError("Cannot obtain Redis client")
+        try:
+            return await client.llen(_v2_dead_key(task_type)) or 0
+        except redis_exc.RedisError as e:
+            raise QueueHealthError(f"Redis error: {e}") from e
+        finally:
+            await client.aclose()
+
+    async def retry_length_v2(self, task_type: str) -> int:
+        """v2 retry ZSET cardinality. Raises QueueHealthError on Redis error."""
+        if not self._redis_enabled:
+            raise QueueHealthError("Redis is not configured")
+        client = await self._get_script_client()
+        if client is None:
+            raise QueueHealthError("Cannot obtain Redis client")
+        try:
+            return await client.zcard(_v2_retry_key(task_type)) or 0
+        except redis_exc.RedisError as e:
+            raise QueueHealthError(f"Redis error: {e}") from e
+        finally:
+            await client.aclose()
+
+    async def corrupt_length_v2(self, task_type: str) -> int:
+        """v2 corrupt ZSET cardinality. Raises QueueHealthError on Redis error."""
+        if not self._redis_enabled:
+            raise QueueHealthError("Redis is not configured")
+        client = await self._get_script_client()
+        if client is None:
+            raise QueueHealthError("Cannot obtain Redis client")
+        try:
+            return await client.zcard(_v2_corrupt_key(task_type)) or 0
+        except redis_exc.RedisError as e:
+            raise QueueHealthError(f"Redis error: {e}") from e
+        finally:
+            await client.aclose()
+
+    async def get_metrics_v2(self, task_types: list[str] | None = None) -> dict[str, Any]:
+        """v2 queue metrics. Raises QueueHealthError on Redis error."""
+        results = dict(queue_metrics)
+        types = task_types or []
+
+        ready = 0
+        processing = 0
+        retry_count = 0
+        dead = 0
+
+        for tt in types:
+            ready += await self.queue_length_v2(tt)
+            processing += await self.processing_length_v2(tt)
+            retry_count += await self.retry_length_v2(tt)
+            dead += await self.dead_length_v2(tt)
+
+        results["ready"] = ready
+        results["processing"] = processing
+        results["retry"] = retry_count
+        results["dead"] = dead
+        return results
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # v2 Dead/Corrupt Management API
+    # ══════════════════════════════════════════════════════════════════════════
+
+    async def list_dead_v2(self, task_type: str, limit: int = 100) -> list[dict]:
+        """List dead-letter entries from v2 namespace (newest first)."""
+        if not self._redis_enabled:
+            return []
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return []
+            task_ids = await client.lrange(_v2_dead_key(task_type), 0, limit - 1)
+            result = []
+            for tid in task_ids:
+                raw = await client.hget(_v2_task_hash_key(tid), "data")
+                if raw:
+                    try:
+                        result.append(json.loads(raw))
+                    except json.JSONDecodeError:
+                        result.append({"task_id": tid, "error": "corrupt_payload"})
+                else:
+                    result.append({"task_id": tid, "error": "hash_expired"})
+            await client.aclose()
+            return result
+        except Exception as e:
+            logger.warning("v2 List dead failed: %s", e)
+            return []
+
+    async def purge_dead_v2(self, task_type: str, max_age_sec: int = 86400 * 7) -> int:
+        """Remove old dead-letter entries from v2 namespace."""
+        if not self._redis_enabled:
+            return 0
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return 0
+            dk = _v2_dead_key(task_type)
+            task_ids = await client.lrange(dk, 0, -1)
+            now = time.time()
+            purged = 0
+            for tid in task_ids:
+                raw = await client.hget(_v2_task_hash_key(tid), "data")
+                if raw:
+                    try:
+                        task_dict = json.loads(raw)
+                        updated = task_dict.get("updated_at", 0)
+                        if now - updated > max_age_sec:
+                            await client.lrem(dk, 1, tid)
+                            await client.delete(_v2_task_hash_key(tid))
+                            purged += 1
+                    except json.JSONDecodeError:
+                        await client.lrem(dk, 1, tid)
+                        purged += 1
+                else:
+                    await client.lrem(dk, 1, tid)
+                    purged += 1
+            await client.aclose()
+            if purged:
+                logger.info("v2 Purged %d old dead tasks for %s", purged, task_type)
+            return purged
+        except Exception as e:
+            logger.warning("v2 Purge dead failed: %s", e)
+            return 0
+
+    async def list_corrupt_v2(self, task_type: str, limit: int = 100) -> list[dict]:
+        """List corrupt entries from v2 namespace (newest first)."""
+        if not self._redis_enabled:
+            return []
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return []
+            members = await client.zrange(
+                _v2_corrupt_key(task_type), 0, limit - 1,
+                desc=True, withscores=True,
+            )
+            result = []
+            for tid, score in members:
+                raw = await client.hget(_v2_task_hash_key(tid), "data")
+                entry = {"task_id": tid, "discovered_at": score}
+                if raw:
+                    try:
+                        entry.update(json.loads(raw))
+                    except json.JSONDecodeError:
+                        entry["error"] = "corrupt_payload"
+                result.append(entry)
+            await client.aclose()
+            return result
+        except Exception as e:
+            logger.warning("v2 List corrupt failed: %s", e)
+            return []
+
+    async def delete_from_dead_v2(self, task_type: str, task_id: str) -> bool:
+        """Remove a specific task from v2 dead-letter list and delete its hash."""
+        if not self._redis_enabled:
+            return False
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return False
+            dk = _v2_dead_key(task_type)
+            await client.lrem(dk, 1, task_id)
+            await client.delete(_v2_task_hash_key(task_id))
+            await client.aclose()
+            return True
+        except Exception as e:
+            logger.warning("v2 Delete from dead failed: %s", e)
+            return False
+
+    async def retry_from_dead_v2(self, task_type: str, task_id: str) -> bool:
+        """Re-enqueue a dead-letter task to the v2 ready queue.
+
+        Returns True on success. The task's fencing key is NOT reset —
+        the generation counter continues monotonically.
+        """
+        if not self._redis_enabled:
+            return False
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return False
+
+            # Read the task hash
+            raw = await client.hget(_v2_task_hash_key(task_id), "data")
+
+            # Remove from dead list
+            await client.lrem(_v2_dead_key(task_type), 1, task_id)
+
+            if raw:
+                # Reset status to pending but keep generation unchanged
+                await client.hset(_v2_task_hash_key(task_id), "status", "pending")
+                await client.hset(_v2_task_hash_key(task_id), "owner_token", "")
+                await client.rpush(_v2_q_key(task_type), task_id)
+                await client.aclose()
+                logger.info("v2 Retried from dead: task_id=%s", task_id)
+                return True
+            else:
+                # Hash already expired — clean up
+                await client.aclose()
+                logger.warning("v2 Dead task hash expired: task_id=%s", task_id)
+                return False
+
+        except Exception as e:
+            logger.warning("v2 Retry from dead failed: %s", e)
+            return False
+
+    async def delete_from_corrupt_v2(self, task_type: str, task_id: str) -> bool:
+        """Remove a specific task from v2 corrupt ZSET."""
+        if not self._redis_enabled:
+            return False
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return False
+            await client.zrem(_v2_corrupt_key(task_type), task_id)
+            await client.aclose()
+            return True
+        except Exception as e:
+            logger.warning("v2 Delete from corrupt failed: %s", e)
+            return False
 # Process-wide singleton
 task_queue = DurableTaskQueue()

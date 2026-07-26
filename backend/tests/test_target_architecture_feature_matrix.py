@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.deployment_profile import DeploymentProfile
 from app.features.control_plane import (
     ExecutionPolicy,
     ExecutionQuota,
@@ -106,7 +107,7 @@ class TestFeatureMatrix:
 
     # Phase 5: OCR Gateway
     def test_ocr_gateway_exists(self):
-        gw = OCRGateway(mode="shadow")
+        gw = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
         assert gw.is_shadow
 
     def test_required_ocr_capabilities_exists(self):

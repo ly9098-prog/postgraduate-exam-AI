@@ -162,10 +162,15 @@ class OcrRuntimeConfig:
     # ── Remote execution backend ──
     execution_backend: str = "local_process"       # "local_process" | "paddlex_http" | "disabled"
     remote_url: str = ""
+    remote_auth_token: str = field(repr=False, default="")  # NEVER in repr, logs, metrics, exceptions, or response bodies
+    remote_auth_header: str = "Authorization"                # configurable header name
+    remote_auth_scheme: str = "Bearer"                       # configurable scheme prefix
     remote_connect_timeout_sec: float = 5.0
     remote_read_timeout_sec: float = 600.0
     remote_health_timeout_sec: float = 3.0
     remote_max_concurrency: int = 1
+    remote_request_max_bytes: int = 10 * 1024 * 1024        # pre-request size limit (raw image)
+    remote_response_max_bytes: int = 10 * 1024 * 1024       # max response body before abort
     remote_visualize: bool = False
     remote_fail_fast: bool = False
     remote_use_doc_orientation_classify: bool = False
@@ -257,10 +262,15 @@ def _build_runtime_config() -> OcrRuntimeConfig:
         # Remote execution backend
         execution_backend=settings.OCR_EXECUTION_BACKEND,
         remote_url=settings.OCR_REMOTE_URL,
+        remote_auth_token=settings.OCR_REMOTE_TOKEN,
+        remote_auth_header=settings.OCR_REMOTE_AUTH_HEADER,
+        remote_auth_scheme=settings.OCR_REMOTE_AUTH_SCHEME,
         remote_connect_timeout_sec=settings.OCR_REMOTE_CONNECT_TIMEOUT_SEC,
         remote_read_timeout_sec=settings.OCR_REMOTE_READ_TIMEOUT_SEC,
         remote_health_timeout_sec=settings.OCR_REMOTE_HEALTH_TIMEOUT_SEC,
         remote_max_concurrency=settings.OCR_REMOTE_MAX_CONCURRENCY,
+        remote_request_max_bytes=settings.PDF_MAX_FILE_BYTES,
+        remote_response_max_bytes=settings.PDF_MAX_FILE_BYTES,
         remote_visualize=settings.OCR_REMOTE_VISUALIZE,
         remote_fail_fast=settings.OCR_REMOTE_FAIL_FAST,
         remote_use_doc_orientation_classify=settings.OCR_REMOTE_USE_DOC_ORIENTATION_CLASSIFY,
@@ -304,10 +314,10 @@ def _validate_config(cfg: OcrRuntimeConfig) -> None:
         )
 
     # Remote backend validation
-    VALID_BACKENDS = ("local_process", "paddlex_http", "disabled")
-    if cfg.execution_backend not in VALID_BACKENDS:
+    valid_backends = ("local_process", "paddlex_http", "disabled")
+    if cfg.execution_backend not in valid_backends:
         errors.append(
-            f"execution_backend must be one of {VALID_BACKENDS}, "
+            f"execution_backend must be one of {valid_backends}, "
             f"got '{cfg.execution_backend}'"
         )
 
@@ -331,6 +341,14 @@ def _validate_config(cfg: OcrRuntimeConfig) -> None:
         if cfg.remote_max_concurrency < 1:
             errors.append(
                 f"remote_max_concurrency must be >= 1, got {cfg.remote_max_concurrency}"
+            )
+
+    # Production must have remote auth token for paddlex_http backend
+    if cfg.execution_backend == "paddlex_http" and cfg.environment == "production":
+        if not cfg.remote_auth_token:
+            errors.append(
+                "remote_auth_token must be set when execution_backend='paddlex_http' "
+                "in production environment"
             )
 
     if errors:

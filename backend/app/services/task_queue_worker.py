@@ -17,30 +17,47 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
-from app.services.staging_storage import async_lease_object, async_retrieve_file
+import redis.exceptions as redis_exc
+
+from app.services.staging_storage import (
+    async_cleanup_work_copy,
+    async_create_work_copy,
+    async_lease_object,
+    async_retrieve_file,
+)
 from app.services.task_queue_service import EnqueueResult, Task, task_queue
 
 logger = logging.getLogger("postgraduate-ai.task-worker")
 
 
-async def _resolve_staging_path(staging_object_id: str) -> EnqueueResult:
-    """Resolve a staging object ID to a local file path.
+async def _resolve_staging_path(staging_object_id: str) -> str:
+    """Resolve a staging object ID to a work copy path in the scratch directory.
 
     Raises FileNotFoundError if the staging object does not exist.
-    The returned path is read-only; the caller must not delete it.
+    The returned path is a writable work copy in the worker scratch
+    directory; the caller should call ``_cleanup_work_copy`` after
+    processing is complete.
 
     Automatically acquires a lease on the staging object to prevent
     cleanup from deleting it while the worker is processing the task.
     """
     if not staging_object_id:
         raise FileNotFoundError("staging_object_id is empty")
+
+    # Verify the staging object exists
     staged_path = await async_retrieve_file(staging_object_id)
     if not staged_path:
         raise FileNotFoundError(f"Staging object {staging_object_id} not found")
+
     # Acquire lease to prevent cleanup during processing
     await async_lease_object(staging_object_id)
-    return staged_path
+
+    # Create a writable work copy so the pipeline can mutate it
+    scratch_dir = _get_scratch_dir()
+    work_path = await async_create_work_copy(staging_object_id, scratch_dir)
+    return str(work_path)
 
 
 async def _resolve_file_path(store: dict | None) -> EnqueueResult:
@@ -62,6 +79,21 @@ async def _resolve_file_path(store: dict | None) -> EnqueueResult:
         logger.warning("Staging object %s not found", staging_id)
     return ""
 
+
+def _get_scratch_dir() -> str:
+    """Return the worker scratch directory, ensuring it exists."""
+    from pathlib import Path
+    scratch = getattr(settings, "WORKER_SCRATCH_DIR", "") or "/tmp/worker-scratch"
+    Path(scratch).mkdir(parents=True, exist_ok=True)
+    return scratch
+
+
+async def _cleanup_work_copy(work_path: str | None) -> None:
+    """Remove a work copy file created by _resolve_staging_path."""
+    if work_path:
+        await async_cleanup_work_copy(work_path)
+
+
 # ── task type constants ──
 
 TASK_TYPE_IMPORT_PIPELINE = "import_pipeline"
@@ -80,7 +112,6 @@ _LEASE_SEC = 600  # 10 minutes default lease
 
 async def enqueue_import_pipeline(
     pipeline_id: str,
-    file_path: str,
     staging_object_id: str,
     source_type: str,
     source_file: str,
@@ -110,7 +141,6 @@ async def enqueue_import_pipeline(
 
 async def enqueue_resume_pipeline(
     pipeline_id: str,
-    file_path: str,
     staging_object_id: str,
     subject: str | None,
     subject_id: int | None,
@@ -119,7 +149,6 @@ async def enqueue_resume_pipeline(
     """Enqueue a pipeline resume task."""
     payload = {
         "pipeline_id": pipeline_id,
-        "file_path": file_path,
         "staging_object_id": staging_object_id,
         "subject": subject,
         "subject_id": subject_id,
@@ -135,7 +164,6 @@ async def enqueue_resume_pipeline(
 
 async def enqueue_image_pipeline(
     pipeline_id: str,
-    image_path: str,
     staging_object_id: str,
     source_file: str,
     subject: str | None,
@@ -161,7 +189,6 @@ async def enqueue_image_pipeline(
 
 async def enqueue_excel_pipeline(
     pipeline_id: str,
-    file_path: str,
     staging_object_id: str,
     source_file: str,
 ) -> EnqueueResult:
@@ -598,6 +625,523 @@ async def run_pipeline_worker(
         logger.info("Pipeline worker stopped")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# v2 Pipeline Worker — uses v2 queue with generation fencing
+# ══════════════════════════════════════════════════════════════════════════════
+
+_v2_worker_running = False
+_v2_worker_draining = False
+_v2_active_processing: set[asyncio.Task] = set()
+"""Track active processing tasks spawned by the dispatcher. Used for shutdown coordination."""
+
+_v2_primary_dispatcher_task: asyncio.Task | None = None
+"""Reference to the dispatcher task itself, for signal-based cancellation."""
+
+
+async def _process_task_v2(task: Task) -> None:
+    """Process a task with generation and owner_token context.
+
+    Same dispatch as _process_task but receives generation and owner_token
+    on the task object for DB fencing verification.
+    """
+    task_type = task.task_type
+    payload = task.payload
+    pipeline_id = payload.get("pipeline_id", task.task_id)
+
+    logger.info(
+        "Worker v2 processing: type=%s task_id=%s pipeline_id=%s gen=%d",
+        task_type, task.task_id, pipeline_id, task.generation,
+    )
+
+    if task_type == TASK_TYPE_IMPORT_PIPELINE:
+        from app.services.import_pipeline_service import _run_pipeline_with_db
+
+        staging_id = payload.get("staging_object_id", "")
+        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
+        await _run_pipeline_with_db(
+            pipeline_id=pipeline_id,
+            file_path=file_path,
+            source_type=payload.get("source_type", "pdf"),
+            source_file=payload.get("source_file", ""),
+            subject=payload.get("subject"),
+            subject_id=payload.get("subject_id"),
+            options=payload.get("options", {}),
+            created_by=payload.get("created_by"),
+        )
+
+    elif task_type == TASK_TYPE_IMAGE_PIPELINE:
+        from app.services.import_pipeline_service import _run_image_pipeline_with_db
+
+        staging_id = payload.get("staging_object_id", "")
+        image_path = await _resolve_staging_path(staging_id) if staging_id else ""
+        if not image_path:
+            raise FileNotFoundError(f"Staging object {staging_id} not found for image pipeline")
+        await _run_image_pipeline_with_db(
+            pipeline_id=pipeline_id,
+            image_path=image_path,
+            source_file=payload.get("source_file", ""),
+            subject=payload.get("subject"),
+            subject_id=payload.get("subject_id"),
+            options=payload.get("options", {}),
+        )
+
+    elif task_type == TASK_TYPE_EXCEL_PIPELINE:
+        from app.features.pipeline_orchestrator import run_excel_pipeline_background
+
+        staging_id = payload.get("staging_object_id", "")
+        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
+        file_content = b""
+        if file_path:
+            with open(file_path, "rb") as _fh:
+                file_content = _fh.read()
+        from app.features import question_pipeline as pipeline_svc
+
+        await run_excel_pipeline_background(
+            pipeline_id=pipeline_id,
+            file_content=file_content,
+            source_file=payload.get("source_file", ""),
+            import_excel_fn=pipeline_svc.import_excel,
+        )
+
+    elif task_type == TASK_TYPE_RESUME_PIPELINE:
+        from app.services.import_pipeline_service import run_resume_background
+
+        staging_id = payload.get("staging_object_id", "")
+        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
+        await run_resume_background(
+            pipeline_id=pipeline_id,
+            file_path=file_path,
+            subject=payload.get("subject"),
+            subject_id=payload.get("subject_id"),
+            options=payload.get("options", {}),
+        )
+
+    elif task_type == TASK_TYPE_ADMIN_RESUME:
+        from app.core.database import async_session
+        from app.features.pipeline_coordinator_entry import run_pipeline
+        from app.features.pipeline_orchestrator import (
+            _get_stage_checkpoint,
+            _set_pipeline_store,
+        )
+
+        staging_id = payload.get("staging_object_id", "")
+        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
+        source_type = payload.get("source_type", "pdf")
+        source_file = payload.get("source_file", "")
+        subject = payload.get("subject")
+        subject_id = payload.get("subject_id")
+        opts = payload.get("options", {})
+
+        ckpt = await _get_stage_checkpoint(pipeline_id)
+
+        async with async_session() as resume_db:
+            result = await run_pipeline(
+                file_path=file_path,
+                source_type=source_type,
+                source_file=source_file,
+                subject=subject,
+                subject_id=subject_id,
+                options=opts,
+                db=resume_db,
+                pipeline_id=pipeline_id,
+                resume_from_checkpoint=ckpt,
+            )
+        try:
+            await _set_pipeline_store(pipeline_id, result)
+        except Exception:
+            logger.warning("Failed to store admin resume result for %s", pipeline_id)
+
+    elif task_type == TASK_TYPE_FORMULA_BATCH:
+        from sqlalchemy import select
+        from app.core.database import async_session
+        from app.models.formula import FormulaCard
+        from app.services.formula_graph_spec_service import _process_batch
+
+        card_ids = payload.get("card_ids", [])
+        admin_id = payload.get("admin_id", 0)
+        job_id = payload.get("job_id", "")
+
+        async with async_session() as db:
+            result = await db.execute(
+                select(FormulaCard).where(FormulaCard.id.in_(card_ids))
+            )
+            cards = list(result.scalars().all())
+
+        await _process_batch(job_id, cards, admin_id)
+
+    elif task_type == TASK_TYPE_BATCH_IMAGE:
+        from app.features import batch_image_import_service as batch_svc
+        from app.services.staging_storage import retrieve_file
+
+        job_id = payload.get("job_id", "")
+        staging_ids: list[str] = payload.get("staging_object_ids", [])
+        subject = payload.get("subject")
+        subject_id = payload.get("subject_id")
+        options = payload.get("options", {})
+        concurrency = payload.get("concurrency", 2)
+
+        sources: list[batch_svc.BatchImageSource] = []
+        for idx, staging_id in enumerate(staging_ids):
+            if not staging_id:
+                continue
+            file_path = retrieve_file(staging_id)
+            if not file_path:
+                continue
+            sources.append(batch_svc.BatchImageSource(
+                seq=idx + 1,
+                source_file=f"image_{idx + 1}.png",
+                temp_path=file_path,
+            ))
+
+        if not sources:
+            logger.error("No valid sources for batch image job %s", job_id)
+            return
+
+        await batch_svc.run_batch_job(
+            job_id=job_id,
+            sources=sources,
+            subject=subject,
+            subject_id=subject_id,
+            options=options,
+            concurrency=concurrency,
+        )
+
+    else:
+        # Unknown task type — dead-letter immediately, don't retry or complete
+        logger.warning("Unknown task type %s — marking as dead-letter: task_id=%s",
+                       task_type, task.task_id)
+        task.max_retries = 0
+        raise ValueError(f"unknown_task_type: {task_type}")
+
+
+async def _try_claim_any_v2(task_types: list[str], lease_sec: int) -> Task | None:
+    """Try to claim a task from any of the given task types. Returns first available."""
+    for task_type in task_types:
+        try:
+            task = await task_queue.dequeue_v2(task_type, lease_sec=lease_sec)
+            if task is not None:
+                return task
+        except Exception as e:
+            logger.warning("v2 Dequeue failed for %s: %s", task_type, e)
+    return None
+
+
+async def _process_claimed_task_v2(task: Task, lease_sec: int, sem: asyncio.Semaphore) -> None:
+    """Process a claimed v2 task with heartbeat, cancellation, and lifecycle.
+
+    Holds the semaphore slot for the duration of processing.
+    Releases the semaphore and cleans up work copy on completion.
+
+    The caller (*run_dispatcher_v2*) acquires the semaphore before claiming
+    the task. The semaphore is released in this function's ``finally`` block.
+    """
+    owner_lost = asyncio.Event()
+
+    hb_task = asyncio.create_task(
+        _v2_heartbeat_loop_with_lease_window(task, lease_sec, owner_lost)
+    )
+    process_task = asyncio.create_task(_process_task_v2(task))
+    cancel_watcher = asyncio.create_task(
+        _cancel_on_owner_loss(process_task, owner_lost)
+    )
+
+    try:
+        try:
+            await process_task
+        except asyncio.CancelledError:
+            logger.warning(
+                "v2 Processing cancelled (owner lost): task_id=%s", task.task_id,
+            )
+            queue_metrics["owner_fencing_rejected"] += 1
+
+        was_cancelled = process_task.cancelled()
+
+        if was_cancelled or owner_lost.is_set():
+            if was_cancelled:
+                logger.warning(
+                    "v2 Owner lost, skipping complete/fail: task_id=%s", task.task_id,
+                )
+        else:
+            try:
+                ok = await task_queue.complete_v2(task)
+                if ok == 1:
+                    logger.info("v2 Task completed: task_id=%s", task.task_id)
+                elif ok == 0:
+                    logger.warning(
+                        "v2 Complete owner mismatch: task_id=%s", task.task_id,
+                    )
+                    queue_metrics["owner_fencing_rejected"] += 1
+                elif ok == -1:
+                    logger.warning(
+                        "v2 Complete generation mismatch: task_id=%s", task.task_id,
+                    )
+                    queue_metrics["owner_fencing_rejected"] += 1
+            except Exception as e:
+                logger.warning("v2 Complete error: task_id=%s error=%s", task.task_id, e)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.exception(
+            "v2 Task failed: task_id=%s type=%s", task.task_id, task.task_type,
+        )
+        if owner_lost.is_set():
+            queue_metrics["owner_fencing_rejected"] += 1
+        else:
+            try:
+                await task_queue.fail_v2(task, str(e)[:500])
+            except Exception as fe:
+                logger.warning("v2 Fail error: task_id=%s error=%s", task.task_id, fe)
+    finally:
+        cancel_watcher.cancel()
+        try:
+            await cancel_watcher
+        except (asyncio.CancelledError, Exception):
+            pass
+
+        hb_task.cancel()
+        try:
+            await hb_task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+        if not process_task.done():
+            process_task.cancel()
+            try:
+                await process_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        sem.release()
+
+
+async def run_dispatcher_v2(
+    poll_interval: float = 5.0,
+    lease_sec: int = _LEASE_SEC,
+) -> None:
+    """v2 Dispatcher — semaphore-based concurrency control.
+
+    Waits for an available slot (asyncio.Semaphore), THEN claims one task.
+    Never claims multiple tasks and waits for the semaphore inside processing.
+
+    Concurrency is controlled by ``WORKER_CONCURRENCY`` in settings
+    (default: 1). With concurrency=1, at most one heavy task is in
+    processing+executing at any time across all task types.
+
+    Designed as a replacement for ``run_pipeline_worker_v2`` which used
+    sequential per-type polling without concurrency management.
+    """
+    global _v2_worker_running
+    _v2_worker_running = True
+
+    semaphore = asyncio.Semaphore(settings.WORKER_CONCURRENCY)
+
+    task_types = [
+        TASK_TYPE_IMPORT_PIPELINE,
+        TASK_TYPE_IMAGE_PIPELINE,
+        TASK_TYPE_EXCEL_PIPELINE,
+        TASK_TYPE_RESUME_PIPELINE,
+        TASK_TYPE_ADMIN_RESUME,
+        TASK_TYPE_BATCH_IMAGE,
+        TASK_TYPE_FORMULA_BATCH,
+    ]
+
+    logger.info(
+        "v2 Dispatcher started: concurrency=%d poll=%ss",
+        settings.WORKER_CONCURRENCY, poll_interval,
+    )
+
+    try:
+        while _v2_worker_running and not _v2_worker_draining:
+            # 1. Wait for an available slot before claiming
+            await semaphore.acquire()
+
+            if _v2_worker_draining or not _v2_worker_running:
+                semaphore.release()
+                break
+
+            # 2. Claim one task (any type)
+            task = await _try_claim_any_v2(task_types, lease_sec)
+
+            if task is None:
+                # No task available — release slot and sleep
+                semaphore.release()
+                await asyncio.sleep(poll_interval)
+                continue
+
+            # 3. Spawn background processing — task releases sem on completion
+            proc_task = asyncio.create_task(
+                _process_claimed_task_v2(task, lease_sec, semaphore),
+                name=f"proc:{task.task_id}",
+            )
+            _v2_active_processing.add(proc_task)
+            proc_task.add_done_callback(_v2_active_processing.discard)
+
+            # Yield control briefly so the just-created task can start
+            await asyncio.sleep(0)
+    except asyncio.CancelledError:
+        logger.info("v2 Dispatcher cancelled")
+        raise
+    finally:
+        _v2_worker_running = False
+        logger.info("v2 Dispatcher stopped")
+
+
+async def _v2_heartbeat_loop_with_lease_window(
+    task: Task, lease_sec: int, owner_lost: asyncio.Event | None = None,
+) -> None:
+    """Heartbeat loop with lease-window-aware failure detection.
+
+    On explicit Lua rejection (owner or generation mismatch):
+        → owner-lost immediately.
+
+    On transient error (connection/timeout):
+        If lease_window_remaining < heartbeat_interval * 2 → owner-lost.
+        Otherwise → retry once, then owner-lost if still failing.
+
+    Once owner_lost is set, the heartbeat loop stops and does NOT
+    attempt further heartbeats. The caller is responsible for handling
+    the owner-lost event.
+    """
+    interval = max(lease_sec // 3, 10)
+    while _v2_worker_running:
+        try:
+            ok = await task_queue.heartbeat_v2(task, lease_sec=lease_sec)
+            if ok == 1:
+                await asyncio.sleep(interval)
+                continue
+
+            # Explicit rejection from Lua — fencing failure
+            logger.warning(
+                "v2 Heartbeat rejected (code=%d), owner lost: task_id=%s",
+                ok, task.task_id,
+            )
+            queue_metrics["lease_renewal_failure"] += 1
+            if owner_lost is not None:
+                owner_lost.set()
+            break
+        except (redis_exc.ConnectionError, redis_exc.TimeoutError) as exc:
+            # Transient error — check lease window before giving up
+            lease_window_remaining = task.lease_expires_at - time.time()
+            if lease_window_remaining < interval * 2:
+                logger.warning(
+                    "v2 Heartbeat transient error + short lease window (%.1fs < %ds), "
+                    "owner lost: task_id=%s error=%s",
+                    lease_window_remaining, interval * 2, task.task_id, exc,
+                )
+                queue_metrics["lease_renewal_failure"] += 1
+                if owner_lost is not None:
+                    owner_lost.set()
+                break
+
+            # Safe window — retry once
+            logger.warning(
+                "v2 Heartbeat transient error, retrying once: task_id=%s error=%s",
+                task.task_id, exc,
+            )
+            try:
+                await asyncio.sleep(1)
+                ok = await task_queue.heartbeat_v2(task, lease_sec=lease_sec)
+                if ok == 1:
+                    await asyncio.sleep(interval)
+                    continue
+            except Exception:
+                pass
+
+            logger.warning(
+                "v2 Heartbeat retry failed, owner lost: task_id=%s", task.task_id,
+            )
+            queue_metrics["lease_renewal_failure"] += 1
+            if owner_lost is not None:
+                owner_lost.set()
+            break
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.warning(
+                "v2 Heartbeat unexpected error, owner lost: task_id=%s error=%s",
+                task.task_id, exc,
+            )
+            queue_metrics["lease_renewal_failure"] += 1
+            if owner_lost is not None:
+                owner_lost.set()
+            break
+
+
+async def set_draining_v2() -> None:
+    """Set draining mode for v2 worker — stop claiming, finish current tasks."""
+    global _v2_worker_draining
+    _v2_worker_draining = True
+    logger.info("v2 Pipeline worker draining — no new tasks claimed")
+
+
+def is_draining_v2() -> bool:
+    """Return whether v2 worker is draining."""
+    return _v2_worker_draining
+
+
+async def stop_worker_v2() -> None:
+    """Signal the v2 dispatcher loop to stop."""
+    global _v2_worker_running
+    _v2_worker_running = False
+    logger.info("v2 Pipeline worker stopping")
+
+
+async def graceful_shutdown_v2(grace_sec: int | None = None) -> None:
+    """Graceful shutdown for v2 worker: drain → shield → cancel.
+
+    Shutdown order (enforced):
+    1. Set draining — dispatcher stops claiming new tasks
+    2. Shield active processing tasks during grace period
+    3. After grace period expires, cancel remaining processing tasks
+    4. Signal dispatcher to stop (running flag = False)
+
+    The caller (main.py) then cancels the dispatcher task itself and
+    proceeds with infrastructure shutdown (Redis, DB, httpx, etc.).
+
+    This function does NOT close infrastructure resources — only
+    coordinates in-flight task lifecycle.
+    """
+    if grace_sec is None:
+        from app.core.config import settings
+        grace_sec = getattr(settings, "WORKER_SHUTDOWN_GRACE_SEC", 30)
+    else:
+        grace_sec = max(grace_sec, 5)
+
+    # Step 1: Stop claiming
+    set_draining_v2()
+    logger.info(
+        "v2 Graceful shutdown: draining set, waiting up to %ds for %d active tasks",
+        grace_sec, len(_v2_active_processing),
+    )
+
+    if not _v2_active_processing:
+        stop_worker_v2()
+        logger.info("v2 Graceful shutdown: no active tasks, stopped immediately")
+        return
+
+    # Step 2-3: Shield active tasks during grace period, then cancel
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*_v2_active_processing, return_exceptions=True),
+            timeout=grace_sec,
+        )
+        logger.info("v2 Graceful shutdown: all active tasks completed within grace")
+    except asyncio.TimeoutError:
+        remaining = [t for t in list(_v2_active_processing) if not t.done()]
+        if remaining:
+            logger.warning(
+                "v2 Graceful shutdown: grace period expired, cancelling %d active tasks",
+                len(remaining),
+            )
+            for t in remaining:
+                t.cancel()
+            await asyncio.gather(*remaining, return_exceptions=True)
+            logger.info("v2 Graceful shutdown: remaining tasks cancelled")
+
+    # Step 4: Signal dispatcher to stop
+    stop_worker_v2()
+
+
 async def _cancel_on_owner_loss(
     processing_task: asyncio.Task,
     owner_lost: asyncio.Event,
@@ -709,3 +1253,48 @@ async def stop_reaper() -> None:
     """Signal the reaper loop to stop."""
     global _reaper_running
     _reaper_running = False
+
+
+# ── v2 reaper runner ──
+
+_v2_reaper_running = False
+
+
+async def run_reaper_loop_v2(
+    task_types: list[str] | None = None,
+    interval: int = 60,
+) -> None:
+    """Run the v2 reaper loop: reclaim expired leases from v2 keys."""
+    global _v2_reaper_running
+    _v2_reaper_running = True
+
+    types = task_types or [
+        TASK_TYPE_IMPORT_PIPELINE,
+        TASK_TYPE_IMAGE_PIPELINE,
+        TASK_TYPE_EXCEL_PIPELINE,
+        TASK_TYPE_RESUME_PIPELINE,
+        TASK_TYPE_ADMIN_RESUME,
+        TASK_TYPE_BATCH_IMAGE,
+        TASK_TYPE_FORMULA_BATCH,
+        TASK_TYPE_PREWARM_ANALYSIS,
+    ]
+
+    try:
+        while _v2_reaper_running:
+            try:
+                for tt in types:
+                    await task_queue._reclaim_expired_v2(tt)
+            except Exception as e:
+                logger.warning("v2 Reaper cycle failed: %s", e)
+            await asyncio.sleep(interval)
+    except asyncio.CancelledError:
+        logger.info("v2 Reaper cancelled")
+        raise
+    finally:
+        _v2_reaper_running = False
+
+
+async def stop_reaper_v2() -> None:
+    """Signal the v2 reaper loop to stop."""
+    global _v2_reaper_running
+    _v2_reaper_running = False

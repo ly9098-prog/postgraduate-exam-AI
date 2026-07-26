@@ -12,6 +12,7 @@
     <view wx:for="{{list}}" wx:key="id" class="record-card {{highlightId === item.id ? 'highlight' : ''}}">
       <view class="record-header">
         <text class="record-filename">{{item.file_name}}</text>
+        <text class="record-format format-{{item.file_format}}">{{item.file_format === 'docx' ? 'Word' : 'PDF'}}</text>
         <text class="record-status tag-{{_taskStatus(item).tone}}">{{_taskStatus(item).label}}</text>
       </view>
 

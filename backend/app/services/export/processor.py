@@ -171,9 +171,15 @@ async def _process_one_task():
     try:
         # Process (opens a new session internally)
         async with async_session() as db:
-            from app.services.export.pdf_exporter import PdfExporter
+            from app.services.export.service import get_exporter
 
-            exporter = PdfExporter()
+            exporter = get_exporter("pdf")  # default — will be overridden if format known later
+            # Load the task first to know its format
+            result = await db.execute(select(ExportTask).where(ExportTask.id == task_id))
+            t = result.scalar_one_or_none()
+            if t:
+                exporter = get_exporter(t.file_format)
+
             updated = await process_task(db, task_id, exporter)
 
             if updated.status == ExportTaskStatus.COMPLETED:
@@ -182,6 +188,9 @@ async def _process_one_task():
                 logger.info("Export task %d finished with status=%s", task_id, updated.status)
 
             await db.commit()
+
+            # Publish status event
+            await _publish_task_event(task_id, updated)
 
     except Exception as e:
         logger.exception("Export task %d crashed: %s", task_id, e)
@@ -213,3 +222,27 @@ async def stop_processor():
     global _draining
     _draining = True
     logger.info("Export processor drain requested (in_flight=%d)", len(_in_flight))
+
+
+async def _publish_task_event(task_id: int, task: ExportTask) -> None:
+    """Publish a task status event via Redis Pub/Sub and WebSocket push."""
+    try:
+        from app.services.export.push_service import build_status_event, publish_via_redis, send_to_user
+
+        event = build_status_event({
+            "id": task.id,
+            "status": task.status,
+            "file_format": task.file_format,
+            "success_count": task.success_count,
+            "skip_count": task.skip_count,
+            "error_message": task.error_message,
+            "completed_at": task.completed_at,
+            "expires_at": task.expires_at,
+            "updated_at": task.updated_at,
+        })
+        # Send locally (same-process connections)
+        await send_to_user(task.user_id, event)
+        # Also publish via Redis (cross-process connections)
+        await publish_via_redis(event, task.user_id)
+    except Exception:
+        logger.debug("Failed to publish event for task %d (non-fatal)", task_id)

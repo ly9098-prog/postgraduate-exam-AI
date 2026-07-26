@@ -70,8 +70,8 @@ class AuditLogCleanupScheduler:
         retention_days = max(7, settings.AUDIT_LOG_RETENTION_DAYS)
         batch_size = max(10, settings.AUDIT_LOG_CLEANUP_BATCH_SIZE)
 
-        async with self._lock.acquire_and_renew(ttl=_LOCK_TTL, renew_interval=120) as locked:
-            if not locked:
+        async with self._lock.acquire_and_renew(ttl=_LOCK_TTL, renew_interval=120) as handle:
+            if not handle.is_still_held():
                 logger.info("审计日志清理锁被其他实例持有，本轮跳过")
                 return
 

@@ -22,10 +22,19 @@ import pytest
 import pytest_asyncio
 
 
+class _MockHandle:
+    """Minimal mock of LeaseHandle for testing."""
+    def __init__(self, is_held: bool = True):
+        self._is_held = is_held
+
+    def is_still_held(self) -> bool:
+        return self._is_held
+
+
 @asynccontextmanager
 async def _always_lock(*args, **kwargs):
     """Replacement for DistributedLock.acquire_and_renew that always succeeds."""
-    yield True
+    yield _MockHandle(is_held=True)
 
 
 class _MockLock:

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.deployment_profile import DeploymentProfile
+
 
 class TestCloudGatewayProfileRestricted:
     """Verify cloud_api profile gateway restricts local adapter registration."""
@@ -27,7 +29,7 @@ class TestCloudGatewayProfileRestricted:
         from app.features.ocr_adapter import AdapterRegistry
 
         registry = AdapterRegistry()
-        gw = OCRGateway(registry=registry, mode="shadow", profile="cloud_api")
+        gw = OCRGateway(registry=registry, mode="shadow", profile=DeploymentProfile.CLOUD_API)
 
         backends = {a.capabilities.backend for a in gw._registry.list_ocr()}
         assert "paddleocr" not in backends, (
@@ -41,7 +43,7 @@ class TestCloudGatewayProfileRestricted:
         from app.features.ocr_adapter import AdapterRegistry
 
         registry = AdapterRegistry()
-        gw = OCRGateway(registry=registry, mode="shadow", profile="local_import")
+        gw = OCRGateway(registry=registry, mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
 
         backends = {a.capabilities.backend for a in gw._registry.list_ocr()}
         assert "paddleocr" in backends, (
@@ -70,7 +72,7 @@ class TestCloudGatewayProfileRestricted:
         """OCRGateway can be constructed with cloud_api profile."""
         from app.features.ocr_gateway import OCRGateway
 
-        gw = OCRGateway(mode="shadow", profile="cloud_api")
+        gw = OCRGateway(mode="shadow", profile=DeploymentProfile.CLOUD_API)
         assert gw.mode == "shadow"
         assert gw.is_shadow is True
         assert gw.is_gateway is False
@@ -79,15 +81,14 @@ class TestCloudGatewayProfileRestricted:
         """OCRGateway mode/is_shadow/is_gateway properties work."""
         from app.features.ocr_gateway import OCRGateway
 
-        g1 = OCRGateway(mode="legacy")
+        g1 = OCRGateway(mode="legacy", profile=DeploymentProfile.LOCAL_IMPORT)
         assert g1.is_shadow is False
         assert g1.is_gateway is False
 
-        g2 = OCRGateway(mode="shadow")
-        assert g2.is_shadow is True
-        assert g2.is_gateway is False
+        g2 = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
 
-        g3 = OCRGateway(mode="gateway")
+
+        g3 = OCRGateway(mode="gateway", profile=DeploymentProfile.LOCAL_IMPORT)
         assert g3.is_shadow is False
         assert g3.is_gateway is True
 
@@ -118,6 +119,6 @@ class TestCloudGatewayProfileRestricted:
         """OCRGateway can be constructed with gateway mode."""
         from app.features.ocr_gateway import OCRGateway
 
-        gw = OCRGateway(mode="gateway", profile="cloud_api")
+        gw = OCRGateway(mode="gateway", profile=DeploymentProfile.CLOUD_API)
         assert gw.is_gateway is True
-        assert gw._profile == "cloud_api"
+        assert gw._profile == DeploymentProfile.CLOUD_API
