@@ -1,0 +1,58 @@
+/* Export records page styles */
+page { background: #F5F5F2; }
+
+.export-records-page { min-height: 100vh; }
+
+.records-scroll { padding: 0 20rpx 40rpx; height: calc(100vh - 100rpx); }
+
+.empty-state {
+  display: flex; align-items: center; justify-content: center;
+  padding: 120rpx 0;
+}
+.empty-text { font-size: 28rpx; color: #999; }
+
+.record-card {
+  background: #FFFFFF; border-radius: 16rpx; padding: 24rpx;
+  margin-bottom: 16rpx; box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.04);
+}
+.record-card.highlight { border: 2rpx solid #4CAF50; }
+
+.record-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12rpx;
+}
+.record-filename { font-size: 28rpx; font-weight: 600; color: #1A1A1A; flex: 1; }
+
+.record-status { font-size: 24rpx; padding: 4rpx 12rpx; border-radius: 8rpx; }
+.tag-success { background: #E8F5E9; color: #4CAF50; }
+.tag-info { background: #E3F2FD; color: #2196F3; }
+.tag-neutral { background: #F5F5F5; color: #999; }
+.tag-danger { background: #FFEBEE; color: #F44336; }
+.tag-muted { background: #F5F5F5; color: #BDBDBD; }
+
+.record-meta { display: flex; flex-wrap: wrap; gap: 8rpx; margin-bottom: 6rpx; }
+.meta-item { font-size: 24rpx; color: #666; }
+.meta-item.warn { color: #F44336; }
+
+.record-error {
+  background: #FFF3E0; border-radius: 8rpx; padding: 8rpx 12rpx;
+  margin-top: 8rpx;
+}
+.error-text { font-size: 24rpx; color: #E65100; }
+
+.record-actions {
+  display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 16rpx;
+  padding-top: 16rpx; border-top: 2rpx solid #F0F0F0;
+}
+.action-btn {
+  font-size: 24rpx; padding: 8rpx 20rpx; border-radius: 20rpx;
+  background: #F0F0F0; color: #333; border: none; line-height: initial;
+  height: auto;
+}
+.action-btn.primary { background: #E8F5E9; color: #4CAF50; }
+.action-btn.danger { background: #FFEBEE; color: #F44336; }
+.action-hint { font-size: 24rpx; color: #999; }
+
+.loading-more, .no-more {
+  text-align: center; padding: 20rpx; font-size: 24rpx; color: #999;
+}

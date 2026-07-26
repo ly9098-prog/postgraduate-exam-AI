@@ -10,7 +10,9 @@
     "pages/wrong-detail/wrong-detail",
     "pages/review-today/review-today",
     "pages/dashboard/dashboard",
-    "pages/pomodoro/pomodoro"
+    "pages/pomodoro/pomodoro",
+    "pages/export-config/export-config",
+    "pages/export-records/export-records"
   ],
   "window": {
     "navigationBarBackgroundColor": "#4F7FFF",

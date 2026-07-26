@@ -387,3 +387,168 @@ RUN pip install --no-cache-dir --user \
 
 > 自检在 `lifespan` startup 阶段执行，约 3-5 秒完成（含 Redis PING 和 DB 查询）。
 > 失败日志格式：`Production configuration validation failed:` 后逐行列明原因。
+
+---
+
+## 8. 生产强化 Batch 8–11 更新事项（2026-07-26）
+
+### 8.1 新增环境变量
+
+| 变量名 | 类型 | 必填 | 默认值 | 生产推荐值 | 敏感 | 说明 |
+|--------|------|------|--------|-----------|------|------|
+| `SLOW_QUERY_MS` | 整数 | 否 | 500 | 500 | 否 | 慢查询阈值（毫秒），超过后记录 `app.db.slow_query` |
+| `STAGING_DISK_QUOTA` | 整数 | 否 | 2GB | 2GB | 否 | Staging 目录磁盘配额，启动时校验剩余空间 |
+| `AUDIT_LOG_CLEANUP_ENABLED` | 布尔 | 否 | true | true | 否 | 审计日志自动清理开关 |
+| `AUDIT_LOG_RETENTION_DAYS` | 整数 | 否 | 180 | 180 | 否 | 审计日志保留天数 |
+| `AUDIT_LOG_CLEANUP_BATCH_SIZE` | 整数 | 否 | 1000 | 1000 | 否 | 单次清理批大小 |
+
+### 8.2 数据库变更
+
+**Alembic 迁移**（合并两个 head）：
+- `812ba6628ff1` — 合并 `v10_export_tasks` 和 `v14_execution_generation_fencing` 两个 head 为单链
+- 合并仅限于版本历史修复，不产生 schema 变更
+
+**连接预算验证**（`production_config_validator` 内置）：
+```
+预算 = (DB_POOL_SIZE_WEB + DB_MAX_OVERFLOW_WEB) × GUNICORN_WORKERS
+     + DB_POOL_SIZE_WORKER + DB_MAX_OVERFLOW_WORKER
+     + DB_POOL_SIZE_SCHEDULER + DB_MAX_OVERFLOW_SCHEDULER
+     ≤ MAX_CONNECTIONS(default 50)
+```
+默认 2 worker 环境：`(3+5)×2 + (2+3) + (1+2) = 16+5+3 = 24` 连接
+
+启动时打印到日志：`DB connection budget: web=8/worker x 2 workers=16 + worker=5 + scheduler=3 = 24 total`
+
+### 8.3 指标端点新指标
+
+`/health/metrics` 新增以下 Prometheus 指标：
+
+| 指标名 | 标签 | 类型 | 说明 |
+|--------|------|------|------|
+| `scheduler_running` | name=pomodoro/audit_cleanup | gauge | 调度器运行状态 |
+| `staging_orphan_count` | 无 | gauge | 孤立的 staging 对象数（有 .data 无 .meta.json） |
+
+### 8.4 部署顺序
+
+```
+1. 备份: bash deploy/scripts/backup.sh + redis-cli SAVE
+2. 数据库迁移: bash deploy/scripts/deploy.sh migrate
+3. 部署 app (任意 PROCESS_ROLE):
+   - scheduler → 验证 /health/ready
+   - worker → 验证 /health/ready (not draining, OCR backend 正确)
+   - web → 验证 /health/ready
+4. 验证核心链路: SSE, 导入, OCR, 刷题
+```
+
+### 8.5 回滚方案
+
+| 场景 | 操作 | 说明 |
+|------|------|------|
+| 应用代码 | 回滚代码 → `deploy.sh update` | 不要 `down` 或删 volume |
+| 数据库 | `alembic downgrade 812ba6628ff1` | 合并迁移无害，downgrade 为 no-op |
+| 连接池配置 | 仅改环境变量后重启 | 无 schema 影响 |
+| 指标端点新增 | 无害 — 旧 Prometheus 忽略未知指标 | 无依赖风险 |
+| 调度器 LeaseHandle | 旧代码兼容（仍返回 bool） | 新旧 worker 可共存 |
+
+### 8.6 启动自检：Schema 分歧检查
+
+应用启动时自动检测已知的运行时 DDL 列是否缺失（仅 PostgreSQL）：
+
+```
+信息列检查:
+  questions      → question_hash, sync_uuid, sync_version
+  question_imports → question_hash, duplicate_status, duplicate_of_question_id, duplicate_of_import_id
+  users          → is_banned, deleted_at
+```
+
+- 非阻塞：仅记录 `WARNING` 日志，不影响启动
+- 仅运行在 PostgreSQL（SQLite 跳过）
+- 诊断结果示例：
+  ```
+  Schema divergence (runtime DDL not in Alembic): question_imports.duplicate_of_question_id, users.is_banned
+  ```
+
+> 这些列由 `database.py` 中的 `_ensure_*` 运行时 DDL 函数创建。
+> 生产迁移到 `cloud_api` profile 后 `init_db()` 被跳过，若 Alembic 迁移未覆盖则可能缺失。
+> 当前生产库已在旧版本中由 `init_db()` 补全，新部署需确保 Alembic 覆盖。
+
+### 8.7 性能审计：EXPLAIN ANALYZE
+
+核心查询的 EXPLAIN ANALYZE SQL 脚本位于 `backend/docs/explain_analyze.sql`。
+在生产 PostgreSQL 上运行以验证查询计划。
+
+覆盖的查询：
+1. Leitner 到期选择 — ORDER BY random() 成本
+2. 错题列表 — 4 个标量子查询
+3. 科目统计 — 双 OUTER JOIN + GROUP BY 表达式
+4. 学习趋势 — 按天聚合索引使用
+5. SM-2 到期复习 — partial index 使用
+6. Dashboard v2 — 双列 JOIN
+
+### 8.8 部署后验证清单
+
+| 步骤 | 命令 | 预期 |
+|------|------|------|
+| 1. 检查单个 head | `alembic heads` | 仅 `812ba6628ff1 (head)` |
+| 2. 验证 readiness | `curl /health/ready` | `status: ok` |
+| 3. 验证角色日志 | `docker compose logs app` | 显示当前角色及组件清单 |
+| 4. 检查 schema 分歧 | `docker compose logs app` | 无 `Schema divergence` 警告 |
+| 5. 检查指标 | `curl /health/metrics` | 包含 `scheduler_running`, `staging_orphan_count` |
+| 6. EXPLAIN ANALYZE | 运行 `docs/explain_analyze.sql` | 查询计划使用索引 |
+| 7. OCR 回退验证 | 触发 OCR 导入 | 日志无 forbidden backends 警告 |
+
+### 8.6 服务器 .env 推荐值（完整版）
+
+```bash
+# 环境
+APP_ENV=production
+DEPLOYMENT_PROFILE=cloud_api
+PROCESS_ROLE=web            # 按角色拆分为 web/worker/scheduler
+
+# 密钥
+APP_SECRET=...
+DEEPSEEK_API_KEY=...
+
+# 数据库
+DATABASE_URL=postgresql+asyncpg://user:pass@postgres:5432/postgraduate
+DB_POOL_SIZE_WEB=3
+DB_MAX_OVERFLOW_WEB=5
+DB_POOL_SIZE_WORKER=2
+DB_MAX_OVERFLOW_WORKER=3
+DB_POOL_SIZE_SCHEDULER=1
+DB_MAX_OVERFLOW_SCHEDULER=2
+
+# Redis
+REDIS_URL=redis://redis:6379/0
+
+# OCR
+OCR_ENABLED=true
+OCR_EXECUTION_BACKEND=paddlex_http
+OCR_REMOTE_URL=https://paddleocr.aistudio-app.com/ocr
+OCR_REMOTE_TOKEN=...
+
+# 微信
+WECHAT_APP_ID=...
+WECHAT_APP_SECRET=...
+WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID=...
+
+# 调度器
+POMODORO_NOTIFY_ENABLED=true
+POMODORO_NOTIFY_PAGE=pages/pomodoro/pomodoro
+POMODORO_SCHEDULER_INTERVAL_SEC=60
+
+# Gunicorn
+GUNICORN_WORKERS=2
+MAX_CONNECTIONS=50
+
+# PDF（云环境）
+PDF_RENDER_PAGE_WINDOW=1
+PDF_MAX_RENDER_PAGES_CONCURRENT=1
+PDF_MAX_PAGES=30
+PDF_MAX_FILE_BYTES=5242880
+
+# 日志
+SQL_ECHO=false
+SQL_LOG_LEVEL=WARNING
+SLOW_QUERY_MS=500
+```

@@ -208,11 +208,77 @@ button::after { border: none; }
 .more-item-arrow { font-family: Arial,sans-serif; font-size: 44rpx; color: #B65B46; }
 .more-cancel { width: 100%; min-height: 82rpx; margin-top: 14rpx; border-radius: 21rpx; background: #ECEFE8; color: #46534A; font-size: 26rpx; font-weight: 900; }
 
-.undo-toast { position: fixed; left: 50%; right: auto; bottom: calc(124rpx + env(safe-area-inset-bottom)); z-index: 160; width: auto; max-width: calc(100vw - 48rpx); min-height: 76rpx; padding: 0 30rpx 0 22rpx; border-radius: 999rpx; background: #10251A; color: #FFFFFF; display: inline-flex; align-items: center; box-sizing: border-box; transform: translate(-50%, 160%); opacity: 0; pointer-events: none; transition: transform .22s ease, opacity .22s ease; box-shadow: 0 18rpx 42rpx rgba(16,37,26,.26); }
-.undo-toast.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
-.undo-toast-text { min-width: 0; flex: none; white-space: nowrap; font-size: 22rpx; line-height: 1.4; color: rgba(255,255,255,.78); }
-.undo-divider { width: 1rpx; height: 36rpx; margin: 0 18rpx; background: rgba(255,255,255,.14); }
-.undo-action { flex-shrink: 0; font-size: 24rpx; font-weight: 900; color: #B7E82A; }
+.undo-toast-layer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(124rpx + env(safe-area-inset-bottom));
+  z-index: 160;
+  display: flex;
+  justify-content: center;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  transform: translateY(160%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform .22s ease, opacity .22s ease;
+}
+.undo-toast-layer.show {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+.undo-toast {
+  flex: none;
+  width: 458rpx;
+  max-width: calc(100vw - 48rpx);
+  min-height: 76rpx;
+  padding: 0 14rpx 0 22rpx;
+  border-radius: 999rpx;
+  background: #10251A;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  box-shadow: 0 18rpx 42rpx rgba(16,37,26,.26);
+}
+.undo-toast-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  font-size: 22rpx;
+  line-height: 1.4;
+  color: rgba(255,255,255,.78);
+}
+.undo-divider {
+  flex: 0 0 1rpx;
+  width: 1rpx;
+  height: 30rpx;
+  margin: 0 16rpx;
+  background: rgba(255,255,255,.16);
+}
+.undo-action {
+  flex: 0 0 88rpx;
+  width: 88rpx;
+  min-width: 88rpx;
+  height: 48rpx;
+  min-height: 48rpx;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1rpx solid rgba(183,232,42,.72);
+  border-radius: 999rpx;
+  background: rgba(183,232,42,.08);
+  color: #C8F14D;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  font-size: 21rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+.undo-action::after { border: 0; }
+.undo-action-pressed { background: rgba(183,232,42,.18); }
 
 @keyframes skeletonPulse { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
 @keyframes switchPulse { 0%,100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
@@ -236,7 +302,7 @@ button::after { border: none; }
   .loading-spinner,
   .decision-sheet,
   .more-sheet { animation: none !important; }
-  .undo-toast { transition: none !important; }
+  .undo-toast-layer { transition: none !important; }
 }
 
 
@@ -265,3 +331,20 @@ button::after { border: none; }
 .more-action { border-radius: 25rpx; }
 .decision-sheet,
 .more-sheet { border-radius: 38rpx 38rpx 0 0; }
+
+/* ==================== Master undo + AI button alignment ==================== */
+.ai-action-btn {
+  height: 84rpx;
+  min-height: 84rpx;
+  padding: 0 24rpx !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.ai-action-btn::after { border: 0; }
+.ai-generate-btn .ai-action-btn-label {
+  display: block;
+  line-height: 1;
+  transform: translateY(2rpx);
+}

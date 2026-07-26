@@ -691,6 +691,34 @@ Page({
     return Promise.all([this.loadStats(), this.loadList(true), this.loadReviewOverview()])
   },
 
+  onExportSelected() {
+    const ids = (this.data.selectedIds || []).map(id => {
+      const n = Number(id)
+      return Number.isFinite(n) ? n : null
+    }).filter(Boolean)
+
+    if (!ids.length) {
+      wx.showToast({ title: '请先选择错题', icon: 'none' })
+      return
+    }
+
+    if (ids.length > 100) {
+      wx.showToast({ title: '单次最多选择 100 道，请调整筛选条件后重试。', icon: 'none' })
+      return
+    }
+
+    // Pass selected IDs via global data (not URL params — too many for URL)
+    const app = getApp()
+    const gd = app.getGlobalData()
+    gd.exportSelectedIds = ids
+
+    wx.navigateTo({ url: '/pages/export-config/export-config' })
+  },
+
+  onViewExportRecords() {
+    wx.navigateTo({ url: '/pages/export-records/export-records' })
+  },
+
   undoBatchMaster() {
     const ids = this._batchMasterUndoIds
     if (!ids || !ids.length) return

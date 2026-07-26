@@ -27,21 +27,44 @@ def detect_deployment_profile() -> DeploymentProfile:
       1. DEPLOYMENT_PROFILE env var (highest priority)
       2. DEPLOY_PROFILE setting (local → local_import, production → cloud_api)
       3. APP_ENV setting (development → local_import, production → cloud_api)
-      4. GPU availability heuristic
+      4. Default to local_import for development
+
+    Conflict detection:
+      If DEPLOYMENT_PROFILE env var AND DEPLOY_PROFILE setting are both set
+      AND they disagree, raises ValueError with all conflicting sources.
 
     Returns:
         DeploymentProfile value.
     """
+    # Collect all sources for conflict detection
+    sources: dict[str, str | None] = {
+        "DEPLOYMENT_PROFILE": os.environ.get("DEPLOYMENT_PROFILE"),
+        "DEPLOY_PROFILE": settings.DEPLOY_PROFILE or None,
+        "APP_ENV": settings.APP_ENV or None,
+    }
+
     # 1. Explicit DEPLOYMENT_PROFILE env var
-    explicit = os.environ.get("DEPLOYMENT_PROFILE", "")
+    explicit = sources["DEPLOYMENT_PROFILE"]
     if explicit:
         try:
-            return DeploymentProfile(explicit)
+            profile = DeploymentProfile(explicit)
         except ValueError:
             raise ValueError(
                 f"无效的 DEPLOYMENT_PROFILE={explicit!r}，"
                 f"必须为 {[p.value for p in DeploymentProfile]}"
             )
+        # Conflict detection: DEPLOYMENT_PROFILE env var vs DEPLOY_PROFILE setting
+        deploy_profile = sources["DEPLOY_PROFILE"]
+        if deploy_profile:
+            expected = DeploymentProfile.LOCAL_IMPORT if deploy_profile == "local" else DeploymentProfile.CLOUD_API
+            if profile != expected:
+                raise ValueError(
+                    f"部署档案冲突: DEPLOYMENT_PROFILE={explicit!r} "
+                    f"与 DEPLOY_PROFILE={deploy_profile!r} 不一致。"
+                    f"请只设置其中一个，或确保两者一致。"
+                    f"来源: {sources}"
+                )
+        return profile
 
     # 2. DEPLOY_PROFILE setting
     deploy = settings.DEPLOY_PROFILE
