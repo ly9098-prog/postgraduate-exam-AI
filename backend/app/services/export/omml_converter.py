@@ -375,7 +375,10 @@ def insert_omml_into_paragraph(paragraph, omml_bytes: bytes) -> None:
     from docx.oxml import parse_xml as _docx_parse_xml
 
     p_elem = paragraph._p
-    omml_str = omml_bytes.decode("utf-8") if isinstance(omml_bytes, bytes) else omml_str
+    if isinstance(omml_bytes, bytes):
+        omml_str = omml_bytes.decode("utf-8")
+    else:
+        omml_str = str(omml_bytes)
 
     # Ensure namespace prefix is ``m:`` — Word requires this
     omml_str = _re.sub(r'\bns\d+:', 'm:', omml_str)
