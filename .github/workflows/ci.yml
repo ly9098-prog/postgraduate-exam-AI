@@ -126,6 +126,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Create CI env file for docker compose
+        run: |
+          cat > backend/.env.ci << 'CIEOF'
+          APP_SECRET=ci-secret-key-not-for-production-use-12345678
+          DATABASE_URL=sqlite+aiosqlite:///ci-test.db
+          WECHAT_APP_ID=ci-app-id
+          WECHAT_APP_SECRET=ci-app-secret
+          DEEPSEEK_API_KEY=ci-ds-key
+          CIEOF
+
       - name: Build app Docker image
-        run: docker compose -f deploy/docker-compose.prod.yml build app --progress=plain
+        run: docker compose -f deploy/docker-compose.prod.yml --env-file backend/.env.ci build app --progress=plain
         timeout-minutes: 15
