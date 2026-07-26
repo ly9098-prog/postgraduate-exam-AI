@@ -249,6 +249,22 @@ async def update_chunk_status(
     if status in ("completed", "failed"):
         values["finished_at"] = _utcnow()
 
+    # Fence via parent pipeline: if the pipeline has been reassigned to a new
+    # worker, stale chunk updates must be rejected.
+    fence = _fencing_ctx.get()
+    if fence is not None:
+        from app.services.db_fencing import (
+            FencingRejectedError,
+            verify_fencing_or_raise,
+        )
+
+        # Verify the parent pipeline still belongs to this worker
+        await verify_fencing_or_raise(
+            db=db,
+            model_class=ImportPipeline,
+            record_id=pipeline_id,
+        )
+
     await db.execute(
         update(ImportPipelineChunk)
         .where(

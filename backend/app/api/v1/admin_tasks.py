@@ -104,13 +104,19 @@ async def _resolve_task_type(task_id: str, client) -> str | None:
         _v2_task_hash_key,
     )
 
-    # First check task hash
+    # Parse task_type from the JSON data blob in the task hash
     hash_key = _v2_task_hash_key(task_id)
-    raw_type = await client.hget(hash_key, "task_type")
-    if raw_type:
-        return raw_type
+    raw_data = await client.hget(hash_key, "data")
+    if raw_data:
+        try:
+            parsed = json.loads(raw_data)
+            tt = parsed.get("task_type")
+            if tt:
+                return tt
+        except json.JSONDecodeError:
+            pass
 
-    # Search all queues
+    # Fallback: search all queues by presence
     for tt in TASK_TYPES:
         if await client.lpos(_v2_q_key(tt), task_id) is not None:
             return tt
@@ -123,6 +129,27 @@ async def _resolve_task_type(task_id: str, client) -> str | None:
         if await client.zscore(_v2_corrupt_key(tt), task_id) is not None:
             return tt
     return None
+
+
+def _parse_task_data(data: dict) -> dict:
+    """Extract fields from the Redis hash, parsing the JSON 'data' blob.
+
+    Redis hash fields: data (JSON), status, owner_token, generation,
+    retry_count, lease_expires_at, error.
+    Fields like task_type, max_retries, payload, created_at are inside
+    the JSON 'data' blob, not top-level hash keys.
+    """
+    result: dict = {}
+    raw_data = data.get("data", "")
+    if raw_data:
+        try:
+            parsed = json.loads(raw_data)
+            result["_parsed"] = parsed
+        except json.JSONDecodeError:
+            result["_parsed"] = {}
+    else:
+        result["_parsed"] = {}
+    return result
 
 
 # ── Routes ──
@@ -193,15 +220,16 @@ async def list_tasks(
                     continue
                 if status and data.get("status") != status:
                     continue
+                parsed = _parse_task_data(data)._parsed
                 result_tasks.append(TaskSummary(
                     task_id=task_id,
-                    task_type=data.get("task_type", tt),
+                    task_type=parsed.get("task_type", tt),
                     status=data.get("status", "dead"),
                     retry_count=int(data.get("retry_count", 0)),
-                    max_retries=int(data.get("max_retries", 0)),
+                    max_retries=int(parsed.get("max_retries", 0)),
                     generation=int(data.get("generation", 0)),
-                    last_error=data.get("last_error", "")[:200] if data.get("last_error") else None,
-                    created_at=data.get("created_at"),
+                    last_error=data.get("error", "")[:200] if data.get("error") else None,
+                    created_at=parsed.get("created_at"),
                 ))
 
             # List corrupt tasks
@@ -213,15 +241,16 @@ async def list_tasks(
                     continue
                 if status and data.get("status") != status:
                     continue
+                parsed = _parse_task_data(data)._parsed
                 result_tasks.append(TaskSummary(
                     task_id=task_id,
-                    task_type=data.get("task_type", tt),
+                    task_type=parsed.get("task_type", tt),
                     status=data.get("status", "corrupt"),
                     retry_count=int(data.get("retry_count", 0)),
-                    max_retries=int(data.get("max_retries", 0)),
+                    max_retries=int(parsed.get("max_retries", 0)),
                     generation=int(data.get("generation", 0)),
-                    last_error=data.get("last_error", "")[:200] if data.get("last_error") else None,
-                    created_at=data.get("created_at"),
+                    last_error=data.get("error", "")[:200] if data.get("error") else None,
+                    created_at=parsed.get("created_at"),
                 ))
     finally:
         pass  # client is managed by the queue service
@@ -256,7 +285,8 @@ async def inspect_task(
     if not data:
         raise task_not_found(task_id)
 
-    task_type = data.get("task_type", "")
+    parsed = _parse_task_data(data)._parsed
+    task_type = parsed.get("task_type", "")
     status = data.get("status", "unknown")
 
     # Determine queue location
@@ -275,8 +305,13 @@ async def inspect_task(
 
     # Safe payload summary
     payload_summary = None
-    payload_raw = data.get("payload", "")
-    if payload_raw:
+    payload_raw = parsed.get("payload", "")
+    if isinstance(payload_raw, dict):
+        payload_summary = {
+            k: v for k, v in payload_raw.items()
+            if k not in ("file_content", "token", "secret", "password")
+        }
+    elif isinstance(payload_raw, str) and payload_raw:
         try:
             payload = json.loads(payload_raw)
             payload_summary = {
@@ -284,7 +319,7 @@ async def inspect_task(
                 if k not in ("file_content", "token", "secret", "password")
             }
         except json.JSONDecodeError:
-            payload_summary = {"_raw_bytes": len(payload_raw)}
+            payload_summary = {"_raw_str": payload_raw[:200]}
 
     # Heartbeat check
     hb = await client.get(_v2_heartbeat_key(task_id))
@@ -300,10 +335,10 @@ async def inspect_task(
         task_type=task_type,
         status=status,
         retry_count=int(data.get("retry_count", 0)),
-        max_retries=int(data.get("max_retries", 0)),
+        max_retries=int(parsed.get("max_retries", 0)),
         generation=int(data.get("generation", 0)),
-        last_error=data.get("last_error", "")[:200] if data.get("last_error") else None,
-        created_at=data.get("created_at"),
+        last_error=data.get("error", "")[:200] if data.get("error") else None,
+        created_at=parsed.get("created_at"),
         payload_summary=payload_summary,
         queue_location=queue_location,
         has_heartbeat=has_heartbeat,
@@ -327,7 +362,8 @@ async def retry_task(
     if not data:
         raise task_not_found(task_id)
 
-    task_type = data.get("task_type", "")
+    parsed = _parse_task_data(data)._parsed
+    task_type = parsed.get("task_type", "")
     status = data.get("status", "")
 
     if status not in ("failed", "dead", "review_required"):
@@ -375,7 +411,8 @@ async def cancel_task(
     if not data:
         raise task_not_found(task_id)
 
-    task_type = data.get("task_type", "")
+    parsed = _parse_task_data(data)._parsed
+    task_type = parsed.get("task_type", "")
     status = data.get("status", "")
 
     if status in ("pending", "retry"):
