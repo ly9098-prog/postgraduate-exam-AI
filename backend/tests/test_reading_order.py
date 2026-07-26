@@ -20,24 +20,16 @@
 """
 from __future__ import annotations
 
-import copy
-import hashlib
-import json
-
-import pytest
-
 from app.core.document_ir import (
     BBox,
-    DocumentIR,
-    LineIR,
     PageIR,
     RegionIR,
     document_ir_from_dict,
     document_ir_to_dict,
 )
 from app.features.reading_order import (
-    ReadingOrderResolver,
     ReadingOrderEdge,
+    ReadingOrderResolver,
     ReadingOrderResult,
     apply_reading_order,
     shuffle_regions,
@@ -497,7 +489,7 @@ def test_apply_reading_order_in_place():
 
 def test_reading_order_json_roundtrip():
     """Reading Order JSON round-trip 不丢失字段。"""
-    from app.core.document_ir import DocumentIR, new_document
+    from app.core.document_ir import new_document
 
     doc = new_document(source_bytes=b"test")
     regions = [

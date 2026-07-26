@@ -28,9 +28,7 @@ from tests.ocr_bench.metrics import evaluate, scenario_pass_rate
 from tests.ocr_bench.schema import (
     BenchmarkCase,
     MetricsResult,
-    ScenarioBucket,
     discover_cases,
-    load_case,
 )
 
 _CASES_DIR = Path(__file__).parent / "cases"

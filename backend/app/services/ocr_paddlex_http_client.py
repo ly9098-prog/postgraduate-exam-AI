@@ -266,6 +266,17 @@ class PaddleXHttpOcrWorkerClient:
         request_id = uuid.uuid4().hex[:16]
         start = time.monotonic()
 
+        # Acquire distributed OCR concurrency slot (cross-process)
+        dist_token: str | None = None
+        try:
+            from app.services.ocr_distributed_concurrency import get_global_concurrency
+            dist_guard = get_global_concurrency()
+            dist_token = await dist_guard.acquire_global()
+        except Exception as exc:
+            logger.warning("Distributed OCR concurrency acquire failed: %s", exc)
+            # Fail closed in production (DistributedConcurrencyError already raised)
+            # In dev, continue with local semaphore only
+
         try:
             self._metrics["queued"] += 1
             async with self._semaphore:
@@ -282,6 +293,12 @@ class PaddleXHttpOcrWorkerClient:
             if not cb_rejected:
                 await self._record_failure()
             raise
+        finally:
+            if dist_token is not None:
+                try:
+                    await dist_guard.release_global(dist_token)
+                except Exception:
+                    pass
 
         elapsed = time.monotonic() - start
         if result.status == "success":

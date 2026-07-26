@@ -3,9 +3,7 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
-from app.stage import ReleaseDecision, Stage1AStatus, Stage1BStatus
+from app.stage import ReleaseDecision
 
 
 class TestReleaseDecisionSplit:

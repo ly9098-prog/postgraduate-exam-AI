@@ -14,6 +14,7 @@ from sqlalchemy import text
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.database import async_session, init_db
+from app.core.error_codes import ApiError, ErrorCode
 from app.core.logging_config import setup_logging
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
@@ -131,6 +132,16 @@ def _report_startup_failure(component: str, exc: Exception) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     role = settings.PROCESS_ROLE
+
+    # Guard: worker/scheduler roles should not serve HTTP.
+    # Use app.worker_main or app.scheduler_main entry points instead.
+    if role in ("worker", "scheduler"):
+        logger.warning(
+            "Role=%s started with FastAPI HTTP server. "
+            "For production, use 'python -m app.%s_main' instead "
+            "to avoid exposing an HTTP port on worker/scheduler processes.",
+            role, role,
+        )
 
     # Background asyncio task references (initialized per role block)
     cleanup_task = None
@@ -285,8 +296,8 @@ async def lifespan(app: FastAPI):
     # ── Role-aware BoundedExecutors ──
     try:
         from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
-        from app.core.executors import init_executors_for_role
         from app.core.executor_registry import init_executor_registry
+        from app.core.executors import init_executors_for_role
 
         _deploy_profile = detect_deployment_profile()
         _executors = init_executors_for_role(
@@ -544,14 +555,19 @@ async def lifespan(app: FastAPI):
             logger.exception("Formula render pool shutdown error")
 
         # 6. Shutdown OCR infrastructure (only if this role uses it)
+        # Cloud profile: skip OCR executor shutdown — it imports local PaddleOCR modules.
         if role in ("web", "all"):
             try:
-                from app.services.ocr_executor_service import ocr_executor
-                await asyncio.wait_for(
-                    ocr_executor.shutdown(wait=True),
-                    timeout=30,
-                )
-                logger.info("OCR executor shut down")
+                from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+                if detect_deployment_profile() != DeploymentProfile.CLOUD_API:
+                    from app.services.ocr_executor_service import ocr_executor
+                    await asyncio.wait_for(
+                        ocr_executor.shutdown(wait=True),
+                        timeout=30,
+                    )
+                    logger.info("OCR executor shut down")
+                else:
+                    logger.info("OCR executor shutdown skipped (cloud profile)")
             except TimeoutError:
                 logger.warning("OCR executor shutdown timed out")
             except Exception:
@@ -577,7 +593,7 @@ async def lifespan(app: FastAPI):
 
         # 7. BoundedExecutors shutdown
         try:
-            from app.core.executor_registry import get_all_executors, clear_executor_registry
+            from app.core.executor_registry import clear_executor_registry, get_all_executors
             from app.core.executors import shutdown_executors
             await shutdown_executors(get_all_executors())
             clear_executor_registry()
@@ -719,6 +735,57 @@ async def log_requests(request: Request, call_next):
         raise
     finally:
         clear_log_context()
+
+
+
+
+@app.exception_handler(ApiError)
+async def api_error_handler(request: Request, exc: ApiError):
+    """Handle ApiError with structured JSON response."""
+    status_code = _api_error_status(exc.code)
+    return JSONResponse(
+        status_code=status_code,
+        content=exc.to_dict(),
+    )
+
+
+def _api_error_status(code: ErrorCode) -> int:
+    codes_503 = {
+        ErrorCode.QUEUE_UNAVAILABLE,
+        ErrorCode.DB_UNAVAILABLE,
+        ErrorCode.STAGING_UNAVAILABLE,
+        ErrorCode.OCR_PROVIDER_ERROR,
+    }
+    codes_429 = {
+        ErrorCode.QUEUE_FULL,
+        ErrorCode.RESOURCE_QUEUE_FULL,
+        ErrorCode.OCR_RATE_LIMIT,
+        ErrorCode.AI_RATE_LIMIT,
+        ErrorCode.RESOURCE_DB_POOL_BUSY,
+    }
+    codes_409 = {
+        ErrorCode.DB_CONFLICT,
+        ErrorCode.TASK_FENCING_REJECTED,
+    }
+    codes_404 = {
+        ErrorCode.TASK_NOT_FOUND,
+        ErrorCode.STAGING_OBJECT_MISSING,
+    }
+    codes_422 = {
+        ErrorCode.REVIEW_REQUIRED,
+    }
+
+    if code in codes_503:
+        return 503
+    if code in codes_429:
+        return 429
+    if code in codes_409:
+        return 409
+    if code in codes_404:
+        return 404
+    if code in codes_422:
+        return 422
+    return 500
 
 
 @app.exception_handler(Exception)

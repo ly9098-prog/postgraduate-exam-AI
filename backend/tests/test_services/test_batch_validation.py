@@ -1,10 +1,10 @@
 """Tests for batch_validation module."""
 
 from app.features.batch_validation import (
-    validate_batch_structure,
+    _check_answer_presence,
     _check_number_continuity,
     _check_option_completeness,
-    _check_answer_presence,
+    validate_batch_structure,
 )
 
 

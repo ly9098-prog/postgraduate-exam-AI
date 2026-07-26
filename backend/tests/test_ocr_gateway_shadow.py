@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.ocr_gateway import OCRGateway, RequiredOCRCapabilities
 from app.core.deployment_profile import DeploymentProfile
+from app.features.ocr_gateway import OCRGateway
 from app.features.page_stream import RenderedPage
 
 

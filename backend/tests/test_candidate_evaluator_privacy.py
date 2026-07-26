@@ -15,20 +15,17 @@ Requirements (from phase_4.md):
 
 from __future__ import annotations
 
-import hashlib
 import json
-import re
 
 import pytest
 
+from app.features.ai_safety import safe_accept_ai_result
 from app.features.candidate_evaluator import (
     CandidateDecision,
     CandidateEvaluator,
     ReasonCode,
     evaluate_candidate,
 )
-from app.features.ai_safety import safe_accept_ai_result
-
 
 # =============================================================================
 # Fixtures

@@ -194,26 +194,43 @@ def parse_html_table(html_text: str) -> list[TableBlock]:
 def parse_segment_table(seg_data: dict) -> TableBlock | None:
     """Parse a *segment* dict whose ``type`` is ``table_markdown``.
 
-    The segment may contain raw markdown (``text`` key) or a structured
-    table dict with ``headers`` / ``rows`` keys.
+    The segment may contain raw markdown (``text`` key), a structured
+    table dict with ``headers`` / ``rows`` keys, or a rich-text JSON
+    table representation.
     """
-    text = (seg_data.get("text") or "").strip()
-    if not text:
+    text = seg_data.get("text") or ""
+
+    # Handle dict/structured text inline
+    if isinstance(text, dict):
+        data = text
+        if "rows" in data or "headers" in data:
+            return TableBlock.from_rows(
+                headers=data.get("headers", []),
+                data=data.get("rows", []),
+            )
         return None
 
-    # Try structured form first: {"headers": [...], "rows": [[...], ...]}
-    if isinstance(text, dict) or (isinstance(text, str) and text.startswith("{")):
-        # Already parsed as dict
-        data = text if isinstance(text, dict) else _try_json(text)
+    # Handle JSON string representation
+    raw = str(text).strip()
+    if raw.startswith("{"):
+        data = _try_json(raw)
         if data and ("rows" in data or "headers" in data):
             return TableBlock.from_rows(
                 headers=data.get("headers", []),
                 data=data.get("rows", []),
             )
 
+    if not raw:
+        return None
+
     # Try markdown-formatted text
-    blocks = parse_markdown_table(text)
-    return blocks[0] if blocks else None
+    blocks = parse_markdown_table(raw)
+    if blocks:
+        return blocks[0]
+
+    # Try HTML table
+    html_blocks = parse_html_table(raw)
+    return html_blocks[0] if html_blocks else None
 
 
 def _try_json(text: str) -> dict | None:

@@ -10,8 +10,6 @@
 """
 from __future__ import annotations
 
-import pytest
-
 from app.features.quality_gate import (
     CodeQualityGate,
     CompositeQualityGate,
@@ -20,7 +18,6 @@ from app.features.quality_gate import (
     QuestionStructureQualityGate,
     record_shadow_decision,
 )
-
 
 # ===================================================================
 # 1. QuestionStructureQualityGate

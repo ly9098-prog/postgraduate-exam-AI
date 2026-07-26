@@ -17,6 +17,14 @@ test = [
     "ruff>=0.1",
     "mypy>=1.7",
 ]
+docx = [
+    "python-docx>=1.1.0",
+    "latex2mathml>=3.80.0",
+]
+pdf = [
+    "fpdf2>=2.7.0",
+    "Pillow>=10.0",
+]
 dev = [
     "ipython",
     "watchfiles",
@@ -68,6 +76,15 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 filterwarnings = [
     "ignore::DeprecationWarning",
+]
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (real DB/Redis)",
+    "cloud_ocr_isolation: Cloud OCR isolation tests",
+    "redis: Tests requiring Redis",
+    "postgres: Tests requiring PostgreSQL",
+    "shutdown: Graceful shutdown tests",
+    "slow: Slow running tests (> 5s)",
 ]
 
 [tool.setuptools.packages.find]

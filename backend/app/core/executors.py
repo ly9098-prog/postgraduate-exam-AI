@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from app.core.bounded_executor import BoundedExecutor
 
 
-def init_executors_for_role(role: str, is_production: bool = True) -> dict[str, "BoundedExecutor"]:
+def init_executors_for_role(role: str, is_production: bool = True) -> dict[str, BoundedExecutor]:
     """Create BoundedExecutor instances appropriate for *role*.
 
     Web role gets a small file-I/O executor.
@@ -63,7 +63,7 @@ def init_executors_for_role(role: str, is_production: bool = True) -> dict[str, 
     }
 
 
-async def shutdown_executors(executors: dict[str, "BoundedExecutor"]) -> None:
+async def shutdown_executors(executors: dict[str, BoundedExecutor]) -> None:
     """Shut down all executors in reverse-insertion order."""
     names = list(executors.keys())
     for name in reversed(names):

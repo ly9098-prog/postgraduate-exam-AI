@@ -36,22 +36,21 @@ import fitz  # noqa: E402  PyMuPDF
 import httpx  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
-from app.core.database import Base, async_session, engine  # noqa: E402
 from app.core.config import settings  # noqa: E402
+from app.core.database import Base, async_session, engine  # noqa: E402
+from app.features import question_pipeline as import_service
+from app.main import app as fastapi_app  # noqa: E402
+from app.models.ai_chat import AiChat  # noqa: E402,F401
+from app.models.ai_generation_log import AiGenerationLog  # noqa: E402,F401
+from app.models.answer_behavior import AnswerBehavior  # noqa: E402,F401
+from app.models.practice_record import PracticeRecord  # noqa: E402,F401
+from app.models.question import Question  # noqa: E402,F401
+from app.models.question_import import QuestionImport  # noqa: E402,F401
+from app.models.tag import Tag  # noqa: E402,F401
 
 # 注册所有 model 到 metadata（保持与 alembic env 一致）
 from app.models.user import User  # noqa: E402,F401
-from app.models.question import Question  # noqa: E402,F401
-from app.models.question_import import QuestionImport  # noqa: E402,F401
-from app.models.practice_record import PracticeRecord  # noqa: E402,F401
 from app.models.wrong_question import WrongQuestion  # noqa: E402,F401
-from app.models.answer_behavior import AnswerBehavior  # noqa: E402,F401
-from app.models.ai_chat import AiChat  # noqa: E402,F401
-from app.models.tag import Tag  # noqa: E402,F401
-from app.models.ai_generation_log import AiGenerationLog  # noqa: E402,F401
-
-from app.main import app as fastapi_app  # noqa: E402
-from app.features import question_pipeline as import_service
 from app.services import ocr_service, pdf_classifier  # noqa: E402
 
 PASSED: list[str] = []

@@ -2,13 +2,12 @@
 
 from app.features.code_structure_reconstructor import (
     _fix_ocr_operators,
-    _split_semicolons,
     _indent_code,
     _reconstruct_compressed_code,
-    reconstruct_code,
+    _split_semicolons,
     reconstruct_and_validate,
+    reconstruct_code,
 )
-
 
 # ============================================================================
 # Phase 1: OCR operator repair

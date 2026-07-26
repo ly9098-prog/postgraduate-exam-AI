@@ -48,8 +48,9 @@ def _apply_filters(query: select, filters: dict | None) -> select:
         query = query.where(WrongQuestion.error_type == error_type)
     if topic := filters.get("topic"):
         # topic is matched against the question's knowledge_points
-        from app.models.question import Question
         import sqlalchemy as sa
+
+        from app.models.question import Question
         if not any(
             isinstance(f, sa.sql.Join) or str(f).startswith("JOIN")
             for f in query.froms  # type: ignore[union-attr]

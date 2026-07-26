@@ -1,8 +1,8 @@
 """import_pdf() 回归测试 — 验证4参数调用不再报 TypeError。"""
 import asyncio
 import io
-import sys
 import os
+import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

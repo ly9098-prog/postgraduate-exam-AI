@@ -1,11 +1,12 @@
 """Tests for image compression and storage backend."""
 
-import pytest
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 
+import pytest
 from PIL import Image
 
+from app.core.config import settings
 from app.services.storage_backend import (
     MAX_IMAGE_DIMENSION,
     COSStorage,
@@ -13,7 +14,6 @@ from app.services.storage_backend import (
     compress_image,
     get_storage,
 )
-from app.core.config import settings
 
 
 def _make_image(fmt: str = "JPEG", size: tuple[int, int] = (200, 150), color: tuple[int, int, int] = (255, 0, 0)):

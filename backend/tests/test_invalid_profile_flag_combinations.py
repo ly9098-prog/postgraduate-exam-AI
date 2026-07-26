@@ -1,6 +1,5 @@
 """Tests for deployment profile flag validation."""
 
-import pytest
 
 from app.core.deployment_profile import DeploymentProfile, validate_profile_flags
 

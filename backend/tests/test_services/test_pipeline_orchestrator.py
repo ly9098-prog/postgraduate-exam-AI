@@ -20,7 +20,6 @@ from app.features.pipeline_orchestrator import (
 )
 from app.features.pipeline_stages._helpers import _count_risk_flags
 
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -116,7 +115,7 @@ class TestExtractTextBlocks:
             _extract_text_blocks(b"   ")
 
     def test_utf8_decoding(self):
-        blocks = _extract_text_blocks("高等数学\n线性代数".encode("utf-8"))
+        blocks = _extract_text_blocks("高等数学\n线性代数".encode())
         assert len(blocks) == 1
         assert "高等数学" in blocks[0]["text"]
 
@@ -1224,9 +1223,10 @@ class TestImportPipelineRun:
     @pytest.fixture(autouse=True)
     def _mock_pdf_renderer(self):
         """Patch pdf_renderer.render_pages so tests don't need real PDFs."""
+        from unittest.mock import AsyncMock
+
         from app.services.pdf_renderer_service import PdfRenderResult
         from app.services.pdf_renderer_service import pdf_renderer as real_renderer
-        from unittest.mock import AsyncMock
 
         mock = AsyncMock(return_value=PdfRenderResult(
             page_images={1: b"fake_png"},
@@ -1842,9 +1842,9 @@ class TestPipelineStoreSlim:
         引用，对 data["ocr_progress"] 赋值会污染主 store 的白名单契约。
         """
         from app.features.pipeline_orchestrator import (
+            _PIPELINE_STORE_FIELDS,
             _ocr_progress,
             _pipeline_diagnostics_store,
-            _PIPELINE_STORE_FIELDS,
             _set_pipeline_store,
         )
 
@@ -2285,42 +2285,34 @@ class TestResolvePdfPageRange:
     """Unit tests for resolve_pdf_page_range() validation + resolution."""
 
     def test_invalid_total_pages_zero(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         with pytest.raises(ValueError, match="PDF 总页数无效"):
             resolve_pdf_page_range(total_pages=0)
 
     def test_invalid_total_pages_negative(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         with pytest.raises(ValueError, match="PDF 总页数无效"):
             resolve_pdf_page_range(total_pages=-1)
 
     def test_page_start_below_one(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         with pytest.raises(ValueError, match="起始页必须是大于等于 1 的整数"):
             resolve_pdf_page_range(total_pages=10, page_start=0)
 
     def test_page_start_exceeds_total(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         with pytest.raises(ValueError, match="起始页 11 超出 PDF 总页数 10"):
             resolve_pdf_page_range(total_pages=10, page_start=11)
 
     def test_page_end_below_one(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         with pytest.raises(ValueError, match="结束页必须是大于等于 1 的整数"):
             resolve_pdf_page_range(total_pages=10, page_end=0)
 
     def test_page_end_exceeds_total(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         with pytest.raises(ValueError, match="结束页 20 超出 PDF 总页数 10"):
             resolve_pdf_page_range(total_pages=10, page_end=20)
 
     def test_start_after_end(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         with pytest.raises(ValueError, match="起始页不能大于结束页"):
             resolve_pdf_page_range(total_pages=10, page_start=5, page_end=3)
 
     def test_defaults_to_full_range(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         result = resolve_pdf_page_range(total_pages=50)
         assert result.effective_start == 1
         assert result.effective_end == 50
@@ -2330,7 +2322,6 @@ class TestResolvePdfPageRange:
         assert result.requested_end is None
 
     def test_explicit_range(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         result = resolve_pdf_page_range(total_pages=100, page_start=10, page_end=20)
         assert result.effective_start == 10
         assert result.effective_end == 20
@@ -2339,7 +2330,6 @@ class TestResolvePdfPageRange:
         assert result.requested_end == 20
 
     def test_only_page_start(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         result = resolve_pdf_page_range(total_pages=30, page_start=25)
         assert result.effective_start == 25
         assert result.effective_end == 30
@@ -2348,7 +2338,6 @@ class TestResolvePdfPageRange:
         assert result.requested_end is None
 
     def test_only_page_end(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         result = resolve_pdf_page_range(total_pages=30, page_end=15)
         assert result.effective_start == 1
         assert result.effective_end == 15
@@ -2357,14 +2346,12 @@ class TestResolvePdfPageRange:
         assert result.requested_end == 15
 
     def test_page_start_equals_page_end(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         result = resolve_pdf_page_range(total_pages=50, page_start=7, page_end=7)
         assert result.effective_start == 7
         assert result.effective_end == 7
         assert result.selected_page_count == 1
 
     def test_page_start_equals_total_pages(self):
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         result = resolve_pdf_page_range(total_pages=10, page_start=10)
         assert result.effective_start == 10
         assert result.effective_end == 10
@@ -2372,7 +2359,6 @@ class TestResolvePdfPageRange:
 
     def test_selected_page_count_inclusive(self):
         """selected_page_count must be (end - start + 1), i.e. inclusive."""
-        from app.features.pipeline_orchestrator import resolve_pdf_page_range
         r1 = resolve_pdf_page_range(total_pages=10, page_start=1, page_end=1)
         assert r1.selected_page_count == 1
         r5 = resolve_pdf_page_range(total_pages=10, page_start=1, page_end=5)

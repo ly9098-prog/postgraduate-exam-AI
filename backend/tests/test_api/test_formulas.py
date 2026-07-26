@@ -17,7 +17,12 @@ from fastapi.testclient import TestClient
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.main import app
-from app.models.formula import FormulaCard, FormulaCardTag, FormulaCategory, FormulaTag, UserFormulaFavorite
+from app.models.formula import (
+    FormulaCard,
+    FormulaCategory,
+    FormulaTag,
+    UserFormulaFavorite,
+)
 from app.models.user import User
 
 client = TestClient(app)
@@ -180,7 +185,8 @@ class TestCatalog:
         self._setup()
         subject = _category(id=1, parent_id=None, code="math2_high_math", node_type="subject")
         chapter = _category(id=2, parent_id=1, code="chapter1", node_type="chapter")
-        app.dependency_overrides[get_db] = _db_lambda([subject, chapter])
+        # Provide a count result so the chapter (id=2) is not pruned as empty
+        app.dependency_overrides[get_db] = _db_lambda([subject, chapter], [(2, 1)])
         try:
             resp = client.get("/api/v1/formulas/catalog")
         finally:

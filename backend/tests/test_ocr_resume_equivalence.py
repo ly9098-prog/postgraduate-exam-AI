@@ -13,19 +13,16 @@ from __future__ import annotations
 import io
 import json
 import os
-import time
 import uuid
 
 import pytest
 from PIL import Image, ImageDraw, ImageFont
 
 from app.features.pipeline_artifacts import (
-    PIPELINE_VERSION,
     _RESUMABLE_ARTIFACTS,
+    PIPELINE_VERSION,
     _build_config_fingerprint,
-    _build_pipeline_fingerprint,
     _ensure_dir,
-    _safe_artifact_dir,
     artifact_exists,
     check_artifact_compatibility,
     cleanup_artifacts,
@@ -48,7 +45,7 @@ def _make_test_image(text: str = "Resume Test", size: tuple[int, int] = (400, 10
     draw = ImageDraw.Draw(img)
     try:
         font = ImageFont.truetype(_FONT_PATH, 20)
-    except (IOError, OSError):
+    except OSError:
         font = ImageFont.load_default()
     draw.text((10, 30), text, fill="black", font=font)
     buf = io.BytesIO()
@@ -165,7 +162,7 @@ class TestConfigFingerprintInvalidation:
         data = {"test": True}
         path = save_artifact(pid, "split", data)
         assert path is not None
-        with open(path, "r") as f:
+        with open(path) as f:
             wrapped = json.load(f)
         assert "config_fingerprint" in wrapped, (
             f"Artifact metadata missing config_fingerprint. Keys: {list(wrapped.keys())}"

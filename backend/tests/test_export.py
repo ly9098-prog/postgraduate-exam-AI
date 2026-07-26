@@ -6,7 +6,6 @@ task lifecycle, idempotency, error handling, and edge cases.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -31,7 +30,6 @@ from app.services.export.service import _build_filename, _build_title, _sanitize
 from app.services.export.snapshot_service import create_snapshot
 from app.services.export.sorter import sort_questions
 from app.services.export.space_allocator import get_answer_space_mm
-
 
 # ═══════════════════════════════════════════════════
 # Filename helpers

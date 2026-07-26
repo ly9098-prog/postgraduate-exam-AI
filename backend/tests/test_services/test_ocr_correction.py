@@ -1,17 +1,15 @@
 """Tests for AI OCR Correction Layer."""
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.features.ocr_correction import (
     _detect_noise,
     _should_correct,
     correct_ocr_blocks,
-    _token_usage,
-    _reset_counters_if_needed,
 )
 from app.features.ocr_fix.interfaces import OCRFixResult
-
 
 # ---------------------------------------------------------------------------
 # Noise detection tests

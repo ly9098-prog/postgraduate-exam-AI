@@ -3,13 +3,17 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.document_ir import (
+    DocumentIR,
+    document_ir_from_dict,
+    document_ir_to_dict,
+    new_document,
+)
 from app.core.module_result import (
     AdapterCapabilities,
     ModuleError,
     ModuleResult,
 )
-from app.core.document_ir import DocumentIR, new_document, document_ir_to_dict, document_ir_from_dict
-
 
 # ===========================================================================
 # ModuleError
@@ -194,7 +198,6 @@ class TestModuleResultCodec:
 
     def test_encode_decode_document_ir(self):
         """Full roundtrip with DocumentIR typed data."""
-        from app.core.document_ir import DocumentIR, document_ir_from_dict, document_ir_to_dict
 
         doc = new_document()
         from app.core.document_ir import register_codec

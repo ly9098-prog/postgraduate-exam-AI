@@ -11,8 +11,6 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
-
 from app.features.pipeline_stages.visual_region_assign_stage import (
     _assign_region_to_question,
     _compute_iou,

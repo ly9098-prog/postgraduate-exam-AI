@@ -25,7 +25,13 @@ from app.core.database import async_session, engine
 from app.models.ocr_job import OCRJob
 from app.models.pipeline_enums import OCRJobStatus
 from app.services.ocr_job_service import (
-    cancel_job, claim_job, complete_job, create_job, heartbeat, list_jobs, start_job,
+    cancel_job,
+    claim_job,
+    complete_job,
+    create_job,
+    heartbeat,
+    list_jobs,
+    start_job,
 )
 from app.services.ocr_result_validation import validate_ocr_result
 
@@ -68,6 +74,7 @@ def _cleanup():
 
 
 import atexit
+
 atexit.register(_cleanup)
 
 

@@ -12,7 +12,6 @@ import uuid
 import pytest
 from sqlalchemy import select, text
 
-
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 

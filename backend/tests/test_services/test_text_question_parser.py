@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.text_question_parser import parse_text_questions, _normalize_text, _split_batch
+from app.features.text_question_parser import _normalize_text, _split_batch, parse_text_questions
 
 
 class TestNormalizeText:
@@ -137,7 +137,7 @@ C"""
         assert result["raw_count"] == 1
 
     def test_fenced_code_block_is_preserved(self):
-        text = """有两个并发进程 \(P_{1}\) 和 \(P_{2}\)，其程序代码如下:
+        text = r"""有两个并发进程 \(P_{1}\) 和 \(P_{2}\)，其程序代码如下:
 ```tex
 P1() {                     P2() {
  x = 1;      // A1          x = -3;     // B1
@@ -178,12 +178,12 @@ class TestMathFormulaImport:
         assert result["questions"][0]["options"][0]["text"] == r"T_1(n)=n\log_2n+5000n"
 
     def test_display_math_delimiters_are_removed(self):
-        text = "题干？\nA. $$T_1(n)=n\log_2n+5000n$$\nB. x\n答案：A"
+        text = "题干？\nA. $$T_1(n)=n\\log_2n+5000n$$\nB. x\n答案：A"
         result = parse_text_questions(text, subject="exam408")
         assert result["questions"][0]["options"][0]["text"] == r"T_1(n)=n\log_2n+5000n"
 
     def test_full_time_complexity_question(self):
-        text = """
+        text = r"""
 05. 下列关于时间复杂度的函数中，时间复杂度最小的是（ ）。
 
 A. \( T_1(n) = n \log_2 n + 5000n \)

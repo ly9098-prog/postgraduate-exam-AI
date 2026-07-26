@@ -13,12 +13,11 @@ Covers:
 10. Edge cases (invalid expression, blank render)
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
-from starlette import status as http_status
 
 from app.core.admin_security import AdminPrincipal, get_current_admin
 from app.core.database import get_db
@@ -26,11 +25,7 @@ from app.main import app
 from app.models.admin import AdminUser
 from app.models.formula import (
     FormulaCard,
-    FormulaCardTag,
-    FormulaCategory,
     FormulaGraphAsset,
-    FormulaGraphPreview,
-    FormulaTag,
 )
 from app.schemas.formula import GraphSpec
 
@@ -105,8 +100,8 @@ def card():
     c.graph_confirmed_at = None
     c.formula_blocks = [{"latex": "y = x^2"}]
     c.deleted_at = None
-    c.created_at = datetime.now(timezone.utc)
-    c.updated_at = datetime.now(timezone.utc)
+    c.created_at = datetime.now(UTC)
+    c.updated_at = datetime.now(UTC)
     return c
 
 
@@ -181,8 +176,9 @@ class TestExpressionParser:
             validate_expression(expr)
 
     def test_valid_expressions(self):
-        from app.services.formula_graph_expr_parser import parse_expression, lambdify_expression
         import numpy as np
+
+        from app.services.formula_graph_expr_parser import lambdify_expression, parse_expression
 
         for expr_str in ["x**2", "sin(x)", "exp(x) + 1", "sqrt(abs(x))", "ln(x) + cos(x)"]:
             expr = parse_expression(expr_str)
@@ -227,7 +223,7 @@ class TestGraphPreview:
             "height": 1000,
             "mime_type": "image/png",
             "quality": {"errors": [], "warnings": [], "passed": True},
-            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
         }
 
         db = _make_admin_db(card)
@@ -285,11 +281,11 @@ class TestGraphConfirm:
         asset.alt_text = None
         asset.description = None
         asset.reviewed_by = 1
-        asset.reviewed_at = datetime.now(timezone.utc)
+        asset.reviewed_at = datetime.now(UTC)
         asset.review_note = None
         asset.published_version = 5
-        asset.created_at = datetime.now(timezone.utc)
-        asset.updated_at = datetime.now(timezone.utc)
+        asset.created_at = datetime.now(UTC)
+        asset.updated_at = datetime.now(UTC)
 
         db = _make_admin_db(card)
         db.flush.return_value = None
@@ -340,11 +336,11 @@ class TestGraphRegenerate:
         asset.alt_text = None
         asset.description = None
         asset.reviewed_by = 1
-        asset.reviewed_at = datetime.now(timezone.utc)
+        asset.reviewed_at = datetime.now(UTC)
         asset.review_note = None
         asset.published_version = 6
-        asset.created_at = datetime.now(timezone.utc)
-        asset.updated_at = datetime.now(timezone.utc)
+        asset.created_at = datetime.now(UTC)
+        asset.updated_at = datetime.now(UTC)
 
         db = _make_admin_db(card)
         db.refresh.return_value = None
@@ -549,11 +545,11 @@ class TestQualityCheck:
 
     def test_blank_image_check(self):
         """check_quality detects blank images."""
-        from app.services.formula_graph_spec_renderer import check_quality
-
         import io
+
         from PIL import Image
-        import numpy as np
+
+        from app.services.formula_graph_spec_renderer import check_quality
 
         # Create a pure white image
         img = Image.new("RGB", (100, 100), (255, 255, 255))
@@ -570,11 +566,11 @@ class TestQualityCheck:
 
     def test_valid_image_no_errors(self):
         """Check quality on a valid image passes."""
-        from app.services.formula_graph_spec_renderer import check_quality
-
         import io
+
         from PIL import Image
-        import numpy as np
+
+        from app.services.formula_graph_spec_renderer import check_quality
 
         # Create a non-blank image
         img = Image.new("RGB", (100, 100), (200, 200, 200))

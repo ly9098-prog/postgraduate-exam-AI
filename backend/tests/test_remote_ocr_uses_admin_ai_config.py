@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.core.deployment_profile import DeploymentProfile
 from app.features.ocr_gateway import OCRGateway
 

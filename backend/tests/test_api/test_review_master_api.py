@@ -4,7 +4,7 @@
 """
 import os
 import tempfile
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,7 +16,6 @@ from app.core.database import Base, get_db
 from app.core.security import get_current_user
 from app.core.time_utils import utcnow
 from app.main import app
-from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.user import User
 from app.models.wrong_question import WrongQuestion

@@ -9,18 +9,16 @@ Validates that:
 6. Legacy subject string migration to subject_id works (migration script logic)
 """
 
-import asyncio
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.core.admin_security import AdminPrincipal
 from app.models.admin import AdminUser, Subject
 from app.models.question import Question
 from app.models.question_import import QuestionImport
-from app.core.admin_security import AdminPrincipal
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -8,8 +8,6 @@ from __future__ import annotations
 import os
 import sys
 
-import pytest
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.features.code_integrity import (
@@ -18,7 +16,6 @@ from app.features.code_integrity import (
     detect_code_block_integrity,
     detect_code_regression,
 )
-
 
 # ============================================================
 # contains_code 测试

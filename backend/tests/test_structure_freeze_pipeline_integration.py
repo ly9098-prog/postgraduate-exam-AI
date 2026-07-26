@@ -14,13 +14,10 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.features.pipeline_orchestrator import (
     _compare_freeze_results,
     _get_blocks_document_ir,
 )
-
 
 # ── Mock blocks with embedded DocumentIR ──
 
@@ -29,7 +26,6 @@ def _make_mock_blocks() -> list[dict]:
     """Build mock normalized_blocks that carry a DocumentIR."""
     from app.core.document_ir import (
         BBox,
-        DocumentIR,
         LineIR,
         PageIR,
         RegionIR,
@@ -137,7 +133,6 @@ def test_get_blocks_document_ir_empty_blocks():
 def _make_fake_frozentry(key: str, text: str, status: str = "bound"):
     """Helper to create a FrozenOptionEntry-like object."""
     from app.features.pipeline_stages.structure_freeze_stage import (
-        BINDING_BOUND,
         FrozenOptionEntry,
     )
     return FrozenOptionEntry(

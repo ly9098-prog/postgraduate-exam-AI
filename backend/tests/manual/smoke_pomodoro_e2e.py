@@ -36,8 +36,8 @@ os.environ["WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID"] = "TPL_SMOKE"
 
 async def main():
     # 1. mock wechat
-    from app.services import wechat_notify_service as wn
     from app.services import pomodoro_scheduler_service as scheduler_module
+    from app.services import wechat_notify_service as wn
 
     sent_calls: list[dict] = []
 
@@ -49,14 +49,16 @@ async def main():
     scheduler_module.wechat.send_subscribe_message = fake_send  # type: ignore
 
     # 2. 启动 FastAPI（手动跑 lifespan）
-    from app.main import app
     from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
 
     async with app.router.lifespan_context(app):
         # 插入测试科目（lifespan 已创建表）
-        from app.models.admin import Subject
-        from app.core.database import async_session as db_session
         from sqlalchemy import insert
+
+        from app.core.database import async_session as db_session
+        from app.models.admin import Subject
 
         async with db_session() as db:
             await db.execute(
@@ -97,9 +99,10 @@ async def main():
             print(f"[2] /pomodoro/start 成功 session_id={sid} expected_end_time={session['expected_end_time']}")
 
             # 把 expected_end_time 提前到过去，让 scheduler 立即认领
+            from sqlalchemy import update
+
             from app.core.database import async_session
             from app.models.pomodoro import PomodoroSession
-            from sqlalchemy import update
 
             async with async_session() as db:
                 await db.execute(

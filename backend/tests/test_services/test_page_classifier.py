@@ -1,10 +1,9 @@
 """Tests for page_classifier module."""
 
-import pytest
 
 from app.features.page_classifier import (
-    ANSWER_PAGE,
     ANALYSIS_PAGE,
+    ANSWER_PAGE,
     BLANK_PAGE,
     CATALOG_PAGE,
     KNOWLEDGE_PAGE,

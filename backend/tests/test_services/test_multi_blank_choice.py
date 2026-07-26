@@ -6,10 +6,6 @@ for shared-option multi-blank choice questions.
 
 from __future__ import annotations
 
-import hashlib
-
-import pytest
-
 from app.features.multi_blank_choice import (
     build_blank_option_groups,
     detect_shared_option_multi_blank,
@@ -19,7 +15,6 @@ from app.features.multi_blank_choice import (
     validate_multi_blank_question,
 )
 from app.features.question_pipeline import normalizer
-
 
 # ── extract_blank_slots ─────────────────────────────────────────
 

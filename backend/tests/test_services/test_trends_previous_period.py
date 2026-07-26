@@ -11,7 +11,6 @@ from app.core.database import Base
 from app.models.practice_record import PracticeRecord
 from app.services.stats_service import get_dashboard_v2, get_trends
 
-
 # ── Helpers ──
 
 
@@ -31,8 +30,8 @@ async def _make_db():
     engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(lambda sync_conn: sync_conn.exec_driver_sql("PRAGMA foreign_keys=OFF"))
-        import app.models.user  # noqa: F401
         import app.models.question  # noqa: F401
+        import app.models.user  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     session = async_session()

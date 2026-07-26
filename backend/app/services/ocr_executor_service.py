@@ -157,7 +157,17 @@ class _OcrExecutorService:
         If *wait* is True (default), waits for running tasks to finish.
         If False, sends a non-blocking shutdown signal (cancels pending futures).
         After shutdown, new submissions raise ``RuntimeError``.
+
+        Safe no-op in cloud_api deployments — the process pool is never
+        started and importing ``ocr_process_pool`` would violate the
+        cloud isolation contract.
         """
+        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
+            self._shutdown = True
+            logger.info("OCR executor shutdown skipped (cloud profile — no local pool)")
+            return
+
         self._shutdown = True
         from app.core.ocr_process_pool import ocr_process_pool
 

@@ -28,25 +28,21 @@ import io
 import logging
 import os
 import re
-import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any
 from urllib.parse import urlparse
 
 from docx import Document
 from docx.enum.section import WD_ORIENT
-from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Cm, Emu, Pt, RGBColor
-from docx.table import _Cell
+from docx.shared import Cm, Pt, RGBColor
 
 from app.core.config import settings
 from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
-from app.services.export.exporter_base import ExportResult, Exporter
-from app.services.export.latex_render import find_latex_segments, has_latex, render_latex_to_png
+from app.services.export.exporter_base import Exporter, ExportResult
+from app.services.export.latex_render import find_latex_segments, has_latex
 from app.services.export.omml_converter import render_latex_as_omml_or_fallback
 from app.services.export.space_allocator import get_answer_space_mm
 from app.services.export.table_parser import parse_table
@@ -85,6 +81,12 @@ _image_executor = ThreadPoolExecutor(
 
 # Angle-bracket content stripping (defense-in-depth)
 _HTML_TAG_RE = re.compile(r"<[^>]*>")
+
+# Inline formatting regex for <b>, <strong>, <i>, <em>, <sub>, <sup>, <br>
+_INLINE_FORMAT_RE = re.compile(
+    r"(</?(?:b|strong|i|em|sub|sup|br)\s*/?>)",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -470,13 +472,16 @@ class DocxExporter(Exporter):
 
             if seg_type == "text":
                 text = seg.get("text", "")
-                cleaned = self._sanitize_text(text)
-                if cleaned:
-                    run = parent_paragraph.add_run(cleaned)
-                    run.font.size = Pt(10.5)
-                    run.font.name = _BODY_FONT
-                    self._set_east_asian_font(run, _BODY_FONT_EA)
-                self._handle_inline_formatting(parent_paragraph, text)
+                # Use inline formatting for tagged content, plain text otherwise
+                if _has_inline_formatting(text):
+                    self._handle_inline_formatting(parent_paragraph, text)
+                else:
+                    cleaned = self._sanitize_text(text)
+                    if cleaned:
+                        run = parent_paragraph.add_run(cleaned)
+                        run.font.size = Pt(10.5)
+                        run.font.name = _BODY_FONT
+                        self._set_east_asian_font(run, _BODY_FONT_EA)
 
             elif seg_type == "newline":
                 p = self._add_paragraph_to_doc(parent_paragraph)
@@ -511,7 +516,13 @@ class DocxExporter(Exporter):
     def _write_latex_content_to_doc(
         self, paragraph, text: str, ctx: DocxContext,
     ):
-        """Split text into plain + LaTeX segments and render each."""
+        """Split text into plain + LaTeX segments and render each.
+
+        Rendering priority for LaTeX:
+        1. OMML (native Word formula)
+        2. PNG image (via matplotlib)
+        3. Raw text fallback
+        """
         segments = find_latex_segments(text)
         for seg in segments:
             if seg["type"] == "text":
@@ -522,23 +533,16 @@ class DocxExporter(Exporter):
                     run.font.name = _BODY_FONT
                     self._set_east_asian_font(run, _BODY_FONT_EA)
             else:
-                # Render LaTeX → PNG → embed in doc
-                png = render_latex_to_png(seg["content"], seg.get("display", False))
-                if png:
-                    img_path = self._save_temp_image(ctx, png, "latex")
-                    try:
-                        run = paragraph.add_run()
-                        run.add_picture(img_path, width=Cm(BODY_W_CM * 0.8))
-                    except Exception:
-                        # Fallback: raw LaTeX text
-                        run = paragraph.add_run(f" [公式] {seg['content']} ")
-                        run.font.size = Pt(8)
-                        run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-                        run.font.name = _BODY_FONT
-                        self._set_east_asian_font(run, _BODY_FONT_EA)
-                else:
-                    # Fallback: raw LaTeX text
-                    run = paragraph.add_run(f" [公式] {seg['content']} ")
+                # Attempt OMML first, then PNG, then raw text
+                latex = seg["content"]
+                display = seg.get("display", False)
+                if not render_latex_as_omml_or_fallback(
+                    latex, display, paragraph,
+                    fallback_png=True,
+                    body_width_cm=BODY_W_CM,
+                ):
+                    # Ultimate fallback: raw LaTeX text
+                    run = paragraph.add_run(f" [公式] {latex} ")
                     run.font.size = Pt(8)
                     run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
                     run.font.name = _BODY_FONT
@@ -675,7 +679,7 @@ class DocxExporter(Exporter):
     # ── Helper utilities ──
 
     @staticmethod
-    def _add_paragraph_to_doc(paragraph) -> "Paragraph":
+    def _add_paragraph_to_doc(paragraph) -> Paragraph:
         """Add a new paragraph after the one containing this paragraph's XML element."""
         from docx.text.paragraph import Paragraph
 
@@ -776,42 +780,35 @@ class DocxExporter(Exporter):
         return dest
 
     @staticmethod
-    def _handle_inline_formatting(paragraph, text: str):
-        """Handle basic inline formatting in text (bold, italic, sub/sup).
-
-        This parses simple HTML-like tags in the text content and applies
-        the corresponding run formatting. Currently handles:
-        - <b>bold</b>
-        - <i>italic</i>
-        - <sub>subscript</sub>
-        - <sup>superscript</sup>
-        """
-        import re as _re
-
-        # Simple pattern: match tags <b>, </b>, <i>, </i>, <sub>, </sub>, <sup>, </sup>
-        parts = _re.split(r"(</?[bisu]p?>)", text)
+    def _handle_inline_formatting(paragraph, text: str) -> None:
+        """Handle basic inline formatting in text (bold, italic, sub, sup, br)."""
+        parts = _INLINE_FORMAT_RE.split(text)
         in_b = False
         in_i = False
         in_sub = False
         in_sup = False
 
         for part in parts:
-            if part == "<b>":
+            lower = part.lower()
+            if lower in ("<b>", "<strong>"):
                 in_b = True
-            elif part == "</b>":
+            elif lower in ("</b>", "</strong>"):
                 in_b = False
-            elif part == "<i>":
+            elif lower in ("<i>", "<em>"):
                 in_i = True
-            elif part == "</i>":
+            elif lower in ("</i>", "</em>"):
                 in_i = False
-            elif part == "<sub>":
+            elif lower == "<sub>":
                 in_sub = True
-            elif part == "</sub>":
+            elif lower == "</sub>":
                 in_sub = False
-            elif part == "<sup>":
+            elif lower == "<sup>":
                 in_sup = True
-            elif part == "</sup>":
+            elif lower == "</sup>":
                 in_sup = False
+            elif lower in ("<br>", "<br/>"):
+                run = paragraph.add_run("\n")
+                run.font.size = Pt(8)
             elif part:
                 run = paragraph.add_run(part)
                 run.font.size = Pt(10.5)
@@ -825,3 +822,8 @@ class DocxExporter(Exporter):
                     run.font.subscript = True
                 if in_sup:
                     run.font.superscript = True
+
+
+def _has_inline_formatting(text: str) -> bool:
+    """Check if text contains inline formatting tags."""
+    return bool(_INLINE_FORMAT_RE.search(text))

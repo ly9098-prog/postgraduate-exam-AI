@@ -22,19 +22,17 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 import os
 import tempfile
-from unittest.mock import AsyncMock, patch
 
 import pytest
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-from app.features.pipeline_stages.visual_region_detect_stage import (
-    run_visual_region_detect_stage,
-)
 from app.features.pipeline_stages.visual_region_assign_stage import (
     run_visual_region_assign_stage,
+)
+from app.features.pipeline_stages.visual_region_detect_stage import (
+    run_visual_region_detect_stage,
 )
 from app.features.question_pipeline import process_question_pipeline
 
@@ -212,7 +210,7 @@ class TestSynthetic800x600Pipeline:
 
     def test_segments_order_text_image_text(self):
         """After full pipeline, segments should be text→image→text."""
-        from app.services.visual_region_types import VisualRegion, VisualRegionType, CoordinateSpace
+        from app.services.visual_region_types import CoordinateSpace, VisualRegion, VisualRegionType
 
         # Build the question as a pipeline would
         stem = "观察下列结构示意图，然后回答问题：\n\n[结构示意图]\n\n根据上图所示结构，以下哪个选项是正确的？"
@@ -319,7 +317,7 @@ class TestSynthetic800x600Pipeline:
 
     def test_bbox_missing_does_not_crop(self):
         """When bbox is None, cropping should not happen and risk flags set."""
-        from app.services.visual_region_types import VisualRegion, VisualRegionType, CoordinateSpace
+        from app.services.visual_region_types import CoordinateSpace, VisualRegion, VisualRegionType
 
         region = VisualRegion(
             region_id="vr_nobbox",

@@ -18,21 +18,19 @@ Safe HTML handling:
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 import os
 import re
-import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
 
 from app.core.config import settings
 from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
-from app.services.export.exporter_base import ExportResult, Exporter
+from app.services.export.exporter_base import Exporter, ExportResult
 from app.services.export.latex_render import find_latex_segments, has_latex, render_latex_to_png
 from app.services.export.space_allocator import get_answer_space_mm
-from app.services.storage_backend import get_storage
+from app.services.export.table_parser import parse_table
+from app.services.export.table_renderer_pdf import render_table_to_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -342,11 +340,14 @@ class PdfExporter(Exporter):
                         pdf.set_text_color(0, 0, 0)
 
             elif seg_type == "table_markdown":
-                # Simple markdown table → render as text
+                # Parse and render as PDF table using unified TableBlock
                 md_text = seg.get("text", "")
                 if md_text:
-                    pdf.set_font(_FONT_NAME, "", 8)
-                    pdf.multi_cell(BODY_W, 4, text=md_text, new_x="LMARGIN", new_y="NEXT")
+                    blocks = parse_table(md_text, source_type="markdown")
+                    if blocks:
+                        for block in blocks:
+                            render_table_to_pdf(pdf, block)
+                            pdf.ln(2)
 
     def _write_latex_content(self, pdf, text: str, ctx: PdfContext):
         """Split text into plain + LaTeX segments and render each."""
@@ -437,8 +438,9 @@ class PdfExporter(Exporter):
                 return None
 
             # Validate actual file content (PIL check)
-            from PIL import Image as PILImage
             import io
+
+            from PIL import Image as PILImage
             try:
                 img = PILImage.open(io.BytesIO(data))
                 img.verify()

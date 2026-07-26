@@ -4,14 +4,10 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
-import pytest
-
 from app.features.ocr_canary import (
     ENV_CANARY_ENABLED,
     ENV_IR_CANARY_PERCENT,
     OCRCanaryConfig,
-    is_canary_globally_disabled,
-    is_ir_canary_disabled,
     select_canary_group,
 )
 

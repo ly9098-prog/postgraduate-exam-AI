@@ -9,10 +9,7 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from scripts.analyze_freeze_dual import analyze, build_markdown_report, save_report
-
 
 _SAMPLE_DIAGNOSTICS = {
     "legacy_option_count": 10,

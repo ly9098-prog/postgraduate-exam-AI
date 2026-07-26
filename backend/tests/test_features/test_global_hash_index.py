@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
@@ -29,7 +28,6 @@ from app.features.global_hash_index import (
 from app.models.admin import Subject
 from app.models.question import Question
 from app.models.question_import import QuestionImport
-
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -79,7 +77,7 @@ def _make_question(
         answer="A",
         question_hash=qhash,
         is_active=is_active,
-        created_at=created_at or datetime.now(timezone.utc),
+        created_at=created_at or datetime.now(UTC),
     )
 
 
@@ -163,7 +161,7 @@ class TestLoadRecentDays:
     def test_only_recent_loaded(self, tmp_path):
         async def _go():
             sm, _ = await _make_session(tmp_path)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             async with sm() as db:
                 # 60 条最近 30 天（hash hh000..hh059）
                 for i in range(60):
@@ -204,7 +202,7 @@ class TestLoadRecentDays:
     def test_unlimited_window_loads_everything(self, tmp_path):
         async def _go():
             sm, _ = await _make_session(tmp_path)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             async with sm() as db:
                 db.add(_make_question(
                     qid=1, subject_id=2, qhash="recent",
@@ -229,7 +227,7 @@ class TestInactiveExcluded:
     def test_inactive_questions_not_loaded(self, tmp_path):
         async def _go():
             sm, _ = await _make_session(tmp_path)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             async with sm() as db:
                 db.add(_make_question(
                     qid=1, subject_id=2, qhash="active",
@@ -297,7 +295,7 @@ class TestFallbackToSql:
     def test_threshold_triggers_fallback(self, tmp_path):
         async def _go():
             sm, _ = await _make_session(tmp_path)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             async with sm() as db:
                 # 5 条 active
                 for i in range(5):
@@ -357,7 +355,7 @@ class TestAddImportCrossChunk:
     def test_add_is_noop_in_fallback_mode(self, tmp_path):
         async def _go():
             sm, _ = await _make_session(tmp_path)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             async with sm() as db:
                 for i in range(5):
                     db.add(_make_question(

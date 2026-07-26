@@ -14,10 +14,8 @@ CandidateContext dataclass provides unified metadata for shadow records.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 import pytest
-
 
 # ===================================================================
 # CandidateContext — unified metadata for shadow evaluation

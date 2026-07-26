@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from tests.ocr_bench.runner import evaluate_case
-from tests.ocr_bench.schema import discover_cases, load_case
+from tests.ocr_bench.schema import load_case
 
 CASES_DIR = Path(__file__).parent / "cases"
 

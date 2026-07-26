@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
-from fastapi import HTTPException, Response as FastAPIResponse
+from fastapi import HTTPException
+from fastapi import Response as FastAPIResponse
 from fastapi.testclient import TestClient
 
 from app.api.v1 import admin_auth

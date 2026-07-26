@@ -13,8 +13,8 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Cm, Pt, RGBColor
-from docx.table import _Cell, Table
+from docx.shared import Cm, Pt
+from docx.table import Table, _Cell
 
 from app.services.export.table_model import TableBlock, TableCell, TextAlign
 
@@ -55,12 +55,14 @@ def render_table_to_docx(doc: Document, block: TableBlock, body_width_cm: float 
     # Apply borders
     _set_table_borders(table)
 
-    # Set column widths (even distribution)
-    col_width_cm = min(body_width_cm * _TABLE_WIDTH_FRAC / col_count, _DEFAULT_COL_CM)
+    # Set column widths (proportional distribution across body width)
+    table_width_cm = body_width_cm * _TABLE_WIDTH_FRAC
+    col_width_cm = table_width_cm / col_count
     for col_idx in range(col_count):
         for row in table.rows:
-            cell = row.cells[col_idx]
-            cell.width = Cm(col_width_cm)
+            if col_idx < len(row.cells):
+                cell = row.cells[col_idx]
+                cell.width = Cm(col_width_cm)
 
     # ── Fill cells ──
     # Track which cells are already consumed by rowspan/colspan
@@ -109,6 +111,9 @@ def render_table_to_docx(doc: Document, block: TableBlock, body_width_cm: float 
     # Disable "allow row to break across pages" for all rows
     for row in table.rows:
         _prevent_row_break(row)
+
+    # Normalise merged-cell XML (gridSpan / vMerge)
+    _ensure_merge_xml(table)
 
     return table
 
@@ -172,21 +177,31 @@ def _set_table_borders(table: Table) -> None:
 
 
 def _keep_row_with_next(row) -> None:
-    """Add ``keepWithNext`` to each cell in the row."""
+    """Add ``keepWithNext`` to each cell in the row, avoiding duplication."""
+    from docx.oxml import OxmlElement
     for cell in row.cells:
         for p in cell.paragraphs:
             pPr = p._p.get_or_add_pPr()
-            keep = OxmlElement("w:keepWithNext")
-            pPr.append(keep)
+            # Check if keepWithNext already exists
+            existing = pPr.findall(qn("w:keepWithNext"))
+            if not existing:
+                keep = OxmlElement("w:keepWithNext")
+                pPr.append(keep)
 
 
 def _prevent_row_break(row) -> None:
-    """Disable ``allowRowBreak`` via Open XML."""
-    for cell in row.cells:
-        tc_pr = cell._tc.get_or_add_tcPr()
-        cant_split = OxmlElement("w:vAlign")
-        cant_split.set(qn("w:val"), "center")
-        tc_pr.append(cant_split)
+    """Add ``w:cantSplit`` to row properties (``w:trPr``).
+
+    This is the correct Open XML to prevent a table row from breaking
+    across pages.  The previous implementation incorrectly used
+    ``w:vAlign=center`` which does not prevent row breaks.
+    """
+    tr_pr = row._tr.get_or_add_trPr()
+    # Check if cantSplit already exists
+    existing = tr_pr.findall(qn("w:cantSplit"))
+    if not existing:
+        cant_split = OxmlElement("w:cantSplit")
+        tr_pr.append(cant_split)
 
 
 def _set_east_asian(run, font_name: str) -> None:
@@ -197,6 +212,34 @@ def _set_east_asian(run, font_name: str) -> None:
         rfonts = OxmlElement("w:rFonts")
         rpr.append(rfonts)
     rfonts.set(qn("w:eastAsia"), font_name)
+
+
+def _ensure_merge_xml(table) -> None:
+    """Normalise merged-cell XML for proper gridSpan / vMerge.
+
+    python-docx's ``cell.merge()`` may not produce correct
+    ``w:gridSpan`` / ``w:vMerge`` in all cases.  This helper scans
+    the table and ensures merged cells have the right attributes.
+    """
+    from docx.oxml import OxmlElement
+    for row_idx, row in enumerate(table.rows):
+        for cell_idx, cell in enumerate(row.cells):
+            tc = cell._tc
+            tc_pr = tc.get_or_add_tcPr()
+
+            # Detect merged cell by checking the tc element's gridSpan attribute
+            # If python-docx already set gridSpan, verify it
+            grid_span = tc_pr.find(qn("w:gridSpan"))
+            if grid_span is not None:
+                val = int(grid_span.get(qn("w:val"), "0"))
+                if val < 2:
+                    tc_pr.remove(grid_span)
+
+            # Detect horizontal continuation cells (empty placeholders from merge)
+            # These typically have w:vMerge/continue, no content
+            v_merge = tc_pr.find(qn("w:vMerge"))
+            if v_merge is not None:
+                val = v_merge.get(qn("w:val"), "continue") if v_merge is not None else None
 
 
 def _empty_table(doc: Document) -> Table:

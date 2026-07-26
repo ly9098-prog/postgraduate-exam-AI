@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from app.services.asset_reference_service import (
     AssetReference,
     AssetReferenceReport,
-    AssetReferenceService,
     DeletionState,
     SafeDeleteMachine,
     extract_asset_urls,

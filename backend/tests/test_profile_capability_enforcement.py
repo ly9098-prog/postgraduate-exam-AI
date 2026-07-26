@@ -1,6 +1,5 @@
 """Tests for RuntimeCapabilities profile-based defaults."""
 
-import pytest
 
 from app.core.deployment_profile import DeploymentProfile
 from app.features.runtime_capabilities import RuntimeCapabilities, build_runtime_capabilities

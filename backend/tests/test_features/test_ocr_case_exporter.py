@@ -2,13 +2,12 @@
 
 import os
 
-import pytest
 from app.features.ocr_case_exporter import (
+    _build_case_id,
+    _safe_filename,
+    _truncate_raw_data,
     export_failure_case,
     export_failure_cases_batch,
-    _truncate_raw_data,
-    _safe_filename,
-    _build_case_id,
 )
 
 

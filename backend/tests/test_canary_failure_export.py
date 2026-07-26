@@ -1,12 +1,6 @@
 """Failure export to bench candidate tests."""
 from __future__ import annotations
 
-import json
-import tempfile
-from pathlib import Path
-
-import pytest
-
 from app.features.ocr_canary import CanaryReviewOutcome
 
 

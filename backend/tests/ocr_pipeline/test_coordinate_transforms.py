@@ -124,9 +124,8 @@ def test_to_dict_list_round_trip():
 
 def test_transform_record_bridge_to_document_ir():
     """transform_tracker.TransformRecord can be converted to document_ir.TransformRecord."""
-    from app.core.transform_tracker import TransformRecord as TrackerRecord
     from app.core.document_ir import TransformRecord as IrRecord
-    import numpy as np
+    from app.core.transform_tracker import TransformRecord as TrackerRecord
 
     # A proper affine matrix (scale x,y + translation)
     mat = np.array([

@@ -1,6 +1,4 @@
 """公式截图系统单元测试"""
-import asyncio
-import hashlib
 import os
 import sys
 import time

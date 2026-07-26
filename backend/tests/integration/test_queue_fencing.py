@@ -344,7 +344,7 @@ class TestQueueV2RetryDead:
     @pytest.mark.asyncio
     async def test_fail_exhausts_retries_goes_to_dead(self, q):
         """Max retries exhausted → dead-letter."""
-        await q.enqueue_v2("v2_dl", {}, task_id="v2_dl_001", max_retries=1)
+        await q.enqueue_v2("v2_dl", {}, task_id="v2_dl_001", max_retries=2)
 
         task = await q.dequeue_v2("v2_dl", lease_sec=30)
         ok = await q.fail_v2(task, "err1")

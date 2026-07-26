@@ -11,7 +11,6 @@ Fallback chain: OMML → PNG (via ``latex_render``) → raw text.
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from lxml import etree
@@ -102,9 +101,9 @@ _MATHML_TO_OMML = {
     "mover": "limUpp",
     "munderover": "lim",
     "mrow": "e",
-    "mtd": None,  # table cells not rendered as OMML tables
-    "mtr": None,
-    "mtable": None,
+    "mtable": "m",
+    "mtr": "mr",
+    "mtd": "e",
 }
 
 
@@ -116,19 +115,49 @@ def _mathml_to_omml(mathml_str: str, display: bool) -> bytes | None:
         logger.debug("Failed to parse MathML XML")
         return None
 
-    # Create OMML wrapper
+    # Create OMML wrapper using proper namespace prefix
+    _register_m_ns()
     if display:
-        omml_root = etree.Element(_M + "oMathPara")
+        omml_root = etree.Element(_M + "oMathPara", nsmap={"m": M_NS})
         omml_math = etree.SubElement(omml_root, _M + "oMath")
     else:
-        omml_root = etree.Element(_M + "oMath")
+        omml_root = etree.Element(_M + "oMath", nsmap={"m": M_NS})
 
     _convert_element(root, omml_root if not display else omml_math, depth=0)
 
     try:
-        return etree.tostring(omml_root, xml_declaration=False, encoding="unicode").encode("utf-8")
+        xml_bytes = etree.tostring(omml_root, xml_declaration=False, encoding="unicode")
+        # Ensure consistent namespace prefix
+        xml_bytes = _fix_ns_prefix(xml_bytes)
+        return xml_bytes.encode("utf-8")
     except Exception:
         return None
+
+
+# Cache for registered namespace state
+_ns_registered = False
+
+
+def _register_m_ns():
+    """Register the ``m:`` namespace prefix with lxml's global registry."""
+    global _ns_registered
+    if not _ns_registered:
+        etree.register_namespace("m", M_NS)
+        _ns_registered = True
+
+
+def _fix_ns_prefix(xml_str: str) -> str:
+    """Replace auto-generated namespace prefixes (ns0, ns1, ...) with ``m:``.
+
+    lxml may generate ``ns0:oMath``, ``ns1:e``, etc. when the namespace
+    prefix registration doesn't take effect. This function normalises them.
+    """
+    import re as _re
+    # Replace ``nsX:`` → ``m:`` for any namespace prefix
+    result = _re.sub(r'\bns\d+:', 'm:', xml_str)
+    # Also handle default namespace xmlns="..."
+    return result
+
 
 
 def _convert_element(mathml_elem, omml_parent: etree.Element, depth: int) -> None:
@@ -153,15 +182,31 @@ def _convert_element(mathml_elem, omml_parent: etree.Element, depth: int) -> Non
             _convert_element(child, omml_parent, depth + 1)
         return
 
+    # Special handling for mtable → m:m (matrix)
+    if tag == "mtable":
+        m_elem = etree.SubElement(omml_parent, _M + "m")
+        # Matrix properties
+        mpr = etree.SubElement(m_elem, _M + "mPr")
+        count = etree.SubElement(mpr, _M + "count")
+        # Determine column count from first row
+        children = list(mathml_elem)
+        first_row = None
+        for child in children:
+            if etree.QName(child).localname == "mtr":
+                first_row = child
+                break
+        col_count = len(list(first_row)) if first_row is not None else 1
+        count.set(_M + "val", str(max(1, col_count)))
+        # Process rows
+        for child in children:
+            _convert_element(child, m_elem, depth + 1)
+        return
+
     # Map MathML tag to OMML tag
     omml_tag_name = _MATHML_TO_OMML.get(tag)
 
     if omml_tag_name is None:
-        # Unsupported tag — try to process children
-        if tag in ("mtd", "mtr", "mtable"):
-            logger.debug("Skipping table MathML element '%s' in OMML conversion", tag)
-            return
-        # For unknown elements, just process children (flatten)
+        # Unsupported tag — process children (flatten)
         for child in mathml_elem:
             _convert_element(child, omml_parent, depth + 1)
         return
@@ -299,10 +344,15 @@ def _convert_element(mathml_elem, omml_parent: etree.Element, depth: int) -> Non
         return
 
     # Handle mrow → m:e (expression container)
+    # Skip extra m:e when already inside a cell context (m:e parent)
     if tag == "mrow":
-        e_elem = etree.SubElement(omml_parent, _M + "e") if omml_parent.tag != _M + "e" else omml_parent
+        parent_is_me = omml_parent.tag == _M + "e"
+        if not parent_is_me:
+            e_elem = etree.SubElement(omml_parent, _M + "e")
+        else:
+            e_elem = omml_parent
         for child in mathml_elem:
-            _convert_element(child, e_elem if omml_parent.tag == _M + "e" else e_elem, depth + 1)
+            _convert_element(child, e_elem, depth + 1)
         return
 
     # Default: process children
@@ -316,15 +366,36 @@ def _convert_element(mathml_elem, omml_parent: etree.Element, depth: int) -> Non
 def insert_omml_into_paragraph(paragraph, omml_bytes: bytes) -> None:
     """Insert OMML XML at the end of a python-docx paragraph.
 
-    The OMML is placed after any existing runs in the paragraph.
+    Insertion priority:
+    1. C14N (canonical) XML via python-docx internal parser
+    2. Raw lxml with namespace reconstruction
     """
+    import re as _re
+
+    from docx.oxml import parse_xml as _docx_parse_xml
+
     p_elem = paragraph._p
+    omml_str = omml_bytes.decode("utf-8") if isinstance(omml_bytes, bytes) else omml_str
 
-    omml_str = omml_bytes.decode("utf-8") if isinstance(omml_bytes, bytes) else omml_bytes
-    omml_elem = etree.fromstring(omml_str.encode("utf-8"))
+    # Ensure namespace prefix is ``m:`` — Word requires this
+    omml_str = _re.sub(r'\bns\d+:', 'm:', omml_str)
 
-    # Append the OMML element directly to the paragraph
-    p_elem.append(omml_elem)
+    try:
+        # Inject the OMML as a namespace-normalised XML fragment
+        omml_elem = _docx_parse_xml(omml_str)
+        p_elem.append(omml_elem)
+        return
+    except Exception:
+        pass
+
+    # Fallback: lxml with namespace map
+    try:
+        import lxml.etree as _etree
+        parser = _etree.XMLParser(remove_blank_text=True)
+        omml_elem = _etree.fromstring(omml_str.encode("utf-8"), parser)
+        p_elem.append(omml_elem)
+    except Exception:
+        logger.warning("Failed to insert OMML fragment into paragraph")
 
 
 # ── High-level helper for DOCX exporter ──
@@ -368,8 +439,11 @@ def render_latex_as_omml_or_fallback(
         try:
             png = render_latex_to_png(latex, display)
             if png:
+                import hashlib
+                import os
+                import tempfile
+
                 from docx.shared import Cm
-                import hashlib, os, tempfile
 
                 # Write PNG to temp file and embed
                 fname = f"latex_{hashlib.md5(png).hexdigest()[:12]}.png"

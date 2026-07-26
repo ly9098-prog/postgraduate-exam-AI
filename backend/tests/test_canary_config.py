@@ -8,9 +8,9 @@ import pytest
 
 from app.features.ocr_canary import (
     ENV_CANARY_ENABLED,
-    ENV_IR_CANARY_PERCENT,
-    ENV_CANARY_SUBJECTS,
     ENV_CANARY_SOURCE_TYPES,
+    ENV_CANARY_SUBJECTS,
+    ENV_IR_CANARY_PERCENT,
     OCRCanaryConfig,
 )
 

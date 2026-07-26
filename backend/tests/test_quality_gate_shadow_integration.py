@@ -9,18 +9,11 @@
 
 from __future__ import annotations
 
-import pytest
-
 
 def test_quality_gate_shadow_module_importable():
     """Quality Gate 模块可正常导入。"""
     from app.features.quality_gate import (
-        CodeQualityGate,
         CompositeQualityGate,
-        PlainTextQualityGate,
-        QualityContext,
-        QuestionStructureQualityGate,
-        record_shadow_decision,
     )
     assert CompositeQualityGate is not None
 
@@ -49,7 +42,6 @@ def test_quality_gate_shadow_same_text_accepted():
     from app.features.quality_gate import (
         CompositeQualityGate,
         QualityContext,
-        record_shadow_decision,
     )
 
     gate = CompositeQualityGate()
@@ -91,9 +83,7 @@ def test_quality_gate_shadow_quality_degraded():
 def test_quality_gate_shadow_off_no_change():
     """Shadow off 时不产生任何评估记录。"""
     from app.features.quality_gate import (
-        CompositeQualityGate,
         QualityContext,
-        record_shadow_decision,
     )
 
     ctx = QualityContext(gate_mode="off", existing_decision="accept")
@@ -131,7 +121,6 @@ def test_quality_gate_shadow_error_isolation():
     """Gate 异常不阻断流程。"""
     from app.features.quality_gate import (
         QualityContext,
-        record_shadow_decision,
     )
 
     ctx = QualityContext(gate_mode="shadow", existing_decision="accept")

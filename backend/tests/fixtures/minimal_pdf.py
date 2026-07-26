@@ -5,12 +5,6 @@ All PDF-dependent tests should use these helpers instead of hardcoding
 """
 from __future__ import annotations
 
-import io
-import os
-import struct
-import tempfile
-from pathlib import Path
-
 
 def _pdf_obj(content: bytes) -> bytes:
     return content + b"\nendobj\n"

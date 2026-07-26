@@ -10,15 +10,13 @@ Covers:
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 
 import pytest
 
 from app.services.admin_import_service import resolve_source_page, resolve_source_page_end
-from app.services.storage_backend import LocalFileStorage, COSStorage, get_question_assets_storage
+from app.services.storage_backend import LocalFileStorage, get_question_assets_storage
 from app.services.visual_region_types import make_image_segment
-
 
 # ═══════════════════════════════════════════════════════════════════
 # 1. resolve_source_page

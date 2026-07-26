@@ -707,12 +707,23 @@ Page({
       return
     }
 
-    // Pass selected IDs via global data (not URL params — too many for URL)
-    const app = getApp()
-    const gd = app.getGlobalData()
-    gd.exportSelectedIds = ids
+    // Check export capability before navigating
+    const exportApi = require('../../services/export')
+    exportApi.getCapabilities().then(cap => {
+      if (!cap.export_enabled) {
+        wx.showToast({ title: '导出功能暂未开放', icon: 'none' })
+        return
+      }
+      // Pass selected IDs via global data (not URL params — too many for URL)
+      const app = getApp()
+      const gd = app.getGlobalData()
+      gd.exportSelectedIds = ids
 
-    wx.navigateTo({ url: '/pages/export-config/export-config' })
+      wx.navigateTo({ url: '/pages/export-config/export-config' })
+    }).catch(() => {
+      // Capability check failed — safe degrade: hide the feature
+      wx.showToast({ title: '导出功能暂未开放', icon: 'none' })
+    })
   },
 
   onViewExportRecords() {

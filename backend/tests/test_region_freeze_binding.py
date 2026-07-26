@@ -18,10 +18,6 @@
 """
 from __future__ import annotations
 
-import copy
-
-import pytest
-
 from app.core.document_ir import (
     BBox,
     DocumentIR,
@@ -36,7 +32,6 @@ from app.core.document_ir import (
 from app.features.pipeline_stages.structure_freeze_stage import (
     BINDING_BOUND,
     BINDING_LOST,
-    BINDING_MERGED,
     BINDING_NEEDS_REVIEW,
     BINDING_REPLACED,
     BINDING_SPLIT,
@@ -45,7 +40,6 @@ from app.features.pipeline_stages.structure_freeze_stage import (
     freeze_registry_to_block_format,
     update_frozen_entries_for_replacement,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

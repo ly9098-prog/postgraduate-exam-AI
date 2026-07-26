@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.services.ocr_result_validation import (
     validate_ocr_result,
-    ValidationResult,
 )
 
 

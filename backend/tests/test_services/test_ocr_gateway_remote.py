@@ -4,8 +4,6 @@ All tests use mock HTTP transport — no real Windows service.
 """
 from __future__ import annotations
 
-import asyncio
-
 import httpx
 import pytest
 
@@ -120,7 +118,6 @@ class TestGatewayWithRemoteClient:
     @pytest.mark.asyncio
     async def test_paddlex_http_ignores_thread_fallback(self, mock_transport):
         """paddlex_http with unsafe_thread_fallback must warn and NOT enter local OCR."""
-        import logging
         from app.core.ocr_runtime_config import OcrRuntimeConfig
 
         cfg = OcrRuntimeConfig(

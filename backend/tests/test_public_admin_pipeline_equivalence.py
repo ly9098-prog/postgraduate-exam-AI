@@ -24,8 +24,8 @@ class TestPublicAdminImportModules:
 
     def test_both_import_start_import_pipeline(self):
         """Both public and admin import modules expose start_import_pipeline concept."""
-        import app.api.v1.imports as public_imports
         import app.api.v1.admin_imports as admin_imports
+        import app.api.v1.imports as public_imports
 
         # The public imports module imports start_import_pipeline from the service
         assert hasattr(public_imports, "svc_start_import_pipeline")
@@ -34,8 +34,8 @@ class TestPublicAdminImportModules:
 
     def test_both_modules_have_router(self):
         """Both modules define an APIRouter for their endpoints."""
-        import app.api.v1.imports as public_imports
         import app.api.v1.admin_imports as admin_imports
+        import app.api.v1.imports as public_imports
 
         assert hasattr(public_imports, "router"), "public imports missing router"
         assert hasattr(admin_imports, "router"), "admin imports missing router"
@@ -46,8 +46,8 @@ class TestPublicAdminImportModules:
 
     def test_import_service_same_source(self):
         """Both modules import start_import_pipeline from the same service."""
-        import app.api.v1.imports as pi
         import app.api.v1.admin_imports as ai
+        import app.api.v1.imports as pi
 
         # Verify both reference the same import source
         assert pi.svc_start_import_pipeline is not None

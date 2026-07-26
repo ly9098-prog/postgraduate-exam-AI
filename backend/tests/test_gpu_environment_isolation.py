@@ -4,8 +4,6 @@ from __future__ import annotations
 import os
 import sys
 
-import pytest
-
 
 class TestGPUEnvironmentIsolation:
     """Verify GPU installation never modifies CPU environment."""
@@ -115,7 +113,7 @@ class TestCPUGPUVersionAlignment:
         cpu_paddleocr_version = "2.10.0"
         gpu_paddleocr_version = "2.10.0"
         assert cpu_paddleocr_version == gpu_paddleocr_version, (
-            f"PaddleOCR version mismatch"
+            "PaddleOCR version mismatch"
         )
 
 

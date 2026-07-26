@@ -1,9 +1,7 @@
 """Tests for Phase 3: NativeTextProbe + Shadow Mode."""
 from __future__ import annotations
 
-import pytest
-
-from app.features.native_text_probe import NativeTextProbe, NativeTextProbeResult
+from app.features.native_text_probe import NativeTextProbe
 
 
 class TestNativeTextProbe:

@@ -1,0 +1,36 @@
+version: "3.8"
+
+# Test infrastructure — isolated from production.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.test.yml up -d
+#   # Wait for services to be healthy
+#   python3 -m pytest tests/integration/ --run-integration -v
+#   docker compose -f docker/docker-compose.test.yml down -v
+
+services:
+  postgres-test:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: testdb
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    tmpfs:
+      - /var/lib/postgresql/data  # ephemeral — data lost on down -v
+
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

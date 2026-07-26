@@ -269,10 +269,15 @@ async function request(method, url, data = {}, options = {}) {
   })
 
   if (res.statusCode >= 400) {
-    throw new ApiError(res.data?.detail || '请求失败', {
-      code: res.data?.code || res.statusCode,
+    const detail = res.data?.detail
+    const message = typeof detail === 'object' && detail?.message ? detail.message
+      : typeof detail === 'string' ? detail
+      : '请求失败'
+    const errorCode = typeof detail === 'object' ? detail?.error_code : undefined
+    throw new ApiError(message, {
+      code: errorCode || res.data?.code || res.statusCode,
       statusCode: res.statusCode,
-      detail: res.data?.detail,
+      detail,
       raw: res.data,
     })
   }

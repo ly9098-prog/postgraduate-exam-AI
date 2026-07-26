@@ -1,15 +1,14 @@
 """QuestionSplitter 单元测试。"""
 import os
-import pytest
+
+from app.features.question_normalizer import normalize_question
 from app.features.question_splitter import (
-    split_questions,
-    _detect_question_number,
     _detect_option_line,
+    _detect_question_number,
     _extract_options,
     _is_ocr_garbage_line,
+    split_questions,
 )
-from app.features.question_normalizer import normalize_question
-
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures")
 

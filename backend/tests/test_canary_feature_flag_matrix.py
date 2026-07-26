@@ -1,12 +1,10 @@
 """Feature flag combination tests."""
 from __future__ import annotations
 
-import pytest
-
 from app.features.ocr_canary import (
+    GROUP_CANARY_C,
     GROUP_CONTROL_A,
     GROUP_OBSERVATION_B,
-    GROUP_CANARY_C,
     OCRCanaryConfig,
     select_canary_group,
 )

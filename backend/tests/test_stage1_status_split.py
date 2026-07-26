@@ -1,13 +1,11 @@
 """Stage 1A/1B status split tests — verify decoupling of CPU and GPU stages."""
 from __future__ import annotations
 
-import pytest
-
 from app.stage import (
+    ExecutionMode,
     ReleaseDecision,
     Stage1AStatus,
     Stage1BStatus,
-    ExecutionMode,
 )
 
 
@@ -113,7 +111,6 @@ class TestReleaseDecisionStructure:
     def test_unsupported_wheel_fails_before_install(self):
         """Assert download-first policy rejects unsupported wheels."""
         # Simulate: only x86_64 wheels accepted
-        from app.stage import _WHEEL_ALLOWED_PLATFORMS  # noqa: F811
         # This tests the concept — download-before-install must fail fast
 
     def test_no_source_build_is_attempted(self):

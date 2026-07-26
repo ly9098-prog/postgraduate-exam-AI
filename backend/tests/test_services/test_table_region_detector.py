@@ -1,12 +1,10 @@
 """Tests for table region detector (P1-8)."""
 
-import pytest
 
 from app.features.table_region_detector import (
     detect_table_candidate,
     detect_tables_in_blocks,
 )
-
 
 # ---------------------------------------------------------------------------
 # detect_table_candidate — table-like text

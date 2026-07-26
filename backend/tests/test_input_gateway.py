@@ -4,8 +4,6 @@ from __future__ import annotations
 import os
 import tempfile
 
-import pytest
-
 from app.features.input_gateway import InputGateway, detect_source_type
 
 

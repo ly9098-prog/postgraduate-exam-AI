@@ -9,6 +9,7 @@ Tests cover:
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -261,8 +262,8 @@ class TestConcurrentMerge:
 
 
 def _make_stub_job(job_id: str) -> dict:
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    from datetime import datetime
+    now = datetime.now(UTC).replace(tzinfo=None)
     return {
         "job_id": job_id,
         "source_type": "image",
@@ -278,8 +279,8 @@ def _make_stub_job(job_id: str) -> dict:
 def _make_stub_item(
     job_id: str, seq: int, review_batch_id: str,
 ) -> dict:
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    from datetime import datetime
+    now = datetime.now(UTC).replace(tzinfo=None)
     return {
         "job_id": job_id,
         "seq": seq,

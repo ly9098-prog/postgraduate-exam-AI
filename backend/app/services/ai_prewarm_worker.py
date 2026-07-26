@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from app.services.task_queue_service import Task, task_queue
+from app.services.task_queue_service import Task, TaskQueueUnavailableError, task_queue
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ async def enqueue_prewarm(
 
     max_retries = max(0, 3 - retries)  # remaining retries from current count
     # If delay > 0, don't use idempotent key (it may be a retry)
-    result = await task_queue.enqueue(
+    result = await task_queue.enqueue_v2(
         TASK_TYPE_PREWARM,
         payload,
         task_id=task_id,
@@ -88,14 +88,27 @@ async def run_prewarm_worker(
 
     logger.info("[prewarm] worker started (poll=%ss lease=%ds)", poll_interval, lease_sec)
 
+    _redis_failure_count = 0
+
     try:
         while _worker_running:
             try:
-                task = await task_queue.dequeue(TASK_TYPE_PREWARM, lease_sec=lease_sec)
+                task = await task_queue.dequeue_v2(TASK_TYPE_PREWARM, lease_sec=lease_sec)
+            except TaskQueueUnavailableError as e:
+                _redis_failure_count += 1
+                backoff = min(e.retry_after * (1 << min(_redis_failure_count - 1, 4)), 300)
+                logger.error(
+                    "[prewarm] Redis unavailable (failure #%d): %s — backing off %ds",
+                    _redis_failure_count, e, backoff,
+                )
+                await asyncio.sleep(backoff)
+                continue
             except Exception as e:
                 logger.warning("[prewarm] dequeue failed: %s", e)
                 await asyncio.sleep(poll_interval)
                 continue
+
+            _redis_failure_count = 0
 
             if task is None:
                 await asyncio.sleep(poll_interval)
@@ -108,7 +121,7 @@ async def run_prewarm_worker(
 
             try:
                 await _process_task(task)
-                ok = await task_queue.complete(task)
+                ok = await task_queue.complete_v2(task)
                 if not ok:
                     logger.warning(
                         "[prewarm] complete rejected (owner mismatch): task_id=%s",
@@ -123,7 +136,7 @@ async def run_prewarm_worker(
                 logger.exception(
                     "[prewarm] processing failed: task_id=%s", task.task_id,
                 )
-                ok = await task_queue.fail(task, str(e))
+                ok = await task_queue.fail_v2(task, str(e))
                 if not ok:
                     logger.warning(
                         "[prewarm] fail rejected (owner mismatch): task_id=%s",
@@ -149,7 +162,7 @@ async def _heartbeat_loop(task: Task, lease_sec: int) -> None:
     interval = max(lease_sec // 3, 10)
     while _worker_running:
         try:
-            ok = await task_queue.heartbeat(task, lease_sec=lease_sec)
+            ok = await task_queue.heartbeat_v2(task, lease_sec=lease_sec)
             if not ok:
                 logger.warning(
                     "[prewarm] heartbeat rejected (owner lost): task_id=%s",

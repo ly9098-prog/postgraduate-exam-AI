@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from app.features.pipeline_coordinator_entry import (
     PipelineCoordinatorMode,
     get_coordinator_mode,
-    run_pipeline,
     is_legacy_available,
 )
 

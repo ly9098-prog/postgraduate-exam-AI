@@ -9,6 +9,7 @@ import uuid
 _TEST_DB_PATH = f"/tmp/_test_ocr_jobs_{uuid.uuid4().hex[:8]}.db"
 os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{_TEST_DB_PATH}")
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session, engine
@@ -26,9 +27,6 @@ from app.services.ocr_job_service import (
     release_job,
     start_job,
 )
-
-import pytest
-
 
 # ── Constants & Helpers ───────────────────────────────────
 
@@ -408,4 +406,5 @@ def _cleanup():
 
 # Register cleanup at end of module
 import atexit
+
 atexit.register(_cleanup)

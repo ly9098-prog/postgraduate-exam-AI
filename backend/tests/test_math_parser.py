@@ -1,13 +1,13 @@
 """数学题 PDF 解析测试 + 选项格式扩展测试"""
-import sys
 import os
+import sys
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.features.question_pipeline import _parse_pdf  # noqa: E402
-from app.services.pdf_text_normalizer import normalize_pdf_text, merge_broken_lines  # noqa: E402
+from app.services.pdf_text_normalizer import merge_broken_lines  # noqa: E402
 
 PASSED: list[str] = []
 FAILED: list[tuple[str, str]] = []
@@ -31,7 +31,9 @@ def check(name: str, cond: bool, msg: str = "") -> None:
 
 
 def _make_pdf(text: str) -> bytes:
-    import fitz, io
+    import io
+
+    import fitz
     doc = fitz.open()
     page = doc.new_page()
     page.insert_text((50, 80), text, fontsize=11, fontname="china-s")
@@ -118,8 +120,9 @@ def test_option_inline_single_line() -> None:
         "Analysis: B is half.\n"
     )
     # 这里直接测解析函数，不走 PDF 渲染（避免字体问题）
-    from app.features.question_pipeline import _parse_pdf as _ppdf
     from unittest.mock import patch
+
+    from app.features.question_pipeline import _parse_pdf as _ppdf
 
     fake_text = (
         "1. Which value is correct?\n"

@@ -9,8 +9,6 @@ Tests that the frozen_option_registry survives VL rebuild:
 
 from __future__ import annotations
 
-import pytest
-
 from app.features.pipeline_orchestrator import _remap_frozen_registry_vl_rebuild
 
 

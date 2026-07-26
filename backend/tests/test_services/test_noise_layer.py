@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.features.pipeline_stages.code_language_noise_layer import (
-    clean_code_language_noise,
     classify_noise,
+    clean_code_language_noise,
     detect_transition_zones,
 )
 

@@ -418,8 +418,7 @@ class TestStructureTextBlock:
 @pytest.mark.asyncio
 class TestParseAsyncIntegration:
     async def test_well_formed_text_does_not_call_llm(self, monkeypatch):
-        from app.features import text_question_parser
-        from app.features import llm_text_structurer
+        from app.features import llm_text_structurer, text_question_parser
 
         called = {"count": 0}
         async def _fake(*a, **kw):
@@ -434,8 +433,7 @@ class TestParseAsyncIntegration:
         assert called["count"] == 0  # 规则解析成功，不应触发 LLM
 
     async def test_low_confidence_triggers_llm_and_merges(self, monkeypatch):
-        from app.features import text_question_parser
-        from app.features import llm_text_structurer
+        from app.features import llm_text_structurer, text_question_parser
 
         # 单行压平：题干 + 选项 + 答案全在一行
         flattened = (
@@ -472,8 +470,7 @@ class TestParseAsyncIntegration:
         assert q["is_valid"]
 
     async def test_llm_failure_falls_back_to_rule_result(self, monkeypatch):
-        from app.features import text_question_parser
-        from app.features import llm_text_structurer
+        from app.features import llm_text_structurer, text_question_parser
 
         async def _fake(*a, **kw):
             return None  # 模拟降级
@@ -491,8 +488,7 @@ class TestParseAsyncIntegration:
 
     async def test_llm_fabricated_analysis_blocked_by_guard(self, monkeypatch):
         """LLM 输出捏造的解析应被反幻觉守门拦截，最终 analysis 为空。"""
-        from app.features import text_question_parser
-        from app.features import llm_text_structurer
+        from app.features import llm_text_structurer, text_question_parser
 
         # 单行压平 + 含答案标签场景，确保 LLM 兜底被触发
         block = (
@@ -606,8 +602,7 @@ class TestRuleOptionsLookBroken:
 class TestEqualCountMerge:
     async def test_llm_replaces_broken_options_at_equal_count(self, monkeypatch):
         """规则解析得到 4 个选项但末选项粘连答案 — LLM 等数量替换应触发。"""
-        from app.features import text_question_parser
-        from app.features import llm_text_structurer
+        from app.features import llm_text_structurer, text_question_parser
 
         # 让规则解析器拿到 4 个选项，但 D 选项里粘连了答案标签
         block = (
@@ -653,8 +648,7 @@ class TestEqualCountMerge:
 
     async def test_llm_does_not_replace_clean_equal_count_options(self, monkeypatch):
         """规则解析的选项干净 + 数量与 LLM 相等 — 不应替换，保留规则结果。"""
-        from app.features import text_question_parser
-        from app.features import llm_text_structurer
+        from app.features import llm_text_structurer, text_question_parser
 
         block = (
             "题干？\n"

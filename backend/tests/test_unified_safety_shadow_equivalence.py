@@ -7,8 +7,6 @@ Verifies that shadow mode:
 """
 from __future__ import annotations
 
-import pytest
-
 from app.features.unified_safety import (
     SAFETY_ACCEPT,
     CandidateContext,

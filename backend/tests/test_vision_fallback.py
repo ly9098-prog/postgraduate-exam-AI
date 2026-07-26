@@ -8,17 +8,12 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from app.features.vision_fallback import (
     _build_vl_config,
     _call_vl_sync,
     _compare_code_results,
-    CODE_TRIGGER_FLAGS,
     needs_vision_fallback,
 )
-from app.features.code_integrity import detect_code_block_integrity
-
 
 # ============================================================
 # needs_vision_fallback 测试

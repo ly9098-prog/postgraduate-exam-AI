@@ -1,26 +1,25 @@
 """内容重复折叠回归测试 — 覆盖 deduplicate_repeated_text 和双层 PDF 解析修复。"""
-import sys
 import os
+import sys
 from unittest.mock import patch
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.services.pdf_text_normalizer import (
-    deduplicate_repeated_text,
-    normalize_pdf_text,
-    _should_merge,
-)
-from app.features.question_pipeline import _parse_pdf, process_question_pipeline
 from app.api.v1.practice import (
+    _contains_code,
+    _ensure_true_false_options,
     _sanitize_question_content,
     _sanitize_question_options,
-    _ensure_true_false_options,
     _sanitize_text_field,
-    _contains_code,
 )
-
+from app.features.question_pipeline import _parse_pdf, process_question_pipeline
+from app.services.pdf_text_normalizer import (
+    _should_merge,
+    deduplicate_repeated_text,
+    normalize_pdf_text,
+)
 
 # ─── deduplicate_repeated_text ────────────────────────────────────────────────
 

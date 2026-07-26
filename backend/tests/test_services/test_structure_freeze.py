@@ -10,21 +10,16 @@ Tests cover:
 from __future__ import annotations
 
 import asyncio
-import copy
 import json
-import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from app.features.pipeline_stages.structure_freeze_stage import (
-    run_structure_freeze_stage,
-    _detect_option_line,
-    _detect_inline_options,
     _compute_confidence,
+    _detect_inline_options,
+    _detect_option_line,
+    run_structure_freeze_stage,
 )
-from app.features.question_normalizer import normalize_question, normalize_output
-
+from app.features.question_normalizer import normalize_output, normalize_question
 
 # =========================================================================
 # Helpers

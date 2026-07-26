@@ -1,8 +1,9 @@
 """ImportTextNormalizer 单元测试。"""
 import os
-import pytest
-from app.features.text_normalizer import ImportTextNormalizer
 
+import pytest
+
+from app.features.text_normalizer import ImportTextNormalizer
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures")
 

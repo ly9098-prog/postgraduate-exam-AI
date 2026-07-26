@@ -5,8 +5,6 @@ and operates correctly in its configured mode.
 """
 from __future__ import annotations
 
-import pytest
-
 from app.core.deployment_profile import DeploymentProfile
 from app.features.control_plane import (
     ExecutionPolicy,

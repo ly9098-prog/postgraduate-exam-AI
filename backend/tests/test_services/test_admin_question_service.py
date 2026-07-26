@@ -10,7 +10,7 @@ pytest.skip(
 )
 
 from app.core.admin_security import AdminPrincipal
-from app.models.admin import AdminUser, Permission, QuestionVersion
+from app.models.admin import AdminUser, QuestionVersion
 from app.models.question import Question
 from app.models.question_import import QuestionImport
 from app.schemas.admin_questions import (

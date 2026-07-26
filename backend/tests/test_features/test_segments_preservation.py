@@ -9,10 +9,7 @@ Verifies that content.segments survives:
 """
 from __future__ import annotations
 
-import pytest
-
 from app.features.question_pipeline import QuestionNormalizer, process_question_pipeline
-
 
 normalizer = QuestionNormalizer()
 

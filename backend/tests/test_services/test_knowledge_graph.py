@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── helpers ──
 
 
@@ -356,7 +355,6 @@ class TestInferSimpleEdges:
         验证 DELETE WHERE 条件包含 source='inferred'。
         """
         from app.services.knowledge_graph_service import infer_simple_edges_from_names
-        from app.models.knowledge_edge import KnowledgeEdge
 
         db = _make_mock_db()
         kp1 = _make_kp(id=1, name="图")
@@ -462,6 +460,7 @@ class TestBuildUserKnowledgePath:
     def test_build_path_with_weak_point(self):
         """build_user_knowledge_path 在有薄弱点时能生成路径。"""
         import sys
+
         from app.services.knowledge_path_service import build_user_knowledge_path
 
         db = _make_mock_db()
@@ -600,8 +599,8 @@ class TestAttachRecommendedQuestions:
 class TestSmartStrategyPath:
     def test_path_strategy_returns_questions(self):
         """smart_strategy=path 能返回题目。"""
-        from app.services.practice_service import get_smart_practice_questions
         import app.services
+        from app.services.practice_service import get_smart_practice_questions
 
         db = _make_mock_db()
         q1 = _make_question(id=100)
@@ -640,8 +639,8 @@ class TestSmartStrategyPath:
 
     def test_path_fallback_to_weakness_vector(self):
         """path 推荐失败时能 fallback 到 weakness_vector。"""
-        from app.services.practice_service import get_smart_practice_questions
         import app.services
+        from app.services.practice_service import get_smart_practice_questions
 
         db = _make_mock_db()
         q1 = _make_question(id=200)

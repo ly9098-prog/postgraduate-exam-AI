@@ -4762,8 +4762,9 @@ class ImportPipeline:
                         is_full_page = False
                     else:
                         # No question bbox — use full page as snapshot
-                        from app.core.executor_registry import get_executor
                         from pathlib import Path
+
+                        from app.core.executor_registry import get_executor
 
                         png_bytes = await get_executor("file_io").run(
                             Path(page_path).read_bytes,

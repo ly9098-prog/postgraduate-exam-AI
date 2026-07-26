@@ -5,9 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models.practice_record import PracticeRecord
 from app.models.question import Question
-
 
 # --- helpers ---
 
@@ -540,7 +538,6 @@ class TestGetWrongQuestions:
 class TestReviewWrongQuestion:
     def test_review_correct(self):
         from app.services.practice_service import review_wrong_question
-        from app.models.wrong_question import WrongQuestion
 
         db = _make_mock_db()
         q = _make_question(1, answer="A")
@@ -567,7 +564,6 @@ class TestReviewWrongQuestion:
 
     def test_review_wrong_again(self):
         from app.services.practice_service import review_wrong_question
-        from app.models.wrong_question import WrongQuestion
 
         db = _make_mock_db()
         q = _make_question(1, answer="A")

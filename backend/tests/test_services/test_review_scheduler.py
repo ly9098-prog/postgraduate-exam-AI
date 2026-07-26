@@ -1,20 +1,19 @@
 """Stage 12: SM-2 复习调度系统 — 单元测试。"""
 import asyncio
 from datetime import date, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.services.review_scheduler import (
     auto_schedule_wrong_question,
+    batch_submit_review,
     get_review_history,
     get_review_stats,
     get_today_review,
     submit_review,
-    batch_submit_review,
 )
 from app.services.sm2_service import calc_sm2
-
 
 # ── Helpers ──
 

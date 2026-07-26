@@ -4,12 +4,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from app.features.question_normalizer import (  # noqa: E402
+    normalize_question as path_a_normalize,
+)
 from app.features.question_pipeline import (  # noqa: E402
     normalizer,
     process_question_pipeline,
-)
-from app.features.question_normalizer import (  # noqa: E402
-    normalize_question as path_a_normalize,
 )
 
 PASSED: list[str] = []

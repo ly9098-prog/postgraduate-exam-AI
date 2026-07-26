@@ -1,8 +1,6 @@
 """Canary data redaction and governance tests."""
 from __future__ import annotations
 
-import pytest
-
 
 class TestDataRedaction:
     """Verify canary data handling meets governance requirements."""

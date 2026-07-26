@@ -12,26 +12,23 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
-
 from app.services.question_snapshot_service import (
+    CS_IMAGE_PIXELS,
+    CS_NORMALIZED_1,
+    CS_NORMALIZED_1000,
+    CS_PDF_POINTS,
+    _collect_question_lines,
+    _extract_expected_option_keys,
     _find_anchor_line,
     _find_next_question_line,
-    _match_question_number,
-    _has_visual_reference,
-    _extract_expected_option_keys,
     _find_option_lines_in_ocr,
+    _has_visual_reference,
+    _match_question_number,
     _union_bbox,
-    _collect_question_lines,
     build_ocr_lines,
     compute_question_bbox,
     expand_bbox,
-    CS_IMAGE_PIXELS,
-    CS_PDF_POINTS,
-    CS_NORMALIZED_1000,
-    CS_NORMALIZED_1,
 )
-
 
 # ---------------------------------------------------------------------------
 # _match_question_number

@@ -11,7 +11,6 @@ import asyncio
 import os
 import sys
 import uuid
-from datetime import datetime
 
 _TEST_DB_PATH = f"./_test_batch_answer_{uuid.uuid4().hex[:6]}.db"
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TEST_DB_PATH}"
@@ -23,13 +22,13 @@ from httpx import ASGITransport
 from sqlalchemy import select
 
 from app.core.database import Base, async_session, engine
-# Register all models
-from app.models.user import User  # noqa: E402,F401
+from app.main import app as fastapi_app  # noqa: E402
+from app.models.admin import AuditLog  # noqa: E402,F401 — pre-register table for create_all
 from app.models.question import Question  # noqa: E402,F401
 from app.models.question_import import QuestionImport  # noqa: E402,F401
-from app.models.admin import AuditLog  # noqa: E402,F401 — pre-register table for create_all
 
-from app.main import app as fastapi_app  # noqa: E402
+# Register all models
+from app.models.user import User  # noqa: E402,F401
 
 PASSED: list[str] = []
 FAILED: list[str] = []
@@ -69,7 +68,7 @@ async def _setup_db():
     try:
         # 创建管理员角色和用户
         from app.core.admin_security import hash_admin_password
-        from app.models.admin import AdminUser, Role, Permission, RolePermission
+        from app.models.admin import AdminUser, Permission, Role, RolePermission
 
         # 创建测试角色
         role = Role(name="test_admin", display_name="测试管理员", is_system=False)

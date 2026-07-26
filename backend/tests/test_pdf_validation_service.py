@@ -1,7 +1,6 @@
 """Tests for pdf_validation_service.py — all layers of PDF validation."""
 from __future__ import annotations
 
-import io
 import os
 from unittest.mock import patch
 
@@ -16,7 +15,6 @@ from app.services.pdf_validation_service import (
     validate_pdf,
     validate_pdf_basic,
 )
-
 
 # ── Fake PDF helpers ─────────────────────────────────────────────────────────
 

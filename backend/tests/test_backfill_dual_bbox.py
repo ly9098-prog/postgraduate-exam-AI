@@ -14,7 +14,6 @@ Covers the 15-point specification for fixing content images and stem text:
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import sys
@@ -29,25 +28,19 @@ for _p in (_SCRIPT_DIR, _BACKEND_DIR):
         sys.path.insert(0, _p)
 
 from backfill_question_images import (
-    CROP_VERSION,
-    OVERLAP_THRESHOLD,
-    VISUAL_PADDING_PT,
-    ImageResult,
-    ZoneResult,
+    _ZONE_ANSWER_HINT,
     _ZONE_HEADER,
+    _ZONE_NEXT_QUESTION,
+    _ZONE_OPTION,
     _ZONE_QUESTION_STEM,
     _ZONE_VISUAL_TEXT,
-    _ZONE_ANSWER_HINT,
-    _ZONE_OPTION,
-    _ZONE_FOOTER,
-    _ZONE_SECTION_HEADING,
-    _ZONE_BODY,
-    _ZONE_NEXT_QUESTION,
-    classify_line,
+    CROP_VERSION,
+    OVERLAP_THRESHOLD,
     _ocr_diagram_bbox,
     analyze_ocr_overlap,
     check_content_image_quality,
     check_visual_gate,
+    classify_line,
     classify_ocr_lines,
     clean_stem_from_visual_text,
     compute_diagram_zone_pt,
@@ -57,7 +50,6 @@ from backfill_question_images import (
     detect_first_option_pt,
     ocr_lines_to_pdf_points,
     refine_visual_bbox_for_options,
-    check_header_pollution,
 )
 
 # ── Fixtures ──
@@ -692,7 +684,8 @@ class TestCheckContentImageQuality:
 
     def test_small_png_valid(self):
         """A 200x200 PNG with non-white pixels should pass all checks."""
-        import struct, zlib
+        import struct
+        import zlib
 
         def _make_png(w, h):
             """Create a minimal PNG with some gray pixels (>512 bytes minimum)."""
@@ -746,7 +739,7 @@ class TestCheckVisualCompleteness:
 
 class TestCropVersion:
     def test_version_visual_v2(self):
-        assert CROP_VERSION == "visual-v2"
+        assert CROP_VERSION == "visual-v2.1"
 
     def test_overlap_threshold(self):
         assert OVERLAP_THRESHOLD == 0.6

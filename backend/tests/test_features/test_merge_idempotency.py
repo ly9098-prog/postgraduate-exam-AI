@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
@@ -99,7 +99,6 @@ class TestMergeIdempotency:
             ImportBatchJob,
             ImportBatchJobItem,
         )
-        from app.models.question_import import QuestionImport as QI
 
         async def _go():
             sm, _ = await _make_session(tmp_path)
@@ -331,7 +330,6 @@ class TestMergeIdempotency:
     def test_merge_crash_inside_atomic_commit_rolls_back(self, tmp_path):
         """Crash inside _batch_merge_commit → everything rolls back."""
         from app.features.batch_image_import_service import (
-            _batch_merge_commit,
             _merge_image_texts,
         )
         from app.models.import_batch_job import (

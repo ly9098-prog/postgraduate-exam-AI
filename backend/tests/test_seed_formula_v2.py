@@ -18,7 +18,7 @@ DATA_FILE = Path(__file__).resolve().parent.parent / "app" / "data" / "formula_l
 
 @pytest.fixture(scope="module")
 def seed_data():
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
+    with open(DATA_FILE, encoding="utf-8") as f:
         return json.load(f)
 
 

@@ -1,8 +1,8 @@
 """Tests for exercise_region_detector module."""
 
-import pytest
 
 from app.features.exercise_region_detector import (
+    EXERCISE_START_KEYWORDS,
     ExerciseRegion,
     _compute_exercise_page_score,
     _expand_regions_for_sampling,
@@ -12,10 +12,7 @@ from app.features.exercise_region_detector import (
     _match_exercise_keyword,
     _normalize_for_matching,
     detect_exercise_regions,
-    EXERCISE_END_KEYWORDS,
-    EXERCISE_START_KEYWORDS,
 )
-
 
 # ---------------------------------------------------------------------------
 # Levenshtein

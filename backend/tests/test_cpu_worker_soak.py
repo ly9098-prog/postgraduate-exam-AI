@@ -1,10 +1,7 @@
 """CPU Worker Soak test — multiple sequential jobs, restart and recovery."""
 from __future__ import annotations
 
-import hashlib
-import json
 import os
-import time
 import uuid
 
 _TEST_DB_PATH = f"/tmp/_test_cpu_soak_{uuid.uuid4().hex[:8]}.db"
@@ -17,7 +14,11 @@ from app.core.database import async_session, engine
 from app.models.ocr_job import OCRJob
 from app.models.pipeline_enums import OCRJobStatus
 from app.services.ocr_job_service import (
-    claim_job, complete_job, create_job, heartbeat, list_jobs, start_job,
+    claim_job,
+    complete_job,
+    create_job,
+    list_jobs,
+    start_job,
 )
 
 _SAMPLE_DOC_SHA = "a" * 64
@@ -80,6 +81,7 @@ def _cleanup():
 
 
 import atexit
+
 atexit.register(_cleanup)
 
 

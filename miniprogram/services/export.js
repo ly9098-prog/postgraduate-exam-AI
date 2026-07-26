@@ -4,6 +4,13 @@
 const api = require('../utils/api')
 
 /**
+ * Get user export capabilities (feature flags + whitelist check).
+ */
+function getCapabilities() {
+  return api.get('/exports/capabilities')
+}
+
+/**
  * Preview export count for a given range + filters.
  */
 function previewCount(params) {
@@ -248,6 +255,7 @@ function syncTaskStatus(taskId, onUpdate, onError, options = {}) {
 }
 
 module.exports = {
+  getCapabilities,
   previewCount,
   createExport,
   listExports,

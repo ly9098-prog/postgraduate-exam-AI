@@ -9,11 +9,11 @@ Architecture:
 - Uses ``UPDATE ... WHERE status='pending' LIMIT 1 RETURNING *`` to
   atomically claim a task (database-level fencing).
 - Tracks heartbeat via ``heartbeat_at`` for zombie recovery.
-- Limits concurrency: configurable per-processor, per-user.
+- Limits concurrency: configurable per-processor, per-user, per-format.
 
 Zombie recovery:
 - Tasks stuck in ``processing`` for > ``EXPORT_PROCESSING_TIMEOUT``
-  without a recent ``heartbeat_at`` are reclaimed (failed → retryable).
+  without a recent ``heartbeat_at`` are reclaimed (failed with retryable).
 
 State machine:
 - pending → processing (via atomic claim)
@@ -23,7 +23,7 @@ State machine:
 - failed → pending (via retry — creates new task)
 
 Per-user limits:
-- A user can have at most ``_MAX_PER_USER`` tasks in ``pending`` or
+- A user can have at most ``EXPORT_MAX_PER_USER`` tasks in ``pending`` or
   ``processing`` simultaneously.  Excess submissions are rejected
   at the API layer.
 """
@@ -37,6 +37,7 @@ from datetime import UTC, datetime, timedelta
 import sqlalchemy as sa
 from sqlalchemy import select, update
 
+from app.core.config import settings
 from app.core.database import async_session
 from app.models.export_task import ExportTask
 from app.schemas.export_task import ExportTaskStatus
@@ -44,20 +45,24 @@ from app.services.export.service import process_task
 
 logger = logging.getLogger(__name__)
 
-# ── Tuning ──
-_POLL_INTERVAL_SEC = 5
-_PROCESSING_TIMEOUT_SEC = 900  # 15 minutes max per task (zombie recovery)
-_HEARTBEAT_INTERVAL_SEC = 30
-_MAX_CONCURRENT = 2  # max concurrent tasks per processor instance
-_MAX_PER_USER = 2    # max pending/processing tasks per user
-_TASK_TIMEOUT_SEC = 600  # per-task wall-clock timeout
+# ── Import settings (with fallbacks for backward compatibility) ──
+_POLL_INTERVAL_SEC = getattr(settings, "EXPORT_POLL_INTERVAL_SEC", 5)
+_PROCESSING_TIMEOUT_SEC = getattr(settings, "EXPORT_PROCESSING_TIMEOUT_SEC", 900)
+_HEARTBEAT_INTERVAL_SEC = getattr(settings, "EXPORT_HEARTBEAT_INTERVAL_SEC", 30)
+_MAX_CONCURRENT = getattr(settings, "EXPORT_MAX_CONCURRENT", 2)
+_MAX_PER_USER = getattr(settings, "EXPORT_MAX_PER_USER", 2)
+_TASK_TIMEOUT_SEC = getattr(settings, "EXPORT_TASK_TIMEOUT_SEC", 600)
+_PDF_CONCURRENCY = getattr(settings, "EXPORT_PDF_CONCURRENCY", 1)
+_DOCX_CONCURRENCY = getattr(settings, "EXPORT_DOCX_CONCURRENCY", 1)
 
 # In-flight tracking for graceful shutdown
 _in_flight: set[int] = set()
 _draining = False
+# Semaphore for global concurrency control
+_concurrency_semaphore: asyncio.Semaphore | None = None
 
 
-# ── State machine — transition rules (reserved for future enforcement) ──
+# ── State machine — transition rules (enforced) ──
 
 _VALID_TRANSITIONS: dict[str, set[str]] = {
     ExportTaskStatus.PENDING: {ExportTaskStatus.PROCESSING},
@@ -68,14 +73,43 @@ _VALID_TRANSITIONS: dict[str, set[str]] = {
 }
 
 
+def validate_transition(
+    current: str,
+    target: str,
+    task_id: int = 0,
+) -> None:
+    """Validate an export status transition.
+
+    Raises ``ValueError`` if the transition is not allowed.
+    """
+    allowed = _VALID_TRANSITIONS.get(current)
+    if allowed is None:
+        raise ValueError(
+            f"export_state_invalid: unknown current state '{current}' for task {task_id}"
+        )
+    if target not in allowed:
+        raise ValueError(
+            f"export_state_invalid: transition {current}→{target} "
+            f"not allowed for task {task_id}"
+        )
+
+
 async def run_export_processor():
     """Main loop — claim and process pending export tasks."""
-    logger.info("Export processor started (poll=%ds, timeout=%ds)", _POLL_INTERVAL_SEC, _PROCESSING_TIMEOUT_SEC)
+    global _concurrency_semaphore
+    _concurrency_semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
+
+    logger.info(
+        "Export processor started (poll=%ds, timeout=%ds, max_concurrent=%d)",
+        _POLL_INTERVAL_SEC, _PROCESSING_TIMEOUT_SEC, _MAX_CONCURRENT,
+    )
 
     while not _draining:
         try:
             await _recover_stale_tasks()
-            await _process_one_task()
+            # Use semaphore for real concurrency
+            async with _concurrency_semaphore:
+                await _process_one_task()
         except asyncio.CancelledError:
             logger.info("Export processor cancelled")
             break
@@ -111,8 +145,9 @@ async def _recover_stale_tasks():
                 "Reclaiming stale task %d (started_at=%s, heartbeat=%s)",
                 task.id, task.processing_started_at, task.heartbeat_at,
             )
+            validate_transition(task.status, ExportTaskStatus.FAILED, task.id)
             task.status = ExportTaskStatus.FAILED
-            task.error_message = "处理超时，请重试"
+            task.error_message = "ERR_TASK_TIMEOUT"
             task.completed_at = datetime.now(UTC)
 
         if stale:
@@ -165,24 +200,26 @@ async def _process_one_task():
                 processing_started_at=now,
                 heartbeat_at=now,
             )
-            .returning(ExportTask.id, ExportTask.user_id)
+            .returning(ExportTask.id, ExportTask.user_id, ExportTask.file_format)
         )
         row = result.one_or_none()
         if row is None:
             return
-        task_id, user_id = row
+        task_id, user_id, file_format = row
         await db.commit()
 
     _in_flight.add(task_id)
     logger.info("export_task_started", extra={
         "task_id": task_id,
         "user_id": user_id,
+        "format": file_format,
     })
 
     # Heartbeat refresh loop
     _heartbeat_stop = False
 
     async def _refresh_heartbeat():
+        """Persistent heartbeat — updates heartbeat_at in DB with commit."""
         while not _heartbeat_stop:
             await asyncio.sleep(_HEARTBEAT_INTERVAL_SEC)
             try:
@@ -193,82 +230,81 @@ async def _process_one_task():
                     t = result.scalar_one_or_none()
                     if t and t.status == ExportTaskStatus.PROCESSING:
                         t.heartbeat_at = datetime.now(UTC)
-                        await hb_db.flush()
-                        logger.debug("Heartbeat refreshed for export task %d", task_id)
+                        await hb_db.commit()
+                        logger.debug("Heartbeat committed for export task %d", task_id)
             except Exception as e:
                 logger.warning("Heartbeat refresh failed for task %d: %s", task_id, e)
 
     heartbeat_task = asyncio.create_task(_refresh_heartbeat())
 
-    # Task timeout
-    async def _task_timeout():
-        await asyncio.sleep(_TASK_TIMEOUT_SEC)
-        if not _heartbeat_stop:
-            logger.warning("export_task_timed_out", extra={
-                "task_id": task_id,
-                "timeout_sec": _TASK_TIMEOUT_SEC,
-            })
-            try:
-                async with async_session() as to_db:
-                    result = await to_db.execute(
-                        select(ExportTask).where(ExportTask.id == task_id)
-                    )
-                    t = result.scalar_one_or_none()
-                    if t and t.status == ExportTaskStatus.PROCESSING:
-                        t.status = ExportTaskStatus.FAILED
-                        t.error_message = f"处理超时（超过{_TASK_TIMEOUT_SEC}秒）"
-                        t.completed_at = datetime.now(UTC)
-                        await to_db.commit()
-            except Exception:
-                pass
-
-    timeout_task = asyncio.create_task(_task_timeout())
-
+    # Task processing with real timeout cancellation
     try:
-        # Process
-        async with async_session() as db:
-            from app.services.export.service import get_exporter
+        async with asyncio.timeout(_TASK_TIMEOUT_SEC):
+            async with async_session() as db:
+                exporter = None
+                if file_format == "pdf":
+                    from app.services.export.pdf_exporter import PdfExporter
+                    exporter = PdfExporter()
+                elif file_format == "docx":
+                    from app.services.export.docx_exporter import DocxExporter
+                    exporter = DocxExporter()
+                else:
+                    raise ValueError(f"ERR_UNKNOWN_FORMAT:{file_format}")
 
-            result = await db.execute(select(ExportTask).where(ExportTask.id == task_id))
-            t = result.scalar_one_or_none()
-            if t:
-                exporter = get_exporter(t.file_format)
-            else:
-                raise ValueError(f"Task {task_id} not found")
+                result = await db.execute(select(ExportTask).where(ExportTask.id == task_id))
+                t = result.scalar_one_or_none()
+                if t is None:
+                    raise ValueError(f"ERR_TASK_NOT_FOUND:{task_id}")
 
-            updated = await process_task(db, task_id, exporter)
+                updated = await process_task(db, task_id, exporter)
 
-            if updated.status == ExportTaskStatus.COMPLETED:
-                logger.info("export_task_completed", extra={
-                    "task_id": task_id,
-                    "user_id": user_id,
-                    "format": updated.file_format,
-                    "question_count": updated.total_count,
-                    "success_count": updated.success_count,
-                    "skip_count": updated.skip_count,
-                    "file_size": updated.file_size,
-                    "duration": (
-                        (updated.completed_at - updated.processing_started_at).total_seconds()
-                        if updated.completed_at and updated.processing_started_at else None
-                    ),
-                })
-            else:
-                logger.info("export_task_failed", extra={
-                    "task_id": task_id,
-                    "user_id": user_id,
-                    "status": updated.status,
-                    "error_message": updated.error_message,
-                })
+                if updated.status == ExportTaskStatus.COMPLETED:
+                    logger.info("export_task_completed", extra={
+                        "task_id": task_id,
+                        "user_id": user_id,
+                        "format": updated.file_format,
+                        "question_count": updated.total_count,
+                        "success_count": updated.success_count,
+                        "skip_count": updated.skip_count,
+                        "file_size": updated.file_size,
+                        "duration": (
+                            (updated.completed_at - updated.processing_started_at).total_seconds()
+                            if updated.completed_at and updated.processing_started_at else None
+                        ),
+                    })
+                else:
+                    logger.info("export_task_failed", extra={
+                        "task_id": task_id,
+                        "user_id": user_id,
+                        "status": updated.status,
+                        "error_message": updated.error_message,
+                    })
 
-            # Stop timeout/heartbeat before commit so the timeout handler
-            # won't see a stale PROCESSING state and overwrite COMPLETED.
-            _heartbeat_stop = True
-            await db.commit()
-            await _publish_task_event(task_id, updated)
+                _heartbeat_stop = True
+                await db.commit()
+                await _publish_task_event(task_id, updated)
+
+    except asyncio.TimeoutError:
+        # Real timeout — task was cancelled by asyncio.timeout()
+        _heartbeat_stop = True
+        logger.warning("export_task_timed_out", extra={
+            "task_id": task_id,
+            "timeout_sec": _TASK_TIMEOUT_SEC,
+        })
+        try:
+            async with async_session() as db:
+                result = await db.execute(select(ExportTask).where(ExportTask.id == task_id))
+                t = result.scalar_one_or_none()
+                if t and t.status == ExportTaskStatus.PROCESSING:
+                    validate_transition(t.status, ExportTaskStatus.FAILED)
+                    t.status = ExportTaskStatus.FAILED
+                    t.error_message = "ERR_TASK_TIMEOUT"
+                    t.completed_at = datetime.now(UTC)
+                    await db.commit()
+        except Exception as e:
+            logger.error("Failed to mark timed-out task %d: %s", task_id, e)
 
     except Exception as e:
-        # Notify the timeout task that processing is done so it doesn't
-        # overwrite COMPLETED with FAILED by stale-read.
         _heartbeat_stop = True
         logger.exception("Export task %d crashed: %s", task_id, e)
         try:
@@ -276,8 +312,9 @@ async def _process_one_task():
                 result = await db.execute(select(ExportTask).where(ExportTask.id == task_id))
                 t = result.scalar_one_or_none()
                 if t and t.status == ExportTaskStatus.PROCESSING:
+                    validate_transition(t.status, ExportTaskStatus.FAILED)
                     t.status = ExportTaskStatus.FAILED
-                    t.error_message = f"处理异常: {str(e)[:200]}"
+                    t.error_message = "ERR_PROCESSING_FAILED"
                     t.completed_at = datetime.now(UTC)
                     await db.commit()
         except Exception as e2:
@@ -286,10 +323,8 @@ async def _process_one_task():
     finally:
         _heartbeat_stop = True
         heartbeat_task.cancel()
-        timeout_task.cancel()
         try:
             await heartbeat_task
-            await timeout_task
         except asyncio.CancelledError:
             pass
         _in_flight.discard(task_id)
@@ -321,6 +356,7 @@ async def _publish_task_event(task_id: int, task: ExportTask) -> None:
             "completed_at": task.completed_at,
             "expires_at": task.expires_at,
             "updated_at": task.updated_at,
+            "version": getattr(task, "version", task.updated_at.timestamp() if task.updated_at else 0),
         })
         # Send locally (same-process connections)
         await send_to_user(task.user_id, event)

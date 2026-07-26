@@ -5,12 +5,10 @@ from __future__ import annotations
 import io
 import zipfile
 
-import pytest
-
-from app.services.export.table_model import TableBlock, TableCell, TableRow, TextAlign
+from app.services.export.table_model import TableBlock, TextAlign
 from app.services.export.table_parser import (
-    parse_markdown_table,
     parse_html_table,
+    parse_markdown_table,
     parse_table,
 )
 from app.services.export.table_renderer import render_table_to_docx

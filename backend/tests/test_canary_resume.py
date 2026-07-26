@@ -1,8 +1,6 @@
 """Canary resume consistency tests."""
 from __future__ import annotations
 
-import pytest
-
 from app.features.ocr_canary import (
     OCRCanaryConfig,
     assign_canary_bucket,

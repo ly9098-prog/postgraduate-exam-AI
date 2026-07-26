@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,7 +28,6 @@ from app.features.pipeline_orchestrator import (
 )
 from app.models.import_pipeline import ImportPipeline as ImportPipelineRow
 from app.models.import_pipeline import ImportPipelineChunk
-
 
 # ---------------------------------------------------------------------------
 # helpers

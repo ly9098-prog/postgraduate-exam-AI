@@ -1,6 +1,5 @@
 """Tests confirming no duplicate database sync coordinator exists."""
 
-import pytest
 
 
 class TestNoDuplicateDatabaseSync:

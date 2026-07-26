@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from app.core.deployment_profile import DeploymentProfile
-from app.features.ocr_gateway import OCRGateway, GatewayRouteDecision
+from app.features.ocr_gateway import GatewayRouteDecision, OCRGateway
 
 
 def test_cloud_profile_no_local_backend():

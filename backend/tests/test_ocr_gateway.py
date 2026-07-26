@@ -1,9 +1,6 @@
 """Tests for Phase 5: OCRGateway."""
 from __future__ import annotations
 
-import os
-import tempfile
-
 import pytest
 
 from app.core.deployment_profile import DeploymentProfile

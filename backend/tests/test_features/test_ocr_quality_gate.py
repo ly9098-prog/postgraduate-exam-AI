@@ -1,12 +1,8 @@
 """OCR Quality Gate 单元测试 — 污染检测 & 上下文感知 LaTeX 判断。"""
-import pytest
 from app.features.ocr_quality_gate import (
-    detect_ocr_contamination,
     _assess_context,
-    _MATH_CONTEXT_KEYWORDS,
-    _PROGRAMMING_CONTEXT_KEYWORDS,
+    detect_ocr_contamination,
 )
-
 
 # ---------------------------------------------------------------
 # 1. 上下文评估 (_assess_context)

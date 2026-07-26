@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from app.core.document_ir import (
     BBox,
-    DocumentIR,
     LineIR,
     PageIR,
     RegionIR,

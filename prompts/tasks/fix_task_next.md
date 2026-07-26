@@ -1,898 +1,1306 @@
-继续推进 Sprint 3H：生产集成审计、资产回滚安全与外部验证准备。
+你是一名资深 Python/FastAPI、SQLAlchemy Async、PostgreSQL、Redis、分布式任务系统和生产可靠性工程师。
 
-当前基线：
+当前项目已完成 P0.5 修复，已报告：
 
-- 遗留图片迁移第二阶段已完成：
-  - import_id=407：补齐 `source_snapshot_url` 和 `crop_version`
-  - import_id=302：补齐缺失的 text segment
-  - import_id=320：option_group 图片和内容完整
-- 3F-A ModuleResult / Adapter 已提交：
-  - commit：`cc452bb`
-  - 71 个文件
-  - 20,081 行新增
-  - 164 项专项测试通过
-- 已实现：
-  - `ModuleResult[T]`
-  - `OcrAdapter` / `DocumentTransformAdapter`
-  - `OCRRequest`
-  - `AdapterRegistry` / `AdapterSelector`
-  - circuit breaker
-  - BenchmarkRunner
-- LocalFileStorage 根路径问题已修复
-- PaddleOCR、GPU、API Token 和预发布验证尚未执行
-- 已知未修复问题：
-  - 资产回滚流程可能在仍有 DB 引用时删除物理文件
-  - 该问题属于数据一致性和设计级风险
+- 新增 `FencingRejectedError`
+- 新增 `conditional_update_with_fencing()`
+- Redis 空队列与 Redis 不可用语义已分离
+- Dispatcher 已增加 Redis 故障退避和熔断
+- staging refcount 已改为复用共享 async Redis pool
+- 123/123 核心 P0 测试通过
+- ruff 通过
+- compileall 通过
+- 当前测试未发生 OOM
 
-本轮不新增 OCR 算法和模型能力，优先完成以下事项：
+本阶段不要重复已经完成的基础重构。
 
-# 一、审计 commit cc452bb 的真实生产接入
+本阶段目标是：
 
-专项测试通过不代表生产主链路已经完成迁移。请对 `cc452bb` 做完整集成审计。
+> Phase 6：证明修复真正接入业务主路径，在真实 Redis/PostgreSQL 和真实进程故障条件下完成验收，并直接投入测试用户使用。
 
-## 1. 建立调用链清单
+当前用户量少，项目仍处于测试阶段，因此：
 
-列出以下对象的所有生产调用点：
+- 不做灰度发布；
+- 不做复杂 canary；
+- 不做双版本长期并行；
+- 修复验证通过后直接启用；
+- 使用过程中发现非阻断问题再继续修复。
+
+但以下事项仍是测试使用前的阻断条件：
+
+- stale Worker 可以写入业务数据；
+- Redis 故障被识别为空队列；
+- durable task 丢失或重复执行；
+- kill -9 后任务无法恢复；
+- staging 文件提前删除；
+- cloud profile 加载本地 OCR；
+- 任务完成后 processing/retry 持续增长；
+- Worker SIGTERM 导致任务永久卡死；
+- 数据库 migration 状态不一致。
+
+直接修改实际代码、测试、部署配置和运维工具。不要只输出建议或伪代码。
+
+------
+
+# 一、首先验证 DB fencing 是否真正接入业务写入
+
+当前新增了：
+
+```python
+conditional_update_with_fencing()
+```
+
+但“新增函数”不代表已经解决 TOCTOU。
+
+必须搜索并列出该函数的所有调用位置：
+
+```bash
+rg "conditional_update_with_fencing" app
+```
+
+输出表格：
 
 ```text
-ModuleResult
-OcrAdapter
-DocumentTransformAdapter
-OCRRequest
-AdapterRegistry
-AdapterSelector
-AdapterCapabilities
-CircuitBreaker
-BenchmarkRunner
+handler
+business model
+business table
+write operation
+uses conditional fencing?
+transaction boundary
 ```
 
-输出：
+至少覆盖：
+
+- 单文件导入；
+- PDF 导入；
+- 图片导入；
+- Excel 导入；
+- batch image；
+- resume；
+- admin resume；
+- formula batch；
+- AI prewarm 或其他异步 AI 写入；
+- pipeline 最终状态；
+- 导入审核状态；
+- 任务失败、取消和人工审核状态。
+
+如果函数只存在于 `db_fencing.py`，或者只在 Worker complete 前调用：
+
+判定为未完成。
+
+------
+
+# 二、修复“只拦 complete，不拦业务写入”的风险
+
+以下流程仍然不安全：
 
 ```text
-reports/sprint3h/adapter_call_sites.json
-reports/sprint3h/adapter_call_sites.md
+Worker A 生成结果
+→ 普通 UPDATE 写入业务表
+→ fencing check 失败
+→ 不调用 complete_v2
 ```
 
-每个调用点记录：
+因为业务数据已经被旧 Worker 覆盖。
+
+必须改成：
 
 ```text
-文件
-函数
-调用阶段
-输入类型
-输出类型
-是否生产路径
-是否兼容路径
-是否仍读取后端私有字段
-是否有 fallback
-是否写入 artifact
-是否支持 resume
+Worker 生成结果
+→ 开启短事务
+→ fenced parent UPDATE
+→ rowcount == 1
+→ 写入相关 child records
+→ commit
+→ complete_v2
 ```
 
-## 2. 验证生产 Pipeline 是否真正使用新契约
-
-重点检查：
+如果 fenced parent UPDATE 的 rowcount 为 0：
 
 ```text
-local PaddleOCR 路径
-PaddleOCR-VL 路径
-OCRFixRouter
-AI repair
-code structure reconstruct
-reading order
-cross-page linking
-structure freeze
-artifact restore
-batch image import
-PDF import
+rollback
+raise FencingRejectedError
+禁止写 child records
+禁止 complete
+禁止 fail 当前新 generation
 ```
 
-禁止出现以下情况：
+所有关键最终写入必须使用类似条件：
+
+```sql
+WHERE id = :business_id
+  AND current_task_id = :task_id
+  AND current_owner_token = :owner_token
+  AND execution_generation = :generation
+```
+
+禁止仅依赖：
+
+```python
+SELECT current generation
+Python 比较
+普通 ORM assignment
+commit
+```
+
+------
+
+# 三、多表写入必须处于同一短事务
+
+如果导入任务会同时写：
+
+- pipeline；
+- import job；
+- questions；
+- knowledge points；
+- review queue；
+- formula records；
+- audit records；
+
+必须设计清晰事务顺序。
+
+推荐：
 
 ```text
-新 Adapter 只在测试中使用
-生产路径仍直接调用旧 OCR service
-ModuleResult 创建后立即丢弃 error/warnings
-业务层继续解析 rec_texts / dt_polys / layoutParsingResults
-新旧 Router 同时执行导致双 OCR
-fallback 绕过 AdapterRegistry
+1. 开启新的 AsyncSession
+2. 执行 fenced parent UPDATE
+3. rowcount != 1 → rollback
+4. 写入或 upsert child records
+5. 更新 pipeline terminal state
+6. commit
+7. queue complete
 ```
 
-## 3. 增加后端私有字段边界扫描
+不得：
 
-新增或完善：
+- 在外部 OCR 或 AI 请求期间持有事务；
+- 在渲染 PDF 期间持有事务；
+- parent fencing 失败后仍写 child table；
+- 业务 commit 成功后因为 queue complete 短暂失败而重复写业务结果。
+
+对于“业务 commit 成功但 Redis complete 失败”的情况：
+
+必须保证再次执行任务时能够识别业务已经以当前 generation 完成，避免重复插入。
+
+可采用：
+
+- 唯一约束；
+- generation terminal marker；
+- idempotent upsert；
+- outbox/finalization record；
+- 等价的可恢复设计。
+
+------
+
+# 四、增加真实 PostgreSQL stale Worker 测试
+
+必须使用真实 PostgreSQL，不接受纯 mock。
+
+测试流程：
+
+## Worker A
 
 ```text
-tests/test_backend_private_field_boundaries.py
-scripts/audit_backend_private_fields.py
+claim task
+generation = 1
+建立业务 fence
+开始执行
+暂停在最终写入前
 ```
 
-Adapter、client 和测试 fixture 目录之外禁止引用：
+## Lease 过期
 
 ```text
-rec_texts
-dt_polys
-layoutParsingResults
-errorMsg
-markdown.text
-供应商特有 result 字段
+停止 A heartbeat
+等待 lease expire
+reaper 恢复任务
 ```
 
-输出：
+## Worker B
 
 ```text
-0 production boundary violations
+claim same task
+generation = 2
+建立新 fence
+写入结果 B
+commit
+complete
 ```
 
-如存在遗留调用，必须逐项迁移或列入明确兼容清单。
+## Worker A 恢复
 
-## 4. 新旧选择路径 Shadow 对比
+A 尝试：
 
-暂时不要直接删除旧 Router。
-
-增加：
-
-```text
-ADAPTER_SELECTION_MODE=legacy | shadow | adapter
-```
-
-默认保持：
-
-```text
-legacy
-```
-
-`shadow` 模式：
-
-```text
-旧路径决定实际执行
-新 AdapterSelector 同时生成候选顺序
-只比较，不改变实际结果
-```
-
-记录：
-
-```json
-{
-  "legacy_candidates": ["paddle_local", "paddle_vl", "rule"],
-  "adapter_candidates": ["paddle_local", "paddle_vl", "rule"],
-  "order_match": true,
-  "capability_match": true,
-  "selection_reason_codes": []
-}
-```
+- 写 pipeline 状态；
+- 写 question；
+- 写 import result；
+- 写 formula 或 batch 状态；
+- 调用 complete。
 
 验收：
 
-```text
-候选集合一致
-候选顺序差异有解释
-shadow 不触发第二次真实 OCR
-shadow 不增加外部 API 调用
-shadow 不改变业务输出
-```
+- A 的 fenced UPDATE rowcount = 0；
+- A 的事务 rollback；
+- A 不得写入任何 child record；
+- A 不得覆盖 B；
+- A 不得 fail 或 complete generation 2；
+- 最终数据库只包含 B 的结果；
+- Redis task 为正确终态。
 
-# 二、修复资产回滚的引用安全问题
+测试必须验证实际数据库内容，不能只断言抛出了异常。
 
-这是本轮最高优先级的数据安全任务。
+------
 
-当前问题：
+# 五、真实 Redis 队列集成测试
 
-```text
-回滚过程中可能先删除物理文件，
-但 Question.content、question_imports、review 数据或其他题目仍然引用该资产。
-```
+使用真实 Redis，不能全部 skip。
 
-必须实现“引用确认后删除”，禁止直接按照 URL 或 storage key 删除。
+至少覆盖：
 
-## 1. 建立统一资产引用解析器
+## 1. Empty 与 unavailable
 
-建议新增：
+空队列：
 
 ```text
-app/services/asset_reference_service.py
+dequeue_v2() → None 或明确 EMPTY result
 ```
 
-接口示例：
-
-```python
-@dataclass
-class AssetReference:
-    entity_type: str
-    entity_id: str
-    field_name: str
-    json_path: str | None
-    asset_url: str
-    storage_key: str
-
-
-@dataclass
-class AssetReferenceReport:
-    storage_key: str
-    references: list[AssetReference]
-    reference_count: int
-    safe_to_delete: bool
-    reason_codes: list[str]
-```
-
-必须检查的引用来源至少包括：
+Redis 停止：
 
 ```text
-Question.content
-Question parsed_content segments
-source_snapshot_url
-option_group image segments
-question_imports
-review records
-pipeline artifact
-题图关联表
-历史版本或 revision 表
-其他包含图片 URL/storage key 的 JSON 字段
+dequeue_v2() → TaskQueueUnavailableError
 ```
 
-不得只检查当前 Question 表。
+两者不可混淆。
 
-## 2. 建立安全删除状态机
+## 2. 双 Worker claim
 
-建议状态：
-
-```text
-planned
-reference_checked
-detached
-grace_period
-deleting
-deleted
-retained
-failed
-cancelled
-```
-
-禁止：
+两个 Worker 同时 claim 同一任务：
 
 ```text
-DB 事务提交前删除文件
-引用数量未知时删除文件
-扫描失败时默认 safe_to_delete=true
-删除失败后仍标记 deleted
-```
-
-## 3. 使用事务 + Outbox
-
-推荐流程：
-
-```text
-事务内：
-1. 锁定目标导入记录或做版本检查
-2. 更新/撤销 DB 引用
-3. 写入 asset_deletion_outbox
-4. 提交事务
-
-事务提交后：
-5. worker 再次检查引用
-6. reference_count == 0 才删除物理文件
-7. 记录删除结果
-```
-
-不得在数据库事务未提交时删除 Local/COS 文件。
-
-## 4. 支持三种模式
-
-```text
-dry-run
-detach-only
-delete-unreferenced
-```
-
-默认：
-
-```text
-dry-run
-```
-
-行为：
-
-### dry-run
-
-只输出：
-
-```text
-将修改哪些 DB 记录
-哪些文件可能删除
-引用数量
-阻塞原因
-```
-
-不修改 DB，不删除文件。
-
-### detach-only
-
-只撤销本次导入产生的引用，不删除物理文件。
-
-### delete-unreferenced
-
-只有二次引用检查为零时，才删除物理文件。
-
-## 5. 幂等性要求
-
-同一 rollback request 重复执行：
-
-```text
-不重复修改 DB
-不重复删除文件
-不产生重复 outbox
-不导致状态倒退
-```
-
-增加：
-
-```text
-rollback_request_id 唯一约束
-asset_deletion_idempotency_key
-```
-
-## 6. 并发要求
-
-必须测试：
-
-```text
-回滚同时另一个任务引用同一图片
-两个回滚同时处理同一 storage key
-回滚期间 Question 被人工编辑
-删除 worker 重试
-COS 超时
-Local delete 成功但状态写入失败
-DB 提交失败
-```
-
-物理删除前必须再次查询引用。
-
-## 7. 回滚清单和恢复证据
-
-每次操作生成：
-
-```text
-rollback_plan.json
-rollback_result.json
-asset_reference_report.json
-database_changes.jsonl
-deleted_assets.jsonl
-retained_assets.jsonl
-errors.jsonl
-report.md
-```
-
-至少记录：
-
-```text
-rollback_request_id
-import_id
-question_ids
-storage keys
-操作前引用
-操作后引用
-文件 hash
-DB revision/version
-执行模式
-执行人或任务来源
-开始/结束时间
-```
-
-# 三、审计 LocalFileStorage 历史错位文件
-
-由于之前使用 `os.getcwd()`，历史文件可能写入：
-
-```text
-project_root/static/
-```
-
-而不是：
-
-```text
-backend/static/
-```
-
-请新增：
-
-```text
-scripts/audit_storage_root_mismatch.py
-scripts/migrate_misplaced_assets.py
-```
-
-## 审计要求
-
-扫描：
-
-```text
-project_root/static/
-backend/static/
-数据库中的本地图片 URL
-Question.content 中的图片 URL
-question_imports 中的图片 URL
-```
-
-识别：
-
-```text
-仅旧目录存在
-仅新目录存在
-两处均存在且 hash 相同
-两处均存在但 hash 不同
-DB URL 指向不存在文件
-文件存在但 DB 无引用
-路径穿越或非法路径
-```
-
-输出：
-
-```text
-storage_root_audit.json
-missing_files.jsonl
-duplicate_files.jsonl
-hash_conflicts.jsonl
-orphan_files.jsonl
-migration_plan.json
-report.md
-```
-
-迁移脚本必须支持：
-
-```text
---dry-run
---copy
---move
---verify-checksum
---update-db
---rollback-manifest
-```
-
-默认只允许：
-
-```text
---dry-run
-```
-
-禁止自动覆盖 hash 不同的同名文件。
-
-# 四、为三个已迁移 Import 建立自动验收
-
-不要只依赖人工总结。
-
-新增回归检查，覆盖：
-
-```text
-import_id=407
-import_id=302
-import_id=320
-```
-
-每个案例验证：
-
-```text
-Question 记录存在
-Question.content 可解析
-所有图片 URL 可解析为 storage key
-对应物理文件存在
-图片可读取
-图片 hash 稳定
-crop_version=visual-v2.1
-source_snapshot_url 存在（适用时）
-option_group segment 完整（适用时）
-text segment 完整（适用时）
-无重复 image segment
-display 顺序正确
-重复执行迁移后内容不变化
-```
-
-新增：
-
-```text
-tests/test_legacy_visual_v21_migration.py
-scripts/validate_visual_v21_migration.py
-```
-
-输出：
-
-```text
-visual_v21_validation.json
-visual_v21_validation.md
-```
-
-# 五、审计 ModuleResult Artifact 体积和兼容性
-
-71 个文件、20,081 行新增属于较大改动，需要检查 artifact 和日志膨胀。
-
-统计：
-
-```text
-迁移前 artifact 平均体积
-迁移后 artifact 平均体积
-ModuleResult.raw 占比
-ModuleError.details 占比
-warnings 占比
-每页平均 ModuleResult 数量
-100 页文档预测 artifact 体积
+只有一个成功
 ```
 
 验证：
 
-```text
-raw capture mode 生效
-raw 总大小限制生效
-敏感信息已脱敏
-截断后仍为合法 JSON
-旧 artifact 可恢复
-新 artifact 在旧模式下不会导致崩溃
-resume 后不重复执行外部 Adapter
-```
+- owner；
+- generation；
+- processing ZSET；
+- Hash status。
 
-建议输出：
+## 3. 并发幂等 enqueue
+
+100 个并发请求使用相同 idempotency key：
 
 ```text
-reports/sprint3h/module_result_artifact_size.json
-reports/sprint3h/module_result_artifact_size.md
+只创建一个 task
+只出现一个 ready member
 ```
 
-如 artifact 增长超过 30%，必须说明原因并提出瘦身方案。
+## 4. heartbeat
 
-# 六、执行离线 Adapter Replay
-
-在没有 Paddle/GPU 环境时，仍需使用现有 fixture、历史 artifact 和 mock raw response 做离线 Replay。
-
-比较：
+任务执行时间超过初始 lease，但正常 heartbeat：
 
 ```text
-旧 local OCR 结果 → DocumentIR
-新 PaddleOCRLocalAdapter → DocumentIR
-
-旧 VL 解析结果 → DocumentIR
-新 PaddleOCRVLDocumentAdapter → DocumentIR
+reaper 不得回收
+generation 不得变化
 ```
 
-比较指标：
+## 5. kill -9
+
+真实启动 Worker 子进程：
 
 ```text
-page 数量
-region 数量
-line 数量
-文本
-bbox/polygon
-reading order
-confidence
-layout type
-stable ID
-provenance
-model/component fingerprint
-warning/error
+claim 后 kill -9
 ```
 
-硬要求：
+等待 lease 到期并运行 reaper。
+
+验证：
+
+- 任务只恢复一次；
+- 不同时存在于 ready 和 processing；
+- 新 Worker 可以 claim；
+- generation 增加；
+- 最终只产生一个有效业务结果。
+
+## 6. complete 后 reaper
+
+完成任务后多次执行 reaper：
 
 ```text
-不丢页
-不丢 region
-不丢 line
-文本无非预期变化
-坐标无非预期变化
-stable ID 可复现
-artifact round-trip 一致
+任务永远不重新进入 ready/retry
 ```
 
-新增：
+## 7. concurrent reaper
+
+两个 reaper 同时扫描同一个过期任务：
 
 ```text
-scripts/replay_adapter_contract.py
-tests/test_adapter_replay_equivalence.py
+只有一次恢复
 ```
 
-# 七、建立外部验证执行包
+## 8. retry/dead
 
-Option C 当前是环境阻塞项。请把它从“跳过”升级为“一键可执行验证包”。
+验证：
 
-新增或完善：
+- retry_count；
+- retry backoff；
+- retry ZSET score；
+- 最大次数；
+- dead-letter；
+- dead TTL；
+- dead 最大长度。
+
+## 9. Redis outage/recovery
+
+运行中关闭 Redis，再恢复。
+
+验证：
+
+- Dispatcher 增加 failure metric；
+- 执行指数退避；
+- 达阈值后停止 claim；
+- readiness 反映 queue unavailable；
+- 不使用 memory queue；
+- Redis 恢复后继续消费；
+- 原任务状态不丢失。
+
+------
+
+# 六、验证 Redis 熔断逻辑不会丢任务
+
+当前 Dispatcher 报告：
 
 ```text
-scripts/preflight_paddle_environment.py
-scripts/run_external_ocr_validation.py
-docs/ocr/EXTERNAL_VALIDATION.md
+10-failure circuit breaker
 ```
 
-Preflight 检查：
+审计其具体行为。
+
+必须明确：
+
+熔断后：
+
+- 是否只是暂停 claim；
+- 是否退出进程；
+- 是否设置 not-ready；
+- 如何恢复；
+- 是否自动 half-open；
+- 是否需要重启；
+- 已 claim 任务的 heartbeat 是否继续。
+
+正确行为应为：
 
 ```text
-PaddleOCR import
-PaddlePaddle import
-CUDA 可见
-GPU 型号
-cuDNN
-权重文件
-权重 checksum
-API Token 是否存在（只检查存在，不输出值）
-外部 API 连通性
-预发布服务连通性
-存储读写
-数据库测试连接
+停止领取新任务
+保留已运行任务 heartbeat
+Redis 恢复后有限探测
+探测成功恢复 claim
 ```
 
-状态必须使用：
+如果 Redis 无法 heartbeat：
+
+必须明确当前任务如何处理。
+
+不能假装 heartbeat 成功。
+
+必须避免：
 
 ```text
-passed
-failed
-not_executed_missing_dependency
-not_executed_missing_credentials
-not_executed_missing_environment
+Redis 故障
+→ heartbeat 丢失
+→ Worker 继续执行很久
+→ Redis 恢复后任务已被其他 Worker claim
+→ 两个 Worker 同时写结果
 ```
 
-禁止笼统使用一个：
+最终仍需依靠数据库 fencing 阻止旧 Worker 写入。
+
+------
+
+# 七、Staging 生命周期真实集成测试
+
+验证共享 async Redis pool 已真正复用。
+
+## 连接复用
+
+执行大量：
 
 ```text
-skipped
+async_incr_refcount
+async_decr_refcount
+lease acquire
+lease renew
+lease release
 ```
 
-外部验证命令至少包括：
+确认：
+
+- 使用同一个 Redis pool；
+- 不为每次操作建立新 client；
+- connection 数有上限；
+- shutdown 能关闭 pool。
+
+## 并发 refcount
+
+多个任务同时引用相同 object：
+
+```text
+refcount 不丢失
+refcount 不为负数
+```
+
+## Work copy
+
+处理器可以删除 work copy。
+
+但：
+
+```text
+immutable staging object 必须仍存在
+```
+
+## 终态清理
+
+验证：
+
+- complete；
+- failed；
+- dead；
+- cancelled；
+- review required；
+
+各状态对应的 lease/refcount/retention 行为。
+
+## Worker crash
+
+Worker 获取对象后 kill -9。
+
+验证：
+
+- staging object 不会立即被删除；
+- lease 过期后可清理；
+- 新 Worker 仍可读取原 object。
+
+------
+
+# 八、完整 SIGTERM 验证
+
+真实启动 Worker。
+
+构造一个可控长任务。
+
+发送：
 
 ```bash
-PYTHONPATH=. python scripts/preflight_paddle_environment.py
-
-PYTHONPATH=. python ../scripts/validate_ocr_process_pool.py \
-  --quality \
-  --input-manifest tests/ocr_bench/manifest.jsonl \
-  --output reports/external/process_pool
-
-PYTHONPATH=. python scripts/run_module_benchmarks.py \
-  --modules ocr_detection,ocr_recognition,preprocess,pdf_render \
-  --output reports/external/module_benchmarks
-
-PYTHONPATH=. python scripts/run_external_ocr_validation.py \
-  --output reports/external/full_validation
+kill -TERM <worker_pid>
 ```
 
-# 八、Benchmark Baseline 收口
-
-执行当前无需 Paddle 的模块基准：
+验证顺序：
 
 ```text
-reading_order
-structure_freeze
-cross_page_linking
-question_splitter
-text_normalizer
+draining=true
+停止 claim
+当前任务 heartbeat 继续
+等待当前任务
+完成则 complete
+超时则安全 release/requeue
+关闭 Dispatcher
+关闭 reaper
+关闭 Redis
+关闭 DB engine
+进程退出
 ```
 
-要求：
+必须验证：
+
+- SIGTERM 后未领取新任务；
+- 没有 un-awaited coroutine；
+- 没有 Task was destroyed；
+- 没有永久 processing zombie；
+- release 操作校验 owner+generation；
+- 新 Worker 可以继续处理被释放任务。
+
+------
+
+# 九、把 integration tests 从 skip 变成真实执行
+
+建立或修复：
 
 ```text
-固定 fixture hash
-固定 random seed
-独立 subprocess cold start
-warmup >= 5
-iterations >= 30
-记录 process-tree RSS
-记录输出 digest
-记录正确性
+docker-compose.test.yml
 ```
 
-生成正式 baseline：
+至少包括：
 
 ```text
-benchmarks/baselines/module_benchmark_<commit>.json
-reports/sprint3h/module_benchmark/
+postgres
+redis
 ```
 
-禁止只报告：
+可以选择：
+
+- Docker Compose；
+- Testcontainers。
+
+提供统一命令：
+
+```bash
+docker compose -f docker-compose.test.yml up -d
+pytest -q -m integration
+docker compose -f docker-compose.test.yml down -v
+```
+
+测试启动前自动：
+
+- 等待 PostgreSQL ready；
+- 等待 Redis ready；
+- 执行 Alembic upgrade head；
+- 创建独立测试 database/namespace。
+
+测试结束清理：
+
+- Redis test keys；
+- PostgreSQL rows/schema；
+- staging test objects；
+- 子进程。
+
+不得以开发机没有服务为理由让全部 integration skip。
+
+------
+
+# 十、修复完整测试套件中的 PaddleOCR import 问题
+
+虽然本轮内存正常，但仍需验证完整非本地 OCR 测试不会隐式加载 Paddle。
+
+全局搜索 import chain。
+
+目标：
 
 ```text
-测试通过
+普通 tests
+cloud tests
+queue tests
+database tests
+API tests
 ```
 
-必须提供实际指标：
+都不得加载 PaddleOCR。
+
+本地 OCR adapter 必须 lazy import。
+
+仅以下条件允许导入：
 
 ```text
-cold start
-warm p50
-warm p95
-throughput
-RSS
-output digest
-environment fingerprint
+DEPLOYMENT_PROFILE=local_import
+OCR_EXECUTION_BACKEND=local_process
+明确运行 local_ocr marker
 ```
 
-# 九、拆分和审计大提交
+设置 pytest marker：
 
-`cc452bb` 包含 71 个文件和 20,081 行新增，需要进行变更风险分类。
-
-输出：
-
-```text
-reports/sprint3h/cc452bb_change_inventory.json
-reports/sprint3h/cc452bb_risk_review.md
-```
-
-按类别统计：
-
-```text
-核心生产路径
-兼容 wrapper
-测试
-benchmark
-schema
-artifact
-配置
-脚本
-文档
-```
-
-逐项标记：
-
-```text
-P0/P1/P2/P3 风险
-是否有测试
-是否进入生产路径
-是否需要外部环境
-是否可回滚
-```
-
-如果发现无关变更、重复实现或死代码，应在独立 commit 中清理，不要重写历史提交。
-
-本轮建议拆成独立提交：
-
-```text
-1. production adapter integration audit/fixes
-2. rollback reference safety
-3. storage root audit/migration
-4. visual-v2.1 validation
-5. external validation package
-6. benchmark baseline and docs
-```
-
-# 十、工程约束
-
-1. 不新增 OCR 模型或算法
-2. 不开始多 GPU Router
-3. 不启用 Quality Gate enforce
-4. 不把全局 Freeze 默认切换为 IR
-5. 不在引用未知时删除物理资产
-6. 不在 DB 提交前删除物理文件
-7. 不把“文件不存在”视为删除成功而忽略 DB 残留
-8. 不覆盖 hash 冲突文件
-9. 不使用 `os.getcwd()` 推导生产存储根目录
-10. 不伪造 Paddle/GPU/API/预发布结果
-11. 不用 mock 结果标记外部验证 passed
-12. 不删除 legacy Adapter 路径
-13. 不让 shadow selection 触发第二次真实 OCR
-14. 不将原始 Token 或签名 URL 写入报告
-15. 不只运行新增测试，必须运行受影响的完整测试集
-
-# 十一、测试要求
-
-至少新增：
-
-```text
-tests/test_asset_reference_service.py
-tests/test_asset_safe_delete.py
-tests/test_asset_rollback_idempotency.py
-tests/test_asset_rollback_concurrency.py
-tests/test_asset_deletion_outbox.py
-tests/test_storage_root_resolution.py
-tests/test_storage_root_migration.py
-tests/test_legacy_visual_v21_migration.py
-tests/test_adapter_production_integration.py
-tests/test_adapter_shadow_selection.py
-tests/test_backend_private_field_boundaries.py
-tests/test_adapter_replay_equivalence.py
-tests/test_module_result_artifact_size.py
-tests/test_external_validation_status.py
-```
-
-重点性质测试：
-
-```python
-assert referenced_asset_is_never_deleted
-assert unreferenced_asset_is_deleted_once
-assert rollback_retry_is_idempotent
-assert db_failure_does_not_delete_file
-assert concurrent_new_reference_blocks_delete
-assert hash_conflict_is_not_overwritten
-assert storage_root_is_independent_of_cwd
-assert adapter_shadow_does_not_call_backend_twice
-assert old_and_new_adapter_outputs_are_equivalent
-assert old_artifact_can_resume
+```ini
+local_ocr
+integration
+cloud_ocr_isolation
+load
 ```
 
 运行：
 
 ```bash
-cd backend
-
-PYTHONPATH=. pytest \
-  tests/test_module_result.py \
-  tests/test_ocr_adapter.py \
-  tests/test_adapter_production_integration.py \
-  tests/test_adapter_shadow_selection.py \
-  tests/test_backend_private_field_boundaries.py \
-  tests/test_adapter_replay_equivalence.py \
-  tests/test_asset_reference_service.py \
-  tests/test_asset_safe_delete.py \
-  tests/test_asset_rollback_idempotency.py \
-  tests/test_asset_rollback_concurrency.py \
-  tests/test_asset_deletion_outbox.py \
-  tests/test_storage_root_resolution.py \
-  tests/test_storage_root_migration.py \
-  tests/test_legacy_visual_v21_migration.py \
-  tests/test_module_result_artifact_size.py \
-  tests/ocr_bench \
-  -q
-
-PYTHONPATH=. python scripts/smoke_test.py
-PYTHONPATH=. python scripts/validate_bench_cases.py
-PYTHONPATH=. python scripts/audit_backend_private_fields.py
-PYTHONPATH=. python scripts/validate_visual_v21_migration.py
-PYTHONPATH=. python scripts/audit_storage_root_mismatch.py --dry-run
+pytest -q -m "not local_ocr and not load"
 ```
 
-同时运行全部受影响的 Pipeline、artifact、storage、review、import、OCR executor 和 persistence 测试。
+应在未安装 PaddleOCR 的环境中通过。
 
-最低验收：
+Cloud CI 不安装 PaddleOCR。
+
+------
+
+# 十一、继续执行 Phase 5 运维能力，但避免过度工程化
+
+当前属于小用户量测试阶段。
+
+只实现最实用的运维能力。
+
+至少提供：
+
+## 1. Doctor
+
+```bash
+python -m app.cli.doctor
+```
+
+检查：
+
+- APP_ENV；
+- PROCESS_ROLE；
+- deployment profile；
+- PostgreSQL；
+- Alembic current=head；
+- Redis；
+- queue namespace；
+- staging；
+- OCR 配置；
+- cloud OCR isolation 配置；
+- storage/scratch 可写；
+- DB connection budget。
+
+失败返回非 0。
+
+## 2. Queue status
+
+```bash
+python -m app.cli.task_queue status
+```
+
+输出：
+
+- ready；
+- processing；
+- retry；
+- dead；
+- corrupt；
+- oldest ready age；
+- oldest processing age。
+
+## 3. Task inspect
+
+```bash
+python -m app.cli.task_queue inspect TASK_ID
+```
+
+输出安全摘要。
+
+不得输出 token 和完整 payload 敏感信息。
+
+## 4. Staging status
+
+```bash
+python -m app.cli.staging status
+```
+
+输出：
+
+- object count；
+- active lease；
+- orphan candidate；
+- disk usage。
+
+## 5. Consistency check
+
+```bash
+python -m app.cli.consistency check
+```
+
+只读检查：
+
+- processing Hash/ZSET 不一致；
+- terminal 仍在 processing；
+- retry 状态不一致；
+- task object_id 不存在；
+- pipeline/task generation 不一致；
+- negative refcount。
+
+## 6. Smoke test
+
+```bash
+python -m app.cli.smoke_test
+```
+
+测试：
+
+- live；
+- ready；
+- PostgreSQL；
+- Redis；
+- staging；
+- enqueue；
+- claim；
+- complete。
+
+使用测试 namespace，完成后清理。
+
+------
+
+# 十二、管理端最小任务操作
+
+测试阶段至少需要：
+
+## 查询任务
+
+支持：
+
+- task_id；
+- pipeline_id；
+- status；
+- task type；
+- created time。
+
+## Retry
+
+只允许：
+
+- failed；
+- dead；
+- review required；
+- 明确可恢复状态。
+
+必须走正式 queue service。
+
+不得直接修改 Redis Hash。
+
+## Cancel
+
+pending/retry：
+
+原子取消。
+
+processing：
+
+设置 cancellation requested。
+
+Worker 在安全 checkpoint 处理。
+
+## 查看错误
+
+返回：
 
 ```text
-0 failed
-0 unexpected xfailed
-Smoke 13/13
-Import boundary 0 violations
-Backend private field boundary 0 violations
-所有引用中的资产均不会被删除
-回滚重复执行无副作用
-DB 失败不会造成文件提前删除
-storage root 不依赖 cwd
-三个 visual-v2.1 案例自动验收通过
-Adapter shadow 不增加 OCR/API 调用
-旧新 Adapter 离线输出等价
-旧 artifact resume 通过
-外部未执行项有精确状态
+error_code
+error_stage
+retryable
+attempt
+last_error_at
 ```
 
-# 十二、本轮交付总结格式
+所有操作写 audit log。
 
-完成后输出：
+不需要建设复杂任务平台。
 
-1. 修改文件清单
-2. commit `cc452bb` 生产接入审计结果
-3. 新 Adapter 的真实生产调用路径
-4. 仍保留的 legacy 路径
-5. 后端私有字段边界扫描结果
-6. Adapter Shadow 对比结果
-7. ModuleResult artifact 体积变化
-8. 资产引用解析范围
-9. 安全删除状态机
-10. DB transaction + outbox 流程
-11. 回滚幂等和并发测试结果
-12. Local/COS 删除行为
-13. 历史 storage root 错位文件数量
-14. 文件迁移和 hash 冲突结果
-15. import_id 407/302/320 自动验收结果
-16. Adapter 离线 Replay 结果
-17. Module Benchmark 实际指标
-18. 外部验证 Preflight 状态
-19. PaddleOCR / GPU / API / 预发布未执行事项
-20. pytest、smoke、boundary 结果
-21. 是否已修复资产回滚设计缺陷
-22. 是否具备进入 Stage 0 Replay / Stage 1 Observation 的条件
-23. 仍然阻塞真实 Canary 的事项
+------
 
-执行顺序：
+# 十三、统一错误码
+
+至少保证以下错误可区分：
 
 ```text
-1. 审计 cc452bb 生产集成
-2. 修复资产引用安全和回滚删除
-3. 审计并迁移历史 storage root
-4. 自动验证三个 visual-v2.1 案例
-5. 执行 Adapter 离线 Replay
-6. 生成模块 Benchmark baseline
-7. 完成外部验证执行包
-8. 全量测试和交付总结
+QUEUE_EMPTY
+QUEUE_UNAVAILABLE
+QUEUE_FULL
+TASK_NOT_FOUND
+TASK_FENCING_REJECTED
+TASK_LEASE_LOST
+TASK_CANCELLED
+TASK_RETRY_EXHAUSTED
+STAGING_OBJECT_MISSING
+STAGING_UNAVAILABLE
+RESOURCE_MEMORY_LOW
+RESOURCE_DISK_LOW
+RESOURCE_QUEUE_FULL
+RESOURCE_DB_POOL_BUSY
+OCR_TIMEOUT
+OCR_RATE_LIMIT
+OCR_PROVIDER_ERROR
+AI_TIMEOUT
+AI_RATE_LIMIT
+DB_UNAVAILABLE
+DB_CONFLICT
+PIPELINE_TIMEOUT
+REVIEW_REQUIRED
 ```
 
-直接开始执行，不需要再次询问先做哪一项。
+内部 queue empty 一般不作为 HTTP error。
 
-没有 Paddle、GPU、API Token 或预发布环境时，完成全部离线任务和执行包，并将真实环境状态明确标记为未执行；不得将“代码准备完成”表述为“真实验证通过”。
+API 返回统一格式：
+
+```json
+{
+  "error": {
+    "code": "QUEUE_UNAVAILABLE",
+    "message": "任务队列暂时不可用",
+    "retryable": true,
+    "request_id": "..."
+  }
+}
+```
+
+提交长任务成功时返回：
+
+```json
+{
+  "task_id": "...",
+  "pipeline_id": "...",
+  "status": "queued"
+}
+```
+
+------
+
+# 十四、可观测性必须验证实际增加，而非只声明变量
+
+验证以下指标在真实测试中发生变化：
+
+```text
+task_queue_redis_failure_total
+task_fencing_rejected_total
+task_claim_total
+task_complete_total
+task_retry_total
+task_dead_total
+task_reaper_recovered_total
+task_heartbeat_failure_total
+staging_refcount_error_total
+staging_orphan_cleaned_total
+worker_draining
+worker_active_tasks
+```
+
+不要使用高基数 label：
+
+- task_id；
+- pipeline_id；
+- user_id；
+- owner_token；
+- object_id。
+
+通过日志字段关联具体任务，而不是 Prometheus label。
+
+------
+
+# 十五、检查当前新增实现中的常见问题
+
+重点审计：
+
+## `conditional_update_with_fencing()`
+
+检查：
+
+- 是否接受任意字段名导致 SQL 注入风险；
+- 是否通过 SQLAlchemy column expression 构建；
+- 是否正确处理 rowcount；
+- PostgreSQL driver 是否可靠返回 rowcount；
+- 是否 flush/commit 边界清晰；
+- 是否错误捕获后继续；
+- 是否允许更新 ownership 字段本身；
+- 是否可以无意覆盖 generation。
+
+## `FencingRejectedError`
+
+检查：
+
+- 是否被过宽 `except Exception` 捕获并转成普通 retry；
+- stale Worker 是否会调用 fail_v2；
+- stale Worker 是否会修改 pipeline failed；
+- 是否会造成错误告警风暴。
+
+## `TaskQueueUnavailableError`
+
+检查：
+
+- 所有消费者都已适配；
+- 所有生产者 enqueue 都已适配；
+- API 层返回 503；
+- readiness 已反映；
+- scheduler 是否仍把异常当空队列；
+- management CLI 是否正确显示 unavailable。
+
+## staging shared client
+
+检查：
+
+- `_client` 是否一定存在；
+- client 未初始化时行为；
+- close 顺序；
+- fork/Gunicorn 后连接池是否在子进程重新建立；
+- 不得在 master 进程创建后跨 fork 复用 socket。
+
+------
+
+# 十六、进程角色直接启用
+
+测试阶段直接使用正式进程角色。
+
+## Web
+
+```bash
+PROCESS_ROLE=web \
+gunicorn app.web_main:app \
+  -k uvicorn.workers.UvicornWorker \
+  --workers 2
+```
+
+实际 workers 以资源预算为准。
+
+## Worker
+
+```bash
+PROCESS_ROLE=worker \
+python -m app.worker_main
+```
+
+默认重型并发：
+
+```text
+1
+```
+
+## Scheduler
+
+```bash
+PROCESS_ROLE=scheduler \
+python -m app.scheduler_main
+```
+
+Worker 和 scheduler 不通过 Gunicorn 暴露公网 HTTP。
+
+如果项目实际入口不同，以现有代码为准，并在最终报告给出准确命令。
+
+------
+
+# 十七、直接发布，不做灰度
+
+本阶段发布流程保持简单：
+
+```bash
+git pull
+alembic upgrade head
+python -m app.cli.doctor
+docker compose up -d --build
+```
+
+或项目当前部署命令。
+
+然后：
+
+```bash
+python -m app.cli.smoke_test
+python -m app.cli.task_queue status
+python -m app.cli.staging status
+python -m app.cli.consistency check
+```
+
+全部通过后：
+
+直接允许测试用户使用。
+
+不需要流量比例和 canary。
+
+------
+
+# 十八、直接使用前的最小回滚准备
+
+虽然不做灰度，仍需：
+
+- 记录当前 git commit；
+- 创建可识别 tag；
+- 备份生产测试数据库；
+- 记录 Alembic revision；
+- 记录 Redis queue namespace；
+- 确认 staging format 没有破坏性变化。
+
+如果 migration 不支持安全 downgrade：
+
+明确说明：
+
+```text
+代码可以回滚
+数据库 migration 不建议 downgrade
+需要使用备份恢复
+```
+
+不需要建立双环境长期运行。
+
+------
+
+# 十九、必须执行的命令
+
+至少执行：
+
+```bash
+python -m compileall app tests
+ruff check app tests
+pytest -q -m "not integration and not local_ocr and not load"
+pytest -q -m integration
+pytest -q -m cloud_ocr_isolation
+pytest -q -m "not local_ocr and not load"
+alembic heads
+alembic current
+alembic upgrade head
+```
+
+如果 mypy baseline 已存在：
+
+```bash
+mypy app
+```
+
+必须实际运行：
+
+```bash
+python -m app.cli.doctor
+python -m app.cli.smoke_test
+python -m app.cli.task_queue status
+python -m app.cli.staging status
+python -m app.cli.consistency check
+```
+
+------
+
+# 二十、故障注入测试
+
+至少执行以下真实故障场景：
+
+## Redis
+
+- Redis 停止；
+- Redis 恢复；
+- claim 期间断开；
+- heartbeat 期间断开；
+- complete 期间断开。
+
+## PostgreSQL
+
+- 在最终 fenced UPDATE 前让 stale Worker 暂停；
+- 由新 Worker 完成；
+- 恢复旧 Worker；
+- 验证旧 Worker 被拒绝。
+
+## Worker
+
+- kill -9；
+- SIGTERM；
+- 当前任务超出 graceful timeout。
+
+## OCR
+
+- timeout；
+- 429；
+- 503；
+- circuit open。
+
+## Staging
+
+- object 暂时不可读；
+- work copy 被删除；
+- Worker crash 后 lease 过期。
+
+输出每个场景的真实结果。
+
+------
+
+# 二十一、Phase 6 验收标准
+
+只有全部满足，才能标记：
+
+```text
+READY FOR TEST USAGE
+```
+
+必须满足：
+
+1. `conditional_update_with_fencing()` 实际用于全部关键业务最终写入；
+2. stale Worker 无法写 parent 或 child data；
+3. stale Worker 不得 complete/fail 新 generation；
+4. Redis empty 与 unavailable 已彻底分离；
+5. enqueue Redis failure 返回 503；
+6. Redis outage/recovery 集成测试通过；
+7. 双 Worker claim 测试通过；
+8. heartbeat 超过初始 lease 测试通过；
+9. kill -9 recovery 通过；
+10. concurrent reaper 只恢复一次；
+11. complete 后永不重投；
+12. staging refcount/lease 测试通过；
+13. staging client 使用共享 pool；
+14. SIGTERM 测试通过；
+15. integration tests 不再全部 skip；
+16. Cloud OCR isolation 继续通过；
+17. 非 local OCR 测试不隐式加载 Paddle；
+18. Alembic single head 且 current=head；
+19. doctor 通过；
+20. smoke test 通过；
+21. consistency check 无严重错误；
+22. 没有已知数据破坏、重复写入或 durable state blocker。
+
+非阻断问题，例如：
+
+- 管理页面样式；
+- 少量低频慢查询；
+- 日志展示不够友好；
+- 非核心功能性能一般；
+
+可以在测试使用期间继续修复。
+
+------
+
+# 二十二、最终报告格式
+
+最终严格按照以下格式输出。
+
+## 1. Phase 6 结论
+
+```text
+READY FOR TEST USAGE: YES / NO
+```
+
+如果 NO，列出 blocker。
+
+## 2. Fencing 接入矩阵
+
+```text
+handler
+model/table
+fenced initialization
+fenced final update
+child write protected
+test
+status
+```
+
+状态只能：
+
+```text
+PASS
+FAIL
+NOT VERIFIED
+```
+
+## 3. Redis 语义验证
+
+列出：
+
+- empty；
+- unavailable；
+- recovery；
+- circuit breaker；
+- readiness。
+
+## 4. 修改文件
+
+```text
+path
+change
+reason
+```
+
+## 5. 新增测试
+
+列出测试文件和场景。
+
+## 6. 真实测试结果
+
+```text
+command
+passed
+failed
+skipped
+duration
+```
+
+不得只写“全部通过”。
+
+## 7. 故障注入结果
+
+分别报告：
+
+- Redis；
+- PostgreSQL stale worker；
+- kill -9；
+- SIGTERM；
+- staging；
+- OCR。
+
+## 8. CLI 实测
+
+```text
+doctor
+smoke_test
+queue status
+staging status
+consistency check
+```
+
+状态和关键输出。
+
+## 9. 当前运行状态
+
+```text
+queue ready
+queue processing
+queue retry
+queue dead
+oldest task age
+staging objects
+staging disk usage
+DB revision
+deployment profile
+OCR backend
+worker concurrency
+```
+
+## 10. 直接部署命令
+
+给出项目实际可执行命令。
+
+## 11. 回滚信息
+
+列出：
+
+- commit/tag；
+- Alembic revision；
+- DB backup；
+- Redis compatibility；
+- staging compatibility。
+
+## 12. 可边用边修的问题
+
+只列非阻断问题。
+
+## 13. 阻断问题
+
+如果没有：
+
+```text
+No known test-usage blockers.
+```
+
+------
+
+# 二十三、禁止事项
+
+禁止：
+
+- 只在 Worker complete 前检查 fencing；
+- stale Worker 写完业务数据后才抛错；
+- 用 SELECT+Python 判断代替最终条件 UPDATE；
+- 新增 helper 但业务 handler 不调用；
+- mock 测试代替全部 Redis/PostgreSQL 集成测试；
+- integration tests 全 skip 后宣布通过；
+- Redis exception 返回 None；
+- Redis 故障 fallback 到 memory queue；
+- staging fallback 到 process-local refcount；
+- stale Worker 调用 fail_v2；
+- kill -9 后人工改 Redis 才能恢复；
+- 通过增加 lease 时间掩盖 heartbeat 问题；
+- cloud profile 导入 PaddleOCR；
+- 为了完整测试安装 PaddleOCR 到 cloud CI；
+- 只修改测试期望值让测试变绿；
+- 声称 READY，但没有 doctor 和 smoke test 实测；
+- 在没有真实数据库内容断言的情况下声称 fencing 成功。
+
+本阶段完成后，不再继续进行大规模架构重构。
+
+满足验收条件后，直接投入小规模测试用户使用。
+
+使用过程中通过：
+
+```text
+task_id
+pipeline_id
+request_id
+error_code
+```
+
+定位问题，修复后直接重新部署。

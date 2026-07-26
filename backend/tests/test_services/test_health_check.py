@@ -16,13 +16,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.api.v1.admin_system_health import router as system_health_router
 from app.models.admin_ai_config import AdminAiModelConfig
 from app.services.health_check_service import (
-    check_ai_model_config,
     AiModelConfigCheck,
+    check_ai_model_config,
 )
-from app.api.v1.admin_system_health import router as system_health_router
-
 
 # ── Fixtures ──────────────────────────────────────────────────
 
@@ -166,9 +165,10 @@ _APP.include_router(system_health_router)
 # --- Override auth + DB dependencies for API tests in THIS file only ---
 # IMPORTANT: All overrides are applied via an autouse fixture with cleanup
 # to prevent cross-test contamination of app.dependency_overrides.
+from types import SimpleNamespace as _SN
+
 from app.core import admin_security as _admin_sec_mod
 from app.core import database as _db_mod
-from types import SimpleNamespace as _SN
 
 # Mutable holder for per-test DB model data — _fake_get_db reads from this.
 _db_models: list = []
@@ -273,14 +273,12 @@ def test_api_system_health_ok(client):
 @pytest.mark.asyncio
 async def test_batch_image_job_emits_model_config_warning():
     """创建批量导入 job 但无 enabled 模型时，trace event 应包含 AI 模型配置 warning."""
-    from app.features.batch_image_import_service import create_batch_job, new_job_id
-    from app.models.pipeline_enums import TraceStep, TraceEventStatus
+    from app.features.batch_image_import_service import new_job_id
 
     db = AsyncMock()
 
     # Mock: no models returned
-    from sqlalchemy import select as sa_select
-    from app.models.admin_ai_config import AdminAiModelConfig
+
 
     # Patch the health check's db.execute to return empty
     with patch(
@@ -303,7 +301,6 @@ async def test_batch_image_job_emits_model_config_warning():
 
         # create_batch_job expects a real-ish session with Job model support.
         # We mock the DB to return None for request_id lookup, and track events.
-        from app.models.import_batch_job import ImportBatchJob
 
         # Simulate a clean create_batch_job execution
         # Rather than calling the full function (which needs complex DB state),

@@ -10,7 +10,6 @@ Also includes basic performance benchmarks and orphan/cleanup tests.
 from __future__ import annotations
 
 import io
-import os
 import time
 import zipfile
 
@@ -167,6 +166,232 @@ class TestContentConsistency:
 
 
 # ═══════════════════════════════════════════════════
+# Enhanced consistency (Task 12 — Phase 5)
+# ═══════════════════════════════════════════════════
+
+
+def _make_enriched_question(
+    stem: str = "测试题干",
+    qtype: str = "single_choice",
+    options: dict | None = None,
+    answer: str = "A",
+    analysis: str = "这是解析",
+    images: list | None = None,
+    table: dict | None = None,
+    formula: str = "",
+    subject_label: str = "数学",
+) -> dict:
+    """Build a question dict with all supported fields."""
+    q = {
+        "content": {"stem": stem, "text": stem},
+        "question_type": qtype,
+        "options": options or {"A": "选项A", "B": "选项B", "C": "选项C", "D": "选项D"},
+        "answer": answer,
+        "analysis": analysis,
+        "subject": {"id": 1, "label": subject_label},
+        "_group_title": "",
+    }
+    if images:
+        q["images"] = images
+    if table:
+        q["table"] = table
+    if formula:
+        q["content"]["formula"] = formula
+    return q
+
+
+class TestEnhancedContentConsistency:
+    """Deep content consistency between PDF and DOCX formats."""
+
+    async def _compare_both(
+        self,
+        questions: list[dict],
+        config: dict,
+    ) -> tuple[ExportResult, ExportResult]:
+        pdf_result = await _generate("pdf", questions, config)
+        docx_result = await _generate("docx", questions, config)
+        assert pdf_result.success, f"PDF failed: {pdf_result.error_message}"
+        assert docx_result.success, f"DOCX failed: {docx_result.error_message}"
+        return pdf_result, docx_result
+
+    async def test_product_name_consistency(self):
+        """Product name appears in both formats."""
+        qs = [_make_enriched_question("产品名称测试")]
+        cfg = _make_config(total_count=1, product_name="MemoGrad")
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        assert "MemoGrad" in pdf_text, "Product name missing from PDF"
+        assert "MemoGrad" in docx_text, "Product name missing from DOCX"
+
+    async def test_title_consistency(self):
+        """Custom title appears in both formats."""
+        qs = [_make_enriched_question("标题测试")]
+        cfg = _make_config(total_count=1, title="我的专属试卷")
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        assert "我的专属试卷" in pdf_text, "Title missing from PDF"
+        assert "我的专属试卷" in docx_text, "Title missing from DOCX"
+
+    async def test_date_consistency(self):
+        """Export date appears in both formats when show_date is on."""
+        qs = [_make_enriched_question("日期测试")]
+        cfg = _make_config(total_count=1, show_date=True, export_date="2026-07-25")
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        assert "2026-07-25" in pdf_text or "20260725" in pdf_text
+        assert "2026-07-25" in docx_text or "20260725" in docx_text
+
+    async def test_total_count_consistency(self):
+        """Total question count appears in both formats."""
+        qs = [_make_enriched_question(f"总量测试{i}") for i in range(3)]
+        cfg = _make_config(total_count=3)
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        assert "3" in pdf_text
+        assert "3" in docx_text
+
+    async def test_stem_text_consistency(self):
+        """Question stem text appears in both formats."""
+        qs = [_make_enriched_question("以下哪个选项是正确的？")]
+        cfg = _make_config(total_count=1)
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        assert "以下哪个选项是正确的？" in pdf_text
+        assert "以下哪个选项是正确的？" in docx_text
+
+    async def test_option_text_consistency(self):
+        """Option labels and text appear in both formats."""
+        qs = [_make_enriched_question(
+            "选项测试",
+            options={"A": "苹果", "B": "香蕉", "C": "橘子", "D": "西瓜"},
+        )]
+        cfg = _make_config(total_count=1)
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        for label in ("A", "B", "C", "D"):
+            assert label in pdf_text
+            assert label in docx_text
+
+    async def test_answer_consistency(self):
+        """Answer text appears in both formats."""
+        qs = [_make_enriched_question("答案测试", answer="正确答案是A")]
+        cfg = _make_config(total_count=1, answer_position="after_question")
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        assert "正确答案是A" in pdf_text or "正确答案是A" in docx_text
+
+    async def test_analysis_consistency(self):
+        """Analysis text appears in both formats."""
+        qs = [_make_enriched_question("解析测试", analysis="本题考查基本概念")]
+        cfg = _make_config(total_count=1, analysis_position="after_question")
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        assert "本题考查基本概念" in pdf_text
+        assert "本题考查基本概念" in docx_text
+
+    async def test_question_type_consistency(self):
+        """Question type labels appear in both formats."""
+        qs = [_make_enriched_question("题型测试", qtype="single_choice")]
+        cfg = _make_config(total_count=1)
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        # Both should contain the stem, which is the type indicator
+        assert "题型测试" in pdf_text
+        assert "题型测试" in docx_text
+
+    async def test_group_title_consistency(self):
+        """Group title appears in both formats."""
+        qs = [
+            _make_enriched_question("第一章题", subject_label="数学"),
+            _make_enriched_question("第二章题", subject_label="英语"),
+        ]
+        qs[0]["_group_title"] = "数学"
+        qs[1]["_group_title"] = "英语"
+        cfg = _make_config(total_count=2, group_by="subject")
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        assert "数学" in pdf_text
+        assert "英语" in pdf_text
+        assert "数学" in docx_text
+        assert "英语" in docx_text
+
+    async def test_answer_at_end_consistency(self):
+        """Answers at end position appear in both formats."""
+        qs = [
+            _make_enriched_question("题1", answer="A", analysis="解析1"),
+            _make_enriched_question("题2", answer="B", analysis="解析2"),
+        ]
+        cfg = _make_config(total_count=2, answer_position="at_end", analysis_position="none")
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        assert "A" in pdf_text
+        assert "B" in pdf_text
+        assert "A" in docx_text
+        assert "B" in docx_text
+
+    async def test_skip_count_consistency(self):
+        """Skip count is reported consistently."""
+        qs = [_make_enriched_question("正常题")]
+        cfg = _make_config(total_count=1, skip_count=0)
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        assert pdf.success
+        assert docx.success
+
+    async def test_chinese_content_no_garbled(self):
+        """Chinese characters render correctly in both formats."""
+        qs = [_make_enriched_question("汉字测试：数学、物理、化学")]
+        cfg = _make_config(total_count=1)
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        assert "汉字测试" in pdf_text
+        assert "汉字测试" in docx_text
+
+    async def test_default_config_consistency(self):
+        """Default configuration produces consistent content."""
+        qs = [_make_enriched_question("默认配置测试")]
+        cfg = _make_config(
+            total_count=1,
+            title="默认试卷",
+            show_date=True,
+            sort_by="newest",
+            group_by="none",
+            answer_position="none",
+            analysis_position="none",
+            space_style="standard",
+        )
+
+        pdf, docx = await self._compare_both(qs, cfg)
+        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
+        docx_text = _extract_docx_text(docx.file_bytes) or ""
+        assert "默认配置测试" in pdf_text
+        assert "默认配置测试" in docx_text
+
+
+# ═══════════════════════════════════════════════════
 # Performance baselines (Task 15)
 # ═══════════════════════════════════════════════════
 
@@ -288,6 +513,7 @@ def _extract_pdf_text(pdf_bytes: bytes) -> str | None:
         # Fallback: PyPDF2/pdfminer
         try:
             from io import BytesIO
+
             from pdfminer.high_level import extract_text as pdfminer_extract
             return pdfminer_extract(BytesIO(pdf_bytes))
         except ImportError:

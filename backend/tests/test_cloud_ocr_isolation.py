@@ -118,6 +118,7 @@ class TestCloudOcrNoPaddleSpec:
     def _import_with_staging(self, env_patch: dict) -> None:
         """Hack: force fresh import of staging_storage under patched env + settings."""
         import sys
+
         from app.core.config import settings
 
         # Ensure the staging dir parent exists
@@ -176,6 +177,7 @@ os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 os.environ["APP_SECRET"] = "a" * 32
 os.environ["CORS_ORIGINS"] = '["https://example.com"]'
 os.environ["STAGING_STORAGE_DIR"] = "/tmp"
+os.environ["WORKER_SCRATCH_DIR"] = "/tmp/worker-scratch-test"
 # Cloud OCR config
 os.environ["OCR_ENABLED"] = "true"
 os.environ["OCR_USE_GPU"] = "false"
@@ -373,6 +375,9 @@ class TestProductionConfigValidatorOcr:
                     with patch.object(settings, "OCR_EXECUTION_BACKEND", set_vals["OCR_EXECUTION_BACKEND"]):
                         with patch.object(settings, "OCR_REMOTE_URL", set_vals.get("OCR_REMOTE_URL", "")):
                             with patch.object(settings, "OCR_REMOTE_TOKEN", set_vals.get("OCR_REMOTE_TOKEN", "")):
+                                # Clear OCR profile cache — lru_cache may return stale value
+                                from app.core.ocr_profile import get_ocr_profile
+                                get_ocr_profile.cache_clear()
                                 validator._check_deployment_profile(errors)
                                 validator._check_ocr_production_rules(errors)
                                 validator._check_ocr_no_local_deps(errors)

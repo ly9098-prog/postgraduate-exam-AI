@@ -96,7 +96,7 @@ class TestCacheClientIntegration:
         from app.core.cache import CacheClient
 
         cache = CacheClient()
-        test_key = f"integration_test:cache_get_set"
+        test_key = "integration_test:cache_get_set"
 
         await cache.set(test_key, {"msg": "cached_value"}, ttl=30)
         result = await cache.get(test_key)
@@ -113,7 +113,7 @@ class TestCacheClientIntegration:
         from app.core.cache import CacheClient
 
         cache = CacheClient()
-        lock_key = f"integration_lock:test_redis"
+        lock_key = "integration_lock:test_redis"
         lock_value = "test_value_123"
 
         acquired = await cache.acquire_lock(lock_key, lock_value, ttl=10)

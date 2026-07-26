@@ -1,8 +1,6 @@
 """Canary health decision tests."""
 from __future__ import annotations
 
-import pytest
-
 from app.features.ocr_canary import evaluate_canary_health
 
 

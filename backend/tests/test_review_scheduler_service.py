@@ -1,14 +1,11 @@
 """Review API tests — content normalization, question filtering, count consistency."""
-from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.api.v1 import review
+from app.main import app
 from app.models.user import User
-
 
 client = TestClient(app)
 

@@ -1,10 +1,7 @@
 """P6 tests: artifact manifest, atomic persistence, enhanced fingerprint compatibility."""
 from __future__ import annotations
 
-import hashlib
-import json
 import os
-import sys
 from pathlib import Path
 
 import pytest
@@ -13,7 +10,6 @@ from app.features.pipeline_fingerprint import (
     ArtifactManifest,
     PipelineRunFingerprint,
     atomic_write,
-    build_pipeline_fingerprint,
     compute_data_sha256,
     compute_file_sha256,
     read_atomic,

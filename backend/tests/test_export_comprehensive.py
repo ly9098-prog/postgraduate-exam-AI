@@ -8,14 +8,12 @@ idempotency concurrency, snapshot sizing, and pagination edge cases.
 from __future__ import annotations
 
 import os
-import time as time_module
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.schemas.export_task import ExportTaskStatus
-
 
 # ══════════════════════════════════════════════════════════════
 # 1. Atomic claiming — unit level (processor internals)
@@ -32,10 +30,10 @@ class TestAtomicClaiming:
     @pytest.mark.asyncio
     async def test_atomic_claim_sql_pattern(self):
         """Verify the SQL pattern is correct (no two-phase SELECT+UPDATE)."""
-        from app.services.export.processor import _process_one_task
-
         # The implementation must NOT do a SELECT then separate UPDATE
         import inspect
+
+        from app.services.export.processor import _process_one_task
         source = inspect.getsource(_process_one_task)
         # It should NOT have a naked select(ExportTask) without a subquery
         # The select should be wrapped in a scalar_subquery() or similar
@@ -49,12 +47,11 @@ class TestAtomicClaiming:
     @pytest.mark.asyncio
     async def test_update_where_status_guards_duplicate_claim(self):
         """Simulate two concurrent UPDATEs — second must get 0 rows."""
-        import sqlalchemy as sa
-        from sqlalchemy import update, select
 
-        from app.services.export.processor import _process_one_task
         # Verify the claim uses a WHERE status='pending' guard
         import inspect
+
+        from app.services.export.processor import _process_one_task
         source = inspect.getsource(_process_one_task)
         assert ".where(ExportTask.status == ExportTaskStatus.PENDING)" in source, (
             "atomic claim must double-check status in the UPDATE WHERE clause"
@@ -76,8 +73,9 @@ class TestHeartbeatBehavior:
 
     def test_heartbeat_uses_coalesce_for_stale_detection(self):
         """Stale recovery must use the most recent of heartbeat_at or processing_started_at."""
-        from app.services.export.processor import _recover_stale_tasks
         import inspect
+
+        from app.services.export.processor import _recover_stale_tasks
         source = inspect.getsource(_recover_stale_tasks)
         assert "coalesce(ExportTask.heartbeat_at" in source or "func.coalesce" in source, (
             "stale recovery must use COALESCE for liveness check"
@@ -103,7 +101,7 @@ class TestStaleRecovery:
         task = MagicMock()
         task.id = kwargs.get("id", 1)
         task.status = kwargs.get("status", ExportTaskStatus.PROCESSING)
-        task.processing_started_at = kwargs.get("processing_started_at", datetime.now(timezone.utc))
+        task.processing_started_at = kwargs.get("processing_started_at", datetime.now(UTC))
         task.heartbeat_at = kwargs.get("heartbeat_at")
         task.error_message = None
         task.completed_at = None
@@ -115,17 +113,17 @@ class TestStaleRecovery:
         # This test verifies the logic pattern: if recovery were called
         # with a task having old timestamps, it would be reclaimed.
         # The actual recovery logic checks coalesce against cutoff.
-        old = datetime.now(timezone.utc) - timedelta(hours=2)
+        old = datetime.now(UTC) - timedelta(hours=2)
         task = self._make_task_mock(processing_started_at=old, heartbeat_at=old)
-        assert task.processing_started_at < datetime.now(timezone.utc) - timedelta(hours=1)
-        assert task.heartbeat_at < datetime.now(timezone.utc) - timedelta(hours=1)
+        assert task.processing_started_at < datetime.now(UTC) - timedelta(hours=1)
+        assert task.heartbeat_at < datetime.now(UTC) - timedelta(hours=1)
         # If recovery checked this task, the COALESCE would be < cutoff → reclaimed
 
     @pytest.mark.asyncio
     async def test_old_processing_recent_heartbeat_not_recovered(self):
         """Recent heartbeat → MUST NOT recover even if processing_started_at is old."""
-        old = datetime.now(timezone.utc) - timedelta(hours=2)
-        recent = datetime.now(timezone.utc) - timedelta(seconds=10)
+        old = datetime.now(UTC) - timedelta(hours=2)
+        recent = datetime.now(UTC) - timedelta(seconds=10)
         task = self._make_task_mock(processing_started_at=old, heartbeat_at=recent)
         # The COALESCE(heartbeat_at, processing_started_at) returns recent
         # which should be >= cutoff → NOT reclaimed
@@ -134,7 +132,7 @@ class TestStaleRecovery:
     @pytest.mark.asyncio
     async def test_old_processing_null_heartbeat_falls_back_to_started(self):
         """heartbeat=NULL → fallback to processing_started_at for staleness check."""
-        old = datetime.now(timezone.utc) - timedelta(hours=2)
+        old = datetime.now(UTC) - timedelta(hours=2)
         task = self._make_task_mock(processing_started_at=old, heartbeat_at=None)
         assert task.heartbeat_at is None
         # COALESCE(NULL, processing_started_at) = processing_started_at (old)
@@ -345,7 +343,8 @@ class TestPageBreakBehavior:
     def test_check_page_break_noop_when_enough_room(self):
         """When remaining > needed, page should NOT be added (check_only=False)."""
         from fpdf import FPDF
-        from app.services.export.pdf_exporter import PdfExporter, PAGE_H, MARGIN_B
+
+        from app.services.export.pdf_exporter import PdfExporter
 
         pdf = FPDF(orientation="P", unit="mm", format="A4")
         pdf.add_page()
@@ -362,7 +361,8 @@ class TestPageBreakBehavior:
     def test_check_page_break_adds_page_when_needed(self):
         """When remaining < needed, page should be added."""
         from fpdf import FPDF
-        from app.services.export.pdf_exporter import PdfExporter, PAGE_H
+
+        from app.services.export.pdf_exporter import PAGE_H, PdfExporter
 
         pdf = FPDF(orientation="P", unit="mm", format="A4")
         pdf.add_page()
@@ -377,6 +377,7 @@ class TestPageBreakBehavior:
     def test_check_page_break_no_infinite_pages(self):
         """Very large needed_mm should not cause infinite loop."""
         from fpdf import FPDF
+
         from app.services.export.pdf_exporter import PdfExporter
 
         pdf = FPDF(orientation="P", unit="mm", format="A4")
@@ -394,6 +395,7 @@ class TestPageBreakBehavior:
     def test_group_heading_orphan_prevention(self):
         """Group heading should have enough space before page break."""
         from fpdf import FPDF
+
         from app.services.export.pdf_exporter import PdfExporter
 
         exporter = PdfExporter()
@@ -404,7 +406,7 @@ class TestPageBreakBehavior:
         pdf.add_font("WenQuanYi", "", "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc")
 
         # Near bottom, but has enough room for heading (15mm)
-        from app.services.export.pdf_exporter import PAGE_H, MARGIN_B
+        from app.services.export.pdf_exporter import MARGIN_B, PAGE_H
         pdf.set_y(PAGE_H - MARGIN_B - 20)  # ~20mm from bottom
 
         exporter._check_page_break(pdf, 15)  # heading needs 15mm
@@ -446,6 +448,7 @@ class TestSnapshotSizing:
     def test_ten_questions_snapshot_size(self):
         """10 questions → should be well under 200KB."""
         import json
+
         from app.services.export.snapshot_service import _MAX_SNAPSHOT_BYTES
 
         questions = [self._make_question(i) for i in range(10)]
@@ -462,6 +465,7 @@ class TestSnapshotSizing:
     def test_hundred_questions_snapshot_size(self):
         """100 questions → must be under 5MB limit."""
         import json
+
         from app.services.export.snapshot_service import _MAX_SNAPSHOT_BYTES
 
         questions = [self._make_question(i, has_image=(i % 10 == 0)) for i in range(100)]
@@ -494,8 +498,6 @@ class TestSortGroupEdgeCases:
 
     def test_missing_sort_field_falls_to_end(self):
         """Questions missing the sort field should sort to the end."""
-        import json
-        from app.services.export.sorter import sort_questions
 
         # With a mock DB that returns questions in stable order
         mock_db = MagicMock()
@@ -509,7 +511,7 @@ class TestSortGroupEdgeCases:
 
         mock_db.execute = execute_stub
 
-        import asyncio
+
         # The actual sort function handles nulls
         from app.schemas.export_task import ExportSortBy
 
@@ -548,8 +550,9 @@ class TestExportStoragePath:
 
     def test_file_key_does_not_static_prefix(self):
         """Service must use clean file_key without static/exports prefix."""
-        from app.services.export import service as export_service
         import inspect
+
+        from app.services.export import service as export_service
         source = inspect.getsource(export_service)
 
         assert "file_key = f" in source, (
@@ -566,8 +569,9 @@ class TestExportStoragePath:
 
     def test_resolve_local_path_goes_through_export_dir(self):
         """_resolve_local_path must resolve through settings.EXPORT_DIR."""
-        from app.api.v1.exports import _resolve_local_path
         import inspect
+
+        from app.api.v1.exports import _resolve_local_path
         source = inspect.getsource(_resolve_local_path)
 
         assert "settings.EXPORT_DIR" in source or "export_root" in source, (
@@ -584,9 +588,9 @@ class TestAnswerAnalysisSections:
 
     def test_answer_section_starts_new_page(self):
         """Answer section must start on a new page."""
-        from app.services.export.pdf_exporter import PdfExporter
-        from fpdf import FPDF
         import inspect
+
+        from app.services.export.pdf_exporter import PdfExporter
         source = inspect.getsource(PdfExporter._generate_sync)
 
         # Should add_page before answer section
@@ -594,8 +598,9 @@ class TestAnswerAnalysisSections:
 
     def test_analysis_section_starts_new_page(self):
         """Analysis section must start on a new page."""
-        from app.services.export.pdf_exporter import PdfExporter
         import inspect
+
+        from app.services.export.pdf_exporter import PdfExporter
         source = inspect.getsource(PdfExporter._generate_sync)
 
         # Should add_page before analysis section
@@ -651,8 +656,9 @@ class TestPageNumbers:
 
     def test_page_number_format(self):
         """Page number should follow '第 X 页 / 共 Y 页' format."""
-        from app.services.export.pdf_exporter import PdfExporter
         import inspect
+
+        from app.services.export.pdf_exporter import PdfExporter
         source = inspect.getsource(PdfExporter._add_page_numbers)
         assert "共" in source, "page number must show total"
         assert "第" in source, "page number must show current page"
@@ -732,9 +738,11 @@ class TestConcurrentClaiming:
         """Two concurrent claim attempts on the same pending task:
         only one should succeed."""
         import asyncio
+
         import sqlalchemy as sa
         from sqlalchemy import select
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
         from app.models.export_task import ExportTask
         from app.schemas.export_task import ExportTaskStatus
 
@@ -745,7 +753,7 @@ class TestConcurrentClaiming:
 
         # Use raw SQL to insert tasks (avoid FK constraints on ORM model)
         async with Session() as db:
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             for i in range(2):
                 await db.execute(
                     sa.text("""
@@ -757,12 +765,13 @@ class TestConcurrentClaiming:
             await db.commit()
 
         async def try_claim(pid: int) -> dict:
-            from datetime import datetime, timezone
-            from sqlalchemy import update, select
+            from datetime import datetime
+
+            from sqlalchemy import update
             result_info = {"pid": pid, "claimed_id": None, "success": False}
             try:
                 async with Session() as db:
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     subq = (
                         select(ExportTask.id)
                         .where(ExportTask.status == ExportTaskStatus.PENDING)
@@ -813,9 +822,11 @@ class TestConcurrentClaiming:
     async def test_two_processors_claim_two_tasks(self):
         """Two pending tasks → two claim attempts → both succeed on different tasks."""
         import asyncio
+
         import sqlalchemy as sa
         from sqlalchemy import select
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
         from app.models.export_task import ExportTask
         from app.schemas.export_task import ExportTaskStatus
 
@@ -826,7 +837,7 @@ class TestConcurrentClaiming:
 
         # Use raw SQL to insert tasks (avoid FK constraints on ORM model)
         async with Session() as db:
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
             for i in range(2):
                 await db.execute(
                     sa.text("""
@@ -838,12 +849,13 @@ class TestConcurrentClaiming:
             await db.commit()
 
         async def try_claim(pid: int) -> dict:
-            from datetime import datetime, timezone
-            from sqlalchemy import update, select
+            from datetime import datetime
+
+            from sqlalchemy import update
             result_info = {"pid": pid, "claimed_id": None, "success": False}
             try:
                 async with Session() as db:
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     subq = (
                         select(ExportTask.id)
                         .where(ExportTask.status == ExportTaskStatus.PENDING)
@@ -882,13 +894,15 @@ class TestConcurrentClaiming:
 
         Session = async_sessionmaker(engine, class_=AsyncSession)
 
-        from datetime import datetime, timezone
-        from sqlalchemy import update, select
-        from app.schemas.export_task import ExportTaskStatus
+        from datetime import datetime
+
+        from sqlalchemy import select, update
+
         from app.models.export_task import ExportTask
+        from app.schemas.export_task import ExportTaskStatus
 
         async with Session() as db:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             subq = (
                 select(ExportTask.id)
                 .where(ExportTask.status == ExportTaskStatus.PENDING)

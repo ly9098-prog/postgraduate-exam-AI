@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from app.models.pipeline_enums import (
-    OCRJobStatus,
     OCR_JOB_TRANSITIONS,
+    OCRJobStatus,
     guard_ocr_job_transition,
 )
 

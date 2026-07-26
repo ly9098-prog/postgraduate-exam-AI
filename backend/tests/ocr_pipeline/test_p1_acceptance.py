@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import ast
-import os
 from pathlib import Path
 
 import pytest
@@ -120,7 +119,6 @@ class TestRuntimeConfigValidation:
 
     def test_production_rejects_unsafe_thread_fallback(self):
         """Production + unsafe_thread_fallback=True → ValueError."""
-        import os
         from app.core.ocr_runtime_config import OcrRuntimeConfig, _validate_config
 
         bad_cfg = OcrRuntimeConfig(
@@ -251,12 +249,12 @@ class TestProductionConfigRejection:
 
     def test_production_rejects_unsafe_thread_fallback_env(self, monkeypatch):
         """Production profile with OCR_UNSAFE_THREAD_FALLBACK_ENABLED=1 must fail."""
-        monkeypatch.setenv("DEPLOY_PROFILE", "cloud_api")
+        monkeypatch.setenv("DEPLOYMENT_PROFILE", "cloud_api")
         monkeypatch.setenv("OCR_UNSAFE_THREAD_FALLBACK_ENABLED", "1")
         monkeypatch.setenv("OCR_ENABLED", "1")
 
         # Reset runtime config singleton
-        from app.core.ocr_runtime_config import reset_runtime_config, get_runtime_config
+        from app.core.ocr_runtime_config import get_runtime_config, reset_runtime_config
         reset_runtime_config()
 
         with pytest.raises(ValueError, match="unsafe_thread_fallback"):
@@ -264,10 +262,12 @@ class TestProductionConfigRejection:
 
     def test_production_without_unsafe_fallback_is_valid(self, monkeypatch):
         """Production profile without unsafe fallback must validate successfully."""
-        monkeypatch.setenv("DEPLOY_PROFILE", "cloud_api")
+        monkeypatch.setenv("DEPLOYMENT_PROFILE", "cloud_api")
         monkeypatch.setenv("OCR_UNSAFE_THREAD_FALLBACK_ENABLED", "0")
+        monkeypatch.setattr("app.core.ocr_runtime_config.settings.OCR_EXECUTION_BACKEND", "disabled")
+        monkeypatch.setattr("app.core.ocr_runtime_config.settings.OCR_REMOTE_TOKEN", "test-token")
 
-        from app.core.ocr_runtime_config import reset_runtime_config, get_runtime_config
+        from app.core.ocr_runtime_config import get_runtime_config, reset_runtime_config
         reset_runtime_config()
 
         cfg = get_runtime_config()

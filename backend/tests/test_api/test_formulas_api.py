@@ -4,11 +4,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.api.v1 import formulas as formulas_router
+from app.main import app
 from app.models.formula import FormulaCard, FormulaCategory
 from app.models.user import User
-
 
 client = TestClient(app)
 
@@ -171,9 +170,9 @@ class TestFormulaList:
 
     def test_list_with_tags(self, monkeypatch):
         """_apply_list_filters handles tags filter without error."""
-        from app.api.v1.formulas import _apply_list_filters
         from sqlalchemy import select
-        from app.models.formula import FormulaCard
+
+        from app.api.v1.formulas import _apply_list_filters
 
         db = MagicMock()
         db.execute = AsyncMock()
@@ -189,9 +188,9 @@ class TestFormulaList:
 
     def test_list_with_search(self, monkeypatch):
         """_apply_list_filters handles search (q) filter without error."""
-        from app.api.v1.formulas import _apply_list_filters
         from sqlalchemy import select
-        from app.models.formula import FormulaCard
+
+        from app.api.v1.formulas import _apply_list_filters
 
         db = MagicMock()
         db.execute = AsyncMock()
@@ -206,9 +205,9 @@ class TestFormulaList:
 
     def test_list_with_function_graph(self, monkeypatch):
         """_apply_library_type_filter handles function_graph without error."""
-        from app.api.v1.formulas import _apply_library_type_filter
         from sqlalchemy import select
-        from app.models.formula import FormulaCard
+
+        from app.api.v1.formulas import _apply_library_type_filter
 
         db = MagicMock()
         db.execute = AsyncMock()
@@ -221,9 +220,9 @@ class TestFormulaList:
 
     def test_list_subject_code_and_chapter_combined(self, monkeypatch):
         """_apply_list_filters handles subject_code + chapter_id combined."""
-        from app.api.v1.formulas import _apply_list_filters
         from sqlalchemy import select
-        from app.models.formula import FormulaCard
+
+        from app.api.v1.formulas import _apply_list_filters
 
         query = _apply_list_filters(
             select(FormulaCard),

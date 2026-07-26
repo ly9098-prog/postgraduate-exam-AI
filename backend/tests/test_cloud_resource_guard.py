@@ -12,8 +12,8 @@ from app.features.resource_guard import (
     PAGE_LIMIT_EXCEEDED,
     PAGE_TIMEOUT,
     PIPELINE_TIMEOUT,
-    REMOTE_OCR_CALL_BUDGET_EXCEEDED,
     PIXEL_BUDGET_EXCEEDED,
+    REMOTE_OCR_CALL_BUDGET_EXCEEDED,
     ResourceGuard,
     ResourceGuardError,
 )
@@ -24,9 +24,9 @@ MB = 1024 * 1024
 class TestGuardCloudDefaults:
     def test_guard_cloud_defaults(self) -> None:
         guard = ResourceGuard.for_profile(DeploymentProfile.CLOUD_API)
-        assert guard.max_input_bytes == 10 * MB
-        assert guard.max_pages == 50
-        assert guard.max_remote_ocr_calls == 100
+        assert guard.max_input_bytes == 5 * MB
+        assert guard.max_pages == 30
+        assert guard.max_remote_ocr_calls == 60
         assert guard.max_artifact_bytes == 50 * MB
         assert guard.max_pipeline_seconds == 1800
         assert guard.max_page_seconds == 120
@@ -81,25 +81,28 @@ class TestRemoteOcrCallBudget:
 
 
 class TestConcurrentDocumentLimit:
-    def test_concurrent_document_limit(self) -> None:
+    @pytest.mark.asyncio
+    async def test_concurrent_document_limit(self) -> None:
         guard = ResourceGuard.for_profile(DeploymentProfile.CLOUD_API)
         assert guard.max_concurrent_documents == 1
 
-        # First lease should succeed
-        lease = guard.acquire_document()
-        assert guard._active_concurrent_documents == 1
+        # First reservation should succeed (local fallback without Redis)
+        token = await guard.acquire_reservation(
+            resource_type="test_document",
+            task_id="test-task-1",
+        )
+        assert token is not None
 
-        # After acquire, check_concurrent_documents should raise
-        with pytest.raises(ResourceGuardError) as exc:
-            guard.check_concurrent_documents()
-        assert exc.value.code == CONCURRENCY_LIMIT_EXCEEDED
+        # Second reservation should fail — capacity reached
+        token2 = await guard.acquire_reservation(
+            resource_type="test_document",
+            task_id="test-task-2",
+        )
+        assert token2 is None
 
-        # Release and verify counter returns to 0
-        lease.release()
-        assert guard._active_concurrent_documents == 0
-
-        # Now check should pass again
-        guard.check_concurrent_documents()  # should not raise
+        # Release and verify
+        ok = await guard.release_reservation(token, resource_type="test_document")
+        assert ok is True
 
 
 class TestErrorCodeValues:

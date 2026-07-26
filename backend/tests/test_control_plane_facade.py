@@ -10,8 +10,6 @@ Verifies:
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from app.features.control_plane import (
@@ -23,12 +21,9 @@ from app.features.control_plane import (
     PipelineExecutionContext,
     PipelineOutcome,
     QuotaExceededError,
-    QuotaLease,
     ResourceDemand,
-    RolloutDecision,
     TraceCollector,
 )
-
 
 # ---------------------------------------------------------------------------
 # PipelineExecutionContext

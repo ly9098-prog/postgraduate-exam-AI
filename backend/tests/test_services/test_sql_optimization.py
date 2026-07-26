@@ -12,7 +12,6 @@ from __future__ import annotations
 from app.core.config import settings
 from app.services.admin_import_service import _LIST_COLUMNS
 
-
 # ── Settings defaults ───────────────────────────────────────
 
 

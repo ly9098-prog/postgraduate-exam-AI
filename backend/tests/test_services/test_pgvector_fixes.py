@@ -15,26 +15,22 @@
 12. 缓存失效
 13. 状态接口维度不匹配检测
 """
-import math
 from dataclasses import FrozenInstanceError
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.services.embedding_service import vector_to_pg_literal
 from app.services.vector_retrieval_service import (
     VectorDecision,
-    decide_vector_access,
-    resolve_vector_mode,
-    is_vector_allowed_for,
-    validate_embedding,
-    _parse_allowlist,
-    _is_allowlist_empty,
     _allowlist_matches,
-    _reset_vector_enabled_cache,
+    _parse_allowlist,
+    decide_vector_access,
     invalidate_vector_cache,
+    is_vector_allowed_for,
+    resolve_vector_mode,
+    validate_embedding,
 )
-from app.services.embedding_service import vector_to_pg_literal
-
 
 # ── 1. validate_embedding ──
 

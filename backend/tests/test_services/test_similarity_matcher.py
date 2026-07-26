@@ -1,7 +1,8 @@
 """Tests for similarity matcher."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.features.global_hash_index import GlobalHashIndex
 from app.features.similarity_matcher import (
@@ -9,7 +10,6 @@ from app.features.similarity_matcher import (
     _find_best_match,
     match_similar_questions,
 )
-
 
 # ---------------------------------------------------------------------------
 # Similarity computation tests

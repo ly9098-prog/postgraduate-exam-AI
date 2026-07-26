@@ -5,9 +5,8 @@ from app.features.sync_merge_service import (
     MAX_QUESTIONS_PER_SYNC,
     MAX_TAGS_PER_SYNC,
     SyncReport,
-    merge_sync_package,
 )
-from app.schemas.sync import SyncPackage, SyncReportResponse
+from app.schemas.sync import SyncPackage
 
 
 def test_sync_imports_work():
@@ -24,5 +23,4 @@ def test_sync_report_dataclass():
 
 def test_sync_package_schema():
     """SyncPackage exists and is importable."""
-    from app.schemas.sync import SyncPackage
     assert SyncPackage is not None

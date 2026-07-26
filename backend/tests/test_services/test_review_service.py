@@ -7,11 +7,10 @@ import pytest
 
 from app.features.review_service import (
     _options_to_dict,
-    submit_to_review,
-    get_review_queue,
     fix_question,
+    get_review_queue,
+    submit_to_review,
 )
-
 
 # --- helpers ---
 
