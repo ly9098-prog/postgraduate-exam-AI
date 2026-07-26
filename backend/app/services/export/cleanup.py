@@ -7,12 +7,12 @@ Idempotent: multiple runs do not cause errors.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.export_task import ExportSnapshot, ExportTask
+from app.models.export_task import ExportTask
 from app.schemas.export_task import ExportTaskStatus
 from app.services.export.snapshot_service import delete_snapshot
 from app.services.storage_backend import get_export_storage
@@ -33,7 +33,7 @@ async def cleanup_expired(
 
     Returns a dict with counts of processed items.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     stats = {"tasks_expired": 0, "files_deleted": 0, "snapshots_deleted": 0}
 
     result = await db.execute(
@@ -72,6 +72,10 @@ async def cleanup_expired(
 
     if stats["tasks_expired"] > 0:
         await db.flush()
-        logger.info("Cleanup: %s", stats)
+        logger.info("export_cleanup_completed", extra={
+            "tasks_expired": stats["tasks_expired"],
+            "files_deleted": stats["files_deleted"],
+            "snapshots_deleted": stats["snapshots_deleted"],
+        })
 
     return stats

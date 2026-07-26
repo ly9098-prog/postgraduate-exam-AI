@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,22 +19,29 @@ from app.schemas.common import RawPaginatedResponse, paginated_response
 from app.schemas.export_task import (
     CreateExportTaskRequest,
     DownloadInfoResponse,
+    ExportCapabilityResponse,
+    ExportErrorCode,
     ExportRangeType,
     ExportTaskResponse,
     ExportTaskStatus,
     PreviewCountRequest,
     PreviewCountResponse,
 )
-from app.services.export.cleanup import cleanup_expired
+from app.services.export.capability import (
+    build_capability,
+    ensure_export_allowed,
+    ensure_format_allowed,
+    is_user_allowed,
+    raise_export_error,
+)
 from app.services.export.service import (
-    _build_filename,
-    _build_title,
     create_export_task as _create_export_task,
+)
+from app.services.export.service import (
     preview_count as _preview_count,
-    process_task,
 )
 from app.services.export.snapshot_service import delete_snapshot, load_snapshot
-from app.services.storage_backend import LocalFileStorage, get_storage
+from app.services.storage_backend import LocalFileStorage, get_export_storage
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +61,25 @@ def _mime_for_format(file_format: str) -> str:
     return _FORMAT_MIME.get(file_format, "application/octet-stream")
 
 
+# ── Whitelist / access control ──
+# Helpers are in app.services.export.capability:
+#   is_user_allowed, ensure_export_allowed, ensure_format_allowed,
+#   build_capability, raise_export_error
+
+
+@router.get("/capabilities", response_model=ExportCapabilityResponse)
+async def export_capabilities(
+    current_user: User = Depends(get_current_user),
+):
+    """Return export capabilities for the current user.
+
+    Used by the mini-program to decide whether to show the export entry
+    point and which options to enable.  Does NOT leak internal config or
+    the whitelist contents.
+    """
+    return build_capability(current_user)
+
+
 @router.post("/preview-count", response_model=PreviewCountResponse)
 async def preview_export_count(
     req: PreviewCountRequest,
@@ -61,6 +87,7 @@ async def preview_export_count(
     current_user: User = Depends(get_current_user),
 ):
     """Preview how many questions match the given export range + filters."""
+    ensure_export_allowed(current_user.id)
     try:
         count = await _preview_count(
             db, current_user.id,
@@ -68,6 +95,11 @@ async def preview_export_count(
             req.filters,
             req.selected_ids,
         )
+        logger.info("export_preview_count", extra={
+            "user_id": current_user.id,
+            "range_type": req.range_type,
+            "count": count,
+        })
         return PreviewCountResponse(count=count, range_type=req.range_type)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -86,12 +118,10 @@ async def create_export(
     Re-export and retry create new tasks (call those endpoints instead).
     """
     # Feature flag check
-    from app.core.config import settings
+    ensure_export_allowed(current_user.id)
 
-    if not settings.EXPORT_FEATURE_ENABLED:
-        raise HTTPException(status_code=403, detail="导出功能已关闭")
-    if req.file_format == "docx" and not settings.EXPORT_DOCX_ENABLED:
-        raise HTTPException(status_code=403, detail="Word 导出功能已关闭")
+    if req.file_format == "docx":
+        ensure_format_allowed("docx")
 
     # Check idempotency
     idempotency_key = _build_idempotency_key(current_user.id, req)
@@ -101,7 +131,7 @@ async def create_export(
             return _task_to_response(existing)
 
     # Per-user concurrency limit
-    from app.services.export.processor import get_user_pending_count, _MAX_PER_USER
+    from app.services.export.processor import _MAX_PER_USER, get_user_pending_count
 
     # Serialize concurrent creation per user by locking existing pending/processing tasks
     # PostgreSQL: FOR UPDATE blocks until competing xact commits
@@ -117,10 +147,7 @@ async def create_export(
     )
     pending_count = await get_user_pending_count(db, current_user.id)
     if pending_count >= _MAX_PER_USER:
-        raise HTTPException(
-            status_code=429,
-            detail=f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成",
-        )
+        raise_export_error(429, ExportErrorCode.TOO_MANY_CONCURRENT, f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成")
 
     task = await _create_export_task(db, current_user.id, {
         **req.model_dump(),
@@ -128,6 +155,13 @@ async def create_export(
     })
     await db.commit()
     await db.refresh(task)
+    logger.info("export_task_created", extra={
+        "task_id": task.id,
+        "user_id": current_user.id,
+        "format": task.file_format,
+        "range_type": task.range_type,
+        "question_count": task.total_count,
+    })
     return _task_to_response(task)
 
 
@@ -185,22 +219,22 @@ async def download_export(
     task = await _get_user_task(db, task_id, current_user.id)
 
     if task.status != ExportTaskStatus.COMPLETED:
-        raise HTTPException(status_code=400, detail="文件尚未生成或已过期")
+        raise_export_error(400, ExportErrorCode.FILE_NOT_READY, "文件尚未生成或已过期")
 
-    if task.expires_at and task.expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="文件已过期")
+    if task.expires_at and task.expires_at < datetime.now(UTC):
+        raise_export_error(400, ExportErrorCode.FILE_EXPIRED, "文件已过期")
 
     if not task.file_key:
-        raise HTTPException(status_code=500, detail="文件记录不存在")
+        raise_export_error(500, ExportErrorCode.FILE_NOT_FOUND, "文件记录不存在")
 
-    storage = get_storage()
+    storage = get_export_storage()
 
     if isinstance(storage, LocalFileStorage):
         # Stream the file directly
         file_path = _resolve_local_path(task.file_key)
         if not file_path or not os.path.exists(file_path):
-            logger.error("Export file missing for task %d: %s", task.id, task.file_key)
-            raise HTTPException(status_code=500, detail="文件不存在，请重新导出")
+            logger.error("export_file_missing: task %d key %s", task.id, task.file_key)
+            raise_export_error(500, ExportErrorCode.FILE_NOT_FOUND, "文件不存在，请重新导出")
 
         return DownloadInfoResponse(
             url=None,
@@ -213,7 +247,7 @@ async def download_export(
         # COS — generate a short-lived signed URL (never return a permanent URL)
         signed_url = await storage.get_download_url(task.file_key, expiry_sec=3600)
         if not signed_url:
-            raise HTTPException(status_code=500, detail="无法生成下载地址")
+            raise_export_error(500, ExportErrorCode.STORAGE_FAILED, "无法生成下载地址")
         return DownloadInfoResponse(
             url=signed_url,
             method="signed_url",
@@ -233,15 +267,15 @@ async def stream_export_file(
     task = await _get_user_task(db, task_id, current_user.id)
 
     if task.status != ExportTaskStatus.COMPLETED:
-        raise HTTPException(status_code=400, detail="文件尚未生成")
+        raise_export_error(400, ExportErrorCode.FILE_NOT_READY, "文件尚未生成")
 
-    if task.expires_at and task.expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="文件已过期")
+    if task.expires_at and task.expires_at < datetime.now(UTC):
+        raise_export_error(400, ExportErrorCode.FILE_EXPIRED, "文件已过期")
 
     file_path = _resolve_local_path(task.file_key or "")
     if not file_path or not os.path.exists(file_path):
-        logger.error("Export file missing for task %d: %s", task.id, task.file_key)
-        raise HTTPException(status_code=500, detail="文件不存在")
+        logger.error("export_file_missing: task %d key %s", task.id, task.file_key)
+        raise_export_error(500, ExportErrorCode.FILE_NOT_FOUND, "文件不存在")
 
     encoded_name = _url_encode_filename(task.file_name)
     return FileResponse(
@@ -266,7 +300,7 @@ async def delete_export(
     # Delete stored file
     if task.file_key:
         try:
-            storage = get_storage()
+            storage = get_export_storage()
             await storage.delete(task.file_key)
         except Exception as e:
             logger.warning("File delete failed for task %d: %s", task.id, e)
@@ -280,6 +314,11 @@ async def delete_export(
 
     await db.delete(task)
     await db.commit()
+    logger.info("export_task_deleted", extra={
+        "task_id": task_id,
+        "user_id": current_user.id,
+        "format": task.file_format,
+    })
     return {"success": True}
 
 
@@ -293,25 +332,20 @@ async def retry_export(
     task = await _get_user_task(db, task_id, current_user.id)
 
     if task.status != ExportTaskStatus.FAILED:
-        raise HTTPException(status_code=400, detail="只有失败的任务可以重试")
+        raise_export_error(400, ExportErrorCode.ACCESS_DENIED, "只有失败的任务可以重试")
 
     # Feature flag check
-    from app.core.config import settings
+    ensure_export_allowed(current_user.id)
 
-    if not settings.EXPORT_FEATURE_ENABLED:
-        raise HTTPException(status_code=403, detail="导出功能已关闭")
-    if task.file_format == "docx" and not settings.EXPORT_DOCX_ENABLED:
-        raise HTTPException(status_code=403, detail="Word 导出功能已关闭")
+    if task.file_format == "docx":
+        ensure_format_allowed("docx")
 
     # Per-user concurrency limit
-    from app.services.export.processor import get_user_pending_count, _MAX_PER_USER
+    from app.services.export.processor import _MAX_PER_USER, get_user_pending_count
 
     pending_count = await get_user_pending_count(db, current_user.id)
     if pending_count >= _MAX_PER_USER:
-        raise HTTPException(
-            status_code=429,
-            detail=f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成",
-        )
+        raise_export_error(429, ExportErrorCode.TOO_MANY_CONCURRENT, f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成")
 
     # Rebuild config from existing task
     config = _task_to_config(task)
@@ -319,6 +353,11 @@ async def retry_export(
     new_task = await _create_export_task(db, current_user.id, config)
     await db.commit()
     await db.refresh(new_task)
+    logger.info("export_task_retried", extra={
+        "task_id": new_task.id,
+        "source_task_id": task.id,
+        "user_id": current_user.id,
+    })
     return _task_to_response(new_task)
 
 
@@ -335,30 +374,25 @@ async def re_export(
     task = await _get_user_task(db, task_id, current_user.id)
 
     if not task.snapshot_id:
-        raise HTTPException(status_code=400, detail="原任务没有快照，无法重新导出")
+        raise_export_error(400, ExportErrorCode.FILE_NOT_FOUND, "原任务没有快照，无法重新导出")
 
     # Feature flag check
-    from app.core.config import settings
+    ensure_export_allowed(current_user.id)
 
-    if not settings.EXPORT_FEATURE_ENABLED:
-        raise HTTPException(status_code=403, detail="导出功能已关闭")
-    if task.file_format == "docx" and not settings.EXPORT_DOCX_ENABLED:
-        raise HTTPException(status_code=403, detail="Word 导出功能已关闭")
+    if task.file_format == "docx":
+        ensure_format_allowed("docx")
 
     # Per-user concurrency limit
-    from app.services.export.processor import get_user_pending_count, _MAX_PER_USER
+    from app.services.export.processor import _MAX_PER_USER, get_user_pending_count
 
     pending_count = await get_user_pending_count(db, current_user.id)
     if pending_count >= _MAX_PER_USER:
-        raise HTTPException(
-            status_code=429,
-            detail=f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成",
-        )
+        raise_export_error(429, ExportErrorCode.TOO_MANY_CONCURRENT, f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成")
 
     # Load snapshot for config
     snapshot_data = await load_snapshot(db, task.snapshot_id, current_user.id)
     if snapshot_data is None:
-        raise HTTPException(status_code=400, detail="原快照不存在或已过期")
+        raise_export_error(400, ExportErrorCode.FILE_NOT_FOUND, "原快照不存在或已过期")
 
     snapshot_config = snapshot_data.get("config", {})
 
@@ -387,6 +421,11 @@ async def re_export(
 
     await db.commit()
     await db.refresh(new_task)
+    logger.info("export_task_reexported", extra={
+        "task_id": new_task.id,
+        "source_task_id": task.id,
+        "user_id": current_user.id,
+    })
     return _task_to_response(new_task)
 
 
@@ -404,7 +443,7 @@ async def export_health():
     when the processor runs in the same process (development or
     ``PROCESS_ROLE=all``).
     """
-    from app.services.export.processor import _in_flight, _draining
+    from app.services.export.processor import _draining, _in_flight
 
     return {
         "status": "ok" if not _draining else "draining",
@@ -431,6 +470,8 @@ async def export_status_ws(ws: WebSocket):
     # Feature flag
     from app.core.config import settings
 
+    # Check global feature flag before auth
+
     if not settings.EXPORT_FEATURE_ENABLED:
         await ws.close(code=4001, reason="导出功能已关闭")
         return
@@ -450,6 +491,17 @@ async def export_status_ws(ws: WebSocket):
         await ws.close(code=4001, reason="Invalid token")
         return
 
+    # Whitelist check (after auth, so we know who the user is)
+    if not is_user_allowed(user_id):
+        logger.info("export_websocket_failed", extra={
+            "user_id": user_id,
+            "reason": "user_not_allowed",
+        })
+        await ws.close(code=4001, reason="导出功能未开放")
+        return
+
+    logger.info("export_websocket_connected", extra={"user_id": user_id})
+
     from app.services.export.push_service import handle_export_ws
 
     await handle_export_ws(ws, user_id)
@@ -465,7 +517,7 @@ async def _get_user_task(db: AsyncSession, task_id: int, user_id: int) -> Export
     )
     task = result.scalar_one_or_none()
     if task is None:
-        raise HTTPException(status_code=404, detail="导出任务不存在")
+        raise_export_error(404, ExportErrorCode.TASK_NOT_FOUND, "导出任务不存在")
     return task
 
 
@@ -542,7 +594,7 @@ async def _find_existing_task(
     """Find an existing task with the same idempotency key in non-terminal state."""
     from datetime import timedelta
 
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=_IDEMPOTENCY_WINDOW_SEC)
+    cutoff = datetime.now(UTC) - timedelta(seconds=_IDEMPOTENCY_WINDOW_SEC)
     result = await db.execute(
         select(ExportTask).where(
             ExportTask.user_id == user_id,
@@ -564,6 +616,7 @@ def _resolve_local_path(file_key: str) -> str | None:
     to match the export storage backend's prefix.
     """
     import os
+
     from app.core.config import settings
 
     export_root = os.path.realpath(
