@@ -303,49 +303,85 @@ class PaddleOCRLocalAdapter:
             # instead of importing from legacy pipeline_orchestrator.
             from app.services.ocr_service import ocr_pages_with_boxes
 
+            blocks: list[dict] = []
             is_pdf = request.source_type == "pdf"
             if is_pdf:
                 # Render PDF pages via PyMuPDF, then OCR each page image.
                 # Run in thread pool to avoid blocking event loop.
-                import io
                 import fitz
 
                 from app.core.config import settings
+                from app.core.ocr_profile import get_ocr_profile
+
+                ocr_profile = get_ocr_profile()
+                batch_size = max(1, ocr_profile.max_workers)
 
                 def _pdf_ocr(source: bytes) -> list[dict]:
-                    doc = fitz.open(stream=source, filetype="pdf")
-                    max_pages = settings.MAX_OCR_PAGES
-                    total_pages = len(doc)
-                    pages_to_process = (
-                        min(total_pages, max_pages) if max_pages > 0 else total_pages
-                    )
-                    page_images: list[tuple[int, bytes]] = []
-                    page_dims: dict[int, tuple[int, int]] = {}
-                    for i in range(pages_to_process):
-                        page = doc[i]
-                        pix = page.get_pixmap(dpi=200)
-                        img_bytes = pix.tobytes("png")
-                        page_images.append((i + 1, img_bytes))
-                        page_dims[i + 1] = (pix.width, pix.height)
-                    doc.close()
+                    import gc
 
-                    results = ocr_pages_with_boxes(page_images, skip_rotation=True)
-                    blocks: list[dict] = []
-                    for page_idx, result in results.items():
-                        pw, ph = page_dims.get(page_idx, (0, 0))
-                        blocks.append({
-                            "page": page_idx,
-                            "text": result.text,
-                            "boxes": result.boxes or [],
-                            "page_width": pw,
-                            "page_height": ph,
-                            "source": "ocr",
-                            "has_boxes": bool(result.boxes),
-                            "_ocr_boxes_failed": result.failed,
-                        })
-                    return blocks
+                    doc = fitz.open(stream=source, filetype="pdf")
+                    try:
+                        max_pages = settings.MAX_OCR_PAGES
+                        total_pages = len(doc)
+                        pages_to_process = (
+                            min(total_pages, max_pages) if max_pages > 0 else total_pages
+                        )
+                        all_blocks: list[dict] = []
+                        # Process pages in batches to manage memory
+                        for batch_start in range(0, pages_to_process, batch_size):
+                            batch_end = min(batch_start + batch_size, pages_to_process)
+                            page_images: list[tuple[int, bytes]] = []
+                            page_dims: dict[int, tuple[int, int]] = {}
+                            for i in range(batch_start, batch_end):
+                                page = doc[i]
+                                pix = page.get_pixmap(dpi=150)
+                                img_bytes = pix.tobytes("png")
+                                page_images.append((i + 1, img_bytes))
+                                page_dims[i + 1] = (pix.width, pix.height)
+
+                            results = ocr_pages_with_boxes(page_images, skip_rotation=True)
+                            for page_idx, result in results.items():
+                                pw, ph = page_dims.get(page_idx, (0, 0))
+                                all_blocks.append({
+                                    "page": page_idx,
+                                    "text": result.text,
+                                    "boxes": result.boxes or [],
+                                    "page_width": pw,
+                                    "page_height": ph,
+                                    "source": "ocr",
+                                    "has_boxes": bool(result.boxes),
+                                    "_ocr_boxes_failed": result.failed,
+                                })
+
+                            # Release batch memory before next iteration
+                            del page_images, page_dims, results
+                            gc.collect()
+
+                        return all_blocks
+                    finally:
+                        doc.close()
 
                 blocks = await asyncio.to_thread(_pdf_ocr, request.source)
+            else:
+                # Image: use ocr_pages_with_boxes.
+                # Run in thread pool to avoid blocking event loop.
+                page_results = await asyncio.to_thread(
+                    ocr_pages_with_boxes,
+                    [(1, request.source)],
+                    True,  # skip_rotation
+                )
+                for page_idx, result in page_results.items():
+                    pw, ph = _get_image_dimensions(request.source)
+                    blocks.append({
+                        "page": page_idx,
+                        "text": result.text,
+                        "boxes": result.boxes or [],
+                        "page_width": pw or 0,
+                        "page_height": ph or 0,
+                        "source": "ocr",
+                        "has_boxes": bool(result.boxes),
+                        "_ocr_boxes_failed": result.failed,
+                    })
 
             latency_ms = round((time.monotonic() - start) * 1000, 2)
 
@@ -908,15 +944,28 @@ class AdapterRegistry:
         return list(self._transform_adapters.values())
 
     def close_all(self) -> None:
-        """Close all registered adapters."""
-        for adapter in self._ocr_adapters.values():
+        """Close all registered adapters.
+
+        Attempts to call ``close()`` on each adapter. Async close methods
+        are scheduled via ``asyncio.ensure_future`` if an event loop is running.
+        """
+        import asyncio as _asyncio
+
+        for adapter in list(self._ocr_adapters.values()) + list(self._transform_adapters.values()):
             try:
-                import asyncio
+                close_fn = getattr(adapter, "close", None)
+                if close_fn is None:
+                    continue
+                coro = close_fn()
                 try:
-                    asyncio.get_running_loop()
-                    # Cannot run async close synchronously; skip
+                    loop = _asyncio.get_running_loop()
+                    _asyncio.ensure_future(coro)
                 except RuntimeError:
-                    pass
+                    # No running loop — close synchronously via asyncio.run
+                    try:
+                        _asyncio.run(coro)
+                    except Exception:
+                        pass
             except Exception:
                 pass
         self._ocr_adapters.clear()
@@ -1066,11 +1115,12 @@ class AdapterSelector:
             if cap.backend == preferred_backend or not preferred_backend:
                 return adapter
 
-        # Fallback: return first healthy
+        # Fallback: return first healthy adapter (ignoring circuit state since
+        # no adapter passed the strict selection above).
         for adapter in candidates:
             cap = adapter.capabilities
             health = self._health.get(cap.backend, AdapterHealth())
-            if health.healthy and time.time() < health.circuit_open_until:
+            if health.healthy:
                 return adapter
 
         return None
