@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
 from sqlalchemy import select, update
@@ -57,7 +57,7 @@ _in_flight: set[int] = set()
 _draining = False
 
 
-# ── State machine ──
+# ── State machine — transition rules (reserved for future enforcement) ──
 
 _VALID_TRANSITIONS: dict[str, set[str]] = {
     ExportTaskStatus.PENDING: {ExportTaskStatus.PROCESSING},
@@ -66,15 +66,6 @@ _VALID_TRANSITIONS: dict[str, set[str]] = {
     ExportTaskStatus.FAILED: set(),  # retry creates a new task
     ExportTaskStatus.EXPIRED: set(),
 }
-
-
-def validate_transition(from_status: str, to_status: str) -> bool:
-    """Check if a status transition is valid per the state machine.
-
-    Returns ``True`` if allowed, ``False`` otherwise.
-    """
-    allowed = _VALID_TRANSITIONS.get(from_status, set())
-    return to_status in allowed
 
 
 async def run_export_processor():
@@ -103,14 +94,14 @@ async def _recover_stale_tasks():
     otherwise processing_started_at) to decide if a task is truly stale.
     """
     now = datetime.now(UTC)
-    cutoff = now.timestamp() - _PROCESSING_TIMEOUT_SEC
+    cutoff = now - timedelta(seconds=_PROCESSING_TIMEOUT_SEC)
 
     async with async_session() as db:
         result = await db.execute(
             select(ExportTask).where(
                 ExportTask.status == ExportTaskStatus.PROCESSING,
                 ExportTask.processing_started_at.isnot(None),
-                sa.func.coalesce(ExportTask.heartbeat_at, ExportTask.processing_started_at) < cutoff,  # type: ignore[operator]
+                sa.func.coalesce(ExportTask.heartbeat_at, ExportTask.processing_started_at) < cutoff,
             )
         )
         stale = result.scalars().all()
@@ -125,7 +116,7 @@ async def _recover_stale_tasks():
             task.completed_at = datetime.now(UTC)
 
         if stale:
-            await db.flush()
+            await db.commit()
             logger.info("Reclaimed %d stale tasks", len(stale))
 
 
@@ -180,7 +171,7 @@ async def _process_one_task():
         if row is None:
             return
         task_id, user_id = row
-        await db.flush()
+        await db.commit()
 
     _in_flight.add(task_id)
     logger.info("export_task_started", extra={
@@ -269,10 +260,16 @@ async def _process_one_task():
                     "error_message": updated.error_message,
                 })
 
+            # Stop timeout/heartbeat before commit so the timeout handler
+            # won't see a stale PROCESSING state and overwrite COMPLETED.
+            _heartbeat_stop = True
             await db.commit()
             await _publish_task_event(task_id, updated)
 
     except Exception as e:
+        # Notify the timeout task that processing is done so it doesn't
+        # overwrite COMPLETED with FAILED by stale-read.
+        _heartbeat_stop = True
         logger.exception("Export task %d crashed: %s", task_id, e)
         try:
             async with async_session() as db:

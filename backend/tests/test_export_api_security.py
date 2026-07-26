@@ -89,6 +89,8 @@ def _get_detail(resp):
     data = resp.json()
     if "detail" in data and isinstance(data["detail"], dict):
         return data["detail"]
+    if "detail" in data and isinstance(data["detail"], str):
+        return {"message": data["detail"]}
     return data
 
 
@@ -150,8 +152,9 @@ class TestPreviewCountPermission:
             app.dependency_overrides[get_current_user] = _override_user(1)
             app.dependency_overrides[get_db] = _override_db()
             resp = client.post(self.url, json=self.payload)
-        # May fail because DB mock isn't realistic enough, but should NOT be 403
-        assert resp.status_code != 403, "Whitelisted user should not get 403"
+        # May fail because DB mock isn't realistic enough
+        assert resp.status_code == 200, f"Whitelisted user should get 200, got {resp.status_code}: {resp.text[:200]}"
+        assert resp.json()["count"] >= 0
 
     def test_preview_count_allowed_when_allow_all(self):
         """EXPORT_ALLOW_ALL_USERS=True allows preview count."""
@@ -166,7 +169,8 @@ class TestPreviewCountPermission:
             app.dependency_overrides[get_current_user] = _override_user(999)
             app.dependency_overrides[get_db] = _override_db()
             resp = client.post(self.url, json=self.payload)
-        assert resp.status_code != 403, "allow-all user should not get 403"
+        assert resp.status_code == 200, f"allow-all user should get 200, got {resp.status_code}: {resp.text[:200]}"
+        assert resp.json()["count"] >= 0
 
     def test_preview_count_returns_structured_error(self):
         """preview-count returns structured error codes."""
