@@ -30,6 +30,14 @@ from app.schemas.export_task import (
 )
 from app.services.export.data_builder import build_snapshot_data
 from app.services.export.exporter_base import Exporter
+from app.services.export.export_metrics import (
+    inc_completed,
+    inc_created,
+    inc_failed,
+    observe_file_size_bytes,
+    observe_processing_seconds,
+    observe_queue_wait_seconds,
+)
 from app.services.export.pdf_exporter import PdfExporter
 from app.services.export.range_resolver import resolve_range
 from app.services.export.snapshot_service import create_snapshot
@@ -167,6 +175,7 @@ async def create_export_task(
     )
     db.add(task)
     await db.flush()
+    inc_created()
     logger.info("Export task %d created for user %d", task.id, user_id)
     return task
 
@@ -276,6 +285,14 @@ async def process_task(
             task.completed_at = datetime.now(dt.UTC)
             task.expires_at = datetime.now(dt.UTC) + dt.timedelta(days=7)
 
+            inc_completed()
+            observe_file_size_bytes(len(result.file_bytes))
+            if task.processing_started_at:
+                observe_processing_seconds(
+                    (task.completed_at - task.processing_started_at).total_seconds()
+                )
+            _record_queue_wait(task)
+
             logger.info(
                 "Export task %d completed: %d questions, %d skipped, %d bytes",
                 task.id, task.success_count, task.skip_count, task.file_size,
@@ -285,16 +302,25 @@ async def process_task(
         task.status = ExportTaskStatus.FAILED
         task.error_message = str(e)[:500]
         task.completed_at = datetime.now(dt.UTC)
+        inc_failed()
         logger.warning("Export task %d failed (validation): %s", task.id, e)
 
     except Exception as e:
         task.status = ExportTaskStatus.FAILED
         task.error_message = f"导出失败: {str(e)[:200]}"
         task.completed_at = datetime.now(dt.UTC)
+        inc_failed()
         logger.exception("Export task %d failed (unexpected)", task.id)
 
     await db.flush()
     return task
+
+
+def _record_queue_wait(task: ExportTask) -> None:
+    """Record queue wait time from created_at to processing_started_at."""
+    if task.created_at and task.processing_started_at:
+        wait = (task.processing_started_at - task.created_at).total_seconds()
+        observe_queue_wait_seconds(max(0, wait))
 
 
 async def _collect_subjects(db: AsyncSession, wq_ids: list[int]) -> list[dict]:

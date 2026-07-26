@@ -453,3 +453,194 @@ class TestPushService:
         """Must enforce max message payload size."""
         from app.services.export.push_service import _MAX_MESSAGE_BYTES
         assert _MAX_MESSAGE_BYTES == 65536
+
+
+# ═══════════════════════════════════════════════════
+# 10. Export metrics
+# ═══════════════════════════════════════════════════
+
+
+class TestExportMetrics:
+    """Export metrics must be wired and return correct values."""
+
+    def test_metrics_empty_initially(self):
+        from app.services.export.export_metrics import get_metrics
+        m = get_metrics()
+        assert "export_created_total" in m
+        assert "export_completed_total" in m
+        assert "export_failed_total" in m
+        assert m["export_created_total"] >= 0
+
+    def test_metrics_after_inc(self):
+        from app.services.export.export_metrics import (
+            get_metrics,
+            inc_completed,
+            inc_created,
+            inc_failed,
+        )
+        before = get_metrics()["export_created_total"]
+        inc_created()
+        inc_completed()
+        inc_failed()
+        after = get_metrics()
+        assert after["export_created_total"] == before + 1
+        assert after["export_completed_total"] >= 1
+        assert after["export_failed_total"] >= 1
+
+    def test_metrics_formula_fallback(self):
+        from app.services.export.export_metrics import get_metrics, inc_formula_fallback
+        inc_formula_fallback("png")
+        inc_formula_fallback("text")
+        m = get_metrics()
+        assert m["export_formula_fallback_png"] >= 1
+        assert m["export_formula_fallback_text"] >= 1
+
+    def test_metrics_histogram(self):
+        from app.services.export.export_metrics import (
+            get_metrics,
+            observe_file_size_bytes,
+            observe_processing_seconds,
+            observe_queue_wait_seconds,
+        )
+        observe_processing_seconds(1.5)
+        observe_queue_wait_seconds(0.5)
+        observe_file_size_bytes(1024)
+        m = get_metrics()
+        assert m["export_processing_seconds_count"] >= 1
+        assert m["export_queue_wait_seconds_count"] >= 1
+        assert m["export_file_size_bytes_count"] >= 1
+
+    def test_metrics_prometheus_format(self):
+        from app.services.export.export_metrics import metrics_as_prometheus
+        text = metrics_as_prometheus()
+        assert "export_created_total" in text
+        assert "export_completed_total" in text
+
+
+# ═══════════════════════════════════════════════════
+# 11. Admin CLI
+# ═══════════════════════════════════════════════════
+
+
+class TestAdminCLI:
+    """Admin CLI must register subcommands and handle args."""
+
+    def test_cli_parse_list(self):
+        from app.cli.export_admin import _parse_args
+        args = _parse_args(["list", "pending"])
+        assert args.command == "list"
+        assert args.status == "pending"
+
+    def test_cli_parse_metrics(self):
+        from app.cli.export_admin import _parse_args
+        args = _parse_args(["metrics"])
+        assert args.command == "metrics"
+
+    def test_cli_parse_cleanup_dry_run(self):
+        from app.cli.export_admin import _parse_args
+        args = _parse_args(["cleanup", "--dry-run"])
+        assert args.command == "cleanup"
+
+    def test_cli_parse_orphan_scan(self):
+        from app.cli.export_admin import _parse_args
+        args = _parse_args(["orphan-scan"])
+        assert args.command == "orphan-scan"
+
+    def test_cli_parse_retry(self):
+        from app.cli.export_admin import _parse_args
+        args = _parse_args(["retry", "42"])
+        assert args.command == "retry"
+        assert args.task_id == 42
+
+    def test_cli_parse_recover_zombie(self):
+        from app.cli.export_admin import _parse_args
+        args = _parse_args(["recover-zombie", "99"])
+        assert args.command == "recover-zombie"
+        assert args.task_id == 99
+
+
+# ═══════════════════════════════════════════════════
+# 12. DOCX acceptance — XML structure
+# ═══════════════════════════════════════════════════
+
+
+class TestDocxAcceptance:
+    """Acceptance DOCX XML structure verification."""
+
+    DOCX_PATH = "/home/lmh/projects/postgraduate-ai/artifacts/libreoffice/phase3_acceptance.docx"
+
+    def _docx_xml(self) -> str:
+        import zipfile
+        import io
+        with zipfile.ZipFile(self.DOCX_PATH) as z:
+            return z.read("word/document.xml").decode("utf-8")
+
+    def test_docx_exists(self):
+        import os
+        assert os.path.exists(self.DOCX_PATH), "Acceptance DOCX not found"
+
+    def test_docx_has_w_tbl(self):
+        xml = self._docx_xml()
+        assert "w:tbl" in xml, "No native table found"
+
+    def test_docx_has_w_tr(self):
+        xml = self._docx_xml()
+        assert "w:tr" in xml, "No table rows"
+
+    def test_docx_has_w_gridSpan(self):
+        xml = self._docx_xml()
+        assert "gridSpan" in xml, "No colspan in merged cells"
+
+    def test_docx_has_omml(self):
+        xml = self._docx_xml()
+        assert "m:oMath" in xml or "oMath" in xml, "No OMML formulas"
+
+    def test_docx_has_page_field(self):
+        xml = self._docx_xml()
+        import zipfile
+        import io
+        has_page = False
+        with zipfile.ZipFile(self.DOCX_PATH) as z:
+            for name in z.namelist():
+                if "footer" in name:
+                    content = z.read(name).decode("utf-8")
+                    if "PAGE" in content:
+                        has_page = True
+                        break
+        assert has_page, "No PAGE field in footer"
+
+    def test_docx_has_numpages_field(self):
+        import zipfile
+        has_numpages = False
+        with zipfile.ZipFile(self.DOCX_PATH) as z:
+            for name in z.namelist():
+                if "footer" in name:
+                    content = z.read(name).decode("utf-8")
+                    if "NUMPAGES" in content:
+                        has_numpages = True
+                        break
+        assert has_numpages, "No NUMPAGES field in footer"
+
+    def test_no_html_tag_leakage(self):
+        xml = self._docx_xml()
+        import re
+        text_content = re.sub(r'<[^>]+>', ' ', xml)
+        assert "<sub>" not in text_content, "Raw <sub> tag leaked"
+        assert "<sup>" not in text_content, "Raw <sup> tag leaked"
+        assert "<b>" not in text_content, "Raw <b> tag leaked"
+
+    def test_chinese_text_present(self):
+        xml = self._docx_xml()
+        assert "线性代数" in xml, "Chinese text missing"
+
+    def test_docx_not_empty(self):
+        import os
+        assert os.path.getsize(self.DOCX_PATH) > 1000, "DOCX too small"
+
+    def test_chemistry_unicode_present(self):
+        xml = self._docx_xml()
+        assert any(c in xml for c in "₂₃₄₊₋"), "Unicode chemistry not found"
+
+    def test_matrix_formula_present(self):
+        xml = self._docx_xml()
+        assert "matrix" in xml.lower() or "pmatrix" in xml.lower(), "Matrix not found"
