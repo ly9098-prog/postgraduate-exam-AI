@@ -71,7 +71,7 @@ async def cleanup_expired(
         stats["tasks_expired"] += 1
 
     if stats["tasks_expired"] > 0:
-        await db.flush()
+        await db.commit()
         logger.info("export_cleanup_completed", extra={
             "tasks_expired": stats["tasks_expired"],
             "files_deleted": stats["files_deleted"],
