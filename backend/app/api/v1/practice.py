@@ -527,6 +527,9 @@ async def list_records(
         page_size=page_size,
     )
 
+    conds = [PR.user_id == current_user.id]
+    if subject:
+        conds.append(PR.subject == subject)
 
 # ── V3: 知识点掌握度查询接口 ──
 

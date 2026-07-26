@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+
 _VALID_QUESTION_TYPES = (
     "single_choice", "multiple_choice", "true_false", "fill_blank", "multi_blank_choice", "subjective",
 )

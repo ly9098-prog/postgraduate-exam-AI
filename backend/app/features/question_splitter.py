@@ -211,6 +211,96 @@ _FROZEN_OPTION_LINE_RE = re.compile(
 _FROZEN_ANSWER_LINE_RE = re.compile(
     r"(?:^|\n)\s*(?:参考|正确)?答案\s*[:：]\s*[A-Da-d]+\s*(?:\n|$)"
 )
+_ANSWER_EXPLANATION_MARKER = re.compile(
+    r"(?:答案|正确答案|参考答案|解析|解答|讲解|分析)\s*[：:]"
+)
+_ANSWER_EXPLANATION_LINE = re.compile(
+    r"^(?:【)?(?:参考|正确)?答案(?:】)?\s*[：:]|^(?:【)?(?:解析|解答|讲解|分析)(?:】)?\s*[：:]"
+)
+
+_OCR_OPTION_PATTERN = re.compile(
+    r"^" + _OPTION_NOISE_PREFIX + r"([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
+)
+
+# 章节号模式：X.X 或 X.X.X 格式（非题号）
+_SECTION_NUMBER_PATTERN = re.compile(
+    r"^\d+\.\d+(\.\d+)?\s*\S"
+)
+
+# 正文标题特征：数字后跟纯中文标题（允许年份标注）
+_CONTENT_TITLE_PATTERN = re.compile(
+    r"^\d+\s*[.、]\s*[一-鿿]{2,}[一-鿿\s、]*(?:[（(]\d{4}[）)])?[一-鿿\s、]*$"
+)
+
+# 年份标注模式：（2019）(2020) 等，王道教材标注考过年份
+_YEAR_ANNOTATION_RE = re.compile(r"[（(]\d{4}[）)]")
+
+# 试卷大题节标题：一、选择题 / 二、填空题 / 三、解答题 / Part I
+_EXAM_SECTION_HEADER = re.compile(
+    r"^(?:"
+    r"[一二三四五六七八九十]+\s*[、.．]\s*"
+    r"(?:单项选择|多项选择|选择|单选|多选|判断|填空|简答|"
+    r"计算|证明|综合应用|综合|解答|论述|分析|程序设计|应用)"
+    r"(?:题|部分)?"
+    r"|Part\s+[IVX]+\b"
+    r"|第\s*[一二三四五六七八九十]+\s*(?:部分|大?题)"
+    r")"
+)
+
+_SENTENCE_END = frozenset("。！？；…")
+
+
+def _iter_lines_with_pos(text: str):
+    """Yield (line_start_pos, line_text) for each line in text."""
+    start = 0
+    for line in text.split("\n"):
+        yield start, line
+        start += len(line) + 1
+
+
+def _has_exam_section_before(pos: int, section_positions: set[int], full_text: str) -> bool:
+    """Check if there's an exam section header between the previous question and pos."""
+    if not section_positions:
+        return False
+    # Look backward from pos for a section header within 500 chars
+    search_start = max(0, pos - 500)
+    for sp in section_positions:
+        if search_start <= sp < pos:
+            return True
+    return False
+
+
+def _is_section_number(line: str, page: int | None = None, content_pages: set | None = None) -> bool:
+    """判断一行是否为章节号（而非题号）。"""
+    stripped = line.strip()
+    # X.X.X 格式一定是章节号
+    if _SECTION_NUMBER_PATTERN.match(stripped):
+        return True
+    # "3.分组交换" 类格式：数字+纯中文标题（允许年份标注）
+    # 仅在有正文页上下文时应用，避免误过滤简短题目
+    if content_pages and _CONTENT_TITLE_PATTERN.match(stripped):
+        if page in content_pages:
+            return True
+    # 含年份标注的知识点编号行（如 "3. 快重传算法（2019）"）
+    if content_pages and page in content_pages:
+        if re.match(r"^\d+\s*[.、]", stripped) and _YEAR_ANNOTATION_RE.search(stripped):
+            if not re.search(r"[A-D]\s*[.、:：)）]", stripped):
+                return True
+    return False
+
+
+def _has_question_characteristics(line: str) -> bool:
+    """判断一行是否有选择题特征（括号、选项标记等）。"""
+    if "（" in line or "(" in line:
+        # 年份标注不算题目特征
+        line_no_year = _YEAR_ANNOTATION_RE.sub("", line)
+        if "（" in line_no_year or "(" in line_no_year:
+            return True
+    if re.search(r"[A-D]\s*[.、:：)）]", line):
+        return True
+    if re.search(r"下列|以下|正确|错误|哪|属于|不属于", line):
+        return True
+    return False
 
 
 def strip_frozen_options_from_stem(stem: str, frozen_options: dict[str, str]) -> str:
@@ -460,6 +550,65 @@ def _find_inline_question_boundaries(line: str, previous_num: int | None) -> lis
 
 def _is_sub_question_line(line: str, num: int, previous_num: int | None, in_subquestion: bool) -> bool:
     if not re.match(r"^(?:\d+\s*[)）]|[（(]\s*\d+\s*[）)])", line):
+        return False
+    if previous_num is None:
+        return False
+    return num == 1 or in_subquestion
+
+
+def _looks_like_paren_question(line: str, match_end: int) -> bool:
+    rest = line[match_end:].lstrip()
+    num_text = line[:match_end].rstrip(" )）")
+    if len(num_text) >= 2 and rest:
+        return True
+    return bool(re.match(r"(?:第\s*)?\S+题", rest))
+
+
+def _has_option_marker_before_question(text: str) -> bool:
+    markers = list(re.finditer(_OPTION_MARKER, text))
+    if not markers:
+        return False
+    keys = [m.group(1).upper() for m in markers]
+    if len(keys) >= 2:
+        return True
+    marker = markers[-1]
+    tail = text[marker.end():].strip()
+    return bool(tail)
+
+
+def _is_probable_inline_question_text(text: str) -> bool:
+    return bool(re.search(r"[（(][^）)]{0,8}[）)]|下列|以下|正确|错误|问|求|计算|证明|已知|若", text))
+
+
+def _looks_like_inline_question(line: str, match: re.Match, previous_num: int | None) -> bool:
+    num = int(match.group(1))
+    if _is_false_question_number(num, line[match.start():]):
+        return False
+    if previous_num is not None and num != previous_num + 1:
+        return False
+    before = line[:match.start()].rstrip()
+    if not before:
+        return False
+    if _has_option_marker_before_question(before):
+        return True
+    if _is_probable_inline_question_text(line[match.end():]):
+        return True
+    return before[-1] in _SENTENCE_END
+
+
+def _find_inline_question_boundaries(line: str, previous_num: int | None) -> list[tuple[int, int]]:
+    boundaries: list[tuple[int, int]] = []
+    expected = previous_num
+    for match in _INLINE_QUESTION_PATTERN.finditer(line):
+        if _looks_like_inline_question(line, match, expected):
+            num = int(match.group(1))
+            boundaries.append((num, match.start()))
+            expected = num
+    return boundaries
+
+
+def _is_sub_question_line(line: str, num: int, previous_num: int | None, in_subquestion: bool) -> bool:
+    if not re.match(r"^\d+\s*[)）]", line):
         return False
     if previous_num is None:
         return False
@@ -1434,6 +1583,14 @@ def split_questions(
         # ── 提取原题号信息（用于审核定位） ──
         source_question_no = str(num) if num and num > 0 else None
         source_question_label = _extract_first_line_label(raw_text)
+
+        # Determine section_type from the most recent question_type_* marker
+        section_type = None
+        if section_type_markers:
+            for marker_page, marker_type in reversed(section_type_markers):
+                if page_start >= marker_page:
+                    section_type = marker_type
+                    break
 
         questions.append({
             "number": num,

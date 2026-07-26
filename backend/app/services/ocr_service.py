@@ -59,6 +59,46 @@ def _run_async(coro):
 # ── Deprecated OCR functions ────────────────────────────────────────────────
 
 
+def _ocr_one_page_with_boxes(
+    page_png: bytes, page_index: int, skip_rotation: bool = False,
+) -> tuple[int, str, list[dict]]:
+    """对单页图片执行 OCR，返回 (page_index, text, boxes)。失败返回空。"""
+    try:
+        ocr = _get_ocr()
+        if skip_rotation:
+            img = _prepare_ocr_image(page_png)
+            result = _ocr_prepared_image(ocr, img)
+            candidate = OcrCandidateResult(result=result, image_size=img.size)
+        else:
+            candidate = _ocr_with_rotation_candidates(ocr, page_png)
+        ordered = _order_ocr_lines_reading_order(
+            _extract_ocr_lines(candidate.result),
+            candidate.image_size[0],
+            candidate.image_size[1],
+        )
+        if not ordered:
+            return page_index, "", []
+        lines = [line["text"] for line in ordered if line["text"].strip()]
+        boxes = [{"bbox": line["bbox"], "conf": line["conf"]} for line in ordered]
+        return page_index, "\n".join(lines), boxes
+    except Exception as e:
+        logger.warning("OCR（含框）第 %d 页失败：%s", page_index, e)
+        return page_index, "", []
+
+
+def ocr_image(image_bytes: bytes) -> str:
+    """对单张图片执行 OCR，返回识别文本。"""
+    if not settings.OCR_ENABLED:
+        raise RuntimeError("OCR 功能未启用（OCR_ENABLED=false）")
+    if not image_bytes:
+        raise ValueError("图片内容为空")
+
+    _, text = _ocr_one_page(image_bytes, 1)
+    if not text.strip():
+        raise RuntimeError("图片 OCR 未识别到文本")
+    return text
+
+
 def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
     """
     并发 OCR 多页。

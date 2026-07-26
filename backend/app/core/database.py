@@ -51,6 +51,18 @@ logger.info(
     _web_per, _workers, _web_per * _workers, _worker_per, _scheduler_per, _total_budget,
 )
 
+_connect_args = {}
+_engine_kwargs: dict = {
+    "echo": settings.APP_ENV == "development",
+    "pool_recycle": settings.DB_POOL_RECYCLE,
+}
+
+if "sqlite" in settings.DATABASE_URL:
+    _connect_args = {"check_same_thread": False}
+else:
+    _engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
+    _engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
+
 engine = create_async_engine(
     settings.DATABASE_URL,
     connect_args=_connect_args,
