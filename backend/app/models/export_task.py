@@ -84,6 +84,7 @@ class ExportTask(Base):
     processing_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     generator_version: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)  # monotonic, for stale-event detection
 
     # ── Timestamps ──
     created_at: Mapped[datetime] = mapped_column(
