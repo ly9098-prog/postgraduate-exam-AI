@@ -72,7 +72,7 @@ async def _main() -> int:
         async with async_session() as db:
             result = await db.execute(text("SELECT 1"))
             row = result.one()
-            assert row._mapping[0] == 1
+            assert row[0] == 1
         results.append(("PostgreSQL", True, "connected"))
         print(_CHECK_MARK)
     except Exception as e:
