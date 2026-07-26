@@ -57,9 +57,9 @@ def _parse_args(argv: list[str] | None = None):
 
 
 async def _list_tasks(status: str):
-    from app.core.database import async_session
     from sqlalchemy import select
 
+    from app.core.database import async_session
     from app.models.export_task import ExportTask
     from app.schemas.export_task import ExportTaskStatus
 
@@ -104,7 +104,7 @@ async def _list_tasks(status: str):
 
 
 async def _show_metrics():
-    from app.services.export.export_metrics import get_metrics, metrics_as_prometheus
+    from app.services.export.export_metrics import get_metrics
     # Pretty print
     m = get_metrics()
     for k, v in m.items():
@@ -118,11 +118,10 @@ async def _do_cleanup(dry_run: bool, confirmed: bool):
         print("ERROR: --confirm required for --execute")
         sys.exit(1)
 
-    from app.core.database import async_session
-    from app.models.export_task import ExportTask
-    from app.schemas.export_task import ExportTaskStatus
     from sqlalchemy import select
 
+    from app.core.database import async_session
+    from app.models.export_task import ExportTask
     from app.services.export.cleanup import cleanup_expired
 
     if dry_run:
@@ -147,12 +146,12 @@ async def _do_cleanup(dry_run: bool, confirmed: bool):
 
 async def _orphan_scan():
     """Scan for storage→DB orphans and DB→storage missing files."""
-    from app.core.database import async_session
     from sqlalchemy import select
 
+    from app.core.database import async_session
     from app.models.export_task import ExportTask
     from app.schemas.export_task import ExportTaskStatus
-    from app.services.export.export_metrics import inc_missing_files, inc_orphan_files
+    from app.services.export.export_metrics import inc_missing_files
     from app.services.storage_backend import get_export_storage
 
     storage = get_export_storage()
@@ -183,9 +182,9 @@ async def _orphan_scan():
 
 
 async def _retry_task(task_id: int):
-    from app.core.database import async_session
     from sqlalchemy import select
 
+    from app.core.database import async_session
     from app.models.export_task import ExportTask
     from app.schemas.export_task import ExportTaskStatus
 
@@ -223,9 +222,9 @@ async def _retry_task(task_id: int):
 
 
 async def _recover_zombie(task_id: int):
-    from app.core.database import async_session
     from sqlalchemy import select
 
+    from app.core.database import async_session
     from app.models.export_task import ExportTask
     from app.schemas.export_task import ExportTaskStatus
 

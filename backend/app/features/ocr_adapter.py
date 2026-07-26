@@ -958,7 +958,7 @@ class AdapterRegistry:
                     continue
                 coro = close_fn()
                 try:
-                    loop = _asyncio.get_running_loop()
+                    _loop = _asyncio.get_running_loop()
                     _asyncio.ensure_future(coro)
                 except RuntimeError:
                     # No running loop — close synchronously via asyncio.run

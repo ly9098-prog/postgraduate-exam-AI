@@ -7,7 +7,10 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.ai_diagnosis import AiDiagnosis
 from app.schemas.dashboard_insights import DashboardInsightsResponse
-from app.schemas.dashboard_llm import DashboardLlmAnalysisRequest, DashboardLlmAnalysisResponse
+from app.schemas.dashboard_llm import (
+    DashboardLlmAnalysisRequest,
+    DashboardLlmAnalysisResponse,
+)
 from app.schemas.growth import GrowthProfile
 from app.schemas.stats import (
     BehaviorStats,

@@ -38,7 +38,6 @@ def find_latex_segments(text: str) -> list[dict]:
     - ``display``: bool (only for latex type — True for $$...$$)
     """
     segments: list[dict] = []
-    pos = 0
     remaining = text
 
     while remaining:

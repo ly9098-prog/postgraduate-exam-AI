@@ -22,7 +22,11 @@ from typing import Any
 from app.features.candidate_evaluator import CandidateDecision, CandidateEvaluator
 from app.features.code_integrity import contains_code, detect_code_block_integrity
 from app.features.pipeline_stages._helpers import _count_risk_flags
-from app.features.token_budget import check_token_limit, estimate_tokens, record_token_usage
+from app.features.token_budget import (
+    check_token_limit,
+    estimate_tokens,
+    record_token_usage,
+)
 
 logger = logging.getLogger(__name__)
 

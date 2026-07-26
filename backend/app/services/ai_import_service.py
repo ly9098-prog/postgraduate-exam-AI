@@ -11,8 +11,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.client import deepseek
 from app.ai import fallback
+from app.ai.client import deepseek
 from app.ai.prompts import (
     build_complete_question,
     build_enrich_question,

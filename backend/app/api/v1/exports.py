@@ -394,7 +394,7 @@ async def re_export(
     if snapshot_data is None:
         raise_export_error(400, ExportErrorCode.FILE_NOT_FOUND, "原快照不存在或已过期")
 
-    snapshot_config = snapshot_data.get("config", {})
+    _snapshot_config = snapshot_data.get("config", {})
 
     config = {
         "range_type": task.range_type,

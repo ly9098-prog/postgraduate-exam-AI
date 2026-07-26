@@ -10,7 +10,10 @@ import logging
 
 from app.features.ai_repair import repair_questions
 from app.features.ai_validation import validate_ai_results
-from app.features.pipeline_stages._helpers import _count_risk_flags, _log_multi_blank_stage
+from app.features.pipeline_stages._helpers import (
+    _count_risk_flags,
+    _log_multi_blank_stage,
+)
 
 logger = logging.getLogger(__name__)
 

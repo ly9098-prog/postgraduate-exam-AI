@@ -24,7 +24,9 @@ async def create(
 ) -> Question:
     # Resolve subject_id: prefer explicit subject_id, fall back to legacy subject string
     if subject_id is None and subject:
-        from app.services.admin_subject_service import resolve_subject_id as _resolve_sid
+        from app.services.admin_subject_service import (
+            resolve_subject_id as _resolve_sid,
+        )
         subject_id = await _resolve_sid(db, subject)
     q = Question(
         subject_id=subject_id,

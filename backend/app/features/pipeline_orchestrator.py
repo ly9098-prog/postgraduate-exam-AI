@@ -12,6 +12,12 @@ Features:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.core.document_ir import DocumentIR
+
+
 import asyncio
 import logging
 import os
@@ -65,7 +71,9 @@ from app.features.pipeline_stages.repair_stage import (
     run_repair_stage,
 )
 from app.features.pipeline_stages.review_stage import run_review_stage
-from app.features.pipeline_stages.structure_freeze_stage import run_structure_freeze_stage
+from app.features.pipeline_stages.structure_freeze_stage import (
+    run_structure_freeze_stage,
+)
 from app.features.pipeline_stages.table_detect_stage import run_table_detect_stage
 from app.features.question_splitter import split_questions
 from app.features.question_type_classifier import (
@@ -2976,7 +2984,10 @@ class ImportPipeline:
                 page_batches.append((1, image_bytes, pw, ph))
 
             # ── Dual-source strategy: PP-OCRv4 primary, VL fallback ──
-            from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+            from app.core.deployment_profile import (
+                DeploymentProfile,
+                detect_deployment_profile,
+            )
             from app.features.ocr_correction_common import repair_option_structure
             from app.features.question_type_classifier import (
                 detect_options_from_text,
@@ -3936,7 +3947,9 @@ class ImportPipeline:
             and any(b.get("boxes") for b in normalized_blocks)
         ):
             try:
-                from app.features.visual_boundary_detector import filter_book_layout_blocks_from_ir
+                from app.features.visual_boundary_detector import (
+                    filter_book_layout_blocks_from_ir,
+                )
 
                 doc_ir = _get_blocks_document_ir(normalized_blocks)
                 if doc_ir is not None:
@@ -4130,7 +4143,9 @@ class ImportPipeline:
                             visual_bounds = detect_visual_boundaries_from_ir(doc_ir)
                         else:
                             visual_bounds = []
-                        from app.features.question_splitter import split_by_visual_boundaries
+                        from app.features.question_splitter import (
+                            split_by_visual_boundaries,
+                        )
                         split_diagnostics["visual_boundary"] = {
                             "boundary_count": len(visual_bounds),
                             "boundaries": [
@@ -4337,7 +4352,9 @@ class ImportPipeline:
         if has_boxes:
             doc_ir = _get_blocks_document_ir(normalized_blocks)
             if doc_ir is not None:
-                from app.features.pipeline_stages.match_stage import run_match_stage_from_ir
+                from app.features.pipeline_stages.match_stage import (
+                    run_match_stage_from_ir,
+                )
                 return run_match_stage_from_ir(raw_questions, doc_ir, structure=structure)
         return run_match_stage(raw_questions, normalized_blocks, structure=structure)
 
@@ -6046,7 +6063,9 @@ async def run_pipeline_background(
                 if qr or al:
                     from sqlalchemy import update
 
-                    from app.models.import_pipeline import ImportPipeline as ImportPipelineRow
+                    from app.models.import_pipeline import (
+                        ImportPipeline as ImportPipelineRow,
+                    )
                     await db.execute(
                         update(ImportPipelineRow)
                         .where(ImportPipelineRow.pipeline_id == pipeline_id)

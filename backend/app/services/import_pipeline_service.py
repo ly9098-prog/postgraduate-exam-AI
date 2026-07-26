@@ -205,7 +205,10 @@ def _build_ocr_runtime_diagnostics() -> dict:
         "ocr_enabled": settings.OCR_ENABLED,
     }
     try:
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
         profile = detect_deployment_profile()
         if profile == DeploymentProfile.CLOUD_API:
             result["paddleocr_available"] = False
@@ -580,7 +583,10 @@ async def start_import_pipeline(
         if not settings.OCR_ENABLED:
             raise ValueError("图片 OCR 功能未启用")
         # 云端使用外部 OCR API，无需本地 PaddleOCR
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
         profile = detect_deployment_profile()
         if profile != DeploymentProfile.CLOUD_API and importlib.util.find_spec("paddleocr") is None:
             raise ValueError("OCR 依赖未安装：paddleocr")

@@ -13,6 +13,7 @@ import asyncio
 import logging
 import warnings
 
+from app.core.config import settings
 from app.core.ocr_types import OcrPageResult
 
 logger = logging.getLogger(__name__)
@@ -64,7 +65,14 @@ def _ocr_one_page_with_boxes(
 ) -> tuple[int, str, list[dict]]:
     """对单页图片执行 OCR，返回 (page_index, text, boxes)。失败返回空。"""
     try:
-        ocr = _get_ocr()
+        from app.core.ocr_types import OcrCandidateResult
+        from app.ocr_worker.executor import (
+            _extract_ocr_lines,
+            _ocr_prepared_image,
+            _ocr_with_rotation_candidates,
+            _order_ocr_lines_reading_order,
+            _prepare_ocr_image,
+        )
         if skip_rotation:
             img = _prepare_ocr_image(page_png)
             result = _ocr_prepared_image(ocr, img)
@@ -270,7 +278,10 @@ def get_last_transform_tracker():
 def _is_cloud_api() -> bool:
     """Check if the current deployment profile is cloud_api."""
     try:
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
         return detect_deployment_profile() == DeploymentProfile.CLOUD_API
     except Exception:
         return False

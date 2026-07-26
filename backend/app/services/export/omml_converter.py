@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
-_M = "{%s}" % M_NS
-_W = "{%s}" % W_NS
+_M = f"{{{M_NS}}}"
+_W = f"{{{W_NS}}}"
 
 # Max input length to prevent DoS
 _MAX_LATEX_LENGTH = 5000

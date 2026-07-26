@@ -88,8 +88,12 @@ from app.services.admin_import_service import (
     reject_import_question,
     update_import_question,
 )
-from app.services.import_pipeline_service import get_pipeline_status as svc_get_pipeline_status
-from app.services.import_pipeline_service import start_import_pipeline as svc_start_import_pipeline
+from app.services.import_pipeline_service import (
+    get_pipeline_status as svc_get_pipeline_status,
+)
+from app.services.import_pipeline_service import (
+    start_import_pipeline as svc_start_import_pipeline,
+)
 from app.services.streaming_upload_handler import stream_to_temp
 
 logger = logging.getLogger(__name__)
@@ -611,7 +615,10 @@ async def import_text_questions(
     import uuid
     from datetime import datetime
 
-    from app.features.question_pipeline import _create_question_import, process_question_pipeline
+    from app.features.question_pipeline import (
+        _create_question_import,
+        process_question_pipeline,
+    )
 
     batch_id = f"BATCH_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     items: list[TextImportResultItem] = []
@@ -790,7 +797,10 @@ async def batch_answer_image_preview(
     - mode=answer_analysis 同时提取答案和解析
     - 不写入数据库，返回预览结果
     """
-    from app.services.batch_answer_image_service import BusinessError, generate_image_preview
+    from app.services.batch_answer_image_service import (
+        BusinessError,
+        generate_image_preview,
+    )
 
     if not files:
         raise HTTPException(status_code=400, detail={"error_code": "NO_FILES", "detail": "未上传任何图片"})
@@ -859,7 +869,10 @@ async def batch_answer_image_apply(
     db: AsyncSession = Depends(get_db),
 ):
     """确认图片预览结果，写入答案/解析到数据库。"""
-    from app.services.batch_answer_image_service import BusinessError, apply_image_preview
+    from app.services.batch_answer_image_service import (
+        BusinessError,
+        apply_image_preview,
+    )
 
     try:
         result = await apply_image_preview(
@@ -1534,7 +1547,9 @@ async def admin_maintenance_cleanup(
     真实删除（dry_run=false）需要先执行 dry-run 并确认。
     """
     from app.features.pipeline_artifacts import cleanup_expired as _cleanup_artifacts
-    from app.services.ocr_cache_service import cleanup_expired_entries as _cleanup_ocr_cache
+    from app.services.ocr_cache_service import (
+        cleanup_expired_entries as _cleanup_ocr_cache,
+    )
 
     target = (request or {}).get("target", "all")
     dry_run = (request or {}).get("dry_run", True)

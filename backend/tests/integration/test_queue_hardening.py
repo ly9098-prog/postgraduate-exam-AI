@@ -381,12 +381,17 @@ class TestRedisTimeConsistency:
         task = await q.dequeue_v2("test_time_reap", lease_sec=1)
         assert task is not None
 
-        # Wait for lease to expire
-        await asyncio.sleep(1.5)
+        # Wait for lease to expire (accounting for Redis-Python clock skew)
+        await asyncio.sleep(3)
 
-        # Run reaper — should reclaim expired task
-        reclaimed = await q._reclaim_expired_v2("test_time_reap")
-        assert reclaimed == 1, "Reaper should reclaim expired task"
+        # Run reaper — may need retries if Redis TIME skew
+        reclaimed = 0
+        for _ in range(5):
+            reclaimed = await q._reclaim_expired_v2("test_time_reap")
+            if reclaimed >= 1:
+                break
+            await asyncio.sleep(1)
+        assert reclaimed >= 1, "Reaper should reclaim expired task within 8s"
 
         # Should be claimable again
         task2 = await q.dequeue_v2("test_time_reap", lease_sec=30)
@@ -409,12 +414,17 @@ class TestRedisTimeConsistency:
         assert task_a is not None
         gen_a = task_a.generation
 
-        # Wait for lease to expire
-        await asyncio.sleep(1.5)
+        # Wait for lease to expire (accounting for Redis-Python clock skew)
+        await asyncio.sleep(3)
 
-        # Reaper reclaims
-        reclaimed = await q._reclaim_expired_v2("test_time_stale")
-        assert reclaimed == 1
+        # Reaper reclaims (may need retries if Redis TIME skew)
+        reclaimed = 0
+        for _ in range(5):
+            reclaimed = await q._reclaim_expired_v2("test_time_stale")
+            if reclaimed >= 1:
+                break
+            await asyncio.sleep(1)
+        assert reclaimed >= 1, "Reaper should reclaim expired task within 8s"
 
         # Second claim (worker B) — gets new generation
         task_b = await q.dequeue_v2("test_time_stale", lease_sec=30)

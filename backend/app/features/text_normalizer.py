@@ -856,9 +856,6 @@ class ImportTextNormalizer:
             return True
         return name in self._enabled_strategies
 
-    def __init__(self, extra_watermark_patterns: list | None = None):
-        self._extra_watermark_patterns = extra_watermark_patterns or []
-
     def normalize(self, raw_blocks: list[dict]) -> list[dict]:
         """标准化文本块，返回 normalized_blocks。
 

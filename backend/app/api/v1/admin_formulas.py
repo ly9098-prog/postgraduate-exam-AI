@@ -587,7 +587,9 @@ async def update_formula_card(
         if old_type == "pure_formula" and new_type in ("function_graph", "auto"):
             # Transitioning into function_graph-capable type
             # Check if there's an existing graph asset
-            from app.services.formula_graph_asset_service import get_graph_assets_for_card
+            from app.services.formula_graph_asset_service import (
+                get_graph_assets_for_card,
+            )
             existing_assets = await get_graph_assets_for_card(db, card.id)
             has_asset = any(a.image_url for a in existing_assets)
             update_data["graph_status"] = "ready" if has_asset else "unconfigured"

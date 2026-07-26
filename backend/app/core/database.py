@@ -452,7 +452,9 @@ async def init_db():
     from app.models.recommendation_strategy_config import (
         RecommendationStrategyConfig,  # noqa: F401 — Phase 4
     )
-    from app.models.refresh_token import RefreshToken  # noqa: F401 — register model for create_all
+    from app.models.refresh_token import (
+        RefreshToken,  # noqa: F401 — register model for create_all
+    )
     from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
 
     async with engine.begin() as conn:

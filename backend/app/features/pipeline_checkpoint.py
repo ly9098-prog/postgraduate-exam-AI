@@ -254,7 +254,6 @@ async def update_chunk_status(
     fence = _fencing_ctx.get()
     if fence is not None:
         from app.services.db_fencing import (
-            FencingRejectedError,
             verify_fencing_or_raise,
         )
 
