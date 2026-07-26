@@ -77,6 +77,18 @@ deploy/nginx/ssl/*.key
 deploy/nginx/ssl/*.crt
 deploy/logs/
 
+# Generated export artifacts
+exports/
+backend/exports/
+artifacts/**/*.pdf
+artifacts/**/*.docx
+!artifacts/**/office-acceptance-checklist.md
+
+# Downloaded font files
+*.ttc
+*.ttf
+!**/fonts/**
+
 # Pipeline runtime artifacts
 .backend_cache/
 backend/.backend_cache/
