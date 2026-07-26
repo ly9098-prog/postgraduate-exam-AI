@@ -68,7 +68,7 @@ async def _main() -> int:
         async with async_session() as db:
             result = await db.execute(text("SELECT 1"))
             row = result.one()
-            if row._mapping[0] == 1:
+            if row[0] == 1:
                 _check("PostgreSQL connectivity", True, settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else settings.DATABASE_URL[:50])
             else:
                 _check("PostgreSQL connectivity", False)
@@ -213,13 +213,16 @@ async def _main() -> int:
     # ── Storage / scratch ──
     print("\n─ Storage")
     try:
+        role = settings.PROCESS_ROLE
         scratch = settings.WORKER_SCRATCH_DIR
-        if scratch:
+        if scratch and role in ("worker", "all"):
             ok = _check("Worker scratch dir exists", os.path.isdir(scratch), scratch)
             if ok:
                 ok = _check("Worker scratch writable", os.access(scratch, os.W_OK))
             if not ok:
                 failures += 1
+        elif scratch and role not in ("worker", "all"):
+            _check("Worker scratch dir", True, f"role={role}, skipped scratch check")
         else:
             _check("Worker scratch dir", False, "WORKER_SCRATCH_DIR not set")
             failures += 1
