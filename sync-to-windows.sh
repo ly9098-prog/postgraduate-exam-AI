@@ -61,6 +61,7 @@ rsync -av --delete \
     --exclude=static \
     --exclude=artifacts \
     --exclude=ocr_test \
+    --exclude=backups \
     \
     --exclude=tests \
     --exclude=backend/tests \
