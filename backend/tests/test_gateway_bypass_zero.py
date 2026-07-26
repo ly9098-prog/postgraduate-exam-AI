@@ -10,8 +10,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import pytest
-
 BACKEND = Path(__file__).resolve().parent.parent / "app"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 

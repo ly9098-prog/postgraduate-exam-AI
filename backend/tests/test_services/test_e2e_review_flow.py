@@ -13,8 +13,6 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 
 def _run(coro):
     return asyncio.run(coro)
@@ -114,7 +112,6 @@ class TestE2EWrongToReviewFlow:
     def test_step1_wrong_answer_creates_wrong_question_and_schedule(self):
         """答错后 record_wrong 创建 WrongQuestion，auto_schedule 创建 ReviewSchedule。"""
         from app.services.wrong_question_service import record_wrong
-        from app.services import review_scheduler
 
         db = _make_mock_db()
         q = _make_question_mock()
@@ -258,8 +255,9 @@ class TestE2EWrongToReviewFlow:
 
     def test_step6_no_sm2_fields_on_wrong_question(self):
         """WrongQuestion 模型不存在 SM-2 字段。"""
-        from app.models.wrong_question import WrongQuestion
         from sqlalchemy import inspect as sa_inspect
+
+        from app.models.wrong_question import WrongQuestion
 
         # 检查模型类的 mapped_column 属性
         mapper = sa_inspect(WrongQuestion)

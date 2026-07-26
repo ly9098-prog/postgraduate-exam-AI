@@ -11,15 +11,10 @@ Covers:
 """
 from __future__ import annotations
 
-import json
-
-import pytest
-
 from app.features.ocr_vl.paddleocr_vl_client import (
     PaddleOCRVLResult,
     _normalize_layout_block,
 )
-
 
 # ---------------------------------------------------------------------------
 # _normalize_layout_block

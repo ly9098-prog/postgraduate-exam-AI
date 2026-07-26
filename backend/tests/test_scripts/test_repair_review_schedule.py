@@ -1,9 +1,7 @@
 """repair_review_schedule_for_wrong_questions 脚本测试。"""
 import asyncio
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 
 from scripts.repair_review_schedule_for_wrong_questions import repair_review_schedule
 
@@ -267,7 +265,7 @@ class TestRepairReviewSchedule:
         mock_wq.user_id = 1
         mock_wq.question_id = 1
         mock_wq.mastered = True
-        mock_wq.last_review_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        mock_wq.last_review_at = datetime(2026, 1, 1, tzinfo=UTC)
 
         mock_wq_result = MagicMock()
         mock_wq_result.scalars.return_value.all.return_value = [mock_wq]

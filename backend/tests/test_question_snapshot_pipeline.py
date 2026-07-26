@@ -8,8 +8,6 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
-
 from app.features.pipeline_orchestrator import ImportPipeline
 from app.services.visual_region_cropper import crop_region
 
@@ -37,7 +35,6 @@ class TestQuestionBboxPipelineStage:
 class TestCropRegionImportable:
     def test_crop_region_importable(self):
         """crop_region should be importable (fixes NameError in pipeline)."""
-        from app.services.visual_region_cropper import crop_region
         assert callable(crop_region)
 
     def test_crop_and_upload_region_importable(self):

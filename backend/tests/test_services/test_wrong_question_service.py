@@ -1,13 +1,10 @@
 """Stage 12: wrong_question_service 单元测试 — 验证 SM-2 收口后的行为。"""
 import asyncio
-from datetime import datetime, timezone, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-from app.services.wrong_question_service import record_wrong, update_quality
 from app.services.sm2_service import calc_sm2
-
+from app.services.wrong_question_service import record_wrong, update_quality
 
 # ── Helpers ──
 
@@ -97,7 +94,7 @@ class TestRecordWrong:
         schedule_mock.interval = 1
         schedule_mock.ease_factor = 2.5
         schedule_mock.repetitions = 0
-        schedule_mock.next_review_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        schedule_mock.next_review_at = datetime.now(UTC).replace(tzinfo=None)
         schedule_mock.last_reviewed_at = None
         schedule_mock.mastered = False
         schedule_mock.user_id = 1
@@ -144,7 +141,7 @@ class TestUpdateQuality:
         schedule_mock.interval = 5
         schedule_mock.ease_factor = 2.5
         schedule_mock.repetitions = 2
-        schedule_mock.next_review_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+        schedule_mock.next_review_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=1)
         schedule_mock.last_reviewed_at = None
         schedule_result = _make_execute_result(scalar_one_or_none=schedule_mock)
         # Step 3: submit_review → schedule query
@@ -198,7 +195,7 @@ class TestUpdateQuality:
         new_schedule.interval = 1
         new_schedule.ease_factor = 2.5
         new_schedule.repetitions = 0
-        new_schedule.next_review_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        new_schedule.next_review_at = datetime.now(UTC).replace(tzinfo=None)
         new_schedule.last_reviewed_at = None
         submit_schedule_result = _make_execute_result(scalar_one_or_none=new_schedule)
         # submit_review: WQ sync

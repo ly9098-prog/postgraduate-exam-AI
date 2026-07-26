@@ -4,9 +4,8 @@ from __future__ import annotations
 import pytest
 
 from app.ocr_worker.device import (
-    OCRDevice,
-    DeviceResolutionError,
     _PADDLE_UNAVAILABLE,
+    DeviceResolutionError,
     resolve_ocr_device,
 )
 

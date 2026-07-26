@@ -1,8 +1,8 @@
 """Comprehensive tests for the admin audit logging system."""
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import Column, DateTime, Integer, JSON, String, Text, Table, MetaData, func, select
+from sqlalchemy import JSON, Column, DateTime, Integer, MetaData, String, Table, Text, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.admin_security import AdminPrincipal
@@ -14,7 +14,6 @@ from app.services.admin_audit_service import (
     list_admin_audit_logs,
     write_admin_audit,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

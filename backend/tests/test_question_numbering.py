@@ -19,14 +19,12 @@ import pytest
 
 from app.features.question_numbering import (
     NumberingType,
-    ParsedNumbering,
     extract_first_question_label,
     has_new_question_number,
     is_section_header,
     parse_numbering,
     validate_question_sequence,
 )
-
 
 # ===================================================================
 # 1. Positive examples (valid question numbers)  — 20+

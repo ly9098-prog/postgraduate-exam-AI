@@ -1,15 +1,15 @@
 """AnswerMatcher 单元测试。"""
 import os
-import pytest
+
 from app.features.answer_matcher import (
-    match_answers,
+    _clean_explanation,
+    _correct_answer_letter,
+    _extract_all_separated_answers,
     _extract_inline_answer,
     _extract_inline_explanation,
     _extract_separated_answer,
     _extract_separated_explanation,
-    _extract_all_separated_answers,
-    _correct_answer_letter,
-    _clean_explanation,
+    match_answers,
 )
 from app.features.question_splitter import split_questions
 

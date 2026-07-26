@@ -2,17 +2,15 @@
 
 覆盖 3 个备用复习接口的完整链路。
 """
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.api.v1 import review
+from app.main import app
+from app.models.review_scheduler import ReviewSchedule
 from app.models.user import User
-from app.models.review_scheduler import ReviewSchedule, ReviewRecord
-from app.models.wrong_question import WrongQuestion
 
 client = TestClient(app)
 
@@ -34,7 +32,7 @@ def _make_schedule(schedule_id=1, user_id=1, question_id=1, interval=1, ease_fac
     schedule.interval = interval
     schedule.ease_factor = ease_factor
     schedule.repetitions = repetitions
-    schedule.next_review_at = datetime.now(timezone.utc)
+    schedule.next_review_at = datetime.now(UTC)
     schedule.last_reviewed_at = None
     schedule.mastered = False
     schedule.subject = "math"
@@ -82,7 +80,7 @@ class TestScheduleSubmitAPI:
             "rating": 4,
             "interval_after": 6,
             "ease_factor_after": 2.6,
-            "next_review_at": datetime.now(timezone.utc) + timedelta(days=6),
+            "next_review_at": datetime.now(UTC) + timedelta(days=6),
             "is_correct": True,
         }
         monkeypatch.setattr(review.review_scheduler, "submit_review", AsyncMock(return_value=mock_result))
@@ -107,7 +105,7 @@ class TestScheduleSubmitAPI:
             "rating": 0,
             "interval_after": 1,
             "ease_factor_after": 2.0,
-            "next_review_at": datetime.now(timezone.utc) + timedelta(days=1),
+            "next_review_at": datetime.now(UTC) + timedelta(days=1),
             "is_correct": False,
         }
         monkeypatch.setattr(review.review_scheduler, "submit_review", AsyncMock(return_value=mock_result))
@@ -129,7 +127,7 @@ class TestScheduleSubmitAPI:
             "rating": 5,
             "interval_after": 10,
             "ease_factor_after": 2.7,
-            "next_review_at": datetime.now(timezone.utc) + timedelta(days=10),
+            "next_review_at": datetime.now(UTC) + timedelta(days=10),
             "is_correct": True,
         }
         monkeypatch.setattr(review.review_scheduler, "submit_review", AsyncMock(return_value=mock_result))
@@ -195,8 +193,8 @@ class TestBatchSubmitAPI:
         """批量提交多个 schedule_id 成功。"""
         mock_result = {
             "results": [
-                {"schedule_id": 1, "question_id": 1, "next_review_at": datetime.now(timezone.utc).isoformat(), "is_correct": True},
-                {"schedule_id": 2, "question_id": 2, "next_review_at": datetime.now(timezone.utc).isoformat(), "is_correct": False},
+                {"schedule_id": 1, "question_id": 1, "next_review_at": datetime.now(UTC).isoformat(), "is_correct": True},
+                {"schedule_id": 2, "question_id": 2, "next_review_at": datetime.now(UTC).isoformat(), "is_correct": False},
             ],
             "total": 2,
         }
@@ -265,7 +263,7 @@ class TestGradeSubmitAPI:
             "rating": 4,
             "interval_after": 6,
             "ease_factor_after": 2.6,
-            "next_review_at": datetime.now(timezone.utc) + timedelta(days=6),
+            "next_review_at": datetime.now(UTC) + timedelta(days=6),
         }
         monkeypatch.setattr(review.review_scheduler, "submit_review", AsyncMock(return_value=mock_review_result))
 
@@ -296,7 +294,7 @@ class TestGradeSubmitAPI:
             "rating": 1,
             "interval_after": 1,
             "ease_factor_after": 2.0,
-            "next_review_at": datetime.now(timezone.utc) + timedelta(days=1),
+            "next_review_at": datetime.now(UTC) + timedelta(days=1),
         }
         monkeypatch.setattr(review.review_scheduler, "submit_review", AsyncMock(return_value=mock_review_result))
 
@@ -342,7 +340,7 @@ class TestGradeSubmitAPI:
             "rating": 4,
             "interval_after": 6,
             "ease_factor_after": 2.6,
-            "next_review_at": datetime.now(timezone.utc) + timedelta(days=6),
+            "next_review_at": datetime.now(UTC) + timedelta(days=6),
         }
         submit_mock = AsyncMock(return_value=mock_review_result)
         monkeypatch.setattr(review.review_scheduler, "submit_review", submit_mock)

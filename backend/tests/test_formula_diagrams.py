@@ -63,7 +63,7 @@ class TestGraphSpecSchema:
 
     def test_all_diagrams_have_required_fields(self):
         for d in DIAGRAMS:
-            assert "slug" in d, f"Missing slug"
+            assert "slug" in d, "Missing slug"
             assert "source_ref" in d, f"{d['slug']}: missing source_ref"
             assert "graph_spec" in d, f"{d['slug']}: missing graph_spec"
             assert d["source_ref"].startswith("math2_diagram_v1:"), \
@@ -428,7 +428,7 @@ class TestImageIntegrity:
             size = len(r["png"])
             if size < 5000:
                 small.append(f"{slug}: {size} bytes")
-        assert not small, f"Images too small:\n" + "\n".join(small)
+        assert not small, "Images too small:\n" + "\n".join(small)
 
     def test_valid_png(self, all_results):
         """Every rendered image is a valid PNG."""
@@ -509,7 +509,8 @@ class TestIdempotency:
 
     def test_checksum_is_deterministic(self):
         """Same spec always produces same checksum."""
-        import hashlib, json
+        import hashlib
+        import json
 
         def spec_checksum(spec):
             raw = json.dumps(spec, sort_keys=True, ensure_ascii=False)
@@ -663,8 +664,9 @@ class TestYTypeShading:
         }
         png, meta, quality = render_spec(spec)
         assert quality["passed"]
-        from PIL import Image
         from io import BytesIO
+
+        from PIL import Image
         img = Image.open(BytesIO(png)).convert("L")
         extrema = img.getextrema()
         assert extrema != (255, 255), "Horizontal shading produced all-white image"

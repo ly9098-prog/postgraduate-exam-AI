@@ -1,6 +1,5 @@
 """统一上传入口 /pipeline/upload — 路由分流测试。"""
 import asyncio
-import io
 import os
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch

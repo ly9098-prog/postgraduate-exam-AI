@@ -36,18 +36,16 @@ os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{tmp_db.name}"
 os.environ["REDIS_URL"] = ""  # 关闭 Redis，走进程内兜底
 os.environ["POMODORO_NOTIFY_ENABLED"] = "true"
 
-from app.core.config import settings  # noqa: E402
-from app.core.database import Base, engine, async_session  # noqa: E402
-
 # 显式导入所有模型，确保外键能解析（User.banned_by → admin_users.id 等）
 import app.models  # noqa: E402,F401
+from app.core.config import settings  # noqa: E402
+from app.core.database import Base, async_session, engine  # noqa: E402
 from app.models import admin as _admin_models  # noqa: E402,F401
 from app.models import app_user_admin_binding as _binding_models  # noqa: E402,F401
 from app.models.pomodoro import PomodoroSession  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.services import pomodoro_scheduler_service as scheduler_module  # noqa: E402
 from app.services import wechat_notify_service  # noqa: E402
-
 
 # 替换 wechat 发送为 mock
 sent_calls: list[dict] = []

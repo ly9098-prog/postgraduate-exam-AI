@@ -10,13 +10,9 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import MagicMock
 
-import pytest
-
 from app.features.pipeline_orchestrator import ImportPipeline
 from tests.test_services.test_pipeline_orchestrator import (
     _make_mock_db,
-    _make_normalized_blocks,
-    _make_raw_questions,
 )
 
 
@@ -27,7 +23,6 @@ def _make_normalized_blocks_with_bbox(
     has_option_patterns: bool = True,
 ) -> list[dict]:
     """Create normalized blocks with bbox + option content for layout reconstruction."""
-    import random
     blocks = []
     for i in range(n):
         page = i // 5 + 1

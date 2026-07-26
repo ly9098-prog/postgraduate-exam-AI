@@ -40,12 +40,12 @@ class TestDurableTaskQueueBasic:
     @pytest.mark.asyncio
     async def test_enqueue_dequeue_roundtrip(self, q):
         """1. Enqueue a task, dequeue it, verify payload."""
-        task_id = await q.enqueue(
+        result = await q.enqueue(
             task_type="test_basic",
             payload={"msg": "hello"},
             task_id="test_basic_001",
         )
-        assert task_id == "test_basic_001"
+        assert result.task_id == "test_basic_001"
 
         task = await q.dequeue("test_basic", lease_sec=30)
         assert task is not None
@@ -56,7 +56,7 @@ class TestDurableTaskQueueBasic:
         assert task.owner_token != ""
 
         await q.complete(task)
-        assert task_id is not None
+        assert result.task_id is not None
 
     @pytest.mark.asyncio
     async def test_complete_removes_from_processing(self, q):
@@ -86,7 +86,7 @@ class TestDurableTaskQueueBasic:
             "test_idem", {"x": 2},
             task_id="test_idem_001", idempotent=True,
         )
-        assert tid1 == tid2 == "test_idem_001"
+        assert tid1.task_id == tid2.task_id == "test_idem_001"
 
         # Dequeue once — should get only one task
         task1 = await q.dequeue("test_idem", lease_sec=10)
@@ -117,7 +117,7 @@ class TestDurableTaskQueueFencing:
         # Force ZSET score to past so reaper will find it
         await r.zadd("taskq:processing:test_fence", {"test_fence_001": time.time() - 60})
         # Delete the heartbeat to simulate crash
-        await r.delete(f"taskq:heartbeat:test_fence_001")
+        await r.delete("taskq:heartbeat:test_fence_001")
         await r.aclose()
         # Reclaim via reaper
         reclaimed = await q._reclaim_expired("test_fence")
@@ -146,7 +146,7 @@ class TestDurableTaskQueueFencing:
         import redis.asyncio as redis_async
         r = redis_async.from_url(TEST_REDIS_URL, decode_responses=True)
         await r.zadd("taskq:processing:test_fence2", {"test_fence_002": time.time() - 60})
-        await r.delete(f"taskq:heartbeat:test_fence_002")
+        await r.delete("taskq:heartbeat:test_fence_002")
         await r.aclose()
         await q._reclaim_expired("test_fence2")
 
@@ -170,7 +170,7 @@ class TestDurableTaskQueueFencing:
         import redis.asyncio as redis_async
         r = redis_async.from_url(TEST_REDIS_URL, decode_responses=True)
         await r.zadd("taskq:processing:test_fence3", {"test_fence_003": time.time() - 60})
-        await r.delete(f"taskq:heartbeat:test_fence_003")
+        await r.delete("taskq:heartbeat:test_fence_003")
         await r.aclose()
         await q._reclaim_expired("test_fence3")
 
@@ -216,7 +216,7 @@ class TestDurableTaskQueueReaper:
         import redis.asyncio as redis_async
         r = redis_async.from_url(TEST_REDIS_URL, decode_responses=True)
         # Force-delete heartbeat to simulate crash
-        await r.delete(f"taskq:heartbeat:test_reap_001")
+        await r.delete("taskq:heartbeat:test_reap_001")
         await r.aclose()
 
         await asyncio.sleep(1.5)

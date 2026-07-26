@@ -253,8 +253,14 @@ class Settings(BaseSettings):
 
     # ── Export / PDF ──
     EXPORT_POLL_INTERVAL_SEC: int = 5
-    EXPORT_PROCESSING_TIMEOUT_SEC: int = 900
-    EXPORT_MAX_CONCURRENT: int = 1
+    EXPORT_PROCESSING_TIMEOUT_SEC: int = 900  # zombie recovery threshold
+    EXPORT_TASK_TIMEOUT_SEC: int = 600        # per-task wall-clock timeout
+    EXPORT_HEARTBEAT_INTERVAL_SEC: int = 30
+    EXPORT_MAX_CONCURRENT: int = 2            # global task concurrency
+    EXPORT_MAX_PER_USER: int = 2              # pending/processing per user
+    EXPORT_PDF_CONCURRENCY: int = 1
+    EXPORT_DOCX_CONCURRENCY: int = 1
+    EXPORT_IMAGE_DOWNLOAD_CONCURRENCY: int = 4
     EXPORT_DIR: str = "static/exports"
     PRODUCT_NAME: str = "MemoGrad"
     GENERATOR_VERSION: str = "2.0"  # v2 = DOCX support added
@@ -263,6 +269,8 @@ class Settings(BaseSettings):
     EXPORT_FEATURE_ENABLED: bool = True
     EXPORT_DOCX_ENABLED: bool = True
     EXPORT_WEBSOCKET_ENABLED: bool = True
+    EXPORT_ALLOWED_USER_IDS: str = ""  # comma-separated user IDs for whitelist
+    EXPORT_ALLOW_ALL_USERS: bool = False  # explicit opt-in; False + empty whitelist = no access
 
     # ── Adaptive Learning ──
     ADAPTIVE_LEARNING_ENABLED: bool = True

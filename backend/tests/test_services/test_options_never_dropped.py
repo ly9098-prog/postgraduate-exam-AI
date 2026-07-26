@@ -12,12 +12,12 @@ import pytest
 
 pytestmark = pytest.mark.options_pipeline
 
+from app.features.question_normalizer import normalize_question as _normalize_question
 from app.features.question_type_classifier import (
     detect_options_from_text,
     extract_options_from_text,
     force_options_probe,
 )
-from app.features.question_normalizer import normalize_question as _normalize_question
 
 QT_SINGLE_CHOICE = "single_choice"
 QT_SUBJECTIVE = "subjective"
@@ -226,7 +226,9 @@ class TestSsotUniqueness:
 
     def test_scan_entire_block_delegates_to_ssot(self):
         """scan_entire_block 委托至 extract_options_from_text。"""
-        from app.features.question_splitter import scan_entire_block_including_surrounding_lines as scan
+        from app.features.question_splitter import (
+            scan_entire_block_including_surrounding_lines as scan,
+        )
         from app.features.question_type_classifier import extract_options_from_text as ssot
 
         text = "A. 甲\nB. 乙\nC. 丙\nD. 丁"

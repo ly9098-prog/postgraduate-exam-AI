@@ -10,7 +10,6 @@ import ast
 import os
 from pathlib import Path
 
-
 # Path to the app directory
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 
@@ -76,7 +75,7 @@ def _scan_file_for_patterns(
     """AST-scan a Python file for variable/attribute names matching patterns."""
     violations: list[tuple[int, str]] = []
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             source = f.read()
     except (OSError, UnicodeDecodeError):
         return violations
@@ -243,24 +242,5 @@ class TestDocumentIRNoProductionWriteViolations:
 
     def test_document_ir_full_exports(self):
         """All key DocumentIR exports are importable."""
-        from app.core.document_ir import (
-            BBox,
-            DocumentIR,
-            LineIR,
-            PageIR,
-            Point,
-            Polygon,
-            Provenance,
-            RegionIR,
-            ReplacementMap,
-            document_ir_from_dict,
-            document_ir_to_blocks,
-            document_ir_to_dict,
-            make_line_id,
-            make_page_id,
-            make_region_id,
-            new_document,
-            validate_document_ir,
-        )
         # All imports succeeded if we reach here
         assert True

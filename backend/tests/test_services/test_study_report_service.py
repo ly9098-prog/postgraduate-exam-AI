@@ -17,13 +17,11 @@ import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from app.services.study_report_service import (
+    _calc_priority,
     _classify_mastery,
     _extract_title,
     _mastery_suggestion,
-    _calc_priority,
     _safe_accuracy,
     get_knowledge_mastery,
     get_leitner_distribution,

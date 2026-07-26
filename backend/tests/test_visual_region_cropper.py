@@ -17,14 +17,12 @@ from PIL import Image, ImageDraw
 
 from app.services.visual_region_cropper import (
     EmptyCropError,
-    OversizedCropError,
     convert_bbox,
-    crop_region,
     crop_from_page_ref_compat,
+    crop_region,
     validate_bbox,
 )
 from app.services.visual_region_types import CoordinateSpace
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -199,7 +197,7 @@ class TestCropRegion:
 
 class TestVisualRegionType:
     def test_region_types_enum_values(self):
-        from app.services.visual_region_types import VisualRegionType, SegmentType
+        from app.services.visual_region_types import SegmentType, VisualRegionType
         assert VisualRegionType.DIAGRAM.value == "diagram"
         assert VisualRegionType.CHART.value == "chart"
         assert VisualRegionType.TABLE.value == "table"

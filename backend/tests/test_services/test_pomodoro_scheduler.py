@@ -16,7 +16,6 @@ import os
 import tempfile
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
@@ -81,18 +80,19 @@ async def isolated_db(monkeypatch_module):
 
     # 强制重新加载 settings 以应用 env
     import importlib
+
     from app.core import config as config_mod
     importlib.reload(config_mod)
 
     # 使用全局 Base — 导入所有模型让其注册到 Base.metadata
-    from app.core.database import Base
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
     import app.models  # noqa: F401 — registers all models on Base
+    from app.core.database import Base
     from app.models import admin as _admin  # noqa: F401
     from app.models import app_user_admin_binding as _aub  # noqa: F401
-    from app.models.user import User  # noqa: F401
     from app.models.pomodoro import PomodoroSession  # noqa: F401
-
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from app.models.user import User  # noqa: F401
 
     engine = create_async_engine(
         f"sqlite+aiosqlite:///{tmp.name}",
@@ -137,9 +137,10 @@ async def db_session(isolated_db):
 @pytest_asyncio.fixture(autouse=True)
 async def reset_tables(isolated_db):
     async with isolated_db.async_session() as db:
+        from sqlalchemy import delete
+
         from app.models.pomodoro import PomodoroSession
         from app.models.user import User
-        from sqlalchemy import delete
 
         await db.execute(delete(PomodoroSession))
         await db.execute(delete(User))
@@ -177,8 +178,9 @@ async def _insert(db, *, user_id: int, openid: str, due_offset_sec: int,
 
 
 async def _make_subject(db) -> int:
-    from app.models.admin import Subject
     import uuid
+
+    from app.models.admin import Subject
     code = f"test_subject_{uuid.uuid4().hex[:8]}"
     subj = Subject(code=code, name="测试科目", level=1, path="test", is_active=True, sort_order=0)
     db.add(subj)
@@ -214,6 +216,7 @@ class TestSchedulerClaiming:
 
         async with isolated_db.async_session() as db:
             from sqlalchemy import select
+
             from app.models.pomodoro import PomodoroSession
             row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
 
@@ -243,6 +246,7 @@ class TestSchedulerClaiming:
 
         async with isolated_db.async_session() as db:
             from sqlalchemy import select
+
             from app.models.pomodoro import PomodoroSession
             row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
 
@@ -272,6 +276,7 @@ class TestSchedulerClaiming:
 
         async with isolated_db.async_session() as db:
             from sqlalchemy import select
+
             from app.models.pomodoro import PomodoroSession
             row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
 
@@ -323,6 +328,7 @@ class TestSchedulerClaiming:
 
         async with isolated_db.async_session() as db:
             from sqlalchemy import select
+
             from app.models.pomodoro import PomodoroSession
             row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
 
@@ -356,6 +362,7 @@ class TestSchedulerClaiming:
 
         async with isolated_db.async_session() as db:
             from sqlalchemy import select
+
             from app.models.pomodoro import PomodoroSession
             row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
 
@@ -366,9 +373,10 @@ class TestSchedulerClaiming:
 class TestServiceLayer:
     @pytest.mark.asyncio
     async def test_complete_session_closes_notification_channel(self, isolated_db):
-        from app.services import pomodoro_service as svc
         from sqlalchemy import select
+
         from app.models.pomodoro import PomodoroSession
+        from app.services import pomodoro_service as svc
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_complete")
@@ -392,9 +400,10 @@ class TestServiceLayer:
 
     @pytest.mark.asyncio
     async def test_interrupt_session_closes_notification_channel(self, isolated_db):
-        from app.services import pomodoro_service as svc
         from sqlalchemy import select
+
         from app.models.pomodoro import PomodoroSession
+        from app.services import pomodoro_service as svc
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_interrupt")
@@ -418,9 +427,10 @@ class TestServiceLayer:
 
     @pytest.mark.asyncio
     async def test_start_session_writes_expected_end_time_and_openid(self, isolated_db):
-        from app.services import pomodoro_service as svc
         from sqlalchemy import select
+
         from app.models.pomodoro import PomodoroSession
+        from app.services import pomodoro_service as svc
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_start")
@@ -442,9 +452,10 @@ class TestServiceLayer:
 
     @pytest.mark.asyncio
     async def test_pause_then_resume_extends_expected_end_time(self, isolated_db):
-        from app.services import pomodoro_service as svc
         from sqlalchemy import select, update
+
         from app.models.pomodoro import PomodoroSession
+        from app.services import pomodoro_service as svc
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_pause")
@@ -489,9 +500,10 @@ class TestServiceLayer:
 
     @pytest.mark.asyncio
     async def test_pause_is_idempotent(self, isolated_db):
-        from app.services import pomodoro_service as svc
         from sqlalchemy import select
+
         from app.models.pomodoro import PomodoroSession
+        from app.services import pomodoro_service as svc
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_pause_idem")
@@ -521,9 +533,10 @@ class TestServiceLayer:
 
     @pytest.mark.asyncio
     async def test_resume_without_pause_is_noop(self, isolated_db):
-        from app.services import pomodoro_service as svc
         from sqlalchemy import select
+
         from app.models.pomodoro import PomodoroSession
+        from app.services import pomodoro_service as svc
 
         async with isolated_db.async_session() as db:
             uid = await _make_user(db, "u_resume_noop")

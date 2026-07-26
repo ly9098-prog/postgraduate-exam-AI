@@ -6,14 +6,10 @@ import time
 import pytest
 
 from app.services.staging_storage import (
-    StagingObject,
-    _sha256_of_file,
-    _VALID_OBJECT_ID_RE_V1,
     _VALID_OBJECT_ID_RE_V2,
+    _sha256_of_file,
     async_cleanup_work_copy,
     async_create_work_copy,
-    async_lease_object,
-    async_release_object,
     cleanup_orphans,
     cleanup_work_copy,
     create_work_copy,
@@ -111,7 +107,6 @@ class TestLeaseOwnerGeneration:
             os.unlink(tmp.name)
             # Clean up any lease files
             try:
-                import json
                 from app.services.staging_storage import _lease_path
                 lp = _lease_path(obj.object_id)
                 if lp.exists():
@@ -122,6 +117,7 @@ class TestLeaseOwnerGeneration:
     def test_lease_with_owner_writes_metadata(self, staged_object):
         """lease_object with owner_token writes ownership metadata to lease file."""
         import json
+
         from app.services.staging_storage import _lease_path
 
         oid = staged_object.object_id
@@ -141,6 +137,7 @@ class TestLeaseOwnerGeneration:
     def test_lease_without_owner_no_metadata(self, staged_object):
         """lease_object without owner_token omits ownership fields."""
         import json
+
         from app.services.staging_storage import _lease_path
 
         oid = staged_object.object_id
@@ -232,6 +229,7 @@ class TestLeaseOwnerGeneration:
 
         # Verify TTL was updated by reading the lease file
         import json
+
         from app.services.staging_storage import _lease_path
         lp = _lease_path(oid)
         with open(lp) as f:
@@ -254,6 +252,7 @@ class TestLeaseOwnerGeneration:
     def test_is_object_leased_expired_legacy(self, staged_object):
         """is_object_leased falls back to mtime for legacy leases."""
         import json
+
         from app.services.staging_storage import _lease_path
 
         oid = staged_object.object_id
@@ -433,7 +432,6 @@ class TestAtomicWrites:
 
     def test_cleanup_orphans_removes_stale_tmp(self):
         """cleanup_orphans removes stale .data.tmp files from crashes."""
-        import shutil
         from app.services.staging_storage import _staging_object_dir
 
         obj_dir = _staging_object_dir()

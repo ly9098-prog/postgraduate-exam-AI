@@ -4,12 +4,10 @@ Uses fakeredis so no real Redis server is required.
 """
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from app.core.config import settings
 from app.services.ocr_distributed_concurrency import (
     OcrDistributedConcurrency,
     _local_token,
@@ -137,7 +135,6 @@ class TestRedisFailure:
     @pytest.mark.asyncio
     async def test_no_redis_url_non_production(self):
         """No REDIS_URL in non-production should log warning and allow."""
-        import os
 
         guard = OcrDistributedConcurrency(redis_url="")
         guard._profile = "development"

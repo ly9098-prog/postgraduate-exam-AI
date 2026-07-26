@@ -3,21 +3,16 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.module_result import AdapterCapabilities, ModuleResult
 from app.core.ocr_request import OCRRequest
 from app.features.ocr_adapter import (
-    AdapterHealth,
     AdapterRegistry,
     AdapterSelector,
-    OcrAdapter,
-    DocumentTransformAdapter,
     PaddleOCRLocalAdapter,
     PaddleOCRVLDocumentAdapter,
     ReadingOrderTransformAdapter,
     RuleFallbackAdapter,
     create_default_adapter_registry,
 )
-
 
 # ===========================================================================
 # Contract: all adapters must implement protocol properties

@@ -26,10 +26,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.core.database import Base
+import app.models.formula  # noqa: F401 — formula tables for FKs
+
 # Import all models to ensure Base.metadata has FK targets
 import app.models.user  # noqa: F401 — users table for FKs
-import app.models.formula  # noqa: F401 — formula tables for FKs
+from app.core.database import Base
 from app.features import pipeline_checkpoint as ckpt
 from app.features.global_hash_index import GlobalHashIndex
 from app.features.pipeline_orchestrator import (
@@ -37,7 +38,6 @@ from app.features.pipeline_orchestrator import (
     resume_pipeline_background,
 )
 from app.models.import_pipeline import ImportPipelineChunk
-
 
 # ---------------------------------------------------------------------------
 # helpers

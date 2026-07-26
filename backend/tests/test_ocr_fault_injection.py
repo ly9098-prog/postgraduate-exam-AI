@@ -34,7 +34,7 @@ def _make_test_image(text: str = "Hello OCR Test", size: tuple[int, int] = (400,
     draw = ImageDraw.Draw(img)
     try:
         font = ImageFont.truetype(_FONT_PATH, 20)
-    except (IOError, OSError):
+    except OSError:
         font = ImageFont.load_default()
     draw.text((10, 30), text, fill="black", font=font)
     buf = io.BytesIO()

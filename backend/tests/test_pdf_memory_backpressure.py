@@ -18,7 +18,6 @@ import pytest
 from app.core.bounded_executor import BoundedExecutor, ExecutorQueueFullError
 from app.core.deployment_profile import DeploymentProfile
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Bounded executor backpressure
 # ══════════════════════════════════════════════════════════════════════════════
@@ -168,7 +167,7 @@ class TestPdfValidationMemoryGuard:
 
     def test_huge_file_rejected(self):
         """Oversized PDF should be rejected at validation time, never rendered."""
-        from app.services.pdf_validation_service import validate_pdf_basic, PdfValidationError
+        from app.services.pdf_validation_service import PdfValidationError, validate_pdf_basic
 
         data = b"%PDF-1.4\n" + b"x" * (201 * 1024 * 1024)
         with pytest.raises(PdfValidationError, match="过大"):

@@ -3,12 +3,10 @@
 确保 func.date().distinct() 的错误写法已修复为正确的 .distinct()。
 """
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
-from app.services.stats_service import _calc_consecutive_days, get_overview
+from app.services.stats_service import _calc_consecutive_days
 
 
 def _make_db_with_dates(dates_list):

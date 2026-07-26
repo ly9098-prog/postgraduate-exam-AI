@@ -18,7 +18,6 @@ import json
 import logging
 import logging.config
 from io import StringIO
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -34,12 +33,10 @@ from app.core.log_context import (
     sanitize_fields,
 )
 from app.core.logging_config import (
-    ContextFilter,
     _CONTEXT_KEYS,
+    ContextFilter,
     _JsonFormatter,
-    setup_logging,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

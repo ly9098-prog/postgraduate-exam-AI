@@ -15,29 +15,26 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 from pathlib import Path
-from typing import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import (
-    AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
 
-from app.core.database import Base
+import app.models.formula  # noqa: F401 — formula tables for FKs
+
 # Import all models to ensure Base.metadata has FK targets
 import app.models.user  # noqa: F401 — users table for FKs
-import app.models.formula  # noqa: F401 — formula tables for FKs
+from app.core.database import Base
 from app.features import pipeline_checkpoint as ckpt
 from app.features.pipeline_orchestrator import (
     ImportPipeline,
     _resolve_chunk_size,
     _split_into_chunks,
 )
-
 
 # ---------------------------------------------------------------------------
 # helpers

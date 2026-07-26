@@ -14,11 +14,12 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
@@ -38,8 +39,8 @@ def _run(coro):
 
 
 def _now():
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    from datetime import datetime
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 @pytest.fixture(autouse=True)
@@ -150,9 +151,8 @@ class TestRequestIdIdempotency:
     def test_duplicate_request_id_returns_existing_job(self, tmp_path):
         """create_batch_job with duplicate request_id returns existing stub."""
         from app.features.batch_image_import_service import (
-            create_batch_job,
-            _find_job_by_request_id,
             BatchImageSource,
+            create_batch_job,
         )
         from app.models.import_batch_job import ImportBatchJob
 
@@ -486,8 +486,7 @@ class TestSubmitToReviewBatchFlush:
 
     def test_batch_flush_no_per_item_flush(self):
         """With batch size=50, only 1 flush per 50 items, not 1 per item."""
-        from app.features.review_service import submit_to_review, _REVIEW_COMMIT_BATCH_SIZE
-        from unittest.mock import MagicMock, AsyncMock
+        from app.features.review_service import submit_to_review
 
         db = MagicMock()
         db.add = MagicMock()
@@ -532,7 +531,6 @@ class TestSubmitToReviewBatchFlush:
     def test_single_item_one_flush(self):
         """Single item → 1 flush only."""
         from app.features.review_service import submit_to_review
-        from unittest.mock import MagicMock, AsyncMock
 
         db = MagicMock()
         db.add = MagicMock()
@@ -567,7 +565,6 @@ class TestSubmitToReviewBatchFlush:
     def test_returns_ids_after_batch_flush(self):
         """After batch flush, all items have their proper IDs in the response."""
         from app.features.review_service import submit_to_review
-        from unittest.mock import MagicMock, AsyncMock
 
         db = MagicMock()
         added = []
@@ -735,7 +732,6 @@ class TestSubmitToReviewSameBatchDuplicates:
     def test_same_batch_duplicate_detected(self):
         """Two questions with same hash in same flush batch → second marked duplicate."""
         from app.features.review_service import submit_to_review
-        from unittest.mock import MagicMock, AsyncMock
 
         db = MagicMock()
         added = []
@@ -797,8 +793,7 @@ class TestSubmitToReviewSameBatchDuplicates:
 
     def test_cross_batch_duplicate_detected(self):
         """Questions with same hash across flush batches → second batch marked duplicate."""
-        from app.features.review_service import submit_to_review, _REVIEW_COMMIT_BATCH_SIZE
-        from unittest.mock import MagicMock, AsyncMock
+        from app.features.review_service import _REVIEW_COMMIT_BATCH_SIZE, submit_to_review
 
         db = MagicMock()
         added = []
@@ -859,7 +854,6 @@ class TestSubmitToReviewSameBatchDuplicates:
     def test_duplicate_batch_flush_still_batched(self):
         """Same-batch duplicate detection does not degrade flush batching."""
         from app.features.review_service import submit_to_review
-        from unittest.mock import MagicMock, AsyncMock
 
         db = MagicMock()
         added = []

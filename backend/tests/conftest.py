@@ -1,10 +1,6 @@
 """Shared test fixtures."""
 from __future__ import annotations
 
-import os
-import tempfile
-import uuid
-
 import pytest
 
 from tests.fixtures.pdf_helper import make_minimal_pdf

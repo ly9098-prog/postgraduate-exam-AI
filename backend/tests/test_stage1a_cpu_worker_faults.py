@@ -22,6 +22,8 @@ import uuid
 _TEST_DB_PATH = f"/tmp/_test_stage1a_faults_{uuid.uuid4().hex[:8]}.db"
 os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{_TEST_DB_PATH}")
 
+from datetime import timedelta
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,12 +31,17 @@ from app.core.database import async_session, engine
 from app.models.ocr_job import OCRJob
 from app.models.pipeline_enums import OCRJobStatus
 from app.services.ocr_job_service import (
-    cancel_job, claim_job, complete_job, create_job, fail_job, get_job,
-    heartbeat, list_jobs, release_job, start_job,
+    _now,
+    cancel_job,
+    claim_job,
+    complete_job,
+    create_job,
+    get_job,
+    heartbeat,
+    list_jobs,
+    release_job,
 )
 from app.services.ocr_result_validation import validate_ocr_result
-from app.services.ocr_job_service import _now
-from datetime import datetime, timedelta, timezone
 
 _SAMPLE_DOC_SHA = "a" * 64
 _SAMPLE_OUTPUT_SHA = "b" * 64
@@ -75,6 +82,7 @@ def _cleanup():
 
 
 import atexit
+
 atexit.register(_cleanup)
 
 
@@ -219,7 +227,7 @@ class TestFaultDownloadInterrupt:
             with open(tmp_path, "w") as f:
                 f.write("partial")
             os.rename(tmp_path, final_path)
-            with open(final_path, "r") as f:
+            with open(final_path) as f:
                 assert f.read() == "partial"
         finally:
             for p in [tmp_path, final_path]:
@@ -322,6 +330,7 @@ class TestFaultWorkerRestart:
     def test_incomplete_workspace_detection(self):
         import tempfile
         from pathlib import Path
+
         from app.ocr_worker.workspace import JobWorkspace
 
         with tempfile.TemporaryDirectory() as tmpdir:

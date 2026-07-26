@@ -9,8 +9,6 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
-
 from app.features.wangdao_preprocessor import (
     _filter_lines_and_boxes,
     _filter_lines_and_boxes_detailed,
@@ -18,7 +16,6 @@ from app.features.wangdao_preprocessor import (
     preprocess_wangdao_blocks,
     preprocess_wangdao_blocks_detailed,
 )
-
 
 # ---------------------------------------------------------------------------
 # classify_zone

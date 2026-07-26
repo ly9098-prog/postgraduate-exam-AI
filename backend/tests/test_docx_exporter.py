@@ -8,18 +8,14 @@ Since DOCX is a ZIP of XML files, we validate the output by:
 
 from __future__ import annotations
 
-import os
 import tempfile
 import zipfile
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytestmark = pytest.mark.asyncio
 
 from app.services.export.docx_exporter import DocxExporter
-from app.services.export.exporter_base import ExportResult
-
 
 # ── Fixtures ──
 
@@ -362,8 +358,9 @@ class TestDocxStructure:
         result = await exporter.export(snapshot, temp_dir)
         assert result.success
 
-        from docx import Document as DocxDocument
         import io
+
+        from docx import Document as DocxDocument
         doc = DocxDocument(io.BytesIO(result.file_bytes))
         section = doc.sections[0]
         # A4 = 210mm × 297mm (in EMU: 21.0 cm, 29.7 cm)
@@ -383,8 +380,9 @@ class TestDocxStructure:
         result = await exporter.export(snapshot, temp_dir)
         assert result.success
 
-        from docx import Document as DocxDocument
         import io
+
+        from docx import Document as DocxDocument
         doc = DocxDocument(io.BytesIO(result.file_bytes))
         # No exception means valid document
         paragraphs = doc.paragraphs
@@ -426,7 +424,8 @@ class TestDocxErrorHandling:
 
 def _extract_text(docx_bytes: bytes) -> str:
     """Extract all text from a DOCX file."""
-    from docx import Document as DocxDocument
     import io
+
+    from docx import Document as DocxDocument
     doc = DocxDocument(io.BytesIO(docx_bytes))
     return "\n".join(p.text for p in doc.paragraphs if p.text)

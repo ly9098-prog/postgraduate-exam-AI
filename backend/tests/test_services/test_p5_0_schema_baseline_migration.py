@@ -4,7 +4,6 @@
 以及 PracticeRecord / ImportPipeline ORM 模型声明完整。
 """
 import os
-import pytest
 
 _MIGRATION_FILE = os.path.join(
     os.path.dirname(__file__),
@@ -22,7 +21,7 @@ class TestMigrationFileExists:
 
     def test_revision_chain(self):
         """迁移 revision 链正确"""
-        with open(_MIGRATION_FILE, "r", encoding="utf-8") as f:
+        with open(_MIGRATION_FILE, encoding="utf-8") as f:
             content = f.read()
         assert 'revision: str = "p5_0_schema_baseline"' in content
         assert 'down_revision' in content
@@ -30,20 +29,20 @@ class TestMigrationFileExists:
 
     def test_upgrade_has_guard_functions(self):
         """upgrade 函数使用 _has_table / _has_column guard（幂等安全）"""
-        with open(_MIGRATION_FILE, "r", encoding="utf-8") as f:
+        with open(_MIGRATION_FILE, encoding="utf-8") as f:
             content = f.read()
         assert "_has_table" in content
         assert "_has_column" in content
 
     def test_downgrade_exists(self):
         """downgrade 函数存在"""
-        with open(_MIGRATION_FILE, "r", encoding="utf-8") as f:
+        with open(_MIGRATION_FILE, encoding="utf-8") as f:
             content = f.read()
         assert "def downgrade" in content
 
     def test_no_drop_table(self):
         """迁移不包含 DROP TABLE（安全约束）"""
-        with open(_MIGRATION_FILE, "r", encoding="utf-8") as f:
+        with open(_MIGRATION_FILE, encoding="utf-8") as f:
             content = f.read()
         # downgrade 的 drop_column 是允许的，但不允许 drop_table
         upgrade_section = content.split("def downgrade")[0]
@@ -51,7 +50,7 @@ class TestMigrationFileExists:
 
     def test_adds_practice_records_columns(self):
         """迁移添加 5 个 practice_records 新列"""
-        with open(_MIGRATION_FILE, "r", encoding="utf-8") as f:
+        with open(_MIGRATION_FILE, encoding="utf-8") as f:
             content = f.read()
         for col in ("question_id", "question_type", "user_answer",
                      "is_correct", "used_time"):
@@ -60,7 +59,7 @@ class TestMigrationFileExists:
 
     def test_adds_import_pipelines_columns(self):
         """迁移添加 2 个 import_pipelines 新列"""
-        with open(_MIGRATION_FILE, "r", encoding="utf-8") as f:
+        with open(_MIGRATION_FILE, encoding="utf-8") as f:
             content = f.read()
         assert '"quality_report"' in content
         assert '"alerts"' in content

@@ -1,5 +1,4 @@
 """向量召回服务 — 单元测试。"""
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -210,7 +209,10 @@ class TestIsVectorEnabled:
     @pytest.mark.asyncio
     async def test_returns_false_when_disabled(self):
         """VECTOR_ENABLED=False 时返回 False。"""
-        from app.services.vector_retrieval_service import is_vector_enabled, _reset_vector_enabled_cache
+        from app.services.vector_retrieval_service import (
+            _reset_vector_enabled_cache,
+            is_vector_enabled,
+        )
         _reset_vector_enabled_cache()
         db = _make_mock_db("postgresql")
         with patch("app.services.vector_retrieval_service.settings") as mock_settings:
@@ -221,7 +223,10 @@ class TestIsVectorEnabled:
     @pytest.mark.asyncio
     async def test_returns_false_for_sqlite(self):
         """SQLite 数据库返回 False。"""
-        from app.services.vector_retrieval_service import is_vector_enabled, _reset_vector_enabled_cache
+        from app.services.vector_retrieval_service import (
+            _reset_vector_enabled_cache,
+            is_vector_enabled,
+        )
         _reset_vector_enabled_cache()
         db = _make_mock_db("sqlite")
         with patch("app.services.vector_retrieval_service.settings") as mock_settings:
@@ -235,7 +240,10 @@ class TestIsVectorEnabled:
     @pytest.mark.asyncio
     async def test_returns_false_when_config_missing(self):
         """配置不完整时返回 False。"""
-        from app.services.vector_retrieval_service import is_vector_enabled, _reset_vector_enabled_cache
+        from app.services.vector_retrieval_service import (
+            _reset_vector_enabled_cache,
+            is_vector_enabled,
+        )
         _reset_vector_enabled_cache()
         db = _make_mock_db("postgresql")
         with patch("app.services.vector_retrieval_service.settings") as mock_settings:
@@ -255,7 +263,10 @@ class TestSearchSimilarQuestions:
     @pytest.mark.asyncio
     async def test_fallback_when_disabled(self):
         """向量不可用时返回 enabled=False。"""
-        from app.services.vector_retrieval_service import search_similar_questions, _reset_vector_enabled_cache
+        from app.services.vector_retrieval_service import (
+            _reset_vector_enabled_cache,
+            search_similar_questions,
+        )
         _reset_vector_enabled_cache()
         db = _make_mock_db("sqlite")
         with patch("app.services.vector_retrieval_service.settings") as mock_settings:

@@ -18,6 +18,8 @@ from app.services.production_config_validator import (
     _check_worker_scratch_dir,
 )
 
+pytestmark = pytest.mark.integration
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # _check_worker_scratch_dir
@@ -31,6 +33,7 @@ class TestCheckWorkerScratchDir:
         """When WORKER_SCRATCH_DIR is empty, an error is appended."""
         errors: list[str] = []
         with patch("app.services.production_config_validator.settings") as mock_settings:
+            mock_settings.PROCESS_ROLE = "worker"
             mock_settings.WORKER_SCRATCH_DIR = ""
             _check_worker_scratch_dir(errors)
         assert any("WORKER_SCRATCH_DIR 未设置" in e for e in errors), errors
@@ -40,6 +43,7 @@ class TestCheckWorkerScratchDir:
         import tempfile
         errors: list[str] = []
         with patch("app.services.production_config_validator.settings") as mock_settings:
+            mock_settings.PROCESS_ROLE = "worker"
             mock_settings.WORKER_SCRATCH_DIR = tempfile.gettempdir()
             _check_worker_scratch_dir(errors)
         assert any("临时目录" in e for e in errors), errors
@@ -49,6 +53,7 @@ class TestCheckWorkerScratchDir:
         scratch = str(tmp_path / "worker_scratch")
         errors: list[str] = []
         with patch("app.services.production_config_validator.settings") as mock_settings:
+            mock_settings.PROCESS_ROLE = "worker"
             mock_settings.WORKER_SCRATCH_DIR = scratch
             _check_worker_scratch_dir(errors)
         assert len(errors) == 0, errors
@@ -58,6 +63,7 @@ class TestCheckWorkerScratchDir:
         scratch = "/proc/readonly_scratch"
         errors: list[str] = []
         with patch("app.services.production_config_validator.settings") as mock_settings:
+            mock_settings.PROCESS_ROLE = "worker"
             mock_settings.WORKER_SCRATCH_DIR = scratch
             _check_worker_scratch_dir(errors)
         assert any("不可写" in e or "检查失败" in e for e in errors), errors
@@ -68,6 +74,7 @@ class TestCheckWorkerScratchDir:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.asyncio
 class TestCheckRoleDeps:
     """Role-specific dependency checks must reflect actual process state."""
 
@@ -173,6 +180,7 @@ class TestCheckRoleDeps:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.asyncio
 class TestCheckOcrConfig:
     """OCR config checks with hysteresis for remote connectivity."""
 
@@ -306,6 +314,7 @@ class TestCheckOcrConfig:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.asyncio
 class TestCheckQueue:
     """Queue health check must report unavailable (not degraded) on Redis error."""
 
@@ -384,6 +393,7 @@ class TestCheckQueue:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.asyncio
 class TestCheckStagingSpace:
     """Staging space check must return dict with free/total/used_percent."""
 
@@ -421,6 +431,7 @@ class TestCheckStagingSpace:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.asyncio
 class TestCheckOcrRemoteConnectivity:
     """Lightweight OCR remote health check."""
 
@@ -487,6 +498,7 @@ class TestReadinessEndpoint:
     def client(self):
         """Create a TestClient that does NOT trigger lifespan startup."""
         from fastapi.testclient import TestClient
+
         from app.main import app
         # Override the lifespan to skip startup/shutdown
         app.router.lifespan_context = None

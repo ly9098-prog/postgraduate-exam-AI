@@ -10,26 +10,23 @@ Covers:
 - should_send_to_llm (repair_stage)
 """
 
-import pytest
 from app.features.code_integrity import (
-    reconstruct_code_block,
-    fix_braces,
     classify_line,
+    fix_braces,
     fix_tree_recursion_breaks,
+    reconstruct_code_block,
 )
+from app.features.pipeline_stages.repair_stage import should_send_to_llm
 from app.features.question_normalizer import (
+    QT_MULTIPLE_CHOICE,
+    QT_SINGLE_CHOICE,
     filter_isolated_tokens,
     normalize_output,
-    QT_SINGLE_CHOICE,
-    QT_MULTIPLE_CHOICE,
-    QT_TRUE_FALSE,
 )
 from app.features.text_normalizer import (
     merge_pointer_lines,
     remove_single_letter_noise,
 )
-from app.features.pipeline_stages.repair_stage import should_send_to_llm
-
 
 # =========================================================================
 # reconstruct_code_block

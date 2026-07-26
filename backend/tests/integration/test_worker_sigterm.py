@@ -89,7 +89,6 @@ async def test_draining_stops_new_claims():
 @pytest.mark.asyncio
 async def test_unknown_task_type_dead_letter(test_suffix: str):
     """Enqueueing a task with unknown type should go to dead-letter when processed."""
-    import json
 
     import redis.asyncio as redis_async
 
@@ -172,7 +171,7 @@ async def test_heartbeat_lease_window_safe_retry():
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            raise asyncio.TimeoutError("transient timeout")
+            raise TimeoutError("transient timeout")
         return 1
 
     from app.services.task_queue_service import task_queue as real_queue
@@ -202,9 +201,11 @@ async def test_heartbeat_lease_window_safe_retry():
 
 async def _run_heartbeat_test(task, lease_sec, owner_lost):
     """Run the new heartbeat loop with lease-window awareness."""
-    from app.services.task_queue_worker import _v2_heartbeat_loop_with_lease_window
     # Set running flag so loop doesn't exit immediately
-    from app.services.task_queue_worker import _v2_worker_running
+    from app.services.task_queue_worker import (
+        _v2_heartbeat_loop_with_lease_window,
+        _v2_worker_running,
+    )
     _v2_worker_running = True
     try:
         await _v2_heartbeat_loop_with_lease_window(task, lease_sec, owner_lost)
@@ -236,7 +237,7 @@ async def test_heartbeat_unsafe_window_immediate_owner_lost():
     owner_lost = asyncio.Event()
 
     async def _mock_failing_heartbeat(t, **_kw):
-        raise asyncio.TimeoutError("transient timeout")
+        raise TimeoutError("transient timeout")
 
     from app.services.task_queue_service import task_queue as real_queue
     original_heartbeat = real_queue.heartbeat_v2
@@ -248,7 +249,7 @@ async def test_heartbeat_unsafe_window_immediate_owner_lost():
         )
         try:
             await asyncio.wait_for(hb_task, timeout=5)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
         # Owner should be lost — unsafe lease window triggered immediate loss
@@ -294,7 +295,7 @@ async def test_heartbeat_lua_rejection_immediate_owner_lost():
         )
         try:
             await asyncio.wait_for(hb_task, timeout=5)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
         assert owner_lost.is_set(), "Owner should be lost on Lua rejection"

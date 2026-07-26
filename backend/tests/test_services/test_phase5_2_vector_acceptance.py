@@ -11,15 +11,11 @@
 
 import asyncio
 import hashlib
-import json
 import math
-import random
 import statistics
 import time
 from collections import Counter
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from app.models.question import Question
 
@@ -478,22 +474,25 @@ class TestQualityVerification:
     def test_self_exclusion_logic(self):
         """验证 search_similar_questions SQL 排除源题（question_id != :qid）。"""
         # 通过检查 SQL 文本来验证自排除逻辑
-        from app.services.vector_retrieval_service import search_similar_questions
         import inspect
+
+        from app.services.vector_retrieval_service import search_similar_questions
         source = inspect.getsource(search_similar_questions)
         assert "question_id != :qid" in source, "SQL 必须排除源题"
 
     def test_same_subject_filter_logic(self):
         """验证 search_similar_questions SQL 限制同科目（qe.subject = :subject）。"""
-        from app.services.vector_retrieval_service import search_similar_questions
         import inspect
+
+        from app.services.vector_retrieval_service import search_similar_questions
         source = inspect.getsource(search_similar_questions)
         assert "qe.subject = :subject" in source, "SQL 必须限制同科目"
 
     def test_vector_recall_subject_filter(self):
         """验证 vector_recall_by_text SQL 限制科目。"""
-        from app.services.vector_retrieval_service import vector_recall_by_text
         import inspect
+
+        from app.services.vector_retrieval_service import vector_recall_by_text
         source = inspect.getsource(vector_recall_by_text)
         assert "qe.subject = :subject" in source, "SQL 必须限制科目"
         assert "qe.subject LIKE :subject_prefix" in source, "SQL 必须支持科目前缀匹配"
@@ -511,8 +510,9 @@ class TestFaultInjection:
 
     def test_fault_1_embedding_api_timeout(self):
         """故障 1: embedding API 超时 → fallback 正常。"""
-        from app.services.embedding_service import get_embedding
         import httpx
+
+        from app.services.embedding_service import get_embedding
 
         with patch("app.services.embedding_service.settings") as s, \
              patch("app.services.embedding_service.httpx.AsyncClient") as mock_client_cls:
@@ -690,8 +690,9 @@ class TestMainChainIntegrity:
 
     def test_random_mode_no_vector_dependency(self):
         """random 模式不依赖向量服务。"""
-        from app.services import practice_service
         import inspect
+
+        from app.services import practice_service
         source = inspect.getsource(practice_service.get_practice_questions)
         assert "vector" not in source.lower(), "random 模式不应依赖向量"
 
@@ -699,16 +700,18 @@ class TestMainChainIntegrity:
         """sequential 模式不依赖向量服务。"""
         # sequential 使用 get_practice_questions with mode != random
         # 走 order_by(Question.id.asc()) 路径
-        from app.services import practice_service
         import inspect
+
+        from app.services import practice_service
         source = inspect.getsource(practice_service.get_practice_questions)
         # 确认无向量调用
         assert "vector_retrieval" not in source
 
     def test_submit_vector_cache_invalidation_is_best_effort(self):
         """submit_answer 答题后清理向量缓存，但失败不影响核心流程。"""
-        from app.services import practice_service
         import inspect
+
+        from app.services import practice_service
         source = inspect.getsource(practice_service.submit_answer)
         # 确认有缓存清理调用
         assert "invalidate_vector_cache" in source
@@ -719,7 +722,6 @@ class TestMainChainIntegrity:
     def test_submit_answer_writes_practice_record(self):
         """submit_answer 正常写入 PracticeRecord。"""
         from app.services import practice_service
-        from app.models.practice_record import PracticeRecord
 
         q = _make_question(id=42, answer="A", subject="exam408-ds")
         db = _make_mock_db("sqlite")
@@ -925,8 +927,9 @@ class TestSeedQuestionSampling:
 
     def test_seed_sampling_logic(self):
         """验证 seed 抽样逻辑：is_active=True + review_status=approved。"""
-        from app.services.vector_retrieval_service import backfill_question_embeddings
         import inspect
+
+        from app.services.vector_retrieval_service import backfill_question_embeddings
         source = inspect.getsource(backfill_question_embeddings)
         assert "is_active == True" in source
         assert "review_status == \"approved\"" in source

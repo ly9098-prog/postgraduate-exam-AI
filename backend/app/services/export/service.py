@@ -11,16 +11,14 @@ Responsibilities:
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
-import os
 import re
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-import datetime as dt
-
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -34,9 +32,8 @@ from app.services.export.data_builder import build_snapshot_data
 from app.services.export.exporter_base import Exporter
 from app.services.export.pdf_exporter import PdfExporter
 from app.services.export.range_resolver import resolve_range
-from app.services.export.snapshot_service import create_snapshot, load_snapshot
+from app.services.export.snapshot_service import create_snapshot
 from app.services.export.sorter import sort_questions
-from app.services.storage_backend import get_storage
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +84,7 @@ def _sanitize_filename(title: str) -> str:
 def _build_filename(title: str, date_str: str, ext: str = "pdf") -> str:
     """Build the export filename: {title}_{yyyyMMdd_HHmm}.{ext}"""
     safe_title = _sanitize_filename(title)
-    ts = date_str.replace("-", "") if date_str else datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+    ts = date_str.replace("-", "") if date_str else datetime.now(dt.UTC).strftime("%Y%m%d_%H%M")
     return f"{safe_title}_{ts}.{ext}"
 
 
@@ -141,7 +138,7 @@ async def create_export_task(
     if not title:
         title = "错题巩固练习"
 
-    date_str = config.get("export_date", "") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    date_str = config.get("export_date", "") or datetime.now(dt.UTC).strftime("%Y-%m-%d")
     file_name = _build_filename(
         title,
         date_str.replace("-", ""),
@@ -257,7 +254,7 @@ async def process_task(
             if not result.success or not result.file_bytes:
                 task.status = ExportTaskStatus.FAILED
                 task.error_message = (result.error_message or "PDF 生成失败")[:500]
-                task.completed_at = datetime.now(timezone.utc)
+                task.completed_at = datetime.now(dt.UTC)
                 task.skip_count = result.skip_count
                 task.skip_reasons = result.skip_reasons
                 logger.warning("Export task %d failed: %s", task.id, task.error_message)
@@ -276,8 +273,8 @@ async def process_task(
             task.success_count = snapshot_data.get("total_count", 0) - (result.skip_count or 0)
             task.skip_count = result.skip_count
             task.skip_reasons = result.skip_reasons
-            task.completed_at = datetime.now(timezone.utc)
-            task.expires_at = datetime.now(timezone.utc) + dt.timedelta(days=7)
+            task.completed_at = datetime.now(dt.UTC)
+            task.expires_at = datetime.now(dt.UTC) + dt.timedelta(days=7)
 
             logger.info(
                 "Export task %d completed: %d questions, %d skipped, %d bytes",
@@ -287,13 +284,13 @@ async def process_task(
     except ValueError as e:
         task.status = ExportTaskStatus.FAILED
         task.error_message = str(e)[:500]
-        task.completed_at = datetime.now(timezone.utc)
+        task.completed_at = datetime.now(dt.UTC)
         logger.warning("Export task %d failed (validation): %s", task.id, e)
 
     except Exception as e:
         task.status = ExportTaskStatus.FAILED
         task.error_message = f"导出失败: {str(e)[:200]}"
-        task.completed_at = datetime.now(timezone.utc)
+        task.completed_at = datetime.now(dt.UTC)
         logger.exception("Export task %d failed (unexpected)", task.id)
 
     await db.flush()
@@ -305,8 +302,8 @@ async def _collect_subjects(db: AsyncSession, wq_ids: list[int]) -> list[dict]:
     if not wq_ids:
         return []
 
-    from app.models.question import Question
     from app.models.admin import Subject
+    from app.models.question import Question
     from app.models.wrong_question import WrongQuestion
 
     # Get distinct subject IDs from questions linked to these wrong-question IDs

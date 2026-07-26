@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+
 from app.core.ocr_runtime_config import OcrRuntimeConfig
 from app.services.ocr_worker_client import (
     OcrWorkerClient,

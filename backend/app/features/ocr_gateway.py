@@ -450,19 +450,18 @@ class OCRGateway:
         if self._registry.list_ocr():
             return  # already registered
 
-        try:
-            from app.features.ocr_adapter import PaddleOCRLocalAdapter
-
-            if self._profile == DeploymentProfile.LOCAL_IMPORT:
+        if self._profile == DeploymentProfile.LOCAL_IMPORT:
+            try:
+                from app.features.ocr_adapter import PaddleOCRLocalAdapter
                 self._registry.register_ocr(PaddleOCRLocalAdapter(engine="paddleocr"))
                 logger.info("OCRGateway[%s]: registered PaddleOCRLocalAdapter", self._profile.value)
-            else:
-                logger.info(
-                    "OCRGateway[%s]: skipping PaddleOCRLocalAdapter (cloud profile)",
-                    self._profile.value,
-                )
-        except Exception as e:
-            logger.debug("OCRGateway: could not register local adapter: %s", e)
+            except Exception as e:
+                logger.debug("OCRGateway: could not register local adapter: %s", e)
+        else:
+            logger.info(
+                "OCRGateway[%s]: skipping PaddleOCRLocalAdapter (cloud profile)",
+                self._profile.value,
+            )
 
         # Remote lightweight adapter (both profiles)
         self._register_remote_adapter()

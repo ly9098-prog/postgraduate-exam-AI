@@ -1,6 +1,7 @@
 """OCR 告警规则回归测试 — evaluate_alerts 正确性与边界覆盖。"""
 
 import pytest
+
 from app.features.ocr_alert_rules import evaluate_alerts
 
 

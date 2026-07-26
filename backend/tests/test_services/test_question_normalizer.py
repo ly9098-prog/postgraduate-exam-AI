@@ -1,29 +1,37 @@
 """QuestionNormalizer 单元测试。"""
 import os
+
 import pytest
-from app.features.question_type_classifier import extract_options_from_text as _extract_fallback_options
+
+from app.features.answer_matcher import match_answers
 from app.features.question_normalizer import (
-    normalize_question,
-    normalize_questions,
-    dedup_batch,
+    QT_FILL_BLANK,
+    QT_MULTIPLE_CHOICE,
+    QT_SINGLE_CHOICE,
+    QT_SUBJECTIVE,
+    QT_TRUE_FALSE,
     _apply_outside_code_blocks,
     _break_before_number_markers,
     _clean_stem,
-    _extract_stem,
-    _normalize_options,
-    _normalize_answer,
-    _detect_question_type,
     _compute_confidence,
     _compute_stem_hash,
-    QT_SINGLE_CHOICE,
-    QT_MULTIPLE_CHOICE,
-    QT_TRUE_FALSE,
-    QT_FILL_BLANK,
-    QT_SUBJECTIVE,
+    _detect_question_type,
+    _extract_stem,
+    _normalize_answer,
+    _normalize_options,
+    dedup_batch,
+    normalize_question,
+    normalize_questions,
 )
-from app.features.question_splitter import split_questions, scan_entire_block_including_surrounding_lines
-from app.features.answer_matcher import match_answers
-from app.features.question_type_classifier import detect_options_from_text, classify as classify_question_type
+from app.features.question_splitter import (
+    scan_entire_block_including_surrounding_lines,
+    split_questions,
+)
+from app.features.question_type_classifier import classify as classify_question_type
+from app.features.question_type_classifier import detect_options_from_text
+from app.features.question_type_classifier import (
+    extract_options_from_text as _extract_fallback_options,
+)
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures")
 
@@ -967,7 +975,9 @@ class TestParseCacheVersion:
 
     def setup_method(self):
         from app.features.question_normalizer import (
-            parse_cache_clear, _parse_cache, PARSER_CACHE_VERSION,
+            PARSER_CACHE_VERSION,
+            _parse_cache,
+            parse_cache_clear,
         )
         parse_cache_clear()
         self._parse_cache = _parse_cache
@@ -985,7 +995,11 @@ class TestParseCacheVersion:
 
     def test_different_version_misses(self):
         """不同版本（模拟升级后）应自动失效。"""
-        from app.features.question_normalizer import parse_cache_get, parse_cache_put, _parse_cache, PARSER_CACHE_VERSION
+        from app.features.question_normalizer import (
+            _parse_cache,
+            parse_cache_get,
+            parse_cache_put,
+        )
 
         raw = "测试题干内容"
         key = "test_key_456"
@@ -1001,10 +1015,8 @@ class TestParseCacheVersion:
 
     def test_no_version_field_misses(self):
         """无 cache_version 字段的历史缓存应自动失效。"""
-        from app.features.question_normalizer import parse_cache_get
-
         # 手动插入一个无版本的缓存条目（模拟遗留数据）
-        from app.features.question_normalizer import _parse_cache, _make_cache_key
+        from app.features.question_normalizer import _make_cache_key, _parse_cache, parse_cache_get
         raw = "历史遗留文本"
         key = "test_legacy"
         cache_key = _make_cache_key(raw, key)
@@ -1018,7 +1030,11 @@ class TestParseCacheVersion:
 
     def test_cache_clear_works(self):
         """parse_cache_clear 应清空所有条目。"""
-        from app.features.question_normalizer import parse_cache_get, parse_cache_put, parse_cache_clear
+        from app.features.question_normalizer import (
+            parse_cache_clear,
+            parse_cache_get,
+            parse_cache_put,
+        )
 
         parse_cache_put("raw", "key", {"result": "val"})
         assert parse_cache_get("raw", "key") is not None
@@ -1028,7 +1044,10 @@ class TestParseCacheVersion:
     def test_fifo_eviction(self):
         """超过 _MAX_CACHE_SIZE 时应淘汰最旧条目。"""
         from app.features.question_normalizer import (
-            parse_cache_get, parse_cache_put, parse_cache_clear, _MAX_CACHE_SIZE,
+            _MAX_CACHE_SIZE,
+            parse_cache_clear,
+            parse_cache_get,
+            parse_cache_put,
         )
         parse_cache_clear()
         # 写入 _MAX_CACHE_SIZE 条

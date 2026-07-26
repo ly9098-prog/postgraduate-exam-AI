@@ -15,17 +15,21 @@ from typing import Any
 from tests.ocr_bench.schema import (
     BusinessMetrics,
     CodeMetrics,
-    FreezeBindingMetrics,
     LineLevelMetrics,
     MetricsResult,
-    QualityGateMetrics,
     ReadingOrderMetrics,
     ScenarioBucket,
 )
 from tests.ocr_eval.metrics import (
     character_error_rate,
+)
+from tests.ocr_eval.metrics import (
     line_precision as _line_precision,
+)
+from tests.ocr_eval.metrics import (
     line_recall as _line_recall,
+)
+from tests.ocr_eval.metrics import (
     text_drop_rate as _text_drop_rate,
 )
 

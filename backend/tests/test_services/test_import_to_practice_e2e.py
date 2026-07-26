@@ -12,7 +12,6 @@ import asyncio
 import io
 import os
 import sys
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -184,8 +183,8 @@ class TestBatchApproveNoRaiseOnAllSkipped:
 
 class TestPracticeSubjectPrefixMatch:
     def test_parent_subject_matches_children(self):
-        from app.services.practice_service import get_practice_questions
         from app.models.question import Question
+        from app.services.practice_service import get_practice_questions
 
         db = MagicMock()
         db.commit = AsyncMock()

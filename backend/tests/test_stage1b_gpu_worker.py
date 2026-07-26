@@ -20,7 +20,6 @@ os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{_TEST_DB_PATH}")
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # GPU Environment Pre-checks
 # ---------------------------------------------------------------------------
@@ -186,9 +185,9 @@ class TestGPUWorkerFaultInjection:
 
     def test_auto_device_uses_gpu_when_available(self):
         """auto mode should resolve to GPU when CUDA is available."""
-        from app.ocr_worker.device import resolve_ocr_device
-
         import paddle
+
+        from app.ocr_worker.device import resolve_ocr_device
         res = resolve_ocr_device(requested_device="auto", _import_paddle=paddle)
         if paddle.is_compiled_with_cuda() and paddle.cuda.device_count() > 0:
             assert res.resolved_device == "gpu"

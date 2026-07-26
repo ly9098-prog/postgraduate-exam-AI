@@ -1,6 +1,6 @@
 """PDF 题目解析单元测试 — 重点覆盖"解析文本中含答案关键词"的污染问题"""
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -9,8 +9,9 @@ from app.features.question_pipeline import _parse_pdf  # noqa: E402
 
 def _make_pdf(text: str) -> bytes:
     """用 PyMuPDF 构造一份纯文本 PDF（单页）"""
-    import fitz
     import io
+
+    import fitz
     doc = fitz.open()
     page = doc.new_page()
     page.insert_text((50, 80), text, fontsize=11, fontname="china-s")

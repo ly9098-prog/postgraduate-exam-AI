@@ -49,13 +49,11 @@ class _MockStreamClient:
         return self._response
 
 from app.features.ocr_vl.paddleocr_vl_client import (
+    _MAX_CONTENT_LENGTH_HEADER_BYTES,
+    _MAX_JSONL_LINES,
     JobSubmissionError,
     PaddleOCRVLClient,
     ResultDownloadError,
-    _CircuitBreaker,
-    CircuitBreakerOpenError,
-    _MAX_JSONL_LINES,
-    _MAX_CONTENT_LENGTH_HEADER_BYTES,
     _get_retry_after,
     _validate_result_url,
 )

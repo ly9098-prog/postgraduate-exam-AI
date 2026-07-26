@@ -1,5 +1,4 @@
 """DocumentStructureAnalyzer 单元测试。"""
-import pytest
 from app.features.structure_analyzer import analyze_structure
 
 

@@ -21,7 +21,6 @@ from __future__ import annotations
 import io
 import logging
 import re
-import textwrap
 
 logger = logging.getLogger(__name__)
 

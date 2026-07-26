@@ -8,8 +8,16 @@ from app.core.admin_security import hash_admin_password, verify_admin_password
 from app.core.database import Base
 from app.models.admin import AdminUser, AuditLog, Permission, Role, RolePermission
 from app.schemas.admin_auth import AdminChangePasswordRequest, AdminLoginRequest
-from app.services.admin_auth_service import authenticate_admin, build_admin_login_response, change_admin_password
-from app.services.admin_bootstrap_service import ADMIN_PERMISSION_DEFINITIONS, ADMIN_ROLE_PERMISSION_NAMES, ensure_dev_super_admin
+from app.services.admin_auth_service import (
+    authenticate_admin,
+    build_admin_login_response,
+    change_admin_password,
+)
+from app.services.admin_bootstrap_service import (
+    ADMIN_PERMISSION_DEFINITIONS,
+    ADMIN_ROLE_PERMISSION_NAMES,
+    ensure_dev_super_admin,
+)
 
 
 class _Result:

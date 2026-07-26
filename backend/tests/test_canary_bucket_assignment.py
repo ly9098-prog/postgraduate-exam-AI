@@ -1,10 +1,6 @@
 """Deterministic bucket assignment tests."""
 from __future__ import annotations
 
-import hashlib
-
-import pytest
-
 from app.features.ocr_canary import (
     BUCKET_DIVISOR,
     OCRCanaryConfig,

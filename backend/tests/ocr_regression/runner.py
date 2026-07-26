@@ -177,7 +177,10 @@ def run_ocr_case(meta: dict, case_dir: Path) -> dict:
     )
 
     # Run option detection
-    from app.features.question_type_classifier import detect_options_from_text, extract_options_from_text
+    from app.features.question_type_classifier import (
+        detect_options_from_text,
+        extract_options_from_text,
+    )
 
     detected = detect_options_from_text(full_text)
     extracted = extract_options_from_text(full_text)
@@ -197,6 +200,7 @@ def _load_vl_config_from_db() -> dict | None:
     """从 SQLite DB 加载 PaddleOCR-VL 配置（同步读取）。"""
     import os
     import sqlite3
+
     import dotenv
 
     # Load .env if DATABASE_URL not already set (e.g. in pytest)
@@ -1138,7 +1142,7 @@ def _check_assertions(
             if flag not in risk_flags:
                 failures.append({
                     "field": f"risk_flags missing {flag!r}",
-                    "expected": f"in risk_flags",
+                    "expected": "in risk_flags",
                     "actual": risk_flags,
                     "message": (
                         f"[{case_dir_name}] 缺少预期代码风险标记 {flag!r}\n"
@@ -1154,7 +1158,7 @@ def _check_assertions(
             if flag in risk_flags:
                 failures.append({
                     "field": f"risk_flags has forbidden {flag!r}",
-                    "expected": f"not in risk_flags",
+                    "expected": "not in risk_flags",
                     "actual": risk_flags,
                     "message": (
                         f"[{case_dir_name}] 出现了不应存在的代码风险标记 {flag!r}\n"
@@ -1237,7 +1241,7 @@ def _check_assertions(
             if reason not in failure_reason:
                 failures.append({
                     "field": f"failure_reason missing {reason!r}",
-                    "expected": f"in failure_reason",
+                    "expected": "in failure_reason",
                     "actual": failure_reason,
                     "message": (
                         f"[{case_dir_name}] failure_reason 缺少预期条目 {reason!r}\n"
@@ -1262,7 +1266,7 @@ def _check_assertions(
                 if flag not in reg_flags:
                     failures.append({
                         "field": f"regression_test missing {flag!r}",
-                        "expected": f"in regression flags",
+                        "expected": "in regression flags",
                         "actual": reg_flags,
                         "message": (
                             f"[{case_dir_name}] detect_code_regression 未产生预期标记 {flag!r}\n"
@@ -1277,7 +1281,7 @@ def _check_assertions(
                 if "regression" in flag and flag not in reg_flags:
                     failures.append({
                         "field": f"regression_test missing {flag!r}",
-                        "expected": f"in regression flags",
+                        "expected": "in regression flags",
                         "actual": reg_flags,
                         "message": (
                             f"[{case_dir_name}] detect_code_regression 未产生预期标记 {flag!r}\n"

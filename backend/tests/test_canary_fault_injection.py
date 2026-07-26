@@ -1,14 +1,12 @@
 """Fault injection tests for canary resilience."""
 from __future__ import annotations
 
-import pytest
-
 from app.features.ocr_canary import (
     GROUP_CONTROL_A,
+    OCRCanaryConfig,
     check_ir_canary_failover,
     evaluate_canary_health,
     select_canary_group,
-    OCRCanaryConfig,
 )
 
 

@@ -8,7 +8,7 @@ Verifies that:
 
 from __future__ import annotations
 
-from app.features.cross_page_linking import CrossPageMergeResult, CrossPageLink
+from app.features.cross_page_linking import CrossPageLink
 from app.features.pipeline_orchestrator import _apply_cross_page_block_merge
 
 

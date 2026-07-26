@@ -14,7 +14,10 @@ def test_paddleocr_not_loaded_on_import():
     # Import core modules
     from app.core import config  # noqa: F401
     from app.core.deployment_profile import DeploymentProfile  # noqa: F401
-    from app.features.runtime_capabilities import RuntimeCapabilities, build_runtime_capabilities  # noqa: F401
+    from app.features.runtime_capabilities import (  # noqa: F401
+        RuntimeCapabilities,
+        build_runtime_capabilities,
+    )
 
     # Verify paddleocr is NOT loaded
     paddle_loaded = [m for m in sys.modules if "paddleocr" in m or "paddle." in m]

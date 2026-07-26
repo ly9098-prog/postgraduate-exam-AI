@@ -1,11 +1,8 @@
 """Phase 4 — 推荐效果评估 + 策略调参 + 质量治理 单元测试。"""
 import asyncio
 import hashlib
-from datetime import date, datetime, timedelta
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
-
 
 # ── helpers ──
 
@@ -386,7 +383,9 @@ class TestRecommendationLogsWithExperiment:
 class TestAggregateMetricsDaily:
     def test_aggregate_basic(self):
         """aggregate_recommendation_metrics_daily 能聚合曝光、答题、正确率。"""
-        from app.services.recommendation_metrics_service import aggregate_recommendation_metrics_daily
+        from app.services.recommendation_metrics_service import (
+            aggregate_recommendation_metrics_daily,
+        )
 
         db = _make_mock_db()
 
@@ -689,7 +688,7 @@ class TestSM2Unaffected:
             os.path.dirname(__file__), "..", "..", "app", "services", "sm2_service.py"
         )
         if os.path.exists(sm2_path):
-            with open(sm2_path, "r", encoding="utf-8") as f:
+            with open(sm2_path, encoding="utf-8") as f:
                 content = f.read()
             # SM-2 服务不应包含 Phase 4 相关引用
             assert "recommendation_experiment" not in content

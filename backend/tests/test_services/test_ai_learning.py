@@ -4,9 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models.ai_chat import AiChat
 from app.models.question import Question
-
 
 # ============================================================
 # Test Helpers
@@ -433,8 +431,8 @@ class TestLearningReport:
 
     def test_insufficient_data(self):
         """数据不足（<5题）时不调用 AI。"""
-        from app.services.ai_learning_service import generate_learning_report
         from app.models.practice_record import PracticeRecord
+        from app.services.ai_learning_service import generate_learning_report
 
         db = _make_mock_db()
         r1 = MagicMock(spec=PracticeRecord)
@@ -462,8 +460,8 @@ class TestLearningReport:
     @pytest.mark.xfail(reason="AI API key not configured in CI")
     def test_report_with_ai_success(self):
         """正常 AI 报告生成。"""
-        from app.services.ai_learning_service import generate_learning_report
         from app.models.practice_record import PracticeRecord
+        from app.services.ai_learning_service import generate_learning_report
 
         db = _make_mock_db()
         records = []
@@ -501,8 +499,8 @@ class TestLearningReport:
     @pytest.mark.xfail(reason="AI API key not configured in CI")
     def test_report_ai_unavailable(self):
         """AI 不可用时返回规则生成的降级报告。"""
-        from app.services.ai_learning_service import generate_learning_report
         from app.models.practice_record import PracticeRecord
+        from app.services.ai_learning_service import generate_learning_report
 
         db = _make_mock_db()
         records = []

@@ -4,7 +4,6 @@ Verifies that PageStream memory usage stays O(window_size), not O(total_pages).
 """
 from __future__ import annotations
 
-import os
 import tracemalloc
 
 import pytest

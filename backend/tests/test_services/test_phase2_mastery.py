@@ -1,16 +1,13 @@
 """Phase 2 — 知识点掌握度画像 + 推荐反馈闭环 单元测试。"""
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from app.models.knowledge_point import KnowledgePoint
-from app.models.question_knowledge_point import QuestionKnowledgePoint
-from app.models.user_knowledge_state import UserKnowledgeState
-from app.models.recommendation_log import RecommendationLog
 from app.models.question import Question
-
+from app.models.question_knowledge_point import QuestionKnowledgePoint
+from app.models.recommendation_log import RecommendationLog
+from app.models.user_knowledge_state import UserKnowledgeState
 
 # --- helpers ---
 
@@ -294,7 +291,10 @@ class TestUpdateUserKnowledgeState:
         db.add.assert_called()
 
     def test_wrong_answer_may_decrease_weakness(self):
-        from app.services.mastery_service import update_user_knowledge_state_after_answer, classify_weakness_level, calculate_mastery_score
+        from app.services.mastery_service import (
+            calculate_mastery_score,
+            classify_weakness_level,
+        )
 
         # After many wrong answers, weakness should be "weak"
         score = calculate_mastery_score(10, 1, 9, last_wrong_at=datetime(2026, 6, 28), last_practiced_at=datetime(2026, 6, 28))

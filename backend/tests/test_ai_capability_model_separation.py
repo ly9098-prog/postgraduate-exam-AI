@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.services.model_config_resolver import (
     AICapability,
     AIModelConfigResolver,
-    ResolvedAIModelConfig,
 )
 
 

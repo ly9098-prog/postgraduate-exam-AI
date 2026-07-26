@@ -27,8 +27,8 @@ class TestReviewUsesDocumentIR:
     @pytest.mark.asyncio
     async def test_review_coordinator_run_returns_module_result(self):
         """run() returns ModuleResult with is_success True."""
-        from app.features.coordinators import ReviewCoordinator
         from app.core.module_result import ModuleResult
+        from app.features.coordinators import ReviewCoordinator
 
         coordinator = ReviewCoordinator()
         result = await coordinator.run(
@@ -47,8 +47,8 @@ class TestReviewUsesDocumentIR:
     @pytest.mark.asyncio
     async def test_review_coordinator_run_with_questions(self):
         """ReviewCoordinator run accepts optional questions list."""
-        from app.features.coordinators import ReviewCoordinator
         from app.core.module_result import ModuleResult
+        from app.features.coordinators import ReviewCoordinator
 
         coordinator = ReviewCoordinator()
         result = await coordinator.run(

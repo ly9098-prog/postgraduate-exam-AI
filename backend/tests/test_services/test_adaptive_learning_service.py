@@ -19,18 +19,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.adaptive_learning_service import (
+    _adjust_weight,
     _clamp,
     calculate_personalized_interval_days,
-    get_difficulty_factor,
-    get_difficulty_label,
-    get_blocked_knowledge_points,
     can_recommend_advanced_knowledge,
     default_weights,
+    get_blocked_knowledge_points,
+    get_difficulty_factor,
+    get_difficulty_label,
     get_recommend_weights,
-    _adjust_weight,
-    update_user_interval_factor,
-    update_question_difficulty_state,
     update_adaptive_state_after_answer,
+    update_question_difficulty_state,
+    update_user_interval_factor,
 )
 
 

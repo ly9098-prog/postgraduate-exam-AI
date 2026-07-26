@@ -9,8 +9,6 @@ Verifies that:
 
 from __future__ import annotations
 
-import pytest
-
 from app.features.pipeline_stages.structure_freeze_stage import (
     BINDING_BOUND,
     BINDING_LOST,

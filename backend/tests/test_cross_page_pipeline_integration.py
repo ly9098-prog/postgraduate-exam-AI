@@ -11,8 +11,6 @@ Tests that cross-page linking is properly wired into the pipeline:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, PropertyMock
-
 import pytest
 
 from app.core.document_ir import (
@@ -24,18 +22,14 @@ from app.core.document_ir import (
     new_document,
 )
 from app.features.cross_page_linking import (
-    CrossPageLink,
     REASON_EXPLICIT_MARKER,
-    REASON_NO_QN_ON_FIRST_REGION,
-    REASON_PAGE_BEGINS_WITH_OPTIONS,
-    REASON_PREV_NEAR_BOTTOM_NO_END,
+    CrossPageLink,
     detect_cross_page_links,
 )
 from app.features.pipeline_orchestrator import (
     _apply_cross_page_block_merge,
     _merge_cross_page_blocks,
 )
-
 
 # ===================================================================
 # Helpers

@@ -14,7 +14,6 @@ architecture gate for the OCR pipeline refactoring.
 from __future__ import annotations
 
 import ast
-import sys
 from pathlib import Path
 
 import pytest
@@ -402,9 +401,7 @@ class TestCompileAll:
     """All Python files in the project must compile without syntax errors."""
 
     def test_all_py_files_compile(self):
-        import compileall
         import py_compile
-        import tempfile
 
         backend_root = PROJECT_ROOT / "backend"
         source_dir = backend_root / "app"

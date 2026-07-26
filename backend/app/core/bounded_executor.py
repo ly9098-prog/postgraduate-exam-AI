@@ -139,7 +139,7 @@ class BoundedExecutor:
                 self._metrics["duration"] = duration
                 self._metrics["queue_wait"] = start - queue_wait_start
             return result
-        except asyncio.TimeoutError:
+        except TimeoutError:
             async with self._lock:
                 self._active -= 1
                 self._metrics["active"] = self._active

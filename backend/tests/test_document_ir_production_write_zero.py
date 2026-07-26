@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import ast
-import os
 from pathlib import Path
-
-import pytest
 
 BACKEND = Path(__file__).resolve().parent.parent / "app"
 
@@ -84,7 +80,7 @@ class TestDocumentIRNoProductionWriteViolations:
 
     def test_document_ir_has_stable_ids(self):
         """Verify DocumentIR has stable IDs (preventing ID reuse)."""
-        from app.core.document_ir import make_page_id, make_region_id
+        from app.core.document_ir import make_page_id
         page_id_1 = make_page_id("doc1", 0)
         page_id_2 = make_page_id("doc1", 0)
         assert page_id_1 == page_id_2, "Stable ID not deterministic"

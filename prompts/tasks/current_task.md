@@ -1,744 +1,958 @@
-你是一名资深 Python/FastAPI、SQLAlchemy Async、PostgreSQL、Redis、分布式任务队列和 OCR 架构工程师。请在当前后端仓库中直接完成审计、修复、迁移、自动化测试和部署说明。不要只输出建议、TODO、伪代码或示例补丁。
-
-# 一、任务目标
-
-当前仓库是一个 FastAPI + SQLAlchemy Async + PostgreSQL + Redis 的刷题和题库导入系统。生产资源约为 2 核 CPU、1.8GB 内存，FastAPI、PostgreSQL、Redis、Nginx 和管理端可能运行在同一台服务器。
-
-本次静态审计已经确认：当前代码只完成了部分结构性改造，尚未满足 `next_task.md` 的生产验收标准，不可直接上线。
-
-你必须重新验证并修复每一个问题。不得因为类名、注释或文件名包含 durable、bounded、cloud safe、resource guard 等字样就认为实现已经正确。
-
-必须优先保证：
-
-1. 不阻塞 FastAPI 事件循环。
-2. 不发生重复导入、重复发布、重复 OCR 或重复 AI 调用。
-3. 进程重启、Worker 崩溃后任务可恢复。
-4. processing、retry、dead、Redis key、临时文件和日志不会无限增长。
-5. 资源不足时在入队前快速拒绝，不允许无限排队。
-6. cloud_api/production 永远不导入、初始化、检查或回退本地 PaddleOCR。
-
-# 二、先输出审计矩阵
-
-开始修改前，输出一份审计矩阵，至少包含：
-
-- 文档要求。
-- 当前状态：已实现、部分实现、未实现、实现错误。
-- 代码路径和行号。
-- 可复现方式。
-- 生产风险。
-- 修复方案。
-- 对应测试。
-
-然后直接修改代码，不要停留在审计报告阶段。
-
-# 三、必须首先修复的 P0
-
-## P0-1：修复 DurableTaskQueue 状态机
-
-重点检查：
-
-- `app/services/task_queue_service.py`
-- `app/services/task_queue_worker.py`
-- `app/services/ai_prewarm_worker.py`
-
-已确认缺陷：
-
-1. `DurableTaskQueue.heartbeat()` 在接收 `Task` 时没有自动使用 `task.task_type`，而是更新 `_p_key(task_type or "")`。
-2. 这会写入错误的 `taskq:processing:` ZSET，正确 processing lease 没有延长，错误 ZSET 会持续增长。
-3. retry claim 在确认 task hash 和 payload 存在前就进入 processing，payload 缺失可能留下脏 processing/heartbeat。
-4. reaper 没有可靠更新 generation、attempt、status 和 owner fencing。
-5. owner 丢失后，旧 Worker 仍可能继续执行写数据库、发布或上传等副作用。
-6. ready queue 没有原子容量控制。
-7. 内存队列满时部分路径仍返回 task_id，调用方会误判成功。
-8. SIGTERM 时仅设置 draining 后立即 cancel，没有等待当前任务和安全释放 lease。
-9. 未知 task type 可能被当成成功完成。
-10. AI prewarm 使用相同的错误 heartbeat，延迟和幂等语义也不完整。
-
-修复要求：
-
-- 使用 Redis Hash 保存 task payload/state。
-- ready queue 只保存 task_id。
-- processing 和 retry 使用 ZSET。
-- 所有 enqueue、claim、heartbeat、complete、fail、retry、dead、reaper 操作必须通过原子 Lua 或 Redis Streams Consumer Group 完成。
-- task state 至少包含：
-
-```text
-task_id
-task_type
-payload
-status
-retry_count
-max_retries
-owner_token
-generation
-lease_until
-created_at
-updated_at
-last_error
-```
-
-- enqueue、幂等 key 和容量检查必须在同一个原子操作中完成。
-- 队列达到上限时不能修改任何 Redis 状态，返回稳定的 429/503 错误和 Retry-After。
-- claim 必须先确认 task hash 和 payload 存在，再进入 processing。
-- 每次 claim 生成新的 owner_token 和 generation。
-- heartbeat 必须原子校验 task_id、task_type、owner_token 和 generation，并更新正确 processing ZSET 的 score。
-- complete、fail 和 reaper 必须使用同样的 fencing 条件。
-- 所有终态必须清理 processing、heartbeat 和 owner 状态。
-- reaper 只能恢复真实过期且未续租的任务，并且只能恢复一次。
-- 旧 owner 在 lease 丢失后不得继续执行副作用步骤。
-- 增加显式的 `release_or_requeue_on_shutdown()`。
-- Worker 收到 SIGTERM 后执行：
-
-```text
-停止 claim 新任务
-继续为当前任务 heartbeat
-等待当前任务在 grace timeout 内完成
-超时则原子释放或重新入队
-关闭 Redis、DB、httpx 和 executor
-```
-
-- dead-letter 必须有容量、TTL、查询、重试、删除接口和指标。
-- production/cloud_api Redis 不可用时拒绝长任务。
-- 只有 local_import 且显式配置时才允许使用有界内存队列。
-
-必须新增测试：
-
-1. claim 后 processing 正确。
-2. heartbeat 延长对应 task_type 的 lease。
-3. 禁止生成空 task_type processing ZSET。
-4. complete 后 processing 为空。
-5. heartbeat 正常时，运行超过初始 lease 不会重复执行。
-6. Worker 崩溃后只恢复一次。
-7. 两个 Worker 并发 claim 只有一个成功。
-8. 重复 enqueue 同一个 task_id 只产生一个任务。
-9. retry/dead 状态正确。
-10. Redis 重连后状态保留。
-11. complete 后 reaper 永不重新入队。
-12. processing/retry/dead 不随已完成任务无限增长。
-13. owner_lost 后旧 Worker 不再执行写库或发布操作。
-14. 队列满时 Redis 状态完全不变。
-
-## P0-2：彻底隔离云端 OCR
-
-重点检查：
-
-- `app/services/ocr_service.py`
-- `app/services/ocr_executor_service.py`
-- `app/features/ocr_gateway.py`
-- `app/features/ocr_adapter.py`
-- `app/services/ocr_worker_client.py`
-- `app/services/ocr_paddlex_http_client.py`
-- `app/services/import_pipeline_service.py`
-- `app/features/exercise_region_detector.py`
-- `app/core/ocr_process_pool.py`
-- `app/main.py`
-
-已确认缺陷：
-
-1. `ocr_service._is_cloud_api()` 将 `DeploymentProfile` 枚举与字符串 `"cloud_api"` 比较，结果恒为 False。
-2. `import_pipeline_service.py` 也使用相同的错误比较。
-3. Gateway 失败后，`ocr_pages`、`ocr_pages_with_boxes` 和 `ocr_raw_text` 会进入 legacy executor。
-4. legacy executor 会导入 `app.core.ocr_process_pool`。
-5. `ocr_executor_service.py` 使用 `run_in_executor(None, ...)`。
-6. `OCRGateway` 构造函数允许不显式传 profile。
-7. Gateway 注册 backend 时过早导入本地 adapter。
-8. worker client factory 没有独立的 cloud fail-closed 防线。
-9. shutdown 可能为了关闭 executor 而导入本地 OCR pool。
-10. `main.py` 使用 `sys.modules` 却没有导入 `sys`。
-11. 外部 OCR client 没有完整重试、退避、熔断、跨进程并发和大小限制。
-12. `OCR_REMOTE_TOKEN` 没有明确安全地放入请求头。
-13. OCR 请求构造存在同步文件读取。
-
-修复要求：
-
-- 所有模块只从 `app.core.deployment_profile` 导入统一的：
-
-```python
-detect_deployment_profile()
-DeploymentProfile
-```
-
-- 所有判断使用枚举，不允许与字符串直接比较。
-- `OCRGateway` 必须强制：
-
-```python
-OCRGateway(profile: DeploymentProfile, ...)
-```
-
-不得自动默认为 local_import。
-
-- cloud_api/production 的实际 import graph 中不得触碰：
-
-```text
-paddle
-paddleocr
-PaddleOCRLocalAdapter
-ocr_process_pool
-ocr_local_worker_client
-ocr_worker/executor.py
-```
-
-- 删除云端的所有 legacy local fallback。
-- 删除云端 `reset_ocr_engine()` 路径。
-- 云端不得调用 `find_spec("paddle")` 或 `find_spec("paddleocr")`。
-- Gateway、client factory 和 executor 三层都要检查 profile 并 fail closed。
-- 检测到 local backend 时记录结构化安全错误并停止该 OCR 路由。
-- 外部 OCR 失败后只能：
-
-```text
-有限次数重试远端
-使用已有 PDF 文本层
-使用轻量文本规则
-使用 AI 文本纠错
-进入人工审核
-返回明确可重试错误
-```
-
-不得进入本地 OCR。
-
-外部 OCR client 必须：
-
-- 复用共享 `httpx.AsyncClient`。
-- 设置 connect、read、write、pool timeout。
-- 设置连接数上限。
-- 使用有界的进程内并发控制。
-- 使用 Redis 实现跨进程并发控制。
-- 获取并发许可时有超时或立即拒绝，不能无限等待。
-- 仅重试连接错误、429、502、503、504。
-- 使用有限次数指数退避和随机抖动。
-- 业务 4xx 不重试。
-- 实现 circuit breaker。
-- 限制原始请求大小、base64 后大小和响应流大小。
-- token 只能放入安全请求头。
-- token 不得出现在 URL、日志、异常、response preview 或监控标签中。
-- shutdown 只关闭真实创建过的远端 client。
-
-必须新增 cloud isolation 测试：
-
-- 设置 `APP_ENV=production` 或 `DEPLOYMENT_PROFILE=cloud_api`。
-- monkeypatch `builtins.__import__`，导入任何 `paddle`、`paddleocr` 或本地 OCR 模块立即失败。
-- monkeypatch `importlib.util.find_spec`，查询 paddle/paddleocr 立即失败。
-- 断言 `sys.modules` 中不存在 paddle 和 paddleocr。
-- 断言不创建 OCR 子进程或进程池。
-- 断言不实例化 local adapter。
-- 外部 OCR 失败时进入 review 或明确失败。
-- 不安装 OCR requirements 时，云端仍能启动并调用外部 OCR。
-- shutdown 不导入任何 local OCR 模块。
-
-## P0-3：修复生产配置 fail-fast
-
-重点检查：
-
-- `app/services/production_config_validator.py`
-- `app/main.py`
-- `app/core/config.py`
-- `app/core/ocr_runtime_config.py`
-
-已确认缺陷：
-
-1. `_check_ocr_no_local_deps()` 在 cloud 中主动执行 `find_spec`，违反硬约束。
-2. 使用 `except Exception: pass` 隐藏配置检查错误。
-3. profile 解析失败时 `_is_restricted_environment()` 可能返回 False，从而跳过生产校验。
-4. `main.py` 将部分生产校验异常记录为非致命 warning。
-5. paddlex_http URL 为空时，URL/token 组合可能漏检。
-6. queue capacity 校验读取了错误位置的 `_DEAD_MAX`。
-7. DB 连接预算没有覆盖真实实例数和 PostgreSQL 保留连接。
-8. `main.py` 存在缺少 `sys`、早期使用未导入 `log_event` 等运行时问题。
-
-修复要求：
-
-- APP_ENV、profile 或配置解析失败时必须 fail closed。
-- production/cloud_api 的任何同步或异步校验异常都必须抛 `SystemError`。
-- 不允许在生产启动路径使用 `except Exception` 后继续启动。
-- 云端不检查 Paddle 是否安装，只验证当前配置和 import graph 不会使用本地 OCR。
-- 完整校验：
-
-```text
-APP_SECRET
-PostgreSQL + asyncpg
-Redis 连接
-Alembic head
-CORS
-PROCESS_ROLE
-OCR profile
-OCR backend
-OCR_USE_GPU=false
-unsafe thread fallback=false
-remote-to-local fallback=false
-OCR URL
-OCR token
-经显式允许的内网 HTTP 例外
-staging/static/persistent storage 可写
-磁盘剩余空间
-DB 连接预算
-队列容量
-角色配置一致性
-```
-
-- 为所有非法配置组合增加参数化启动测试。
-- 非法组合必须导致 lifespan 启动失败。
-- 修复所有 NameError、未定义符号和被异常吞掉的启动检查。
-
-安全默认值至少调整为：
-
-```text
-cloud 单文件：5MB
-cloud PDF 页数：30
-同时处理文档：1
-同时渲染页面：1
-PDF page window：1
-worker 并发：1
-OCR GPU：false
-```
-
-## P0-4：真正拆分 web、worker 和 scheduler
-
-重点检查 `app/main.py` 及部署命令。
-
-当前 web role 仍启动 token cleanup 和 staging cleanup，违反角色隔离。
-
-修复要求：
-
-- `PROCESS_ROLE=web`：
-
-```text
-HTTP
-鉴权
-轻量数据库查询
-上传到 staging
-资源准入
-可靠入队
-```
-
-不得执行 pipeline、OCR、AI、公式、定时清理或 reaper。
-
-- `PROCESS_ROLE=worker`：
-
-```text
-导题
-PDF
-外部 OCR
-AI 修复
-公式任务
-task heartbeat/retry/dead
-```
-
-默认并发 1。
-
-- `PROCESS_ROLE=scheduler`：
-
-```text
-番茄钟
-refresh token cleanup
-audit cleanup
-staging orphan cleanup
-其他定时任务
-```
-
-- 为三个角色提供独立启动命令、Docker Compose/systemd/supervisor 示例和健康检查。
-- 所有 `asyncio.create_task()` 保存引用并添加 done callback。
-- 关键任务异常退出时，production 进程必须退出或进入 not-ready，不能静默停止。
-- 每个组件有明确 `start()`、`stop()`、`drain()`。
-- shutdown 顺序正确关闭共享 httpx、Redis、SQLAlchemy engine 和 executor。
-- web role 不初始化重型 OCR client。
-- worker role 初始化自己需要的 OCR Gateway 和共享远端 client。
-
-## P0-5：重写 ResourceGuard 原子准入
-
-重点检查：
-
-- `app/core/resource_guard.py`
-- `app/services/import_pipeline_service.py`
-- 所有上传、resume、后台管理和内部导入入口
-
-已确认缺陷：
-
-1. Redis acquire Lua 超过容量后仍然 `INCR`。
-2. `can_accept_work()` 和 `increment_pipeline_count()` 分离，存在竞态。
-3. increment 忽略 acquire 返回值。
-4. async 路径调用同步 Redis client。
-5. Redis 失败时 production 也可能降级为进程内计数。
-6. 校验期间抛异常可能泄漏 pipeline count。
-7. module singleton 未按 deployment profile 配置。
-8. event-loop lag、临时磁盘和 DB pool 等指标没有真实接入。
-
-修复要求：
-
-- 使用异步 Redis Lua 实现原子的：
-
-```python
-async with resource_guard.acquire_pipeline(...):
-    ...
-```
-
-- 超限时不能修改计数。
-- 使用 owner token + lease/ZSET 或等价结构支持续租和 crash cleanup。
-- 不要使用单个整数加固定 TTL 表达活动任务。
-- production Redis 失败时 fail closed。
-- local_import 只有显式配置时允许本地有界 fallback。
-- 任何异常或取消都必须在 context manager 中释放。
-- admission 至少检查：
-
-```text
-RSS
-系统可用内存
-临时磁盘
-当前 pipeline 数
-OCR 并发
-页面像素预算
-远端 API 调用预算
-队列长度
-DB pool 使用率
-event-loop lag
-```
-
-- 所有导入入口必须在入队前调用同一 guard。
-- 资源不足返回稳定错误码、503/429 和 Retry-After。
-- 登录、刷题和答题提交等轻量接口不能被长任务 admission 阻塞。
-
-## P0-6：将 staging 生命周期绑定到 durable task
-
-重点检查：
-
-- `app/services/staging_storage.py`
-- `app/services/task_queue_worker.py`
-- `app/services/import_pipeline_service.py`
-- `app/services/import_service.py`
-- 所有上传入口
-
-修复要求：
-
-- 上传时直接分块流式写入 staging volume。
-- 写入过程中计算 SHA-256、size 和 MIME/magic。
-- 使用原子 rename 提交对象和 metadata。
-- task payload 只保存 object_id。
-- 不保存服务器路径、`UploadFile`、请求 Session、ORM 实例或内存闭包。
-- enqueue、claim、heartbeat 应创建或续租 object lease。
-- completed、failed、cancelled 和 dead 状态按 retention policy 释放 lease。
-- cleanup 只能删除：
-
-```text
-无有效 lease
-无 ready/processing/retry task 引用
-超过保留期
-```
-
-- 正确使用 `ttl_sec`。
-- 删除 object 时同时清理 metadata 和 lease。
-- quota 必须并发安全，不能每次依靠 O(n) 目录扫描。
-- production 使用持久 Docker volume，不允许 durable task 依赖 `/tmp`。
-- 删除 resume payload 中的 `file_path`。
-- 将旧的 `/tmp` + FastAPI BackgroundTasks 导入路径迁移到 durable queue。
-
-## P0-7：PDF 和图片改为严格单页流式处理
-
-重点检查：
-
-- `app/services/pdf_renderer_service.py`
-- `app/features/pipeline_orchestrator.py`
-- `app/core/config.py`
-- 图片压缩和上传路径
-
-已确认缺陷：
-
-1. `PdfRenderResult` 保存全部页面 bytes。
-2. 可能同时保存全部内存和磁盘副本。
-3. `PDF_RENDER_PAGE_WINDOW` 默认 0。
-4. cloud 默认仍为 200MB、600 页和并发 5。
-5. semaphore 没有限制 executor 等待队列。
-6. chunk 路径仍会积累多页。
-7. `ckpt` 存在先使用后导入的运行时错误。
-
-修复要求：
-
-- 生产主路径不得返回全量 `dict[int, bytes]`。
-- 提供 `AsyncIterator[RenderedPage]`。
-- cloud 同时最多持有一页：
-
-```text
-render
-校验
-文本层/OCR
-解析
-持久化
-释放 bytes/Pixmap/PIL/BytesIO
-删除临时页
-下一页
-```
-
-- 跨阶段保存 object/artifact 引用，不保存全量 bytes。
-- 专用 executor 有固定 worker 数和有界提交队列。
-- 队列满立即返回 429/503。
-- 全部 PyMuPDF、PIL、Excel、图片压缩、公式渲染、大文件哈希、同步 SDK 调用必须 offload。
-- 不得在持有数据库事务时等待外部 API、上传或 CPU 操作。
-- 增加以下校验：
-
-```text
-文件 magic
-MIME
-文件大小
-页数
-页面尺寸
-单页像素
-压缩比
-decompression bomb
-总 OCR 请求数
-pipeline 总超时
-临时磁盘预算
-```
-
-## P0-8：修复 scheduler 分布式锁
-
-重点检查：
-
-- `app/services/pomodoro_scheduler_service.py`
-- `app/services/audit_cleanup_scheduler.py`
-- `app/core/cache.py`
-- token/staging cleanup
-
-修复要求：
-
-- 不得使用会在 Redis 故障时自动降级本地锁的 cache API。
-- 建立 strict distributed lock。
-- 锁包含唯一 owner token。
-- 使用 Lua compare-and-expire 续租。
-- 使用 Lua compare-and-delete 释放。
-- owner 丢失后立即停止任务。
-- 长任务必须在 TTL 到期前续租。
-- audit cleanup 超过初始 TTL 时仍不能被第二实例重入。
-- refresh-token 和 staging cleanup 只在 scheduler 角色运行。
-- 每批有处理上限和数据库幂等条件。
-- 增加 acquired、skipped、failed、duration、processed 指标。
-
-# 四、继续完成 P1/P2
-
-## 1. BackgroundTasks 和事件循环
-
-- 删除重型 `/tmp` BackgroundTasks 主路径。
-- 后台任务只接收序列化 ID/object_id。
-- 每个后台任务自行建立、提交、回滚和关闭 AsyncSession。
-- 不得传请求 Session、UploadFile、ORM 实例或 Request。
-- 审计所有 `asyncio.create_task()`。
-- 未跟踪的 SSE publish task 必须改为可靠管理、直接 await 或 outbox。
-- async 路由中的 `compress_image()` 必须 offload。
-- 审计 PIL、fitz、openpyxl、文件 I/O、同步 COS SDK、公式渲染和大型 JSON。
-
-## 2. SSE
-
-- 保留 Redis Pub/Sub/Streams 主路径。
-- DB fallback 在无事件时指数退避，不能固定每两秒查询。
-- 限制单用户并发连接和总连接数。
-- 跨进程统计 active SSE，或至少提供可聚合 Prometheus 指标。
-- heartbeat 不访问数据库。
-- terminal 后立即关闭。
-- Nginx/客户端断开后立即 cancel generator 和 subscription。
-- 修复 subscription 异常重启抖动及 task 泄漏。
-
-## 3. Readiness 和可观测性
-
-- Redis readiness 使用 strict Redis PING，不能通过本地 cache fallback。
-- `/health/live` 只表示进程存活。
-- `/health/ready` 检查：
-
-```text
-PostgreSQL
-strict Redis
-Alembic head
-当前角色依赖
-worker queue
-staging writable/free space
-draining
-OCR profile/backend/URL/token
-cloud OCR 隔离
-```
-
-- 外部 OCR 短暂故障可以 degraded。
-- 非法 OCR 配置必须 not-ready。
-- 增加 Prometheus 指标：
-
-```text
-event-loop lag
-HTTP p50/p95/p99
-DB pool checked-out/wait
-慢 SQL
-task ready/processing/retry/dead
-task duration
-lease renewal failure
-duplicate execution prevented
-pipeline stage duration
-OCR duration/429/timeout/circuit
-AI duration/token/timeout
-RSS/available memory/temp disk
-active SSE
-scheduler acquired/skipped
-orphan files cleaned
-```
-
-## 4. 数据库性能
-
-必须实际执行并保存修复前后的：
-
-```sql
-EXPLAIN (ANALYZE, BUFFERS)
-```
-
-覆盖：
-
-- 今日复习。
-- 错题列表和统计。
-- practice 推荐。
-- 知识状态。
-- pipeline 状态。
-- audit log cleanup。
-- pomodoro 到期扫描。
-- task 管理查询。
-- question import review queue。
-
-修复：
-
-- 逐知识点 mastery 查询。
-- practice 跨学科循环。
-- AI prewarm 逐错题查询。
-- review 逐题查询。
-- 批量知识点 get-or-create。
-- 导入逐题 flush/refresh。
-- 公式逐条 get。
-- 大表 `ORDER BY random()`。
-
-使用 JOIN、IN、selectinload、PostgreSQL upsert、bulk insert/update 和必要唯一索引。
-
-所有索引修改必须提供 Alembic upgrade 和 downgrade。
-
-按实际 web、worker、scheduler 实例数重新计算连接预算，并为 PostgreSQL 管理和运维连接保留余量。
-
-# 五、强制测试
-
-当前仓库没有测试目录。必须新增真实、可执行的测试。
-
-## 单元测试
-
-1. profile 解析和非法配置 fail-fast。
-2. cloud OCR 禁止本地 import/find_spec/subprocess/adapter/fallback。
-3. 外部 OCR retry、backoff、jitter、4xx、circuit、大小限制和 token 脱敏。
-4. queue 全状态机和 fencing。
-5. heartbeat 正确 ZSET。
-6. queue capacity 原子性。
-7. SIGTERM graceful drain。
-8. scheduler strict lock。
-9. staging lease 和 cleanup。
-10. PDF 单页窗口。
-11. ResourceGuard 原子准入和异常释放。
-12. SSE 关闭、取消、heartbeat 和退避。
-13. 批量 SQL 查询次数断言。
-
-## 集成测试：真实 Redis + PostgreSQL
-
-1. 两个 Worker 同时 claim，仅一个成功。
-2. Worker 执行中被 kill。
-3. lease 过期后只恢复一次。
-4. heartbeat 正常时不恢复。
-5. complete 后永不重新入队。
-6. Redis 断连和重连。
-7. production 不降级内存队列。
-8. PostgreSQL pool 耗尽。
-9. OCR timeout、429、500 和 circuit。
-10. SIGTERM。
-11. staging volume 和容器重启后恢复。
-12. 多 scheduler 实例只有一个执行。
-
-## 压力测试
-
-在 2 核、1.8GB 容器限制下测试：
-
-- 普通 API 并发。
-- 一个 PDF pipeline 同时处理普通请求。
-- 多个导入请求快速提交。
-- OCR 高延迟、429 和失败。
-- SSE 长连接。
-- 百万级练习记录核心查询。
+你是一名资深全栈、测试和基础设施工程师。请在已经完成 PDF、DOCX 导出和 WebSocket 状态推送的项目中实施第三期：
+
+# 错题导出第三期：生产上线加固与文档渲染质量提升
+
+本期不以增加更多导出格式为目标，而是将现有 PDF/DOCX 功能提升到可稳定生产上线的质量。
+
+核心目标：
+
+1. 完成 DOCX 在 Microsoft Word、WPS、LibreOffice 中的真实兼容性验证；
+2. 将 Word 表格从文本降级升级为原生表格，支持常见合并单元格；
+3. 将可转换公式升级为 Word 原生 OMML，保留图片和原文双重降级；
+4. 完成 WebSocket 在生产 Nginx、多实例、Redis 异常场景下的部署和验证；
+5. 建立导出任务的性能基线、指标、日志、告警和运维工具；
+6. 对第一、二期功能进行完整回归、并发压测和故障注入测试。
+
+请先审计当前代码，输出不超过 15 条的实施清单，然后直接开发和验证，不要等待二次确认。
+
+------
+
+# 一、实施前必须重新审计
+
+不得仅依赖之前的完成汇报。
+
+请检查当前工作区的真实实现：
+
+- PDF 导出器；
+- DOCX 导出器；
+- Exporter 抽象；
+- 内容标准化层；
+- 表格解析逻辑；
+- 数学和化学公式渲染逻辑；
+- 图片下载及 SSRF 防护；
+- 任务 processor；
+- WebSocket 服务；
+- Redis Pub/Sub；
+- 小程序状态同步服务；
+- Nginx、Docker、部署文件；
+- 本地存储与 COS；
+- Alembic 迁移；
+- 当前测试结果和验收样例。
+
+先运行现有测试，记录准确基线：
+
+- 收集数；
+- 通过数；
+- 失败数；
+- 跳过数；
+- 警告数；
+- 执行时间。
+
+若基线存在失败，先判断是否与现有导出功能有关，再开始第三期修改。
+
+------
+
+# 二、本期必须完成的能力
+
+## 2.1 DOCX 真实办公软件兼容
+
+至少验证以下三种软件中的两种：
+
+- Microsoft Word；
+- WPS Office；
+- LibreOffice。
+
+自动化环境中必须至少使用 LibreOffice headless 完成：
+
+1. 打开 DOCX；
+2. 转换为 PDF；
+3. 确认无损坏或修复提示；
+4. 确认转换命令退出码成功；
+5. 检查转换后的 PDF 页面和关键文本。
+
+Microsoft Word 和 WPS 若当前环境无法自动运行，需要：
+
+- 提供明确的人工验收清单；
+- 提供验收样例文件；
+- 记录软件版本、操作系统和结果；
+- 不得直接标记为自动验证通过。
+
+必须验证：
+
+- 中文；
+- 页眉；
+- 页脚；
+- PAGE/NUMPAGES；
+- 图片；
+- 表格；
+- 合并单元格；
+- 上标和下标；
+- 数学公式；
+- 化学公式；
+- 代码块；
+- 多页内容；
+- 答案和解析；
+- 分组标题；
+- 长题分页。
+
+------
+
+# 三、原生 Word 表格
+
+当前 Markdown 表格或结构化表格不能继续只输出为普通文本。
+
+## 3.1 支持范围
+
+至少支持：
+
+- 普通二维表格；
+- 表头；
+- 多行多列；
+- 单元格换行；
+- 单元格内基础富文本；
+- 表格边框；
+- 自动或受控列宽；
+- 表格整体不超出正文宽度；
+- 表格行尽量不跨页；
+- 水平合并单元格；
+- 垂直合并单元格。
+
+根据项目真实题目数据支持：
+
+- Markdown 表格；
+- HTML `<table>`；
+- segments 中的 table 类型；
+- 富文本 JSON 中的表格结构。
+
+## 3.2 统一中间模型
+
+若当前内容标准化层中没有表格模型，请新增或完善，例如：
+
+- `TableBlock`
+- `TableRow`
+- `TableCell`
+- `row_span`
+- `col_span`
+- `is_header`
+- `alignment`
+- `content_blocks`
+
+PDF 和 DOCX 应共同消费标准化表格结构，避免两套解析逻辑。
+
+## 3.3 DOCX 实现
+
+使用 Word 原生表格生成：
+
+- `w:tbl`
+- `w:tr`
+- `w:tc`
+- `w:gridSpan`
+- `w:vMerge`
+
+如果 `python-docx` 高层 API 不足，可以使用底层 Open XML，但应封装为独立模块，不能把 XML 操作散落在导出器中。
+
+## 3.4 表格异常降级
+
+遇到无法支持的复杂表格时：
+
+1. 尽量保持行列关系；
+2. 输出可读的简化表格；
+3. 记录结构化降级原因；
+4. 不允许直接丢弃表格；
+5. 不允许将所有单元格拼接成无法区分的连续文本。
+
+------
+
+# 四、Word 原生数学公式 OMML
+
+当前 LaTeX 公式以 PNG 图片嵌入可以保留作为降级，但本期需要增加原生公式路径。
+
+## 4.1 渲染优先级
+
+公式处理顺序：
+
+1. 可识别公式转换为 MathML；
+2. MathML 转换为 OMML；
+3. 将 OMML 写入 DOCX；
+4. OMML 转换失败时渲染高清透明 PNG；
+5. PNG 渲染失败时显示原始公式文本。
+
+不得因为 OMML 失败导致整份任务失败。
+
+## 4.2 支持内容
+
+至少验证：
+
+- 行内公式；
+- 块级公式；
+- 分数；
+- 根式；
+- 上标；
+- 下标；
+- 求和；
+- 积分；
+- 矩阵；
+- 括号；
+- 希腊字母；
+- 多行公式；
+- 化学上下标；
+- Unicode 数学符号。
+
+## 4.3 行内公式
+
+行内公式必须尽量保持在原段落中。
+
+不能将全部公式强制独占一行。
+
+## 4.4 公式安全
+
+公式处理不能：
+
+- 执行 shell；
+- 执行任意 LaTeX 命令；
+- 读取本地文件；
+- 请求任意网络地址；
+- 写入任务目录之外；
+- 导致无限递归或超长解析。
+
+增加：
+
+- 输入长度限制；
+- 解析超时；
+- 嵌套深度限制；
+- 缓存；
+- 失败日志。
+
+## 4.5 OMML 测试
+
+通过解压 DOCX 检查：
+
+- `word/document.xml` 中存在 `m:oMath` 或 `m:oMathPara`；
+- 行内和块级公式位置正确；
+- 失败公式使用图片或原始文本；
+- 不存在题目内容丢失。
+
+------
+
+# 五、化学公式增强
+
+至少处理：
+
+- `H₂O`
+- `CO₂`
+- `NH₄⁺`
+- `SO₄²⁻`
+- 化学反应箭头；
+- 化学方程式；
+- HTML `<sub>`、`<sup>`；
+- Unicode 上下标；
+- 普通 LaTeX 上下标；
+- mhchem 或 `\ce{}`，若项目数据中出现。
+
+优先级：
+
+1. 原生上标和下标；
+2. OMML；
+3. 高清图片；
+4. 原始可读文本。
+
+不得把化学下标变成普通同行数字而不加区分。
+
+------
+
+# 六、PDF 与 DOCX 内容一致性
+
+建立格式一致性测试。
+
+同一任务快照分别生成 PDF 和 DOCX 后，验证：
+
+- 题目数量一致；
+- 题目顺序一致；
+- 分组顺序一致；
+- 题号一致；
+- 选项一致；
+- 答案一致；
+- 解析一致；
+- 图片数量一致；
+- 表格数量一致；
+- 公式数量一致；
+- 跳过题目和跳过原因一致。
+
+允许版式差异，但不允许业务内容差异。
+
+建议生成格式无关的“渲染清单”或“内容清单”用于测试，而不是直接比较二进制文件。
+
+------
+
+# 七、分页和打印质量
+
+## 7.1 DOCX
+
+完善：
+
+- `keep_with_next`
+- `keep_together`
+- `page_break_before`
+- widow/orphan 控制；
+- 表格行跨页控制；
+- 分组标题与第一道题保持；
+- 题号与题干保持；
+- 图片尺寸；
+- 答题留白。
+
+## 7.2 PDF
+
+同时回归检查：
+
+- 普通题尽量不跨页；
+- 超长题自然跨页；
+- 表格不溢出；
+- 图片不拉伸；
+- 公式不模糊；
+- 答案和解析不发生错位；
+- 页码正确；
+- 无意外空白页。
+
+## 7.3 视觉回归
+
+将 DOCX 通过 LibreOffice 转为 PDF，再将 PDF 页面渲染为图片。
+
+建立可重复的视觉验收流程，至少检查：
+
+- 首页；
+- 包含图片的页面；
+- 包含表格的页面；
+- 包含公式的页面；
+- 包含长题的分页位置；
+- 末尾答案页；
+- 末尾解析页。
+
+如项目测试规范允许，可以增加图片快照或结构化视觉断言。
+
+------
+
+# 八、WebSocket 生产部署
+
+## 8.1 Nginx
+
+将 WebSocket 配置正式加入项目生产配置，而不是只放在说明文字中。
+
+至少配置：
+
+- HTTP/1.1；
+- Upgrade；
+- Connection；
+- Host；
+- X-Forwarded-For；
+- X-Forwarded-Proto；
+- 合理的 read timeout；
+- 合理的 send timeout；
+- 禁用不合适的代理缓冲；
+- TLS/WSS 场景；
+- 路径与后端路由一致。
+
+如项目没有 Nginx 配置文件，新增可直接使用的示例文件。
+
+## 8.2 多实例
+
+验证：
+
+- WebSocket 连接在实例 A；
+- 导出 processor 在实例 B；
+- Redis Pub/Sub 将事件转发到实例 A；
+- 用户能够收到状态更新；
+- 不会收到其他用户的事件；
+- 重复事件不会造成错误状态。
+
+数据库仍是最终状态来源。
+
+## 8.3 Redis 不可用
+
+明确并实现：
+
+- Redis 连接失败；
+- Redis 在连接期间断开；
+- Redis 恢复；
+- Pub/Sub 订阅中断；
+- 消息发布失败。
+
+要求：
+
+- 导出任务本身继续执行；
+- WebSocket 同进程通知可用时可以继续；
+- 跨实例实时通知失败时自动退化为轮询；
+- 客户端最终可以通过数据库状态恢复；
+- 不得因 Redis 异常导致任务永久 processing；
+- 日志和指标可以发现降级。
+
+## 8.4 WebSocket 鉴权
+
+检查并加强：
+
+- 用户身份；
+- token 过期；
+- 无效 token；
+- 连接数量限制；
+- 心跳；
+- 空闲超时；
+- 消息大小限制；
+- 非法消息；
+- 用户只能订阅自己的任务；
+- 连接关闭清理；
+- 日志中不记录完整 token。
+
+## 8.5 客户端重连
+
+小程序状态同步服务需要：
+
+- 指数退避；
+- 随机抖动；
+- 最大重连间隔；
+- 页面隐藏停止；
+- 页面显示恢复；
+- 网络断开监听；
+- 网络恢复立即同步；
+- 重连前先请求当前状态；
+- 防止多个 socket；
+- 防止多个轮询；
+- 终态停止；
+- 旧事件不能覆盖新状态。
+
+事件中必须包含可比较的：
+
+- `updated_at`
+- `version`
+- 或单调递增序列号。
+
+客户端仅接受比当前状态更新的事件。
+
+------
+
+# 九、任务处理器生产加固
+
+## 9.1 状态机
+
+集中管理合法状态流转：
+
+- pending → processing；
+- processing → completed；
+- processing → failed；
+- completed → expired；
+- failed → retry；
+- 重新导出创建新任务。
+
+禁止任意状态修改。
+
+## 9.2 心跳与 Zombie 恢复
+
+验证：
+
+- heartbeat 定期更新；
+- 长任务不会被错误判定为 zombie；
+- processor 崩溃后可以恢复；
+- 重复恢复不会重复生成文件；
+- 锁 TTL 与心跳协调；
+- 数据库原子领取仍是主保护；
+- Redis 锁只是辅助保护。
+
+## 9.3 超时
+
+增加或确认：
+
+- 总任务超时；
+- 单图片下载超时；
+- 总资源下载超时；
+- 公式解析超时；
+- PDF 生成超时；
+- DOCX 生成超时；
+- 文件上传超时。
+
+失败时：
+
+- 状态变为 failed；
+- 保存受控错误码；
+- 清理临时文件；
+- 清理孤儿文件；
+- 允许人工重试。
+
+## 9.4 并发
+
+建立配置：
+
+- 总并发任务数；
+- PDF 并发数；
+- DOCX 并发数；
+- 图片下载并发数；
+- 每用户同时运行任务数。
+
+建议默认限制：
+
+- 每用户最多 2 个 pending/processing 任务；
+- 超过后返回明确提示；
+- 具体数值可根据压测结果调整。
+
+------
+
+# 十、性能压测
+
+至少测试：
+
+## 10.1 单任务
+
+分别测试 PDF 和 DOCX：
+
+- 1 道；
+- 10 道；
+- 50 道；
+- 100 道；
+- 100 道含图片；
+- 100 道含公式；
+- 100 道含表格；
+- 100 道混合复杂内容。
 
 记录：
 
-```text
-RSS
-available memory
-event-loop lag
-HTTP p95/p99
-queue length
-processing/retry/dead
-DB pool
-temp disk
-OCR concurrency
-duplicate execution count
-```
+- 排队时间；
+- 处理时间；
+- 总耗时；
+- 峰值内存；
+- CPU；
+- 输出文件大小；
+- 临时目录大小；
+- 图片下载量；
+- 公式缓存命中率。
 
-# 六、仓库清理
+## 10.2 并发
 
-- 移除交付包中的：
+至少测试：
 
-```text
-app/dev.db
-app/data/dev.db
-app/postgraduate.db
-```
+- 5 个并发任务；
+- 10 个并发任务；
+- 混合 PDF 和 DOCX；
+- 同一用户重复提交；
+- 多用户并发；
+- Redis 正常；
+- Redis 中断；
+- 存储延迟；
+- 单张图片超时。
 
-- 加入 `.gitignore`。
-- 补充根级依赖、测试、lint、类型检查和运行配置。
-- 不得提交 token、密码或生产数据库文件。
+## 10.3 性能基线
 
-# 七、工作顺序
+将结果写入文档。
 
-严格执行：
+给出：
 
-1. 输出审计矩阵。
-2. 修复所有 P0。
-3. 每修复一个 P0 模块立即增加并运行测试。
-4. 处理事件循环、SSE、观测和数据库性能。
-5. 给出新增或修改的环境变量与 `.env.example`。
-6. 提供 Alembic migration 和 downgrade。
-7. 提供旧配置兼容、数据迁移和回滚方案。
-8. 提供 web、worker、scheduler 独立部署步骤。
-9. 运行并粘贴真实命令结果。
-10. 最后列出仍未解决的风险。
+- 推荐 worker 数量；
+- 推荐 processor 并发；
+- 推荐内存；
+- 推荐任务超时；
+- 100 道复杂题目的预期完成时间；
+- 超过阈值时的告警标准。
 
-至少运行：
+不得用测试中的空白或极短文本题目代表真实 100 道复杂题性能。
 
-```bash
-python -m compileall app
-pytest -q
-ruff check .
-mypy app
-```
+------
 
-根据仓库实际工具调整命令，但不得伪造未运行的结果。
+# 十一、可观测性
 
-# 八、禁止事项
+## 11.1 结构化日志
 
-禁止：
+每个导出任务日志应包含：
 
-- 只写 TODO、建议、设计说明或伪代码。
-- 使用 `except Exception: pass` 隐藏关键错误。
-- 仅增加 timeout 掩盖死锁。
-- 增加内存、线程或 Worker 数掩盖架构问题。
-- production 降级进程内队列或本地分布式锁。
-- cloud_api 检查、导入或执行本地 PaddleOCR。
-- 外部 OCR 失败后回退本地 OCR。
-- 把同步重任务放进 FastAPI 事件循环。
-- durable task 依赖 `/tmp`、请求 Session、UploadFile、ORM 实例或进程内闭包。
-- 在 owner lease 已失效时继续写库、上传或发布。
-- 声称测试通过但没有测试文件和命令输出。
+- task_id；
+- user_id 的安全标识；
+- file_format；
+- question_count；
+- status；
+- processor instance；
+- queue wait time；
+- processing time；
+- file size；
+- retry count；
+- error code；
+- skip count。
 
-# 九、最终输出格式
+不得记录：
 
-最终按以下顺序输出：
+- JWT；
+- openid 全值，如项目规范要求脱敏；
+- 题目完整内容；
+- 答案；
+- 解析；
+- 签名 URL；
+- 存储密钥；
+- 用户隐私数据。
 
-1. 已确认问题和代码路径。
-2. 修复后的架构及关键不变量。
-3. 实际修改文件清单和关键 diff 摘要。
-4. 新增或修改的环境变量。
-5. Alembic migration。
-6. 完整测试和真实执行结果。
-7. 旧配置兼容与回滚方案。
-8. web、worker、scheduler 生产部署步骤。
-9. 压测方法、数据和验收结论。
-10. 仍未解决的风险、影响和后续动作。
+## 11.2 指标
+
+增加或接入项目现有指标系统。
+
+至少提供：
+
+- 导出任务创建数；
+- pending 数；
+- processing 数；
+- completed 数；
+- failed 数；
+- expired 数；
+- PDF/DOCX 分格式数量；
+- 成功率；
+- 平均处理时间；
+- P50/P95/P99；
+- 排队时间；
+- 文件大小；
+- 图片下载失败数；
+- 公式降级数；
+- 表格降级数；
+- WebSocket 当前连接数；
+- WebSocket 重连数；
+- Redis Pub/Sub 失败数；
+- 轮询兜底次数；
+- 清理成功和失败数；
+- 孤儿文件数。
+
+如果项目没有 Prometheus，可以实现项目现有监控系统所需的等价指标，或提供受保护的内部指标接口。
+
+## 11.3 健康检查
+
+增加或完善：
+
+- API 健康检查；
+- 数据库；
+- Redis；
+- 文件存储；
+- processor 心跳；
+- cleanup 最近运行时间；
+- WebSocket Pub/Sub 状态。
+
+不要在公开健康检查中泄露敏感配置。
+
+## 11.4 告警建议
+
+文档至少提供以下告警：
+
+- 失败率超过阈值；
+- processing 超时；
+- pending 队列积压；
+- processor 无心跳；
+- Redis Pub/Sub 异常；
+- 存储失败；
+- 清理任务失败；
+- 孤儿文件增长；
+- 磁盘空间不足；
+- WebSocket 断线率异常。
+
+------
+
+# 十二、导出管理和运维工具
+
+增加仅管理员或运维可用的安全能力，具体遵循项目已有后台管理方式。
+
+至少支持查询：
+
+- 当前 pending 任务；
+- processing 任务；
+- zombie 任务；
+- failed 任务；
+- 过期但未清理文件；
+- 孤儿文件；
+- processor 状态；
+- 最近 cleanup 执行情况。
+
+可选操作：
+
+- 重试 failed 任务；
+- 将确认的 zombie 任务恢复为 pending；
+- 触发一次清理；
+- 清理孤儿文件。
+
+要求：
+
+- 严格管理员权限；
+- 操作审计日志；
+- 不提供任意路径删除；
+- 不允许查看其他用户题目内容；
+- 危险操作需要二次确认或明确参数。
+
+如果项目当前没有管理后台，可提供受保护的 CLI 管理命令，而不是为了本期建立完整后台系统。
+
+------
+
+# 十三、存储和清理验证
+
+验证本地存储和 COS：
+
+- completed 文件存在；
+- 下载鉴权；
+- 删除；
+- 到期；
+- 重试；
+- 重新导出；
+- 上传失败补偿；
+- 数据库提交失败补偿；
+- 文件丢失；
+- 重复清理；
+- 清理进程崩溃；
+- COS 签名 URL；
+- 本地目录权限；
+- 磁盘空间不足。
+
+增加孤儿文件扫描：
+
+- 存储中存在、数据库无记录；
+- 数据库 completed、存储中无文件；
+- 数据库已删除、文件仍存在；
+- 文件已过期但未清理。
+
+扫描默认只报告。
+
+实际删除需要安全开关或明确命令，防止误删。
+
+------
+
+# 十四、测试要求
+
+## 14.1 单元和集成测试
+
+至少新增：
+
+- Markdown 表格转原生 Word 表格；
+- HTML 表格；
+- 水平合并；
+- 垂直合并；
+- 表格宽度；
+- 表格分页；
+- MathML/LaTeX 转 OMML；
+- 行内 OMML；
+- 块级 OMML；
+- OMML 失败转 PNG；
+- PNG 失败转原文；
+- 化学上下标；
+- PDF/DOCX 内容一致性；
+- LibreOffice headless 转换；
+- WebSocket Nginx 路径配置；
+- Redis 断开轮询兜底；
+- 多实例 Pub/Sub；
+- 旧事件不覆盖新状态；
+- processor 心跳；
+- zombie 恢复；
+- 超时；
+- 并发限制；
+- 每用户任务限制；
+- orphan scan；
+- cleanup 幂等；
+- 指标；
+- 管理命令权限。
+
+## 14.2 完整回归
+
+运行完整后端测试，不只运行 export 测试。
+
+检查小程序：
+
+- 语法；
+- lint；
+- 页面事件；
+- WebSocket；
+- 网络恢复；
+- 轮询；
+- PDF；
+- DOCX；
+- 预览；
+- 保存；
+- 分享；
+- 过期；
+- 删除；
+- 重试；
+- 重新导出。
+
+## 14.3 故障注入
+
+至少模拟：
+
+- Redis 不可用；
+- 数据库短暂失败；
+- COS 上传失败；
+- 本地磁盘无权限；
+- 图片超时；
+- 图片返回错误 MIME；
+- 公式转换失败；
+- LibreOffice 不存在；
+- processor 被中止；
+- WebSocket 中断；
+- Nginx 未 Upgrade；
+- completed 文件被人工删除。
+
+系统应受控失败或降级，不得产生永久卡死任务。
+
+------
+
+# 十五、文档与部署
+
+更新：
+
+- 导出功能文档；
+- Dockerfile；
+- docker-compose；
+- Nginx 配置；
+- `.env.example`；
+- 生产部署说明；
+- processor 启动说明；
+- Redis Pub/Sub；
+- WebSocket；
+- LibreOffice；
+- 字体；
+- 性能基线；
+- 指标；
+- 告警；
+- 故障排查；
+- 数据清理；
+- 孤儿文件扫描；
+- 回滚方式。
+
+如果增加 LibreOffice，仅用于兼容性验证，不一定要求在线生成 DOCX 时依赖 LibreOffice。
+
+明确区分：
+
+- 运行时依赖；
+- CI 测试依赖；
+- 人工验收依赖。
+
+------
+
+# 十六、本期非目标
+
+本期不实现：
+
+- 新的导出格式；
+- 用户上传 Word 模板；
+- 用户自由拖拽设计试卷；
+- 在线编辑 DOCX；
+- 永久保存导出文件；
+- 邮件发送；
+- 打印服务；
+- 超过 100 道自动分卷；
+- 多套商业模板；
+- 用户自定义字体；
+- 用户上传页眉 Logo；
+- A3、Letter、横向、双栏；
+- 音频和视频导出。
+
+发现这些需求时只记录，不要扩大本期范围。
+
+------
+
+# 十七、验收标准
+
+本期完成后必须满足：
+
+1. DOCX 可通过 LibreOffice headless 正常打开并转换。
+2. 提供 Word/WPS 人工兼容性验收文件和清单。
+3. Markdown 表格输出为原生 Word 表格。
+4. HTML 或结构化表格输出为原生 Word 表格。
+5. 支持常见水平合并单元格。
+6. 支持常见垂直合并单元格。
+7. 可转换公式输出为 OMML。
+8. OMML 失败时自动使用高清图片。
+9. 图片失败时显示原始公式。
+10. Unicode 和 HTML 化学上下标正确。
+11. PDF 和 DOCX 业务内容一致。
+12. DOCX 分页和表格宽度可接受。
+13. Nginx WebSocket 配置已进入项目配置文件。
+14. 多实例 WebSocket 事件转发经过验证。
+15. Redis 异常时客户端自动轮询兜底。
+16. WebSocket 重连采用退避和抖动。
+17. 旧状态事件不会覆盖新状态。
+18. processor 有心跳和 zombie 恢复。
+19. processor 有任务总超时。
+20. PDF/DOCX 并发受到控制。
+21. 每用户同时运行任务数量受到控制。
+22. 100 道真实复杂题性能经过测试。
+23. 多任务并发性能经过测试。
+24. 关键结构化日志已经实现。
+25. 关键任务和 WebSocket 指标已经实现。
+26. processor 和 cleanup 健康状态可检查。
+27. 提供生产告警建议。
+28. 提供孤儿文件扫描能力。
+29. 清理任务可幂等重复运行。
+30. 本地存储和 COS 安全访问无回归。
+31. PDF 功能无回归。
+32. DOCX 原有功能无回归。
+33. 小程序轮询与推送无回归。
+34. 完整测试结果准确记录。
+35. 部署和故障排查文档完整。
+
+------
+
+# 十八、完成后的回复格式
+
+实施完成后按以下结构回复：
+
+## 1. 基线审计
+
+列出修改前测试结果和发现的问题。
+
+## 2. 原生表格
+
+说明支持的数据来源、合并单元格和降级规则。
+
+## 3. OMML 公式
+
+说明转换链路、支持范围和降级路径。
+
+## 4. Office 兼容性
+
+列出 LibreOffice、Word、WPS 的验证方式和结果。
+
+## 5. WebSocket 生产验证
+
+说明 Nginx、多实例、Redis 异常和客户端兜底。
+
+## 6. 任务可靠性
+
+说明心跳、zombie、超时、并发和用户限流。
+
+## 7. 性能结果
+
+列出 PDF/DOCX 的 1、10、50、100 道测试及并发压测结果。
+
+## 8. 可观测性
+
+列出日志、指标、健康检查和告警。
+
+## 9. 存储与清理
+
+说明本地/COS、孤儿文件、删除和过期验证。
+
+## 10. 修改文件
+
+列出主要新增和修改文件。
+
+## 11. 测试结果
+
+逐条列出实际执行命令、收集数、通过数、失败数、跳过数、警告数和耗时。
+
+## 12. 验收产物
+
+列出 DOCX、转换后 PDF、视觉检查图片、压测报告等相对路径。
+
+## 13. 部署变更
+
+列出 Docker、Nginx、Redis、LibreOffice、字体、环境变量和进程配置。
+
+## 14. 已知限制
+
+只列真实限制，不得将核心未完成项包装为后续优化。
+
+## 15. 验收表
+
+逐项对照 35 条验收标准，标记：
+
+- 已验证；
+- 部分支持；
+- 未完成；
+- 当前环境无法验证。
+
+所有“已验证”必须附测试名称、命令、文件路径或其他可复核证据。
+
+请先输出不超过 15 条的实施清单，然后立即开始审计、开发、测试和修复，不要等待确认。

@@ -1,8 +1,6 @@
 """Tests for Phase 3: InputSafetyValidator."""
 from __future__ import annotations
 
-import pytest
-
 from app.features.input_safety import InputSafetyValidator
 
 

@@ -9,14 +9,10 @@ Verifies:
 
 from __future__ import annotations
 
-import hashlib
 import json
-
-import pytest
 
 from app.core.document_ir import (
     BBox,
-    DocumentIR,
     LineIR,
     PageIR,
     Provenance,
@@ -164,8 +160,8 @@ class TestDocumentIRBoundary:
 
     def test_coordinators_use_document_ir_not_raw_fields(self):
         """Verify key pipeline modules reference DocumentIR, not raw OCR fields."""
-        import app.features.reading_order as ro
         import app.features.cross_page_linking as cpl
+        import app.features.reading_order as ro
 
         # These modules should work with DocumentIR types
         assert hasattr(ro, "ReadingOrderResult")

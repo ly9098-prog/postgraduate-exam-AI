@@ -8,20 +8,18 @@ Covers:
 5. Admin graph asset endpoints (integration, mocked)
 """
 
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from io import BytesIO
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from io import BytesIO
-from PIL import Image
-from fastapi import UploadFile
 from fastapi.testclient import TestClient
+from PIL import Image
 
-from app.core.admin_security import AdminPrincipal, get_current_admin, require_permissions
+from app.core.admin_security import AdminPrincipal, get_current_admin
 from app.core.database import get_db
 from app.main import app
 from app.models.admin import AdminUser
-from app.models.formula import FormulaCard, FormulaGraphAsset, FormulaCategory
+from app.models.formula import FormulaCard, FormulaGraphAsset
 from app.services.formula_graph_asset_service import (
     _create_thumbnail,
     _validate_image,

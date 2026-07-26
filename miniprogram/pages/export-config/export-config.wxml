@@ -25,11 +25,13 @@
           <radio value="pdf" checked="{{format === 'pdf'}}" />
           <text class="radio-label">PDF</text>
         </label>
-        <label class="radio-item {{format === 'docx' ? 'active' : ''}}" data-value="docx" bindtap="onFormatChange">
-          <radio value="docx" checked="{{format === 'docx'}}" />
+        <label class="radio-item {{wordDisabled ? 'disabled' : ''}} {{format === 'docx' ? 'active' : ''}}"
+               data-value="docx" bindtap="{{wordDisabled ? '' : 'onFormatChange'}}">
+          <radio value="docx" checked="{{format === 'docx'}}" disabled="{{wordDisabled}}" />
           <text class="radio-label">Word</text>
         </label>
       </view>
+      <text wx:if="{{wordTip}}" class="config-hint warn">{{wordTip}}</text>
     </view>
 
     <!-- Title -->

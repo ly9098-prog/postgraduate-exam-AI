@@ -14,15 +14,8 @@
     pytest tests/test_services/test_phase_5_2_1_deployment.py -v
 """
 import asyncio
-import json
-import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
-
-import pytest
-
-from app.core.config import settings
-
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # ── helpers ──
 
@@ -399,7 +392,10 @@ class TestTask6ShadowMode:
 
     def test_shadow_mode_resolve(self):
         """测试 shadow 模式解析。"""
-        from app.services.vector_retrieval_service import resolve_vector_mode, _reset_vector_enabled_cache
+        from app.services.vector_retrieval_service import (
+            _reset_vector_enabled_cache,
+            resolve_vector_mode,
+        )
 
         with patch("app.services.vector_retrieval_service.settings") as mock_s:
             mock_s.VECTOR_MODE = "shadow"
@@ -476,7 +472,7 @@ class TestTask7Allowlist:
 
     def test_allowlist_empty_allows_all(self):
         """测试空 allowlist 全部拒绝（安全默认）。"""
-        from app.services.vector_retrieval_service import is_vector_allowed_for, _parse_allowlist
+        from app.services.vector_retrieval_service import is_vector_allowed_for
 
         with patch("app.services.vector_retrieval_service.settings") as mock_s:
             mock_s.VECTOR_MODE = "allowlist"

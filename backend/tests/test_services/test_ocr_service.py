@@ -1,6 +1,5 @@
 """Stage 9 OCR 增强服务 — 单元测试。AI 调用和 PyMuPDF 全部 mock。"""
 import sys
-from contextlib import ExitStack
 from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -59,6 +58,7 @@ class TestServiceOcrImageDependencyHandling:
 class TestPrepareOcrImage:
     def test_prepare_ocr_image_applies_exif_transpose_and_returns_rgb(self):
         from PIL import Image
+
         from app.services.ocr_service import _prepare_ocr_image
 
         image = Image.new("RGB", (1200, 800), "white")
@@ -74,6 +74,7 @@ class TestPrepareOcrImage:
 
     def test_prepare_ocr_image_upscales_small_image_within_max_side(self):
         from PIL import Image
+
         from app.services.ocr_service import _OCR_MAX_SIDE, _prepare_ocr_image
 
         image = Image.new("RGB", (500, 800), "white")
@@ -88,6 +89,7 @@ class TestPrepareOcrImage:
 
     def test_crop_blank_margins_keeps_blank_image_safe(self):
         from PIL import Image
+
         from app.services.ocr_service import _crop_blank_margins
 
         image = Image.new("RGB", (800, 600), "white")
@@ -98,6 +100,7 @@ class TestPrepareOcrImage:
 
     def test_crop_blank_margins_removes_large_white_border(self):
         from PIL import Image, ImageDraw
+
         from app.services.ocr_service import _crop_blank_margins
 
         image = Image.new("RGB", (1000, 800), "white")
@@ -119,6 +122,7 @@ class TestOcrRotationAndOrdering:
 
     def test_rotation_candidates_skip_when_initial_score_good(self):
         from PIL import Image
+
         from app.services import ocr_service
 
         image = Image.new("RGB", (1200, 800), "white")
@@ -139,6 +143,7 @@ class TestOcrRotationAndOrdering:
 
     def test_rotation_candidates_use_better_rotated_result(self):
         from PIL import Image
+
         from app.services import ocr_service
 
         image = Image.new("RGB", (1200, 800), "white")
@@ -160,6 +165,7 @@ class TestOcrRotationAndOrdering:
 
     def test_rotation_candidates_fallback_to_raw_image_on_runtime_error(self):
         from PIL import Image
+
         from app.services import ocr_service
 
         prepared = Image.new("RGB", (1200, 800), "white")

@@ -1,12 +1,11 @@
 """Tests for AI standardization result validation."""
 
-import pytest
 
 from app.features.ai_validation import (
     _detect_duplicate_stem,
     _detect_field_pollution,
-    _detect_structure_anomalies,
     _detect_length_anomaly,
+    _detect_structure_anomalies,
     validate_ai_result,
     validate_ai_results,
 )

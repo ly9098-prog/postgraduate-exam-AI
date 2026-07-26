@@ -15,29 +15,22 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from app.core.document_ir import BBox, DocumentIR, LineIR, PageIR, RegionIR, new_document
 from app.features.cross_page_linking import (
     REASON_AMBIGUOUS,
     REASON_EXPLICIT_MARKER,
-    REASON_NEW_QN_TERMINATES,
     REASON_NO_QN_ON_FIRST_REGION,
-    REASON_PAGE_BEGINS_WITH_OPTIONS,
-    REASON_PAGE_BEGINS_WITH_LOWERCASE,
-    REASON_PREV_NEAR_BOTTOM_NO_END,
     CrossPageLink,
     _detect_explicit_continuation,
     _ends_without_sentence_end,
     _has_new_question_number,
     _is_near_bottom,
-    _starts_with_option,
     _starts_with_lowercase,
+    _starts_with_option,
     apply_cross_page_links_to_pipeline,
     detect_cross_page_links,
     run_cross_page_linking_stage,
 )
-
 
 # ===================================================================
 # Helpers

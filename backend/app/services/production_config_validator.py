@@ -355,9 +355,13 @@ def _check_queue_capacity(errors: list[str]) -> None:
 def _check_worker_scratch_dir(errors: list[str]) -> None:
     """Verify WORKER_SCRATCH_DIR is set and not pointing to system temp dir.
 
-    Worker scratch dir must be explicitly configured to avoid filling up
-    the system temp partition. In cloud production, this is required.
+    Only required for worker/all roles. Web and scheduler roles don't need
+    a worker scratch directory.
     """
+    role = settings.PROCESS_ROLE
+    if role not in ("worker", "all"):
+        return
+
     scratch = settings.WORKER_SCRATCH_DIR
     if not scratch:
         errors.append(

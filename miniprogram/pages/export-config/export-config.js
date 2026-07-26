@@ -79,6 +79,9 @@ Page({
     // Submit
     submitting: false,
     submitError: '',
+
+    // Capability
+    _wsEnabled: true,
   },
 
   onLoad(options) {
@@ -108,11 +111,34 @@ Page({
     const today = this._formatDate(new Date())
     this.setData({ exportDate: today })
 
+    // Check user capabilities and update UI
+    this._checkCapabilities()
+
     // Auto-generate title from subjects
     this._autoGenerateTitle()
 
     // Preview count
     this._updatePreviewCount()
+  },
+
+  async _checkCapabilities() {
+    try {
+      const cap = await exportApi.getCapabilities()
+      const wordDisabled = !cap.docx_enabled
+      const wordTip = wordDisabled ? 'Word 导出暂未开放' : ''
+      this.setData({
+        wordDisabled,
+        wordTip,
+        _wsEnabled: cap.websocket_enabled,
+      })
+      // If docx is disabled and currently selected, switch to pdf
+      if (wordDisabled && this.data.format === 'docx') {
+        this.setData({ format: 'pdf' })
+      }
+    } catch (e) {
+      // Capability check failed — safe degrade: disable all
+      this.setData({ wordDisabled: true })
+    }
   },
 
   onUnload() {

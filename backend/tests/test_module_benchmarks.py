@@ -1,20 +1,13 @@
 """Module benchmark framework tests — correctness, not performance."""
 from __future__ import annotations
 
-import json
-import os
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from app.core.document_ir import new_document
 from app.features.ocr_adapter import (
-    AdapterRegistry,
     ReadingOrderTransformAdapter,
     RuleFallbackAdapter,
 )
-
 
 # ===========================================================================
 # Fixtures
@@ -25,7 +18,15 @@ from app.features.ocr_adapter import (
 def sample_document():
     """Create a minimal DocumentIR with regions."""
     doc = new_document()
-    from app.core.document_ir import BBox, LineIR, PageIR, RegionIR, make_page_id, make_region_id, make_line_id
+    from app.core.document_ir import (
+        BBox,
+        LineIR,
+        PageIR,
+        RegionIR,
+        make_line_id,
+        make_page_id,
+        make_region_id,
+    )
 
     page_id = make_page_id(doc.document_id, 0)
     page = PageIR(

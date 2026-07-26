@@ -17,12 +17,10 @@ Call sites checked:
 
 from __future__ import annotations
 
-import importlib
 import inspect
 import re
 
 import pytest
-
 
 # Regex patterns that indicate an independent numbering regex (not delegating).
 # These are patterns we expect to find ONLY inside question_numbering.py itself,

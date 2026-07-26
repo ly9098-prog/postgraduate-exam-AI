@@ -45,7 +45,14 @@ class TableBlock:
 
     @property
     def column_count(self) -> int:
-        return max(len(r.cells) for r in self.rows) if self.rows else 0
+        """Logical column count accounting for ``col_span``."""
+        max_cols = 0
+        for row in self.rows:
+            col = 0
+            for cell in row.cells:
+                col += cell.col_span
+            max_cols = max(max_cols, col)
+        return max_cols
 
     @property
     def row_count(self) -> int:

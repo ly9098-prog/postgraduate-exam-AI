@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import pytest
+
 from app.core.ocr_runtime_config import (
     OcrRuntimeConfig,
-    sanitize_url,
     _validate_config,
+    sanitize_url,
 )
 
 

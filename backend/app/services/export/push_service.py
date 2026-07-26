@@ -4,12 +4,15 @@ Architecture:
 - Each user connects via WebSocket with JWT auth.
 - The WebSocket handler registers the connection in a user-indexed dict.
 - On task status change, the processor publishes to Redis Pub/Sub.
-- All WebSocket instances subscribe to the Redis channel and forward
-  events to the relevant user's connections.
+- A **single per-instance** Redis subscriber listens for all users and
+  forwards events to the relevant local connections.
 - When Redis is unavailable, the miniprogram falls back to polling.
 
-This enables real-time task status updates in single- and multi-instance
-deployments. Events are ephemeral — the database remains the source of truth.
+This design avoids the N×N fanout problem: each instance has exactly one
+Redis subscriber task (not one per connection), and each message is
+forwarded to the correct user's local connections once.
+
+Events are ephemeral — the database remains the source of truth.
 """
 
 from __future__ import annotations
@@ -17,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 from collections.abc import Callable
 from typing import Any
 
@@ -35,8 +37,85 @@ _MAX_CONNECTIONS_PER_USER = 5
 # Heartbeat interval (seconds)
 _HEARTBEAT_INTERVAL = 25
 
+# Max message payload size (bytes)
+_MAX_MESSAGE_BYTES = 65_536
+
 # Redis channel prefix
 _CHANNEL_PREFIX = "export:task:events:"
+
+# ═══════════════════════════════════════════════════
+# Per-instance unified Redis subscriber
+# ═══════════════════════════════════════════════════
+
+_redis_subscriber_task: asyncio.Task | None = None
+_redis_subscriber_stop = asyncio.Event()
+
+
+async def _subscribe_all():
+    """Single per-instance Redis subscriber for all export events.
+
+    Listens on the export event channel and dispatches each message
+    to the correct user's local connections via ``send_to_user``.
+    This avoids the N×N fanout problem.
+    """
+    try:
+        from app.core.cache import cache
+
+        if not cache.is_enabled():
+            logger.debug("Redis not available — skipping per-instance subscriber")
+            return
+
+        client = await cache._ensure_client()
+        if client is None:
+            return
+
+        async with client.pubsub() as pubsub:
+            # Subscribe to all export events via a single channel
+            channel = f"{_CHANNEL_PREFIX}*"
+            await pubsub.psubscribe(channel)
+
+            logger.info("Per-instance Redis subscriber started")
+
+            while not _redis_subscriber_stop.is_set():
+                try:
+                    msg = await pubsub.get_message(timeout=1.0)
+                    if msg and msg["type"] == "pmessage":
+                        try:
+                            payload = json.loads(msg["data"])
+                            task_id = payload.get("task_id")
+                            # Forward to local connections once
+                            # The payload already contains user_id from build_status_event
+                            user_id = payload.get("user_id")
+                            if user_id:
+                                await send_to_user(user_id, payload)
+                        except (json.JSONDecodeError, KeyError):
+                            logger.warning("Invalid Redis pmessage payload")
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    await asyncio.sleep(1)
+
+    except Exception:
+        logger.debug("Redis subscriber unavailable (polling fallback)")
+
+
+def start_redis_subscriber():
+    """Start the per-instance Redis subscriber if not already running."""
+    global _redis_subscriber_task
+    if _redis_subscriber_task is None or _redis_subscriber_task.done():
+        _redis_subscriber_stop.clear()
+        _redis_subscriber_task = asyncio.create_task(_subscribe_all())
+        logger.debug("Per-instance Redis subscriber started")
+
+
+def stop_redis_subscriber():
+    """Stop the per-instance Redis subscriber."""
+    global _redis_subscriber_task
+    if _redis_subscriber_task and not _redis_subscriber_task.done():
+        _redis_subscriber_stop.set()
+        _redis_subscriber_task.cancel()
+        _redis_subscriber_task = None
+        logger.debug("Per-instance Redis subscriber stopped")
 
 
 # ═══════════════════════════════════════════════════
@@ -58,6 +137,9 @@ async def register(user_id: int, ws: WebSocket) -> bool:
 
     _connections[user_id].add(ws)
     logger.debug("WebSocket registered for user %d (total: %d)", user_id, len(_connections[user_id]))
+
+    # Ensure the per-instance subscriber is running
+    start_redis_subscriber()
     return True
 
 
@@ -83,6 +165,11 @@ async def send_to_user(user_id: int, event: dict) -> int:
     delivered = 0
     payload = json.dumps(event, ensure_ascii=False, default=str)
 
+    if len(payload) > _MAX_MESSAGE_BYTES:
+        logger.warning("WS payload too large (%d bytes) for user %d", len(payload), user_id)
+        event = {"type": "export_status", "task_id": event.get("task_id"), "status": event.get("status")}
+        payload = json.dumps(event, ensure_ascii=False, default=str)
+
     for ws in _connections[user_id]:
         try:
             await ws.send_text(payload)
@@ -90,7 +177,6 @@ async def send_to_user(user_id: int, event: dict) -> int:
         except Exception:
             stale.add(ws)
 
-    # Clean up stale connections
     if stale:
         _connections[user_id] -= stale
         if not _connections[user_id]:
@@ -120,6 +206,8 @@ def get_active_connections() -> int:
 def build_status_event(task: dict) -> dict:
     """Build the status event payload from a task dict.
 
+    Includes ``user_id`` for per-instance Redis routing.
+
     The payload excludes sensitive data (JWT, permanent URLs, internal keys).
     """
     return {
@@ -133,7 +221,9 @@ def build_status_event(task: dict) -> dict:
         "completed_at": _serialize_dt(task.get("completed_at")),
         "expires_at": _serialize_dt(task.get("expires_at")),
         "updated_at": _serialize_dt(task.get("updated_at")),
+        "version": task.get("version", 0),
         "downloadable": task.get("status") == "completed",
+        "user_id": task.get("user_id"),
     }
 
 
@@ -174,50 +264,6 @@ async def publish_via_redis(event: dict, user_id: int) -> None:
         logger.debug("Redis publish failed (non-fatal)")
 
 
-async def listen_redis_for_user(
-    user_id: int,
-    on_event: Callable,
-    stop_event: asyncio.Event,
-) -> None:
-    """Listen for Redis Pub/Sub events for a specific user.
-
-    Runs in a background task per connection. Forwarded events are
-    delivered to the on_event callback.
-    """
-    try:
-        from app.core.cache import cache
-
-        if not cache.is_enabled():
-            return
-
-        client = await cache._ensure_client()
-        if client is None:
-            return
-
-        async with client.pubsub() as pubsub:
-            channel = f"{_CHANNEL_PREFIX}{user_id}"
-            await pubsub.subscribe(channel)
-
-            while not stop_event.is_set():
-                try:
-                    msg = await pubsub.get_message(timeout=1.0)
-                    if msg and msg["type"] == "message":
-                        try:
-                            payload = json.loads(msg["data"])
-                            await on_event(payload)
-                        except json.JSONDecodeError:
-                            logger.warning("Invalid Redis message for user %d", user_id)
-                except asyncio.CancelledError:
-                    break
-                except Exception:
-                    await asyncio.sleep(1)
-
-            await pubsub.unsubscribe(channel)
-
-    except Exception:
-        logger.debug("Redis listener unavailable for user %d (polling fallback)", user_id)
-
-
 # ═══════════════════════════════════════════════════
 # WebSocket handler
 # ═══════════════════════════════════════════════════
@@ -232,9 +278,11 @@ async def handle_export_ws(ws: WebSocket, user_id: int) -> None:
 
     Flow:
     1. Accept the connection and register it.
-    2. Start heartbeat + Redis listener in background tasks.
-    3. Forward incoming Redis events to the WS.
-    4. On disconnect: unregister and clean up.
+    2. Send heartbeat probe to detect stale connections.
+    3. On disconnect: unregister and clean up.
+
+    Note: Redis events are handled by the per-instance ``_subscribe_all``
+    subscriber, not per-connection. This avoids N×N fanout.
     """
     await ws.accept()
 
@@ -244,15 +292,6 @@ async def handle_export_ws(ws: WebSocket, user_id: int) -> None:
         await ws.close()
         return
 
-    stop_event = asyncio.Event()
-    redis_task = asyncio.create_task(
-        listen_redis_for_user(
-            user_id,
-            lambda ev: send_to_user(user_id, ev),
-            stop_event,
-        )
-    )
-
     try:
         # Heartbeat loop — respond to PING from client
         while True:
@@ -261,8 +300,7 @@ async def handle_export_ws(ws: WebSocket, user_id: int) -> None:
                 msg = json.loads(data)
                 if msg.get("type") == "ping":
                     await ws.send_json({"type": "pong"})
-            except asyncio.TimeoutError:
-                # No message received — send a heartbeat probe
+            except TimeoutError:
                 try:
                     await ws.send_json({"type": "ping"})
                 except Exception:
@@ -275,10 +313,4 @@ async def handle_export_ws(ws: WebSocket, user_id: int) -> None:
     except Exception as e:
         logger.warning("WebSocket error for user %d: %s", user_id, e)
     finally:
-        stop_event.set()
-        redis_task.cancel()
-        try:
-            await redis_task
-        except asyncio.CancelledError:
-            pass
         unregister(user_id, ws)

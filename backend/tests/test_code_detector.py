@@ -25,7 +25,6 @@ from app.features.code_detector import (  # noqa: E402
 )
 from tests.ocr_regression.code.cases import REGRESSION_CASES  # noqa: E402
 
-
 # ============================================================
 # 单元测试：行打分
 # ============================================================

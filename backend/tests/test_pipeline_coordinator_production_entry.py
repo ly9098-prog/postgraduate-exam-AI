@@ -51,7 +51,6 @@ class TestRunPipelineShadowMode:
         monkeypatch.setenv("PIPELINE_COORDINATOR_MODE", "shadow")
 
         from app.features.pipeline_coordinator_entry import (
-            _run_legacy_pipeline,
             run_pipeline,
         )
 

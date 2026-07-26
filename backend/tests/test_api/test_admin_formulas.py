@@ -19,7 +19,12 @@ from app.core.admin_security import AdminPrincipal, get_current_admin
 from app.core.database import get_db
 from app.main import app
 from app.models.admin import AdminUser
-from app.models.formula import FormulaCard, FormulaCardTag, FormulaCardVersion, FormulaCategory, FormulaTag
+from app.models.formula import (
+    FormulaCard,
+    FormulaCardVersion,
+    FormulaCategory,
+    FormulaTag,
+)
 
 client = TestClient(app)
 

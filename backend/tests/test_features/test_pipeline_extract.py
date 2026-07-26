@@ -12,10 +12,9 @@ import os
 import tempfile
 
 from app.features.pipeline_orchestrator import (
-    _BINARY_MAGIC_BYTES,
+    ImportPipeline,
     _detect_binary_header,
     _extract_text_blocks,
-    ImportPipeline,
 )
 
 

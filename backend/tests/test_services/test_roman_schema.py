@@ -1,22 +1,19 @@
 """Tests for roman_schema.py — shared Roman numeral constants, schemas, and utilities."""
 
-import pytest
 from app.features.roman_schema import (
-    _ROMAN_SUBITEM_TOKEN,
     _RE_ROMAN_SUBITEM_MARKER,
     _ROMAN_TO_VALUE,
     _VALUE_TO_ROMAN,
     DUPLICATE,
     GAP,
-    OCR_DIGIT_CONFUSION,
     SEQUENCE_BREAK,
-    has_roman_subitem_list,
-    classify_roman_issue,
+    apply_roman_fix,
     build_roman_anomaly,
+    classify_roman_issue,
+    generate_digit_confusion_candidates,
     generate_duplicate_candidates,
     generate_gap_candidates,
-    generate_digit_confusion_candidates,
-    apply_roman_fix,
+    has_roman_subitem_list,
 )
 
 

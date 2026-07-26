@@ -27,23 +27,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import httpx
 from httpx import ASGITransport
-from sqlalchemy import select
 
 from app.core.database import Base, async_session, engine
-from app.models.user import User  # noqa: E402,F401
+from app.main import app as fastapi_app  # noqa: E402
+from app.models.admin import AuditLog  # noqa: E402,F401
 from app.models.question import Question  # noqa: E402,F401
 from app.models.question_import import QuestionImport  # noqa: E402,F401
-from app.models.admin import AuditLog  # noqa: E402,F401
-from app.main import app as fastapi_app  # noqa: E402
+from app.models.user import User  # noqa: E402,F401
 
 # ── 测试服务层函数 ──
 from app.services.batch_answer_image_service import (
-    _normalize_question_no,
-    _extract_entries,
-    _normalize_single_answer,
-    _build_question_no_map,
-    ImagePreviewMode,
     BusinessError,
+    ImagePreviewMode,
+    _build_question_no_map,
+    _extract_entries,
+    _normalize_question_no,
+    _normalize_single_answer,
 )
 
 PASSED: list[str] = []
@@ -80,7 +79,7 @@ async def _setup_db():
     db = async_session()
     try:
         from app.core.admin_security import hash_admin_password
-        from app.models.admin import AdminUser, Role, Permission, RolePermission
+        from app.models.admin import AdminUser, Permission, Role, RolePermission
 
         role = Role(name="test_admin", display_name="测试管理员", is_system=False)
         db.add(role)
@@ -437,8 +436,8 @@ async def run_tests():
             # 模拟 OCR 文本：提取"6. A"
             # 批次有 2 个题号 "6" 的记录
             from app.services.batch_answer_image_service import (
-                _extract_entries,
                 _build_question_no_map,
+                _extract_entries,
                 _lock_batch_questions,
             )
             questions = await _lock_batch_questions(db, "test_dup_qno_batch")

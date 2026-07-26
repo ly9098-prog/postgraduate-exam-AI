@@ -7,7 +7,6 @@ import pytest
 
 from app.features.pipeline_definition import PipelineDefinition, StageDefinition
 
-
 # Known-good snapshot: 27 stages in canonical order verified from current branch
 _EXPECTED_STAGE_NAMES = (
     "extract",
@@ -165,7 +164,6 @@ class TestPipelineDefinition:
 
     def test_no_runtime_imports(self):
         """pipeline_definition is a pure metadata module — no orchestrator imports."""
-        import importlib
 
         # Force re-import (in case previous tests loaded it)
         import app.features.pipeline_definition as pd_module
@@ -174,8 +172,6 @@ class TestPipelineDefinition:
         mod_source = importlib.util.find_spec("app.features.pipeline_definition")
         assert mod_source is not None
         # Check we can import it without triggering orchestrator/artifacts
-        import app
-        from app.features import pipeline_definition
 
         # Verify it doesn't import pipeline_orchestrator or pipeline_artifacts
         loader_details = importlib.util.find_spec("app.features.pipeline_definition")

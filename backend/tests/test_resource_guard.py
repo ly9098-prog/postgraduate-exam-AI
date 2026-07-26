@@ -1,8 +1,8 @@
 """Unit tests for ResourceGuard (Batch 3: ZSET reservation)."""
 
 import pytest
+
 from app.core.resource_guard import (
-    RESOURCE_PRESSURE,
     ResourceGuard,
     ResourceGuardError,
     resource_guard,

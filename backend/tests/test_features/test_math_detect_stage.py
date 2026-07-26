@@ -9,8 +9,9 @@ Covers:
 """
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.features.pipeline_stages.math_detect_stage import (
     _is_valid_bbox,

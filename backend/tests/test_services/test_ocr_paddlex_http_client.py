@@ -7,29 +7,27 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import math
 from typing import Any
-from unittest.mock import ANY
 
 import httpx
 import pytest
 
 from app.core.ocr_runtime_config import OcrRuntimeConfig
-from app.core.ocr_types import STABLE_ERROR_CODES, WorkerResult
+from app.core.ocr_types import STABLE_ERROR_CODES
 from app.services.ocr_paddlex_http_client import (
     PaddleXHttpOcrWorkerClient,
     _compute_backoff,
     _compute_base64_size,
     _derive_health_url,
+    _empty_result,
     _is_retryable_exception,
     _is_retryable_status,
+    _map_pruned_result,
     _normalize_bbox,
     _normalize_polygon,
     _parse_retry_after,
     _safe_score,
     _safe_str,
-    _map_pruned_result,
-    _empty_result,
     health_check,
 )
 

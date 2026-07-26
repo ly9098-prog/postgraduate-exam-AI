@@ -8,7 +8,12 @@ from app.models.admin import AdminUser, Subject
 from app.models.question import Question
 from app.schemas.admin_subjects import AdminSubjectCreateRequest, AdminSubjectUpdateRequest
 from app.services import admin_subject_service
-from app.services.admin_subject_service import create_subject, delete_subject, list_subject_tree, update_subject
+from app.services.admin_subject_service import (
+    create_subject,
+    delete_subject,
+    list_subject_tree,
+    update_subject,
+)
 
 
 class _Scalars:

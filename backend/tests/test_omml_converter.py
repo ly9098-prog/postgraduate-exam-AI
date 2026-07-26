@@ -13,11 +13,9 @@ from __future__ import annotations
 import io
 import zipfile
 
-import pytest
-
 from app.services.export.omml_converter import (
-    latex_to_omml_xml,
     insert_omml_into_paragraph,
+    latex_to_omml_xml,
     render_latex_as_omml_or_fallback,
 )
 

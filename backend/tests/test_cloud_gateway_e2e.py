@@ -5,8 +5,6 @@ Verifies cloud_api profile does not register local adapters.
 
 from __future__ import annotations
 
-import pytest
-
 from app.core.deployment_profile import DeploymentProfile
 
 
@@ -25,8 +23,8 @@ class TestCloudGatewayProfileRestricted:
         ``registry or AdapterRegistry()`` creates a NEW registry.  We read
         backends from ``gw._registry`` instead of the passed-in object.
         """
-        from app.features.ocr_gateway import OCRGateway
         from app.features.ocr_adapter import AdapterRegistry
+        from app.features.ocr_gateway import OCRGateway
 
         registry = AdapterRegistry()
         gw = OCRGateway(registry=registry, mode="shadow", profile=DeploymentProfile.CLOUD_API)
@@ -39,8 +37,8 @@ class TestCloudGatewayProfileRestricted:
 
     def test_local_profile_registers_local_adapter(self):
         """OCRGateway(profile='local_import') does register local paddleocr."""
-        from app.features.ocr_gateway import OCRGateway
         from app.features.ocr_adapter import AdapterRegistry
+        from app.features.ocr_gateway import OCRGateway
 
         registry = AdapterRegistry()
         gw = OCRGateway(registry=registry, mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)

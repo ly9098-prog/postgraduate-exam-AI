@@ -1,10 +1,9 @@
 """Tests for the legacy visual audit script."""
 
+import hashlib
 import json
 import os
-import sqlite3
 import sys
-import hashlib
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"))
@@ -12,7 +11,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "scripts"
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import audit_legacy_question_visuals as audit
-
 
 # ── Fixtures ──
 
@@ -35,8 +33,6 @@ def _db_sha256(path: str) -> str:
 
 def test_readonly_db_unchanged():
     """Run a full audit and verify DB hash + timestamps unchanged."""
-    import tempfile
-    import argparse
     with tempfile.TemporaryDirectory() as tmpdir:
         pre_hash = _db_sha256(FIXTURE_DB)
 
@@ -82,7 +78,6 @@ def test_import_no_side_effect():
 
 def test_canary_450_option_images():
     """import_id=450 is frozen with option_images expected."""
-    import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
         snap, pre_state = audit.create_audit_snapshot(FIXTURE_DB, tmpdir)
         records, stats, qmap = audit.scan_imports(snap, only_import_id=450)
@@ -96,7 +91,6 @@ def test_canary_450_option_images():
 
 def test_canary_452_no_content_image():
     """import_id=452 requires_content_image=false — not marked as needing image."""
-    import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
         snap, pre_state = audit.create_audit_snapshot(FIXTURE_DB, tmpdir)
         records, stats, qmap = audit.scan_imports(snap, only_import_id=452)
@@ -109,7 +103,6 @@ def test_canary_452_no_content_image():
 
 def test_canary_461_stem_diagram():
     """import_id=461 is frozen with stem_diagram expected."""
-    import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
         snap, pre_state = audit.create_audit_snapshot(FIXTURE_DB, tmpdir)
         records, stats, qmap = audit.scan_imports(snap, only_import_id=461)
@@ -355,7 +348,6 @@ def test_csv_formula_escaping():
 
 def test_all_513_records_produced():
     """Full DB scan produces 513 audit results with no silent skips."""
-    import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
         snap, pre_state = audit.create_audit_snapshot(FIXTURE_DB, tmpdir)
         records, stats, qmap = audit.scan_imports(snap)
@@ -404,7 +396,6 @@ def _run_full_audit():
     global _AUDIT_CACHE
     if _AUDIT_CACHE is not None:
         return _AUDIT_CACHE
-    import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
         import audit_legacy_question_visuals as audit
         snap, pre_state = audit.create_audit_snapshot(FIXTURE_DB, tmpdir)
@@ -493,7 +484,6 @@ def test_source_snapshot_not_student_visible():
 
 
 def test_deterministic_classification():
-    import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
         import audit_legacy_question_visuals as audit
         snap, _ = audit.create_audit_snapshot(FIXTURE_DB, tmpdir)

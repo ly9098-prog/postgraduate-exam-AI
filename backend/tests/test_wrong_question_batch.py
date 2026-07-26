@@ -1,17 +1,15 @@
 """wrong_question_service — batch operations, enhanced list, stats, task-flow regression tests."""
 import os
 import tempfile
-from datetime import date, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base
-from app.models.practice_record import PracticeRecord
 from app.models.question import Question
-from app.models.review_scheduler import ReviewRecord, ReviewSchedule
+from app.models.review_scheduler import ReviewSchedule
 from app.models.user import User
 from app.models.wrong_question import WrongQuestion
 from app.services.wrong_question_service import (
@@ -21,7 +19,6 @@ from app.services.wrong_question_service import (
     list_wrong_enriched,
     record_wrong,
 )
-
 
 # ── Helpers ──
 
@@ -390,9 +387,10 @@ class TestBatchAPI:
     @pytest.mark.asyncio
     async def test_batch_empty_ids(self):
         from fastapi.testclient import TestClient
-        from app.main import app
+
         from app.api.v1 import wrong_questions as wq_module
         from app.core.security import get_current_user
+        from app.main import app
 
         user = self._make_mock_user(1)
         db = self._make_mock_db()
@@ -412,9 +410,10 @@ class TestBatchAPI:
     @pytest.mark.asyncio
     async def test_batch_too_many_ids(self):
         from fastapi.testclient import TestClient
-        from app.main import app
+
         from app.api.v1 import wrong_questions as wq_module
         from app.core.security import get_current_user
+        from app.main import app
 
         user = self._make_mock_user(1)
         db = self._make_mock_db()
@@ -434,9 +433,10 @@ class TestBatchAPI:
     @pytest.mark.asyncio
     async def test_batch_invalid_action(self):
         from fastapi.testclient import TestClient
-        from app.main import app
+
         from app.api.v1 import wrong_questions as wq_module
         from app.core.security import get_current_user
+        from app.main import app
 
         user = self._make_mock_user(1)
         db = self._make_mock_db()
@@ -455,6 +455,7 @@ class TestBatchAPI:
 
     def test_unauthorized_returns_401(self):
         from fastapi.testclient import TestClient
+
         from app.main import app
 
         client = TestClient(app)
@@ -629,7 +630,7 @@ class TestMasterUnmaster:
     @pytest.mark.asyncio
     async def test_batch_unmark_creates_schedule_if_missing(self):
         """WQ 存在但无 ReviewSchedule → unmark 后创建 schedule 恢复调度资格。"""
-        from sqlalchemy import func, select
+        from sqlalchemy import select
 
         engine, session, db_path = await _make_db()
         try:

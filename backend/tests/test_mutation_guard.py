@@ -5,10 +5,10 @@ import pytest
 from app.core.immutable_regions import Region, TextRegions
 from app.core.mutation_guard import (
     MutationError,
+    allow_code_mutation,
     assert_no_mutation,
     guard,
     verify_all_code_regions,
-    allow_code_mutation,
 )
 
 

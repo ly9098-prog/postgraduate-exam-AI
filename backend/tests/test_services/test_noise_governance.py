@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from app.features.pipeline_stages.code_language_noise_metrics import (
@@ -18,12 +16,11 @@ from app.features.pipeline_stages.noise_drift_detector import (
     detect_drift,
 )
 from app.features.pipeline_stages.noise_rule_governor import (
-    DEFAULT_POLICY,
-    _FP_RATE_LOW,
     _FP_RATE_HIGH,
+    _FP_RATE_LOW,
+    DEFAULT_POLICY,
     evaluate_policy,
 )
-
 
 # ============================================================================
 # NoiseMetrics

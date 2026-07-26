@@ -7,7 +7,7 @@ SQL 行为也 mock 掉导致测试和实际 DB 行为脱节。
 from __future__ import annotations
 
 import asyncio
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import pytest
 from sqlalchemy.ext.asyncio import (

@@ -1,6 +1,5 @@
 """Unit tests for task queue metrics (P0-1 coverage)."""
 
-import pytest
 from app.services.task_queue_service import Task
 
 

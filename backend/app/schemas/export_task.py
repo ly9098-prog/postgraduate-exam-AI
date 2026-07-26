@@ -53,6 +53,25 @@ class ExportSortBy(StrEnum):
     QUESTION_TYPE = "question_type"
 
 
+class ExportErrorCode(StrEnum):
+    """Structured error codes for export API responses."""
+    FEATURE_DISABLED = "feature_disabled"
+    USER_NOT_ALLOWED = "user_not_allowed"
+    DOCX_DISABLED = "docx_disabled"
+    TOO_MANY_QUESTIONS = "too_many_questions"
+    NO_QUESTIONS = "no_questions"
+    TOO_MANY_CONCURRENT = "too_many_concurrent"
+    TASK_NOT_FOUND = "task_not_found"
+    ACCESS_DENIED = "access_denied"
+    FILE_NOT_READY = "file_not_ready"
+    FILE_NOT_FOUND = "file_not_found"
+    FILE_EXPIRED = "file_expired"
+    GENERATION_FAILED = "generation_failed"
+    TASK_TIMEOUT = "task_timeout"
+    STORAGE_FAILED = "storage_failed"
+    SERVICE_UNAVAILABLE = "service_unavailable"
+
+
 class ExportGroupBy(StrEnum):
     NONE = "none"
     SUBJECT = "subject"
@@ -193,3 +212,16 @@ class ExportRecordListItem(BaseModel):
     expires_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ExportCapabilityResponse(BaseModel):
+    """Per-user export capability — returned by the capabilities endpoint.
+
+    Does NOT leak internal config or whitelist contents.
+    """
+    export_enabled: bool = False
+    pdf_enabled: bool = False
+    docx_enabled: bool = False
+    websocket_enabled: bool = False
+    max_question_count: int = 100
+    retention_days: int = 7

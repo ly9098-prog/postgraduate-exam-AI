@@ -1,7 +1,8 @@
 """Tests for CoordinatorPipeline profile integration."""
 
-import pytest
 from unittest.mock import Mock
+
+import pytest
 
 from app.features.coordinator_orchestrator import CoordinatorPipeline
 

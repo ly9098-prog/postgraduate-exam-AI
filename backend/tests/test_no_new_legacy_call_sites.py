@@ -10,7 +10,6 @@ import ast
 import os
 from pathlib import Path
 
-
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 FEATURES_DIR = APP_DIR / "features"
 
@@ -74,7 +73,7 @@ def _scan_for_names(
     """
     hits: list[tuple[int, str, str]] = []
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             source = f.read()
     except (OSError, UnicodeDecodeError):
         return hits

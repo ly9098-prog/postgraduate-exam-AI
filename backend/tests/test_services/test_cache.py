@@ -1,5 +1,5 @@
 """Stage 14 缓存 — 单元测试。"""
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

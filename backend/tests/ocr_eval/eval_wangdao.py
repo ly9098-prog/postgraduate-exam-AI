@@ -192,10 +192,10 @@ SAMPLE_ANSWER_ONLY = [
 
 def run_pipeline_stages(raw_blocks: list[dict], import_mode: str | None = None) -> dict:
     """Run the full pipeline stages and return intermediate results."""
-    from app.features.wangdao_preprocessor import preprocess_wangdao_blocks
-    from app.features.text_normalizer import ImportTextNormalizer
-    from app.features.structure_analyzer import analyze_structure
     from app.features.question_splitter import split_questions
+    from app.features.structure_analyzer import analyze_structure
+    from app.features.text_normalizer import ImportTextNormalizer
+    from app.features.wangdao_preprocessor import preprocess_wangdao_blocks
 
     # Stage 1: Wangdao preprocess (coordinate-based filtering)
     preprocessed = preprocess_wangdao_blocks(raw_blocks)
@@ -280,8 +280,8 @@ class TestWangdaoStructureOnly:
         assert result[0]["text"] == "正文内容"
 
     def test_section_markers_detected(self):
-        from app.features.text_normalizer import ImportTextNormalizer
         from app.features.structure_analyzer import analyze_structure
+        from app.features.text_normalizer import ImportTextNormalizer
 
         normalizer = ImportTextNormalizer()
         from app.features.wangdao_preprocessor import preprocess_wangdao_blocks
@@ -330,9 +330,9 @@ class TestWangdaoStructureOnly:
         result = run_pipeline_stages(SAMPLE_BLOCKS_CH1)
         for q in result["questions"]:
             text = q["raw_question_text"]
-            assert "广域网" not in text, f"Content '广域网' detected as question"
-            assert "城域网" not in text, f"Content '城域网' detected as question"
-            assert "局域网" not in text, f"Content '局域网' detected as question"
+            assert "广域网" not in text, "Content '广域网' detected as question"
+            assert "城域网" not in text, "Content '城域网' detected as question"
+            assert "局域网" not in text, "Content '局域网' detected as question"
 
     def test_no_watermark_in_output(self):
         result = run_pipeline_stages(SAMPLE_BLOCKS_CH1)
@@ -448,8 +448,9 @@ class TestWangdaoLiveOCR:
     @pytest.fixture(autouse=True)
     def _skip_if_ocr_unavailable(self):
         try:
-            from app.services.ocr_service import ocr_pages_with_boxes
             import fitz  # noqa: F401
+
+            from app.services.ocr_service import ocr_pages_with_boxes
         except ImportError as e:
             pytest.skip(f"OCR dependencies unavailable: {e}")
 
@@ -488,7 +489,7 @@ def _print_report(result: dict, expected: list[dict] | None = None):
     print("王道408 Pipeline 评测报告")
     print("=" * 60)
 
-    print(f"\n[Pipeline 统计]")
+    print("\n[Pipeline 统计]")
     print(f"  预处理过滤块数: {result['removed_by_preprocess']}")
     print(f"  标准化后块数: {result['normalized_count']}")
     print(f"  结构模式: {result['structure']['mode']} (置信度: {result['structure']['confidence']})")
@@ -498,7 +499,7 @@ def _print_report(result: dict, expected: list[dict] | None = None):
     for m in markers:
         print(f"    - page {m['page']}: {m['marker_type']} ({m['text'][:30]})")
 
-    print(f"\n[页面分类]")
+    print("\n[页面分类]")
     print(f"  题目页: {result['structure']['question_pages']}")
     print(f"  答案页: {result['structure']['answer_pages']}")
     print(f"  正文页: {result['structure']['content_pages']}")
@@ -511,7 +512,7 @@ def _print_report(result: dict, expected: list[dict] | None = None):
 
     if expected:
         metrics = compute_metrics(result["questions"], expected)
-        print(f"\n[评测指标]")
+        print("\n[评测指标]")
         print(f"  Precision: {metrics['precision']}")
         print(f"  Recall: {metrics['recall']}")
         print(f"  F1: {metrics['f1']}")

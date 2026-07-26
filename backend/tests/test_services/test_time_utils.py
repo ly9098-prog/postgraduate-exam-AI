@@ -1,7 +1,5 @@
 """Tests for time_utils: UTC serialization, naive/aware handling, date range."""
-from datetime import UTC, datetime, timezone, timedelta
-
-import pytest
+from datetime import UTC, datetime, timedelta, timezone
 
 from app.core.time_utils import (
     normalize_to_naive_utc,
@@ -18,7 +16,7 @@ class TestSerializeUtcDatetime:
         assert serialize_utc_datetime(dt) == "2026-07-04T12:30:00Z"
 
     def test_aware_utc_datetime_gets_z(self):
-        dt = datetime(2026, 7, 4, 12, 30, 0, tzinfo=timezone.utc)
+        dt = datetime(2026, 7, 4, 12, 30, 0, tzinfo=UTC)
         assert serialize_utc_datetime(dt) == "2026-07-04T12:30:00Z"
 
     def test_aware_positive_offset_converts_to_utc(self):
@@ -53,7 +51,7 @@ class TestNormalizeToNaiveUtc:
         assert result.tzinfo is None
 
     def test_aware_utc_strips_tz(self):
-        dt = datetime(2026, 7, 4, 12, 30, 0, tzinfo=timezone.utc)
+        dt = datetime(2026, 7, 4, 12, 30, 0, tzinfo=UTC)
         result = normalize_to_naive_utc(dt)
         assert result == datetime(2026, 7, 4, 12, 30, 0)
         assert result.tzinfo is None
@@ -91,6 +89,6 @@ class TestUtcnow:
     def test_close_to_aware_utc(self):
         """与 aware UTC 的差值应在合理范围内。"""
         now_naive = utcnow()
-        now_aware = datetime.now(timezone.utc)
+        now_aware = datetime.now(UTC)
         diff = abs((now_aware.replace(tzinfo=None) - now_naive).total_seconds())
         assert diff < 2  # within 2 seconds

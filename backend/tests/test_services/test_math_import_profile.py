@@ -1,12 +1,10 @@
 """Tests for math candidate detection engine (P1-2)."""
 
-import pytest
 
 from app.features.math_import_profile import (
-    is_math_candidate,
     apply_math_risk_flags,
+    is_math_candidate,
 )
-
 
 # ---------------------------------------------------------------------------
 # is_math_candidate — subject triggers

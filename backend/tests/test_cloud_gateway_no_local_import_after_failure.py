@@ -6,8 +6,6 @@ backends (paddleocr, rule_fallback) but NOT remote adapters (paddleocr-vl).
 
 from __future__ import annotations
 
-import pytest
-
 from app.core.deployment_profile import DeploymentProfile
 
 
@@ -16,8 +14,8 @@ class TestCloudGatewayNoLocalImportAfterFailure:
 
     def test_cloud_fallback_chain_is_filtered(self):
         """_get_forbidden_fallback includes 'paddleocr' but not 'paddleocr-vl'."""
-        from app.features.ocr_gateway import OCRGateway
         from app.features.ocr_adapter import AdapterRegistry
+        from app.features.ocr_gateway import OCRGateway
 
         registry = AdapterRegistry()
         gw = OCRGateway(registry=registry, mode="shadow", profile=DeploymentProfile.CLOUD_API)
@@ -36,8 +34,8 @@ class TestCloudGatewayNoLocalImportAfterFailure:
 
     def test_cloud_no_local_after_failure_construction(self):
         """OCRGateway construction works for cloud_api profile."""
-        from app.features.ocr_gateway import OCRGateway
         from app.features.ocr_adapter import AdapterRegistry
+        from app.features.ocr_gateway import OCRGateway
 
         registry = AdapterRegistry()
         gw = OCRGateway(registry=registry, mode="shadow", profile=DeploymentProfile.CLOUD_API)
@@ -47,8 +45,8 @@ class TestCloudGatewayNoLocalImportAfterFailure:
 
     def test_enforce_fallback_policy_filters_local(self):
         """_enforce_fallback_policy removes forbidden backends from chain."""
-        from app.features.ocr_gateway import OCRGateway
         from app.features.ocr_adapter import AdapterRegistry
+        from app.features.ocr_gateway import OCRGateway
 
         registry = AdapterRegistry()
         gw = OCRGateway(registry=registry, mode="shadow", profile=DeploymentProfile.CLOUD_API)
@@ -63,8 +61,8 @@ class TestCloudGatewayNoLocalImportAfterFailure:
 
     def test_local_profile_allows_local_backends(self):
         """local_import's _get_forbidden_fallback returns empty list."""
-        from app.features.ocr_gateway import OCRGateway
         from app.features.ocr_adapter import AdapterRegistry
+        from app.features.ocr_gateway import OCRGateway
 
         registry = AdapterRegistry()
         gw = OCRGateway(registry=registry, mode="shadow", profile="local_import")
@@ -76,8 +74,8 @@ class TestCloudGatewayNoLocalImportAfterFailure:
 
     def test_enforce_fallback_policy_noop_for_local(self):
         """_enforce_fallback_policy is a no-op for local_import."""
-        from app.features.ocr_gateway import OCRGateway
         from app.features.ocr_adapter import AdapterRegistry
+        from app.features.ocr_gateway import OCRGateway
 
         registry = AdapterRegistry()
         gw = OCRGateway(registry=registry, mode="shadow", profile="local_import")
@@ -90,8 +88,8 @@ class TestCloudGatewayNoLocalImportAfterFailure:
 
     def test_cloud_fallback_always_has_review(self):
         """Even if all backends forbidden, chain includes 'review'."""
-        from app.features.ocr_gateway import OCRGateway
         from app.features.ocr_adapter import AdapterRegistry
+        from app.features.ocr_gateway import OCRGateway
 
         registry = AdapterRegistry()
         gw = OCRGateway(registry=registry, mode="shadow", profile=DeploymentProfile.CLOUD_API)

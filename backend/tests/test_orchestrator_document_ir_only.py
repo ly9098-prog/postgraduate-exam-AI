@@ -9,7 +9,6 @@ import ast
 import os
 from pathlib import Path
 
-
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 
 # Raw fields that the orchestrator should NOT use directly
@@ -27,7 +26,7 @@ def _scan_file_ast_for_names(
     """AST-scan a file for variable/attribute names matching patterns."""
     violations: list[tuple[int, str]] = []
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open(filepath, encoding="utf-8") as f:
             source = f.read()
     except (OSError, UnicodeDecodeError):
         return violations

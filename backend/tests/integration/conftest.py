@@ -13,6 +13,7 @@ All fixtures here are sync. Tests handle async setup async/await inline.
 from __future__ import annotations
 
 import os
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 

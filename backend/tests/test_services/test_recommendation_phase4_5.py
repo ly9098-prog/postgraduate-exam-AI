@@ -1,10 +1,7 @@
 """Phase 4.5 — 推荐系统上线前稳定性治理 + 灰度验证 单元测试。"""
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
-
 
 # ── helpers ──
 
@@ -543,7 +540,7 @@ class TestPhase45Regression:
             os.path.dirname(__file__), "..", "..", "app", "services", "sm2_service.py"
         )
         if os.path.exists(sm2_path):
-            with open(sm2_path, "r", encoding="utf-8") as f:
+            with open(sm2_path, encoding="utf-8") as f:
                 content = f.read()
             assert "recommendation_experiment" not in content
             assert "seed_default" not in content

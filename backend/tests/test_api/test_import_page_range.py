@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from app.api.v1 import admin_imports, imports as public_imports
+from app.api.v1 import admin_imports
+from app.api.v1 import imports as public_imports
 from app.core.admin_security import AdminPrincipal, get_current_admin
-from app.core.database import get_db
 from app.core.security import get_current_user
 from app.main import app
 from app.models.admin import AdminUser

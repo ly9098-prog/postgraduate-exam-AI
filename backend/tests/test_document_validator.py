@@ -1,8 +1,6 @@
 """Tests for Phase 9: DocumentValidator."""
 from __future__ import annotations
 
-import pytest
-
 from app.features.document_validator import DocumentValidator
 
 

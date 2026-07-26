@@ -17,13 +17,12 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.features.code_integrity import (
+    contains_code,
     detect_code_block_integrity,
     detect_garbled_code_block,
-    contains_code,
 )
-from app.features.question_normalizer import normalize_questions
 from app.features.ocr_quality_gate import detect_ocr_contamination
-
+from app.features.question_normalizer import normalize_questions
 
 # ============================================================
 # Test 1: 答案透传
