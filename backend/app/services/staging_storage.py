@@ -274,8 +274,103 @@ Used only in development/local environments.
 """
 
 
+def _get_redis_client():
+    """Get the shared async Redis client from the app cache module.
+
+    Returns None if Redis is not configured or not available.
+    Uses the same connection pool as the rest of the application.
+    """
+    try:
+        from app.core.cache import cache
+        # cache._client is the underlying redis.asyncio.Redis instance
+        client = getattr(cache, "_client", None)
+        if client is not None:
+            return client
+        # Lazy-init: trigger _ensure_client which creates the connection
+        return None
+    except Exception:
+        return None
+
+
+async def _ensure_refcount_redis():
+    """Get or create the shared async Redis client for refcount operations.
+
+    Uses the application-wide Redis connection pool from the cache module.
+    Returns None if Redis is unavailable.
+    """
+    try:
+        from app.core.cache import cache
+
+        if not cache.is_enabled:
+            return None
+        # Trigger lazy connection via cache's internal _ensure_client
+        client = await cache._ensure_client()
+        return client
+    except Exception:
+        return None
+
+
+def _redis_sync(coro):
+    """Run an async Redis coroutine synchronously via a temporary event loop.
+
+    Only used from sync functions (incr_refcount, decr_refcount, get_refcount)
+    called via asyncio.to_thread — they run in a thread pool where they can
+    create their own event loop. Safe for the limited cases where sync staging
+    functions need Redis access.
+    """
+    import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop is not None:
+        # We're in an async context — use asyncio.run_coroutine_threadsafe
+        # but this is complex. Instead, return None and let the caller
+        # use in-memory fallback.
+        return None
+    try:
+        return asyncio.run(coro)
+    except Exception:
+        return None
+
+
 def _refcount_key(object_id: str) -> str:
     return f"staging:v2:refcount:{object_id}"
+
+
+async def _refcount_redis_async(op: str, object_id: str) -> int | None:
+    """Execute a refcount Redis operation using the shared async Redis client.
+
+    Uses the application-wide Redis connection pool — no per-call connection
+    creation. Returns int or None on failure (caller falls back to in-memory).
+    """
+    try:
+        client = await _ensure_refcount_redis()
+        if client is None:
+            return None
+        key = _refcount_key(object_id)
+        if op == "incr":
+            return await client.incr(key)
+        elif op == "decr":
+            val = await client.decr(key)
+            if val <= 0:
+                await client.delete(key)
+            return max(0, val)
+        elif op == "get":
+            val = await client.get(key)
+            return int(val) if val else 0
+        return None
+    except Exception:
+        return None
+
+
+def _refcount_redis_op(op: str, object_id: str) -> int | None:
+    """Sync wrapper for _refcount_redis_async. Uses _redis_sync to bridge.
+
+    Only used from sync callers (via asyncio.to_thread). Returns None on
+    failure so callers fall back to in-memory store.
+    """
+    return _redis_sync(_refcount_redis_async(op, object_id))
 
 
 def incr_refcount(object_id: str) -> int:
@@ -286,16 +381,16 @@ def incr_refcount(object_id: str) -> int:
     deleted until all referencing tasks have completed and their leases
     have expired.
 
+    Uses Redis when available; falls back to in-memory store for
+    development environments without Redis.
+
     Returns the new count.
     """
-    try:
-        from app.core.redis_client import redis_client
-        if redis_client:
-            key = _refcount_key(object_id)
-            val = redis_client.incr(key)
+    if settings.REDIS_URL:
+        val = _refcount_redis_op("incr", object_id)
+        if val is not None:
             return val
-    except Exception:
-        pass
+    # In-memory fallback (development only)
     count = _REFCOUNT_STORE.get(object_id, 0) + 1
     _REFCOUNT_STORE[object_id] = count
     return count
@@ -303,16 +398,10 @@ def incr_refcount(object_id: str) -> int:
 
 def decr_refcount(object_id: str) -> int:
     """Decrement the reference count. Returns new count (0 = no more references)."""
-    try:
-        from app.core.redis_client import redis_client
-        if redis_client:
-            key = _refcount_key(object_id)
-            val = redis_client.decr(key)
-            if val <= 0:
-                redis_client.delete(key)
-            return max(0, val)
-    except Exception:
-        pass
+    if settings.REDIS_URL:
+        val = _refcount_redis_op("decr", object_id)
+        if val is not None:
+            return val
     count = _REFCOUNT_STORE.get(object_id, 0) - 1
     if count <= 0:
         _REFCOUNT_STORE.pop(object_id, None)
@@ -323,14 +412,10 @@ def decr_refcount(object_id: str) -> int:
 
 def get_refcount(object_id: str) -> int:
     """Return the current reference count (0 if unknown)."""
-    try:
-        from app.core.redis_client import redis_client
-        if redis_client:
-            key = _refcount_key(object_id)
-            val = redis_client.get(key)
-            return int(val) if val else 0
-    except Exception:
-        pass
+    if settings.REDIS_URL:
+        val = _refcount_redis_op("get", object_id)
+        if val is not None:
+            return val
     return _REFCOUNT_STORE.get(object_id, 0)
 
 
@@ -716,13 +801,29 @@ async def async_set_object_retention(
 
 
 async def async_incr_refcount(object_id: str) -> int:
-    """Async wrapper for incr_refcount."""
-    return await asyncio.to_thread(incr_refcount, object_id)
+    """Async: increment refcount using the shared Redis client."""
+    if settings.REDIS_URL:
+        val = await _refcount_redis_async("incr", object_id)
+        if val is not None:
+            return val
+    # In-memory fallback (development only)
+    count = _REFCOUNT_STORE.get(object_id, 0) + 1
+    _REFCOUNT_STORE[object_id] = count
+    return count
 
 
 async def async_decr_refcount(object_id: str) -> int:
-    """Async wrapper for decr_refcount."""
-    return await asyncio.to_thread(decr_refcount, object_id)
+    """Async: decrement refcount using the shared Redis client."""
+    if settings.REDIS_URL:
+        val = await _refcount_redis_async("decr", object_id)
+        if val is not None:
+            return val
+    count = _REFCOUNT_STORE.get(object_id, 0) - 1
+    if count <= 0:
+        _REFCOUNT_STORE.pop(object_id, None)
+    else:
+        _REFCOUNT_STORE[object_id] = count
+    return max(0, count)
 
 
 def get_metrics() -> dict:

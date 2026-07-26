@@ -47,6 +47,22 @@ class QueueFencingError(Exception):
     """
 
 
+class TaskQueueUnavailableError(Exception):
+    """Raised when the task queue Redis backend is unreachable.
+
+    Distinct from an empty queue — indicates a network error, timeout,
+    connection refused, or protocol error. Callers MUST treat this as a
+    service degradation, NOT as "no tasks available."
+
+    Properties:
+        retry_after: Suggested seconds before retrying (default 30).
+    """
+
+    def __init__(self, message: str = "", retry_after: int = 30) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 # v1 Redis key prefixes (legacy — used for drain/migration)
 _QUEUE_PREFIX = "taskq:queue"
 _PROCESSING_PREFIX = "taskq:processing"
@@ -81,6 +97,7 @@ _CORRUPT_MAX = 100              # max corrupt entries
 _IDEMPOTENT_TTL = 86400 * 7      # 7d — matches dead hash TTL, ensures idempotency outlives all terminal states
 _COMPLETED_TTL = 86400            # 24h retention for completed task hashes
 _DEAD_HASH_TTL = 86400 * 7        # 7d retention for dead task hashes
+_FENCING_TOMBSTONE_TTL = 86400 * 7  # 7d — covers max task time + lease + retry window + late writes
 
 
 class TaskStatus(StrEnum):
@@ -616,12 +633,13 @@ return 1
 
 # COMPLETE_V2 — verify owner_token AND generation
 # KEYS: [processing_key, retry_key, task_hash_prefix, heartbeat_prefix, fencing_prefix]
-# ARGS: [task_id, owner_token, completed_ttl]
+# ARGS: [task_id, owner_token, completed_ttl, fencing_tombstone_ttl]
 # Returns: 1 on success, 0 on owner mismatch, -1 on generation mismatch
 _LUA_COMPLETE_V2 = """
 local task_id = ARGV[1]
 local owner_token = ARGV[2]
 local ttl = tonumber(ARGV[3])
+local fence_ttl = tonumber(ARGV[4])
 
 local stored = redis.call("GET", KEYS[4] .. ":" .. task_id)
 if not stored or stored ~= owner_token then
@@ -639,6 +657,8 @@ redis.call("ZREM", KEYS[2], task_id)
 redis.call("HSET", KEYS[3] .. ":" .. task_id, "status", "completed")
 redis.call("EXPIRE", KEYS[3] .. ":" .. task_id, ttl)
 redis.call("DEL", KEYS[4] .. ":" .. task_id)
+-- Fencing key gets tombstone TTL instead of permanent retention
+redis.call("EXPIRE", KEYS[5] .. ":" .. task_id, fence_ttl)
 
 return 1
 """
@@ -695,13 +715,14 @@ return 1
 
 # FAIL_DEAD_V2 — verify owner+generation → ZREM processing → LPUSH dead → HSET status=dead
 # KEYS: [processing_key, dead_key, task_hash_prefix, heartbeat_prefix, fencing_prefix]
-# ARGS: [task_id, task_json, owner_token, dead_max]
+# ARGS: [task_id, task_json, owner_token, dead_max, fencing_tombstone_ttl]
 # Returns: 1 on success, 0 on owner mismatch, -1 on generation mismatch
 _LUA_FAIL_DEAD_V2 = """
 local task_id = ARGV[1]
 local task_json = ARGV[2]
 local owner_token = ARGV[3]
 local dead_max = tonumber(ARGV[4]) or 1000
+local fence_ttl = tonumber(ARGV[5])
 
 local stored = redis.call("GET", KEYS[4] .. ":" .. task_id)
 if not stored or stored ~= owner_token then
@@ -721,16 +742,19 @@ redis.call("HSET", KEYS[3] .. ":" .. task_id, "data", task_json)
 redis.call("HSET", KEYS[3] .. ":" .. task_id, "status", "dead")
 redis.call("EXPIRE", KEYS[3] .. ":" .. task_id, 604800)
 redis.call("DEL", KEYS[4] .. ":" .. task_id)
+-- Fencing key gets tombstone TTL
+redis.call("EXPIRE", KEYS[5] .. ":" .. task_id, fence_ttl)
 return 1
 """
 
-# REAPER_V2 — reclaim expired tasks (v2 keys)
+# REAPER_V2 — reclaim expired tasks (v2 keys), with ready queue capacity check
 # KEYS: [processing_key, queue_key, heartbeat_prefix, task_hash_prefix]
-# ARGS: [now_timestamp, batch_size]
-# Returns: count of reclaimed tasks
+# ARGS: [now_timestamp, batch_size, max_ready]
+# Returns: count of reclaimed tasks (tasks that exceeded capacity are skipped)
 _LUA_REAPER_V2 = """
 local now = tonumber(ARGV[1])
 local limit = tonumber(ARGV[2]) or 100
+local max_ready = tonumber(ARGV[3])
 local expired = redis.call("ZRANGEBYSCORE", KEYS[1], 0, now, "LIMIT", 0, limit)
 local count = 0
 for _, task_id in ipairs(expired) do
@@ -742,6 +766,13 @@ for _, task_id in ipairs(expired) do
         else
             local payload_exists = redis.call("HEXISTS", KEYS[4] .. ":" .. task_id, "data")
             if payload_exists == 1 then
+                -- Check ready queue capacity before re-enqueuing
+                local ready_len = redis.call("LLEN", KEYS[2])
+                if max_ready > 0 and ready_len >= max_ready then
+                    -- Ready queue full — skip this task, leave in processing
+                    -- (it will be retried on next reaper cycle)
+                    break
+                end
                 redis.call("ZREM", KEYS[1], task_id)
                 redis.call("RPUSH", KEYS[2], task_id)
                 count = count + 1
@@ -801,12 +832,13 @@ return {task_id, owner_token, tostring(generation), raw}
 """
 
 # MARK_CORRUPT_V2 — atomically remove from processing, add to corrupt ZSET
-# KEYS: [processing_key, corrupt_key, task_hash_prefix, heartbeat_prefix]
-# ARGS: [task_id, error_summary, corrupt_max]
+# KEYS: [processing_key, corrupt_key, task_hash_prefix, heartbeat_prefix, fencing_prefix]
+# ARGS: [task_id, error_summary, corrupt_max, fencing_tombstone_ttl]
 _LUA_MARK_CORRUPT_V2 = """
 local task_id = ARGV[1]
 local error_summary = ARGV[2] or ""
 local corrupt_max = tonumber(ARGV[3]) or 100
+local fence_ttl = tonumber(ARGV[4])
 
 redis.call("ZREM", KEYS[1], task_id)
 redis.call("ZADD", KEYS[2], redis.call("TIME")[1], task_id)
@@ -816,6 +848,8 @@ redis.call("HSET", KEYS[3] .. ":" .. task_id,
     "error", error_summary,
     "discovered_at", redis.call("TIME")[1])
 redis.call("DEL", KEYS[4] .. ":" .. task_id)
+-- Fencing key gets tombstone TTL
+redis.call("EXPIRE", KEYS[5] .. ":" .. task_id, fence_ttl)
 return 1
 """
 
@@ -1081,7 +1115,7 @@ class DurableTaskQueue:
             sha = getattr(self, sha_name, None)
             return await client.evalsha(sha, num_keys, *args)
 
-    # ── enqueue ──
+    # ── enqueue (DEPRECATED v1 — use enqueue_v2) ──
 
     async def enqueue(
         self,
@@ -1918,6 +1952,15 @@ class DurableTaskQueue:
         NEVER reset — not by reaper, retry, complete, or purge.
 
         Tries the ready queue first, then the retry ZSET.
+
+        Returns:
+            Task if a task was claimed.
+            None if the queue is genuinely empty (no ready or retry tasks).
+
+        Raises:
+            TaskQueueUnavailableError: Redis is unreachable (connection
+                refused, timeout, network error). Callers MUST treat this
+                as service degradation, NOT as "no tasks available."
         """
         if not self._redis_enabled:
             return None
@@ -1977,8 +2020,15 @@ class DurableTaskQueue:
             return task
 
         except (redis_exc.ConnectionError, redis_exc.TimeoutError) as e:
-            logger.warning("v2 Dequeue Redis error: %s", e)
-            return None
+            logger.error("v2 Dequeue Redis unavailable: %s", e)
+            raise TaskQueueUnavailableError(
+                f"Redis unavailable during dequeue: {e}", retry_after=30,
+            ) from e
+        except redis_exc.ResponseError as e:
+            logger.error("v2 Dequeue Redis protocol error: %s", e)
+            raise TaskQueueUnavailableError(
+                f"Redis protocol error during dequeue: {e}", retry_after=30,
+            ) from e
 
     async def _dequeue_retry_v2(
         self, client, task_type: str, lease_sec: int,
@@ -2121,6 +2171,7 @@ class DurableTaskQueue:
                 task_id,
                 token,
                 str(_COMPLETED_TTL),
+                str(_FENCING_TOMBSTONE_TTL),
             )
             await client.aclose()
 
@@ -2248,6 +2299,7 @@ class DurableTaskQueue:
                 task_json,
                 token,
                 str(settings.TASK_QUEUE_DEAD_MAX),
+                str(_FENCING_TOMBSTONE_TTL),
             )
             await client.aclose()
 
@@ -2283,14 +2335,16 @@ class DurableTaskQueue:
             await self._load_scripts(client)
 
             result = await self._evalsha_or_reload(
-                client, "_lua_mark_corrupt_v2", 4,
+                client, "_lua_mark_corrupt_v2", 5,
                 _v2_p_key(task_type),
                 _v2_corrupt_key(task_type),
                 _V2_TASK_PREFIX,
                 _V2_HEARTBEAT_PREFIX,
+                _V2_FENCING_PREFIX,
                 task_id,
                 error_summary,
                 str(settings.TASK_QUEUE_CORRUPT_MAX),
+                str(_FENCING_TOMBSTONE_TTL),
             )
             await client.aclose()
             return bool(result)
@@ -2317,6 +2371,7 @@ class DurableTaskQueue:
                 _V2_TASK_PREFIX,
                 str(time.time()),
                 "100",
+                str(_get_max_ready(task_type)),
             ) or 0
             reclaimed = int(reclaimed)
             await client.aclose()
@@ -2589,5 +2644,110 @@ class DurableTaskQueue:
         except Exception as e:
             logger.warning("v2 Delete from corrupt failed: %s", e)
             return False
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # v1 → v2 Drain / Migration
+    # ══════════════════════════════════════════════════════════════════════════
+
+    async def drain_v1_to_v2(self, task_type: str, batch_size: int = 100) -> int:
+        """Drain v1 ready queue tasks into v2 keys (one-time migration).
+
+        Reads task_ids from v1 ready queue, reads their payloads from v1
+        task hashes, and re-enqueues them into v2 keys. Tasks already in
+        v2 (idempotent guard) are skipped.
+
+        Tasks in v1 processing or retry are NOT drained — the reaper will
+        clean them up after lease expiry. Those need to be handled via
+        drain_active_v1_to_v2 instead.
+
+        This is idempotent: running it multiple times only drains
+        previously-undrained tasks.
+
+        Returns count of migrated tasks.
+        """
+        if not self._redis_enabled:
+            return 0
+        migrated = 0
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return 0
+            await self._load_scripts(client)
+
+            for _ in range(batch_size):
+                task_id = await client.lpop(_q_key(task_type))
+                if not task_id:
+                    break
+
+                # Check v2 idempotent guard
+                v2_idem_exists = await client.exists(_v2_idempotent_key(task_id))
+                if v2_idem_exists:
+                    logger.info("v1→v2 drain: task %s already in v2, skipping", task_id)
+                    continue
+
+                raw = await client.hget(_task_hash_key(task_id), "data")
+                if not raw:
+                    logger.warning("v1→v2 drain: task %s has no payload, skipping", task_id)
+                    continue
+
+                # Re-enqueue into v2
+                max_ready = _get_max_ready(task_type)
+                result = await self._evalsha_or_reload(
+                    client, "_lua_enqueue_v2", 3,
+                    _v2_q_key(task_type),
+                    _V2_TASK_PREFIX,
+                    _V2_IDEMPOTENCY_PREFIX,
+                    task_id,
+                    raw,
+                    str(_IDEMPOTENT_TTL),
+                    str(max_ready),
+                )
+                if result and result != "__duplicate__" and result != "__queue_full__":
+                    migrated += 1
+
+            await client.aclose()
+            if migrated:
+                logger.info("v1→v2 drain: migrated %d tasks for %s", migrated, task_type)
+            return migrated
+        except Exception as e:
+            logger.warning("v1→v2 drain failed for %s: %s", task_type, e)
+            return migrated
+
+    async def drain_all_v1_to_v2(self, task_types: list[str] | None = None) -> dict[str, int]:
+        """Drain all v1 queues into v2. Returns {task_type: count_migrated}."""
+        types = task_types or []
+        results: dict[str, int] = {}
+        for tt in types:
+            results[tt] = await self.drain_v1_to_v2(tt)
+        return results
+
+    async def delete_v1_keys(self, task_type: str) -> dict[str, int]:
+        """Delete v1 Redis keys for a task type (safe after drain).
+
+        Returns counts of deleted keys by category.
+        Only call after confirming no tasks remain in v1 keys.
+        """
+        if not self._redis_enabled:
+            return {}
+        deleted: dict[str, int] = {}
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return {}
+            for name, key in [
+                ("queue", _q_key(task_type)),
+                ("processing", _p_key(task_type)),
+                ("retry", _retry_key(task_type)),
+                ("dead", _dead_key(task_type)),
+                ("corrupt", _corrupt_key(task_type)),
+            ]:
+                count = await client.delete(key)
+                deleted[name] = count
+            await client.aclose()
+            return deleted
+        except Exception as e:
+            logger.warning("v1 key deletion failed for %s: %s", task_type, e)
+            return deleted
+
 # Process-wide singleton
 task_queue = DurableTaskQueue()

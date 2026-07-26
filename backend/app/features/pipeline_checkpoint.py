@@ -14,6 +14,7 @@ Redis 失败仅打日志，不影响主流程。
 
 from __future__ import annotations
 
+import contextvars
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -24,6 +25,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.import_pipeline import ImportPipeline, ImportPipelineChunk
 
 logger = logging.getLogger(__name__)
+
+# ── Fencing context (set by worker before calling handlers) ──
+
+_fencing_ctx: contextvars.ContextVar[dict[str, Any] | None] = (
+    contextvars.ContextVar("pipeline_fencing_ctx", default=None)
+)
+
+
+def set_fencing_context(
+    task_id: str,
+    owner_token: str,
+    generation: int,
+) -> contextvars.Token:
+    """Set fencing context for the current async task.
+
+    Called by the worker before invoking business handlers.
+    Returns a Token that should be passed to ``clear_fencing_context``.
+    """
+    return _fencing_ctx.set({
+        "task_id": task_id,
+        "owner_token": owner_token,
+        "generation": generation,
+    })
+
+
+def clear_fencing_context(token: contextvars.Token) -> None:
+    """Reset fencing context to its previous value."""
+    _fencing_ctx.reset(token)
 
 
 _CHECKPOINT_REDIS_PREFIX = "import:pipeline:checkpoint"
@@ -120,6 +149,33 @@ async def update_pipeline_status(
     if finished:
         values["finished_at"] = _utcnow()
 
+    # Use fenced conditional UPDATE when a fencing context is active
+    fence = _fencing_ctx.get()
+    if fence is not None:
+        from app.services.db_fencing import (
+            FencingRejectedError,
+            conditional_update_with_fencing,
+        )
+
+        ok = await conditional_update_with_fencing(
+            db=db,
+            model_class=ImportPipeline,
+            record_id=pipeline_id,
+            expected_task_id=fence["task_id"],
+            expected_generation=fence["generation"],
+            expected_owner_token=fence["owner_token"],
+            **values,
+        )
+        if not ok:
+            await db.rollback()
+            raise FencingRejectedError(
+                f"Pipeline status update rejected (fence lost): "
+                f"pipeline_id={pipeline_id} task_id={fence['task_id']} gen={fence['generation']}"
+            )
+        await db.commit()
+        return
+
+    # No fencing context — plain UPDATE (e.g. called from API, not worker)
     await db.execute(
         update(ImportPipeline)
         .where(ImportPipeline.pipeline_id == pipeline_id)

@@ -29,7 +29,17 @@ def upgrade() -> None:
     if not _is_postgresql():
         return
 
-    # 1. Create pgvector extension
+    # 1. Check if pgvector extension is available before attempting to create it.
+    #    CREATE EXTENSION IF NOT EXISTS throws an aborted-transaction error when
+    #    the extension files are missing. Pre-check avoids this.
+    conn = op.get_bind()
+    available = conn.execute(
+        text("SELECT 1 FROM pg_available_extensions WHERE name = 'vector'")
+    ).scalar()
+    if not available:
+        return
+
+    # pgvector available — create extension and vector tables
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     # 2. Create question_embeddings table

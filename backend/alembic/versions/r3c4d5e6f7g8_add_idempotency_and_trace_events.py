@@ -85,7 +85,8 @@ def upgrade() -> None:
             sa.Column("message", sa.String(512), nullable=False, server_default=""),
             sa.Column("duration_ms", sa.Integer(), nullable=True),
             sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
-            sa.ForeignKeyConstraint(["job_id"], ["import_batch_jobs.job_id"],),
+            # FK to import_batch_jobs deferred — that table lives on branch q1b2c3d4e5f6
+            # and may not exist yet. FK is added in migration f9e0d1c2b3a4 after the merge.
             sa.PrimaryKeyConstraint("id"),
         )
 
