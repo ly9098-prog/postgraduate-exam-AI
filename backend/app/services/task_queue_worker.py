@@ -21,18 +21,71 @@ import time
 
 import redis.exceptions as redis_exc
 
+from app.core.config import settings
+from app.services.db_fencing import FencingRejectedError
 from app.services.staging_storage import (
     async_cleanup_work_copy,
     async_create_work_copy,
     async_lease_object,
     async_retrieve_file,
 )
-from app.services.task_queue_service import EnqueueResult, Task, task_queue
+from app.services.task_queue_service import (
+    EnqueueResult,
+    Task,
+    TaskQueueUnavailableError,
+    task_queue,
+)
 
 logger = logging.getLogger("postgraduate-ai.task-worker")
 
 
-async def _resolve_staging_path(staging_object_id: str) -> str:
+async def _init_fencing_for_task(task: Task, pipeline_id: str, task_type: str) -> None:
+    """Initialize DB fencing fields on the business record for this task.
+
+    Uses a conditional UPDATE to prevent TOCTOU — only sets fence fields
+    if the current generation is lower (or None/0), ensuring a newer claim
+    cannot be overwritten by a stale worker.
+
+    Fencing failure here is non-fatal (logged) — the actual business writes
+    will be guarded by verify_fencing_or_raise.
+    """
+    from app.core.database import async_session
+    from app.services.db_fencing import FENCING_TABLES, initialize_fencing_fields
+
+    table_entry = FENCING_TABLES.get(task_type)
+    if table_entry is None:
+        return
+
+    model_class, id_column = table_entry
+    try:
+        async with async_session() as db:
+            ok = await initialize_fencing_fields(
+                db=db,
+                model_class=model_class,
+                record_id=pipeline_id,
+                task_id=task.task_id,
+                owner_token=task.owner_token,
+                generation=task.generation,
+                status="processing",
+            )
+            if ok:
+                logger.debug(
+                    "DB fencing initialized: task_id=%s model=%s id=%s gen=%d",
+                    task.task_id, model_class.__name__, pipeline_id, task.generation,
+                )
+            else:
+                logger.warning(
+                    "DB fencing init skipped (stale generation): task_id=%s gen=%d",
+                    task.task_id, task.generation,
+                )
+    except Exception as e:
+        logger.warning(
+            "DB fencing init failed (non-fatal): task_id=%s error=%s",
+            task.task_id, e,
+        )
+
+
+async def _resolve_staging_path(staging_object_id: str, owner_token: str = "", generation: int = 0) -> str:
     """Resolve a staging object ID to a work copy path in the scratch directory.
 
     Raises FileNotFoundError if the staging object does not exist.
@@ -42,6 +95,8 @@ async def _resolve_staging_path(staging_object_id: str) -> str:
 
     Automatically acquires a lease on the staging object to prevent
     cleanup from deleting it while the worker is processing the task.
+    The lease is tied to the task's owner_token and generation for
+    fencing verification.
     """
     if not staging_object_id:
         raise FileNotFoundError("staging_object_id is empty")
@@ -51,8 +106,8 @@ async def _resolve_staging_path(staging_object_id: str) -> str:
     if not staged_path:
         raise FileNotFoundError(f"Staging object {staging_object_id} not found")
 
-    # Acquire lease to prevent cleanup during processing
-    await async_lease_object(staging_object_id)
+    # Acquire lease with owner+generation to prevent cleanup during processing
+    await async_lease_object(staging_object_id, owner_token=owner_token, generation=generation)
 
     # Create a writable work copy so the pipeline can mutate it
     scratch_dir = _get_scratch_dir()
@@ -104,6 +159,18 @@ TASK_TYPE_EXCEL_PIPELINE = "excel_pipeline"
 TASK_TYPE_PREWARM_ANALYSIS = "prewarm_analysis"
 TASK_TYPE_FORMULA_BATCH = "formula_batch"
 TASK_TYPE_BATCH_IMAGE = "batch_image"
+
+# Task types that support DB fencing (have execution_generation columns)
+_FENCING_TASK_TYPES = frozenset({
+    TASK_TYPE_IMPORT_PIPELINE,
+    TASK_TYPE_IMAGE_PIPELINE,
+    TASK_TYPE_EXCEL_PIPELINE,
+    TASK_TYPE_RESUME_PIPELINE,
+    TASK_TYPE_ADMIN_RESUME,
+    TASK_TYPE_BATCH_IMAGE,
+    # formula_batch excluded: processes multiple FormulaCard records,
+    # no single business record to fence per task
+})
 
 # ── enqueue helpers ──
 
@@ -293,6 +360,7 @@ queue_metrics: dict[str, int] = {
     "owner_fencing_rejected": 0,
     "duplicate_enqueue_prevented": 0,
     "reaper_reclaimed": 0,
+    "queue_redis_failure": 0,
 }
 
 
@@ -638,189 +706,335 @@ _v2_primary_dispatcher_task: asyncio.Task | None = None
 """Reference to the dispatcher task itself, for signal-based cancellation."""
 
 
+async def _verify_fencing_or_cancel(task: Task, pipeline_id: str, task_type: str) -> None:
+    """Verify DB fencing before business writes. Raises FencingRejectedError on mismatch."""
+    from app.services.db_fencing import (
+        FENCING_TABLES,
+        FencingVerificationError,
+        verify_fencing_or_raise,
+    )
+
+    table_entry = FENCING_TABLES.get(task_type)
+    if table_entry is None:
+        return
+
+    from app.core.database import async_session
+
+    try:
+        async with async_session() as db:
+            await verify_fencing_or_raise(
+                db=db,
+                model_class=table_entry[0],
+                record_id=pipeline_id,
+                expected_task_id=task.task_id,
+                expected_generation=task.generation,
+                expected_owner_token=task.owner_token,
+            )
+    except FencingVerificationError as e:
+        logger.warning(
+            "v2 Pre-execution fence check FAILED: task_id=%s pipeline_id=%s gen=%d — %s",
+            task.task_id, pipeline_id, task.generation, e,
+        )
+        raise FencingRejectedError(str(e)) from e
+    except Exception as e:
+        logger.warning(
+            "v2 Pre-execution fence check error (non-fatal): task_id=%s error=%s",
+            task.task_id, e,
+        )
+        raise
+
+
 async def _process_task_v2(task: Task) -> None:
     """Process a task with generation and owner_token context.
 
-    Same dispatch as _process_task but receives generation and owner_token
-    on the task object for DB fencing verification.
+    Sets a fencing context via contextvars so that ``update_pipeline_status``
+    in the call chain automatically uses atomic fenced UPDATEs instead of
+    plain UPDATEs.
     """
+    from app.features.pipeline_checkpoint import clear_fencing_context, set_fencing_context
+
     task_type = task.task_type
     payload = task.payload
     pipeline_id = payload.get("pipeline_id", task.task_id)
+
+    # Compute the actual DB record ID for fencing verification.
+    _fence_record_id: str = ""
+    if task_type in (TASK_TYPE_IMPORT_PIPELINE, TASK_TYPE_IMAGE_PIPELINE,
+                     TASK_TYPE_EXCEL_PIPELINE, TASK_TYPE_RESUME_PIPELINE,
+                     TASK_TYPE_ADMIN_RESUME):
+        _fence_record_id = pipeline_id
+    elif task_type == TASK_TYPE_BATCH_IMAGE:
+        _fence_record_id = payload.get("job_id", "")
 
     logger.info(
         "Worker v2 processing: type=%s task_id=%s pipeline_id=%s gen=%d",
         task_type, task.task_id, pipeline_id, task.generation,
     )
 
-    if task_type == TASK_TYPE_IMPORT_PIPELINE:
-        from app.services.import_pipeline_service import _run_pipeline_with_db
+    # Initialize DB fencing and set fencing context
+    if _fence_record_id and task_type in _FENCING_TASK_TYPES:
+        await _init_fencing_for_task(task, _fence_record_id, task_type)
 
-        staging_id = payload.get("staging_object_id", "")
-        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
-        await _run_pipeline_with_db(
-            pipeline_id=pipeline_id,
-            file_path=file_path,
-            source_type=payload.get("source_type", "pdf"),
-            source_file=payload.get("source_file", ""),
-            subject=payload.get("subject"),
-            subject_id=payload.get("subject_id"),
-            options=payload.get("options", {}),
-            created_by=payload.get("created_by"),
+    _fence_token = None
+    if _fence_record_id and task_type in _FENCING_TASK_TYPES:
+        _fence_token = set_fencing_context(
+            task_id=task.task_id,
+            owner_token=task.owner_token,
+            generation=task.generation,
         )
 
-    elif task_type == TASK_TYPE_IMAGE_PIPELINE:
-        from app.services.import_pipeline_service import _run_image_pipeline_with_db
+    try:
+        if task_type == TASK_TYPE_IMPORT_PIPELINE:
+            from app.services.import_pipeline_service import _run_pipeline_with_db
 
-        staging_id = payload.get("staging_object_id", "")
-        image_path = await _resolve_staging_path(staging_id) if staging_id else ""
-        if not image_path:
-            raise FileNotFoundError(f"Staging object {staging_id} not found for image pipeline")
-        await _run_image_pipeline_with_db(
-            pipeline_id=pipeline_id,
-            image_path=image_path,
-            source_file=payload.get("source_file", ""),
-            subject=payload.get("subject"),
-            subject_id=payload.get("subject_id"),
-            options=payload.get("options", {}),
-        )
-
-    elif task_type == TASK_TYPE_EXCEL_PIPELINE:
-        from app.features.pipeline_orchestrator import run_excel_pipeline_background
-
-        staging_id = payload.get("staging_object_id", "")
-        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
-        file_content = b""
-        if file_path:
-            with open(file_path, "rb") as _fh:
-                file_content = _fh.read()
-        from app.features import question_pipeline as pipeline_svc
-
-        await run_excel_pipeline_background(
-            pipeline_id=pipeline_id,
-            file_content=file_content,
-            source_file=payload.get("source_file", ""),
-            import_excel_fn=pipeline_svc.import_excel,
-        )
-
-    elif task_type == TASK_TYPE_RESUME_PIPELINE:
-        from app.services.import_pipeline_service import run_resume_background
-
-        staging_id = payload.get("staging_object_id", "")
-        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
-        await run_resume_background(
-            pipeline_id=pipeline_id,
-            file_path=file_path,
-            subject=payload.get("subject"),
-            subject_id=payload.get("subject_id"),
-            options=payload.get("options", {}),
-        )
-
-    elif task_type == TASK_TYPE_ADMIN_RESUME:
-        from app.core.database import async_session
-        from app.features.pipeline_coordinator_entry import run_pipeline
-        from app.features.pipeline_orchestrator import (
-            _get_stage_checkpoint,
-            _set_pipeline_store,
-        )
-
-        staging_id = payload.get("staging_object_id", "")
-        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
-        source_type = payload.get("source_type", "pdf")
-        source_file = payload.get("source_file", "")
-        subject = payload.get("subject")
-        subject_id = payload.get("subject_id")
-        opts = payload.get("options", {})
-
-        ckpt = await _get_stage_checkpoint(pipeline_id)
-
-        async with async_session() as resume_db:
-            result = await run_pipeline(
-                file_path=file_path,
-                source_type=source_type,
-                source_file=source_file,
-                subject=subject,
-                subject_id=subject_id,
-                options=opts,
-                db=resume_db,
+            if _fence_record_id:
+                await _verify_fencing_or_cancel(task, _fence_record_id, task_type)
+            staging_id = payload.get("staging_object_id", "")
+            file_path = await _resolve_staging_path(staging_id, task.owner_token, task.generation) if staging_id else ""
+            await _run_pipeline_with_db(
                 pipeline_id=pipeline_id,
-                resume_from_checkpoint=ckpt,
+                file_path=file_path,
+                source_type=payload.get("source_type", "pdf"),
+                source_file=payload.get("source_file", ""),
+                subject=payload.get("subject"),
+                subject_id=payload.get("subject_id"),
+                options=payload.get("options", {}),
+                created_by=payload.get("created_by"),
             )
-        try:
-            await _set_pipeline_store(pipeline_id, result)
-        except Exception:
-            logger.warning("Failed to store admin resume result for %s", pipeline_id)
 
-    elif task_type == TASK_TYPE_FORMULA_BATCH:
-        from sqlalchemy import select
+        elif task_type == TASK_TYPE_IMAGE_PIPELINE:
+            from app.services.import_pipeline_service import _run_image_pipeline_with_db
+
+            staging_id = payload.get("staging_object_id", "")
+            image_path = await _resolve_staging_path(staging_id, task.owner_token, task.generation) if staging_id else ""
+            if not image_path:
+                raise FileNotFoundError(f"Staging object {staging_id} not found for image pipeline")
+
+            if _fence_record_id:
+                await _verify_fencing_or_cancel(task, _fence_record_id, task_type)
+            await _run_image_pipeline_with_db(
+                pipeline_id=pipeline_id,
+                image_path=image_path,
+                source_file=payload.get("source_file", ""),
+                subject=payload.get("subject"),
+                subject_id=payload.get("subject_id"),
+                options=payload.get("options", {}),
+            )
+
+        elif task_type == TASK_TYPE_EXCEL_PIPELINE:
+            from app.features.pipeline_orchestrator import run_excel_pipeline_background
+
+            staging_id = payload.get("staging_object_id", "")
+            file_path = await _resolve_staging_path(staging_id, task.owner_token, task.generation) if staging_id else ""
+            file_content = b""
+            if file_path:
+                with open(file_path, "rb") as _fh:
+                    file_content = _fh.read()
+            from app.features import question_pipeline as pipeline_svc
+
+            if _fence_record_id:
+                await _verify_fencing_or_cancel(task, _fence_record_id, task_type)
+            await run_excel_pipeline_background(
+                pipeline_id=pipeline_id,
+                file_content=file_content,
+                source_file=payload.get("source_file", ""),
+                import_excel_fn=pipeline_svc.import_excel,
+            )
+
+        elif task_type == TASK_TYPE_RESUME_PIPELINE:
+            from app.services.import_pipeline_service import run_resume_background
+
+            staging_id = payload.get("staging_object_id", "")
+            file_path = await _resolve_staging_path(staging_id, task.owner_token, task.generation) if staging_id else ""
+            if _fence_record_id:
+                await _verify_fencing_or_cancel(task, _fence_record_id, task_type)
+            await run_resume_background(
+                pipeline_id=pipeline_id,
+                file_path=file_path,
+                subject=payload.get("subject"),
+                subject_id=payload.get("subject_id"),
+                options=payload.get("options", {}),
+            )
+
+        elif task_type == TASK_TYPE_ADMIN_RESUME:
+            from app.core.database import async_session
+            from app.features.pipeline_coordinator_entry import run_pipeline
+            from app.features.pipeline_orchestrator import (
+                _get_stage_checkpoint,
+                _set_pipeline_store,
+            )
+
+            staging_id = payload.get("staging_object_id", "")
+            file_path = await _resolve_staging_path(staging_id, task.owner_token, task.generation) if staging_id else ""
+            source_type = payload.get("source_type", "pdf")
+            source_file = payload.get("source_file", "")
+            subject = payload.get("subject")
+            subject_id = payload.get("subject_id")
+            opts = payload.get("options", {})
+
+            ckpt = await _get_stage_checkpoint(pipeline_id)
+
+            if _fence_record_id:
+                await _verify_fencing_or_cancel(task, _fence_record_id, task_type)
+            async with async_session() as resume_db:
+                result = await run_pipeline(
+                    file_path=file_path,
+                    source_type=source_type,
+                    source_file=source_file,
+                    subject=subject,
+                    subject_id=subject_id,
+                    options=opts,
+                    db=resume_db,
+                    pipeline_id=pipeline_id,
+                    resume_from_checkpoint=ckpt,
+                )
+            try:
+                await _set_pipeline_store(pipeline_id, result)
+            except Exception:
+                logger.warning("Failed to store admin resume result for %s", pipeline_id)
+
+        elif task_type == TASK_TYPE_FORMULA_BATCH:
+            from sqlalchemy import select
+
+            from app.core.database import async_session
+            from app.models.formula import FormulaCard
+            from app.services.formula_graph_spec_service import _process_batch
+
+            card_ids = payload.get("card_ids", [])
+            admin_id = payload.get("admin_id", 0)
+            job_id = payload.get("job_id", "")
+
+            async with async_session() as db:
+                result = await db.execute(
+                    select(FormulaCard).where(FormulaCard.id.in_(card_ids))
+                )
+                cards = list(result.scalars().all())
+
+            await _process_batch(job_id, cards, admin_id)
+
+        elif task_type == TASK_TYPE_BATCH_IMAGE:
+            from app.features import batch_image_import_service as batch_svc
+            from app.services.staging_storage import retrieve_file
+
+            job_id = payload.get("job_id", "")
+            staging_ids: list[str] = payload.get("staging_object_ids", [])
+            subject = payload.get("subject")
+            subject_id = payload.get("subject_id")
+            options = payload.get("options", {})
+            concurrency = payload.get("concurrency", 2)
+
+            if _fence_record_id:
+                await _verify_fencing_or_cancel(task, _fence_record_id, task_type)
+
+            scratch_dir = _get_scratch_dir()
+            work_copies: list[str] = []
+
+            sources: list[batch_svc.BatchImageSource] = []
+            for idx, staging_id in enumerate(staging_ids):
+                if not staging_id:
+                    continue
+                file_path = retrieve_file(staging_id)
+                if not file_path:
+                    continue
+                try:
+                    work_path = str(await async_create_work_copy(staging_id, scratch_dir))
+                    work_copies.append(work_path)
+                except Exception as e:
+                    logger.warning(
+                        "Failed to create work copy for %s: %s, using original",
+                        staging_id, e,
+                    )
+                    work_path = file_path
+                sources.append(batch_svc.BatchImageSource(
+                    seq=idx + 1,
+                    source_file=f"image_{idx + 1}.png",
+                    temp_path=work_path,
+                ))
+
+            if not sources:
+                logger.error("No valid sources for batch image job %s", job_id)
+                return
+
+            try:
+                await batch_svc.run_batch_job(
+                    job_id=job_id,
+                    sources=sources,
+                    subject=subject,
+                    subject_id=subject_id,
+                    options=options,
+                    concurrency=concurrency,
+                )
+            finally:
+                for wp in work_copies:
+                    await async_cleanup_work_copy(wp)
+
+        else:
+            # Unknown task type — dead-letter immediately, don't retry or complete
+            logger.warning("Unknown task type %s — marking as dead-letter: task_id=%s",
+                           task_type, task.task_id)
+            task.max_retries = 0
+            raise ValueError(f"unknown_task_type: {task_type}")
+
+    finally:
+        if _fence_token is not None:
+            clear_fencing_context(_fence_token)
+
+    # ── Post-execution atomic fence check ──
+    # After business writes complete but before complete_v2, verify the fence
+    # is still held via a conditional UPDATE. If rowcount=0, the fence was lost
+    # during execution — raise FencingRejectedError to prevent complete_v2.
+    if _fence_record_id and task_type in _FENCING_TASK_TYPES:
         from app.core.database import async_session
-        from app.models.formula import FormulaCard
-        from app.services.formula_graph_spec_service import _process_batch
-
-        card_ids = payload.get("card_ids", [])
-        admin_id = payload.get("admin_id", 0)
-        job_id = payload.get("job_id", "")
-
-        async with async_session() as db:
-            result = await db.execute(
-                select(FormulaCard).where(FormulaCard.id.in_(card_ids))
-            )
-            cards = list(result.scalars().all())
-
-        await _process_batch(job_id, cards, admin_id)
-
-    elif task_type == TASK_TYPE_BATCH_IMAGE:
-        from app.features import batch_image_import_service as batch_svc
-        from app.services.staging_storage import retrieve_file
-
-        job_id = payload.get("job_id", "")
-        staging_ids: list[str] = payload.get("staging_object_ids", [])
-        subject = payload.get("subject")
-        subject_id = payload.get("subject_id")
-        options = payload.get("options", {})
-        concurrency = payload.get("concurrency", 2)
-
-        sources: list[batch_svc.BatchImageSource] = []
-        for idx, staging_id in enumerate(staging_ids):
-            if not staging_id:
-                continue
-            file_path = retrieve_file(staging_id)
-            if not file_path:
-                continue
-            sources.append(batch_svc.BatchImageSource(
-                seq=idx + 1,
-                source_file=f"image_{idx + 1}.png",
-                temp_path=file_path,
-            ))
-
-        if not sources:
-            logger.error("No valid sources for batch image job %s", job_id)
-            return
-
-        await batch_svc.run_batch_job(
-            job_id=job_id,
-            sources=sources,
-            subject=subject,
-            subject_id=subject_id,
-            options=options,
-            concurrency=concurrency,
+        from app.services.db_fencing import (
+            FENCING_TABLES,
+            FencingRejectedError,
+            conditional_update_with_fencing,
         )
 
-    else:
-        # Unknown task type — dead-letter immediately, don't retry or complete
-        logger.warning("Unknown task type %s — marking as dead-letter: task_id=%s",
-                       task_type, task.task_id)
-        task.max_retries = 0
-        raise ValueError(f"unknown_task_type: {task_type}")
+        table_entry = FENCING_TABLES.get(task_type)
+        if table_entry is not None:
+            model_class, _id_col = table_entry
+            try:
+                async with async_session() as db:
+                    ok = await conditional_update_with_fencing(
+                        db=db,
+                        model_class=model_class,
+                        record_id=_fence_record_id,
+                        expected_task_id=task.task_id,
+                        expected_generation=task.generation,
+                        expected_owner_token=task.owner_token,
+                        execution_status="completed",
+                    )
+                    if not ok:
+                        await db.rollback()
+                        raise FencingRejectedError(
+                            f"Post-execution fence lost: "
+                            f"model={model_class.__name__} id={_fence_record_id} "
+                            f"task_id={task.task_id} gen={task.generation}"
+                        )
+                    await db.commit()
+            except FencingRejectedError:
+                raise
+            except Exception as e:
+                logger.warning(
+                    "Post-execution fence check failed (non-fatal): "
+                    "task_id=%s error=%s", task.task_id, e,
+                )
 
 
 async def _try_claim_any_v2(task_types: list[str], lease_sec: int) -> Task | None:
-    """Try to claim a task from any of the given task types. Returns first available."""
+    """Try to claim a task from any of the given task types. Returns first available.
+
+    Returns None only when all queues are genuinely empty.
+    Raises TaskQueueUnavailableError when Redis is unreachable.
+    """
     for task_type in task_types:
         try:
             task = await task_queue.dequeue_v2(task_type, lease_sec=lease_sec)
             if task is not None:
                 return task
+        except TaskQueueUnavailableError:
+            raise
         except Exception as e:
             logger.warning("v2 Dequeue failed for %s: %s", task_type, e)
     return None
@@ -880,6 +1094,13 @@ async def _process_claimed_task_v2(task: Task, lease_sec: int, sem: asyncio.Sema
                 logger.warning("v2 Complete error: task_id=%s error=%s", task.task_id, e)
     except asyncio.CancelledError:
         raise
+    except FencingRejectedError:
+        logger.warning(
+            "v2 DB fencing rejected (stale worker): task_id=%s type=%s gen=%d",
+            task.task_id, task.task_type, task.generation,
+        )
+        queue_metrics["owner_fencing_rejected"] += 1
+        # Do NOT call fail_v2 — this worker no longer owns the fence
     except Exception as e:
         logger.exception(
             "v2 Task failed: task_id=%s type=%s", task.task_id, task.task_type,
@@ -950,6 +1171,9 @@ async def run_dispatcher_v2(
         settings.WORKER_CONCURRENCY, poll_interval,
     )
 
+    _redis_failure_count = 0
+    _max_redis_failures = 10
+
     try:
         while _v2_worker_running and not _v2_worker_draining:
             # 1. Wait for an available slot before claiming
@@ -960,7 +1184,27 @@ async def run_dispatcher_v2(
                 break
 
             # 2. Claim one task (any type)
-            task = await _try_claim_any_v2(task_types, lease_sec)
+            try:
+                task = await _try_claim_any_v2(task_types, lease_sec)
+            except TaskQueueUnavailableError as e:
+                semaphore.release()
+                _redis_failure_count += 1
+                queue_metrics["queue_redis_failure"] += 1
+                backoff = min(e.retry_after * (1 << min(_redis_failure_count - 1, 4)), 300)
+                logger.error(
+                    "v2 Dispatcher Redis unavailable (failure #%d): %s — backing off %ds",
+                    _redis_failure_count, e, backoff,
+                )
+                if _redis_failure_count >= _max_redis_failures:
+                    logger.critical(
+                        "v2 Dispatcher circuit breaker OPEN after %d Redis failures — stopping claim loop",
+                        _redis_failure_count,
+                    )
+                    break
+                await asyncio.sleep(backoff)
+                continue
+
+            _redis_failure_count = 0
 
             if task is None:
                 # No task available — release slot and sleep
@@ -1126,7 +1370,7 @@ async def graceful_shutdown_v2(grace_sec: int | None = None) -> None:
             timeout=grace_sec,
         )
         logger.info("v2 Graceful shutdown: all active tasks completed within grace")
-    except asyncio.TimeoutError:
+    except TimeoutError:
         remaining = [t for t in list(_v2_active_processing) if not t.done()]
         if remaining:
             logger.warning(

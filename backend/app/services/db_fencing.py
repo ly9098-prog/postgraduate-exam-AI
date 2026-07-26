@@ -24,9 +24,25 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger("postgraduate-ai.db-fencing")
+
+
+def _get_pk_column(model_class: Any) -> str:
+    """Resolve the primary key column name for a SQLAlchemy model."""
+    try:
+        pk_cols = sa_inspect(model_class).primary_key
+        if pk_cols:
+            return pk_cols[0].name
+    except Exception:
+        pass
+    # Fallback: try common PK names
+    for candidate in ("id", "pipeline_id", "job_id"):
+        if hasattr(model_class, candidate):
+            return candidate
+    return "id"
 
 
 class FencingVerificationError(Exception):
@@ -34,6 +50,15 @@ class FencingVerificationError(Exception):
 
     Indicates that a stale worker is attempting to write business state
     for a task that was re-assigned to another worker.
+    """
+
+
+class FencingRejectedError(Exception):
+    """Raised when a conditional fenced UPDATE affects 0 rows.
+
+    The worker no longer owns the fence — its generation/task_id/owner_token
+    has been superseded. All further business writes must be aborted and the
+    current transaction rolled back.
     """
 
 
@@ -75,11 +100,12 @@ async def verify_fencing_or_raise(
     """
     from sqlalchemy import select
 
+    pk_col = getattr(model_class, _get_pk_column(model_class))
     stmt = select(
         model_class.execution_generation,
         model_class.current_task_id,
         model_class.current_owner_token,
-    ).where(model_class.id == record_id)
+    ).where(pk_col == record_id)
 
     result = await db.execute(stmt)
     row = result.one_or_none()
@@ -115,6 +141,53 @@ async def verify_fencing_or_raise(
         )
 
 
+async def conditional_update_with_fencing(
+    db: AsyncSession,
+    model_class: Any,
+    record_id: str | int,
+    *,
+    expected_task_id: str,
+    expected_generation: int,
+    expected_owner_token: str,
+    **values: Any,
+) -> bool:
+    """Atomically update a business record guarded by fencing WHERE clauses.
+
+    Executes an UPDATE with conditions on ``current_task_id``,
+    ``current_owner_token``, and ``execution_generation``. If any of
+    these fields no longer match, the UPDATE affects 0 rows and the
+    caller MUST abort.
+
+    Returns ``True`` if exactly 1 row was updated (fence still held).
+    Returns ``False`` if 0 rows were updated (fence lost — the caller
+    should raise ``FencingRejectedError`` and rollback).
+
+    The caller is responsible for committing or rolling back the
+    transaction.
+    """
+    from sqlalchemy import update
+
+    pk_col = getattr(model_class, _get_pk_column(model_class))
+    stmt = (
+        update(model_class)
+        .where(pk_col == record_id)
+        .where(model_class.current_task_id == expected_task_id)
+        .where(model_class.current_owner_token == expected_owner_token)
+        .where(model_class.execution_generation == expected_generation)
+        .values(**values)
+    )
+    result = await db.execute(stmt)
+    ok = result.rowcount == 1 if result.rowcount is not None else False
+    if not ok:
+        logger.warning(
+            "Fencing conditional UPDATE rejected: model=%s id=%s "
+            "task_id=%s gen=%d rowcount=%s",
+            model_class.__name__, record_id, expected_task_id,
+            expected_generation, result.rowcount,
+        )
+    return ok
+
+
 async def initialize_fencing_fields(
     db: AsyncSession,
     model_class: Any,
@@ -137,9 +210,10 @@ async def initialize_fencing_fields(
     """
     from sqlalchemy import update
 
+    pk_col = getattr(model_class, _get_pk_column(model_class))
     stmt = (
         update(model_class)
-        .where(model_class.id == record_id)
+        .where(pk_col == record_id)
         .where(
             # Only set if not already set by a higher generation
             (model_class.execution_generation == 0)
@@ -156,3 +230,38 @@ async def initialize_fencing_fields(
     result = await db.execute(stmt)
     await db.commit()
     return result.rowcount > 0
+
+
+# ── Fencing table registrations ──
+# Maps task_type → (model_class, id_column) for DB fencing verification.
+
+def _register_default_tables() -> None:
+    """Register known business models for DB fencing (idempotent)."""
+    if FENCING_TABLES:
+        return
+    try:
+        from app.models.import_pipeline import ImportPipeline
+        register_fencing_table("import_pipeline", ImportPipeline, "pipeline_id")
+    except ImportError:
+        pass
+    try:
+        from app.models.import_pipeline import ImportPipeline
+        register_fencing_table("image_pipeline", ImportPipeline, "pipeline_id")
+        register_fencing_table("excel_pipeline", ImportPipeline, "pipeline_id")
+        register_fencing_table("resume_pipeline", ImportPipeline, "pipeline_id")
+        register_fencing_table("admin_resume", ImportPipeline, "pipeline_id")
+    except ImportError:
+        pass
+    try:
+        from app.models.import_batch_job import ImportBatchJob
+        register_fencing_table("batch_image", ImportBatchJob, "job_id")
+    except ImportError:
+        pass
+    try:
+        from app.models.formula import FormulaCard
+        register_fencing_table("formula_batch", FormulaCard, "id")
+    except ImportError:
+        pass
+
+
+_register_default_tables()

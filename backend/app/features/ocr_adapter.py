@@ -305,37 +305,47 @@ class PaddleOCRLocalAdapter:
 
             is_pdf = request.source_type == "pdf"
             if is_pdf:
-                # PDF: use pipeline_orchestrator._ocr_scanned_pdf (handles PDF rendering
-                # via PyMuPDF internally). Run in thread pool to avoid blocking event loop.
-                from app.features.pipeline_orchestrator import _ocr_scanned_pdf
-                blocks = await asyncio.to_thread(
-                    _ocr_scanned_pdf, request.source,
-                    pipeline_id=trace_id,
-                    page_start=1, page_end=None,
-                )
-            else:
-                # Image: use ocr_pages_with_boxes via thread pool to avoid event loop crash
-                # (ocr_service helper is sync and uses _run_async internally).
-                from app.services.ocr_service import ocr_pages_with_boxes
-                page_results = await asyncio.to_thread(
-                    ocr_pages_with_boxes,
-                    [(1, request.source)],
-                    True,  # skip_rotation
-                )
-                blocks = []
-                for page_idx, result in page_results.items():
-                    # Get image dimensions from the input
-                    pw, ph = _get_image_dimensions(request.source)
-                    blocks.append({
-                        "page": page_idx,
-                        "text": result.text,
-                        "boxes": result.boxes or [],
-                        "page_width": pw or 0,
-                        "page_height": ph or 0,
-                        "source": "ocr",
-                        "has_boxes": bool(result.boxes),
-                        "_ocr_boxes_failed": result.failed,
-                    })
+                # Render PDF pages via PyMuPDF, then OCR each page image.
+                # Run in thread pool to avoid blocking event loop.
+                import io
+                import fitz
+
+                from app.core.config import settings
+
+                def _pdf_ocr(source: bytes) -> list[dict]:
+                    doc = fitz.open(stream=source, filetype="pdf")
+                    max_pages = settings.MAX_OCR_PAGES
+                    total_pages = len(doc)
+                    pages_to_process = (
+                        min(total_pages, max_pages) if max_pages > 0 else total_pages
+                    )
+                    page_images: list[tuple[int, bytes]] = []
+                    page_dims: dict[int, tuple[int, int]] = {}
+                    for i in range(pages_to_process):
+                        page = doc[i]
+                        pix = page.get_pixmap(dpi=200)
+                        img_bytes = pix.tobytes("png")
+                        page_images.append((i + 1, img_bytes))
+                        page_dims[i + 1] = (pix.width, pix.height)
+                    doc.close()
+
+                    results = ocr_pages_with_boxes(page_images, skip_rotation=True)
+                    blocks: list[dict] = []
+                    for page_idx, result in results.items():
+                        pw, ph = page_dims.get(page_idx, (0, 0))
+                        blocks.append({
+                            "page": page_idx,
+                            "text": result.text,
+                            "boxes": result.boxes or [],
+                            "page_width": pw,
+                            "page_height": ph,
+                            "source": "ocr",
+                            "has_boxes": bool(result.boxes),
+                            "_ocr_boxes_failed": result.failed,
+                        })
+                    return blocks
+
+                blocks = await asyncio.to_thread(_pdf_ocr, request.source)
 
             latency_ms = round((time.monotonic() - start) * 1000, 2)
 
