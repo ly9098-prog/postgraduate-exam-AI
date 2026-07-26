@@ -288,6 +288,10 @@ async def submit_to_review(
     prepared: list[tuple[dict, str, dict | None, str | None, int | None, str | None]] = []
     subject_hash_pairs: list[tuple[int | str | None, str | None]] = []
 
+    # Pre-compute hashes and batch duplicate lookups (2 queries instead of 2N)
+    prepared: list[tuple[dict, str, dict | None, str | None, str | None]] = []
+    subject_hash_pairs: list[tuple[str | None, str | None]] = []
+
     for q in questions:
         if not isinstance(q, dict):
             skipped += 1

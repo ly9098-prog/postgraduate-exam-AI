@@ -89,7 +89,7 @@ function _rawRequest(method, url, data, header, timeout) {
     wx.request({
       url: `${config.BASE_URL}${url}`,
       method,
-      data,
+      data: payload,
       header,
       timeout: timeout || 30000,
       success: resolve,

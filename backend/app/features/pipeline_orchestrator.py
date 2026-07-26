@@ -990,6 +990,30 @@ async def _get_pipeline_store(pipeline_id: str) -> dict | None:
     return None
 
 
+async def _set_pipeline_store(pipeline_id: str, data: dict) -> None:
+    _pipeline_store[pipeline_id] = data
+    _prune_store()
+    try:
+        from app.core.cache import cache
+        await cache.set(f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}", data, ttl=_PIPELINE_STATUS_TTL)
+    except Exception:
+        pass
+
+
+async def _get_pipeline_store(pipeline_id: str) -> dict | None:
+    if pipeline_id in _pipeline_store:
+        return _pipeline_store[pipeline_id]
+    try:
+        from app.core.cache import cache
+        data = await cache.get(f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}")
+        if data:
+            _pipeline_store[pipeline_id] = data
+            return data
+    except Exception:
+        pass
+    return None
+
+
 # ---------------------------------------------------------------------------
 # PDF text extraction
 # ---------------------------------------------------------------------------

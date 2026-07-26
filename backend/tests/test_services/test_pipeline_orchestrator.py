@@ -1127,6 +1127,242 @@ class TestImportPipelineSplit:
 
 
 # ---------------------------------------------------------------------------
+# _ocr_scanned_pdf
+# ---------------------------------------------------------------------------
+
+
+class TestOcrScannedPdf:
+    def test_renders_pages_and_calls_ocr(self):
+        from app.services.ocr_service import OcrPageResult
+
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        mock_page = MagicMock()
+        mock_pix = MagicMock()
+        mock_pix.tobytes.return_value = b"fake_png"
+        mock_pix.width = 800
+        mock_pix.height = 600
+        mock_page.get_pixmap.return_value = mock_pix
+        mock_doc.__len__ = MagicMock(return_value=1)
+        mock_doc.__getitem__ = MagicMock(return_value=mock_page)
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch(
+                "app.services.ocr_service.ocr_pages_with_boxes",
+                return_value={1: OcrPageResult(page_index=1, text="OCR识别结果", boxes=[])},
+            ) as mock_ocr:
+                with patch(
+                    "app.services.ocr_service.clean_ocr_text",
+                    side_effect=lambda t: t,
+                ):
+                    blocks = _ocr_scanned_pdf(b"pdf bytes")
+
+        assert len(blocks) == 1
+        assert blocks[0]["page"] == 1
+        assert blocks[0]["text"] == "OCR识别结果"
+        mock_ocr.assert_called_once_with([(1, b"fake_png")], skip_rotation=True)
+        mock_doc.close.assert_called_once()
+
+    def test_skips_empty_ocr_pages(self):
+        from app.services.ocr_service import OcrPageResult
+
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        pages = []
+        for _ in range(2):
+            p = MagicMock()
+            pix = MagicMock()
+            pix.tobytes.return_value = b"png"
+            pix.width = 800
+            pix.height = 600
+            p.get_pixmap.return_value = pix
+            pages.append(p)
+        mock_doc.__len__ = MagicMock(return_value=2)
+        mock_doc.__getitem__ = MagicMock(side_effect=lambda i: pages[i])
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            with patch(
+                "app.services.ocr_service.ocr_pages_with_boxes",
+                return_value={
+                    1: OcrPageResult(page_index=1, text="", boxes=[]),
+                    2: OcrPageResult(page_index=2, text="第二页内容", boxes=[]),
+                },
+            ):
+                with patch(
+                    "app.services.ocr_service.clean_ocr_text",
+                    side_effect=lambda t: t,
+                ):
+                    blocks = _ocr_scanned_pdf(b"pdf")
+
+        assert len(blocks) == 1
+        assert blocks[0]["page"] == 2
+
+    def test_empty_pdf_returns_empty(self):
+        mock_fitz = MagicMock()
+        mock_doc = MagicMock()
+        mock_doc.__len__ = MagicMock(return_value=0)
+        mock_fitz.open.return_value = mock_doc
+
+        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+            blocks = _ocr_scanned_pdf(b"empty pdf")
+
+        assert blocks == []
+
+
+class TestRunExtractOcrFallback:
+    def test_scanned_pdf_triggers_paddleocr(self):
+        pipeline = ImportPipeline()
+        sparse_blocks = [{"page": 1, "block_index": 0, "text": "ab"}]
+        ocr_blocks = [{"page": 1, "block_index": 0, "text": "OCR 识别到的完整内容"}]
+
+        with patch(
+            "app.features.pipeline_orchestrator._extract_pdf_blocks",
+            return_value=sparse_blocks,
+        ):
+            with patch(
+                "app.features.pipeline_orchestrator._ocr_scanned_pdf",
+                return_value=ocr_blocks,
+            ) as mock_ocr:
+                with patch("app.core.config.settings.OCR_ENABLED", True):
+                    result = pipeline._run_extract(b"pdf content", "pdf")
+
+        mock_ocr.assert_called_once_with(b"pdf content", pipeline_id="", page_start=1, page_end=None)
+        assert result["raw_blocks"] == ocr_blocks
+        assert result["extracted"] == 1
+
+    def test_scanned_pdf_ocr_disabled_uses_sparse(self):
+        pipeline = ImportPipeline()
+        sparse_blocks = [{"page": 1, "block_index": 0, "text": "ab"}]
+
+        with patch(
+            "app.features.pipeline_orchestrator._extract_pdf_blocks",
+            return_value=sparse_blocks,
+        ):
+            with patch("app.core.config.settings.OCR_ENABLED", False):
+                result = pipeline._run_extract(b"pdf content", "pdf")
+
+        assert result["raw_blocks"] == sparse_blocks
+
+    def test_scanned_pdf_ocr_failure_falls_back(self):
+        pipeline = ImportPipeline()
+        sparse_blocks = [{"page": 1, "block_index": 0, "text": "x"}]
+
+        with patch(
+            "app.features.pipeline_orchestrator._extract_pdf_blocks",
+            return_value=sparse_blocks,
+        ):
+            with patch(
+                "app.features.pipeline_orchestrator._ocr_scanned_pdf",
+                side_effect=RuntimeError("paddleocr 未安装"),
+            ):
+                with patch("app.core.config.settings.OCR_ENABLED", True):
+                    result = pipeline._run_extract(b"pdf content", "pdf")
+
+        assert result["raw_blocks"] == sparse_blocks
+
+    def test_normal_pdf_no_ocr_triggered(self):
+        pipeline = ImportPipeline()
+        blocks = [{"page": 1, "block_index": 0, "text": "A" * 200}]
+
+        with patch(
+            "app.features.pipeline_orchestrator._extract_pdf_blocks",
+            return_value=blocks,
+        ):
+            result = pipeline._run_extract(b"pdf content", "pdf")
+
+        assert result["raw_blocks"] == blocks
+        assert result["extracted"] == 1
+
+
+# ---------------------------------------------------------------------------
+# ImportPipeline — split stage
+# ---------------------------------------------------------------------------
+
+
+class TestImportPipelineSplit:
+    def test_fallback_question_created_for_unsplit_text(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [
+            {"page": 2, "block_index": 0, "normalized_text": "这是一段没有题号的 OCR 文本。"},
+            {"page": 3, "block_index": 1, "normalized_text": "仍然需要进入人工审核。"},
+        ]
+
+        result = pipeline._run_split(normalized_blocks)
+
+        assert result["split_count"] == 1
+        assert result["split_diagnostics"] == {
+            "normalized_block_count": 2,
+            "text_block_count": 2,
+            "raw_question_count": 0,
+            "raw_questions_preview": [],
+            "failure_reason": "text_present_but_no_question_boundary",
+            "fallback_created": True,
+        }
+        assert result["warnings"] == ["no questions found in document; created low-confidence review item"]
+        assert result["raw_questions"] == [{
+            "number": 1,
+            "raw_question_text": "这是一段没有题号的 OCR 文本。\n仍然需要进入人工审核。",
+            "page_start": 2,
+            "page_end": 3,
+            "has_options": False,
+            "option_lines": {},
+            "confidence": 0.2,
+        }]
+
+    def test_numbered_questions_do_not_use_fallback(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [
+            {"page": 1, "block_index": 0, "normalized_text": "1. 已编号题目\nA. 选项A\nB. 选项B"},
+        ]
+
+        result = pipeline._run_split(normalized_blocks)
+
+        assert result["split_count"] == 1
+        assert result["split_diagnostics"] == {
+            "normalized_block_count": 1,
+            "text_block_count": 1,
+            "raw_question_count": 1,
+            "raw_questions_preview": [
+                {
+                    "number": 1,
+                    "raw_question_text": "1. 已编号题目\nA. 选项A\nB. 选项B",
+                    "page_start": 1,
+                    "page_end": 1,
+                    "has_options": True,
+                    "option_lines": {"A": "选项A", "B": "选项B"},
+                    "confidence": 0.9,
+                    "section_type": None,
+                }
+            ],
+            "failure_reason": None,
+            "fallback_created": False,
+        }
+        assert result["warnings"] == []
+        assert result["raw_questions"][0]["confidence"] != 0.2
+
+    def test_match_uses_separated_structure(self):
+        pipeline = ImportPipeline()
+        normalized_blocks = [
+            {
+                "page": 1,
+                "block_index": 0,
+                "normalized_text": "1. 题目A\nA. 选项A\nB. 选项B\n2. 题目B\nA. 选项A\nB. 选项B",
+            },
+            {"page": 2, "block_index": 1, "normalized_text": "参考答案：\n1. B\n2. A"},
+        ]
+        structure = pipeline._run_analyze_structure(normalized_blocks)["structure"]
+        split = pipeline._run_split(normalized_blocks, structure=structure)
+        result = pipeline._run_match(split["raw_questions"], normalized_blocks, structure=structure)
+
+        assert structure["mode"] == "SEPARATED"
+        assert structure["answer_pages"] == [2]
+        assert [q["answer"] for q in result["matched"]] == ["B", "A"]
+        assert all(q["answer_source"] == "separated" for q in result["matched"])
+
+
+# ---------------------------------------------------------------------------
 # PipelineStage
 # ---------------------------------------------------------------------------
 

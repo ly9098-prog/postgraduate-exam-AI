@@ -37,10 +37,160 @@ from app.services.upload_validator import get_upload_validator
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/import")
 
+_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+_IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_MAX_IMAGE_PIPELINE_STORE_SIZE = 200
+_IMAGE_PIPELINE_STATUS_TTL_SECONDS = 86400
+_IMAGE_PIPELINE_REDIS_PREFIX = "import:image:pipeline"
+_image_pipeline_store: dict[str, dict] = {}
+
+
+def _image_pipeline_key(pipeline_id: str) -> str:
+    return f"{_IMAGE_PIPELINE_REDIS_PREFIX}:{pipeline_id}"
+
+
+def _prune_image_pipeline_store() -> None:
+    if len(_image_pipeline_store) <= _MAX_IMAGE_PIPELINE_STORE_SIZE:
+        return
+    over_limit = len(_image_pipeline_store) - _MAX_IMAGE_PIPELINE_STORE_SIZE
+    oldest_ids = sorted(
+        _image_pipeline_store,
+        key=lambda pid: _image_pipeline_store[pid].get("started_at", ""),
+    )[:over_limit]
+    for pipeline_id in oldest_ids:
+        _image_pipeline_store.pop(pipeline_id, None)
+
+
+async def _set_image_pipeline_status(image_pipeline_id: str, **updates) -> dict:
+    updates.pop("pipeline_id", None)
+    status = _image_pipeline_store.setdefault(
+        image_pipeline_id,
+        {
+            "pipeline_id": image_pipeline_id,
+            "status": "queued",
+            "source_type": "image",
+            "stages": {},
+            "stats": {},
+            "errors": [],
+            "batch_id": "",
+            "started_at": datetime.now().isoformat(),
+        },
+    )
+    if "started_at" in updates and status.get("started_at"):
+        updates = {key: value for key, value in updates.items() if key != "started_at"}
+    status.update(updates)
+    _prune_image_pipeline_store()
+    try:
+        await cache.set(
+            _image_pipeline_key(image_pipeline_id),
+            status,
+            ttl=_IMAGE_PIPELINE_STATUS_TTL_SECONDS,
+        )
+    except Exception:
+        logger.warning("image pipeline status cache write failed: pipeline_id=%s", image_pipeline_id)
+    return status
+
+
+async def _get_image_pipeline_status(pipeline_id: str) -> dict | None:
+    try:
+        cached = await cache.get(_image_pipeline_key(pipeline_id))
+    except Exception:
+        logger.warning("image pipeline status cache read failed: pipeline_id=%s", pipeline_id)
+        cached = None
+    if cached is not None:
+        _image_pipeline_store[pipeline_id] = cached
+        _prune_image_pipeline_store()
+        return cached
+    return _image_pipeline_store.get(pipeline_id)
+
+
+def _validate_image_content(content: bytes) -> tuple[int, int, str]:
+    try:
+        from PIL import Image, UnidentifiedImageError
+        import io
+    except ImportError as exc:
+        raise HTTPException(status_code=400, detail="图片解析依赖不可用") from exc
+
+    try:
+        with Image.open(io.BytesIO(content)) as img:
+            img.verify()
+        with Image.open(io.BytesIO(content)) as img:
+            width, height = img.size
+            image_format = (img.format or "").lower()
+    except UnidentifiedImageError as exc:
+        raise HTTPException(status_code=400, detail="图片内容无法解析") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="图片内容校验失败") from exc
+
+    if width <= 0 or height <= 0:
+        raise HTTPException(status_code=400, detail="图片尺寸无效")
+    return width, height, image_format
+
+
+def _build_ocr_text_diagnostics(raw_ocr_text: str, cleaned_text: str) -> dict:
+    raw_lines = [line for line in raw_ocr_text.splitlines() if line.strip()]
+    cleaned_lines = [line for line in cleaned_text.splitlines() if line.strip()]
+    return {
+        "raw_text_length": len(raw_ocr_text),
+        "cleaned_text_length": len(cleaned_text),
+        "raw_line_count": len(raw_lines),
+        "cleaned_line_count": len(cleaned_lines),
+        "raw_text_preview": raw_ocr_text[:1000],
+        "cleaned_text_preview": cleaned_text[:1000],
+        "text_length_delta": len(raw_ocr_text) - len(cleaned_text),
+        "line_count_delta": len(raw_lines) - len(cleaned_lines),
+    }
+
+
+def _build_ocr_runtime_diagnostics() -> dict:
+    return {
+        "ocr_enabled": settings.OCR_ENABLED,
+        "paddleocr_available": importlib.util.find_spec("paddleocr") is not None,
+    }
+
+
+def _classify_image_pipeline_result(result: dict, cleaned_text: str) -> str | None:
+    if not cleaned_text.strip():
+        return "ocr_empty_text"
+    split = result.get("diagnostics", {}).get("split", {})
+    if split.get("failure_reason") == "text_present_but_no_question_boundary":
+        return "text_present_but_split_failed"
+    schema_errors = result.get("diagnostics", {}).get("schema_errors", [])
+    if any("missing_options" in item.get("errors", []) for item in schema_errors if isinstance(item, dict)):
+        return "missing_options"
+    if result.get("status") != "completed":
+        return "pipeline_failed"
+    return None
+
+
+async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
+    current = await _get_image_pipeline_status(pipeline_id) or {}
+    errors = list(current.get("errors", []))
+    errors.append(error)
+    stages = dict(current.get("stages", {}))
+    if stages:
+        active_stage = next(
+            (
+                name
+                for name, stage in reversed(list(stages.items()))
+                if stage.get("status") in {"running", "pending"}
+            ),
+            None,
+        )
+        if active_stage:
+            stages[active_stage] = {**stages[active_stage], "status": "failed", "error": error}
+    await _set_image_pipeline_status(
+        pipeline_id,
+        status="failed",
+        errors=errors,
+        stages=stages,
+        finished_at=datetime.now().isoformat(),
+    )
+
 
 @router.get("/template")
 async def download_template(
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("import:read")),
 ):
     """下载 Excel 导入模板"""
     content = svc.generate_template()

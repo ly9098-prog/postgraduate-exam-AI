@@ -6,6 +6,200 @@ const adapter = require('../../utils/question-runner-adapter')
 
 const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
 
+function _deduplicateLines(text) {
+  if (!text) return text
+  const lines = text.split('\n')
+  const out = []
+  for (let i = 0; i < lines.length; i++) {
+    if (i === 0 || lines[i].trim() !== lines[i - 1].trim()) {
+      out.push(lines[i])
+    }
+  }
+  return out.join('\n')
+}
+
+function _needsRichRender(text) {
+  if (!text) return false
+  return /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/.test(text) || /<\/?[a-z][\s\S]*>/i.test(text)
+}
+
+function _escapeRegExp(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function _replaceSimpleLatexCommands(text) {
+  return String(text || '')
+    .replace(/\\leq/g, '≤')
+    .replace(/\\geq/g, '≥')
+    .replace(/\\neq/g, '≠')
+    .replace(/\\times/g, '×')
+    .replace(/\\cdot/g, '·')
+    .replace(/\\lt/g, '<')
+    .replace(/\\gt/g, '>')
+}
+
+function _toPlainInlineMathText(text) {
+  if (!text) return ''
+  const source = String(text)
+  if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
+  let plain = source.replace(/\$([^$\n]+?)\$/g, function(_, expr) {
+    return _replaceSimpleLatexCommands(expr).trim()
+  })
+  if (/\\[a-zA-Z]+/.test(plain)) return null
+  plain = plain.replace(/[ \t]+/g, ' ').replace(/\s+([，。！？；：,.!?;:])/g, '$1').trim()
+  return plain
+}
+
+function _stripLeadingOptionLabel(key, value) {
+  const text = String(value || '').trim()
+  if (!key || !text) return text
+  const label = _escapeRegExp(String(key).trim())
+  const labelPattern = new RegExp(`^${label}[\\s\\u00A0]*[.．、:：）)]\\s*`, 'i')
+  if (/^\s*\$/.test(text)) {
+    const inner = text.replace(/^\s*\$\s*/, '')
+    return '$' + inner.replace(labelPattern, '')
+  }
+  return text.replace(labelPattern, '')
+}
+
+function _normalizeOptionText(text) {
+  return String(text || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function _buildOptionPattern(key, value) {
+  const label = _escapeRegExp(String(key || '').trim())
+  const normalizedValue = _normalizeOptionText(value)
+  if (!label || !normalizedValue) return ''
+
+  const spaces = '[\\s\\u00A0]*'
+  const separator = '[.．、:：）)]'
+  const valuePattern = _escapeRegExp(normalizedValue).replace(/\s+/g, '[\\s\\u00A0]+')
+  return `${label}${spaces}${separator}${spaces}${valuePattern}`
+}
+
+function _stripEmbeddedOptionBlock(stemText, options) {
+  if (!stemText || !options) return stemText
+  const patterns = Object.keys(options)
+    .sort()
+    .map((key) => _buildOptionPattern(key, options[key]))
+    .filter(Boolean)
+
+  if (patterns.length < 2) return stemText
+
+  const gap = '(?:\\s|<br>|\\n|\\r|&nbsp;)*'
+  const blockRegex = new RegExp(`${gap}${patterns.join(gap)}\\s*$`, 'i')
+  return blockRegex.test(stemText) ? stemText.replace(blockRegex, '').trim() : stemText
+}
+
+function _stripTrailingOptionBlockByLabels(stemText, optionKeys) {
+  if (!stemText || !optionKeys || optionKeys.length < 2) return stemText
+  const matches = _findOptionLabelMatches(stemText, optionKeys)
+
+  if (matches.length < 2) return stemText
+
+  for (const index of matches) {
+    const suffix = stemText.slice(index)
+    if (_hasTrailingOptionBlock(suffix, optionKeys)) return stemText.slice(0, index).trim()
+  }
+
+  return stemText
+}
+
+function _findOptionLabelMatches(text, optionKeys) {
+  if (!text || !optionKeys || optionKeys.length < 2) return []
+  const labels = optionKeys.map(_escapeRegExp).join('|')
+  const labelMarker = `(?:^|[\\s\\n\\r])(?:${labels})[\\s\\u00A0]*[.．、:：）)]`
+  const labelRegex = new RegExp(labelMarker, 'g')
+  const matches = []
+  let match
+  while ((match = labelRegex.exec(text)) !== null) {
+    const index = match.index + (match[0].match(/^[\s\n\r]/) ? 1 : 0)
+    matches.push(index)
+  }
+  return matches
+}
+
+function _containsTrailingOptionBlock(text, optionKeys) {
+  const matches = _findOptionLabelMatches(text, optionKeys)
+  if (matches.length < 2) return false
+  return matches.some(index => _hasTrailingOptionBlock(String(text || '').slice(index), optionKeys))
+}
+
+function _hasTrailingOptionBlock(text, optionKeys) {
+  if (!text || !optionKeys || optionKeys.length < 2) return false
+  const keys = optionKeys.map(key => String(key || '').trim()).filter(Boolean)
+  if (keys.length < 2) return false
+
+  const spaces = '[\\s\\u00A0]*'
+  const separator = '[.．、:：）)]'
+  const marker = (key, prefix) => `${prefix}${_escapeRegExp(key)}${spaces}${separator}`
+  const first = marker(keys[0], '^' + spaces)
+  const second = marker(keys[1], '[\\s\\n\\r]+')
+  const required = new RegExp(first + '[\\s\\S]+?' + second, 'i')
+  if (!required.test(text)) return false
+
+  const labels = keys.map(_escapeRegExp).join('|')
+  const labelRegex = new RegExp(`(?:^|[\\s\\n\\r])(?:${labels})${spaces}${separator}`, 'g')
+  const found = []
+  let match
+  while ((match = labelRegex.exec(text)) !== null) {
+    found.push(String(match[0]).replace(/^[\s\n\r]+/, '').charAt(0).toUpperCase())
+  }
+  if (found.length < 2) return false
+  return found[0] === keys[0].toUpperCase() && found[1] === keys[1].toUpperCase()
+}
+
+function _shortText(text) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim()
+  return normalized.length > 80 ? normalized.slice(0, 80) + '...' : normalized
+}
+
+function _segmentsToText(segments) {
+  if (!Array.isArray(segments)) return ''
+  return segments.map((seg) => {
+    if (!seg) return ''
+    if (seg.type === 'text' || seg.type === 'newline') return seg.text || ''
+    return seg.alt ? `$${seg.alt}$` : ''
+  }).join('')
+}
+
+function _textToSegments(text) {
+  if (!text) return []
+  const lines = String(text).split('\n')
+  const segments = []
+  lines.forEach((line, index) => {
+    if (line) segments.push({ type: 'text', text: line })
+    if (index < lines.length - 1) segments.push({ type: 'newline' })
+  })
+  return segments
+}
+
+function _cleanStemText(stemText, options, optionKeys) {
+  const dedupedStem = _deduplicateLines(stemText)
+  const withoutExactOptions = _stripEmbeddedOptionBlock(dedupedStem, options)
+  const withoutLabelOptions = _stripTrailingOptionBlockByLabels(withoutExactOptions, optionKeys)
+  return _removeTrailingOptionKeys(withoutLabelOptions, optionKeys)
+}
+
+function _removeTrailingOptionKeys(text, optionKeys) {
+  if (!text || !optionKeys || optionKeys.length === 0) return text
+  const keys = optionKeys.map(_escapeRegExp).join('')
+  const pattern = new RegExp('\\s+[' + keys + ']\\s*$', 'g')
+  return text.replace(pattern, '')
+}
+
+function _optionTextToHtml(key, value) {
+  const text = String(value || '').trim()
+  if (!key) return _textToHtml(text)
+  const keyPattern = new RegExp(`^${_escapeRegExp(String(key))}[\\s\\u00A0]*[.．、:：）)]?\\s*`, 'i')
+  const normalized = keyPattern.test(text) ? text : `${key}. ${text}`
+  return _textToHtml(normalized)
+}
+
 Page({
   _pageAlive: false,
   _practiceSession: {},
@@ -506,6 +700,10 @@ Page({
     })
   },
 
+  chooseMode(e) {
+    this.setData({ selectedMode: e.currentTarget.dataset.mode })
+  },
+
   setCount(e) {
     this.setData({ count: Number(e.currentTarget.dataset.count) }, () => {
       this._updateComputedFields()
@@ -526,6 +724,8 @@ Page({
     this._practiceSession.traceId = traceId
     this._practiceSession.startTime = Date.now()
     this.setData({
+      traceId,
+      renderCount: 0,
       started: true,
       currentIndex: 0,
       answeredCount: 0,

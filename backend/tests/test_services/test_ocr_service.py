@@ -219,6 +219,169 @@ class TestOcrRotationAndOrdering:
         assert [line["text"] for line in ordered] == ["L1", "L2", "L3", "R1", "R2", "R3"]
 
 # ============================================================
+# ocr_image / dependency handling
+# ============================================================
+
+
+class TestServiceOcrImageDependencyHandling:
+    def test_missing_paddleocr_raises_clear_error(self):
+        """缺少 paddleocr 时应暴露明确依赖错误，而不是误报未识别到文本。"""
+        from app.services import ocr_service
+
+        with patch.object(ocr_service.settings, "OCR_ENABLED", True), patch.object(
+            ocr_service,
+            "_ocr_instance",
+            None,
+        ), patch.dict(sys.modules, {"paddleocr": None}):
+            with pytest.raises(RuntimeError, match="OCR 依赖未安装：paddleocr"):
+                ocr_service.ocr_image(b"fake image")
+
+    def test_ocr_pages_with_boxes_propagates_dependency_error(self):
+        """缺少 paddleocr 时，带框接口应容错返回空文本而非抛异常。"""
+        from app.services import ocr_service
+
+        with patch.object(ocr_service.settings, "OCR_ENABLED", True), patch.object(
+            ocr_service,
+            "_ocr_instance",
+            None,
+        ), patch.dict(sys.modules, {"paddleocr": None}):
+            result = ocr_service.ocr_pages_with_boxes([(1, b"fake image")])
+            assert result[1].text == ""
+            assert result[1].boxes == []
+
+
+# ============================================================
+# _prepare_ocr_image
+# ============================================================
+
+
+class TestPrepareOcrImage:
+    def test_prepare_ocr_image_applies_exif_transpose_and_returns_rgb(self):
+        from PIL import Image
+        from app.services.ocr_service import _prepare_ocr_image
+
+        image = Image.new("RGB", (1200, 800), "white")
+        exif = Image.Exif()
+        exif[274] = 6
+        buf = BytesIO()
+        image.save(buf, format="JPEG", exif=exif)
+
+        prepared = _prepare_ocr_image(buf.getvalue())
+
+        assert prepared.mode == "RGB"
+        assert prepared.size == (1500, 2250)
+
+    def test_prepare_ocr_image_upscales_small_image_within_max_side(self):
+        from PIL import Image
+        from app.services.ocr_service import _OCR_MAX_SIDE, _prepare_ocr_image
+
+        image = Image.new("RGB", (500, 800), "white")
+        buf = BytesIO()
+        image.save(buf, format="PNG")
+
+        prepared = _prepare_ocr_image(buf.getvalue())
+
+        assert prepared.mode == "RGB"
+        assert prepared.size[0] == 1500
+        assert max(prepared.size) <= _OCR_MAX_SIDE
+
+    def test_crop_blank_margins_keeps_blank_image_safe(self):
+        from PIL import Image
+        from app.services.ocr_service import _crop_blank_margins
+
+        image = Image.new("RGB", (800, 600), "white")
+
+        cropped = _crop_blank_margins(image)
+
+        assert cropped.size == image.size
+
+    def test_crop_blank_margins_removes_large_white_border(self):
+        from PIL import Image, ImageDraw
+        from app.services.ocr_service import _crop_blank_margins
+
+        image = Image.new("RGB", (1000, 800), "white")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((250, 200, 750, 600), fill="black")
+
+        cropped = _crop_blank_margins(image)
+
+        assert cropped.size[0] < image.size[0]
+        assert cropped.size[1] < image.size[1]
+        assert cropped.size[0] > 500
+        assert cropped.size[1] > 400
+
+
+class TestOcrRotationAndOrdering:
+    @staticmethod
+    def _ocr_line(text: str, bbox: list[list[int]], conf: float = 0.9):
+        return [bbox, [text, conf]]
+
+    def test_rotation_candidates_skip_when_initial_score_good(self):
+        from PIL import Image
+        from app.services import ocr_service
+
+        image = Image.new("RGB", (1200, 800), "white")
+        good_result = [[
+            self._ocr_line("1. 这是一道测试题目，包含足够多的文字", [[0, 0], [900, 0], [900, 20], [0, 20]]),
+            self._ocr_line("A. 选项一 B. 选项二 C. 选项三 D. 选项四", [[0, 30], [900, 30], [900, 50], [0, 50]]),
+            self._ocr_line("解析文本继续提供有效字符", [[0, 60], [900, 60], [900, 80], [0, 80]]),
+        ]]
+        mock_ocr = MagicMock()
+        mock_ocr.ocr.return_value = good_result
+
+        with patch.object(ocr_service, "_prepare_ocr_image", return_value=image):
+            candidate = ocr_service._ocr_with_rotation_candidates(mock_ocr, b"image")
+
+        assert candidate.result == good_result
+        assert candidate.image_size == image.size
+        assert mock_ocr.ocr.call_count == 1
+
+    def test_rotation_candidates_use_better_rotated_result(self):
+        from PIL import Image
+        from app.services import ocr_service
+
+        image = Image.new("RGB", (1200, 800), "white")
+        bad_result = [[self._ocr_line("?", [[0, 0], [10, 0], [10, 10], [0, 10]], 0.2)]]
+        rotated_result = [[
+            self._ocr_line("1. 旋转后识别出足够多文本内容", [[0, 0], [700, 0], [700, 20], [0, 20]]),
+            self._ocr_line("A. 选项一", [[0, 30], [300, 30], [300, 50], [0, 50]]),
+            self._ocr_line("B. 选项二", [[0, 60], [300, 60], [300, 80], [0, 80]]),
+        ]]
+        mock_ocr = MagicMock()
+        mock_ocr.ocr.side_effect = [bad_result, rotated_result, bad_result, bad_result]
+
+        with patch.object(ocr_service, "_prepare_ocr_image", return_value=image):
+            candidate = ocr_service._ocr_with_rotation_candidates(mock_ocr, b"image")
+
+        assert candidate.result == rotated_result
+        assert candidate.image_size == (800, 1200)
+        assert mock_ocr.ocr.call_count == 4
+
+    def test_single_column_order_uses_top_then_left(self):
+        from app.services.ocr_service import _order_ocr_lines_reading_order
+
+        lines = [
+            {"text": "second", "cx": 20, "cy": 50, "width": 100, "bbox": [0, 40, 100, 60]},
+            {"text": "first", "cx": 30, "cy": 10, "width": 100, "bbox": [0, 0, 100, 20]},
+        ]
+
+        ordered = _order_ocr_lines_reading_order(lines, 1000, 800)
+
+        assert [line["text"] for line in ordered] == ["first", "second"]
+
+    def test_two_column_order_reads_left_column_before_right(self):
+        from app.services.ocr_service import _order_ocr_lines_reading_order
+
+        lines = []
+        for idx, y in enumerate((100, 140, 180), start=1):
+            lines.append({"text": f"L{idx}", "cx": 150, "cy": y, "width": 200, "bbox": [50, y - 10, 250, y + 10]})
+            lines.append({"text": f"R{idx}", "cx": 750, "cy": y, "width": 200, "bbox": [650, y - 10, 850, y + 10]})
+
+        ordered = _order_ocr_lines_reading_order(lines, 1000, 800)
+
+        assert [line["text"] for line in ordered] == ["L1", "L2", "L3", "R1", "R2", "R3"]
+
+# ============================================================
 # is_ocr_enabled
 # ============================================================
 

@@ -39,7 +39,7 @@ page {
 
 .ambient-glow {
   position: absolute;
-  border-radius: 50%;
+  border-radius: 999rpx;
   pointer-events: none;
   filter: blur(2rpx);
 }
@@ -436,6 +436,18 @@ page {
   font-size: 27rpx;
   font-weight: 950;
   line-height: 1;
+  color: #FFFFFF;
+  font-weight: 800;
+}
+
+/* ── 左中：品牌文字 ── */
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  margin-left: 22rpx;
+  position: relative;
+  z-index: 1;
 }
 
 .login-arrow {
