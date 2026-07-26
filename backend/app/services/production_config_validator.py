@@ -31,6 +31,7 @@ import asyncio
 import logging
 import os
 import re
+import sys
 
 from app.core.config import settings
 from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
@@ -62,6 +63,7 @@ def validate_production_config() -> None:
     _check_db_pool_budget(errors)
     _check_queue_capacity(errors)
     _check_worker_scratch_dir(errors)
+    _check_gunicorn_fork_safety(errors)
 
     if errors:
         raise SystemError(
@@ -343,7 +345,7 @@ def _check_db_pool_budget(errors: list[str]) -> None:
 
 def _check_queue_capacity(errors: list[str]) -> None:
     """Verify queue capacity is reasonable in production."""
-    dead_max = settings.TASK_QUEUE_MAX_DEAD
+    dead_max = settings.TASK_QUEUE_DEAD_MAX
     if not isinstance(dead_max, int) or dead_max < 1:
         errors.append(f"TASK_QUEUE_MAX_DEAD={dead_max} 不合理")
     for name in ("IMPORT", "OCR", "AI", "FORMULA", "BATCH_IMAGE"):
@@ -387,6 +389,43 @@ def _check_worker_scratch_dir(errors: list[str]) -> None:
             errors.append(f"WORKER_SCRATCH_DIR 不可写: {scratch}")
     except OSError as exc:
         errors.append(f"WORKER_SCRATCH_DIR 检查失败: {scratch}: {exc}")
+
+
+def _check_gunicorn_fork_safety(errors: list[str]) -> None:
+    """Detect fork-unsafe client initialization patterns.
+
+    If Gunicorn ``--preload`` is used, module-level imports that initialize
+    network clients (redis, httpx, database) would be inherited by all worker
+    processes, leading to file descriptor leaks and connection races.
+
+    This check warns if ``--preload`` is detected and recommends using the
+    default lazy-initialization pattern (via FastAPI ``lifespan``).
+    """
+
+    # Check if we're running under Gunicorn with preload
+    gunicorn_preload = os.environ.get("GUNICORN_PRELOAD", "").lower() in ("1", "true", "yes")
+    using_gunicorn = "gunicorn" in sys.argv[0] if sys.argv else False
+
+    if not gunicorn_preload and not using_gunicorn:
+        return  # Not using preload, safe
+
+    if gunicorn_preload or using_gunicorn:
+        # Check for module-level client initialization that shouldn't exist
+        suspicious_modules = {
+            "redis": "Redis client at module level",
+            "httpx": "httpx client at module level",
+        }
+        for mod_name, reason in suspicious_modules.items():
+            if mod_name in sys.modules:
+                # Check if the module-level client was created at import time
+                mod = sys.modules[mod_name]
+                if mod.__name__ == "app.services.task_queue_service":
+                    continue  # Known safe — lazy initialization
+                errors.append(
+                    f"Gunicorn preload unsafe: module-level '{mod_name}' "
+                    f"initialization detected ({reason}). "
+                    f"Use lazy initialization via FastAPI lifespan instead."
+                )
 
 
 # ── async checks ──

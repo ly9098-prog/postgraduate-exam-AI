@@ -1,8 +1,13 @@
+import logging
+import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger("postgraduate-ai.config")
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="allow")
     APP_ENV: str = "development"
     APP_SECRET: str = "change-me-in-production"
     PROCESS_ROLE: str = "web"  # "web" | "worker" | "scheduler" | "all"
@@ -203,8 +208,10 @@ class Settings(BaseSettings):
     TASK_QUEUE_MAX_READY_AI: int = 20
     TASK_QUEUE_MAX_READY_BATCH_IMAGE: int = 10
     TASK_QUEUE_MAX_READY_FORMULA: int = 20
+    # TASK_QUEUE_MAX_RETRY renamed to TASK_QUEUE_RETRY_MAX (kept for backward compat, warning on conflict)
     TASK_QUEUE_MAX_RETRY: int = 500
     TASK_QUEUE_RETRY_MAX: int = 500
+    # TASK_QUEUE_MAX_DEAD renamed to TASK_QUEUE_DEAD_MAX (kept for backward compat, warning on conflict)
     TASK_QUEUE_MAX_DEAD: int = 1000
     TASK_QUEUE_DEAD_MAX: int = 1000
     TASK_QUEUE_CORRUPT_MAX: int = 100
@@ -279,6 +286,44 @@ class Settings(BaseSettings):
     ADAPTIVE_PATH_ENABLED: bool = True
     ADAPTIVE_WEIGHT_ENABLED: bool = True
     ADAPTIVE_DRY_RUN: bool = False
+
+
+    def warn_deprecated_env_vars(self) -> list[str]:
+        """Log warnings for deprecated env var names. Returns list of conflicts."""
+        conflicts: list[str] = []
+        deprecations: list[str] = []
+
+        # TASK_QUEUE_MAX_RETRY → TASK_QUEUE_RETRY_MAX
+        if self.TASK_QUEUE_MAX_RETRY != self.TASK_QUEUE_RETRY_MAX:
+            conflicts.append(
+                f"TASK_QUEUE_MAX_RETRY={self.TASK_QUEUE_MAX_RETRY} != "
+                f"TASK_QUEUE_RETRY_MAX={self.TASK_QUEUE_RETRY_MAX}. "
+                "Remove TASK_QUEUE_MAX_RETRY from env and use TASK_QUEUE_RETRY_MAX."
+            )
+        elif self.TASK_QUEUE_MAX_RETRY != 500:
+            deprecations.append(
+                "TASK_QUEUE_MAX_RETRY is deprecated, use TASK_QUEUE_RETRY_MAX"
+            )
+
+        # TASK_QUEUE_MAX_DEAD → TASK_QUEUE_DEAD_MAX
+        if self.TASK_QUEUE_MAX_DEAD != self.TASK_QUEUE_DEAD_MAX:
+            conflicts.append(
+                f"TASK_QUEUE_MAX_DEAD={self.TASK_QUEUE_MAX_DEAD} != "
+                f"TASK_QUEUE_DEAD_MAX={self.TASK_QUEUE_DEAD_MAX}. "
+                "Remove TASK_QUEUE_MAX_DEAD from env and use TASK_QUEUE_DEAD_MAX."
+            )
+        elif self.TASK_QUEUE_MAX_DEAD != 1000:
+            deprecations.append(
+                "TASK_QUEUE_MAX_DEAD is deprecated, use TASK_QUEUE_DEAD_MAX"
+            )
+
+        if os.environ.get("DEPLOY_PROFILE"):
+            deprecations.append("DEPLOY_PROFILE is deprecated, use DEPLOYMENT_PROFILE")
+
+        for msg in deprecations:
+            logger.warning("Configuration deprecation: %s", msg)
+
+        return conflicts
 
 
 settings = Settings()

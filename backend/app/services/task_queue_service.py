@@ -107,6 +107,8 @@ class TaskStatus(StrEnum):
     FAILED = "failed"
     DEAD = "dead"
     CORRUPT = "corrupt"
+    CANCELLED = "cancelled"
+    CANCEL_REQUESTED = "cancel_requested"
 
 
 @dataclass
@@ -128,6 +130,14 @@ class EnqueueResult:
         return self.accepted
 
 
+# Current task schema version for rolling deployment compatibility.
+# Increment when making backward-incompatible changes to task payload structure.
+_CURRENT_TASK_SCHEMA_VERSION: int = 2
+# Minimum worker version required to process this schema version.
+# Semver-like integer — v2 requires worker version >= 2.
+_MINIMUM_WORKER_VERSION: int = 1
+
+
 @dataclass
 class Task:
     """A task in the durable queue."""
@@ -143,6 +153,11 @@ class Task:
     owner_token: str = ""
     error: str = ""
     generation: int = 0
+    # Rolling deployment versioning fields
+    schema_version: int = _CURRENT_TASK_SCHEMA_VERSION
+    minimum_worker_version: int = _MINIMUM_WORKER_VERSION
+    created_by_version: str = ""
+    trace_id: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -158,6 +173,10 @@ class Task:
             "owner_token": self.owner_token,
             "error": self.error,
             "generation": self.generation,
+            "schema_version": self.schema_version,
+            "minimum_worker_version": self.minimum_worker_version,
+            "created_by_version": self.created_by_version,
+            "trace_id": self.trace_id,
         }
 
     @classmethod
@@ -175,6 +194,10 @@ class Task:
             owner_token=d.get("owner_token", ""),
             error=d.get("error", ""),
             generation=d.get("generation", 0),
+            schema_version=d.get("schema_version", 1),
+            minimum_worker_version=d.get("minimum_worker_version", 1),
+            created_by_version=d.get("created_by_version", ""),
+            trace_id=d.get("trace_id", ""),
         )
 
 
@@ -603,16 +626,19 @@ return {raw, owner_token, tostring(generation)}
 """
 
 # HEARTBEAT_V2 — verify BOTH owner_token AND generation
+# Uses Redis TIME instead of client-provided timestamps to prevent clock skew.
 # KEYS: [processing_key, heartbeat_prefix, task_hash_prefix, fencing_prefix]
-# ARGS: [task_id, new_lease_expiry, lease_ttl, owner_token]
+# ARGS: [task_id, lease_ttl, owner_token]
 # Returns: 1 on success, 0 on owner mismatch, -1 on generation mismatch
 _LUA_HEARTBEAT_V2 = """
 local task_id = ARGV[1]
-local new_expiry = tonumber(ARGV[2])
-local lease_ttl = tonumber(ARGV[3])
-local owner_token = ARGV[4]
+local lease_ttl = tonumber(ARGV[2])
+local owner_token = ARGV[3]
 
--- Verify owner via heartbeat
+-- Use Redis server time for lease expiry (clock-skew safe)
+local redis_now = redis.call("TIME")
+local now_sec = tonumber(redis_now[1])
+local new_expiry = now_sec + lease_ttl
 local stored = redis.call("GET", KEYS[2] .. ":" .. task_id)
 if not stored or stored ~= owner_token then
     return 0
@@ -747,14 +773,16 @@ redis.call("EXPIRE", KEYS[5] .. ":" .. task_id, fence_ttl)
 return 1
 """
 
-# REAPER_V2 — reclaim expired tasks (v2 keys), with ready queue capacity check
+# REAPER_V2 — reclaim expired tasks using Redis server time
+# Uses ``redis.call("TIME")`` instead of client-provided timestamps
+# so that all workers agree on lease expiry regardless of clock skew.
 # KEYS: [processing_key, queue_key, heartbeat_prefix, task_hash_prefix]
-# ARGS: [now_timestamp, batch_size, max_ready]
+# ARGS: [batch_size, max_ready]
 # Returns: count of reclaimed tasks (tasks that exceeded capacity are skipped)
 _LUA_REAPER_V2 = """
-local now = tonumber(ARGV[1])
-local limit = tonumber(ARGV[2]) or 100
-local max_ready = tonumber(ARGV[3])
+local now = tonumber(redis.call("TIME")[1])
+local limit = tonumber(ARGV[1]) or 100
+local max_ready = tonumber(ARGV[2])
 local expired = redis.call("ZRANGEBYSCORE", KEYS[1], 0, now, "LIMIT", 0, limit)
 local count = 0
 for _, task_id in ipairs(expired) do
@@ -851,6 +879,64 @@ redis.call("DEL", KEYS[4] .. ":" .. task_id)
 -- Fencing key gets tombstone TTL
 redis.call("EXPIRE", KEYS[5] .. ":" .. task_id, fence_ttl)
 return 1
+"""
+
+# CANCEL_V2 — atomic cancel with status-dependent behavior
+# KEYS: [queue_key, processing_key, retry_key, dead_key, heartbeat_prefix, task_hash_prefix, fencing_prefix]
+# ARGS: [task_id, reason, fencing_tombstone_ttl]
+# Returns:
+#   0 — already terminal or not found (idempotent)
+#   1 — pending → cancelled (removed from ready)
+#   2 — processing → cancel_requested (flag set on task hash)
+#   3 — retrying → cancelled (removed from retry ZSET)
+#   4 — in dead-letter → cancelled (removed from dead list)
+_LUA_CANCEL_V2 = """
+local task_id = ARGV[1]
+local reason = ARGV[2] or "cancelled by admin"
+local fence_ttl = tonumber(ARGV[3])
+
+-- Check task exists
+local status = redis.call("HGET", KEYS[6] .. ":" .. task_id, "status")
+if not status then
+    return 0  -- not found
+end
+
+-- Already terminal
+if status == "completed" or status == "cancelled" or status == "corrupt" then
+    return 0
+end
+
+if status == "pending" then
+    -- Remove from ready queue, set cancelled
+    redis.call("LREM", KEYS[1], 0, task_id)
+    redis.call("HSET", KEYS[6] .. ":" .. task_id, "status", "cancelled", "error", reason)
+    redis.call("EXPIRE", KEYS[6] .. ":" .. task_id, 86400)
+    return 1
+end
+
+if status == "processing" then
+    -- Set cancel_requested flag — worker will check at heartbeat boundary
+    redis.call("HSET", KEYS[6] .. ":" .. task_id, "cancel_requested", "1", "cancel_reason", reason)
+    return 2
+end
+
+if status == "failed" then
+    -- Remove from retry ZSET, set cancelled
+    redis.call("ZREM", KEYS[3], task_id)
+    redis.call("HSET", KEYS[6] .. ":" .. task_id, "status", "cancelled", "error", reason)
+    redis.call("EXPIRE", KEYS[6] .. ":" .. task_id, 86400)
+    return 3
+end
+
+if status == "dead" then
+    redis.call("LREM", KEYS[4], 0, task_id)
+    redis.call("HSET", KEYS[6] .. ":" .. task_id, "status", "cancelled", "error", reason)
+    redis.call("EXPIRE", KEYS[6] .. ":" .. task_id, 86400)
+    redis.call("DEL", KEYS[5] .. ":" .. task_id)
+    return 4
+end
+
+return 0
 """
 
 # ── Helpers ──
@@ -1010,6 +1096,7 @@ class DurableTaskQueue:
         self._lua_reaper_v2 = None
         self._lua_retry_claim_v2 = None
         self._lua_mark_corrupt_v2 = None
+        self._lua_cancel_v2 = None
 
     @property
     def _allow_local_fallback(self) -> bool:
@@ -1070,6 +1157,7 @@ class DurableTaskQueue:
         self._lua_reaper_v2 = await client.script_load(_LUA_REAPER_V2)
         self._lua_retry_claim_v2 = await client.script_load(_LUA_RETRY_CLAIM_V2)
         self._lua_mark_corrupt_v2 = await client.script_load(_LUA_MARK_CORRUPT_V2)
+        self._lua_cancel_v2 = await client.script_load(_LUA_CANCEL_V2)
 
     async def close(self) -> None:
         """Close the persistent Redis connection."""
@@ -1111,6 +1199,7 @@ class DurableTaskQueue:
             self._lua_reaper_v2 = None
             self._lua_retry_claim_v2 = None
             self._lua_mark_corrupt_v2 = None
+            self._lua_cancel_v2 = None
             await self._load_scripts(client)
             sha = getattr(self, sha_name, None)
             return await client.evalsha(sha, num_keys, *args)
@@ -1130,7 +1219,19 @@ class DurableTaskQueue:
 
         In production/cloud_api mode, returns ``EnqueueResult(accepted=False)``
         with an appropriate reason when Redis is unavailable or at capacity.
+
+        DEPRECATED: Use ``enqueue_v2`` instead. This method is kept for
+        backward compatibility with legacy callers but writes to v1 keys
+        (``taskq:queue:*``) which are NOT consumed by the v2 dispatcher.
+        In production/cloud_api, this method logs a warning on every call.
         """
+        if self._is_restricted:
+            logger.warning(
+                "v1 enqueue() called in restricted environment — "
+                "tasks go to v1 keys not consumed by v2 dispatcher. "
+                "Call enqueue_v2() instead. task_id=%s type=%s",
+                task_id or "?", task_type,
+            )
         tid = task_id or f"task_{uuid.uuid4().hex}"
 
         task = Task(
@@ -2094,7 +2195,7 @@ class DurableTaskQueue:
                 return 0
             await self._load_scripts(client)
 
-            new_expiry = time.time() + lease_sec
+            # Note: Lua uses Redis TIME internally for lease expiry, not client time
             result = await self._evalsha_or_reload(
                 client, "_lua_heartbeat_v2", 4,
                 _v2_p_key(task_type),
@@ -2102,7 +2203,6 @@ class DurableTaskQueue:
                 _V2_TASK_PREFIX,
                 _V2_FENCING_PREFIX,
                 task_id,
-                str(new_expiry),
                 str(lease_sec),
                 token,
             )
@@ -2120,7 +2220,8 @@ class DurableTaskQueue:
                 )
                 queue_metrics["owner_fencing_rejected"] += 1
             elif result == 1 and isinstance(task_or_id, Task):
-                task_or_id.lease_expires_at = new_expiry
+                # Best-effort local lease estimate (Redis TIME is authoritative)
+                task_or_id.lease_expires_at = time.time() + lease_sec
 
             return result
 
@@ -2353,6 +2454,64 @@ class DurableTaskQueue:
             logger.warning("v2 Mark corrupt error: %s", e)
             return False
 
+    async def cancel_v2(
+        self,
+        task_id: str,
+        task_type: str,
+        reason: str = "cancelled by admin",
+    ) -> int:
+        """Cancel a v2 task atomically using Lua.
+
+        Behavior by task status:
+
+        * ``pending`` → ``cancelled`` (removed from ready queue)
+        * ``processing`` → ``cancel_requested`` (flag set, worker checks at heartbeat)
+        * ``failed`` (retrying) → ``cancelled`` (removed from retry ZSET)
+        * ``dead`` → ``cancelled`` (removed from dead list)
+        * ``completed`` / ``cancelled`` / ``corrupt`` → no-op
+
+        Returns:
+            0 — already terminal or not found (idempotent)
+            1 — pending → cancelled
+            2 — processing → cancel_requested
+            3 — retrying → cancelled
+            4 — dead → cancelled
+        """
+        if not self._redis_enabled:
+            return 0
+
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                return 0
+            await self._load_scripts(client)
+
+            result = await self._evalsha_or_reload(
+                client, "_lua_cancel_v2", 7,
+                _v2_q_key(task_type),
+                _v2_p_key(task_type),
+                _v2_retry_key(task_type),
+                _v2_dead_key(task_type),
+                _V2_HEARTBEAT_PREFIX,
+                _V2_TASK_PREFIX,
+                _V2_FENCING_PREFIX,
+                task_id,
+                reason[:200],
+                str(_FENCING_TOMBSTONE_TTL),
+            )
+            await client.aclose()
+
+            result = int(result) if result is not None else 0
+            if result > 0:
+                logger.info(
+                    "v2 Cancel (code=%d): task_id=%s type=%s", result, task_id, task_type,
+                )
+            return result
+
+        except Exception as e:
+            logger.warning("v2 Cancel error: %s", e)
+            return 0
+
     async def _reclaim_expired_v2(self, task_type: str) -> int:
         """Reclaim expired v2 tasks whose worker heartbeat is gone."""
         if not self._redis_enabled:
@@ -2369,7 +2528,6 @@ class DurableTaskQueue:
                 _v2_q_key(task_type),
                 _V2_HEARTBEAT_PREFIX,
                 _V2_TASK_PREFIX,
-                str(time.time()),
                 "100",
                 str(_get_max_ready(task_type)),
             ) or 0
@@ -2644,6 +2802,47 @@ class DurableTaskQueue:
         except Exception as e:
             logger.warning("v2 Delete from corrupt failed: %s", e)
             return False
+
+    async def get_task_v2(self, task_id: str) -> dict | None:
+        """Retrieve a task by task_id from the v2 namespace.
+
+        Returns the task hash contents (including "data", "status", etc.)
+        or None if the task does not exist (hash missing or expired).
+
+        This is a read-only inspection method used by the outbox reconciler
+        and admin CLI. It does NOT modify any Redis state.
+
+        Raises:
+            QueueHealthError: Redis is unreachable.
+        """
+        if not self._redis_enabled:
+            raise QueueHealthError("Redis is not configured")
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                raise QueueHealthError("Cannot obtain Redis client")
+            exists = await client.exists(_v2_task_hash_key(task_id))
+            if not exists:
+                await client.aclose()
+                return None
+            raw = await client.hgetall(_v2_task_hash_key(task_id))
+            await client.aclose()
+            if not raw:
+                return None
+            # Parse "data" field from JSON
+            result: dict = {"task_id": task_id}
+            for k, v in raw.items():
+                if k == "data":
+                    try:
+                        import json
+                        result[k] = json.loads(v)
+                    except (json.JSONDecodeError, TypeError):
+                        result[k] = v
+                else:
+                    result[k] = v
+            return result
+        except redis_exc.RedisError as e:
+            raise QueueHealthError(f"Redis error fetching task {task_id}: {e}") from e
 
     # ══════════════════════════════════════════════════════════════════════════
     # v1 → v2 Drain / Migration

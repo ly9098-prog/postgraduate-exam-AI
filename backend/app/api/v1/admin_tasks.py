@@ -395,53 +395,56 @@ async def cancel_task(
     task_id: str,
     _=Depends(require_permissions("import:write")),
 ):
-    """Cancel a pending/retry task or request cancellation for a processing task."""
+    """Cancel a pending/retry task or request cancellation for a processing task.
+
+    Uses the atomic ``cancel_v2`` Lua script which handles all task states
+    (pending → cancelled, processing → cancel_requested, retry → cancelled,
+    dead → cancelled, terminal → no-op).
+    """
     from app.services.task_queue_service import (
-        _v2_q_key,
-        _v2_retry_key,
         _v2_task_hash_key,
         task_queue,
     )
 
     client = await _get_redis_client()
-
     hash_key = _v2_task_hash_key(task_id)
     data = await client.hgetall(hash_key)
 
     if not data:
+        await client.aclose()
         raise task_not_found(task_id)
 
     parsed = _parse_task_data(data)._parsed
     task_type = parsed.get("task_type", "")
-    status = data.get("status", "")
+    await client.aclose()
 
-    if status in ("pending", "retry"):
-        # Remove from ready/retry queue
-        if status == "pending":
-            await client.lrem(_v2_q_key(task_type), 1, task_id)
-        elif status == "retry":
-            await client.zrem(_v2_retry_key(task_type), task_id)
+    if not task_type:
+        raise HTTPException(status_code=400, detail=f"Cannot determine task_type for {task_id}")
 
-        await task_queue.mark_corrupt_v2(task_id, task_type, "cancelled by admin")
-        logger.info("Admin cancel: task_id=%s type=%s status=%s", task_id, task_type, status)
+    reason = "cancelled by admin"
+    result = await task_queue.cancel_v2(task_id, task_type, reason=reason)
+
+    messages = {
+        1: f"Task {task_id} cancelled (was pending).",
+        2: f"Cancellation requested for task {task_id}. Worker will stop at next safe checkpoint.",
+        3: f"Task {task_id} cancelled (was retrying).",
+        4: f"Task {task_id} cancelled (was in dead-letter).",
+    }
+    if result in messages:
+        logger.info("Admin cancel: task_id=%s type=%s code=%d", task_id, task_type, result)
         return TaskOperationResult(
             task_id=task_id,
             operation="cancel",
             success=True,
-            message=f"Task {task_id} cancelled.",
+            message=messages[result],
         )
-    elif status == "processing":
-        # Set cancellation flag — worker checks at safe points
-        await client.hset(hash_key, "cancel_requested", "1")
-        logger.info("Admin cancel request: task_id=%s type=%s (processing)", task_id, task_type)
-        return TaskOperationResult(
-            task_id=task_id,
-            operation="cancel",
-            success=True,
-            message=f"Cancellation requested for task {task_id}. Worker will stop at next safe checkpoint.",
+    elif result == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task {task_id} not found or already in terminal state (completed/cancelled/corrupt).",
         )
     else:
         raise HTTPException(
-            status_code=400,
-            detail=f"Task status '{status}' cannot be cancelled. Only pending/retry/processing tasks can be cancelled.",
+            status_code=500,
+            detail=f"Cancel failed for task {task_id} (error code {result}).",
         )
