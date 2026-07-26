@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Callable
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -82,7 +81,7 @@ async def _subscribe_all():
                     if msg and msg["type"] == "pmessage":
                         try:
                             payload = json.loads(msg["data"])
-                            task_id = payload.get("task_id")
+                            _task_id = payload.get("task_id")
                             # Forward to local connections once
                             # The payload already contains user_id from build_status_event
                             user_id = payload.get("user_id")

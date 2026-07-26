@@ -284,7 +284,7 @@ async def _process_one_task():
                 await db.commit()
                 await _publish_task_event(task_id, updated)
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # Real timeout — task was cancelled by asyncio.timeout()
         _heartbeat_stop = True
         logger.warning("export_task_timed_out", extra={

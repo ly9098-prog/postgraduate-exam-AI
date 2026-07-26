@@ -5,7 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.admin_security import AdminPrincipal
 from app.models.admin import Subject
 from app.models.question import Question
-from app.schemas.admin_subjects import AdminSubjectCreateRequest, AdminSubjectUpdateRequest
+from app.schemas.admin_subjects import (
+    AdminSubjectCreateRequest,
+    AdminSubjectUpdateRequest,
+)
 from app.services.admin_audit_service import write_admin_audit
 
 

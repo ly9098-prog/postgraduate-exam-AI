@@ -1,7 +1,9 @@
 import asyncio
 import hashlib
+import importlib
 import logging
 import os
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
@@ -9,8 +11,10 @@ from fastapi.responses import Response
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import cache
+from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import get_current_user, require_app_permission
+from app.core.security import require_app_permission
 from app.features import question_pipeline as svc
 from app.features.import_mode import ImportMode
 from app.models.user import User
@@ -106,8 +110,9 @@ async def _get_image_pipeline_status(pipeline_id: str) -> dict | None:
 
 def _validate_image_content(content: bytes) -> tuple[int, int, str]:
     try:
-        from PIL import Image, UnidentifiedImageError
         import io
+
+        from PIL import Image, UnidentifiedImageError
     except ImportError as exc:
         raise HTTPException(status_code=400, detail="图片解析依赖不可用") from exc
 

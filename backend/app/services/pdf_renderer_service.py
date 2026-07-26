@@ -319,7 +319,10 @@ class _PdfRenderer:
             all rendered pages in memory simultaneously and will raise
             ``PdfResourceLimitError`` if the deployment profile forbids it.
         """
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
 
         if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
             raise PdfResourceLimitError(

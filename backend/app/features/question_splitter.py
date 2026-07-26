@@ -219,7 +219,7 @@ _ANSWER_EXPLANATION_LINE = re.compile(
 )
 
 _OCR_OPTION_PATTERN = re.compile(
-    r"^" + _OPTION_NOISE_PREFIX + r"([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
+    r"^" + _OPTION_PREFIX_MARKER + r"([" + "".join(_OCR_OPTION_MAP.keys()) + r"])\s*[.、:：)）]\s*(.+)"
 )
 
 # 章节号模式：X.X 或 X.X.X 格式（非题号）
@@ -488,7 +488,9 @@ def _is_false_question_number(num: int, line: str) -> bool:
 
     统一委托 ``question_numbering._is_false_question_number``。
     """
-    from app.features.question_numbering import _is_false_question_number as _qn_is_false
+    from app.features.question_numbering import (
+        _is_false_question_number as _qn_is_false,
+    )
     return _qn_is_false(num, line)
 
 
@@ -1262,7 +1264,9 @@ def _extract_options(text: str) -> dict[str, str]:
     # FALLBACK: 委托至 question_type_classifier SSOT 进行宽模式提取
     # 覆盖代码片段、断裂 OCR 等导致行首匹配失败的情况
     if len(options) < 2:
-        from app.features.question_type_classifier import extract_options_from_text as _ssot_extract
+        from app.features.question_type_classifier import (
+            extract_options_from_text as _ssot_extract,
+        )
         fallback_opts = _ssot_extract(cleaned_text)
         if len(fallback_opts) >= len(options):
             options = fallback_opts

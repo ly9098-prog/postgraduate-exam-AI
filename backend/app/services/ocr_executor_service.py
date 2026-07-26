@@ -42,7 +42,10 @@ class _OcrExecutorService:
         The _OcrExecutorService uses local PaddleOCR, which must never
         be imported or initialized in cloud_api / production deployments.
         """
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
 
         if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
             raise RuntimeError(
@@ -162,7 +165,10 @@ class _OcrExecutorService:
         started and importing ``ocr_process_pool`` would violate the
         cloud isolation contract.
         """
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
         if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
             self._shutdown = True
             logger.info("OCR executor shutdown skipped (cloud profile — no local pool)")

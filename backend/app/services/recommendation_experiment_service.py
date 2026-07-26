@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
 from app.models.recommendation_experiment import RecommendationExperiment
-from app.models.recommendation_experiment_assignment import RecommendationExperimentAssignment
+from app.models.recommendation_experiment_assignment import (
+    RecommendationExperimentAssignment,
+)
 from app.models.recommendation_metrics_daily import RecommendationMetricsDaily
 
 logger = logging.getLogger(__name__)

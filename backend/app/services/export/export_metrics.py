@@ -6,8 +6,6 @@ Can be extended to use the ``prometheus-client`` library when deployed.
 
 from __future__ import annotations
 
-import time
-from collections import defaultdict
 from threading import Lock
 
 _lock = Lock()

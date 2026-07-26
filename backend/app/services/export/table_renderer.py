@@ -221,7 +221,6 @@ def _ensure_merge_xml(table) -> None:
     ``w:gridSpan`` / ``w:vMerge`` in all cases.  This helper scans
     the table and ensures merged cells have the right attributes.
     """
-    from docx.oxml import OxmlElement
     for row_idx, row in enumerate(table.rows):
         for cell_idx, cell in enumerate(row.cells):
             tc = cell._tc

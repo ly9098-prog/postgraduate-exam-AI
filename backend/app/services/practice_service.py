@@ -14,7 +14,6 @@ from app.models.question_import import (
 )
 from app.services.admin_subject_service import resolve_subject_ids
 from app.services.behavior_service import record_answer_behavior
-from app.services.review_scheduler import auto_schedule_wrong_question
 from app.services.wrong_question_service import record_wrong
 from app.utils.answer_normalizer import is_answer_correct
 
@@ -1869,11 +1868,6 @@ async def submit_answer(
             "Leitner 状态更新失败（不影响答题）qid=%d uid=%d",
             question_id, user_id, exc_info=True,
         )
-        results.append(r)
-        if r["is_correct"]:
-            total_correct += 1
-        else:
-            total_wrong += 1
 
     # ── V6: 个性化调度状态更新（best-effort）──
     try:

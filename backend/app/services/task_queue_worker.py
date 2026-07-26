@@ -775,7 +775,10 @@ async def _process_task_v2(task: Task) -> None:
     Raises:
         ValueError: If worker version is incompatible with task payload.
     """
-    from app.features.pipeline_checkpoint import clear_fencing_context, set_fencing_context
+    from app.features.pipeline_checkpoint import (
+        clear_fencing_context,
+        set_fencing_context,
+    )
 
     # Check worker-task version compatibility at entry
     await _check_worker_version_compatibility(task)

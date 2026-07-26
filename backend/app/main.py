@@ -159,7 +159,10 @@ async def lifespan(app: FastAPI):
 
     # Check sys.modules for banned OCR packages in cloud_api
     try:
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
         if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
             banned = {"paddle", "paddleocr"}
             loaded = {mod for mod in banned if mod in sys.modules}
@@ -297,7 +300,10 @@ async def lifespan(app: FastAPI):
 
     # ── Role-aware BoundedExecutors ──
     try:
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
         from app.core.executor_registry import init_executor_registry
         from app.core.executors import init_executors_for_role
 
@@ -550,7 +556,9 @@ async def lifespan(app: FastAPI):
                 logger.warning("Pomodoro scheduler stop error: %s", e)
 
             try:
-                from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
+                from app.services.audit_cleanup_scheduler import (
+                    audit_log_cleanup_scheduler,
+                )
                 await audit_log_cleanup_scheduler.stop()
                 logger.info("Audit log cleanup scheduler stopped")
             except Exception as e:
@@ -567,7 +575,9 @@ async def lifespan(app: FastAPI):
 
         # 5. Shutdown formula render ProcessPoolExecutor (common)
         try:
-            from app.services.formula_graph_spec_renderer import shutdown_formula_render_pool
+            from app.services.formula_graph_spec_renderer import (
+                shutdown_formula_render_pool,
+            )
             await asyncio.wait_for(
                 asyncio.to_thread(
                     shutdown_formula_render_pool,
@@ -590,7 +600,10 @@ async def lifespan(app: FastAPI):
         # Cloud profile: skip OCR executor shutdown — it imports local PaddleOCR modules.
         if role in ("web", "all"):
             try:
-                from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+                from app.core.deployment_profile import (
+                    DeploymentProfile,
+                    detect_deployment_profile,
+                )
                 if detect_deployment_profile() != DeploymentProfile.CLOUD_API:
                     from app.services.ocr_executor_service import ocr_executor
                     await asyncio.wait_for(
@@ -625,7 +638,10 @@ async def lifespan(app: FastAPI):
 
         # 7. BoundedExecutors shutdown
         try:
-            from app.core.executor_registry import clear_executor_registry, get_all_executors
+            from app.core.executor_registry import (
+                clear_executor_registry,
+                get_all_executors,
+            )
             from app.core.executors import shutdown_executors
             await shutdown_executors(get_all_executors())
             clear_executor_registry()
@@ -1014,7 +1030,10 @@ async def _check_redis() -> bool:
     In production, Redis is mandatory — returns False if not configured.
     """
     if not settings.REDIS_URL:
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
         try:
             if detect_deployment_profile() == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production":
                 return False
@@ -1104,7 +1123,10 @@ async def _check_role_deps() -> bool:
     role = settings.PROCESS_ROLE
     is_cloud = False
     try:
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
         is_cloud = detect_deployment_profile() == DeploymentProfile.CLOUD_API
     except Exception:
         pass

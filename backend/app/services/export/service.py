@@ -29,7 +29,6 @@ from app.schemas.export_task import (
     ExportTaskStatus,
 )
 from app.services.export.data_builder import build_snapshot_data
-from app.services.export.exporter_base import Exporter
 from app.services.export.export_metrics import (
     inc_completed,
     inc_created,
@@ -38,6 +37,7 @@ from app.services.export.export_metrics import (
     observe_processing_seconds,
     observe_queue_wait_seconds,
 )
+from app.services.export.exporter_base import Exporter
 from app.services.export.pdf_exporter import PdfExporter
 from app.services.export.range_resolver import resolve_range
 from app.services.export.snapshot_service import create_snapshot
@@ -274,7 +274,7 @@ async def process_task(
             from app.services.storage_backend import get_export_storage
             storage = get_export_storage()
             file_key = f"{task.id}/{task.file_name}"
-            file_url = await storage.upload(file_key, result.file_bytes)
+            _file_url = await storage.upload(file_key, result.file_bytes)
 
             task.status = ExportTaskStatus.COMPLETED
             task.file_key = file_key

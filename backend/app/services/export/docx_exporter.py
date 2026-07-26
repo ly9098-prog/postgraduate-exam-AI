@@ -7,6 +7,8 @@ Content strategy mirrors PdfExporter:
 - Tables are rendered as Word native tables; markdown tables are parsed.
 - Code blocks use monospace font with gray background.
 
+from __future__ import annotations
+
 Font strategy:
 - Chinese body: SimSun (宋体), fallback DengXian (等线)
 - Chinese heading: SimHei (黑体)

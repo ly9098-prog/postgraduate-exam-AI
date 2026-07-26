@@ -53,7 +53,11 @@ _RISK_FLAGS_REQUIRE_REPAIR = frozenset({
 })
 
 # 内存 token 计数器（共享模块，与 ocr_correction 同一预算池）
-from app.features.code_integrity import contains_code, detect_code_block_integrity, is_code_question
+from app.features.code_integrity import (
+    contains_code,
+    detect_code_block_integrity,
+    is_code_question,
+)
 from app.features.token_budget import (
     check_token_limit,
     estimate_tokens,

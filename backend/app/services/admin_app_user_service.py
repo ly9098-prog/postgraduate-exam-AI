@@ -11,7 +11,10 @@ from app.models.app_user_admin_binding import AppUserAdminBinding
 from app.models.practice_record import PracticeRecord
 from app.models.user import User
 from app.models.wrong_question import WrongQuestion
-from app.schemas.admin_app_users import AdminAppUserBanRequest, AdminAppUserUpdateRequest
+from app.schemas.admin_app_users import (
+    AdminAppUserBanRequest,
+    AdminAppUserUpdateRequest,
+)
 from app.services.admin_audit_service import write_admin_audit
 
 

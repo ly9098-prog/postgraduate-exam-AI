@@ -141,7 +141,10 @@ class QuestionNormalizer:
     }
 
     def normalize(self, raw: dict, source: dict | None = None) -> dict:
-        from app.services.formula_normalizer import normalize_text_import_math, wrap_inline_math
+        from app.services.formula_normalizer import (
+            normalize_text_import_math,
+            wrap_inline_math,
+        )
 
         plain_math = bool(raw.get("preserve_plain_math"))
         subject = self.normalize_subject(raw.get("subject") or raw.get("科目"))
@@ -375,7 +378,10 @@ class QuestionNormalizer:
         normalized: list[dict] = []
         used: set[str] = set()
         next_index = 0
-        from app.services.formula_normalizer import normalize_text_import_math, wrap_inline_math
+        from app.services.formula_normalizer import (
+            normalize_text_import_math,
+            wrap_inline_math,
+        )
 
         plain_math = bool(getattr(self, "_plain_math_options", False))
         for key, value in items:
@@ -1556,7 +1562,10 @@ from app.features.question_ai_complete import (  # noqa: E402, F401
     complete_import,
     complete_import_with_strategy,
 )
-from app.features.question_ai_enrich import enrich_batch, enrich_import  # noqa: E402, F401
+from app.features.question_ai_enrich import (  # noqa: E402, F401
+    enrich_batch,
+    enrich_import,
+)
 from app.features.question_draft_generator import generate_drafts  # noqa: E402, F401
 from app.features.question_import_writer import (  # noqa: E402, F401
     _apply_duplicate_fields,

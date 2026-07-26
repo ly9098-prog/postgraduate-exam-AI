@@ -1,5 +1,11 @@
 """视觉题目边界检测器 — 利用 OCR bbox 坐标检测题目分界。
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.core.document_ir import DocumentIR
+
+
 当正则题号切分失败时（整本教材 OCR 无法识别题号边界），
 通过行间距突变和缩进重置信号辅助切分。
 """

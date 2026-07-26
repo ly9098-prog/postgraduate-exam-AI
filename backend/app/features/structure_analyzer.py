@@ -1,5 +1,11 @@
 """文档结构分析器 — 纯规则实现。
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.core.document_ir import DocumentIR
+
+
 分析文档的宏观结构：识别题目/答案/解析区域，判断题目-答案组织模式。
 不做逐题切分、不做答案匹配、不调用 AI。
 """

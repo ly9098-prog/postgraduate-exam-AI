@@ -3,7 +3,11 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.admin_security import AdminPrincipal, hash_admin_password, set_admin_user_nbf
+from app.core.admin_security import (
+    AdminPrincipal,
+    hash_admin_password,
+    set_admin_user_nbf,
+)
 from app.models.admin import AdminUser, Role
 from app.schemas.admin_users import (
     AdminUserCreateRequest,

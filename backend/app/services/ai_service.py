@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.client import deepseek
 from app.ai.context import build_error_context
 from app.ai.fallback import get_fallback_advice, get_fallback_analysis
-from app.ai.prompts import AI_ANALYSIS_PROMPT_VERSION, build_error_analysis, build_study_advice
+from app.ai.prompts import (
+    AI_ANALYSIS_PROMPT_VERSION,
+    build_error_analysis,
+    build_study_advice,
+)
 from app.models.ai_chat import AiChat
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion

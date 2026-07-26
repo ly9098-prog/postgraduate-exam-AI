@@ -5,6 +5,12 @@ Extracted from ``pipeline_orchestrator.py:_run_match`` (P5-2).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.core.document_ir import DocumentIR
+
+
 import logging
 
 from app.features.answer_matcher import match_answers

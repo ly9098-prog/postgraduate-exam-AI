@@ -4,7 +4,6 @@ import re
 
 from app.models.question_import import QuestionImport
 
-
 SUBJECT_VALUES = {"math2", "exam408", "english"}
 TYPE_VALUES = {"choice", "fill", "subjective"}
 
