@@ -6,13 +6,13 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import decode_token, get_current_user
 from app.models.export_task import ExportTask
 from app.models.user import User
 from app.schemas.common import RawPaginatedResponse, paginated_response
@@ -42,6 +42,16 @@ router = APIRouter(prefix="/api/v1/exports")
 
 # ── Idempotency window (seconds) ──
 _IDEMPOTENCY_WINDOW_SEC = 60
+
+# ── MIME types per format ──
+_FORMAT_MIME: dict[str, str] = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+def _mime_for_format(file_format: str) -> str:
+    return _FORMAT_MIME.get(file_format, "application/octet-stream")
 
 
 @router.post("/preview-count", response_model=PreviewCountResponse)
@@ -167,7 +177,7 @@ async def download_export(
             method="stream",
             file_name=task.file_name,
             file_size=task.file_size or os.path.getsize(file_path),
-            content_type="application/pdf",
+            content_type=_mime_for_format(task.file_format),
         )
     else:
         # COS — generate a short-lived signed URL (never return a permanent URL)
@@ -179,7 +189,7 @@ async def download_export(
             method="signed_url",
             file_name=task.file_name,
             file_size=task.file_size or 0,
-            content_type="application/pdf",
+            content_type=_mime_for_format(task.file_format),
         )
 
 
@@ -206,7 +216,7 @@ async def stream_export_file(
     encoded_name = _url_encode_filename(task.file_name)
     return FileResponse(
         path=file_path,
-        media_type="application/pdf",
+        media_type=_mime_for_format(task.file_format),
         filename=task.file_name,
         headers={
             "Content-Disposition": f'inline; filename="{encoded_name}"',
@@ -312,6 +322,38 @@ async def re_export(
     await db.commit()
     await db.refresh(new_task)
     return _task_to_response(new_task)
+
+
+# ── WebSocket: real-time export status push ──
+
+
+@router.websocket("/ws")
+async def export_status_ws(ws: WebSocket):
+    """WebSocket endpoint for real-time export task status.
+
+    Authentication: pass JWT token as ``token`` query parameter.
+    The user will receive export task status events for their own tasks.
+
+    Protocol:
+    - Client sends ``{"type": "ping"}`` → server responds ``{"type": "pong"}``
+    - Server sends ``{"type": "export_status", "task_id": ..., ...}``
+    - Server sends ``{"type": "ping"}`` periodically (heartbeat)
+    """
+    # Authenticate via query param
+    token = ws.query_params.get("token", "")
+    if not token:
+        await ws.close(code=4001, reason="Missing token")
+        return
+
+    try:
+        user_id = decode_token(token)
+    except Exception:
+        await ws.close(code=4001, reason="Invalid token")
+        return
+
+    from app.services.export.push_service import handle_export_ws
+
+    await handle_export_ws(ws, user_id)
 
 
 # ── Internal helpers ──

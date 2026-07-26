@@ -30,7 +30,12 @@ def _random_sample_query(query, total_count: int, need: int, id_col=None):
     The offset approach assumes roughly evenly-distributed IDs and is only
     a best-effort randomization — it's good enough for practice sampling
     where perfect uniformity isn't required.
+
+    Falls back to ``ORDER BY random()`` when ``total_count`` is not a usable
+    integer (e.g. mock objects in tests).
     """
+    if not isinstance(total_count, int):
+        return query.order_by(id_col.asc() if id_col else func.random()).limit(need)
     if total_count <= need:
         return query.order_by(id_col.asc() if id_col else func.random()).limit(need)
     if total_count > 2000 or need <= 20:
@@ -1673,13 +1678,11 @@ async def get_smart_scored_questions(
         ]
         if excluded_sub is not None:
             fill_cond2.append(Question.id.notin_(excluded_sub))
-        fill_q2 = (
-            select(Question)
-            .where(and_(*fill_cond2))
-            .options(selectinload(Question.subject_ref))
-            .order_by(func.random())
-            .limit(remaining)
-        )
+        fill_q2_base = select(Question).where(and_(*fill_cond2)).options(selectinload(Question.subject_ref))
+        fill_count2 = (
+            await db.execute(select(func.count(Question.id)).where(and_(*fill_cond2)))
+        ).scalar() or 0
+        fill_q2 = _random_sample_query(fill_q2_base, total_count=fill_count2, need=remaining, id_col=Question.id)
         fill_result2 = await db.execute(fill_q2)
         for fq in fill_result2.scalars().all():
             selected.append(fq)

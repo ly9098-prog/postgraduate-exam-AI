@@ -2,6 +2,7 @@
 
 Combines system-level monitoring (RSS, memory, event-loop lag) with
 per-pipeline budgeting (input size, pages, pixels, OCR calls, artifacts).
+Redis-backed ZSET reservation replaces the previous INCR/DECR semaphore.
 
 Usage::
 
@@ -13,8 +14,12 @@ Usage::
         return {"error": "resource_pressure", "detail": reason}
 
     # Async context manager (preferred — atomic acquire/release)
-    async with resource_guard.acquire_pipeline() as acquired:
-        if not acquired:
+    async with resource_guard.acquire_pipeline(
+        resource_type="import_pipeline",
+        task_id=pipeline_id,
+        owner_token=worker_id,
+    ) as token:
+        if not token:
             return JSONResponse({"error": "resource_pressure"}, status_code=503)
         # ... pipeline work ...
 
@@ -28,9 +33,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+import uuid
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.core.config import settings
 from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
@@ -50,55 +57,131 @@ ARTIFACT_SIZE_LIMIT_EXCEEDED = "ARTIFACT_SIZE_LIMIT_EXCEEDED"
 PIPELINE_TIMEOUT = "PIPELINE_TIMEOUT"
 PAGE_TIMEOUT = "PAGE_TIMEOUT"
 
-# ── Redis-backed distributed semaphore for cross-process pipeline admission ──
+# ── Redis v2 ZSET reservation keys ──
+# Uses `{resource_type}` hash tag for cross-key atomicity in cluster mode.
 
-_RESOURCE_PREFIX = "resource:active_pipelines"
-_RESOURCE_SEM_KEY = f"{_RESOURCE_PREFIX}:semaphore"
-_RESOURCE_TTL = 3600  # 1 hour max pipeline lifetime (safety net for crashes)
+_V2_RESOURCE_ZSET_TPL = "resource:v2:{rt}:zset"
+_V2_RESOURCE_META_TPL = "resource:v2:{rt}:meta:{token}"
+_V2_RESOURCE_META_PREFIX_TPL = "resource:v2:{rt}:meta:"
 
-# Lua: atomic check-and-increment (rejects when at capacity)
-# KEYS: [semaphore_key]
-# ARGS: [max_concurrent, ttl_sec]
-# Returns: new_count on success (>0), -1 if at capacity
-_LUA_ACQUIRE_SEM = """
-local key = KEYS[1]
-local max = tonumber(ARGV[1])
-local ttl = tonumber(ARGV[2])
-local current = redis.call("GET", key)
-if current then
-    current = tonumber(current)
-else
-    current = 0
+# Lua: atomic acquire — clean expired, check capacity, add + metadata
+# KEYS: [zset_key, meta_key]
+# ARGS: [resource_type, task_id, owner_token, generation, ttl_sec, capacity, token, now_ts]
+# Returns: "OK" on success, "" on capacity
+_LUA_ACQUIRE_RESERVATION_V2 = """
+local zset_key = KEYS[1]
+local meta_key = KEYS[2]
+local capacity = tonumber(ARGV[6])
+local token = ARGV[7]
+local now = tonumber(ARGV[8])
+local ttl = tonumber(ARGV[5])
+
+-- Clean expired
+redis.call("ZREMRANGEBYSCORE", zset_key, "-inf", now)
+
+-- Check capacity
+local current = redis.call("ZCARD", zset_key)
+if current >= capacity then
+    return ""
 end
-if current >= max then
-    return -1
-end
-redis.call("INCR", key)
-redis.call("EXPIRE", key, ttl)
-return current + 1
+
+-- Add reservation
+local expires_at = now + ttl
+redis.call("ZADD", zset_key, expires_at, token)
+redis.call("HSET", meta_key,
+    "task_id", ARGV[2],
+    "owner_token", ARGV[3],
+    "generation", ARGV[4],
+    "resource_type", ARGV[1],
+    "acquired_at", now,
+    "expires_at", expires_at,
+)
+redis.call("EXPIRE", meta_key, ttl + 60)
+return "OK"
 """
 
-# Lua: atomic decrement (never below 0)
-_LUA_RELEASE_SEM = """
-local key = KEYS[1]
-local current = redis.call("GET", key)
-if current then
-    current = tonumber(current)
-    if current > 0 then
-        redis.call("DECR", key)
-        return current - 1
-    end
+# Lua: atomic release — verify owner + generation match
+# KEYS: [zset_key, meta_key]
+# ARGS: [token, owner_token, generation, now_ts]
+# Returns: "OK", "OWNER_MISMATCH", "GENERATION_MISMATCH", "NOT_FOUND"
+_LUA_RELEASE_RESERVATION_V2 = """
+local zset_key = KEYS[1]
+local meta_key = KEYS[2]
+local token = ARGV[1]
+local owner_token = ARGV[2]
+local generation = ARGV[3]
+
+-- Check if reservation exists
+local exists = redis.call("ZSCORE", zset_key, token)
+if not exists then
+    return "NOT_FOUND"
 end
-return 0
+
+-- Verify owner
+local stored_owner = redis.call("HGET", meta_key, "owner_token")
+if stored_owner and stored_owner ~= owner_token then
+    return "OWNER_MISMATCH"
+end
+
+-- Verify generation (if stored)
+local stored_gen = redis.call("HGET", meta_key, "generation")
+if stored_gen and generation ~= "0" and stored_gen ~= generation then
+    return "GENERATION_MISMATCH"
+end
+
+redis.call("ZREM", zset_key, token)
+redis.call("DEL", meta_key)
+return "OK"
 """
 
-_LUA_GET_COUNT = """
-local key = KEYS[1]
-local current = redis.call("GET", key)
-if current then
-    return tonumber(current)
+# Lua: atomic renew — verify owner
+# KEYS: [zset_key, meta_key]
+# ARGS: [token, owner_token, ttl_sec, now_ts]
+# Returns: "OK", "OWNER_MISMATCH", "NOT_FOUND"
+_LUA_RENEW_RESERVATION_V2 = """
+local zset_key = KEYS[1]
+local meta_key = KEYS[2]
+local token = ARGV[1]
+local owner_token = ARGV[2]
+local ttl = tonumber(ARGV[3])
+local now = tonumber(ARGV[4])
+
+-- Check if reservation exists
+local exists = redis.call("ZSCORE", zset_key, token)
+if not exists then
+    return "NOT_FOUND"
 end
-return 0
+
+-- Verify owner
+local stored_owner = redis.call("HGET", meta_key, "owner_token")
+if stored_owner and stored_owner ~= owner_token then
+    return "OWNER_MISMATCH"
+end
+
+local expires_at = now + ttl
+redis.call("ZADD", zset_key, expires_at, token)
+redis.call("HSET", meta_key, "expires_at", expires_at)
+redis.call("EXPIRE", meta_key, ttl + 60)
+return "OK"
+"""
+
+# Lua: reaper — remove all expired reservations + their metadata
+# KEYS: [zset_key, meta_prefix]
+# ARGS: [now_ts]
+# Returns: count of removed reservations
+_LUA_REAPER_RESERVATIONS_V2 = """
+local zset_key = KEYS[1]
+local meta_prefix = KEYS[2]
+local now = tonumber(ARGV[1])
+
+local expired = redis.call("ZRANGEBYSCORE", zset_key, "-inf", now)
+local count = 0
+for _, member in ipairs(expired) do
+    redis.call("ZREM", zset_key, member)
+    redis.call("DEL", meta_prefix .. member)
+    count = count + 1
+end
+return count
 """
 
 
@@ -132,6 +215,18 @@ class SystemMetrics:
     temp_disk_usage_mb: float = 0.0
 
 
+@dataclass
+class ReservationInfo:
+    """Metadata for an acquired reservation."""
+    token: str
+    task_id: str
+    owner_token: str
+    generation: int
+    resource_type: str
+    acquired_at: float
+    expires_at: float
+
+
 # ── Unified ResourceGuard ──
 
 
@@ -140,16 +235,19 @@ class ResourceGuard:
 
     Provides:
     - ``can_accept_work()`` — system-level check before accepting new jobs
+    - ``acquire_reservation()`` / ``release_reservation()`` — ZSET-based
     - ``check_*()`` — per-pipeline budget checks
     - ``for_profile()`` — factory with profile-appropriate defaults
 
-    Active pipeline counting uses a Redis-backed semaphore for cross-process
-    coordination. Falls back to process-local counting when Redis is
-    unavailable (dev only).
+    Active pipeline reservation uses a Redis ZSET for cross-process
+    coordination with TTL-based crash safety.
     """
 
-    # ── Class-level fallback for when Redis is unavailable ──
-    _active_pipeline_count: int = 0
+    # ── Process-local owner token ──
+    _process_owner_token: str = ""
+
+    # ── In-memory reservation registry (for same-process release) ──
+    _reservations_by_task: dict[str, ReservationInfo] = {}
 
     # ── Construction ──
 
@@ -158,7 +256,6 @@ class ResourceGuard:
         thresholds: SystemThresholds | None = None,
         metrics_provider: Callable[[], SystemMetrics] | None = None,
     ):
-        # System-level
         self._thresholds = thresholds or SystemThresholds()
         self._metrics_provider = metrics_provider or self._collect_system_metrics
 
@@ -178,103 +275,39 @@ class ResourceGuard:
         self._remote_ocr_calls: int = 0
         self._artifact_bytes_written: int = 0
 
-    # ── Redis semaphore for distributed pipeline counting ──
-    # Uses sync Redis client since increment/decrement are called from
-    # sync contexts (finally blocks, __del__, etc.).
+        # Lua script SHAs (loaded lazily)
+        self._lua_acquire_sha: str | None = None
+        self._lua_release_sha: str | None = None
+        self._lua_renew_sha: str | None = None
+        self._lua_reaper_sha: str | None = None
+
+        # Orphan reconciler task
+        self._orphan_reconciler_task: asyncio.Task | None = None
+
+    @property
+    def process_owner_token(self) -> str:
+        if not ResourceGuard._process_owner_token:
+            ResourceGuard._process_owner_token = f"proc_{uuid.uuid4().hex[:12]}"
+        return ResourceGuard._process_owner_token
+
+    # ── Key builders with hash tags ──
 
     @staticmethod
-    def _get_redis_client():
-        """Create a sync Redis client for semaphore operations."""
-        if not settings.REDIS_URL:
-            return None
-        try:
-            import redis as redis_sync
-            return redis_sync.from_url(
-                settings.REDIS_URL,
-                socket_connect_timeout=2,
-                socket_timeout=2,
-                decode_responses=True,
-            )
-        except Exception:
-            return None
-
-    def _redis_active_count_sync(self) -> int:
-        """Return current active pipeline count from Redis (sync)."""
-        client = self._get_redis_client()
-        if client is None:
-            return ResourceGuard._active_pipeline_count
-        try:
-            val = client.get(_RESOURCE_SEM_KEY)
-            return int(val) if val else 0
-        except Exception:
-            return ResourceGuard._active_pipeline_count
-        finally:
-            try:
-                client.close()
-            except Exception:
-                pass
-
-    def _redis_acquire_sync(self, max_concurrent: int) -> bool:
-        """Try to acquire Redis semaphore (sync). True if under capacity.
-
-        In production/cloud_api, Redis failure fails closed (returns False).
-        In dev/local, falls back to process-local counting.
-        """
-        client = self._get_redis_client()
-        if client is None:
-            if self._is_restricted():
-                return False
-            current = ResourceGuard._active_pipeline_count
-            if current >= max_concurrent:
-                return False
-            ResourceGuard._active_pipeline_count += 1
-            return True
-        try:
-            sha = client.script_load(_LUA_ACQUIRE_SEM)
-            result = client.evalsha(sha, 1, _RESOURCE_SEM_KEY,
-                                    str(max_concurrent), str(_RESOURCE_TTL))
-            count = int(result) if result else 0
-            return count > 0
-        except Exception:
-            if self._is_restricted():
-                return False
-            current = ResourceGuard._active_pipeline_count
-            if current >= max_concurrent:
-                return False
-            ResourceGuard._active_pipeline_count += 1
-            return True
-        finally:
-            try:
-                client.close()
-            except Exception:
-                pass
-
-    def _redis_release_sync(self) -> None:
-        """Release Redis semaphore (sync)."""
-        client = self._get_redis_client()
-        if client is None:
-            ResourceGuard._active_pipeline_count = max(
-                0, ResourceGuard._active_pipeline_count - 1
-            )
-            return
-        try:
-            sha = client.script_load(_LUA_RELEASE_SEM)
-            client.evalsha(sha, 1, _RESOURCE_SEM_KEY)
-        except Exception:
-            ResourceGuard._active_pipeline_count = max(
-                0, ResourceGuard._active_pipeline_count - 1
-            )
-        finally:
-            try:
-                client.close()
-            except Exception:
-                pass
-
-    # ── Async Redis semaphore (preferred path for async callers) ──
+    def _zset_key(resource_type: str) -> str:
+        return _V2_RESOURCE_ZSET_TPL.format(rt=resource_type)
 
     @staticmethod
-    async def _get_async_redis_client():
-        """Create an async Redis client for semaphore operations."""
+    def _meta_key(resource_type: str, token: str) -> str:
+        return _V2_RESOURCE_META_TPL.format(rt=resource_type, token=token)
+
+    @staticmethod
+    def _meta_prefix(resource_type: str) -> str:
+        return _V2_RESOURCE_META_PREFIX_TPL.format(rt=resource_type)
+
+    # ── Async Redis client ──
+
+    @staticmethod
+    async def _get_async_redis():
         if not settings.REDIS_URL:
             return None
         try:
@@ -289,104 +322,341 @@ class ResourceGuard:
             return None
 
     def _is_restricted(self) -> bool:
-        """Check if we're in a restricted environment (fail-closed on Redis failure)."""
         if settings.APP_ENV == "production":
             return True
         try:
             return detect_deployment_profile() == DeploymentProfile.CLOUD_API
         except Exception:
-            return True  # fail closed
+            return True
 
-    async def _redis_acquire_async(self, max_concurrent: int) -> bool:
-        """Try to acquire Redis semaphore (async). True if under capacity.
+    # ── ZSET Reservation API ──
 
-        In production/cloud_api, Redis failure fails closed (returns False).
-        In dev/local, falls back to process-local counting.
+    async def acquire_reservation(
+        self,
+        resource_type: str,
+        task_id: str,
+        owner_token: str = "",
+        generation: int = 0,
+        ttl_sec: int | None = None,
+    ) -> str | None:
+        """Acquire a reservation slot.
+
+        Args:
+            resource_type: e.g. "import_pipeline", "image_pipeline"
+            task_id: the task/pipeline identifier
+            owner_token: process/worker identifier; defaults to process token
+            generation: fencing generation (0 for new tasks)
+            ttl_sec: reservation TTL; defaults to PIPELINE_RESERVATION_LEASE_SEC
+
+        Returns reservation token string, or None if at capacity.
         """
-        client = await self._get_async_redis_client()
-        if client is None:
-            if self._is_restricted():
-                return False
-            current = ResourceGuard._active_pipeline_count
-            if current >= max_concurrent:
-                return False
-            ResourceGuard._active_pipeline_count += 1
-            return True
-        try:
-            sha = await client.script_load(_LUA_ACQUIRE_SEM)
-            result = await client.evalsha(sha, 1, _RESOURCE_SEM_KEY,
-                                          str(max_concurrent), str(_RESOURCE_TTL))
-            count = int(result) if result else 0
-            return count > 0
-        except Exception:
-            if self._is_restricted():
-                return False
-            current = ResourceGuard._active_pipeline_count
-            if current >= max_concurrent:
-                return False
-            ResourceGuard._active_pipeline_count += 1
-            return True
-        finally:
-            try:
-                await client.aclose()
-            except Exception:
-                pass
+        owner_token = owner_token or self.process_owner_token
+        ttl_sec = ttl_sec or settings.PIPELINE_RESERVATION_LEASE_SEC
+        capacity = self._thresholds.max_active_pipelines
 
-    async def _redis_release_async(self) -> None:
-        """Release Redis semaphore (async). Safe to call even on failed acquire."""
-        client = await self._get_async_redis_client()
+        client = await self._get_async_redis()
         if client is None:
-            ResourceGuard._active_pipeline_count = max(
-                0, ResourceGuard._active_pipeline_count - 1
-            )
-            return
+            if self._is_restricted():
+                logger.warning("Reservation denied: Redis unavailable in restricted env")
+                return None
+            logger.warning("Reservation using in-memory fallback")
+            return self._acquire_local(capacity, ttl_sec, resource_type, task_id, owner_token, generation)
+
         try:
-            sha = await client.script_load(_LUA_RELEASE_SEM)
-            await client.evalsha(sha, 1, _RESOURCE_SEM_KEY)
-        except Exception:
-            ResourceGuard._active_pipeline_count = max(
-                0, ResourceGuard._active_pipeline_count - 1
+            token = uuid.uuid4().hex
+            zset_key = self._zset_key(resource_type)
+            meta_key = self._meta_key(resource_type, token)
+
+            if self._lua_acquire_sha is None:
+                self._lua_acquire_sha = await client.script_load(_LUA_ACQUIRE_RESERVATION_V2)
+
+            result = await client.evalsha(
+                self._lua_acquire_sha,
+                2,
+                zset_key,
+                meta_key,
+                resource_type,
+                task_id,
+                owner_token,
+                str(generation),
+                str(ttl_sec),
+                str(capacity),
+                token,
+                str(int(time.time())),
             )
+
+            if result == "OK":
+                return token
+            return None
+        except Exception as exc:
+            logger.warning("Redis reservation acquire error: %s", exc)
+            if self._is_restricted():
+                return None
+            return self._acquire_local(capacity, ttl_sec, resource_type, task_id, owner_token, generation)
         finally:
-            try:
+            if client:
                 await client.aclose()
-            except Exception:
-                pass
+
+    def _acquire_local(
+        self,
+        capacity: int,
+        ttl_sec: int,
+        resource_type: str,
+        task_id: str,
+        owner_token: str,
+        generation: int,
+    ) -> str | None:
+        """In-process fallback acquire (dev only)."""
+        active = sum(
+            1 for r in ResourceGuard._reservations_by_task.values()
+            if r.resource_type == resource_type and r.expires_at > time.time()
+        )
+        if active >= capacity:
+            return None
+        token = uuid.uuid4().hex
+        now = time.time()
+        info = ReservationInfo(
+            token=token,
+            task_id=task_id,
+            owner_token=owner_token,
+            generation=generation,
+            resource_type=resource_type,
+            acquired_at=now,
+            expires_at=now + ttl_sec,
+        )
+        ResourceGuard._reservations_by_task[token] = info
+        return token
+
+    async def release_reservation(
+        self,
+        token: str,
+        resource_type: str = "import_pipeline",
+        owner_token: str = "",
+        generation: int = 0,
+    ) -> bool:
+        """Release a reservation. Returns True if released, False if not found."""
+        owner_token = owner_token or self.process_owner_token
+
+        # Try local first
+        local_info = ResourceGuard._reservations_by_task.get(token)
+        if local_info is not None and local_info.resource_type == resource_type:
+            ResourceGuard._reservations_by_task.pop(token, None)
+            return True
+        if local_info is not None:
+            # Wrong resource_type — not a match
+            return False
+
+        client = await self._get_async_redis()
+        if client is None:
+            return False
+
+        try:
+            if self._lua_release_sha is None:
+                self._lua_release_sha = await client.script_load(_LUA_RELEASE_RESERVATION_V2)
+
+            zset_key = self._zset_key(resource_type)
+            meta_key = self._meta_key(resource_type, token)
+
+            result = await client.evalsha(
+                self._lua_release_sha,
+                2,
+                zset_key,
+                meta_key,
+                token,
+                owner_token,
+                str(generation),
+                str(int(time.time())),
+            )
+            return result == "OK"
+        except Exception as exc:
+            logger.warning("Redis reservation release error: %s", exc)
+            return False
+        finally:
+            if client:
+                await client.aclose()
+
+    # ── Orphan reconciler ──
+
+    async def _run_orphan_reconciler_once(self) -> int:
+        """Run one pass of the orphan reconciler. Returns count of released orphans."""
+        total = 0
+        for resource_type in ("import_pipeline", "image_pipeline", "excel_pipeline"):
+            client = await self._get_async_redis()
+            if client is None:
+                continue
+            try:
+                if self._lua_reaper_sha is None:
+                    self._lua_reaper_sha = await client.script_load(_LUA_REAPER_RESERVATIONS_V2)
+
+                zset_key = self._zset_key(resource_type)
+                meta_prefix = self._meta_prefix(resource_type)
+
+                count = await client.evalsha(
+                    self._lua_reaper_sha,
+                    2,
+                    zset_key,
+                    meta_prefix,
+                    str(int(time.time())),
+                )
+                count = int(count) if count else 0
+                if count > 0:
+                    logger.warning(
+                        "Orphan reconciler released %d expired %s reservations",
+                        count, resource_type,
+                    )
+                total += count
+            except Exception as exc:
+                logger.debug("Orphan reconciler error for %s: %s", resource_type, exc)
+            finally:
+                await client.aclose()
+        return total
+
+    async def start_orphan_reconciler(self, interval_sec: int = 300) -> None:
+        """Start background orphan reconciler loop."""
+        if self._orphan_reconciler_task is not None:
+            return
+
+        async def _loop():
+            while True:
+                try:
+                    await asyncio.sleep(interval_sec)
+                    await self._run_orphan_reconciler_once()
+                except asyncio.CancelledError:
+                    break
+                except Exception as exc:
+                    logger.exception("Orphan reconciler crashed: %s", exc)
+
+        self._orphan_reconciler_task = asyncio.create_task(_loop())
+
+    async def stop_orphan_reconciler(self) -> None:
+        """Stop orphan reconciler background loop."""
+        if self._orphan_reconciler_task is None:
+            return
+        self._orphan_reconciler_task.cancel()
+        try:
+            await self._orphan_reconciler_task
+        except asyncio.CancelledError:
+            pass
+        self._orphan_reconciler_task = None
 
     # ── Async context manager (preferred API) ──
 
     @asynccontextmanager
-    async def acquire_pipeline(self, *, timeout: float = 5.0):
+    async def acquire_pipeline(
+        self,
+        resource_type: str = "import_pipeline",
+        task_id: str = "",
+        owner_token: str = "",
+        generation: int = 0,
+        ttl_sec: int | None = None,
+        *,
+        timeout: float = 5.0,
+    ):
         """Async context manager for pipeline admission.
 
-        Atomically acquires a pipeline slot. Yields True on success,
-        False if at capacity or Redis unavailable (production).
-
+        Acquires a reservation slot using the ZSET-based system.
+        Yields the reservation token (str) on success, None on failure.
         Automatically releases on exit, exception, or cancellation.
-
-        Usage::
-
-            async with resource_guard.acquire_pipeline() as acquired:
-                if not acquired:
-                    return JSONResponse(
-                        {"error": "RESOURCE_PRESSURE"},
-                        status_code=503,
-                        headers={"Retry-After": "30"},
-                    )
-                # ... pipeline work ...
         """
-        acquired = False
+        token: str | None = None
         try:
-            acquired = await asyncio.wait_for(
-                self._redis_acquire_async(self._thresholds.max_active_pipelines),
+            token = await asyncio.wait_for(
+                self.acquire_reservation(
+                    resource_type=resource_type,
+                    task_id=task_id,
+                    owner_token=owner_token,
+                    generation=generation,
+                    ttl_sec=ttl_sec,
+                ),
                 timeout=timeout,
             )
-            yield acquired
+            yield token
         except TimeoutError:
-            yield False
+            yield None
         finally:
-            if acquired:
-                await self._redis_release_async()
+            if token:
+                await self.release_reservation(
+                    token,
+                    resource_type=resource_type,
+                    owner_token=owner_token,
+                    generation=generation,
+                )
+
+    # ── System-level check ──
+
+    def can_accept_work(self) -> tuple[bool, str | None]:
+        """Check if the server can accept new pipeline work.
+
+        Returns (True, None) if OK, or (False, reason) if resource pressure.
+        System-level checks only (RSS, memory, lag, temp disk).
+        Does NOT check Redis — that is handled by acquire_reservation().
+        """
+        metrics = self._metrics_provider()
+
+        if metrics.rss_mb > self._thresholds.max_rss_mb:
+            return False, f"RSS {metrics.rss_mb:.0f}MB exceeds limit {self._thresholds.max_rss_mb}MB"
+
+        if metrics.available_memory_mb > 0 and metrics.available_memory_mb < self._thresholds.min_available_memory_mb:
+            return False, f"Available memory {metrics.available_memory_mb:.0f}MB below minimum {self._thresholds.min_available_memory_mb}MB"
+
+        if metrics.event_loop_lag_ms > self._thresholds.max_event_loop_lag_ms:
+            return False, f"Event loop lag {metrics.event_loop_lag_ms:.0f}ms exceeds limit {self._thresholds.max_event_loop_lag_ms}ms"
+
+        if metrics.temp_disk_usage_mb > self._thresholds.max_temp_disk_mb:
+            return False, f"Temp disk {metrics.temp_disk_usage_mb:.0f}MB exceeds limit {self._thresholds.max_temp_disk_mb}MB"
+
+        return True, None
+
+    # ── Pipeline count tracking (legacy sync compat — delegates to async) ──
+
+    def increment_pipeline_count(self) -> bool:
+        """Legacy: in-process only fallback. Prefer acquire_reservation()."""
+        current = ResourceGuard._active_pipeline_count
+        if current >= self._thresholds.max_active_pipelines:
+            return False
+        ResourceGuard._active_pipeline_count += 1
+        return True
+
+    def decrement_pipeline_count(self) -> None:
+        """Legacy: in-process only fallback. Prefer release_reservation()."""
+        ResourceGuard._active_pipeline_count = max(
+            0, ResourceGuard._active_pipeline_count - 1
+        )
+
+    _active_pipeline_count: int = 0
+
+    # ── System metrics ──
+
+    @staticmethod
+    def _collect_system_metrics() -> SystemMetrics:
+        """Collect real resource metrics from the system."""
+        m = SystemMetrics()
+
+        try:
+            with open("/proc/self/status") as f:
+                for line in f:
+                    if line.startswith("VmRSS:"):
+                        m.rss_mb = int(line.split()[1]) / 1024
+                        break
+        except OSError:
+            pass
+
+        try:
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    if line.startswith("MemAvailable:"):
+                        m.available_memory_mb = int(line.split()[1]) / 1024
+                        break
+        except OSError:
+            pass
+
+        m.active_pipelines = ResourceGuard._active_pipeline_count
+
+        return m
+
+    def get_system_metrics(self) -> SystemMetrics:
+        m = self._metrics_provider()
+        return m
 
     @classmethod
     def for_profile(cls, profile: DeploymentProfile) -> ResourceGuard:
@@ -419,88 +689,6 @@ class ResourceGuard:
                 max_rss_mb=3072,
             )
         return guard
-
-    # ── System-level check ──
-
-    def can_accept_work(self) -> tuple[bool, str | None]:
-        """Check if the server can accept new pipeline work.
-
-        Returns (True, None) if OK, or (False, reason) if resource pressure.
-        Uses Redis-backed semaphore for active pipeline counting.
-        """
-        metrics = self._metrics_provider()
-
-        if metrics.rss_mb > self._thresholds.max_rss_mb:
-            return False, f"RSS {metrics.rss_mb:.0f}MB exceeds limit {self._thresholds.max_rss_mb}MB"
-
-        if metrics.available_memory_mb > 0 and metrics.available_memory_mb < self._thresholds.min_available_memory_mb:
-            return False, f"Available memory {metrics.available_memory_mb:.0f}MB below minimum {self._thresholds.min_available_memory_mb}MB"
-
-        if metrics.event_loop_lag_ms > self._thresholds.max_event_loop_lag_ms:
-            return False, f"Event loop lag {metrics.event_loop_lag_ms:.0f}ms exceeds limit {self._thresholds.max_event_loop_lag_ms}ms"
-
-        # Check Redis-based active pipeline count
-        active = self._redis_active_count_sync()
-        if active >= self._thresholds.max_active_pipelines:
-            return False, f"Active pipelines {active} at limit {self._thresholds.max_active_pipelines}"
-
-        if metrics.temp_disk_usage_mb > self._thresholds.max_temp_disk_mb:
-            return False, f"Temp disk {metrics.temp_disk_usage_mb:.0f}MB exceeds limit {self._thresholds.max_temp_disk_mb}MB"
-
-        return True, None
-
-    @staticmethod
-    def _collect_system_metrics() -> SystemMetrics:
-        """Collect real resource metrics from the system."""
-        m = SystemMetrics()
-
-        try:
-            with open("/proc/self/status") as f:
-                for line in f:
-                    if line.startswith("VmRSS:"):
-                        m.rss_mb = int(line.split()[1]) / 1024
-                        break
-        except OSError:
-            pass
-
-        try:
-            with open("/proc/meminfo") as f:
-                for line in f:
-                    if line.startswith("MemAvailable:"):
-                        m.available_memory_mb = int(line.split()[1]) / 1024
-                        break
-        except OSError:
-            pass
-
-        m.active_pipelines = ResourceGuard._active_pipeline_count
-
-        return m
-
-    def get_system_metrics(self) -> SystemMetrics:
-        m = self._metrics_provider()
-        # Override with Redis count for accuracy
-        m.active_pipelines = self._redis_active_count_sync()
-        return m
-
-    # ── Pipeline count tracking (Redis-backed, cross-process) ──
-
-    def increment_pipeline_count(self) -> bool:
-        """Increment active pipeline count using Redis semaphore.
-
-        Uses Redis Lua for atomic cross-process counting.
-        In production/cloud_api, Redis failure fails closed (returns False).
-        In dev/local, falls back to process-local counting.
-
-        Returns True if the count was successfully incremented (under capacity).
-        """
-        return self._redis_acquire_sync(self._thresholds.max_active_pipelines)
-
-    def decrement_pipeline_count(self) -> None:
-        """Decrement active pipeline count using Redis semaphore.
-
-        Safe to call even if increment was process-local (Redis fallback).
-        """
-        self._redis_release_sync()
 
     # ── Per-pipeline budget checks ──
 

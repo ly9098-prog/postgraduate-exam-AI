@@ -16,6 +16,29 @@ logger = logging.getLogger("postgraduate-ai.pubsub")
 _CHANNEL_PREFIX = "sse:job:"
 
 
+async def check_health() -> bool:
+    """Health check for SSE Pub/Sub infrastructure.
+
+    Uses Redis PING only — no DB queries. Returns True if Redis is reachable
+    and Pub/Sub can operate, False otherwise. This is the minimal connectivity
+    check needed for SSE to work.
+    """
+    try:
+        from app.core.cache import cache
+
+        if not cache.is_enabled():
+            return False
+
+        client = await cache._ensure_client()
+        if client is None:
+            return False
+
+        await client.ping()
+        return True
+    except Exception:
+        return False
+
+
 async def publish_event(job_id: int, event_type: str, data: dict) -> None:
     """Publish an event to the job's Redis channel.
 
@@ -36,7 +59,7 @@ async def publish_event(job_id: int, event_type: str, data: dict) -> None:
         payload = json.dumps({"type": event_type, "data": data}, ensure_ascii=False, default=str)
         await client.publish(channel, payload)
     except Exception:
-        pass  # Pub/Sub is best-effort
+        logger.debug("Pub/Sub publish_event failed for job %s: best-effort, skipping", job_id)
 
 
 async def subscribe_job(

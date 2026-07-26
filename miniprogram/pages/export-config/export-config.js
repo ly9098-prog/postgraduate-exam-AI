@@ -49,8 +49,8 @@ Page({
 
     // Format
     format: 'pdf',
-    wordDisabled: true,
-    wordTip: '即将支持',
+    wordDisabled: false,
+    wordTip: '',
 
     // Title
     title: '',
@@ -131,10 +131,6 @@ Page({
   // ── Format selection ──
   onFormatChange(e) {
     const value = e.detail.value
-    if (value === 'word') {
-      wx.showToast({ title: 'Word 导出即将支持，敬请期待', icon: 'none' })
-      return
-    }
     this.setData({ format: value })
   },
 
@@ -226,7 +222,7 @@ Page({
         answer_position: this.data.answerPosition,
         analysis_position: this.data.analysisPosition,
         space_style: this.data.spaceStyle,
-        file_format: 'pdf',
+        file_format: this.data.format,
       }
 
       const task = await exportApi.createExport(params)

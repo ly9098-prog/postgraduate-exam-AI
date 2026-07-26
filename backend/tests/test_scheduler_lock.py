@@ -4,10 +4,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+class _LeaseHandleMock:
+    """Minimal mock of LeaseHandle for testing."""
+    def __init__(self, is_held: bool):
+        self._is_held = is_held
+
+    def is_still_held(self) -> bool:
+        return self._is_held
+
+
 class _AsyncCM:
     """Simple async context manager for mocking."""
-    def __init__(self, value: bool):
-        self._value = value
+    def __init__(self, is_held: bool):
+        self._value = _LeaseHandleMock(is_held)
 
     async def __aenter__(self):
         return self._value

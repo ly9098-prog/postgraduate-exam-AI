@@ -21,13 +21,13 @@
     <view class="config-section">
       <view class="section-title">文件格式</view>
       <view class="radio-group row">
-        <label class="radio-item active">
-          <radio value="pdf" checked="{{true}}" disabled="{{false}}" />
+        <label class="radio-item {{format === 'pdf' ? 'active' : ''}}" data-value="pdf" bindtap="onFormatChange">
+          <radio value="pdf" checked="{{format === 'pdf'}}" />
           <text class="radio-label">PDF</text>
         </label>
-        <label class="radio-item disabled">
-          <radio value="word" disabled="{{true}}" />
-          <text class="radio-label">Word <text class="coming-soon">即将支持</text></text>
+        <label class="radio-item {{format === 'docx' ? 'active' : ''}}" data-value="docx" bindtap="onFormatChange">
+          <radio value="docx" checked="{{format === 'docx'}}" />
+          <text class="radio-label">Word</text>
         </label>
       </view>
     </view>

@@ -150,14 +150,15 @@ async def _append_trace_event(
 
     # Best-effort Redis Pub/Sub notification for SSE consumers
     try:
+        from app.core.background_tasks import create_background_task
         from app.services.sse_pubsub import publish_event
-        asyncio.create_task(publish_event(
+        create_background_task(publish_event(
             int(job_id) if str(job_id).isdigit() else 0,
             "done" if status in ("completed", "failed") else "trace",
             {"seq": seq, "step": step, "status": status, "message": message[:200]},
         ), name=f"sse-pub:{job_id}")
     except Exception:
-        pass
+        logger.debug("SSE Pub/Sub create_task failed for job %s (best-effort)", job_id)
 
     return event
 

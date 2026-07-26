@@ -9,6 +9,7 @@ import asyncio
 import httpx
 import pytest
 
+from app.core.deployment_profile import DeploymentProfile
 from app.core.ocr_runtime_config import OcrRuntimeConfig
 from app.features.ocr_gateway import OCRGateway
 from app.services.ocr_worker_client import create_ocr_worker_client
@@ -56,7 +57,7 @@ class TestGatewayWithRemoteClient:
         # Override with mock transport
         client._client = httpx.AsyncClient(transport=mock_transport)
 
-        gateway = OCRGateway(mode="gateway", worker_client=client)
+        gateway = OCRGateway(mode="gateway", profile=DeploymentProfile.CLOUD_API, worker_client=client)
         results = await gateway.recognize_pages([(0, _FAKE_PNG), (2, _FAKE_PNG)])
         await gateway.shutdown()
 
@@ -74,7 +75,7 @@ class TestGatewayWithRemoteClient:
         client = create_ocr_worker_client(cfg)
         client._client = httpx.AsyncClient(transport=mock_transport)
 
-        gateway = OCRGateway(mode="gateway", worker_client=client)
+        gateway = OCRGateway(mode="gateway", profile=DeploymentProfile.CLOUD_API, worker_client=client)
         await gateway.shutdown()
         await gateway.shutdown()  # second call must not raise
 
@@ -87,7 +88,7 @@ class TestGatewayWithRemoteClient:
         client = create_ocr_worker_client(cfg)
         client._client = httpx.AsyncClient(transport=mock_transport)
 
-        gateway = OCRGateway(mode="gateway", worker_client=client)
+        gateway = OCRGateway(mode="gateway", profile=DeploymentProfile.CLOUD_API, worker_client=client)
         await gateway.recognize_pages([(0, _FAKE_PNG)])
         await gateway.shutdown()
 
@@ -109,7 +110,7 @@ class TestGatewayWithRemoteClient:
         client = create_ocr_worker_client(cfg)
         client._client = httpx.AsyncClient(transport=transport)
 
-        gateway = OCRGateway(mode="gateway", worker_client=client)
+        gateway = OCRGateway(mode="gateway", profile=DeploymentProfile.CLOUD_API, worker_client=client)
         results = await gateway.recognize_pages([(0, _FAKE_PNG)])
         await gateway.shutdown()
 
@@ -132,7 +133,7 @@ class TestGatewayWithRemoteClient:
         client._client = httpx.AsyncClient(transport=mock_transport)
 
         # Simulate misconfiguration: worker_client is None but thread fallback is on
-        gateway = OCRGateway(mode="gateway", worker_client=None)
+        gateway = OCRGateway(mode="gateway", profile=DeploymentProfile.CLOUD_API, worker_client=None)
         gateway._get_runtime_config = lambda: cfg
 
         # When worker_client is None, the Gateway tries to init it via factory.

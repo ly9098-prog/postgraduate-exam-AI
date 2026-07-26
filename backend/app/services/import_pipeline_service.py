@@ -42,6 +42,54 @@ logger = logging.getLogger(__name__)
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 
 
+# ── Reservation management (Batch 3: ZSET-based admission ordering) ──
+
+_pipeline_reservations: dict[str, tuple[str, str, str, int]] = {}
+"""In-memory registry mapping pipeline_id → (token, resource_type, owner_token, generation).
+
+Allows the background task to release the reservation that was acquired
+during admission. Both run in the same OS process (v1 or v2 worker).
+"""
+
+
+async def _acquire_pipeline_reservation(pipeline_id: str, resource_type: str) -> str:
+    """Acquire a ZSET reservation and store info for background-task release.
+
+    Raises ResourceGuardError if at capacity.
+    """
+    from app.core.resource_guard import RESOURCE_PRESSURE, ResourceGuardError
+
+    # System-level resource check first
+    ok, reason = resource_guard.can_accept_work()
+    if not ok:
+        raise ResourceGuardError(RESOURCE_PRESSURE, reason)
+
+    token = await resource_guard.acquire_reservation(
+        resource_type=resource_type,
+        task_id=pipeline_id,
+    )
+    if not token:
+        raise ResourceGuardError(RESOURCE_PRESSURE, f"{resource_type} 并发数已达上限")
+    _pipeline_reservations[pipeline_id] = (
+        token, resource_type, resource_guard.process_owner_token, 0,
+    )
+    return token
+
+
+async def _release_pipeline_reservation(pipeline_id: str) -> None:
+    """Release the ZSET reservation for a pipeline (called from background task finally)."""
+    info = _pipeline_reservations.pop(pipeline_id, None)
+    if info is None:
+        return
+    token, resource_type, owner_token, generation = info
+    await resource_guard.release_reservation(
+        token=token,
+        resource_type=resource_type,
+        owner_token=owner_token,
+        generation=generation,
+    )
+
+
 def _sha256_of_file(path: str) -> str:
     """Compute SHA-256 of a file without loading it entirely into memory."""
     hasher = hashlib.sha256()
@@ -373,7 +421,7 @@ async def _run_image_pipeline_with_db(
         capture_exception(exc, tags={"pipeline_id": pipeline_id, "source_file": source_file, "stage": "ocr"})
         await _fail_image_pipeline(pipeline_id, str(exc))
     finally:
-        resource_guard.decrement_pipeline_count()
+        await _release_pipeline_reservation(pipeline_id)
         if image_path and os.path.exists(image_path):
             try:
                 os.unlink(image_path)
@@ -467,7 +515,7 @@ async def _run_pipeline_with_db(
             "finished_at": "",
         })
     finally:
-        resource_guard.decrement_pipeline_count()
+        await _release_pipeline_reservation(pipeline_id)
         if file_path and os.path.exists(file_path):
             try:
                 os.unlink(file_path)
@@ -497,16 +545,6 @@ async def start_import_pipeline(
     """
     if not filename:
         raise ValueError("文件名不能为空")
-
-    # System-level resource check
-    ok, reason = resource_guard.can_accept_work()
-    if not ok:
-        from app.core.resource_guard import RESOURCE_PRESSURE, ResourceGuardError
-        raise ResourceGuardError(RESOURCE_PRESSURE, reason)
-
-    if not resource_guard.increment_pipeline_count():
-        from app.core.resource_guard import RESOURCE_PRESSURE, ResourceGuardError
-        raise ResourceGuardError(RESOURCE_PRESSURE, "并发管道数已达上限")
 
     # Validate file exists and is non-empty
     file_size = os.path.getsize(file_path)
@@ -551,86 +589,95 @@ async def start_import_pipeline(
         image_hash = _sha256_of_file(file_path)
         pipeline_id = f"img_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{image_hash[:8]}"
 
-        # Stage the image to persistent storage before enqueuing
-        staging_obj = await async_store_file(
-            file_path,
-            original_name=filename,
-            mime=content_type or "image/png",
-        )
+        # Acquire admission reservation before staging
+        await _acquire_pipeline_reservation(pipeline_id, "image_pipeline")
+        try:
+            # Stage the image to persistent storage before enqueuing
+            staging_obj = await async_store_file(
+                file_path,
+                original_name=filename,
+                mime=content_type or "image/png",
+            )
 
-        options = {
-            "enable_ai_repair": enable_ai_repair,
-            "confidence_threshold": confidence_threshold,
-            "image_hash": image_hash,
-        }
+            options = {
+                "enable_ai_repair": enable_ai_repair,
+                "confidence_threshold": confidence_threshold,
+                "image_hash": image_hash,
+            }
 
-        _ctx = get_log_context()
-        options["_trace_id"] = _ctx.get("trace_id")
-        options["_request_id"] = _ctx.get("request_id")
+            _ctx = get_log_context()
+            options["_trace_id"] = _ctx.get("trace_id")
+            options["_request_id"] = _ctx.get("request_id")
 
-        await _set_image_pipeline_status(
-            pipeline_id,
-            status="queued",
-            stats={
-                "image_bytes": file_size,
-                "image_width": image_width,
-                "image_height": image_height,
-                "image_format": image_format,
-                "staging_object_id": staging_obj.object_id,
-            },
-            stages={"upload": {"status": "completed"}, "ocr": {"status": "pending"}},
-        )
+            await _set_image_pipeline_status(
+                pipeline_id,
+                status="queued",
+                stats={
+                    "image_bytes": file_size,
+                    "image_width": image_width,
+                    "image_height": image_height,
+                    "image_format": image_format,
+                    "staging_object_id": staging_obj.object_id,
+                },
+                stages={"upload": {"status": "completed"}, "ocr": {"status": "pending"}},
+            )
 
-        from app.services.task_queue_worker import enqueue_image_pipeline
-        result = await enqueue_image_pipeline(
-            pipeline_id=pipeline_id,
-            image_path=file_path,
-            staging_object_id=staging_obj.object_id,
-            source_file=filename,
-            subject=subject,
-            subject_id=subject_id,
-            options=options,
-        )
-        if not result:
-            await _set_image_pipeline_status(pipeline_id, status="failed", errors=[f"Queue rejected: {result.reason}"])
-            raise ValueError(f"任务队列已满: {result.reason}")
+            from app.services.task_queue_worker import enqueue_image_pipeline
+            result = await enqueue_image_pipeline(
+                pipeline_id=pipeline_id,
+                staging_object_id=staging_obj.object_id,
+                source_file=filename,
+                subject=subject,
+                subject_id=subject_id,
+                options=options,
+            )
+            if not result:
+                await _set_image_pipeline_status(pipeline_id, status="failed", errors=[f"Queue rejected: {result.reason}"])
+                raise ValueError(f"任务队列已满: {result.reason}")
 
-        log_event(
-            logger, "import.upload.accepted",
-            pipeline_id=pipeline_id, source_type="image",
-            source_file=filename, file_size=file_size,
-            content_type=content_type or "-",
-        )
-        return PipelineUploadResponse(pipeline_id=pipeline_id, status="queued", source_type="image")
+            log_event(
+                logger, "import.upload.accepted",
+                pipeline_id=pipeline_id, source_type="image",
+                source_file=filename, file_size=file_size,
+                content_type=content_type or "-",
+            )
+            return PipelineUploadResponse(pipeline_id=pipeline_id, status="queued", source_type="image")
+        except Exception:
+            await _release_pipeline_reservation(pipeline_id)
+            raise
 
     if is_excel:
         pipeline_id = f"xl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
 
-        staging_obj = await async_store_file(file_path, original_name=filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        await _set_pipeline_store(pipeline_id, {
-            "pipeline_id": pipeline_id,
-            "status": "parsing",
-            "source_type": "excel",
-            "source_file": filename,
-            "stages": {"upload": {"status": "completed"}},
-            "stats": {},
-            "errors": [],
-            "started_at": datetime.now().isoformat(),
-            "staging_object_id": staging_obj.object_id,
-        })
+        await _acquire_pipeline_reservation(pipeline_id, "excel_pipeline")
+        try:
+            staging_obj = await async_store_file(file_path, original_name=filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            await _set_pipeline_store(pipeline_id, {
+                "pipeline_id": pipeline_id,
+                "status": "parsing",
+                "source_type": "excel",
+                "source_file": filename,
+                "stages": {"upload": {"status": "completed"}},
+                "stats": {},
+                "errors": [],
+                "started_at": datetime.now().isoformat(),
+                "staging_object_id": staging_obj.object_id,
+            })
 
-        from app.services.task_queue_worker import enqueue_excel_pipeline
-        result = await enqueue_excel_pipeline(
-            pipeline_id=pipeline_id,
-            file_path=file_path,
-            staging_object_id=staging_obj.object_id,
-            source_file=filename,
-        )
-        if not result:
-            await _set_pipeline_store(pipeline_id, {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]})
-            raise ValueError(f"任务队列已满: {result.reason}")
+            from app.services.task_queue_worker import enqueue_excel_pipeline
+            result = await enqueue_excel_pipeline(
+                pipeline_id=pipeline_id,
+                staging_object_id=staging_obj.object_id,
+                source_file=filename,
+            )
+            if not result:
+                await _set_pipeline_store(pipeline_id, {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]})
+                raise ValueError(f"任务队列已满: {result.reason}")
 
-        return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type="excel")
+            return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type="excel")
+        except Exception:
+            await _release_pipeline_reservation(pipeline_id)
+            raise
 
     source_type = "pdf" if is_pdf else "txt"
     pipeline_id = f"pl_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
@@ -673,53 +720,59 @@ async def start_import_pipeline(
     options["_trace_id"] = ctx.get("trace_id")
     options["_request_id"] = ctx.get("request_id")
 
-    # Stage file to persistent storage before enqueuing task
-    mime = content_type or ("application/pdf" if is_pdf else "text/plain")
-    staging_obj = await async_store_file(file_path, original_name=filename, mime=mime)
+    # Acquire admission reservation before staging
+    await _acquire_pipeline_reservation(pipeline_id, "import_pipeline")
+    try:
+        # Stage file to persistent storage before enqueuing task
+        mime = content_type or ("application/pdf" if is_pdf else "text/plain")
+        staging_obj = await async_store_file(file_path, original_name=filename, mime=mime)
 
-    store_data: dict = {
-        "pipeline_id": pipeline_id,
-        "status": "processing",
-        "source_type": source_type,
-        "source_file": filename,
-        "current_stage": "extract",
-        "stages": {"upload": {"status": "completed"}},
-        "stats": {},
-        "errors": [],
-        "started_at": datetime.now().isoformat(),
-        "staging_object_id": staging_obj.object_id,
-    }
-    if page_range:
-        store_data["page_range"] = page_range.model_dump()
+        store_data: dict = {
+            "pipeline_id": pipeline_id,
+            "status": "processing",
+            "source_type": source_type,
+            "source_file": filename,
+            "current_stage": "extract",
+            "stages": {"upload": {"status": "completed"}},
+            "stats": {},
+            "errors": [],
+            "started_at": datetime.now().isoformat(),
+            "staging_object_id": staging_obj.object_id,
+        }
+        if page_range:
+            store_data["page_range"] = page_range.model_dump()
 
-    await _set_pipeline_store(pipeline_id, store_data)
+        await _set_pipeline_store(pipeline_id, store_data)
 
-    from app.services.task_queue_worker import enqueue_import_pipeline
-    result = await enqueue_import_pipeline(
-        pipeline_id=pipeline_id,
-        file_path=file_path,
-        staging_object_id=staging_obj.object_id,
-        source_type=source_type,
-        source_file=filename,
-        subject=subject,
-        subject_id=subject_id,
-        options=options,
-        created_by=created_by,
-    )
-    if not result:
-        await _set_pipeline_store(pipeline_id, {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]})
-        raise ValueError(f"任务队列已满: {result.reason}")
+        from app.services.task_queue_worker import enqueue_import_pipeline
+        result = await enqueue_import_pipeline(
+            pipeline_id=pipeline_id,
+            staging_object_id=staging_obj.object_id,
+            source_type=source_type,
+            source_file=filename,
+            subject=subject,
+            subject_id=subject_id,
+            options=options,
+            created_by=created_by,
+        )
+        if not result:
+            await _set_pipeline_store(pipeline_id, {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]})
+            raise ValueError(f"任务队列已满: {result.reason}")
 
-    log_event(
-        logger, "import.upload.accepted",
-        pipeline_id=pipeline_id, source_type=source_type,
-        source_file=filename, file_size=file_size,
-        content_type=content_type or "-",
-    )
-    return PipelineUploadResponse(
-        pipeline_id=pipeline_id, status="parsing",
-        source_type=source_type, page_range=page_range,
-    )
+        log_event(
+            logger, "import.upload.accepted",
+            pipeline_id=pipeline_id, source_type=source_type,
+            source_file=filename, file_size=file_size,
+            content_type=content_type or "-",
+        )
+        return PipelineUploadResponse(
+            pipeline_id=pipeline_id, status="parsing",
+            source_type=source_type, page_range=page_range,
+        )
+    except Exception:
+        await _release_pipeline_reservation(pipeline_id)
+        raise
+        raise
 
 
 async def get_pipeline_status(pipeline_id: str, db: AsyncSession) -> PipelineStatusResponse:

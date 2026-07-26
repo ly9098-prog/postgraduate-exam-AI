@@ -15,6 +15,14 @@ Lua scripts:
   on success, 0 on owner mismatch (caller should stop).
 - ``_LUA_RELEASE`` — compare value (owner_token) → DEL, returns 1
   on success, 0 on owner mismatch.
+
+Usage::
+
+    lock = DistributedLock("my_task_lock")
+    async with lock.acquire_and_renew(ttl=60, renew_interval=30) as handle:
+        if handle.is_still_held():
+            while handle.is_still_held():
+                await process_one_batch()
 """
 
 from __future__ import annotations
@@ -32,6 +40,52 @@ import redis.exceptions as redis_exc
 from app.core.config import settings
 
 logger = logging.getLogger("postgraduate-ai.distributed-lock")
+
+
+class LeaseLostError(Exception):
+    """Raised when the distributed lock is lost mid-lease (e.g., Redis failure)."""
+    pass
+
+
+class LeaseHandle:
+    """Handle returned by ``acquire_and_renew()`` that tracks lease state.
+
+    Scheduler jobs should call ``is_still_held()`` between batches to detect
+    lock loss (e.g., Redis failure, another instance stole the lock).
+
+    Usage::
+
+        async with lock.acquire_and_renew(ttl=60, renew_interval=30) as handle:
+            if handle.is_still_held():
+                while handle.is_still_held():
+                    await process_one_batch()
+    """
+
+    def __init__(self, lock: DistributedLock) -> None:
+        self._lock = lock
+        self._lost_event = asyncio.Event()
+        # Start in "lost" state — caller must call mark_held() after successful acquire
+        self._lost_event.set()
+
+    def mark_held(self) -> None:
+        """Call after successful lock acquisition."""
+        self._lost_event.clear()
+
+    def mark_lost(self) -> None:
+        """Call when renew detects the lock is no longer ours."""
+        self._lost_event.set()
+
+    def is_still_held(self) -> bool:
+        """Return True if this instance still holds the lock (renew has not failed)."""
+        return not self._lost_event.is_set()
+
+    async def wait_for_loss(self) -> None:
+        """Async wait — completes when the lock is lost."""
+        await self._lost_event.wait()
+
+    @property
+    def owner_token(self) -> str:
+        return self._lock._owner_token
 
 # Lua: ACQUIRE — SET NX (atomically set if not exist)
 # KEYS: [lock_key]
@@ -84,9 +138,10 @@ class DistributedLock:
                 await lock.release()
 
         # With automatic renewal
-        async with lock.acquire_and_renew(ttl=60, renew_interval=30) as held:
-            if held:
-                await do_long_work()
+        async with lock.acquire_and_renew(ttl=60, renew_interval=30) as handle:
+            if handle.is_still_held():
+                while handle.is_still_held():
+                    await do_long_work_in_batches()
 
     Metrics counters (incremented in-process):
         - acquired, skipped, failed, duration
@@ -275,6 +330,7 @@ class DistributedLock:
         ttl: int,
         renew_interval: float,
         stop_event: asyncio.Event,
+        handle: LeaseHandle,
     ) -> None:
         """Background task that periodically extends the lock."""
         while not stop_event.is_set():
@@ -285,6 +341,7 @@ class DistributedLock:
                         "distlock %s: renewal failed, lock lost after %s",
                         self._name, self._owner_token[:8],
                     )
+                    handle.mark_lost()
                     return
             except asyncio.CancelledError:
                 return
@@ -299,28 +356,34 @@ class DistributedLock:
     ):
         """Async context manager that acquires the lock and auto-renews it.
 
+        Yields a :class:`LeaseHandle` — check ``handle.is_still_held()`` after
+        acquiring and periodically during long-running work to detect lock loss.
+
         Usage::
 
-            async with lock.acquire_and_renew(ttl=60, renew_interval=30) as held:
-                if held:
+            async with lock.acquire_and_renew(ttl=60, renew_interval=30) as handle:
+                if handle.is_still_held():
                     await do_long_work()
         """
         start = time.time()
         acquired = await self.acquire(ttl=ttl)
+        handle = LeaseHandle(self)
 
         if not acquired:
             self.duration_ms += (time.time() - start) * 1000
-            yield False
+            yield handle  # handle.is_still_held() == False
             return
+
+        handle.mark_held()
 
         stop_event = asyncio.Event()
         renewer = asyncio.create_task(
-            self._renew_loop(ttl, renew_interval, stop_event),
+            self._renew_loop(ttl, renew_interval, stop_event, handle),
             name=f"distlock-renew-{self._name}",
         )
 
         try:
-            yield True
+            yield handle
         finally:
             stop_event.set()
             renewer.cancel()

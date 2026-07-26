@@ -145,6 +145,21 @@ def _validate_quality_gate_mode(mode: str) -> str:
 _ = _validate_quality_gate_mode(_DOMAIN_QUALITY_GATE_MODE)
 
 
+async def _check_cancelled() -> None:
+    """Cooperative cancellation checkpoint.
+
+    Checks whether the current asyncio task has been cancelled.
+    If so, raises ``asyncio.CancelledError`` at a well-defined point
+    rather than depending solely on implicit ``await`` propagation.
+
+    Add calls to this function at pipeline stage boundaries:
+    between chunks, between pages, before AI calls.
+    """
+    t = asyncio.current_task()
+    if t is not None and t.cancelled():
+        raise asyncio.CancelledError()
+
+
 def _run_coro_in_loop(coro) -> Any:
     """安全地运行协程，兼容已有或新建事件循环。
 
@@ -5861,6 +5876,9 @@ async def run_import_pipeline(
         source_file=source_file, subject=subject or "-",
     )
 
+    # Cancellation checkpoint before pipeline execution
+    await _check_cancelled()
+
     try:
         result = await pipeline.run(
             file_content=file_content,
@@ -5875,6 +5893,10 @@ async def run_import_pipeline(
             page_images=page_images,
             resume_from_checkpoint=resume_from_checkpoint,
         )
+
+        # Cancellation checkpoint after pipeline execution
+        await _check_cancelled()
+
         result["pipeline_id"] = pipeline_id
 
         log_event(
@@ -5949,6 +5971,9 @@ async def run_pipeline_background(
             "page_range": existing.get("page_range") or initial_page_range,
         })
 
+    # Cancellation checkpoint before pipeline execution
+    await _check_cancelled()
+
     try:
         result = await run_import_pipeline(
             file_content=file_content,
@@ -5964,6 +5989,10 @@ async def run_pipeline_background(
             created_by=created_by,
             source_sha256=source_sha256,
         )
+
+        # Cancellation checkpoint after pipeline execution
+        await _check_cancelled()
+
         result["pipeline_id"] = pipeline_id
         # Preserve page_range through the final store write (the pipeline
         # result itself doesn't carry PdfPageRangeInfo — only the upload

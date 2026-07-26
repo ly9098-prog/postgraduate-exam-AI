@@ -23,6 +23,10 @@ page { background: #F5F5F2; }
 }
 .record-filename { font-size: 28rpx; font-weight: 600; color: #1A1A1A; flex: 1; }
 
+.record-format { font-size: 20rpx; padding: 2rpx 10rpx; border-radius: 6rpx; margin-right: 8rpx; }
+.format-pdf { background: #E3F2FD; color: #1565C0; }
+.format-docx { background: #F3E5F5; color: #7B1FA2; }
+
 .record-status { font-size: 24rpx; padding: 4rpx 12rpx; border-radius: 8rpx; }
 .tag-success { background: #E8F5E9; color: #4CAF50; }
 .tag-info { background: #E3F2FD; color: #2196F3; }

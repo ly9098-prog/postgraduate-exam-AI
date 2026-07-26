@@ -35,7 +35,7 @@ class ExportTaskStatus(StrEnum):
 
 class ExportFileFormat(StrEnum):
     PDF = "pdf"
-    # WORD = "word"  # reserved — display "coming soon"
+    DOCX = "docx"
 
 
 class ExportRangeType(StrEnum):
@@ -124,14 +124,12 @@ class PreviewCountRequest(ExportConfigRequest):
 
 class CreateExportTaskRequest(ExportConfigRequest):
     """Extended with format selection for task creation."""
-    file_format: str = "pdf"  # only pdf for now; word = "coming soon"
+    file_format: str = "pdf"
 
     @field_validator("file_format")
     @classmethod
     def validate_format(cls, v: str) -> str:
-        if v == "word":
-            raise ValueError("Word 导出即将支持，敬请期待")
-        if v != "pdf":
+        if v not in ("pdf", "docx"):
             raise ValueError(f"不支持的导出格式: {v}")
         return v
 
@@ -176,7 +174,7 @@ class DownloadInfoResponse(BaseModel):
     method: str = "stream"  # "stream" | "signed_url"
     file_name: str
     file_size: int | None = None
-    content_type: str = "application/pdf"
+    content_type: str = "application/pdf"  # overridden per format by the API handler
 
 
 class ExportRecordListItem(BaseModel):

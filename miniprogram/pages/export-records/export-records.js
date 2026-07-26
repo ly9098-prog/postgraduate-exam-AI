@@ -79,27 +79,41 @@ Page({
     this._loadList(false)
   },
 
-  // ── Polling ──
+  // ── Status sync: WebSocket + polling fallback ──
   _startPollingIfNeeded(task) {
     const terminalStates = ['completed', 'failed', 'expired']
     if (terminalStates.includes(task.status)) return
     if (this.data._pollingTasks[task.id]) return
 
-    const stop = exportApi.pollTaskStatus(
+    const stop = exportApi.syncTaskStatus(
       task.id,
       (updated) => {
         if (!this.data._alive) return
-        this._updateTaskInList(updated)
-        // If reached terminal state, stop polling
-        if (terminalStates.includes(updated.status)) {
-          const s = this.data._pollingTasks[task.id]
-          if (s) s()
+        // Ensure we process the update correctly — WS events may have
+        // different key naming than API responses
+        const taskUpdate = updated.task_id ? {
+          id: updated.task_id,
+          status: updated.status,
+          file_format: updated.file_format,
+          success_count: updated.success_count,
+          skip_count: updated.skip_count,
+          error_message: updated.error_message,
+          completed_at: updated.completed_at,
+          expires_at: updated.expires_at,
+        } : updated
+
+        this._updateTaskInList(taskUpdate || updated)
+        const s = this.data._pollingTasks[task.id]
+        // If reached terminal state, stop
+        if (s && terminalStates.includes((taskUpdate || updated).status)) {
+          s()
+          delete this.data._pollingTasks[task.id]
         }
       },
       (err) => {
-        // Error handler — polling continues internally
+        // Error — sync service handles internally
       },
-      3000,
+      { pollIntervalMs: 3000 },
     )
     this.data._pollingTasks[task.id] = stop
   },
@@ -128,6 +142,7 @@ Page({
   // ── Preview (wx.openDocument) ──
   async onPreview(e) {
     const taskId = e.currentTarget.dataset.id
+    const task = this.data.list.find(t => t.id === taskId)
     if (!taskId) return
 
     try {
@@ -135,7 +150,6 @@ Page({
 
       let filePath = ''
       if (info.method === 'stream') {
-        // Download via file endpoint
         const url = exportApi.getFileUrl(taskId)
         const dl = await this._downloadFile(url)
         filePath = dl
@@ -147,13 +161,20 @@ Page({
         return
       }
 
+      // Determine file type from task format or file extension
+      const fileFormat = (task && task.file_format) || 'pdf'
+      const fileType = fileFormat === 'docx' ? 'docx' : 'pdf'
+
       wx.openDocument({
         filePath,
-        fileType: 'pdf',
+        fileType: fileType,
         success: () => console.log('Preview success'),
         fail: (err) => {
           console.error('Preview failed', err)
-          wx.showToast({ title: '预览失败，请稍后重试', icon: 'none' })
+          const msg = fileType === 'docx'
+            ? 'Word 文件预览失败，请尝试保存后使用 WPS 或 Word 打开'
+            : '预览失败，请稍后重试'
+          wx.showToast({ title: msg, icon: 'none' })
         },
       })
     } catch (err) {
@@ -180,6 +201,7 @@ Page({
   // ── Save ──
   async onSave(e) {
     const taskId = e.currentTarget.dataset.id
+    const task = this.data.list.find(t => t.id === taskId)
     wx.showToast({ title: '正在保存…', icon: 'loading' })
 
     try {
@@ -189,8 +211,9 @@ Page({
       const dl = await this._downloadFile(url)
       const fs = wx.getFileSystemManager()
 
-      // Save to persistent local path
-      const savedPath = `${wx.env.USER_DATA_PATH}/${info.file_name || 'export.pdf'}`
+      // Use the original file name from the task
+      const fileName = (task && task.file_name) || (info.file_name) || 'export.' + ((task && task.file_format) || 'pdf')
+      const savedPath = `${wx.env.USER_DATA_PATH}/${fileName}`
       fs.saveFile({
         tempFilePath: dl,
         filePath: savedPath,

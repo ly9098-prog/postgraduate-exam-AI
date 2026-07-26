@@ -6,6 +6,7 @@ import tempfile
 
 import pytest
 
+from app.core.deployment_profile import DeploymentProfile
 from app.features.ocr_gateway import (
     GatewayRouteDecision,
     OCRGateway,
@@ -17,7 +18,7 @@ from app.features.page_stream import RenderedPage
 class TestOCRGateway:
     @pytest.mark.asyncio
     async def test_recognize_page_shadow_returns_route_decision(self):
-        gateway = OCRGateway(mode="shadow")
+        gateway = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
         page = RenderedPage(page_index=0, page_id="p0000")
         result = await gateway.recognize_page(page, trace_id="test-shadow")
         assert result.is_success
@@ -28,7 +29,7 @@ class TestOCRGateway:
 
     @pytest.mark.asyncio
     async def test_route_page_returns_decision(self):
-        gateway = OCRGateway(mode="shadow")
+        gateway = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
         page = RenderedPage(page_index=0, page_id="p0000")
         route = await gateway.route_page(page)
         assert isinstance(route, GatewayRouteDecision)
@@ -36,7 +37,7 @@ class TestOCRGateway:
 
     @pytest.mark.asyncio
     async def test_legacy_mode_returns_not_active(self):
-        gateway = OCRGateway(mode="legacy")
+        gateway = OCRGateway(mode="legacy", profile=DeploymentProfile.LOCAL_IMPORT)
         page = RenderedPage(page_index=0, page_id="p0000")
         result = await gateway.recognize_page(page, trace_id="test-legacy")
         assert result.is_failure
@@ -45,7 +46,7 @@ class TestOCRGateway:
     @pytest.mark.asyncio
     async def test_shadow_does_not_call_backend(self):
         """Shadow mode must not perform actual OCR calls."""
-        gateway = OCRGateway(mode="shadow")
+        gateway = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
         page = RenderedPage(page_index=0, page_id="p0000")
         result = await gateway.recognize_page(page, trace_id="test-no-call")
         assert result.is_success
@@ -54,9 +55,9 @@ class TestOCRGateway:
 
     @pytest.mark.asyncio
     async def test_gateway_mode_property(self):
-        shadow = OCRGateway(mode="shadow")
-        legacy = OCRGateway(mode="legacy")
-        gw = OCRGateway(mode="gateway")
+        shadow = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
+        legacy = OCRGateway(mode="legacy", profile=DeploymentProfile.LOCAL_IMPORT)
+        gw = OCRGateway(mode="gateway", profile=DeploymentProfile.LOCAL_IMPORT)
         assert shadow.is_shadow
         assert not shadow.is_gateway
         assert not legacy.is_shadow
@@ -73,7 +74,7 @@ class TestOCRGateway:
     @pytest.mark.asyncio
     async def test_multiple_shadow_calls_idempotent(self):
         """Shadow mode calls should be idempotent and fast."""
-        gateway = OCRGateway(mode="shadow")
+        gateway = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
         page = RenderedPage(page_index=0, page_id="p0000")
         r1 = await gateway.recognize_page(page, trace_id="shadow-1")
         r2 = await gateway.recognize_page(page, trace_id="shadow-2")
@@ -86,7 +87,7 @@ class TestOCRGatewayShadowNoDoubleCall:
 
     @pytest.mark.asyncio
     async def test_shadow_no_side_effects(self):
-        gateway = OCRGateway(mode="shadow")
+        gateway = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
         page = RenderedPage(page_index=0, page_id="p0000")
         result = await gateway.recognize_page(page, trace_id="test-no-side")
         assert result.is_success

@@ -61,6 +61,7 @@ def validate_production_config() -> None:
     _check_staging_production(errors)
     _check_db_pool_budget(errors)
     _check_queue_capacity(errors)
+    _check_worker_scratch_dir(errors)
 
     if errors:
         raise SystemError(
@@ -349,6 +350,39 @@ def _check_queue_capacity(errors: list[str]) -> None:
         val = getattr(settings, f"TASK_QUEUE_MAX_READY_{name}", None)
         if val is not None and (not isinstance(val, int) or val < 0):
             errors.append(f"TASK_QUEUE_MAX_READY_{name}={val} 不合理")
+
+
+def _check_worker_scratch_dir(errors: list[str]) -> None:
+    """Verify WORKER_SCRATCH_DIR is set and not pointing to system temp dir.
+
+    Worker scratch dir must be explicitly configured to avoid filling up
+    the system temp partition. In cloud production, this is required.
+    """
+    scratch = settings.WORKER_SCRATCH_DIR
+    if not scratch:
+        errors.append(
+            "WORKER_SCRATCH_DIR 未设置——生产过程需要显式配置工作暂存目录。"
+        )
+        return
+
+    import tempfile
+
+    real_scratch = os.path.realpath(scratch)
+    real_temp = os.path.realpath(tempfile.gettempdir())
+
+    if real_scratch == real_temp:
+        errors.append(
+            f"WORKER_SCRATCH_DIR={scratch!r} 指向系统临时目录 {real_temp}。"
+            f" 必须设置为独立目录以避免填满系统临时分区。"
+        )
+        return
+
+    try:
+        os.makedirs(scratch, exist_ok=True)
+        if not os.access(scratch, os.W_OK):
+            errors.append(f"WORKER_SCRATCH_DIR 不可写: {scratch}")
+    except OSError as exc:
+        errors.append(f"WORKER_SCRATCH_DIR 检查失败: {scratch}: {exc}")
 
 
 # ── async checks ──

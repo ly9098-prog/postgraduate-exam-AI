@@ -65,6 +65,7 @@ services:
       OCR_ENABLED: ${OCR_ENABLED:-false}
       OCR_MAX_WORKERS: ${OCR_MAX_WORKERS:-1}
       # Production: local OCR not allowed — use disabled or paddlex_http
+      DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-cloud_api}
       OCR_USE_GPU: ${OCR_USE_GPU:-false}
       OCR_EXECUTION_BACKEND: ${OCR_EXECUTION_BACKEND:-disabled}
       OCR_REMOTE_URL: ${OCR_REMOTE_URL:-}
@@ -104,6 +105,7 @@ services:
       # 导出 PDF 文件存储
       EXPORT_DIR: ${EXPORT_DIR:-/opt/2240ai-v2/exports}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      WORKER_SCRATCH_DIR: ${WORKER_SCRATCH_DIR:-/tmp}
       PRODUCT_NAME: ${PRODUCT_NAME:-MemoGrad}
     ports:
       - "127.0.0.1:8000:8000"

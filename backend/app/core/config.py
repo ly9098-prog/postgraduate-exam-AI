@@ -257,6 +257,7 @@ class Settings(BaseSettings):
     EXPORT_MAX_CONCURRENT: int = 1
     EXPORT_DIR: str = "static/exports"
     PRODUCT_NAME: str = "MemoGrad"
+    GENERATOR_VERSION: str = "2.0"  # v2 = DOCX support added
 
     # ── Adaptive Learning ──
     ADAPTIVE_LEARNING_ENABLED: bool = True

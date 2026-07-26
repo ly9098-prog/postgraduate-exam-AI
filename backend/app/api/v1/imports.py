@@ -273,7 +273,6 @@ async def resume_pipeline(
 
         result = await enqueue_resume_pipeline(
             pipeline_id=pipeline_id,
-            file_path=tmp.path,
             staging_object_id=_resume_staging.object_id,
             subject=subject,
             subject_id=None,

@@ -517,7 +517,7 @@ async def get_task_flow(
 
     all_items, total_count = await list_wrong_enriched(
         db, user_id, subject=subject, error_type=error_type, topic=topic,
-        page=1, page_size=9999,
+        page=1, page_size=500,
     )
 
     today_due: list[dict] = []

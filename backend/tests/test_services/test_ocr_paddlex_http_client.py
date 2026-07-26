@@ -18,9 +18,14 @@ from app.core.ocr_runtime_config import OcrRuntimeConfig
 from app.core.ocr_types import STABLE_ERROR_CODES, WorkerResult
 from app.services.ocr_paddlex_http_client import (
     PaddleXHttpOcrWorkerClient,
+    _compute_backoff,
+    _compute_base64_size,
     _derive_health_url,
+    _is_retryable_exception,
+    _is_retryable_status,
     _normalize_bbox,
     _normalize_polygon,
+    _parse_retry_after,
     _safe_score,
     _safe_str,
     _map_pruned_result,
@@ -341,6 +346,461 @@ class TestMapPrunedResult:
         )
         assert result["text"] == ""
         assert result["failed"] is False
+
+
+# ===================================================================
+# Retry / backoff / size-check pure function tests
+# ===================================================================
+
+
+class TestRetryFunctions:
+    """Pure-function tests for retry helpers."""
+
+    @pytest.mark.parametrize("attempt,expected_min,expected_max", [
+        (0, 0.9, 1.1),    # base_delay=1.0 ± 10%
+        (1, 1.8, 2.2),    # 2.0 ± 10%
+        (2, 3.6, 4.4),    # 4.0 ± 10%
+        (3, 7.2, 8.8),    # 8.0 ± 10%
+        (4, 14.4, 17.6),  # 16.0 ± 10%
+    ])
+    def test_compute_backoff_exponential(self, attempt, expected_min, expected_max):
+        delay = _compute_backoff(attempt)
+        assert expected_min <= delay <= expected_max, (
+            f"attempt={attempt}: {delay} not in [{expected_min}, {expected_max}]"
+        )
+
+    def test_compute_backoff_capped(self):
+        """Delay should be capped at max_delay."""
+        delay = _compute_backoff(10, max_delay=30.0, jitter=0.0)
+        assert delay == 30.0
+
+    def test_compute_backoff_with_retry_after(self):
+        """Retry-After value should be used if provided."""
+        delay = _compute_backoff(0, retry_after=5.0)
+        assert delay == 5.0
+
+    def test_compute_backoff_retry_after_capped(self):
+        """Retry-After should be capped at max_delay."""
+        delay = _compute_backoff(0, retry_after=60.0, max_delay=30.0)
+        assert delay == 30.0
+
+    def test_parse_retry_after_seconds(self):
+        """Parse Retry-After header in seconds format."""
+        resp = httpx.Response(429, headers={"Retry-After": "30"})
+        assert _parse_retry_after(resp) == 30.0
+
+    def test_parse_retry_after_none(self):
+        """No Retry-After header returns None."""
+        resp = httpx.Response(429)
+        assert _parse_retry_after(resp) is None
+
+    def test_parse_retry_after_empty(self):
+        """Empty Retry-After header returns None."""
+        resp = httpx.Response(429, headers={"Retry-After": ""})
+        assert _parse_retry_after(resp) is None
+
+    def test_is_retryable_status(self):
+        assert _is_retryable_status(429) is True
+        assert _is_retryable_status(502) is True
+        assert _is_retryable_status(503) is True
+        assert _is_retryable_status(504) is True
+        assert _is_retryable_status(400) is False
+        assert _is_retryable_status(401) is False
+        assert _is_retryable_status(500) is False
+        assert _is_retryable_status(200) is False
+
+    def test_is_retryable_exception(self):
+        import httpx
+        assert _is_retryable_exception(httpx.ConnectError("fail")) is True
+        assert _is_retryable_exception(httpx.ReadTimeout("fail")) is True
+        assert _is_retryable_exception(httpx.WriteError("fail")) is True
+        assert _is_retryable_exception(ValueError("no")) is False
+
+    def test_compute_base64_size(self):
+        """Verify base64 expansion estimate (1.37x)."""
+        assert _compute_base64_size(1000) == 1370
+        assert _compute_base64_size(0) == 0
+        assert _compute_base64_size(1) == 2  # ceil(1 * 1.37)
+
+
+# ===================================================================
+# Retry integration tests
+# ===================================================================
+
+
+class TestRetryBehavior:
+    """End-to-end retry behavior via mock transport."""
+
+    @pytest.mark.asyncio
+    async def test_retry_timeout_then_success(self):
+        """First call times out, retry succeeds."""
+        call_count = [0]
+
+        def handler(r):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise httpx.ReadTimeout("First attempt timed out")
+            return httpx.Response(200, json={
+                "errorCode": 0, "errorMsg": "Success",
+                "result": {"ocrResults": [{
+                    "prunedResult": {
+                        "rec_texts": ["recovered"], "rec_scores": [0.9],
+                        "rec_polys": [[[0, 0], [10, 0], [10, 10], [0, 10]]],
+                        "rec_boxes": [[0, 0, 10, 10]],
+                    }
+                }]},
+            })
+
+        cfg = _config(remote_read_timeout_sec=1)
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            result = await client.recognize(_FAKE_PNG, page_index=0)
+        await client.shutdown()
+
+        assert result.status == "success"
+        assert result.result["text"] == "recovered"
+        assert call_count[0] == 2
+
+    @pytest.mark.asyncio
+    async def test_retry_all_exhausted_timeout(self):
+        """All retries exhausted due to persistent timeout — correct error code."""
+        def handler(r):
+            raise httpx.ReadTimeout("Always times out")
+
+        cfg = _config(remote_read_timeout_sec=1)
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            result = await client.recognize(_FAKE_PNG, page_index=0)
+        await client.shutdown()
+
+        assert result.status == "failed"
+        assert result.stable_error_code == STABLE_ERROR_CODES["REMOTE_TIMEOUT"]
+        assert "All retries exhausted" in result.result.get("error", "")
+
+    @pytest.mark.asyncio
+    async def test_non_retryable_400_immediate(self):
+        """400 status returns immediately without retry."""
+        call_count = [0]
+
+        def handler(r):
+            call_count[0] += 1
+            return httpx.Response(400, text="Bad Request")
+
+        cfg = _config()
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            result = await client.recognize(_FAKE_PNG, page_index=0)
+        await client.shutdown()
+
+        assert result.status == "failed"
+        assert result.stable_error_code == STABLE_ERROR_CODES["REMOTE_HTTP_ERROR"]
+        assert call_count[0] == 1, "Non-retryable 400 must not retry"
+
+    @pytest.mark.asyncio
+    async def test_retry_502_then_success(self):
+        """502 retries, then succeeds."""
+        call_count = [0]
+
+        def handler(r):
+            call_count[0] += 1
+            if call_count[0] <= 2:
+                return httpx.Response(502, text="Bad Gateway")
+            return httpx.Response(200, json={
+                "errorCode": 0, "errorMsg": "Success",
+                "result": {"ocrResults": [{
+                    "prunedResult": {
+                        "rec_texts": ["502-recovered"], "rec_scores": [0.9],
+                        "rec_polys": [[[0, 0], [10, 0], [10, 10], [0, 10]]],
+                        "rec_boxes": [[0, 0, 10, 10]],
+                    }
+                }]},
+            })
+
+        cfg = _config(remote_read_timeout_sec=1)
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            result = await client.recognize(_FAKE_PNG, page_index=0)
+        await client.shutdown()
+
+        assert result.status == "success"
+        assert call_count[0] == 3
+
+    @pytest.mark.asyncio
+    async def test_retry_all_exhausted_http(self):
+        """All retries exhausted for persistent 502."""
+        call_count = [0]
+
+        def handler(r):
+            call_count[0] += 1
+            return httpx.Response(502, text="Bad Gateway")
+
+        cfg = _config(remote_read_timeout_sec=1)
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            result = await client.recognize(_FAKE_PNG, page_index=0)
+        await client.shutdown()
+
+        assert result.status == "failed"
+        assert result.stable_error_code == STABLE_ERROR_CODES["REMOTE_HTTP_ERROR"]
+        assert call_count[0] == 4  # 1 initial + 3 retries
+
+    @pytest.mark.asyncio
+    async def test_cancellation_during_retry_sleep(self):
+        """CancelledError during retry sleep propagates correctly."""
+        import asyncio
+
+        def handler(r):
+            raise httpx.ReadTimeout("timeout")
+
+        cfg = _config(remote_read_timeout_sec=1)
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+
+            task = asyncio.create_task(client.recognize(_FAKE_PNG, page_index=0))
+            await asyncio.sleep(0.01)
+            task.cancel()
+            try:
+                await task
+                assert False, "Should have raised CancelledError"
+            except asyncio.CancelledError:
+                pass  # expected
+        await client.shutdown()
+
+
+# ===================================================================
+# Circuit breaker safety tests
+# ===================================================================
+
+
+class TestCircuitBreakerSafety:
+    """Thread-safe circuit breaker: half-open single probe, async lock."""
+
+    @pytest.mark.asyncio
+    async def test_half_open_probe_direct(self):
+        """Direct verification of half-open single-probe via async checks."""
+        cfg = _config()
+
+        async with httpx.AsyncClient() as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            client._circuit_failure_threshold = 3
+            client._circuit_recovery_timeout = 30
+
+            # Open the circuit
+            for _ in range(3):
+                await client._record_failure()
+            assert client._circuit_state == "open"
+
+            # Set recovery timeout to 0 so the next check enters half-open
+            client._circuit_recovery_timeout = 0.0
+
+            # First async check: should transition to half-open and return True
+            allowed1 = await client._circuit_may_attempt_async()
+            assert allowed1 is True
+            assert client._circuit_state == "half-open"
+            assert client._half_open_probe_in_flight is True
+
+            # Second async check: should be rejected (probe already in flight)
+            allowed2 = await client._circuit_may_attempt_async()
+            assert allowed2 is False
+
+            # Verify state is still half-open
+            assert client._circuit_state == "half-open"
+        await client.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_probe_success_closes_circuit(self):
+        """After a successful probe, the circuit should close."""
+        cfg = _config()
+
+        transport = httpx.MockTransport(lambda r: httpx.Response(200, json={
+            "errorCode": 0, "errorMsg": "Success",
+            "result": {"ocrResults": [{
+                "prunedResult": {
+                    "rec_texts": ["ok"], "rec_scores": [0.9],
+                    "rec_polys": [[[0, 0], [10, 0], [10, 10], [0, 10]]],
+                    "rec_boxes": [[0, 0, 10, 10]],
+                }
+            }]},
+        }))
+
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            client._circuit_failure_threshold = 3
+            client._circuit_recovery_timeout = 30
+
+            # Open the circuit via 3 sequential failures
+            def fail_handler(r):
+                raise httpx.ConnectError("fail")
+
+            fail_transport = httpx.MockTransport(fail_handler)
+            client._client = httpx.AsyncClient(transport=fail_transport)
+
+            for _ in range(3):
+                await client.recognize(_FAKE_PNG, page_index=0)
+            assert client._circuit_state == "open"
+
+            # Now swap back to the success transport
+            await client._client.aclose()
+            client._client = httpx.AsyncClient(transport=transport)
+
+            # Set recovery to 0 so next recognize enters half-open
+            client._circuit_recovery_timeout = 0.0
+
+            # The probe should succeed and close the circuit
+            result = await client.recognize(_FAKE_PNG, page_index=0)
+            assert result.status == "success"
+            assert client._circuit_state == "closed"
+
+            await client._client.aclose()
+        await client.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_probe_failure_keeps_open(self):
+        """After a failed probe, the circuit should stay open."""
+        cfg = _config()
+
+        def fail_handler(r):
+            raise httpx.ConnectError("probe fail")
+
+        transport = httpx.MockTransport(fail_handler)
+
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            client._circuit_failure_threshold = 3
+            client._circuit_recovery_timeout = 30
+
+            # Open the circuit
+            for _ in range(3):
+                await client._record_failure()
+            assert client._circuit_state == "open"
+
+            # Set recovery to 0 so next check enters half-open
+            client._circuit_recovery_timeout = 0.0
+
+            # The probe fails → circuit stays open
+            result = await client.recognize(_FAKE_PNG, page_index=0)
+            assert result.status == "failed"
+            assert client._circuit_state == "open"
+
+        await client.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_circuit_state_metrics(self):
+        """Circuit state is reflected in metrics."""
+        cfg = _config()
+
+        def fail_handler(r):
+            raise httpx.ConnectError("fail")
+
+        transport = httpx.MockTransport(fail_handler)
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            client._circuit_failure_threshold = 3
+            client._circuit_recovery_timeout = 30
+
+            for _ in range(3):
+                await client.recognize(_FAKE_PNG, page_index=0)
+
+            m = client.metrics
+            assert m["circuit_state"] == "open"
+            assert m["circuit_breaker_trips"] >= 1
+        await client.shutdown()
+
+
+# ===================================================================
+# Size check tests
+# ===================================================================
+
+
+class TestSizeCheck:
+    """Pre-request size budget enforcement."""
+
+    @pytest.mark.asyncio
+    async def test_request_size_rejected(self):
+        """Image exceeding request size budget is rejected before sending."""
+        cfg = _config(remote_request_max_bytes=100)
+
+        call_count = [0]
+        transport = httpx.MockTransport(lambda r: (
+            call_count.__setitem__(0, call_count[0] + 1) or
+            httpx.Response(200, json={"errorCode": 0, "errorMsg": "Success",
+                                       "result": {"ocrResults": []}})
+        ))
+
+        large_image = b"x" * 200  # base64 ~274 bytes, exceeds 100
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            result = await client.recognize(large_image, page_index=0)
+        await client.shutdown()
+
+        assert result.status == "failed"
+        assert "too large" in result.result.get("error", "").lower()
+        assert call_count[0] == 0, "No HTTP request should have been sent"
+
+    @pytest.mark.asyncio
+    async def test_request_size_accepted(self):
+        """Image within size budget is sent normally."""
+        cfg = _config(remote_request_max_bytes=2000)
+
+        transport = httpx.MockTransport(lambda r: httpx.Response(200, json={
+            "errorCode": 0, "errorMsg": "Success",
+            "result": {"ocrResults": [{
+                "prunedResult": {
+                    "rec_texts": ["ok"], "rec_scores": [0.9],
+                    "rec_polys": [[[0, 0], [10, 0], [10, 10], [0, 10]]],
+                    "rec_boxes": [[0, 0, 10, 10]],
+                }
+            }]},
+        }))
+
+        small_image = b"x" * 100  # base64 ~137 bytes, well under 2000
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            result = await client.recognize(small_image, page_index=0)
+        await client.shutdown()
+
+        assert result.status == "success"
+
+
+# ===================================================================
+# Shared client lifecycle
+# ===================================================================
+
+
+class TestSharedClient:
+    """When a shared httpx.AsyncClient is provided, shutdown does not close it."""
+
+    @pytest.mark.asyncio
+    async def test_shared_client_not_closed_on_shutdown(self):
+        """Shutdown must not close a client it doesn't own."""
+        transport = httpx.MockTransport(lambda r: httpx.Response(200, json={
+            "errorCode": 0, "errorMsg": "Success",
+            "result": {"ocrResults": [{
+                "prunedResult": {
+                    "rec_texts": ["shared"], "rec_scores": [0.9],
+                    "rec_polys": [[[0, 0], [10, 0], [10, 10], [0, 10]]],
+                    "rec_boxes": [[0, 0, 10, 10]],
+                }
+            }]},
+        }))
+
+        cfg = _config()
+        async with httpx.AsyncClient(transport=transport) as hc:
+            client = PaddleXHttpOcrWorkerClient(cfg, http_client=hc)
+            r = await client.recognize(_FAKE_PNG, page_index=0)
+            assert r.status == "success"
+            await client.shutdown()
+            # The shared client hc is still open (context manager hasn't exited)
+            # A second call to hc should work (verify it's not closed)
+            resp = await hc.get("http://test/")
+            assert resp.status_code == 200
+        await client.shutdown()  # idempotent
 
 
 # ===================================================================

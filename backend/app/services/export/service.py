@@ -40,10 +40,33 @@ from app.services.storage_backend import get_storage
 
 logger = logging.getLogger(__name__)
 
+# ── Exporter registry ──
+_EXPORTERS: dict[str, type[Exporter]] = {}
+
+
+def register_exporter(format_name: str, exporter_cls: type[Exporter]) -> None:
+    """Register an exporter class for a given format string."""
+    _EXPORTERS[format_name] = exporter_cls
+
+
+def get_exporter(format_name: str) -> Exporter:
+    """Get an exporter instance for the given format."""
+    cls = _EXPORTERS.get(format_name)
+    if cls is None:
+        raise ValueError(f"Unsupported export format: {format_name}")
+    return cls()
+
+
+# Register built-in exporters
+from app.services.export.docx_exporter import DocxExporter
+
+register_exporter("pdf", PdfExporter)
+register_exporter("docx", DocxExporter)
+
 # ── Limits ──
 _MAX_EXPORT = 100
 _MAX_FILENAME_BYTES = 200
-_DEFAULT_FILENAME = "错题巩固练习.pdf"
+_DEFAULT_FILENAME = "错题巩固练习"  # extension added by _build_filename
 
 # ── File-name sanitisation ──
 _INVALID_FILENAME_CHARS = re.compile(r'[/\\:*?"<>|\x00-\x1f]')
@@ -143,7 +166,7 @@ async def create_export_task(
         total_count=0,
         file_name=file_name,
         idempotency_key=config.get("_idempotency_key"),
-        generator_version=settings.GENERATOR_VERSION if hasattr(settings, "GENERATOR_VERSION") else "1.0",
+        generator_version=settings.GENERATOR_VERSION,
     )
     db.add(task)
     await db.flush()
@@ -171,7 +194,7 @@ async def process_task(
     if task.status != ExportTaskStatus.PROCESSING:
         raise ValueError(f"Export task {task_id} is not in processing state (status={task.status})")
 
-    exporter = exporter or PdfExporter()
+    exporter = exporter or get_exporter(task.file_format)
 
     try:
         # 1. Resolve range
@@ -195,6 +218,7 @@ async def process_task(
         config_for_snapshot = {
             "title": title,
             "file_name": task.file_name,
+            "file_format": task.file_format,
             "show_date": task.show_date,
             "export_date": task.export_date,
             "sort_by": task.sort_by,
