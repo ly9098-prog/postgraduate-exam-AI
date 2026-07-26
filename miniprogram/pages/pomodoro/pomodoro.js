@@ -139,6 +139,9 @@ Page({
     // font size accessibility
     fontSizeLevel: 'medium',
 
+    // 番茄钟完成提醒（默认关闭；开启后启动专注会请求微信订阅消息授权）
+    notifyOn: false,
+
     // new features
     examDays: 0,
     showCelebration: false,
@@ -195,6 +198,7 @@ Page({
     this.setData({
       examDays: this._getExamDays(),
       fontSizeLevel: wx.getStorageSync('pomodoro_font_size') || 'medium',
+      notifyOn: !!wx.getStorageSync('pomodoro_notify_on'),
     })
     this._loadSubjects()
 
@@ -516,6 +520,7 @@ Page({
         preset: this.data.selectedPreset,
         work_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
         break_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.breakDuration,
+        notification_enabled: notificationEnabled,
       })
       this._beginCountdown(session)
     } catch (e) {
