@@ -12,6 +12,10 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Set PIL decompression bomb protection to prevent OOM from pathological images.
+# The limit matches the maximum allowed PDF page pixel count from settings.
+Image.MAX_IMAGE_PIXELS = settings.PDF_MAX_PAGE_PIXELS
+
 # Resolve backend root directory for consistent relative path handling.
 _BACKEND_ROOT = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -77,6 +81,15 @@ class StorageBackend(ABC):
         """删除已上传的文件。失败或不存在时返回 False。"""
         ...
 
+    @abstractmethod
+    async def get_download_url(self, url_or_key: str, expiry_sec: int = 3600) -> str | None:
+        """获取下载 URL。
+
+        LocalFileStorage: 返回 None（通过鉴权接口流式读取）。
+        COSStorage: 返回短时签名 URL。
+        """
+        ...
+
 
 class LocalFileStorage(StorageBackend):
     def __init__(self, prefix: str = "static/formulas"):
@@ -108,6 +121,10 @@ class LocalFileStorage(StorageBackend):
         return await loop.run_in_executor(
             _storage_executor, self._sync_delete, filepath,
         )
+
+    async def get_download_url(self, url_or_key: str, expiry_sec: int = 3600) -> str | None:
+        """Local storage: no public URL — stream through auth endpoint."""
+        return None
 
     def _resolve_delete_path(self, url_or_key: str) -> str | None:
         """Resolve URL or key to a relative path, with path traversal protection."""
@@ -245,6 +262,38 @@ class COSStorage(StorageBackend):
             logger.error("COS delete failed for %s: %s", key, e)
             return False
 
+    async def get_download_url(self, url_or_key: str, expiry_sec: int = 3600) -> str | None:
+        """Generate a short-lived signed URL for secure download.
+
+        Returns None if the backend is not configured or the key is invalid.
+        """
+        client = self._get_client()
+        if client is None:
+            return None
+
+        # Extract key from URL or use as-is
+        bucket_domain = f"{self._bucket}.cos.{self._region}.myqcloud.com"
+        if bucket_domain in url_or_key:
+            key = url_or_key.split(bucket_domain, 1)[1].lstrip("/")
+        else:
+            key = url_or_key
+
+        try:
+            loop = asyncio.get_running_loop()
+            signed_url = await loop.run_in_executor(
+                _storage_executor,
+                lambda: client.get_presigned_url(
+                    Bucket=self._bucket,
+                    Key=key,
+                    Method="GET",
+                    Expired=expiry_sec,
+                ),
+            )
+            return str(signed_url)
+        except Exception as e:
+            logger.error("Failed to generate signed URL for %s: %s", key, e)
+            return None
+
 
 def get_storage() -> StorageBackend:
     if settings.STORAGE_BACKEND == "cos":
@@ -257,4 +306,18 @@ def get_question_assets_storage() -> StorageBackend:
     prefix = "static/question-assets"
     if settings.STORAGE_BACKEND == "cos":
         return COSStorage(prefix=prefix)
+    return LocalFileStorage(prefix=prefix)
+
+
+def get_export_storage() -> StorageBackend:
+    """获取用于导出文件的 storage backend。
+
+    LocalFileStorage: 写入 EXPORT_DIR 目录。
+    COSStorage: 使用独立的 ``static/exports/`` 前缀。
+    """
+    prefix = settings.EXPORT_DIR
+    if settings.STORAGE_BACKEND == "cos":
+        cos = COSStorage(prefix=prefix)
+        cos._cos_prefix = "static/exports/"
+        return cos
     return LocalFileStorage(prefix=prefix)

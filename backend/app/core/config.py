@@ -93,6 +93,9 @@ class Settings(BaseSettings):
 
     # Remote OCR authentication
     OCR_REMOTE_TOKEN: str = ""
+    OCR_REMOTE_AUTH_HEADER: str = "Authorization"  # header name for auth token
+    OCR_REMOTE_AUTH_SCHEME: str = "Bearer"  # scheme prefix (e.g. "Bearer", "Basic")
+    OCR_ALLOW_HTTP: bool = False  # allow HTTP (not HTTPS) for remote OCR in trusted network
 
     # Artifact migration
     REJECT_LEGACY_ARTIFACTS: bool = False  # reject artifacts without metadata wrapper
@@ -103,12 +106,14 @@ class Settings(BaseSettings):
 
     # PDF 导入限制
     PDF_MAX_FILE_SIZE_BYTES: int = 200 * 1024 * 1024   # 200MB
+    PDF_MAX_FILE_BYTES: int = 5 * 1024 * 1024  # cloud default: 5MB
     PDF_MAX_PAGES: int = 600
     PDF_MAX_PAGE_PIXELS: int = 4096 * 4096              # max width*height per page
     PDF_MAX_DECODED_BYTES: int = 50 * 1024 * 1024       # 50MB per-page decoded memory budget
     PDF_RENDER_DPI: int = 150
     PDF_MAX_RENDER_PAGES_CONCURRENT: int = 5            # pages rendered per batch
     PDF_RENDER_PAGE_WINDOW: int = 0                      # 0 = all, N = max pages held in memory at once
+    PDF_TOTAL_PIXEL_BUDGET: int = 4000 * 4000 * 30       # cloud default: 30 pages at 4k
 
     # Exercise Region Detection
     EXERCISE_DETECTION_ENABLED: bool = True
@@ -178,6 +183,16 @@ class Settings(BaseSettings):
     # Staging storage for durable task files (Docker volume in prod)
     STAGING_STORAGE_DIR: str = "/opt/2240ai-v2/staging"
     STAGING_DISK_QUOTA: int = 2 * 1024 * 1024 * 1024  # 2 GB
+    STAGING_RETENTION_SEC: int = 604800  # 7 days default retention for staging objects
+    SCRATCH_QUOTA_BYTES: int = 500 * 1024 * 1024  # 500 MB worker scratch space
+
+    # Resource reservation for pipeline admission
+    PIPELINE_RESERVATION_LEASE_SEC: int = 3600  # max pipeline reservation duration
+    PIPELINE_RESERVATION_HEARTBEAT_SEC: int = 120  # reservation renewal interval
+
+    # Distributed OCR concurrency
+    OCR_GLOBAL_CONCURRENCY: int = 1  # max concurrent OCR requests across all workers
+    OCR_DISTRIBUTED_LEASE_SEC: int = 60  # lease duration for distributed OCR slot
 
     # Task queue — in-memory fallback guard
     ALLOW_IN_MEMORY_TASK_QUEUE: bool = False
@@ -189,8 +204,14 @@ class Settings(BaseSettings):
     TASK_QUEUE_MAX_READY_BATCH_IMAGE: int = 10
     TASK_QUEUE_MAX_READY_FORMULA: int = 20
     TASK_QUEUE_MAX_RETRY: int = 500
+    TASK_QUEUE_RETRY_MAX: int = 500
     TASK_QUEUE_MAX_DEAD: int = 1000
+    TASK_QUEUE_DEAD_MAX: int = 1000
+    TASK_QUEUE_CORRUPT_MAX: int = 100
     TASK_QUEUE_MAX_READY_DEFAULT: int = 50
+    TASK_QUEUE_RETENTION_SEC: int = 604800  # 7 days default retention for task metadata
+    TASK_LEASE_SEC: int = 300  # default lease duration for claimed tasks
+    TASK_HEARTBEAT_SEC: int = 60  # default heartbeat interval
 
     # COS (Tencent Cloud Object Storage)
     COS_BUCKET: str = ""
@@ -203,6 +224,9 @@ class Settings(BaseSettings):
 
     # 部署
     WORKERS: int = 2
+    WORKER_SCRATCH_DIR: str = ""
+    WORKER_SHUTDOWN_GRACE_SEC: int = 30
+    WORKER_CONCURRENCY: int = 1  # max concurrent heavy tasks per worker process
 
     # ── Vector Search (pgvector) ──
     VECTOR_ENABLED: bool = False
@@ -227,7 +251,14 @@ class Settings(BaseSettings):
     AUDIT_LOG_CLEANUP_HOUR_UTC: int = 3
     AUDIT_LOG_CLEANUP_BATCH_SIZE: int = 1000
 
-    # ── V6 Adaptive Learning ──
+    # ── Export / PDF ──
+    EXPORT_POLL_INTERVAL_SEC: int = 5
+    EXPORT_PROCESSING_TIMEOUT_SEC: int = 900
+    EXPORT_MAX_CONCURRENT: int = 1
+    EXPORT_DIR: str = "static/exports"
+    PRODUCT_NAME: str = "MemoGrad"
+
+    # ── Adaptive Learning ──
     ADAPTIVE_LEARNING_ENABLED: bool = True
     ADAPTIVE_INTERVAL_ENABLED: bool = True
     ADAPTIVE_DIFFICULTY_ENABLED: bool = True

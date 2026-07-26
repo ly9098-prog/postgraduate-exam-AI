@@ -26,6 +26,7 @@ from app.models.import_pipeline import ImportPipeline, ImportPipelineChunk
 from app.models.pomodoro import PomodoroSession
 from app.models.refresh_token import RefreshToken
 from app.models.ocr_job import OCRJob
+from app.models.export_task import ExportTask, ExportSnapshot  # noqa: F401
 from app.models.worker_credential import WorkerCredential
 from app.models.formula import (  # noqa: F401
     FormulaCard,

@@ -1519,6 +1519,14 @@ page {
   color: #176838;
 }
 
+.capsule-action-export {
+  min-width: 88rpx; padding: 0 18rpx;
+  border: 1rpx solid #CCDDFF;
+  background: #EBF0FF;
+  color: #2B5FD9;
+  font-weight: 700;
+}
+
 .capsule-more {
   min-width: 78rpx;
   padding: 0 17rpx;

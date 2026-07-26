@@ -1,0 +1,121 @@
+<!-- Export configuration page -->
+<import src="/styles/templates.wxml" />
+
+<view class="page export-config-page">
+  <premium-nav title="导出设置" show-back="{{true}}" />
+
+  <scroll-view class="config-scroll" scroll-y="{{true}}">
+    <!-- Range -->
+    <view class="config-section">
+      <view class="section-title">导出范围</view>
+      <view class="radio-group">
+        <label wx:for="{{rangeTypes}}" wx:key="value" class="radio-item {{rangeType === item.value ? 'active' : ''}}"
+               data-value="{{item.value}}" bindtap="onRangeChange">
+          <radio value="{{item.value}}" checked="{{rangeType === item.value}}" />
+          <text class="radio-label">{{item.label}}</text>
+        </label>
+      </view>
+    </view>
+
+    <!-- Format -->
+    <view class="config-section">
+      <view class="section-title">文件格式</view>
+      <view class="radio-group row">
+        <label class="radio-item active">
+          <radio value="pdf" checked="{{true}}" disabled="{{false}}" />
+          <text class="radio-label">PDF</text>
+        </label>
+        <label class="radio-item disabled">
+          <radio value="word" disabled="{{true}}" />
+          <text class="radio-label">Word <text class="coming-soon">即将支持</text></text>
+        </label>
+      </view>
+    </view>
+
+    <!-- Title -->
+    <view class="config-section">
+      <view class="section-title">试卷标题</view>
+      <input class="title-input" placeholder="{{titleDefault}}" value="{{title}}" bindinput="onTitleInput" maxlength="120" />
+    </view>
+
+    <!-- Date -->
+    <view class="config-section">
+      <view class="section-title">日期</view>
+      <view class="date-row">
+        <switch checked="{{showDate}}" bindchange="onDateToggle" />
+        <picker wx:if="{{showDate}}" mode="date" value="{{exportDate}}" bindchange="onDateChange" class="date-picker">
+          <text class="date-text">{{exportDate}}</text>
+        </picker>
+        <text wx:else class="date-hidden">不显示</text>
+      </view>
+    </view>
+
+    <!-- Sorting -->
+    <view class="config-section">
+      <view class="section-title">排序方式</view>
+      <picker mode="selector" range="{{SORT_OPTIONS}}" range-key="label" value="{{0}}" bindchange="onSortChange">
+        <view class="picker-display">{{SORT_OPTIONS.find(o => o.value === sortBy)?.label || SORT_OPTIONS[0].label}}</view>
+      </picker>
+    </view>
+
+    <!-- Grouping -->
+    <view class="config-section">
+      <view class="section-title">分组方式</view>
+      <picker mode="selector" range="{{GROUP_OPTIONS}}" range-key="label" value="{{0}}" bindchange="onGroupChange">
+        <view class="picker-display">{{GROUP_OPTIONS.find(o => o.value === groupBy)?.label || GROUP_OPTIONS[0].label}}</view>
+      </picker>
+    </view>
+
+    <!-- Answer -->
+    <view class="config-section">
+      <view class="section-title">答案</view>
+      <picker mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{0}}" bindchange="onAnswerPositionChange">
+        <view class="picker-display">{{POSITION_OPTIONS.find(o => o.value === answerPosition)?.label || POSITION_OPTIONS[0].label}}</view>
+      </picker>
+    </view>
+
+    <!-- Analysis -->
+    <view class="config-section">
+      <view class="section-title">解析</view>
+      <picker mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{0}}" bindchange="onAnalysisPositionChange">
+        <view class="picker-display">{{POSITION_OPTIONS.find(o => o.value === analysisPosition)?.label || POSITION_OPTIONS[0].label}}</view>
+      </picker>
+    </view>
+
+    <!-- Space -->
+    <view class="config-section">
+      <view class="section-title">答题空间</view>
+      <picker mode="selector" range="{{SPACE_OPTIONS}}" range-key="label" value="{{1}}" bindchange="onSpaceChange">
+        <view class="picker-display">{{SPACE_OPTIONS.find(o => o.value === spaceStyle)?.label || SPACE_OPTIONS[1].label}}</view>
+      </picker>
+    </view>
+
+    <!-- Preview count -->
+    <view class="config-section count-section">
+      <view class="section-title">预计导出</view>
+      <view class="count-display">
+        <text wx:if="{{countLoading}}" class="count-loading">计算中…</text>
+        <text wx:elif="{{countError}}" class="count-error">{{countError}}</text>
+        <text wx:else class="count-value {{previewCount === 0 || previewCount > 100 ? 'invalid' : ''}}">
+          {{previewCount}} 道
+        </text>
+      </view>
+      <view wx:if="{{previewCount > 100}}" class="count-hint warn">
+        单次最多导出 100 道，请调整导出范围。
+      </view>
+    </view>
+  </scroll-view>
+
+  <!-- Submit bar -->
+  <view class="submit-bar">
+    <view class="submit-bar-inner">
+      <button class="records-btn" bindtap="onViewRecords">导出记录</button>
+      <button class="submit-btn {{submitting ? 'loading' : ''}}"
+              disabled="{{submitting || previewCount === 0 || previewCount > 100}}"
+              bindtap="onSubmit">
+        <text wx:if="{{submitting}}">提交中…</text>
+        <text wx:else>开始导出</text>
+      </button>
+    </view>
+  </view>
+</view>

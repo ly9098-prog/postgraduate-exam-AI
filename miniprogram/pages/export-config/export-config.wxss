@@ -1,0 +1,71 @@
+/* Export config page styles */
+page { background: #F5F5F2; }
+
+.export-config-page { min-height: 100vh; display: flex; flex-direction: column; }
+
+.config-scroll { flex: 1; padding: 0 20rpx 120rpx; }
+
+.config-section {
+  background: #FFFFFF; border-radius: 16rpx; padding: 24rpx;
+  margin-bottom: 16rpx; box-shadow: 0 2rpx 8rpx rgba(0,0,0,0.04);
+}
+.section-title {
+  font-size: 28rpx; font-weight: 600; color: #1A1A1A; margin-bottom: 16rpx;
+}
+
+.radio-group { display: flex; flex-direction: column; gap: 12rpx; }
+.radio-group.row { flex-direction: row; gap: 24rpx; }
+.radio-item {
+  display: flex; align-items: center; gap: 8rpx;
+  padding: 12rpx 16rpx; border-radius: 12rpx;
+  background: #F8F8F8; transition: all 0.2s;
+}
+.radio-item.active { background: #E8F5E9; }
+.radio-item.disabled { opacity: 0.5; }
+.radio-item radio { transform: scale(0.8); }
+.radio-label { font-size: 26rpx; color: #333; }
+.coming-soon { font-size: 22rpx; color: #999; margin-left: 6rpx; }
+
+.title-input {
+  width: 100%; height: 72rpx; border: 2rpx solid #E0E0E0;
+  border-radius: 12rpx; padding: 0 20rpx; font-size: 28rpx;
+  box-sizing: border-box; background: #FAFAFA;
+}
+
+.date-row { display: flex; align-items: center; gap: 16rpx; }
+.date-picker { flex: 1; }
+.date-text { font-size: 28rpx; color: #333; padding: 8rpx 16rpx; background: #F0F0F0; border-radius: 8rpx; }
+.date-hidden { font-size: 26rpx; color: #999; }
+
+.picker-display {
+  font-size: 28rpx; color: #333; padding: 16rpx 20rpx;
+  background: #F8F8F8; border-radius: 12rpx; border: 2rpx solid #E0E0E0;
+}
+
+.count-section { }
+.count-display { margin-bottom: 8rpx; }
+.count-value { font-size: 32rpx; font-weight: 700; color: #4CAF50; }
+.count-value.invalid { color: #F44336; }
+.count-loading { font-size: 28rpx; color: #999; }
+.count-error { font-size: 26rpx; color: #F44336; }
+.count-hint { font-size: 24rpx; color: #999; }
+.count-hint.warn { color: #F44336; }
+
+.submit-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: #FFFFFF; border-top: 2rpx solid #E8E8E8;
+  padding: 16rpx 20rpx; padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+}
+.submit-bar-inner { display: flex; gap: 16rpx; }
+.records-btn {
+  flex: 0 0 auto; height: 88rpx; line-height: 88rpx;
+  font-size: 28rpx; color: #666; background: #F0F0F0;
+  border-radius: 44rpx; padding: 0 32rpx; border: none;
+}
+.submit-btn {
+  flex: 1; height: 88rpx; line-height: 88rpx;
+  font-size: 32rpx; color: #FFFFFF; background: #4CAF50;
+  border-radius: 44rpx; border: none; text-align: center;
+}
+.submit-btn.loading { opacity: 0.7; }
+.submit-btn[disabled] { background: #BDBDBD; }

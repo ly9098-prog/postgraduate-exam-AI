@@ -30,6 +30,11 @@
           hover-class="top-action-pressed"
           bindtap="toggleBatchMode"
         >选择</view>
+        <view
+          class="top-action"
+          hover-class="top-action-pressed"
+          bindtap="onViewExportRecords"
+        >导出记录</view>
       </view>
     </block>
 
@@ -430,6 +435,12 @@
       hover-class="{{selectedCount > 0 ? 'capsule-button-pressed' : 'none'}}"
       bindtap="openBatchMore"
     >更多</view>
+
+    <view
+      class="capsule-action capsule-action-export {{selectedCount === 0 ? 'disabled' : ''}}"
+      hover-class="{{selectedCount > 0 ? 'capsule-primary-pressed' : 'none'}}"
+      bindtap="onExportSelected"
+    >导出</view>
   </view>
 
   <!-- 批量标记已掌握撤销 -->

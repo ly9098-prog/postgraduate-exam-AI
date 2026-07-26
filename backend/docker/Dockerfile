@@ -55,6 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
+    fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -68,6 +69,8 @@ ENV PYTHONUNBUFFERED=1
 
 # Pre-create staging dir for durable task files (Docker volume mount point)
 RUN mkdir -p /opt/2240ai-v2/staging && chown app:app /opt/2240ai-v2/staging && chmod 700 /opt/2240ai-v2/staging
+# Pre-create export dir for local export file persistence
+RUN mkdir -p /opt/2240ai-v2/exports && chown app:app /opt/2240ai-v2/exports && chmod 700 /opt/2240ai-v2/exports
 
 USER app
 

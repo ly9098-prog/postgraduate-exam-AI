@@ -33,19 +33,42 @@ _INTERVAL_SEC = 6 * 3600  # 6 hours
 
 
 async def _periodic_token_cleanup():
-    """Background task: clean up expired refresh tokens every 6 hours."""
+    """Background task: clean up expired refresh tokens every 6 hours.
+
+    Uses DistributedLock to prevent concurrent execution across scheduler
+    instances. If lock is held by another instance, skip this cycle.
+    """
+    try:
+        from app.core.distributed_lock import DistributedLock
+        _token_cleanup_lock = DistributedLock("token:cleanup")
+    except Exception:
+        _token_cleanup_lock = None
+
     while True:
         await asyncio.sleep(_INTERVAL_SEC)
-        try:
-            from app.core.database import async_session
-            from app.services import token_service
+        # Try to acquire the distributed lock; skip if another instance is cleaning
+        if _token_cleanup_lock is not None:
+            async with _token_cleanup_lock.acquire_and_renew(ttl=300, renew_interval=60) as handle:
+                if not handle.is_still_held():
+                    logger.debug("Token cleanup lock held by another instance, skipping")
+                    continue
+                await _do_token_cleanup()
+        else:
+            await _do_token_cleanup()
 
-            async with async_session() as db:
-                deleted = await token_service.cleanup_expired_tokens(db)
-                if deleted:
-                    logger.info("Cleaned up %d expired refresh tokens", deleted)
-        except Exception as e:
-            logger.warning("Refresh token cleanup failed (non-fatal): %s", e)
+
+async def _do_token_cleanup():
+    """Execute the actual token cleanup query."""
+    try:
+        from app.core.database import async_session
+        from app.services import token_service
+
+        async with async_session() as db:
+            deleted = await token_service.cleanup_expired_tokens(db)
+            if deleted:
+                logger.info("Cleaned up %d expired refresh tokens", deleted)
+    except Exception as e:
+        logger.warning("Refresh token cleanup failed (non-fatal): %s", e)
 
 
 async def _periodic_staging_cleanup():
@@ -59,6 +82,31 @@ async def _periodic_staging_cleanup():
                 logger.info("Staging cleanup removed %d expired objects", removed)
         except Exception as e:
             logger.warning("Staging cleanup failed (non-fatal): %s", e)
+
+
+async def _periodic_export_processor():
+    """Background task: process pending export tasks (scheduler role only)."""
+    try:
+        from app.services.export.processor import run_export_processor
+        await run_export_processor()
+    except Exception as e:
+        logger.warning("Export processor exited: %s", e)
+
+
+async def _periodic_export_cleanup():
+    """Background task: clean up expired export tasks hourly."""
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            from app.core.database import async_session
+            from app.services.export.cleanup import cleanup_expired
+
+            async with async_session() as db:
+                stats = await cleanup_expired(db)
+                if stats["tasks_expired"] > 0:
+                    logger.info("Export cleanup: %s", stats)
+        except Exception as e:
+            logger.warning("Export cleanup failed (non-fatal): %s", e)
 
 
 def _report_startup_failure(component: str, exc: Exception) -> None:
@@ -83,6 +131,14 @@ def _report_startup_failure(component: str, exc: Exception) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     role = settings.PROCESS_ROLE
+
+    # Background asyncio task references (initialized per role block)
+    cleanup_task = None
+    _staging_cleanup_task = None
+    _pipeline_worker_task = None
+    _reaper_task = None
+    _export_processor_task = None
+    _export_cleanup_task = None
 
     # ── Common startup (all roles) ──
     validate_production_config()
@@ -126,9 +182,64 @@ async def lifespan(app: FastAPI):
         settings.APP_ENV, role, profile.name, profile.use_gpu,
         profile.max_workers, profile.max_pdf_pages,
     )
+    # Explicitly log which components are active per role
+    if role == "web":
+        logger.info("Role=%s: API serving, OCR gateway active (no worker/dispatcher)", role)
+    elif role == "worker":
+        logger.info("Role=%s: pipeline dispatcher, reaper, AI prewarm active (no API)", role)
+    elif role == "scheduler":
+        logger.info(
+            "Role=%s: periodic tasks (token cleanup, staging cleanup, pomodoro, "
+            "audit cleanup, export) active (no API, no worker)",
+            role,
+        )
+    elif role == "all":
+        logger.warning(
+            "Role=%s: ALL components in one process (development mode). "
+            "In production, use web/worker/scheduler split.",
+            role,
+        )
     os.makedirs("static/formulas", exist_ok=True)
     os.makedirs("static/question-assets", exist_ok=True)
+    os.makedirs(settings.EXPORT_DIR, exist_ok=True)
     await init_db()
+
+    # Schema divergence diagnostic: detect missing runtime-DDL columns on PostgreSQL.
+    # Lightweight startup check — warns if known columns are absent.
+    try:
+        from app.core.database import engine
+        _sync_engine = engine.sync_engine
+        if _sync_engine.dialect.name == "postgresql":
+            _runtime_ddl_checks: dict[str, list[str]] = {
+                "questions": ["question_hash", "sync_uuid", "sync_version"],
+                "question_imports": ["question_hash", "duplicate_status",
+                                   "duplicate_of_question_id", "duplicate_of_import_id"],
+                "users": ["is_banned", "deleted_at"],
+            }
+            _divergence: list[str] = []
+            async with async_session() as _s:
+                for _tbl, _cols in _runtime_ddl_checks.items():
+                    try:
+                        _row = (await _s.execute(
+                            text("SELECT column_name FROM information_schema.columns "
+                                 "WHERE table_name=:tbl AND column_name=ANY(:cols)"),
+                            {"tbl": _tbl, "cols": _cols},
+                        )).all()
+                        _found = {r[0] for r in _row}
+                        for _c in _cols:
+                            if _c not in _found:
+                                _divergence.append(f"{_tbl}.{_c}")
+                    except Exception:
+                        pass
+            if _divergence:
+                logger.warning(
+                    "Schema divergence (runtime DDL not in Alembic): %s",
+                    ", ".join(_divergence),
+                )
+            else:
+                logger.debug("Schema divergence check: all runtime-DDL columns present")
+    except Exception:
+        logger.debug("Schema divergence check skipped (not PostgreSQL or transient)")
     try:
         from app.core.database import async_session
         async with async_session() as db:
@@ -204,13 +315,32 @@ async def lifespan(app: FastAPI):
     if role in ("web", "all"):
         # Initialize OCR Gateway (needed for API enqueue endpoints)
         try:
+            import httpx
+
             from app.core.ocr_runtime_config import get_runtime_config
             from app.features.ocr_gateway import OCRGateway
             from app.services.ocr_worker_client import create_ocr_worker_client
 
             cfg = get_runtime_config()
             if cfg.enabled:
-                worker_client = create_ocr_worker_client(cfg)
+                # Create a shared httpx.AsyncClient for all OCR HTTP
+                # communication.  Ownership remains in this lifespan block;
+                # the worker client will NOT close it on shutdown.
+                _ocr_shared_http_client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(
+                        connect=cfg.remote_connect_timeout_sec,
+                        read=cfg.remote_read_timeout_sec,
+                        write=cfg.remote_connect_timeout_sec,
+                        pool=cfg.remote_connect_timeout_sec,
+                    ),
+                    limits=httpx.Limits(
+                        max_keepalive_connections=cfg.remote_max_concurrency,
+                        max_connections=cfg.remote_max_concurrency,
+                    ),
+                )
+                worker_client = create_ocr_worker_client(
+                    cfg, http_client=_ocr_shared_http_client,
+                )
                 from app.core.deployment_profile import detect_deployment_profile
                 _ocr_gateway = OCRGateway(
                     mode="gateway",
@@ -231,17 +361,17 @@ async def lifespan(app: FastAPI):
     # ── Role: worker — pipeline processing + AI prewarm ──
     if role in ("worker", "all"):
         try:
-            from app.services.task_queue_worker import run_pipeline_worker
+            from app.services.task_queue_worker import run_dispatcher_v2
             _pipeline_worker_task = asyncio.create_task(
-                run_pipeline_worker(), name="pipeline-worker"
+                run_dispatcher_v2(), name="pipeline-dispatcher-v2"
             )
         except Exception as e:
-            _report_startup_failure("Pipeline worker", e)
+            _report_startup_failure("Pipeline dispatcher v2", e)
 
         try:
-            from app.services.task_queue_worker import run_reaper_loop
+            from app.services.task_queue_worker import run_reaper_loop_v2
             _reaper_task = asyncio.create_task(
-                run_reaper_loop(), name="task-reaper"
+                run_reaper_loop_v2(), name="task-reaper-v2"
             )
         except Exception as e:
             _report_startup_failure("Reaper", e)
@@ -275,6 +405,21 @@ async def lifespan(app: FastAPI):
             _periodic_staging_cleanup(), name="staging-cleanup"
         )
 
+        # Export processor + cleanup (scheduler role only)
+        _export_processor_task = asyncio.create_task(
+            _periodic_export_processor(), name="export-processor"
+        )
+        _export_cleanup_task = asyncio.create_task(
+            _periodic_export_cleanup(), name="export-cleanup"
+        )
+
+    # Start resource reservation orphan reconciler (all roles)
+    try:
+        from app.core.resource_guard import resource_guard
+        await resource_guard.start_orphan_reconciler()
+    except Exception as e:
+        logger.warning("Orphan reconciler start failed (non-fatal): %s", e)
+
     # ── Yield — application serves requests ──
     try:
         yield
@@ -284,12 +429,26 @@ async def lifespan(app: FastAPI):
         # ══════════════════════════════════════════
         logger.info("=== Shutdown sequence started (role=%s) ===", role)
 
-        # 1. Set draining — stop claiming new work
-        try:
-            from app.services.task_queue_worker import set_draining
-            await set_draining()
-        except Exception as e:
-            logger.warning("set_draining failed during shutdown: %s", e)
+        # 1. Graceful shutdown for v2 worker: drain → shield → cancel
+        if role in ("worker", "all"):
+            try:
+                from app.services.task_queue_worker import graceful_shutdown_v2
+                await graceful_shutdown_v2()
+            except Exception as e:
+                logger.warning("v2 Graceful shutdown failed: %s", e)
+
+            try:
+                from app.services.task_queue_worker import stop_reaper_v2
+                await stop_reaper_v2()
+            except Exception as e:
+                logger.warning("Reaper v2 stop failed: %s", e)
+        else:
+            # Non-worker roles still drain if any v1 tasks are active
+            try:
+                from app.services.task_queue_worker import set_draining_v2
+                await set_draining_v2()
+            except Exception as e:
+                logger.warning("set_draining_v2 failed: %s", e)
 
         # 2. Stop event-loop lag monitor
         if _lag_monitor_task and not _lag_monitor_task.done():
@@ -299,14 +458,13 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
 
-        # 3. Signal worker + reaper to stop (graceful, no cancel yet)
-        if role in ("worker", "all"):
+        # 3b. Signal export processor to drain
+        if role in ("scheduler", "all"):
             try:
-                from app.services.task_queue_worker import stop_reaper, stop_worker
-                await stop_worker()
-                await stop_reaper()
+                from app.services.export.processor import stop_processor
+                await stop_processor()
             except Exception as e:
-                logger.warning("Worker/reaper stop signal failed: %s", e)
+                logger.warning("Export processor stop signal failed: %s", e)
 
         # 4. Cancel and await background asyncio tasks with grace timeout
         _shutdown_tasks = []
@@ -315,13 +473,19 @@ async def lifespan(app: FastAPI):
             _shutdown_tasks.append(("token-cleanup", cleanup_task))
         if _pipeline_worker_task and not _pipeline_worker_task.done():
             _pipeline_worker_task.cancel()
-            _shutdown_tasks.append(("pipeline-worker", _pipeline_worker_task))
+            _shutdown_tasks.append(("pipeline-dispatcher-v2", _pipeline_worker_task))
         if _reaper_task and not _reaper_task.done():
             _reaper_task.cancel()
-            _shutdown_tasks.append(("task-reaper", _reaper_task))
+            _shutdown_tasks.append(("task-reaper-v2", _reaper_task))
         if _staging_cleanup_task and not _staging_cleanup_task.done():
             _staging_cleanup_task.cancel()
             _shutdown_tasks.append(("staging-cleanup", _staging_cleanup_task))
+        if _export_processor_task and not _export_processor_task.done():
+            _export_processor_task.cancel()
+            _shutdown_tasks.append(("export-processor", _export_processor_task))
+        if _export_cleanup_task and not _export_cleanup_task.done():
+            _export_cleanup_task.cancel()
+            _shutdown_tasks.append(("export-cleanup", _export_cleanup_task))
 
         for name, task in _shutdown_tasks:
             try:
@@ -401,6 +565,16 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning("OCR Gateway shutdown error: %s", e)
 
+            # Close the shared httpx.AsyncClient used by OCR
+            try:
+                _ocr_shared_http_client
+            except NameError:
+                pass
+            else:
+                if _ocr_shared_http_client is not None:
+                    await _ocr_shared_http_client.aclose()
+                    logger.info("OCR shared httpx client closed")
+
         # 7. BoundedExecutors shutdown
         try:
             from app.core.executor_registry import get_all_executors, clear_executor_registry
@@ -436,6 +610,13 @@ async def lifespan(app: FastAPI):
             logger.warning("Engine dispose error: %s", e)
 
         # ── Diagnostics ──
+        # Stop resource reservation orphan reconciler
+        try:
+            from app.core.resource_guard import resource_guard
+            await resource_guard.stop_orphan_reconciler()
+        except Exception as e:
+            logger.warning("Orphan reconciler stop error: %s", e)
+
         logger.info("=== Shutdown sequence completed (role=%s) ===", role)
         try:
             import multiprocessing
@@ -619,6 +800,12 @@ def _get_db_pool_metrics() -> dict:
         return {"error": str(e)}
 
 
+# ── OCR readiness hysteresis ──
+# Track consecutive remote OCR health-check failures.
+# Crosses the degraded threshold at 3 consecutive failures.
+_ocr_remote_consecutive_failures: int = 0
+
+
 @app.get("/health")
 async def health():
     """Legacy health endpoint — returns ok regardless of dependency state."""
@@ -659,6 +846,7 @@ async def ready_health():
     redis_ok = await _check_redis()
     alembic_ok = await _check_alembic_head()
     staging_ok = await _check_staging()
+    staging_space = await _check_staging_space()
     role_ok = await _check_role_deps()
 
     # Non-critical checks (informational, don't fail probe)
@@ -667,8 +855,8 @@ async def ready_health():
 
     # Draining is critical — stop the load balancer from sending requests
     try:
-        from app.services.task_queue_worker import is_draining
-        draining = is_draining()
+        from app.services.task_queue_worker import is_draining_v2
+        draining = is_draining_v2()
     except Exception:
         draining = False
 
@@ -687,6 +875,8 @@ async def ready_health():
         checks["ocr"] = ocr_status
     if queue_status:
         checks["queue"] = queue_status
+    if staging_space:
+        checks["staging_space"] = staging_space
 
     critical_failures = [
         k for k, v in checks.items()
@@ -777,15 +967,107 @@ async def _check_staging() -> bool:
         return False
 
 
+async def _check_staging_space() -> dict:
+    """Return staging directory space info (free bytes, total bytes, used percent).
+
+    Returns empty dict on failure (non-critical, informational only).
+    """
+    from app.services.staging_storage import _STAGING_DIR
+    try:
+        st = os.statvfs(str(_STAGING_DIR))
+        free_bytes = st.f_frsize * st.f_bavail
+        total_bytes = st.f_frsize * st.f_blocks
+        used_percent = ((total_bytes - free_bytes) / total_bytes * 100) if total_bytes > 0 else 0
+        return {
+            "staging_free_bytes": free_bytes,
+            "staging_total_bytes": total_bytes,
+            "staging_used_percent": round(used_percent, 1),
+        }
+    except Exception:
+        return {}
+
+
 async def _check_role_deps() -> bool:
-    """Check role-specific dependencies are available."""
+    """Check role-specific dependencies are available.
+
+    Web:
+      - If cloud_api, verify no local paddle/paddleocr in sys.modules
+      - (DB, Redis, staging checked separately)
+
+    Worker:
+      - Must not be draining
+      - If cloud_api, OCR execution backend must not be local_process
+
+    Scheduler:
+      - Pomodoro scheduler loop running (if POMODORO_NOTIFY_ENABLED)
+      - Audit log cleanup scheduler loop running (if AUDIT_LOG_CLEANUP_ENABLED)
+    """
     role = settings.PROCESS_ROLE
+    is_cloud = False
+    try:
+        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        is_cloud = detect_deployment_profile() == DeploymentProfile.CLOUD_API
+    except Exception:
+        pass
+
     if role == "web":
-        # Web needs DB and Redis (already checked separately)
+        if is_cloud:
+            import sys
+            if "paddle" in sys.modules or "paddleocr" in sys.modules:
+                logger.warning(
+                    "role_deps: cloud_api web role detected banned OCR modules in sys.modules"
+                )
+                return False
         return True
-    elif role in ("worker", "scheduler"):
-        # Worker/scheduler need DB, Redis, staging
+
+    if role == "worker":
+        # Draining check
+        try:
+            from app.services.task_queue_worker import is_draining_v2
+            if is_draining_v2():
+                logger.warning("role_deps: worker is draining")
+                return False
+        except Exception:
+            pass
+
+        # Cloud worker must not use local_process backend
+        if is_cloud:
+            exec_backend = (settings.OCR_EXECUTION_BACKEND or "").lower()
+            if exec_backend == "local_process":
+                logger.warning("role_deps: cloud worker with local_process OCR backend")
+                return False
+
         return True
+
+    if role == "scheduler":
+        # Check pomodoro scheduler running (if enabled)
+        try:
+            from app.services.pomodoro_scheduler_service import pomodoro_scheduler
+            if settings.POMODORO_NOTIFY_ENABLED and not pomodoro_scheduler._running:
+                logger.warning("role_deps: pomodoro scheduler not running")
+                return False
+        except ImportError:
+            logger.warning("role_deps: pomodoro_scheduler_service import failed")
+            return False
+        except Exception as e:
+            logger.warning("role_deps: pomodoro scheduler check error: %s", e)
+            return False
+
+        # Check audit log cleanup scheduler running (if enabled)
+        try:
+            from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
+            if settings.AUDIT_LOG_CLEANUP_ENABLED and not audit_log_cleanup_scheduler._running:
+                logger.warning("role_deps: audit log cleanup scheduler not running")
+                return False
+        except ImportError:
+            logger.warning("role_deps: audit_cleanup_scheduler import failed")
+            return False
+        except Exception as e:
+            logger.warning("role_deps: audit cleanup scheduler check error: %s", e)
+            return False
+
+        return True
+
     return False  # Unknown role → fail probe
 
 
@@ -793,35 +1075,96 @@ async def _check_ocr_config() -> str | None:
     """Check OCR configuration. Returns status string or None if not applicable.
 
     Returns "ok", "degraded", "unavailable", or None (no OCR configured).
-    In production, illegal OCR config returns "unavailable" (fails probe).
+
+    Config errors → immediate "unavailable" in cloud/production, "degraded" in dev.
+    Remote connectivity errors → hysteresis: 3 consecutive failures → "degraded".
+    Local paddle modules in cloud → "unavailable".
     """
     if not settings.OCR_ENABLED:
         return None
 
     exec_backend = (settings.OCR_EXECUTION_BACKEND or "").lower()
-    issues = []
+    issues: list[str] = []
 
+    # Check for local paddle in sys.modules under cloud → immediate unavailable
     if exec_backend == "local_process":
         issues.append("local_process backend not allowed")
+
     if settings.OCR_USE_GPU is not False:
         issues.append("GPU should be disabled")
+
     if exec_backend == "paddlex_http" and not settings.OCR_REMOTE_TOKEN:
         issues.append("remote token not set")
 
-    if not issues:
-        return "ok"
-
     from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
     try:
-        if detect_deployment_profile() == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production":
-            return "unavailable"
+        is_cloud = detect_deployment_profile() == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production"
     except Exception:
-        pass
-    return "degraded"
+        is_cloud = False
+
+    # Local paddle in sys.modules under cloud → unavailable
+    if is_cloud:
+        import sys
+        if "paddle" in sys.modules or "paddleocr" in sys.modules:
+            issues.append("local paddle modules loaded in cloud deployment")
+
+    if issues:
+        if is_cloud:
+            return "unavailable"
+        return "degraded"
+
+    # Remote connectivity check with hysteresis (only for remote backends)
+    if exec_backend == "paddlex_http":
+        global _ocr_remote_consecutive_failures
+        remote_ok = await _check_ocr_remote_connectivity()
+        if remote_ok:
+            _ocr_remote_consecutive_failures = 0
+            return "ok"
+        else:
+            _ocr_remote_consecutive_failures += 1
+            if _ocr_remote_consecutive_failures >= 3:
+                return "degraded"
+            # Transient failure — still ok until threshold
+            return "ok"
+
+    return "ok"
+
+
+async def _check_ocr_remote_connectivity() -> bool:
+    """Lightweight health check against remote OCR endpoint.
+
+    Returns True if reachable, False on any failure.
+    Does NOT update hysteresis counters — caller is responsible.
+    """
+    if not settings.OCR_ENABLED:
+        return True
+    exec_backend = (settings.OCR_EXECUTION_BACKEND or "").lower()
+    if exec_backend != "paddlex_http" or not settings.OCR_REMOTE_URL:
+        return True
+    try:
+        import httpx
+        url = settings.OCR_REMOTE_URL
+        timeout = httpx.Timeout(settings.OCR_REMOTE_HEALTH_TIMEOUT_SEC)
+        headers = {}
+        if settings.OCR_REMOTE_TOKEN:
+            header_name = getattr(settings, "OCR_REMOTE_AUTH_HEADER", "Authorization")
+            scheme = getattr(settings, "OCR_REMOTE_AUTH_SCHEME", "Bearer")
+            headers[header_name] = f"{scheme} {settings.OCR_REMOTE_TOKEN}"
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            respiratory = url.rstrip("/") + "/health"
+            resp = await client.get(respiratory, headers=headers)
+            return resp.status_code < 500
+    except Exception:
+        return False
 
 
 async def _check_queue() -> str | None:
-    """Check durable queue health."""
+    """Check durable queue health.
+
+    Returns "ok" if queue is healthy, "degraded" if queue depth is high,
+    "unavailable" if Redis is unreachable in production (no hysteresis
+    for critical infrastructure deps), or None if Redis not configured.
+    """
     if not settings.REDIS_URL:
         return None
     try:
@@ -834,6 +1177,9 @@ async def _check_queue() -> str | None:
             return "degraded"
         return "ok"
     except Exception:
+        # Redis error is a critical infrastructure failure — not "degraded"
+        if settings.APP_ENV == "production":
+            return "unavailable"
         return "degraded"
 
 
@@ -936,6 +1282,12 @@ async def metrics_endpoint():
     # ── SSE connections ──
     # ── SSE connections ──
     try:
+        from app.services.sse_pubsub import check_health as _sse_health
+        _sse_ok = await _sse_health()
+        _append(f"sse_healthy {1 if _sse_ok else 0}")
+    except Exception:
+        _append("sse_healthy 0")
+    try:
         from app.features import batch_image_import_service as _batch_svc_mod
         _active_sse = getattr(_batch_svc_mod, "_active_sse_connections", {})
         _total_sse = sum(_active_sse.values()) if isinstance(_active_sse, dict) else 0
@@ -952,8 +1304,8 @@ async def metrics_endpoint():
 
     # ── Draining status ──
     try:
-        from app.services.task_queue_worker import is_draining
-        _append(f'worker_draining {1 if is_draining() else 0}')
+        from app.services.task_queue_worker import is_draining_v2
+        _append(f'worker_draining {1 if is_draining_v2() else 0}')
     except Exception:
         _append("worker_draining 0")
 
@@ -985,6 +1337,26 @@ async def metrics_endpoint():
         _append('distlock_skipped_total{name="audit:cleanup"} 0')
         _append('distlock_failed_total{name="audit:cleanup"} 0')
         _append('distlock_duration_ms_total{name="audit:cleanup"} 0')
+
+    # ── Scheduler running state ──
+    try:
+        from app.services.pomodoro_scheduler_service import pomodoro_scheduler
+        _append(f'scheduler_running{{name="pomodoro"}} {1 if pomodoro_scheduler._running else 0}')
+    except Exception:
+        _append('scheduler_running{name="pomodoro"} 0')
+    try:
+        from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
+        _append(f'scheduler_running{{name="audit_cleanup"}} {1 if audit_log_cleanup_scheduler._running else 0}')
+    except Exception:
+        _append('scheduler_running{name="audit_cleanup"} 0')
+
+    # ── Staging cleanup stats ──
+    try:
+        from app.services.staging_storage import get_metrics as _staging_metrics
+        _sm = _staging_metrics()
+        _append(f'staging_orphan_count {_sm.get("orphan_count", 0)}')
+    except Exception:
+        _append('staging_orphan_count 0')
 
     # Prometheus text format requires trailing newline
     lines.append("")

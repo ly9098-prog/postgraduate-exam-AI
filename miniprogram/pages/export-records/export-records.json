@@ -1,0 +1,8 @@
+{
+  "component": true,
+  "usingComponents": {
+    "premium-nav": "/components/premium-nav/premium-nav"
+  },
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "导出记录"
+}

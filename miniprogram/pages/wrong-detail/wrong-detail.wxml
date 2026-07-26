@@ -158,7 +158,7 @@
       </view>
       <text class="ai-idle-title">把“做错了”变成“下次会做”。</text>
       <text class="ai-idle-desc">AI 会结合题目、你的答案和正确答案生成三段复盘。</text>
-      <button class="ai-action-btn" bindtap="onTapAiAnalysis">生成 AI 解析</button>
+      <button class="ai-action-btn ai-generate-btn" bindtap="onTapAiAnalysis"><text class="ai-action-btn-label">生成 AI 解析</text></button>
     </view>
   </view>
 
@@ -209,8 +209,10 @@
 </view>
 
 <!-- 撤销掌握 -->
-<view class="undo-toast {{masterUndoVisible ? 'show' : ''}}">
-  <text class="undo-toast-text">已标记掌握，正在查看下一题</text>
-  <view class="undo-divider"></view>
-  <text class="undo-action" bindtap="undoMastered">撤销</text>
+<view class="undo-toast-layer {{masterUndoVisible ? 'show' : ''}}">
+  <view class="undo-toast">
+    <text class="undo-toast-text">已标记掌握，正在查看下一题</text>
+    <view class="undo-divider"></view>
+    <button class="undo-action" hover-class="undo-action-pressed" bindtap="undoMastered">撤销</button>
+  </view>
 </view>
