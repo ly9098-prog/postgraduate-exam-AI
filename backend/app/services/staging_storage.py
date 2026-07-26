@@ -381,15 +381,20 @@ def incr_refcount(object_id: str) -> int:
     deleted until all referencing tasks have completed and their leases
     have expired.
 
-    Uses Redis when available; falls back to in-memory store for
-    development environments without Redis.
+    Uses Redis when available. In production, Redis failure raises
+    RuntimeError. In development, falls back to in-memory store.
 
-    Returns the new count.
+    Raises:
+        RuntimeError: In production when Redis is unavailable.
     """
     if settings.REDIS_URL:
         val = _refcount_redis_op("incr", object_id)
         if val is not None:
             return val
+        if _is_production:
+            raise RuntimeError(
+                f"Redis unavailable for refcount incr (object_id={object_id})"
+            )
     # In-memory fallback (development only)
     count = _REFCOUNT_STORE.get(object_id, 0) + 1
     _REFCOUNT_STORE[object_id] = count
@@ -397,11 +402,19 @@ def incr_refcount(object_id: str) -> int:
 
 
 def decr_refcount(object_id: str) -> int:
-    """Decrement the reference count. Returns new count (0 = no more references)."""
+    """Decrement the reference count. Returns new count (0 = no more references).
+
+    Raises:
+        RuntimeError: In production when Redis is unavailable.
+    """
     if settings.REDIS_URL:
         val = _refcount_redis_op("decr", object_id)
         if val is not None:
             return val
+        if _is_production:
+            raise RuntimeError(
+                f"Redis unavailable for refcount decr (object_id={object_id})"
+            )
     count = _REFCOUNT_STORE.get(object_id, 0) - 1
     if count <= 0:
         _REFCOUNT_STORE.pop(object_id, None)
@@ -411,11 +424,19 @@ def decr_refcount(object_id: str) -> int:
 
 
 def get_refcount(object_id: str) -> int:
-    """Return the current reference count (0 if unknown)."""
+    """Return the current reference count (0 if unknown).
+
+    Raises:
+        RuntimeError: In production when Redis is unavailable.
+    """
     if settings.REDIS_URL:
         val = _refcount_redis_op("get", object_id)
         if val is not None:
             return val
+        if _is_production:
+            raise RuntimeError(
+                f"Redis unavailable for refcount get (object_id={object_id})"
+            )
     return _REFCOUNT_STORE.get(object_id, 0)
 
 

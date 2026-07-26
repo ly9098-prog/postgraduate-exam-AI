@@ -650,6 +650,33 @@ class ResourceGuard:
         except OSError:
             pass
 
+        # Event-loop lag — import from main.py module-level global
+        try:
+            import sys as _sys
+
+            # Access the module global from main.py
+            _main_mod = _sys.modules.get("app.main")
+            if _main_mod is not None:
+                m.event_loop_lag_ms = getattr(_main_mod, "_elapsed_monitor_event_loop_lag_ms", 0.0)
+        except Exception:
+            pass
+
+        # Temp disk usage (fallback to /tmp)
+        try:
+            import os as _os
+            import shutil as _shutil
+
+            _usage = _shutil.disk_usage(_os.path.realpath("/tmp"))
+            _total_gb = _usage.total / (1024**3)
+            _free_gb = _usage.free / (1024**3)
+            if _total_gb > 0:
+                _used_mb = (_usage.total - _usage.free) / (1024**2)
+                m.temp_disk_usage_mb = _used_mb
+            # available temp disk is the free space
+            m.available_memory_mb = min(m.available_memory_mb, _free_gb * 1024)
+        except Exception:
+            pass
+
         m.active_pipelines = ResourceGuard._active_pipeline_count
 
         return m

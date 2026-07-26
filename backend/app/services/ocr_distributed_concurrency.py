@@ -40,10 +40,13 @@ logger = logging.getLogger(__name__)
 _OCR_CONCURRENCY_KEY = "ocr:v2:concurrency"
 _ACQUIRE_LUA = """
 local key = KEYS[1]
-local now = tonumber(ARGV[1])
-local capacity = tonumber(ARGV[2])
-local ttl = tonumber(ARGV[3])
-local token = ARGV[4]
+local capacity = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local token = ARGV[3]
+
+-- Use Redis server time for clock-skew-safe expiry
+local redis_now = redis.call("TIME")
+local now = tonumber(redis_now[1])
 
 -- Remove expired entries
 redis.call("ZREMRANGEBYSCORE", key, "-inf", now)
@@ -54,7 +57,7 @@ if count >= capacity then
     return 0  -- at capacity
 end
 
--- Add new entry
+-- Add new entry with server-time based score
 local score = now + ttl
 redis.call("ZADD", key, score, token)
 
@@ -73,6 +76,28 @@ if removed > 0 then
     return 1  -- released
 end
 return 0  -- token not found (not ours or already expired)
+"""
+
+_RENEW_LUA = """
+local key = KEYS[1]
+local token = ARGV[1]
+local ttl = tonumber(ARGV[2])
+
+-- Use Redis server time for clock-skew-safe expiry
+local redis_now = redis.call("TIME")
+local now = tonumber(redis_now[1])
+
+-- Check token exists
+local score = redis.call("ZSCORE", key, token)
+if not score then
+    return 0  -- token not found (lease lost)
+end
+
+-- Update score to now + ttl (extend lease)
+local new_score = now + ttl
+redis.call("ZADD", key, new_score, token)
+redis.call("EXPIRE", key, ttl * 2)
+return 1  -- renewed
 """
 
 
@@ -96,6 +121,7 @@ class OcrDistributedConcurrency:
         self._profile = detect_deployment_profile()
         self._lua_acquire: Any = None
         self._lua_release: Any = None
+        self._lua_renew: Any = None
 
     async def _ensure_redis(self) -> Any:
         """Lazy-init the Redis client and register Lua scripts."""
@@ -122,6 +148,7 @@ class OcrDistributedConcurrency:
             )
             self._lua_acquire = self._redis.register_script(_ACQUIRE_LUA)
             self._lua_release = self._redis.register_script(_RELEASE_LUA)
+            self._lua_renew = self._redis.register_script(_RENEW_LUA)
             return self._redis
         except Exception as exc:
             self._redis = None
@@ -171,10 +198,14 @@ class OcrDistributedConcurrency:
         try:
             result = await self._lua_acquire(
                 keys=[_OCR_CONCURRENCY_KEY],
-                args=[time.time(), capacity, ttl_sec, token],
+                args=[capacity, ttl_sec, token],
             )
             if result == 1:
                 return token
+            # At capacity — return None, caller must NOT proceed with OCR
+            logger.warning(
+                "OCR distributed concurrency at capacity (%d), request rejected", capacity,
+            )
             return None
         except Exception as exc:
             if self._profile == DeploymentProfile.CLOUD_API:
@@ -209,6 +240,46 @@ class OcrDistributedConcurrency:
         except Exception as exc:
             logger.warning("Redis error releasing OCR concurrency slot: %s", exc)
             return True  # best-effort
+
+    async def renew_global(self, token: str, ttl_sec: int | None = None) -> bool:
+        """Renew a distributed OCR concurrency slot lease.
+
+        Uses Redis server time for clock-skew-safe expiry calculation.
+        This should be called periodically during long OCR operations
+        to prevent the slot from being reclaimed by another worker.
+
+        Args:
+            token: The reservation token from ``acquire_global``.
+            ttl_sec: New lease duration (default from settings).
+
+        Returns:
+            True if renewed, False if token not found (lease lost).
+        """
+        if not token:
+            return False
+        if ttl_sec is None:
+            ttl_sec = settings.OCR_DISTRIBUTED_LEASE_SEC
+
+        redis = await self._ensure_redis()
+        if redis is None:
+            return False
+
+        try:
+            result = await self._lua_renew(
+                keys=[_OCR_CONCURRENCY_KEY],
+                args=[token, ttl_sec],
+            )
+            renewed = result == 1
+            if not renewed:
+                logger.warning("OCR concurrency lease lost: token=%s", token[:8])
+            return renewed
+        except Exception as exc:
+            logger.warning("Redis error renewing OCR concurrency slot: %s", exc)
+            if self._profile == DeploymentProfile.CLOUD_API:
+                raise DistributedConcurrencyError(
+                    f"Redis error renewing OCR concurrency slot: {exc}"
+                ) from exc
+            return True  # best-effort in non-production
 
     async def close(self) -> None:
         """Close the Redis connection."""

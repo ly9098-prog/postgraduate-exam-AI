@@ -16,5 +16,6 @@ from app.models.formula import (  # noqa: F401
 from app.models.ocr_job import OCRJob  # noqa: F401
 from app.models.question import Question  # noqa: F401
 from app.models.question_import import QuestionImport  # noqa: F401
+from app.models.task_outbox import TaskOutbox  # noqa: F401
 from app.models.user_question_state import UserQuestionState  # noqa: F401
 from app.models.worker_credential import WorkerCredential  # noqa: F401

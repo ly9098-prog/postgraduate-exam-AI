@@ -150,6 +150,8 @@ async def lifespan(app: FastAPI):
     _reaper_task = None
     _export_processor_task = None
     _export_cleanup_task = None
+    _outbox_dispatcher_task = None
+    _outbox_reconciler_task = None
 
     # ── Common startup (all roles) ──
     validate_production_config()
@@ -424,6 +426,30 @@ async def lifespan(app: FastAPI):
             _periodic_export_cleanup(), name="export-cleanup"
         )
 
+        # Outbox dispatcher + reconciler (scheduler role only)
+        # Reads pending outbox records and enqueues them to Redis v2 queue
+        try:
+            from app.services.outbox_service import (
+                run_outbox_dispatcher,
+                run_outbox_reconciler,
+            )
+            from app.services.task_queue_service import task_queue
+
+            async def _enqueue_from_outbox(task_id: str, task_type: str, payload: dict) -> object:
+                return await task_queue.enqueue_v2(
+                    task_type, payload, task_id=task_id,
+                )
+
+            _outbox_dispatcher_task = asyncio.create_task(
+                run_outbox_dispatcher(_enqueue_from_outbox), name="outbox-dispatcher"
+            )
+            _outbox_reconciler_task = asyncio.create_task(
+                run_outbox_reconciler(), name="outbox-reconciler"
+            )
+            logger.info("Outbox dispatcher + reconciler started")
+        except Exception as e:
+            logger.warning("Outbox dispatcher start failed (non-fatal): %s", e)
+
     # Start resource reservation orphan reconciler (all roles)
     try:
         from app.core.resource_guard import resource_guard
@@ -497,6 +523,12 @@ async def lifespan(app: FastAPI):
         if _export_cleanup_task and not _export_cleanup_task.done():
             _export_cleanup_task.cancel()
             _shutdown_tasks.append(("export-cleanup", _export_cleanup_task))
+        if _outbox_dispatcher_task and not _outbox_dispatcher_task.done():
+            _outbox_dispatcher_task.cancel()
+            _shutdown_tasks.append(("outbox-dispatcher", _outbox_dispatcher_task))
+        if _outbox_reconciler_task and not _outbox_reconciler_task.done():
+            _outbox_reconciler_task.cancel()
+            _shutdown_tasks.append(("outbox-reconciler", _outbox_reconciler_task))
 
         for name, task in _shutdown_tasks:
             try:

@@ -160,6 +160,10 @@ TASK_TYPE_PREWARM_ANALYSIS = "prewarm_analysis"
 TASK_TYPE_FORMULA_BATCH = "formula_batch"
 TASK_TYPE_BATCH_IMAGE = "batch_image"
 
+# Current worker version for rolling deployment compatibility.
+# Must be incremented when backward-incompatible task processing changes are made.
+_WORKER_VERSION: int = 1
+
 # Task types that support DB fencing (have execution_generation columns)
 _FENCING_TASK_TYPES = frozenset({
     TASK_TYPE_IMPORT_PIPELINE,
@@ -171,6 +175,23 @@ _FENCING_TASK_TYPES = frozenset({
     # formula_batch excluded: processes multiple FormulaCard records,
     # no single business record to fence per task
 })
+
+
+async def _check_worker_version_compatibility(task: Task) -> None:
+    """Verify this worker is compatible with the task's minimum_worker_version.
+
+    Raises:
+        ValueError: If the worker version is too old for this task.
+            The task should be marked as incompatible/dead, not retried.
+    """
+    required = getattr(task, "minimum_worker_version", 1)
+    if required > _WORKER_VERSION:
+        raise ValueError(
+            f"Incompatible task payload version: task requires minimum_worker_version={required} "
+            f"but current worker version is {_WORKER_VERSION}. "
+            f"task_id={task.task_id} type={task.task_type} schema_version={task.schema_version}"
+        )
+
 
 # ── enqueue helpers ──
 
@@ -198,7 +219,7 @@ async def enqueue_import_pipeline(
         "created_by": created_by,
         "staging_object_id": staging_object_id,
     }
-    return await task_queue.enqueue(
+    return await task_queue.enqueue_v2(
         TASK_TYPE_IMPORT_PIPELINE,
         payload,
         task_id=f"import:{pipeline_id}",
@@ -221,7 +242,7 @@ async def enqueue_resume_pipeline(
         "subject_id": subject_id,
         "options": options,
     }
-    return await task_queue.enqueue(
+    return await task_queue.enqueue_v2(
         TASK_TYPE_RESUME_PIPELINE,
         payload,
         task_id=f"resume:{pipeline_id}",
@@ -246,7 +267,7 @@ async def enqueue_image_pipeline(
         "options": options,
         "staging_object_id": staging_object_id,
     }
-    return await task_queue.enqueue(
+    return await task_queue.enqueue_v2(
         TASK_TYPE_IMAGE_PIPELINE,
         payload,
         task_id=f"image:{pipeline_id}",
@@ -265,7 +286,7 @@ async def enqueue_excel_pipeline(
         "source_file": source_file,
         "staging_object_id": staging_object_id,
     }
-    return await task_queue.enqueue(
+    return await task_queue.enqueue_v2(
         TASK_TYPE_EXCEL_PIPELINE,
         payload,
         task_id=f"excel:{pipeline_id}",
@@ -284,7 +305,7 @@ async def enqueue_formula_batch(
         "card_ids": card_ids,
         "admin_id": admin_id,
     }
-    return await task_queue.enqueue(
+    return await task_queue.enqueue_v2(
         TASK_TYPE_FORMULA_BATCH,
         payload,
         task_id=f"formula_batch:{job_id}",
@@ -315,7 +336,7 @@ async def enqueue_admin_resume(
         "subject_id": subject_id,
         "options": options,
     }
-    return await task_queue.enqueue(
+    return await task_queue.enqueue_v2(
         TASK_TYPE_ADMIN_RESUME,
         payload,
         task_id=f"admin_resume:{pipeline_id}",
@@ -345,7 +366,7 @@ async def enqueue_batch_image_job(
         "options": options,
         "concurrency": concurrency,
     }
-    return await task_queue.enqueue(
+    return await task_queue.enqueue_v2(
         TASK_TYPE_BATCH_IMAGE,
         payload,
         task_id=f"batch_image:{job_id}",
@@ -750,8 +771,14 @@ async def _process_task_v2(task: Task) -> None:
     Sets a fencing context via contextvars so that ``update_pipeline_status``
     in the call chain automatically uses atomic fenced UPDATEs instead of
     plain UPDATEs.
+
+    Raises:
+        ValueError: If worker version is incompatible with task payload.
     """
     from app.features.pipeline_checkpoint import clear_fencing_context, set_fencing_context
+
+    # Check worker-task version compatibility at entry
+    await _check_worker_version_compatibility(task)
 
     task_type = task.task_type
     payload = task.payload
@@ -1251,6 +1278,19 @@ async def _v2_heartbeat_loop_with_lease_window(
         try:
             ok = await task_queue.heartbeat_v2(task, lease_sec=lease_sec)
             if ok == 1:
+                # Check for cancel_requested flag on the task hash
+                try:
+                    task_data = await task_queue.get_task_v2(task.task_id)
+                    if task_data and task_data.get("cancel_requested") == "1":
+                        logger.warning(
+                            "v2 Cancel requested, stopping: task_id=%s reason=%s",
+                            task.task_id, task_data.get("cancel_reason", ""),
+                        )
+                        if owner_lost is not None:
+                            owner_lost.set()
+                        break
+                except Exception:
+                    pass  # Cancel check failure is non-fatal for heartbeat
                 await asyncio.sleep(interval)
                 continue
 

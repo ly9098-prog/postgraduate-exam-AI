@@ -103,3 +103,9 @@ backend/tests/fixtures/*.pdf
 
 # Root-level screenshots and debug images
 /*.png
+
+# GPU OCR virtualenv (too large for git)
+backend/.venv-ocr-gpu-330/
+backend/.venv-ocr-gpu-*/
+ocr_test/import/
+artifacts/**/*.pdf
