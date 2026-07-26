@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.export_task import ExportSnapshot, ExportTask
 from app.schemas.export_task import ExportTaskStatus
 from app.services.export.snapshot_service import delete_snapshot
-from app.services.storage_backend import get_storage
+from app.services.storage_backend import get_export_storage
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ async def cleanup_expired(
     )
     tasks = result.scalars().all()
 
-    storage = get_storage()
+    storage = get_export_storage()
 
     for task in tasks:
         # Delete stored file
@@ -75,45 +75,3 @@ async def cleanup_expired(
         logger.info("Cleanup: %s", stats)
 
     return stats
-
-
-async def cleanup_orphan_files(
-    db: AsyncSession,
-    batch_size: int = 50,
-) -> dict:
-    """Find completed tasks without existing files and log them.
-
-    This detects storage inconsistency (DB says completed, file missing).
-    Returns counts for monitoring.
-    """
-    result = await db.execute(
-        select(ExportTask)
-        .where(
-            ExportTask.status == ExportTaskStatus.COMPLETED,
-            ExportTask.file_key.isnot(None),
-        )
-        .limit(batch_size)
-    )
-    tasks = result.scalars().all()
-    storage = get_storage()
-    missing = 0
-
-    for task in tasks:
-        if task.file_key:
-            # We can only check local files
-            import os
-            if not task.file_key.startswith("http"):
-                from app.core.config import settings
-                from app.services.storage_backend import LocalFileStorage
-                filepath = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-                    task.file_key,
-                )
-                if not os.path.exists(filepath.replace("static/exports", "static/exports")):
-                    logger.error(
-                        "Orphan task %d: completed but file missing at %s",
-                        task.id, task.file_key,
-                    )
-                    missing += 1
-
-    return {"orphan_tasks_checked": len(tasks), "missing_files": missing}

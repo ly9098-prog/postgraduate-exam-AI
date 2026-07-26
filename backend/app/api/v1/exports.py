@@ -85,12 +85,42 @@ async def create_export(
     ``_IDEMPOTENCY_WINDOW_SEC`` return the existing pending/processing task.
     Re-export and retry create new tasks (call those endpoints instead).
     """
+    # Feature flag check
+    from app.core.config import settings
+
+    if not settings.EXPORT_FEATURE_ENABLED:
+        raise HTTPException(status_code=403, detail="导出功能已关闭")
+    if req.file_format == "docx" and not settings.EXPORT_DOCX_ENABLED:
+        raise HTTPException(status_code=403, detail="Word 导出功能已关闭")
+
     # Check idempotency
     idempotency_key = _build_idempotency_key(current_user.id, req)
     if idempotency_key:
         existing = await _find_existing_task(db, current_user.id, idempotency_key)
         if existing is not None:
             return _task_to_response(existing)
+
+    # Per-user concurrency limit
+    from app.services.export.processor import get_user_pending_count, _MAX_PER_USER
+
+    # Serialize concurrent creation per user by locking existing pending/processing tasks
+    # PostgreSQL: FOR UPDATE blocks until competing xact commits
+    # SQLite: FOR UPDATE is parsed but ignored — race bound ≤1 extra task
+    await db.execute(
+        select(ExportTask.id)
+        .where(
+            ExportTask.user_id == current_user.id,
+            ExportTask.status.in_([ExportTaskStatus.PENDING, ExportTaskStatus.PROCESSING]),
+        )
+        .limit(_MAX_PER_USER)
+        .with_for_update()
+    )
+    pending_count = await get_user_pending_count(db, current_user.id)
+    if pending_count >= _MAX_PER_USER:
+        raise HTTPException(
+            status_code=429,
+            detail=f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成",
+        )
 
     task = await _create_export_task(db, current_user.id, {
         **req.model_dump(),
@@ -265,6 +295,24 @@ async def retry_export(
     if task.status != ExportTaskStatus.FAILED:
         raise HTTPException(status_code=400, detail="只有失败的任务可以重试")
 
+    # Feature flag check
+    from app.core.config import settings
+
+    if not settings.EXPORT_FEATURE_ENABLED:
+        raise HTTPException(status_code=403, detail="导出功能已关闭")
+    if task.file_format == "docx" and not settings.EXPORT_DOCX_ENABLED:
+        raise HTTPException(status_code=403, detail="Word 导出功能已关闭")
+
+    # Per-user concurrency limit
+    from app.services.export.processor import get_user_pending_count, _MAX_PER_USER
+
+    pending_count = await get_user_pending_count(db, current_user.id)
+    if pending_count >= _MAX_PER_USER:
+        raise HTTPException(
+            status_code=429,
+            detail=f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成",
+        )
+
     # Rebuild config from existing task
     config = _task_to_config(task)
 
@@ -288,6 +336,24 @@ async def re_export(
 
     if not task.snapshot_id:
         raise HTTPException(status_code=400, detail="原任务没有快照，无法重新导出")
+
+    # Feature flag check
+    from app.core.config import settings
+
+    if not settings.EXPORT_FEATURE_ENABLED:
+        raise HTTPException(status_code=403, detail="导出功能已关闭")
+    if task.file_format == "docx" and not settings.EXPORT_DOCX_ENABLED:
+        raise HTTPException(status_code=403, detail="Word 导出功能已关闭")
+
+    # Per-user concurrency limit
+    from app.services.export.processor import get_user_pending_count, _MAX_PER_USER
+
+    pending_count = await get_user_pending_count(db, current_user.id)
+    if pending_count >= _MAX_PER_USER:
+        raise HTTPException(
+            status_code=429,
+            detail=f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成",
+        )
 
     # Load snapshot for config
     snapshot_data = await load_snapshot(db, task.snapshot_id, current_user.id)
@@ -324,6 +390,29 @@ async def re_export(
     return _task_to_response(new_task)
 
 
+# ── Health check ──
+
+
+@router.get("/health")
+async def export_health():
+    """Lightweight export subsystem health check.
+
+    Returns processor state and recent task counts.
+    Note: ``_in_flight`` and ``_draining`` are process-local.
+    In split-role deployments (web ≠ scheduler) the web process
+    always reports 0 in_flight — this endpoint is most useful
+    when the processor runs in the same process (development or
+    ``PROCESS_ROLE=all``).
+    """
+    from app.services.export.processor import _in_flight, _draining
+
+    return {
+        "status": "ok" if not _draining else "draining",
+        "in_flight": len(_in_flight),
+        "draining": _draining,
+    }
+
+
 # ── WebSocket: real-time export status push ──
 
 
@@ -339,6 +428,16 @@ async def export_status_ws(ws: WebSocket):
     - Server sends ``{"type": "export_status", "task_id": ..., ...}``
     - Server sends ``{"type": "ping"}`` periodically (heartbeat)
     """
+    # Feature flag
+    from app.core.config import settings
+
+    if not settings.EXPORT_FEATURE_ENABLED:
+        await ws.close(code=4001, reason="导出功能已关闭")
+        return
+    if not settings.EXPORT_WEBSOCKET_ENABLED:
+        await ws.close(code=4001, reason="实时推送功能已关闭")
+        return
+
     # Authenticate via query param
     token = ws.query_params.get("token", "")
     if not token:
