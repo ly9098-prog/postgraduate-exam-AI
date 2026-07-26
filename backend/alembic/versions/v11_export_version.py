@@ -1,7 +1,10 @@
 """v11: Add version column to export_tasks for stale-event detection
 
+Chains after ``f9e0d1c2b3a4`` (the migration already applied on production
+at deploy time), keeping the history linear.
+
 Revision ID: v11_export_version
-Revises: v10_export_tasks
+Revises: f9e0d1c2b3a4
 Create Date: 2026-07-27
 """
 
@@ -9,7 +12,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "v11_export_version"
-down_revision = "812ba6628ff1"
+down_revision = "f9e0d1c2b3a4"
 branch_labels = None
 depends_on = None
 

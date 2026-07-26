@@ -127,7 +127,7 @@ async def _recover_stale_tasks():
     Uses the most recent liveness timestamp (heartbeat_at if set,
     otherwise processing_started_at) to decide if a task is truly stale.
     """
-    now = datetime.now(UTC)
+    now = datetime.now(UTC).replace(tzinfo=None)
     cutoff = now - timedelta(seconds=_PROCESSING_TIMEOUT_SEC)
 
     async with async_session() as db:
@@ -148,7 +148,7 @@ async def _recover_stale_tasks():
             validate_transition(task.status, ExportTaskStatus.FAILED, task.id)
             task.status = ExportTaskStatus.FAILED
             task.error_message = "ERR_TASK_TIMEOUT"
-            task.completed_at = datetime.now(UTC)
+            task.completed_at = datetime.now(UTC).replace(tzinfo=None)
 
         if stale:
             await db.commit()
@@ -181,7 +181,7 @@ async def _process_one_task():
         return
 
     async with async_session() as db:
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(tzinfo=None)
 
         # Atomic claim: UPDATE the first pending task and RETURN the id.
         subq = (
@@ -229,7 +229,7 @@ async def _process_one_task():
                     )
                     t = result.scalar_one_or_none()
                     if t and t.status == ExportTaskStatus.PROCESSING:
-                        t.heartbeat_at = datetime.now(UTC)
+                        t.heartbeat_at = datetime.now(UTC).replace(tzinfo=None)
                         await hb_db.commit()
                         logger.debug("Heartbeat committed for export task %d", task_id)
             except Exception as e:
@@ -299,7 +299,7 @@ async def _process_one_task():
                     validate_transition(t.status, ExportTaskStatus.FAILED)
                     t.status = ExportTaskStatus.FAILED
                     t.error_message = "ERR_TASK_TIMEOUT"
-                    t.completed_at = datetime.now(UTC)
+                    t.completed_at = datetime.now(UTC).replace(tzinfo=None)
                     await db.commit()
         except Exception as e:
             logger.error("Failed to mark timed-out task %d: %s", task_id, e)
@@ -315,7 +315,7 @@ async def _process_one_task():
                     validate_transition(t.status, ExportTaskStatus.FAILED)
                     t.status = ExportTaskStatus.FAILED
                     t.error_message = "ERR_PROCESSING_FAILED"
-                    t.completed_at = datetime.now(UTC)
+                    t.completed_at = datetime.now(UTC).replace(tzinfo=None)
                     await db.commit()
         except Exception as e2:
             logger.error("Failed to mark task %d as failed: %s", task_id, e2)

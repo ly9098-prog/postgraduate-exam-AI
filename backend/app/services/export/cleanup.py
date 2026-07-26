@@ -33,7 +33,7 @@ async def cleanup_expired(
 
     Returns a dict with counts of processed items.
     """
-    now = datetime.now(UTC)
+    now = datetime.now(UTC).replace(tzinfo=None)
     stats = {"tasks_expired": 0, "files_deleted": 0, "snapshots_deleted": 0}
 
     result = await db.execute(

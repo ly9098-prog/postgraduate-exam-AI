@@ -75,12 +75,13 @@ async def _list_tasks(status: str):
 
     async with async_session() as db:
         if status == "zombie":
-            cutoff = datetime.now(UTC) - timedelta(seconds=900)
+            cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=900)
+            from sqlalchemy import func as sa_func
             result = await db.execute(
                 select(ExportTask).where(
                     ExportTask.status == ExportTaskStatus.PROCESSING,
-                    ExportTask.heartbeat_at.isnot(None),
-                    ExportTask.heartbeat_at < cutoff,
+                    ExportTask.processing_started_at.isnot(None),
+                    sa_func.coalesce(ExportTask.heartbeat_at, ExportTask.processing_started_at) < cutoff,
                 )
             )
         else:
@@ -127,7 +128,7 @@ async def _do_cleanup(dry_run: bool, confirmed: bool):
     if dry_run:
         print("[DRY RUN] Would clean up expired tasks")
         async with async_session() as db:
-            now = datetime.now(UTC)
+            now = datetime.now(UTC).replace(tzinfo=None)
             result = await db.execute(
                 select(ExportTask).where(
                     ExportTask.expires_at.isnot(None),
@@ -240,7 +241,7 @@ async def _recover_zombie(task_id: int):
 
         t.status = ExportTaskStatus.FAILED
         t.error_message = "ERR_ZOMBIE_RECOVERED"
-        t.completed_at = datetime.now(UTC)
+        t.completed_at = datetime.now(UTC).replace(tzinfo=None)
         await db.commit()
         print(f"Task {task_id} recovered (processing → failed)")
 

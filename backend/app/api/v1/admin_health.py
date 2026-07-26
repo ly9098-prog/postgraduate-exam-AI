@@ -52,7 +52,7 @@ async def export_health(_=Depends(require_permissions("dashboard:read"))):
     from app.services.export.export_metrics import get_metrics
     from app.services.export.push_service import get_active_connections
 
-    now = datetime.now(UTC)
+    now = datetime.now(UTC).replace(tzinfo=None)
     result = {"status": "unknown", "database": "unknown", "processor": {}, "tasks": {}, "pubsub": {}}
 
     # DB checks
