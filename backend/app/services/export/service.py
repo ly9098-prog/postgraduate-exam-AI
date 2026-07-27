@@ -30,6 +30,7 @@ from app.schemas.export_task import (
     ExportTaskStatus,
 )
 from app.services.export.data_builder import build_snapshot_data
+from app.services.export.exceptions import ExportDomainError
 from app.services.export.export_metrics import (
     inc_completed,
     inc_created,
@@ -39,7 +40,7 @@ from app.services.export.export_metrics import (
     observe_queue_wait_seconds,
 )
 from app.services.export.exporter_base import Exporter
-from app.services.export.exceptions import ExportDomainError
+from app.services.export.generation_token import GenerationToken
 from app.services.export.pdf_exporter import PdfExporter
 from app.services.export.range_resolver import resolve_range
 from app.services.export.snapshot_service import create_snapshot, load_snapshot
@@ -185,6 +186,7 @@ async def process_task(
     db: AsyncSession,
     task_id: int,
     exporter: Exporter | None = None,
+    token: GenerationToken | None = None,
 ) -> ExportTask:
     """Process an export task: resolve, build snapshot, generate, store.
 
@@ -197,6 +199,9 @@ async def process_task(
 
     Returns the updated task.
     """
+    # Lazy import to avoid circular dependency (processor.py imports process_task)
+    from app.services.export.processor import validate_transition
+
     # Load task with lock protection (re-select to get latest)
     result = await db.execute(select(ExportTask).where(ExportTask.id == task_id))
     task = result.scalar_one_or_none()
@@ -286,6 +291,7 @@ async def process_task(
             result = await exporter.export(snapshot_data, tmpdir)
 
             if not result.success or not result.file_bytes:
+                validate_transition(ExportTaskStatus.PROCESSING, ExportTaskStatus.FAILED, task.id)
                 task.status = ExportTaskStatus.FAILED
                 task.error_message = (result.error_message or "PDF 生成失败")[:500]
                 task.completed_at = utcnow()
@@ -295,12 +301,21 @@ async def process_task(
                 await db.flush()
                 return task
 
-            # 8. Store the file
+            # 8. Check generation token before upload
+            if token is not None and not token.is_active():
+                raise ExportDomainError(
+                    status_code=499,
+                    error_code=ExportErrorCode.GENERATION_FAILED,
+                    message="导出任务已超时，文件已丢弃",
+                )
+
+            # 9. Store the file
             from app.services.storage_backend import get_export_storage
             storage = get_export_storage()
             file_key = f"{task.id}/{task.file_name}"
             _file_url = await storage.upload(file_key, result.file_bytes)
 
+            validate_transition(ExportTaskStatus.PROCESSING, ExportTaskStatus.COMPLETED, task.id)
             task.status = ExportTaskStatus.COMPLETED
             task.file_key = file_key
             task.file_size = len(result.file_bytes)

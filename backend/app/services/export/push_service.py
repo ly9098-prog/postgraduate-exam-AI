@@ -75,6 +75,7 @@ async def _subscribe_all():
 
             logger.info("Per-instance Redis subscriber started")
 
+            retry_delay = 1
             while not _redis_subscriber_stop.is_set():
                 try:
                     msg = await pubsub.get_message(timeout=1.0)
@@ -89,10 +90,12 @@ async def _subscribe_all():
                                 await send_to_user(user_id, payload)
                         except (json.JSONDecodeError, KeyError):
                             logger.warning("Invalid Redis pmessage payload")
+                    retry_delay = 1  # reset on success
                 except asyncio.CancelledError:
                     break
                 except Exception:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, 30)  # exponential backoff, cap at 30s
 
     except Exception:
         logger.debug("Redis subscriber unavailable (polling fallback)")
@@ -147,7 +150,7 @@ def unregister(user_id: int, ws: WebSocket) -> None:
     if user_id in _connections:
         _connections[user_id].discard(ws)
         if not _connections[user_id]:
-            del _connections[user_id]
+            _connections.pop(user_id, None)
     logger.debug("WebSocket unregistered for user %d", user_id)
 
 
@@ -156,6 +159,10 @@ async def send_to_user(user_id: int, event: dict) -> int:
 
     Returns the number of successfully delivered connections.
     Cleans up stale connections.
+
+    Thread-safety: iterates a snapshot of the user's connection set to
+    avoid ``Set changed size during iteration`` when a concurrent
+    ``unregister()`` call modifies the same set during an ``await``.
     """
     if user_id not in _connections:
         return 0
@@ -169,7 +176,8 @@ async def send_to_user(user_id: int, event: dict) -> int:
         event = {"type": "export_status", "task_id": event.get("task_id"), "status": event.get("status")}
         payload = json.dumps(event, ensure_ascii=False, default=str)
 
-    for ws in _connections[user_id]:
+    # Snapshot to avoid Set changed size during iteration
+    for ws in list(_connections.get(user_id, ())):
         try:
             await ws.send_text(payload)
             delivered += 1
@@ -177,9 +185,10 @@ async def send_to_user(user_id: int, event: dict) -> int:
             stale.add(ws)
 
     if stale:
-        _connections[user_id] -= stale
-        if not _connections[user_id]:
-            del _connections[user_id]
+        if user_id in _connections:
+            _connections[user_id] -= stale
+            if not _connections[user_id]:
+                _connections.pop(user_id, None)
 
     return delivered
 

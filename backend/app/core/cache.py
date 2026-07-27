@@ -95,8 +95,7 @@ class CacheClient:
             await self._client.ping()
             logger.info("Redis 连接成功")
         except Exception as e:
-            logger.warning("Redis 不可用，缓存已禁用: %s", e)
-            self._enabled = False
+            logger.warning("Redis 不可用: %s", e)
             self._client = None
         return self._client
 

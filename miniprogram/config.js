@@ -50,6 +50,8 @@ module.exports = {
   DEBUG_QUESTION_ID: '',
   ENV,
   enableMathImage: false,
+  // 导出功能实时状态推送（WebSocket 开关）
+  EXPORT_WS_ENABLED: true,
   // 微信公众平台申请的"番茄钟完成"订阅消息模板 ID。
   // 字段：thing1（打卡活动）+ character_string2（打卡进度）
   POMODORO_SUBSCRIBE_TMPL_ID: 'Dc2tD7nbZn4FQi9nYOXZCtpmK3KUbcG_vrJ57UokMUQ',
