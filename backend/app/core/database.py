@@ -35,34 +35,6 @@ else:
     _engine_kwargs["max_overflow"] = _max_overflow
     _engine_kwargs["pool_timeout"] = settings.DB_POOL_TIMEOUT
 
-logger.info(
-    "DB pool configured: role=%s pool_size=%d max_overflow=%d total_connections=%d",
-    _role, _pool_size, _max_overflow, _pool_size + _max_overflow,
-)
-
-# Log total connection budget across all roles (for system-level visibility)
-_workers = getattr(settings, "GUNICORN_WORKERS", 1) or 1
-_web_per = settings.DB_POOL_SIZE_WEB + settings.DB_MAX_OVERFLOW_WEB
-_worker_per = settings.DB_POOL_SIZE_WORKER + settings.DB_MAX_OVERFLOW_WORKER
-_scheduler_per = settings.DB_POOL_SIZE_SCHEDULER + settings.DB_MAX_OVERFLOW_SCHEDULER
-_total_budget = _web_per * _workers + _worker_per + _scheduler_per
-logger.info(
-    "DB connection budget: web=%d/worker x %d workers=%d + worker=%d + scheduler=%d = %d total",
-    _web_per, _workers, _web_per * _workers, _worker_per, _scheduler_per, _total_budget,
-)
-
-_connect_args = {}
-_engine_kwargs: dict = {
-    "echo": settings.APP_ENV == "development",
-    "pool_recycle": settings.DB_POOL_RECYCLE,
-}
-
-if "sqlite" in settings.DATABASE_URL:
-    _connect_args = {"check_same_thread": False}
-else:
-    _engine_kwargs["pool_size"] = settings.DB_POOL_SIZE
-    _engine_kwargs["max_overflow"] = settings.DB_MAX_OVERFLOW
-
 engine = create_async_engine(
     settings.DATABASE_URL,
     connect_args=_connect_args,

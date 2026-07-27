@@ -102,7 +102,7 @@ async def export_health(_=Depends(require_permissions("dashboard:read"))):
 
     # Redis / PubSub
     try:
-        if cache.is_enabled():
+        if cache.is_enabled:
             result["pubsub"] = {"subscribed": True}
         else:
             result["pubsub"] = {"subscribed": False, "note": "Redis not configured"}

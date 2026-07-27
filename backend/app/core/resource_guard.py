@@ -304,22 +304,44 @@ class ResourceGuard:
     def _meta_prefix(resource_type: str) -> str:
         return _V2_RESOURCE_META_PREFIX_TPL.format(rt=resource_type)
 
-    # ── Async Redis client ──
+    # ── Async Redis client (shared connection pool) ──
+
+    # Lazy shared connection pool for all ResourceGuard Redis operations.
+    # Avoids creating a new connection per acquire/release/renew/reaper call.
+    _redis_pool = None  # type: redis.asyncio.ConnectionPool | None
 
     @staticmethod
-    async def _get_async_redis():
+    async def _get_redis_client():
+        """Get a Redis connection from the shared pool, or None if unavailable.
+
+        Uses a lazily-created ``redis.asyncio.ConnectionPool`` for efficient
+        connection reuse across all ResourceGuard operations.
+        """
         if not settings.REDIS_URL:
             return None
         try:
             import redis.asyncio as redis_async
-            return redis_async.from_url(
-                settings.REDIS_URL,
-                socket_connect_timeout=2,
-                socket_timeout=2,
-                decode_responses=True,
-            )
+            if ResourceGuard._redis_pool is None:
+                ResourceGuard._redis_pool = redis_async.ConnectionPool.from_url(
+                    settings.REDIS_URL,
+                    socket_connect_timeout=2,
+                    socket_timeout=2,
+                    decode_responses=True,
+                    max_connections=10,
+                )
+            return redis_async.Redis(connection_pool=ResourceGuard._redis_pool)
         except Exception:
             return None
+
+    @staticmethod
+    async def _close_redis_pool():
+        """Close the shared connection pool, if it was created."""
+        if ResourceGuard._redis_pool is not None:
+            try:
+                await ResourceGuard._redis_pool.aclose()
+            except Exception:
+                pass
+            ResourceGuard._redis_pool = None
 
     def _is_restricted(self) -> bool:
         if settings.APP_ENV == "production":
@@ -354,7 +376,7 @@ class ResourceGuard:
         ttl_sec = ttl_sec or settings.PIPELINE_RESERVATION_LEASE_SEC
         capacity = self._thresholds.max_active_pipelines
 
-        client = await self._get_async_redis()
+        client = await self._get_redis_client()
         if client is None:
             if self._is_restricted():
                 logger.warning("Reservation denied: Redis unavailable in restricted env")
@@ -446,7 +468,7 @@ class ResourceGuard:
             # Wrong resource_type — not a match
             return False
 
-        client = await self._get_async_redis()
+        client = await self._get_redis_client()
         if client is None:
             return False
 
@@ -481,7 +503,7 @@ class ResourceGuard:
         """Run one pass of the orphan reconciler. Returns count of released orphans."""
         total = 0
         for resource_type in ("import_pipeline", "image_pipeline", "excel_pipeline"):
-            client = await self._get_async_redis()
+            client = await self._get_redis_client()
             if client is None:
                 continue
             try:
@@ -661,7 +683,7 @@ class ResourceGuard:
         except Exception:
             pass
 
-        # Temp disk usage (fallback to /tmp)
+        # Temp disk availability (separate metric — do NOT overwrite available_memory_mb)
         try:
             import os as _os
             import shutil as _shutil
@@ -672,8 +694,7 @@ class ResourceGuard:
             if _total_gb > 0:
                 _used_mb = (_usage.total - _usage.free) / (1024**2)
                 m.temp_disk_usage_mb = _used_mb
-            # available temp disk is the free space
-            m.available_memory_mb = min(m.available_memory_mb, _free_gb * 1024)
+            # Do NOT overwrite available_memory_mb with disk space
         except Exception:
             pass
 

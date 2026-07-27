@@ -26,7 +26,7 @@ async def check_health() -> bool:
     try:
         from app.core.cache import cache
 
-        if not cache.is_enabled():
+        if not cache.is_enabled:
             return False
 
         client = await cache._ensure_client()
@@ -48,7 +48,7 @@ async def publish_event(job_id: int, event_type: str, data: dict) -> None:
     try:
         from app.core.cache import cache
 
-        if not cache.is_enabled():
+        if not cache.is_enabled:
             return
 
         client = await cache._ensure_client()
@@ -85,7 +85,7 @@ async def subscribe_job(
     try:
         from app.core.cache import cache
 
-        if not cache.is_enabled():
+        if not cache.is_enabled:
             raise ConnectionError("No Redis configured")
 
         client = await cache._ensure_client()
@@ -97,15 +97,13 @@ async def subscribe_job(
             await pubsub.subscribe(channel)
 
             deadline = asyncio.get_event_loop().time() + timeout
-            # Exponential backoff for DB polling fallback
-            initial_backoff = poll_interval
-            max_backoff = 60.0  # cap at 60 seconds
-            backoff = initial_backoff
+            # Exponential backoff for get_message timeout.
+            # NO DB polling while Pub/Sub is available — DB fallback only after PubSub breaks.
+            get_msg_timeout = 1.0  # initial get_message timeout
+            max_get_msg_timeout = 5.0  # cap
             while asyncio.get_event_loop().time() < deadline:
                 try:
-                    msg = await pubsub.get_message(
-                        timeout=poll_interval if poll_fn else 1.0,
-                    )
+                    msg = await pubsub.get_message(timeout=get_msg_timeout)
                     if msg and msg["type"] == "message":
                         try:
                             payload = json.loads(msg["data"])
@@ -117,21 +115,9 @@ async def subscribe_job(
                                 return
                         except json.JSONDecodeError:
                             logger.warning("Invalid PubSub message for job %d", job_id)
-
-                    # When no message and poll_fn available, use fallback
-                    # with exponential backoff between empty polls.
-                    if poll_fn and msg is None:
-                        events = await poll_fn()
-                        if events:
-                            for ev in events:
-                                await on_event(ev.get("type", "trace"), ev.get("data", {}))
-                                if ev.get("type") == "done":
-                                    await on_done()
-                                    return
-                            backoff = initial_backoff  # reset on success
-                        else:
-                            await asyncio.sleep(backoff)
-                            backoff = min(backoff * 2, max_backoff)
+                        get_msg_timeout = 0.05  # reset after message
+                    else:
+                        get_msg_timeout = min(get_msg_timeout * 1.5, max_get_msg_timeout)
                 except asyncio.CancelledError:
                     raise
                 except Exception:

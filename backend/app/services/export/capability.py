@@ -16,9 +16,12 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import HTTPException
-
 from app.schemas.export_task import ExportCapabilityResponse, ExportErrorCode
+from app.services.export.exceptions import (
+    ExportDomainError,
+    ExportPermissionError,
+    ExportValidationError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,14 +106,17 @@ def _get_retention_days() -> int:
 def raise_export_error(
     status_code: int, error_code: ExportErrorCode, message: str,
 ):
-    """Raise a structured ``HTTPException``.
+    """Raise a structured ``ExportDomainError``.
 
-    The response body is ``{"message": ..., "error_code": ...}``.
+    Since ``ExportDomainError`` extends ``HTTPException``, FastAPI converts it
+    automatically to an HTTP response with body
+    ``{"detail": {"message": ..., "error_code": ...}}``.
     The frontend ``api.js`` extracts ``message`` for display.
     """
-    raise HTTPException(
+    raise ExportDomainError(
         status_code=status_code,
-        detail={"message": message, "error_code": error_code.value},
+        error_code=error_code,
+        message=message,
     )
 
 

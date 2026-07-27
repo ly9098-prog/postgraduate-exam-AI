@@ -30,23 +30,31 @@ def _build_base_query(user_id: int) -> select:
     )
 
 
-def _apply_filters(query: select, filters: dict | None) -> select:
+async def _apply_filters(db: AsyncSession, query: select, filters: dict | None) -> select:
     """Apply the same filter logic as the wrong-question list endpoint.
 
     Supported filter keys: ``subject``, ``error_type``, ``topic``.
+    Subject codes/names are resolved through ``resolve_subject_ids()``
+    to be consistent with the wrong-question listing endpoint.
     """
     if not filters:
         return query
 
     if subject := filters.get("subject"):
         from app.models.question import Question
-        query = query.join(Question, WrongQuestion.question_id == Question.id).where(
-            Question.subject_id == subject  # subject here is subject_id
-        )
+        from app.services.admin_subject_service import resolve_subject_ids
+
+        subject_ids = await resolve_subject_ids(db, subject)
+        if subject_ids:
+            query = query.join(Question, WrongQuestion.question_id == Question.id).where(
+                Question.subject_id.in_(subject_ids)
+            )
+        else:
+            query = query.where(False)
+
     if error_type := filters.get("error_type"):
         query = query.where(WrongQuestion.error_type == error_type)
     if topic := filters.get("topic"):
-        # topic is matched against the question's knowledge_points
         import sqlalchemy as sa
 
         from app.models.question import Question
@@ -101,9 +109,15 @@ async def _resolve_filtered(
     user_id: int,
     filters: dict | None,
 ) -> list[int]:
-    """Active wrong questions matching the given filter params."""
+    """Active wrong questions matching the given filter params.
+
+    Rejects empty/null filters — when no filters are provided the client
+    should use ``all`` range, not ``filtered``.
+    """
+    if not filters:
+        raise ValueError("筛选范围为 filtered 但未提供筛选条件")
     query = _build_base_query(user_id)
-    query = _apply_filters(query, filters)
+    query = await _apply_filters(db, query, filters)
     query = query.order_by(WrongQuestion.id)
     result = await db.execute(query)
     ids = [row[0] for row in result.fetchall()]

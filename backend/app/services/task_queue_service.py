@@ -1076,6 +1076,7 @@ class DurableTaskQueue:
         )
         self._local_tasks: dict[str, Task] = {}
         self._redis = None  # lazy persistent connection for dequeue
+        self._pool: redis_async.ConnectionPool | None = None  # shared pool for script ops
         self._lua_enqueue = None
         self._lua_enqueue_non_idempotent = None
         self._lua_claim = None
@@ -1123,15 +1124,24 @@ class DurableTaskQueue:
         return self._redis
 
     async def _get_script_client(self):
-        """Get a short-lived Redis connection for non-blocking operations."""
+        """Get a Redis connection from the shared pool for non-blocking operations.
+
+        Uses a lazily-created ``redis.asyncio.ConnectionPool`` shared across
+        all script-based operations. Callers MUST return connections to the pool
+        by calling ``await client.aclose()`` (or using ``async with``) — but
+        with a pool, ``aclose()`` returns the connection, not destroys it.
+        """
         if not self._redis_enabled:
             return None
-        return redis_async.from_url(
-            self._redis_url,
-            socket_connect_timeout=5,
-            socket_timeout=5,
-            decode_responses=True,
-        )
+        if self._pool is None:
+            self._pool = redis_async.ConnectionPool.from_url(
+                self._redis_url,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+                decode_responses=True,
+                max_connections=20,
+            )
+        return redis_async.Redis(connection_pool=self._pool)
 
     async def _load_scripts(self, client) -> None:
         """Load Lua scripts into Redis and cache SHA hashes."""
@@ -1160,13 +1170,19 @@ class DurableTaskQueue:
         self._lua_cancel_v2 = await client.script_load(_LUA_CANCEL_V2)
 
     async def close(self) -> None:
-        """Close the persistent Redis connection."""
+        """Close the persistent Redis connection and shared pool."""
         if self._redis is not None:
             try:
                 await self._redis.aclose()
             except Exception as e:
                 logger.warning("Error closing task queue Redis connection: %s", e)
             self._redis = None
+        if self._pool is not None:
+            try:
+                await self._pool.aclose()
+            except Exception as e:
+                logger.warning("Error closing task queue Redis pool: %s", e)
+            self._pool = None
 
     # ── NOSCRIPT recovery ──
 
