@@ -35,6 +35,12 @@ const POSITION_OPTIONS = [
 
 Page({
   data: {
+    // Expose options to WXML (cannot use require or global vars in WXML)
+    SORT_OPTIONS: SORT_OPTIONS,
+    GROUP_OPTIONS: GROUP_OPTIONS,
+    SPACE_OPTIONS: SPACE_OPTIONS,
+    POSITION_OPTIONS: POSITION_OPTIONS,
+
     // Navigation context
     _selectedIds: [],
 
@@ -62,14 +68,24 @@ Page({
 
     // Sort & Group
     sortBy: 'newest',
+    sortByLabel: '加入时间最新优先',
+    sortByIndex: 0,
     groupBy: 'none',
+    groupByLabel: '连续排列',
+    groupByIndex: 0,
 
     // Answer & Analysis
     answerPosition: 'none',
+    answerPositionLabel: '不打印',
+    answerPositionIndex: 0,
     analysisPosition: 'none',
+    analysisPositionLabel: '不打印',
+    analysisPositionIndex: 0,
 
     // Space
     spaceStyle: 'standard',
+    spaceStyleLabel: '标准',
+    spaceStyleIndex: 1,
 
     // Preview count
     previewCount: 0,
@@ -147,6 +163,7 @@ Page({
 
   // ── Range selection ──
   onRangeChange(e) {
+    // radio-group uses dataset.value; picker uses e.detail.value
     const value = e.detail && e.detail.value ? e.detail.value : e.currentTarget.dataset.value
     if (!value) return
     this.setData({ rangeType: value, countError: '' }, () => {
@@ -154,7 +171,7 @@ Page({
     })
   },
 
-  // ── Format selection ──
+  // ── Format: radio-group change — e.detail.value is the format string directly ──
   onFormatChange(e) {
     const value = e.detail.value
     this.setData({ format: value })
@@ -174,29 +191,44 @@ Page({
     this.setData({ exportDate: e.detail.value })
   },
 
-  // ── Sort ──
+  // ── Sort: picker e.detail.value is an index into SORT_OPTIONS ──
   onSortChange(e) {
-    this.setData({ sortBy: e.detail.value })
+    const idx = parseInt(e.detail.value, 10)
+    const option = SORT_OPTIONS[idx]
+    if (!option) return
+    this.setData({ sortBy: option.value, sortByLabel: option.label })
   },
 
-  // ── Group ──
+  // ── Group: picker e.detail.value is an index into GROUP_OPTIONS ──
   onGroupChange(e) {
-    this.setData({ groupBy: e.detail.value })
+    const idx = parseInt(e.detail.value, 10)
+    const option = GROUP_OPTIONS[idx]
+    if (!option) return
+    this.setData({ groupBy: option.value, groupByLabel: option.label })
   },
 
-  // ── Answer position ──
+  // ── Answer position: picker e.detail.value is an index ──
   onAnswerPositionChange(e) {
-    this.setData({ answerPosition: e.detail.value })
+    const idx = parseInt(e.detail.value, 10)
+    const option = POSITION_OPTIONS[idx]
+    if (!option) return
+    this.setData({ answerPosition: option.value, answerPositionLabel: option.label })
   },
 
-  // ── Analysis position ──
+  // ── Analysis position: picker e.detail.value is an index ──
   onAnalysisPositionChange(e) {
-    this.setData({ analysisPosition: e.detail.value })
+    const idx = parseInt(e.detail.value, 10)
+    const option = POSITION_OPTIONS[idx]
+    if (!option) return
+    this.setData({ analysisPosition: option.value, analysisPositionLabel: option.label })
   },
 
-  // ── Space style ──
+  // ── Space style: picker e.detail.value is an index ──
   onSpaceChange(e) {
-    this.setData({ spaceStyle: e.detail.value })
+    const idx = parseInt(e.detail.value, 10)
+    const option = SPACE_OPTIONS[idx]
+    if (!option) return
+    this.setData({ spaceStyle: option.value, spaceStyleLabel: option.label })
   },
 
   // ── Preview count ──

@@ -55,40 +55,40 @@
     <!-- Sorting -->
     <view class="config-section">
       <view class="section-title">排序方式</view>
-      <picker mode="selector" range="{{SORT_OPTIONS}}" range-key="label" value="{{0}}" bindchange="onSortChange">
-        <view class="picker-display">{{SORT_OPTIONS.find(o => o.value === sortBy)?.label || SORT_OPTIONS[0].label}}</view>
+      <picker mode="selector" range="{{SORT_OPTIONS}}" range-key="label" value="{{sortByIndex}}" bindchange="onSortChange">
+        <view class="picker-display">{{sortByLabel}}</view>
       </picker>
     </view>
 
     <!-- Grouping -->
     <view class="config-section">
       <view class="section-title">分组方式</view>
-      <picker mode="selector" range="{{GROUP_OPTIONS}}" range-key="label" value="{{0}}" bindchange="onGroupChange">
-        <view class="picker-display">{{GROUP_OPTIONS.find(o => o.value === groupBy)?.label || GROUP_OPTIONS[0].label}}</view>
+      <picker mode="selector" range="{{GROUP_OPTIONS}}" range-key="label" value="{{groupByIndex}}" bindchange="onGroupChange">
+        <view class="picker-display">{{groupByLabel}}</view>
       </picker>
     </view>
 
     <!-- Answer -->
     <view class="config-section">
       <view class="section-title">答案</view>
-      <picker mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{0}}" bindchange="onAnswerPositionChange">
-        <view class="picker-display">{{POSITION_OPTIONS.find(o => o.value === answerPosition)?.label || POSITION_OPTIONS[0].label}}</view>
+      <picker mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{answerPositionIndex}}" bindchange="onAnswerPositionChange">
+        <view class="picker-display">{{answerPositionLabel}}</view>
       </picker>
     </view>
 
     <!-- Analysis -->
     <view class="config-section">
       <view class="section-title">解析</view>
-      <picker mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{0}}" bindchange="onAnalysisPositionChange">
-        <view class="picker-display">{{POSITION_OPTIONS.find(o => o.value === analysisPosition)?.label || POSITION_OPTIONS[0].label}}</view>
+      <picker mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{analysisPositionIndex}}" bindchange="onAnalysisPositionChange">
+        <view class="picker-display">{{analysisPositionLabel}}</view>
       </picker>
     </view>
 
     <!-- Space -->
     <view class="config-section">
       <view class="section-title">答题空间</view>
-      <picker mode="selector" range="{{SPACE_OPTIONS}}" range-key="label" value="{{1}}" bindchange="onSpaceChange">
-        <view class="picker-display">{{SPACE_OPTIONS.find(o => o.value === spaceStyle)?.label || SPACE_OPTIONS[1].label}}</view>
+      <picker mode="selector" range="{{SPACE_OPTIONS}}" range-key="label" value="{{spaceStyleIndex}}" bindchange="onSpaceChange">
+        <view class="picker-display">{{spaceStyleLabel}}</view>
       </picker>
     </view>
 

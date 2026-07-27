@@ -265,10 +265,12 @@ class Settings(BaseSettings):
     EXPORT_HEARTBEAT_INTERVAL_SEC: int = 30
     EXPORT_MAX_CONCURRENT: int = 2            # global task concurrency
     EXPORT_MAX_PER_USER: int = 2              # pending/processing per user
+    EXPORT_MAX_QUESTIONS: int = 100           # per-task question cap
     EXPORT_PDF_CONCURRENCY: int = 1
     EXPORT_DOCX_CONCURRENCY: int = 1
     EXPORT_IMAGE_DOWNLOAD_CONCURRENCY: int = 4
-    EXPORT_DIR: str = "static/exports"
+    EXPORT_DIR: str = "var/exports"
+    EXPORT_RETENTION_DAYS: int = 7  # how long completed files remain available
     PRODUCT_NAME: str = "MemoGrad"
     GENERATOR_VERSION: str = "2.0"  # v2 = DOCX support added
 

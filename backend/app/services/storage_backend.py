@@ -73,12 +73,17 @@ class StorageBackend(ABC):
 
     @abstractmethod
     async def upload(self, filename: str, data: bytes) -> str:
-        """上传图片，返回绝对 HTTP URL"""
+        """上传文件，返回绝对 URL 或可访问路径"""
         ...
 
     @abstractmethod
     async def delete(self, url_or_key: str) -> bool:
         """删除已上传的文件。失败或不存在时返回 False。"""
+        ...
+
+    @abstractmethod
+    async def exists(self, url_or_key: str) -> bool:
+        """检查文件是否存在。"""
         ...
 
     @abstractmethod
@@ -126,8 +131,29 @@ class LocalFileStorage(StorageBackend):
         """Local storage: no public URL — stream through auth endpoint."""
         return None
 
+    async def exists(self, url_or_key: str) -> bool:
+        """Check if a local file exists."""
+        rel = self._resolve_delete_path(url_or_key)
+        if rel is None:
+            return False
+        filepath = os.path.join(_BACKEND_ROOT, rel)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _storage_executor, os.path.exists, filepath,
+        )
+
     def _resolve_delete_path(self, url_or_key: str) -> str | None:
-        """Resolve URL or key to a relative path, with path traversal protection."""
+        """Resolve URL or key to a relative path, with path traversal protection.
+
+        Accepts:
+        - Full HTTP URL (extracts the path component)
+        - Absolute path that already includes self._prefix
+        - Relative key that will be joined with self._prefix
+
+        When ``self._prefix`` is an absolute path, returns an absolute path.
+        When ``self._prefix`` is a relative path, returns a path relative to
+        ``_BACKEND_ROOT``.
+        """
         if url_or_key.startswith("http"):
             if settings.PUBLIC_BASE_URL and url_or_key.startswith(settings.PUBLIC_BASE_URL):
                 rel = url_or_key[len(settings.PUBLIC_BASE_URL):].lstrip("/")
@@ -143,6 +169,18 @@ class LocalFileStorage(StorageBackend):
         if normalized.startswith(".."):
             logger.warning("Path traversal rejected: %s", url_or_key)
             return None
+
+        if os.path.isabs(self._prefix):
+            # Absolute prefix: resolve directly
+            filepath = os.path.join(self._prefix, normalized)
+            # Ensure it's within the prefix (path traversal protection)
+            real_prefix = os.path.realpath(self._prefix)
+            real_path = os.path.realpath(filepath)
+            if not real_path.startswith(real_prefix + os.sep):
+                logger.warning("Path traversal blocked: %s -> %s", url_or_key, real_path)
+                return None
+            return filepath
+
         if normalized.startswith("/"):
             normalized = normalized.lstrip("/")
             prefix_normalized = self._prefix.lstrip("/")
@@ -150,10 +188,12 @@ class LocalFileStorage(StorageBackend):
                 logger.warning("Delete rejected: path %s outside prefix %s", normalized, self._prefix)
                 return None
         else:
-            if not normalized.startswith(self._prefix.lstrip("/") + "/"):
-                logger.warning("Delete rejected: path %s outside prefix %s", normalized, self._prefix)
-                return None
-        return normalized
+            prefix_clean = self._prefix.lstrip("/")
+            # If the key already starts with the prefix, use it as-is
+            if normalized.startswith(prefix_clean + "/"):
+                return normalized
+            # Otherwise, join with prefix (relative key mode for export files)
+            return f"{prefix_clean}/{normalized}"
 
     @staticmethod
     def _sync_delete(filepath: str) -> bool:
@@ -202,6 +242,21 @@ class COSStorage(StorageBackend):
     def _build_key(self, filename: str) -> str:
         return f"{self._cos_prefix.rstrip('/')}/{filename.lstrip('/')}"
 
+    def _normalize_key(self, key: str) -> str:
+        """Ensure a storage key includes the COS prefix.
+
+        Saved file_key may be just '{task.id}/{filename}' without the
+        'var/exports/' prefix. This method normalizes it so that
+        delete, get_download_url, and exists find the correct object.
+        """
+        bucket_domain = f"{self._bucket}.cos.{self._region}.myqcloud.com"
+        if bucket_domain in key:
+            return key.split(bucket_domain, 1)[1].lstrip("/")
+        prefix = self._cos_prefix.rstrip("/")
+        if not key.startswith(prefix + "/") and not key.startswith("http"):
+            return f"{prefix}/{key.lstrip('/')}"
+        return key
+
     async def upload(self, filename: str, data: bytes) -> str:
         client = self._get_client()
         if client is None:
@@ -238,12 +293,7 @@ class COSStorage(StorageBackend):
             logger.warning("COS delete skipped: backend not configured")
             return False
 
-        # 从 URL 提取 key
-        bucket_domain = f"{self._bucket}.cos.{self._region}.myqcloud.com"
-        if bucket_domain in url_or_key:
-            key = url_or_key.split(bucket_domain, 1)[1].lstrip("/")
-        else:
-            key = url_or_key
+        key = self._normalize_key(url_or_key)
 
         # 验证命名空间
         prefix = self._cos_prefix.rstrip("/")
@@ -271,12 +321,7 @@ class COSStorage(StorageBackend):
         if client is None:
             return None
 
-        # Extract key from URL or use as-is
-        bucket_domain = f"{self._bucket}.cos.{self._region}.myqcloud.com"
-        if bucket_domain in url_or_key:
-            key = url_or_key.split(bucket_domain, 1)[1].lstrip("/")
-        else:
-            key = url_or_key
+        key = self._normalize_key(url_or_key)
 
         try:
             loop = asyncio.get_running_loop()
@@ -293,6 +338,25 @@ class COSStorage(StorageBackend):
         except Exception as e:
             logger.error("Failed to generate signed URL for %s: %s", key, e)
             return None
+
+    async def exists(self, url_or_key: str) -> bool:
+        """Check if a COS object exists."""
+        client = self._get_client()
+        if client is None:
+            return False
+
+        key = self._normalize_key(url_or_key)
+
+        try:
+            loop = asyncio.get_running_loop()
+            response = await loop.run_in_executor(
+                _storage_executor,
+                lambda: client.object_exists(Bucket=self._bucket, Key=key),
+            )
+            return bool(response)
+        except Exception as e:
+            logger.error("COS exists check failed for %s: %s", key, e)
+            return False
 
 
 def get_storage() -> StorageBackend:
@@ -313,11 +377,23 @@ def get_export_storage() -> StorageBackend:
     """获取用于导出文件的 storage backend。
 
     LocalFileStorage: 写入 EXPORT_DIR 目录。
-    COSStorage: 使用独立的 ``static/exports/`` 前缀。
+    COSStorage: 使用 EXPORT_DIR 作为 COS 对象前缀。
     """
     prefix = settings.EXPORT_DIR
     if settings.STORAGE_BACKEND == "cos":
         cos = COSStorage(prefix=prefix)
-        cos._cos_prefix = "static/exports/"
+        cos._cos_prefix = f"{prefix}/"
         return cos
     return LocalFileStorage(prefix=prefix)
+
+
+def get_export_storage_root() -> str:
+    """Return the absolute filesystem root directory for export files.
+
+    Used by both the storage backend and API layer to resolve file paths
+    consistently. Prevents directory traversal and symlink attacks.
+    """
+    root = os.path.realpath(os.path.join(_BACKEND_ROOT, settings.EXPORT_DIR))
+    # Ensure directory exists
+    os.makedirs(root, exist_ok=True)
+    return root

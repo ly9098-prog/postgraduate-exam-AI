@@ -33,6 +33,7 @@ from app.services.export.capability import (
     ensure_format_allowed,
     is_user_allowed,
     raise_export_error,
+    validate_export_range,
 )
 from app.services.export.service import (
     create_export_task as _create_export_task,
@@ -122,6 +123,16 @@ async def create_export(
 
     if req.file_format == "docx":
         ensure_format_allowed("docx")
+
+    # Validate range and count before creating
+    range_type = ExportRangeType(req.range_type)
+    count = await _preview_count(
+        db, current_user.id,
+        range_type,
+        req.filters,
+        req.selected_ids,
+    )
+    validate_export_range(req.range_type, req.selected_ids, count)
 
     # Check idempotency
     idempotency_key = _build_idempotency_key(current_user.id, req)
@@ -297,13 +308,15 @@ async def delete_export(
     """Delete an export task, its file, and its snapshot."""
     task = await _get_user_task(db, task_id, current_user.id)
 
-    # Delete stored file
+    # Delete stored file — check return value
     if task.file_key:
         try:
             storage = get_export_storage()
-            await storage.delete(task.file_key)
+            deleted = await storage.delete(task.file_key)
+            if not deleted:
+                logger.warning("File delete returned false for task %d, key %s — DB record still retained", task.id, task.file_key)
         except Exception as e:
-            logger.warning("File delete failed for task %d: %s", task.id, e)
+            logger.warning("File delete failed for task %d: %s — DB record retained", task.id, e)
 
     # Delete snapshot
     if task.snapshot_id:
@@ -340,6 +353,19 @@ async def retry_export(
     if task.file_format == "docx":
         ensure_format_allowed("docx")
 
+    # Rebuild config from existing task
+    config = _task_to_config(task)
+
+    # Validate range and count before creating
+    range_type = ExportRangeType(config["range_type"])
+    count = await _preview_count(
+        db, current_user.id,
+        range_type,
+        config.get("filters"),
+        config.get("selected_ids"),
+    )
+    validate_export_range(config["range_type"], config.get("selected_ids"), count)
+
     # Per-user concurrency limit
     from app.services.export.processor import _MAX_PER_USER, get_user_pending_count
 
@@ -347,7 +373,6 @@ async def retry_export(
     if pending_count >= _MAX_PER_USER:
         raise_export_error(429, ExportErrorCode.TOO_MANY_CONCURRENT, f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成")
 
-    # Rebuild config from existing task
     config = _task_to_config(task)
 
     new_task = await _create_export_task(db, current_user.id, config)
@@ -612,16 +637,12 @@ async def _find_existing_task(
 def _resolve_local_path(file_key: str) -> str | None:
     """Resolve a storage key to a local file path with path traversal protection.
 
-    Resolution goes through ``settings.EXPORT_DIR``, not ``backend_root + static/exports/``,
-    to match the export storage backend's prefix.
+    Uses the same ``get_export_storage_root()`` as the storage backend for
+    consistent path resolution.
     """
-    import os
+    from app.services.storage_backend import get_export_storage_root
 
-    from app.core.config import settings
-
-    export_root = os.path.realpath(
-        os.path.join(os.path.dirname(__file__), "..", "..", settings.EXPORT_DIR)
-    )
+    export_root = get_export_storage_root()
     resolved = os.path.realpath(os.path.join(export_root, file_key))
 
     # Path traversal protection: resolved path must be under export_root

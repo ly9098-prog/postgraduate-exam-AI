@@ -27,14 +27,19 @@ async def cleanup_expired(
     """Clean up all expired export tasks.
 
     For each expired task:
-    1. Delete the stored PDF file.
+    1. Delete the stored PDF file (check return value — False = failure).
     2. Delete the snapshot.
     3. Update task status to ``expired``.
 
     Returns a dict with counts of processed items.
     """
     now = datetime.now(UTC).replace(tzinfo=None)
-    stats = {"tasks_expired": 0, "files_deleted": 0, "snapshots_deleted": 0}
+    stats = {
+        "tasks_expired": 0,
+        "files_deleted": 0,
+        "files_delete_failed": 0,
+        "snapshots_deleted": 0,
+    }
 
     result = await db.execute(
         select(ExportTask)
@@ -50,23 +55,34 @@ async def cleanup_expired(
     storage = get_export_storage()
 
     for task in tasks:
-        # Delete stored file
+        # Delete stored file — check return value
+        file_deleted = False
         if task.file_key:
             try:
-                await storage.delete(task.file_key)
-                stats["files_deleted"] += 1
+                deleted = await storage.delete(task.file_key)
+                if deleted:
+                    file_deleted = True
+                else:
+                    logger.warning("Cleanup: file delete returned false for task %d, key %s", task.id, task.file_key)
             except Exception as e:
-                logger.warning("Failed to delete file for task %d: %s", task.id, e)
+                logger.warning("Cleanup: file delete raised for task %d: %s", task.id, e)
+        else:
+            file_deleted = True  # no file to delete
 
-        # Delete snapshot
+        if file_deleted:
+            stats["files_deleted"] += 1
+        else:
+            stats["files_delete_failed"] += 1
+
+        # Delete snapshot (best-effort — snapshot is less critical than file tracking)
         if task.snapshot_id:
             try:
                 await delete_snapshot(db, task.snapshot_id)
                 stats["snapshots_deleted"] += 1
             except Exception as e:
-                logger.warning("Failed to delete snapshot for task %d: %s", task.id, e)
+                logger.warning("Cleanup: snapshot delete failed for task %d: %s", task.id, e)
 
-        # Update task status
+        # Always mark as expired (allows re-export even if file delete failed)
         task.status = ExportTaskStatus.EXPIRED
         stats["tasks_expired"] += 1
 
@@ -75,6 +91,7 @@ async def cleanup_expired(
         logger.info("export_cleanup_completed", extra={
             "tasks_expired": stats["tasks_expired"],
             "files_deleted": stats["files_deleted"],
+            "files_delete_failed": stats["files_delete_failed"],
             "snapshots_deleted": stats["snapshots_deleted"],
         })
 

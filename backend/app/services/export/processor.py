@@ -348,6 +348,7 @@ async def _publish_task_event(task_id: int, task: ExportTask) -> None:
 
         event = build_status_event({
             "id": task.id,
+            "user_id": task.user_id,
             "status": task.status,
             "file_format": task.file_format,
             "success_count": task.success_count,

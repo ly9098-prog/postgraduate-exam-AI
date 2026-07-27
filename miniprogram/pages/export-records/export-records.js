@@ -12,13 +12,17 @@ const STATUS_MAP = {
   expired: { label: '已过期', tone: 'muted' },
 }
 
+const FORMAT_MAP = {
+  pdf: 'PDF',
+  docx: 'Word',
+}
+
 Page({
   data: {
     list: [],
     page: 1,
     hasMore: false,
     loading: false,
-    highlightId: null,
 
     // Polling
     _pollingTasks: {}, // taskId -> stop function
@@ -57,7 +61,9 @@ Page({
     try {
       const res = await exportApi.listExports(page, 20)
       const tasks = res.items || []
-      const list = reset ? tasks : [...this.data.list, ...tasks]
+      // Precompute display values for WXML
+      const enriched = tasks.map(t => this._enrichTask(t))
+      const list = reset ? enriched : [...this.data.list, ...enriched]
 
       this.setData({
         list,
@@ -67,10 +73,29 @@ Page({
       })
 
       // Start polling for non-terminal tasks
-      tasks.forEach(t => this._startPollingIfNeeded(t))
+      enriched.forEach(t => this._startPollingIfNeeded(t))
     } catch (err) {
       this.setData({ loading: false })
       wx.showToast({ title: '加载失败', icon: 'none' })
+    }
+  },
+
+  _enrichTask(task) {
+    const st = STATUS_MAP[task.status] || { label: task.status, tone: 'neutral' }
+    var fsText = ''
+    if (task.file_size) {
+      var kb = (task.file_size / 1024)
+      fsText = kb.toFixed(1) + 'KB'
+    }
+    var fmtText = FORMAT_MAP[task.file_format] || task.file_format
+    var dateText = task.created_at || ''
+    return {
+      ...task,
+      statusLabel: st.label,
+      statusTone: st.tone,
+      fileSizeText: fsText,
+      formatText: fmtText,
+      dateText: dateText,
     }
   },
 
@@ -89,8 +114,7 @@ Page({
       task.id,
       (updated) => {
         if (!this.data._alive) return
-        // Ensure we process the update correctly — WS events may have
-        // different key naming than API responses
+        // WS events may have different key naming than API responses
         const taskUpdate = updated.task_id ? {
           id: updated.task_id,
           status: updated.status,
@@ -102,10 +126,12 @@ Page({
           expires_at: updated.expires_at,
         } : updated
 
-        this._updateTaskInList(taskUpdate || updated)
+        const enriched = this._enrichTask(taskUpdate || updated)
+
+        this._updateTaskInList(enriched)
         const s = this.data._pollingTasks[task.id]
         // If reached terminal state, stop
-        if (s && terminalStates.includes((taskUpdate || updated).status)) {
+        if (s && terminalStates.includes((enriched).status)) {
           s()
           delete this.data._pollingTasks[task.id]
         }
@@ -134,15 +160,9 @@ Page({
     this.setData({ list })
   },
 
-  // ── Task status helper ──
-  _taskStatus(task) {
-    return STATUS_MAP[task.status] || { label: task.status, tone: 'neutral' }
-  },
-
   // ── Preview (wx.openDocument) ──
   async onPreview(e) {
     const taskId = e.currentTarget.dataset.id
-    const task = this.data.list.find(t => t.id === taskId)
     if (!taskId) return
 
     try {
@@ -162,14 +182,15 @@ Page({
       }
 
       // Determine file type from task format or file extension
+      const task = this.data.list.find(function(t) { return t.id === taskId })
       const fileFormat = (task && task.file_format) || 'pdf'
       const fileType = fileFormat === 'docx' ? 'docx' : 'pdf'
 
       wx.openDocument({
         filePath,
         fileType: fileType,
-        success: () => console.log('Preview success'),
-        fail: (err) => {
+        success: function() { console.log('Preview success') },
+        fail: function(err) {
           console.error('Preview failed', err)
           const msg = fileType === 'docx'
             ? 'Word 文件预览失败，请尝试保存后使用 WPS 或 Word 打开'
@@ -185,11 +206,11 @@ Page({
   _downloadFile(url) {
     const token = wx.getStorageSync('token')
     const header = token ? { Authorization: 'Bearer ' + token } : {}
-    return new Promise((resolve, reject) => {
+    return new Promise(function(resolve, reject) {
       wx.downloadFile({
         url,
         header,
-        success: (res) => {
+        success: function(res) {
           if (res.statusCode === 200) resolve(res.tempFilePath)
           else reject(new Error('下载失败: ' + res.statusCode))
         },
@@ -199,92 +220,92 @@ Page({
   },
 
   // ── Save ──
-  async onSave(e) {
-    const taskId = e.currentTarget.dataset.id
-    const task = this.data.list.find(t => t.id === taskId)
+  onSave: function(e) {
+    var taskId = e.currentTarget.dataset.id
+    var self = this
     wx.showToast({ title: '正在保存…', icon: 'loading' })
 
-    try {
-      const info = await exportApi.getDownloadInfo(taskId)
-      const url = info.url || exportApi.getFileUrl(taskId)
-
-      const dl = await this._downloadFile(url)
-      const fs = wx.getFileSystemManager()
-
-      // Use the original file name from the task
-      const fileName = (task && task.file_name) || (info.file_name) || 'export.' + ((task && task.file_format) || 'pdf')
-      const savedPath = `${wx.env.USER_DATA_PATH}/${fileName}`
-      fs.saveFile({
-        tempFilePath: dl,
-        filePath: savedPath,
-        success: () => {
-          wx.showToast({ title: '已保存到本地', icon: 'success' })
-        },
-        fail: () => {
-          wx.showToast({ title: '保存失败', icon: 'none' })
-        },
+    exportApi.getDownloadInfo(taskId).then(function(info) {
+      var url = info.url || exportApi.getFileUrl(taskId)
+      var task = self.data.list.find(function(t) { return t.id === taskId })
+      return self._downloadFile(url).then(function(dl) {
+        var fileName = (task && task.file_name) || info.file_name || 'export.' + ((task && task.file_format) || 'pdf')
+        var savedPath = wx.env.USER_DATA_PATH + '/' + fileName
+        var fs = wx.getFileSystemManager()
+        fs.saveFile({
+          tempFilePath: dl,
+          filePath: savedPath,
+          success: function() {
+            wx.showToast({ title: '已保存到本地', icon: 'success' })
+          },
+          fail: function() {
+            wx.showToast({ title: '保存失败', icon: 'none' })
+          },
+        })
       })
-    } catch (err) {
+    }).catch(function(err) {
       wx.showToast({ title: '保存失败: ' + (err.message || ''), icon: 'none' })
-    }
+    })
   },
 
   // ── Share ──
   onShare(e) {
-    const taskId = e.currentTarget.dataset.id
-    const task = this.data.list.find(t => t.id === taskId)
+    const task = this._findTaskById(e)
     if (!task) return
-
-    // Share a page where the recipient can view/access the file
     wx.shareAppMessage({
       title: task.file_name || '错题巩固练习',
-      path: `/pages/export-records/export-records?highlight=${taskId}`,
+      path: '/pages/export-records/export-records?highlight=' + task.id,
     })
   },
 
   // ── Delete ──
-  async onDelete(e) {
+  onDelete(e) {
     const taskId = e.currentTarget.dataset.id
+    const self = this
 
     wx.showModal({
       title: '确认删除',
       content: '删除后将同时清理文件和导出记录，不可恢复。',
-      success: async (res) => {
+      success: function(res) {
         if (!res.confirm) return
-        try {
-          await exportApi.deleteExport(taskId)
-          this.setData({
-            list: this.data.list.filter(t => t.id !== taskId),
+        exportApi.deleteExport(taskId).then(function() {
+          self.setData({
+            list: self.data.list.filter(function(t) { return t.id !== taskId }),
           })
           wx.showToast({ title: '已删除', icon: 'success' })
-        } catch (err) {
+        }).catch(function() {
           wx.showToast({ title: '删除失败', icon: 'none' })
-        }
+        })
       },
     })
   },
 
   // ── Retry ──
-  async onRetry(e) {
+  onRetry(e) {
     const taskId = e.currentTarget.dataset.id
-    try {
-      await exportApi.retryExport(taskId)
+    const self = this
+    exportApi.retryExport(taskId).then(function() {
       wx.showToast({ title: '已重新提交', icon: 'success' })
-      this._loadList(true)
-    } catch (err) {
+      self._loadList(true)
+    }).catch(function(err) {
       wx.showToast({ title: err.message || '重试失败', icon: 'none' })
-    }
+    })
   },
 
   // ── Re-export ──
-  async onReExport(e) {
+  onReExport(e) {
     const taskId = e.currentTarget.dataset.id
-    try {
-      await exportApi.reExport(taskId)
+    const self = this
+    exportApi.reExport(taskId).then(function() {
       wx.showToast({ title: '已重新导出', icon: 'success' })
-      this._loadList(true)
-    } catch (err) {
+      self._loadList(true)
+    }).catch(function(err) {
       wx.showToast({ title: err.message || '重新导出失败', icon: 'none' })
-    }
+    })
+  },
+
+  _findTaskById(e) {
+    const taskId = e.currentTarget.dataset.id
+    return this.data.list.find(function(t) { return t.id === taskId })
   },
 })
