@@ -542,7 +542,12 @@ async def create_formula_card(
         {"title": card.title},
     )
     await db.commit()
-    await db.refresh(card)
+    fresh_result = await db.execute(
+        select(FormulaCard).where(FormulaCard.id == card.id)
+    )
+    card = fresh_result.scalar_one_or_none()
+    if not card:
+        raise HTTPException(status_code=404, detail="Formula disappeared after commit")
     return await _card_to_dict(db, card)
 
 
@@ -617,8 +622,25 @@ async def update_formula_card(
     if card.status in ("approved", "rejected"):
         card.status = "draft"
 
-    # Version snapshot
-    await _create_version_snapshot(db, card, "update", admin.id)
+    # Version snapshot - build a plain dict to avoid ORM lazy-load issues
+    snapshot = {
+        "id": card.id,
+        "title": card.title,
+        "category_id": card.category_id,
+        "card_type": card.card_type,
+        "formula_blocks": card.formula_blocks,
+        "conditions": card.conditions,
+        "status": card.status,
+        "version": card.version,
+    }
+    version = FormulaCardVersion(
+        formula_card_id=card.id,
+        version=card.version,
+        snapshot=snapshot,
+        action="update",
+        edited_by=admin.id,
+    )
+    db.add(version)
 
     await _log_audit(
         db, admin, request, "formula.update",
@@ -626,8 +648,18 @@ async def update_formula_card(
         {"title": card.title, "fields": list(update_data.keys())},
     )
     await db.commit()
-    await db.refresh(card)
-    return await _card_to_dict(db, card)
+
+    # Build response from a fresh query to avoid greenlet issues with expired ORM state
+    try:
+        fresh_result = await db.execute(
+            select(FormulaCard).where(FormulaCard.id == card.id)
+        )
+        fresh_card = fresh_result.scalar_one_or_none()
+        if not fresh_card:
+            raise HTTPException(status_code=404, detail="Formula disappeared after commit")
+        return await _card_to_dict(db, fresh_card)
+    except Exception:
+        raise
 
 
 @router.delete("/{card_id}")
@@ -803,8 +835,12 @@ async def review_formula_card(
         },
     )
     await db.commit()
-    await db.refresh(card)
-    return {"status": "ok", "new_status": card.status}
+    # Fetch fresh status without triggering lazy load
+    status_result = await db.execute(
+        select(FormulaCard.status).where(FormulaCard.id == card.id)
+    )
+    fresh_status = status_result.scalar_one_or_none()
+    return {"status": "ok", "new_status": fresh_status or card.status}
 
 
 @router.post("/batch-review")

@@ -1185,7 +1185,7 @@ async def run_dispatcher_v2(
     _v2_worker_running = True
 
     from app.core.worker_concurrency import get_worker_semaphore
-    semaphore = get_worker_semaphore()
+    semaphore = await get_worker_semaphore()
 
     task_types = [
         TASK_TYPE_IMPORT_PIPELINE,

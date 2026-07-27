@@ -87,7 +87,7 @@ async def run_prewarm_worker(
     _worker_running = True
 
     from app.core.worker_concurrency import get_worker_semaphore
-    semaphore = get_worker_semaphore()
+    semaphore = await get_worker_semaphore()
 
     logger.info("[prewarm] worker started (poll=%ss lease=%ds)", poll_interval, lease_sec)
 
@@ -100,18 +100,18 @@ async def run_prewarm_worker(
             try:
                 task = await task_queue.dequeue_v2(TASK_TYPE_PREWARM, lease_sec=lease_sec)
             except TaskQueueUnavailableError as e:
-                semaphore.release()
                 _redis_failure_count += 1
                 backoff = min(e.retry_after * (1 << min(_redis_failure_count - 1, 4)), 300)
                 logger.error(
                     "[prewarm] Redis unavailable (failure #%d): %s — backing off %ds",
                     _redis_failure_count, e, backoff,
                 )
+                semaphore.release()
                 await asyncio.sleep(backoff)
                 continue
             except Exception as e:
-                semaphore.release()
                 logger.warning("[prewarm] dequeue failed: %s", e)
+                semaphore.release()
                 await asyncio.sleep(poll_interval)
                 continue
 
@@ -122,40 +122,41 @@ async def run_prewarm_worker(
                 await asyncio.sleep(poll_interval)
                 continue
 
-            # Process task with heartbeat loop
-            heartbeat_task = asyncio.create_task(
-                _heartbeat_loop(task, lease_sec)
-            )
-
             try:
-                await _process_task(task)
-                ok = await task_queue.complete_v2(task)
-                if not ok:
-                    logger.warning(
-                        "[prewarm] complete rejected (owner mismatch): task_id=%s",
-                        task.task_id,
-                    )
-                else:
-                    logger.info(
-                        "[prewarm] completed wq_id=%s uid=%s",
-                        task.payload.get("wq_id"), task.payload.get("user_id"),
-                    )
-            except Exception as e:
-                logger.exception(
-                    "[prewarm] processing failed: task_id=%s", task.task_id,
+                heartbeat_task = asyncio.create_task(
+                    _heartbeat_loop(task, lease_sec)
                 )
-                ok = await task_queue.fail_v2(task, str(e))
-                if not ok:
-                    logger.warning(
-                        "[prewarm] fail rejected (owner mismatch): task_id=%s",
-                        task.task_id,
-                    )
-            finally:
-                heartbeat_task.cancel()
+
                 try:
-                    await heartbeat_task
-                except asyncio.CancelledError:
-                    pass
+                    await _process_task(task)
+                    ok = await task_queue.complete_v2(task)
+                    if not ok:
+                        logger.warning(
+                            "[prewarm] complete rejected (owner mismatch): task_id=%s",
+                            task.task_id,
+                        )
+                    else:
+                        logger.info(
+                            "[prewarm] completed wq_id=%s uid=%s",
+                            task.payload.get("wq_id"), task.payload.get("user_id"),
+                        )
+                except Exception as e:
+                    logger.exception(
+                        "[prewarm] processing failed: task_id=%s", task.task_id,
+                    )
+                    ok = await task_queue.fail_v2(task, str(e))
+                    if not ok:
+                        logger.warning(
+                            "[prewarm] fail rejected (owner mismatch): task_id=%s",
+                            task.task_id,
+                        )
+                finally:
+                    heartbeat_task.cancel()
+                    try:
+                        await heartbeat_task
+                    except asyncio.CancelledError:
+                        pass
+            finally:
                 semaphore.release()
 
     except asyncio.CancelledError:

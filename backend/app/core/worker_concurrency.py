@@ -16,21 +16,24 @@ logger = logging.getLogger("postgraduate-ai.worker-concurrency")
 
 # Module-level semaphore — shared across dispatcher and prewarm worker
 _worker_semaphore: asyncio.Semaphore | None = None
+_init_lock = asyncio.Lock()
 
 
-def get_worker_semaphore() -> asyncio.Semaphore:
+async def get_worker_semaphore() -> asyncio.Semaphore:
     """Get or create the shared worker semaphore.
 
-    The capacity is ``WORKER_CONCURRENCY`` (default 1). Returns a bound
-    semaphore for ``async with`` usage.
+    The capacity is ``WORKER_CONCURRENCY`` (default 1). Async init is
+    guarded by ``_init_lock`` to prevent TOCTOU races.
     """
     global _worker_semaphore
     if _worker_semaphore is None:
-        _worker_semaphore = asyncio.Semaphore(settings.WORKER_CONCURRENCY)
-        logger.info(
-            "Worker concurrency gate initialized: concurrency=%d",
-            settings.WORKER_CONCURRENCY,
-        )
+        async with _init_lock:
+            if _worker_semaphore is None:
+                _worker_semaphore = asyncio.Semaphore(settings.WORKER_CONCURRENCY)
+                logger.info(
+                    "Worker concurrency gate initialized: concurrency=%d",
+                    settings.WORKER_CONCURRENCY,
+                )
     return _worker_semaphore
 
 

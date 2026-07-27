@@ -15,15 +15,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import warnings
-from concurrent.futures import ThreadPoolExecutor
 
 from app.core.config import settings
 from app.core.ocr_types import OcrPageResult
 
 logger = logging.getLogger(__name__)
-
-# Shared executor for bridging sync->async calls
-_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ocr_bridge")
 
 
 # ── Private helpers ─────────────────────────────────────────────────────────
@@ -54,20 +50,40 @@ def get_gateway():
 
 
 def _run_async(coro):
-    """Run a coroutine from sync context using ThreadPoolExecutor bridge.
+    """Run a coroutine from sync context.
 
-    Works correctly even when the event loop is already running (e.g., when
-    called from sync code within an async context like pipeline orchestrator).
+    Three strategies, tried in order:
+    1. No running loop → ``asyncio.run(coro)`` (called from a plain thread).
+    2. Loop is running but we are in a **worker thread** → submit via
+       ``run_coroutine_threadsafe`` and block (safe, loop advances on
+       its own thread).
+    3. Loop is running on the **calling thread** (sync code called from
+       within an async handler on the event-loop thread) → offload the
+       entire operation to the shared ``_executor`` threadpool so the
+       event loop remains unblocked.
     """
     try:
         loop = asyncio.get_running_loop()
-        if loop.is_running():
-            # Bridge: submit to running loop from a worker thread
-            future = asyncio.run_coroutine_threadsafe(coro, loop)
-            return future.result(timeout=600)
-        return loop.run_until_complete(coro)
     except RuntimeError:
         return asyncio.run(coro)
+
+    # We are on the event-loop thread — offload to executor to avoid
+    # blocking the loop.
+    from concurrent.futures import ThreadPoolExecutor
+    _executor: ThreadPoolExecutor = _get_or_create_executor()
+    future = _executor.submit(asyncio.run, coro)
+    return future.result(timeout=600)
+
+
+_executor_instance = None
+
+
+def _get_or_create_executor():
+    global _executor_instance
+    if _executor_instance is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _executor_instance = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ocr_bridge")
+    return _executor_instance
 
 
 # ── Deprecated OCR functions ────────────────────────────────────────────────
