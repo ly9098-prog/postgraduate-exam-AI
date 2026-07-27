@@ -257,7 +257,9 @@ class TestClassifyWeaknessLevel:
 
 class TestUpdateUserKnowledgeState:
     def test_correct_answer_increases_mastery(self):
-        from app.services.mastery_service import update_user_knowledge_state_after_answer
+        from app.services.mastery_service import (
+            update_user_knowledge_state_after_answer,
+        )
 
         db = _make_mock_db()
         kp = _make_kp(id=1, name="导数")
@@ -499,12 +501,12 @@ class TestSubmitAnswerFeedbackLoop:
         # Mock db.execute to return question
         db.execute = AsyncMock(return_value=_make_execute_result(scalar_one_or_none=q))
 
-        with patch("app.services.practice_service.record_wrong", new_callable=AsyncMock) as mock_wrong, \
-             patch("app.services.practice_service.record_answer_behavior", new_callable=AsyncMock) as mock_behavior, \
+        with patch("app.services.practice_service.record_wrong", new_callable=AsyncMock), \
+             patch("app.services.practice_service.record_answer_behavior", new_callable=AsyncMock), \
              patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock) as mock_mastery, \
+                   new_callable=AsyncMock), \
              patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock) as mock_rec_log, \
+                   new_callable=AsyncMock), \
              patch("app.services.question_review_service.update_user_question_state_after_answer",
                    new_callable=AsyncMock):
             result = _run(submit_answer(db, user_id=1, question_id=1, user_answer="B", request_id="test-req"))

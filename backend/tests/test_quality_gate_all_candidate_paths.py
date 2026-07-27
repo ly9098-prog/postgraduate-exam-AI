@@ -149,7 +149,7 @@ class TestShadowModeInvariant:
         try:
             # Simulate a shadow evaluation error
             from app.features.quality_gate import CompositeQualityGate
-            gate = CompositeQualityGate()
+            CompositeQualityGate()
             # This should not raise even with None input
             shadow_ok = True
         except Exception:

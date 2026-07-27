@@ -138,7 +138,6 @@ class TestGatewayWithRemoteClient:
         # But we can verify the factory does create a paddlex client.
         # Test that the Gateway can handle the None client gracefully.
         # Override _init_worker_client to return None to simulate failure
-        original_init = gateway._init_worker_client
         gateway._init_worker_client = lambda: None
 
         results = await gateway.recognize_pages([(0, _FAKE_PNG)])

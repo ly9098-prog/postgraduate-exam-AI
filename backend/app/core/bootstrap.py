@@ -24,8 +24,7 @@ import logging
 import os
 import signal
 import sys
-import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
 
 from app.core.config import settings
 
@@ -256,7 +255,7 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
 
 async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
     """Initialize scheduler-specific: periodic tasks, cleanup loops."""
-    from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+    from app.core.deployment_profile import detect_deployment_profile
 
     profile = detect_deployment_profile()
     _report = _startup_failure_reporter(profile)
@@ -291,7 +290,10 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
 
     # Outbox dispatcher + reconciler
     try:
-        from app.services.outbox_service import run_outbox_dispatcher, run_outbox_reconciler
+        from app.services.outbox_service import (
+            run_outbox_dispatcher,
+            run_outbox_reconciler,
+        )
         from app.services.task_queue_service import task_queue
 
         async def _enqueue_from_outbox(task_id: str, task_type: str, payload: dict) -> object:
@@ -402,7 +404,10 @@ def _ensure_scratch_dir() -> str:
     if not scratch or scratch == "/tmp" or scratch == "/tmp/worker-scratch":
         # In production, WORKER_SCRATCH_DIR must be explicitly configured.
         # In development, fall back to a safe location.
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
 
         profile = detect_deployment_profile()
         if profile == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production":
@@ -486,7 +491,9 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
 
     # 4. Formula render pool
     try:
-        from app.services.formula_graph_spec_renderer import shutdown_formula_render_pool
+        from app.services.formula_graph_spec_renderer import (
+            shutdown_formula_render_pool,
+        )
 
         await asyncio.wait_for(
             asyncio.to_thread(shutdown_formula_render_pool, wait=True, cancel_futures=False),
@@ -499,7 +506,10 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
 
     # 5. OCR infrastructure (role-aware)
     if role in ("worker", "all"):
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
 
         profile = detect_deployment_profile()
         if profile != DeploymentProfile.CLOUD_API:
@@ -511,7 +521,6 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
                 logger.exception("OCR executor shutdown error")
 
         try:
-            from app.features.ocr_gateway import OCRGateway
 
             # Gateway may or may not be initialized in this role
             # Attempt shutdown safely
@@ -525,7 +534,10 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
 
     # 6. BoundedExecutors shutdown
     try:
-        from app.core.executor_registry import clear_executor_registry, get_all_executors
+        from app.core.executor_registry import (
+            clear_executor_registry,
+            get_all_executors,
+        )
         from app.core.executors import shutdown_executors
 
         await shutdown_executors(get_all_executors())
@@ -588,9 +600,9 @@ async def _run_role_async(role: str) -> None:
     validate_production_config()
     await validate_production_config_async()
 
-    from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+    from app.core.deployment_profile import detect_deployment_profile
 
-    profile = detect_deployment_profile()
+    detect_deployment_profile()
 
     # Staging sweep on startup
     try:

@@ -20,19 +20,16 @@ import zipfile
 
 import pytest
 
-from app.services.export.table_model import TableBlock, TableCell, TableRow, TextAlign
-from app.services.export.table_parser import (
-    parse_html_table,
-    parse_markdown_table,
-    parse_segment_table,
-    parse_table,
-)
+from app.schemas.export_task import ExportTaskStatus
 from app.services.export.omml_converter import (
     latex_to_omml_xml,
-    insert_omml_into_paragraph,
 )
 from app.services.export.processor import validate_transition
-from app.schemas.export_task import ExportTaskStatus
+from app.services.export.table_model import TableBlock, TableCell, TableRow
+from app.services.export.table_parser import (
+    parse_html_table,
+    parse_segment_table,
+)
 
 _OMML_NS = "schemas.openxmlformats.org/officeDocument/2006/math"
 
@@ -273,6 +270,7 @@ class TestDocxTableXml:
     def test_w_tbl_present(self):
         """DOCX with table must contain w:tbl."""
         from docx import Document
+
         from app.services.export.table_renderer import render_table_to_docx
 
         doc = Document()
@@ -287,6 +285,7 @@ class TestDocxTableXml:
     def test_w_cant_split_present(self):
         """Row properties must include w:cantSplit (not w:vAlign)."""
         from docx import Document
+
         from app.services.export.table_renderer import render_table_to_docx
 
         doc = Document()
@@ -304,6 +303,7 @@ class TestDocxTableXml:
     def test_w_grid_span_present(self):
         """Merged cells must produce w:gridSpan."""
         from docx import Document
+
         from app.services.export.table_renderer import render_table_to_docx
 
         doc = Document()
@@ -325,11 +325,12 @@ class TestDocxTableXml:
 
     def test_header_footer_fields_present(self):
         """DOCX must have PAGE and NUMPAGES fields."""
-        from docx import Document
-        from app.services.export.docx_exporter import DocxExporter
-        from app.services.export.docx_exporter import _has_inline_formatting
+        from app.services.export.docx_exporter import (
+            DocxExporter,
+            _has_inline_formatting,
+        )
 
-        exporter = DocxExporter()
+        DocxExporter()
         # Test _has_inline_formatting helper
         assert _has_inline_formatting("normal text") is False
         assert _has_inline_formatting("Hello <b>bold</b> world") is True
@@ -571,7 +572,6 @@ class TestDocxAcceptance:
 
     def _docx_xml(self) -> str:
         import zipfile
-        import io
         with zipfile.ZipFile(self.DOCX_PATH) as z:
             return z.read("word/document.xml").decode("utf-8")
 
@@ -596,9 +596,8 @@ class TestDocxAcceptance:
         assert "m:oMath" in xml or "oMath" in xml, "No OMML formulas"
 
     def test_docx_has_page_field(self):
-        xml = self._docx_xml()
+        self._docx_xml()
         import zipfile
-        import io
         has_page = False
         with zipfile.ZipFile(self.DOCX_PATH) as z:
             for name in z.namelist():

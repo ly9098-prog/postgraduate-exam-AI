@@ -388,7 +388,7 @@ def run_live_ocr_pipeline(pages: range | None = None) -> dict:
     if not WANGDAO_PDF.exists():
         pytest.skip(f"PDF fixture not found: {WANGDAO_PDF}")
 
-    from app.services.ocr_service import ocr_pages_with_boxes
+    from app.services.ocr_service import ocr_pages_with_boxes  # noqa: F401
 
     pdf_content = WANGDAO_PDF.read_bytes()
 
@@ -450,7 +450,7 @@ class TestWangdaoLiveOCR:
         try:
             import fitz  # noqa: F401
 
-            from app.services.ocr_service import ocr_pages_with_boxes
+            from app.services.ocr_service import ocr_pages_with_boxes  # noqa: F401
         except ImportError as e:
             pytest.skip(f"OCR dependencies unavailable: {e}")
 

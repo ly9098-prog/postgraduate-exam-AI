@@ -95,7 +95,9 @@ class TestGetStrategyConfig:
 class TestCreateOrUpdateStrategyConfig:
     def test_create_new_config(self):
         """create_or_update_strategy_config 能创建新配置。"""
-        from app.services.recommendation_strategy_service import create_or_update_strategy_config
+        from app.services.recommendation_strategy_service import (
+            create_or_update_strategy_config,
+        )
 
         db = _make_mock_db()
         db.execute.return_value = _make_execute_result(scalar_one_or_none=None)
@@ -107,14 +109,16 @@ class TestCreateOrUpdateStrategyConfig:
             "weight_vector_similarity": 0.7,
         }
 
-        result = _run(create_or_update_strategy_config(db, payload))
+        _run(create_or_update_strategy_config(db, payload))
 
         db.add.assert_called_once()
         db.flush.assert_called_once()
 
     def test_update_existing_config(self):
         """create_or_update_strategy_config 能更新已有配置。"""
-        from app.services.recommendation_strategy_service import create_or_update_strategy_config
+        from app.services.recommendation_strategy_service import (
+            create_or_update_strategy_config,
+        )
 
         db = _make_mock_db()
         mock_config = MagicMock()
@@ -136,7 +140,7 @@ class TestCreateOrUpdateStrategyConfig:
         db.execute.return_value = _make_execute_result(scalar_one_or_none=mock_config)
 
         payload = {"name": "test_config", "display_name": "新名称"}
-        result = _run(create_or_update_strategy_config(db, payload))
+        _run(create_or_update_strategy_config(db, payload))
 
         assert mock_config.display_name == "新名称"
         db.add.assert_not_called()  # 不应新增
@@ -213,7 +217,9 @@ class TestApplyStrategyWeights:
 class TestAssignUserToVariant:
     def test_stable_assignment(self):
         """assign_user_to_variant 对同一用户返回稳定分组。"""
-        from app.services.recommendation_experiment_service import assign_user_to_variant
+        from app.services.recommendation_experiment_service import (
+            assign_user_to_variant,
+        )
 
         db = _make_mock_db()
 
@@ -266,7 +272,9 @@ class TestAssignUserToVariant:
 class TestResolveStrategyForUser:
     def test_returns_experiment_strategy(self):
         """resolve_strategy_for_user 有活跃实验时返回实验策略。"""
-        from app.services.recommendation_experiment_service import resolve_strategy_for_user
+        from app.services.recommendation_experiment_service import (
+            resolve_strategy_for_user,
+        )
 
         db = _make_mock_db()
 
@@ -309,7 +317,9 @@ class TestResolveStrategyForUser:
 
     def test_returns_default_when_no_experiment(self):
         """resolve_strategy_for_user 无活跃实验时返回默认策略。"""
-        from app.services.recommendation_experiment_service import resolve_strategy_for_user
+        from app.services.recommendation_experiment_service import (
+            resolve_strategy_for_user,
+        )
 
         db = _make_mock_db()
         db.execute.return_value = _make_execute_result(scalar_one_or_none=None)
@@ -428,7 +438,9 @@ class TestAggregateMetricsDaily:
 class TestGetRecommendationMetrics:
     def test_reads_daily_table(self):
         """get_recommendation_metrics 从 daily 表读取。"""
-        from app.services.recommendation_metrics_service import get_recommendation_metrics
+        from app.services.recommendation_metrics_service import (
+            get_recommendation_metrics,
+        )
 
         db = _make_mock_db()
         mock_daily = MagicMock()
@@ -471,7 +483,9 @@ class TestGetRecommendationMetrics:
 class TestCompareExperimentVariants:
     def test_compare_variants(self):
         """compare_experiment_variants 返回各分组指标（GROUP BY 单次查询）。"""
-        from app.services.recommendation_metrics_service import compare_experiment_variants
+        from app.services.recommendation_metrics_service import (
+            compare_experiment_variants,
+        )
 
         db = _make_mock_db()
 
@@ -513,7 +527,9 @@ class TestCompareExperimentVariants:
 class TestRecommendationQualityReport:
     def test_returns_correct_structure(self):
         """build_recommendation_quality_report 返回完整结构。"""
-        from app.services.recommendation_quality_service import build_recommendation_quality_report
+        from app.services.recommendation_quality_service import (
+            build_recommendation_quality_report,
+        )
 
         db = _make_mock_db()
 
@@ -553,7 +569,9 @@ class TestRecommendationQualityReport:
 class TestKnowledgeQualityReport:
     def test_identifies_isolated_and_no_question_kps(self):
         """build_knowledge_quality_report 能识别孤立知识点和无题知识点。"""
-        from app.services.recommendation_quality_service import build_knowledge_quality_report
+        from app.services.recommendation_quality_service import (
+            build_knowledge_quality_report,
+        )
 
         db = _make_mock_db()
 

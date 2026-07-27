@@ -73,7 +73,7 @@ class TestScheduleSubmitAPI:
 
     def test_schedule_submit_success(self, monkeypatch):
         """提交单题复习结果成功。"""
-        schedule = _make_schedule()
+        _make_schedule()
         mock_result = {
             "schedule_id": 1,
             "question_id": 1,

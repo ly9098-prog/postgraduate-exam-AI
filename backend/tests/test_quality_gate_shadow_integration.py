@@ -123,7 +123,7 @@ def test_quality_gate_shadow_error_isolation():
         QualityContext,
     )
 
-    ctx = QualityContext(gate_mode="shadow", existing_decision="accept")
+    QualityContext(gate_mode="shadow", existing_decision="accept")
 
     # Simulate what the pipeline does: wrap in try/except
     try:

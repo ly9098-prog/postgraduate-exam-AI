@@ -46,7 +46,7 @@ def _make_page(
     y1: int | None = None,
 ) -> PageIR:
     """Create a PageIR with one region containing the given texts."""
-    full_text = "\n".join(texts)
+    "\n".join(texts)
     region_y1 = y1 if y1 is not None else height - 50
     lines = []
     for li, t in enumerate(texts):
@@ -157,7 +157,7 @@ class TestApplyCrossPageBlockMerge:
         links = detect_cross_page_links(doc.pages)
         # May or may not detect — but if detected, should be ambiguous
         ambiguous_links = [l for l in links if l.is_ambiguous]
-        non_ambiguous = [l for l in links if not l.is_ambiguous]
+        [l for l in links if not l.is_ambiguous]
 
         blocks = [
             _make_block(1, "1. 题目", block_index=0),

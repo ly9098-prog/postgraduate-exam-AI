@@ -419,7 +419,7 @@ class TestCheckStagingSpace:
         """When statvfs fails, returns empty dict."""
         check = self._import_check_staging_space()
         with (
-            patch("app.services.staging_storage._STAGING_DIR") as mock_dir,
+            patch("app.services.staging_storage._STAGING_DIR"),
             patch("app.main.os.statvfs", side_effect=OSError("statvfs failed")),
         ):
             result = await check()

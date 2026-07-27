@@ -178,7 +178,10 @@ class TestExpressionParser:
     def test_valid_expressions(self):
         import numpy as np
 
-        from app.services.formula_graph_expr_parser import lambdify_expression, parse_expression
+        from app.services.formula_graph_expr_parser import (
+            lambdify_expression,
+            parse_expression,
+        )
 
         for expr_str in ["x**2", "sin(x)", "exp(x) + 1", "sqrt(abs(x))", "ln(x) + cos(x)"]:
             expr = parse_expression(expr_str)
@@ -385,7 +388,9 @@ class TestManualUploadPriority:
 
     def test_choose_effective_prioritizes_uploaded(self):
         """choose_effective_graph_asset returns uploaded over generated."""
-        from app.services.formula_graph_asset_service import choose_effective_graph_asset
+        from app.services.formula_graph_asset_service import (
+            choose_effective_graph_asset,
+        )
 
         uploaded = MagicMock(spec=FormulaGraphAsset)
         uploaded.source_type = "uploaded"
@@ -404,7 +409,9 @@ class TestManualUploadPriority:
 
     def test_generated_over_template(self):
         """Generated takes priority over template."""
-        from app.services.formula_graph_asset_service import choose_effective_graph_asset
+        from app.services.formula_graph_asset_service import (
+            choose_effective_graph_asset,
+        )
 
         generated = MagicMock(spec=FormulaGraphAsset)
         generated.source_type = "generated"

@@ -85,7 +85,11 @@ async def isolated_db(monkeypatch_module):
     importlib.reload(config_mod)
 
     # 使用全局 Base — 导入所有模型让其注册到 Base.metadata
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from sqlalchemy.ext.asyncio import (
+        AsyncSession,
+        async_sessionmaker,
+        create_async_engine,
+    )
 
     import app.models  # noqa: F401 — registers all models on Base
     from app.core.database import Base

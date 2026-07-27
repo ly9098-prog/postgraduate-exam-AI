@@ -19,8 +19,6 @@ import logging
 from app.schemas.export_task import ExportCapabilityResponse, ExportErrorCode
 from app.services.export.exceptions import (
     ExportDomainError,
-    ExportPermissionError,
-    ExportValidationError,
 )
 
 logger = logging.getLogger(__name__)

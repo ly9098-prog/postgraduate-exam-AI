@@ -99,7 +99,7 @@ class TestQualityGateDelegates:
     def test_quality_gate_no_independent_qn_pattern(self):
         """QuestionStructureQualityGate should delegate to parser."""
         import app.features.quality_gate as qg
-        source = inspect.getsource(qg)
+        inspect.getsource(qg)
         # May have _QN_PATTERN for approximate counting (acceptable)
         # but must also reference question_numbering for authoritative detection
         # This is a soft check — the gate uses simple regex for quick counting

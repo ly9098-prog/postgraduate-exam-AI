@@ -65,7 +65,7 @@ class TestNonTableDetection:
 
     def test_list_items(self):
         text = "1. 进程管理\n2. 内存管理\n3. 文件系统\n4. 设备管理"
-        result = detect_table_candidate(text)
+        detect_table_candidate(text)
         # Known limitation: numbered lists with keyword matches (进程) +
         # number-per-line pattern can trigger table detection.
         # If detected, confidence should be low since column count is unstable.
@@ -92,7 +92,7 @@ class TestMarkdownGeneration:
     def test_low_confidence_no_markdown(self):
         """Two-line candidate with stable columns still produces markdown."""
         text = "进程  到达时间  服务时间\nP1    0          3"
-        result = detect_table_candidate(text)
+        detect_table_candidate(text)
         # The detector produces markdown even for 2 header+data rows
         # if column count is consistent (3 cols each)
 

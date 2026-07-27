@@ -26,7 +26,11 @@ from app.schemas.export_task import (
 from app.services.export.cleanup import cleanup_expired
 from app.services.export.latex_render import find_latex_segments, has_latex
 from app.services.export.range_resolver import resolve_range
-from app.services.export.service import _build_filename, _build_title, _sanitize_filename
+from app.services.export.service import (
+    _build_filename,
+    _build_title,
+    _sanitize_filename,
+)
 from app.services.export.snapshot_service import create_snapshot
 from app.services.export.sorter import sort_questions
 from app.services.export.space_allocator import get_answer_space_mm
@@ -360,17 +364,18 @@ class TestCapabilityService:
         ensure_format_allowed("pdf")
 
     def test_validate_export_range_zero_raises(self):
-        from app.services.export.capability import validate_export_range
-        from app.schemas.export_task import ExportErrorCode
         from fastapi import HTTPException
+
+        from app.services.export.capability import validate_export_range
         with pytest.raises(HTTPException) as exc:
             validate_export_range("all", None, 0)
         assert exc.value.status_code == 400
         assert "no_questions" in str(exc.value.detail)
 
     def test_validate_export_range_exceeds_max(self):
-        from app.services.export.capability import validate_export_range
         from fastapi import HTTPException
+
+        from app.services.export.capability import validate_export_range
         with pytest.raises(HTTPException) as exc:
             validate_export_range("all", None, 999)
         assert exc.value.status_code == 400
@@ -453,8 +458,8 @@ class TestLocalFileStorage:
 
 class TestCOSStorageKeyNormalization:
     def test_normalize_key_adds_prefix(self):
-        from app.services.storage_backend import COSStorage, settings
-        from unittest.mock import MagicMock
+
+        from app.services.storage_backend import COSStorage
         storage = COSStorage.__new__(COSStorage)
         storage._cos_prefix = "var/exports/"
         storage._bucket = "test-bucket"
@@ -493,7 +498,7 @@ class TestCOSStorageKeyNormalization:
 class TestSnapshotLifecycle:
     @pytest.mark.asyncio
     async def test_create_and_load_snapshot(self, mock_db):
-        from app.services.export.snapshot_service import create_snapshot, load_snapshot
+        from app.services.export.snapshot_service import create_snapshot
         mock_db.flush = AsyncMock()
         mock_db.add = MagicMock()
 
@@ -525,8 +530,8 @@ class TestSnapshotLifecycle:
 
 class TestExportStorageRoot:
     def test_get_export_storage_root_creates_dir(self, tmp_path, monkeypatch):
-        from app.services.storage_backend import get_export_storage_root
         from app.core.config import settings
+        from app.services.storage_backend import get_export_storage_root
 
         test_dir = str(tmp_path / "var" / "exports")
         monkeypatch.setattr(settings, "EXPORT_DIR", test_dir)

@@ -781,6 +781,10 @@ class ResourceGuard:
         self._artifact_bytes_written = new_total
 
 
-# ── Module-level singleton ──
+# ── Module-level singleton (profile-aware) ──
 
-resource_guard = ResourceGuard()
+try:
+    _profile = detect_deployment_profile()
+except Exception:
+    _profile = DeploymentProfile.LOCAL_IMPORT
+resource_guard = ResourceGuard.for_profile(_profile)

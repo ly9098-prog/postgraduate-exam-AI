@@ -6,7 +6,10 @@ import pytest
 from app.core.admin_security import AdminPrincipal
 from app.models.admin import AdminUser, Subject
 from app.models.question import Question
-from app.schemas.admin_subjects import AdminSubjectCreateRequest, AdminSubjectUpdateRequest
+from app.schemas.admin_subjects import (
+    AdminSubjectCreateRequest,
+    AdminSubjectUpdateRequest,
+)
 from app.services import admin_subject_service
 from app.services.admin_subject_service import (
     create_subject,

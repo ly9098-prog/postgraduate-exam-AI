@@ -336,6 +336,20 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
 
     ax.tick_params(colors=theme["axis"]["color"], labelsize=theme["font"]["size"]["tick"])
 
+    # Custom ticks (optional — backward compatible)
+    x_ticks = panel.get("x_ticks")
+    if x_ticks is not None:
+        x_tick_labels = panel.get("x_tick_labels")
+        ax.set_xticks(x_ticks)
+        if x_tick_labels is not None:
+            ax.set_xticklabels(x_tick_labels, fontsize=theme["font"]["size"]["tick"])
+    y_ticks = panel.get("y_ticks")
+    if y_ticks is not None:
+        y_tick_labels = panel.get("y_tick_labels")
+        ax.set_yticks(y_ticks)
+        if y_tick_labels is not None:
+            ax.set_yticklabels(y_tick_labels, fontsize=theme["font"]["size"]["tick"])
+
     # Labels
     x_label = _sanitize_label(panel.get("x_label", "x"))
     y_label = _sanitize_label(panel.get("y_label", "y"))
@@ -389,9 +403,10 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
         dash = theme["dash_styles"].get(line_style_key, "solid")
         label = _sanitize_label(expr_data.get("label", ""))
 
-        # Build x grid
-        intervals = domain.get("intervals", [])
-        exclude = domain.get("exclude_points", [])
+        # Build x grid — expression-level domain with panel-level fallback
+        expr_domain = expr_data.get("domain", domain)
+        intervals = expr_domain.get("intervals", [])
+        exclude = expr_domain.get("exclude_points", [])
         xs = _build_x_grid(intervals, exclude, x_range)
 
         # Evaluate

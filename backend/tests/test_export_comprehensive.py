@@ -33,8 +33,8 @@ class TestAtomicClaiming:
         # The implementation must NOT do a SELECT then separate UPDATE
         import inspect
 
-        from app.services.export.processor import _process_one_task
-        source = inspect.getsource(_process_one_task)
+        from app.services.export.processor import _try_claim_task
+        source = inspect.getsource(_try_claim_task)
         # It should NOT have a naked select(ExportTask) without a subquery
         # The select should be wrapped in a scalar_subquery() or similar
         assert "scalar_subquery()" in source, (
@@ -51,8 +51,8 @@ class TestAtomicClaiming:
         # Verify the claim uses a WHERE status='pending' guard
         import inspect
 
-        from app.services.export.processor import _process_one_task
-        source = inspect.getsource(_process_one_task)
+        from app.services.export.processor import _try_claim_task
+        source = inspect.getsource(_try_claim_task)
         assert ".where(ExportTask.status == ExportTaskStatus.PENDING)" in source, (
             "atomic claim must double-check status in the UPDATE WHERE clause"
         )
@@ -159,7 +159,7 @@ class TestCosSignedUrl:
 
     @pytest.fixture
     def cos_storage(self):
-        from app.services.storage_backend import COSStorage, settings
+        from app.services.storage_backend import COSStorage
         storage = COSStorage()
         storage._client = MagicMock()
         storage._cos_prefix = "static/exports/"
@@ -729,7 +729,11 @@ class TestConcurrentClaiming:
 
         import sqlalchemy as sa
         from sqlalchemy import select
-        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.asyncio import (
+            AsyncSession,
+            async_sessionmaker,
+            create_async_engine,
+        )
 
         from app.models.export_task import ExportTask
         from app.schemas.export_task import ExportTaskStatus
@@ -813,7 +817,11 @@ class TestConcurrentClaiming:
 
         import sqlalchemy as sa
         from sqlalchemy import select
-        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.asyncio import (
+            AsyncSession,
+            async_sessionmaker,
+            create_async_engine,
+        )
 
         from app.models.export_task import ExportTask
         from app.schemas.export_task import ExportTaskStatus
@@ -875,7 +883,11 @@ class TestConcurrentClaiming:
     @pytest.mark.asyncio
     async def test_no_pending_tasks_returns_none(self):
         """Claim attempt with no pending tasks should gracefully return None."""
-        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.asyncio import (
+            AsyncSession,
+            async_sessionmaker,
+            create_async_engine,
+        )
 
         engine = create_async_engine("sqlite+aiosqlite://", echo=False)
         await self._create_export_tasks_table(engine)

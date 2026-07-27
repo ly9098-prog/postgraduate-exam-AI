@@ -133,7 +133,7 @@ class TestConfigFingerprintInvalidation:
         save_artifact(pid, "split", data)
 
         # Now "change" the config by monkeypatching fingerprint
-        original_fingerprint = _build_config_fingerprint()
+        _build_config_fingerprint()
         monkeypatch.setattr(
             "app.features.pipeline_artifacts._build_config_fingerprint",
             lambda: "changed-config-fp",

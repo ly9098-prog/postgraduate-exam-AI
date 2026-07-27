@@ -63,7 +63,7 @@ class TestReleaseDecision:
 
     def test_release_decision_is_actionable(self):
         """Release decision should state what to do next."""
-        health = evaluate_canary_health(data_loss_detected=True)
+        evaluate_canary_health(data_loss_detected=True)
         decision = {
             "approved": False,
             "recommendation": "rollback_to_legacy",

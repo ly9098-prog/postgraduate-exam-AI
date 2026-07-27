@@ -763,12 +763,18 @@ async def batch_answer_apply(
 
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 _IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
-_IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 _IMAGE_MAX_FILES = 50
+
+
+def _get_image_max_bytes() -> int:
+    """Return image max bytes from settings, falling back to 5 MB."""
+    from app.core.config import settings
+    return settings.IMAGE_IMPORT_MAX_BYTES or 5 * 1024 * 1024
 
 
 def _validate_answer_image(filename: str, content: bytes, content_type: str | None) -> str | None:
     """校验单张答案/解析图片，返回错误原因（None 表示通过）。"""
+    max_bytes = _get_image_max_bytes()
     if not filename:
         return "文件名为空"
     if not filename.lower().endswith(_IMAGE_EXTENSIONS):
@@ -777,8 +783,8 @@ def _validate_answer_image(filename: str, content: bytes, content_type: str | No
         return f"Content-Type 不支持: {content_type}"
     if not content:
         return "图片内容为空"
-    if len(content) > _IMAGE_MAX_BYTES:
-        return "图片过大（最大 10MB）"
+    if len(content) > max_bytes:
+        return f"图片过大（最大 {max_bytes // (1024*1024)}MB）"
     return None
 
 

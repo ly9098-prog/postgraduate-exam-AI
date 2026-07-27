@@ -21,6 +21,7 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import struct
@@ -90,15 +91,29 @@ class TempFile:
 async def stream_to_temp(
     upload,
     *,
-    max_size: int = 200 * 1024 * 1024,
+    max_size: int | None = None,
     suffix: str = ".bin",
 ) -> TempFile:
     """Stream an uploaded file to a temporary file on disk.
 
+    Uses settings-based default limits: PDF_MAX_FILE_BYTES for PDF,
+    IMAGE_IMPORT_MAX_BYTES for images. Blocks I/O in an executor to
+    avoid event-loop starvation.
+
     Raises ``ValueError`` if the file exceeds *max_size*.
     The returned ``TempFile`` must be closed by the caller.
     """
-    fd, path = tempfile.mkstemp(suffix=suffix)
+    from app.core.config import settings
+
+    if max_size is None:
+        # Determine default from settings
+        if suffix in (".pdf",):
+            max_size = getattr(settings, "PDF_MAX_FILE_BYTES", 5 * 1024 * 1024)
+        else:
+            max_size = getattr(settings, "IMAGE_IMPORT_MAX_BYTES", 10 * 1024 * 1024)
+
+    loop = asyncio.get_running_loop()
+    fd, path = await loop.run_in_executor(None, _create_temp, suffix)
     total = 0
     try:
         while True:
@@ -107,22 +122,21 @@ async def stream_to_temp(
                 break
             total += len(chunk)
             if total > max_size:
-                os.close(fd)
-                os.unlink(path)
+                await loop.run_in_executor(None, _close_and_unlink, fd, path)
                 raise ValueError(
                     f"文件超过大小限制（{max_size // (1024*1024)}MB）",
                 )
-            os.write(fd, chunk)
-        os.close(fd)
+            await loop.run_in_executor(None, os.write, fd, chunk)
+        await loop.run_in_executor(None, os.close, fd)
     except ValueError:
         raise
     except Exception:
         try:
-            os.close(fd)
+            await loop.run_in_executor(None, os.close, fd)
         except OSError:
             pass
         try:
-            os.unlink(path)
+            await loop.run_in_executor(None, os.unlink, path)
         except OSError:
             pass
         raise
@@ -135,11 +149,28 @@ async def stream_to_temp(
     )
 
 
+def _create_temp(suffix: str) -> tuple[int, str]:
+    """Synchronous: create temp file and return (fd, path)."""
+    return tempfile.mkstemp(suffix=suffix)
+
+
+def _close_and_unlink(fd: int, path: str) -> None:
+    """Synchronous: close fd and unlink path."""
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
 async def stream_to_temp_batch(
     uploads: list,
     *,
-    max_total: int = 500 * 1024 * 1024,
-    max_per_file: int = 200 * 1024 * 1024,
+    max_total: int = 50 * 1024 * 1024,
+    max_per_file: int | None = None,
     suffix: str = ".bin",
 ) -> list[TempFile]:
     """Stream multiple uploaded files to temp files.
@@ -147,6 +178,10 @@ async def stream_to_temp_batch(
     Raises ``ValueError`` if total exceeds *max_total*.
     Caller must close each returned ``TempFile``.
     """
+    from app.core.config import settings
+
+    if max_per_file is None:
+        max_per_file = getattr(settings, "IMAGE_IMPORT_MAX_BYTES", 10 * 1024 * 1024)
     temps: list[TempFile] = []
     total_bytes = 0
     try:

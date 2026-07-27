@@ -411,83 +411,49 @@ def _check_gunicorn_fork_safety(errors: list[str]) -> None:
     by all worker processes, leading to file descriptor leaks and connection
     races.
 
-    This check detects actual CLIENT INITIALIZATION at module level, not
-    just module imports. Importing ``redis`` or ``httpx`` is safe; calling
-    ``redis.Redis()`` or ``httpx.Client()`` at module level is not.
-
-    We detect this by checking whether the GUNICORN_PRELOAD env var is set
-    or the process is running under Gunicorn, then looking for known
-    client-initialization patterns in imported modules.
+    We only flag patterns that appear at MODULE level (indent == 0), since
+    client initialization inside function/class bodies runs per-worker and
+    is safe even with ``--preload``.
     """
 
     gunicorn_preload = os.environ.get("GUNICORN_PRELOAD", "").lower() in ("1", "true", "yes")
-    using_gunicorn = "gunicorn" in sys.argv[0] if sys.argv else False
-
-    if not gunicorn_preload and not using_gunicorn:
+    if not gunicorn_preload:
         return
 
-    # Check for actual module-level CLIENT initialization (not just imports)
-    # Safe: import redis / import httpx at module level
-    # Unsafe: redis.Redis() / httpx.Client() / httpx.AsyncClient() at module level
-    suspicious_patterns = {
-        "redis": (
-            "redis.Redis(",
-            "from_url(",
-        ),
-        "httpx": (
-            "httpx.Client(",
-            "httpx.AsyncClient(",
-        ),
+    own_patterns = {
+        "redis.asyncio.from_url": "Redis client at module level",
+        "httpx.AsyncClient": "httpx client at module level",
+        "httpx.Client": "httpx sync client at module level",
     }
-
-    for mod_name, patterns in suspicious_patterns.items():
-        if mod_name not in sys.modules:
+    # Scan own modules — only flag patterns at module scope (indent == 0)
+    for name, mod in list(sys.modules.items()):
+        if not name.startswith("app."):
             continue
-        mod = sys.modules[mod_name]
         mod_file = getattr(mod, "__file__", "") or ""
-        # Check for client initialization in the module's own source
-        if mod_file and os.path.isfile(mod_file):
-            try:
-                with open(mod_file) as f:
-                    source = f.read()
-                for pattern in patterns:
-                    if pattern in source:
-                        errors.append(
-                            f"Gunicorn preload unsafe: module-level '{pattern}' "
-                            f"initialization detected in {mod_name} module. "
-                            f"Use lazy initialization via FastAPI lifespan instead."
-                        )
-            except OSError:
-                pass
-
-    # Check our own modules for module-level client patterns
-    if gunicorn_preload or using_gunicorn:
-        own_patterns = {
-            "redis.asyncio.from_url": "Redis client at module level",
-            "httpx.AsyncClient": "httpx client at module level",
-            "httpx.Client": "httpx sync client at module level",
-        }
-        # Scan app.* modules (not installed packages)
-        for name, mod in list(sys.modules.items()):
-            if not name.startswith("app."):
-                continue
-            mod_file = getattr(mod, "__file__", "") or ""
-            if not mod_file or not os.path.isfile(mod_file):
-                continue
-            try:
-                with open(mod_file) as f:
-                    source = f.read()
-                for pattern, reason in own_patterns.items():
-                    if pattern in source:
-                        # Known-safe: app.core.database uses lazy constructor
-                        if name == "app.core.cache" and "from_url" in pattern:
-                            continue  # CacheClient.__init__ is lazy, not module-level
-                        errors.append(
-                            f"Gunicorn preload unsafe: module-level '{reason}' "
-                            f"in {name}. Use lazy initialization via FastAPI lifespan."
-                        )
-            except OSError:
-                pass
+        if not mod_file or not os.path.isfile(mod_file):
+            continue
+        try:
+            with open(mod_file) as f:
+                source_lines = f.readlines()
+            for pattern, reason in own_patterns.items():
+                for lineno, line in enumerate(source_lines, 1):
+                    if pattern not in line:
+                        continue
+                    stripped = line.lstrip()
+                    if not stripped or stripped.startswith(("#", '"', "'")):
+                        continue  # comment or docstring
+                    if len(line) - len(stripped) > 0:
+                        continue  # inside function/class — safe
+                    # Known-safe: app.core.cache uses lazy constructor
+                    if name == "app.core.cache" and "from_url" in pattern:
+                        continue
+                    errors.append(
+                        f"Gunicorn preload unsafe: module-level '{reason}' "
+                        f"in {name} (line {lineno}). "
+                        f"Use lazy initialization via FastAPI lifespan."
+                    )
+        except OSError:
+            pass
 
 
 # ── async checks ──

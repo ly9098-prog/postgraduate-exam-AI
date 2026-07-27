@@ -229,7 +229,9 @@ class TestSsotUniqueness:
         from app.features.question_splitter import (
             scan_entire_block_including_surrounding_lines as scan,
         )
-        from app.features.question_type_classifier import extract_options_from_text as ssot
+        from app.features.question_type_classifier import (
+            extract_options_from_text as ssot,
+        )
 
         text = "A. 甲\nB. 乙\nC. 丙\nD. 丁"
         result_scan = scan(text)

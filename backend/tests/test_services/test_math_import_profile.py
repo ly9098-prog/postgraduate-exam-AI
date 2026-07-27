@@ -123,7 +123,7 @@ class TestComplexFormula:
 
     def test_sum_with_fraction(self):
         q = {"stem": "\\sum_{n=1}^{\\infty} \\frac{1}{n^2}"}
-        diag = is_math_candidate(q)
+        is_math_candidate(q)
         # `\infty` between \sum_ and \frac breaks simple regex;
         # flagged as math but not complex-formula via this pattern
 

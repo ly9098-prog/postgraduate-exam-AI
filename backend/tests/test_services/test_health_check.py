@@ -294,10 +294,10 @@ async def test_batch_image_job_emits_model_config_warning():
             features=[],
         ),
     ):
-        job_id = new_job_id()
+        new_job_id()
         from app.features.batch_image_import_service import BatchImageSource
 
-        source = BatchImageSource(seq=1, source_file="test.png", temp_path="/tmp/test.png")
+        BatchImageSource(seq=1, source_file="test.png", temp_path="/tmp/test.png")
 
         # create_batch_job expects a real-ish session with Job model support.
         # We mock the DB to return None for request_id lookup, and track events.

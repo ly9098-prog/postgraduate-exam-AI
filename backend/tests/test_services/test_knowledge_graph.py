@@ -96,7 +96,7 @@ class TestCreateKnowledgeEdge:
             _make_execute_result(scalar_one_or_none=None),  # 查已有边 → 不存在
         ]
         # flush + refresh 后返回新边
-        new_edge = _make_edge(id=10, source_id=1, target_id=2, relation_type="prerequisite")
+        _make_edge(id=10, source_id=1, target_id=2, relation_type="prerequisite")
         db.refresh.side_effect = lambda e: None  # refresh 不报错
 
         result = _run(create_knowledge_edge(db, "exam408-ds", 1, 2, "prerequisite"))
@@ -465,7 +465,7 @@ class TestBuildUserKnowledgePath:
 
         db = _make_mock_db()
 
-        weak_kp = _make_kp(id=20, name="链表")
+        _make_kp(id=20, name="链表")
 
         mock_mastery = MagicMock()
         mock_mastery.get_user_weak_knowledge_points = AsyncMock(return_value=[{
@@ -549,7 +549,9 @@ class TestBuildUserKnowledgePath:
 class TestAttachRecommendedQuestions:
     def test_attach_questions_to_nodes(self):
         """attach_recommended_questions_to_path 能给每个节点挂题。"""
-        from app.services.knowledge_path_service import attach_recommended_questions_to_path
+        from app.services.knowledge_path_service import (
+            attach_recommended_questions_to_path,
+        )
 
         db = _make_mock_db()
 
@@ -567,8 +569,8 @@ class TestAttachRecommendedQuestions:
             },
         ]
 
-        q1 = _make_question(id=100)
-        q2 = _make_question(id=101)
+        _make_question(id=100)
+        _make_question(id=101)
 
         # 新实现使用 batch SELECT ... WHERE kp_id IN (...) 预取全部候选，内存中去重和排序
         # 返回候选行包含 knowledge_point_id, question_id, difficulty

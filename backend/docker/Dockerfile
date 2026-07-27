@@ -3,11 +3,13 @@ FROM python:3.11-slim AS builder
 
 WORKDIR /app
 COPY requirements.txt .
-RUN PIPOPT="pip install --no-cache-dir --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com" && \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    PIPOPT="pip install --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com" && \
     $PIPOPT -r requirements.txt
 COPY requirements-ocr.txt .
 # Install OCR deps + paddleocr without its opencv deps (replaced by headless)
-RUN PIPOPT="pip install --no-cache-dir --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com" && \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    PIPOPT="pip install --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com" && \
     $PIPOPT -r requirements-ocr.txt && \
     $PIPOPT --no-deps paddleocr
 

@@ -783,7 +783,10 @@ async def _run_single_image(
         if content:
             try:
                 ext = os.path.splitext(source_file)[1] or ".png"
-                tmpf = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+                from app.core.config import settings
+                _scratch = settings.WORKER_SCRATCH_DIR
+                _tmp_dir = _scratch if _scratch and os.path.isdir(_scratch) else None
+                tmpf = tempfile.NamedTemporaryFile(suffix=ext, delete=False, dir=_tmp_dir)
                 tmpf.write(content)
                 _tmp_img_path = tmpf.name
                 tmpf.close()

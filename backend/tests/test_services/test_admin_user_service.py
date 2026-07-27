@@ -5,7 +5,10 @@ import pytest
 
 from app.core.admin_security import AdminPrincipal, verify_admin_password
 from app.models.admin import AdminUser, Role
-from app.schemas.admin_users import AdminUserCreateRequest, AdminUserResetPasswordRequest
+from app.schemas.admin_users import (
+    AdminUserCreateRequest,
+    AdminUserResetPasswordRequest,
+)
 from app.services import admin_user_service
 from app.services.admin_user_service import (
     create_admin_user,

@@ -15,7 +15,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.core.document_ir import BBox, DocumentIR, LineIR, PageIR, RegionIR, new_document
+from app.core.document_ir import (
+    BBox,
+    DocumentIR,
+    LineIR,
+    PageIR,
+    RegionIR,
+    new_document,
+)
 from app.features.cross_page_linking import (
     REASON_AMBIGUOUS,
     REASON_EXPLICIT_MARKER,
@@ -48,7 +55,7 @@ def _make_page(
     region_type: str = "text",
 ) -> PageIR:
     """Create a PageIR with one region containing the given texts."""
-    full_text = "\n".join(texts)
+    "\n".join(texts)
     region_y1 = y1 if y1 is not None else height - 50
     lines = []
     for li, t in enumerate(texts):
@@ -340,7 +347,7 @@ def test_run_cross_page_linking_no_pages():
 def test_real_case_014_cross_page():
     """014_cross_page 真实 case 可检测跨页。"""
     case_dir = Path(__file__).parent / "ocr_bench" / "cases" / "014_cross_page"
-    meta = json.loads((case_dir / "meta.json").read_text(encoding="utf-8"))
+    json.loads((case_dir / "meta.json").read_text(encoding="utf-8"))
 
     # Build DocumentIR-like structure from the case data
     p0 = _make_page("p0", 0, [

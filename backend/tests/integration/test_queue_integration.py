@@ -356,7 +356,6 @@ class TestDurableTaskQueueHeartbeat:
         await q.enqueue("test_hb_z", {}, task_id="test_hb_z_001")
 
         task = await q.dequeue("test_hb_z", lease_sec=30)
-        initial_expiry = task.lease_expires_at
 
         # Heartbeat should extend
         await q.heartbeat(task, lease_sec=60)
@@ -416,7 +415,7 @@ class TestDurableTaskQueueEdgeCases:
         from app.services.task_queue_service import Task
 
         t = Task(task_id="does_not_exist", task_type="test", payload={})
-        ok = await q.complete(t)
+        await q.complete(t)
         # Should not raise
 
     @pytest.mark.asyncio
@@ -425,7 +424,7 @@ class TestDurableTaskQueueEdgeCases:
         from app.services.task_queue_service import Task
 
         t = Task(task_id="does_not_exist", task_type="test", payload={})
-        ok = await q.fail(t, "test error")
+        await q.fail(t, "test error")
         # Should not raise
 
     @pytest.mark.asyncio

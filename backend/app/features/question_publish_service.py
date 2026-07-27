@@ -403,7 +403,7 @@ async def get_publish_history(
     db: AsyncSession,
     page: int = 1,
     page_size: int = 20,
-) -> PublishHistoryResponse:
+) -> PublishHistoryResponse:  # noqa: F821
     """查询发布历史：按 batch_id 聚合 question_imports 中已发布的记录。"""
     from app.schemas.question_publish import PublishHistoryItem, PublishHistoryResponse
 

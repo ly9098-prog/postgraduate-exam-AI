@@ -267,7 +267,7 @@ class TestVectorModeShadow:
         """shadow 模式下 similar 模式返回 fallback 结果而非向量结果。"""
         from app.services import practice_service
 
-        questions = [_make_question(id=i, subject="exam408-ds") for i in range(1, 11)]
+        [_make_question(id=i, subject="exam408-ds") for i in range(1, 11)]
         fallback_q = [_make_question(id=i + 100, subject="exam408-ds") for i in range(5)]
 
         db = _make_mock_db("sqlite")
@@ -731,13 +731,13 @@ class TestMainChainIntegrity:
         db.execute = AsyncMock(return_value=mock_select_result)
 
         with patch("app.services.practice_service.record_wrong",
-                   new_callable=AsyncMock) as mock_wrong, \
+                   new_callable=AsyncMock), \
              patch("app.services.practice_service.record_answer_behavior",
-                   new_callable=AsyncMock) as mock_behavior, \
+                   new_callable=AsyncMock), \
              patch("app.services.mastery_service.update_user_knowledge_state_after_answer",
-                   new_callable=AsyncMock) as mock_mastery, \
+                   new_callable=AsyncMock), \
              patch("app.services.recommendation_log_service.mark_recommendation_answered",
-                   new_callable=AsyncMock) as mock_rec_log, \
+                   new_callable=AsyncMock), \
              patch("app.services.question_review_service.update_user_question_state_after_answer",
                    new_callable=AsyncMock):
             result = _run(practice_service.submit_answer(

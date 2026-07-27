@@ -151,7 +151,7 @@ class TestContentConsistency:
         assert docx_result.success
 
         pdf_text = _extract_pdf_text(pdf_result.file_bytes)
-        docx_text = _extract_docx_text(docx_result.file_bytes)
+        _extract_docx_text(docx_result.file_bytes)
 
         # PDF header
         if pdf_text:

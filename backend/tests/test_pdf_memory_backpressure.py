@@ -167,7 +167,10 @@ class TestPdfValidationMemoryGuard:
 
     def test_huge_file_rejected(self):
         """Oversized PDF should be rejected at validation time, never rendered."""
-        from app.services.pdf_validation_service import PdfValidationError, validate_pdf_basic
+        from app.services.pdf_validation_service import (
+            PdfValidationError,
+            validate_pdf_basic,
+        )
 
         data = b"%PDF-1.4\n" + b"x" * (201 * 1024 * 1024)
         with pytest.raises(PdfValidationError, match="过大"):

@@ -156,6 +156,6 @@ class TestDocumentValidator:
         ]
         result = self.validator.validate(doc_ir, questions)
         # With empty source/target, should warn
-        has_link_warning = any("CROSS_PAGE" in w for w in result.warnings)
+        any("CROSS_PAGE" in w for w in result.warnings)
         # Cross-page link check may or may not warn depending on content
         assert result is not None

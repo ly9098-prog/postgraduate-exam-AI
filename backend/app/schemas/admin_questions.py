@@ -141,12 +141,12 @@ class AdminQuestionBatchResult(BaseModel):
 
     @computed_field
     @property
-    def successIds(self) -> list[int]:
+    def successIds(self) -> list[int]:  # noqa: N802
         return self.success_ids
 
     @computed_field
     @property
-    def failedItems(self) -> list[AdminQuestionBatchFailure]:
+    def failedItems(self) -> list[AdminQuestionBatchFailure]:  # noqa: N802
         return self.failed_items
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)

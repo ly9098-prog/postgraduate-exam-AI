@@ -83,7 +83,7 @@ class TestCloudGatewayProfileRestricted:
         assert g1.is_shadow is False
         assert g1.is_gateway is False
 
-        g2 = OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
+        OCRGateway(mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
 
 
         g3 = OCRGateway(mode="gateway", profile=DeploymentProfile.LOCAL_IMPORT)

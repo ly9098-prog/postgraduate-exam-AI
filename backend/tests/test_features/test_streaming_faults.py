@@ -75,7 +75,7 @@ class TestTempFileFaults:
     async def test_detach_prevents_cleanup(self):
         """After detach(), close() does not unlink the file."""
         mock = MagicMock()
-        mock.read = AsyncMock(return_value=b"content")
+        mock.read = AsyncMock(side_effect=[b"content", b""])
 
         tmp = await stream_to_temp(mock)
         path = tmp.path
@@ -92,7 +92,7 @@ class TestTempFileFaults:
     async def test_context_manager_cleans_up(self):
         """Using TempFile as context manager cleans up on exit."""
         mock = MagicMock()
-        mock.read = AsyncMock(return_value=b"content")
+        mock.read = AsyncMock(side_effect=[b"content", b""])
 
         tmp = await stream_to_temp(mock)
         path = tmp.path

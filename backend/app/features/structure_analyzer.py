@@ -411,7 +411,7 @@ def analyze_structure(
 
 
 def analyze_structure_from_ir(
-    doc: "DocumentIR",
+    doc: "DocumentIR",  # noqa: F821
     features: dict | None = None,
 ) -> dict:
     """DocumentIR entry point for analyze_structure."""

@@ -15,11 +15,9 @@ import time
 import pytest
 
 from app.services.task_queue_service import (
-    QueueHealthError,
-    TaskStatus,
     Task,
+    TaskStatus,
 )
-from app.services.task_queue_worker import _WORKER_VERSION as _CURRENT_SCHEMA
 
 pytestmark = pytest.mark.integration
 
@@ -319,7 +317,10 @@ class TestTaskPayloadVersioning:
     @pytest.mark.asyncio
     async def test_compatible_version_passes(self, q):
         """Task with minimum_worker_version <= _WORKER_VERSION passes check."""
-        from app.services.task_queue_worker import _check_worker_version_compatibility, _WORKER_VERSION
+        from app.services.task_queue_worker import (
+            _WORKER_VERSION,
+            _check_worker_version_compatibility,
+        )
 
         task = Task(
             task_id="compat_001",

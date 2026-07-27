@@ -48,7 +48,11 @@ class TestStaleWorkerFencing:
         """Worker A (gen=1) loses lease → Worker B (gen=2) writes → A's fenced UPDATE rejected."""
         import redis.asyncio as aioredis
         from sqlalchemy import select, text
-        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.asyncio import (
+            AsyncSession,
+            async_sessionmaker,
+            create_async_engine,
+        )
 
         from app.services.db_fencing import (
             conditional_update_with_fencing,
@@ -206,7 +210,11 @@ class TestStaleWorkerFencing:
         """FencingRejectedError is raised when conditional_update_with_fencing returns False."""
         import redis.asyncio as aioredis
         from sqlalchemy import text
-        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.asyncio import (
+            AsyncSession,
+            async_sessionmaker,
+            create_async_engine,
+        )
 
         from app.services.db_fencing import (
             FencingRejectedError,
@@ -266,7 +274,11 @@ class TestStaleWorkerFencing:
         """Two workers racing to initialize fencing — only the higher gen wins."""
         import redis.asyncio as aioredis
         from sqlalchemy import select, text
-        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+        from sqlalchemy.ext.asyncio import (
+            AsyncSession,
+            async_sessionmaker,
+            create_async_engine,
+        )
 
         engine = create_async_engine(TEST_DATABASE_URL, echo=False)
         session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

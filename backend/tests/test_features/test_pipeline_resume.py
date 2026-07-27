@@ -301,7 +301,7 @@ class TestResumeEndpointValidation:
         f = MagicMock()
         f.filename = filename
         f.content_type = "application/pdf"
-        f.read = AsyncMock(return_value=content)
+        f.read = AsyncMock(side_effect=[content, b""])
         return f
 
     def test_404_when_pipeline_missing(self, tmp_path):
@@ -397,7 +397,7 @@ class TestResumeSecurityChecks:
         f = MagicMock()
         f.filename = filename
         f.content_type = "application/pdf"
-        f.read = AsyncMock(return_value=content)
+        f.read = AsyncMock(side_effect=[content, b""])
         return f
 
     def _make_user(self, user_id):
@@ -412,7 +412,7 @@ class TestResumeSecurityChecks:
         pipeline_id: str,
         created_by: str | None,
         source_sha256: str | None,
-        total_pages: int = 40,
+        total_pages: int = 10,
         status: str = "paused",
     ):
         db.add(
@@ -476,11 +476,11 @@ class TestResumeSecurityChecks:
                 # Build a real PDF that pdf parser accepts (page count 40).
                 # We do not actually need fitz to succeed; if it raises 400 PDF
                 # parse failure first, the test would mask the sha mismatch
-                # signal. Patch fitz.open to a 40-page doc.
+                # signal. Patch fitz.open to match total_pages (10).
                 fake_doc = MagicMock()
                 fake_doc.__enter__ = MagicMock(return_value=fake_doc)
                 fake_doc.__exit__ = MagicMock(return_value=False)
-                fake_doc.__len__ = MagicMock(return_value=40)
+                fake_doc.__len__ = MagicMock(return_value=10)
                 with patch("fitz.open", return_value=fake_doc):
                     user_a = self._make_user("user_a")
                     with pytest.raises(Exception) as exc_info:
@@ -493,7 +493,7 @@ class TestResumeSecurityChecks:
                             current_user=user_a,
                         )
                     assert exc_info.value.status_code == 400
-                    assert "match" in exc_info.value.detail
+                    assert "sha256" in exc_info.value.detail
 
         _run(_go())
 
@@ -518,7 +518,7 @@ class TestResumeSecurityChecks:
                 fake_doc = MagicMock()
                 fake_doc.__enter__ = MagicMock(return_value=fake_doc)
                 fake_doc.__exit__ = MagicMock(return_value=False)
-                fake_doc.__len__ = MagicMock(return_value=40)
+                fake_doc.__len__ = MagicMock(return_value=10)
                 with patch("fitz.open", return_value=fake_doc):
                     user_x = self._make_user("user_x")
                     response = await resume_pipeline(
@@ -553,7 +553,7 @@ class TestResumeSecurityChecks:
                 fake_doc = MagicMock()
                 fake_doc.__enter__ = MagicMock(return_value=fake_doc)
                 fake_doc.__exit__ = MagicMock(return_value=False)
-                fake_doc.__len__ = MagicMock(return_value=40)
+                fake_doc.__len__ = MagicMock(return_value=10)
                 with patch("fitz.open", return_value=fake_doc):
                     user_a = self._make_user("user_a")
                     response = await resume_pipeline(

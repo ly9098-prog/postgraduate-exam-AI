@@ -228,7 +228,7 @@ def detect_visual_boundaries(normalized_blocks: list[dict]) -> list[dict]:
     return boundaries
 
 
-def filter_book_layout_blocks_from_ir(doc: "DocumentIR") -> tuple[list[dict], dict]:
+def filter_book_layout_blocks_from_ir(doc: "DocumentIR") -> tuple[list[dict], dict]:  # noqa: F821
     """DocumentIR-native entry point for filter_book_layout_blocks.
 
     Converts DocumentIR to blocks at the boundary and delegates to the
@@ -239,7 +239,7 @@ def filter_book_layout_blocks_from_ir(doc: "DocumentIR") -> tuple[list[dict], di
     return filter_book_layout_blocks(blocks)
 
 
-def detect_visual_boundaries_from_ir(doc: "DocumentIR") -> list[dict]:
+def detect_visual_boundaries_from_ir(doc: "DocumentIR") -> list[dict]:  # noqa: F821
     """DocumentIR-native entry point for detect_visual_boundaries.
 
     Converts DocumentIR to blocks at the boundary and delegates to the

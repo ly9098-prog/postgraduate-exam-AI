@@ -235,7 +235,6 @@ class TestAlertOrdering:
         if len(alerts) < 2:
             return
         levels = [a["level"] for a in alerts]
-        seen = set()
         prev_order = 0
         order = {"error": 0, "warning": 1, "info": 2}
         for level in levels:

@@ -162,7 +162,7 @@ class TestGetEmbedding:
     async def test_returns_none_when_config_missing(self):
         """配置缺失时返回 None。"""
         from app.services.embedding_service import get_embedding
-        with patch("app.services.embedding_service.settings") as mock_settings:
+        with patch("app.core.config.settings") as mock_settings:
             mock_settings.EMBEDDING_API_KEY = ""
             mock_settings.EMBEDDING_BASE_URL = ""
             mock_settings.EMBEDDING_MODEL = ""
@@ -190,7 +190,7 @@ class TestGetEmbedding:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.services.embedding_service.settings") as mock_settings, \
+        with patch("app.core.config.settings") as mock_settings, \
              patch("app.services.embedding_service.httpx.AsyncClient", return_value=mock_client):
             mock_settings.EMBEDDING_API_KEY = "test-key"
             mock_settings.EMBEDDING_BASE_URL = "http://test.api"

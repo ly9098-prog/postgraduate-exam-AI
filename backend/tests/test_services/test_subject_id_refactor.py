@@ -77,7 +77,7 @@ class TestListSubjectOptions:
     async def test_returns_id_code_name_path_level(self):
         from app.services.admin_import_service import list_subject_options
 
-        subj = _subject(1, "math2", "数学二")
+        _subject(1, "math2", "数学二")
 
         class Db:
             async def execute(self, stmt):
@@ -171,7 +171,7 @@ class TestAICompleteSubjectId:
         parsed = {"subject_id": 0}
         missing = ["subject"]
 
-        suggestion = _apply_complete_suggestion(qi, parsed, missing)
+        _apply_complete_suggestion(qi, parsed, missing)
         assert qi.subject_id is None
 
     @pytest.mark.asyncio
