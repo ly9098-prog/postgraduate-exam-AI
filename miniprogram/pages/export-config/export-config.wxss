@@ -697,3 +697,13 @@ button::after {
   transform: scale(0.98);
   opacity: 0.78;
 }
+
+/* Range options that do not have usable page context stay visible, but are
+   intentionally subdued and cannot trigger an invalid preview request. */
+.choice-card-disabled {
+  opacity: 0.48;
+}
+
+.choice-card-disabled .choice-indicator {
+  background: #F4F5F1;
+}

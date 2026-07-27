@@ -432,18 +432,21 @@ async def re_export(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Re-export using the original snapshot and config.
+    """Create a fresh pending task from an earlier export.
 
-    Creates a new task. Does NOT override the original task.
+    Preferred path: reuse the immutable snapshot referenced by the source
+    task. Snapshot rows are reference-safe during deletion, so duplicating the
+    full JSON payload is unnecessary and was a common failure point for large
+    exports.
+
+    Compatibility path: older tasks may not have a snapshot (or the snapshot
+    may have been cleaned up). In that case the original configuration is
+    submitted again against the user's current wrong-question data instead of
+    rejecting the request outright.
     """
     task = await _get_user_task(db, task_id, current_user.id)
 
-    if not task.snapshot_id:
-        raise_export_error(400, ExportErrorCode.FILE_NOT_FOUND, "原任务没有快照，无法重新导出")
-
-    # Feature flag check
     ensure_export_allowed(current_user.id)
-
     if task.file_format == "docx":
         ensure_format_allowed("docx")
 
@@ -452,47 +455,64 @@ async def re_export(
 
     pending_count = await get_user_pending_count(db, current_user.id)
     if pending_count >= _MAX_PER_USER:
-        raise_export_error(429, ExportErrorCode.TOO_MANY_CONCURRENT, f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成")
+        raise_export_error(
+            429,
+            ExportErrorCode.TOO_MANY_CONCURRENT,
+            f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成",
+        )
 
-    # Load snapshot for config
-    snapshot_data = await load_snapshot(db, task.snapshot_id, current_user.id)
-    if snapshot_data is None:
-        raise_export_error(400, ExportErrorCode.FILE_NOT_FOUND, "原快照不存在或已过期")
+    config = _task_to_config(task)
 
-    # Copy snapshot — each re-export gets its own independent snapshot
-    from app.services.export.snapshot_service import create_snapshot
-    new_snapshot_id = await create_snapshot(db, current_user.id, snapshot_data)
+    # Verify whether the original immutable snapshot can still be reused.
+    reusable_snapshot_id: str | None = None
+    if task.snapshot_id:
+        snapshot_data = await load_snapshot(db, task.snapshot_id, current_user.id)
+        if snapshot_data is not None:
+            reusable_snapshot_id = task.snapshot_id
+        else:
+            logger.warning(
+                "Re-export source snapshot missing: task=%d snapshot=%s; rebuilding from config",
+                task.id,
+                task.snapshot_id,
+            )
 
-    config = {
-        "range_type": task.range_type,
-        "filters": task.filters,
-        "selected_ids": task.selected_ids,
-        "title": task.title,
-        "show_date": task.show_date,
-        "export_date": task.export_date,
-        "sort_by": task.sort_by,
-        "group_by": task.group_by,
-        "answer_position": task.answer_position,
-        "analysis_position": task.analysis_position,
-        "space_style": task.space_style,
-        "file_format": task.file_format,
-        "_source_task_id": task.id,
-        "_snapshot_id": task.snapshot_id,
-    }
+    # Older records can lack a snapshot. Validate their original range now so
+    # the API returns an actionable error instead of creating a doomed task.
+    if reusable_snapshot_id is None:
+        range_type = ExportRangeType(config["range_type"])
+        count = await _preview_count(
+            db,
+            current_user.id,
+            range_type,
+            config.get("filters"),
+            config.get("selected_ids"),
+        )
+        validate_export_range(
+            config["range_type"],
+            config.get("selected_ids"),
+            count,
+        )
 
     new_task = await _create_export_task(db, current_user.id, config)
-    # Assign the new independent snapshot
-    new_task.snapshot_id = new_snapshot_id
     new_task.source_task_id = task.id
-    new_task.total_count = task.total_count
+    new_task.total_count = task.total_count or 0
+
+    # Reuse the immutable snapshot rather than copying several megabytes of
+    # JSON. delete_export already retains snapshots referenced by other tasks.
+    if reusable_snapshot_id is not None:
+        new_task.snapshot_id = reusable_snapshot_id
 
     await db.commit()
     await db.refresh(new_task)
-    logger.info("export_task_reexported", extra={
-        "task_id": new_task.id,
-        "source_task_id": task.id,
-        "user_id": current_user.id,
-    })
+    logger.info(
+        "export_task_reexported",
+        extra={
+            "task_id": new_task.id,
+            "source_task_id": task.id,
+            "user_id": current_user.id,
+            "snapshot_reused": reusable_snapshot_id is not None,
+        },
+    )
     return _task_to_response(new_task)
 
 

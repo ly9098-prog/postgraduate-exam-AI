@@ -41,11 +41,22 @@ logger = logging.getLogger(__name__)
 # ── Page layout constants (mm) ──
 PAGE_W = 210  # A4 width
 PAGE_H = 297  # A4 height
-MARGIN_L = 20
-MARGIN_R = 20
-MARGIN_T = 25
-MARGIN_B = 20
-BODY_W = PAGE_W - MARGIN_L - MARGIN_R  # 170 mm
+MARGIN_L = 18
+MARGIN_R = 18
+MARGIN_T = 18
+MARGIN_B = 18
+BODY_W = PAGE_W - MARGIN_L - MARGIN_R  # 174 mm
+
+# Print-friendly MemoGrad palette
+_COLOR_ACCENT = (36, 111, 70)
+_COLOR_ACCENT_DARK = (27, 82, 52)
+_COLOR_ACCENT_LIGHT = (234, 245, 238)
+_COLOR_TEXT = (35, 43, 37)
+_COLOR_MUTED = (111, 122, 114)
+_COLOR_LINE = (218, 225, 219)
+_COLOR_SURFACE = (247, 249, 246)
+_COLOR_WARM = (249, 247, 239)
+_COLOR_WHITE = (255, 255, 255)
 
 # Font
 _DEFAULT_FONT_PATH = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
@@ -125,107 +136,82 @@ class PdfExporter(Exporter):
         config: dict,
         ctx: PdfContext,
     ) -> bytes:
-        """Synchronous PDF generation — runs in thread pool executor."""
+        """Synchronous PDF generation — runs in a thread-pool executor."""
         from fpdf import FPDF
 
         pdf = FPDF(orientation="P", unit="mm", format="A4")
+        # The previous exporter calculated an 18-20 mm body width but never
+        # applied matching FPDF margins, which made the document look offset.
+        pdf.set_margins(MARGIN_L, MARGIN_T, MARGIN_R)
         pdf.set_auto_page_break(auto=True, margin=MARGIN_B)
         pdf.add_font(_FONT_NAME, "", self._font_path)
         pdf.add_page()
         self._add_header(pdf, config)
 
-        # ── Questions ──
-        answer_section: list[dict] = []  # items for end-of-doc answer section
-        analysis_section: list[dict] = []  # items for end-of-doc analysis section
-        group_title = config.get("group_by", "none")
-
+        answer_section: list[dict] = []
+        analysis_section: list[dict] = []
+        group_by = config.get("group_by", "none")
         current_group = None
+
         for idx, q in enumerate(questions):
             q_group = q.get("_group_title", "")
-            if group_title != "none" and q_group and q_group != current_group:
+            if group_by != "none" and q_group and q_group != current_group:
                 current_group = q_group
-                self._check_page_break(pdf, 15)
-                pdf.set_font(_FONT_NAME, "", 14)
-                pdf.multi_cell(BODY_W, 8, text=q_group, new_x="LMARGIN", new_y="NEXT")
-                pdf.ln(2)
+                self._check_page_break(pdf, 18)
+                self._write_group_header(pdf, q_group)
 
             question_num = idx + 1
+            self._check_page_break(pdf, 36)
 
-            # Check if we need a new page for this question (keep whole question together)
-            self._check_page_break(pdf, 40)
-
-            # Question type label
             qt_label = self._get_question_type_label(q.get("question_type", ""))
+            self._write_question_header(pdf, question_num, qt_label)
 
-            # Question number + type
-            pdf.set_font(_FONT_NAME, "", 11)
-            question_header = f"{question_num}. [{qt_label}]" if qt_label else f"{question_num}."
-            pdf.multi_cell(BODY_W, 6, text=question_header, new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(1)
-
-            # Question content
-            pdf.set_font(_FONT_NAME, "", 10)
+            # Question stem
+            pdf.set_font(_FONT_NAME, "", 10.5)
+            pdf.set_text_color(*_COLOR_TEXT)
             content_text = self._get_question_text(q)
-            self._write_content(pdf, content_text, q, ctx)
+            if content_text:
+                self._write_content(pdf, content_text, q, ctx)
+            else:
+                pdf.set_text_color(*_COLOR_MUTED)
+                pdf.multi_cell(
+                    BODY_W, 5.8,
+                    text="（题干内容未提供）",
+                    new_x="LMARGIN", new_y="NEXT",
+                )
+                pdf.set_text_color(*_COLOR_TEXT)
 
             # Options
             options = q.get("options") or {}
             if options:
-                pdf.ln(1)
-                pdf.set_font(_FONT_NAME, "", 10)
+                pdf.ln(1.5)
                 for opt_key in sorted(options.keys()):
-                    opt_text = options[opt_key]
-                    label = f"{opt_key}. {opt_text}"
-                    pdf.multi_cell(BODY_W, 6, text=label, new_x="LMARGIN", new_y="NEXT")
+                    self._write_option(pdf, str(opt_key), str(options[opt_key]))
 
-            # Answer space
+            # Answer space with subtle writing guides instead of a large blank gap.
             space_mm = get_answer_space_mm(
                 config.get("space_style", "standard"),
                 q.get("question_type"),
             )
             if space_mm > 0:
-                pdf.ln(2)
-                # Draw a thin line or just blank space
-                y_before = pdf.get_y()
-                pdf.set_y(y_before + space_mm)
-                # Ensure we haven't overflowed
-                if pdf.get_y() > PAGE_H - MARGIN_B:
-                    pdf.add_page()
+                self._write_answer_space(pdf, space_mm)
 
-            # Answer after question
             if config.get("answer_position") == "after_question":
                 ans = self._sanitize_text(q.get("answer", ""))
                 if ans:
-                    pdf.ln(1)
-                    pdf.set_fill_color(245, 245, 242)
-                    pdf.set_font(_FONT_NAME, "", 10)
-                    pdf.multi_cell(
-                        BODY_W, 5,
-                        text=f"【答案】{ans}",
-                        new_x="LMARGIN", new_y="NEXT",
-                        fill=True,
-                    )
+                    pdf.ln(1.5)
+                    self._write_callout(pdf, "参考答案", ans, _COLOR_ACCENT_LIGHT)
 
-            # Analysis after question
             if config.get("analysis_position") == "after_question":
                 analysis_text = self._sanitize_text(q.get("analysis", ""))
                 if analysis_text:
-                    pdf.ln(1)
-                    pdf.set_fill_color(245, 245, 242)
-                    pdf.set_font(_FONT_NAME, "", 10)
-                    pdf.multi_cell(
-                        BODY_W, 5,
-                        text=f"【解析】{analysis_text}",
-                        new_x="LMARGIN", new_y="NEXT",
-                        fill=True,
-                    )
+                    pdf.ln(1.5)
+                    self._write_callout(pdf, "题目解析", analysis_text, _COLOR_WARM)
 
-            # Collect for end-of-doc sections
             if config.get("answer_position") == "at_end":
                 answer_section.append({
                     "num": question_num,
-                    "answer": q.get("answer", ""),
-                    "question_type": q.get("question_type", ""),
+                    "answer": self._sanitize_text(q.get("answer", "")),
                 })
             if config.get("analysis_position") == "at_end":
                 analysis_section.append({
@@ -233,82 +219,214 @@ class PdfExporter(Exporter):
                     "analysis": self._sanitize_text(q.get("analysis", "")),
                 })
 
-            # Separator between questions
-            pdf.ln(3)
+            self._write_question_separator(pdf)
 
-        # ── Answer section (at end) ──
         if answer_section:
             pdf.add_page()
-            pdf.set_font(_FONT_NAME, "", 14)
-            pdf.multi_cell(BODY_W, 8, text="参考答案", new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(3)
-            pdf.set_font(_FONT_NAME, "", 10)
-            # Compact answer format: "1. B  2. AC  3. 正确"
-            lines = []
+            self._write_section_banner(pdf, "参考答案", "按题号快速核对")
             for item in answer_section:
-                lines.append(f"{item['num']}. {item['answer']}")
-            # Wrap into groups of ~8 to avoid overly long lines
-            for i in range(0, len(lines), 8):
-                chunk = lines[i:i + 8]
-                pdf.multi_cell(BODY_W, 6, text="    ".join(chunk), new_x="LMARGIN", new_y="NEXT")
+                self._check_page_break(pdf, 12)
+                self._write_numbered_item(
+                    pdf,
+                    item["num"],
+                    item.get("answer") or "未提供答案",
+                    compact=True,
+                )
 
-        # ── Analysis section (at end) ──
         if analysis_section:
             pdf.add_page()
-            pdf.set_font(_FONT_NAME, "", 14)
-            pdf.multi_cell(BODY_W, 8, text="解析", new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(3)
-            pdf.set_font(_FONT_NAME, "", 10)
+            self._write_section_banner(pdf, "题目解析", "回顾思路与关键知识点")
             for item in analysis_section:
-                if item.get("analysis"):
-                    pdf.multi_cell(
-                        BODY_W, 5,
-                        text=f"{item['num']}. {item['analysis']}",
-                        new_x="LMARGIN", new_y="NEXT",
-                    )
-                    pdf.ln(1)
+                if not item.get("analysis"):
+                    continue
+                self._check_page_break(pdf, 18)
+                self._write_numbered_item(
+                    pdf,
+                    item["num"],
+                    item["analysis"],
+                    compact=False,
+                )
 
-        # ── Page numbers ──
-        self._add_page_numbers(pdf)
-
+        self._add_page_numbers(pdf, config.get("product_name", "MemoGrad"))
         return pdf.output()
 
     # ── Internal helpers ──
 
+    @staticmethod
+    def _rounded_rect(pdf, x: float, y: float, w: float, h: float, radius: float, style: str = "F") -> None:
+        """Draw a rounded rectangle with a plain-rect fallback for older fpdf2."""
+        try:
+            pdf.rect(
+                x,
+                y,
+                w,
+                h,
+                style=style,
+                round_corners=True,
+                corner_radius=radius,
+            )
+        except TypeError:
+            pdf.rect(x, y, w, h, style=style)
+
     def _add_header(self, pdf, config: dict):
-        """Add the paper header: product name, title, date, question count."""
-        # Product name
-        product_name = config.get("product_name", "")
-        if product_name:
-            pdf.set_font(_FONT_NAME, "", 9)
-            pdf.set_text_color(128, 128, 128)
-            pdf.multi_cell(BODY_W, 5, text=product_name, new_x="LMARGIN", new_y="NEXT")
-            pdf.ln(2)
+        """Render a compact, print-friendly paper masthead."""
+        product_name = config.get("product_name", "") or "MemoGrad"
+        pdf.set_text_color(*_COLOR_MUTED)
+        pdf.set_font(_FONT_NAME, "", 8.5)
+        pdf.cell(BODY_W / 2, 5, text=product_name, new_x="RIGHT", new_y="TOP")
+        pdf.cell(BODY_W / 2, 5, text="错题巩固练习", align="R", new_x="LMARGIN", new_y="NEXT")
 
-        pdf.set_text_color(0, 0, 0)
+        pdf.set_draw_color(*_COLOR_ACCENT)
+        pdf.set_line_width(0.8)
+        pdf.line(MARGIN_L, pdf.get_y() + 1.5, PAGE_W - MARGIN_R, pdf.get_y() + 1.5)
+        pdf.ln(8)
 
-        # Title
         title = config.get("title", "错题巩固练习")
-        pdf.set_font(_FONT_NAME, "", 16)
-        pdf.multi_cell(BODY_W, 9, text=title, new_x="LMARGIN", new_y="NEXT", align="C")
+        pdf.set_text_color(*_COLOR_TEXT)
+        pdf.set_font(_FONT_NAME, "", 19)
+        pdf.multi_cell(BODY_W, 9.5, text=title, new_x="LMARGIN", new_y="NEXT", align="C")
         pdf.ln(1)
 
-        # Date (if shown)
-        if config.get("show_date", True):
-            date_str = config.get("export_date", "")
-            if date_str:
-                pdf.set_font(_FONT_NAME, "", 9)
-                pdf.set_text_color(128, 128, 128)
-                pdf.multi_cell(BODY_W, 5, text=date_str, new_x="LMARGIN", new_y="NEXT", align="C")
-                pdf.ln(1)
+        meta_parts: list[str] = []
+        if config.get("show_date", True) and config.get("export_date"):
+            meta_parts.append(str(config.get("export_date")))
+        meta_parts.append(f"共 {config.get('total_count', 0)} 题")
+        meta_text = "  ·  ".join(meta_parts)
 
-        pdf.set_text_color(0, 0, 0)
+        meta_w = min(BODY_W, max(55, pdf.get_string_width(meta_text) + 18))
+        meta_x = (PAGE_W - meta_w) / 2
+        meta_y = pdf.get_y()
+        pdf.set_fill_color(*_COLOR_SURFACE)
+        self._rounded_rect(pdf, meta_x, meta_y, meta_w, 9, 4.5, style="F")
+        pdf.set_xy(meta_x, meta_y + 0.5)
+        pdf.set_font(_FONT_NAME, "", 9)
+        pdf.set_text_color(*_COLOR_MUTED)
+        pdf.cell(meta_w, 8, text=meta_text, align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_y(meta_y + 14)
+        pdf.set_text_color(*_COLOR_TEXT)
 
-        # Question count
-        total = config.get("total_count", 0)
+    def _write_group_header(self, pdf, title: str) -> None:
+        y = pdf.get_y()
+        pdf.set_fill_color(*_COLOR_ACCENT_LIGHT)
+        self._rounded_rect(pdf, MARGIN_L, y, BODY_W, 10, 2.5, style="F")
+        pdf.set_xy(MARGIN_L + 4, y + 1)
+        pdf.set_text_color(*_COLOR_ACCENT_DARK)
+        pdf.set_font(_FONT_NAME, "", 11)
+        pdf.cell(BODY_W - 8, 8, text=title, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_y(y + 14)
+        pdf.set_text_color(*_COLOR_TEXT)
+
+    def _write_question_header(self, pdf, question_num: int, qt_label: str) -> None:
+        y = pdf.get_y()
+        badge_w = 11 if question_num < 100 else 14
+        pdf.set_fill_color(*_COLOR_ACCENT)
+        self._rounded_rect(pdf, MARGIN_L, y, badge_w, 8.5, 2.2, style="F")
+        pdf.set_xy(MARGIN_L, y + 0.3)
+        pdf.set_text_color(*_COLOR_WHITE)
+        pdf.set_font(_FONT_NAME, "", 9 if question_num < 100 else 8)
+        pdf.cell(badge_w, 8, text=str(question_num), align="C")
+
+        if qt_label:
+            label_w = min(38, max(19, pdf.get_string_width(qt_label) + 9))
+            label_x = MARGIN_L + badge_w + 4
+            pdf.set_fill_color(*_COLOR_SURFACE)
+            self._rounded_rect(pdf, label_x, y, label_w, 8.5, 4.2, style="F")
+            pdf.set_xy(label_x, y + 0.3)
+            pdf.set_text_color(*_COLOR_MUTED)
+            pdf.set_font(_FONT_NAME, "", 8.5)
+            pdf.cell(label_w, 8, text=qt_label, align="C")
+
+        pdf.set_xy(MARGIN_L, y + 12)
+        pdf.set_text_color(*_COLOR_TEXT)
+
+    def _write_option(self, pdf, key: str, text: str) -> None:
+        self._check_page_break(pdf, 10)
+        y = pdf.get_y()
+        pdf.set_fill_color(*_COLOR_SURFACE)
+        self._rounded_rect(pdf, MARGIN_L, y + 0.2, 7.5, 7.5, 2, style="F")
+        pdf.set_xy(MARGIN_L, y + 0.1)
+        pdf.set_text_color(*_COLOR_ACCENT_DARK)
+        pdf.set_font(_FONT_NAME, "", 8.5)
+        pdf.cell(7.5, 7.3, text=key, align="C")
+        pdf.set_xy(MARGIN_L + 11, y)
+        pdf.set_text_color(*_COLOR_TEXT)
         pdf.set_font(_FONT_NAME, "", 10)
-        pdf.multi_cell(BODY_W, 6, text=f"共 {total} 题", new_x="LMARGIN", new_y="NEXT", align="C")
-        pdf.ln(3)
+        pdf.multi_cell(BODY_W - 11, 6.2, text=text, new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(0.7)
+
+    def _write_answer_space(self, pdf, space_mm: float) -> None:
+        space_mm = max(7, float(space_mm))
+        self._check_page_break(pdf, space_mm + 5)
+        start_y = pdf.get_y() + 2
+        pdf.set_draw_color(*_COLOR_LINE)
+        pdf.set_line_width(0.25)
+        line_y = start_y + 7
+        end_y = start_y + space_mm
+        while line_y <= end_y:
+            pdf.line(MARGIN_L, line_y, PAGE_W - MARGIN_R, line_y)
+            line_y += 8
+        pdf.set_y(end_y)
+        pdf.set_x(MARGIN_L)
+
+    def _write_callout(self, pdf, label: str, text: str, fill_color: tuple[int, int, int]) -> None:
+        self._check_page_break(pdf, 14)
+        pdf.set_fill_color(*fill_color)
+        pdf.set_text_color(*_COLOR_TEXT)
+        pdf.set_font(_FONT_NAME, "", 9.5)
+        pdf.multi_cell(
+            BODY_W,
+            6.2,
+            text=f"  {label}  {text}  ",
+            new_x="LMARGIN",
+            new_y="NEXT",
+            fill=True,
+        )
+
+    def _write_question_separator(self, pdf) -> None:
+        pdf.ln(4)
+        if PAGE_H - MARGIN_B - pdf.get_y() < 6:
+            pdf.add_page()
+            return
+        y = pdf.get_y()
+        pdf.set_draw_color(*_COLOR_LINE)
+        pdf.set_line_width(0.25)
+        pdf.line(MARGIN_L, y, PAGE_W - MARGIN_R, y)
+        pdf.set_y(y + 6)
+
+    def _write_section_banner(self, pdf, title: str, subtitle: str) -> None:
+        pdf.set_fill_color(*_COLOR_ACCENT)
+        self._rounded_rect(pdf, MARGIN_L, pdf.get_y(), BODY_W, 17, 3, style="F")
+        y = pdf.get_y()
+        pdf.set_xy(MARGIN_L + 6, y + 2)
+        pdf.set_text_color(*_COLOR_WHITE)
+        pdf.set_font(_FONT_NAME, "", 14)
+        pdf.cell(BODY_W - 12, 7, text=title, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_x(MARGIN_L + 6)
+        pdf.set_font(_FONT_NAME, "", 8.5)
+        pdf.cell(BODY_W - 12, 5, text=subtitle, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_y(y + 23)
+        pdf.set_text_color(*_COLOR_TEXT)
+
+    def _write_numbered_item(self, pdf, number: int, text: str, compact: bool) -> None:
+        y = pdf.get_y()
+        badge = 9
+        pdf.set_fill_color(*_COLOR_ACCENT_LIGHT)
+        self._rounded_rect(pdf, MARGIN_L, y, badge, badge, 2.2, style="F")
+        pdf.set_xy(MARGIN_L, y + 0.4)
+        pdf.set_text_color(*_COLOR_ACCENT_DARK)
+        pdf.set_font(_FONT_NAME, "", 8.5)
+        pdf.cell(badge, 8, text=str(number), align="C")
+        pdf.set_xy(MARGIN_L + 13, y)
+        pdf.set_text_color(*_COLOR_TEXT)
+        pdf.set_font(_FONT_NAME, "", 10 if compact else 9.5)
+        pdf.multi_cell(
+            BODY_W - 13,
+            6 if compact else 5.8,
+            text=text,
+            new_x="LMARGIN",
+            new_y="NEXT",
+        )
+        pdf.ln(3 if compact else 4)
 
     def _write_content(self, pdf, text: str, question: dict, ctx: PdfContext):
         """Write question content, handling segments, images, and LaTeX."""
@@ -319,7 +437,7 @@ class PdfExporter(Exporter):
         elif has_latex(text):
             self._write_latex_content(pdf, text, ctx)
         else:
-            pdf.multi_cell(BODY_W, 5.5, text=text, new_x="LMARGIN", new_y="NEXT")
+            pdf.multi_cell(BODY_W, 5.9, text=text, new_x="LMARGIN", new_y="NEXT")
 
     def _write_segments(self, pdf, segments: list[dict], ctx: PdfContext):
         """Render a ``segments`` content array."""
@@ -327,7 +445,7 @@ class PdfExporter(Exporter):
             seg_type = seg.get("type", "text")
 
             if seg_type == "text":
-                pdf.multi_cell(BODY_W, 5.5, text=seg.get("text", ""), new_x="LMARGIN", new_y="NEXT")
+                pdf.multi_cell(BODY_W, 5.9, text=seg.get("text", ""), new_x="LMARGIN", new_y="NEXT")
 
             elif seg_type == "newline":
                 pdf.ln(2)
@@ -358,7 +476,7 @@ class PdfExporter(Exporter):
         segments = find_latex_segments(text)
         for seg in segments:
             if seg["type"] == "text":
-                pdf.multi_cell(BODY_W, 5.5, text=seg["content"], new_x="LMARGIN", new_y="NEXT")
+                pdf.multi_cell(BODY_W, 5.9, text=seg["content"], new_x="LMARGIN", new_y="NEXT")
             else:
                 png = render_latex_to_png(seg["content"], seg.get("display", False))
                 if png:
@@ -366,7 +484,7 @@ class PdfExporter(Exporter):
                     try:
                         pdf.image(img_path, w=BODY_W * 0.8)
                     except Exception:
-                        pdf.multi_cell(BODY_W, 5.5, text=seg["content"], new_x="LMARGIN", new_y="NEXT")
+                        pdf.multi_cell(BODY_W, 5.9, text=seg["content"], new_x="LMARGIN", new_y="NEXT")
                 else:
                     # Fallback: raw LaTeX
                     pdf.set_font(_FONT_NAME, "", 8)
@@ -549,13 +667,28 @@ class PdfExporter(Exporter):
             if not check_only:
                 pdf.add_page()
 
-    def _add_page_numbers(self, pdf):
-        """Add page numbers to all pages."""
+    def _add_page_numbers(self, pdf, product_name: str = "MemoGrad"):
+        """Add a restrained footer without triggering automatic page breaks."""
         total = pdf.page_no()
+        pdf.set_auto_page_break(False)
         for page_num in range(1, total + 1):
             pdf.page = page_num
-            pdf.set_y(-15)
-            pdf.set_font(_FONT_NAME, "", 8)
-            pdf.set_text_color(128, 128, 128)
-            pdf.cell(BODY_W, 10, text=f"第 {page_num} 页 / 共 {total} 页", align="C", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(0, 0, 0)
+            y = PAGE_H - 13
+            pdf.set_draw_color(*_COLOR_LINE)
+            pdf.set_line_width(0.25)
+            pdf.line(MARGIN_L, y - 2, PAGE_W - MARGIN_R, y - 2)
+            pdf.set_xy(MARGIN_L, y)
+            pdf.set_font(_FONT_NAME, "", 7.5)
+            pdf.set_text_color(*_COLOR_MUTED)
+            pdf.cell(BODY_W / 2, 5, text=product_name or "MemoGrad", new_x="RIGHT", new_y="TOP")
+            pdf.cell(
+                BODY_W / 2,
+                5,
+                text=f"第 {page_num} 页 / 共 {total} 页",
+                align="R",
+                new_x="LMARGIN",
+                new_y="NEXT",
+            )
+        pdf.page = total
+        pdf.set_auto_page_break(True, margin=MARGIN_B)
+
