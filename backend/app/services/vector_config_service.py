@@ -17,7 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
 from app.core.config import settings
-from app.models.admin_ai_config import decrypt_api_key, encrypt_api_key
+from app.core.secret_crypto import (
+    SecretDecryptionError,
+    SecretEncryptionError,
+    decrypt_secret,
+    encrypt_secret,
+)
 from app.models.admin_vector_config import AdminVectorConfig
 from app.schemas.admin_vector_config import (
     EmbeddingTestResponse,
@@ -56,6 +61,12 @@ async def _seed_if_empty(db: AsyncSession) -> AdminVectorConfig:
         return row
 
     logger.info("admin_vector_configs 表为空，从环境变量 seed 默认配置")
+    encrypted_key = None
+    if settings.EMBEDDING_API_KEY:
+        try:
+            encrypted_key = encrypt_secret(settings.EMBEDDING_API_KEY)
+        except SecretEncryptionError:
+            logger.warning("AI_CONFIG_ENCRYPT_KEY not configured — skipping seed of embedding API key")
     row = AdminVectorConfig(
         vector_enabled=settings.VECTOR_ENABLED,
         vector_mode=settings.VECTOR_MODE,
@@ -64,9 +75,7 @@ async def _seed_if_empty(db: AsyncSession) -> AdminVectorConfig:
         vector_top_k=settings.VECTOR_TOP_K,
         vector_similarity_threshold=settings.VECTOR_SIMILARITY_THRESHOLD,
         embedding_provider=settings.EMBEDDING_PROVIDER,
-        embedding_api_key_encrypted=(
-            encrypt_api_key(settings.EMBEDDING_API_KEY) if settings.EMBEDDING_API_KEY else None
-        ),
+        embedding_api_key_encrypted=encrypted_key,
         embedding_base_url=settings.EMBEDDING_BASE_URL,
         embedding_model=settings.EMBEDDING_MODEL,
         embedding_dim=settings.EMBEDDING_DIM,
@@ -114,12 +123,16 @@ async def patch_vector_config(
     changed_fields = list(update_data.keys())
 
     # API key 特殊处理：加密存储
+    emb_key = data.get_embedding_api_key_value()
     if "embedding_api_key" in update_data:
-        raw_key = update_data.pop("embedding_api_key")
-        if raw_key:
-            row.embedding_api_key_encrypted = encrypt_api_key(raw_key)
-        else:
-            row.embedding_api_key_encrypted = None
+        update_data.pop("embedding_api_key")
+        # get_embedding_api_key_value returns:
+        #   None  → not provided (keep existing)
+        #   ""    → explicit clear
+        #   other → new key to encrypt
+        if emb_key is not None:
+            row.embedding_api_key_encrypted = encrypt_secret(emb_key) if emb_key else None
+        # If emb_key is None — keep existing, don't touch
 
     for field, value in update_data.items():
         if hasattr(row, field):
@@ -179,7 +192,10 @@ async def resolve_embedding_config(db: AsyncSession) -> EmbeddingConfig:
 
     api_key = ""
     if row.embedding_api_key_encrypted:
-        api_key = decrypt_api_key(row.embedding_api_key_encrypted)
+        try:
+            api_key = decrypt_secret(row.embedding_api_key_encrypted)
+        except (SecretDecryptionError, SecretEncryptionError):
+            api_key = ""
 
     # 如果 DB 中 key 为空但环境变量有值，fallback
     if not api_key and settings.EMBEDDING_API_KEY:
@@ -326,13 +342,17 @@ async def test_embedding_connection(
 
 
 def _to_response(row: AdminVectorConfig) -> VectorConfigResponse:
-    """ORM 行 → 前端响应（API key 掩码处理）。"""
-    key_configured = bool(row.embedding_api_key_encrypted)
+    """ORM 行 → 前端响应（API key 掩码处理，固定长度为 "********"）。"""
+    key_configured = False
     key_masked = ""
-    if key_configured:
-        plain = decrypt_api_key(row.embedding_api_key_encrypted)
-        if plain:
-            key_masked = plain[:4] + "****" + plain[-4:] if len(plain) > 8 else "****"
+    if row.embedding_api_key_encrypted:
+        try:
+            plain = decrypt_secret(row.embedding_api_key_encrypted)
+            if plain:
+                key_configured = True
+                key_masked = "********"
+        except (SecretDecryptionError, SecretEncryptionError):
+            pass
 
     return VectorConfigResponse(
         vector_enabled=row.vector_enabled,

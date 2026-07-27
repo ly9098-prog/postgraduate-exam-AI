@@ -2,7 +2,9 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
+
+from app.core.secret_crypto import is_mask_placeholder
 
 
 class VectorConfigResponse(BaseModel):
@@ -45,22 +47,39 @@ class VectorConfigPatchRequest(BaseModel):
 
     # ── Embedding ──
     embedding_provider: str | None = None
-    embedding_api_key: str | None = None  # 空字符串表示清除 key
+    embedding_api_key: SecretStr | None = None  # null/None = 不修改, 空字符串 = 清除
     embedding_base_url: str | None = None
     embedding_model: str | None = None
     embedding_dim: int | None = Field(default=None, ge=1, le=8192)
     embedding_timeout: int | None = Field(default=None, ge=1, le=300)
     embedding_batch_size: int | None = Field(default=None, ge=1, le=256)
 
+    def get_embedding_api_key_value(self) -> str | None:
+        """Return the plaintext embedding API key, handling None, mask, and empty."""
+        if self.embedding_api_key is None:
+            return None  # not provided — keep existing
+        val = self.embedding_api_key.get_secret_value()
+        if is_mask_placeholder(val):
+            return None  # mask — keep existing
+        return val  # may be "" (explicit clear) or a real key
+
 
 class EmbeddingTestRequest(BaseModel):
     """测试 Embedding API 连通性。api_key 为空时从 DB 读取已存储的 key。"""
 
     api_base_url: str
-    api_key: str | None = None
+    api_key: SecretStr | None = None
     model: str
     dim: int = 1024
     timeout: int = 30
+
+    def get_api_key_value(self) -> str | None:
+        if self.api_key is None:
+            return None
+        val = self.api_key.get_secret_value()
+        if not val or is_mask_placeholder(val):
+            return None
+        return val
 
 
 class EmbeddingTestResponse(BaseModel):

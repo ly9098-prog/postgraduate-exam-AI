@@ -1,75 +1,248 @@
 <!-- Export records page -->
-<import src="/styles/templates.wxml" />
 
 <view class="page export-records-page">
-  <premium-nav title="导出记录" show-back="{{true}}" />
+  <premium-nav title="导出记录" show-back="{{true}}" bind:back="onBack" />
 
-  <scroll-view class="records-scroll" scroll-y="{{true}}" bindscrolltolower="onLoadMore">
-    <view wx:if="{{list.length === 0 && !loading}}" class="empty-state">
-      <text class="empty-text">暂无导出记录</text>
-    </view>
-
-    <view wx:for="{{list}}" wx:key="id" class="record-card {{highlightId === item.id ? 'highlight' : ''}}">
-      <view class="record-header">
-        <text class="record-filename">{{item.file_name}}</text>
-        <text class="record-format format-{{item.file_format}}">{{item.formatText}}</text>
-        <text class="record-status tag-{{item.statusTone}}">{{item.statusLabel}}</text>
+  <scroll-view
+    class="records-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    show-scrollbar="{{false}}"
+    bindscrolltolower="onLoadMore"
+  >
+    <view class="records-content">
+      <!-- First-load skeleton -->
+      <view wx:if="{{loading && list.length === 0}}" class="skeleton-list">
+        <view wx:for="{{skeletonItems}}" wx:key="*this" class="skeleton-card">
+          <view class="skeleton-row skeleton-row-top">
+            <view class="skeleton-circle"></view>
+            <view class="skeleton-copy">
+              <view class="skeleton-line skeleton-line-status"></view>
+              <view class="skeleton-line skeleton-line-caption"></view>
+            </view>
+            <view class="skeleton-pill"></view>
+          </view>
+          <view class="skeleton-line skeleton-line-title"></view>
+          <view class="skeleton-line skeleton-line-meta"></view>
+          <view class="skeleton-actions">
+            <view class="skeleton-button"></view>
+            <view class="skeleton-button"></view>
+            <view class="skeleton-button"></view>
+          </view>
+        </view>
       </view>
 
-      <view class="record-meta">
-        <text class="meta-item">导出时间: {{item.dateText}}</text>
-        <text class="meta-item">题数: {{item.total_count || 0}}</text>
-        <text wx:if="{{item.file_size}}" class="meta-item">大小: {{item.fileSizeText}}</text>
+      <!-- Empty state -->
+      <view wx:elif="{{list.length === 0}}" class="empty-state">
+        <view class="empty-illustration" aria-hidden="true">
+          <view class="empty-paper">
+            <view class="empty-paper-fold"></view>
+            <view class="empty-paper-line line-one"></view>
+            <view class="empty-paper-line line-two"></view>
+            <view class="empty-paper-line line-three"></view>
+          </view>
+          <view class="empty-check">✓</view>
+        </view>
+        <text class="empty-title">还没有导出记录</text>
+        <text class="empty-text">完成导出后，文件会集中保存在这里，方便预览、保存和分享。</text>
+        <button class="empty-action" hover-class="button-pressed" bindtap="onGoExport">去导出错题</button>
       </view>
 
-      <view wx:if="{{item.success_count != null}}" class="record-meta">
-        <text class="meta-item">成功: {{item.success_count}} 道</text>
-        <text wx:if="{{item.skip_count > 0}}" class="meta-item warn">跳过: {{item.skip_count}} 道</text>
-      </view>
+      <block wx:else>
+        <view class="records-intro">
+          <view class="intro-title-row">
+            <text class="intro-title">最近导出</text>
+            <text class="intro-count">{{list.length}} 条</text>
+          </view>
+          <text class="intro-caption">文件到期前可随时预览、保存或分享</text>
+        </view>
 
-      <view wx:if="{{item.expires_at}}" class="record-meta">
-        <text class="meta-item">到期: {{item.expires_at}}</text>
-      </view>
+        <view
+          wx:for="{{list}}"
+          wx:key="id"
+          class="record-card record-card-{{item.status}} {{highlightId === item.id ? 'record-card-highlight' : ''}}"
+        >
+          <view class="record-status-row">
+            <view class="status-identity">
+              <view class="status-mark status-mark-{{item.status}}">
+                <view wx:if="{{item.status === 'processing'}}" class="status-spinner"></view>
+                <text wx:else class="status-glyph">{{item.statusGlyph}}</text>
+              </view>
+              <view class="status-copy">
+                <text class="status-title">{{item.statusLabel}}</text>
+                <text class="status-summary">{{item.statusSummary}}</text>
+              </view>
+            </view>
 
-      <view wx:if="{{item.error_message}}" class="record-error">
-        <text class="error-text">{{item.error_message}}</text>
-      </view>
+            <text class="record-format format-{{item.file_format}}">{{item.formatText}}</text>
+          </view>
 
-      <!-- Actions by status -->
-      <view class="record-actions">
-        <!-- Pending / Processing: only show status -->
-        <block wx:if="{{item.status === 'pending' || item.status === 'processing'}}">
-          <text class="action-hint">正在生成中…</text>
-        </block>
+          <view class="record-file-block">
+            <text class="record-filename">{{item.displayFileName}}</text>
+            <text class="record-date">导出于 {{item.dateText}}</text>
+          </view>
 
-        <!-- Completed: preview, save, share, delete, re-export -->
-        <block wx:elif="{{item.status === 'completed'}}">
-          <button class="action-btn" data-id="{{item.id}}" bindtap="onPreview">预览</button>
-          <button class="action-btn" data-id="{{item.id}}" bindtap="onSave">保存</button>
-          <button class="action-btn" data-id="{{item.id}}" bindtap="onShare">分享</button>
-          <button class="action-btn danger" data-id="{{item.id}}" bindtap="onDelete">删除</button>
-          <button class="action-btn" data-id="{{item.id}}" bindtap="onReExport">重新导出</button>
-        </block>
+          <view class="record-facts">
+            <view class="fact-item">
+              <text class="fact-label">题目</text>
+              <text class="fact-value">{{item.questionCountText}}</text>
+            </view>
+            <view wx:if="{{item.fileSizeText}}" class="fact-divider"></view>
+            <view wx:if="{{item.fileSizeText}}" class="fact-item">
+              <text class="fact-label">大小</text>
+              <text class="fact-value">{{item.fileSizeText}}</text>
+            </view>
+            <view wx:if="{{item.resultText}}" class="fact-divider"></view>
+            <view wx:if="{{item.resultText}}" class="fact-item fact-item-wide">
+              <text class="fact-label">结果</text>
+              <text class="fact-value {{item.skip_count > 0 ? 'fact-value-warning' : ''}}">{{item.resultText}}</text>
+            </view>
+          </view>
 
-        <!-- Failed: retry, delete -->
-        <block wx:elif="{{item.status === 'failed'}}">
-          <button class="action-btn primary" data-id="{{item.id}}" bindtap="onRetry">重试</button>
-          <button class="action-btn danger" data-id="{{item.id}}" bindtap="onDelete">删除</button>
-        </block>
+          <view
+            wx:if="{{item.expiresText}}"
+            class="expiry-row {{item.expiresSoon ? 'expiry-row-soon' : ''}} {{item.status === 'expired' ? 'expiry-row-expired' : ''}}"
+          >
+            <view class="expiry-clock">
+              <view class="expiry-clock-hand"></view>
+            </view>
+            <view class="expiry-copy">
+              <text class="expiry-text">{{item.expiresText}}</text>
+              <text class="expiry-relative">{{item.expiresRelativeText}}</text>
+            </view>
+          </view>
 
-        <!-- Expired: re-export, delete -->
-        <block wx:elif="{{item.status === 'expired'}}">
-          <button class="action-btn" data-id="{{item.id}}" bindtap="onReExport">重新导出</button>
-          <button class="action-btn danger" data-id="{{item.id}}" bindtap="onDelete">删除</button>
-        </block>
-      </view>
-    </view>
+          <view wx:if="{{item.error_message}}" class="message-panel message-panel-error">
+            <view class="message-icon">!</view>
+            <text class="message-text">{{item.error_message}}</text>
+          </view>
 
-    <view wx:if="{{loading}}" class="loading-more">
-      <text>加载中…</text>
-    </view>
-    <view wx:elif="{{!hasMore && list.length > 0}}" class="no-more">
-      <text>没有更多了</text>
+          <view wx:if="{{item._warning}}" class="message-panel message-panel-warning">
+            <view class="message-icon">!</view>
+            <text class="message-text">{{item._warning}}</text>
+          </view>
+
+          <view wx:if="{{item.status === 'pending' || item.status === 'processing'}}" class="progress-panel">
+            <view class="progress-track">
+              <view class="progress-bar progress-bar-{{item.status}}"></view>
+            </view>
+            <text class="progress-caption">
+              {{item.status === 'pending' ? '正在等待处理，状态会自动更新' : '正在排版并生成文件，完成后状态会自动更新'}}
+            </text>
+          </view>
+
+          <!-- Actions by status -->
+          <view class="record-actions">
+            <!-- Pending / Processing -->
+            <block wx:if="{{item.status === 'pending' || item.status === 'processing'}}">
+              <button
+                class="action-btn action-btn-subtle action-btn-danger-text action-btn-full"
+                hover-class="button-pressed"
+                data-id="{{item.id}}"
+                bindtap="onDelete"
+              >删除任务</button>
+            </block>
+
+            <!-- Completed -->
+            <block wx:elif="{{item.status === 'completed'}}">
+              <view class="completed-actions">
+                <button
+                  class="action-btn action-btn-primary"
+                  hover-class="button-pressed"
+                  data-id="{{item.id}}"
+                  bindtap="onPreview"
+                >预览</button>
+                <button
+                  class="action-btn action-btn-secondary"
+                  hover-class="button-pressed"
+                  data-id="{{item.id}}"
+                  bindtap="onSave"
+                >保存</button>
+                <button
+                  class="action-btn action-btn-secondary"
+                  hover-class="button-pressed"
+                  open-type="share"
+                  data-id="{{item.id}}"
+                >分享</button>
+              </view>
+
+              <button
+                class="more-toggle"
+                hover-class="more-toggle-pressed"
+                data-id="{{item.id}}"
+                bindtap="onToggleMore"
+              >
+                <text>其他操作</text>
+                <view class="more-chevron {{expandedActionId === item.id ? 'more-chevron-open' : ''}}"></view>
+              </button>
+
+              <view wx:if="{{expandedActionId === item.id}}" class="secondary-actions">
+                <button
+                  class="secondary-action"
+                  hover-class="secondary-action-pressed"
+                  data-id="{{item.id}}"
+                  bindtap="onReExport"
+                >重新导出</button>
+                <view class="secondary-divider"></view>
+                <button
+                  class="secondary-action secondary-action-danger"
+                  hover-class="secondary-action-pressed"
+                  data-id="{{item.id}}"
+                  bindtap="onDelete"
+                >删除记录</button>
+              </view>
+            </block>
+
+            <!-- Failed -->
+            <block wx:elif="{{item.status === 'failed'}}">
+              <view class="two-actions">
+                <button
+                  class="action-btn action-btn-primary"
+                  hover-class="button-pressed"
+                  data-id="{{item.id}}"
+                  bindtap="onRetry"
+                >重试导出</button>
+                <button
+                  class="action-btn action-btn-subtle action-btn-danger-text"
+                  hover-class="button-pressed"
+                  data-id="{{item.id}}"
+                  bindtap="onDelete"
+                >删除记录</button>
+              </view>
+            </block>
+
+            <!-- Expired -->
+            <block wx:elif="{{item.status === 'expired'}}">
+              <view class="two-actions">
+                <button
+                  class="action-btn action-btn-primary"
+                  hover-class="button-pressed"
+                  data-id="{{item.id}}"
+                  bindtap="onReExport"
+                >重新导出</button>
+                <button
+                  class="action-btn action-btn-subtle action-btn-danger-text"
+                  hover-class="button-pressed"
+                  data-id="{{item.id}}"
+                  bindtap="onDelete"
+                >删除记录</button>
+              </view>
+            </block>
+          </view>
+        </view>
+
+        <view wx:if="{{loading}}" class="loading-more">
+          <view class="loading-spinner"></view>
+          <text>正在加载更多</text>
+        </view>
+        <view wx:elif="{{!hasMore}}" class="no-more">
+          <view class="no-more-line"></view>
+          <text>已经到底了</text>
+          <view class="no-more-line"></view>
+        </view>
+      </block>
+
+      <view class="safe-bottom-space"></view>
     </view>
   </scroll-view>
 </view>

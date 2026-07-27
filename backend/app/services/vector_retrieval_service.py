@@ -17,6 +17,7 @@ from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.services import embedding_service
 from app.services.admin_subject_service import resolve_subject_ids
+from app.services.vector_config_service import EmbeddingConfig, VectorSearchConfig
 
 logger = logging.getLogger("postgraduate-ai.vector_retrieval")
 
@@ -34,7 +35,11 @@ _VECTOR_CACHE_TTL = 60  # 秒
 
 
 class _VectorSettings:
-    """从 DB 缓存或环境变量获取向量相关配置。"""
+    """从 DB 缓存或环境变量获取向量相关配置。
+
+    注意：解密后的 API Key 不进入模块级缓存，每次调用时再解析。
+    只有非敏感配置（VectorSearchConfig）被缓存。
+    """
 
     _cached: Any = None
     _cached_at: float = 0
@@ -50,28 +55,11 @@ class _VectorSettings:
             return
         try:
             from app.services.vector_config_service import (
-                EmbeddingConfig,
-                VectorSearchConfig,
                 _seed_if_empty,
-                decrypt_api_key,
             )
             row = await _seed_if_empty(db)
 
-            api_key = ""
-            if row.embedding_api_key_encrypted:
-                api_key = decrypt_api_key(row.embedding_api_key_encrypted)
-            if not api_key and settings.EMBEDDING_API_KEY:
-                api_key = settings.EMBEDDING_API_KEY
-
-            emb = EmbeddingConfig(
-                api_key=api_key,
-                base_url=row.embedding_base_url or settings.EMBEDDING_BASE_URL,
-                model=row.embedding_model or settings.EMBEDDING_MODEL,
-                dim=row.embedding_dim or settings.EMBEDDING_DIM,
-                timeout=row.embedding_timeout or settings.EMBEDDING_TIMEOUT,
-                batch_size=row.embedding_batch_size or settings.EMBEDDING_BATCH_SIZE,
-                provider=row.embedding_provider or settings.EMBEDDING_PROVIDER,
-            )
+            # 只缓存非敏感配置 (vec)，不缓存包含解密后 api_key 的 EmbeddingConfig
             vec = VectorSearchConfig(
                 enabled=row.vector_enabled,
                 mode=row.vector_mode,
@@ -80,15 +68,66 @@ class _VectorSettings:
                 top_k=row.vector_top_k,
                 similarity_threshold=row.vector_similarity_threshold,
             )
-            self._cached = {"emb": emb, "vec": vec}
+
+            # embedding 配置只保存非敏感字段，api_key 在需要时通过 _resolve_embedding_api_key 获取
+            self._cached = {
+                "vec": vec,
+                "_embedding_base_url": row.embedding_base_url or settings.EMBEDDING_BASE_URL,
+                "_embedding_model": row.embedding_model or settings.EMBEDDING_MODEL,
+                "_embedding_dim": row.embedding_dim or settings.EMBEDDING_DIM,
+                "_embedding_timeout": row.embedding_timeout or settings.EMBEDDING_TIMEOUT,
+                "_embedding_batch_size": row.embedding_batch_size or settings.EMBEDDING_BATCH_SIZE,
+                "_embedding_provider": row.embedding_provider or settings.EMBEDDING_PROVIDER,
+                "_embedding_api_key_encrypted": row.embedding_api_key_encrypted,
+            }
             self._cached_at = now
         except BaseException:
             logger.debug("DB 向量配置读取失败，使用环境变量", exc_info=True)
 
+    def _resolve_embedding_api_key(self) -> str:
+        """解析 Embedding API Key（每次调用时解密，不缓存明文）。"""
+        if self._cached and "_embedding_api_key_encrypted" in self._cached:
+            encrypted = self._cached["_embedding_api_key_encrypted"]
+            if encrypted:
+                from app.core.secret_crypto import (
+                    SecretDecryptionError,
+                    SecretEncryptionError,
+                    decrypt_secret,
+                )
+                try:
+                    return decrypt_secret(encrypted)
+                except (SecretDecryptionError, SecretEncryptionError):
+                    pass
+        if settings.EMBEDDING_API_KEY:
+            return settings.EMBEDDING_API_KEY
+        return ""
+
+    def _build_embedding_config(self) -> EmbeddingConfig:
+        """在不访问 DB 的情况下构造 EmbeddingConfig（key 从缓存密文解析）。"""
+        if self._cached:
+            return EmbeddingConfig(
+                api_key=self._resolve_embedding_api_key(),
+                base_url=self._cached.get("_embedding_base_url", settings.EMBEDDING_BASE_URL),
+                model=self._cached.get("_embedding_model", settings.EMBEDDING_MODEL),
+                dim=self._cached.get("_embedding_dim", settings.EMBEDDING_DIM),
+                timeout=self._cached.get("_embedding_timeout", settings.EMBEDDING_TIMEOUT),
+                batch_size=self._cached.get("_embedding_batch_size", settings.EMBEDDING_BATCH_SIZE),
+                provider=self._cached.get("_embedding_provider", settings.EMBEDDING_PROVIDER),
+            )
+        return EmbeddingConfig(
+            api_key=settings.EMBEDDING_API_KEY,
+            base_url=settings.EMBEDDING_BASE_URL,
+            model=settings.EMBEDDING_MODEL,
+            dim=settings.EMBEDDING_DIM,
+            timeout=settings.EMBEDDING_TIMEOUT,
+            batch_size=settings.EMBEDDING_BATCH_SIZE,
+            provider=settings.EMBEDDING_PROVIDER,
+        )
+
     @property
     def emb(self):
-        if self._cached and "emb" in self._cached:
-            return self._cached["emb"]
+        if self._cached:
+            return self._build_embedding_config()
         # Fallback: use local settings (patchable in tests)
         from app.services.vector_config_service import EmbeddingConfig
         return EmbeddingConfig(

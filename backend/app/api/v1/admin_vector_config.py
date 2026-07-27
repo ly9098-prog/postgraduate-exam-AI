@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_roles
 from app.core.database import get_db
+from app.core.secret_crypto import SecretDecryptionError, SecretEncryptionError
 from app.schemas.admin_vector_config import (
     EmbeddingTestRequest,
     EmbeddingTestResponse,
@@ -49,6 +50,18 @@ async def update_vector_config(
     except ValueError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except SecretEncryptionError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="加密配置不可用，无法保存 API Key。请联系管理员检查 AI_CONFIG_ENCRYPT_KEY 配置。",
+        )
+    except SecretDecryptionError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="数据库中的凭据无法解密，请检查加密配置或重新保存凭据。",
+        )
     except Exception:
         await db.rollback()
         raise
@@ -61,7 +74,7 @@ async def test_embedding(
     db: AsyncSession = Depends(get_db),
 ):
     """对给定 Embedding 配置发起一次最小连通性测试，不保存任何状态。"""
-    api_key = data.api_key
+    api_key = data.get_api_key_value()
     # 前端未传 key 时（用户刷新页面后未重新输入），从 DB 读取已存储的 key
     if not api_key:
         stored = await resolve_embedding_config(db)

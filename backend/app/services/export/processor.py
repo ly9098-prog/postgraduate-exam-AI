@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -63,6 +64,8 @@ _DOCX_CONCURRENCY = getattr(settings, "EXPORT_DOCX_CONCURRENCY", 1)
 # In-flight tracking for graceful shutdown
 _in_flight: set[int] = set()
 _draining = False
+_processor_started_at: float | None = None
+_processor_heartbeat_at: float | None = None
 
 # Semaphores for real concurrency control
 _concurrency_semaphore: asyncio.Semaphore | None = None
@@ -129,6 +132,11 @@ async def run_export_processor():
         _POLL_INTERVAL_SEC, _TASK_TIMEOUT_SEC, _MAX_CONCURRENT,
         _PDF_CONCURRENCY, _DOCX_CONCURRENCY,
     )
+    logger.info("export_processor_started role=%s", getattr(settings, "PROCESS_ROLE", "unknown"))
+
+    global _processor_started_at, _processor_heartbeat_at
+    _processor_started_at = time.time()
+    _processor_heartbeat_at = _processor_started_at
 
     while not _draining:
         try:
@@ -143,7 +151,10 @@ async def run_export_processor():
         except Exception as e:
             logger.warning("Export processor error (non-fatal): %s", e)
 
+        _processor_heartbeat_at = time.time()
         await asyncio.sleep(_POLL_INTERVAL_SEC)
+
+    logger.info("export_processor_stopped role=%s", getattr(settings, "PROCESS_ROLE", "unknown"))
 
     # Drain: wait for in_flight tasks to complete
     if _in_flight:
@@ -185,6 +196,10 @@ async def _recover_stale_tasks():
 
         if stale:
             await db.commit()
+            # Publish events for reclaimed stale tasks
+            for task in stale:
+                await db.refresh(task)
+                await _publish_task_event(task.id, task)
             logger.info("Reclaimed %d stale tasks", len(stale))
 
 
@@ -455,16 +470,38 @@ async def stop_processor():
     logger.info("Export processor drain requested (in_flight=%d)", len(_in_flight))
 
 
-async def _publish_task_event(task_id: int, task: ExportTask) -> None:
-    """Publish a task status event via WebSocket push (local connections only).
+def get_processor_health() -> dict:
+    """Return processor health info for the export health endpoint.
 
-    The per-instance Redis subscriber handles cross-process delivery.
-    We only send to local connections here to avoid duplicate delivery
-    (the Redis subscriber would re-send the same event).
+    Returns empty dict if processor was never started (web-only role).
+    """
+    if _processor_started_at is None:
+        return {}
+    return {
+        "running": not _draining,
+        "started_at": _processor_started_at,
+        "last_heartbeat_at": _processor_heartbeat_at,
+        "in_flight": len(_in_flight),
+        "draining": _draining,
+    }
+
+
+async def _publish_task_event(task_id: int, task: ExportTask) -> None:
+    """Publish a task status event — Redis cross-process then local delivery.
+
+    Architecture:
+    1. If Redis is available: publish via Redis Pub/Sub. The per-instance
+       Redis subscriber on each process (including this one) forwards the
+       event to local WebSocket connections. This avoids duplicate delivery.
+    2. If Redis is unavailable: fall back to direct ``send_to_user()`` which
+       only reaches connections on the current process. In this mode,
+       scheduler-process events will NOT reach web-process WebSockets,
+       so only ``PROCESS_ROLE=all`` (or same-process) works fully.
     """
     try:
         from app.services.export.push_service import (
             build_status_event,
+            publish_via_redis,
             send_to_user,
         )
 
@@ -481,6 +518,25 @@ async def _publish_task_event(task_id: int, task: ExportTask) -> None:
             "updated_at": task.updated_at,
             "version": getattr(task, "version", task.updated_at.timestamp() if task.updated_at else 0),
         })
-        await send_to_user(task.user_id, event)
+
+        # Try Redis first for cross-process delivery
+        redis_published = False
+        try:
+            from app.core.cache import cache
+            if cache.is_enabled:
+                await publish_via_redis(event, task.user_id)
+                redis_published = True
+        except Exception:
+            pass
+
+        # Fallback: local delivery only (same-process WebSockets)
+        if not redis_published:
+            await send_to_user(task.user_id, event)
+
+        logger.info(
+            "export_status_published task_id=%d user_id=%d status=%s transport=%s",
+            task_id, task.user_id, task.status,
+            "redis" if redis_published else "local",
+        )
     except Exception:
         logger.debug("Failed to publish event for task %d (non-fatal)", task_id)

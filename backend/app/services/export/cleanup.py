@@ -99,6 +99,14 @@ async def cleanup_expired(
 
     if stats["tasks_expired"] > 0:
         await db.commit()
+        # Publish expired events for frontend sync
+        for task in tasks:
+            if task.status == ExportTaskStatus.EXPIRED:
+                try:
+                    await db.refresh(task)
+                    await _publish_expired_event(task)
+                except Exception:
+                    logger.debug("Failed to publish expired event for task %d", task.id)
         logger.info("export_cleanup_completed", extra={
             "tasks_expired": stats["tasks_expired"],
             "files_deleted": stats["files_deleted"],
@@ -107,3 +115,12 @@ async def cleanup_expired(
         })
 
     return stats
+
+
+async def _publish_expired_event(task: ExportTask) -> None:
+    """Publish an expired status event — same pattern as processor._publish_task_event."""
+    try:
+        from app.services.export.processor import _publish_task_event
+        await _publish_task_event(task.id, task)
+    except Exception:
+        logger.debug("Failed to publish expired event for task %d", task.id)

@@ -76,7 +76,7 @@ class TestAICapabilityModelSeparation:
         ]
 
         with patch(
-            "app.services.model_config_resolver.decrypt_api_key",
+            "app.services.model_config_resolver.decrypt_secret",
             side_effect=["ocr-fix-secret", "ai-repair-secret"],
         ):
             resolver = AIModelConfigResolver(mock_db)
@@ -142,7 +142,7 @@ class TestAICapabilityModelSeparation:
         resolver = AIModelConfigResolver(mock_db)
 
         with patch(
-            "app.services.model_config_resolver.decrypt_api_key",
+            "app.services.model_config_resolver.decrypt_secret",
             side_effect=["ocr-fix-secret-value", "ai-repair-secret-value"],
         ):
             ocr_fix_config = await resolver.resolve_for_capability(AICapability.OCR_FIX)
@@ -182,7 +182,7 @@ class TestAICapabilityModelSeparation:
         )
 
         with patch(
-            "app.services.model_config_resolver.decrypt_api_key",
+            "app.services.model_config_resolver.decrypt_secret",
             return_value="same-secret",
         ):
             resolver = AIModelConfigResolver(mock_db)

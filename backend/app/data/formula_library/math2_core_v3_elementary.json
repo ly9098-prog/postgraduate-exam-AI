@@ -1,0 +1,479 @@
+{
+  "subjects": [
+    {
+      "code": "elementary_math",
+      "name": "初等数学",
+      "node_type": "subject",
+      "chapters": [
+        {
+          "code": "elementary_algebra",
+          "name": "初等代数",
+          "groups": [
+            {
+              "code": "elem_algebra_formulas",
+              "name": "代数基础公式",
+              "cards": [
+                {
+                  "title": "乘法公式与因式分解",
+                  "aliases": ["乘法公式", "因式分解公式"],
+                  "search_text": "乘法公式 因式分解 完全平方 平方差 立方和 立方差 完全立方 二项式 n次方差",
+                  "card_type": "pure_formula",
+                  "tags": ["basic"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:factorization",
+                  "source_title": "27张宇数学公式手册·附录初等数学·初等代数·乘法公式与因式分解",
+                  "summary": "常用的乘法公式和因式分解公式，包括完全平方、平方差、完全立方、立方和差及n次方差公式。",
+                  "formula_blocks": [
+                    {"label": "完全平方公式", "latex": "(a \\pm b)^2 = a^2 \\pm 2ab + b^2"},
+                    {"label": "三数和平方", "latex": "(a + b + c)^2 = a^2 + b^2 + c^2 + 2ab + 2ac + 2bc"},
+                    {"label": "平方差公式", "latex": "a^2 - b^2 = (a - b)(a + b)"},
+                    {"label": "完全立方公式", "latex": "(a \\pm b)^3 = a^3 \\pm 3a^2 b + 3ab^2 \\pm b^3"},
+                    {"label": "立方和差公式", "latex": "a^3 \\pm b^3 = (a \\pm b)(a^2 \\mp ab + b^2)"},
+                    {"label": "n次方差公式", "latex": "a^n - b^n = (a - b)(a^{n-1} + a^{n-2}b + a^{n-3}b^2 + \\cdots + ab^{n-2} + b^{n-1})\\ (n \\in \\mathbb{N}^+)"}
+                  ]
+                },
+                {
+                  "title": "一元二次方程",
+                  "aliases": ["二次方程求根公式", "韦达定理"],
+                  "search_text": "一元二次方程 求根公式 韦达定理 二次方程根与系数",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:quadratic_equation",
+                  "source_title": "27张宇数学公式手册·附录初等数学·初等代数·一元二次方程",
+                  "summary": "一元二次方程的求根公式和韦达定理（根与系数的关系），是求解二次方程的基础工具。",
+                  "formula_blocks": [
+                    {"label": "标准形式", "latex": "ax^2 + bx + c = 0\\ (a \\neq 0)"},
+                    {"label": "求根公式", "latex": "x_{1,2} = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"},
+                    {"label": "韦达定理（两根和）", "latex": "x_1 + x_2 = -\\frac{b}{a}"},
+                    {"label": "韦达定理（两根积）", "latex": "x_1 x_2 = \\frac{c}{a}"}
+                  ],
+                  "conditions": "Δ=b²-4ac≥0时有实根；Δ<0时有共轭复根。",
+                  "secondary_conclusions": "两根之差的绝对值|x₁-x₂|=(√(b²-4ac))/|a|；以x₁,x₂为根的二次方程为x²-(x₁+x₂)x+x₁x₂=0。"
+                },
+                {
+                  "title": "常用不等式",
+                  "aliases": ["基本不等式", "均值不等式", "柯西不等式", "绝对值不等式"],
+                  "search_text": "基本不等式 均值不等式 AM-GM 柯西不等式 绝对值三角不等式 均值不等式推广",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "high_frequency", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:inequalities",
+                  "source_title": "27张宇数学公式手册·附录初等数学·初等代数·不等式",
+                  "summary": "常用代数不等式，包括均值不等式、柯西不等式、绝对值三角不等式及其推广形式。",
+                  "formula_blocks": [
+                    {"label": "基本平方不等式", "latex": "a^2 + b^2 \\geq 2ab"},
+                    {"label": "均值不等式（二元）", "latex": "\\frac{a+b}{2} \\geq \\sqrt{ab}\\ (a,b \\in \\mathbb{R}^+)"},
+                    {"label": "立方均值不等式", "latex": "a^3 + b^3 + c^3 \\geq 3abc\\ (a>0,b>0,c>0)"},
+                    {"label": "柯西不等式", "latex": "(a^2+b^2)(c^2+d^2) \\geq (ac+bd)^2"},
+                    {"label": "绝对值三角不等式", "latex": "|a|-|b| \\leq |a+b| \\leq |a|+|b|"},
+                    {"label": "一般均值不等式", "latex": "\\frac{a_1+a_2+\\cdots+a_n}{n} \\geq \\sqrt[n]{a_1 a_2 \\cdots a_n}\\ (a_i>0)"}
+                  ],
+                  "conditions": "均值不等式要求所有数为正；柯西不等式适用于任意实数。",
+                  "error_tips": "均值不等式等号成立条件为各数相等；柯西不等式等号成立条件为对应分量成比例。"
+                },
+                {
+                  "title": "指数运算法则",
+                  "aliases": ["指数公式", "幂运算法则"],
+                  "search_text": "指数 幂 指数法则 同底数幂 乘方 负指数 零指数",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:exponent_rules",
+                  "source_title": "27张宇数学公式手册·附录初等数学·初等代数·指数",
+                  "summary": "指数运算的基本法则，包括同底数幂的乘除、幂的乘方、积的乘方、负指数和零指数。",
+                  "formula_blocks": [
+                    {"label": "同底数幂乘法", "latex": "a^m \\cdot a^n = a^{m+n}"},
+                    {"label": "同底数幂除法", "latex": "a^m \\div a^n = a^{m-n}"},
+                    {"label": "幂的乘方", "latex": "(a^m)^n = a^{mn}"},
+                    {"label": "积的乘方", "latex": "(ab)^m = a^m b^m"},
+                    {"label": "商的乘方", "latex": "\\left(\\frac{a}{b}\\right)^m = \\frac{a^m}{b^m}"},
+                    {"label": "负指数", "latex": "a^{-m} = \\frac{1}{a^m}\\ (a \\neq 0)"},
+                    {"label": "零指数", "latex": "a^0 = 1\\ (a>0)"}
+                  ],
+                  "conditions": "底数a>0且a≠1（零指数要求）。",
+                  "error_tips": "a⁰=1要求a≠0；负指数表示倒数而非负数。"
+                },
+                {
+                  "title": "对数运算法则",
+                  "aliases": ["对数公式", "对数性质", "换底公式"],
+                  "search_text": "对数 log 对数运算法则 换底公式 积的对数 商的对数 幂的对数",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:logarithm_rules",
+                  "source_title": "27张宇数学公式手册·附录初等数学·初等代数·对数",
+                  "summary": "对数运算的基本法则和换底公式，在考研数学中广泛应用于化简和计算。",
+                  "formula_blocks": [
+                    {"label": "对数定义", "latex": "N = a^{\\log_a N}\\ (a>0,a\\neq1)"},
+                    {"label": "积的对数", "latex": "\\log_a(MN) = \\log_a M + \\log_a N"},
+                    {"label": "商的对数", "latex": "\\log_a\\left(\\frac{M}{N}\\right) = \\log_a M - \\log_a N"},
+                    {"label": "幂的对数", "latex": "\\log_a(M^n) = n\\log_a M"},
+                    {"label": "根式的对数", "latex": "\\log_a \\sqrt[n]{M} = \\frac{1}{n}\\log_a M"},
+                    {"label": "换底公式", "latex": "\\log_a M = \\frac{\\log_b M}{\\log_b a}"},
+                    {"label": "特殊值", "latex": "\\log_a 1 = 0,\\ \\log_a a = 1"}
+                  ],
+                  "conditions": "真数>0，底数a>0且a≠1。",
+                  "error_tips": "换底公式可以简化不同底数的对数运算；对数的真数必须为正。"
+                },
+                {
+                  "title": "等差数列与等比数列",
+                  "aliases": ["等差公式", "等比公式", "数列通项", "数列求和"],
+                  "search_text": "等差数列 等比数列 通项公式 前n项和 等差 等比 数列",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "high_frequency", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:sequences",
+                  "source_title": "27张宇数学公式手册·附录初等数学·初等代数·数列",
+                  "summary": "等差数列和等比数列的通项公式与前n项和公式，是考研数学中数列计算的基础工具。",
+                  "formula_blocks": [
+                    {"label": "等差数列通项", "latex": "a_n = a_1 + (n-1)d"},
+                    {"label": "等差数列前n项和", "latex": "S_n = \\frac{n}{2}(a_1 + a_n) = na_1 + \\frac{n(n-1)}{2}d"},
+                    {"label": "等比数列通项", "latex": "a_n = a_1 q^{n-1}"},
+                    {"label": "等比数列前n项和", "latex": "S_n = \\begin{cases} na_1, & q=1 \\\\ \\dfrac{a_1(1-q^n)}{1-q} = \\dfrac{a_1-a_n q}{1-q}, & q\\neq 1 \\end{cases}"}
+                  ],
+                  "conditions": "等差数列中d为公差；等比数列中q为公比且q≠1时用分式求和公式。"
+                },
+                {
+                  "title": "常用数列前n项和",
+                  "aliases": ["平方和公式", "奇数和", "自然数和"],
+                  "search_text": "自然数和 奇数和 平方和 立方和 前n个自然数平方和",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "high_frequency"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:summation_formulas",
+                  "source_title": "27张宇数学公式手册·附录初等数学·初等代数·常用数列前n项的和",
+                  "summary": "常见数列的前n项和公式，在极限计算和级数运算中频繁使用。",
+                  "formula_blocks": [
+                    {"label": "自然数和", "latex": "1 + 2 + \\cdots + n = \\frac{n(n+1)}{2}"},
+                    {"label": "奇数和", "latex": "1 + 3 + 5 + \\cdots + (2n-1) = n^2"},
+                    {"label": "平方和", "latex": "1^2 + 2^2 + \\cdots + n^2 = \\frac{n(n+1)(2n+1)}{6}"}
+                  ],
+                  "secondary_conclusions": "1³+2³+⋯+n³=[n(n+1)/2]²（自然数和之平方）。"
+                },
+                {
+                  "title": "排列、组合与二项式定理",
+                  "aliases": ["排列数", "组合数", "二项式展开", "二项式定理"],
+                  "search_text": "排列 组合 排列数 组合数 阶乘 二项式定理 二项展开式 Pascal",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "high_frequency", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:combinatorics",
+                  "source_title": "27张宇数学公式手册·附录初等数学·初等代数·排列组合与二项式公式",
+                  "summary": "排列数、组合数的定义和计算公式，以及二项式展开定理。",
+                  "formula_blocks": [
+                    {"label": "排列数（不可重复）", "latex": "A_n^k = n(n-1)\\cdots(n-k+1)"},
+                    {"label": "可重复排列", "latex": "n^k"},
+                    {"label": "全排列（阶乘）", "latex": "n! = n(n-1)\\cdots 3\\cdot 2\\cdot 1"},
+                    {"label": "组合数", "latex": "C_n^k = \\frac{A_n^k}{k!} = \\frac{n!}{(n-k)!k!}"},
+                    {"label": "二项式定理", "latex": "(a+b)^n = \\sum_{k=0}^n C_n^k a^{n-k} b^k,\\ n \\in \\mathbb{N}"}
+                  ],
+                  "conditions": "n,k为正整数且k≤n。",
+                  "secondary_conclusions": "C_n^k = C_n^{n-k}；C_n^0 + C_n^1 + ⋯ + C_n^n = 2^n。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "elementary_geometry",
+          "name": "初等几何",
+          "groups": [
+            {
+              "code": "elem_geometry_area",
+              "name": "面积与体积",
+              "cards": [
+                {
+                  "title": "三角形面积公式",
+                  "aliases": ["海伦公式", "正弦面积公式"],
+                  "search_text": "三角形面积 海伦公式 正弦面积公式 半周长",
+                  "card_type": "pure_formula",
+                  "tags": ["basic"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:triangle_area",
+                  "source_title": "27张宇数学公式手册·附录初等数学·初等几何·三角形的面积",
+                  "summary": "三角形面积的常用计算公式，包括正弦面积公式和海伦公式。",
+                  "formula_blocks": [
+                    {"label": "正弦面积公式", "latex": "S = \\frac{1}{2}ab\\sin C"},
+                    {"label": "海伦公式", "latex": "S = \\sqrt{s(s-a)(s-b)(s-c)}"},
+                    {"label": "半周长", "latex": "s = \\frac{1}{2}(a+b+c)"}
+                  ],
+                  "conditions": "a,b,c为三边长，C为a,b夹角。",
+                  "secondary_conclusions": "C=π/2时为正弦公式退化为S=ab/2（直角三角形面积公式）。"
+                },
+                {
+                  "title": "梯形面积与圆的计算",
+                  "aliases": ["梯形面积", "圆周长", "圆弧长", "扇形面积"],
+                  "search_text": "梯形面积 圆周长 圆弧长 扇形面积 圆",
+                  "card_type": "pure_formula",
+                  "tags": ["basic"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:trapezoid_circle",
+                  "source_title": "27张宇数学公式手册·附录初等数学·初等几何·梯形与圆",
+                  "summary": "梯形的面积公式、圆的周长弧长及扇形面积公式。",
+                  "formula_blocks": [
+                    {"label": "梯形面积", "latex": "S = \\frac{1}{2}(a+b)h"},
+                    {"label": "圆周长", "latex": "l = 2\\pi r"},
+                    {"label": "圆弧长", "latex": "l = r\\theta"},
+                    {"label": "扇形面积", "latex": "S = \\frac{1}{2}r^2\\theta"}
+                  ],
+                  "conditions": "梯形：a,b为上下底，h为高。圆和扇形：θ为弧度制圆心角，r为半径。"
+                },
+                {
+                  "title": "旋转体体积与表面积",
+                  "aliases": ["圆柱", "圆锥", "圆台", "球体", "旋转体公式"],
+                  "search_text": "旋转体 圆柱 圆锥 圆台 球 体积 侧面积 表面积",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:revolution_solids",
+                  "source_title": "27张宇数学公式手册·附录初等数学·初等几何·旋转体",
+                  "summary": "常见旋转体（圆柱、圆锥、圆台、球）的体积、侧面积和全面积公式。",
+                  "formula_blocks": [
+                    {"label": "圆柱（底面半径r，高h）", "latex": "V = \\pi r^2 h,\\ S_{\\text{侧}} = 2\\pi rh,\\ S_{\\text{全}} = 2\\pi r(r+h)"},
+                    {"label": "圆锥（底面半径r，高h）", "latex": "V = \\frac{1}{3}\\pi r^2 h,\\ S_{\\text{侧}} = \\pi rl,\\ S_{\\text{全}} = \\pi r(l+r)"},
+                    {"label": "圆锥母线", "latex": "l = \\sqrt{r^2+h^2}"},
+                    {"label": "圆台（上底r₁，下底r₂，高h）", "latex": "V = \\frac{1}{3}\\pi h(r_1^2+r_2^2+r_1r_2),\\ S_{\\text{侧}} = \\pi(r_1+r_2)l"},
+                    {"label": "圆台母线", "latex": "l = \\sqrt{h^2+(r_2-r_1)^2}"},
+                    {"label": "球（半径r）", "latex": "V = \\frac{4}{3}\\pi r^3,\\ S_{\\text{全}} = 4\\pi r^2"}
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "elementary_trigonometry",
+          "name": "三角函数",
+          "groups": [
+            {
+              "code": "elem_trig_basic",
+              "name": "三角恒等式",
+              "cards": [
+                {
+                  "title": "和差角公式",
+                  "aliases": ["两角和差公式", "和角公式", "差角公式"],
+                  "search_text": "和差角公式 两角和 两角差 sin cos tan 和角公式 差角公式",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "high_frequency", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:sum_diff_angles",
+                  "source_title": "27张宇数学公式手册·附录初等数学·三角函数·和差角公式",
+                  "summary": "三角函数的两角和与两角差公式，是三角函数恒等变换的基础。",
+                  "formula_blocks": [
+                    {"label": "正弦和差角", "latex": "\\sin(\\alpha \\pm \\beta) = \\sin\\alpha\\cos\\beta \\pm \\cos\\alpha\\sin\\beta"},
+                    {"label": "余弦和差角", "latex": "\\cos(\\alpha \\pm \\beta) = \\cos\\alpha\\cos\\beta \\mp \\sin\\alpha\\sin\\beta"},
+                    {"label": "正切和差角", "latex": "\\tan(\\alpha \\pm \\beta) = \\frac{\\tan\\alpha \\pm \\tan\\beta}{1 \\mp \\tan\\alpha\\tan\\beta}"},
+                    {"label": "余切和差角", "latex": "\\cot(\\alpha \\pm \\beta) = \\frac{\\cot\\alpha\\cot\\beta \\mp 1}{\\cot\\beta \\pm \\cot\\alpha}"}
+                  ],
+                  "error_tips": "正切和差角公式分母不为零；余切公式不要与正切混淆。"
+                },
+                {
+                  "title": "和差化积公式",
+                  "aliases": ["和差化积"],
+                  "search_text": "和差化积 三角恒等式 sin+sin cos+cos sin-cos",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "high_frequency", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:sum_to_product",
+                  "source_title": "27张宇数学公式手册·附录初等数学·三角函数·和差化积公式",
+                  "summary": "将三角函数的和差形式转化为乘积形式的恒等式，常用于证明恒等式和积分化简。",
+                  "formula_blocks": [
+                    {"label": "正弦和", "latex": "\\sin\\alpha + \\sin\\beta = 2\\sin\\frac{\\alpha+\\beta}{2}\\cos\\frac{\\alpha-\\beta}{2}"},
+                    {"label": "正弦差", "latex": "\\sin\\alpha - \\sin\\beta = 2\\cos\\frac{\\alpha+\\beta}{2}\\sin\\frac{\\alpha-\\beta}{2}"},
+                    {"label": "余弦和", "latex": "\\cos\\alpha + \\cos\\beta = 2\\cos\\frac{\\alpha+\\beta}{2}\\cos\\frac{\\alpha-\\beta}{2}"},
+                    {"label": "余弦差", "latex": "\\cos\\alpha - \\cos\\beta = -2\\sin\\frac{\\alpha+\\beta}{2}\\sin\\frac{\\alpha-\\beta}{2}"}
+                  ],
+                  "error_tips": "余弦差公式前有负号；和差化积与积化和差是互逆变换，不要混淆。"
+                },
+                {
+                  "title": "倍角公式",
+                  "aliases": ["二倍角公式", "三倍角公式", "倍角"],
+                  "search_text": "倍角 二倍角 三倍角 sin2x cos2x tan2x sin3x cos3x",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "high_frequency", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:multiple_angles",
+                  "source_title": "27张宇数学公式手册·附录初等数学·三角函数·倍角公式",
+                  "summary": "三角函数的二倍角和三倍角公式，是积分化简和恒等变换的重要工具。",
+                  "formula_blocks": [
+                    {"label": "正弦二倍角", "latex": "\\sin 2\\alpha = 2\\sin\\alpha\\cos\\alpha"},
+                    {"label": "余弦二倍角", "latex": "\\cos 2\\alpha = 2\\cos^2\\alpha - 1 = 1 - 2\\sin^2\\alpha = \\cos^2\\alpha - \\sin^2\\alpha"},
+                    {"label": "正切二倍角", "latex": "\\tan 2\\alpha = \\frac{2\\tan\\alpha}{1-\\tan^2\\alpha}"},
+                    {"label": "余切二倍角", "latex": "\\cot 2\\alpha = \\frac{\\cot^2\\alpha-1}{2\\cot\\alpha}"},
+                    {"label": "正弦三倍角", "latex": "\\sin 3\\alpha = 3\\sin\\alpha - 4\\sin^3\\alpha"},
+                    {"label": "余弦三倍角", "latex": "\\cos 3\\alpha = 4\\cos^3\\alpha - 3\\cos\\alpha"},
+                    {"label": "正切三倍角", "latex": "\\tan 3\\alpha = \\frac{3\\tan\\alpha - \\tan^3\\alpha}{1-3\\tan^2\\alpha}"}
+                  ],
+                  "secondary_conclusions": "由余弦二倍角可推导降幂公式：sin²α=(1-cos2α)/2，cos²α=(1+cos2α)/2。"
+                },
+                {
+                  "title": "半角公式",
+                  "aliases": ["半角"],
+                  "search_text": "半角公式 sin半角 cos半角 tan半角 三角半角",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:half_angles",
+                  "source_title": "27张宇数学公式手册·附录初等数学·三角函数·半角公式",
+                  "summary": "三角函数的半角公式，由余弦倍角公式推导得到。",
+                  "formula_blocks": [
+                    {"label": "正弦半角", "latex": "\\sin\\frac{\\alpha}{2} = \\pm\\sqrt{\\frac{1-\\cos\\alpha}{2}}"},
+                    {"label": "余弦半角", "latex": "\\cos\\frac{\\alpha}{2} = \\pm\\sqrt{\\frac{1+\\cos\\alpha}{2}}"},
+                    {"label": "正切半角", "latex": "\\tan\\frac{\\alpha}{2} = \\pm\\sqrt{\\frac{1-\\cos\\alpha}{1+\\cos\\alpha}} = \\frac{1-\\cos\\alpha}{\\sin\\alpha} = \\frac{\\sin\\alpha}{1+\\cos\\alpha}"},
+                    {"label": "余切半角", "latex": "\\cot\\frac{\\alpha}{2} = \\pm\\sqrt{\\frac{1+\\cos\\alpha}{1-\\cos\\alpha}} = \\frac{1+\\cos\\alpha}{\\sin\\alpha} = \\frac{\\sin\\alpha}{1-\\cos\\alpha}"}
+                  ],
+                  "conditions": "符号由α/2所在象限决定。",
+                  "error_tips": "半角公式前的正负号不可省略，需根据α/2象限判断。"
+                },
+                {
+                  "title": "正弦定理与余弦定理",
+                  "aliases": ["正弦定理", "余弦定理"],
+                  "search_text": "正弦定理 余弦定理 三角形 边角关系 R 外接圆 任意三角形",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "high_frequency"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:law_sine_cosine",
+                  "source_title": "27张宇数学公式手册·附录初等数学·三角函数·正弦定理与余弦定理",
+                  "summary": "任意三角形的正弦定理和余弦定理，建立三角形边角关系的基本定理。",
+                  "formula_blocks": [
+                    {"label": "正弦定理", "latex": "\\frac{a}{\\sin A} = \\frac{b}{\\sin B} = \\frac{c}{\\sin C} = 2R"},
+                    {"label": "余弦定理", "latex": "c^2 = a^2 + b^2 - 2ab\\cos C"}
+                  ],
+                  "conditions": "R为三角形外接圆半径。正弦定理对所有三角形成立。"
+                },
+                {
+                  "title": "反三角函数关系",
+                  "aliases": ["反三角恒等式", "反三角关系"],
+                  "search_text": "arcsin arccos arctan arccot 反三角 反三角函数关系 互余",
+                  "card_type": "pure_formula",
+                  "tags": ["basic"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:inverse_trig_relations",
+                  "source_title": "27张宇数学公式手册·附录初等数学·三角函数·反三角函数性质",
+                  "summary": "反三角函数之间的基本关系，为积分和恒等变换提供便利。",
+                  "formula_blocks": [
+                    {"label": "反正弦与反余弦", "latex": "\\arcsin x + \\arccos x = \\frac{\\pi}{2}"},
+                    {"label": "反正切与反余切", "latex": "\\arctan x + \\operatorname{arccot} x = \\frac{\\pi}{2}"}
+                  ],
+                  "conditions": "x∈[-1,1]（前式）；x∈ℝ（后式）。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "elementary_analytic_geometry",
+          "name": "平面解析几何",
+          "groups": [
+            {
+              "code": "elem_analytic_geom_basic",
+              "name": "解析几何基础",
+              "cards": [
+                {
+                  "title": "两点间距离与直线方程",
+                  "aliases": ["距离公式", "直线方程"],
+                  "search_text": "两点距离 距离公式 直线方程 一般式 点斜式 斜截式 截距式 两点式",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "high_frequency", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:distance_line",
+                  "source_title": "27张宇数学公式手册·附录初等数学·平面解析几何·距离与直线",
+                  "summary": "平面直角坐标系中两点间距离和直线方程的各种表示形式。",
+                  "formula_blocks": [
+                    {"label": "两点间距离", "latex": "|P_1P_2| = \\sqrt{(x_2-x_1)^2 + (y_2-y_1)^2}"},
+                    {"label": "点到原点距离", "latex": "|OP| = \\sqrt{x^2+y^2}"},
+                    {"label": "直线一般式", "latex": "Ax+By+C=0"},
+                    {"label": "直线点斜式", "latex": "y-y_1 = k(x-x_1)"},
+                    {"label": "直线两点式", "latex": "\\dfrac{y-y_1}{x-x_1} = \\dfrac{y_2-y_1}{x_2-x_1}"},
+                    {"label": "直线斜截式", "latex": "y = kx + b"},
+                    {"label": "直线截距式", "latex": "\\dfrac{x}{a} + \\dfrac{y}{b} = 1"}
+                  ],
+                  "conditions": "两点式要求x₁≠x₂；截距式要求a,b≠0。",
+                  "error_tips": "截距式中的a,b是x轴和y轴截距（可正可负），不是距离。"
+                },
+                {
+                  "title": "点到直线的距离公式",
+                  "aliases": ["点到直线距离"],
+                  "search_text": "点到直线距离 距离公式 垂线长度 点线距离",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:point_line_distance",
+                  "source_title": "27张宇数学公式手册·附录初等数学·平面解析几何·点到直线距离",
+                  "summary": "平面直角坐标系中点到直线的垂直距离公式。",
+                  "formula_blocks": [
+                    {"label": "点到直线距离", "latex": "d = \\frac{|Ax_0+By_0+C|}{\\sqrt{A^2+B^2}}"}
+                  ],
+                  "conditions": "点P(x₀,y₀)到直线l:Ax+By+C=0的距离。",
+                  "error_tips": "分子要加绝对值（距离为正）；分母为√(A²+B²)。"
+                },
+                {
+                  "title": "圆的方程",
+                  "aliases": ["圆的标准方程", "圆的一般方程", "圆心半径"],
+                  "search_text": "圆 圆的标准方程 圆的一般方程 圆心 半径 圆方程",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:circle_equation",
+                  "source_title": "27张宇数学公式手册·附录初等数学·平面解析几何·圆",
+                  "summary": "圆的标准方程和一般方程，以及圆心坐标和半径的计算公式。",
+                  "formula_blocks": [
+                    {"label": "圆的标准方程", "latex": "(x-a)^2 + (y-b)^2 = r^2"},
+                    {"label": "圆的一般方程", "latex": "x^2 + y^2 + Dx + Ey + F = 0"},
+                    {"label": "圆心坐标", "latex": "\\left(-\\dfrac{D}{2}, -\\dfrac{E}{2}\\right)"},
+                    {"label": "半径", "latex": "r = \\dfrac{\\sqrt{D^2+E^2-4F}}{2}"}
+                  ],
+                  "conditions": "一般方程要求D²+E²-4F>0才表示实圆。"
+                },
+                {
+                  "title": "椭圆的标准方程与性质",
+                  "aliases": ["椭圆"],
+                  "search_text": "椭圆 椭圆标准方程 椭圆焦点 椭圆准线 椭圆方程",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:ellipse",
+                  "source_title": "27张宇数学公式手册·附录初等数学·平面解析几何·椭圆",
+                  "summary": "椭圆的标准方程、焦点坐标和准线方程。",
+                  "formula_blocks": [
+                    {"label": "椭圆标准方程", "latex": "\\dfrac{x^2}{a^2} + \\dfrac{y^2}{b^2} = 1,\\ a>b>0"},
+                    {"label": "焦点坐标", "latex": "F(\\pm c, 0),\\ c = \\sqrt{a^2-b^2}"},
+                    {"label": "准线方程", "latex": "x = \\pm\\dfrac{a^2}{c}"}
+                  ],
+                  "conditions": "a为长半轴，b为短半轴。焦点在长轴上。"
+                },
+                {
+                  "title": "双曲线的标准方程与性质",
+                  "aliases": ["双曲线"],
+                  "search_text": "双曲线 双曲线标准方程 双曲线焦点 双曲线渐近线 双曲线准线",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:hyperbola",
+                  "source_title": "27张宇数学公式手册·附录初等数学·平面解析几何·双曲线",
+                  "summary": "双曲线的标准方程、焦点、渐近线和准线方程。",
+                  "formula_blocks": [
+                    {"label": "双曲线标准方程", "latex": "\\dfrac{x^2}{a^2} - \\dfrac{y^2}{b^2} = 1"},
+                    {"label": "焦点坐标", "latex": "F(\\pm c, 0),\\ c = \\sqrt{a^2+b^2}"},
+                    {"label": "渐近线方程", "latex": "y = \\pm\\dfrac{b}{a}x"},
+                    {"label": "准线方程", "latex": "x = \\pm\\dfrac{a^2}{c}"}
+                  ]
+                },
+                {
+                  "title": "抛物线的标准方程与性质",
+                  "aliases": ["抛物线"],
+                  "search_text": "抛物线 抛物线标准方程 抛物线焦点 抛物线切线",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:parabola",
+                  "source_title": "27张宇数学公式手册·附录初等数学·平面解析几何·抛物线",
+                  "summary": "抛物线的标准方程、焦点坐标和切线方程。",
+                  "formula_blocks": [
+                    {"label": "抛物线标准方程", "latex": "y^2 = 2px\\ (p>0)"},
+                    {"label": "焦点坐标", "latex": "F\\left(\\dfrac{p}{2}, 0\\right)"},
+                    {"label": "切线方程", "latex": "y_1 y = p(x+x_1)"}
+                  ],
+                  "conditions": "切线方程中(x₁,y₁)为切点坐标，且点在抛物线上。"
+                },
+                {
+                  "title": "极坐标与直角坐标互化",
+                  "aliases": ["极坐标"],
+                  "search_text": "极坐标 直角坐标 极坐标变换 极径 极角 ρ θ 坐标互化",
+                  "card_type": "pure_formula",
+                  "tags": ["basic", "syllabus_required"],
+                  "source_ref": "zhangyu_formula_manual:elementary_math:polar_coordinates",
+                  "source_title": "27张宇数学公式手册·附录初等数学·平面解析几何·极坐标与直角坐标",
+                  "summary": "极坐标系与直角坐标系之间的坐标变换公式。",
+                  "formula_blocks": [
+                    {"label": "极坐标→直角坐标", "latex": "\\begin{cases} x = \\rho\\cos\\theta \\\\ y = \\rho\\sin\\theta \\end{cases}"},
+                    {"label": "直角坐标→极坐标", "latex": "\\begin{cases} \\rho^2 = x^2 + y^2 \\\\ \\tan\\theta = \\dfrac{y}{x}\\ (x\\neq0) \\end{cases}"}
+                  ],
+                  "error_tips": "θ的取值需根据点(x,y)所在象限确定，不能仅由arctan(y/x)决定。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

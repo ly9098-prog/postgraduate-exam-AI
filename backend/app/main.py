@@ -215,10 +215,84 @@ async def lifespan(app: FastAPI):
             "In production, use web/worker/scheduler split.",
             role,
         )
+
+    # Log export access config
+    try:
+        from app.services.export.capability import log_export_config_on_startup
+        log_export_config_on_startup()
+    except Exception:
+        logger.warning("Export config logging failed (non-fatal)", exc_info=True)
+
+    # Log export processor status
+    _has_processor = role in ("scheduler", "all")
+    _has_redis = bool(settings.REDIS_URL)
+    if _has_processor:
+        logger.info("export_processor_enabled=true process_role=%s redis_available=%s", role, _has_redis)
+    elif role == "web":
+        logger.warning(
+            "process_role=web export_processor_enabled=false export_processor_mode=external "
+            " — pending export tasks will NOT be processed. "
+            "Start a scheduler process (PROCESS_ROLE=scheduler) or use PROCESS_ROLE=all for local dev."
+        )
     os.makedirs("static/formulas", exist_ok=True)
     os.makedirs("static/question-assets", exist_ok=True)
     os.makedirs(settings.EXPORT_DIR, exist_ok=True)
     await init_db()
+
+    # Fix residual UNIQUE constraint on export_tasks.idempotency_key.
+    # The phase7_export_fixes migration attempted this but failed on SQLite
+    # (table-level UNIQUE constraints can't be dropped via batch_op.drop_index).
+    # This runtime DDL is a belt-and-suspenders fix alongside the application-level
+    # IntegrityError handler in the create_export endpoint.
+    try:
+        from app.core.database import engine as _db_engine
+        _sync_engine = _db_engine.sync_engine
+        _dialect = _sync_engine.dialect.name
+        if _dialect == "sqlite":
+            from sqlalchemy import inspect as _sa_inspect
+            _inspector = _sa_inspect(_sync_engine)
+            _ix_list = _inspector.get_indexes("export_tasks")
+            # SQLite may expose the UNIQUE constraint as a unique index
+            _has_unique_ix = any(
+                _ix.get("column_names", []) == ["idempotency_key"] and _ix.get("unique")
+                for _ix in _ix_list
+            )
+            if _has_unique_ix:
+                # Recreate table without the UNIQUE constraint using Alembic batch mode
+                from alembic import op
+                from alembic.runtime.migration import MigrationContext
+                _conn = _sync_engine.connect()
+                _ctx = MigrationContext.configure(_conn)
+                _op = op.Operations(_ctx)
+                with _op.batch_alter_table("export_tasks") as _batch:
+                    # Drop all unique indexes on idempotency_key
+                    for _ix in _ix_list:
+                        if _ix.get("column_names", []) == ["idempotency_key"]:
+                            _batch.drop_index(_ix["name"])
+                    # Recreate non-unique index
+                    _batch.create_index("ix_export_tasks_idempotency_key", ["idempotency_key"])
+                _conn.commit()
+                _conn.close()
+                logger.info("Fixed residual UNIQUE constraint on export_tasks.idempotency_key (SQLite)")
+        elif _dialect == "postgresql":
+            # PostgreSQL: drop the UNIQUE constraint if it exists and replace with index
+            async with async_session() as _s:
+                _row = (await _s.execute(text("""
+                    SELECT conname FROM pg_constraint
+                    WHERE conrelid = 'export_tasks'::regclass
+                    AND conname LIKE '%idempotency_key%'
+                    AND contype = 'u'
+                """))).scalar_one_or_none()
+                if _row:
+                    await _s.execute(text(f'ALTER TABLE export_tasks DROP CONSTRAINT "{_row}"'))
+                    await _s.execute(text(
+                        'CREATE INDEX IF NOT EXISTS ix_export_tasks_idempotency_key '
+                        'ON export_tasks (idempotency_key)'
+                    ))
+                    await _s.commit()
+                    logger.info("Fixed residual UNIQUE constraint on export_tasks.idempotency_key (PostgreSQL)")
+    except Exception:
+        logger.warning("Failed to fix idempotency_key UNIQUE constraint (non-fatal, application-level fallback active)")
 
     # Schema divergence diagnostic: detect missing runtime-DDL columns on PostgreSQL.
     # Lightweight startup check — warns if known columns are absent.
@@ -506,6 +580,7 @@ async def lifespan(app: FastAPI):
             try:
                 from app.services.export.processor import stop_processor
                 await stop_processor()
+                logger.info("export_processor_stopped role=%s", role)
             except Exception as e:
                 logger.warning("Export processor stop signal failed: %s", e)
 

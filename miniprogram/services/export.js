@@ -155,6 +155,39 @@ function syncTaskStatus(taskId, onUpdate, onError, options = {}) {
   }
 }
 
+/**
+ * Get a user-facing error message for capability check failures.
+ *
+ * @param {Error|null} error - The ApiError or raw error object, or null if capability response was received.
+ * @param {object|null} capability - The capability response (if received).
+ * @returns {string} User-facing error message.
+ */
+function getExportCapabilityErrorMessage(error, capability) {
+  // Capability response with reason_code
+  if (capability) {
+    if (capability.reason_code === 'feature_disabled') {
+      return '导出功能当前已关闭'
+    }
+    if (capability.reason_code === 'user_not_allowed') {
+      return '当前账号暂未获得导出权限'
+    }
+    // Unknown reason_code — fall through
+  }
+
+  // Network or API error
+  if (error) {
+    if (error.code === 'NETWORK_ERROR' || error.code === 'AUTH_REQUIRED') {
+      return '无法连接导出服务，请检查网络和小程序环境配置'
+    }
+    // 优先使用服务端返回的消息
+    if (error.message && !error.message.includes('请求失败')) {
+      return error.message
+    }
+  }
+
+  return '获取导出能力失败，请稍后重试'
+}
+
 module.exports = {
   getCapabilities,
   previewCount,
@@ -168,4 +201,5 @@ module.exports = {
   reExport,
   pollTaskStatus,
   syncTaskStatus,
+  getExportCapabilityErrorMessage,
 }

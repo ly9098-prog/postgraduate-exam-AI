@@ -70,6 +70,7 @@ class ExportErrorCode(StrEnum):
     TASK_TIMEOUT = "task_timeout"
     STORAGE_FAILED = "storage_failed"
     SERVICE_UNAVAILABLE = "service_unavailable"
+    TASK_ALREADY_EXISTS = "task_already_exists"
 
 
 class ExportGroupBy(StrEnum):
@@ -177,6 +178,8 @@ class ExportTaskResponse(BaseModel):
     success_count: int | None = None
     skip_count: int | None = None
     error_message: str | None = None
+    status_reason: str | None = None
+    status_message: str | None = None
     created_at: datetime
     completed_at: datetime | None = None
     expires_at: datetime | None = None
@@ -218,6 +221,8 @@ class ExportCapabilityResponse(BaseModel):
     """Per-user export capability — returned by the capabilities endpoint.
 
     Does NOT leak internal config or whitelist contents.
+    When ``export_enabled`` is ``False``, ``reason_code`` and ``message``
+    provide a diagnostic hint for the frontend (no sensitive info leaked).
     """
     export_enabled: bool = False
     pdf_enabled: bool = False
@@ -225,3 +230,5 @@ class ExportCapabilityResponse(BaseModel):
     websocket_enabled: bool = False
     max_question_count: int = 100
     retention_days: int = 7
+    reason_code: str | None = None
+    message: str | None = None

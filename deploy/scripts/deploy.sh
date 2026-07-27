@@ -69,6 +69,10 @@ do_update_app() {
   info "替换 app 服务（不重启 postgres/redis/nginx）..."
   compose up -d --no-deps app
   info "app 服务已替换"
+  # Also replace scheduler (same image, different command)
+  info "替换 scheduler 服务..."
+  compose up -d --no-deps scheduler 2>/dev/null || warn "scheduler 服务不存在或启动失败（export 功能不可用）"
+  info "scheduler 服务已替换"
 }
 
 do_update_admin() {
@@ -99,6 +103,36 @@ do_migrate() {
   info "运行数据库迁移..."
   compose exec -T app alembic upgrade head
   info "迁移完成"
+}
+
+do_scheduler_health_check() {
+  info "检查 scheduler 服务健康状态..."
+  local attempt
+  for attempt in 1 2 3 4 5; do
+    if compose exec -T app python -c "
+import urllib.request, json
+resp = urllib.request.urlopen('http://localhost:8000/api/v1/exports/health', timeout=5)
+data = json.loads(resp.read())
+assert data.get('processor_running') is True, 'Processor not running: ' + str(data)
+assert data.get('status') == 'ok', 'Status not ok: ' + str(data)
+" >/dev/null 2>&1; then
+      info "scheduler 健康检查通过（processor_running=true）"
+      return 0
+    fi
+    sleep 3
+  done
+  warn "scheduler 健康检查未通过，请检查 scheduler 日志"
+  compose logs --tail=20 scheduler || true
+  return 1
+}
+
+do_update_scheduler() {
+  check_prereqs
+  do_build
+  info "替换 scheduler 服务..."
+  compose up -d --no-deps scheduler
+  do_scheduler_health_check || warn "scheduler 健康检查未通过"
+  info "=== scheduler 更新完成 ==="
 }
 
 do_health_check() {
@@ -132,6 +166,8 @@ do_status() {
   compose ps
   echo ""
   do_health_check || warn "健康检查未通过"
+  echo ""
+  do_scheduler_health_check || warn "scheduler 健康检查未通过（export 功能不可用）"
 }
 
 do_init() {
@@ -142,6 +178,7 @@ do_init() {
   sleep 5
   do_migrate
   do_health_check
+  do_scheduler_health_check || warn "scheduler 健康检查未通过（export 功能可能不可用）"
   info "=== 首次部署完成 ==="
   echo "接下来请："
   echo "  1. 配置域名 DNS 指向服务器 IP"
@@ -154,6 +191,7 @@ do_update() {
   do_build
   do_update_app
   do_health_check || error "更新后健康检查失败；请查看上方 app 日志，必要时回滚上一版本代码后重新执行 app 更新"
+  do_scheduler_health_check || warn "scheduler 健康检查未通过（export 功能可能不可用）"
   info "=== 更新完成（未执行 git pull，未执行数据库迁移） ==="
 }
 
@@ -165,7 +203,8 @@ do_update_all() {
   do_update_admin
   do_health_check || error "更新后 app 健康检查失败"
   do_admin_health_check || warn "admin 前端健康检查未通过，请检查日志"
-  info "=== 全量更新完成（app + admin，未执行 git pull，未执行数据库迁移） ==="
+  do_scheduler_health_check || warn "scheduler 健康检查未通过（export 功能可能不可用）"
+  info "=== 全量更新完成（app + admin + scheduler，未执行 git pull，未执行数据库迁移） ==="
 }
 
 do_backup() {
@@ -179,6 +218,7 @@ case "${1:-help}" in
   init)         do_init ;;
   update)       do_update ;;
   update-admin) check_prereqs; do_build_admin; do_update_admin; do_admin_health_check || warn "admin 前端健康检查未通过" ;;
+  update-scheduler) do_update_scheduler ;;
   update-all)   do_update_all ;;
   build)        check_prereqs; do_build ;;
   build-admin)  check_prereqs; do_build_admin ;;
@@ -186,15 +226,16 @@ case "${1:-help}" in
   status)       do_status ;;
   migrate)      do_migrate ;;
   *)
-    echo "使用方法: $0 {init|update|update-admin|update-all|build|build-admin|backup|status|migrate}"
+    echo "使用方法: $0 {init|update|update-admin|update-scheduler|update-all|build|build-admin|backup|status|migrate}"
     echo ""
-    echo "  init          首次部署（构建 + 启动 + 显式初始化迁移）"
-    echo "  update        日常更新（缓存构建 + 仅替换 app，不 git pull，不默认迁移）"
-    echo "  update-admin  仅更新 admin 前端（构建 + 替换 admin 服务）"
-    echo "  update-all    全量更新（app + admin，不 git pull，不默认迁移）"
-    echo "  build         仅重新构建 app 镜像"
-    echo "  build-admin   仅重新构建 admin 前端镜像"
-    echo "  backup        执行 PostgreSQL 备份（Docker 模式）"
+    echo "  init              首次部署（构建 + 启动 + 显式初始化迁移）"
+    echo "  update            日常更新（缓存构建 + 替换 app + scheduler，不 git pull，不默认迁移）"
+    echo "  update-admin      仅更新 admin 前端（构建 + 替换 admin 服务）"
+    echo "  update-scheduler  仅更新 scheduler（构建 + 替换 scheduler 服务）"
+    echo "  update-all        全量更新（app + admin + scheduler，不 git pull，不默认迁移）"
+    echo "  build             仅重新构建 app 镜像"
+    echo "  build-admin       仅重新构建 admin 前端镜像"
+    echo "  backup            执行 PostgreSQL 备份（Docker 模式）"
     echo "  status        查看服务状态和健康检查"
     echo "  migrate       显式运行数据库迁移"
     ;;

@@ -12,6 +12,7 @@
 | 服务 | 容器名 | 说明 |
 |------|--------|------|
 | `app` | deploy-app-1 | FastAPI + Gunicorn，源码构建 |
+| `scheduler` | deploy-scheduler-1 | 后台调度器（定时任务 + export processor），与 app 共用镜像但无 HTTP |
 | `nginx` | deploy-nginx-1 | nginx:1.25-alpine，HTTPS 反代 |
 | `postgres` | deploy-postgres-1 | PostgreSQL 15，持久卷 pgdata_prod |
 | `redis` | deploy-redis-1 | Redis 7，持久卷 redisdata_prod |
@@ -21,19 +22,20 @@
 
 ```
 用户 → nginx:443 (HTTPS) → app:8000 (HTTP)
-                      → postgres:5432（仅 app 可访问）
-                      → redis:6379（仅 app 可访问）
+                      → postgres:5432（仅 app/scheduler 可访问）
+                      → redis:6379（仅 app/scheduler 可访问）
+scheduler（无 HTTP）→ postgres + redis（后台任务 + export processor）
 ```
 
 ### 关键路径
 
 | 路径 | 说明 |
 |------|------|
-| `deploy/docker-compose.prod.yml` | **当前生产 compose 入口** |
+| `deploy/docker-compose.prod.yml` | **当前生产 compose 入口**（含 app + scheduler + admin） |
 | `deploy/scripts/deploy.sh` | **当前推荐生产部署脚本** |
 | `deploy/nginx/nginx.conf` | Nginx 配置 |
 | `deploy/scripts/backup.sh` | 备份脚本 |
-| `backend/docker/Dockerfile` | app 镜像 Dockerfile（含 PaddleOCR） |
+| `backend/docker/Dockerfile` | app + scheduler 共用镜像 Dockerfile（含 PaddleOCR） |
 | `backend/.env` | 服务器侧环境变量（独立维护） |
 
 ### 服务器信息
@@ -520,6 +522,12 @@ DB_MAX_OVERFLOW_SCHEDULER=2
 
 # Redis
 REDIS_URL=redis://redis:6379/0
+
+# 导出（export 功能）
+EXPORT_FEATURE_ENABLED=true          # 导出功能全局开关
+EXPORT_WEBSOCKET_ENABLED=true        # WebSocket 实时推送
+EXPORT_ALLOW_ALL_USERS=true          # 允许所有用户导出（设为 false 需配置白名单）
+EXPORT_ALLOWED_USER_IDS=             # 白名单用户 ID（逗号分隔，EXPORT_ALLOW_ALL_USERS=false 时生效）
 
 # OCR
 OCR_ENABLED=true

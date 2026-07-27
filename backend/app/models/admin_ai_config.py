@@ -1,44 +1,12 @@
 import logging
 from datetime import datetime
 
-from cryptography.fernet import Fernet
 from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.config import settings
 from app.core.database import Base
 
 logger = logging.getLogger(__name__)
-
-
-def _get_fernet() -> Fernet | None:
-    key = settings.AI_CONFIG_ENCRYPT_KEY
-    if not key:
-        return None
-    try:
-        return Fernet(key.encode())
-    except Exception:
-        return None
-
-
-def encrypt_api_key(plain: str) -> str:
-    f = _get_fernet()
-    if f is None:
-        logger.warning("AI_CONFIG_ENCRYPT_KEY not configured — API key stored in plain text")
-        return plain
-    return f.encrypt(plain.encode()).decode()
-
-
-def decrypt_api_key(encrypted: str) -> str:
-    f = _get_fernet()
-    if f is None:
-        logger.warning("AI_CONFIG_ENCRYPT_KEY not configured — API key returned as-is")
-        return encrypted
-    try:
-        return f.decrypt(encrypted.encode()).decode()
-    except Exception:
-        logger.error("Failed to decrypt API key — key may have been rotated")
-        return ""
 
 
 class AdminAiModelConfig(Base):

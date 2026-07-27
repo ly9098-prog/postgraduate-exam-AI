@@ -1,58 +1,65 @@
-// API 基础配置
-//
-// 上传体验版/正式版前请通过以下方式切换：
-// 方案 A：将 __BUILD_ENV__ 替换为项目构建脚本注入的环境变量
-// 方案 B：直接在微信开发者工具中修改此处为 production
-//
-// 注意：DEV = true 时 BASE_URL 为 localhost，真机体验版/正式版
-// 会请求手机自己的 localhost 导致所有接口失败。
-// ═══════════════════════════════════════════════
-// 环境配置
-// 发布前检查：
-//   1. ENV 必须为 'production'
-//   2. BASE_URL 必须为正式域名，不可包含 localhost / 127.0.0.1
-// ═══════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+//  本地 / 生产切换 — 修改这里即可
+// ══════════════════════════════════════════════════════════════
+//  true  → 本地开发（localhost:8000），仅开发者工具可用
+//  false → 正式/体验/真机（https://xzshub.top）
+const LOCAL_DEBUG = true
 
-// 构建时注入或手动切换：'development' | 'production'
-const ENV = 'production'
+// ══════════════════════════════════════════════════════════════
+//  以下代码无需手动修改
+// ══════════════════════════════════════════════════════════════
 
-const CONFIG = {
-  development: {
-    BASE_URL: 'http://localhost:8000/api/v1',
-    debug: true,
-  },
-  production: {
-    BASE_URL: 'https://xzshub.top/api/v1',
-    debug: false,
-  },
+const API_URLS = {
+  local: 'http://localhost:8000/api/v1',
+  trial: 'https://xzshub.top/api/v1',
+  release: 'https://xzshub.top/api/v1',
 }
 
-// ── 发布保护 ──────────────────────────────────
-if (ENV === 'production') {
-  const url = CONFIG.production.BASE_URL
-  if (/localhost|127\.0\.0\.1/i.test(url)) {
-    throw new Error(
-      '[config] Production build cannot use localhost/127.0.0.1. ' +
-      'Set ENV to "development" only for local debugging.'
-    )
+// 发布前检查：发布时必须改 LOCAL_DEBUG = false
+if (LOCAL_DEBUG) {
+  const url = API_URLS.local
+  if (!url.includes('localhost') && !url.includes('127.0.0.1')) {
+    throw new Error('[config] LOCAL_DEBUG=true 时 BASE_URL 必须指向 localhost')
   }
 }
 
-const envConfig = CONFIG[ENV] || CONFIG.production
-// 统一调试开关：debug 与 DEBUG_MODE 始终一致
-var debugMode = ENV === 'development' && false   // 可临时改为 true 调试
+// ── 运行时环境解析（纯函数，用于测试） ──
+function resolveRuntimeConfig({ envVersion, platform, localDebug }) {
+  if (envVersion === 'develop' && platform === 'devtools' && localDebug) return 'local'
+  if (envVersion === 'trial') return 'trial'
+  return 'release'
+}
+
+// ── 根据 LOCAL_DEBUG 确定目标环境 ──
+var runtimeEnv
+if (LOCAL_DEBUG) {
+  runtimeEnv = 'local'
+} else {
+  try {
+    const info = wx.getAccountInfoSync()
+    runtimeEnv = info.miniProgram.envVersion === 'trial' ? 'trial' : 'release'
+  } catch (_e) {
+    runtimeEnv = 'release'
+  }
+}
+
+const envConfig = {
+  BASE_URL: API_URLS[runtimeEnv] || API_URLS.release,
+  debug: runtimeEnv === 'local',
+}
+
+// 统一调试开关
+var debugMode = envConfig.debug && false // 可临时改为 true 输出调试日志
 
 module.exports = {
   ...envConfig,
-  DEV: ENV === 'development',
+  DEV: runtimeEnv === 'local',
   DEBUG_MODE: debugMode,
-  debug: debugMode,                              // 别名，与 DEBUG_MODE 保持一致
+  debug: debugMode,
   DEBUG_QUESTION_ID: '',
-  ENV,
+  ENV: runtimeEnv,
+  resolveRuntimeConfig,
   enableMathImage: false,
-  // 导出功能实时状态推送（WebSocket 开关）
   EXPORT_WS_ENABLED: true,
-  // 微信公众平台申请的"番茄钟完成"订阅消息模板 ID。
-  // 字段：thing1（打卡活动）+ character_string2（打卡进度）
   POMODORO_SUBSCRIBE_TMPL_ID: 'Dc2tD7nbZn4FQi9nYOXZCtpmK3KUbcG_vrJ57UokMUQ',
 }

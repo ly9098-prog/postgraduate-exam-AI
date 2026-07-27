@@ -1,0 +1,2428 @@
+{
+  "version": 1,
+  "description": "Formula graph_specs for production deployment — export from local DB",
+  "cards": {
+    "58": {
+      "title": "常数函数 y=C",
+      "source_ref": "H-001",
+      "graph_spec": {
+        "schema_version": 1,
+        "render_mode": "explicit_2d",
+        "template": "single_function",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "panels": [
+          {
+            "expressions": [
+              {
+                "expression": "0*x + 2",
+                "display_latex": "y=2",
+                "label": "y=2",
+                "line_style": "solid"
+              }
+            ],
+            "domain": {
+              "intervals": [],
+              "exclude_points": []
+            },
+            "axis_mode": "manual",
+            "x_range": [
+              -5.0,
+              5.0
+            ],
+            "y_range": [
+              -1.0,
+              5.0
+            ],
+            "annotations": [
+              {
+                "x": 0.0,
+                "y": 2.0,
+                "label": "(0,2)",
+                "color": null,
+                "point_style": "filled"
+              }
+            ],
+            "vertical_lines": [],
+            "horizontal_lines": [],
+            "title": "常数函数 y=C（示例 C=2）",
+            "x_label": "",
+            "y_label": "",
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "59": {
+      "title": "一次函数 y=kx+b",
+      "source_ref": "H-002",
+      "graph_spec": {
+        "template": "single_function",
+        "renderer_version": 1,
+        "spec_version": 1,
+        "title": "y=kx+b — 一次函数",
+        "panels": [
+          {
+            "x_range": [
+              -5,
+              5
+            ],
+            "y_range": [
+              -5,
+              5
+            ],
+            "axis_mode": "manual",
+            "expressions": [
+              {
+                "expression": "x",
+                "label": "y=x (k=1,b=0)"
+              },
+              {
+                "expression": "2*x+1",
+                "label": "y=2x+1 (k=2,b=1)"
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          }
+        ]
+      }
+    },
+    "60": {
+      "title": "二次函数 y=ax^2+bx+c",
+      "source_ref": "H-003",
+      "graph_spec": {
+        "template": "single_function",
+        "renderer_version": 1,
+        "spec_version": 1,
+        "title": "y=ax²+bx+c — 二次函数",
+        "panels": [
+          {
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -1,
+              5
+            ],
+            "axis_mode": "manual",
+            "expressions": [
+              {
+                "expression": "x**2",
+                "label": "y=x² (a=1,b=0,c=0)"
+              },
+              {
+                "expression": "x**2-2*x",
+                "label": "y=x²-2x (a=1,b=-2)"
+              }
+            ],
+            "annotations": [
+              {
+                "x": 0,
+                "y": 0,
+                "label": "顶点 (0,0)"
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          }
+        ]
+      }
+    },
+    "61": {
+      "title": "y=|x|",
+      "source_ref": "H-004",
+      "graph_spec": {
+        "template": "single_function",
+        "renderer_version": 1,
+        "spec_version": 1,
+        "title": "y=|x| — 绝对值函数",
+        "panels": [
+          {
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -0.5,
+              3
+            ],
+            "axis_mode": "manual",
+            "expressions": [
+              {
+                "expression": "abs(x)",
+                "label": "y=|x|"
+              }
+            ],
+            "annotations": [
+              {
+                "x": 0,
+                "y": 0,
+                "label": "(0,0)"
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          }
+        ]
+      }
+    },
+    "62": {
+      "title": "y=1/x 与 y=1/x^2",
+      "source_ref": "H-005",
+      "graph_spec": {
+        "template": "function_comparison",
+        "renderer_version": 1,
+        "spec_version": 1,
+        "title": "y=1/x 与 y=1/x²",
+        "panels": [
+          {
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -3,
+              3
+            ],
+            "axis_mode": "manual",
+            "expressions": [
+              {
+                "expression": "1/x",
+                "label": "y=1/x",
+                "domain": {
+                  "intervals": [
+                    [
+                      -3,
+                      -0.01
+                    ],
+                    [
+                      0.01,
+                      3
+                    ]
+                  ]
+                }
+              },
+              {
+                "expression": "1/(x**2)",
+                "label": "y=1/x²",
+                "domain": {
+                  "intervals": [
+                    [
+                      -3,
+                      -0.01
+                    ],
+                    [
+                      0.01,
+                      3
+                    ]
+                  ]
+                }
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          }
+        ]
+      }
+    },
+    "63": {
+      "title": "幂函数（正整数与负整数）y=x^n 与 y=x^{-n}",
+      "source_ref": "H-006",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "multi_panel",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 2
+        },
+        "title": "幂函数（正整数与负整数）",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=xⁿ（n=1,2,3）",
+            "expressions": [
+              {
+                "expression": "x",
+                "display_latex": "y=x",
+                "label": "n=1"
+              },
+              {
+                "expression": "x**2",
+                "display_latex": "y=x²",
+                "label": "n=2"
+              },
+              {
+                "expression": "x**3",
+                "display_latex": "y=x³",
+                "label": "n=3"
+              }
+            ],
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -3,
+              3
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          },
+          {
+            "title": "y=x⁻ⁿ（n=1,2）",
+            "expressions": [
+              {
+                "expression": "1/x",
+                "display_latex": "y=1/x",
+                "label": "n=1"
+              },
+              {
+                "expression": "1/(x**2)",
+                "display_latex": "y=1/x²",
+                "label": "n=2"
+              }
+            ],
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -5,
+              5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "vertical_lines": [
+              {
+                "value": 0,
+                "label": "x=0"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "64": {
+      "title": "幂函数（有理指数）y=x^{1/n} 与 y=x^{m/n}",
+      "source_ref": "H-007",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "multi_panel",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 2
+        },
+        "title": "幂函数（有理指数）",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=x^{1/n}",
+            "expressions": [
+              {
+                "expression": "x**0.5",
+                "display_latex": "y=x^{1/2}",
+                "label": "n=2"
+              },
+              {
+                "expression": "x**(1/3)",
+                "display_latex": "y=x^{1/3}",
+                "label": "n=3"
+              }
+            ],
+            "x_range": [
+              0,
+              4
+            ],
+            "y_range": [
+              0,
+              2
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "annotations": [
+              {
+                "x": 1,
+                "y": 1,
+                "label": "(1,1)"
+              }
+            ],
+            "axis_style": "cross"
+          },
+          {
+            "title": "y=x^{2/3}",
+            "expressions": [
+              {
+                "expression": "x**(2/3)",
+                "display_latex": "y=x^{2/3}",
+                "label": "y=x^{2/3}"
+              }
+            ],
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              0,
+              3
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "65": {
+      "title": "幂函数 α 值对比",
+      "source_ref": "H-008",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "function_comparison",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "幂函数 α 值对比",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=x^α（α=2,1,0.5,-1）",
+            "expressions": [
+              {
+                "expression": "x**2",
+                "display_latex": "y=x²",
+                "label": "α=2"
+              },
+              {
+                "expression": "x",
+                "display_latex": "y=x",
+                "label": "α=1"
+              },
+              {
+                "expression": "x**0.5",
+                "display_latex": "y=x^{0.5}",
+                "label": "α=0.5",
+                "domain": {
+                  "intervals": [
+                    [
+                      0.01,
+                      4
+                    ]
+                  ]
+                }
+              },
+              {
+                "expression": "1/x",
+                "display_latex": "y=1/x",
+                "label": "α=-1",
+                "domain": {
+                  "intervals": [
+                    [
+                      0.01,
+                      4
+                    ]
+                  ]
+                }
+              }
+            ],
+            "x_range": [
+              0,
+              4
+            ],
+            "y_range": [
+              0,
+              4
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "annotations": [
+              {
+                "x": 1,
+                "y": 1,
+                "label": "(1,1)"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "66": {
+      "title": "指数函数底数对比 y=a^x",
+      "source_ref": "H-009",
+      "graph_spec": {
+        "template": "function_comparison",
+        "renderer_version": 1,
+        "spec_version": 1,
+        "title": "指数函数底数对比 y=aˣ",
+        "panels": [
+          {
+            "x_range": [
+              -2,
+              3
+            ],
+            "y_range": [
+              -0.5,
+              8
+            ],
+            "axis_mode": "manual",
+            "expressions": [
+              {
+                "expression": "2**x",
+                "label": "y=2ˣ"
+              },
+              {
+                "expression": "3**x",
+                "label": "y=3ˣ"
+              },
+              {
+                "expression": "0.5**x",
+                "label": "y=(½)ˣ"
+              }
+            ],
+            "annotations": [
+              {
+                "x": 0,
+                "y": 1,
+                "label": "(0,1)"
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          }
+        ]
+      }
+    },
+    "67": {
+      "title": "对数函数底数对比 y=log_a x",
+      "source_ref": "H-010",
+      "graph_spec": {
+        "template": "function_comparison",
+        "renderer_version": 1,
+        "spec_version": 1,
+        "title": "对数函数底数对比 y=logₐx",
+        "panels": [
+          {
+            "x_range": [
+              0,
+              4
+            ],
+            "y_range": [
+              -3,
+              3
+            ],
+            "axis_mode": "manual",
+            "expressions": [
+              {
+                "expression": "ln(x)",
+                "label": "y=ln x",
+                "domain": {
+                  "intervals": [
+                    [
+                      0.01,
+                      4
+                    ]
+                  ]
+                }
+              },
+              {
+                "expression": "ln(x)/ln(2)",
+                "label": "y=log₂x",
+                "domain": {
+                  "intervals": [
+                    [
+                      0.01,
+                      4
+                    ]
+                  ]
+                }
+              },
+              {
+                "expression": "ln(x)/ln(0.5)",
+                "label": "y=log_{½}x",
+                "domain": {
+                  "intervals": [
+                    [
+                      0.01,
+                      4
+                    ]
+                  ]
+                }
+              }
+            ],
+            "annotations": [
+              {
+                "x": 1,
+                "y": 0,
+                "label": "(1,0)"
+              }
+            ],
+            "vertical_lines": [
+              {
+                "value": 0,
+                "style": "dotted"
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          }
+        ]
+      }
+    },
+    "68": {
+      "title": "指数函数与对数函数反函数关系",
+      "source_ref": "H-011",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "function_comparison",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "指数函数与对数函数反函数关系",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=eˣ, y=ln x, y=x",
+            "expressions": [
+              {
+                "expression": "exp(x)",
+                "display_latex": "y=e^x",
+                "label": "y=eˣ"
+              },
+              {
+                "expression": "ln(x)",
+                "display_latex": "y=ln x",
+                "label": "y=ln x",
+                "domain": {
+                  "intervals": [
+                    [
+                      0.01,
+                      5
+                    ]
+                  ]
+                }
+              },
+              {
+                "expression": "x",
+                "display_latex": "y=x",
+                "label": "y=x",
+                "line_style": "dashed"
+              }
+            ],
+            "x_range": [
+              -2,
+              5
+            ],
+            "y_range": [
+              -2,
+              5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "69": {
+      "title": "y=sin x",
+      "source_ref": "H-012",
+      "graph_spec": {
+        "template": "single_function",
+        "renderer_version": 1,
+        "spec_version": 1,
+        "title": "y=sin x",
+        "panels": [
+          {
+            "x_range": [
+              -6.283185307179586,
+              6.283185307179586
+            ],
+            "y_range": [
+              -1.5,
+              1.5
+            ],
+            "axis_mode": "manual",
+            "expressions": [
+              {
+                "expression": "sin(x)",
+                "label": "y=sin x"
+              }
+            ],
+            "annotations": [
+              {
+                "x": 0,
+                "y": 0,
+                "label": "(0,0)"
+              },
+              {
+                "x": 1.5707963267948966,
+                "y": 1,
+                "label": "(π/2,1)"
+              },
+              {
+                "x": 3.141592653589793,
+                "y": 0,
+                "label": "(π,0)"
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          }
+        ]
+      }
+    },
+    "70": {
+      "title": "y=cos x",
+      "source_ref": "H-013",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "single_function",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "y=cos x",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=cos x",
+            "expressions": [
+              {
+                "expression": "cos(x)",
+                "display_latex": "y=cos x",
+                "label": "y=cos x"
+              }
+            ],
+            "x_range": [
+              -6.28318,
+              6.28318
+            ],
+            "y_range": [
+              -1.5,
+              1.5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "annotations": [
+              {
+                "x": 0,
+                "y": 1,
+                "label": "cos0=1"
+              },
+              {
+                "x": 3.14159,
+                "y": -1,
+                "label": "cosπ=-1"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "71": {
+      "title": "正弦与余弦对比",
+      "source_ref": "H-014",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "function_comparison",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "正弦与余弦对比",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=sin x, y=cos x",
+            "expressions": [
+              {
+                "expression": "sin(x)",
+                "display_latex": "y=sin x",
+                "label": "y=sin x"
+              },
+              {
+                "expression": "cos(x)",
+                "display_latex": "y=cos x",
+                "label": "y=cos x"
+              }
+            ],
+            "x_range": [
+              -6.28318,
+              6.28318
+            ],
+            "y_range": [
+              -1.5,
+              1.5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "72": {
+      "title": "y=tan x",
+      "source_ref": "H-015",
+      "graph_spec": {
+        "template": "single_function",
+        "renderer_version": 1,
+        "spec_version": 1,
+        "title": "y=tan x",
+        "panels": [
+          {
+            "x_range": [
+              -6.283185307179586,
+              6.283185307179586
+            ],
+            "y_range": [
+              -5,
+              5
+            ],
+            "axis_mode": "manual",
+            "expressions": [
+              {
+                "expression": "tan(x)",
+                "label": "y=tan x",
+                "domain": {
+                  "intervals": [
+                    [
+                      -6.283185307179586,
+                      -4.7623889803846895
+                    ],
+                    [
+                      -4.66238898038469,
+                      -1.6207963267948966
+                    ],
+                    [
+                      -1.5207963267948965,
+                      1.5207963267948965
+                    ],
+                    [
+                      1.6207963267948966,
+                      4.66238898038469
+                    ],
+                    [
+                      4.7623889803846895,
+                      6.283185307179586
+                    ]
+                  ]
+                }
+              }
+            ],
+            "vertical_lines": [
+              {
+                "value": -4.71238898038469,
+                "style": "dashed",
+                "label": ""
+              },
+              {
+                "value": -1.5707963267948966,
+                "style": "dashed",
+                "label": ""
+              },
+              {
+                "value": 1.5707963267948966,
+                "style": "dashed",
+                "label": ""
+              },
+              {
+                "value": 4.71238898038469,
+                "style": "dashed",
+                "label": ""
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          }
+        ]
+      }
+    },
+    "73": {
+      "title": "y=cot x",
+      "source_ref": "H-016",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "single_function",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "y=cot x",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=cot x",
+            "expressions": [
+              {
+                "expression": "cos(x)/sin(x)",
+                "display_latex": "y=cot x",
+                "label": "y=cot x"
+              }
+            ],
+            "x_range": [
+              -6.28318,
+              6.28318
+            ],
+            "y_range": [
+              -5,
+              5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "annotations": [
+              {
+                "x": 1.570795,
+                "y": 0,
+                "label": "cot(π/2)=0"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "74": {
+      "title": "正切与余切对比",
+      "source_ref": "H-017",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "function_comparison",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "正切与余切对比",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=tan x, y=cot x",
+            "expressions": [
+              {
+                "expression": "tan(x)",
+                "display_latex": "y=tan x",
+                "label": "y=tan x"
+              },
+              {
+                "expression": "cos(x)/sin(x)",
+                "display_latex": "y=cot x",
+                "label": "y=cot x"
+              }
+            ],
+            "x_range": [
+              -6.28318,
+              6.28318
+            ],
+            "y_range": [
+              -5,
+              5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "75": {
+      "title": "y=sec x, y=csc x",
+      "source_ref": "H-018",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "function_comparison",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "正割与余割",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=sec x, y=csc x",
+            "expressions": [
+              {
+                "expression": "1/cos(x)",
+                "display_latex": "y=sec x",
+                "label": "y=sec x"
+              },
+              {
+                "expression": "1/sin(x)",
+                "display_latex": "y=csc x",
+                "label": "y=csc x"
+              }
+            ],
+            "x_range": [
+              -6.28318,
+              6.28318
+            ],
+            "y_range": [
+              -5,
+              5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "76": {
+      "title": "y=arcsin x",
+      "source_ref": "H-019",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "single_function",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "y=arcsin x",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=arcsin x",
+            "expressions": [
+              {
+                "expression": "asin(x)",
+                "display_latex": "y=arcsin x",
+                "label": "y=arcsin x"
+              }
+            ],
+            "x_range": [
+              -1.5,
+              1.5
+            ],
+            "y_range": [
+              -2.070795,
+              2.070795
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "annotations": [
+              {
+                "x": 1,
+                "y": 1.570795,
+                "label": "(1,π/2)"
+              },
+              {
+                "x": -1,
+                "y": -1.570795,
+                "label": "(-1,-π/2)"
+              },
+              {
+                "x": 0,
+                "y": 0,
+                "label": "(0,0)"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "77": {
+      "title": "y=arccos x",
+      "source_ref": "H-020",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "single_function",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "y=arccos x",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=arccos x",
+            "expressions": [
+              {
+                "expression": "acos(x)",
+                "display_latex": "y=arccos x",
+                "label": "y=arccos x"
+              }
+            ],
+            "x_range": [
+              -1.5,
+              1.5
+            ],
+            "y_range": [
+              -0.5,
+              3.64159
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "annotations": [
+              {
+                "x": 1,
+                "y": 0,
+                "label": "(1,0)"
+              },
+              {
+                "x": -1,
+                "y": 3.14159,
+                "label": "(-1,π)"
+              },
+              {
+                "x": 0,
+                "y": 1.570795,
+                "label": "(0,π/2)"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "78": {
+      "title": "y=arctan x",
+      "source_ref": "H-021",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "single_function",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "y=arctan x",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=arctan x",
+            "expressions": [
+              {
+                "expression": "atan(x)",
+                "display_latex": "y=arctan x",
+                "label": "y=arctan x"
+              }
+            ],
+            "x_range": [
+              -5,
+              5
+            ],
+            "y_range": [
+              -2.070795,
+              2.070795
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "annotations": [
+              {
+                "x": 0,
+                "y": 0,
+                "label": "(0,0)"
+              }
+            ],
+            "horizontal_lines": [
+              {
+                "value": 1.570795,
+                "label": "y=π/2"
+              },
+              {
+                "value": -1.570795,
+                "label": "y=-π/2"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "79": {
+      "title": "y=arccot x",
+      "source_ref": "H-022",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "single_function",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "y=arccot x",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=arccot x",
+            "expressions": [
+              {
+                "expression": "pi/2 - atan(x)",
+                "display_latex": "y=arccot x",
+                "label": "y=arccot x"
+              }
+            ],
+            "x_range": [
+              -5,
+              5
+            ],
+            "y_range": [
+              -0.5,
+              3.64159
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "annotations": [
+              {
+                "x": 0,
+                "y": 1.570795,
+                "label": "(0,π/2)"
+              }
+            ],
+            "horizontal_lines": [
+              {
+                "value": 3.14159,
+                "label": "y=π"
+              },
+              {
+                "value": 0,
+                "label": "y=0"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "80": {
+      "title": "y=x+1/x",
+      "source_ref": "H-023",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "single_function",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "y=x+1/x",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=x+1/x",
+            "expressions": [
+              {
+                "expression": "x + 1/x",
+                "display_latex": "y=x+1/x",
+                "label": "y=x+1/x"
+              }
+            ],
+            "x_range": [
+              -5,
+              5
+            ],
+            "y_range": [
+              -6,
+              6
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "domain": {
+              "intervals": [
+                [
+                  -5,
+                  -0.01
+                ],
+                [
+                  0.01,
+                  5
+                ]
+              ]
+            },
+            "annotations": [
+              {
+                "x": 1,
+                "y": 2,
+                "label": "(1,2)"
+              },
+              {
+                "x": -1,
+                "y": -2,
+                "label": "(-1,-2)"
+              }
+            ],
+            "vertical_lines": [
+              {
+                "value": 0,
+                "label": "x=0"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "81": {
+      "title": "y=xe^{-x} 与 y=x^n e^{-x}",
+      "source_ref": "H-024",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "function_comparison",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "y=xⁿe⁻ˣ（n=1,2）",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=xe⁻ˣ, y=x²e⁻ˣ",
+            "expressions": [
+              {
+                "expression": "x*exp(-x)",
+                "display_latex": "y=xe^{-x}",
+                "label": "n=1: y=xe⁻ˣ"
+              },
+              {
+                "expression": "x**2*exp(-x)",
+                "display_latex": "y=x^2 e^{-x}",
+                "label": "n=2: y=x²e⁻ˣ"
+              }
+            ],
+            "x_range": [
+              -1,
+              6
+            ],
+            "y_range": [
+              -1,
+              2
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "annotations": [
+              {
+                "x": 1,
+                "y": 0.36787968862663156,
+                "label": "(1,1/e)"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "82": {
+      "title": "y=ln x / x",
+      "source_ref": "H-025",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "single_function",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "y=ln x / x",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=ln x / x",
+            "expressions": [
+              {
+                "expression": "ln(x)/x",
+                "display_latex": "y=ln x/x",
+                "label": "y=ln x/x"
+              }
+            ],
+            "x_range": [
+              0,
+              10
+            ],
+            "y_range": [
+              -0.5,
+              0.6
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "domain": {
+              "intervals": [
+                [
+                  0.01,
+                  10
+                ]
+              ]
+            },
+            "annotations": [
+              {
+                "x": 2.71828,
+                "y": 0.36787968862663156,
+                "label": "(e, 1/e)"
+              },
+              {
+                "x": 1,
+                "y": 0,
+                "label": "(1,0)"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "83": {
+      "title": "平移变换 y=f(x-a)+b",
+      "source_ref": "H-026",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "multi_panel",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 3
+        },
+        "title": "平移变换 y=f(x-a)+b",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "原函数 y=x²",
+            "expressions": [
+              {
+                "expression": "x**2",
+                "display_latex": "y=x²",
+                "label": "y=x²"
+              }
+            ],
+            "x_range": [
+              -3,
+              5
+            ],
+            "y_range": [
+              -1,
+              5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          },
+          {
+            "title": "水平平移 y=(x-2)²",
+            "expressions": [
+              {
+                "expression": "(x-2)**2",
+                "display_latex": "y=(x-2)²",
+                "label": "y=(x-2)²"
+              }
+            ],
+            "x_range": [
+              -3,
+              5
+            ],
+            "y_range": [
+              -1,
+              5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          },
+          {
+            "title": "竖直平移 y=x²+1",
+            "expressions": [
+              {
+                "expression": "x**2+1",
+                "display_latex": "y=x²+1",
+                "label": "y=x²+1"
+              }
+            ],
+            "x_range": [
+              -3,
+              5
+            ],
+            "y_range": [
+              -1,
+              5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "84": {
+      "title": "综合变换 y=af(bx+c)+d",
+      "source_ref": "H-027",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "multi_panel",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 3
+        },
+        "title": "综合变换 y=af(bx+c)+d",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "基准 y=x²",
+            "expressions": [
+              {
+                "expression": "x**2",
+                "display_latex": "y=x²",
+                "label": "基准"
+              }
+            ],
+            "x_range": [
+              -4,
+              4
+            ],
+            "y_range": [
+              -1,
+              5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          },
+          {
+            "title": "伸缩 y=2x²",
+            "expressions": [
+              {
+                "expression": "2*x**2",
+                "display_latex": "y=2x²",
+                "label": "a=2"
+              }
+            ],
+            "x_range": [
+              -4,
+              4
+            ],
+            "y_range": [
+              -1,
+              5
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          },
+          {
+            "title": "反射+平移 y=-(x+1)²+2",
+            "expressions": [
+              {
+                "expression": "-(x+1)**2+2",
+                "display_latex": "y=-(x+1)²+2",
+                "label": "a=-1,h=-1,k=2"
+              }
+            ],
+            "x_range": [
+              -4,
+              4
+            ],
+            "y_range": [
+              -3,
+              3
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "85": {
+      "title": "绝对值变换对比 y=|f(x)| 与 y=f(|x|)",
+      "source_ref": "H-028",
+      "graph_spec": {
+        "template": "function_comparison",
+        "renderer_version": 1,
+        "spec_version": 1,
+        "title": "绝对值变换对比",
+        "panels": [
+          {
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -1,
+              5
+            ],
+            "axis_mode": "manual",
+            "expressions": [
+              {
+                "expression": "x**2-1",
+                "label": "f(x)=x²-1"
+              },
+              {
+                "expression": "abs(x**2-1)",
+                "label": "y=|f(x)|"
+              },
+              {
+                "expression": "(abs(x))**2 - 1",
+                "label": "y=f(|x|)"
+              }
+            ],
+            "annotations": [
+              {
+                "x": 0,
+                "y": -1,
+                "label": "(0,-1)"
+              },
+              {
+                "x": -1,
+                "y": 0,
+                "label": "(-1,0)"
+              },
+              {
+                "x": 1,
+                "y": 0,
+                "label": "(1,0)"
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          }
+        ]
+      }
+    },
+    "86": {
+      "title": "原函数与导函数图像关系",
+      "source_ref": "H-029",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "function_comparison",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "原函数与导函数图像关系",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "f(x)=x³-3x, f'(x)=3x²-3",
+            "expressions": [
+              {
+                "expression": "x**3-3*x",
+                "display_latex": "y=x³-3x",
+                "label": "f(x)=x³-3x"
+              },
+              {
+                "expression": "3*x**2-3",
+                "display_latex": "y=3x²-3",
+                "label": "f'(x)=3x²-3"
+              }
+            ],
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -4,
+              4
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "annotations": [
+              {
+                "x": -1,
+                "y": 2,
+                "label": "f(-1)=2, f'(-1)=0"
+              },
+              {
+                "x": 1,
+                "y": -2,
+                "label": "f(1)=-2, f'(1)=0"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "87": {
+      "title": "常见有理函数及其渐近线",
+      "source_ref": "H-030",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "function_comparison",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "常见有理函数 y=(x+1)/(x²-1)",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "y=(x+1)/(x²-1)",
+            "expressions": [
+              {
+                "expression": "(x+1)/(x**2-1)",
+                "display_latex": "y=\\frac{x+1}{x^2-1}",
+                "label": "y=(x+1)/(x²-1)"
+              }
+            ],
+            "x_range": [
+              -4,
+              4
+            ],
+            "y_range": [
+              -6,
+              6
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "annotations": [
+              {
+                "x": -1,
+                "y": 0,
+                "label": "可去间断点 x=-1",
+                "point_style": "hollow"
+              }
+            ],
+            "vertical_lines": [
+              {
+                "value": 1,
+                "label": "x=1 渐近线"
+              }
+            ],
+            "horizontal_lines": [
+              {
+                "value": 0,
+                "label": "y=0 水平渐近线"
+              }
+            ],
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "88": {
+      "title": "对数·幂·指数增长速度对比",
+      "source_ref": "H-031",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "function_comparison",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "title": "对数·幂·指数增长速度对比",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "增长速度对比",
+            "expressions": [
+              {
+                "expression": "ln(x)",
+                "display_latex": "y=ln x",
+                "label": "ln x",
+                "domain": {
+                  "intervals": [
+                    [
+                      0.01,
+                      5
+                    ]
+                  ]
+                }
+              },
+              {
+                "expression": "x**0.5",
+                "display_latex": "y=x^{0.5}",
+                "label": "x^0.5"
+              },
+              {
+                "expression": "x",
+                "display_latex": "y=x",
+                "label": "x"
+              },
+              {
+                "expression": "x**2",
+                "display_latex": "y=x^2",
+                "label": "x²"
+              },
+              {
+                "expression": "exp(x)",
+                "display_latex": "y=e^x",
+                "label": "eˣ"
+              }
+            ],
+            "x_range": [
+              0,
+              5
+            ],
+            "y_range": [
+              -1,
+              10
+            ],
+            "axis_mode": "manual",
+            "x_label": "",
+            "y_label": "",
+            "grid": true,
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "89": {
+      "title": "分段函数典型图像：sgn x 与 \\lfloor x\\rfloor",
+      "source_ref": "H-032",
+      "graph_spec": {
+        "template": "function_comparison",
+        "renderer_version": 1,
+        "spec_version": 1,
+        "title": "分段函数典型图像",
+        "panels": [
+          {
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -3,
+              3
+            ],
+            "axis_mode": "manual",
+            "expressions": [
+              {
+                "expression": "sign(x)",
+                "label": "y=sgn x"
+              },
+              {
+                "expression": "floor(x)",
+                "label": "y=[x]"
+              }
+            ],
+            "annotations": [
+              {
+                "x": 0,
+                "y": 0,
+                "label": "原点"
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          }
+        ]
+      }
+    },
+    "90": {
+      "title": "四类间断点图像对比",
+      "source_ref": "H-033",
+      "graph_spec": {
+        "schema_version": 1,
+        "template": "discontinuity_comparison",
+        "render_mode": "explicit_2d",
+        "layout": {
+          "rows": 2,
+          "columns": 2
+        },
+        "title": "四类间断点图像对比",
+        "x_label": "x",
+        "y_label": "y",
+        "legend": true,
+        "grid": true,
+        "panels": [
+          {
+            "title": "可去间断点",
+            "expressions": [
+              {
+                "expression": "sin(x)/x",
+                "label": "f(x)=sin x/x"
+              }
+            ],
+            "x_range": [
+              -12.56636,
+              12.56636
+            ],
+            "y_range": [
+              -0.5,
+              1.5
+            ],
+            "axis_mode": "manual",
+            "annotations": [
+              {
+                "x": 0,
+                "y": 1,
+                "label": "可去间断点",
+                "point_style": "hollow"
+              }
+            ],
+            "horizontal_lines": [
+              {
+                "value": 1,
+                "style": "dashed"
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          },
+          {
+            "title": "跳跃间断点",
+            "expressions": [
+              {
+                "expression": "sign(x)",
+                "label": "f(x)=sgn x"
+              }
+            ],
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -2,
+              2
+            ],
+            "axis_mode": "manual",
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          },
+          {
+            "title": "无穷间断点",
+            "expressions": [
+              {
+                "expression": "1/x",
+                "label": "f(x)=1/x"
+              }
+            ],
+            "x_range": [
+              -3,
+              3
+            ],
+            "y_range": [
+              -10,
+              10
+            ],
+            "axis_mode": "manual",
+            "vertical_lines": [
+              {
+                "value": 0,
+                "label": "x=0"
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          },
+          {
+            "title": "振荡间断点",
+            "expressions": [
+              {
+                "expression": "sin(1/x)",
+                "label": "f(x)=sin(1/x)"
+              }
+            ],
+            "x_range": [
+              -1,
+              1
+            ],
+            "y_range": [
+              -1.5,
+              1.5
+            ],
+            "axis_mode": "manual",
+            "vertical_lines": [
+              {
+                "value": 0,
+                "style": "dashed"
+              }
+            ],
+            "axis_style": "cross",
+            "x_label": "",
+            "y_label": ""
+          }
+        ]
+      }
+    },
+    "91": {
+      "title": "幂指辅助函数 y=x^x",
+      "source_ref": "H-034",
+      "graph_spec": {
+        "schema_version": 1,
+        "render_mode": "explicit_2d",
+        "template": "single_function",
+        "layout": {
+          "rows": 1,
+          "columns": 1
+        },
+        "panels": [
+          {
+            "expressions": [
+              {
+                "expression": "x**x",
+                "display_latex": "y=x^x",
+                "label": "y=x^x",
+                "line_style": "solid"
+              }
+            ],
+            "domain": {
+              "intervals": [
+                [
+                  0.01,
+                  2.0
+                ]
+              ],
+              "exclude_points": []
+            },
+            "axis_mode": "manual",
+            "x_range": [
+              0.01,
+              2.0
+            ],
+            "y_range": [
+              0.0,
+              2.5
+            ],
+            "annotations": [
+              {
+                "x": 0.36787968862663156,
+                "y": 0.6922006275554039,
+                "label": "极小值点",
+                "color": null,
+                "point_style": "filled"
+              },
+              {
+                "x": 1.0,
+                "y": 1.0,
+                "label": "(1,1)",
+                "color": null,
+                "point_style": "filled"
+              }
+            ],
+            "vertical_lines": [
+              {
+                "value": 0.36787968862663156,
+                "label": "x=1/e",
+                "style": "dashed",
+                "is_vertical": true
+              }
+            ],
+            "horizontal_lines": [],
+            "title": "幂指辅助函数 y=x^x",
+            "x_label": "",
+            "y_label": "",
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "92": {
+      "title": "指数对数不等式常用辅助函数",
+      "source_ref": "H-035",
+      "graph_spec": {
+        "schema_version": 1,
+        "render_mode": "explicit_2d",
+        "template": "inequality_auxiliary",
+        "layout": {
+          "rows": 2,
+          "columns": 2
+        },
+        "panels": [
+          {
+            "expressions": [
+              {
+                "expression": "exp(x)",
+                "display_latex": null,
+                "label": "y=eˣ",
+                "line_style": "solid"
+              },
+              {
+                "expression": "x+1",
+                "display_latex": null,
+                "label": "y=x+1",
+                "line_style": "solid"
+              }
+            ],
+            "domain": {
+              "intervals": [],
+              "exclude_points": []
+            },
+            "axis_mode": "manual",
+            "x_range": [
+              -3.0,
+              3.0
+            ],
+            "y_range": [
+              -2.0,
+              8.0
+            ],
+            "annotations": [
+              {
+                "x": 0.0,
+                "y": 1.0,
+                "label": "(0,1)",
+                "color": null,
+                "point_style": "filled"
+              }
+            ],
+            "vertical_lines": [],
+            "horizontal_lines": [],
+            "title": "y=eˣ 与 y=x+1",
+            "x_label": "",
+            "y_label": "",
+            "axis_style": "cross"
+          },
+          {
+            "expressions": [
+              {
+                "expression": "ln(x)",
+                "display_latex": null,
+                "label": "y=ln x",
+                "line_style": "solid"
+              },
+              {
+                "expression": "x-1",
+                "display_latex": null,
+                "label": "y=x-1",
+                "line_style": "solid"
+              }
+            ],
+            "domain": {
+              "intervals": [
+                [
+                  0.001,
+                  5.0
+                ]
+              ],
+              "exclude_points": []
+            },
+            "axis_mode": "manual",
+            "x_range": [
+              0.0,
+              5.0
+            ],
+            "y_range": [
+              -3.0,
+              4.0
+            ],
+            "annotations": [
+              {
+                "x": 1.0,
+                "y": 0.0,
+                "label": "(1,0)",
+                "color": null,
+                "point_style": "filled"
+              }
+            ],
+            "vertical_lines": [
+              {
+                "value": 0.0,
+                "label": null,
+                "style": "dashed",
+                "is_vertical": true
+              }
+            ],
+            "horizontal_lines": [],
+            "title": "y=ln x 与 y=x-1",
+            "x_label": "",
+            "y_label": "",
+            "axis_style": "cross"
+          },
+          {
+            "expressions": [
+              {
+                "expression": "x",
+                "display_latex": null,
+                "label": "y=x",
+                "line_style": "solid"
+              },
+              {
+                "expression": "sin(x)",
+                "display_latex": null,
+                "label": "y=sin x",
+                "line_style": "solid"
+              }
+            ],
+            "domain": {
+              "intervals": [
+                [
+                  0.0,
+                  5.0
+                ]
+              ],
+              "exclude_points": []
+            },
+            "axis_mode": "manual",
+            "x_range": [
+              0.0,
+              5.0
+            ],
+            "y_range": [
+              -1.0,
+              5.0
+            ],
+            "annotations": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "label": "(0,0)",
+                "color": null,
+                "point_style": "filled"
+              }
+            ],
+            "vertical_lines": [],
+            "horizontal_lines": [],
+            "title": "y=x 与 y=sin x",
+            "x_label": "",
+            "y_label": "",
+            "axis_style": "cross"
+          }
+        ]
+      }
+    },
+    "201": {
+      "title": "特殊函数：x=sin y 的分支表示与图像",
+      "source_ref": "math2_manual:function:x_equals_sin_y_branches",
+      "graph_spec": {
+        "template": "single_function",
+        "renderer_version": 1,
+        "spec_version": 2,
+        "title": "$x=\\sin y,\\quad 0\\leq y\\leq 2\\pi$",
+        "panels": [
+          {
+            "x_range": [
+              -1.35,
+              1.35
+            ],
+            "y_range": [
+              -0.28,
+              6.663185307179586
+            ],
+            "axis_mode": "manual",
+            "axis_style": "cross",
+            "show_legend": false,
+            "x_label": "",
+            "y_label": "",
+            "x_ticks": [
+              -1,
+              0,
+              1
+            ],
+            "x_tick_labels": [
+              "-1",
+              "",
+              "1"
+            ],
+            "y_ticks": [
+              0,
+              1.5707963267948966,
+              3.141592653589793,
+              4.71238898038469,
+              6.283185307179586
+            ],
+            "y_tick_labels": [
+              "",
+              "$\\frac{\\pi}{2}$",
+              "$\\pi$",
+              "$\\frac{3\\pi}{2}$",
+              "$2\\pi$"
+            ],
+            "expressions": [
+              {
+                "expression": "asin(x)",
+                "label": "y=arcsin x",
+                "domain": {
+                  "intervals": [
+                    [
+                      0,
+                      1
+                    ]
+                  ],
+                  "exclude_points": []
+                }
+              },
+              {
+                "expression": "pi-asin(x)",
+                "label": "y=π-arcsin x",
+                "domain": {
+                  "intervals": [
+                    [
+                      -1,
+                      1
+                    ]
+                  ],
+                  "exclude_points": []
+                }
+              },
+              {
+                "expression": "2*pi+asin(x)",
+                "label": "y=2π+arcsin x",
+                "domain": {
+                  "intervals": [
+                    [
+                      -1,
+                      0
+                    ]
+                  ],
+                  "exclude_points": []
+                }
+              }
+            ],
+            "annotations": [
+              {
+                "x": 1,
+                "y": 1.5707963267948966,
+                "label": "$(1,\\frac{\\pi}{2})$"
+              },
+              {
+                "x": 0,
+                "y": 3.141592653589793,
+                "label": "$(0,\\pi)$"
+              },
+              {
+                "x": -1,
+                "y": 4.71238898038469,
+                "label": "$(-1,\\frac{3\\pi}{2})$"
+              },
+              {
+                "x": 0,
+                "y": 6.283185307179586,
+                "label": "$(0,2\\pi)$"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

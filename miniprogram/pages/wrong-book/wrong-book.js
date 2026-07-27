@@ -711,7 +711,8 @@ Page({
     const exportApi = require('../../services/export')
     exportApi.getCapabilities().then(cap => {
       if (!cap.export_enabled) {
-        wx.showToast({ title: '导出功能暂未开放', icon: 'none' })
+        const msg = exportApi.getExportCapabilityErrorMessage(null, cap)
+        wx.showToast({ title: msg, icon: 'none', duration: 3000 })
         return
       }
       // Pass selected IDs via global data (not URL params — too many for URL)
@@ -720,9 +721,9 @@ Page({
       gd.exportSelectedIds = ids
 
       wx.navigateTo({ url: '/pages/export-config/export-config' })
-    }).catch(() => {
-      // Capability check failed — safe degrade: hide the feature
-      wx.showToast({ title: '导出功能暂未开放', icon: 'none' })
+    }).catch(err => {
+      const msg = exportApi.getExportCapabilityErrorMessage(err, null)
+      wx.showToast({ title: msg, icon: 'none', duration: 3000 })
     })
   },
 

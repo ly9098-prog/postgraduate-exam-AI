@@ -110,7 +110,12 @@ echo -e "${CYAN}🚀 启动服务...${NC}"
 echo -e "${CYAN}   访问地址: http://127.0.0.1:8000${NC}"
 echo -e "${CYAN}   API 文档: http://127.0.0.1:8000/docs${NC}"
 echo -e "${CYAN}   停止服务: Ctrl+C${NC}"
+echo -e "${CYAN}   角色: PROCESS_ROLE=${PROCESS_ROLE:-all}${NC}"
 echo -e "${CYAN}========================================${NC}"
 echo ""
+
+# 默认以 all 角色启动（API + 调度器 + Worker），导出任务自动处理。
+# 如需 web-only（不处理导出），请先执行: export PROCESS_ROLE=web
+export PROCESS_ROLE="${PROCESS_ROLE:-all}"
 
 "$RUNTIME_PYTHON" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

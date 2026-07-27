@@ -1,20 +1,22 @@
 /**
- * ExportStatusSyncManager — page-level WebSocket+fallback polling for export tasks.
+ * ExportStatusSyncManager — page-level WebSocket + calibration polling for export tasks.
  *
  * Design:
  * - One WebSocket per page instance (not per task).
  * - Routes incoming status events by task_id to registered callbacks.
- * - No backup polling while the WebSocket is healthy.
- * - A single fallback polling loop starts only when WebSocket fails.
- * - Properly manages lifecycle: hide/show/unload/stop.
+ * - **Calibration polling** runs even when WS is healthy, at reduced frequency,
+ *   to recover from missed events (cross-process loss, backend restart, page background).
+ * - Uses ``_wsOpened`` flag instead of ``WebSocket.OPEN`` (WeChat SocketTask is not
+ *   a browser WebSocket and the global ``WebSocket`` constant may not exist).
+ * - Transition protection: never let a delayed response override a newer terminal state.
  *
  * Usage:
  *   const sync = new ExportStatusSyncManager({
  *     onUpdate: (taskId, taskData) => { ... },
+ *     onCalibrate: (nonTerminalIds) => { ... },
  *     onError: (err) => { ... },
  *   })
- *   sync.addTask(42)
- *   sync.addTask(43)
+ *   sync.setTaskIds([42, 43])
  *   sync.start()
  *   // ... page onHide:
  *   sync.onHide()
@@ -29,30 +31,49 @@ const storage = require('../utils/storage')
 
 const TERMINAL_STATES = ['completed', 'failed', 'expired']
 const WS_HEARTBEAT_INTERVAL = 25000
+const CALIBRATION_INTERVAL_WS = 5000   // calibration interval when WS is healthy (slow)
+const CALIBRATION_INTERVAL_FALLBACK = 3000  // polling interval when WS is unavailable
+
+/**
+ * State priority: a higher index means "more terminal".
+ * Used to reject stale updates that would regress a task.
+ */
+const STATE_RANK = {
+  pending: 0,
+  processing: 1,
+  completed: 2,
+  failed: 2,
+  expired: 2,
+}
 
 class ExportStatusSyncManager {
   /**
    * @param {object} options
    * @param {function(number, object)} [options.onUpdate] - Called with (taskId, data) on status change
    * @param {function(Error)} [options.onError] - Called on non-fatal errors
-   * @param {number} [options.pollIntervalMs=3000] - Polling interval in ms
+   * @param {number} [options.pollIntervalMs=3000] - Fallback polling interval in ms
    */
   constructor(options = {}) {
     this._taskIds = new Set()
     this._onUpdate = options.onUpdate || null
     this._onError = options.onError || null
-    this._pollIntervalMs = options.pollIntervalMs || 3000
+    this._pollIntervalMs = options.pollIntervalMs || CALIBRATION_INTERVAL_FALLBACK
+
+    // Track per-task status for transition protection
+    this._taskStatuses = {}  // taskId -> status string
 
     // Internal state
     this._stopped = false
     this._ws = null
-    this._wsHealthy = false
+    this._wsOpened = false
     this._pollTimer = null
     this._reconnectTimer = null
     this._heartbeatTimer = null
     this._consecutiveErrors = 0
     this._maxConsecutiveErrors = 5
     this._hidden = false
+    this._reconnectAttempts = 0
+    this._maxReconnectAttempts = 5
   }
 
   // ── Public API ──
@@ -66,23 +87,32 @@ class ExportStatusSyncManager {
   /** Remove a task ID from monitoring. */
   removeTask(taskId) {
     this._taskIds.delete(taskId)
+    delete this._taskStatuses[taskId]
   }
 
-  /** Replace all tracked task IDs. */
+  /** Replace all tracked task IDs. Preserves known statuses for existing IDs. */
   setTaskIds(ids) {
-    this._taskIds = new Set(ids.filter(id => typeof id === 'number'))
+    const newSet = new Set(ids.filter(id => typeof id === 'number'))
+    // Clean up statuses for removed IDs
+    for (const tid of this._taskIds) {
+      if (!newSet.has(tid)) {
+        delete this._taskStatuses[tid]
+      }
+    }
+    this._taskIds = newSet
   }
 
   /** Start or resume synchronisation. Safe to call multiple times. */
   start() {
     if (this._stopped) return
     this._hidden = false
+    this._reconnectAttempts = 0
 
     // Only connect if there are tasks to monitor
     if (this._taskIds.size === 0) return
 
     // Don't reconnect if WS is already healthy
-    if (this._wsHealthy) return
+    if (this._wsOpened) return
 
     this._connectWebSocket()
   }
@@ -104,10 +134,16 @@ class ExportStatusSyncManager {
   onShow() {
     if (this._stopped) return
     this._hidden = false
+    this._reconnectAttempts = 0
     if (this._allTerminal()) return
 
+    // Run calibration immediately on return from background
+    this._calibrateOnce()
+
     // Reconnect if everything was cleaned up
-    this._connectWebSocket()
+    if (!this._wsOpened) {
+      this._connectWebSocket()
+    }
   }
 
   /** Page unloaded — permanent cleanup. Same as stop(). */
@@ -125,20 +161,39 @@ class ExportStatusSyncManager {
   _cleanupTransient() {
     this._closeWebSocket()
     this._clearTimers()
-    this._wsHealthy = false
+    this._wsOpened = false
   }
 
   _cleanupAll() {
     this._cleanupTransient()
     this._taskIds.clear()
+    this._taskStatuses = {}
   }
 
   _allTerminal() {
-    // We don't track per-task terminal state internally.
-    // The caller is responsible for calling removeTask() when
-    // they receive a terminal update via onUpdate.
-    // When the set is empty, everything is terminal.
+    // Empty set means all tasks have been removed (terminal)
     return this._taskIds.size === 0
+  }
+
+  // ── Transition protection ──
+
+  /**
+   * Returns true if the update should be accepted.
+   * Rejects updates that would regress a terminal state to a non-terminal one.
+   */
+  _acceptTransition(taskId, newStatus) {
+    const current = this._taskStatuses[taskId]
+    if (!current) return true  // no known state → accept
+
+    const currentRank = STATE_RANK[current] !== undefined ? STATE_RANK[current] : -1
+    const newRank = STATE_RANK[newStatus] !== undefined ? STATE_RANK[newStatus] : -1
+
+    // Never allow terminal → non-terminal
+    if (currentRank === 2 && newRank < 2) return false
+    // Never allow completed → failed (or vice versa)
+    if (currentRank === 2 && newRank === 2 && current !== newStatus) return false
+    // Allow same state or forward progression
+    return true
   }
 
   // ── WebSocket ──
@@ -152,7 +207,13 @@ class ExportStatusSyncManager {
     }
 
     if (this._stopped || this._hidden) return
-    if (this._wsHealthy) return
+    if (this._wsOpened) return
+
+    // Exceeded reconnect limit — fall back to polling permanently
+    if (this._reconnectAttempts >= this._maxReconnectAttempts) {
+      this._startPolling()
+      return
+    }
 
     // Clean up any previous connection state
     this._closeWebSocket()
@@ -168,15 +229,17 @@ class ExportStatusSyncManager {
     const wsUrl = `${wsBase}/api/v1/exports/ws?token=${encodeURIComponent(token || '')}`
 
     try {
-      this._ws = wx.connectSocket({ url: wsUrl, fail: () => this._fallbackToPolling() })
+      const socketTask = wx.connectSocket({ url: wsUrl, fail: () => this._fallbackToPolling() })
+      this._ws = socketTask
 
-      this._ws.onOpen(() => {
+      socketTask.onOpen(() => {
         if (this._stopped) {
           this._closeWebSocket()
           return
         }
-        this._wsHealthy = true
+        this._wsOpened = true
         this._consecutiveErrors = 0
+        this._reconnectAttempts = 0
 
         // If we were polling, stop — WS is healthy now
         this._stopPolling()
@@ -184,11 +247,14 @@ class ExportStatusSyncManager {
         // Start heartbeat pings
         this._startHeartbeat()
 
+        // Start calibration polling (reduced frequency, always on)
+        this._startCalibration()
+
         // Send initial ping to verify
         this._wsSend({ type: 'ping' })
       })
 
-      this._ws.onMessage((res) => {
+      socketTask.onMessage((res) => {
         if (this._stopped) return
         try {
           const msg = JSON.parse(res.data)
@@ -198,14 +264,14 @@ class ExportStatusSyncManager {
         }
       })
 
-      this._ws.onError(() => {
+      socketTask.onError(() => {
         if (this._stopped) return
-        this._wsHealthy = false
+        this._wsOpened = false
         this._fallbackToPolling()
       })
 
-      this._ws.onClose(() => {
-        this._wsHealthy = false
+      socketTask.onClose(() => {
+        this._wsOpened = false
         this._stopHeartbeat()
         if (this._stopped || this._hidden) return
         // Schedule reconnect
@@ -230,10 +296,15 @@ class ExportStatusSyncManager {
     if (msg.type === 'export_status' && msg.task_id) {
       const tid = Number(msg.task_id)
       if (this._taskIds.has(tid)) {
+        const newStatus = msg.status
+        if (!this._acceptTransition(tid, newStatus)) {
+          return  // reject stale/non-forward update
+        }
+        this._taskStatuses[tid] = newStatus
         if (this._onUpdate) this._onUpdate(tid, msg)
 
         // Remove terminal tasks from tracking
-        if (TERMINAL_STATES.includes(msg.status)) {
+        if (TERMINAL_STATES.includes(newStatus)) {
           this._taskIds.delete(tid)
           if (this._allTerminal()) {
             this.stop()
@@ -246,8 +317,14 @@ class ExportStatusSyncManager {
 
   _wsSend(data) {
     try {
-      if (this._ws && this._ws.readyState === WebSocket.OPEN) {
-        this._ws.send({ data: JSON.stringify(data) })
+      if (this._ws && this._wsOpened) {
+        this._ws.send({
+          data: JSON.stringify(data),
+          fail: () => {
+            this._wsOpened = false
+            this._fallbackToPolling()
+          },
+        })
       }
     } catch (e) {
       // Ignore send errors
@@ -259,13 +336,13 @@ class ExportStatusSyncManager {
       try { this._ws.close() } catch (e) { /* ignore */ }
       this._ws = null
     }
-    this._wsHealthy = false
+    this._wsOpened = false
   }
 
   _startHeartbeat() {
     this._stopHeartbeat()
     this._heartbeatTimer = setInterval(() => {
-      if (this._stopped || !this._wsHealthy) {
+      if (this._stopped || !this._wsOpened) {
         this._stopHeartbeat()
         return
       }
@@ -284,15 +361,82 @@ class ExportStatusSyncManager {
 
   _scheduleReconnect() {
     if (this._reconnectTimer) return
+    this._reconnectAttempts++
     this._reconnectTimer = setTimeout(() => {
       this._reconnectTimer = null
-      if (!this._stopped && !this._hidden && !this._wsHealthy) {
+      if (!this._stopped && !this._hidden && !this._wsOpened) {
         this._connectWebSocket()
       }
     }, 5000)
   }
 
-  // ── Fallback polling (single loop) ──
+  // ── Calibration polling (always on when tasks are non-terminal) ──
+  //
+  // Even when WebSocket is healthy, we periodically re-fetch from the database
+  // to recover from missed events (cross-process loss, backend restart, etc.).
+  // When WS is down, this becomes the primary sync mechanism at a faster rate.
+
+  _startCalibration() {
+    this._stopCalibration()
+    if (this._allTerminal()) return
+
+    const calibrate = () => {
+      if (this._stopped || this._allTerminal()) return
+      this._calibrateOnce()
+      // Schedule next calibration
+      if (!this._stopped) {
+        this._pollTimer = setTimeout(calibrate, CALIBRATION_INTERVAL_WS)
+      }
+    }
+
+    // Start first calibration after a short delay (allow WS events to settle first)
+    this._pollTimer = setTimeout(calibrate, 1500)
+  }
+
+  _stopCalibration() {
+    if (this._pollTimer) {
+      clearTimeout(this._pollTimer)
+      this._pollTimer = null
+    }
+  }
+
+  /** Fetch latest task status from DB for all tracked non-terminal tasks. */
+  async _calibrateOnce() {
+    if (this._stopped || this._allTerminal()) return
+
+    // Collect IDs from tasks that are not known to be terminal
+    const ids = Array.from(this._taskIds)
+
+    for (const tid of ids) {
+      if (this._stopped || this._allTerminal()) return
+      try {
+        const task = await api.get(`/exports/${tid}`)
+        this._consecutiveErrors = 0
+
+        // Transition protection: don't regress terminal state
+        if (!this._acceptTransition(tid, task.status)) {
+          continue
+        }
+
+        this._taskStatuses[tid] = task.status
+        if (this._onUpdate) this._onUpdate(tid, task)
+
+        if (TERMINAL_STATES.includes(task.status)) {
+          this._taskIds.delete(tid)
+        }
+      } catch (e) {
+        this._consecutiveErrors++
+        if (this._onError && this._consecutiveErrors <= 3) {
+          this._onError(e)
+        }
+      }
+    }
+  }
+
+  // ── Fallback polling (single loop, used only when WS unavailable) ──
+  //
+  // When the WebSocket is down, we use this as the primary sync mechanism.
+  // When WS comes back, this stops and calibration takes over.
 
   _fallbackToPolling() {
     if (this._stopped || this._hidden) return
@@ -308,27 +452,33 @@ class ExportStatusSyncManager {
     const poll = async () => {
       if (this._stopped) return
 
-      // If WS reconnected while we were waiting, stop polling
-      if (this._wsHealthy) {
+      // If WS reconnected while we were waiting, switch to calibration mode
+      if (this._wsOpened) {
         this._stopPolling()
+        this._startCalibration()
         return
       }
 
       try {
-        // Poll each tracked task individually
         const ids = Array.from(this._taskIds)
         for (const tid of ids) {
           if (this._stopped) return
           try {
             const task = await api.get(`/exports/${tid}`)
             this._consecutiveErrors = 0
+
+            // Transition protection
+            if (!this._acceptTransition(tid, task.status)) {
+              continue
+            }
+
+            this._taskStatuses[tid] = task.status
             if (this._onUpdate) this._onUpdate(tid, task)
 
             if (TERMINAL_STATES.includes(task.status)) {
               this._taskIds.delete(tid)
             }
           } catch (e) {
-            // Individual task error — report via onError
             this._consecutiveErrors++
             if (this._onError) this._onError(e)
           }
@@ -368,7 +518,7 @@ class ExportStatusSyncManager {
   }
 
   _clearTimers() {
-    this._stopPolling()
+    this._stopPolling()  // covers both polling and calibration timers
     this._stopHeartbeat()
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer)

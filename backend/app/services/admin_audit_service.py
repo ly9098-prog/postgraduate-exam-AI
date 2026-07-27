@@ -6,6 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
+from app.core.secret_crypto import sanitise_dict
 from app.core.time_utils import utcnow
 from app.models.admin import AuditLog
 
@@ -18,15 +19,17 @@ except ImportError:  # pragma: no cover
         pass
 
 
-# ── Fields that are never written into audit detail ──
-_SENSITIVE_PARAM_KEYS = frozenset({"password", "password_hash", "api_key", "access_token", "refresh_token"})
-
-
 def _sanitize_detail(detail: dict | None) -> dict | None:
-    """Remove sensitive keys from audit detail recursively (one level deep)."""
+    """Remove sensitive values from audit detail recursively.
+
+    Sensitive field values are replaced with ``[REDACTED]``.
+    Uses ``secret_crypto.sanitise_dict`` for recursive redaction.
+    """
     if detail is None:
         return None
-    return {k: ("[REDACTED]" if k.lower() in _SENSITIVE_PARAM_KEYS else v) for k, v in detail.items()}
+    result = sanitise_dict(detail)
+    assert isinstance(result, dict | None)  # nosec — type narrowing
+    return result
 
 
 async def write_admin_audit(
