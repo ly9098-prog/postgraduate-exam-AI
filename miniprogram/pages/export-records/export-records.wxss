@@ -86,24 +86,6 @@ button::after {
   animation: card-enter 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
-.record-card::before {
-  content: '';
-  position: absolute;
-  top: 18rpx;
-  bottom: 18rpx;
-  left: 0;
-  width: 7rpx;
-  height: auto;
-  border-radius: 0 999rpx 999rpx 0;
-  background: #AAB4AC;
-}
-
-.record-card-completed::before { background: #38A463; }
-.record-card-processing::before { background: #4A8B68; }
-.record-card-pending::before { background: #A1A98D; }
-.record-card-failed::before { background: #D7655F; }
-.record-card-expired::before { background: #98A09A; }
-
 .record-card-highlight {
   border-color: #48A66A;
   box-shadow: 0 0 0 5rpx rgba(72, 166, 106, 0.13), 0 14rpx 34rpx rgba(31, 55, 39, 0.10);
@@ -526,6 +508,17 @@ button::after {
 .button-pressed {
   transform: scale(0.975);
   opacity: 0.78;
+}
+
+.action-btn[disabled],
+.secondary-action[disabled] {
+  transform: none;
+  opacity: 0.58;
+}
+
+.action-btn-primary[disabled] {
+  background: #668572;
+  box-shadow: none;
 }
 
 .more-toggle {

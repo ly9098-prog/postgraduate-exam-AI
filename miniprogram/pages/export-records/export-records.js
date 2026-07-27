@@ -56,6 +56,9 @@ const FORMAT_MAP = {
 const TERMINAL_STATES = ['completed', 'failed', 'expired']
 const PENDING_WARNING_SECONDS = 30
 const PROCESSING_WARNING_SECONDS = 300  // 5 minutes
+const EXPORT_STORAGE_KEY = 'saved_export_files_v2'
+const EXPORT_STORAGE_DIR = 'exports'
+const MAX_SAVED_EXPORTS = 5
 
 function pad2(value) {
   return Number(value) < 10 ? '0' + Number(value) : String(value)
@@ -150,6 +153,8 @@ Page({
     loading: false,
     highlightId: null,
     expandedActionId: null,
+    savingTaskId: null,
+    reExportingTaskId: null,
     skeletonItems: [1, 2],
   },
 
@@ -160,7 +165,7 @@ Page({
   _statusSyncManager: null,
   _hasLoadedOnce: false,
   _loadPromise: null,
-  _completedNotified: new Set(),
+  _completedNotified: null,
   _taskWatchStartedAt: null,  // Map<taskId, timestamp> for timeout detection
   _watchTimer: null,  // periodic check for long-running tasks
 
@@ -210,7 +215,7 @@ Page({
     this._pageAlive = false
     this._stopWatchTimer()
     this._destroySyncManager()
-    this._completedNotified.clear()
+    if (this._completedNotified) this._completedNotified.clear()
     if (this._taskWatchStartedAt) {
       this._taskWatchStartedAt.clear()
     }
@@ -251,7 +256,9 @@ Page({
     if (taskIds.length > 0) {
       this._statusSyncManager.start()
     } else {
-      this._statusSyncManager.stop()
+      // No active tasks right now. Keep the manager reusable so a newly
+      // created retry/re-export task can start synchronising immediately.
+      this._statusSyncManager.pause()
     }
   },
 
@@ -318,6 +325,28 @@ Page({
       return this._enrichTask({ ...t, ...updated })
     })
     this.setData({ list })
+  },
+
+  /**
+   * Insert or replace a task at the top of the list.
+   * Re-export returns the newly-created pending task directly, so rendering
+   * that response avoids a race where an immediate list refresh still shows
+   * only the completed source task.
+   */
+  _upsertTaskAtTop(task) {
+    const taskId = Number(task && task.id)
+    if (!taskId) return
+
+    const enriched = this._enrichTask({ ...task, id: taskId })
+    const list = [enriched].concat(
+      this.data.list.filter(item => Number(item.id) !== taskId)
+    )
+    this.setData({
+      list,
+      highlightId: taskId,
+      expandedActionId: null,
+    })
+    this._restartStatusSync()
   },
 
   // ── List loading ──
@@ -600,9 +629,178 @@ Page({
         url,
         header,
         success: function(res) {
-          if (res.statusCode === 200) resolve(res.tempFilePath)
-          else reject(new Error('下载失败: ' + res.statusCode))
+          if (res.statusCode === 200 && res.tempFilePath) {
+            resolve(res.tempFilePath)
+            return
+          }
+          reject(new Error('下载失败（' + (res.statusCode || '未知状态') + '）'))
         },
+        fail: function(err) {
+          reject(new Error((err && err.errMsg) || '下载失败'))
+        },
+      })
+    })
+  },
+
+  _sanitizeLocalFileName(fileName, fileFormat) {
+    const ext = fileFormat === 'docx' ? 'docx' : 'pdf'
+    let safe = String(fileName || ('错题巩固练习.' + ext))
+      .replace(/[\\/:*?"<>|\x00-\x1f]/g, '')
+      .replace(/^\s+|\s+$/g, '')
+    if (!safe) safe = '错题巩固练习.' + ext
+    if (!new RegExp('\\.' + ext + '$', 'i').test(safe)) {
+      safe += '.' + ext
+    }
+    return safe
+  },
+
+  _fsCall(method, options) {
+    const fs = wx.getFileSystemManager()
+    return new Promise(function(resolve, reject) {
+      if (!fs || typeof fs[method] !== 'function') {
+        reject(new Error('当前微信版本不支持文件保存'))
+        return
+      }
+      fs[method](Object.assign({}, options, {
+        success: resolve,
+        fail: reject,
+      }))
+    })
+  },
+
+  _unlinkFile(filePath) {
+    if (!filePath) return Promise.resolve()
+    return this._fsCall('unlink', { filePath }).catch(function() {})
+  },
+
+  _ensureExportStorageDir() {
+    const dirPath = wx.env.USER_DATA_PATH + '/' + EXPORT_STORAGE_DIR
+    return this._fsCall('mkdir', { dirPath, recursive: true })
+      .catch(function(err) {
+        const msg = (err && err.errMsg) || ''
+        if (/exist/i.test(msg)) return
+        throw err
+      })
+      .then(function() { return dirPath })
+  },
+
+  _readSavedExportIndex() {
+    const raw = wx.getStorageSync(EXPORT_STORAGE_KEY)
+    if (!Array.isArray(raw)) return []
+    return raw.filter(function(item) {
+      return item && typeof item.filePath === 'string'
+    })
+  },
+
+  _writeSavedExportIndex(items) {
+    try {
+      wx.setStorageSync(EXPORT_STORAGE_KEY, Array.isArray(items) ? items : [])
+    } catch (_) {}
+  },
+
+  _isStorageQuotaError(err) {
+    const msg = String((err && (err.errMsg || err.message)) || '')
+    return /maximum size|storage limit|quota|空间.*满|存储.*满/i.test(msg)
+  },
+
+  async _listDirFiles(dirPath) {
+    try {
+      const res = await this._fsCall('readdir', { dirPath })
+      return (res && res.files) || []
+    } catch (_) {
+      return []
+    }
+  },
+
+  async _clearManagedExportFiles() {
+    const indexed = this._readSavedExportIndex()
+    const targets = indexed.map(function(item) { return item.filePath })
+    const exportDir = wx.env.USER_DATA_PATH + '/' + EXPORT_STORAGE_DIR
+    const managedNames = await this._listDirFiles(exportDir)
+    managedNames.forEach(function(name) {
+      targets.push(exportDir + '/' + name)
+    })
+
+    // Clean legacy files saved by the previous implementation directly under
+    // USER_DATA_PATH. Only recognisable export documents are removed.
+    const rootFiles = await this._listDirFiles(wx.env.USER_DATA_PATH)
+    rootFiles.forEach(function(name) {
+      if (/^(?:错题|export[_-]).*\.(?:pdf|docx)$/i.test(name)) {
+        targets.push(wx.env.USER_DATA_PATH + '/' + name)
+      }
+    })
+
+    const unique = Array.from(new Set(targets))
+    await Promise.all(unique.map((filePath) => this._unlinkFile(filePath)))
+
+    // wx.saveFile from older versions stored files in WeChat's saved-file
+    // area. Remove only PDF/Word entries so unrelated app data is preserved.
+    try {
+      const saved = await this._fsCall('getSavedFileList', {})
+      const documentFiles = ((saved && saved.fileList) || []).filter(function(item) {
+        return item && /\.(?:pdf|docx)$/i.test(item.filePath || '')
+      })
+      await Promise.all(documentFiles.map((item) => {
+        return this._fsCall('removeSavedFile', { filePath: item.filePath }).catch(function() {})
+      }))
+    } catch (_) {}
+
+    this._writeSavedExportIndex([])
+  },
+
+  async _rememberSavedExport(filePath, taskId, fileName) {
+    const now = Date.now()
+    const current = this._readSavedExportIndex()
+      .filter(function(item) { return item.filePath !== filePath })
+    current.unshift({ filePath, taskId, fileName, savedAt: now })
+
+    const keep = current.slice(0, MAX_SAVED_EXPORTS)
+    const remove = current.slice(MAX_SAVED_EXPORTS)
+    await Promise.all(remove.map((item) => this._unlinkFile(item.filePath)))
+    this._writeSavedExportIndex(keep)
+  },
+
+  /**
+   * Persist a downloaded file in the app's managed export directory.
+   * Uses FileSystemManager.saveFile (the supported API), keeps only a small
+   * number of historical exports, and clears prior app-generated export files
+   * once when WeChat reports that the private file quota is full.
+   */
+  async _persistDownloadedFile(tempFilePath, fileName, taskId) {
+    const exportDir = await this._ensureExportStorageDir()
+    const stableName = 'export_' + taskId + '_' + fileName
+    const targetPath = exportDir + '/' + stableName
+
+    const saveOnce = async () => {
+      await this._unlinkFile(targetPath)
+      const res = await this._fsCall('saveFile', {
+        tempFilePath,
+        filePath: targetPath,
+      })
+      return (res && res.savedFilePath) || targetPath
+    }
+
+    try {
+      const savedPath = await saveOnce()
+      await this._rememberSavedExport(savedPath, taskId, fileName)
+      return savedPath
+    } catch (err) {
+      if (!this._isStorageQuotaError(err)) throw err
+      await this._clearManagedExportFiles()
+      await this._ensureExportStorageDir()
+      const savedPath = await saveOnce()
+      await this._rememberSavedExport(savedPath, taskId, fileName)
+      return savedPath
+    }
+  },
+
+  _openSavedDocument(filePath, fileFormat) {
+    return new Promise(function(resolve, reject) {
+      wx.openDocument({
+        filePath,
+        fileType: fileFormat === 'docx' ? 'docx' : 'pdf',
+        showMenu: true,
+        success: resolve,
         fail: reject,
       })
     })
@@ -610,33 +808,78 @@ Page({
 
   // ── Save ──
 
-  onSave: function(e) {
-    var taskId = e.currentTarget.dataset.id
-    var self = this
-    wx.showToast({ title: '正在保存…', icon: 'loading' })
+  async onSave(e) {
+    const taskId = Number(e.currentTarget.dataset.id)
+    if (!taskId || this.data.savingTaskId) return
 
-    exportApi.getDownloadInfo(taskId).then(function(info) {
-      var isStream = info.method === 'stream'
-      var url = isStream ? exportApi.getFileUrl(taskId) : (info.url || exportApi.getFileUrl(taskId))
-      var task = self.data.list.find(function(t) { return t.id === taskId })
-      return self._downloadFile(url, isStream).then(function(dl) {
-        var fileName = (task && task.file_name) || info.file_name || 'export.' + ((task && task.file_format) || 'pdf')
-        var savedPath = wx.env.USER_DATA_PATH + '/' + fileName
-        var fs = wx.getFileSystemManager()
-        fs.saveFile({
-          tempFilePath: dl,
-          filePath: savedPath,
-          success: function() {
-            wx.showToast({ title: '已保存到本地', icon: 'success' })
-          },
-          fail: function() {
-            wx.showToast({ title: '保存失败', icon: 'none' })
+    const task = this.data.list.find(item => Number(item.id) === taskId)
+    let tempFilePath = ''
+    let fileFormat = (task && task.file_format) || 'pdf'
+    this.setData({ savingTaskId: taskId })
+
+    try {
+      const info = await exportApi.getDownloadInfo(taskId)
+      const useAuth = info.method === 'stream'
+      const url = useAuth
+        ? exportApi.getFileUrl(taskId)
+        : (info.url || exportApi.getFileUrl(taskId))
+      tempFilePath = await this._downloadFile(url, useAuth)
+      fileFormat = (task && task.file_format) ||
+        (/\.docx$/i.test(info.file_name || '') ? 'docx' : 'pdf')
+      const fileName = this._sanitizeLocalFileName(
+        (task && task.file_name) || info.file_name,
+        fileFormat
+      )
+      const savedFilePath = await this._persistDownloadedFile(
+        tempFilePath,
+        fileName,
+        taskId
+      )
+
+      wx.showModal({
+        title: '保存成功',
+        content: '文件已保存到小程序本地。打开文件后，还可以通过右上角菜单发送、收藏或保存到其他应用。',
+        confirmText: '打开文件',
+        cancelText: '完成',
+        success: (res) => {
+          if (!res.confirm) return
+          this._openSavedDocument(savedFilePath, fileFormat).catch(() => {
+            wx.showToast({ title: '打开文件失败', icon: 'none' })
+          })
+        },
+      })
+    } catch (err) {
+      console.error('Save export failed', err)
+
+      // A device may have its entire mini-program private quota occupied by
+      // files outside this page. In that case the downloaded temporary file is
+      // still usable: open it with the document menu so the user can save it
+      // to WeChat, Files, WPS or another app instead of receiving a dead-end.
+      if (tempFilePath && this._isStorageQuotaError(err)) {
+        wx.showModal({
+          title: '存储空间已满',
+          content: '已清理历史导出文件，但小程序私有存储仍不足。可以打开本次文件，通过右上角菜单保存到本地、收藏或发送到其他应用。',
+          confirmText: '打开文件',
+          cancelText: '暂不打开',
+          success: (res) => {
+            if (!res.confirm) return
+            this._openSavedDocument(tempFilePath, fileFormat).catch(() => {
+              wx.showToast({ title: '打开文件失败', icon: 'none' })
+            })
           },
         })
+        return
+      }
+
+      const detail = (err && (err.message || err.errMsg)) || '未知错误'
+      wx.showModal({
+        title: '保存失败',
+        content: '未能保存文件：' + detail,
+        showCancel: false,
       })
-    }).catch(function(err) {
-      wx.showToast({ title: '保存失败: ' + (err.message || ''), icon: 'none' })
-    })
+    } finally {
+      if (this._pageAlive) this.setData({ savingTaskId: null })
+    }
   },
 
   // ── Share ──
@@ -700,14 +943,28 @@ Page({
 
   // ── Re-export ──
 
-  onReExport(e) {
-    const taskId = e.currentTarget.dataset.id
-    const self = this
-    exportApi.reExport(taskId).then(function() {
-      wx.showToast({ title: '已重新导出', icon: 'success' })
-      self._loadList(true)
-    }).catch(function(err) {
+  async onReExport(e) {
+    const taskId = Number(e.currentTarget.dataset.id)
+    if (!taskId || this.data.reExportingTaskId) return
+
+    this.setData({ reExportingTaskId: taskId })
+    try {
+      const newTask = await exportApi.reExport(taskId)
+      if (!newTask || !newTask.id || Number(newTask.id) === taskId) {
+        throw new Error('服务端未创建新的导出任务')
+      }
+
+      // The endpoint creates a fresh pending task. Show that task immediately
+      // instead of reporting a misleading "export succeeded" state.
+      this._upsertTaskAtTop({
+        ...newTask,
+        status: newTask.status || 'pending',
+      })
+      wx.showToast({ title: '已提交，正在导出', icon: 'none' })
+    } catch (err) {
       wx.showToast({ title: err.message || '重新导出失败', icon: 'none' })
-    })
+    } finally {
+      if (this._pageAlive) this.setData({ reExportingTaskId: null })
+    }
   },
 })

@@ -156,8 +156,10 @@
                   class="action-btn action-btn-secondary"
                   hover-class="button-pressed"
                   data-id="{{item.id}}"
+                  disabled="{{savingTaskId === item.id}}"
+                  loading="{{savingTaskId === item.id}}"
                   bindtap="onSave"
-                >保存</button>
+                >{{savingTaskId === item.id ? '保存中' : '保存'}}</button>
                 <button
                   class="action-btn action-btn-secondary"
                   hover-class="button-pressed"
@@ -181,8 +183,10 @@
                   class="secondary-action"
                   hover-class="secondary-action-pressed"
                   data-id="{{item.id}}"
+                  disabled="{{reExportingTaskId === item.id}}"
+                  loading="{{reExportingTaskId === item.id}}"
                   bindtap="onReExport"
-                >重新导出</button>
+                >{{reExportingTaskId === item.id ? '提交中' : '重新导出'}}</button>
                 <view class="secondary-divider"></view>
                 <button
                   class="secondary-action secondary-action-danger"
@@ -218,8 +222,10 @@
                   class="action-btn action-btn-primary"
                   hover-class="button-pressed"
                   data-id="{{item.id}}"
+                  disabled="{{reExportingTaskId === item.id}}"
+                  loading="{{reExportingTaskId === item.id}}"
                   bindtap="onReExport"
-                >重新导出</button>
+                >{{reExportingTaskId === item.id ? '提交中' : '重新导出'}}</button>
                 <button
                   class="action-btn action-btn-subtle action-btn-danger-text"
                   hover-class="button-pressed"

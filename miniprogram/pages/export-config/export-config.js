@@ -45,8 +45,9 @@ Page({
     _selectedIds: [],
 
     // Range
-    rangeType: 'all', // default 'all' until selectedIds are received via event channel or global data
+    rangeType: 'all', // 'all' | 'filtered' | 'selected'
     filters: null,
+    hasActiveFilters: false,
     rangeTypes: [
       { value: 'all', label: '全部错题' },
       { value: 'filtered', label: '当前筛选结果' },
@@ -121,29 +122,22 @@ Page({
   },
 
   async onLoad(options) {
-    // Recover selected IDs from page data or global state
+    // Recover selected IDs / active filters from the opener. Context can
+    // arrive after onLoad, so every update also refreshes preview count once
+    // export capability is ready.
     const eventChannel = this.getOpenerEventChannel()
     if (eventChannel) {
       eventChannel.on('acceptDataFromOpenerPage', (data) => {
-        if (data && data.selectedIds && data.selectedIds.length > 0) {
-          this.setData({ _selectedIds: data.selectedIds, rangeType: 'selected' }, () => {
-            if (this.data._exportEnabled) this._updatePreviewCount()
-          })
-        }
-        if (data && data.filters) {
-          this.setData({ filters: data.filters, rangeType: 'filtered' }, () => {
-            if (this.data._exportEnabled) this._updatePreviewCount()
-          })
-        }
+        this._applyExportContext(data || {})
       })
     }
 
-    // Also try to get from app global data
+    // Selected-export entry uses global data because a long ID list should not
+    // be placed in the URL. Apply it before the first preview request.
     const app = getApp()
     const globalData = app.getGlobalData && app.getGlobalData()
     if (globalData && globalData.exportSelectedIds) {
-      this.setData({ _selectedIds: globalData.exportSelectedIds, rangeType: 'selected' })
-      // Clear after reading
+      this._applyExportContext({ selectedIds: globalData.exportSelectedIds })
       globalData.exportSelectedIds = null
     }
 
@@ -228,6 +222,16 @@ Page({
   onRangeChange(e) {
     const value = e.detail && e.detail.value ? e.detail.value : e.currentTarget.dataset.value
     if (!value) return
+
+    if (value === 'filtered' && !this.data.hasActiveFilters) {
+      wx.showToast({ title: '当前没有筛选条件', icon: 'none' })
+      return
+    }
+    if (value === 'selected' && !(this.data._selectedIds || []).length) {
+      wx.showToast({ title: '当前没有已选错题', icon: 'none' })
+      return
+    }
+
     this.setData({ rangeType: value, countError: '' }, () => {
       if (this.data._exportEnabled) {
         this._updatePreviewCount()
@@ -338,10 +342,11 @@ Page({
     this.setData({ submitting: true, submitError: '' })
 
     try {
+      const rangeParams = this._buildRangeParams()
       const params = {
-        range_type: this.data.rangeType,
-        filters: this.data.filters,
-        selected_ids: this.data._selectedIds || [],
+        range_type: rangeParams.range_type,
+        filters: rangeParams.filters,
+        selected_ids: rangeParams.selected_ids,
         title: this.data.title || this.data.titleDefault,
         show_date: this.data.showDate,
         export_date: this.data.showDate ? this.data.exportDate : '',
@@ -416,11 +421,85 @@ Page({
   },
 
   // ── Helpers ──
+  _normalizeSelectedIds(ids) {
+    if (!Array.isArray(ids)) return []
+    const seen = {}
+    return ids.map(function(id) {
+      const value = Number(id)
+      return Number.isFinite(value) && value > 0 ? value : null
+    }).filter(function(id) {
+      if (!id || seen[id]) return false
+      seen[id] = true
+      return true
+    })
+  },
+
+  _normalizeFilters(filters) {
+    if (!filters || typeof filters !== 'object' || Array.isArray(filters)) {
+      return null
+    }
+
+    const normalized = {}
+    Object.keys(filters).forEach(function(key) {
+      const value = filters[key]
+      if (value === null || value === undefined || value === '') return
+      if (Array.isArray(value) && value.length === 0) return
+      if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) return
+      normalized[key] = value
+    })
+    return Object.keys(normalized).length ? normalized : null
+  },
+
+  _applyExportContext(context) {
+    const data = context || {}
+    const hasSelected = Object.prototype.hasOwnProperty.call(data, 'selectedIds')
+    const hasFilters = Object.prototype.hasOwnProperty.call(data, 'filters')
+    const selectedIds = hasSelected
+      ? this._normalizeSelectedIds(data.selectedIds)
+      : (this.data._selectedIds || [])
+    const filters = hasFilters
+      ? this._normalizeFilters(data.filters)
+      : this.data.filters
+    const hasActiveFilters = !!filters
+
+    let rangeType = data.rangeType
+    if (!['all', 'filtered', 'selected'].includes(rangeType)) {
+      if (hasSelected && selectedIds.length) rangeType = 'selected'
+      else if (hasFilters && hasActiveFilters) rangeType = 'filtered'
+      else if (this.data.rangeType === 'selected' && !selectedIds.length) rangeType = 'all'
+      else if (this.data.rangeType === 'filtered' && !hasActiveFilters) rangeType = 'all'
+      else rangeType = this.data.rangeType || 'all'
+    }
+    if (rangeType === 'selected' && !selectedIds.length) rangeType = hasActiveFilters ? 'filtered' : 'all'
+    if (rangeType === 'filtered' && !hasActiveFilters) rangeType = selectedIds.length ? 'selected' : 'all'
+
+    this.setData({
+      _selectedIds: selectedIds,
+      filters,
+      hasActiveFilters,
+      rangeType,
+      countError: '',
+    }, () => {
+      if (this.data._exportEnabled) this._updatePreviewCount()
+    })
+  },
+
   _buildRangeParams() {
-    const params = {
-      range_type: this.data.rangeType,
-      filters: null,
-      selected_ids: null,
+    const selectedIds = this._normalizeSelectedIds(this.data._selectedIds)
+    const filters = this._normalizeFilters(this.data.filters)
+    let rangeType = this.data.rangeType
+
+    // Never send an invalid range to the API. With no active filters,
+    // "current filtered result" is equivalent to all wrong questions.
+    if (rangeType === 'filtered' && !filters) rangeType = 'all'
+    if (rangeType === 'selected' && !selectedIds.length) {
+      rangeType = filters ? 'filtered' : 'all'
+    }
+
+    return {
+      range_type: rangeType,
+      filters: rangeType === 'filtered' ? filters : null,
+      selected_ids: rangeType === 'selected' ? selectedIds : null,
       title: '',
       show_date: true,
       export_date: '',
@@ -430,13 +509,6 @@ Page({
       analysis_position: 'none',
       space_style: 'standard',
     }
-    if (this.data.rangeType === 'filtered' && this.data.filters) {
-      params.filters = this.data.filters
-    }
-    if (this.data.rangeType === 'selected') {
-      params.selected_ids = this.data._selectedIds || []
-    }
-    return params
   },
 
   _formatDate(date) {

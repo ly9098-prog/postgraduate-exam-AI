@@ -31,26 +31,26 @@
           </view>
 
           <view
-            class="choice-card {{rangeType === 'filtered' ? 'choice-card-active' : ''}}"
+            class="choice-card {{rangeType === 'filtered' ? 'choice-card-active' : ''}} {{!hasActiveFilters ? 'choice-card-disabled' : ''}}"
             data-value="filtered"
             bindtap="onRangeChange"
           >
             <view class="choice-indicator"><view class="choice-indicator-core"></view></view>
             <view class="choice-copy">
               <text class="choice-title">当前筛选结果</text>
-              <text class="choice-caption">沿用错题本当前的学科和条件筛选</text>
+              <text class="choice-caption">{{hasActiveFilters ? '沿用错题本当前的学科和条件筛选' : '当前没有筛选条件'}}</text>
             </view>
           </view>
 
           <view
-            class="choice-card {{rangeType === 'selected' ? 'choice-card-active' : ''}}"
+            class="choice-card {{rangeType === 'selected' ? 'choice-card-active' : ''}} {{_selectedIds.length === 0 ? 'choice-card-disabled' : ''}}"
             data-value="selected"
             bindtap="onRangeChange"
           >
             <view class="choice-indicator"><view class="choice-indicator-core"></view></view>
             <view class="choice-copy">
               <text class="choice-title">已选错题</text>
-              <text class="choice-caption">仅导出你在错题本中勾选的题目</text>
+              <text class="choice-caption">{{_selectedIds.length > 0 ? '仅导出你在错题本中勾选的题目' : '当前没有已选错题'}}</text>
             </view>
             <text wx:if="{{_selectedIds.length > 0}}" class="choice-badge">{{_selectedIds.length}} 道</text>
           </view>

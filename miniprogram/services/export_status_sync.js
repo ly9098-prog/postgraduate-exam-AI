@@ -117,6 +117,19 @@ class ExportStatusSyncManager {
     this._connectWebSocket()
   }
 
+  /**
+   * Temporarily suspend synchronisation while keeping the manager reusable.
+   * This is used when all current tasks are terminal; a later retry or
+   * re-export can add a new task and call start() on the same page instance.
+   */
+  pause() {
+    if (this._stopped) return
+    this._hidden = false
+    this._cleanupTransient()
+    this._consecutiveErrors = 0
+    this._reconnectAttempts = 0
+  }
+
   /** Stop all synchronisation permanently. No more API requests after this. */
   stop() {
     this._stopped = true
@@ -307,7 +320,7 @@ class ExportStatusSyncManager {
         if (TERMINAL_STATES.includes(newStatus)) {
           this._taskIds.delete(tid)
           if (this._allTerminal()) {
-            this.stop()
+            this.pause()
           }
         }
       }
@@ -431,6 +444,10 @@ class ExportStatusSyncManager {
         }
       }
     }
+
+    if (this._allTerminal()) {
+      this.pause()
+    }
   }
 
   // ── Fallback polling (single loop, used only when WS unavailable) ──
@@ -485,7 +502,7 @@ class ExportStatusSyncManager {
         }
 
         if (this._allTerminal()) {
-          this.stop()
+          this.pause()
           return
         }
       } catch (e) {

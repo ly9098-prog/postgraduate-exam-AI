@@ -111,11 +111,14 @@ async def _resolve_filtered(
 ) -> list[int]:
     """Active wrong questions matching the given filter params.
 
-    Rejects empty/null filters — when no filters are provided the client
-    should use ``all`` range, not ``filtered``.
+    Empty filter payloads are treated as the unfiltered result set. This keeps
+    preview/create compatible with clients that represent "current result"
+    as ``filtered`` even when the user has not applied any actual condition.
     """
-    if not filters:
-        raise ValueError("筛选范围为 filtered 但未提供筛选条件")
+    if not filters or not any(
+        value not in (None, "", [], {}) for value in filters.values()
+    ):
+        return await _resolve_all(db, user_id)
     query = _build_base_query(user_id)
     query = await _apply_filters(db, query, filters)
     query = query.order_by(WrongQuestion.id)
