@@ -98,7 +98,7 @@ class StorageBackend(ABC):
 
 class LocalFileStorage(StorageBackend):
     def __init__(self, prefix: str = "static/formulas"):
-        self._prefix = prefix
+        super().__init__(prefix)
 
     async def upload(self, filename: str, data: bytes) -> str:
         loop = asyncio.get_running_loop()
@@ -228,16 +228,20 @@ class COSStorage(StorageBackend):
         if not self._bucket or not self._region:
             logger.warning("COS_BUCKET or COS_REGION not configured, upload will fail")
             return None
-        from qcloud_cos import CosConfig, CosS3Client
+        try:
+            from qcloud_cos import CosConfig, CosS3Client
 
-        config = CosConfig(
-            Region=self._region,
-            SecretId=settings.COS_SECRET_ID,
-            SecretKey=settings.COS_SECRET_KEY,
-            Endpoint=settings.COS_ENDPOINT or None,
-        )
-        self._client = CosS3Client(config)
-        return self._client
+            config = CosConfig(
+                Region=self._region,
+                SecretId=settings.COS_SECRET_ID,
+                SecretKey=settings.COS_SECRET_KEY,
+                Endpoint=settings.COS_ENDPOINT or None,
+            )
+            self._client = CosS3Client(config)
+            return self._client
+        except Exception as e:
+            logger.warning("COS client init failed: %s", e)
+            return None
 
     def _build_key(self, filename: str) -> str:
         return f"{self._cos_prefix.rstrip('/')}/{filename.lstrip('/')}"
@@ -373,18 +377,31 @@ def get_question_assets_storage() -> StorageBackend:
     return LocalFileStorage(prefix=prefix)
 
 
+# Singleton cache for storage instances (avoid creating new COS clients per call)
+_export_storage_instance: StorageBackend | None = None
+
+
 def get_export_storage() -> StorageBackend:
     """获取用于导出文件的 storage backend。
 
     LocalFileStorage: 写入 EXPORT_DIR 目录。
     COSStorage: 使用 EXPORT_DIR 作为 COS 对象前缀。
+
+    Returns a cached singleton instance to avoid creating new COS clients
+    (with their connection pools) on every call.
     """
+    global _export_storage_instance
+    if _export_storage_instance is not None:
+        return _export_storage_instance
+
     prefix = settings.EXPORT_DIR
     if settings.STORAGE_BACKEND == "cos":
         cos = COSStorage(prefix=prefix)
         cos._cos_prefix = f"{prefix}/"
-        return cos
-    return LocalFileStorage(prefix=prefix)
+        _export_storage_instance = cos
+    else:
+        _export_storage_instance = LocalFileStorage(prefix=prefix)
+    return _export_storage_instance
 
 
 def get_export_storage_root() -> str:

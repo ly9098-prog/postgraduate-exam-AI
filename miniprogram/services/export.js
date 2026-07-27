@@ -123,6 +123,9 @@ function pollTaskStatus(taskId, onUpdate, onError, intervalMs = 2500) {
  * Start WebSocket connection for real-time export task status.
  * Falls back to polling if WebSocket fails.
  *
+ * DEPRECATED: Use ExportStatusSyncManager from export_status_sync.js instead.
+ * This wrapper delegates to ExportStatusSyncManager for backward compatibility.
+ *
  * @param {number} taskId - Task ID to subscribe to
  * @param {function} onUpdate - Callback with updated task data
  * @param {function} onError - Error callback
@@ -130,126 +133,25 @@ function pollTaskStatus(taskId, onUpdate, onError, intervalMs = 2500) {
  * @returns {function} stop function
  */
 function syncTaskStatus(taskId, onUpdate, onError, options = {}) {
-  const pollInterval = options.pollIntervalMs || 3000
-  let stopped = false
-  let ws = null
-  let pollTimer = null
-  let reconnectTimer = null
-  let usePolling = false
-
-  const config = require('../config')
-  const storage = require('../utils/storage')
-  const token = storage.get('token')
-
-  // ── WebSocket approach ──
-  function connectWebSocket() {
-    if (stopped || usePolling) return
-
-    // Determine WebSocket URL from API base
-    const wsBase = config.BASE_URL.replace(/^http/, 'ws').replace(/\/api\/v1$/, '')
-    const wsUrl = `${wsBase}/api/v1/exports/ws?token=${encodeURIComponent(token || '')}`
-
-    try {
-      ws = wx.connectSocket({ url: wsUrl, fail: () => fallbackToPolling() })
-
-      ws.onOpen(() => {
-        // Connected — send ping to verify
-        ws.send({ data: JSON.stringify({ type: 'ping' }) })
-      })
-
-      ws.onMessage((res) => {
-        try {
-          const msg = JSON.parse(res.data)
-          if (msg.type === 'export_status') {
-            if (!msg.task_id || (taskId && msg.task_id !== taskId)) return
-            if (onUpdate) onUpdate(msg)
-          } else if (msg.type === 'pong') {
-            // Connection alive
-          } else if (msg.type === 'ping') {
-            // Server heartbeat — respond
-            ws.send({ data: JSON.stringify({ type: 'ping' }) })
-          }
-        } catch (e) {
-          // ignore parse errors
-        }
-      })
-
-      ws.onError(() => {
-        if (!usePolling) fallbackToPolling()
-      })
-
-      ws.onClose(() => {
-        if (!stopped && !usePolling) {
-          // Try reconnect once
-          reconnectTimer = setTimeout(() => {
-            if (!stopped) connectWebSocket()
-          }, 5000)
-        }
-      })
-    } catch (e) {
-      fallbackToPolling()
-    }
-  }
-
-  // ── Polling fallback ──
-  function fallbackToPolling() {
-    if (usePolling || stopped) return
-    usePolling = true
-    if (ws) { ws.close(); ws = null }
-
-    pollTaskStatus(taskId, onUpdate, onError, pollInterval)
-    // pollTaskStatus returns a stop function, store it differently
-  }
-
-  // Start
-  if (token) {
-    connectWebSocket()
-  } else {
-    fallbackToPolling()
-  }
-
-  // Also start polling as backup in case WebSocket messages are missed
-  // This ensures we get terminal state even if WS drops
-  const backupPollTimer = setTimeout(() => {
-    if (!stopped) {
-      _startBackupPoll(taskId, onUpdate, onError, pollInterval)
-    }
-  }, 15000) // Start backup polling after 15 seconds
-
-  function _startBackupPoll(tid, onUpd, onErr, interval) {
-    if (stopped) return
-    let consecutiveErrors = 0
-    const MAX_CONSECUTIVE_ERRORS = 5
-
-    async function poll() {
-      if (stopped) return
-      try {
-        const res = await getExport(tid)
-        consecutiveErrors = 0
-        if (onUpd) onUpd(res)
-
-        const terminalStates = ['completed', 'failed', 'expired']
-        if (!terminalStates.includes(res.status) && !stopped) {
-          pollTimer = setTimeout(poll, interval)
-        }
-      } catch (err) {
-        consecutiveErrors++
-        if (onErr) onErr(err)
-        if (consecutiveErrors < MAX_CONSECUTIVE_ERRORS && !stopped) {
-          pollTimer = setTimeout(poll, interval * 2)
-        }
+  const { ExportStatusSyncManager } = require('./export_status_sync')
+  const mgr = new ExportStatusSyncManager({
+    onUpdate: (tid, data) => {
+      if (tid !== taskId || !onUpdate) return
+      // Normalize data shape: WS events use task_id, polling uses id
+      const normalized = { ...data }
+      if (normalized.task_id !== undefined && normalized.id === undefined) {
+        normalized.id = normalized.task_id
       }
-    }
-
-    pollTimer = setTimeout(poll, 500)
-  }
+      onUpdate(normalized)
+    },
+    onError,
+    pollIntervalMs: options.pollIntervalMs || 3000,
+  })
+  mgr.addTask(taskId)
+  mgr.start()
 
   return function stop() {
-    stopped = true
-    if (ws) { ws.close(); ws = null }
-    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null }
-    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
-    if (backupPollTimer) { clearTimeout(backupPollTimer) }
+    mgr.stop()
   }
 }
 
