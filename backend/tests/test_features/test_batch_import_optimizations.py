@@ -793,7 +793,10 @@ class TestSubmitToReviewSameBatchDuplicates:
 
     def test_cross_batch_duplicate_detected(self):
         """Questions with same hash across flush batches → second batch marked duplicate."""
-        from app.features.review_service import _REVIEW_COMMIT_BATCH_SIZE, submit_to_review
+        from app.features.review_service import (
+            _REVIEW_COMMIT_BATCH_SIZE,
+            submit_to_review,
+        )
 
         db = MagicMock()
         added = []

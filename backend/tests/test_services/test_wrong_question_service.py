@@ -66,7 +66,7 @@ class TestRecordWrong:
         async def _run():
             return await record_wrong(db, user_id=1, question_id=10, wrong_answer="B")
 
-        result = asyncio.run(_run())
+        asyncio.run(_run())
 
         # 验证新建的 WQ 没有 SM-2 字段
         from app.models.wrong_question import WrongQuestion
@@ -108,7 +108,7 @@ class TestRecordWrong:
         async def _run():
             return await record_wrong(db, user_id=1, question_id=10, wrong_answer="C")
 
-        result = asyncio.run(_run())
+        asyncio.run(_run())
 
         assert existing_wq.wrong_answer == "C"
         assert existing_wq.review_count == 2
@@ -154,7 +154,7 @@ class TestUpdateQuality:
         async def _run():
             return await update_quality(db, user_id=1, wq_id=1, quality=4)
 
-        result = asyncio.run(_run())
+        asyncio.run(_run())
 
         # 验证 schedule 被更新了 SM-2 参数
         assert schedule_mock.interval > 0
@@ -210,7 +210,7 @@ class TestUpdateQuality:
         async def _run():
             return await update_quality(db, user_id=1, wq_id=1, quality=3)
 
-        result = asyncio.run(_run())
+        asyncio.run(_run())
 
         # 新 schedule 应被 SM-2 更新
         assert new_schedule.last_reviewed_at is not None

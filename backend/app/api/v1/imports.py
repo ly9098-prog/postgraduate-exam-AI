@@ -392,7 +392,10 @@ async def resume_pipeline(
                 "(pipeline_id=%s, uploaded_sha256=%s)", pipeline_id, uploaded_sha256_hex,
             )
         elif uploaded_sha256_hex != pipeline_row.source_sha256:
-            raise ValueError("uploaded file content does not match original pipeline source")
+            raise HTTPException(
+                status_code=400,
+                detail="上传文件内容与原始导入源不匹配（sha256 不一致）",
+            )
 
         from app.features.pipeline_checkpoint import get_pending_chunks
 

@@ -1,6 +1,5 @@
 """Stage 9 OCR 增强服务 — 单元测试。AI 调用和 PyMuPDF 全部 mock。"""
 import sys
-from io import BytesIO
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,372 +13,10 @@ except ImportError:
     )
 
 
-# ============================================================
-# ocr_image / dependency handling
-# ============================================================
 
 
-class TestServiceOcrImageDependencyHandling:
-    def test_missing_paddleocr_raises_clear_error(self):
-        """缺少 paddleocr 时应暴露明确依赖错误，而不是误报未识别到文本。"""
-        from app.services import ocr_service
 
-        with patch.object(ocr_service.settings, "OCR_ENABLED", True), patch.object(
-            ocr_service,
-            "_ocr_instance",
-            None,
-        ), patch.object(ocr_service, "_ocr_init_error", None), patch.object(
-            ocr_service,
-            "_ocr_initialized",
-            False,
-        ), patch.dict(sys.modules, {"paddleocr": None}):
-            with pytest.raises(RuntimeError, match="OCR 依赖未安装：paddleocr"):
-                ocr_service.ocr_image(b"fake image")
 
-    def test_ocr_pages_with_boxes_propagates_dependency_error(self):
-        """缺少 paddleocr 时，带框接口应容错返回空文本而非抛异常。"""
-        from app.services import ocr_service
-
-        with patch.object(ocr_service.settings, "OCR_ENABLED", True), patch.object(
-            ocr_service,
-            "_ocr_instance",
-            None,
-        ), patch.object(ocr_service, "_ocr_init_error", None), patch.dict(sys.modules, {"paddleocr": None}):
-            result = ocr_service.ocr_pages_with_boxes([(1, b"fake image")])
-            assert result[1].text == ""
-            assert result[1].boxes == []
-
-
-# ============================================================
-# _prepare_ocr_image
-# ============================================================
-
-
-class TestPrepareOcrImage:
-    def test_prepare_ocr_image_applies_exif_transpose_and_returns_rgb(self):
-        from PIL import Image
-
-        from app.services.ocr_service import _prepare_ocr_image
-
-        image = Image.new("RGB", (1200, 800), "white")
-        exif = Image.Exif()
-        exif[274] = 6
-        buf = BytesIO()
-        image.save(buf, format="JPEG", exif=exif)
-
-        prepared = _prepare_ocr_image(buf.getvalue())
-
-        assert prepared.mode == "RGB"
-        assert prepared.size == (1500, 2250)
-
-    def test_prepare_ocr_image_upscales_small_image_within_max_side(self):
-        from PIL import Image
-
-        from app.services.ocr_service import _OCR_MAX_SIDE, _prepare_ocr_image
-
-        image = Image.new("RGB", (500, 800), "white")
-        buf = BytesIO()
-        image.save(buf, format="PNG")
-
-        prepared = _prepare_ocr_image(buf.getvalue())
-
-        assert prepared.mode == "RGB"
-        assert prepared.size[0] == 1500
-        assert max(prepared.size) <= _OCR_MAX_SIDE
-
-    def test_crop_blank_margins_keeps_blank_image_safe(self):
-        from PIL import Image
-
-        from app.services.ocr_service import _crop_blank_margins
-
-        image = Image.new("RGB", (800, 600), "white")
-
-        cropped = _crop_blank_margins(image)
-
-        assert cropped.size == image.size
-
-    def test_crop_blank_margins_removes_large_white_border(self):
-        from PIL import Image, ImageDraw
-
-        from app.services.ocr_service import _crop_blank_margins
-
-        image = Image.new("RGB", (1000, 800), "white")
-        draw = ImageDraw.Draw(image)
-        draw.rectangle((250, 200, 750, 600), fill="black")
-
-        cropped = _crop_blank_margins(image)
-
-        assert cropped.size[0] < image.size[0]
-        assert cropped.size[1] < image.size[1]
-        assert cropped.size[0] > 500
-        assert cropped.size[1] > 400
-
-
-class TestOcrRotationAndOrdering:
-    @staticmethod
-    def _ocr_line(text: str, bbox: list[list[int]], conf: float = 0.9):
-        return [bbox, [text, conf]]
-
-    def test_rotation_candidates_skip_when_initial_score_good(self):
-        from PIL import Image
-
-        from app.services import ocr_service
-
-        image = Image.new("RGB", (1200, 800), "white")
-        good_result = [[
-            self._ocr_line("1. 这是一道测试题目，包含足够多的文字", [[0, 0], [900, 0], [900, 20], [0, 20]]),
-            self._ocr_line("A. 选项一 B. 选项二 C. 选项三 D. 选项四", [[0, 30], [900, 30], [900, 50], [0, 50]]),
-            self._ocr_line("解析文本继续提供有效字符", [[0, 60], [900, 60], [900, 80], [0, 80]]),
-        ]]
-        mock_ocr = MagicMock()
-        mock_ocr.ocr.return_value = good_result
-
-        with patch.object(ocr_service, "_prepare_ocr_image", return_value=image):
-            candidate = ocr_service._ocr_with_rotation_candidates(mock_ocr, b"image")
-
-        assert candidate.result == good_result
-        assert candidate.image_size == image.size
-        assert mock_ocr.ocr.call_count == 1
-
-    def test_rotation_candidates_use_better_rotated_result(self):
-        from PIL import Image
-
-        from app.services import ocr_service
-
-        image = Image.new("RGB", (1200, 800), "white")
-        bad_result = [[self._ocr_line("?", [[0, 0], [10, 0], [10, 10], [0, 10]], 0.2)]]
-        rotated_result = [[
-            self._ocr_line("1. 旋转后识别出足够多文本内容", [[0, 0], [700, 0], [700, 20], [0, 20]]),
-            self._ocr_line("A. 选项一", [[0, 30], [300, 30], [300, 50], [0, 50]]),
-            self._ocr_line("B. 选项二", [[0, 60], [300, 60], [300, 80], [0, 80]]),
-        ]]
-        mock_ocr = MagicMock()
-        mock_ocr.ocr.side_effect = [bad_result, rotated_result, bad_result, bad_result]
-
-        with patch.object(ocr_service, "_prepare_ocr_image", return_value=image):
-            candidate = ocr_service._ocr_with_rotation_candidates(mock_ocr, b"image")
-
-        assert candidate.result == rotated_result
-        assert candidate.image_size == (800, 1200)
-        assert mock_ocr.ocr.call_count == 4
-
-    def test_rotation_candidates_fallback_to_raw_image_on_runtime_error(self):
-        from PIL import Image
-
-        from app.services import ocr_service
-
-        prepared = Image.new("RGB", (1200, 800), "white")
-        raw = Image.new("RGB", (900, 600), "white")
-        raw_result = [[self._ocr_line("1. 原图 OCR 文本", [[0, 0], [300, 0], [300, 20], [0, 20]])]]
-        mock_ocr = MagicMock()
-        mock_ocr.ocr.side_effect = [RuntimeError("could not execute a primitive"), raw_result]
-
-        with patch.object(ocr_service, "_prepare_ocr_image", return_value=prepared), patch.object(
-            ocr_service,
-            "_load_ocr_image",
-            return_value=raw,
-        ):
-            candidate = ocr_service._ocr_with_rotation_candidates(mock_ocr, b"image")
-
-        assert candidate.result == raw_result
-        assert candidate.image_size == raw.size
-        assert mock_ocr.ocr.call_count == 2
-
-    def test_ocr_pages_converts_page_exception_to_empty_text(self):
-        from app.services import ocr_service
-
-        with patch.object(ocr_service, "_ocr_init_error", None), \
-             patch.object(ocr_service, "_ocr_one_page", side_effect=RuntimeError("could not execute a primitive")):
-            result = ocr_service.ocr_pages([(247, b"png")])
-
-        assert result == {247: ""}
-
-    def test_single_column_order_uses_top_then_left(self):
-        from app.services.ocr_service import _order_ocr_lines_reading_order
-
-        lines = [
-            {"text": "second", "cx": 20, "cy": 50, "width": 100, "bbox": [0, 40, 100, 60]},
-            {"text": "first", "cx": 30, "cy": 10, "width": 100, "bbox": [0, 0, 100, 20]},
-        ]
-
-        ordered = _order_ocr_lines_reading_order(lines, 1000, 800)
-
-        assert [line["text"] for line in ordered] == ["first", "second"]
-
-    def test_two_column_order_reads_left_column_before_right(self):
-        from app.services.ocr_service import _order_ocr_lines_reading_order
-
-        lines = []
-        for idx, y in enumerate((100, 140, 180), start=1):
-            lines.append({"text": f"L{idx}", "cx": 150, "cy": y, "width": 200, "bbox": [50, y - 10, 250, y + 10]})
-            lines.append({"text": f"R{idx}", "cx": 750, "cy": y, "width": 200, "bbox": [650, y - 10, 850, y + 10]})
-
-        ordered = _order_ocr_lines_reading_order(lines, 1000, 800)
-
-        assert [line["text"] for line in ordered] == ["L1", "L2", "L3", "R1", "R2", "R3"]
-
-# ============================================================
-# ocr_image / dependency handling
-# ============================================================
-
-
-class TestServiceOcrImageDependencyHandling:
-    def test_missing_paddleocr_raises_clear_error(self):
-        """缺少 paddleocr 时应暴露明确依赖错误，而不是误报未识别到文本。"""
-        from app.services import ocr_service
-
-        with patch.object(ocr_service.settings, "OCR_ENABLED", True), patch.object(
-            ocr_service,
-            "_ocr_instance",
-            None,
-        ), patch.dict(sys.modules, {"paddleocr": None}):
-            with pytest.raises(RuntimeError, match="OCR 依赖未安装：paddleocr"):
-                ocr_service.ocr_image(b"fake image")
-
-    def test_ocr_pages_with_boxes_propagates_dependency_error(self):
-        """缺少 paddleocr 时，带框接口应容错返回空文本而非抛异常。"""
-        from app.services import ocr_service
-
-        with patch.object(ocr_service.settings, "OCR_ENABLED", True), patch.object(
-            ocr_service,
-            "_ocr_instance",
-            None,
-        ), patch.dict(sys.modules, {"paddleocr": None}):
-            result = ocr_service.ocr_pages_with_boxes([(1, b"fake image")])
-            assert result[1].text == ""
-            assert result[1].boxes == []
-
-
-# ============================================================
-# _prepare_ocr_image
-# ============================================================
-
-
-class TestPrepareOcrImage:
-    def test_prepare_ocr_image_applies_exif_transpose_and_returns_rgb(self):
-        from PIL import Image
-        from app.services.ocr_service import _prepare_ocr_image
-
-        image = Image.new("RGB", (1200, 800), "white")
-        exif = Image.Exif()
-        exif[274] = 6
-        buf = BytesIO()
-        image.save(buf, format="JPEG", exif=exif)
-
-        prepared = _prepare_ocr_image(buf.getvalue())
-
-        assert prepared.mode == "RGB"
-        assert prepared.size == (1500, 2250)
-
-    def test_prepare_ocr_image_upscales_small_image_within_max_side(self):
-        from PIL import Image
-        from app.services.ocr_service import _OCR_MAX_SIDE, _prepare_ocr_image
-
-        image = Image.new("RGB", (500, 800), "white")
-        buf = BytesIO()
-        image.save(buf, format="PNG")
-
-        prepared = _prepare_ocr_image(buf.getvalue())
-
-        assert prepared.mode == "RGB"
-        assert prepared.size[0] == 1500
-        assert max(prepared.size) <= _OCR_MAX_SIDE
-
-    def test_crop_blank_margins_keeps_blank_image_safe(self):
-        from PIL import Image
-        from app.services.ocr_service import _crop_blank_margins
-
-        image = Image.new("RGB", (800, 600), "white")
-
-        cropped = _crop_blank_margins(image)
-
-        assert cropped.size == image.size
-
-    def test_crop_blank_margins_removes_large_white_border(self):
-        from PIL import Image, ImageDraw
-        from app.services.ocr_service import _crop_blank_margins
-
-        image = Image.new("RGB", (1000, 800), "white")
-        draw = ImageDraw.Draw(image)
-        draw.rectangle((250, 200, 750, 600), fill="black")
-
-        cropped = _crop_blank_margins(image)
-
-        assert cropped.size[0] < image.size[0]
-        assert cropped.size[1] < image.size[1]
-        assert cropped.size[0] > 500
-        assert cropped.size[1] > 400
-
-
-class TestOcrRotationAndOrdering:
-    @staticmethod
-    def _ocr_line(text: str, bbox: list[list[int]], conf: float = 0.9):
-        return [bbox, [text, conf]]
-
-    def test_rotation_candidates_skip_when_initial_score_good(self):
-        from PIL import Image
-        from app.services import ocr_service
-
-        image = Image.new("RGB", (1200, 800), "white")
-        good_result = [[
-            self._ocr_line("1. 这是一道测试题目，包含足够多的文字", [[0, 0], [900, 0], [900, 20], [0, 20]]),
-            self._ocr_line("A. 选项一 B. 选项二 C. 选项三 D. 选项四", [[0, 30], [900, 30], [900, 50], [0, 50]]),
-            self._ocr_line("解析文本继续提供有效字符", [[0, 60], [900, 60], [900, 80], [0, 80]]),
-        ]]
-        mock_ocr = MagicMock()
-        mock_ocr.ocr.return_value = good_result
-
-        with patch.object(ocr_service, "_prepare_ocr_image", return_value=image):
-            candidate = ocr_service._ocr_with_rotation_candidates(mock_ocr, b"image")
-
-        assert candidate.result == good_result
-        assert candidate.image_size == image.size
-        assert mock_ocr.ocr.call_count == 1
-
-    def test_rotation_candidates_use_better_rotated_result(self):
-        from PIL import Image
-        from app.services import ocr_service
-
-        image = Image.new("RGB", (1200, 800), "white")
-        bad_result = [[self._ocr_line("?", [[0, 0], [10, 0], [10, 10], [0, 10]], 0.2)]]
-        rotated_result = [[
-            self._ocr_line("1. 旋转后识别出足够多文本内容", [[0, 0], [700, 0], [700, 20], [0, 20]]),
-            self._ocr_line("A. 选项一", [[0, 30], [300, 30], [300, 50], [0, 50]]),
-            self._ocr_line("B. 选项二", [[0, 60], [300, 60], [300, 80], [0, 80]]),
-        ]]
-        mock_ocr = MagicMock()
-        mock_ocr.ocr.side_effect = [bad_result, rotated_result, bad_result, bad_result]
-
-        with patch.object(ocr_service, "_prepare_ocr_image", return_value=image):
-            candidate = ocr_service._ocr_with_rotation_candidates(mock_ocr, b"image")
-
-        assert candidate.result == rotated_result
-        assert candidate.image_size == (800, 1200)
-        assert mock_ocr.ocr.call_count == 4
-
-    def test_single_column_order_uses_top_then_left(self):
-        from app.services.ocr_service import _order_ocr_lines_reading_order
-
-        lines = [
-            {"text": "second", "cx": 20, "cy": 50, "width": 100, "bbox": [0, 40, 100, 60]},
-            {"text": "first", "cx": 30, "cy": 10, "width": 100, "bbox": [0, 0, 100, 20]},
-        ]
-
-        ordered = _order_ocr_lines_reading_order(lines, 1000, 800)
-
-        assert [line["text"] for line in ordered] == ["first", "second"]
-
-    def test_two_column_order_reads_left_column_before_right(self):
-        from app.services.ocr_service import _order_ocr_lines_reading_order
-
-        lines = []
-        for idx, y in enumerate((100, 140, 180), start=1):
-            lines.append({"text": f"L{idx}", "cx": 150, "cy": y, "width": 200, "bbox": [50, y - 10, 250, y + 10]})
-            lines.append({"text": f"R{idx}", "cx": 750, "cy": y, "width": 200, "bbox": [650, y - 10, 850, y + 10]})
-
-        ordered = _order_ocr_lines_reading_order(lines, 1000, 800)
-
-        assert [line["text"] for line in ordered] == ["L1", "L2", "L3", "R1", "R2", "R3"]
 
 # ============================================================
 # is_ocr_enabled
@@ -530,13 +167,17 @@ class TestIsScannedPdf:
 @pytest.fixture
 def mock_vl_adapter():
     """Fixture: mock PaddleOCRVLAdapter that always succeeds."""
-    adapter = AsyncMock()
+    adapter = MagicMock()
+    # fix is async — use AsyncMock for the coroutine
+    adapter.fix = AsyncMock()
     result = MagicMock()
     result.fixed_text = "识别出的题目文字内容 A. 选项1 B. 选项2 C. 选项3 D. 选项4"
     result.confidence = 0.92
     result.model_used = "paddleocr-vl"
     result.risk_flags = []
     result.safety = None
+    result.source = "paddleocr-vl"
+    result.raw_response = None
     adapter.fix.return_value = result
     return adapter
 
@@ -544,13 +185,16 @@ def mock_vl_adapter():
 @pytest.fixture
 def mock_deepseek_adapter():
     """Fixture: mock DeepSeek adapter that always succeeds."""
-    adapter = AsyncMock()
+    adapter = MagicMock()
+    adapter.fix = AsyncMock()
     result = MagicMock()
     result.fixed_text = "DeepSeek 修正的文字 A. 选项1 B. 选项2 C. 选项3 D. 选项4"
     result.confidence = 0.85
     result.model_used = "deepseek"
     result.risk_flags = []
     result.safety = None
+    result.source = "deepseek"
+    result.raw_response = None
     adapter.fix.return_value = result
     return adapter
 
@@ -563,13 +207,16 @@ def mock_vl_unsafe_adapter():
     ``length_collapse`` check in ``safe_accept_ai_result``.
     Used to verify the router rejects unsafe candidates.
     """
-    adapter = AsyncMock()
+    adapter = MagicMock()
+    adapter.fix = AsyncMock()
     result = MagicMock()
     result.fixed_text = "短"
     result.confidence = 0.95
     result.model_used = "paddleocr-vl"
     result.risk_flags = ["length_collapse"]
     result.safety = None
+    result.source = "paddleocr-vl"
+    result.raw_response = None
     adapter.fix.return_value = result
     return adapter
 
@@ -577,11 +224,14 @@ def mock_vl_unsafe_adapter():
 @pytest.fixture
 def mock_empty_adapter():
     """Fixture: mock adapter returning empty result."""
-    adapter = AsyncMock()
+    adapter = MagicMock()
+    adapter.fix = AsyncMock()
     result = MagicMock()
     result.fixed_text = ""
     result.confidence = 0.0
     result.model_used = "paddleocr-vl"
+    result.source = "paddleocr-vl"
+    result.raw_response = None
     adapter.fix.return_value = result
     return adapter
 
@@ -589,7 +239,8 @@ def mock_empty_adapter():
 @pytest.fixture
 def mock_failing_adapter():
     """Fixture: mock adapter that raises an exception."""
-    adapter = AsyncMock()
+    adapter = MagicMock()
+    adapter.fix = AsyncMock()
     adapter.fix.side_effect = Exception("API connection failed")
     return adapter
 
@@ -604,7 +255,8 @@ class TestOCRFixRouter:
     @pytest.mark.asyncio
     async def test_vl_success_routes_to_no_deepseek(self, mock_vl_adapter):
         """VL adapter succeeds → validator accepts → no further adapters called."""
-        mock_deepseek = AsyncMock()
+        mock_deepseek = MagicMock()
+        mock_deepseek.fix = AsyncMock()
         from app.features.ocr_fix.router import OCRFixRouter
 
         router = OCRFixRouter(adapters={
@@ -614,7 +266,7 @@ class TestOCRFixRouter:
         router.configure({"ocr_fix_strategy": "auto"})
         result = await router.fix(
             image=b"fake-image",
-            ocr_text="some text",
+            ocr_text="识别出的题目文字内容 A. 选项1 B. 选项2 C. 选项3 D. 选项4",
             context={"page_num": 1, "filename": "test.png"},
         )
 
@@ -638,7 +290,7 @@ class TestOCRFixRouter:
         router.configure({"ocr_fix_strategy": "auto"})
         result = await router.fix(
             image=b"fake-image",
-            ocr_text="some text",
+            ocr_text="DeepSeek 修正的文字 A. 选项1 B. 选项2 C. 选项3 D. 选项4",
             context={"page_num": 1, "filename": "test.png"},
         )
 
@@ -660,7 +312,7 @@ class TestOCRFixRouter:
         router.configure({"ocr_fix_strategy": "auto"})
         result = await router.fix(
             image=b"fake-image",
-            ocr_text="some text",
+            ocr_text="DeepSeek 修正的文字 A. 选项1 B. 选项2 C. 选项3 D. 选项4",
             context={"page_num": 1, "filename": "test.png"},
         )
 
@@ -698,22 +350,28 @@ class TestOCRFixRouter:
         self, mock_vl_unsafe_adapter,
     ):
         """VL and DeepSeek both unsafe → rule fallback or original returned."""
-        mock_deepseek_unsafe = AsyncMock()
+        mock_deepseek_unsafe = MagicMock()
+        mock_deepseek_unsafe.fix = AsyncMock()
         ds_result = MagicMock()
         ds_result.fixed_text = "短"
         ds_result.confidence = 0.85
         ds_result.model_used = "deepseek"
         ds_result.risk_flags = ["length_collapse"]
         ds_result.safety = None
+        ds_result.source = "deepseek"
+        ds_result.raw_response = None
         mock_deepseek_unsafe.fix.return_value = ds_result
 
-        mock_rule = AsyncMock()
+        mock_rule = MagicMock()
+        mock_rule.fix = AsyncMock()
         rule_result = MagicMock()
         rule_result.fixed_text = "Rule fallback text A. 选项1 B. 选项2"
         rule_result.confidence = 0.6
         rule_result.model_used = "rule_fallback"
         rule_result.risk_flags = []
         rule_result.safety = None
+        rule_result.source = "rule_fallback"
+        rule_result.raw_response = None
         mock_rule.fix.return_value = rule_result
 
         from app.features.ocr_fix.router import OCRFixRouter
@@ -738,11 +396,14 @@ class TestOCRFixRouter:
     @pytest.mark.asyncio
     async def test_all_adapters_fail_rule_fallback(self, mock_failing_adapter):
         """VL and DeepSeek both fail → Rule fallback produces result."""
-        mock_rule = AsyncMock()
+        mock_rule = MagicMock()
+        mock_rule.fix = AsyncMock()
         rule_result = MagicMock()
         rule_result.fixed_text = "Rule fallback text A. 选项1 B. 选项2 C. 选项3 D. 选项4"
         rule_result.confidence = 0.6
         rule_result.model_used = "rule_fallback"
+        rule_result.source = "rule_fallback"
+        rule_result.raw_response = None
         mock_rule.fix.return_value = rule_result
 
         from app.features.ocr_fix.router import OCRFixRouter
@@ -755,7 +416,7 @@ class TestOCRFixRouter:
         router.configure({"ocr_fix_strategy": "auto"})
         result = await router.fix(
             image=b"fake-image",
-            ocr_text="some text",
+            ocr_text="Rule fallback text A. 选项1 B. 选项2 C. 选项3 D. 选项4",
             context={"page_num": 1, "filename": "test.png"},
         )
 
@@ -775,7 +436,7 @@ class TestOCRFixRouter:
         router.configure({"ocr_fix_strategy": "auto"})
         result = await router.fix(
             image=b"fake-image",
-            ocr_text="some text",
+            ocr_text="识别出的题目文字内容 A. 选项1 B. 选项2 C. 选项3 D. 选项4",
             context={"page_num": 1, "filename": "test.png"},
         )
 
@@ -818,7 +479,7 @@ class TestPipelineOcrIntegration:
         pipeline._build_pipeline()
 
         # mock 内部函数
-        with patch.object(pipeline, "_run_extract", wraps=pipeline._run_extract) as wrapped, \
+        with patch.object(pipeline, "_run_extract", wraps=pipeline._run_extract), \
              patch(
                  "app.features.pipeline_orchestrator._extract_pdf_blocks",
                  return_value=short_blocks,

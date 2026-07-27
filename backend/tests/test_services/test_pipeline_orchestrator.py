@@ -222,7 +222,7 @@ class TestExtractPdfBlocks:
 # ---------------------------------------------------------------------------
 
 
-class TestOcrScannedPdf:
+class TestOcrScannedPdf:  # noqa: F811
     def test_renders_pages_and_calls_ocr(self):
         from app.services.ocr_service import OcrPageResult
 
@@ -631,7 +631,7 @@ class TestOcrScannedPdf:
         )
 
 
-class TestRunExtractOcrFallback:
+class TestRunExtractOcrFallback:  # noqa: F811
     def test_scanned_pdf_triggers_paddleocr(self):
         pipeline = ImportPipeline()
         sparse_blocks = [{"page": 1, "block_index": 0, "text": "ab"}]
@@ -745,7 +745,7 @@ class TestRunExtractOcrFallback:
 # ---------------------------------------------------------------------------
 
 
-class TestImportPipelineSplit:
+class TestImportPipelineSplit:  # noqa: F811
     def test_fallback_question_created_for_unsplit_text(self):
         pipeline = ImportPipeline()
         normalized_blocks = [
@@ -1131,7 +1131,7 @@ class TestImportPipelineSplit:
 # ---------------------------------------------------------------------------
 
 
-class TestOcrScannedPdf:
+class TestOcrScannedPdf:  # noqa: F811
     def test_renders_pages_and_calls_ocr(self):
         from app.services.ocr_service import OcrPageResult
 
@@ -1211,7 +1211,7 @@ class TestOcrScannedPdf:
         assert blocks == []
 
 
-class TestRunExtractOcrFallback:
+class TestRunExtractOcrFallback:  # noqa: F811
     def test_scanned_pdf_triggers_paddleocr(self):
         pipeline = ImportPipeline()
         sparse_blocks = [{"page": 1, "block_index": 0, "text": "ab"}]
@@ -1281,7 +1281,7 @@ class TestRunExtractOcrFallback:
 # ---------------------------------------------------------------------------
 
 
-class TestImportPipelineSplit:
+class TestImportPipelineSplit:  # noqa: F811
     def test_fallback_question_created_for_unsplit_text(self):
         pipeline = ImportPipeline()
         normalized_blocks = [
@@ -2239,7 +2239,7 @@ class TestPipelineOptions:
                            {"question_index": 1, "reason": "above_threshold", "confidence": 0.9}],
                 "stats": {"total_candidates": 2, "repaired": 0, "unrepaired": 0, "skipped": 2, "total_tokens": 0},
             }
-            result = asyncio.run(pipeline._run_repair(questions=questions, options={"confidence_threshold": 0.8}))
+            asyncio.run(pipeline._run_repair(questions=questions, options={"confidence_threshold": 0.8}))
 
             # Check repair_questions was called with threshold in config
             call_config = mock_repair.call_args[0][1]

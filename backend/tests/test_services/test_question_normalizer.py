@@ -1016,7 +1016,11 @@ class TestParseCacheVersion:
     def test_no_version_field_misses(self):
         """无 cache_version 字段的历史缓存应自动失效。"""
         # 手动插入一个无版本的缓存条目（模拟遗留数据）
-        from app.features.question_normalizer import _make_cache_key, _parse_cache, parse_cache_get
+        from app.features.question_normalizer import (
+            _make_cache_key,
+            _parse_cache,
+            parse_cache_get,
+        )
         raw = "历史遗留文本"
         key = "test_legacy"
         cache_key = _make_cache_key(raw, key)

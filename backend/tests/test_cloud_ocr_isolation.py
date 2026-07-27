@@ -11,6 +11,7 @@ Required by the production safety specification:
 from __future__ import annotations
 
 import os
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -29,6 +30,28 @@ def _patch_settings():
     original = settings.APP_ENV
     yield
     settings.APP_ENV = original
+
+
+@pytest.fixture(autouse=True)
+def _unload_paddle_modules():
+    """Remove paddle/paddleocr from sys.modules so cloud isolation tests pass.
+
+    ``test_process_pool_lifecycle.py`` runs before this file and loads
+    ``paddle`` / ``paddleocr`` into ``sys.modules``.  Those modules are
+    legitimately installed in the dev environment but must not appear
+    *loaded* when the cloud_api config validator checks for local OCR deps.
+
+    This fixture temporarily removes them before each test, then restores
+    the original state so other test files are unaffected.
+    """
+    saved = {}
+    for mod in ("paddleocr", "paddle"):
+        if mod in sys.modules:
+            saved[mod] = sys.modules.pop(mod)
+    yield
+    for mod, obj in saved.items():
+        if mod not in sys.modules:
+            sys.modules[mod] = obj
 
 
 class TestCloudProfileDetection:
@@ -127,7 +150,9 @@ class TestCloudOcrNoPaddleSpec:
         sys.modules.pop("app.services.import_pipeline_service", None)
         with patch.object(settings, "STAGING_STORAGE_DIR", staging_dir):
             with patch.dict(os.environ, env_patch, clear=False):
-                from app.services.import_pipeline_service import _build_ocr_runtime_diagnostics
+                from app.services.import_pipeline_service import (
+                    _build_ocr_runtime_diagnostics,
+                )
 
                 return _build_ocr_runtime_diagnostics()
 
@@ -433,7 +458,10 @@ class TestCloudOcrNoImportFallback:
         import os
         from unittest.mock import patch
         with patch.dict(os.environ, {"DEPLOYMENT_PROFILE": "cloud_api"}, clear=False):
-            from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+            from app.core.deployment_profile import (
+                DeploymentProfile,
+                detect_deployment_profile,
+            )
             profile = detect_deployment_profile()
             assert profile == DeploymentProfile.CLOUD_API
 

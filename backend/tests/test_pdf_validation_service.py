@@ -131,7 +131,7 @@ class TestValidateDeep:
             pytest.skip("PyMuPDF not available")
 
         pdf = _make_fake_pdf()
-        doc = fitz.open(stream=pdf, filetype="pdf")
+        fitz.open(stream=pdf, filetype="pdf")
         # PyMuPDF opens encrypted PDFs as empty — just check encryption detection
         # In practice, doc.is_encrypted will be True for real encrypted files
         # We test the code path by mocking

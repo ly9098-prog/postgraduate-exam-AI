@@ -9,7 +9,7 @@ Covers:
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -120,10 +120,21 @@ class TestRunMathDetectNoFullPageUpload:
             "segments": questions[0]["segments"],
         }
 
-        with patch(
-            "app.features.pipeline_stages.math_detect_stage.crop_region",
-            new=AsyncMock(),
-        ) as mock_crop:
+        with (
+            patch(
+                "app.features.pipeline_stages.math_detect_stage.crop_region",
+                new=AsyncMock(),
+            ) as mock_crop,
+            patch(
+                "app.core.executor_registry.get_executor",
+            ) as mock_get_executor,
+        ):
+            mock_executor = AsyncMock()
+            # executor.run(fn, *args) must call fn(*args)
+            async def _run(fn, *args, **kwargs):
+                return await fn(*args, **kwargs)
+            mock_executor.run = _run
+            mock_get_executor.return_value = mock_executor
             mock_crop.side_effect = Exception("crop failed in test")
             result = await run_math_detect_stage(
                 questions,

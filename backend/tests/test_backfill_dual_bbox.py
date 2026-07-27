@@ -301,7 +301,6 @@ class TestCleanStem:
 
     def test_no_regex_number_deletion(self, bplus_ocr_lines):
         """Real numbers in stem must NOT be deleted via regex - only spatial dedup."""
-        viz_text: list[dict] = []
         kept = bplus_ocr_lines
         # Only exclude "12" from the visual region, keep everything else
         original = "一棵( 12 25 05 10 151922 28 26"
@@ -440,14 +439,14 @@ class TestClassifyOcrLines:
 
 class TestComputeStemBottom:
     def test_bplus_stem_bottom(self, bplus_ocr_lines, pdf_rect):
-        zones = classify_ocr_lines(bplus_ocr_lines, 425.34)
+        classify_ocr_lines(bplus_ocr_lines, 425.34)
         stem_btm = compute_stem_bottom_pt(bplus_ocr_lines, 425.34)
         assert stem_btm is not None
         # Stem "1.下图所示是一棵()" bottom is at 223px → ~107pt
         assert 100 < stem_btm < 115, f"stem_bottom={stem_btm:.1f}"
 
     def test_bst_stem_bottom(self, bst_ocr_lines, pdf_rect):
-        zones = classify_ocr_lines(bst_ocr_lines, 425.34)
+        classify_ocr_lines(bst_ocr_lines, 425.34)
         stem_btm = compute_stem_bottom_pt(bst_ocr_lines, 425.34)
         assert stem_btm is not None
         # Stem "27.【2021统考真题】..." bottom is at 121px → ~58pt

@@ -128,7 +128,9 @@ class TestSeedDefaultStrategies:
 class TestStrategyConfigValidation:
     def test_valid_config_passes(self):
         """合法配置通过校验。"""
-        from app.services.recommendation_strategy_service import validate_strategy_config
+        from app.services.recommendation_strategy_service import (
+            validate_strategy_config,
+        )
 
         payload = {
             "name": "test",
@@ -142,7 +144,9 @@ class TestStrategyConfigValidation:
 
     def test_invalid_strategy_type_rejected(self):
         """非法 strategy_type 被拒绝。"""
-        from app.services.recommendation_strategy_service import validate_strategy_config
+        from app.services.recommendation_strategy_service import (
+            validate_strategy_config,
+        )
 
         payload = {
             "strategy_type": "nonexistent_strategy",
@@ -153,7 +157,9 @@ class TestStrategyConfigValidation:
 
     def test_negative_weight_rejected(self):
         """负权重被拒绝。"""
-        from app.services.recommendation_strategy_service import validate_strategy_config
+        from app.services.recommendation_strategy_service import (
+            validate_strategy_config,
+        )
 
         payload = {
             "weight_vector_similarity": -0.5,
@@ -164,7 +170,9 @@ class TestStrategyConfigValidation:
 
     def test_scene_not_validated_as_strategy_type(self):
         """scene 字段不被当作 strategy_type 校验。"""
-        from app.services.recommendation_strategy_service import validate_strategy_config
+        from app.services.recommendation_strategy_service import (
+            validate_strategy_config,
+        )
 
         payload = {
             "name": "test",
@@ -176,7 +184,9 @@ class TestStrategyConfigValidation:
 
     def test_no_strategy_type_passes(self):
         """不提供 strategy_type 时通过校验。"""
-        from app.services.recommendation_strategy_service import validate_strategy_config
+        from app.services.recommendation_strategy_service import (
+            validate_strategy_config,
+        )
 
         payload = {
             "name": "test",

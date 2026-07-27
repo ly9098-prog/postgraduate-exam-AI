@@ -201,7 +201,7 @@ class TestGetReviewPlan:
 
     def test_with_due_items(self):
         """场景 4：有逾期题目，验证 priority 和 overdue_days。"""
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(tzinfo=None)
         overdue_date = now - timedelta(days=3)
 
         db = _make_db([

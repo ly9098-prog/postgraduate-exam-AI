@@ -30,7 +30,11 @@ from app.features.document_validator import DocumentValidationResult, DocumentVa
 from app.features.input_gateway import InputDocument, InputGateway
 from app.features.input_safety import InputSafetyValidator, SafetyResult
 from app.features.native_text_probe import NativeTextProbe, NativeTextProbeResult
-from app.features.ocr_gateway import GatewayRouteDecision, OCRGateway, RequiredOCRCapabilities
+from app.features.ocr_gateway import (
+    GatewayRouteDecision,
+    OCRGateway,
+    RequiredOCRCapabilities,
+)
 from app.features.page_stream import PageRenderer, PageStream, RenderedPage
 from app.features.unified_safety import (
     CandidateContext,

@@ -39,7 +39,11 @@ async def _make_sessionmaker(tmp_path):
 
 
 def _seed_main_store(pipeline_id: str) -> None:
-    """直接写主 store 模拟 chunked pipeline 已落进 _pipeline_store 的状态。"""
+    """直接写主 store 模拟 chunked pipeline 已落进 _pipeline_store 的状态。
+
+    Keys must be a subset of ``_PIPELINE_STORE_FIELDS`` — see
+    ``test_status_query_does_not_pollute_main_store_with_chunk_progress``.
+    """
     orch._pipeline_store[pipeline_id] = {
         "pipeline_id": pipeline_id,
         "status": "paused",
@@ -51,7 +55,6 @@ def _seed_main_store(pipeline_id: str) -> None:
         "started_at": "2026-06-05T10:00:00",
         "finished_at": "",
         "batch_id": "",
-        "raw_text_preview": "",
         "question_count": 50,
     }
 

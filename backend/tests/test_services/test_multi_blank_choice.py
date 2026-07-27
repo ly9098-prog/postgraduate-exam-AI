@@ -490,7 +490,7 @@ class TestAdjacencyMatrixRegression:
         detection = detect_shared_option_multi_blank(stem, options, answer)
         assert detection["is_multi_blank_choice"] is True
 
-        slot_ids = detection["slot_ids"]
+        detection["slot_ids"]
         groups = detection["blank_option_groups"]
         serialized = detection["serialized_answer"]
 

@@ -113,12 +113,6 @@ def test_option_format_paren() -> None:
 def test_option_inline_single_line() -> None:
     print("\n[5] 选项识别：单行连续选项 'A.0 B.3/2 C.1 D.3'")
     # 注意：PyMuPDF china-s 字体对 / 的渲染有限，用英文数字测试
-    text = (
-        "1. Which value is correct?\n"
-        "A.zero B.half C.one D.two\n"
-        "Answer: B\n"
-        "Analysis: B is half.\n"
-    )
     # 这里直接测解析函数，不走 PDF 渲染（避免字体问题）
     from unittest.mock import patch
 

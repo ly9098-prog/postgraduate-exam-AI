@@ -385,7 +385,10 @@ async def import_pdf(
     则注册后台数学管线任务；否则立即清理临时文件。
     """
     # 写入临时文件（BackgroundTask 需持有路径）
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+    # Production must configure WORKER_SCRATCH_DIR to avoid system /tmp
+    _scratch = settings.WORKER_SCRATCH_DIR
+    _tmp_dir = _scratch if _scratch and os.path.isdir(_scratch) else None
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", dir=_tmp_dir) as tmp:
         tmp.write(content)
         tmp_path = tmp.name
 

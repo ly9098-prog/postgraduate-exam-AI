@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.control_plane import ExecutionQuota, PipelineExecutionContext, QuotaExceededError
+from app.features.control_plane import (
+    ExecutionQuota,
+    PipelineExecutionContext,
+    QuotaExceededError,
+)
 
 
 class TestExecutionQuotaStandalone:

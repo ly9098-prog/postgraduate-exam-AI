@@ -368,7 +368,7 @@ class TestDetail:
 
     def test_get_detail_not_published(self):
         """Unpublished cards should not be accessible via user API."""
-        card = _card(status="draft")
+        _card(status="draft")
         app.dependency_overrides[get_db] = _db_lambda()
         try:
             resp = client.get("/api/v1/formulas/1")
@@ -378,7 +378,7 @@ class TestDetail:
 
     def test_get_detail_deleted(self):
         """Soft-deleted cards should not be accessible."""
-        card = _card(deleted_at=datetime(2026, 7, 1))
+        _card(deleted_at=datetime(2026, 7, 1))
         app.dependency_overrides[get_db] = _db_lambda()
         try:
             resp = client.get("/api/v1/formulas/1")

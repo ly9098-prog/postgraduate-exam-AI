@@ -86,15 +86,21 @@ async def run_prewarm_worker(
     global _worker_running
     _worker_running = True
 
+    from app.core.worker_concurrency import get_worker_semaphore
+    semaphore = get_worker_semaphore()
+
     logger.info("[prewarm] worker started (poll=%ss lease=%ds)", poll_interval, lease_sec)
 
     _redis_failure_count = 0
 
     try:
         while _worker_running:
+            # Acquire shared worker concurrency slot before claiming
+            await semaphore.acquire()
             try:
                 task = await task_queue.dequeue_v2(TASK_TYPE_PREWARM, lease_sec=lease_sec)
             except TaskQueueUnavailableError as e:
+                semaphore.release()
                 _redis_failure_count += 1
                 backoff = min(e.retry_after * (1 << min(_redis_failure_count - 1, 4)), 300)
                 logger.error(
@@ -104,6 +110,7 @@ async def run_prewarm_worker(
                 await asyncio.sleep(backoff)
                 continue
             except Exception as e:
+                semaphore.release()
                 logger.warning("[prewarm] dequeue failed: %s", e)
                 await asyncio.sleep(poll_interval)
                 continue
@@ -111,6 +118,7 @@ async def run_prewarm_worker(
             _redis_failure_count = 0
 
             if task is None:
+                semaphore.release()
                 await asyncio.sleep(poll_interval)
                 continue
 
@@ -148,6 +156,7 @@ async def run_prewarm_worker(
                     await heartbeat_task
                 except asyncio.CancelledError:
                     pass
+                semaphore.release()
 
     except asyncio.CancelledError:
         logger.info("[prewarm] worker cancelled")

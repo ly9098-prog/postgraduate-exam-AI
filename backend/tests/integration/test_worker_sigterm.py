@@ -65,7 +65,7 @@ async def test_draining_stops_new_claims():
         assert is_draining_v2() is False
 
         # Start dispatcher briefly
-        dispatcher_task = asyncio.create_task(run_dispatcher_v2(poll_interval=0.5))
+        asyncio.create_task(run_dispatcher_v2(poll_interval=0.5))
         await asyncio.sleep(0.3)
         assert _v2_worker_running is True
         assert _v2_worker_draining is False
@@ -382,7 +382,7 @@ async def test_dispatcher_concurrency_limit(test_suffix: str):
         assert r2.accepted
 
         # Start dispatcher
-        dispatcher = asyncio.create_task(tqw.run_dispatcher_v2(poll_interval=0.3))
+        asyncio.create_task(tqw.run_dispatcher_v2(poll_interval=0.3))
         await asyncio.sleep(1.5)
 
         # With concurrency=1, only 1 task should be in processing at any time

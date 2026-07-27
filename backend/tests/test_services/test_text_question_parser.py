@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.text_question_parser import _normalize_text, _split_batch, parse_text_questions
+from app.features.text_question_parser import (
+    _normalize_text,
+    _split_batch,
+    parse_text_questions,
+)
 
 
 class TestNormalizeText:

@@ -64,4 +64,4 @@ class AiLogItem(BaseModel):
 class AiLogListResponse(BaseModel):
     items: list[AiLogItem]
     page: int
-    pageSize: int
+    pageSize: int  # noqa: N815

@@ -23,7 +23,9 @@ from sqlalchemy import select
 
 from app.core.database import Base, async_session, engine
 from app.main import app as fastapi_app  # noqa: E402
-from app.models.admin import AuditLog  # noqa: E402,F401 — pre-register table for create_all
+from app.models.admin import (
+    AuditLog,  # noqa: E402,F401 — pre-register table for create_all
+)
 from app.models.question import Question  # noqa: E402,F401
 from app.models.question_import import QuestionImport  # noqa: E402,F401
 

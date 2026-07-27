@@ -532,6 +532,128 @@
               ]
             }
           ]
+        },
+        {
+          "code": "math2_high_math__定积分",
+          "name": "定积分",
+          "groups": [
+            {
+              "code": "math2_high_math__定积分__公式",
+              "name": "公式",
+              "cards": [
+                {
+                  "title": "华里士公式（点火公式）",
+                  "aliases": [
+                    "华里士公式",
+                    "Wallis公式",
+                    "Wallis integral",
+                    "点火公式",
+                    "正弦幂积分",
+                    "余弦幂积分",
+                    "正弦余弦幂积分",
+                    "三角函数幂积分"
+                  ],
+                  "search_text": "华里士公式 Wallis公式 Wallis integral 点火公式 正弦幂积分 余弦幂积分 三角函数幂积分 定积分递推",
+                  "card_type": "pure_formula",
+                  "tags": [
+                    "syllabus_required",
+                    "high_frequency",
+                    "must_memorize",
+                    "error_prone"
+                  ],
+                  "source_ref": "math2_manual:calculus:wallis_formula",
+                  "source_title": "华里士公式（点火公式）",
+                  "summary": "华里士公式用于计算正弦、余弦整数次幂在 [0,π/2] 或 [0,π] 上的定积分。其核心是相差 2 次幂的递推关系，并根据 n 的奇偶性得到不同的连乘表达式。",
+                  "formula_blocks": [
+                    {
+                      "label": "基本定义与递推公式",
+                      "latex": "I_n = \\int_0^{\\frac{\\pi}{2}}\\sin^n x\\,dx = \\int_0^{\\frac{\\pi}{2}}\\cos^n x\\,dx\\\\[4pt] I_n = \\frac{n-1}{n}I_{n-2},\\qquad n\\ge 2\\\\[4pt] I_0 = \\frac{\\pi}{2},\\qquad I_1 = 1"
+                    },
+                    {
+                      "label": "[0,π/2] 上的分段公式",
+                      "latex": "\\int_0^{\\frac{\\pi}{2}}\\sin^n x\\,dx = \\int_0^{\\frac{\\pi}{2}}\\cos^n x\\,dx = \\begin{cases} \\displaystyle \\frac{n-1}{n}\\cdot\\frac{n-3}{n-2}\\cdot\\ldots\\cdot\\frac{2}{3}\\cdot 1, & n\\text{ 为大于 }1\\text{ 的奇数}, \\\\[10pt] \\displaystyle \\frac{n-1}{n}\\cdot\\frac{n-3}{n-2}\\cdot\\ldots\\cdot\\frac{1}{2}\\cdot\\frac{\\pi}{2}, & n\\text{ 为正偶数}. \\end{cases}"
+                    },
+                    {
+                      "label": "[0,π] 上的正弦幂积分",
+                      "latex": "\\int_0^\\pi\\sin^n x\\,dx = \\begin{cases} \\displaystyle 2\\cdot\\frac{n-1}{n}\\cdot\\frac{n-3}{n-2}\\cdot\\ldots\\cdot\\frac{2}{3}\\cdot 1, & n\\text{ 为大于 }1\\text{ 的奇数}, \\\\[10pt] \\displaystyle 2\\cdot\\frac{n-1}{n}\\cdot\\frac{n-3}{n-2}\\cdot\\ldots\\cdot\\frac{1}{2}\\cdot\\frac{\\pi}{2}, & n\\text{ 为正偶数}. \\end{cases} \\\\[4pt] \\text{即}\\quad \\int_0^\\pi\\sin^n x\\,dx = 2I_n"
+                    },
+                    {
+                      "label": "[0,π] 上的余弦幂积分",
+                      "latex": "\\int_0^\\pi\\cos^n x\\,dx = \\begin{cases} 0, & n\\text{ 为正奇数}, \\\\[8pt] \\displaystyle 2\\cdot\\frac{n-1}{n}\\cdot\\frac{n-3}{n-2}\\cdot\\ldots\\cdot\\frac{1}{2}\\cdot\\frac{\\pi}{2}, & n\\text{ 为正偶数}. \\end{cases}"
+                    },
+                    {
+                      "label": "双阶乘等价形式",
+                      "latex": "I_n = \\begin{cases} \\displaystyle \\frac{(n-1)!!}{n!!}, & n\\text{ 为正奇数}, \\\\[8pt] \\displaystyle \\frac{(n-1)!!}{n!!}\\cdot\\frac{\\pi}{2}, & n\\text{ 为非负偶数}. \\end{cases}"
+                    }
+                  ],
+                  "conditions": "n 为非负整数。当 n≥2 时可使用递推关系 I_n=((n-1)/n)I_{n-2}。n=0 和 n=1 分别使用初值 I_0=π/2、I_1=1。连乘分段式中的奇数情形按大于 1 的正奇数书写，偶数情形按正偶数书写。",
+                  "symbol_notes": "I_n—正弦/余弦的 n 次幂在 [0,π/2] 上的定积分值。",
+                  "secondary_conclusions": "\\int_0^\\pi\\sin^n x\\,dx=2I_n\\\\[4pt]\\int_0^\\pi\\cos^n x\\,dx=\\begin{cases}0,&n\\text{ 为正奇数},\\\\2I_n,&n\\text{ 为正偶数}.\\end{cases}",
+                  "error_tips": "奇数连乘最终到 2/3·1。偶数连乘最终到 1/2·π/2，不能漏掉 π/2。在 [0,π] 上，正弦幂积分相当于 [0,π/2] 上结果的 2 倍。在 [0,π] 上，余弦正奇次幂积分为 0，但正弦正奇次幂积分不为 0。不要混淆积分区间 [0,π/2] 和 [0,π]。n=0、n=1 应使用初值，不能机械套用图中的正奇数或正偶数连乘式。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "math2_high_math__函数",
+          "name": "函数",
+          "groups": [
+            {
+              "code": "math2_high_math__函数__反三角函数",
+              "name": "反三角函数",
+              "cards": [
+                {
+                  "title": "特殊函数：x=sin y 的分支表示与图像",
+                  "aliases": [
+                    "x=sin y",
+                    "正弦关系曲线",
+                    "正弦函数反解",
+                    "反正弦分支",
+                    "arcsin分支",
+                    "反正弦多分支",
+                    "特殊函数图像",
+                    "横向正弦曲线"
+                  ],
+                  "search_text": "x=sin y 正弦关系曲线 正弦函数反解 反正弦分支 arcsin分支 反正弦多分支 特殊函数图像 横向正弦曲线",
+                  "card_type": "function_graph",
+                  "tags": [
+                    "syllabus_required",
+                    "error_prone",
+                    "common_inference"
+                  ],
+                  "source_ref": "math2_manual:function:x_equals_sin_y_branches",
+                  "source_title": "x=sin y 在 0≤y≤2π 上的分支表示",
+                  "summary": "在 0≤y≤2π 上，关系 x=sin y 对同一个 x 通常可能对应多个 y，因此不能用单个反正弦主值函数表示。根据 y 所处的区间，可拆分为三个反正弦分支。其图像是以 x 为横轴、y 为纵轴的横向正弦曲线。",
+                  "formula_blocks": [
+                    {
+                      "label": "关系式",
+                      "latex": "x = \\sin y,\\qquad 0\\le y\\le 2\\pi"
+                    },
+                    {
+                      "label": "三段分支公式",
+                      "latex": "y = \\begin{cases} \\arcsin x, & 0\\le y\\le\\frac{\\pi}{2}, \\\\[8pt] \\pi - \\arcsin x, & \\frac{\\pi}{2}<y\\le\\frac{3\\pi}{2}, \\\\[8pt] 2\\pi + \\arcsin x, & \\frac{3\\pi}{2}<y\\le 2\\pi. \\end{cases}"
+                    },
+                    {
+                      "label": "各分支的 x 范围",
+                      "latex": "\\begin{aligned} y&=\\arcsin x, & x&\\in[0,1], & y&\\in\\left[0,\\frac{\\pi}{2}\\right], \\\\[4pt] y&=\\pi-\\arcsin x, & x&\\in[-1,1), & y&\\in\\left(\\frac{\\pi}{2},\\frac{3\\pi}{2}\\right], \\\\[4pt] y&=2\\pi+\\arcsin x, & x&\\in(-1,0], & y&\\in\\left(\\frac{3\\pi}{2},2\\pi\\right]. \\end{aligned}"
+                    },
+                    {
+                      "label": "参数方程形式",
+                      "latex": "(x,y) = (\\sin t,\\,t),\\qquad 0\\le t\\le 2\\pi"
+                    },
+                    {
+                      "label": "关键点",
+                      "latex": "(0,0),\\quad (1,\\pi/2),\\quad (0,\\pi),\\quad (-1,3\\pi/2),\\quad (0,2\\pi)"
+                    }
+                  ],
+                  "conditions": "反正弦函数采用主值范围 arcsin x∈[-π/2,π/2]。关系中限定 0≤y≤2π。整个关系的 x 取值范围为 [-1,1]。",
+                  "secondary_conclusions": "对 x∈(0,1)，通常有两个对应的 y。对 x∈(-1,0)，通常也有两个对应的 y。对 x=0，在区间 0≤y≤2π 内有 y=0、π、2π 三个对应值。因此该关系在整个区间上不是单值函数 y=f(x)。",
+                  "error_tips": "不能把整个关系直接写成 y=arcsin x。arcsin x 只表示反正弦函数的主值。第二分支中的 π 不能漏掉。第三分支中的 2π 不能漏掉。不要把 x=sin y 错画成 y=sin x。横轴应为 x，纵轴应为 y。注意 π/2 和 3π/2 两个分界点的归属。"
+                }
+              ]
+            }
+          ]
         }
       ]
     },

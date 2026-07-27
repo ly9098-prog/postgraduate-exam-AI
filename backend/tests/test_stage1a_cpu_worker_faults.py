@@ -131,7 +131,7 @@ class TestFaultClaimThenKill:
     async def test_job_reclaimable_after_expired_lease(self):
         """Job with expired lease cannot be completed — verifies lease enforcement."""
         async with async_session() as db:
-            job = await _make_job(db, request_id="fault-kill-reclaim")
+            await _make_job(db, request_id="fault-kill-reclaim")
             j1, token = await claim_job(db, worker_id="dead-worker",
                                          lease_seconds=1)
             assert j1 is not None

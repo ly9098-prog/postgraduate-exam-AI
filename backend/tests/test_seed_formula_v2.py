@@ -45,7 +45,7 @@ class TestJsonSchema:
     ]
 
     def test_total_cards(self, all_cards):
-        assert len(all_cards) == 23, f"Expected 23 cards, got {len(all_cards)}"
+        assert len(all_cards) == 25, f"Expected 25 cards, got {len(all_cards)}"
 
     def test_required_fields(self, all_cards):
         missing = []

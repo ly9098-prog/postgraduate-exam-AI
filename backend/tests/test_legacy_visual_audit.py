@@ -45,7 +45,7 @@ def test_readonly_db_unchanged():
         manual_config = {}
         ocr_pages = {}
         audits = [audit.classify_record(r, questions_map, manual_config, ocr_pages) for r in import_records]
-        asset_map = audit.resolve_all_assets(audits, verify_http=False)
+        audit.resolve_all_assets(audits, verify_http=False)
 
         violations = audit.verify_readonly(snap_path, pre_state)
         assert len(violations) == 0, f"Read-only violations: {violations}"
@@ -356,7 +356,7 @@ def test_all_513_records_produced():
         errors = 0
         for rec in records:
             try:
-                ra = audit.classify_record(rec, qmap, {}, {})
+                audit.classify_record(rec, qmap, {}, {})
             except Exception:
                 errors += 1
         assert errors == 0, f"{errors} records raised unhandled exceptions"

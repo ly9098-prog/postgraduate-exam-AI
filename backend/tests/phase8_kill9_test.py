@@ -17,8 +17,8 @@ HEARTBEAT_SEC = 3
 async def main():
     print("=== Phase 8: kill -9 Recovery Test ===\n")
 
-    from app.services.task_queue_service import task_queue
     from app.core.config import settings
+    from app.services.task_queue_service import task_queue
 
     # 1. Enqueue test task
     print("1. Enqueuing test task...")

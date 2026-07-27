@@ -259,7 +259,7 @@ def test_ab_high_confidence_layout():
 
 def test_ab_medium_confidence_layout():
     """中置信度 layout → router 应选 layout_enhanced → 应提升选项恢复率。"""
-    baseline = _run_pipeline_and_collect(
+    _run_pipeline_and_collect(
         _make_pipeline_with_routing(
             split_mode="standard",
             layout_confidence=0.6,

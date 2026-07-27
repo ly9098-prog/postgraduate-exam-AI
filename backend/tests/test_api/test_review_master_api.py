@@ -228,7 +228,7 @@ class TestMasterUnmasterAPI:
                 select(func.count(ReviewSchedule.id)).where(
                     ReviewSchedule.user_id == 1,
                     ReviewSchedule.next_review_at <= utcnow(),
-                    ReviewSchedule.mastered == False,
+                    not ReviewSchedule.mastered,
                 )
             )
             assert cnt1.scalar() == 0
@@ -242,7 +242,7 @@ class TestMasterUnmasterAPI:
                 select(func.count(ReviewSchedule.id)).where(
                     ReviewSchedule.user_id == 1,
                     ReviewSchedule.next_review_at <= utcnow(),
-                    ReviewSchedule.mastered == False,
+                    not ReviewSchedule.mastered,
                 )
             )
             assert cnt2.scalar() == 1

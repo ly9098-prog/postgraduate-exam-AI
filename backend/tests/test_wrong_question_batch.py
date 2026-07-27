@@ -334,8 +334,8 @@ class TestTaskFlow:
         engine, session, db_path = await _make_db()
         try:
             await _add_user(session, 1)
-            wq1 = await _add_wq(session, 1, 101, review_count=1, mastered=False)
-            wq2 = await _add_wq(session, 1, 102, review_count=3, mastered=False)
+            await _add_wq(session, 1, 101, review_count=1, mastered=False)
+            await _add_wq(session, 1, 102, review_count=3, mastered=False)
             wq3 = await _add_wq(session, 1, 103, review_count=1, mastered=True)
 
             result = await get_task_flow(session, 1, preview_size=3)

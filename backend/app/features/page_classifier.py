@@ -322,7 +322,7 @@ def filter_blocks_by_classification(
 
 
 def classify_pages_from_ir(
-    doc: "DocumentIR",
+    doc: "DocumentIR",  # noqa: F821
     section_markers: list[dict] | None = None,
 ) -> list[dict]:
     """DocumentIR entry point for classify_pages."""

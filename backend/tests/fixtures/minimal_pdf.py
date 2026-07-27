@@ -117,13 +117,13 @@ def make_minimal_pdf(
     return result
 
 
-@pytest_fixture
+@pytest.fixture  # noqa: F821
 def minimal_pdf_bytes() -> bytes:
     """Return bytes of a minimal 1-page PDF."""
     return make_minimal_pdf(page_count=1)
 
 
-@pytest_fixture
+@pytest.fixture  # noqa: F821
 def minimal_pdf_path(minimal_pdf_bytes, tmp_path) -> str:
     """Write a minimal 1-page PDF to a temp file and return its path."""
     p = tmp_path / "test.pdf"
@@ -131,7 +131,7 @@ def minimal_pdf_path(minimal_pdf_bytes, tmp_path) -> str:
     return str(p)
 
 
-@pytest_fixture
+@pytest.fixture  # noqa: F821
 def multipage_pdf_path(tmp_path) -> str:
     """Write a multi-page PDF (5 pages) to a temp file and return its path."""
     p = tmp_path / "test_5p.pdf"
@@ -139,7 +139,7 @@ def multipage_pdf_path(tmp_path) -> str:
     return str(p)
 
 
-@pytest_fixture
+@pytest.fixture  # noqa: F821
 def large_pdf_path(tmp_path) -> str:
     """Write a 30-page PDF for chunk testing."""
     p = tmp_path / "test_30p.pdf"

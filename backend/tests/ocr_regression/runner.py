@@ -930,7 +930,7 @@ def print_report(results: list[dict], verbose: bool = False) -> None:
         print(f"  Review: {', '.join(status_parts)}")
 
     # 详细表格
-    pending_cases = [
+    [
         r for r in valid if r.get("review_status") == REVIEW_PENDING
     ]
 
@@ -1133,7 +1133,7 @@ def _check_assertions(
     validation_status: str = norm_q.get("validation_status") or ""
     retry_recommended: bool = norm_q.get("retry_recommended") or False
     failure_reason: list[str] = norm_q.get("failure_reason") or []
-    is_valid: bool = norm_q.get("is_valid") or False
+    norm_q.get("is_valid") or False
 
     # ---- 1. expected_code_flags ----
     expected_flags = assertions.get(_ASSERT_FIELD_EXPECTED_CODE_FLAGS)

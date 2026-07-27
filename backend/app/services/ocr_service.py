@@ -5,6 +5,9 @@ This module provides backward-compatible wrappers that delegate to
 ``OCRGateway`` or the legacy executor service.
 
 DO NOT add new OCR logic here. Use ``OCRGateway.recognize_pages()`` instead.
+
+Cloud API: all legacy paths are rejected with RuntimeError.
+Gateway path runs async via ThreadPoolExecutor bridge.
 """
 
 from __future__ import annotations
@@ -12,11 +15,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 
 from app.core.config import settings
 from app.core.ocr_types import OcrPageResult
 
 logger = logging.getLogger(__name__)
+
+# Shared executor for bridging sync->async calls
+_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ocr_bridge")
 
 
 # ── Private helpers ─────────────────────────────────────────────────────────
@@ -47,11 +54,17 @@ def get_gateway():
 
 
 def _run_async(coro):
-    """Run a coroutine from sync context."""
+    """Run a coroutine from sync context using ThreadPoolExecutor bridge.
+
+    Works correctly even when the event loop is already running (e.g., when
+    called from sync code within an async context like pipeline orchestrator).
+    """
     try:
         loop = asyncio.get_running_loop()
         if loop.is_running():
-            raise RuntimeError("Cannot run from event loop thread")
+            # Bridge: submit to running loop from a worker thread
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+            return future.result(timeout=600)
         return loop.run_until_complete(coro)
     except RuntimeError:
         return asyncio.run(coro)
@@ -60,48 +73,18 @@ def _run_async(coro):
 # ── Deprecated OCR functions ────────────────────────────────────────────────
 
 
-def _ocr_one_page_with_boxes(
-    page_png: bytes, page_index: int, skip_rotation: bool = False,
-) -> tuple[int, str, list[dict]]:
-    """对单页图片执行 OCR，返回 (page_index, text, boxes)。失败返回空。"""
-    try:
-        from app.core.ocr_types import OcrCandidateResult
-        from app.ocr_worker.executor import (
-            _extract_ocr_lines,
-            _ocr_prepared_image,
-            _ocr_with_rotation_candidates,
-            _order_ocr_lines_reading_order,
-            _prepare_ocr_image,
-        )
-        if skip_rotation:
-            img = _prepare_ocr_image(page_png)
-            result = _ocr_prepared_image(ocr, img)
-            candidate = OcrCandidateResult(result=result, image_size=img.size)
-        else:
-            candidate = _ocr_with_rotation_candidates(ocr, page_png)
-        ordered = _order_ocr_lines_reading_order(
-            _extract_ocr_lines(candidate.result),
-            candidate.image_size[0],
-            candidate.image_size[1],
-        )
-        if not ordered:
-            return page_index, "", []
-        lines = [line["text"] for line in ordered if line["text"].strip()]
-        boxes = [{"bbox": line["bbox"], "conf": line["conf"]} for line in ordered]
-        return page_index, "\n".join(lines), boxes
-    except Exception as e:
-        logger.warning("OCR（含框）第 %d 页失败：%s", page_index, e)
-        return page_index, "", []
-
-
 def ocr_image(image_bytes: bytes) -> str:
-    """对单张图片执行 OCR，返回识别文本。"""
+    """对单张图片执行 OCR，返回识别文本。
+
+    Routes through :func:`ocr_pages` which delegates to OCRGateway.
+    """
     if not settings.OCR_ENABLED:
         raise RuntimeError("OCR 功能未启用（OCR_ENABLED=false）")
     if not image_bytes:
         raise ValueError("图片内容为空")
 
-    _, text = _ocr_one_page(image_bytes, 1)
+    results = ocr_pages([(0, image_bytes)])
+    text = results.get(0, "")
     if not text.strip():
         raise RuntimeError("图片 OCR 未识别到文本")
     return text

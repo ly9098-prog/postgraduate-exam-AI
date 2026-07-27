@@ -19,7 +19,7 @@ class TestValidateDocumentIR:
         violations = validate_document_ir(doc)
         # Empty doc with schema version mismatch may trigger one violation
         # (empty doc is valid otherwise)
-        schema_violations = [v for v in violations if "Schema version" in v]
+        [v for v in violations if "Schema version" in v]
         non_schema = [v for v in violations if "Schema version" not in v]
         assert len(non_schema) == 0
 

@@ -1,5 +1,3 @@
-"""
-PostgreSQL 备份脚本集成测试。
 
 测试真实 pg_dump → pg_restore 流程。
 
@@ -20,6 +18,7 @@ PostgreSQL 备份脚本集成测试。
 """
 
 from __future__ import annotations
+import logging
 
 import importlib.util
 import os

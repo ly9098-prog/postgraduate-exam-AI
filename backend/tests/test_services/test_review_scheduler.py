@@ -1,6 +1,6 @@
 """Stage 12: SM-2 复习调度系统 — 单元测试。"""
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -206,7 +206,7 @@ class TestGetTodayReview:
             _make_schedule_mock(id=2, question_id=11, subject="english", next_review_at=now - timedelta(days=1)),
         ]
         math_q = _make_question_mock(id=10, subject="math2")
-        eng_q = _make_question_mock(id=11, subject="english")
+        _make_question_mock(id=11, subject="english")
         _mock_execute_sequence(
             db,
             {"scalar": 1},
@@ -402,7 +402,7 @@ class TestAutoScheduleWrongQuestion:
         async def _run():
             return await auto_schedule_wrong_question(db, user_id=1, question_id=10)
 
-        result = asyncio.run(_run())
+        asyncio.run(_run())
 
         from app.models.review_scheduler import ReviewSchedule
         schedules = [obj for obj in added_objects if isinstance(obj, ReviewSchedule)]
@@ -425,7 +425,7 @@ class TestAutoScheduleWrongQuestion:
         async def _run():
             return await auto_schedule_wrong_question(db, user_id=1, question_id=10)
 
-        result = asyncio.run(_run())
+        asyncio.run(_run())
 
         # Should reset to difficult state
         assert existing.interval == 1

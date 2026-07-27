@@ -27,7 +27,7 @@ class TestPageStreamMemory:
             )
 
             stream_small = PageStream(window_size=5, overlap=1)
-            snap1 = tracemalloc.take_snapshot()
+            tracemalloc.take_snapshot()
             small_peak = 0
 
             try:
@@ -46,7 +46,7 @@ class TestPageStreamMemory:
             )
 
             stream_large = PageStream(window_size=20, overlap=2)
-            snap2 = tracemalloc.take_snapshot()
+            tracemalloc.take_snapshot()
             large_peak = 0
 
             try:

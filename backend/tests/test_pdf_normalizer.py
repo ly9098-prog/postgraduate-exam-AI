@@ -4,7 +4,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.services.pdf_text_normalizer import merge_broken_lines, normalize_pdf_text  # noqa: E402
+from app.services.pdf_text_normalizer import (  # noqa: E402
+    merge_broken_lines,
+    normalize_pdf_text,
+)
 
 PASSED: list[str] = []
 FAILED: list[tuple[str, str]] = []

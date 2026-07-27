@@ -45,7 +45,9 @@ class TestCoordinatorShadow:
     @pytest.mark.asyncio
     async def test_shadow_creates_plan(self):
         """Shadow mode creates a plan but doesn't execute OCR/API/persistence."""
-        from app.features.pipeline_coordinator_entry import run_coordinator_pipeline_shadow
+        from app.features.pipeline_coordinator_entry import (
+            run_coordinator_pipeline_shadow,
+        )
 
         plan = await run_coordinator_pipeline_shadow()
         assert plan is not None
@@ -55,7 +57,9 @@ class TestCoordinatorShadow:
     @pytest.mark.asyncio
     async def test_shadow_plan_has_no_execution(self):
         """Verify shadow plan stages contain routing decisions, not execution results."""
-        from app.features.pipeline_coordinator_entry import run_coordinator_pipeline_shadow
+        from app.features.pipeline_coordinator_entry import (
+            run_coordinator_pipeline_shadow,
+        )
 
         plan = await run_coordinator_pipeline_shadow()
         for stage in plan.stages:

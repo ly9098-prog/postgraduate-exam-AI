@@ -335,8 +335,6 @@ class TestSanitizeTextFieldForCode:
             "printf(\"%d\", ++x);\n"
             "A. 4\nB. 5\nC. 6\nD. 7"
         )
-        options = {"A": "4", "B": "5", "C": "6", "D": "7"}
-        option_keys = ["A", "B", "C", "D"]
         result = _sanitize_question_content({"text": stem, "stem": stem})
         # 选项剥离由前端 _cleanStemText 处理，后端只做字段清洗
         # 确保代码缩进和换行保留

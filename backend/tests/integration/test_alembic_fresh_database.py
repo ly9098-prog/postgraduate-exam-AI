@@ -10,7 +10,6 @@ Run with:
 
 from __future__ import annotations
 
-import asyncio
 import os
 import subprocess
 import sys
@@ -157,7 +156,7 @@ def fresh_db_engine():
     assert result.returncode == 0, (
         f"alembic upgrade head failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
     )
-    print(f"[alembic upgrade head] OK")
+    print("[alembic upgrade head] OK")
 
     # Create engine for verification
     engine = create_async_engine(TEST_POSTGRES_URL, echo=False)

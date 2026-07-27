@@ -444,7 +444,7 @@ class TestTextConsistency:
         result = build(case["content"])
         if "segments" in result:
             rebuilt = _rebuild_text(result["segments"])
-            original = case["content"]["text"]
+            case["content"]["text"]
             # rebuilding 应包含围栏内容
             assert "```" in rebuilt, f"重建文本缺少围栏: {rebuilt[:80]}"
             # 代码内容应可找回

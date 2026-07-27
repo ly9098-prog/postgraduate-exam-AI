@@ -324,7 +324,7 @@ async def run_tests():
 
         db = async_session()
         try:
-            result = await generate_image_preview(
+            await generate_image_preview(
                 db,
                 "test_image_batch",
                 [

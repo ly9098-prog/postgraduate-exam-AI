@@ -43,7 +43,7 @@ class TestNativeTextProbe:
     def test_high_image_coverage_returns_remote_ocr_vl(self):
         text = "Some readable text here but lots of images"
         # Short text with high image coverage → low printable ratio → LOCAL_OCR
-        result = self.probe.analyze_page(
+        self.probe.analyze_page(
             text,
             page_index=0,
             page_width=612,

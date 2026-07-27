@@ -2,7 +2,18 @@
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import JSON, Column, DateTime, Integer, MetaData, String, Table, Text, func, select
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    func,
+    select,
+)
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.admin_security import AdminPrincipal

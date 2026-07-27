@@ -72,6 +72,7 @@ from app.features.pipeline_stages.repair_stage import (
 )
 from app.features.pipeline_stages.review_stage import run_review_stage
 from app.features.pipeline_stages.structure_freeze_stage import (
+    FrozenOptionEntry,
     run_structure_freeze_stage,
 )
 from app.features.pipeline_stages.table_detect_stage import run_table_detect_stage

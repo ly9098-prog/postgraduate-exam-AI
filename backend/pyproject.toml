@@ -89,3 +89,7 @@ markers = [
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["N802", "N803", "N806", "N807", "N811", "N812", "N813", "N814", "N815", "N816", "N817", "N818"]
+

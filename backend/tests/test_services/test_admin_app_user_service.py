@@ -6,9 +6,16 @@ import pytest
 from app.core.admin_security import AdminPrincipal
 from app.models.admin import AdminUser
 from app.models.user import User
-from app.schemas.admin_app_users import AdminAppUserBanRequest, AdminAppUserUpdateRequest
+from app.schemas.admin_app_users import (
+    AdminAppUserBanRequest,
+    AdminAppUserUpdateRequest,
+)
 from app.services import admin_app_user_service
-from app.services.admin_app_user_service import ban_app_user, unban_app_user, update_app_user
+from app.services.admin_app_user_service import (
+    ban_app_user,
+    unban_app_user,
+    update_app_user,
+)
 
 
 class _Db:

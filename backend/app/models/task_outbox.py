@@ -37,7 +37,22 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+
+# ── SQLite compatibility ──────────────────────────────────────────────
+# JSONB is PostgreSQL-specific.  The ``@compiles`` handler below lets
+# SQLite (used in tests and local dev) treat JSONB as plain JSON so
+# that table creation and basic read/write operations work without
+# a real PostgreSQL instance.
+from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Mapped, mapped_column
+
+
+@compiles(JSONB, "sqlite")
+def _compile_jsonb_sqlite(element, compiler, **kw):
+    """Render JSONB as JSON on SQLite — lossy for binary keys, fine for payload blobs."""
+    from sqlalchemy.types import JSON as SA_JSON
+    return compiler.visit_JSON(SA_JSON(), **kw)
+
 
 from app.core.database import Base
 

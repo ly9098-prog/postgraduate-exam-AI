@@ -1,6 +1,6 @@
 """Stage 11 刷题系统 — 单元测试（mock DB session）。"""
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -415,7 +415,7 @@ class TestPracticeStats:
         from app.services.practice_service import get_practice_stats
 
         db = _make_mock_db()
-        today_str = date.today().isoformat()
+        date.today().isoformat()
         db.execute.side_effect = [
             # Total count + correct (base query)
             _make_execute_result(one=(10, 7)),

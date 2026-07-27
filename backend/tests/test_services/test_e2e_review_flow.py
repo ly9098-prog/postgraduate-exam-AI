@@ -305,7 +305,7 @@ class TestAutoGradeRatingMapping:
 
         db.execute.return_value = _make_execute_result(scalar_one_or_none=schedule)
 
-        result = _run(submit_review(db, user_id=1, schedule_id=1, question_id=1, rating=1))
+        _run(submit_review(db, user_id=1, schedule_id=1, question_id=1, rating=1))
 
         # rating=1 应该重置 interval 和 repetitions
         assert schedule.interval <= 1

@@ -976,7 +976,7 @@ class TestSplitterImmutability:
                 "② A. n+1  B. n  C. n−1  D. 1"
             ),
         }]
-        result = split_questions(blocks)
+        split_questions(blocks)
         # 验证原始 blocks 未被修改
         assert blocks[0]["normalized_text"].count("① A.") == 1
         assert blocks[0]["normalized_text"].count("② A.") == 1
