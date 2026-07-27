@@ -767,9 +767,9 @@ _IMAGE_MAX_FILES = 50
 
 
 def _get_image_max_bytes() -> int:
-    """Return image max bytes from settings, falling back to 5 MB."""
+    """Return image max bytes from settings (Pydantic default is 5 MB)."""
     from app.core.config import settings
-    return settings.IMAGE_IMPORT_MAX_BYTES or 5 * 1024 * 1024
+    return settings.IMAGE_IMPORT_MAX_BYTES
 
 
 def _validate_answer_image(filename: str, content: bytes, content_type: str | None) -> str | None:

@@ -324,7 +324,12 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
 
     # Axes styling
     ax.set_facecolor("white")
-    ax.grid(True, color=theme["grid"]["color"], linewidth=0.5, alpha=theme["grid"]["alpha"])
+
+    axis_style = panel.get("axis_style", "box")
+    if axis_style == "cross":
+        ax.grid(True, linewidth=0.6, alpha=0.18)
+    else:
+        ax.grid(True, color=theme["grid"]["color"], linewidth=0.5, alpha=theme["grid"]["alpha"])
     ax.set_axisbelow(True)
 
     ax.spines["left"].set_color(theme["axis"]["color"])
@@ -333,6 +338,14 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
     ax.spines["bottom"].set_linewidth(theme["axis"]["width"])
     for spine in ["top", "right"]:
         ax.spines[spine].set_visible(False)
+
+    if axis_style == "cross":
+        ax.spines["bottom"].set_position(("data", 0))
+        ax.spines["left"].set_position(("data", 0))
+        ax.spines["bottom"].set_linewidth(1.4)
+        ax.spines["left"].set_linewidth(1.4)
+        ax.xaxis.set_ticks_position("bottom")
+        ax.yaxis.set_ticks_position("left")
 
     ax.tick_params(colors=theme["axis"]["color"], labelsize=theme["font"]["size"]["tick"])
 
@@ -350,11 +363,12 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
         if y_tick_labels is not None:
             ax.set_yticklabels(y_tick_labels, fontsize=theme["font"]["size"]["tick"])
 
-    # Labels
-    x_label = _sanitize_label(panel.get("x_label", "x"))
-    y_label = _sanitize_label(panel.get("y_label", "y"))
-    ax.set_xlabel(x_label, fontsize=theme["font"]["size"]["axis_label"])
-    ax.set_ylabel(y_label, fontsize=theme["font"]["size"]["axis_label"])
+    # Labels (skip for cross-axis — handled by _add_cross_axis_arrows)
+    if axis_style != "cross":
+        x_label = _sanitize_label(panel.get("x_label", "x"))
+        y_label = _sanitize_label(panel.get("y_label", "y"))
+        ax.set_xlabel(x_label, fontsize=theme["font"]["size"]["axis_label"])
+        ax.set_ylabel(y_label, fontsize=theme["font"]["size"]["axis_label"])
     if title:
         ax.set_title(_sanitize_label(title), fontsize=theme["font"]["size"]["panel_title"])
 
@@ -404,7 +418,8 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
         label = _sanitize_label(expr_data.get("label", ""))
 
         # Build x grid — expression-level domain with panel-level fallback
-        expr_domain = expr_data.get("domain", domain)
+        # expr_data.get("domain") returns None when JSON has "domain": null
+        expr_domain = expr_data.get("domain") or domain
         intervals = expr_domain.get("intervals", [])
         exclude = expr_domain.get("exclude_points", [])
         xs = _build_x_grid(intervals, exclude, x_range)
@@ -460,6 +475,26 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
     for ann in annotations:
         ann_type = ann.get("type", "point")
 
+        if ann_type == "label":
+            x, y = ann.get("x"), ann.get("y")
+            label = _sanitize_label(ann.get("label", ""))
+            if not label or x is None or y is None:
+                continue
+            fontsize = ann.get("fontsize", theme["font"]["size"]["annotation"])
+            color = ann.get("color", theme["axis"]["color"])
+            ha = ann.get("ha", "center")
+            va = ann.get("va", "center")
+            offset = ann.get("offset")
+            if offset:
+                ax.annotate(label, xy=(x, y), xytext=offset,
+                            textcoords="offset points",
+                            fontsize=fontsize, color=color, ha=ha, va=va,
+                            clip_on=False)
+            else:
+                ax.text(x, y, label, fontsize=fontsize, color=color,
+                        ha=ha, va=va, clip_on=False)
+            continue
+
         if ann_type == "arrow":
             x_start, y_start = ann.get("x_start"), ann.get("y_start")
             x_end, y_end = ann.get("x_end"), ann.get("y_end")
@@ -504,7 +539,8 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
                         color=color)
 
     # Legend
-    if legend_labels:
+    show_legend = panel.get("show_legend", True)
+    if legend_labels and show_legend:
         ax.legend(
             legend_handles, legend_labels,
             loc="upper right", fontsize=theme["font"]["size"]["legend"],
@@ -524,8 +560,60 @@ def _render_panel(ax, panel: dict, color_cycle: list[str]) -> dict:
         ax.set_xlim(x0, x1)
         ax.set_ylim(y0, y1)
 
+    # Cross-axis arrows
+    if axis_style == "cross":
+        _add_cross_axis_arrows(ax)
+
     metadata = {"curve_count": curve_count, "total_points": total_points, "valid_points": valid_points}
     return metadata
+
+
+def _add_cross_axis_arrows(ax):
+    """Draw arrows, axis-end labels (x/y), and origin O for cross-axis style."""
+    x_min, x_max = ax.get_xlim()
+    y_min, y_max = ax.get_ylim()
+    x_range = x_max - x_min
+    y_range = y_max - y_min
+
+    arrow_len_x = x_range * 0.06
+    arrow_len_y = y_range * 0.04
+    arrow_style = dict(arrowstyle="->", linewidth=1.4, color="black",
+                       shrinkA=0, shrinkB=0)
+    # x-axis positive
+    ax.annotate("", xy=(x_max, 0), xytext=(x_max - arrow_len_x, 0),
+                arrowprops=arrow_style, annotation_clip=False, zorder=10)
+    # x-axis negative
+    ax.annotate("", xy=(x_min, 0), xytext=(x_min + arrow_len_x, 0),
+                arrowprops=arrow_style, annotation_clip=False, zorder=10)
+    # y-axis positive
+    ax.annotate("", xy=(0, y_max), xytext=(0, y_max - arrow_len_y),
+                arrowprops=arrow_style, annotation_clip=False, zorder=10)
+
+    # Axis labels at ends
+    ax.text(x_max + x_range * 0.02, -x_range * 0.005, "x",
+            fontsize=14, ha="left", va="top", clip_on=False)
+    ax.text(0, y_max + y_range * 0.01, "y",
+            fontsize=14, ha="left", va="bottom", clip_on=False)
+
+    # O at origin
+    ax.annotate("O", xy=(0, 0), xytext=(-10, -12),
+                textcoords="offset points", fontsize=13, color="black",
+                ha="right", va="top")
+
+    # Clear tick label at origin to avoid overlap with O (use Text.set_text to avoid warning)
+    eps = 1e-9
+    for get_ticks, get_labels in [
+        (ax.get_xticks, ax.get_xticklabels),
+        (ax.get_yticks, ax.get_yticklabels),
+    ]:
+        tick_values = list(get_ticks())
+        text_objects = get_labels()
+        for i, (t, text_obj) in enumerate(zip(tick_values, text_objects)):
+            if abs(t) < eps:
+                try:
+                    text_obj.set_text("")
+                except Exception:
+                    pass
 
 
 # ── Cached parsing/lambdify ──

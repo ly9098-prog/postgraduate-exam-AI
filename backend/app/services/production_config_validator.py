@@ -411,13 +411,18 @@ def _check_gunicorn_fork_safety(errors: list[str]) -> None:
     by all worker processes, leading to file descriptor leaks and connection
     races.
 
-    We only flag patterns that appear at MODULE level (indent == 0), since
-    client initialization inside function/class bodies runs per-worker and
-    is safe even with ``--preload``.
+    We check two conditions to decide whether to run:
+    - ``GUNICORN_PRELOAD`` env var explicitly set
+    - ``sys.argv[0]`` contains "gunicorn" (Gunicorn CLI without env var)
+
+    Only flags patterns at MODULE scope (indent == 0), since client
+    initialization inside function/class bodies runs per-worker and is
+    safe even with ``--preload``.
     """
 
     gunicorn_preload = os.environ.get("GUNICORN_PRELOAD", "").lower() in ("1", "true", "yes")
-    if not gunicorn_preload:
+    using_gunicorn = "gunicorn" in sys.argv[0] if sys.argv else False
+    if not gunicorn_preload and not using_gunicorn:
         return
 
     own_patterns = {
@@ -435,6 +440,28 @@ def _check_gunicorn_fork_safety(errors: list[str]) -> None:
         try:
             with open(mod_file) as f:
                 source_lines = f.readlines()
+            # Build set of line numbers that are inside a function or class body
+            # (lines with indent > 0, or lines between a `def`/`class` and its
+            # next peer at indent 0).
+            in_body: set[int] = set()
+            body_start = None
+            for lineno, line in enumerate(source_lines, 1):
+                stripped = line.lstrip()
+                if not stripped or stripped.startswith(("#", '"', "'", "\n")):
+                    if body_start is not None:
+                        in_body.add(lineno)
+                    continue
+                indent = len(line) - len(stripped)
+                if indent == 0 and (
+                    stripped.startswith("def ") or stripped.startswith("class ")
+                    or stripped.startswith("async def ")
+                ):
+                    body_start = lineno
+                elif indent == 0:
+                    body_start = None
+                else:
+                    if body_start is not None:
+                        in_body.add(lineno)
             for pattern, reason in own_patterns.items():
                 for lineno, line in enumerate(source_lines, 1):
                     if pattern not in line:
@@ -442,7 +469,14 @@ def _check_gunicorn_fork_safety(errors: list[str]) -> None:
                     stripped = line.lstrip()
                     if not stripped or stripped.startswith(("#", '"', "'")):
                         continue  # comment or docstring
-                    if len(line) - len(stripped) > 0:
+                    # Check both indent == 0 AND not inside a function/class body
+                    # (the latter catches multi-line module-level patterns on
+                    # continuation lines, e.g. CFG = {"k": redis.from_url(...)})
+                    indent = len(line) - len(stripped)
+                    if indent > 0 and lineno not in in_body:
+                        # Multi-line module-level expression — flag it
+                        pass
+                    elif indent > 0:
                         continue  # inside function/class — safe
                     # Known-safe: app.core.cache uses lazy constructor
                     if name == "app.core.cache" and "from_url" in pattern:

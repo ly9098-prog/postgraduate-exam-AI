@@ -785,6 +785,11 @@ class ResourceGuard:
 
 try:
     _profile = detect_deployment_profile()
-except Exception:
+except Exception as exc:
+    logger.warning(
+        "ResourceGuard: deployment profile detection failed (%s), "
+        "falling back to LOCAL_IMPORT — cloud safeguards DISABLED",
+        exc,
+    )
     _profile = DeploymentProfile.LOCAL_IMPORT
 resource_guard = ResourceGuard.for_profile(_profile)
