@@ -50,7 +50,7 @@ function getDownloadInfo(taskId) {
  */
 function getFileUrl(taskId) {
   const config = require('../config')
-  return `${config.apiBase}/exports/${taskId}/file`
+  return config.BASE_URL + '/exports/' + taskId + '/file'
 }
 
 /**
@@ -146,8 +146,7 @@ function syncTaskStatus(taskId, onUpdate, onError, options = {}) {
     if (stopped || usePolling) return
 
     // Determine WebSocket URL from API base
-    const apiBase = config.apiBase || config.BASE_URL || ''
-    const wsBase = apiBase.replace(/^http/, 'ws').replace(/\/api\/v1$/, '')
+    const wsBase = config.BASE_URL.replace(/^http/, 'ws').replace(/\/api\/v1$/, '')
     const wsUrl = `${wsBase}/api/v1/exports/ws?token=${encodeURIComponent(token || '')}`
 
     try {

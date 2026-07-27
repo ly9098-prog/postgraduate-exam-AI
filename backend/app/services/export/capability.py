@@ -28,6 +28,26 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════
 
 
+def _parse_allowed_ids(raw: str) -> set[int]:
+    """Parse the comma-separated allowed-user-IDs string.
+
+    Handles spaces, empty strings, duplicates, and non-integer values
+    gracefully — any unparsable segment is silently skipped.
+    """
+    if not raw or not raw.strip():
+        return set()
+    result: set[int] = set()
+    for part in raw.split(","):
+        stripped = part.strip()
+        if not stripped:
+            continue
+        try:
+            result.add(int(stripped))
+        except (ValueError, TypeError):
+            logger.warning("Ignoring invalid EXPORT_ALLOWED_USER_IDS entry: %r", stripped)
+    return result
+
+
 def is_user_allowed(user_id: int) -> bool:
     """Check if a user is allowed to create new export tasks."""
     from app.core.config import settings
@@ -37,11 +57,7 @@ def is_user_allowed(user_id: int) -> bool:
     if settings.EXPORT_ALLOW_ALL_USERS:
         return True
     if settings.EXPORT_ALLOWED_USER_IDS:
-        allowed = {
-            int(x.strip())
-            for x in settings.EXPORT_ALLOWED_USER_IDS.split(",")
-            if x.strip()
-        }
+        allowed = _parse_allowed_ids(settings.EXPORT_ALLOWED_USER_IDS)
         return user_id in allowed
     return False
 
@@ -50,7 +66,8 @@ def build_capability(user: object) -> ExportCapabilityResponse:
     """Build capability response for the given user.
 
     The response tells the frontend what the current user can do, without
-    leaking internal config or whitelist contents.
+    leaking internal config or whitelist contents. Configurable constants
+    (max question count, retention days) are populated from settings.
     """
     from app.core.config import settings
 
@@ -61,7 +78,21 @@ def build_capability(user: object) -> ExportCapabilityResponse:
         pdf_enabled=allowed,
         docx_enabled=allowed and settings.EXPORT_DOCX_ENABLED,
         websocket_enabled=allowed and settings.EXPORT_WEBSOCKET_ENABLED,
+        max_question_count=settings.EXPORT_MAX_QUESTIONS,
+        retention_days=_get_retention_days(),
     )
+
+
+def _get_retention_days() -> int:
+    """Return the configured retention period in days.
+
+    Looks for a setting in order of preference:
+    1. EXPORT_RETENTION_DAYS (if defined)
+    2. Falls back to 7 days
+    """
+    from app.core.config import settings
+
+    return getattr(settings, "EXPORT_RETENTION_DAYS", 7)
 
 
 # ═══════════════════════════════════════════════════
@@ -84,11 +115,24 @@ def raise_export_error(
 
 
 def ensure_export_allowed(user_id: int):
-    """Raise if the user is not allowed to create export tasks."""
+    """Raise if the user is not allowed to create export tasks.
+
+    Returns different error codes depending on the reason:
+    - ``feature_disabled`` when the global feature flag is off
+    - ``user_not_allowed`` when the user is not on the whitelist
+    """
+    from app.core.config import settings
+
+    if not settings.EXPORT_FEATURE_ENABLED:
+        logger.info(
+            "export_capability_checked",
+            extra={"user_id": user_id, "allowed": False, "reason": "feature_disabled"},
+        )
+        raise_export_error(403, ExportErrorCode.FEATURE_DISABLED, "导出功能已关闭")
     if not is_user_allowed(user_id):
         logger.info(
             "export_capability_checked",
-            extra={"user_id": user_id, "allowed": False},
+            extra={"user_id": user_id, "allowed": False, "reason": "user_not_allowed"},
         )
         raise_export_error(403, ExportErrorCode.USER_NOT_ALLOWED, "导出功能未开放")
 
@@ -108,3 +152,26 @@ def log_capability_check(user_id: int, allowed: bool, **extra):
         "export_capability_checked",
         extra={"user_id": user_id, "allowed": allowed, **extra},
     )
+
+
+def validate_export_range(range_type: str, selected_ids: list[int] | None, count: int) -> None:
+    """Validate the export range before creating a task.
+
+    Raises ``HTTPException`` if the range is invalid:
+    - 0 questions → ``no_questions``
+    - count exceeds max → ``too_many_questions``
+
+    The max count comes from settings.EXPORT_MAX_QUESTIONS.
+    """
+    from app.core.config import settings
+
+    max_count = settings.EXPORT_MAX_QUESTIONS
+
+    if count == 0:
+        raise_export_error(400, ExportErrorCode.NO_QUESTIONS, "没有可导出的错题")
+    if count > max_count:
+        raise_export_error(
+            400,
+            ExportErrorCode.TOO_MANY_QUESTIONS,
+            f"单次最多导出 {max_count} 道，当前共 {count} 道，请调整导出范围。",
+        )

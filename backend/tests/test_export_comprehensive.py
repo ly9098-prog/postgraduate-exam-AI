@@ -151,70 +151,58 @@ class TestStaleRecovery:
 # ══════════════════════════════════════════════════════════════
 
 class TestCosSignedUrl:
-    """Mock COS client to verify signed URL generation contract."""
+    """Mock COS client to verify signed URL generation contract.
+
+    Keys passed to get_download_url/delete/exists are relative (without prefix).
+    The _normalize_key method prepends the COS prefix automatically.
+    """
+
+    @pytest.fixture
+    def cos_storage(self):
+        from app.services.storage_backend import COSStorage, settings
+        storage = COSStorage()
+        storage._client = MagicMock()
+        storage._cos_prefix = "static/exports/"
+        return storage
 
     @pytest.mark.asyncio
-    async def test_get_download_url_calls_presigned_url(self):
+    async def test_get_download_url_calls_presigned_url(self, cos_storage):
         """get_download_url must call client.get_presigned_url."""
-        from app.services.storage_backend import COSStorage
+        cos_storage._client.get_presigned_url.return_value = "https://signed.example.com/file.pdf?signature=abc"
 
-        storage = COSStorage()
-        mock_client = MagicMock()
-        mock_client.get_presigned_url.return_value = "https://signed.example.com/file.pdf?signature=abc"
-        storage._client = mock_client
+        result = await cos_storage.get_download_url("1/test.pdf", expiry_sec=3600)
 
-        result = await storage.get_download_url("static/exports/1/test.pdf", expiry_sec=3600)
-
-        mock_client.get_presigned_url.assert_called_once()
-        kwargs = mock_client.get_presigned_url.call_args.kwargs
+        cos_storage._client.get_presigned_url.assert_called_once()
+        kwargs = cos_storage._client.get_presigned_url.call_args.kwargs
         assert kwargs["Key"] == "static/exports/1/test.pdf"
         assert kwargs["Method"] == "GET"
         assert kwargs["Expired"] == 3600
         assert result == "https://signed.example.com/file.pdf?signature=abc"
 
     @pytest.mark.asyncio
-    async def test_get_download_url_not_raw_key(self):
+    async def test_get_download_url_not_raw_key(self, cos_storage):
         """Returned URL must NOT be the raw file_key (must be a signed URL)."""
-        from app.services.storage_backend import COSStorage
-
-        storage = COSStorage()
-        mock_client = MagicMock()
         signed = "https://cos.example.com/file.pdf?q-sign-algorithm=sha1&q-sign-time=abc"
-        mock_client.get_presigned_url.return_value = signed
-        storage._client = mock_client
+        cos_storage._client.get_presigned_url.return_value = signed
 
-        result = await storage.get_download_url("static/exports/1/test.pdf")
+        result = await cos_storage.get_download_url("1/test.pdf")
         assert "signature" in result or "q-sign" in result, (
             "must be a signed URL, not raw key"
         )
 
     @pytest.mark.asyncio
-    async def test_expiry_passed_to_client(self):
+    async def test_expiry_passed_to_client(self, cos_storage):
         """Expiry parameter must be forwarded to the COS client."""
-        from app.services.storage_backend import COSStorage
-
-        storage = COSStorage()
-        mock_client = MagicMock()
-        mock_client.get_presigned_url.return_value = "https://signed.url/"
-        storage._client = mock_client
-
-        await storage.get_download_url("key.pdf", expiry_sec=3600)
-        assert mock_client.get_presigned_url.call_args.kwargs["Expired"] == 3600
+        cos_storage._client.get_presigned_url.return_value = "https://signed.url/"
+        await cos_storage.get_download_url("key.pdf", expiry_sec=3600)
+        assert cos_storage._client.get_presigned_url.call_args.kwargs["Expired"] == 3600
 
     @pytest.mark.asyncio
-    async def test_expiry_is_short_lived(self):
+    async def test_expiry_is_short_lived(self, cos_storage):
         """Expiry should be <= 1 hour for security."""
-        from app.services.storage_backend import COSStorage
-
-        storage = COSStorage()
-        mock_client = MagicMock()
-        mock_client.get_presigned_url.return_value = "https://signed.url/"
-        storage._client = mock_client
-
-        await storage.get_download_url("key.pdf", expiry_sec=86400)
-        # Even if caller passes 24h, the default is 1h and we should enforce
-        # Short enough that it's practically bounded
-        expiry = mock_client.get_presigned_url.call_args.kwargs["Expired"]
+        cos_storage._client.get_presigned_url.return_value = "https://signed.url/"
+        await cos_storage.get_download_url("key.pdf", expiry_sec=86400)
+        expiry = cos_storage._client.get_presigned_url.call_args.kwargs["Expired"]
         assert expiry <= 86400, "expiry should be reasonable"
 
     @pytest.mark.asyncio

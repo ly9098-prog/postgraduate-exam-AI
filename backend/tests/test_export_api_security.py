@@ -121,7 +121,7 @@ class TestPreviewCountPermission:
             resp = client.post(self.url, json=self.payload)
         assert resp.status_code == 403
         detail = _get_detail(resp)
-        assert detail["error_code"] == "user_not_allowed"
+        assert detail["error_code"] == "feature_disabled"
 
     def test_preview_count_blocked_when_user_not_in_whitelist(self):
         """User not in EXPORT_ALLOWED_USER_IDS gets 403."""
@@ -389,6 +389,8 @@ class TestCapabilityEndpoint:
             mock_settings.EXPORT_DOCX_ENABLED = True
             mock_settings.EXPORT_WEBSOCKET_ENABLED = True
             mock_settings.EXPORT_ALLOWED_USER_IDS = ""
+            mock_settings.EXPORT_MAX_QUESTIONS = 100
+            mock_settings.EXPORT_RETENTION_DAYS = 7
             resp = client.get("/api/v1/exports/capabilities")
         assert resp.status_code == 200
         data = resp.json()
@@ -421,7 +423,7 @@ class TestCreateExportPermission:
                 "file_format": "pdf",
             })
         assert resp.status_code == 403
-        assert _get_detail(resp)["error_code"] == "user_not_allowed"
+        assert _get_detail(resp)["error_code"] == "feature_disabled"
 
     def test_create_export_docx_blocked_when_disabled(self):
         """DOCX create blocked when EXPORT_DOCX_ENABLED=False."""

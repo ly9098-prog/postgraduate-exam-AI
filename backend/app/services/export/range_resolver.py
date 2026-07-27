@@ -5,7 +5,8 @@ Validates that:
 - For ``all`` range: page-filter params are NOT applied (range is truly all).
 - For ``filtered`` range: filter params are applied using the same query logic
   as the wrong-question listing endpoint.
-- Max 100 items enforced after resolution.
+- Count limits are enforced by the create/retry/re-export endpoints, NOT here,
+  so preview-count can report any number without error.
 """
 
 from __future__ import annotations
@@ -19,8 +20,6 @@ from app.models.wrong_question import WrongQuestion
 from app.schemas.export_task import ExportRangeType
 
 logger = logging.getLogger(__name__)
-
-_MAX_EXPORT = 100
 
 
 def _build_base_query(user_id: int) -> select:
@@ -74,7 +73,8 @@ async def resolve_range(
     """Return the list of validated WrongQuestion IDs for the given range.
 
     Raises:
-        ValueError: if the range is invalid or exceeds MAX_EXPORT.
+        ValueError: if the range type is invalid or ownership check fails.
+        Does NOT enforce max-count limits — those are checked at create time.
     """
     if range_type == ExportRangeType.SELECTED:
         return await _resolve_selected(db, user_id, selected_ids or [])
@@ -93,7 +93,6 @@ async def _resolve_all(db: AsyncSession, user_id: int) -> list[int]:
     query = _build_base_query(user_id).order_by(WrongQuestion.id)
     result = await db.execute(query)
     ids = [row[0] for row in result.fetchall()]
-    _check_limit(ids)
     return ids
 
 
@@ -108,7 +107,6 @@ async def _resolve_filtered(
     query = query.order_by(WrongQuestion.id)
     result = await db.execute(query)
     ids = [row[0] for row in result.fetchall()]
-    _check_limit(ids)
     return ids
 
 
@@ -117,14 +115,17 @@ async def _resolve_selected(
     user_id: int,
     selected_ids: list[int],
 ) -> list[int]:
-    """Verify each selected ID is an active wrong-question record of the user."""
+    """Verify each selected ID is an active wrong-question record of the user.
+
+    If ANY ID is not found, not owned by the user, or not active, the entire
+    request is rejected. This prevents leaking information about which IDs
+    exist or belong to other users.
+    """
     if not selected_ids:
         raise ValueError("已选错题列表为空")
 
     # Deduplicate
     unique = list(dict.fromkeys(selected_ids))
-    if len(unique) > _MAX_EXPORT:
-        raise ValueError(f"单次最多导出 {_MAX_EXPORT} 道，已选 {len(unique)} 道")
 
     # Validate ownership
     result = await db.execute(
@@ -136,18 +137,17 @@ async def _resolve_selected(
     )
     valid_ids = {row[0] for row in result.fetchall()}
 
-    invalid = [str(i) for i in unique if i not in valid_ids]
-    if invalid:
+    # If ANY selected ID is invalid, reject the entire request
+    missing = len(unique) - len(valid_ids)
+    if missing > 0:
         logger.warning(
-            "User %d: selected wrong-question IDs not found/owned: %s",
-            user_id, invalid,
+            "User %d: %d selected wrong-question IDs invalid (unauthorized/deleted)",
+            user_id, missing,
         )
+        # Return an opaque error — do not leak which IDs are valid
+        raise ValueError("部分题目无法导出，请刷新后重试")
 
-    result_list = [i for i in unique if i in valid_ids]
-    if not result_list:
-        raise ValueError("没有可导出的有效错题记录")
-
-    return result_list
+    return unique
 
 
 def preview_count(
@@ -155,10 +155,3 @@ def preview_count(
 ) -> int:
     """Return the count without additional DB roundtrip."""
     return len(resolved_ids)
-
-
-def _check_limit(ids: list[int]) -> None:
-    if len(ids) > _MAX_EXPORT:
-        raise ValueError(
-            f"单次最多导出 {_MAX_EXPORT} 道，当前共 {len(ids)} 道，请调整导出范围。"
-        )

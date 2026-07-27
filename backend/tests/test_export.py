@@ -184,12 +184,21 @@ class TestRangeResolver:
     @pytest.mark.asyncio
     async def test_selected_ownership_validation(self, mock_db):
         mock_db._result.fetchall.return_value = [(1,), (3,)]
+        # Any invalid ID raises ValueError (opaque error)
+        with pytest.raises(ValueError, match="部分题目无法导出"):
+            await resolve_range(
+                mock_db, 1, ExportRangeType.SELECTED,
+                selected_ids=[1, 2, 3, 4],
+            )
+
+    @pytest.mark.asyncio
+    async def test_selected_all_valid_passes(self, mock_db):
+        mock_db._result.fetchall.return_value = [(1,), (2,), (3,)]
         result = await resolve_range(
             mock_db, 1, ExportRangeType.SELECTED,
-            selected_ids=[1, 2, 3, 4],
+            selected_ids=[1, 2, 3],
         )
-        assert 1 in result
-        assert 2 not in result
+        assert result == [1, 2, 3]
 
     @pytest.mark.asyncio
     async def test_selected_empty_list_raises(self, mock_db):
@@ -197,10 +206,11 @@ class TestRangeResolver:
             await resolve_range(mock_db, 1, ExportRangeType.SELECTED, selected_ids=[])
 
     @pytest.mark.asyncio
-    async def test_all_over_100_raises(self, mock_db):
+    async def test_all_over_100_passes_preview(self, mock_db):
+        """Range resolver no longer enforces the 100-limit — that's checked at create time."""
         mock_db._result.fetchall.return_value = [(i,) for i in range(101)]
-        with pytest.raises(ValueError, match="最多"):
-            await resolve_range(mock_db, 1, ExportRangeType.ALL)
+        result = await resolve_range(mock_db, 1, ExportRangeType.ALL)
+        assert len(result) == 101
 
 
 # ═══════════════════════════════════════════════════
@@ -314,3 +324,231 @@ class TestCleanup:
         result = _sanitize_filename("数学/物理:化学*测试?")
         assert "/" not in result
         assert result
+
+
+# ═══════════════════════════════════════════════════
+# Capability service tests
+# ═══════════════════════════════════════════════════
+
+
+class TestCapabilityService:
+    def test_parse_allowed_ids_empty(self):
+        from app.services.export.capability import _parse_allowed_ids
+        assert _parse_allowed_ids("") == set()
+        assert _parse_allowed_ids("  ") == set()
+        assert _parse_allowed_ids(None) == set()
+
+    def test_parse_allowed_ids_normal(self):
+        from app.services.export.capability import _parse_allowed_ids
+        assert _parse_allowed_ids("1,2,3") == {1, 2, 3}
+
+    def test_parse_allowed_ids_with_spaces(self):
+        from app.services.export.capability import _parse_allowed_ids
+        assert _parse_allowed_ids(" 1 , 2 , 3 ") == {1, 2, 3}
+
+    def test_parse_allowed_ids_invalid_skipped(self):
+        from app.services.export.capability import _parse_allowed_ids
+        assert _parse_allowed_ids("1,,abc,2") == {1, 2}
+
+    def test_parse_allowed_ids_duplicates(self):
+        from app.services.export.capability import _parse_allowed_ids
+        assert _parse_allowed_ids("1,2,2,3,1") == {1, 2, 3}
+
+    def test_ensure_format_allowed_pdf_always(self):
+        from app.services.export.capability import ensure_format_allowed
+        # pdf should never raise
+        ensure_format_allowed("pdf")
+
+    def test_validate_export_range_zero_raises(self):
+        from app.services.export.capability import validate_export_range
+        from app.schemas.export_task import ExportErrorCode
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as exc:
+            validate_export_range("all", None, 0)
+        assert exc.value.status_code == 400
+        assert "no_questions" in str(exc.value.detail)
+
+    def test_validate_export_range_exceeds_max(self):
+        from app.services.export.capability import validate_export_range
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as exc:
+            validate_export_range("all", None, 999)
+        assert exc.value.status_code == 400
+        assert "too_many_questions" in str(exc.value.detail)
+
+
+# ═══════════════════════════════════════════════════
+# Storage backend contract tests
+# ═══════════════════════════════════════════════════
+
+
+class TestLocalFileStorage:
+    @pytest.mark.asyncio
+    async def test_upload_and_delete(self, tmp_path, monkeypatch):
+        """Upload a file, verify it exists, delete it, verify it's gone."""
+        from app.services.storage_backend import LocalFileStorage
+        prefix = str(tmp_path / "exports")
+        storage = LocalFileStorage(prefix=prefix)
+        data = b"test pdf content"
+        url = await storage.upload("test/1/test.pdf", data)
+        assert url is not None
+
+        # Verify file exists on disk
+        file_path = tmp_path / "exports" / "test" / "1" / "test.pdf"
+        assert file_path.exists()
+        assert file_path.read_bytes() == data
+
+        # Delete using the key (relative path, not full filesystem path)
+        deleted = await storage.delete("test/1/test.pdf")
+        assert deleted is True
+        assert not file_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_returns_true(self, tmp_path):
+        """Deleting a file that doesn't exist should return True (idempotent)."""
+        from app.services.storage_backend import LocalFileStorage
+        storage = LocalFileStorage(prefix=str(tmp_path))
+        deleted = await storage.delete("nonexistent/file.pdf")
+        assert deleted is True
+
+    @pytest.mark.asyncio
+    async def test_exists_after_upload(self, tmp_path):
+        from app.services.storage_backend import LocalFileStorage
+        storage = LocalFileStorage(prefix=str(tmp_path))
+        await storage.upload("exists/test.pdf", b"data")
+        exists = await storage.exists("exists/test.pdf")
+        assert exists is True
+
+    @pytest.mark.asyncio
+    async def test_exists_nonexistent(self, tmp_path):
+        from app.services.storage_backend import LocalFileStorage
+        storage = LocalFileStorage(prefix=str(tmp_path))
+        exists = await storage.exists("ghost/file.pdf")
+        assert exists is False
+
+    @pytest.mark.asyncio
+    async def test_path_traversal_blocked(self):
+        from app.services.storage_backend import LocalFileStorage
+        storage = LocalFileStorage(prefix="/safe/prefix")
+        # Path traversal with ".." should be rejected
+        deleted = await storage.delete("../../etc/passwd")
+        assert deleted is False
+
+    def test_relative_key_joins_with_prefix(self):
+        """Keys without prefix should be joined with prefix in _resolve_delete_path."""
+        from app.services.storage_backend import LocalFileStorage
+        storage = LocalFileStorage(prefix="var/exports")
+        result = storage._resolve_delete_path("42/test.pdf")
+        assert result is not None
+        assert result == "var/exports/42/test.pdf"
+
+    def test_prefixed_key_used_as_is(self):
+        """Keys that already contain the prefix should be used as-is."""
+        from app.services.storage_backend import LocalFileStorage
+        storage = LocalFileStorage(prefix="var/exports")
+        result = storage._resolve_delete_path("var/exports/42/test.pdf")
+        assert result is not None
+        assert result == "var/exports/42/test.pdf"
+
+
+class TestCOSStorageKeyNormalization:
+    def test_normalize_key_adds_prefix(self):
+        from app.services.storage_backend import COSStorage, settings
+        from unittest.mock import MagicMock
+        storage = COSStorage.__new__(COSStorage)
+        storage._cos_prefix = "var/exports/"
+        storage._bucket = "test-bucket"
+        storage._region = "ap-guangzhou"
+
+        key = storage._normalize_key("42/test.pdf")
+        assert key == "var/exports/42/test.pdf"
+
+    def test_normalize_key_keeps_full_url(self):
+        from app.services.storage_backend import COSStorage
+        storage = COSStorage.__new__(COSStorage)
+        storage._cos_prefix = "var/exports/"
+        storage._bucket = "test-bucket"
+        storage._region = "ap-guangzhou"
+
+        url = "https://test-bucket.cos.ap-guangzhou.myqcloud.com/var/exports/42/test.pdf"
+        key = storage._normalize_key(url)
+        assert key == "var/exports/42/test.pdf"
+
+    def test_normalize_key_already_prefixed(self):
+        from app.services.storage_backend import COSStorage
+        storage = COSStorage.__new__(COSStorage)
+        storage._cos_prefix = "var/exports/"
+        storage._bucket = "test-bucket"
+        storage._region = "ap-guangzhou"
+
+        key = storage._normalize_key("var/exports/42/test.pdf")
+        assert key == "var/exports/42/test.pdf"
+
+
+# ═══════════════════════════════════════════════════
+# Snapshot lifecycle tests (re-export, isolation)
+# ═══════════════════════════════════════════════════
+
+
+class TestSnapshotLifecycle:
+    @pytest.mark.asyncio
+    async def test_create_and_load_snapshot(self, mock_db):
+        from app.services.export.snapshot_service import create_snapshot, load_snapshot
+        mock_db.flush = AsyncMock()
+        mock_db.add = MagicMock()
+
+        sid = await create_snapshot(mock_db, 1, {"questions": [], "config": {}, "total_count": 0})
+        assert sid is not None
+        assert len(sid) == 36  # UUID length
+
+    @pytest.mark.asyncio
+    async def test_load_nonexistent_snapshot(self, mock_db):
+        from app.services.export.snapshot_service import load_snapshot
+        mock_db._result.scalar_one_or_none.return_value = None
+        result = await load_snapshot(mock_db, "nonexistent-id", 1)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_delete_snapshot(self, mock_db):
+        from app.services.export.snapshot_service import delete_snapshot
+        mock_snap = MagicMock()
+        mock_db._result.scalar_one_or_none.return_value = mock_snap
+        mock_db.delete = AsyncMock()
+        result = await delete_snapshot(mock_db, "some-id")
+        assert result is True
+
+
+# ═══════════════════════════════════════════════════
+# Export storage root path consistency
+# ═══════════════════════════════════════════════════
+
+
+class TestExportStorageRoot:
+    def test_get_export_storage_root_creates_dir(self, tmp_path, monkeypatch):
+        from app.services.storage_backend import get_export_storage_root
+        from app.core.config import settings
+
+        test_dir = str(tmp_path / "var" / "exports")
+        monkeypatch.setattr(settings, "EXPORT_DIR", test_dir)
+        root = get_export_storage_root()
+        assert root == str(tmp_path / "var" / "exports")
+        assert (tmp_path / "var" / "exports").exists()
+
+
+# ═══════════════════════════════════════════════════
+# Export API security — unauthorized access
+# ═══════════════════════════════════════════════════
+
+
+class TestExportSecurity:
+    def test_resolve_local_path_traversal_blocked(self):
+        from app.api.v1.exports import _resolve_local_path
+        result = _resolve_local_path("../../etc/passwd")
+        assert result is None
+
+    def test_resolve_local_path_normal(self):
+        from app.api.v1.exports import _resolve_local_path
+        # A normal key should resolve to a valid path under export root
+        result = _resolve_local_path("42/test.pdf")
+        assert result is not None
+        assert "test.pdf" in result

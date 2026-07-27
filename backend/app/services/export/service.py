@@ -40,7 +40,7 @@ from app.services.export.export_metrics import (
 from app.services.export.exporter_base import Exporter
 from app.services.export.pdf_exporter import PdfExporter
 from app.services.export.range_resolver import resolve_range
-from app.services.export.snapshot_service import create_snapshot
+from app.services.export.snapshot_service import create_snapshot, load_snapshot
 from app.services.export.sorter import sort_questions
 
 logger = logging.getLogger(__name__)
@@ -68,8 +68,7 @@ from app.services.export.docx_exporter import DocxExporter
 register_exporter("pdf", PdfExporter)
 register_exporter("docx", DocxExporter)
 
-# ── Limits ──
-_MAX_EXPORT = 100
+# ── Limits (primary source: settings.EXPORT_MAX_QUESTIONS) ──
 _MAX_FILENAME_BYTES = 200
 _DEFAULT_FILENAME = "错题巩固练习"  # extension added by _build_filename
 
@@ -187,6 +186,11 @@ async def process_task(
 ) -> ExportTask:
     """Process an export task: resolve, build snapshot, generate, store.
 
+    If the task already has a ``snapshot_id`` (e.g. from re-export), the
+    existing snapshot is loaded directly, skipping the resolve/sort/build
+    steps. This ensures re-exported content reflects the original snapshot,
+    not the current state of the user's wrong-question book.
+
     This is called by the background processor (not the web request handler).
 
     Returns the updated task.
@@ -203,55 +207,66 @@ async def process_task(
     exporter = exporter or get_exporter(task.file_format)
 
     try:
-        # 1. Resolve range
-        wq_ids = await resolve_range(
-            db, task.user_id,
-            ExportRangeType(task.range_type),
-            task.filters,
-            task.selected_ids,
-        )
+        # Check if we already have a snapshot (re-export path)
+        if task.snapshot_id:
+            snapshot_data = await load_snapshot(db, task.snapshot_id, task.user_id)
+            if snapshot_data is None:
+                # Snapshot missing — fall through to rebuild
+                logger.warning("Snapshot %s for task %d not found, rebuilding", task.snapshot_id, task.id)
+                task.snapshot_id = None
+            else:
+                logger.info("Reusing existing snapshot %s for task %d", task.snapshot_id, task.id)
 
-        # 2. Sort (if random, uses deterministic seed)
-        sorted_ids = await sort_questions(
-            db, task.user_id, wq_ids,
-            ExportSortBy(task.sort_by),
-        )
+        if not task.snapshot_id:
+            # 1. Resolve range
+            wq_ids = await resolve_range(
+                db, task.user_id,
+                ExportRangeType(task.range_type),
+                task.filters,
+                task.selected_ids,
+            )
 
-        # 3. Build config dict for snapshot
-        subjects = await _collect_subjects(db, sorted_ids)
-        title = task.title or _build_title(subjects)
+            # 2. Sort (if random, uses deterministic seed)
+            sorted_ids = await sort_questions(
+                db, task.user_id, wq_ids,
+                ExportSortBy(task.sort_by),
+            )
 
-        config_for_snapshot = {
-            "title": title,
-            "file_name": task.file_name,
-            "file_format": task.file_format,
-            "show_date": task.show_date,
-            "export_date": task.export_date,
-            "sort_by": task.sort_by,
-            "group_by": task.group_by,
-            "answer_position": task.answer_position,
-            "analysis_position": task.analysis_position,
-            "space_style": task.space_style,
-            "product_name": _get_product_name(),
-            "total_count": len(sorted_ids),
-            "skip_count": 0,
-        }
+            # 3. Build config dict for snapshot
+            subjects = await _collect_subjects(db, sorted_ids)
+            title = task.title or _build_title(subjects)
 
-        wq_order_map = {wq_id: idx for idx, wq_id in enumerate(sorted_ids)}
+            config_for_snapshot = {
+                "title": title,
+                "file_name": task.file_name,
+                "file_format": task.file_format,
+                "show_date": task.show_date,
+                "export_date": task.export_date,
+                "sort_by": task.sort_by,
+                "group_by": task.group_by,
+                "answer_position": task.answer_position,
+                "analysis_position": task.analysis_position,
+                "space_style": task.space_style,
+                "product_name": _get_product_name(),
+                "total_count": len(sorted_ids),
+                "skip_count": 0,
+            }
 
-        # 4. Build snapshot data
-        snapshot_data = await build_snapshot_data(
-            db, task.user_id, sorted_ids, wq_order_map, config_for_snapshot,
-        )
+            wq_order_map = {wq_id: idx for idx, wq_id in enumerate(sorted_ids)}
 
-        snapshot_data["config"]["total_count"] = snapshot_data.get("total_count", 0)
-        snapshot_data["config"]["skip_count"] = snapshot_data.get("skip_count", 0)
+            # 4. Build snapshot data
+            snapshot_data = await build_snapshot_data(
+                db, task.user_id, sorted_ids, wq_order_map, config_for_snapshot,
+            )
 
-        # 5. Save snapshot
-        snapshot_id = await create_snapshot(db, task.user_id, snapshot_data)
-        task.snapshot_id = snapshot_id
+            snapshot_data["config"]["total_count"] = snapshot_data.get("total_count", 0)
+            snapshot_data["config"]["skip_count"] = snapshot_data.get("skip_count", 0)
 
-        # 6. Update task counts before PDF generation (so we have them on failure)
+            # 5. Save snapshot
+            snapshot_id = await create_snapshot(db, task.user_id, snapshot_data)
+            task.snapshot_id = snapshot_id
+
+        # 6. Update task counts
         task.total_count = snapshot_data.get("total_count", 0)
 
         await db.flush()
@@ -283,7 +298,7 @@ async def process_task(
             task.skip_count = result.skip_count
             task.skip_reasons = result.skip_reasons
             task.completed_at = datetime.now(dt.UTC)
-            task.expires_at = datetime.now(dt.UTC) + dt.timedelta(days=7)
+            task.expires_at = datetime.now(dt.UTC) + dt.timedelta(days=settings.EXPORT_RETENTION_DAYS)
 
             inc_completed()
             observe_file_size_bytes(len(result.file_bytes))
