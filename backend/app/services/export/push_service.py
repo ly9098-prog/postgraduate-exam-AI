@@ -60,7 +60,7 @@ async def _subscribe_all():
     try:
         from app.core.cache import cache
 
-        if not cache.is_enabled():
+        if not cache.is_enabled:
             logger.debug("Redis not available — skipping per-instance subscriber")
             return
 
@@ -249,7 +249,7 @@ async def publish_via_redis(event: dict, user_id: int) -> None:
     try:
         from app.core.cache import cache
 
-        if not cache.is_enabled():
+        if not cache.is_enabled:
             return
 
         client = await cache._ensure_client()

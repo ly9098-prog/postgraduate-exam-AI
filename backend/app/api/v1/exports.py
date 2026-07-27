@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import UTC, datetime
 
+from app.core.time_utils import utcnow
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
 from fastapi.responses import FileResponse
 from sqlalchemy import select
@@ -232,7 +232,7 @@ async def download_export(
     if task.status != ExportTaskStatus.COMPLETED:
         raise_export_error(400, ExportErrorCode.FILE_NOT_READY, "文件尚未生成或已过期")
 
-    if task.expires_at and task.expires_at < datetime.now(UTC):
+    if task.expires_at and task.expires_at < utcnow():
         raise_export_error(400, ExportErrorCode.FILE_EXPIRED, "文件已过期")
 
     if not task.file_key:
@@ -280,7 +280,7 @@ async def stream_export_file(
     if task.status != ExportTaskStatus.COMPLETED:
         raise_export_error(400, ExportErrorCode.FILE_NOT_READY, "文件尚未生成")
 
-    if task.expires_at and task.expires_at < datetime.now(UTC):
+    if task.expires_at and task.expires_at < utcnow():
         raise_export_error(400, ExportErrorCode.FILE_EXPIRED, "文件已过期")
 
     file_path = _resolve_local_path(task.file_key or "")
@@ -318,12 +318,23 @@ async def delete_export(
         except Exception as e:
             logger.warning("File delete failed for task %d: %s — DB record retained", task.id, e)
 
-    # Delete snapshot
+    # Delete snapshot — only if no other task references it
     if task.snapshot_id:
         try:
-            await delete_snapshot(db, task.snapshot_id)
+            other_refs = await db.execute(
+                select(ExportTask.id)
+                .where(
+                    ExportTask.snapshot_id == task.snapshot_id,
+                    ExportTask.id != task.id,
+                )
+                .limit(1)
+            )
+            if other_refs.scalar_one_or_none() is None:
+                await delete_snapshot(db, task.snapshot_id)
+            else:
+                logger.debug("Snapshot %s still referenced by other tasks — skipping delete", task.snapshot_id)
         except Exception as e:
-            logger.warning("Snapshot delete failed for task %d: %s", task.id, e)
+            logger.warning("Snapshot delete check failed for task %d: %s", task.id, e)
 
     await db.delete(task)
     await db.commit()
@@ -376,6 +387,8 @@ async def retry_export(
     config = _task_to_config(task)
 
     new_task = await _create_export_task(db, current_user.id, config)
+    new_task.source_task_id = task.id
+    new_task.retry_count = (task.retry_count or 0) + 1
     await db.commit()
     await db.refresh(new_task)
     logger.info("export_task_retried", extra={
@@ -419,7 +432,9 @@ async def re_export(
     if snapshot_data is None:
         raise_export_error(400, ExportErrorCode.FILE_NOT_FOUND, "原快照不存在或已过期")
 
-    _snapshot_config = snapshot_data.get("config", {})
+    # Copy snapshot — each re-export gets its own independent snapshot
+    from app.services.export.snapshot_service import create_snapshot
+    new_snapshot_id = await create_snapshot(db, current_user.id, snapshot_data)
 
     config = {
         "range_type": task.range_type,
@@ -439,8 +454,8 @@ async def re_export(
     }
 
     new_task = await _create_export_task(db, current_user.id, config)
-    # Copy snapshot reference for immediate reuse
-    new_task.snapshot_id = task.snapshot_id
+    # Assign the new independent snapshot
+    new_task.snapshot_id = new_snapshot_id
     new_task.source_task_id = task.id
     new_task.total_count = task.total_count
 
@@ -619,7 +634,7 @@ async def _find_existing_task(
     """Find an existing task with the same idempotency key in non-terminal state."""
     from datetime import timedelta
 
-    cutoff = datetime.now(UTC) - timedelta(seconds=_IDEMPOTENCY_WINDOW_SEC)
+    cutoff = utcnow() - timedelta(seconds=_IDEMPOTENCY_WINDOW_SEC)
     result = await db.execute(
         select(ExportTask).where(
             ExportTask.user_id == user_id,

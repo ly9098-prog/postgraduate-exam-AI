@@ -97,10 +97,10 @@ Page({
     submitError: '',
 
     // Capability
-    _wsEnabled: true,
+    maxQuestionCount: 100,
   },
 
-  onLoad(options) {
+  async onLoad(options) {
     // Recover selected IDs from page data or global state
     const eventChannel = this.getOpenerEventChannel()
     if (eventChannel) {
@@ -127,14 +127,14 @@ Page({
     const today = this._formatDate(new Date())
     this.setData({ exportDate: today })
 
-    // Check user capabilities and update UI
-    this._checkCapabilities()
-
     // Auto-generate title from subjects
     this._autoGenerateTitle()
 
-    // Preview count
-    this._updatePreviewCount()
+    // Check capabilities first, then preview only if export is enabled
+    await this._checkCapabilities()
+    if (this.data._exportEnabled) {
+      this._updatePreviewCount()
+    }
   },
 
   async _checkCapabilities() {
@@ -142,18 +142,24 @@ Page({
       const cap = await exportApi.getCapabilities()
       const wordDisabled = !cap.docx_enabled
       const wordTip = wordDisabled ? 'Word 导出暂未开放' : ''
+      const exportEnabled = cap.export_enabled !== false
       this.setData({
         wordDisabled,
         wordTip,
         _wsEnabled: cap.websocket_enabled,
+        _exportEnabled: exportEnabled,
+        maxQuestionCount: cap.max_question_count || 100,
       })
       // If docx is disabled and currently selected, switch to pdf
       if (wordDisabled && this.data.format === 'docx') {
         this.setData({ format: 'pdf' })
       }
+      if (!exportEnabled) {
+        wx.showToast({ title: '导出功能暂未开放', icon: 'none', duration: 3000 })
+      }
     } catch (e) {
       // Capability check failed — safe degrade: disable all
-      this.setData({ wordDisabled: true })
+      this.setData({ wordDisabled: true, _exportEnabled: true })
     }
   },
 
@@ -171,9 +177,10 @@ Page({
     })
   },
 
-  // ── Format: radio-group change — e.detail.value is the format string directly ──
+  // ── Format buttons use bindtap — read from dataset, not detail ──
   onFormatChange(e) {
-    const value = e.detail.value
+    const value = e.currentTarget.dataset.value
+    if (!value || (value === 'docx' && this.data.wordDisabled)) return
     this.setData({ format: value })
   },
 
@@ -256,12 +263,13 @@ Page({
 
     // Validate count
     const count = this.data.previewCount
+    const max = this.data.maxQuestionCount || 100
     if (count === 0) {
       wx.showToast({ title: '没有可导出的错题', icon: 'none' })
       return
     }
-    if (count > 100) {
-      wx.showToast({ title: '单次最多导出 100 道，请调整导出范围。', icon: 'none' })
+    if (count > max) {
+      wx.showToast({ title: '单次最多导出 ' + max + ' 道，请调整导出范围。', icon: 'none' })
       return
     }
 

@@ -171,10 +171,10 @@ Page({
       let filePath = ''
       if (info.method === 'stream') {
         const url = exportApi.getFileUrl(taskId)
-        const dl = await this._downloadFile(url)
+        const dl = await this._downloadFile(url, true)
         filePath = dl
       } else if (info.url) {
-        const dl = await this._downloadFile(info.url)
+        const dl = await this._downloadFile(info.url, false)
         filePath = dl
       } else {
         wx.showToast({ title: '无法获取文件', icon: 'none' })
@@ -203,9 +203,12 @@ Page({
     }
   },
 
-  _downloadFile(url) {
-    const token = wx.getStorageSync('token')
-    const header = token ? { Authorization: 'Bearer ' + token } : {}
+  _downloadFile(url, useAuth = true) {
+    const header = {}
+    if (useAuth) {
+      const token = wx.getStorageSync('token')
+      if (token) header['Authorization'] = 'Bearer ' + token
+    }
     return new Promise(function(resolve, reject) {
       wx.downloadFile({
         url,
@@ -226,9 +229,10 @@ Page({
     wx.showToast({ title: '正在保存…', icon: 'loading' })
 
     exportApi.getDownloadInfo(taskId).then(function(info) {
-      var url = info.url || exportApi.getFileUrl(taskId)
+      var isStream = info.method === 'stream'
+      var url = isStream ? exportApi.getFileUrl(taskId) : (info.url || exportApi.getFileUrl(taskId))
       var task = self.data.list.find(function(t) { return t.id === taskId })
-      return self._downloadFile(url).then(function(dl) {
+      return self._downloadFile(url, isStream).then(function(dl) {
         var fileName = (task && task.file_name) || info.file_name || 'export.' + ((task && task.file_format) || 'pdf')
         var savedPath = wx.env.USER_DATA_PATH + '/' + fileName
         var fs = wx.getFileSystemManager()

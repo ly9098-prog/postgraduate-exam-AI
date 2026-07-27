@@ -62,6 +62,7 @@ class ExportTask(Base):
     skip_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     skip_reasons: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     # ── File info ──
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -76,7 +77,7 @@ class ExportTask(Base):
         Integer, ForeignKey("export_tasks.id", ondelete="SET NULL"), nullable=True
     )
     idempotency_key: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, unique=True
+        String(64), nullable=True, index=True
     )
 
     # ── Processing metadata ──

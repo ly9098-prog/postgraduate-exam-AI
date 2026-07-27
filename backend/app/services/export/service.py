@@ -15,15 +15,16 @@ import datetime as dt
 import logging
 import re
 import tempfile
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.time_utils import utcnow
 from app.models.export_task import ExportTask
 from app.schemas.export_task import (
+    ExportErrorCode,
     ExportRangeType,
     ExportSortBy,
     ExportTaskStatus,
@@ -38,6 +39,7 @@ from app.services.export.export_metrics import (
     observe_queue_wait_seconds,
 )
 from app.services.export.exporter_base import Exporter
+from app.services.export.exceptions import ExportDomainError
 from app.services.export.pdf_exporter import PdfExporter
 from app.services.export.range_resolver import resolve_range
 from app.services.export.snapshot_service import create_snapshot, load_snapshot
@@ -91,7 +93,7 @@ def _sanitize_filename(title: str) -> str:
 def _build_filename(title: str, date_str: str, ext: str = "pdf") -> str:
     """Build the export filename: {title}_{yyyyMMdd_HHmm}.{ext}"""
     safe_title = _sanitize_filename(title)
-    ts = date_str.replace("-", "") if date_str else datetime.now(dt.UTC).strftime("%Y%m%d_%H%M")
+    ts = date_str.replace("-", "") if date_str else utcnow().strftime("%Y%m%d_%H%M")
     return f"{safe_title}_{ts}.{ext}"
 
 
@@ -145,7 +147,7 @@ async def create_export_task(
     if not title:
         title = "错题巩固练习"
 
-    date_str = config.get("export_date", "") or datetime.now(dt.UTC).strftime("%Y-%m-%d")
+    date_str = config.get("export_date", "") or utcnow().strftime("%Y-%m-%d")
     file_name = _build_filename(
         title,
         date_str.replace("-", ""),
@@ -199,10 +201,18 @@ async def process_task(
     result = await db.execute(select(ExportTask).where(ExportTask.id == task_id))
     task = result.scalar_one_or_none()
     if task is None:
-        raise ValueError(f"Export task {task_id} not found")
+        raise ExportDomainError(
+            status_code=404,
+            error_code=ExportErrorCode.TASK_NOT_FOUND,
+            message=f"Export task {task_id} not found",
+        )
 
     if task.status != ExportTaskStatus.PROCESSING:
-        raise ValueError(f"Export task {task_id} is not in processing state (status={task.status})")
+        raise ExportDomainError(
+            status_code=400,
+            error_code=ExportErrorCode.ACCESS_DENIED,
+            message=f"Export task {task_id} is not in processing state (status={task.status})",
+        )
 
     exporter = exporter or get_exporter(task.file_format)
 
@@ -278,7 +288,7 @@ async def process_task(
             if not result.success or not result.file_bytes:
                 task.status = ExportTaskStatus.FAILED
                 task.error_message = (result.error_message or "PDF 生成失败")[:500]
-                task.completed_at = datetime.now(dt.UTC)
+                task.completed_at = utcnow()
                 task.skip_count = result.skip_count
                 task.skip_reasons = result.skip_reasons
                 logger.warning("Export task %d failed: %s", task.id, task.error_message)
@@ -297,8 +307,8 @@ async def process_task(
             task.success_count = snapshot_data.get("total_count", 0) - (result.skip_count or 0)
             task.skip_count = result.skip_count
             task.skip_reasons = result.skip_reasons
-            task.completed_at = datetime.now(dt.UTC)
-            task.expires_at = datetime.now(dt.UTC) + dt.timedelta(days=settings.EXPORT_RETENTION_DAYS)
+            task.completed_at = utcnow()
+            task.expires_at = utcnow() + dt.timedelta(days=settings.EXPORT_RETENTION_DAYS)
 
             inc_completed()
             observe_file_size_bytes(len(result.file_bytes))
@@ -313,17 +323,27 @@ async def process_task(
                 task.id, task.success_count, task.skip_count, task.file_size,
             )
 
+    except ExportDomainError as e:
+        task.status = ExportTaskStatus.FAILED
+        task.error_message = e.message[:500]
+        task.error_code = e.error_code.value
+        task.completed_at = utcnow()
+        inc_failed()
+        logger.warning("Export task %d failed (domain): %s", task.id, e.message)
+
     except ValueError as e:
         task.status = ExportTaskStatus.FAILED
         task.error_message = str(e)[:500]
-        task.completed_at = datetime.now(dt.UTC)
+        task.error_code = ExportErrorCode.GENERATION_FAILED.value
+        task.completed_at = utcnow()
         inc_failed()
         logger.warning("Export task %d failed (validation): %s", task.id, e)
 
     except Exception as e:
         task.status = ExportTaskStatus.FAILED
         task.error_message = f"导出失败: {str(e)[:200]}"
-        task.completed_at = datetime.now(dt.UTC)
+        task.error_code = ExportErrorCode.SERVICE_UNAVAILABLE.value
+        task.completed_at = utcnow()
         inc_failed()
         logger.exception("Export task %d failed (unexpected)", task.id)
 

@@ -25,12 +25,13 @@ from app.core.pdf_error import PdfResourceLimitError
 
 logger = logging.getLogger("postgraduate-ai.pdf-renderer")
 
-# Limits (hard-coded safety caps, config can lower but not raise)
-_MAX_FILE_SIZE = 200 * 1024 * 1024   # 200 MB
-_MAX_PAGES = 600
-_MAX_PAGE_PIXELS = 4096 * 4096
+# Limits — pulled from settings, hard-coded as safety caps
+_MAX_FILE_SIZE = settings.PDF_MAX_FILE_BYTES or 5 * 1024 * 1024   # 5MB cloud default
+_MAX_PAGES = settings.PDF_MAX_PAGES or 30
+_MAX_PAGE_PIXELS = settings.PDF_MAX_PAGE_PIXELS or 4096 * 4096
+_MAX_DECODED_BYTES = settings.PDF_MAX_DECODED_BYTES or 50 * 1024 * 1024
 _MAX_IMAGE_DIMENSION = 8192
-_DEFAULT_DPI = 150
+_DEFAULT_DPI = settings.PDF_RENDER_DPI or 150
 
 
 @dataclass
@@ -125,6 +126,13 @@ def _render_sync(
     start_idx = max(0, (page_start or 1) - 1)
     end_idx = min(total_pages, page_end or total_pages)
 
+    # Page window: max pages held in memory at once.
+    # 0 = no limit (deprecated, but used by render_pages which is blocked in cloud).
+    # Positive N = render N pages then flush to temp, keeping last N in memory.
+    page_window = settings.PDF_RENDER_PAGE_WINDOW
+    if page_window is None or page_window <= 0:
+        page_window = end_idx - start_idx  # no windowing
+
     temp_dir: str | None = None
     result = PdfRenderResult(total_pages=total_pages)
 
@@ -152,15 +160,14 @@ def _render_sync(
 
                 # Decoded memory budget (RGBA: w × h × 4)
                 decoded_bytes = pix.width * pix.height * 4
-                max_decoded = settings.PDF_MAX_DECODED_BYTES
-                if decoded_bytes > max_decoded:
+                if decoded_bytes > _MAX_DECODED_BYTES:
                     doc.close()
                     raise PdfResourceLimitError(
                         "decoded_memory_limit",
                         details={
                             "page": i + 1,
                             "actual_decoded_bytes": decoded_bytes,
-                            "limit": max_decoded,
+                            "limit": _MAX_DECODED_BYTES,
                         },
                     )
 
@@ -174,8 +181,30 @@ def _render_sync(
                 png = render_pix.tobytes("png")
                 page_num = i + 1
 
-                result.page_images[page_num] = png
-                result.accumulated_bytes += len(png)
+                # Page window: only keep last page_window pages in memory.
+                # If window is 1, only the current page is in memory at any time.
+                page_window_enabled = page_window < (end_idx - start_idx)
+                if page_window_enabled:
+                    # Write to temp file to persist, keep only page_window in memory
+                    if temp_dir or is_path:
+                        filepath = temp_dir or ""
+                        if temp_dir:
+                            filepath = os.path.join(temp_dir, f"page_{page_num:04d}.png")
+                        with open(filepath, "wb") as f:
+                            f.write(png)
+                        result.page_file_refs[page_num] = filepath
+                    # Only store in memory if within window
+                    if len(result.page_images) < page_window:
+                        result.page_images[page_num] = png
+                    elif len(result.page_images) >= page_window:
+                        # Replace oldest in-memory page with newest
+                        oldest = next(iter(result.page_images))
+                        del result.page_images[oldest]
+                        result.page_images[page_num] = png
+                else:
+                    result.page_images[page_num] = png
+                    result.accumulated_bytes += len(png)
+
                 result.rendered_count += 1
 
                 # Write temp file if needed
