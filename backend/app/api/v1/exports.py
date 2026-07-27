@@ -160,10 +160,37 @@ async def create_export(
     if pending_count >= _MAX_PER_USER:
         raise_export_error(429, ExportErrorCode.TOO_MANY_CONCURRENT, f"同时最多只能有 {_MAX_PER_USER} 个未完成的任务，请等待当前任务完成")
 
-    task = await _create_export_task(db, current_user.id, {
-        **req.model_dump(),
-        "_idempotency_key": idempotency_key,
-    })
+    # Capture user_id before any DB mutation — needed in the IntegrityError
+    # recovery path after db.rollback() (which expires all ORM objects).
+    _user_id = current_user.id
+
+    # Validation + idempotency + per-user limit all passed.
+    # Catch idempotency_key UNIQUE constraint violations from the database layer.
+    # This handles cases where the migration to drop the UNIQUE constraint hasn't
+    # been applied (SQLite) or a race condition between idempotency check and INSERT.
+    from sqlalchemy.exc import IntegrityError
+    try:
+        task = await _create_export_task(db, _user_id, {
+            **req.model_dump(),
+            "_idempotency_key": idempotency_key,
+        })
+    except IntegrityError:
+        await db.rollback()
+        # Another task with the same config was created concurrently, or the
+        # idempotency_key UNIQUE constraint still exists. Use the local
+        # _user_id captured before the try block (ORM objects are expired
+        # after rollback — accessing current_user.id would trigger MissingGreenlet).
+        if idempotency_key:
+            existing = await _find_existing_task(db, _user_id, idempotency_key)
+            if existing is not None:
+                return _task_to_response(existing)
+        # If we still can't find it, try to return any task with this key
+        from app.services.export.service import find_task_by_idempotency_key
+        existing = await find_task_by_idempotency_key(db, _user_id, idempotency_key)
+        if existing is not None:
+            return _task_to_response(existing)
+        # Last resort: re-raise as a structured error
+        raise_export_error(409, ExportErrorCode.TASK_ALREADY_EXISTS, "相同配置的导出任务已存在")
     await db.commit()
     await db.refresh(task)
     logger.info("export_task_created", extra={
@@ -473,22 +500,106 @@ async def re_export(
 
 
 @router.get("/health")
-async def export_health():
-    """Lightweight export subsystem health check.
+async def export_health(
+    db: AsyncSession = Depends(get_db),
+):
+    """Export subsystem health check with processor diagnostics.
 
-    Returns processor state and recent task counts.
-    Note: ``_in_flight`` and ``_draining`` are process-local.
-    In split-role deployments (web ≠ scheduler) the web process
-    always reports 0 in_flight — this endpoint is most useful
-    when the processor runs in the same process (development or
-    ``PROCESS_ROLE=all``).
+    Returns:
+    - ``status``: ``ok`` (healthy), ``degraded`` (web-only, no local processor),
+      ``error`` (processor should be running but is not responding)
+    - ``processor_enabled``: whether the export processor is active
+    - ``processor_running``: whether the processor loop is running (not draining)
+    - ``processor_last_heartbeat_at``: timestamp of last processor loop iteration
+    - ``pending_task_count``: total pending export tasks in DB
+    - ``processing_task_count``: total processing export tasks in DB
+    - ``processor_mode``: ``internal`` (same process), ``external`` (separate scheduler), ``none``
     """
-    from app.services.export.processor import _draining, _in_flight
+    from app.core.config import settings
+    from app.services.export.processor import get_processor_health
+
+    role = settings.PROCESS_ROLE
+
+    processor_local = role in ("scheduler", "all")
+    ph = get_processor_health()
+    processor_running = bool(ph.get("running", False))
+    processor_last_heartbeat_at = ph.get("last_heartbeat_at")
+
+    # Count pending/processing tasks
+    pending_count = 0
+    processing_count = 0
+    try:
+        from app.models.export_task import ExportTask
+        from app.schemas.export_task import ExportTaskStatus
+
+        pending_result = await db.execute(
+            select(ExportTask).where(ExportTask.status == ExportTaskStatus.PENDING)
+        )
+        pending_count = len(pending_result.scalars().all())
+
+        processing_result = await db.execute(
+            select(ExportTask).where(ExportTask.status == ExportTaskStatus.PROCESSING)
+        )
+        processing_count = len(processing_result.scalars().all())
+    except Exception:
+        pass
+
+    # Redis push capability
+    redis_push_enabled = False
+    try:
+        from app.core.cache import cache
+        redis_push_enabled = cache.is_enabled
+    except Exception:
+        pass
+
+    # Active WS connections in this process
+    active_ws = 0
+    try:
+        from app.services.export.push_service import get_active_connections
+        active_ws = get_active_connections()
+    except Exception:
+        pass
+
+    if processor_local:
+        if ph:
+            # We SHOULD have a running processor — check heartbeat
+            if processor_running:
+                status = "ok"
+                message = None
+            else:
+                status = "error"
+                message = "导出处理器已停止响应"
+        else:
+            # Processor should start in scheduler/all role but hasn't yet
+            status = "degraded"
+            message = "导出处理器正在启动中"
+        processor_mode = "internal"
+    else:
+        # Web-only role — processor is external or non-existent
+        status = "degraded"
+        message = "导出处理器未运行，需要单独启动 scheduler 进程"
+        processor_mode = "external"
+
+    # Check if pending tasks exist without a running local processor
+    if pending_count > 0 and not processor_running:
+        message = "存在待处理任务但导出处理器未运行"
+        if status == "ok":
+            status = "degraded"
+        if status == "error":
+            status = "error"  # keep error
 
     return {
-        "status": "ok" if not _draining else "draining",
-        "in_flight": len(_in_flight),
-        "draining": _draining,
+        "status": status,
+        "process_role": role,
+        "processor_enabled": processor_local,
+        "processor_running": processor_running,
+        "processor_last_heartbeat_at": processor_last_heartbeat_at,
+        "processor_mode": processor_mode,
+        "pending_task_count": pending_count,
+        "processing_task_count": processing_count,
+        "redis_push_enabled": redis_push_enabled,
+        "active_websocket_connections": active_ws,
+        "message": message,
     }
 
 
@@ -562,6 +673,32 @@ async def _get_user_task(db: AsyncSession, task_id: int, user_id: int) -> Export
 
 
 def _task_to_response(task: ExportTask) -> ExportTaskResponse:
+    # Determine status_reason for pending tasks
+    status_reason = None
+    status_message = None
+    if task.status == ExportTaskStatus.PENDING:
+        # Check if processor is locally available
+        try:
+            from app.services.export.processor import get_processor_health
+            ph = get_processor_health()
+            if not ph.get("running", False):
+                status_reason = "processor_unavailable"
+                status_message = "导出处理服务暂不可用，请稍后重试"
+        except Exception:
+            pass
+        # Check pending duration
+        from app.core.config import settings as _export_settings
+        from app.core.time_utils import utcnow as _utcnow
+        if task.created_at:
+            pending_seconds = (_utcnow() - task.created_at).total_seconds()
+            warning_seconds = getattr(_export_settings, "EXPORT_PENDING_WARNING_SECONDS", 30)
+            if pending_seconds > warning_seconds:
+                if status_reason is None:
+                    status_reason = "pending_timeout"
+                    status_message = "等待时间较长，导出处理服务可能未启动"
+                else:
+                    status_message = "导出处理服务暂不可用，请稍后重试或联系管理员"
+
     return ExportTaskResponse(
         id=task.id,
         status=task.status,
@@ -576,6 +713,8 @@ def _task_to_response(task: ExportTask) -> ExportTaskResponse:
         success_count=task.success_count,
         skip_count=task.skip_count,
         error_message=task.error_message,
+        status_reason=status_reason,
+        status_message=status_message,
         created_at=task.created_at,
         completed_at=task.completed_at,
         expires_at=task.expires_at,

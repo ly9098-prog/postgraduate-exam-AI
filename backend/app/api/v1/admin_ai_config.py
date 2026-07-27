@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_roles
 from app.core.database import get_db
+from app.core.secret_crypto import SecretDecryptionError, SecretEncryptionError
 from app.schemas.admin_ai_config import (
     AdminAiConfigsPatchRequest,
     AdminAiConfigsResponse,
@@ -53,6 +54,18 @@ async def update_model(
     except ValueError as exc:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except SecretEncryptionError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="加密配置不可用，无法保存 API Key。请联系管理员检查 AI_CONFIG_ENCRYPT_KEY 配置。",
+        )
+    except SecretDecryptionError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="数据库中的凭据无法解密，请检查加密配置或重新保存凭据。",
+        )
 
 
 @router.post("/ai-models", response_model=AdminAiModelConfigResponse, status_code=status.HTTP_201_CREATED)
@@ -62,9 +75,16 @@ async def create_model_endpoint(
     current_admin=Depends(require_roles("super_admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await create_model(db, data, current_admin)
-    await db.commit()
-    return result
+    try:
+        result = await create_model(db, data, current_admin)
+        await db.commit()
+        return result
+    except SecretEncryptionError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="加密配置不可用，无法保存 API Key。请联系管理员检查 AI_CONFIG_ENCRYPT_KEY 配置。",
+        )
 
 
 @router.delete("/ai-models/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -93,7 +113,7 @@ async def test_connection(
     """对给定模型配置发起一次最小连通性测试，不保存任何状态。"""
     result = await test_model_connection(
         api_base_url=data.api_base_url,
-        api_key=data.api_key,
+        api_key=data.get_api_key_value(),
         model_name=data.model_name,
         model_id=data.model_id,
         db=db,

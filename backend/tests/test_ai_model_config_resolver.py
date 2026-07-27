@@ -238,7 +238,7 @@ class TestResolverConfigResolution:
     async def test_secret_resolution(self, mock_db, mock_model):
         """Test secret resolution."""
         mock_db.get = AsyncMock(return_value=mock_model)
-        with patch("app.services.model_config_resolver.decrypt_api_key", return_value="decrypted-key"):
+        with patch("app.services.model_config_resolver.decrypt_secret", return_value="decrypted-key"):
             resolver = AIModelConfigResolver(mock_db)
             config = await resolver.resolve_for_capability("ocr_vl", requested_config_id=1)
             secret = await resolver.resolve_secret(config)

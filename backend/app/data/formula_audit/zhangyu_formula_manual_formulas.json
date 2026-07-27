@@ -1,0 +1,493 @@
+{
+  "source_document": "27张宇数学公式手册.pdf",
+  "document_path": "/home/lmh/projects/postgraduate-ai/ocr_test/import/27张宇数学公式手册.pdf",
+  "inventory": [
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 178,
+      "printed_page": 170,
+      "part": "附录 初等数学",
+      "chapter": "初等代数",
+      "section": "乘法公式与因式分解",
+      "title": "乘法公式与因式分解",
+      "aliases": ["乘法公式", "因式分解公式"],
+      "formula_blocks": [
+        {"latex": "(a \\pm b)^2 = a^2 \\pm 2ab + b^2", "label": "完全平方公式"},
+        {"latex": "(a + b + c)^2 = a^2 + b^2 + c^2 + 2ab + 2ac + 2bc", "label": "三数和平方"},
+        {"latex": "a^2 - b^2 = (a - b)(a + b)", "label": "平方差公式"},
+        {"latex": "(a \\pm b)^3 = a^3 \\pm 3a^2b + 3ab^2 \\pm b^3", "label": "完全立方公式"},
+        {"latex": "a^3 \\pm b^3 = (a \\pm b)(a^2 \\mp ab + b^2)", "label": "立方和差公式"},
+        {"latex": "a^n - b^n = (a - b)(a^{n-1} + a^{n-2}b + a^{n-3}b^2 + \\cdots + ab^{n-2} + b^{n-1})\\ (n \\text{ 为正整数})", "label": "n次方差公式"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.94,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:factorization"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 178,
+      "printed_page": 170,
+      "part": "附录 初等数学",
+      "chapter": "初等代数",
+      "section": "一元二次方程",
+      "title": "一元二次方程",
+      "aliases": ["二次方程求根公式", "韦达定理"],
+      "formula_blocks": [
+        {"latex": "ax^2 + bx + c = 0\\ (a \\neq 0)", "label": "标准形式"},
+        {"latex": "x_{1,2} = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}", "label": "求根公式"},
+        {"latex": "x_1 + x_2 = -\\frac{b}{a}", "label": "韦达定理(两根和)"},
+        {"latex": "x_1 x_2 = \\frac{c}{a}", "label": "韦达定理(两根积)"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.94,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:quadratic_equation"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 178,
+      "printed_page": 170,
+      "part": "附录 初等数学",
+      "chapter": "初等代数",
+      "section": "常用不等式",
+      "title": "常用不等式",
+      "aliases": ["基本不等式", "均值不等式", "柯西不等式"],
+      "formula_blocks": [
+        {"latex": "a^2 + b^2 \\geq 2ab", "label": "基本平方不等式"},
+        {"latex": "\\frac{a+b}{2} \\geq \\sqrt{ab}\\ (a,b \\in \\mathbb{R}^+)", "label": "均值不等式"},
+        {"latex": "a^3 + b^3 + c^3 \\geq 3abc\\ (a>0,b>0,c>0)", "label": "立方均值不等式"},
+        {"latex": "(a^2+b^2)(c^2+d^2) \\geq (ac+bd)^2", "label": "柯西不等式"},
+        {"latex": "|a|-|b| \\leq |a+b| \\leq |a|+|b|", "label": "绝对值三角不等式"},
+        {"latex": "\\frac{a_1+a_2+\\cdots+a_n}{n} \\geq \\sqrt[n]{a_1 a_2 \\cdots a_n}\\ (a_i>0)", "label": "一般均值不等式"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.93,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:inequalities"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 179,
+      "printed_page": 171,
+      "part": "附录 初等数学",
+      "chapter": "初等代数",
+      "section": "指数运算",
+      "title": "指数运算法则",
+      "aliases": ["指数公式"],
+      "formula_blocks": [
+        {"latex": "a^m \\cdot a^n = a^{m+n}", "label": "同底数幂乘法"},
+        {"latex": "a^m \\div a^n = a^{m-n}", "label": "同底数幂除法"},
+        {"latex": "(a^m)^n = a^{mn}", "label": "幂的乘方"},
+        {"latex": "(ab)^m = a^m b^m", "label": "积的乘方"},
+        {"latex": "\\left(\\frac{a}{b}\\right)^m = \\frac{a^m}{b^m}", "label": "商的乘方"},
+        {"latex": "a^{-m} = \\frac{1}{a^m}", "label": "负指数"},
+        {"latex": "a^0 = 1\\ (a>0)", "label": "零指数"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.93,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:exponent_rules"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 179,
+      "printed_page": 171,
+      "part": "附录 初等数学",
+      "chapter": "初等代数",
+      "section": "对数运算",
+      "title": "对数运算法则",
+      "aliases": ["对数公式"],
+      "formula_blocks": [
+        {"latex": "N = a^{\\log_a N}\\ (a>0,a\\neq1)", "label": "对数定义"},
+        {"latex": "\\log_a(MN) = \\log_a M + \\log_a N", "label": "积的对数"},
+        {"latex": "\\log_a\\left(\\frac{M}{N}\\right) = \\log_a M - \\log_a N", "label": "商的对数"},
+        {"latex": "\\log_a(M^n) = n\\log_a M", "label": "幂的对数"},
+        {"latex": "\\log_a \\sqrt[n]{M} = \\frac{1}{n}\\log_a M", "label": "根式的对数"},
+        {"latex": "\\log_a M = \\frac{\\log_b M}{\\log_b a}", "label": "换底公式"},
+        {"latex": "\\log_a 1 = 0,\\ \\log_a a = 1", "label": "特殊值"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.93,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:logarithm_rules"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 180,
+      "printed_page": 172,
+      "part": "附录 初等数学",
+      "chapter": "初等代数",
+      "section": "数列",
+      "title": "等差数列与等比数列",
+      "aliases": ["等差公式", "等比公式"],
+      "formula_blocks": [
+        {"latex": "a_n = a_1 + (n-1)d", "label": "等差数列通项"},
+        {"latex": "S_n = \\frac{n}{2}(a_1 + a_n) = na_1 + \\frac{n(n-1)}{2}d", "label": "等差数列前n项和"},
+        {"latex": "a_n = a_1 q^{n-1}", "label": "等比数列通项"},
+        {"latex": "S_n = \\begin{cases} na_1, & q=1 \\\\ \\frac{a_1(1-q^n)}{1-q} = \\frac{a_1-a_n q}{1-q}, & q\\neq1 \\end{cases}", "label": "等比数列前n项和"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.95,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:sequences"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 180,
+      "printed_page": 172,
+      "part": "附录 初等数学",
+      "chapter": "初等代数",
+      "section": "常用数列和",
+      "title": "常用数列前n项和",
+      "aliases": ["平方和", "奇数和", "自然数和"],
+      "formula_blocks": [
+        {"latex": "1 + 2 + \\cdots + n = \\frac{n(n+1)}{2}", "label": "自然数和"},
+        {"latex": "1 + 3 + 5 + \\cdots + (2n-1) = n^2", "label": "奇数和"},
+        {"latex": "1^2 + 2^2 + \\cdots + n^2 = \\frac{n(n+1)(2n+1)}{6}", "label": "平方和"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.95,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:summation_formulas"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 181,
+      "printed_page": 173,
+      "part": "附录 初等数学",
+      "chapter": "初等代数",
+      "section": "排列组合与二项式定理",
+      "title": "排列、组合与二项式定理",
+      "aliases": ["排列数", "组合数", "二项式展开"],
+      "formula_blocks": [
+        {"latex": "A_n^k = n(n-1)\\cdots(n-k+1)", "label": "排列数(不可重复)"},
+        {"latex": "n^k", "label": "排列数(可重复)"},
+        {"latex": "n! = n(n-1)\\cdots 3\\cdot 2\\cdot 1", "label": "阶乘(全排列)"},
+        {"latex": "C_n^k = \\frac{A_n^k}{k!} = \\frac{n(n-1)\\cdots(n-k+1)}{k!} = \\frac{n!}{(n-k)!k!}", "label": "组合数"},
+        {"latex": "(a+b)^n = \\sum_{k=0}^n C_n^k a^{n-k} b^k,\\ n \\in \\mathbb{N}", "label": "二项式定理"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.95,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:combinatorics"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 182,
+      "printed_page": 174,
+      "part": "附录 初等数学",
+      "chapter": "初等几何",
+      "section": "三角形面积",
+      "title": "三角形面积公式",
+      "aliases": ["海伦公式", "正弦面积公式"],
+      "formula_blocks": [
+        {"latex": "S = \\frac{1}{2}ab\\sin C", "label": "正弦面积公式"},
+        {"latex": "S = \\sqrt{s(s-a)(s-b)(s-c)}", "label": "海伦公式"},
+        {"latex": "s = \\frac{1}{2}(a+b+c)", "label": "半周长"}
+      ],
+      "conditions": "a,b,c为三边长，C为a,b夹角",
+      "has_diagram": false,
+      "recognition_confidence": 0.99,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:triangle_area"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 182,
+      "printed_page": 174,
+      "part": "附录 初等数学",
+      "chapter": "初等几何",
+      "section": "梯形与圆",
+      "title": "梯形面积与圆的计算",
+      "aliases": ["梯形面积", "圆周长", "圆弧长", "扇形面积"],
+      "formula_blocks": [
+        {"latex": "S = \\frac{1}{2}(a+b)h", "label": "梯形面积", "conditions": "a,b为上下底，h为高"},
+        {"latex": "l = 2\\pi r", "label": "圆周长"},
+        {"latex": "l = r\\theta", "label": "圆弧长", "conditions": "θ为圆弧所对圆心角(弧度)"},
+        {"latex": "S = \\frac{1}{2}r^2\\theta", "label": "扇形面积", "conditions": "θ为圆心角(弧度)"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.99,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:trapezoid_circle"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 183,
+      "printed_page": 175,
+      "part": "附录 初等数学",
+      "chapter": "初等几何",
+      "section": "旋转体",
+      "title": "旋转体体积与表面积",
+      "aliases": ["圆柱", "圆锥", "圆台", "球体"],
+      "formula_blocks": [
+        {"latex": "V = \\pi r^2 h,\\ S_{\\text{侧}} = 2\\pi rh,\\ S_{\\text{全}} = 2\\pi r(r+h)", "label": "圆柱(底面半径r,高h)"},
+        {"latex": "V = \\frac{1}{3}\\pi r^2 h,\\ S_{\\text{侧}} = \\pi rl,\\ S_{\\text{全}} = \\pi r(l+r)", "label": "圆锥(底面半径r,高h,母线l=\\sqrt{r^2+h^2})"},
+        {"latex": "V = \\frac{1}{3}\\pi h(r_1^2+r_2^2+r_1r_2),\\ S_{\\text{侧}} = \\pi(r_1+r_2)l", "label": "圆台(上底r₁,下底r₂,高h,母线l=\\sqrt{h^2+(r_2-r_1)^2})"},
+        {"latex": "V = \\frac{4}{3}\\pi r^3,\\ S_{\\text{全}} = 4\\pi r^2", "label": "球(半径r)"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.96,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:revolution_solids"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 184,
+      "printed_page": 176,
+      "part": "附录 初等数学",
+      "chapter": "三角函数",
+      "section": "和差角公式",
+      "title": "和差角公式",
+      "aliases": ["两角和差"],
+      "formula_blocks": [
+        {"latex": "\\sin(\\alpha \\pm \\beta) = \\sin\\alpha\\cos\\beta \\pm \\cos\\alpha\\sin\\beta", "label": "正弦和差角"},
+        {"latex": "\\cos(\\alpha \\pm \\beta) = \\cos\\alpha\\cos\\beta \\mp \\sin\\alpha\\sin\\beta", "label": "余弦和差角"},
+        {"latex": "\\tan(\\alpha \\pm \\beta) = \\frac{\\tan\\alpha \\pm \\tan\\beta}{1 \\mp \\tan\\alpha\\tan\\beta}", "label": "正切和差角"},
+        {"latex": "\\cot(\\alpha \\pm \\beta) = \\frac{\\cot\\alpha\\cot\\beta \\mp 1}{\\cot\\beta \\pm \\cot\\alpha}", "label": "余切和差角"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.94,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:sum_diff_angles"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 184,
+      "printed_page": 176,
+      "part": "附录 初等数学",
+      "chapter": "三角函数",
+      "section": "和差化积",
+      "title": "和差化积公式",
+      "aliases": ["和差化积"],
+      "formula_blocks": [
+        {"latex": "\\sin\\alpha + \\sin\\beta = 2\\sin\\frac{\\alpha+\\beta}{2}\\cos\\frac{\\alpha-\\beta}{2}", "label": "正弦和"},
+        {"latex": "\\sin\\alpha - \\sin\\beta = 2\\cos\\frac{\\alpha+\\beta}{2}\\sin\\frac{\\alpha-\\beta}{2}", "label": "正弦差"},
+        {"latex": "\\cos\\alpha + \\cos\\beta = 2\\cos\\frac{\\alpha+\\beta}{2}\\cos\\frac{\\alpha-\\beta}{2}", "label": "余弦和"},
+        {"latex": "\\cos\\alpha - \\cos\\beta = -2\\sin\\frac{\\alpha+\\beta}{2}\\sin\\frac{\\alpha-\\beta}{2}", "label": "余弦差"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.94,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:sum_to_product"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 184,
+      "printed_page": 176,
+      "part": "附录 初等数学",
+      "chapter": "三角函数",
+      "section": "倍角公式",
+      "title": "倍角公式",
+      "aliases": ["二倍角", "三倍角"],
+      "formula_blocks": [
+        {"latex": "\\sin 2\\alpha = 2\\sin\\alpha\\cos\\alpha", "label": "正弦二倍角"},
+        {"latex": "\\cos 2\\alpha = 2\\cos^2\\alpha - 1 = 1 - 2\\sin^2\\alpha = \\cos^2\\alpha - \\sin^2\\alpha", "label": "余弦二倍角"},
+        {"latex": "\\tan 2\\alpha = \\frac{2\\tan\\alpha}{1-\\tan^2\\alpha}", "label": "正切二倍角"},
+        {"latex": "\\cot 2\\alpha = \\frac{\\cot^2\\alpha-1}{2\\cot\\alpha}", "label": "余切二倍角"},
+        {"latex": "\\sin 3\\alpha = 3\\sin\\alpha - 4\\sin^3\\alpha", "label": "正弦三倍角"},
+        {"latex": "\\cos 3\\alpha = 4\\cos^3\\alpha - 3\\cos\\alpha", "label": "余弦三倍角"},
+        {"latex": "\\tan 3\\alpha = \\frac{3\\tan\\alpha - \\tan^3\\alpha}{1-3\\tan^2\\alpha}", "label": "正切三倍角"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.92,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:multiple_angles"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 185,
+      "printed_page": 177,
+      "part": "附录 初等数学",
+      "chapter": "三角函数",
+      "section": "半角公式",
+      "title": "半角公式",
+      "aliases": ["半角"],
+      "formula_blocks": [
+        {"latex": "\\sin\\frac{\\alpha}{2} = \\pm\\sqrt{\\frac{1-\\cos\\alpha}{2}}", "label": "正弦半角"},
+        {"latex": "\\cos\\frac{\\alpha}{2} = \\pm\\sqrt{\\frac{1+\\cos\\alpha}{2}}", "label": "余弦半角"},
+        {"latex": "\\tan\\frac{\\alpha}{2} = \\pm\\sqrt{\\frac{1-\\cos\\alpha}{1+\\cos\\alpha}} = \\frac{1-\\cos\\alpha}{\\sin\\alpha} = \\frac{\\sin\\alpha}{1+\\cos\\alpha}", "label": "正切半角"},
+        {"latex": "\\cot\\frac{\\alpha}{2} = \\pm\\sqrt{\\frac{1+\\cos\\alpha}{1-\\cos\\alpha}} = \\frac{1+\\cos\\alpha}{\\sin\\alpha} = \\frac{\\sin\\alpha}{1-\\cos\\alpha}", "label": "余切半角"}
+      ],
+      "conditions": "符号由α/2所在象限决定",
+      "has_diagram": false,
+      "recognition_confidence": 0.92,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:half_angles"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 185,
+      "printed_page": 177,
+      "part": "附录 初等数学",
+      "chapter": "三角函数",
+      "section": "正余弦定理",
+      "title": "正弦定理与余弦定理",
+      "aliases": ["正弦定理", "余弦定理"],
+      "formula_blocks": [
+        {"latex": "\\frac{a}{\\sin A} = \\frac{b}{\\sin B} = \\frac{c}{\\sin C} = 2R", "label": "正弦定理", "conditions": "R为外接圆半径"},
+        {"latex": "c^2 = a^2 + b^2 - 2ab\\cos C", "label": "余弦定理"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.92,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:law_sine_cosine"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 186,
+      "printed_page": 178,
+      "part": "附录 初等数学",
+      "chapter": "三角函数",
+      "section": "反三角函数性质",
+      "title": "反三角函数关系",
+      "aliases": ["反三角恒等式"],
+      "formula_blocks": [
+        {"latex": "\\arcsin x + \\arccos x = \\frac{\\pi}{2}", "label": "反正弦与反余弦"},
+        {"latex": "\\arctan x + \\operatorname{arccot} x = \\frac{\\pi}{2}", "label": "反正切与反余切"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.99,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:inverse_trig_relations"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 187,
+      "printed_page": 179,
+      "part": "附录 初等数学",
+      "chapter": "平面解析几何",
+      "section": "距离与直线",
+      "title": "两点间距离与直线方程",
+      "aliases": ["距离公式", "直线方程"],
+      "formula_blocks": [
+        {"latex": "|P_1P_2| = \\sqrt{(x_2-x_1)^2 + (y_2-y_1)^2}", "label": "两点间距离"},
+        {"latex": "|OP| = \\sqrt{x^2+y^2}", "label": "点到原点距离"},
+        {"latex": "Ax+By+C=0", "label": "直线一般式"},
+        {"latex": "y-y_1 = k(x-x_1)", "label": "直线点斜式"},
+        {"latex": "\\frac{y-y_1}{x-x_1} = \\frac{y_2-y_1}{x_2-x_1}", "label": "直线两点式"},
+        {"latex": "y = kx + b", "label": "直线斜截式"},
+        {"latex": "\\frac{x}{a} + \\frac{y}{b} = 1", "label": "直线截距式"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.94,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:distance_line"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 188,
+      "printed_page": 180,
+      "part": "附录 初等数学",
+      "chapter": "平面解析几何",
+      "section": "点到直线距离",
+      "title": "点到直线的距离公式",
+      "aliases": ["点到直线距离"],
+      "formula_blocks": [
+        {"latex": "d = \\frac{|Ax_0+By_0+C|}{\\sqrt{A^2+B^2}}", "label": "点到直线距离"}
+      ],
+      "conditions": "点P(x₀,y₀)到直线l:Ax+By+C=0的距离",
+      "has_diagram": false,
+      "recognition_confidence": 0.98,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:point_line_distance"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 188,
+      "printed_page": 180,
+      "part": "附录 初等数学",
+      "chapter": "平面解析几何",
+      "section": "圆",
+      "title": "圆的方程",
+      "aliases": ["圆的标准方程", "圆的一般方程"],
+      "formula_blocks": [
+        {"latex": "(x-a)^2 + (y-b)^2 = r^2", "label": "圆的标准方程", "conditions": "(a,b)为圆心，r为半径"},
+        {"latex": "x^2 + y^2 + Dx + Ey + F = 0", "label": "圆的一般方程"},
+        {"latex": "\\left(-\\frac{D}{2}, -\\frac{E}{2}\\right)", "label": "圆心坐标", "conditions": "D²+E²-4F>0"},
+        {"latex": "\\frac{\\sqrt{D^2+E^2-4F}}{2}", "label": "半径"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.98,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:circle_equation"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 188,
+      "printed_page": 180,
+      "part": "附录 初等数学",
+      "chapter": "平面解析几何",
+      "section": "椭圆",
+      "title": "椭圆的标准方程与性质",
+      "aliases": ["椭圆"],
+      "formula_blocks": [
+        {"latex": "\\frac{x^2}{a^2} + \\frac{y^2}{b^2} = 1,\\ a>b>0", "label": "椭圆标准方程"},
+        {"latex": "F(\\pm c, 0),\\ c = \\sqrt{a^2-b^2}", "label": "焦点坐标"},
+        {"latex": "x = \\pm\\frac{a^2}{c}", "label": "准线方程"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.98,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:ellipse"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 189,
+      "printed_page": 181,
+      "part": "附录 初等数学",
+      "chapter": "平面解析几何",
+      "section": "双曲线",
+      "title": "双曲线的标准方程与性质",
+      "aliases": ["双曲线"],
+      "formula_blocks": [
+        {"latex": "\\frac{x^2}{a^2} - \\frac{y^2}{b^2} = 1", "label": "双曲线标准方程"},
+        {"latex": "F(\\pm c, 0),\\ c = \\sqrt{a^2+b^2}", "label": "焦点坐标"},
+        {"latex": "y = \\pm\\frac{b}{a}x", "label": "渐近线方程"},
+        {"latex": "x = \\pm\\frac{a^2}{c}", "label": "准线方程"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.96,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:hyperbola"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 189,
+      "printed_page": 181,
+      "part": "附录 初等数学",
+      "chapter": "平面解析几何",
+      "section": "抛物线",
+      "title": "抛物线的标准方程与性质",
+      "aliases": ["抛物线"],
+      "formula_blocks": [
+        {"latex": "y^2 = 2px\\ (p>0)", "label": "抛物线标准方程"},
+        {"latex": "F\\left(\\frac{p}{2}, 0\\right)", "label": "焦点坐标"},
+        {"latex": "y_1 y = p(x+x_1)", "label": "切线方程", "conditions": "切点为(x₁,y₁)"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.96,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:parabola"
+    },
+    {
+      "source_document": "27张宇数学公式手册.pdf",
+      "pdf_page": 190,
+      "printed_page": 182,
+      "part": "附录 初等数学",
+      "chapter": "平面解析几何",
+      "section": "极坐标与直角坐标",
+      "title": "极坐标与直角坐标互化",
+      "aliases": ["极坐标"],
+      "formula_blocks": [
+        {"latex": "\\begin{cases} x = \\rho\\cos\\theta \\\\ y = \\rho\\sin\\theta \\end{cases}", "label": "极→直角"},
+        {"latex": "\\begin{cases} \\rho^2 = x^2 + y^2 \\\\ \\tan\\theta = \\frac{y}{x}\\ (x\\neq0) \\end{cases}", "label": "直角→极"}
+      ],
+      "has_diagram": false,
+      "recognition_confidence": 0.93,
+      "review_status": "verified",
+      "source_ref": "zhangyu_formula_manual:elementary_math:polar_coordinates"
+    }
+  ]
+}

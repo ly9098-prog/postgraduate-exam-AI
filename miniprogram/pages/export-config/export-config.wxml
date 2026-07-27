@@ -1,121 +1,257 @@
 <!-- Export configuration page -->
-<import src="/styles/templates.wxml" />
 
 <view class="page export-config-page">
-  <premium-nav title="导出设置" show-back="{{true}}" />
+  <premium-nav title="导出设置" show-back="{{true}}" bind:back="onBack" />
 
-  <scroll-view class="config-scroll" scroll-y="{{true}}">
-    <!-- Range -->
-    <view class="config-section">
-      <view class="section-title">导出范围</view>
-      <view class="radio-group">
-        <label wx:for="{{rangeTypes}}" wx:key="value" class="radio-item {{rangeType === item.value ? 'active' : ''}}"
-               data-value="{{item.value}}" bindtap="onRangeChange">
-          <radio value="{{item.value}}" checked="{{rangeType === item.value}}" />
-          <text class="radio-label">{{item.label}}</text>
-        </label>
+  <scroll-view class="config-scroll" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
+    <view class="config-content">
+      <view class="page-intro">
+        <text class="page-intro-title">生成专属错题练习</text>
+        <text class="page-intro-caption">选择题目范围和排版方式，导出后可在记录页预览、保存或分享。</text>
       </view>
-    </view>
 
-    <!-- Format -->
-    <view class="config-section">
-      <view class="section-title">文件格式</view>
-      <view class="radio-group row">
-        <label class="radio-item {{format === 'pdf' ? 'active' : ''}}" data-value="pdf" bindtap="onFormatChange">
-          <radio value="pdf" checked="{{format === 'pdf'}}" />
-          <text class="radio-label">PDF</text>
-        </label>
-        <label class="radio-item {{wordDisabled ? 'disabled' : ''}} {{format === 'docx' ? 'active' : ''}}"
-               data-value="docx" bindtap="{{wordDisabled ? '' : 'onFormatChange'}}">
-          <radio value="docx" checked="{{format === 'docx'}}" disabled="{{wordDisabled}}" />
-          <text class="radio-label">Word</text>
-        </label>
+      <!-- Range -->
+      <view class="config-card">
+        <view class="section-heading">
+          <text class="section-title">导出范围</text>
+          <text class="section-caption">选择本次需要整理的错题</text>
+        </view>
+
+        <view class="choice-list">
+          <view
+            class="choice-card {{rangeType === 'all' ? 'choice-card-active' : ''}}"
+            data-value="all"
+            bindtap="onRangeChange"
+          >
+            <view class="choice-indicator"><view class="choice-indicator-core"></view></view>
+            <view class="choice-copy">
+              <text class="choice-title">全部错题</text>
+              <text class="choice-caption">导出错题本中的全部题目</text>
+            </view>
+          </view>
+
+          <view
+            class="choice-card {{rangeType === 'filtered' ? 'choice-card-active' : ''}}"
+            data-value="filtered"
+            bindtap="onRangeChange"
+          >
+            <view class="choice-indicator"><view class="choice-indicator-core"></view></view>
+            <view class="choice-copy">
+              <text class="choice-title">当前筛选结果</text>
+              <text class="choice-caption">沿用错题本当前的学科和条件筛选</text>
+            </view>
+          </view>
+
+          <view
+            class="choice-card {{rangeType === 'selected' ? 'choice-card-active' : ''}}"
+            data-value="selected"
+            bindtap="onRangeChange"
+          >
+            <view class="choice-indicator"><view class="choice-indicator-core"></view></view>
+            <view class="choice-copy">
+              <text class="choice-title">已选错题</text>
+              <text class="choice-caption">仅导出你在错题本中勾选的题目</text>
+            </view>
+            <text wx:if="{{_selectedIds.length > 0}}" class="choice-badge">{{_selectedIds.length}} 道</text>
+          </view>
+        </view>
       </view>
-      <text wx:if="{{wordTip}}" class="config-hint warn">{{wordTip}}</text>
-    </view>
 
-    <!-- Title -->
-    <view class="config-section">
-      <view class="section-title">试卷标题</view>
-      <input class="title-input" placeholder="{{titleDefault}}" value="{{title}}" bindinput="onTitleInput" maxlength="120" />
-    </view>
+      <!-- Format -->
+      <view class="config-card">
+        <view class="section-heading">
+          <text class="section-title">文件格式</text>
+          <text class="section-caption">根据阅读和编辑需求选择格式</text>
+        </view>
 
-    <!-- Date -->
-    <view class="config-section">
-      <view class="section-title">日期</view>
-      <view class="date-row">
-        <switch checked="{{showDate}}" bindchange="onDateToggle" />
+        <view class="format-grid">
+          <view
+            class="format-card {{format === 'pdf' ? 'format-card-active' : ''}}"
+            data-value="pdf"
+            bindtap="onFormatChange"
+          >
+            <view class="format-card-top">
+              <text class="format-token format-token-pdf">PDF</text>
+              <view class="format-check"></view>
+            </view>
+            <text class="format-title">版式稳定</text>
+            <text class="format-caption">适合预览、打印与分享</text>
+          </view>
+
+          <view
+            class="format-card {{format === 'docx' ? 'format-card-active' : ''}} {{wordDisabled ? 'format-card-disabled' : ''}}"
+            data-value="docx"
+            bindtap="onFormatChange"
+          >
+            <view class="format-card-top">
+              <text class="format-token format-token-word">Word</text>
+              <view class="format-check"></view>
+            </view>
+            <text class="format-title">方便编辑</text>
+            <text class="format-caption">适合后续修改和排版</text>
+            <text wx:if="{{wordDisabled}}" class="format-disabled-tip">暂未开放</text>
+          </view>
+        </view>
+        <text wx:if="{{wordTip && !wordDisabled}}" class="inline-hint inline-hint-warn">{{wordTip}}</text>
+      </view>
+
+      <!-- Paper information -->
+      <view class="config-card">
+        <view class="section-heading">
+          <text class="section-title">试卷信息</text>
+          <text class="section-caption">设置显示在文件首页的信息</text>
+        </view>
+
+        <view class="field-block">
+          <text class="field-label">试卷标题</text>
+          <view class="input-shell">
+            <input
+              class="title-input"
+              placeholder="{{titleDefault}}"
+              placeholder-class="input-placeholder"
+              value="{{title}}"
+              bindinput="onTitleInput"
+              maxlength="120"
+            />
+            <text class="input-count">{{title.length}}/120</text>
+          </view>
+        </view>
+
+        <view class="field-divider"></view>
+
+        <view class="date-setting">
+          <view class="date-setting-copy">
+            <text class="field-label">显示日期</text>
+            <text class="field-caption">在试卷标题下方标注日期</text>
+          </view>
+          <switch checked="{{showDate}}" color="#2F7D50" bindchange="onDateToggle" />
+        </view>
+
         <picker wx:if="{{showDate}}" mode="date" value="{{exportDate}}" bindchange="onDateChange" class="date-picker">
-          <text class="date-text">{{exportDate}}</text>
+          <view class="date-value-row">
+            <view class="date-icon"><view class="date-icon-line"></view></view>
+            <text class="date-text">{{exportDate}}</text>
+            <view class="row-chevron"></view>
+          </view>
         </picker>
-        <text wx:else class="date-hidden">不显示</text>
       </view>
-    </view>
 
-    <!-- Sorting -->
-    <view class="config-section">
-      <view class="section-title">排序方式</view>
-      <picker mode="selector" range="{{SORT_OPTIONS}}" range-key="label" value="{{sortByIndex}}" bindchange="onSortChange">
-        <view class="picker-display">{{sortByLabel}}</view>
-      </picker>
-    </view>
+      <!-- Layout settings -->
+      <view class="config-card settings-card">
+        <view class="section-heading">
+          <text class="section-title">内容与排版</text>
+          <text class="section-caption">调整题目顺序、答案和留白方式</text>
+        </view>
 
-    <!-- Grouping -->
-    <view class="config-section">
-      <view class="section-title">分组方式</view>
-      <picker mode="selector" range="{{GROUP_OPTIONS}}" range-key="label" value="{{groupByIndex}}" bindchange="onGroupChange">
-        <view class="picker-display">{{groupByLabel}}</view>
-      </picker>
-    </view>
+        <picker class="setting-picker" mode="selector" range="{{SORT_OPTIONS}}" range-key="label" value="{{sortByIndex}}" bindchange="onSortChange">
+          <view class="setting-row">
+            <view class="setting-copy">
+              <text class="setting-label">排序方式</text>
+              <text class="setting-caption">决定题目在试卷中的先后顺序</text>
+            </view>
+            <view class="setting-value">
+              <text>{{sortByLabel}}</text>
+              <view class="row-chevron"></view>
+            </view>
+          </view>
+        </picker>
 
-    <!-- Answer -->
-    <view class="config-section">
-      <view class="section-title">答案</view>
-      <picker mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{answerPositionIndex}}" bindchange="onAnswerPositionChange">
-        <view class="picker-display">{{answerPositionLabel}}</view>
-      </picker>
-    </view>
+        <view class="setting-divider"></view>
 
-    <!-- Analysis -->
-    <view class="config-section">
-      <view class="section-title">解析</view>
-      <picker mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{analysisPositionIndex}}" bindchange="onAnalysisPositionChange">
-        <view class="picker-display">{{analysisPositionLabel}}</view>
-      </picker>
-    </view>
+        <picker class="setting-picker" mode="selector" range="{{GROUP_OPTIONS}}" range-key="label" value="{{groupByIndex}}" bindchange="onGroupChange">
+          <view class="setting-row">
+            <view class="setting-copy">
+              <text class="setting-label">分组方式</text>
+              <text class="setting-caption">控制不同题目之间的分区结构</text>
+            </view>
+            <view class="setting-value">
+              <text>{{groupByLabel}}</text>
+              <view class="row-chevron"></view>
+            </view>
+          </view>
+        </picker>
 
-    <!-- Space -->
-    <view class="config-section">
-      <view class="section-title">答题空间</view>
-      <picker mode="selector" range="{{SPACE_OPTIONS}}" range-key="label" value="{{spaceStyleIndex}}" bindchange="onSpaceChange">
-        <view class="picker-display">{{spaceStyleLabel}}</view>
-      </picker>
-    </view>
+        <view class="setting-divider"></view>
 
-    <!-- Preview count -->
-    <view class="config-section count-section">
-      <view class="section-title">预计导出</view>
-      <view class="count-display">
-        <text wx:if="{{countLoading}}" class="count-loading">计算中…</text>
-        <text wx:elif="{{countError}}" class="count-error">{{countError}}</text>
-        <text wx:else class="count-value {{previewCount === 0 || previewCount > 100 ? 'invalid' : ''}}">
-          {{previewCount}} 道
-        </text>
+        <picker class="setting-picker" mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{answerPositionIndex}}" bindchange="onAnswerPositionChange">
+          <view class="setting-row">
+            <view class="setting-copy">
+              <text class="setting-label">答案</text>
+              <text class="setting-caption">选择答案是否打印及其位置</text>
+            </view>
+            <view class="setting-value">
+              <text>{{answerPositionLabel}}</text>
+              <view class="row-chevron"></view>
+            </view>
+          </view>
+        </picker>
+
+        <view class="setting-divider"></view>
+
+        <picker class="setting-picker" mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{analysisPositionIndex}}" bindchange="onAnalysisPositionChange">
+          <view class="setting-row">
+            <view class="setting-copy">
+              <text class="setting-label">解析</text>
+              <text class="setting-caption">选择解析是否打印及其位置</text>
+            </view>
+            <view class="setting-value">
+              <text>{{analysisPositionLabel}}</text>
+              <view class="row-chevron"></view>
+            </view>
+          </view>
+        </picker>
+
+        <view class="setting-divider"></view>
+
+        <picker class="setting-picker" mode="selector" range="{{SPACE_OPTIONS}}" range-key="label" value="{{spaceStyleIndex}}" bindchange="onSpaceChange">
+          <view class="setting-row">
+            <view class="setting-copy">
+              <text class="setting-label">答题空间</text>
+              <text class="setting-caption">控制每道题下方预留的书写空间</text>
+            </view>
+            <view class="setting-value">
+              <text>{{spaceStyleLabel}}</text>
+              <view class="row-chevron"></view>
+            </view>
+          </view>
+        </picker>
       </view>
-      <view wx:if="{{previewCount > 100}}" class="count-hint warn">
-        单次最多导出 100 道，请调整导出范围。
+
+      <view wx:if="{{submitError}}" class="submit-error-panel">
+        <view class="submit-error-icon">!</view>
+        <text>{{submitError}}</text>
       </view>
+
+      <view class="config-safe-space"></view>
     </view>
   </scroll-view>
 
   <!-- Submit bar -->
   <view class="submit-bar">
+    <view class="submit-summary">
+      <view class="submit-summary-copy">
+        <text class="submit-summary-label">预计导出</text>
+        <text wx:if="{{capabilityLoading}}" class="submit-summary-status">正在检查导出权限…</text>
+        <text wx:elif="{{capabilityError && !_exportEnabled}}" class="submit-summary-status submit-summary-error">暂不可用</text>
+        <text wx:elif="{{countLoading}}" class="submit-summary-status">正在计算…</text>
+        <text wx:elif="{{countError}}" class="submit-summary-status submit-summary-error">计算失败</text>
+        <text wx:else class="submit-summary-count {{!previewCount || !_exportEnabled || countError || previewCount === 0 || previewCount > maxQuestionCount ? 'submit-summary-count-invalid' : ''}}">{{previewCount}} 道</text>
+      </view>
+
+      <button wx:if="{{capabilityError && !_exportEnabled}}" class="summary-retry" bindtap="onRetryCapability">重试</button>
+      <text wx:elif="{{previewCount > maxQuestionCount}}" class="summary-warning">最多 {{maxQuestionCount}} 道</text>
+      <text wx:elif="{{countError}}" class="summary-warning">{{countError}}</text>
+    </view>
+
     <view class="submit-bar-inner">
-      <button class="records-btn" bindtap="onViewRecords">导出记录</button>
-      <button class="submit-btn {{submitting ? 'loading' : ''}}"
-              disabled="{{submitting || previewCount === 0 || previewCount > 100}}"
-              bindtap="onSubmit">
-        <text wx:if="{{submitting}}">提交中…</text>
+      <button class="records-btn" hover-class="footer-button-pressed" bindtap="onViewRecords">导出记录</button>
+      <button
+        class="submit-btn {{submitting ? 'loading' : ''}}"
+        hover-class="footer-button-pressed"
+        disabled="{{submitting || capabilityLoading || !_exportEnabled || countLoading || countError || previewCount === 0 || previewCount > maxQuestionCount}}"
+        bindtap="onSubmit"
+      >
+        <text wx:if="{{submitting}}">正在创建…</text>
         <text wx:else>开始导出</text>
       </button>
     </view>

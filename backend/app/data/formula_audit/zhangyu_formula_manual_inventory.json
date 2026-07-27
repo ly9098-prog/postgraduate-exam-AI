@@ -1,0 +1,229 @@
+{
+  "source_document": "27张宇数学公式手册.pdf",
+  "document_path": "/home/lmh/projects/postgraduate-ai/ocr_test/import/27张宇数学公式手册.pdf",
+  "total_pdf_pages": 190,
+  "analysis_date": "2026-07-27",
+  "structure": [
+    {
+      "part": "第一部分 高等数学",
+      "chapters": [
+        {
+          "chapter": "第一章 函数、极限、连续",
+          "printed_page_start": 2,
+          "sections": [
+            "一、函数",
+            "二、极限",
+            "三、无穷小量与无穷大量",
+            "四、连续"
+          ],
+          "math2_relevant": true
+        },
+        {
+          "chapter": "第二章 一元函数微分学",
+          "printed_page_start": 13,
+          "sections": [
+            "一、导数与微分",
+            "二、导数的计算",
+            "三、微分中值定理",
+            "四、洛必达法则",
+            "五、函数及其性态的研究",
+            "六、曲率、曲率半径、曲率圆"
+          ],
+          "math2_relevant": true
+        },
+        {
+          "chapter": "第三章 一元函数积分学",
+          "printed_page_start": 24,
+          "sections": [
+            "一、不定积分",
+            "二、定积分",
+            "三、反常积分"
+          ],
+          "math2_relevant": true
+        },
+        {
+          "chapter": "第四章 向量代数和空间解析几何",
+          "printed_page_start": 39,
+          "math2_relevant": false,
+          "note": "数学二不作要求"
+        },
+        {
+          "chapter": "第五章 多元函数微分学",
+          "printed_page_start": 45,
+          "sections": [
+            "一、偏导数与全微分",
+            "二、隐函数求导法",
+            "三、方向导数",
+            "四、偏导数在几何中的应用",
+            "五、多元函数的极值"
+          ],
+          "math2_relevant": true,
+          "note": "偏导数在几何中的应用(数学二不作要求)"
+        },
+        {
+          "chapter": "第六章 多元函数积分学",
+          "printed_page_start": 50,
+          "sections": [
+            "一、重积分的计算",
+            "二、重积分的应用(数学二不作要求)",
+            "三、曲线、曲面积分(数学二不作要求)"
+          ],
+          "math2_relevant": true,
+          "note": "仅二重积分"
+        },
+        {
+          "chapter": "第七章 级数",
+          "printed_page_start": 61,
+          "math2_relevant": false,
+          "note": "数学二不作要求"
+        },
+        {
+          "chapter": "第八章 常微分方程及差分方程",
+          "printed_page_start": 74,
+          "sections": [
+            "一、一阶微分方程的类型及其解法",
+            "二、可降阶的高阶微分方程",
+            "三、线性微分方程解的结构定理",
+            "四、常系数齐次线性微分方程",
+            "五、二阶常系数非齐次线性微分方程",
+            "六、欧拉方程",
+            "七、差分方程(数学二不作要求)"
+          ],
+          "math2_relevant": true,
+          "note": "差分方程(数学二不作要求)"
+        }
+      ]
+    },
+    {
+      "part": "第二部分 线性代数",
+      "chapters": [
+        {
+          "chapter": "第一章 行列式",
+          "printed_page_start": 84,
+          "sections": [
+            "一、行列式的定义与性质",
+            "二、行列式的展开定理",
+            "三、几种特殊的行列式",
+            "四、有关行列式的若干个重要公式"
+          ],
+          "math2_relevant": true
+        },
+        {
+          "chapter": "第二章 矩阵",
+          "printed_page_start": 91,
+          "sections": [
+            "一、矩阵的定义与运算",
+            "二、矩阵的秩",
+            "三、分块矩阵",
+            "四、矩阵的初等变换与初等矩阵"
+          ],
+          "math2_relevant": true
+        },
+        {
+          "chapter": "第三章 向量",
+          "printed_page_start": 111,
+          "sections": [
+            "一、n维向量的定义及其运算",
+            "二、向量组的线性相(无)关性",
+            "三、极大无关组与向量组的秩",
+            "四、内积与施密特正交化",
+            "五、n维向量空间(数学二不作要求)"
+          ],
+          "math2_relevant": true,
+          "note": "n维向量空间(数学二不作要求)"
+        },
+        {
+          "chapter": "第四章 线性方程组",
+          "printed_page_start": 123,
+          "sections": [
+            "一、线性方程组的4种表示形式",
+            "二、线性方程组有解的判别条件",
+            "三、齐次线性方程组的解的结构",
+            "四、非齐次线性方程组AX=b的解的结构"
+          ],
+          "math2_relevant": true
+        },
+        {
+          "chapter": "第五章 矩阵的特征值和特征向量",
+          "printed_page_start": 128,
+          "sections": [
+            "一、特征值和特征向量",
+            "二、矩阵的对角化问题"
+          ],
+          "math2_relevant": true
+        },
+        {
+          "chapter": "第六章 二次型",
+          "printed_page_start": 132,
+          "sections": [
+            "一、二次型及其表示法",
+            "二、正定二次型及其判定"
+          ],
+          "math2_relevant": true
+        }
+      ]
+    },
+    {
+      "part": "第三部分 概率论与数理统计",
+      "math2_relevant": false,
+      "note": "数学二不作要求"
+    },
+    {
+      "part": "附录 初等数学",
+      "math2_relevant": true,
+      "note": "完全缺失于当前公式库",
+      "chapters": [
+        {
+          "chapter": "初等代数",
+          "printed_page_start": 170,
+          "sections": [
+            "乘法公式与因式分解",
+            "一元二次方程",
+            "不等式",
+            "指数",
+            "对数",
+            "数列(等差数列、等比数列、常用数列和)",
+            "排列、组合与二项式公式"
+          ]
+        },
+        {
+          "chapter": "初等几何",
+          "printed_page_start": 174,
+          "sections": [
+            "三角形面积(含正弦面积公式、海伦公式)",
+            "梯形面积",
+            "圆(周长、弧长、扇形面积)",
+            "旋转体(圆柱、圆锥、圆台、球)"
+          ]
+        },
+        {
+          "chapter": "三角函数",
+          "printed_page_start": 176,
+          "sections": [
+            "和差角公式",
+            "和差化积公式",
+            "倍角公式(含三倍角)",
+            "半角公式",
+            "正弦定理",
+            "余弦定理",
+            "反三角函数性质"
+          ]
+        },
+        {
+          "chapter": "平面解析几何",
+          "printed_page_start": 179,
+          "sections": [
+            "两点间距离公式",
+            "直线(一般式、点斜式、两点式、斜截式、截距式)",
+            "点到直线距离公式",
+            "圆(标准方程、一般方程)",
+            "椭圆(标准方程、焦点、准线)",
+            "双曲线(标准方程、焦点、渐近线、准线)",
+            "抛物线(标准方程、焦点、切线)",
+            "极坐标与直角坐标互化"
+          ]
+        }
+      ]
+    }
+  ]
+}

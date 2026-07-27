@@ -31,7 +31,12 @@ from enum import StrEnum
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.admin_ai_config import AdminAiModelConfig, decrypt_api_key
+from app.core.secret_crypto import (
+    SecretDecryptionError,
+    SecretEncryptionError,
+    decrypt_secret,
+)
+from app.models.admin_ai_config import AdminAiModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +273,7 @@ class AIModelConfigResolver:
                 AIConfigErrorCode.AI_CONFIG_SECRET_MISSING.value,
                 f"No secret configured for model config {config.model_config_id}",
             )
-        decrypted = decrypt_api_key(model.api_key_encrypted)
+        decrypted = decrypt_secret(model.api_key_encrypted)
         if not decrypted:
             raise ValueError(
                 AIConfigErrorCode.AI_CONFIG_SECRET_MISSING.value,
@@ -552,7 +557,10 @@ async def resolve_active_model(db: AsyncSession, feature: str | None = None) -> 
 
 
 def _decrypt_model(model: AdminAiModelConfig) -> dict | None:
-    api_key = decrypt_api_key(model.api_key_encrypted) if model.api_key_encrypted else ""
+    try:
+        api_key = decrypt_secret(model.api_key_encrypted) if model.api_key_encrypted else ""
+    except (SecretDecryptionError, SecretEncryptionError):
+        api_key = ""
     if not api_key:
         log_event(
             logger, "ai.model.resolve.error", "warning",

@@ -1,0 +1,188 @@
+{
+  "summary": {
+    "pdf_pages": 190,
+    "pdf_formula_groups": 23,
+    "existing_complete": 0,
+    "existing_needs_update": 0,
+    "missing": 23,
+    "needs_manual_review": 0,
+    "out_of_scope": 0
+  },
+  "notes": {
+    "scope": "仅处理数学二相关内容。PDF第三部分(概率论与数理统计, printed pages 138-168)为数学三内容，不包括在本次补全范围内。PDF第4章(向量代数和空间解析几何)、第7章(级数)、差分方程为数学二不作要求内容。",
+    "coverage_assessment": "现有201张公式卡片已完整覆盖数学二高等数学和线性代数各章节的核心公式。本章附录初等数学是唯一完全缺失的部分。"
+  },
+  "existing_complete": [
+    "ID 1-7: 函数、极限、连续 — 极限基础公式",
+    "ID 8-10: 函数、极限、连续 — 函数性质与图像",
+    "ID 11-18: 一元函数微分学 — 导数与微分公式",
+    "ID 19-24: 一元函数积分学 — 不定积分与定积分公式",
+    "ID 25-28: 多元函数微分学 — 偏导数与全微分",
+    "ID 29-32: 二重积分 — 二重积分计算法",
+    "ID 33-38: 常微分方程 — 一阶微分方程",
+    "ID 39-41: 行列式 — 行列式的性质与计算",
+    "ID 42-44: 矩阵 — 矩阵运算与逆矩阵",
+    "ID 45-47: 向量 — 向量的线性关系",
+    "ID 48-49: 线性方程组 — 线性方程组的解法",
+    "ID 50-53: 特征值与特征向量",
+    "ID 54-57: 二次型 — 二次型的标准化",
+    "ID 93-176: H-xxx系列详细公式展开",
+    "ID 177-201: 扩展公式(曲率、物理应用、线性代数进阶等)"
+  ],
+  "existing_needs_update": [],
+  "missing": [
+    {
+      "category": "初等数学/初等代数",
+      "title": "乘法公式与因式分解",
+      "source_ref": "zhangyu_formula_manual:elementary_math:factorization",
+      "priority": "medium"
+    },
+    {
+      "category": "初等数学/初等代数",
+      "title": "一元二次方程",
+      "source_ref": "zhangyu_formula_manual:elementary_math:quadratic_equation",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/初等代数",
+      "title": "常用不等式",
+      "source_ref": "zhangyu_formula_manual:elementary_math:inequalities",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/初等代数",
+      "title": "指数运算法则",
+      "source_ref": "zhangyu_formula_manual:elementary_math:exponent_rules",
+      "priority": "medium"
+    },
+    {
+      "category": "初等数学/初等代数",
+      "title": "对数运算法则",
+      "source_ref": "zhangyu_formula_manual:elementary_math:logarithm_rules",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/初等代数",
+      "title": "等差数列与等比数列",
+      "source_ref": "zhangyu_formula_manual:elementary_math:sequences",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/初等代数",
+      "title": "常用数列前n项和",
+      "source_ref": "zhangyu_formula_manual:elementary_math:summation_formulas",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/初等代数",
+      "title": "排列、组合与二项式定理",
+      "source_ref": "zhangyu_formula_manual:elementary_math:combinatorics",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/初等几何",
+      "title": "三角形面积公式",
+      "source_ref": "zhangyu_formula_manual:elementary_math:triangle_area",
+      "priority": "medium"
+    },
+    {
+      "category": "初等数学/初等几何",
+      "title": "梯形面积与圆的计算",
+      "source_ref": "zhangyu_formula_manual:elementary_math:trapezoid_circle",
+      "priority": "medium"
+    },
+    {
+      "category": "初等数学/初等几何",
+      "title": "旋转体体积与表面积",
+      "source_ref": "zhangyu_formula_manual:elementary_math:revolution_solids",
+      "priority": "medium"
+    },
+    {
+      "category": "初等数学/三角函数",
+      "title": "和差角公式",
+      "source_ref": "zhangyu_formula_manual:elementary_math:sum_diff_angles",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/三角函数",
+      "title": "和差化积公式",
+      "source_ref": "zhangyu_formula_manual:elementary_math:sum_to_product",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/三角函数",
+      "title": "倍角公式",
+      "source_ref": "zhangyu_formula_manual:elementary_math:multiple_angles",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/三角函数",
+      "title": "半角公式",
+      "source_ref": "zhangyu_formula_manual:elementary_math:half_angles",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/三角函数",
+      "title": "正弦定理与余弦定理",
+      "source_ref": "zhangyu_formula_manual:elementary_math:law_sine_cosine",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/三角函数",
+      "title": "反三角函数关系",
+      "source_ref": "zhangyu_formula_manual:elementary_math:inverse_trig_relations",
+      "priority": "medium"
+    },
+    {
+      "category": "初等数学/平面解析几何",
+      "title": "两点间距离与直线方程",
+      "source_ref": "zhangyu_formula_manual:elementary_math:distance_line",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/平面解析几何",
+      "title": "点到直线的距离公式",
+      "source_ref": "zhangyu_formula_manual:elementary_math:point_line_distance",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/平面解析几何",
+      "title": "圆的方程",
+      "source_ref": "zhangyu_formula_manual:elementary_math:circle_equation",
+      "priority": "high"
+    },
+    {
+      "category": "初等数学/平面解析几何",
+      "title": "椭圆的标准方程与性质",
+      "source_ref": "zhangyu_formula_manual:elementary_math:ellipse",
+      "priority": "medium"
+    },
+    {
+      "category": "初等数学/平面解析几何",
+      "title": "双曲线的标准方程与性质",
+      "source_ref": "zhangyu_formula_manual:elementary_math:hyperbola",
+      "priority": "medium"
+    },
+    {
+      "category": "初等数学/平面解析几何",
+      "title": "抛物线的标准方程与性质",
+      "source_ref": "zhangyu_formula_manual:elementary_math:parabola",
+      "priority": "medium"
+    },
+    {
+      "category": "初等数学/平面解析几何",
+      "title": "极坐标与直角坐标互化",
+      "source_ref": "zhangyu_formula_manual:elementary_math:polar_coordinates",
+      "priority": "medium"
+    }
+  ],
+  "needs_manual_review": [],
+  "special_checks": {
+    "wallis_formula": {
+      "card_id": 200,
+      "title": "华里士公式（点火公式）",
+      "status": "existing_complete",
+      "note": "已有华里士公式卡片(ID 200)包含完整的偶次和奇次积分公式，与PDF内容一致。不需更新。"
+    }
+  }
+}

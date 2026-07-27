@@ -122,10 +122,8 @@ async def claim_pending(
     conditions = [TaskOutbox.status == "pending"]
 
     # Also reclaim expired leases
-    conditions.append(
-        TaskOutbox.status == "leased",
-        TaskOutbox.lease_expires_at < datetime.now(UTC),
-    )
+    conditions.append(TaskOutbox.status == "leased")
+    conditions.append(TaskOutbox.lease_expires_at < datetime.now(UTC))
 
     # Build the main query with OR for (pending OR expired-lease)
     query = (

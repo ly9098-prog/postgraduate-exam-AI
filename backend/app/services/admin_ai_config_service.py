@@ -1,3 +1,4 @@
+import logging
 import time
 from urllib.parse import urljoin
 
@@ -6,13 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
 from app.core.config import settings
-from app.core.time_utils import utcnow
-from app.models.admin_ai_config import (
-    AdminAiConfig,
-    AdminAiModelConfig,
-    decrypt_api_key,
-    encrypt_api_key,
+from app.core.secret_crypto import (
+    SecretDecryptionError,
+    SecretEncryptionError,
+    decrypt_secret,
+    encrypt_secret,
 )
+from app.core.time_utils import utcnow
+from app.models.admin_ai_config import AdminAiConfig, AdminAiModelConfig
+
+logger = logging.getLogger(__name__)
 from app.schemas.admin_ai_config import (
     AdminAiModelConfigCreateRequest,
     AdminAiModelConfigPatchRequest,
@@ -168,14 +172,23 @@ async def _seed_models_if_empty(db: AsyncSession):
     for m in _DEFAULT_MODELS:
         model = AdminAiModelConfig(**m)
         if m["name"] == "deepseek-v4-flash" and env_key and env_key != "sk-your-key-here":
-            model.api_key_encrypted = encrypt_api_key(env_key)
+            try:
+                model.api_key_encrypted = encrypt_secret(env_key)
+            except SecretEncryptionError:
+                logger.warning("AI_CONFIG_ENCRYPT_KEY not available — skipping seed of API key")
         db.add(model)
     await db.flush()
 
 
 async def _ensure_env_key_synced(db: AsyncSession):
-    """对于已存在的数据库，确保 deepseek-v4-flash 模型有 API key（从环境变量同步）。
-    当 env key 被轮换时也自动更新 DB。
+    """For existing DB, sync the deepseek-v4-flash model key from env.
+
+    Only syncs when:
+    - DB field is empty (no stored key), OR
+    - Existing value decrypts successfully AND differs from env key.
+
+    On decrypt failure (wrong key, corrupted data) the DB value is
+    NEVER overwritten — a clear error is logged instead.
     """
     env_key = settings.DEEPSEEK_API_KEY
     if not env_key or env_key == "sk-your-key-here":
@@ -187,14 +200,27 @@ async def _ensure_env_key_synced(db: AsyncSession):
     ).scalar_one_or_none()
     if model is None:
         return
-    if model.api_key_encrypted:
-        # 已加密的 key 能解密且与当前 env key 一致时不覆盖
-        # 解密失败（key 轮换）或与新 key 不同时更新
-        existing = decrypt_api_key(model.api_key_encrypted)
-        if existing and existing == env_key:
-            return
-    model.api_key_encrypted = encrypt_api_key(env_key)
-    await db.flush()
+
+    # Case 1: DB field is empty — always sync from env
+    if not model.api_key_encrypted:
+        model.api_key_encrypted = encrypt_secret(env_key)
+        await db.flush()
+        return
+
+    # Case 2: DB has a value — try to decrypt and compare
+    try:
+        existing = decrypt_secret(model.api_key_encrypted)
+        if existing == env_key:
+            return  # already in sync
+        # Different key — update
+        model.api_key_encrypted = encrypt_secret(env_key)
+        await db.flush()
+    except (SecretDecryptionError, SecretEncryptionError):
+        # Cannot decrypt — do NOT overwrite. Log and move on.
+        logger.error(
+            "Cannot sync DEEPSEEK_API_KEY env var to DB: existing encrypted value "
+            "cannot be decrypted (key may have been rotated). DB value preserved."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -207,11 +233,11 @@ def _model_to_response(m: AdminAiModelConfig) -> AdminAiModelConfigResponse:
     api_key_masked = None
     if m.api_key_encrypted:
         try:
-            raw = decrypt_api_key(m.api_key_encrypted)
+            raw = decrypt_secret(m.api_key_encrypted)
             if raw:
                 api_ok = True
-                api_key_masked = "*" * len(raw)
-        except Exception:
+                api_key_masked = "********"
+        except (SecretDecryptionError, SecretEncryptionError):
             api_ok = False
     return AdminAiModelConfigResponse(
         id=m.id,
@@ -280,8 +306,11 @@ async def patch_model(
     if data.api_base_url is not None:
         model.api_base_url = data.api_base_url
         changes["api_base_url"] = data.api_base_url
-    if data.api_key is not None and data.api_key.strip() and data.api_key != "****":
-        model.api_key_encrypted = encrypt_api_key(data.api_key)
+
+    # API key: use get_api_key_value() which handles None and mask placeholders
+    new_key = data.get_api_key_value()
+    if new_key is not None:
+        model.api_key_encrypted = encrypt_secret(new_key)
         changes["api_key_updated"] = True
 
     if "features" in data.model_fields_set:
@@ -379,8 +408,9 @@ async def create_model(
         feature=new_features[0] if new_features else None,
         features=new_features,
     )
-    if data.api_key and data.api_key.strip():
-        model.api_key_encrypted = encrypt_api_key(data.api_key)
+    new_key = data.get_api_key_value()
+    if new_key:
+        model.api_key_encrypted = encrypt_secret(new_key)
     db.add(model)
     await db.flush()
 
@@ -496,7 +526,7 @@ def _coerce_value(raw: str):
 
 async def test_model_connection(
     api_base_url: str,
-    api_key: str,
+    api_key: str | None,
     model_name: str,
     model_id: int | None = None,
     db: AsyncSession | None = None,
@@ -506,21 +536,28 @@ async def test_model_connection(
 ) -> dict:
     """对给定模型配置发起一次最小连通性测试，返回诊断结果。
 
+    凭据优先级：
+    1. 请求明确提交了非空、非掩码的临时 API Key；
+    2. 提供了 model_id：从数据库解密已保存 Key；
+    3. 项目明确支持的环境变量 fallback；
+    4. 都没有则返回安全的 auth_error。
+
     - Chat 模型 (deepseek/openai): 调用 /v1/chat/completions
     - OCR 模型 (paddleocr_vl): 提交极小图片测试连通性
-
-    若提供 model_id + db，优先使用数据库中已加密存储的凭证（忽略前端的掩码 key）。
     """
-
 
     # 确定 provider / features：优先参数，其次 DB
     effective_provider = provider
     effective_features: list[str] = features if features else []
     if feature and feature not in effective_features:
         effective_features.append(feature)
-    if model_id is not None and db is not None:
+
+    # Key priority 1: explicit temp key from request
+    effective_api_key = api_key
+
+    # Key priority 2: from DB via model_id (only if no explicit key provided)
+    if effective_api_key is None and model_id is not None and db is not None:
         from app.core.config import settings as app_settings
-        from app.models.admin_ai_config import AdminAiModelConfig
 
         model = await db.get(AdminAiModelConfig, model_id)
         if model is not None:
@@ -532,19 +569,17 @@ async def test_model_connection(
                 [model.feature] if model.feature else []
             )
 
-            if model.provider == "deepseek":
-                env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
-                if env_key and env_key != "sk-your-key-here":
-                    api_key = env_key
-                elif model.api_key_encrypted:
-                    decrypted = decrypt_api_key(model.api_key_encrypted)
-                    if decrypted and decrypted != "****":
-                        api_key = decrypted
-            else:
-                if model.api_key_encrypted:
-                    decrypted = decrypt_api_key(model.api_key_encrypted)
-                    if decrypted and decrypted != "****":
-                        api_key = decrypted
+            if model.api_key_encrypted:
+                try:
+                    effective_api_key = decrypt_secret(model.api_key_encrypted)
+                except (SecretDecryptionError, SecretEncryptionError):
+                    # DB key not decryptable — do NOT fall back to env
+                    return {
+                        "success": False,
+                        "status": "auth_error",
+                        "message": "数据库中保存的 API Key 无法解密，请检查加密配置或重新保存凭据",
+                        "latency_ms": 0,
+                    }
         else:
             await _seed_models_if_empty(db)
             await db.flush()
@@ -557,31 +592,44 @@ async def test_model_connection(
                 effective_features = model.features if model.features else (
                     [model.feature] if model.feature else []
                 )
-                if model.provider == "deepseek":
-                    env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
-                    if env_key and env_key != "sk-your-key-here":
-                        api_key = env_key
-                    elif model.api_key_encrypted:
-                        decrypted = decrypt_api_key(model.api_key_encrypted)
-                        if decrypted and decrypted != "****":
-                            api_key = decrypted
-                else:
-                    if model.api_key_encrypted:
-                        decrypted = decrypt_api_key(model.api_key_encrypted)
-                        if decrypted and decrypted != "****":
-                            api_key = decrypted
+                if model.api_key_encrypted:
+                    try:
+                        effective_api_key = decrypt_secret(model.api_key_encrypted)
+                    except (SecretDecryptionError, SecretEncryptionError):
+                        return {
+                            "success": False,
+                            "status": "auth_error",
+                            "message": "数据库中保存的 API Key 无法解密",
+                            "latency_ms": 0,
+                        }
+
+    # Key priority 3: env var fallback for deepseek provider
+    if effective_api_key is None and effective_provider == "deepseek":
+        from app.core.config import settings as app_settings
+
+        env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
+        if env_key and env_key != "sk-your-key-here":
+            effective_api_key = env_key
+
+    # Key priority 4: no key available
+    if not effective_api_key:
+        return {
+            "success": False,
+            "status": "auth_error",
+            "message": "未提供 API Key，请在上方输入后测试，或先保存模型配置",
+            "latency_ms": 0,
+        }
 
     # PaddleOCR-VL 特殊处理：不调用 chat/completions
-    # 检测依据：provider 含 paddleocr 关键字，或 features 含 "vision"
     _is_paddleocr = (
         (effective_provider and "paddleocr" in effective_provider.lower())
         or "vision" in effective_features
     )
     if _is_paddleocr:
-        return await _test_paddleocr_vl_connection(api_base_url, api_key)
+        return await _test_paddleocr_vl_connection(api_base_url, effective_api_key)
 
     # 通用 Chat 模型测试
-    return await _test_chat_connection(api_base_url, api_key, model_name)
+    return await _test_chat_connection(api_base_url, effective_api_key, model_name)
 
 
 async def _test_chat_connection(

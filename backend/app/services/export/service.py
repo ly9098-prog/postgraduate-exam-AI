@@ -404,3 +404,24 @@ def _get_product_name() -> str:
         return name
     # Fallback to app name from PUBLIC_BASE_URL or env
     return "MemoGrad"
+
+
+async def find_task_by_idempotency_key(
+    db: AsyncSession,
+    user_id: int,
+    idempotency_key: str | None,
+) -> ExportTask | None:
+    """Find any task (any status) matching the given idempotency key.
+
+    Used as a recovery path when the idempotency_key UNIQUE constraint
+    prevents insertion (e.g. migration to drop it hasn't been applied).
+    """
+    if not idempotency_key:
+        return None
+    result = await db.execute(
+        select(ExportTask).where(
+            ExportTask.user_id == user_id,
+            ExportTask.idempotency_key == idempotency_key,
+        ).order_by(ExportTask.created_at.desc()).limit(1)
+    )
+    return result.scalar_one_or_none()

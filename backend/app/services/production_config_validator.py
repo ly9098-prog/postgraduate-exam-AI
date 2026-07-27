@@ -56,6 +56,7 @@ def validate_production_config() -> None:
     _check_directories(errors)
     _check_deployment_profile(errors)
     _check_process_role(errors)
+    _check_ai_encrypt_key(errors)
     _check_ocr_production_rules(errors)
     _check_ocr_no_local_deps(errors)
     _check_pdf_production_rules(errors)
@@ -173,6 +174,29 @@ def _check_process_role(errors: list[str]) -> None:
     elif role not in valid_roles + ("all",):
         errors.append(
             f"PROCESS_ROLE={role!r} is invalid, must be one of: {', '.join(valid_roles + ('all',))}"
+        )
+
+
+def _check_ai_encrypt_key(errors: list[str]) -> None:
+    """AI_CONFIG_ENCRYPT_KEY must be a valid Fernet key in production/cloud_api.
+
+    The error message names the environment variable but never reveals its value.
+    """
+    key = settings.AI_CONFIG_ENCRYPT_KEY
+    if not key:
+        errors.append(
+            "AI_CONFIG_ENCRYPT_KEY 未设置——生产环境需要有效的 Fernet 密钥。"
+            " 生成命令: python -c \"from cryptography.fernet import Fernet; "
+            "print(Fernet.generate_key().decode())\""
+        )
+        return
+    try:
+        from cryptography.fernet import Fernet
+        Fernet(key.encode())
+    except Exception:
+        errors.append(
+            "AI_CONFIG_ENCRYPT_KEY 格式无效——必须是有效的 Fernet 密钥。"
+            " 变量值不记录在日志中。"
         )
 
 
@@ -421,8 +445,7 @@ def _check_gunicorn_fork_safety(errors: list[str]) -> None:
     """
 
     gunicorn_preload = os.environ.get("GUNICORN_PRELOAD", "").lower() in ("1", "true", "yes")
-    using_gunicorn = "gunicorn" in sys.argv[0] if sys.argv else False
-    if not gunicorn_preload and not using_gunicorn:
+    if not gunicorn_preload:
         return
 
     own_patterns = {

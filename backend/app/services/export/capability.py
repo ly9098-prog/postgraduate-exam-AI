@@ -69,18 +69,48 @@ def build_capability(user: object) -> ExportCapabilityResponse:
     The response tells the frontend what the current user can do, without
     leaking internal config or whitelist contents. Configurable constants
     (max question count, retention days) are populated from settings.
+
+    When the user is not allowed, ``reason_code`` and ``message`` carry a
+    diagnostic hint — no sensitive info (whitelist, env values) is leaked.
     """
     from app.core.config import settings
 
     uid = getattr(user, "id", 0) or 0
     allowed = is_user_allowed(uid)
+
+    if not settings.EXPORT_FEATURE_ENABLED:
+        return ExportCapabilityResponse(
+            export_enabled=False,
+            pdf_enabled=False,
+            docx_enabled=False,
+            websocket_enabled=False,
+            max_question_count=settings.EXPORT_MAX_QUESTIONS,
+            retention_days=_get_retention_days(),
+            reason_code="feature_disabled",
+            message="导出功能已关闭",
+        )
+
+    if not allowed:
+        return ExportCapabilityResponse(
+            export_enabled=False,
+            pdf_enabled=False,
+            docx_enabled=False,
+            websocket_enabled=False,
+            max_question_count=settings.EXPORT_MAX_QUESTIONS,
+            retention_days=_get_retention_days(),
+            reason_code="user_not_allowed",
+            message="当前账号暂未获得导出权限",
+        )
+
     return ExportCapabilityResponse(
-        export_enabled=allowed,
-        pdf_enabled=allowed,
-        docx_enabled=allowed and settings.EXPORT_DOCX_ENABLED,
-        websocket_enabled=allowed and settings.EXPORT_WEBSOCKET_ENABLED,
+        export_enabled=True,
+        pdf_enabled=True,
+        docx_enabled=settings.EXPORT_DOCX_ENABLED,
+        websocket_enabled=settings.EXPORT_WEBSOCKET_ENABLED,
         max_question_count=settings.EXPORT_MAX_QUESTIONS,
         retention_days=_get_retention_days(),
+        reason_code=None,
+        message=None,
     )
 
 
@@ -155,6 +185,55 @@ def log_capability_check(user_id: int, allowed: bool, **extra):
     logger.info(
         "export_capability_checked",
         extra={"user_id": user_id, "allowed": allowed, **extra},
+    )
+
+
+def log_export_config_on_startup():
+    """Log export access config at startup.
+
+    Output format::
+
+        export_access_config feature_enabled=true access_mode=all docx_enabled=true websocket_enabled=true
+
+    ``access_mode`` is one of:
+    - ``disabled`` — EXPORT_FEATURE_ENABLED is False
+    - ``all`` — EXPORT_ALLOW_ALL_USERS is True
+    - ``allowlist`` — EXPORT_ALLOWED_USER_IDS is non-empty
+    - ``deny_by_default`` — feature enabled but no user can access
+
+    Warns when feature is enabled in ``deny_by_default`` mode (no user can
+    actually create exports).  Does NOT log whitelist contents.
+    """
+    from app.core.config import settings
+
+    if not settings.EXPORT_FEATURE_ENABLED:
+        logger.info(
+            "export_access_config feature_enabled=false access_mode=disabled "
+            "docx_enabled=%s websocket_enabled=%s",
+            settings.EXPORT_DOCX_ENABLED,
+            settings.EXPORT_WEBSOCKET_ENABLED,
+        )
+        return
+
+    if settings.EXPORT_ALLOW_ALL_USERS:
+        access_mode = "all"
+    elif settings.EXPORT_ALLOWED_USER_IDS:
+        access_mode = "allowlist"
+    else:
+        access_mode = "deny_by_default"
+        logger.warning(
+            "EXPORT_FEATURE_ENABLED=true EXPORT_ALLOW_ALL_USERS=false "
+            "EXPORT_ALLOWED_USER_IDS=\"\" — export is enabled but no user "
+            "has access. Set EXPORT_ALLOW_ALL_USERS=true or populate "
+            "EXPORT_ALLOWED_USER_IDS to grant access."
+        )
+
+    logger.info(
+        "export_access_config feature_enabled=true access_mode=%s "
+        "docx_enabled=%s websocket_enabled=%s",
+        access_mode,
+        settings.EXPORT_DOCX_ENABLED,
+        settings.EXPORT_WEBSOCKET_ENABLED,
     )
 
 

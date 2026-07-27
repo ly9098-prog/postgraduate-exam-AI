@@ -119,6 +119,54 @@ services:
       retries: 3
       start_period: 15s
 
+  # Export scheduler — background processor for pending export tasks.
+  # Must be deployed alongside web for export feature to work.
+  #   PROCESS_ROLE=scheduler  → runs export processor, token cleanup, etc.
+  #   No HTTP server, no exposed ports, no healthcheck.
+  # Uses the same image as app but with a non-HTTP entry point.
+  scheduler:
+    build:
+      context: ../backend
+      dockerfile: docker/Dockerfile
+    restart: always
+    mem_limit: 384m
+    mem_reservation: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      PROCESS_ROLE: scheduler
+      APP_SECRET: ${APP_SECRET:?必须设置 APP_SECRET}
+      DATABASE_URL: ${DATABASE_URL:?必须设置 DATABASE_URL}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-cloud_api}
+      EXPORT_DIR: ${EXPORT_DIR:-/opt/2240ai-v2/exports}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      EXPORT_FEATURE_ENABLED: ${EXPORT_FEATURE_ENABLED:-true}
+      EXPORT_WEBSOCKET_ENABLED: ${EXPORT_WEBSOCKET_ENABLED:-true}
+      EXPORT_ALLOW_ALL_USERS: ${EXPORT_ALLOW_ALL_USERS:-false}
+      EXPORT_ALLOWED_USER_IDS: ${EXPORT_ALLOWED_USER_IDS:-}
+      EXPORT_POLL_INTERVAL_SEC: ${EXPORT_POLL_INTERVAL_SEC:-5}
+      EXPORT_PROCESSING_TIMEOUT_SEC: ${EXPORT_PROCESSING_TIMEOUT_SEC:-900}
+      EXPORT_HEARTBEAT_INTERVAL_SEC: ${EXPORT_HEARTBEAT_INTERVAL_SEC:-30}
+      EXPORT_MAX_CONCURRENT: ${EXPORT_MAX_CONCURRENT:-2}
+      EXPORT_MAX_PER_USER: ${EXPORT_MAX_PER_USER:-2}
+      EXPORT_MAX_QUESTIONS: ${EXPORT_MAX_QUESTIONS:-100}
+      DB_POOL_SIZE_SCHEDULER: ${DB_POOL_SIZE_SCHEDULER:-1}
+      DB_MAX_OVERFLOW_SCHEDULER: ${DB_MAX_OVERFLOW_SCHEDULER:-2}
+      OMP_NUM_THREADS: 1
+      MKL_NUM_THREADS: 1
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - exports_data:/opt/2240ai-v2/exports
+    # Override CMD: run scheduler_main instead of gunicorn (no HTTP server)
+    command: ["python", "-m", "app.scheduler_main"]
+
   admin:
     build:
       context: ../admin-frontend

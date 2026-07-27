@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
+
+from app.core.secret_crypto import is_mask_placeholder
 
 
 class AdminAiModelConfigResponse(BaseModel):
@@ -26,10 +28,19 @@ class AdminAiModelConfigPatchRequest(BaseModel):
     name: str | None = None
     is_enabled: bool | None = None
     is_default: bool | None = None
-    api_key: str | None = None
+    api_key: SecretStr | None = None
     api_base_url: str | None = None
     feature: str | None = None
     features: list[str] | None = None
+
+    def get_api_key_value(self) -> str | None:
+        """Return the plaintext API key, or None if not provided / is mask placeholder."""
+        if self.api_key is None:
+            return None
+        val = self.api_key.get_secret_value()
+        if not val or is_mask_placeholder(val):
+            return None
+        return val
 
 
 class AdminAiModelConfigCreateRequest(BaseModel):
@@ -37,9 +48,18 @@ class AdminAiModelConfigCreateRequest(BaseModel):
     display_name: str
     provider: str
     api_base_url: str | None = None
-    api_key: str | None = None
+    api_key: SecretStr | None = None
     feature: str | None = None
     features: list[str] | None = None
+
+    def get_api_key_value(self) -> str | None:
+        """Return the plaintext API key, or None if not provided / is mask placeholder."""
+        if self.api_key is None:
+            return None
+        val = self.api_key.get_secret_value()
+        if not val or is_mask_placeholder(val):
+            return None
+        return val
 
 
 class AdminAiConfigsResponse(BaseModel):
@@ -54,12 +74,21 @@ class AdminAiConfigsPatchRequest(BaseModel):
 
 class ModelTestConnectionRequest(BaseModel):
     api_base_url: str
-    api_key: str
+    api_key: SecretStr | None = None
     model_name: str
     model_id: int | None = None
     provider: str | None = None
     feature: str | None = None
     features: list[str] | None = None
+
+    def get_api_key_value(self) -> str | None:
+        """Return the plaintext API key, or None if not provided / is mask."""
+        if self.api_key is None:
+            return None
+        val = self.api_key.get_secret_value()
+        if not val or is_mask_placeholder(val):
+            return None
+        return val
 
 
 class ModelTestConnectionResponse(BaseModel):
