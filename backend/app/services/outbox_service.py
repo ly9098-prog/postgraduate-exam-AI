@@ -26,12 +26,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.models.task_outbox import TaskOutbox
 
 logger = logging.getLogger("postgraduate-ai.outbox")
@@ -123,7 +124,7 @@ async def claim_pending(
 
     # Also reclaim expired leases
     conditions.append(TaskOutbox.status == "leased")
-    conditions.append(TaskOutbox.lease_expires_at < datetime.now(UTC))
+    conditions.append(TaskOutbox.lease_expires_at < utcnow())
 
     # Build the main query with OR for (pending OR expired-lease)
     query = (
@@ -145,7 +146,7 @@ async def claim_pending(
     result = await db.execute(query)
     rows = list(result.scalars().all())
 
-    now = datetime.now(UTC)
+    now = utcnow()
     lease_expiry = now + timedelta(seconds=lease_sec)
 
     claimed: list[TaskOutbox] = []
@@ -182,8 +183,8 @@ async def mark_published(
         .where(TaskOutbox.id == outbox_id)
         .values(
             status="published",
-            published_at=datetime.now(UTC),
-            updated_at=datetime.now(UTC),
+            published_at=utcnow(),
+            updated_at=utcnow(),
         )
     )
     await db.commit()
@@ -200,7 +201,7 @@ async def mark_failed(
         .values(
             status="failed",
             error_message=error[:500],
-            updated_at=datetime.now(UTC),
+            updated_at=utcnow(),
         )
     )
     await db.commit()
@@ -225,7 +226,7 @@ async def mark_cancelled(
         .values(
             status="cancelled",
             error_message="cancelled by admin",
-            updated_at=datetime.now(UTC),
+            updated_at=utcnow(),
         )
     )
     await db.commit()
@@ -237,7 +238,7 @@ async def mark_cancelled(
 
 async def purge_old(db: AsyncSession, retention_days: int = _OUTBOX_RETENTION_DAYS) -> int:
     """Delete published/failed/cancelled outbox records older than retention."""
-    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+    cutoff = utcnow() - timedelta(days=retention_days)
     result = await db.execute(
         delete(TaskOutbox).where(
             and_(
@@ -292,7 +293,7 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
 
                 # Redis has the task but outbox is still leased → mark published
                 row.status = "published"
-                row.published_at = datetime.now(UTC)
+                row.published_at = utcnow()
                 stats["fixed_publish"] += 1
                 logger.info(
                     "Reconcile: outbox leased→published (Redis has task): task_id=%s",
