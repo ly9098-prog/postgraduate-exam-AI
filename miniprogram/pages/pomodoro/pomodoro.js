@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const config = require('../../config')
 const { safeDecodeURIComponent } = require('../../utils/route-params')
+const pomodoroTheme = require('../../utils/pomodoro-theme')
 
 const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
 
@@ -139,6 +140,13 @@ Page({
     // font size accessibility
     fontSizeLevel: 'medium',
 
+    // shared light/dark theme (default light, stored per local user)
+    themeMode: 'light',
+    themeSwitching: false,
+    sliderBlockColor: '#153323',
+    sliderTrackColor: 'rgba(21,51,35,0.12)',
+    celebrationTheme: 'light',
+
     // 番茄钟完成提醒（默认关闭；开启后启动专注会请求微信订阅消息授权）
     notifyOn: false,
 
@@ -191,14 +199,13 @@ Page({
 
   onLoad(opts) {
     this._timerState = this._createTimerState()
-    wx.setNavigationBarColor({
-      frontColor: '#ffffff',
-      backgroundColor: '#0B1121',
-    })
+    const themeMode = pomodoroTheme.getTheme()
+    pomodoroTheme.applyNativeTheme(themeMode)
     this.setData({
       examDays: this._getExamDays(),
       fontSizeLevel: wx.getStorageSync('pomodoro_font_size') || 'medium',
       notifyOn: !!wx.getStorageSync('pomodoro_notify_on'),
+      ...this._getThemeViewModel(themeMode),
     })
     this._loadSubjects()
 
@@ -214,6 +221,7 @@ Page({
 
   async onShow() {
     this._pageVisible = true
+    this._syncThemeFromStorage()
 
     // Completion flag — check before active fetch since it may short-circuit
     const completionFlag = wx.getStorageSync('pomodoro_completion')
@@ -366,10 +374,24 @@ Page({
 
   onUnload() {
     this._clearTimer()
+    if (this._themeSwitchTimer) {
+      clearTimeout(this._themeSwitchTimer)
+      this._themeSwitchTimer = null
+    }
     wx.setNavigationBarColor({
       frontColor: '#ffffff',
       backgroundColor: '#4F7FFF',
     })
+    try {
+      if (wx.setBackgroundColor) {
+        wx.setBackgroundColor({
+          backgroundColor: '#F4F4EE',
+          backgroundColorTop: '#F4F4EE',
+          backgroundColorBottom: '#F4F4EE',
+        })
+      }
+      if (wx.setBackgroundTextStyle) wx.setBackgroundTextStyle({ textStyle: 'dark' })
+    } catch (_) {}
   },
 
   /* ==================== Subject Loading ==================== */
@@ -520,7 +542,7 @@ Page({
         preset: this.data.selectedPreset,
         work_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
         break_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.breakDuration,
-        notification_enabled: notificationEnabled,
+        notification_enabled: !!this.data.notifyOn,
       })
       this._beginCountdown(session)
     } catch (e) {
@@ -2125,7 +2147,7 @@ Page({
     this._lastDrawnIsBreak = isBreak
 
     // 缓存渐变和几何，仅在 isBreak/freeTimer 切换时重建
-    var cacheKey = isBreak ? 'break' : (this.data.isFreeTimer ? 'free' : 'focus')
+    var cacheKey = (isBreak ? 'break' : (this.data.isFreeTimer ? 'free' : 'focus')) + '|' + this.data.themeMode
     if (!this._ringCache || this._ringCache._key !== cacheKey) {
       this._ringCache = this._buildRingCache(isBreak)
       if (this._ringCache) this._ringCache._key = cacheKey
@@ -2152,7 +2174,7 @@ Page({
     }
 
     ctx.beginPath()
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
+    ctx.strokeStyle = this.data.themeMode === 'light' ? 'rgba(21,51,35,0.12)' : 'rgba(255,255,255,0.06)'
     ctx.lineWidth = lineWidth
     ctx.arc(center, center, radius, 0, Math.PI * 2)
     ctx.stroke()
@@ -2224,6 +2246,62 @@ Page({
   goStats() {
     this._navigatingToStats = true
     wx.navigateTo({ url: '/subpackages/productivity/pomodoro-stats/index' })
+  },
+
+
+  /* ==================== Theme ==================== */
+
+  _getThemeViewModel(mode) {
+    const themeMode = pomodoroTheme.normalizeTheme(mode)
+    const isLight = themeMode === 'light'
+    return {
+      themeMode,
+      sliderBlockColor: isLight ? '#153323' : '#ffffff',
+      sliderTrackColor: isLight ? 'rgba(21,51,35,0.12)' : 'rgba(255,255,255,0.06)',
+      celebrationTheme: isLight ? 'light' : 'dark',
+    }
+  },
+
+  _syncThemeFromStorage() {
+    const themeMode = pomodoroTheme.getTheme()
+    pomodoroTheme.applyNativeTheme(themeMode)
+    if (themeMode === this.data.themeMode) return
+    this._applyTheme(themeMode, false, false)
+  },
+
+  _applyTheme(mode, persist, animate) {
+    const themeMode = pomodoroTheme.normalizeTheme(mode)
+    if (persist) pomodoroTheme.setTheme(themeMode)
+    pomodoroTheme.applyNativeTheme(themeMode)
+
+    if (this._themeSwitchTimer) {
+      clearTimeout(this._themeSwitchTimer)
+      this._themeSwitchTimer = null
+    }
+
+    const patch = this._getThemeViewModel(themeMode)
+    if (animate) patch.themeSwitching = true
+    this.setData(patch, () => {
+      this._ringCache = null
+      this._lastDrawnProgress = undefined
+      this._lastDrawnIsBreak = undefined
+      if ((this.data.phase === PHASE.RUNNING || this.data.phase === PHASE.BREAK) &&
+          this.data.ringCanvasVisible && !this.data.showEndConfirm) {
+        wx.nextTick(() => this.drawRing(this._getCurrentTotalSec(), this.data.phase === PHASE.BREAK))
+      }
+    })
+
+    if (animate) {
+      this._themeSwitchTimer = setTimeout(() => {
+        this._themeSwitchTimer = null
+        this.setData({ themeSwitching: false })
+      }, 520)
+    }
+  },
+
+  toggleTheme() {
+    const next = this.data.themeMode === 'dark' ? 'light' : 'dark'
+    this._applyTheme(next, true, true)
   },
 
   /* ==================== Font Size Toggle ==================== */

@@ -3,6 +3,7 @@ import io
 import logging
 import os
 import posixpath
+import uuid
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 
@@ -111,9 +112,27 @@ class LocalFileStorage(StorageBackend):
 
     @staticmethod
     def _sync_upload(filepath: str, data: bytes) -> None:
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, "wb") as f:
-            f.write(data)
+        """Write through a sibling temp file and atomically replace the target.
+
+        Re-export uses the same stable file key. ``os.replace`` guarantees that
+        readers either see the previous complete document or the new complete
+        document, never a partially-written file.
+        """
+        directory = os.path.dirname(filepath)
+        os.makedirs(directory, exist_ok=True)
+        temp_path = f"{filepath}.tmp-{uuid.uuid4().hex}"
+        try:
+            with open(temp_path, "wb") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, filepath)
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     async def delete(self, url_or_key: str) -> bool:
         """删除本地文件。（路径解析快速完成，文件 I/O 在 executor 中执行）"""

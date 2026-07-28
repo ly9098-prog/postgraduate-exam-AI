@@ -164,6 +164,30 @@
 
   <!-- 一句话 AI 洞察：点击展开错题本专属建议 -->
   <view class="insight-card {{aiInsightExpanded ? 'expanded' : ''}} {{aiDiagnosisLoading && !aiDiagnosis ? 'insight-loading' : ''}} {{aiDiagnosisRefreshing ? 'insight-refreshing' : ''}}" wx:if="{{stats.total > 0}}">
+    <view class="insight-mode-strip">
+      <view class="insight-mode-copy">
+        <view class="insight-mode-orbit"><view class="insight-mode-orbit-dot"></view></view>
+        <view class="insight-mode-texts">
+          <text class="insight-mode-title">自动 AI 洞察</text>
+          <text class="insight-mode-desc">{{autoAiInsightEnabled ? '进入页面后自动生成' : '仅在点击后生成'}}</text>
+        </view>
+      </view>
+      <view
+        class="ai-auto-control {{autoAiInsightEnabled ? 'enabled' : ''}} {{aiAutoSwitchPulse ? 'pulse' : ''}}"
+        catchtap="toggleAiAutoAnalysis"
+        hover-class="ai-auto-control-pressed"
+        role="switch"
+        aria-label="自动生成 AI 洞察"
+        aria-checked="{{autoAiInsightEnabled}}"
+      >
+        <text class="ai-auto-mode-label">{{autoAiInsightEnabled ? '自动' : '手动'}}</text>
+        <view class="ai-auto-switch">
+          <view class="ai-auto-switch-glow"></view>
+          <view class="ai-auto-thumb"><text>✦</text></view>
+        </view>
+      </view>
+    </view>
+
     <!-- 骨架屏：首次加载中 -->
     <block wx:if="{{aiDiagnosisLoading && !aiDiagnosis}}">
       <view class="insight-skeleton">
@@ -194,10 +218,10 @@
             class="insight-refresh {{aiDiagnosisRefreshing || aiDiagnosisLoading ? 'disabled' : ''}}"
             hover-class="insight-refresh-pressed"
             catchtap="refreshAiDiagnosis"
-          ><text>{{aiDiagnosisRefreshing || aiDiagnosisLoading ? '分析中' : '更新'}}</text></view>
+          ><text>{{aiDiagnosisRefreshing || aiDiagnosisLoading ? '分析中' : (aiDiagnosis ? '更新' : '生成')}}</text></view>
         </view>
         <text class="insight-summary">{{aiInsightText}}</text>
-        <text class="insight-hint">{{aiInsightExpanded ? '点击收起' : '点击查看复盘建议'}}</text>
+        <text class="insight-hint">{{aiDiagnosis ? (aiInsightExpanded ? '点击收起' : '点击查看复盘建议') : (autoAiInsightEnabled ? '自动分析已开启' : '点击卡片或“生成”手动分析')}}</text>
       </view>
       <text class="insight-arrow {{aiInsightExpanded ? 'expanded' : ''}}">›</text>
     </view>

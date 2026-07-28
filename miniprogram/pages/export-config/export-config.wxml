@@ -3,11 +3,27 @@
 <view class="page export-config-page">
   <premium-nav title="导出设置" show-back="{{true}}" bind:back="onBack" />
 
-  <scroll-view class="config-scroll" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
-    <view class="config-content">
+  <scroll-view
+    class="config-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    show-scrollbar="{{false}}"
+    bindscroll="onConfigScroll"
+    bindtouchstart="onPageInteraction"
+  >
+    <view class="config-content" bindtap="onPageInteraction">
       <view class="page-intro">
-        <text class="page-intro-title">生成专属错题练习</text>
-        <text class="page-intro-caption">选择题目范围和排版方式，导出后可在记录页预览、保存或分享。</text>
+        <view class="page-intro-copy">
+          <text class="page-intro-title">生成专属错题练习</text>
+          <text class="page-intro-caption">选择题目范围和排版方式，导出后可在记录页预览或分享。</text>
+        </view>
+        <button class="records-entry" hover-class="records-entry-pressed" bindtap="onViewRecords">
+          <view class="records-entry-clock">
+            <view class="records-entry-hand records-entry-hand-hour"></view>
+            <view class="records-entry-hand records-entry-hand-minute"></view>
+          </view>
+          <text>导出记录</text>
+        </button>
       </view>
 
       <!-- Range -->
@@ -111,29 +127,14 @@
               placeholder-class="input-placeholder"
               value="{{title}}"
               bindinput="onTitleInput"
+              bindfocus="onTitleFocus"
+              bindblur="onTitleBlur"
               maxlength="120"
             />
             <text class="input-count">{{title.length}}/120</text>
           </view>
         </view>
 
-        <view class="field-divider"></view>
-
-        <view class="date-setting">
-          <view class="date-setting-copy">
-            <text class="field-label">显示日期</text>
-            <text class="field-caption">在试卷标题下方标注日期</text>
-          </view>
-          <switch checked="{{showDate}}" color="#2F7D50" bindchange="onDateToggle" />
-        </view>
-
-        <picker wx:if="{{showDate}}" mode="date" value="{{exportDate}}" bindchange="onDateChange" class="date-picker">
-          <view class="date-value-row">
-            <view class="date-icon"><view class="date-icon-line"></view></view>
-            <text class="date-text">{{exportDate}}</text>
-            <view class="row-chevron"></view>
-          </view>
-        </picker>
       </view>
 
       <!-- Layout settings -->
@@ -143,7 +144,7 @@
           <text class="section-caption">调整题目顺序、答案和留白方式</text>
         </view>
 
-        <picker class="setting-picker" mode="selector" range="{{SORT_OPTIONS}}" range-key="label" value="{{sortByIndex}}" bindchange="onSortChange">
+        <picker class="setting-picker" mode="selector" range="{{SORT_OPTIONS}}" range-key="label" value="{{sortByIndex}}" bindtap="onPickerOpen" bindchange="onSortChange" bindcancel="onPickerCancel">
           <view class="setting-row">
             <view class="setting-copy">
               <text class="setting-label">排序方式</text>
@@ -158,7 +159,7 @@
 
         <view class="setting-divider"></view>
 
-        <picker class="setting-picker" mode="selector" range="{{GROUP_OPTIONS}}" range-key="label" value="{{groupByIndex}}" bindchange="onGroupChange">
+        <picker class="setting-picker" mode="selector" range="{{GROUP_OPTIONS}}" range-key="label" value="{{groupByIndex}}" bindtap="onPickerOpen" bindchange="onGroupChange" bindcancel="onPickerCancel">
           <view class="setting-row">
             <view class="setting-copy">
               <text class="setting-label">分组方式</text>
@@ -173,7 +174,7 @@
 
         <view class="setting-divider"></view>
 
-        <picker class="setting-picker" mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{answerPositionIndex}}" bindchange="onAnswerPositionChange">
+        <picker class="setting-picker" mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{answerPositionIndex}}" bindtap="onPickerOpen" bindchange="onAnswerPositionChange" bindcancel="onPickerCancel">
           <view class="setting-row">
             <view class="setting-copy">
               <text class="setting-label">答案</text>
@@ -188,7 +189,7 @@
 
         <view class="setting-divider"></view>
 
-        <picker class="setting-picker" mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{analysisPositionIndex}}" bindchange="onAnalysisPositionChange">
+        <picker class="setting-picker" mode="selector" range="{{POSITION_OPTIONS}}" range-key="label" value="{{analysisPositionIndex}}" bindtap="onPickerOpen" bindchange="onAnalysisPositionChange" bindcancel="onPickerCancel">
           <view class="setting-row">
             <view class="setting-copy">
               <text class="setting-label">解析</text>
@@ -203,7 +204,7 @@
 
         <view class="setting-divider"></view>
 
-        <picker class="setting-picker" mode="selector" range="{{SPACE_OPTIONS}}" range-key="label" value="{{spaceStyleIndex}}" bindchange="onSpaceChange">
+        <picker class="setting-picker" mode="selector" range="{{SPACE_OPTIONS}}" range-key="label" value="{{spaceStyleIndex}}" bindtap="onPickerOpen" bindchange="onSpaceChange" bindcancel="onPickerCancel">
           <view class="setting-row">
             <view class="setting-copy">
               <text class="setting-label">答题空间</text>
@@ -226,34 +227,44 @@
     </view>
   </scroll-view>
 
-  <!-- Submit bar -->
-  <view class="submit-bar">
-    <view class="submit-summary">
-      <view class="submit-summary-copy">
-        <text class="submit-summary-label">预计导出</text>
-        <text wx:if="{{capabilityLoading}}" class="submit-summary-status">正在检查导出权限…</text>
-        <text wx:elif="{{capabilityError && !_exportEnabled}}" class="submit-summary-status submit-summary-error">暂不可用</text>
-        <text wx:elif="{{countLoading}}" class="submit-summary-status">正在计算…</text>
-        <text wx:elif="{{countError}}" class="submit-summary-status submit-summary-error">计算失败</text>
-        <text wx:else class="submit-summary-count {{!previewCount || !_exportEnabled || countError || previewCount === 0 || previewCount > maxQuestionCount ? 'submit-summary-count-invalid' : ''}}">{{previewCount}} 道</text>
-      </view>
-
-      <button wx:if="{{capabilityError && !_exportEnabled}}" class="summary-retry" bindtap="onRetryCapability">重试</button>
-      <text wx:elif="{{previewCount > maxQuestionCount}}" class="summary-warning">最多 {{maxQuestionCount}} 道</text>
-      <text wx:elif="{{countError}}" class="summary-warning">{{countError}}</text>
+  <!-- Floating primary action -->
+  <view
+    class="floating-submit-wrap {{floatingVisible ? 'floating-submit-wrap-visible' : 'floating-submit-wrap-hidden'}}"
+    bindtouchstart="onPageInteraction"
+  >
+    <view wx:if="{{capabilityError}}" class="floating-submit-hint floating-submit-hint-error">
+      <text>{{capabilityError}}</text>
+      <button class="floating-retry" bindtap="onRetryCapability">重试检查</button>
+    </view>
+    <view wx:elif="{{countError}}" class="floating-submit-hint floating-submit-hint-error">
+      <text>{{previewCountReady ? '题目数量刷新失败，已保留当前数量' : countError}}</text>
+      <button class="floating-retry" bindtap="onRetryPreviewCount">重新计算</button>
+    </view>
+    <view wx:elif="{{previewCountReady && previewCount > maxQuestionCount}}" class="floating-submit-hint floating-submit-hint-error">
+      <text>单次最多导出 {{maxQuestionCount}} 道，请调整范围</text>
     </view>
 
-    <view class="submit-bar-inner">
-      <button class="records-btn" hover-class="footer-button-pressed" bindtap="onViewRecords">导出记录</button>
-      <button
-        class="submit-btn {{submitting ? 'loading' : ''}}"
-        hover-class="footer-button-pressed"
-        disabled="{{submitting || capabilityLoading || !_exportEnabled || countLoading || countError || previewCount === 0 || previewCount > maxQuestionCount}}"
-        bindtap="onSubmit"
+    <button
+      class="floating-submit-btn {{submitting || capabilityLoading || countLoading ? 'floating-submit-btn-busy' : ''}} {{!_exportEnabled || !previewCountReady || previewCount === 0 || previewCount > maxQuestionCount ? 'floating-submit-btn-disabled' : 'floating-submit-btn-actionable'}}"
+      hover-class="floating-submit-btn-pressed"
+      disabled="{{submitting || capabilityLoading || countLoading || !_exportEnabled || !previewCountReady || previewCount <= 0 || previewCount > maxQuestionCount}}"
+      bindtap="onSubmit"
+    >
+      <text wx:if="{{submitting}}">正在创建导出…</text>
+      <text wx:elif="{{capabilityLoading}}">正在检查导出能力…</text>
+      <text wx:elif="{{countLoading}}">正在计算题目数量…</text>
+      <text wx:elif="{{!_exportEnabled}}">暂不可用</text>
+      <text wx:elif="{{!previewCountReady}}">等待题目数量</text>
+      <text wx:elif="{{previewCount > maxQuestionCount}}">最多 {{maxQuestionCount}} 道</text>
+      <text wx:elif="{{previewCount === 0}}">暂无可导出题目</text>
+      <text wx:else>开始导出 · {{previewCount}} 道</text>
+      <view
+        wx:if="{{!submitting && !capabilityLoading && !countLoading && _exportEnabled && previewCountReady && previewCount > 0 && previewCount <= maxQuestionCount}}"
+        class="floating-submit-arrow"
+        aria-hidden="true"
       >
-        <text wx:if="{{submitting}}">正在创建…</text>
-        <text wx:else>开始导出</text>
-      </button>
-    </view>
+        <view class="floating-submit-arrow-line"></view>
+      </view>
+    </button>
   </view>
 </view>

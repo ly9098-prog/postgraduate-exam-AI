@@ -48,6 +48,41 @@ from app.services.export.sorter import sort_questions
 
 logger = logging.getLogger(__name__)
 
+
+_REEXPORTING_CODE = "reexporting"
+_REEXPORT_FAILED_CODE = "reexport_failed"
+
+
+def _is_reexport_with_old_file(task: ExportTask) -> bool:
+    """Return whether a replacement export can safely fall back to its old file."""
+    return (
+        task.error_code == _REEXPORTING_CODE
+        and bool(task.file_key)
+        and task.completed_at is not None
+        and (task.expires_at is None or task.expires_at > utcnow())
+    )
+
+
+def _apply_export_failure(
+    task: ExportTask,
+    message: str,
+    error_code: str,
+) -> None:
+    """Fail a normal task or restore the previous version of a re-export task."""
+    safe_message = (message or "导出失败")[:420]
+    if _is_reexport_with_old_file(task):
+        task.status = ExportTaskStatus.COMPLETED
+        task.error_code = _REEXPORT_FAILED_CODE
+        task.error_message = f"重新导出失败：{safe_message}"[:500]
+        # Keep file_key/file_size/completed_at/expires_at from the valid old version.
+    else:
+        task.status = ExportTaskStatus.FAILED
+        task.error_code = error_code
+        task.error_message = safe_message[:500]
+        task.completed_at = utcnow()
+    task.processing_started_at = None
+    task.heartbeat_at = None
+
 # ── Exporter registry ──
 _EXPORTERS: dict[str, type[Exporter]] = {}
 
@@ -291,12 +326,17 @@ async def process_task(
             result = await exporter.export(snapshot_data, tmpdir)
 
             if not result.success or not result.file_bytes:
-                validate_transition(ExportTaskStatus.PROCESSING, ExportTaskStatus.FAILED, task.id)
-                task.status = ExportTaskStatus.FAILED
-                task.error_message = (result.error_message or "PDF 生成失败")[:500]
-                task.completed_at = utcnow()
-                task.skip_count = result.skip_count
-                task.skip_reasons = result.skip_reasons
+                was_reexport = _is_reexport_with_old_file(task)
+                target = ExportTaskStatus.COMPLETED if was_reexport else ExportTaskStatus.FAILED
+                validate_transition(ExportTaskStatus.PROCESSING, target, task.id)
+                _apply_export_failure(
+                    task,
+                    result.error_message or "文件生成失败",
+                    ExportErrorCode.GENERATION_FAILED.value,
+                )
+                if not was_reexport:
+                    task.skip_count = result.skip_count
+                    task.skip_reasons = result.skip_reasons
                 logger.warning("Export task %d failed: %s", task.id, task.error_message)
                 await db.flush()
                 return task
@@ -324,6 +364,10 @@ async def process_task(
             task.skip_reasons = result.skip_reasons
             task.completed_at = utcnow()
             task.expires_at = utcnow() + dt.timedelta(days=settings.EXPORT_RETENTION_DAYS)
+            task.error_code = None
+            task.error_message = None
+            task.processing_started_at = None
+            task.heartbeat_at = None
 
             inc_completed()
             observe_file_size_bytes(len(result.file_bytes))
@@ -339,26 +383,21 @@ async def process_task(
             )
 
     except ExportDomainError as e:
-        task.status = ExportTaskStatus.FAILED
-        task.error_message = e.message[:500]
-        task.error_code = e.error_code.value
-        task.completed_at = utcnow()
+        _apply_export_failure(task, e.message, e.error_code.value)
         inc_failed()
         logger.warning("Export task %d failed (domain): %s", task.id, e.message)
 
     except ValueError as e:
-        task.status = ExportTaskStatus.FAILED
-        task.error_message = str(e)[:500]
-        task.error_code = ExportErrorCode.GENERATION_FAILED.value
-        task.completed_at = utcnow()
+        _apply_export_failure(task, str(e), ExportErrorCode.GENERATION_FAILED.value)
         inc_failed()
         logger.warning("Export task %d failed (validation): %s", task.id, e)
 
     except Exception as e:
-        task.status = ExportTaskStatus.FAILED
-        task.error_message = f"导出失败: {str(e)[:200]}"
-        task.error_code = ExportErrorCode.SERVICE_UNAVAILABLE.value
-        task.completed_at = utcnow()
+        _apply_export_failure(
+            task,
+            f"导出失败：{str(e)[:200]}",
+            ExportErrorCode.SERVICE_UNAVAILABLE.value,
+        )
         inc_failed()
         logger.exception("Export task %d failed (unexpected)", task.id)
 

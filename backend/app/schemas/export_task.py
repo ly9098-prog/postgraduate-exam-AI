@@ -26,7 +26,7 @@ class ExportTaskStatus(StrEnum):
     #   pending     → processing  (processor claims)
     #   processing  → completed   (success)
     #   processing  → failed      (error / timeout)
-    #   failed      → pending     (retry — creates new task)
+    #   completed / failed / expired → pending (in-place re-export)
     #   pending     → failed      (processor gives up)
     #   completed   → expired     (cleanup scheduler)
     #   pending     → expired     (cleanup scheduler)
@@ -186,6 +186,9 @@ class ExportTaskResponse(BaseModel):
     source_task_id: int | None = None
     retry_count: int = 0
     generator_version: str | None = None
+    has_file: bool = False
+    is_reexporting: bool = False
+    reexport_failed: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

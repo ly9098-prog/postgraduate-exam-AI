@@ -1,9 +1,10 @@
-<view class="page">
+<view class="page theme-{{themeMode}}">
+  <view class="theme-backdrop"></view>
   <view class="page-inner animation-entrance {{pageEntered ? 'entered' : ''}}">
 
     <block wx:if="{{loading}}">
       <view class="loading-wrap">
-        <loading-lottie text="加载中..." size="large" />
+        <loading-lottie text="加载中..." size="large" theme="{{themeMode}}" />
       </view>
     </block>
 
@@ -23,24 +24,41 @@
       <view class="stats-content">
         <!-- ===== OVERVIEW ===== -->
         <view class="overview-section">
-          <view class="ov-row">
-            <view class="ov-card">
-              <text class="ov-label">今日专注</text>
-              <text class="ov-value">{{_dispTodaySessions}}</text>
+          <view class="overview-main-card">
+            <view class="overview-main-head">
+              <view class="overview-main-copy">
+                <text class="overview-kicker">DAILY FOCUS</text>
+                <text class="overview-main-label">{{selectedDurationLabel}}</text>
+              </view>
+              <view class="overview-session-chip">
+                <view class="overview-session-dot"></view>
+                <text class="overview-session-number">{{_dispTodaySessions}}</text>
+                <text class="overview-session-unit">次专注</text>
+              </view>
             </view>
-            <view class="ov-card">
-              <text class="ov-label">今日专注</text>
-              <text class="ov-value ov-accent">{{_dispTodayDurationText}}</text>
+            <view class="overview-duration-row">
+              <text class="overview-duration duration-value {{durationValueAnimating ? 'duration-value-updating' : ''}}">{{_dispTodayDurationText}}</text>
+              <text class="overview-duration-note">专注时长</text>
             </view>
+            <view class="overview-accent-line"><view class="overview-accent-glow"></view></view>
           </view>
-          <view class="ov-row">
-            <view class="ov-card">
-              <text class="ov-label">本周专注</text>
-              <text class="ov-value">{{_dispWeekSessions}}</text>
+
+          <view class="overview-secondary-row">
+            <view class="overview-secondary-card">
+              <view class="overview-secondary-head">
+                <view class="overview-mini-mark overview-mini-mark-count"></view>
+                <text class="overview-secondary-kicker">WEEKLY SESSIONS</text>
+              </view>
+              <text class="overview-secondary-value">{{_dispWeekSessions}}</text>
+              <text class="overview-secondary-label">本周专注次数</text>
             </view>
-            <view class="ov-card">
-              <text class="ov-label">本周专注</text>
-              <text class="ov-value ov-green">{{_dispWeekDurationText}}</text>
+            <view class="overview-secondary-card overview-secondary-card-duration">
+              <view class="overview-secondary-head">
+                <view class="overview-mini-mark overview-mini-mark-time"></view>
+                <text class="overview-secondary-kicker">WEEKLY DURATION</text>
+              </view>
+              <text class="overview-secondary-value overview-secondary-value-green">{{_dispWeekDurationText}}</text>
+              <text class="overview-secondary-label">本周专注时长</text>
             </view>
           </view>
         </view>
@@ -52,22 +70,50 @@
             <canvas class="trend-canvas" type="2d" id="trend-bars-canvas" hidden="{{!!selectedSubjectDetail}}"></canvas>
           </view>
           <view class="chart-legend">
-            <view class="legend-item"><view class="legend-dot" style="background: #A78BFA;"></view><text class="legend-text">有记录</text></view>
-            <view class="legend-item"><view class="legend-dot" style="background: rgba(255,255,255,0.08);"></view><text class="legend-text">无记录</text></view>
+            <view class="legend-item"><view class="legend-dot legend-dot-record"></view><text class="legend-text">有记录</text></view>
+            <view class="legend-item"><view class="legend-dot legend-dot-empty"></view><text class="legend-text">无记录</text></view>
           </view>
         </view>
 
         <!-- ===== SUBJECTS DISTRIBUTION ===== -->
-        <view class="card-section" wx:if="{{subjects.length > 0}}">
-          <text class="section-title">今日科目分布</text>
+        <view class="card-section pie-card-section">
+          <view class="section-header pie-section-header">
+            <view class="pie-title-wrap">
+              <text class="section-title">{{pieDateLabel}}科目分布</text>
+              <text class="pie-section-subtitle">各科目专注时长占比</text>
+            </view>
+            <view class="header-actions">
+              <view
+                class="today-btn"
+                wx:if="{{selectedDate !== _todayDate}}"
+                hover-class="today-btn-pressed"
+                hover-start-time="20"
+                hover-stay-time="80"
+                catchtap="goToToday"
+              >
+                <text class="today-btn-text">今天</text>
+              </view>
+              <picker mode="date" value="{{selectedDate}}" end="{{_todayDate}}" bindchange="onDateChange">
+                <view class="date-picker-btn pie-date-picker-btn">
+                  <text class="date-picker-text">{{selectedDate}}</text>
+                  <text class="date-picker-arrow">▾</text>
+                </view>
+              </picker>
+            </view>
+          </view>
           <!-- Pie Chart -->
           <view class="pie-wrap {{pieTapped ? 'pie-tapped' : ''}}" id="pie-chart-wrap">
             <canvas class="pie-canvas" type="2d" id="pie-canvas" catchtap="onPieTap" hidden="{{!!selectedSubjectDetail}}"></canvas>
+            <view class="pie-loading-mask" wx:if="{{pieLoading}}">
+              <view class="pie-loading-ring"></view>
+              <text>正在切换日期</text>
+            </view>
           </view>
-          <view class="subject-legend" aria-label="学科图例">
+          <view class="subject-legend" aria-label="学科图例" wx:if="{{subjects.length > 0}}">
             <view class="subject-legend-item" wx:for="{{subjects}}" wx:key="subject">
               <view class="subject-legend-dot" style="background: {{item._color}};"></view>
               <text class="subject-legend-name">{{item._label}}</text>
+              <text class="subject-legend-percent">{{item._pctText}}</text>
             </view>
           </view>
         </view>
@@ -76,17 +122,6 @@
         <view class="card-section">
           <view class="section-header">
             <text class="section-title">最近记录</text>
-            <view class="header-actions">
-              <view class="today-btn {{selectedDate === _todayDate ? 'active' : ''}}" wx:if="{{selectedDate !== _todayDate}}" hover-class="today-btn-pressed" hover-start-time="20" hover-stay-time="80" catchtap="goToToday">
-                <text class="today-btn-text">今天</text>
-              </view>
-              <picker mode="date" value="{{selectedDate}}" bindchange="onDateChange">
-                <view class="date-picker-btn">
-                  <text class="date-picker-text">{{selectedDate}}</text>
-                  <text class="date-picker-arrow">▾</text>
-                </view>
-              </picker>
-            </view>
           </view>
           <view wx:if="{{history.length === 0}}" class="empty-hint">
             <view class="empty-icon"></view>
@@ -130,7 +165,7 @@
           <text class="detail-value">{{selectedSubjectDetail._durationText}}</text>
         </view>
         <view class="detail-item">
-          <text class="detail-label">今日占比</text>
+          <text class="detail-label">{{pieDateLabel}}占比</text>
           <text class="detail-value">{{selectedSubjectDetail._pctText}}</text>
         </view>
         <view class="detail-item">

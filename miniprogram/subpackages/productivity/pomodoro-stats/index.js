@@ -1,4 +1,5 @@
 const api = require('../../../utils/api')
+const pomodoroTheme = require('../../../utils/pomodoro-theme')
 
 function parseServerTime(value) {
   if (!value) return NaN
@@ -9,14 +10,31 @@ function parseServerTime(value) {
   return new Date(hasTimezone ? s : s + '+00:00').getTime()
 }
 
-function getSubjectColor(subject) {
-  const COLORS = ['#3B82F6', '#F59E0B', '#10B981', '#06B6D4', '#F97316', '#2DD4BF', '#EA580C', '#8B5CF6', '#6366F1', '#EC4899']
+const DARK_SUBJECT_COLORS = ['#3B82F6', '#F59E0B', '#10B981', '#06B6D4', '#F97316', '#2DD4BF', '#EA580C', '#8B5CF6', '#6366F1', '#EC4899']
+const LIGHT_SUBJECT_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C4773B', '#D96B5F', '#6685A3', '#718C45', '#B45E46', '#876F8F']
+// A clearer jewel-toned palette used only by the light-mode pie chart.
+// History accents and the trend chart keep their existing colors.
+const LIGHT_PIE_COLORS = ['#E76F51', '#2A9D8F', '#457B9D', '#E9C46A', '#8E6BBE', '#F28482', '#6A994E', '#43AA8B', '#B56576', '#577590']
+const DARK_TREND_COLORS = ['#22C55E', '#06B6D4', '#3B82F6', '#818CF8', '#A78BFA', '#D946EF']
+const LIGHT_TREND_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C4773B', '#D96B5F', '#6685A3']
+
+function getColorBySubject(subject, colors) {
   let hash = 0
   const str = subject || ''
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash)
   }
-  return COLORS[Math.abs(hash) % COLORS.length]
+  return colors[Math.abs(hash) % colors.length]
+}
+
+function getSubjectColor(subject, themeMode) {
+  const colors = themeMode === 'light' ? LIGHT_SUBJECT_COLORS : DARK_SUBJECT_COLORS
+  return getColorBySubject(subject, colors)
+}
+
+function getPieSubjectColor(subject, themeMode) {
+  const colors = themeMode === 'light' ? LIGHT_PIE_COLORS : DARK_SUBJECT_COLORS
+  return getColorBySubject(subject, colors)
 }
 
 /**
@@ -40,10 +58,12 @@ function formatDuration(sec) {
 var pageConfig = {
   data: {
     loading: true,
+    themeMode: 'light',
     errorText: '',
     pageEntered: false,
     todaySessions: 0,
     todayDurationText: '0分钟',
+    selectedDurationLabel: '今日专注',
     weekSessions: 0,
     weekDurationText: '0分钟',
     trends: [],
@@ -51,9 +71,11 @@ var pageConfig = {
     history: [],
     historyTotal: 0,
 
-    // date picker
+    // The only date picker lives in the pie card; the selected date also filters history.
     selectedDate: '',
     _todayDate: '',
+    pieDateLabel: '今日',
+    pieLoading: false,
 
     // pie chart detail popup
     selectedSubjectDetail: null,
@@ -63,6 +85,7 @@ var pageConfig = {
     // Animated display values
     _dispTodaySessions: 0,
     _dispTodayDurationText: '0分钟',
+    durationValueAnimating: false,
     _dispWeekSessions: 0,
     _dispWeekDurationText: '0分钟',
   },
@@ -74,20 +97,27 @@ var pageConfig = {
     this._viewReady = false
     this._hasData = false
     this._finalDrawn = false
-    wx.setNavigationBarColor({
-      frontColor: '#ffffff',
-      backgroundColor: '#0B1121',
-    })
+    this._displayTodayDurationSec = 0
+    this._durationAnimationToken = 0
+    this._durationAnimationTimer = null
+    const themeMode = pomodoroTheme.getTheme()
+    pomodoroTheme.applyNativeTheme(themeMode)
     const now = new Date()
     const y = now.getFullYear()
     const m = String(now.getMonth() + 1).padStart(2, '0')
     const d = String(now.getDate()).padStart(2, '0')
     const today = `${y}-${m}-${d}`
-    this.setData({ selectedDate: today, _todayDate: today })
+    this.setData({
+      selectedDate: today,
+      _todayDate: today,
+      pieDateLabel: '今日',
+      themeMode,
+    })
   },
 
   onShow() {
     this._isVisible = true
+    this._syncThemeFromStorage()
     if (!this._viewReady) return
     this._requestId++
     this.loadData()
@@ -102,6 +132,7 @@ var pageConfig = {
 
   onHide() {
     this._isVisible = false
+    this._cancelDurationAnimation(false)
   },
 
   onUnload() {
@@ -110,38 +141,329 @@ var pageConfig = {
     this._cancelPendingWork()
   },
 
+
+  _syncThemeFromStorage() {
+    const themeMode = pomodoroTheme.getTheme()
+    pomodoroTheme.applyNativeTheme(themeMode)
+    if (themeMode === this.data.themeMode) return false
+    const subjects = (this.data.subjects || []).map(item => ({
+      ...item,
+      _color: getPieSubjectColor(item.subject_code || item.subject || item._label, themeMode),
+    }))
+    const history = (this.data.history || []).map(item => ({
+      ...item,
+      _color: getSubjectColor(item.subject_code || item._subjectLabel, themeMode),
+    }))
+    this.setData({ themeMode, subjects, history }, () => {
+      this._resetPieCache()
+      if (!this._alive || !this._viewReady || !this._hasData) return
+      wx.nextTick(() => {
+        if (!this._alive || !this._isVisible) return
+        this._renderTrendBars(1)
+        this._renderPieChart(1, true)
+      })
+    })
+    return true
+  },
+
+  _getCanvasPalette() {
+    if (this.data.themeMode === 'light') {
+      return {
+        grid: 'rgba(21,51,35,0.065)',
+        baseline: 'rgba(21,51,35,0.14)',
+        emptyBar: 'rgba(21,51,35,0.10)',
+        pendingBar: 'rgba(21,51,35,0.065)',
+        dateText: 'rgba(21,35,26,0.44)',
+        badgeFill: 'rgba(255,255,255,0.96)',
+        badgeText: 'rgba(21,35,26,0.92)',
+        emptyPieFill: 'rgba(21,51,35,0.045)',
+        emptyPieStroke: 'rgba(21,51,35,0.13)',
+        emptyPieText: 'rgba(21,35,26,0.42)',
+        shadowStart: 'rgba(21,35,26,0.16)',
+        shadowMid: 'rgba(21,35,26,0.06)',
+        separator: 'rgba(21,35,26,0.14)',
+        selectedMask: 'rgba(244,244,238,0.88)',
+      }
+    }
+    return {
+      grid: 'rgba(255,255,255,0.03)',
+      baseline: 'rgba(255,255,255,0.08)',
+      emptyBar: 'rgba(255,255,255,0.05)',
+      pendingBar: 'rgba(255,255,255,0.03)',
+      dateText: 'rgba(255,255,255,0.25)',
+      badgeFill: 'rgba(11,17,33,0.9)',
+      badgeText: 'rgba(255,255,255,0.92)',
+      emptyPieFill: 'rgba(255,255,255,0.05)',
+      emptyPieStroke: 'rgba(255,255,255,0.08)',
+      emptyPieText: 'rgba(255,255,255,0.28)',
+      shadowStart: 'rgba(0,0,0,0.25)',
+      shadowMid: 'rgba(0,0,0,0.10)',
+      separator: 'rgba(0,0,0,0.18)',
+      selectedMask: 'rgba(0,0,0,0.7)',
+    }
+  },
+
   /* ==================== Color Helpers ==================== */
 
   _easeOutCubic(t) {
     return 1 - Math.pow(1 - t, 3)
   },
 
+  _easeInOutCubic(t) {
+    return t < 0.5
+      ? 4 * t * t * t
+      : 1 - Math.pow(-2 * t + 2, 3) / 2
+  },
+
+  _formatPieDateLabel(value) {
+    if (!value) return '今日'
+    if (value === this.data._todayDate) return '今日'
+    const today = new Date(this.data._todayDate + 'T00:00:00')
+    const target = new Date(value + 'T00:00:00')
+    if (Number.isFinite(today.getTime()) && Number.isFinite(target.getTime())) {
+      const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000)
+      if (diffDays === 1) return '昨日'
+      return `${target.getMonth() + 1}月${target.getDate()}日`
+    }
+    return value
+  },
+
+  _formatSelectedDurationLabel(value) {
+    const dateLabel = this._formatPieDateLabel(value)
+    return dateLabel === '今日' ? '今日专注' : `${dateLabel}专注`
+  },
+
+  _buildSubjectItems(subjects) {
+    const subjArr = Array.isArray(subjects) ? subjects : []
+    const totalDur = Math.max(1, subjArr.reduce((sum, item) => sum + (item.duration_sec || 0), 0))
+    return subjArr.map(item => {
+      const dur = item.duration_sec || 0
+      const pct = dur / totalDur
+      const code = item.subject_code || ''
+      return {
+        subject: code || `uncategorized-${item.subject_id || 'none'}`,
+        subject_id: item.subject_id,
+        subject_code: code,
+        duration_sec: dur,
+        sessions: item.sessions || 0,
+        _label: item.subject_name || '未分类',
+        _color: getPieSubjectColor(code || '未分类', this.data.themeMode),
+        _durationText: this._fmtMin(dur),
+        _pct: pct,
+        _pctText: (pct * 100).toFixed(1) + '%',
+      }
+    })
+  },
+
+
+  _buildSubjectBreakdownFromSessions(sessions) {
+    const grouped = Object.create(null)
+    ;(Array.isArray(sessions) ? sessions : []).forEach(session => {
+      // Keep the original chart semantics: only completed focus sessions count.
+      if (!session || session.status !== 'completed') return
+      const duration = Number(session.actual_duration ?? session.actual_duration_sec ?? session.duration_sec ?? 0)
+      if (!Number.isFinite(duration) || duration <= 0) return
+      const subjectId = session.subject_id ?? null
+      const subjectCode = session.subject_code || ''
+      const key = subjectId != null ? `id:${subjectId}` : `code:${subjectCode || 'uncategorized'}`
+      if (!grouped[key]) {
+        grouped[key] = {
+          subject_id: subjectId,
+          subject_code: subjectCode,
+          subject_name: session.subject_name || '未分类',
+          sessions: 0,
+          duration_sec: 0,
+        }
+      }
+      grouped[key].sessions += 1
+      grouped[key].duration_sec += duration
+    })
+    return Object.values(grouped).sort((a, b) => b.duration_sec - a.duration_sec)
+  },
+
+  async _fetchAllDateHistory(date) {
+    const requestDate = String(date || '').trim()
+    if (!requestDate) return { items: [], total: 0 }
+    const stamp = Date.now()
+    const pageSize = 100
+    const first = await api.get('/pomodoro/history', {
+      page: 1,
+      page_size: pageSize,
+      date: requestDate,
+      _ts: stamp,
+    })
+    const firstItems = Array.isArray(first.items) ? first.items : []
+    const total = Number(first.total) || firstItems.length
+    const pageCount = Math.ceil(total / pageSize)
+    if (pageCount <= 1) return { items: firstItems, total }
+
+    const remaining = []
+    for (let page = 2; page <= pageCount; page++) {
+      remaining.push(api.get('/pomodoro/history', {
+        page,
+        page_size: pageSize,
+        date: requestDate,
+        _ts: `${stamp}-${page}`,
+      }))
+    }
+    const responses = await Promise.all(remaining)
+    const items = firstItems.slice()
+    responses.forEach(response => {
+      if (response && Array.isArray(response.items)) items.push(...response.items)
+    })
+    return { items, total }
+  },
+
+  _resetPieCache() {
+    this._pieSectors = null
+    this._pieWallSteps = null
+    this._pieLabelLayout = null
+    this._shadeCache = null
+  },
+
+  _cancelDurationAnimation(resetState) {
+    this._durationAnimationToken = (this._durationAnimationToken || 0) + 1
+    if (this._durationAnimationTimer) {
+      clearTimeout(this._durationAnimationTimer)
+      this._durationAnimationTimer = null
+    }
+    if (resetState && this._alive) {
+      this.setData({ durationValueAnimating: false })
+    }
+  },
+
+  _animateSelectedDuration(fromSec, toSec, fromSessions, toSessions) {
+    const startValue = Math.max(0, Number(fromSec) || 0)
+    const targetValue = Math.max(0, Number(toSec) || 0)
+    const startSessions = Math.max(0, Number(fromSessions) || 0)
+    const targetSessions = Math.max(0, Number(toSessions) || 0)
+
+    this._cancelDurationAnimation(false)
+    const token = this._durationAnimationToken
+    const startText = this._fmtMin(startValue)
+    const targetText = this._fmtMin(targetValue)
+
+    this._displayTodayDurationSec = startValue
+    if (startText === targetText && startSessions === targetSessions) {
+      this._displayTodayDurationSec = targetValue
+      this.setData({
+        _dispTodaySessions: targetSessions,
+        _dispTodayDurationText: targetText,
+        durationValueAnimating: false,
+      })
+      return
+    }
+
+    // Keep the selected-day count and duration on one transition clock. Sparse
+    // setData ticks leave the canvas animation enough main-thread time.
+    const duration = 960
+    const steps = 15
+    const interval = Math.round(duration / steps)
+    const delta = targetValue - startValue
+    const sessionDelta = targetSessions - startSessions
+    let step = 0
+    let lastText = startText
+    let lastValue = startValue
+    let lastSessions = startSessions
+
+    this.setData({ durationValueAnimating: true })
+
+    const tick = () => {
+      if (
+        !this._alive ||
+        !this._isVisible ||
+        token !== this._durationAnimationToken
+      ) return
+
+      step += 1
+      const progress = Math.min(1, step / steps)
+      const eased = this._easeInOutCubic(progress)
+      let nextValue = Math.round(startValue + delta * eased)
+      let nextSessions = Math.round(startSessions + sessionDelta * eased)
+
+      // Guard against rounding producing a one-frame reversal.
+      nextValue = delta >= 0
+        ? Math.max(lastValue, Math.min(targetValue, nextValue))
+        : Math.min(lastValue, Math.max(targetValue, nextValue))
+      nextSessions = sessionDelta >= 0
+        ? Math.max(lastSessions, Math.min(targetSessions, nextSessions))
+        : Math.min(lastSessions, Math.max(targetSessions, nextSessions))
+
+      if (progress >= 1) {
+        nextValue = targetValue
+        nextSessions = targetSessions
+      }
+      lastValue = nextValue
+      lastSessions = nextSessions
+      this._displayTodayDurationSec = nextValue
+
+      const nextText = this._fmtMin(nextValue)
+      const isFinal = progress >= 1
+      if (nextText !== lastText || nextSessions !== this.data._dispTodaySessions || isFinal) {
+        lastText = nextText
+        this.setData({
+          _dispTodaySessions: nextSessions,
+          _dispTodayDurationText: nextText,
+          durationValueAnimating: !isFinal,
+        })
+      }
+
+      if (!isFinal) {
+        this._durationAnimationTimer = setTimeout(tick, interval)
+      } else {
+        this._durationAnimationTimer = null
+      }
+    }
+
+    this._durationAnimationTimer = setTimeout(tick, interval)
+  },
+
   /* ==================== Data Loading ==================== */
 
   async loadData() {
     const reqId = this._requestId
+    const selectedDate = this.data.selectedDate
+    this._dateRequestSeq = (this._dateRequestSeq || 0) + 1
+    const dateSeq = this._dateRequestSeq
     this.setData({ loading: true, errorText: '' })
     try {
-      const [stats, trends, subjects, hist] = await Promise.all([
+      const [stats, trends, dayData] = await Promise.all([
         api.get('/pomodoro/stats'),
         api.get('/pomodoro/trends', { days: 7 }),
-        api.get('/pomodoro/subjects'),
-        api.get('/pomodoro/history', { page: 1, page_size: 20, date: this.data.selectedDate }),
+        this._fetchAllDateHistory(selectedDate),
       ])
-      if (!this._alive || reqId !== this._requestId) return
-      const subjArr = subjects || []
-      const totalDur = Math.max(1, subjArr.reduce((sum, s) => sum + (s.duration_sec || 0), 0))
-      this._rawTodayDur = stats.today_duration_sec || 0
+      if (
+        !this._alive ||
+        reqId !== this._requestId ||
+        dateSeq !== this._dateRequestSeq ||
+        selectedDate !== this.data.selectedDate
+      ) return
+
+      const daySessions = dayData.items || []
+      const subjectBreakdown = this._buildSubjectBreakdownFromSessions(daySessions)
+      const selectedDurationSec = subjectBreakdown.reduce(
+        (sum, item) => sum + (Number(item.duration_sec) || 0),
+        0
+      )
+      const selectedSessionCount = subjectBreakdown.reduce(
+        (sum, item) => sum + (Number(item.sessions) || 0),
+        0
+      )
+      // Both values in the main overview card follow the same selected-date
+      // records used by the pie chart and recent-history list.
+      this._rawTodayDur = selectedDurationSec
       this._rawWeekDur = stats.week_duration_sec || 0
-      this._pieSectors = null
-      this._shadeCache = null
+      this._resetPieCache()
 
       const willAnimate = !this._hasData
       this._hasData = true
+      this._cancelDurationAnimation(false)
+      this._displayTodayDurationSec = willAnimate ? 0 : selectedDurationSec
 
       this.setData({
-        todaySessions: stats.today_sessions || 0,
-        todayDurationText: this._fmtMin(stats.today_duration_sec || 0),
+        todaySessions: selectedSessionCount,
+        todayDurationText: this._fmtMin(selectedDurationSec),
+        selectedDurationLabel: this._formatSelectedDurationLabel(selectedDate),
         weekSessions: stats.week_sessions || 0,
         weekDurationText: this._fmtMin(stats.week_duration_sec || 0),
         trends: (trends || []).map(t => ({
@@ -149,38 +471,25 @@ var pageConfig = {
           duration_sec: t.duration_sec,
           _shortDate: (t.date || '').slice(5),
         })),
-        subjects: subjArr.map(s => {
-          const dur = s.duration_sec || 0
-          const pct = dur / totalDur
-          const name = s.subject_name || '未分类'
-          const code = s.subject_code || ''
-          return {
-            subject: code,
-            subject_id: s.subject_id,
-            subject_code: code,
-            duration_sec: dur,
-            sessions: s.sessions || 0,
-            _label: name,
-            _color: getSubjectColor(code),
-            _durationText: this._fmtMin(dur),
-            _pctText: (pct * 100).toFixed(1) + '%',
-          }
-        }),
-        history: (hist.items || []).map(this._formatSession),
-        historyTotal: hist.total || 0,
+        subjects: this._buildSubjectItems(subjectBreakdown),
+        pieDateLabel: this._formatPieDateLabel(selectedDate),
+        pieLoading: false,
+        history: daySessions.slice(0, 20).map(this._formatSession),
+        historyTotal: dayData.total || 0,
         loading: false,
         errorText: '',
         pageEntered: true,
-        _dispTodaySessions: 0,
-        _dispTodayDurationText: '0分钟',
-        _dispWeekSessions: 0,
-        _dispWeekDurationText: '0分钟',
+        _dispTodaySessions: willAnimate ? 0 : selectedSessionCount,
+        _dispTodayDurationText: willAnimate ? '0分钟' : this._fmtMin(selectedDurationSec),
+        durationValueAnimating: willAnimate,
+        _dispWeekSessions: willAnimate ? 0 : (stats.week_sessions || 0),
+        _dispWeekDurationText: willAnimate ? '0分钟' : this._fmtMin(stats.week_duration_sec || 0),
       }, () => {
         if (!this._alive || !this._isVisible || reqId !== this._requestId) return
         this._initCanvases(() => {
           if (!this._alive || !this._isVisible) return
           if (willAnimate) {
-            this._renderPieChart(0)
+            this._renderPieChart(0, false)
             this._renderTrendBars(0)
             const node = this._pieCanvasNode
             const raf = node && node.requestAnimationFrame
@@ -197,7 +506,7 @@ var pageConfig = {
     } catch (e) {
       if (!this._alive || reqId !== this._requestId) return
       console.error('加载统计失败', e)
-      this.setData({ loading: false, errorText: '加载失败，请检查网络后重试' })
+      this.setData({ loading: false, pieLoading: false, errorText: '加载失败，请检查网络后重试' })
     }
   },
 
@@ -216,58 +525,180 @@ var pageConfig = {
       _date: `${start.getMonth() + 1}/${start.getDate()}`,
       _duration: durationText,
       _subjectLabel: isFree ? '自由计时 · ' + subjectName : subjectName,
-      _color: getSubjectColor(subjectKey),
+      _color: getSubjectColor(subjectKey || subjectName, this.data.themeMode),
       _statusLabel: s.status === 'completed' ? '完成' : '中断',
       _statusClass: s.status === 'completed' ? 'status-done' : 'status-interrupt',
     }
   },
 
   onDateChange(e) {
-    const date = e.detail.value
-    this.setData({ selectedDate: date }, () => {
-      this.loadHistory(date)
-    })
+    const date = e && e.detail ? e.detail.value : ''
+    if (!date || date === this.data.selectedDate) return
+    this.setData({
+      selectedDate: date,
+      pieDateLabel: this._formatPieDateLabel(date),
+      selectedDurationLabel: this._formatSelectedDurationLabel(date),
+      selectedSubjectDetail: null,
+      _selectedSubject: null,
+    }, () => this.loadDateData(date))
   },
 
   goToToday() {
-    const now = new Date()
-    const y = now.getFullYear()
-    const m = String(now.getMonth() + 1).padStart(2, '0')
-    const d = String(now.getDate()).padStart(2, '0')
-    const today = `${y}-${m}-${d}`
-    if (today === this.data.selectedDate) return
-    this.setData({ selectedDate: today }, () => {
-      this.loadHistory(today)
-    })
+    const today = this.data._todayDate
+    if (!today || today === this.data.selectedDate) return
+    this.setData({
+      selectedDate: today,
+      pieDateLabel: '今日',
+      selectedDurationLabel: '今日专注',
+      selectedSubjectDetail: null,
+      _selectedSubject: null,
+    }, () => this.loadDateData(today))
   },
 
-  async loadHistory(date) {
-    this._historySeq = (this._historySeq || 0) + 1
-    const seq = this._historySeq
+  async loadDateData(date) {
+    const requestDate = String(date || '').trim()
+    if (!requestDate) return
+    this._dateRequestSeq = (this._dateRequestSeq || 0) + 1
+    const seq = this._dateRequestSeq
+    this.setData({ pieLoading: true })
     try {
-      const hist = await api.get('/pomodoro/history', { page: 1, page_size: 20, date })
-      if (!this._alive || !this._isVisible || seq !== this._historySeq) return
-      const formatted = (hist.items || []).map(this._formatSession)
+      const dayData = await this._fetchAllDateHistory(requestDate)
+      if (
+        !this._alive ||
+        !this._isVisible ||
+        seq !== this._dateRequestSeq ||
+        requestDate !== this.data.selectedDate
+      ) return
+
+      const daySessions = dayData.items || []
+      const subjectBreakdown = this._buildSubjectBreakdownFromSessions(daySessions)
+      const selectedDurationSec = subjectBreakdown.reduce(
+        (sum, item) => sum + (Number(item.duration_sec) || 0),
+        0
+      )
+      const selectedSessionCount = subjectBreakdown.reduce(
+        (sum, item) => sum + (Number(item.sessions) || 0),
+        0
+      )
+      const previousDurationSec = Number.isFinite(this._displayTodayDurationSec)
+        ? this._displayTodayDurationSec
+        : (Number(this._rawTodayDur) || 0)
+      const previousSessionCount = Math.max(0, Number(this.data._dispTodaySessions) || 0)
+      this._rawTodayDur = selectedDurationSec
+      this._resetPieCache()
       this.setData({
-        history: formatted,
-        historyTotal: hist.total || 0,
+        todaySessions: selectedSessionCount,
+        subjects: this._buildSubjectItems(subjectBreakdown),
+        todayDurationText: this._fmtMin(selectedDurationSec),
+        selectedDurationLabel: this._formatSelectedDurationLabel(requestDate),
+        history: daySessions.slice(0, 20).map(this._formatSession),
+        historyTotal: dayData.total || 0,
+        pieDateLabel: this._formatPieDateLabel(requestDate),
+        pieLoading: false,
+        selectedSubjectDetail: null,
+        _selectedSubject: null,
+      }, () => {
+        if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
+        this._animateSelectedDuration(previousDurationSec, selectedDurationSec, previousSessionCount, selectedSessionCount)
+        if (this._pieCtx && this._pieRect) {
+          this._animatePieOnly()
+        } else {
+          this._initCanvases(() => this._animatePieOnly())
+        }
       })
     } catch (e) {
-      if (!this._alive || !this._isVisible) return
-      console.error('加载历史记录失败', e)
+      if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
+      console.error('加载指定日期数据失败', e)
+      this.setData({ pieLoading: false })
+      wx.showToast({ title: '该日期数据加载失败', icon: 'none' })
     }
+  },
+
+  _animatePieOnly() {
+    if (!this._pieCtx || !this._pieRect) return
+    const token = (this._pieAnimationToken || 0) + 1
+    this._pieAnimationToken = token
+    this._pieLabelToken = (this._pieLabelToken || 0) + 1
+    const duration = 980
+    const start = Date.now()
+    const node = this._pieCanvasNode
+    const raf = node && node.requestAnimationFrame
+      ? cb => node.requestAnimationFrame(cb)
+      : cb => setTimeout(cb, 16)
+    let lastDraw = 0
+
+    this._renderPieChart(0, false)
+    const tick = () => {
+      if (!this._alive || !this._isVisible || token !== this._pieAnimationToken) return
+      const elapsed = Date.now() - start
+      const raw = Math.min(1, elapsed / duration)
+      if (raw < 1 && elapsed - lastDraw >= 28) {
+        lastDraw = elapsed
+        this._renderPieChart(this._easeInOutCubic(raw), false)
+      }
+      if (raw < 1) {
+        this._pieDateRafId = raf(tick)
+      } else {
+        // Keep the expensive percentage badges out of the final motion frame.
+        this._renderPieChart(1, false)
+        this._pieDateRafId = null
+        this._revealPieLabelsIncrementally()
+      }
+    }
+    this._pieDateRafId = raf(tick)
+  },
+
+  _revealPieLabelsIncrementally() {
+    const ctx = this._pieCtx
+    const rect = this._pieRect
+    const layout = this._pieLabelLayout
+    if (!ctx || !rect || !layout || !layout.length) return
+
+    const token = (this._pieLabelToken || 0) + 1
+    this._pieLabelToken = token
+    const geometry = this._getPieGeometry(rect)
+    const node = this._pieCanvasNode
+    const raf = node && node.requestAnimationFrame
+      ? cb => node.requestAnimationFrame(cb)
+      : cb => setTimeout(cb, 16)
+    let index = 0
+
+    const drawNext = () => {
+      if (!this._alive || !this._isVisible || token !== this._pieLabelToken) return
+      const end = Math.min(layout.length, index + 2)
+      this._drawPieLabels(ctx, geometry, layout, 1, index, end)
+      index = end
+      if (index < layout.length) {
+        this._pieLabelRafId = raf(drawNext)
+      } else {
+        this._pieLabelRafId = null
+      }
+    }
+
+    this._pieLabelRafId = raf(drawNext)
   },
 
   /* ==================== Animation Control ==================== */
 
   _cancelPendingWork() {
+    this._cancelDurationAnimation(false)
     this._animActive = false
     this._finalDrawn = false
     this._requestId++
     if (this._rafId && this._pieCanvasNode && this._pieCanvasNode.cancelAnimationFrame) {
       this._pieCanvasNode.cancelAnimationFrame(this._rafId)
     }
+    if (this._pieDateRafId && this._pieCanvasNode && this._pieCanvasNode.cancelAnimationFrame) {
+      this._pieCanvasNode.cancelAnimationFrame(this._pieDateRafId)
+    }
+    if (this._pieLabelRafId && this._pieCanvasNode && this._pieCanvasNode.cancelAnimationFrame) {
+      this._pieCanvasNode.cancelAnimationFrame(this._pieLabelRafId)
+    }
     this._rafId = null
+    this._pieDateRafId = null
+    this._pieLabelRafId = null
+    this._pieAnimationToken = (this._pieAnimationToken || 0) + 1
+    this._pieLabelToken = (this._pieLabelToken || 0) + 1
     if (this._animTimer) {
       clearTimeout(this._animTimer)
       this._animTimer = null
@@ -275,6 +706,13 @@ var pageConfig = {
   },
 
   _initCanvases(callback) {
+    if (
+      this._pieCanvasNode && this._pieCtx && this._pieRect &&
+      this._trendCanvasNode && this._trendCtx && this._trendBarsRect
+    ) {
+      callback()
+      return
+    }
     let pending = 2
     const done = () => { if (--pending === 0) callback() }
     // Cap DPR at 2 — backbuffer cost grows quadratically and DPR=3 on iPhones
@@ -320,27 +758,37 @@ var pageConfig = {
     if (!this._alive || !this._isVisible || reqId !== this._requestId) return
     this._animActive = true
     this._finalDrawn = false
-    const animDuration = 700
+    this._pieLabelToken = (this._pieLabelToken || 0) + 1
+    const pieAnimDuration = 1100
+    const trendAnimDuration = 700
+    const animDuration = Math.max(pieAnimDuration, trendAnimDuration)
     const startTime = Date.now()
 
-    // Number animation — independent timer (~12 updates), no setData in Canvas RAF
+    // Finish number updates before the two canvas charts reach their final
+    // frames, so setData/layout work never competes with the heaviest draws.
     const tSessions = this.data.todaySessions
     const wSessions = this.data.weekSessions
-    const totalSteps = 12
+    const numberDuration = 520
+    const totalSteps = 9
     let step = 0
     const numTick = () => {
       if (!this._animActive || !this._alive || !this._isVisible || reqId !== this._requestId) return
       step++
       const p = Math.min(1, step / totalSteps)
       const e = this._easeOutCubic(p)
+      const displayDurationSec = Math.round(this._rawTodayDur * e)
+      this._displayTodayDurationSec = displayDurationSec
       this.setData({
         _dispTodaySessions: Math.round(tSessions * e),
-        _dispTodayDurationText: this._fmtMin(Math.round(this._rawTodayDur * e)),
+        _dispTodayDurationText: this._fmtMin(displayDurationSec),
+        durationValueAnimating: p < 1,
         _dispWeekSessions: Math.round(wSessions * e),
         _dispWeekDurationText: this._fmtMin(Math.round(this._rawWeekDur * e)),
       })
       if (step < totalSteps) {
-        this._animTimer = setTimeout(numTick, Math.round(animDuration / totalSteps))
+        this._animTimer = setTimeout(numTick, Math.round(numberDuration / totalSteps))
+      } else {
+        this._animTimer = null
       }
     }
     numTick()
@@ -351,24 +799,45 @@ var pageConfig = {
       ? cb => node.requestAnimationFrame(cb)
       : cb => setTimeout(cb, 16)
 
+    let lastPieDraw = -Infinity
+    let lastTrendDraw = -Infinity
     const tick = () => {
       if (!this._animActive || !this._alive || !this._isVisible || reqId !== this._requestId) return
       const elapsed = Date.now() - startTime
       const rawP = Math.min(1, elapsed / animDuration)
-      const eased = this._easeOutCubic(rawP)
-
-      this._renderPieChart(eased)
-      if (Math.round(elapsed / 16) % 2 === 0 || rawP >= 1) {
-        this._renderTrendBars(eased)
-      }
+      const pieProgress = this._easeInOutCubic(Math.min(1, elapsed / pieAnimDuration))
+      const trendProgress = this._easeOutCubic(Math.min(1, elapsed / trendAnimDuration))
 
       if (rawP < 1) {
+        // Draw at most one canvas per RAF.  Previously both charts often
+        // repainted in the same final frames, producing a visible hitch.
+        const pieLag = elapsed - lastPieDraw
+        const trendLag = elapsed - lastTrendDraw
+        const pieDue = pieLag >= 28
+        const trendDue = trendLag >= 42
+        if (pieDue && (!trendDue || pieLag >= trendLag)) {
+          lastPieDraw = elapsed
+          this._renderPieChart(pieProgress, false)
+        } else if (trendDue) {
+          lastTrendDraw = elapsed
+          this._renderTrendBars(trendProgress)
+        }
         this._rafId = raf(tick)
       } else if (!this._finalDrawn) {
         this._finalDrawn = true
         this._animActive = false
-        this._rafId = null
-        // Final frame already drawn in the render calls above (rawP>=1 triggers both)
+        // Stagger final chart frames and then paint percentage labels in small
+        // batches.  Data remains dynamic, but no single frame carries all work.
+        this._renderPieChart(1, false)
+        this._rafId = raf(() => {
+          if (!this._alive || !this._isVisible || reqId !== this._requestId) return
+          this._renderTrendBars(1)
+          this._rafId = raf(() => {
+            if (!this._alive || !this._isVisible || reqId !== this._requestId) return
+            this._rafId = null
+            this._revealPieLabelsIncrementally()
+          })
+        })
       }
     }
     this._rafId = raf(tick)
@@ -377,7 +846,8 @@ var pageConfig = {
   /* ==================== Trend Bars ==================== */
 
   _renderTrendBars(progress) {
-    const TREND_COLORS = ['#22C55E', '#06B6D4', '#3B82F6', '#818CF8', '#A78BFA', '#D946EF']
+    const trendColors = this.data.themeMode === 'light' ? LIGHT_TREND_COLORS : DARK_TREND_COLORS
+    const palette = this._getCanvasPalette()
     const trends = this.data.trends
     if (!trends || !trends.length) return
     const ctx = this._trendCtx
@@ -408,7 +878,7 @@ var pageConfig = {
     for (let i = 0; i <= 3; i++) {
       const y = padT + chartH * (1 - i / 3)
       ctx.beginPath()
-      ctx.strokeStyle = 'rgba(255,255,255,0.03)'
+      ctx.strokeStyle = palette.grid
       ctx.lineWidth = 0.5
       ctx.moveTo(padL, y)
       ctx.lineTo(w - padR, y)
@@ -417,7 +887,7 @@ var pageConfig = {
 
     // Baseline
     ctx.beginPath()
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)'
+    ctx.strokeStyle = palette.baseline
     ctx.lineWidth = 1
     ctx.moveTo(padL, padT + chartH)
     ctx.lineTo(w - padR, padT + chartH)
@@ -450,7 +920,7 @@ var pageConfig = {
         }
 
         // Per-bar color
-        const barColor = TREND_COLORS[i % TREND_COLORS.length]
+        const barColor = trendColors[i % trendColors.length]
         const rc = parseInt(barColor.slice(1, 3), 16)
         const gc = parseInt(barColor.slice(3, 5), 16)
         const bc = parseInt(barColor.slice(5, 7), 16)
@@ -543,15 +1013,15 @@ var pageConfig = {
           ctx.restore()
         }
       } else if (t.duration_sec > 0) {
-        ctx.fillStyle = 'rgba(255,255,255,0.05)'
+        ctx.fillStyle = palette.emptyBar
         ctx.fillRect(x, baseY - 1, barW, 1)
       } else {
-        ctx.fillStyle = 'rgba(255,255,255,0.03)'
+        ctx.fillStyle = palette.pendingBar
         ctx.fillRect(x, baseY - 2, barW, 2)
       }
 
       // Date label
-      ctx.fillStyle = 'rgba(255,255,255,0.25)'
+      ctx.fillStyle = palette.dateText
       ctx.font = '9px sans-serif'
       ctx.textAlign = 'center'
       ctx.fillText(t._shortDate || '', x + barW / 2, baseY + 18)
@@ -590,77 +1060,210 @@ var pageConfig = {
     ctx.restore()
   },
 
-  _renderPieChart(progress) {
+  _getPieGeometry(rect) {
+    const w = rect.width
+    const h = rect.height
+    const radius = Math.min(w * 0.255, h * 0.3)
+    return {
+      w,
+      h,
+      centerX: w / 2,
+      centerY: h * 0.44,
+      radius,
+      tilt: 0.72,
+      depth: radius * 0.08,
+    }
+  },
+
+  _roundRectPath(ctx, x, y, width, height, radius) {
+    const r = Math.min(radius, width / 2, height / 2)
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.lineTo(x + width - r, y)
+    ctx.quadraticCurveTo(x + width, y, x + width, y + r)
+    ctx.lineTo(x + width, y + height - r)
+    ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height)
+    ctx.lineTo(x + r, y + height)
+    ctx.quadraticCurveTo(x, y + height, x, y + height - r)
+    ctx.lineTo(x, y + r)
+    ctx.quadraticCurveTo(x, y, x + r, y)
+    ctx.closePath()
+  },
+
+  _buildPieLabelLayout(sectors, geometry) {
+    const { w, h, centerY, radius, tilt } = geometry
+    const minY = 24
+    const maxY = h - 28
+    const left = []
+    const right = []
+
+    sectors.forEach(sec => {
+      const mid = (sec.startA + sec.endA) / 2
+      const item = {
+        sec,
+        mid,
+        side: Math.cos(mid) >= 0 ? 'right' : 'left',
+        rawY: centerY + Math.sin(mid) * radius * tilt * 1.14,
+      }
+      ;(item.side === 'right' ? right : left).push(item)
+    })
+
+    const distribute = items => {
+      if (!items.length) return
+      items.sort((a, b) => a.rawY - b.rawY)
+      const gap = items.length > 1
+        ? Math.max(19, Math.min(25, (maxY - minY) / (items.length - 1)))
+        : 0
+      items[0].labelY = Math.max(minY, items[0].rawY)
+      for (let i = 1; i < items.length; i++) {
+        items[i].labelY = Math.max(items[i].rawY, items[i - 1].labelY + gap)
+      }
+      if (items[items.length - 1].labelY > maxY) {
+        items[items.length - 1].labelY = maxY
+        for (let i = items.length - 2; i >= 0; i--) {
+          items[i].labelY = Math.min(items[i].labelY, items[i + 1].labelY - gap)
+        }
+      }
+      if (items[0].labelY < minY) {
+        const shift = minY - items[0].labelY
+        items.forEach(item => { item.labelY += shift })
+      }
+    }
+
+    distribute(left)
+    distribute(right)
+
+    return left.concat(right).map(item => ({
+      ...item,
+      badgeX: item.side === 'right' ? w - 57 : 7,
+      badgeW: 50,
+      badgeH: 23,
+    }))
+  },
+
+  _drawPieLabels(ctx, geometry, layout, reveal, startIndex = 0, endIndex = layout ? layout.length : 0) {
+    if (!layout || !layout.length || reveal <= 0) return
+    const { centerX, centerY, radius, tilt } = geometry
+    const palette = this._getCanvasPalette()
+    ctx.save()
+    ctx.globalAlpha = Math.max(0, Math.min(1, reveal))
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+
+    for (let i = startIndex; i < Math.min(endIndex, layout.length); i++) {
+      const item = layout[i]
+      const sec = item.sec
+      const startX = centerX + Math.cos(item.mid) * radius * 1.02
+      const startY = centerY + Math.sin(item.mid) * radius * tilt * 1.02
+      const elbowX = item.side === 'right'
+        ? centerX + radius + 13
+        : centerX - radius - 13
+      const lineEndX = item.side === 'right' ? item.badgeX : item.badgeX + item.badgeW
+      const lineY = item.labelY
+
+      ctx.strokeStyle = sec.color
+      ctx.lineWidth = 1.15
+      ctx.beginPath()
+      ctx.moveTo(startX, startY)
+      ctx.lineTo(elbowX, lineY)
+      ctx.lineTo(lineEndX, lineY)
+      ctx.stroke()
+
+      ctx.fillStyle = sec.color
+      ctx.beginPath()
+      ctx.arc(startX, startY, 2.1, 0, Math.PI * 2)
+      ctx.fill()
+
+      const badgeY = lineY - item.badgeH / 2
+      this._roundRectPath(ctx, item.badgeX, badgeY, item.badgeW, item.badgeH, 8)
+      ctx.fillStyle = palette.badgeFill
+      ctx.fill()
+      ctx.strokeStyle = sec.color
+      ctx.lineWidth = 0.8
+      ctx.stroke()
+
+      ctx.fillStyle = palette.badgeText
+      ctx.font = '600 10px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(sec.subject._pctText || '0%', item.badgeX + item.badgeW / 2, lineY + 0.5)
+    }
+    ctx.restore()
+  },
+
+  _renderPieChart(progress, includeLabels = true) {
     const subjects = this.data.subjects
     const ctx = this._pieCtx
     const rect = this._pieRect
     if (!ctx || !rect || !rect.width) return
-    const w = rect.width
-    const h = rect.height
-    const size = Math.min(w, h)
-    const centerX = w / 2
-    const centerY = h * 0.44
-    const radius = size * 0.39
-    const tilt = 0.72
-    const depth = radius * 0.08
-    const isFinal = progress >= 1
+
+    const geometry = this._getPieGeometry(rect)
+    const palette = this._getCanvasPalette()
+    const { w, h, centerX, centerY, radius, tilt, depth } = geometry
+    const reveal = Math.max(0, Math.min(1, (progress - 0.5) / 0.5))
+    const labelReveal = Math.max(0, Math.min(1, (progress - 0.62) / 0.38))
 
     ctx.clearRect(0, 0, w, h)
 
-    const hasData = subjects && subjects.length && subjects.some(s => (s.duration_sec || 0) > 0)
+    const hasData = subjects && subjects.length && subjects.some(item => (item.duration_sec || 0) > 0)
     if (!hasData) {
-      this._drawEllipticSector(ctx, centerX, centerY, radius, tilt, 0, Math.PI * 2, 'rgba(255,255,255,0.05)', 'rgba(255,255,255,0.08)', 1)
-      ctx.fillStyle = 'rgba(255,255,255,0.28)'
+      this._drawEllipticSector(
+        ctx, centerX, centerY, radius, tilt, 0, Math.PI * 2,
+        palette.emptyPieFill, palette.emptyPieStroke, 1
+      )
+      ctx.fillStyle = palette.emptyPieText
       ctx.font = '12px sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText('今日暂无数据', centerX, centerY + 6)
+      ctx.textBaseline = 'middle'
+      ctx.fillText(`${this.data.pieDateLabel || '该日'}暂无数据`, centerX, centerY + 5)
       return
     }
 
-    // Build sector + shade caches once per data set
+    // Geometry, shades and label positions are cached for the entire data set.
     if (!this._pieSectors) {
-      const totalDur = subjects.reduce((sum, s) => sum + (s.duration_sec || 0), 0) || 1
+      const totalDur = subjects.reduce((sum, item) => sum + (item.duration_sec || 0), 0) || 1
       const sectors = []
       let angle = -Math.PI / 2
-      subjects.filter(s => (s.duration_sec || 0) > 0).forEach(s => {
-        const pct = (s.duration_sec || 0) / totalDur
+      subjects.filter(item => (item.duration_sec || 0) > 0).forEach(item => {
+        const pct = (item.duration_sec || 0) / totalDur
         const endA = angle + Math.PI * 2 * pct
         sectors.push({
-          subject: s,
-          color: s._color || '#3B82F6',
+          subject: item,
+          color: item._color || '#3B82F6',
+          pct,
           startA: angle,
           endA,
         })
         angle = endA
       })
       this._pieSectors = sectors
-      const wallStepsFull = Math.max(6, Math.round(depth * 1.5))
+      // Keep layer count stable across the animation. The previous final-frame
+      // jump from 3 layers to ~12 caused the visible tail-end hitch.
+      const wallStepsFull = Math.max(5, Math.min(7, Math.round(depth)))
       this._pieWallSteps = wallStepsFull
       sectors.forEach(sec => {
         sec._wallShades = []
         for (let layer = 1; layer <= wallStepsFull; layer++) {
           const ratio = layer / wallStepsFull
-          // Progressive darkening: -55 at bottom, -15 at top
-          const darken = Math.round(-55 + ratio * 40)
-          sec._wallShades.push(this._shadeColorCached(sec.color, darken))
+          sec._wallShades.push(this._shadeColorCached(sec.color, Math.round(-52 + ratio * 38)))
         }
       })
+      this._pieLabelLayout = this._buildPieLabelLayout(sectors, geometry)
     }
 
     const sectors = this._pieSectors
-    const wallStepsFull = this._pieWallSteps
-    const wallSteps = isFinal ? wallStepsFull : Math.min(3, wallStepsFull)
-
+    const wallSteps = this._pieWallSteps
     const selectedSubject = this.data._selectedSubject
 
-    // === 1. Drop shadow (final only) — soft, offset to bottom-right ===
-    if (isFinal) {
+    // 1. Shadow fades in before completion instead of appearing on one heavy final frame.
+    if (reveal > 0) {
       ctx.save()
+      ctx.globalAlpha = reveal
       ctx.translate(centerX + 4, centerY + depth * 1.3)
       ctx.scale(1, tilt)
       const shadowGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 1.05)
-      shadowGrad.addColorStop(0, 'rgba(0,0,0,0.25)')
-      shadowGrad.addColorStop(0.5, 'rgba(0,0,0,0.10)')
+      shadowGrad.addColorStop(0, palette.shadowStart)
+      shadowGrad.addColorStop(0.5, palette.shadowMid)
       shadowGrad.addColorStop(1, 'rgba(0,0,0,0)')
       ctx.fillStyle = shadowGrad
       ctx.beginPath()
@@ -669,20 +1272,17 @@ var pageConfig = {
       ctx.restore()
     }
 
-    // Sort: selected sector drawn last for correct overlap
-    const sortedSectors = [...sectors]
-    if (selectedSubject) {
-      sortedSectors.sort((a, b) => {
-        const aSel = a.subject.subject === selectedSubject ? 1 : 0
-        const bSel = b.subject.subject === selectedSubject ? 1 : 0
-        return aSel - bSel
-      })
-    }
+    const sortedSectors = selectedSubject
+      ? sectors.slice().sort((a, b) => {
+          const aSelected = a.subject.subject === selectedSubject ? 1 : 0
+          const bSelected = b.subject.subject === selectedSubject ? 1 : 0
+          return aSelected - bSelected
+        })
+      : sectors
 
-    // === 2. Side walls — stacked elliptic layers with progressive darkening ===
+    // 2. Side walls use a constant number of layers throughout the animation.
     for (let layer = wallSteps; layer >= 1; layer--) {
       const layerOffset = depth * layer / wallSteps * progress
-      const shadeIdx = Math.min(wallStepsFull - 1, Math.round((layer - 1) * wallStepsFull / wallSteps))
       sortedSectors.forEach(sec => {
         const curEnd = sec.startA + (sec.endA - sec.startA) * progress
         if (curEnd - sec.startA < 0.002) return
@@ -691,11 +1291,14 @@ var pageConfig = {
         const pull = isSelected ? 6 : 0
         const cx = centerX + Math.cos(mid) * pull
         const cy = centerY + Math.sin(mid) * pull * tilt + layerOffset
-        this._drawEllipticSector(ctx, cx, cy, radius, tilt, sec.startA, curEnd, sec._wallShades[shadeIdx])
+        this._drawEllipticSector(
+          ctx, cx, cy, radius, tilt, sec.startA, curEnd,
+          sec._wallShades[layer - 1]
+        )
       })
     }
 
-    // === 3. Top sectors — clean color fills, no per-sector strokes ===
+    // 3. Top sectors.
     sortedSectors.forEach(sec => {
       const curEnd = sec.startA + (sec.endA - sec.startA) * progress
       if (curEnd - sec.startA < 0.002) return
@@ -708,12 +1311,13 @@ var pageConfig = {
       this._drawEllipticSector(ctx, cx, cy, radius, tilt, sec.startA, curEnd, fillColor)
     })
 
-    // === 4. Sector separators — thin, low-opacity dark lines ===
-    if (isFinal && sectors.length > 1) {
+    // 4. Separators fade in progressively.
+    if (reveal > 0 && sectors.length > 1) {
       ctx.save()
+      ctx.globalAlpha = reveal
       ctx.translate(centerX, centerY)
       ctx.scale(1, tilt)
-      ctx.strokeStyle = 'rgba(0,0,0,0.12)'
+      ctx.strokeStyle = palette.separator
       ctx.lineWidth = 1
       sectors.forEach(sec => {
         ctx.beginPath()
@@ -721,18 +1325,13 @@ var pageConfig = {
         ctx.lineTo(Math.cos(sec.startA) * radius, Math.sin(sec.startA) * radius)
         ctx.stroke()
       })
-      // Close the ring — draw separator at last sector's end angle
-      const last = sectors[sectors.length - 1]
-      ctx.beginPath()
-      ctx.moveTo(0, 0)
-      ctx.lineTo(Math.cos(last.endA) * radius, Math.sin(last.endA) * radius)
-      ctx.stroke()
       ctx.restore()
     }
 
-    // === 5. Unified lighting — single radial gradient from top-left ===
-    if (isFinal) {
+    // 5. Unified lighting, also progressive to avoid a final-frame spike.
+    if (reveal > 0) {
       ctx.save()
+      ctx.globalAlpha = reveal
       ctx.translate(centerX, centerY)
       ctx.scale(1, tilt)
       ctx.beginPath()
@@ -753,29 +1352,23 @@ var pageConfig = {
       ctx.restore()
     }
 
-    // === 6. Selected state: dim non-selected + highlight selected ===
-    if (selectedSubject && isFinal) {
-      // Dim non-selected sectors
+    // 6. Selected state.
+    if (selectedSubject && reveal > 0.9) {
       sectors.forEach(sec => {
         if (sec.subject.subject === selectedSubject) return
-        const curEnd = sec.startA + (sec.endA - sec.startA) * progress
-        if (curEnd - sec.startA < 0.002) return
         ctx.save()
         ctx.globalAlpha = 0.12
-        ctx.fillStyle = 'rgba(0,0,0,0.7)'
-        this._drawEllipticSector(ctx, centerX, centerY, radius, tilt, sec.startA, curEnd)
+        this._drawEllipticSector(
+          ctx, centerX, centerY, radius, tilt,
+          sec.startA, sec.endA, palette.selectedMask
+        )
         ctx.restore()
       })
-      // Highlight selected — thin bright border
-      sectors.forEach(sec => {
-        if (sec.subject.subject !== selectedSubject) return
-        const curEnd = sec.startA + (sec.endA - sec.startA) * progress
-        if (curEnd - sec.startA < 0.002) return
-        const mid = (sec.startA + curEnd) / 2
-        const cx = centerX + Math.cos(mid) * 6
-        const cy = centerY + Math.sin(mid) * 6 * tilt
-        this._drawEllipticSector(ctx, cx, cy, radius * 1.03, tilt, sec.startA, curEnd, null, 'rgba(255,255,255,0.2)', 1.5)
-      })
+    }
+
+    // 7. Every sector gets a leader line and percentage badge.
+    if (includeLabels) {
+      this._drawPieLabels(ctx, geometry, this._pieLabelLayout, labelReveal)
     }
   },
 
@@ -792,10 +1385,8 @@ var pageConfig = {
       if (!rect || !rect.width) return
       const x = tapX - rect.left
       const y = tapY - rect.top
-      const centerX = rect.width / 2
-      const centerY = rect.height * 0.44
-      const radius = Math.min(rect.width, rect.height) * 0.39
-      const tilt = 0.72
+      const geometry = this._getPieGeometry(rect)
+      const { centerX, centerY, radius, tilt } = geometry
 
       const dx = x - centerX
       const dy = (y - centerY) / tilt

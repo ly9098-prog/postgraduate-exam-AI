@@ -126,6 +126,17 @@ Page({
     this.loadFormulas(true)
   },
 
+  onShow() {
+    // onLoad already performs the initial request. Refresh favorites every time
+    // the page becomes visible again so a toggle made in the reader is reflected
+    // immediately when the user navigates back to the library.
+    if (!this._hasShownOnce) {
+      this._hasShownOnce = true
+      return
+    }
+    this.loadFavoriteIds()
+  },
+
 
   measureNavigation() {
     let statusBarHeight = 20
@@ -596,10 +607,14 @@ Page({
     try {
       const data = await api.request('GET', '/formulas/favorites/list', { page: 1, page_size: 200 })
       const favoriteIds = (data?.items || []).map((item) => Number(item.id)).filter(Boolean)
-      const formulas = (this.data.formulas || []).map((item) => ({
-        ...item,
-        isFavorited: Boolean(item.isFavorited || item.is_favorited || favoriteIds.includes(Number(item.id))),
-      }))
+      const formulas = (this.data.formulas || []).map((item) => {
+        const isFavorited = favoriteIds.includes(Number(item.id))
+        return {
+          ...item,
+          isFavorited,
+          is_favorited: isFavorited,
+        }
+      }).filter((item) => !this.data.onlyFavorites || item.isFavorited)
       this.setData({ favoriteIds, formulas })
     } catch (e) {
       console.warn('Failed to load formula favorites', e)

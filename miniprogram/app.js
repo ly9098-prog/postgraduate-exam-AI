@@ -78,12 +78,18 @@ function _sanitizeStack(stack) {
 App({
   onLaunch() {
     // 不在启动时加载动画分包，改为在首次播放时由 getApp().loadRewardAnimationPackage() 按需加载
+    this._startPreviewTempFileCleanup()
   },
 
   loadRewardAnimationPackage: loadRewardAnimationPackage,
 
   onShow() {
     this._tryRestoreLogin()
+    this._startPreviewTempFileCleanup()
+  },
+
+  onHide() {
+    this._stopPreviewTempFileCleanup()
   },
 
   onError(err) {
@@ -131,6 +137,27 @@ App({
   },
 
   _globalData: null,
+  _previewTempCleanupTimer: null,
+
+  _startPreviewTempFileCleanup() {
+    const manager = require('./utils/preview-temp-files')
+    manager.cleanupIfDue().catch(function(err) {
+      console.warn('[PREVIEW_TEMP_CLEANUP] cleanup failed', err && (err.errMsg || err.message || err))
+    })
+
+    if (this._previewTempCleanupTimer) return
+    this._previewTempCleanupTimer = setInterval(function() {
+      manager.cleanupIfDue({ force: true }).catch(function(err) {
+        console.warn('[PREVIEW_TEMP_CLEANUP] scheduled cleanup failed', err && (err.errMsg || err.message || err))
+      })
+    }, manager.CLEANUP_INTERVAL_MS)
+  },
+
+  _stopPreviewTempFileCleanup() {
+    if (!this._previewTempCleanupTimer) return
+    clearInterval(this._previewTempCleanupTimer)
+    this._previewTempCleanupTimer = null
+  },
 
   async _tryRestoreLogin() {
     const storage = require('./utils/storage')

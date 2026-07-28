@@ -71,6 +71,38 @@ async def enqueue_prewarm(
     return True
 
 
+async def enqueue_prewarm_batch(
+    wrong_question_ids: list[int],
+    user_id: int,
+) -> dict[str, list[int]]:
+    """Queue a completed practice's wrong questions as one best-effort batch.
+
+    Duplicate wrong-question ids are removed while preserving their original
+    order. Queue writes remain independent, so one unavailable item never
+    prevents the remaining analyses from being scheduled.
+    """
+    unique_ids = list(dict.fromkeys(int(wq_id) for wq_id in wrong_question_ids if wq_id))
+    queued: list[int] = []
+    skipped: list[int] = []
+
+    for wq_id in unique_ids:
+        try:
+            accepted = await enqueue_prewarm(wq_id, user_id)
+        except Exception:
+            logger.warning(
+                "[prewarm] batch enqueue failed wq_id=%d uid=%d",
+                wq_id, user_id, exc_info=True,
+            )
+            accepted = False
+        (queued if accepted else skipped).append(wq_id)
+
+    logger.info(
+        "[prewarm] practice batch scheduled uid=%d queued=%d skipped=%d",
+        user_id, len(queued), len(skipped),
+    )
+    return {"queued": queued, "skipped": skipped}
+
+
 # ── Worker loop ──
 
 

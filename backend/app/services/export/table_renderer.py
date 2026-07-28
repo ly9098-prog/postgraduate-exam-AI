@@ -157,7 +157,7 @@ def _style_header_cell(word_cell: _Cell) -> None:
     # Shading via Open XML
     tc_pr = word_cell._tc.get_or_add_tcPr()
     shading = OxmlElement("w:shd")
-    shading.set(qn("w:fill"), "E8EDF2")
+    shading.set(qn("w:fill"), "F2F2F2")
     shading.set(qn("w:val"), "clear")
     tc_pr.append(shading)
 

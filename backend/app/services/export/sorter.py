@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import random
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,10 +78,14 @@ async def sort_questions(
 def _sort_key(sort_by: ExportSortBy, wq: WrongQuestion, q: Question):
     """Return a comparable sort key."""
     if sort_by == ExportSortBy.NEWEST:
-        return (wq.created_at or _FALLBACK_DT,)
+        timestamp = _datetime_timestamp(wq.created_at)
+        # Missing timestamps always sort last; newest dates sort first.
+        return (1, 0.0) if timestamp is None else (0, -timestamp)
 
     if sort_by == ExportSortBy.OLDEST:
-        return (wq.created_at or _FALLBACK_DT,)
+        timestamp = _datetime_timestamp(wq.created_at)
+        # Missing timestamps always sort last; oldest dates sort first.
+        return (1, 0.0) if timestamp is None else (0, timestamp)
 
     if sort_by == ExportSortBy.ORIGINAL:
         # Original order based on question source ordering — use question ID as proxy
@@ -88,18 +93,43 @@ def _sort_key(sort_by: ExportSortBy, wq: WrongQuestion, q: Question):
 
     if sort_by == ExportSortBy.KNOWLEDGE_POINT:
         kp = q.knowledge_points
-        primary = (kp[0] if kp else "") or ""
-        return (primary,)
+        primary = str((kp[0] if kp else "") or "").strip()
+        return (0, primary) if primary else (1, "")
 
     if sort_by == ExportSortBy.QUESTION_TYPE:
         qt = q.question_type or ""
-        order = QUESTION_TYPE_SORT_ORDER.get(QuestionType(qt), 999) if qt else 999
+        try:
+            order = QUESTION_TYPE_SORT_ORDER.get(QuestionType(qt), 999) if qt else 999
+        except (ValueError, KeyError):
+            order = 999
         return (order,)
 
     return (0,)
 
 
-_FALLBACK_DT = "9999-12-31 23:59:59"
+def _datetime_timestamp(value) -> float | None:
+    """Normalize datetime-like values to a sortable timestamp.
+
+    ``WrongQuestion.created_at`` is normally a ``datetime`` but older rows or
+    test fixtures may contain ISO strings. Returning ``None`` keeps malformed
+    or missing values at the end instead of raising a mixed-type sort error.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        try:
+            return value.timestamp()
+        except (OSError, OverflowError, ValueError):
+            return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+        except (OSError, OverflowError, ValueError):
+            return None
+    return None
 
 
 def _sort_random(wq_ids: list[int]) -> list[int]:

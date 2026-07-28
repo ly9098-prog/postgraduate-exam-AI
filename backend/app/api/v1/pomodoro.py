@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -152,10 +152,17 @@ async def get_trends(
 
 @router.get("/subjects", response_model=list[PomodoroSubjectBreakdown])
 async def get_subject_breakdown(
+    date: str | None = Query(None, description="Breakdown date (YYYY-MM-DD), defaults to today"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await svc.get_subject_breakdown(db, current_user.id)
+    filter_date = None
+    if date:
+        try:
+            filter_date = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="date must use YYYY-MM-DD format") from exc
+    return await svc.get_subject_breakdown(db, current_user.id, filter_date)
 
 
 @router.get("/history", response_model=PomodoroHistoryResponse)
