@@ -44,7 +44,7 @@
           <view class="empty-check">✓</view>
         </view>
         <text class="empty-title">还没有导出记录</text>
-        <text class="empty-text">完成导出后，文件会集中保存在这里，方便预览、保存和分享。</text>
+        <text class="empty-text">完成导出后，文件会集中保存在这里，方便预览和分享。</text>
         <button class="empty-action" hover-class="button-pressed" bindtap="onGoExport">去导出错题</button>
       </view>
 
@@ -54,7 +54,7 @@
             <text class="intro-title">最近导出</text>
             <text class="intro-count">{{list.length}} 条</text>
           </view>
-          <text class="intro-caption">文件到期前可随时预览、保存或分享</text>
+          <text class="intro-caption">文件到期前可随时预览或分享</text>
         </view>
 
         <view
@@ -135,7 +135,23 @@
           <view class="record-actions">
             <!-- Pending / Processing -->
             <block wx:if="{{item.status === 'pending' || item.status === 'processing'}}">
+              <view wx:if="{{item.hasPreviousFile}}" class="two-actions">
+                <button
+                  class="action-btn action-btn-secondary"
+                  hover-class="button-pressed"
+                  data-id="{{item.id}}"
+                  disabled="{{previewingTaskId === item.id}}"
+                  bindtap="onPreview"
+                >{{previewingTaskId === item.id ? '打开中' : '预览旧版'}}</button>
+                <button
+                  class="action-btn action-btn-subtle action-btn-danger-text"
+                  hover-class="button-pressed"
+                  data-id="{{item.id}}"
+                  bindtap="onDelete"
+                >删除任务</button>
+              </view>
               <button
+                wx:else
                 class="action-btn action-btn-subtle action-btn-danger-text action-btn-full"
                 hover-class="button-pressed"
                 data-id="{{item.id}}"
@@ -145,27 +161,20 @@
 
             <!-- Completed -->
             <block wx:elif="{{item.status === 'completed'}}">
-              <view class="completed-actions">
+              <view class="completed-actions completed-actions-two">
                 <button
                   class="action-btn action-btn-primary"
                   hover-class="button-pressed"
                   data-id="{{item.id}}"
+                  disabled="{{previewingTaskId === item.id}}"
                   bindtap="onPreview"
-                >预览</button>
-                <button
-                  class="action-btn action-btn-secondary"
-                  hover-class="button-pressed"
-                  data-id="{{item.id}}"
-                  disabled="{{savingTaskId === item.id}}"
-                  loading="{{savingTaskId === item.id}}"
-                  bindtap="onSave"
-                >{{savingTaskId === item.id ? '保存中' : '保存'}}</button>
+                >{{previewingTaskId === item.id ? '打开中' : '预览文件'}}</button>
                 <button
                   class="action-btn action-btn-secondary"
                   hover-class="button-pressed"
                   open-type="share"
                   data-id="{{item.id}}"
-                >分享</button>
+                >分享页面</button>
               </view>
 
               <button
@@ -201,6 +210,14 @@
             <block wx:elif="{{item.status === 'failed'}}">
               <view class="two-actions">
                 <button
+                  wx:if="{{item.hasPreviousFile}}"
+                  class="action-btn action-btn-secondary"
+                  hover-class="button-pressed"
+                  data-id="{{item.id}}"
+                  bindtap="onPreview"
+                >预览旧版</button>
+                <button
+                  wx:else
                   class="action-btn action-btn-primary"
                   hover-class="button-pressed"
                   data-id="{{item.id}}"
@@ -251,4 +268,26 @@
       <view class="safe-bottom-space"></view>
     </view>
   </scroll-view>
+
+  <!-- Unified custom dialog -->
+  <view wx:if="{{dialogVisible}}" class="dialog-layer" catchtouchmove="onDialogMaskTap">
+    <view class="dialog-mask" bindtap="onDialogMaskTap"></view>
+    <view class="custom-dialog dialog-tone-{{dialogTone}}" catchtap="onDialogPanelTap">
+      <text class="dialog-title">{{dialogTitle}}</text>
+      <text class="dialog-content">{{dialogContent}}</text>
+      <view class="dialog-actions {{!dialogShowCancel ? 'dialog-actions-single' : ''}}">
+        <button
+          wx:if="{{dialogShowCancel}}"
+          class="dialog-button dialog-button-cancel"
+          hover-class="dialog-button-pressed"
+          bindtap="onDialogCancel"
+        >{{dialogCancelText}}</button>
+        <button
+          class="dialog-button dialog-button-confirm dialog-button-confirm-{{dialogTone}}"
+          hover-class="dialog-button-pressed"
+          bindtap="onDialogConfirm"
+        >{{dialogConfirmText}}</button>
+      </view>
+    </view>
+  </view>
 </view>

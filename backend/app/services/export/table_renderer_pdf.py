@@ -61,7 +61,7 @@ def render_table_to_pdf(pdf, block: TableBlock) -> None:
         # Render
         if headers:
             pdf.set_font("WenQuanYi", "B", 8)
-            pdf.set_fill_color(232, 237, 242)
+            pdf.set_fill_color(242, 242, 242)
             pdf.cell(col_w, 6, headers[0], border=1, align="C", fill=True)
             for h in headers[1:]:
                 pdf.cell(col_w, 6, h, border=1, align="C", fill=True)

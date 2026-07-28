@@ -438,15 +438,45 @@
 }
 
 .fc-formula-scroll {
-  min-height: 108rpx;
+  min-height: 112rpx;
 }
 
 .fc-formula-track,
 .fc-formula-track.is-long {
   min-width: 100%;
-  min-height: 108rpx;
-  padding: 18rpx 22rpx 20rpx;
-  text-align: center !important;
+  min-height: 112rpx;
+  padding: 20rpx 24rpx 22rpx;
+  text-align: center;
+}
+
+/* A long natural-width formula must start at the left edge of the scroll area.
+ * Centering an overflowing inline-block creates an unreachable negative offset,
+ * which is why the integral/equality before a cases brace disappeared. */
+.fc-formula-track.is-long {
+  text-align: left !important;
+}
+
+.fc-formula-scroll-shell.is-multiline,
+.fc-formula-scroll.is-multiline,
+.fc-formula-track.is-multiline {
+  min-height: 190rpx;
+}
+
+.fc-formula-scroll-shell.has-many-lines,
+.fc-formula-scroll.has-many-lines,
+.fc-formula-track.has-many-lines {
+  min-height: 236rpx;
+}
+
+.fc-formula-track.is-multiline {
+  padding-top: 28rpx;
+  padding-bottom: 30rpx;
+  vertical-align: top;
+}
+
+.fc-formula-track.is-multiline.is-long {
+  padding-left: 28rpx;
+  padding-right: 36rpx;
 }
 
 .fc-formula-rich {

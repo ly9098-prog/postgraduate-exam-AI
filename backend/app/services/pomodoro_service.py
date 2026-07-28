@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +8,20 @@ from app.core.time_utils import utcnow
 from app.models.admin import Subject
 from app.models.pomodoro import PomodoroSession
 from app.models.user import User
+
+
+# Product dates are selected and displayed in China Standard Time, while all
+# PomodoroSession timestamps are stored as naive UTC datetimes.  Query with a
+# half-open UTC range instead of func.date(end_time): the latter interprets the
+# stored value as a UTC calendar date and can also be cached/optimised poorly by
+# the database when switching between dates.
+_SHANGHAI_TZ = timezone(timedelta(hours=8))
+
+
+def _shanghai_date_utc_range(target_date: date) -> tuple[datetime, datetime]:
+    start_local = datetime.combine(target_date, time.min, tzinfo=_SHANGHAI_TZ)
+    start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    return start_utc, start_utc + timedelta(days=1)
 
 
 def _effective_paused_sec(session, now) -> int:
@@ -372,8 +386,13 @@ async def get_trends(db: AsyncSession, user_id: int, days: int = 7) -> list[dict
     return points
 
 
-async def get_subject_breakdown(db: AsyncSession, user_id: int) -> list[dict]:
-    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+async def get_subject_breakdown(
+    db: AsyncSession,
+    user_id: int,
+    filter_date: date | None = None,
+) -> list[dict]:
+    target_date = filter_date or datetime.now(_SHANGHAI_TZ).date()
+    start_utc, end_utc = _shanghai_date_utc_range(target_date)
 
     result = await db.execute(
         select(
@@ -384,7 +403,8 @@ async def get_subject_breakdown(db: AsyncSession, user_id: int) -> list[dict]:
         .where(
             PomodoroSession.user_id == user_id,
             PomodoroSession.status == "completed",
-            PomodoroSession.end_time >= today_start,
+            PomodoroSession.end_time >= start_utc,
+            PomodoroSession.end_time < end_utc,
         )
         .group_by(PomodoroSession.subject_id)
     )
@@ -426,7 +446,11 @@ async def get_history(
         ~PomodoroSession.status.in_(["running", "paused"]),
     ]
     if filter_date is not None:
-        where.append(func.date(PomodoroSession.end_time) == filter_date)
+        start_utc, end_utc = _shanghai_date_utc_range(filter_date)
+        where.extend([
+            PomodoroSession.end_time >= start_utc,
+            PomodoroSession.end_time < end_utc,
+        ])
 
     count_result = await db.execute(
         select(func.count(PomodoroSession.id)).where(*where)

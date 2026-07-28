@@ -78,9 +78,9 @@ _docx_semaphore: asyncio.Semaphore | None = None
 _VALID_TRANSITIONS: dict[str, set[str]] = {
     ExportTaskStatus.PENDING: {ExportTaskStatus.PROCESSING},
     ExportTaskStatus.PROCESSING: {ExportTaskStatus.COMPLETED, ExportTaskStatus.FAILED},
-    ExportTaskStatus.COMPLETED: {ExportTaskStatus.EXPIRED},
-    ExportTaskStatus.FAILED: set(),  # retry creates a new task
-    ExportTaskStatus.EXPIRED: set(),
+    ExportTaskStatus.COMPLETED: {ExportTaskStatus.EXPIRED, ExportTaskStatus.PENDING},
+    ExportTaskStatus.FAILED: {ExportTaskStatus.PENDING},
+    ExportTaskStatus.EXPIRED: {ExportTaskStatus.PENDING},
 }
 
 

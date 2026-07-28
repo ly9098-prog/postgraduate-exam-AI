@@ -1,4 +1,5 @@
-<view class="page page-{{phase === 'break' ? 'break' : 'focus'}} {{isFreeTimer ? 'page-free' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
+<view class="page theme-{{themeMode}} page-{{phase === 'break' ? 'break' : 'focus'}} {{isFreeTimer ? 'page-free' : ''}}" bindtouchstart="onTouchStart" bindtouchend="onTouchEnd">
+  <view class="theme-backdrop"></view>
   <view class="page-inner animation-entrance size-{{fontSizeLevel}} {{pageEntered ? 'entered' : ''}}">
 
     <!-- ===== TOP BAR ===== -->
@@ -20,6 +21,17 @@
         </view>
         <view class="font-size-btn" hover-class="font-size-btn-pressed" hover-start-time="20" hover-stay-time="80" catchtap="cycleFontSize">
           <text class="font-size-icon {{fontSizeLevel === 'large' ? 'active' : ''}}">Aa</text>
+        </view>
+        <view
+          class="theme-toggle theme-toggle-{{themeMode}} {{themeSwitching ? 'theme-toggle-switching' : ''}}"
+          hover-class="theme-toggle-pressed"
+          hover-start-time="20"
+          hover-stay-time="80"
+          catchtap="toggleTheme"
+          aria-label="{{themeMode === 'light' ? '切换深色模式' : '切换浅色模式'}}"
+        >
+          <text class="theme-glyph theme-glyph-sun">☼</text>
+          <text class="theme-glyph theme-glyph-moon">☾</text>
         </view>
       </view>
     </view>
@@ -93,8 +105,8 @@
                 <slider
                   min="5" max="120" value="{{workDuration}}"
                   bindchange="onWorkChange" show-value
-                  activeColor="#3B82F6" block-size="16" block-color="#ffffff"
-                  backgroundColor="rgba(255,255,255,0.06)"
+                  activeColor="#3B82F6" block-size="16" block-color="{{sliderBlockColor}}"
+                  backgroundColor="{{sliderTrackColor}}"
                 />
               </view>
               <view class="custom-row">
@@ -102,8 +114,8 @@
                 <slider
                   min="5" max="120" value="{{breakDuration}}"
                   bindchange="onBreakChange" show-value
-                  activeColor="#F97316" block-size="16" block-color="#ffffff"
-                  backgroundColor="rgba(255,255,255,0.06)"
+                  activeColor="#F97316" block-size="16" block-color="{{sliderBlockColor}}"
+                  backgroundColor="{{sliderTrackColor}}"
                 />
               </view>
             </view>
@@ -192,7 +204,7 @@
     <view class="bottom-bar">
       <view class="stats-link" hover-class="stats-link-pressed" hover-start-time="20" hover-stay-time="80" catchtap="goStats">
         <text>学习统计</text>
-        <view class="stats-arrow line-icon icon-chevron-right" style="color:#637394;"></view>
+        <view class="stats-arrow line-icon icon-chevron-right"></view>
       </view>
     </view>
   </view>
@@ -201,7 +213,7 @@
   <animated-view
     show="{{showCelebration}}"
     type="{{celebrationType}}"
-    theme="dark"
+    theme="{{celebrationTheme}}"
     title="完成一个番茄钟"
     detail="专注 {{workDuration}} 分钟"
     motto="{{celebrationMotto}}"
@@ -210,7 +222,7 @@
   />
 
   <!-- ===== 结束计时确认弹窗（cover-view 覆盖 canvas） ===== -->
-  <cover-view wx:if="{{showEndConfirm}}" class="confirm-cover-overlay confirm-theme-{{endConfirmTheme}}" catchtap="cancelEndConfirm">
+  <cover-view wx:if="{{showEndConfirm}}" class="confirm-cover-overlay theme-{{themeMode}} confirm-theme-{{endConfirmTheme}}" catchtap="cancelEndConfirm">
     <cover-view class="confirm-cover-card" catchtap="noop">
       <cover-view class="confirm-cover-title">{{endConfirmTitle}}</cover-view>
       <cover-view class="confirm-cover-body">{{endConfirmText}}</cover-view>

@@ -6,6 +6,8 @@ const storage = require('../../utils/storage')
 const aiCache = require('../../utils/ai-diagnosis-cache')
 const { getSubjectName, getSubjectShortName } = require('../../utils/subject-meta')
 
+const AI_AUTO_SETTING_PREFIX = 'ai_wrong_book_auto_v1_'
+
 const ERROR_TYPES = [
   { value: '', label: '全部类型' },
   { value: 'concept_mistake', label: '概念错误' },
@@ -48,7 +50,9 @@ Page({
     batchMasterUndoVisible: false,
     _batchMasterUndoCount: 0,
     selectionPulse: false,
-    aiInsightText: '正在根据错题记录生成复习建议…',
+    aiInsightText: '自动分析已关闭，点击生成获取 AI 洞察',
+    autoAiInsightEnabled: false,
+    aiAutoSwitchPulse: false,
     aiInsightExpanded: false,
     aiInsightHasDetails: false,
     aiInsightWeakPoints: [],
@@ -102,6 +106,7 @@ Page({
   _selectionPulseTimer: null,
   _batchMasterUndoIds: [],
   _batchMasterUndoTimer: null,
+  _aiAutoSwitchTimer: null,
 
   onLoad(options) {
     this.setData({ enableMathImage: config.enableMathImage || false })
@@ -116,7 +121,10 @@ Page({
     }
     this._updateFilterCount()
 
-    // 尽早恢复缓存，使页面首次渲染时直接显示已有诊断
+    // 自动分析偏好按当前用户保存在本机，默认关闭。
+    this._restoreAiAutoSetting()
+    // 尽早恢复缓存，使页面首次渲染时直接显示已有诊断。
+    // 关闭自动分析不会清除既有结果，只是不再主动请求。
     this._restoreAiDiagnosisFromCache()
   },
 
@@ -129,15 +137,12 @@ Page({
   onShow() {
     this._alive = true
     if (!this._ready) return
-    // 刷新统计和列表，但不无条件刷新 AI
-    this.loadStats()
-    this.loadList(true)
-    this.loadReviewOverview()
-    // 已有诊断时检查是否需要后台更新
-    // 无诊断时由 _loadPage / _checkAiDiagnosis 处理
-    if (this.data.aiDiagnosis) {
-      this._checkAiDiagnosis()
-    }
+    // 页面重新可见时先统一刷新数据，再根据本机开关决定是否自动生成 AI 洞察。
+    Promise.all([
+      this.loadStats(),
+      this.loadList(true),
+      this.loadReviewOverview(),
+    ]).then(() => this._checkAiDiagnosis())
   },
 
   onHide() {
@@ -149,6 +154,10 @@ Page({
     if (this._selectionPulseTimer) {
       clearTimeout(this._selectionPulseTimer)
       this._selectionPulseTimer = null
+    }
+    if (this._aiAutoSwitchTimer) {
+      clearTimeout(this._aiAutoSwitchTimer)
+      this._aiAutoSwitchTimer = null
     }
     this._clearBatchMasterUndo()
   },
@@ -166,6 +175,68 @@ Page({
     ])
     // 首次加载完成后检查 AI 诊断
     await this._checkAiDiagnosis()
+  },
+
+  _getAiAutoSettingKey() {
+    const userId = this._getUserId()
+    return userId ? AI_AUTO_SETTING_PREFIX + String(userId) : ''
+  },
+
+  _getAiInsightIdleText(enabled) {
+    return enabled
+      ? '自动分析已开启，进入错题本时会生成最新洞察'
+      : '自动分析已关闭，点击生成获取 AI 洞察'
+  },
+
+  _restoreAiAutoSetting() {
+    const key = this._getAiAutoSettingKey()
+    const enabled = key ? storage.get(key) === true : false
+    this.setData({
+      autoAiInsightEnabled: enabled,
+      aiInsightText: this.data.aiDiagnosis
+        ? this.data.aiInsightText
+        : this._getAiInsightIdleText(enabled),
+    })
+  },
+
+  toggleAiAutoAnalysis() {
+    const enabled = !this.data.autoAiInsightEnabled
+    const key = this._getAiAutoSettingKey()
+    if (key) storage.set(key, enabled)
+
+    if (this._aiAutoSwitchTimer) clearTimeout(this._aiAutoSwitchTimer)
+    this.setData({
+      autoAiInsightEnabled: enabled,
+      aiAutoSwitchPulse: true,
+      aiInsightText: this.data.aiDiagnosis
+        ? this.data.aiInsightText
+        : this._getAiInsightIdleText(enabled),
+    })
+    this._aiAutoSwitchTimer = setTimeout(() => {
+      if (this._alive) this.setData({ aiAutoSwitchPulse: false })
+      this._aiAutoSwitchTimer = null
+    }, 420)
+
+    if (!enabled) {
+      // 关闭时停止接受尚未完成的自动请求结果；既有缓存仍保留展示。
+      if (this.data.aiDiagnosisLoading || this.data.aiDiagnosisRefreshing) {
+        this._aiDiagnosisRequestId++
+        this.setData({ aiDiagnosisLoading: false, aiDiagnosisRefreshing: false, aiDiagnosisError: false })
+      }
+      wx.showToast({ title: '已切换为手动分析', icon: 'none' })
+      return
+    }
+
+    wx.showToast({ title: '已开启自动分析', icon: 'none' })
+    if (this._aiStatsLoaded && Number((this.data.stats || {}).total) > 0) {
+      const startAutoAnalysis = () => {
+        if (this._alive && this.data.autoAiInsightEnabled) {
+          this.ensureAiDiagnosis({ background: true, refreshOnChange: true })
+        }
+      }
+      if (this._aiDiagnosisPromise) this._aiDiagnosisPromise.finally(startAutoAnalysis)
+      else startAutoAnalysis()
+    }
   },
 
   _restoreAiDiagnosisFromCache() {
@@ -221,7 +292,7 @@ Page({
           analysis,
           aiInsightText: this.data.aiDiagnosis
             ? this._oneLineInsight(this.data.aiDiagnosis.summary)
-            : this._oneLineInsight(analysis.focusInsight),
+            : this._getAiInsightIdleText(this.data.autoAiInsightEnabled),
         })
       }
     } catch (e) {
@@ -306,7 +377,7 @@ Page({
         highFrequencyCount,
         aiInsightText: this.data.aiDiagnosis
           ? this._oneLineInsight(this.data.aiDiagnosis.summary)
-          : this._oneLineInsight(analysis.focusInsight),
+          : this._getAiInsightIdleText(this.data.autoAiInsightEnabled),
         hasMore: page < data.total_pages,
         page: reset ? 2 : page + 1,
         loading: false,
@@ -862,7 +933,11 @@ Page({
       return null
     }
 
-    return this.ensureAiDiagnosis({ background: true })
+    if (!this.data.autoAiInsightEnabled) {
+      return this.data.aiDiagnosis || null
+    }
+
+    return this.ensureAiDiagnosis({ background: true, refreshOnChange: true })
   },
 
   _hasAiDiagnosisContent(value) {
@@ -903,6 +978,7 @@ Page({
    * @param {object} options
    *   force:     true = 忽略缓存和指纹，强制请求（手动刷新）
    *   background: true = 后台刷新，失败时静默
+   *   refreshOnChange: true = 数据指纹变化时立即刷新，不受本地最短间隔限制
    */
   async ensureAiDiagnosis(options) {
     options = options || {}
@@ -931,6 +1007,7 @@ Page({
 
     // 后台刷新场景：检查 TTL 和指纹
     var needRefresh = false
+    var sourceChanged = false
     if (!hasData) {
       needRefresh = true
     } else {
@@ -945,8 +1022,9 @@ Page({
         // 从缓存读取上一次指纹
         var uid = this._getUserId()
         var cache = aiCache.restore(uid)
-        if (cache.signature && cache.signature !== currentSig && aiCache.canRefresh(cachedAt)) {
+        if (cache.signature && cache.signature !== currentSig && (options.refreshOnChange || aiCache.canRefresh(cachedAt))) {
           needRefresh = true
+          sourceChanged = true
         }
       }
     }
@@ -955,7 +1033,7 @@ Page({
       return this.data.aiDiagnosis
     }
 
-    return this._requestAiDiagnosis({ background: true })
+    return this._requestAiDiagnosis({ background: true, refresh: sourceChanged })
   },
 
   /**
@@ -976,7 +1054,7 @@ Page({
 
     this._aiDiagnosisPromise = (async function() {
       try {
-        var params = opts.force ? { refresh: 'true' } : {}
+        var params = (opts.force || opts.refresh) ? { refresh: 'true' } : {}
         var diagnosis = await api.get('/stats/ai-diagnosis', params, { timeout: 60000 })
         if (self._isAiDiagnosisPending(diagnosis)) {
           diagnosis = await self._pollAiDiagnosis(diagnosis, requestId)

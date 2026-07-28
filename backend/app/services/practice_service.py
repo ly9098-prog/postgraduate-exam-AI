@@ -1955,17 +1955,14 @@ async def batch_submit_answers(
 
     # 全部 commit 后，逐个执行 best-effort 后置操作
     # （错题、行为、掌握度等 — 不影响主流程结果）
+    wrong_question_ids_for_prewarm: list[int] = []
     for record, q, is_correct, user_answer in records:
         if not is_correct:
             try:
                 from app.services.wrong_question_service import record_wrong
 
                 wq = await record_wrong(db, user_id, q.id, user_answer)
-                try:
-                    from app.services.ai_prewarm_worker import enqueue_prewarm
-                    await enqueue_prewarm(wq.id, user_id)
-                except Exception:
-                    pass
+                wrong_question_ids_for_prewarm.append(wq.id)
             except Exception:
                 logger.warning("批量错题记录失败 qid=%d uid=%d", q.id, user_id, exc_info=True)
 
@@ -1992,6 +1989,19 @@ async def batch_submit_answers(
             )
         except Exception:
             logger.warning("批量掌握度更新失败 qid=%d uid=%d", q.id, user_id, exc_info=True)
+
+    # 本次练习成功落库后统一预生成所有新增/更新错题的 AI 解析。
+    # 调度失败不影响成绩返回，用户进入错题详情时仍可手动生成。
+    if wrong_question_ids_for_prewarm:
+        try:
+            from app.services.ai_prewarm_worker import enqueue_prewarm_batch
+
+            await enqueue_prewarm_batch(wrong_question_ids_for_prewarm, user_id)
+        except Exception:
+            logger.warning(
+                "批量 AI 错题分析调度失败 uid=%d count=%d",
+                user_id, len(wrong_question_ids_for_prewarm), exc_info=True,
+            )
 
     return {
         "results": [

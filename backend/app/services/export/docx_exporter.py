@@ -12,7 +12,7 @@ from __future__ import annotations
 Font strategy:
 - Chinese body: SimSun (宋体), fallback DengXian (等线)
 - Chinese heading: SimHei (黑体)
-- English/numbers: Calibri as primary, Times New Roman as fallback
+- English/numbers: Times New Roman
 - Code: Consolas / Courier New
 - East Asian font set explicitly via OOXML w:eastAsia attribute.
 
@@ -30,12 +30,15 @@ import io
 import logging
 import os
 import re
+import unicodedata
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
 from docx import Document
 from docx.enum.section import WD_ORIENT
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -55,17 +58,17 @@ logger = logging.getLogger(__name__)
 # ── Page layout constants ──
 PAGE_W_CM = 21.0  # A4 width
 PAGE_H_CM = 29.7  # A4 height
-MARGIN_L_CM = 2.0
-MARGIN_R_CM = 2.0
-MARGIN_T_CM = 2.5
-MARGIN_B_CM = 2.0
-BODY_W_CM = PAGE_W_CM - MARGIN_L_CM - MARGIN_R_CM  # 17.0 cm
+MARGIN_L_CM = 1.8
+MARGIN_R_CM = 1.8
+MARGIN_T_CM = 1.7
+MARGIN_B_CM = 1.6
+BODY_W_CM = PAGE_W_CM - MARGIN_L_CM - MARGIN_R_CM  # 17.4 cm
 
 # ── Font names ──
 _BODY_FONT = "SimSun"  # 宋体 — Chinese body
 _BODY_FONT_EA = "SimSun"  # East-Asian body
 _HEADING_FONT = "SimHei"  # 黑体 — Chinese heading
-_EN_FONT = "Calibri"  # English / numbers
+_EN_FONT = "Times New Roman"  # English / numbers
 _CODE_FONT = "Consolas"
 _CODE_FONT_CJK = "DengXian"  # 等线 — Chinese in code blocks
 
@@ -150,7 +153,6 @@ class DocxExporter(Exporter):
         """Synchronous DOCX generation."""
         doc = Document()
 
-        # ── Page setup ──
         section = doc.sections[0]
         section.page_width = Cm(PAGE_W_CM)
         section.page_height = Cm(PAGE_H_CM)
@@ -160,12 +162,10 @@ class DocxExporter(Exporter):
         section.left_margin = Cm(MARGIN_L_CM)
         section.right_margin = Cm(MARGIN_R_CM)
 
-        # ── Default font ──
         style = doc.styles["Normal"]
         font = style.font
         font.name = _EN_FONT
         font.size = Pt(10.5)
-        # Set East-Asian font
         rpr = style.element.get_or_add_rPr()
         rfonts = rpr.find(qn("w:rFonts"))
         if rfonts is None:
@@ -175,140 +175,157 @@ class DocxExporter(Exporter):
         rfonts.set(qn("w:ascii"), _EN_FONT)
         rfonts.set(qn("w:hAnsi"), _EN_FONT)
 
-        # Paragraph spacing
         pf = style.paragraph_format
         pf.space_before = Pt(0)
-        pf.space_after = Pt(2)
-        pf.line_spacing = 1.5
+        pf.space_after = Pt(0)
+        pf.line_spacing = 1.45
 
-        # ── Header ──
         self._add_header(doc, config)
-
-        # ── Header and Footer (per section) ──
         self._setup_header_footer(doc, config)
 
-        # ── Questions ──
         answer_section: list[dict] = []
         analysis_section: list[dict] = []
-
-        group_title = config.get("group_by", "none")
+        group_by = config.get("group_by", "none")
+        group_counts = Counter(
+            q.get("_group_title", "") for q in questions if q.get("_group_title", "")
+        )
         current_group = None
+        group_index = 0
 
         for idx, q in enumerate(questions):
             q_group = q.get("_group_title", "")
-            if group_title != "none" and q_group and q_group != current_group:
+            if group_by != "none" and q_group and q_group != current_group:
                 current_group = q_group
-                self._add_group_header(doc, q_group)
+                group_index += 1
+                self._add_group_header(doc, q_group, group_index, group_counts.get(q_group, 0))
 
             question_num = idx + 1
-
-            # ── Question header line: number + type ──
             qt_label = self._get_question_type_label(q.get("question_type", ""))
-            header_text = f"{question_num}. [{qt_label}]" if qt_label else f"{question_num}."
-            p = doc.add_paragraph()
-            p.paragraph_format.keep_with_next = True
-            p.paragraph_format.space_before = Pt(6)
-            p.paragraph_format.space_after = Pt(2)
-            run = p.add_run(header_text)
-            run.bold = False
-            run.font.size = Pt(11)
-            run.font.name = _HEADING_FONT
-            self._set_east_asian_font(run, _HEADING_FONT)
+            show_type = group_by != "question_type"
+            question_paragraphs = []
 
-            # ── Question content ──
-            content_text = self._get_question_text(q)
+            # Number and stem share one paragraph, matching conventional exam
+            # layout. Text stored outside ``segments`` must not be discarded.
             stem_p = doc.add_paragraph()
-            stem_p.paragraph_format.keep_with_next = True
-            stem_p.paragraph_format.space_after = Pt(2)
-            self._write_content_to_paragraph(stem_p, content_text, q, ctx, doc)
+            stem_p.paragraph_format.space_before = Pt(3.5)
+            stem_p.paragraph_format.space_after = Pt(1.5)
+            prefix = f"{question_num}．"
+            if show_type and qt_label:
+                prefix += f"[{self._formal_group_title(qt_label)}]"
+            prefix_run = stem_p.add_run(prefix)
+            prefix_run.bold = False
+            prefix_run.font.size = Pt(10.5)
+            prefix_run.font.name = _BODY_FONT
+            self._set_east_asian_font(prefix_run, _BODY_FONT_EA)
 
-            # ── Options ──
-            options = q.get("options") or {}
-            if options:
-                for opt_key in sorted(options.keys()):
-                    opt_text = options[opt_key]
-                    opt_p = doc.add_paragraph()
-                    opt_p.paragraph_format.keep_with_next = True
-                    opt_p.paragraph_format.space_after = Pt(1)
-                    opt_p.paragraph_format.left_indent = Cm(0.5)
-                    run = opt_p.add_run(f"{opt_key}. {opt_text}")
+            content_text = self._get_question_text(q)
+            content = q.get("content") if isinstance(q.get("content"), dict) else {}
+            segments = (content or {}).get("segments") or []
+            cleaned_stem = self._sanitize_text(content_text).strip()
+            if cleaned_stem:
+                if has_latex(cleaned_stem):
+                    self._write_latex_content_to_doc(stem_p, cleaned_stem, ctx)
+                else:
+                    run = stem_p.add_run(cleaned_stem)
                     run.font.size = Pt(10.5)
                     run.font.name = _BODY_FONT
                     self._set_east_asian_font(run, _BODY_FONT_EA)
+                visual_segments = [
+                    seg for seg in segments
+                    if seg.get("type") in ("code_image", "math_image", "table_image", "image", "table_markdown")
+                ]
+                if visual_segments:
+                    self._write_segments_to_doc(stem_p, visual_segments, ctx, doc)
+            elif segments:
+                self._write_segments_to_doc(stem_p, segments, ctx, doc)
+            else:
+                run = stem_p.add_run("（题干内容未提供）")
+                run.font.size = Pt(10.5)
+                run.font.name = _BODY_FONT
+                self._set_east_asian_font(run, _BODY_FONT_EA)
+            question_paragraphs.append(stem_p)
 
-            # ── Answer space ──
+            segment_urls = {str(seg.get("url")) for seg in segments if seg.get("url")}
+            for url in q.get("image_urls") or []:
+                if url and str(url) not in segment_urls:
+                    self._embed_image_in_doc(stem_p, str(url), ctx)
+
+            options = q.get("options") or {}
+            options_table = None
+            if options:
+                options_table = self._add_options_table(doc, options)
+                stem_p.paragraph_format.keep_with_next = True
             space_mm = get_answer_space_mm(
                 config.get("space_style", "standard"),
                 q.get("question_type"),
             )
             if space_mm > 0:
-                self._add_answer_space(doc, space_mm, q.get("question_type", ""))
+                question_paragraphs.extend(
+                    self._add_answer_space(doc, space_mm, q.get("question_type", ""))
+                )
 
-            # ── Answer after question ──
             if config.get("answer_position") == "after_question":
-                ans = q.get("answer", "")
+                ans = self._sanitize_text(q.get("answer", ""))
                 if ans:
                     ans_p = doc.add_paragraph()
-                    ans_p.paragraph_format.keep_with_next = True
-                    self._add_shaded_run(ans_p, "【答案】" + ans)
+                    ans_p.paragraph_format.space_before = Pt(2)
+                    self._add_labeled_text(ans_p, "答案", ans)
+                    question_paragraphs.append(ans_p)
 
-            # ── Analysis after question ──
             if config.get("analysis_position") == "after_question":
-                analysis_text = q.get("analysis", "")
+                analysis_text = self._sanitize_text(q.get("analysis", ""))
                 if analysis_text:
                     ana_p = doc.add_paragraph()
-                    self._add_shaded_run(ana_p, "【解析】" + analysis_text)
+                    ana_p.paragraph_format.space_before = Pt(2)
+                    self._add_labeled_text(ana_p, "解析", analysis_text)
+                    question_paragraphs.append(ana_p)
 
-            # ── Collect for end sections ──
             if config.get("answer_position") == "at_end":
                 answer_section.append({
                     "num": question_num,
-                    "answer": q.get("answer", ""),
+                    "answer": self._sanitize_text(q.get("answer", "")),
                 })
             if config.get("analysis_position") == "at_end":
                 analysis_section.append({
                     "num": question_num,
-                    "analysis": q.get("analysis", ""),
+                    "analysis": self._sanitize_text(q.get("analysis", "")),
                 })
 
-        # ── Answer section at end ──
+            self._keep_question_together(question_paragraphs)
+            if options_table is not None:
+                # Tie the stem to the first option-table row. Rows themselves
+                # are marked cantSplit, so ordinary questions stay intact.
+                stem_p.paragraph_format.keep_with_next = True
+
         if answer_section:
             doc.add_page_break()
-            p = doc.add_paragraph()
-            run = p.add_run("参考答案")
-            run.bold = True
-            run.font.size = Pt(14)
-            run.font.name = _HEADING_FONT
-            self._set_east_asian_font(run, _HEADING_FONT)
-            p.paragraph_format.space_after = Pt(6)
+            self._add_end_section_title(doc, "参考答案")
+            for item in answer_section:
+                p = doc.add_paragraph()
+                p.paragraph_format.space_after = Pt(3)
+                run = p.add_run(f"{item['num']}．{item.get('answer') or '未提供答案'}")
+                run.font.size = Pt(10.5)
+                run.font.name = _BODY_FONT
+                self._set_east_asian_font(run, _BODY_FONT_EA)
 
-            # Compact answer format
-            answer_p = doc.add_paragraph()
-            answer_p.paragraph_format.space_after = Pt(4)
-            lines = [f"{item['num']}. {item['answer']}" for item in answer_section]
-            answer_p.add_run("    ".join(lines))
-
-        # ── Analysis section at end ──
         if analysis_section:
             doc.add_page_break()
-            p = doc.add_paragraph()
-            run = p.add_run("解析")
-            run.bold = True
-            run.font.size = Pt(14)
-            run.font.name = _HEADING_FONT
-            self._set_east_asian_font(run, _HEADING_FONT)
-            p.paragraph_format.space_after = Pt(6)
-
+            self._add_end_section_title(doc, "答案解析")
             for item in analysis_section:
-                if item.get("analysis"):
-                    ap = doc.add_paragraph()
-                    ap.paragraph_format.space_after = Pt(4)
-                    run = ap.add_run(f"{item['num']}. {item['analysis']}")
-                    run.font.size = Pt(10.5)
-                    run.font.name = _BODY_FONT
-                    self._set_east_asian_font(run, _BODY_FONT_EA)
+                if not item.get("analysis"):
+                    continue
+                p = doc.add_paragraph()
+                p.paragraph_format.space_after = Pt(6)
+                number_run = p.add_run(f"{item['num']}．")
+                number_run.bold = True
+                number_run.font.size = Pt(10.5)
+                number_run.font.name = _BODY_FONT
+                self._set_east_asian_font(number_run, _BODY_FONT_EA)
+                run = p.add_run(item["analysis"])
+                run.font.size = Pt(10.5)
+                run.font.name = _BODY_FONT
+                self._set_east_asian_font(run, _BODY_FONT_EA)
 
-        # ── Save ──
         buf = io.BytesIO()
         doc.save(buf)
         buf.seek(0)
@@ -316,96 +333,59 @@ class DocxExporter(Exporter):
 
     # ── Document header ──
 
-    def _add_header(self, doc: Document, config: dict):
-        """Add document header: product name, title, date, question count."""
-        # Product name
-        product_name = config.get("product_name", "")
-        if product_name:
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            run = p.add_run(product_name)
-            run.font.size = Pt(9)
-            run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-            run.font.name = _EN_FONT
-            p.paragraph_format.space_after = Pt(2)
-
-        # Title
-        title = config.get("title", "错题巩固练习")
+    def _add_header(self, doc: Document, config: dict) -> None:
+        """Add a clean first-page exam title without metadata or rules."""
+        title = self._sanitize_text(config.get("title", "错题巩固练习")) or "错题巩固练习"
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_before = Pt(4)
-        p.paragraph_format.space_after = Pt(4)
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(13)
+        p.paragraph_format.keep_with_next = True
         run = p.add_run(title)
         run.bold = False
-        run.font.size = Pt(16)
+        run.font.size = Pt(18)
         run.font.name = _HEADING_FONT
         self._set_east_asian_font(run, _HEADING_FONT)
 
-        # Date
-        if config.get("show_date", True):
-            date_str = config.get("export_date", "")
-            if date_str:
-                p = doc.add_paragraph()
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p.paragraph_format.space_after = Pt(2)
-                run = p.add_run(date_str)
-                run.font.size = Pt(9)
-                run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-                run.font.name = _EN_FONT
-
-        # Question count
-        total = config.get("total_count", 0)
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p.paragraph_format.space_after = Pt(6)
-        run = p.add_run(f"共 {total} 题")
-        run.font.size = Pt(10)
-        run.font.name = _BODY_FONT
-        self._set_east_asian_font(run, _BODY_FONT_EA)
-
-    # ── Header / Footer with PAGE/NUMPAGES fields ──
-
-    def _setup_header_footer(self, doc: Document, config: dict):
-        """Add header (product name) and footer (page numbers) using Open XML fields."""
+    def _setup_header_footer(self, doc: Document, config: dict) -> None:
+        """Use a later-page title header and centered ``· PAGE ·`` footer."""
         section = doc.sections[0]
+        section.different_first_page_header_footer = True
+        section.header_distance = Cm(0.65)
+        section.footer_distance = Cm(0.65)
+        title = self._sanitize_text(config.get("title", "错题巩固练习")) or "错题巩固练习"
 
-        # ── Header: product name ──
+        first_header = section.first_page_header
+        first_header.is_linked_to_previous = False
+        first_header.paragraphs[0].text = ""
+
         header = section.header
         header.is_linked_to_previous = False
         hp = header.paragraphs[0]
+        hp.text = ""
         hp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        product_name = config.get("product_name", settings.PRODUCT_NAME)
-        run = hp.add_run(product_name)
+        hp.paragraph_format.space_after = Pt(2)
+        run = hp.add_run(title)
         run.font.size = Pt(8)
-        run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-        run.font.name = _EN_FONT
+        run.font.color.rgb = RGBColor(0x60, 0x60, 0x60)
+        run.font.name = _BODY_FONT
+        self._set_east_asian_font(run, _BODY_FONT_EA)
+        self._set_paragraph_bottom_border(hp, color="B7B7B7", size="3", space="2")
 
-        # ── Footer: PAGE / NUMPAGES ──
-        footer = section.footer
-        footer.is_linked_to_previous = False
-        fp = footer.paragraphs[0]
-        fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-        # "第 " text
-        run = fp.add_run("第 ")
-        run.font.size = Pt(8)
-        run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-
-        # PAGE field
-        self._add_field_to_paragraph(fp, "PAGE")
-
-        # " 页 / 共 " text
-        run = fp.add_run(" 页 / 共 ")
-        run.font.size = Pt(8)
-        run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-
-        # NUMPAGES field
-        self._add_field_to_paragraph(fp, "NUMPAGES")
-
-        # " 页" text
-        run = fp.add_run(" 页")
-        run.font.size = Pt(8)
-        run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+        for footer in (section.first_page_footer, section.footer):
+            footer.is_linked_to_previous = False
+            fp = footer.paragraphs[0]
+            fp.text = ""
+            fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = fp.add_run("· ")
+            run.font.size = Pt(8)
+            run.font.color.rgb = RGBColor(0x68, 0x68, 0x68)
+            run.font.name = _EN_FONT
+            self._add_field_to_paragraph(fp, "PAGE")
+            run = fp.add_run(" ·")
+            run.font.size = Pt(8)
+            run.font.color.rgb = RGBColor(0x68, 0x68, 0x68)
+            run.font.name = _EN_FONT
 
     @staticmethod
     def _add_field_to_paragraph(paragraph, field_name: str):
@@ -636,74 +616,193 @@ class DocxExporter(Exporter):
             logger.warning("Image download failed for %s: %s", url, e)
             return None
 
+    @staticmethod
+    def _display_units(text: str) -> int:
+        units = 0
+        for char in str(text):
+            units += 2 if unicodedata.east_asian_width(char) in ("W", "F", "A") else 1
+        return units
+
+    def _choose_option_columns(self, items: list[tuple[str, str]]) -> int:
+        rendered = [f"{key}．{self._sanitize_text(text)}" for key, text in items]
+        # Approximate capacities at 10.5 pt in a 17.4 cm body width. These
+        # thresholds match conventional four/two/one-column exam choices.
+        if rendered and all(self._display_units(text) <= 20 for text in rendered):
+            return 4
+        if rendered and all(self._display_units(text) <= 46 for text in rendered):
+            return 2
+        return 1
+
+    def _add_options_table(self, doc: Document, options: dict):
+        items = [(str(key), str(options[key])) for key in sorted(options.keys())]
+        columns = self._choose_option_columns(items)
+        rows = (len(items) + columns - 1) // columns
+        table = doc.add_table(rows=rows, cols=columns)
+        table.alignment = WD_TABLE_ALIGNMENT.LEFT
+        table.autofit = False
+        self._set_table_borders_none(table)
+        self._set_table_indent(table, 0.55)
+
+        cell_width = Cm((BODY_W_CM - 0.55) / columns)
+        for row_index, row in enumerate(table.rows):
+            self._set_row_cant_split(row)
+            for col_index, cell in enumerate(row.cells):
+                cell.width = cell_width
+                cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                self._set_cell_margins(cell, top=0, left=0.03, bottom=0, right=0.08)
+                item_index = row_index * columns + col_index
+                p = cell.paragraphs[0]
+                p.paragraph_format.space_before = Pt(0)
+                p.paragraph_format.space_after = Pt(1)
+                p.paragraph_format.line_spacing = 1.25
+                if item_index < len(items):
+                    key, value = items[item_index]
+                    run = p.add_run(f"{key}．{self._sanitize_text(value)}")
+                    run.font.size = Pt(10.5)
+                    run.font.name = _BODY_FONT
+                    self._set_east_asian_font(run, _BODY_FONT_EA)
+        return table
+
+    @staticmethod
+    def _set_table_borders_none(table) -> None:
+        tbl_pr = table._tbl.tblPr
+        borders = tbl_pr.find(qn("w:tblBorders"))
+        if borders is None:
+            borders = OxmlElement("w:tblBorders")
+            tbl_pr.append(borders)
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            el = OxmlElement(f"w:{edge}")
+            el.set(qn("w:val"), "nil")
+            borders.append(el)
+
+    @staticmethod
+    def _set_table_indent(table, indent_cm: float) -> None:
+        tbl_pr = table._tbl.tblPr
+        tbl_ind = tbl_pr.find(qn("w:tblInd"))
+        if tbl_ind is None:
+            tbl_ind = OxmlElement("w:tblInd")
+            tbl_pr.append(tbl_ind)
+        tbl_ind.set(qn("w:w"), str(int(round(indent_cm * 1440 / 2.54))))
+        tbl_ind.set(qn("w:type"), "dxa")
+
+    @staticmethod
+    def _set_cell_margins(cell, top=0, left=0, bottom=0, right=0) -> None:
+        tc = cell._tc
+        tc_pr = tc.get_or_add_tcPr()
+        tc_mar = tc_pr.first_child_found_in("w:tcMar")
+        if tc_mar is None:
+            tc_mar = OxmlElement("w:tcMar")
+            tc_pr.append(tc_mar)
+        for m, value in (("top", top), ("left", left), ("bottom", bottom), ("right", right)):
+            node = tc_mar.find(qn(f"w:{m}"))
+            if node is None:
+                node = OxmlElement(f"w:{m}")
+                tc_mar.append(node)
+            node.set(qn("w:w"), str(int(round(value * 1440 / 2.54))))
+            node.set(qn("w:type"), "dxa")
+
+    @staticmethod
+    def _set_row_cant_split(row) -> None:
+        tr_pr = row._tr.get_or_add_trPr()
+        cant_split = OxmlElement("w:cantSplit")
+        tr_pr.append(cant_split)
+
     # ── Answer space ──
 
-    def _add_answer_space(self, doc: Document, space_mm: float, question_type: str):
-        """Add printable answer space: blank paragraphs with spacing."""
-        # Fill-blank: underline-style space
-        # Subjective: blank paragraphs with explicit height
-        if question_type == "fill_blank":
-            # Add underline blank
+    def _add_answer_space(self, doc: Document, space_mm: float, question_type: str) -> list:
+        """Reserve unruled writing space and return its paragraphs."""
+        height_pt = max(1.0, float(space_mm)) / 0.352778
+        line_height = 14.0
+        num_lines = max(1, int(round(height_pt / line_height)))
+        paragraphs = []
+        for _ in range(num_lines):
             p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(2)
-            p.paragraph_format.space_after = Pt(2)
-            # Create underline run with spaces
-            run = p.add_run(" " * 40)
-            run.underline = True
-            run.font.size = Pt(12)
-        else:
-            # Subjective / other: blank paragraphs
-            height_pt = space_mm / 0.352778  # mm → pt
-            num_lines = max(1, int(height_pt / 14))
-            for _ in range(num_lines):
-                p = doc.add_paragraph()
-                p.paragraph_format.space_before = Pt(0)
-                p.paragraph_format.space_after = Pt(0)
-                # Minimal content to reserve space
-                run = p.add_run("")
-                run.font.size = Pt(12)
-                p.paragraph_format.line_spacing = Pt(14)
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(0)
+            p.paragraph_format.line_spacing = Pt(line_height)
+            run = p.add_run(" ")
+            run.font.size = Pt(1)
+            paragraphs.append(p)
+        return paragraphs
 
-    # ── Group header ──
-
-    def _add_group_header(self, doc: Document, title: str):
-        """Add a group header paragraph with page-break control."""
+    def _add_group_header(self, doc: Document, title: str, index: int, count: int) -> None:
+        """Add a numbered, monochrome section heading."""
         p = doc.add_paragraph()
         p.paragraph_format.keep_with_next = True
-        p.paragraph_format.space_before = Pt(12)
+        p.paragraph_format.keep_together = True
+        p.paragraph_format.space_before = Pt(9)
         p.paragraph_format.space_after = Pt(4)
-        run = p.add_run(title)
+        text = f"{self._chinese_section_number(index)}、{self._formal_group_title(title)}" + (f"（共{count}题）" if count else "")
+        run = p.add_run(text)
         run.bold = True
-        run.font.size = Pt(14)
+        run.font.size = Pt(13)
         run.font.name = _HEADING_FONT
         self._set_east_asian_font(run, _HEADING_FONT)
 
-    # ── Helper utilities ──
+    def _add_end_section_title(self, doc: Document, title: str) -> None:
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.keep_with_next = True
+        p.paragraph_format.space_after = Pt(10)
+        run = p.add_run(title)
+        run.bold = True
+        run.font.size = Pt(15)
+        run.font.name = _HEADING_FONT
+        self._set_east_asian_font(run, _HEADING_FONT)
 
     @staticmethod
-    def _add_paragraph_to_doc(paragraph) -> Paragraph:
-        """Add a new paragraph after the one containing this paragraph's XML element."""
-        from docx.text.paragraph import Paragraph
-
-        body = paragraph._element.getparent()
-        new_p = OxmlElement("w:p")
-        body.append(new_p)
-        # Return a Paragraph wrapper
-        return Paragraph(new_p, paragraph._element.getparent())
-
-    @staticmethod
-    def _add_shaded_run(paragraph, text: str):
-        """Add a run with gray background shading."""
+    def _add_labeled_text(paragraph, label: str, text: str) -> None:
+        label_run = paragraph.add_run(f"{label}：")
+        label_run.bold = True
+        label_run.font.size = Pt(10.5)
+        label_run.font.name = _BODY_FONT
+        DocxExporter._set_east_asian_font(label_run, _BODY_FONT_EA)
         run = paragraph.add_run(text)
-        run.font.size = Pt(10)
+        run.font.size = Pt(10.5)
         run.font.name = _BODY_FONT
         DocxExporter._set_east_asian_font(run, _BODY_FONT_EA)
 
-        # Add shading via Open XML
-        shading = OxmlElement("w:shd")
-        shading.set(qn("w:fill"), "F5F5F2")
-        shading.set(qn("w:val"), "clear")
-        run._r.get_or_add_rPr().append(shading)
+    @staticmethod
+    def _keep_question_together(paragraphs: list) -> None:
+        """Keep ordinary questions on one page where Word can do so."""
+        if not paragraphs:
+            return
+        for idx, paragraph in enumerate(paragraphs):
+            paragraph.paragraph_format.keep_together = True
+            paragraph.paragraph_format.keep_with_next = idx < len(paragraphs) - 1
+        paragraphs[-1].paragraph_format.space_after = Pt(8)
+
+    @staticmethod
+    def _set_paragraph_bottom_border(paragraph, color: str, size: str, space: str) -> None:
+        p_pr = paragraph._p.get_or_add_pPr()
+        p_bdr = p_pr.find(qn("w:pBdr"))
+        if p_bdr is None:
+            p_bdr = OxmlElement("w:pBdr")
+            p_pr.append(p_bdr)
+        bottom = OxmlElement("w:bottom")
+        bottom.set(qn("w:val"), "single")
+        bottom.set(qn("w:sz"), size)
+        bottom.set(qn("w:space"), space)
+        bottom.set(qn("w:color"), color)
+        p_bdr.append(bottom)
+
+    @staticmethod
+    def _chinese_section_number(value: int) -> str:
+        numerals = [
+            "零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
+            "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
+        ]
+        if 0 <= value < len(numerals):
+            return numerals[value]
+        return str(value)
+
+    @staticmethod
+    def _formal_group_title(title: str) -> str:
+        return {
+            "单选题": "单项选择题",
+            "多选题": "多项选择题",
+            "问答题": "简答题",
+        }.get(title, title)
 
     @staticmethod
     def _set_east_asian_font(run, font_name: str):
@@ -717,11 +816,22 @@ class DocxExporter(Exporter):
 
     @staticmethod
     def _get_question_text(q: dict) -> str:
-        """Extract display text from a question dict."""
+        """Extract display text with the same fallback order as DataBuilder."""
         content = q.get("content") or {}
         if isinstance(content, dict):
-            return content.get("stem") or content.get("text") or ""
-        return str(content)
+            direct = content.get("stem") or content.get("text")
+            if direct:
+                return str(direct)
+            segment_text = "".join(
+                str(seg.get("text") or "")
+                for seg in (content.get("segments") or [])
+                if isinstance(seg, dict) and seg.get("type", "text") == "text"
+            ).strip()
+            if segment_text:
+                return segment_text
+        elif content:
+            return str(content)
+        return str(q.get("raw_content") or "")
 
     @staticmethod
     def _sanitize_text(text: str | None) -> str:

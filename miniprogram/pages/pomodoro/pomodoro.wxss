@@ -7,8 +7,8 @@
 /* ── Native page (dark fallback for scroll bounce area) ── */
 page {
   min-height: 100vh;
-  background: #0B1121;
-  background-color: #0B1121;
+  background: #F4F4EE;
+  background-color: #F4F4EE;
 }
 
 /* ── Page ── */
@@ -1206,5 +1206,494 @@ page {
   .stats-link {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* ============================================
+   LIGHT / DARK THEME BRIDGE
+   Light palette follows the Home study-desk language.
+   Existing dark selectors above remain the dark source of truth.
+   ============================================ */
+.page {
+  position: relative;
+  isolation: isolate;
+  color: #FFFFFF;
+}
+
+.page-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.theme-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(183, 232, 42, 0.12), transparent 380rpx),
+    radial-gradient(circle at 0% 62%, rgba(21, 51, 35, 0.05), transparent 420rpx),
+    linear-gradient(180deg, #F7F7F1 0%, #EFF1EA 100%);
+  transition: opacity 480ms cubic-bezier(0.22, 1, 0.36, 1), background 480ms ease;
+}
+
+.theme-light .theme-backdrop {
+  opacity: 1;
+}
+
+.theme-light.page-break .theme-backdrop {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(249, 115, 22, 0.11), transparent 380rpx),
+    radial-gradient(circle at 0% 68%, rgba(244, 63, 94, 0.045), transparent 440rpx),
+    linear-gradient(180deg, #FBF7EF 0%, #F4EEE6 100%);
+}
+
+.theme-light.page-free .theme-backdrop {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(183, 232, 42, 0.13), transparent 380rpx),
+    radial-gradient(circle at 0% 65%, rgba(16, 185, 129, 0.075), transparent 440rpx),
+    linear-gradient(180deg, #F5F7EE 0%, #EDF3EA 100%);
+}
+
+/* Theme toggle — current mode is represented by sun / moon. */
+.theme-toggle {
+  position: relative;
+  width: 56rpx;
+  height: 56rpx;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 2rpx solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8rpx 20rpx rgba(0, 0, 0, 0.08);
+  transition: transform 220ms ease, background 420ms ease, border-color 420ms ease, box-shadow 420ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.theme-toggle-pressed {
+  transform: scale(0.92);
+}
+
+.theme-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 27rpx;
+  line-height: 1;
+  opacity: 0;
+  transform: rotate(-80deg) scale(0.45);
+  transition: opacity 340ms ease, transform 440ms cubic-bezier(0.22, 1, 0.36, 1), color 420ms ease;
+}
+
+.theme-toggle-light .theme-glyph-sun,
+.theme-toggle-dark .theme-glyph-moon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+.theme-toggle-light .theme-glyph-sun {
+  color: #173426;
+  text-shadow: 0 0 16rpx rgba(183, 232, 42, 0.34);
+}
+
+.theme-toggle-dark .theme-glyph-moon {
+  color: #BFDBFE;
+  text-shadow: 0 0 16rpx rgba(96, 165, 250, 0.35);
+}
+
+.theme-toggle-switching .theme-glyph {
+  animation: theme-glyph-pop 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes theme-glyph-pop {
+  0% { transform: rotate(-25deg) scale(0.72); }
+  58% { transform: rotate(12deg) scale(1.16); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+/* Shared color transitions; transforms and Canvas animation stay untouched. */
+.exam-label,
+.exam-count,
+.stat-pill,
+.stat-num,
+.section-label,
+.subj-card,
+.subj-name,
+.dot-ring,
+.dot-fill,
+.dot-label,
+.mode-info,
+.custom-label,
+.context-hint,
+.notify-row,
+.notify-title,
+.notify-sub,
+.ceremony-subject,
+.ceremony-divider,
+.ceremony-duration,
+.ceremony-preset,
+.ceremony-status,
+.spinner-ring,
+.timer-subject,
+.timer-hint,
+.ring-time,
+.ctrl-primary,
+.ctrl-secondary,
+.ctrl-label,
+.break-skip,
+.stats-link,
+.stats-arrow,
+.font-size-btn,
+.font-size-icon {
+  transition-property: color, background-color, background, border-color, box-shadow, opacity, text-shadow;
+  transition-duration: 440ms;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Home-inspired light palette. */
+.theme-light {
+  color: #15231A;
+}
+
+.theme-light .exam-label {
+  color: #849087;
+}
+
+.theme-light .exam-count {
+  color: #173426;
+}
+
+.theme-light .stat-pill {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1rpx solid #DDE2DA;
+  box-shadow: 0 8rpx 22rpx rgba(21, 51, 35, 0.055);
+}
+
+.theme-light .stat-num {
+  color: #455249;
+}
+
+.theme-light .section-label {
+  color: #6F7C73;
+  font-weight: 700;
+}
+
+.theme-light .subj-loading-text,
+.theme-light .subj-empty-text {
+  color: #849087;
+}
+
+.theme-light .subj-error-text {
+  color: #C76532;
+}
+
+.theme-light .subj-retry {
+  color: #2459B8;
+  border-color: rgba(59, 130, 246, 0.24);
+  background: rgba(59, 130, 246, 0.055);
+}
+
+.theme-light .subj-card {
+  background: rgba(255, 255, 255, 0.76);
+  border-color: #DDE2DA;
+  box-shadow: 0 12rpx 30rpx rgba(21, 51, 35, 0.055);
+}
+
+.theme-light .subj-card.active {
+  background: linear-gradient(180deg, rgba(239, 247, 255, 0.96), rgba(232, 242, 255, 0.9));
+  border-color: rgba(59, 130, 246, 0.34);
+  box-shadow: 0 16rpx 34rpx rgba(59, 130, 246, 0.14);
+}
+
+.theme-light .subj-name {
+  color: #637068;
+}
+
+.theme-light .subj-card.active .subj-name {
+  color: #173B70;
+}
+
+.theme-light .dot-ring {
+  border-color: rgba(21, 51, 35, 0.18);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.theme-light .dot-fill {
+  background: rgba(21, 51, 35, 0.16);
+}
+
+.theme-light .dot-label,
+.theme-light .mode-info,
+.theme-light .custom-label {
+  color: #6F7C73;
+}
+
+.theme-light .mode-dot.active .dot-label {
+  color: #173426;
+  font-weight: 650;
+}
+
+.theme-light .context-hint {
+  color: #5D6A61;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1rpx solid #E0E4DC;
+}
+
+.theme-light .notify-row {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: #DDE2DA;
+  box-shadow: 0 10rpx 28rpx rgba(21, 51, 35, 0.05);
+}
+
+.theme-light .notify-title {
+  color: #24352A;
+}
+
+.theme-light .notify-sub {
+  color: #849087;
+}
+
+.theme-light .btn-start {
+  background: linear-gradient(135deg, #153323 0%, #24543A 100%);
+  box-shadow: 0 12rpx 34rpx rgba(21, 51, 35, 0.22), 0 0 0 1rpx rgba(183, 232, 42, 0.16);
+}
+
+.theme-light .btn-hover {
+  box-shadow: 0 6rpx 18rpx rgba(21, 51, 35, 0.17);
+}
+
+.theme-light .btn-start-text {
+  color: #FFFFFF;
+}
+
+.theme-light .ceremony-subject,
+.theme-light .ring-time {
+  color: #173426;
+}
+
+.theme-light .ceremony-divider {
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.36), transparent);
+}
+
+.theme-light .ceremony-duration {
+  color: #455249;
+}
+
+.theme-light .ceremony-preset,
+.theme-light .ceremony-status {
+  color: #849087;
+}
+
+.theme-light .spinner-ring {
+  border-color: rgba(21, 51, 35, 0.10);
+  border-top-color: #3B82F6;
+}
+
+.theme-light .timer-subject {
+  color: #34483B;
+}
+
+.theme-light .timer-hint {
+  color: #849087;
+}
+
+.theme-light.page-focus .ring-glow {
+  box-shadow:
+    0 0 36rpx rgba(59, 130, 246, 0.17),
+    0 0 82rpx rgba(59, 130, 246, 0.08),
+    0 0 150rpx rgba(6, 182, 212, 0.055);
+}
+
+.theme-light.page-break .ring-glow {
+  box-shadow:
+    0 0 36rpx rgba(249, 115, 22, 0.17),
+    0 0 82rpx rgba(249, 115, 22, 0.08),
+    0 0 150rpx rgba(244, 63, 94, 0.05);
+}
+
+.theme-light .time-warm {
+  color: #7C3A16;
+}
+
+.theme-light .ring-status {
+  color: #C76532;
+}
+
+.theme-light .ctrl-primary,
+.theme-light .ctrl-secondary {
+  background: rgba(255, 255, 255, 0.76);
+  border-color: #DDE2DA;
+  box-shadow: 0 14rpx 32rpx rgba(21, 51, 35, 0.075);
+}
+
+.theme-light.page-break .ctrl-primary {
+  background: rgba(255, 247, 237, 0.92);
+  border-color: rgba(249, 115, 22, 0.2);
+}
+
+.theme-light .ctrl-primary-pressed {
+  background: rgba(230, 240, 255, 0.95);
+  border-color: rgba(59, 130, 246, 0.3);
+  box-shadow: 0 10rpx 26rpx rgba(59, 130, 246, 0.15);
+}
+
+.theme-light .ctrl-secondary-pressed {
+  background: #F4F6F1;
+  border-color: #CFD6CD;
+}
+
+.theme-light .ctrl-label {
+  color: #5D6A61;
+}
+
+.theme-light .break-skip {
+  color: #B45309;
+  background: rgba(255, 247, 237, 0.86);
+  border-color: rgba(249, 115, 22, 0.19);
+}
+
+.theme-light .stats-link {
+  color: #455249;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1rpx solid #DDE2DA;
+  box-shadow: 0 9rpx 24rpx rgba(21, 51, 35, 0.05);
+}
+
+.theme-light .stats-link-pressed {
+  background: #FFFFFF;
+}
+
+.theme-light .stats-arrow {
+  color: #637068;
+}
+
+.theme-light .font-size-btn,
+.theme-light .theme-toggle {
+  background: rgba(255, 255, 255, 0.74);
+  border-color: #DDE2DA;
+  box-shadow: 0 8rpx 22rpx rgba(21, 51, 35, 0.055);
+}
+
+.theme-light .font-size-btn-pressed,
+.theme-light .theme-toggle-pressed {
+  background: #FFFFFF;
+}
+
+.theme-light .font-size-icon {
+  color: #637068;
+}
+
+.theme-light .font-size-icon.active {
+  color: #2459B8;
+}
+
+/* Free timer keeps its emerald identity on the light desk. */
+.theme-light.page-free {
+  background: linear-gradient(180deg, #0B1121 0%, #0F1E1E 40%, #111827 100%) !important;
+}
+
+.theme-light.page-free .ring-glow {
+  box-shadow:
+    0 0 48rpx rgba(16, 185, 129, 0.18),
+    0 0 100rpx rgba(16, 185, 129, 0.08),
+    0 0 170rpx rgba(5, 150, 105, 0.045) !important;
+}
+
+.theme-light.page-free .ctrl-primary {
+  background: rgba(236, 253, 245, 0.9);
+  border-color: rgba(16, 185, 129, 0.21);
+}
+
+.theme-light.page-free .ctrl-secondary {
+  background: rgba(255, 247, 237, 0.9);
+  border-color: rgba(251, 146, 60, 0.18);
+}
+
+/* cover-view confirmation cards must receive the theme class directly. */
+.confirm-cover-overlay.theme-light {
+  background: rgba(21, 35, 26, 0.32);
+}
+
+.confirm-cover-overlay.theme-light .confirm-cover-card {
+  background: rgba(255, 255, 255, 0.98);
+  border: 1rpx solid #DDE2DA;
+  box-shadow: 0 28rpx 80rpx rgba(21, 51, 35, 0.18);
+}
+
+.confirm-cover-overlay.theme-light .confirm-cover-body {
+  color: #5D6A61;
+}
+
+.confirm-cover-overlay.theme-light .confirm-cover-cancel {
+  background: #EFF2EC;
+  color: #34483B;
+}
+
+.confirm-cover-overlay.theme-light.confirm-theme-focus .confirm-cover-card {
+  background: rgba(250, 252, 255, 0.99);
+  border-color: rgba(59, 130, 246, 0.22);
+  box-shadow: 0 28rpx 80rpx rgba(59, 130, 246, 0.16);
+}
+
+.confirm-cover-overlay.theme-light.confirm-theme-focus .confirm-cover-title {
+  color: #2459B8;
+}
+
+.confirm-cover-overlay.theme-light.confirm-theme-break .confirm-cover-card {
+  background: rgba(255, 251, 247, 0.99);
+  border-color: rgba(249, 115, 22, 0.22);
+  box-shadow: 0 28rpx 80rpx rgba(249, 115, 22, 0.15);
+}
+
+.confirm-cover-overlay.theme-light.confirm-theme-break .confirm-cover-title {
+  color: #C45B18;
+}
+
+.confirm-cover-overlay.theme-light.confirm-theme-free .confirm-cover-card {
+  background: rgba(248, 255, 251, 0.99);
+  border-color: rgba(16, 185, 129, 0.22);
+  box-shadow: 0 28rpx 80rpx rgba(16, 185, 129, 0.15);
+}
+
+.confirm-cover-overlay.theme-light.confirm-theme-free .confirm-cover-title {
+  color: #087A55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-backdrop,
+  .theme-toggle,
+  .theme-glyph,
+  .theme-toggle-switching .theme-glyph {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .page-inner {
+    padding-left: 24rpx;
+    padding-right: 24rpx;
+  }
+
+  .top-right {
+    gap: 7rpx;
+  }
+
+  .stat-pill {
+    padding-left: 12rpx;
+    padding-right: 12rpx;
+  }
+
+  .font-size-btn {
+    margin-left: 0;
+  }
+
+  .font-size-btn,
+  .theme-toggle {
+    width: 52rpx;
+    height: 52rpx;
   }
 }

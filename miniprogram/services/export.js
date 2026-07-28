@@ -48,9 +48,10 @@ function getDownloadInfo(taskId) {
 /**
  * Get the file stream URL for local-storage exports.
  */
-function getFileUrl(taskId) {
+function getFileUrl(taskId, version) {
   const config = require('../config')
-  return config.BASE_URL + '/exports/' + taskId + '/file'
+  const suffix = version ? '?v=' + encodeURIComponent(String(version)) : ''
+  return config.BASE_URL + '/exports/' + taskId + '/file' + suffix
 }
 
 /**

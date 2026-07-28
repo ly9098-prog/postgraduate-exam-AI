@@ -181,12 +181,16 @@ function normalizeLatexSource(value) {
     .replace(/\r\n?/g, '\n')
     .trim()
 
+  source = normalizeEnvironmentCommands(source)
   source = stripOuterMathDelimiters(source)
     .replace(/^\\begin\{(?:equation\*?|displaymath)\}/, '')
     .replace(/\\end\{(?:equation\*?|displaymath)\}$/, '')
     .trim()
 
-  var hasStructuredEnvironment = /\\begin\s*\{(?:aligned|align\*?|gathered|cases|matrix|pmatrix|bmatrix|vmatrix|array)\}/.test(source)
+  // Protect LaTeX row breaks before removing display delimiters. Without this,
+  // a valid `\\[4pt]` row break is partially consumed as `\[` and leaks the
+  // literal text `4pt]` into the formula shown by the mini-program.
+  source = protectFormulaRowBreaks(source)
 
   // Remove editor delimiters without removing escaped currency symbols.
   source = source
@@ -195,15 +199,21 @@ function normalizeLatexSource(value) {
     .replace(/\\\(|\\\)/g, '')
     .replace(/(^|[^\\])\$/g, '$1')
 
-  if (!hasStructuredEnvironment) {
-    // A formula block in the admin editor is one visual row. Newlines and raw
-    // LaTeX line breaks are therefore treated as horizontal spacing.
-    source = source
-      .replace(/\\\\(?:\[[^\]]*\])?/g, ' \\qquad ')
-      .replace(/\n+/g, ' \\qquad ')
-      .replace(/(?:\s*\\(?:qquad|quad)\s*)+/g, ' \\qquad ')
+  // The admin editor preserves explicit top-level line breaks as separate
+  // centered rows. Row breaks inside cases/matrix environments remain inside
+  // those environments, while a row break after an environment creates a new
+  // outer row (for example the “即 …” line below a cases formula).
+  source = source.replace(/\n+/g, FORMULA_ROW_BREAK_TOKEN)
+  var rows = splitTopLevelFormulaRows(source)
+
+  if (rows.length > 1) {
+    var multilineEnvironment = rows.some(function (row) { return /(^|[^\\])&/.test(row) })
+      ? 'aligned'
+      : 'gathered'
+    source = '\\begin{' + multilineEnvironment + '}' + rows.join(' \\\\[7pt] ') + '\\end{' + multilineEnvironment + '}'
   } else {
-    source = source.replace(/\n+/g, ' ')
+    source = rows.length ? rows[0] : ''
+    source = source.replace(/(?:\s*\\(?:qquad|quad)\s*)+/g, ' \\qquad ')
   }
 
   source = replaceUnicodeMath(source)
@@ -212,6 +222,7 @@ function normalizeLatexSource(value) {
     .trim()
 
   source = normalizeDeterminantNotation(source)
+  source = wrapCjkTextInMath(source)
 
   return source
 }
@@ -248,6 +259,158 @@ function normalizeFunctionNames(value) {
     /(^|[^\\A-Za-z])(lim|arcsin|arccos|arctan|sin|cos|tan|cot|sec|csc|ln|log|det|exp)(?=[^A-Za-z]|$)/g,
     function (_, prefix, name) { return prefix + '\\' + name },
   )
+}
+
+var FORMULA_ROW_BREAK_TOKEN = '\u0007FORMULA_ROW_BREAK\u0007'
+var STRUCTURED_ENVIRONMENT_NAME = '(?:aligned|align\\*?|gathered|cases|matrix|pmatrix|bmatrix|vmatrix|array)'
+
+/**
+ * Repair legacy environment commands that were saved without braces.
+ *
+ * Examples:
+ *   \\begincases ... \\endcases
+ *   \\begin cases ... \\end cases
+ *
+ * Valid commands such as \\begin{cases} are left untouched.
+ */
+function normalizeEnvironmentCommands(value) {
+  return String(value == null ? '' : value).replace(
+    new RegExp('\\\\(begin|end)\\s*(' + STRUCTURED_ENVIRONMENT_NAME + ')(?![A-Za-z])', 'g'),
+    function (_, command, environment) {
+      return '\\' + command + '{' + environment + '}'
+    },
+  )
+}
+
+function stripOuterGroupingBraces(value) {
+  var source = String(value == null ? '' : value).trim()
+  var changed = true
+
+  while (changed && source.charAt(0) === '{' && source.charAt(source.length - 1) === '}') {
+    changed = false
+    var depth = 0
+    for (var i = 0; i < source.length; i++) {
+      var ch = source.charAt(i)
+      if (ch === '\\') {
+        i += 1
+        continue
+      }
+      if (ch === '{') depth += 1
+      else if (ch === '}') depth -= 1
+
+      if (depth === 0) {
+        if (i === source.length - 1) {
+          source = source.slice(1, -1).trim()
+          changed = true
+        }
+        break
+      }
+      if (depth < 0) break
+    }
+  }
+
+  return source
+}
+
+function protectFormulaRowBreaks(value) {
+  return String(value == null ? '' : value).replace(/\\\\(?:\s*\[[^\]]*\])?/g, FORMULA_ROW_BREAK_TOKEN)
+}
+
+function restoreFormulaRowBreaks(value, withSpacing) {
+  var separator = withSpacing ? ' \\\\[6pt] ' : ' \\\\ '
+  return String(value == null ? '' : value).split(FORMULA_ROW_BREAK_TOKEN).join(separator)
+}
+
+function splitTopLevelFormulaRows(value) {
+  var source = String(value == null ? '' : value)
+  var rows = ['']
+  var environmentDepth = 0
+  var environmentPattern = /^\\(begin|end)\{(?:aligned|align\*?|gathered|cases|matrix|pmatrix|bmatrix|vmatrix|array)\}/
+  var cursor = 0
+
+  while (cursor < source.length) {
+    if (source.indexOf(FORMULA_ROW_BREAK_TOKEN, cursor) === cursor) {
+      if (environmentDepth === 0) rows.push('')
+      else rows[rows.length - 1] += FORMULA_ROW_BREAK_TOKEN
+      cursor += FORMULA_ROW_BREAK_TOKEN.length
+      continue
+    }
+
+    var environment = source.slice(cursor).match(environmentPattern)
+    if (environment) {
+      rows[rows.length - 1] += environment[0]
+      if (environment[1] === 'begin') environmentDepth += 1
+      else environmentDepth = Math.max(0, environmentDepth - 1)
+      cursor += environment[0].length
+      continue
+    }
+
+    rows[rows.length - 1] += source.charAt(cursor)
+    cursor += 1
+  }
+
+  return rows.map(function (row) {
+    return restoreFormulaRowBreaks(row, true).replace(/^[ \t]+|[ \t]+$/g, '')
+  }).filter(Boolean)
+}
+
+/**
+ * Keep Chinese descriptions inside a LaTeX expression in text mode.
+ *
+ * The admin preview accepts formulas such as
+ *   \begin{cases}0,&n 为正奇数\\2I_n,&n 为正偶数\end{cases}
+ * as one expression.  The mini-program must do the same instead of splitting
+ * the expression at the first Chinese character. Existing \text{...} blocks
+ * are temporarily protected so this transform remains idempotent.
+ */
+function wrapCjkTextInMath(value) {
+  var source = String(value == null ? '' : value)
+  if (!source || !/[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/.test(source)) return source
+
+  var protectedText = []
+  var commands = ['\\text{', '\\textrm{', '\\textbf{', '\\textit{', '\\mathrm{']
+  var result = ''
+  var cursor = 0
+
+  while (cursor < source.length) {
+    var foundAt = -1
+    var foundCommand = ''
+    for (var i = 0; i < commands.length; i++) {
+      var index = source.indexOf(commands[i], cursor)
+      if (index >= 0 && (foundAt < 0 || index < foundAt)) {
+        foundAt = index
+        foundCommand = commands[i]
+      }
+    }
+
+    if (foundAt < 0) {
+      result += source.slice(cursor)
+      break
+    }
+
+    result += source.slice(cursor, foundAt)
+    var bodyStart = foundAt + foundCommand.length
+    var block = scanBalancedBraces(source.slice(bodyStart))
+    if (!block) {
+      result += foundCommand
+      cursor = bodyStart
+      continue
+    }
+
+    var fullBlock = source.slice(foundAt, bodyStart + block.consumed)
+    var token = '\u0007CJKTEXT' + protectedText.length + '\u0007'
+    protectedText.push(fullBlock)
+    result += token
+    cursor = bodyStart + block.consumed
+  }
+
+  result = result.replace(/[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]+/g, function (text) {
+    return '\\text{' + text + '}'
+  })
+
+  return result.replace(/\u0007CJKTEXT(\d+)\u0007/g, function (_, index) {
+    return protectedText[Number(index)] || ''
+  })
 }
 
 /* ── Determinant notation scanner helpers ── */
@@ -466,6 +629,7 @@ function normalizeMathRun(value) {
     .replace(/[ \t]+/g, ' ')
     .trim()
   source = normalizeDeterminantNotation(source)
+  source = wrapCjkTextInMath(source)
   return source
 }
 
@@ -534,11 +698,61 @@ function protectExplicitMath(source, store) {
   })
 }
 
+function extractStandaloneStructuredMath(source) {
+  var candidate = normalizeEnvironmentCommands(String(source == null ? '' : source).trim())
+  if (!candidate) return null
+
+  // Keep sentence punctuation outside the formula while still allowing the
+  // formula itself to be wrapped in one or more harmless grouping braces.
+  var punctuation = ''
+  var punctuationMatch = candidate.match(/([,.;:，。；：！？!?、]+)$/)
+  if (punctuationMatch) {
+    punctuation = punctuationMatch[1]
+    candidate = candidate.slice(0, candidate.length - punctuation.length).trim()
+  }
+
+  candidate = stripOuterMathDelimiters(candidate)
+  candidate = stripOuterGroupingBraces(candidate)
+
+  var envPattern = new RegExp('\\\\begin\\{(' + STRUCTURED_ENVIRONMENT_NAME + ')\\}', 'g')
+  var match = envPattern.exec(candidate)
+  if (!match) return null
+
+  var envStart = match.index
+  var environment = scanMatchingEnd(candidate.slice(envStart), match[1])
+  if (!environment) return null
+
+  var formulaEnd = envStart + environment.endPos
+  var prefix = candidate.slice(0, envStart).trim()
+  var suffix = candidate.slice(formulaEnd).trim()
+
+  // Prefixes such as I_n= are mathematical. Plain Chinese prose is not, so a
+  // sentence containing an embedded cases block continues through the mixed
+  // prose tokenizer instead of swallowing the entire sentence into KaTeX.
+  if (prefix && !isMathRun(prefix)) return null
+  if (suffix && !/^[{}()[\],.;:，。；：！？!?、\s]+$/.test(suffix)) return null
+
+  var formula = stripOuterGroupingBraces(candidate.slice(0, formulaEnd) + suffix)
+  var normalized = normalizeLatexSource(formula)
+  if (!normalized) return null
+  return {
+    html: '$' + ensureDisplayStyle(normalized) + '$',
+    suffix: punctuation,
+  }
+}
+
 function processPlainTextNode(value) {
   // Convert Greek glyphs before tokenisation. Otherwise a label such as
   // "(1+x)^α展开" is split into the invalid fragment "(1+x)^" and the
   // remaining prose, which makes KaTeX report "Expected group after '^'".
-  var source = replaceUnicodeGreek(normalizeTrendPhrases(collapseProseWhitespace(decodeBasicEntities(value))))
+  var source = normalizeEnvironmentCommands(
+    replaceUnicodeGreek(normalizeTrendPhrases(collapseProseWhitespace(decodeBasicEntities(value)))),
+  )
+  var structuredMath = extractStandaloneStructuredMath(source)
+  if (structuredMath) {
+    return structuredMath.html + escapeHtml(structuredMath.suffix)
+  }
+
   var protectedText = []
   var protectedMath = []
   source = protectPlainTokens(source, protectedText)
@@ -689,7 +903,15 @@ function prepareFormulaBlocks(card) {
     var latex = normalizeLatexSource(normalized.latex || normalized.formula || normalized.content)
     if (!latex) return
 
-    var complexity = formulaComplexity(latex)
+    var visualRows = latex
+      .replace(/\\begin\{(?:aligned|align\*?|gathered|cases|matrix|pmatrix|bmatrix|vmatrix|array)\}/g, '')
+      .replace(/\\end\{(?:aligned|align\*?|gathered|cases|matrix|pmatrix|bmatrix|vmatrix|array)\}/g, '')
+      .split(/\\\\(?:\[[^\]]*\])?/)
+      .map(function (row) { return row.trim() })
+      .filter(Boolean)
+    var rowComplexities = visualRows.map(formulaComplexity)
+    var complexity = rowComplexities.length ? Math.max.apply(Math, rowComplexities) : formulaComplexity(latex)
+    var isMultiline = visualRows.length > 1
     var groupedLatex = splitFormulaGroup(latex)
     var isGrouped = groupedLatex.length >= 3
     prepared.push(Object.assign({}, normalized, {
@@ -704,6 +926,8 @@ function prepareFormulaBlocks(card) {
       }),
       isScrollable: !isGrouped && complexity > 108,
       sizeClass: !isGrouped && complexity > 185 ? 'is-dense' : (!isGrouped && complexity > 120 ? 'is-compact' : ''),
+      isMultiline: !isGrouped && isMultiline,
+      lineCount: visualRows.length || 1,
       scrollLeft: 0,
     }))
   })
@@ -763,4 +987,5 @@ module.exports = {
   splitFormulaGroup: splitFormulaGroup,
   sanitizeLatexContent: sanitizeLatexContent,
   normalizeDeterminantNotation: normalizeDeterminantNotation,
+  normalizeEnvironmentCommands: normalizeEnvironmentCommands,
 }

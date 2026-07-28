@@ -63,17 +63,17 @@ Page({
     title: '',
     titleDefault: '错题巩固练习',
 
-    // Date
-    showDate: true,
+    // Reference-paper layout uses a clean title without a date line.
+    showDate: false,
     exportDate: '',
 
     // Sort & Group
     sortBy: 'newest',
     sortByLabel: '加入时间最新优先',
     sortByIndex: 0,
-    groupBy: 'none',
-    groupByLabel: '连续排列',
-    groupByIndex: 0,
+    groupBy: 'question_type',
+    groupByLabel: '按题型',
+    groupByIndex: 4,
 
     // Answer & Analysis
     answerPosition: 'none',
@@ -92,6 +92,7 @@ Page({
     previewCount: 0,
     countLoading: false,
     countError: '',
+    previewCountReady: false,
 
     // Submit
     submitting: false,
@@ -103,30 +104,31 @@ Page({
     capabilityLoading: true,
     capabilityError: '',
     maxQuestionCount: 100,
+
+    // Floating primary action
+    floatingVisible: false,
+    titleInputFocused: false,
+    pickerOpen: false,
   },
 
   // Non-reactive fields
   _navigating: false,
+  _previewRequestSeq: 0,
+  _previewDebounceTimer: null,
+  _floatingIdleTimer: null,
+  _floatingEntranceTimer: null,
+  _pageDestroyed: false,
+  _pageReady: false,
 
-  onShow() {
-    // Reset transient state when returning from export records page
-    this._navigating = false
-    if (this.data.submitting) {
-      this.setData({ submitting: false })
-    }
-  },
+  onLoad(options) {
+    this._pageDestroyed = false
+    this._pageReady = false
 
-  onUnload() {
-    // Clean up transient state — do NOT cancel back-end export tasks
-    this._navigating = false
-  },
-
-  async onLoad(options) {
-    // Recover selected IDs / active filters from the opener. Context can
-    // arrive after onLoad, so every update also refreshes preview count once
-    // export capability is ready.
-    const eventChannel = this.getOpenerEventChannel()
-    if (eventChannel) {
+    // getOpenerEventChannel() may return a placeholder object when this page
+    // is reached via redirectTo/direct entry. Only register listeners when the
+    // real EventChannel API is available.
+    const eventChannel = this.getOpenerEventChannel && this.getOpenerEventChannel()
+    if (eventChannel && typeof eventChannel.on === 'function') {
       eventChannel.on('acceptDataFromOpenerPage', (data) => {
         this._applyExportContext(data || {})
       })
@@ -141,21 +143,162 @@ Page({
       globalData.exportSelectedIds = null
     }
 
-    // Set default date
-    const today = this._formatDate(new Date())
-    this.setData({ exportDate: today })
-
-    // Auto-generate title from subjects
     this._autoGenerateTitle()
+    this._checkCapabilities()
+  },
 
-    // Check capabilities first, then preview only if export is enabled
-    await this._checkCapabilities()
+  onReady() {
+    this._pageReady = true
+    // Delay one frame so the first appearance uses the same transition as all
+    // later reveals instead of rendering abruptly in its final position.
+    this._clearFloatingEntranceTimer()
+    this._floatingEntranceTimer = setTimeout(() => {
+      this._floatingEntranceTimer = null
+      this._showFloatingAction(true)
+    }, 40)
+  },
+
+  onShow() {
+    this._navigating = false
+    if (this.data.pickerOpen || this.data.titleInputFocused) {
+      this.setData({ pickerOpen: false, titleInputFocused: false })
+    }
+    if (this.data.submitting) {
+      this.setData({ submitting: false }, () => {
+        if (this._pageReady) this._syncFloatingAction()
+      })
+    } else if (this._pageReady) {
+      this._showFloatingAction(true)
+    }
+  },
+
+  onHide() {
+    this._clearFloatingIdleTimer()
+    this._clearFloatingEntranceTimer()
+  },
+
+  onUnload() {
+    // Clean up transient state — do NOT cancel back-end export tasks.
+    this._pageDestroyed = true
+    this._navigating = false
+    this._previewRequestSeq += 1
+    if (this._previewDebounceTimer) {
+      clearTimeout(this._previewDebounceTimer)
+      this._previewDebounceTimer = null
+    }
+    this._clearFloatingIdleTimer()
+    this._clearFloatingEntranceTimer()
+  },
+
+  _clearFloatingIdleTimer() {
+    if (this._floatingIdleTimer) {
+      clearTimeout(this._floatingIdleTimer)
+      this._floatingIdleTimer = null
+    }
+  },
+
+  _clearFloatingEntranceTimer() {
+    if (this._floatingEntranceTimer) {
+      clearTimeout(this._floatingEntranceTimer)
+      this._floatingEntranceTimer = null
+    }
+  },
+
+  _isFloatingPinned() {
+    const data = this.data
+    return !!(
+      data.capabilityLoading ||
+      data.countLoading ||
+      data.submitting ||
+      data.capabilityError ||
+      data.countError ||
+      data.submitError ||
+      data.titleInputFocused ||
+      data.pickerOpen
+    )
+  },
+
+  _showFloatingAction(restartTimer = true) {
+    if (this._pageDestroyed) return
+    if (!this.data.floatingVisible) {
+      this.setData({ floatingVisible: true })
+    }
+    if (restartTimer) this._restartFloatingIdleTimer()
+  },
+
+  _restartFloatingIdleTimer() {
+    this._clearFloatingIdleTimer()
+    if (this._pageDestroyed || this._isFloatingPinned()) return
+
+    this._floatingIdleTimer = setTimeout(() => {
+      this._floatingIdleTimer = null
+      if (this._pageDestroyed) return
+      if (this._isFloatingPinned()) {
+        this._showFloatingAction(false)
+        return
+      }
+      this.setData({ floatingVisible: false })
+    }, 5000)
+  },
+
+  _syncFloatingAction() {
+    if (this._pageDestroyed) return
+    this._showFloatingAction(false)
+    if (this._isFloatingPinned()) {
+      this._clearFloatingIdleTimer()
+    } else {
+      this._restartFloatingIdleTimer()
+    }
+  },
+
+  _registerInteraction() {
+    this._showFloatingAction(true)
+  },
+
+  onConfigScroll() {
+    // Every scroll event forces the action back into view and refreshes the
+    // five-second inactivity window. The final event naturally starts the
+    // countdown after scrolling stops.
+    this._registerInteraction()
+  },
+
+  onPageInteraction() {
+    this._registerInteraction()
+  },
+
+  onTitleFocus() {
+    this.setData({ titleInputFocused: true }, () => this._syncFloatingAction())
+  },
+
+  onTitleBlur() {
+    this.setData({ titleInputFocused: false }, () => this._syncFloatingAction())
+  },
+
+  onPickerOpen() {
+    this.setData({ pickerOpen: true }, () => this._syncFloatingAction())
+  },
+
+  onPickerCancel() {
+    this.setData({ pickerOpen: false }, () => this._syncFloatingAction())
   },
 
   async _checkCapabilities() {
-    this.setData({ capabilityLoading: true, capabilityError: '' })
+    // Invalidate any in-flight count request before restarting capability
+    // discovery so stale results cannot overwrite the new page state.
+    this._previewRequestSeq += 1
+    if (this._previewDebounceTimer) {
+      clearTimeout(this._previewDebounceTimer)
+      this._previewDebounceTimer = null
+    }
+    this.setData({
+      capabilityLoading: true,
+      capabilityError: '',
+      submitError: '',
+    }, () => this._syncFloatingAction())
+
     try {
       const cap = await exportApi.getCapabilities()
+      if (this._pageDestroyed) return
       const wordDisabled = !cap.docx_enabled
       const wordTip = wordDisabled ? 'Word 导出暂未开放' : ''
       const exportEnabled = cap.export_enabled !== false
@@ -167,34 +310,50 @@ Page({
         maxQuestionCount: cap.max_question_count || 100,
         capabilityLoading: false,
         capabilityError: '',
-      })
-      // If docx is disabled and currently selected, switch to pdf
+      }, () => this._syncFloatingAction())
+
       if (wordDisabled && this.data.format === 'docx') {
         this.setData({ format: 'pdf' })
       }
       if (!exportEnabled) {
         const msg = exportApi.getExportCapabilityErrorMessage(null, cap)
-        this.setData({ capabilityError: msg })
+        this.setData({ capabilityError: msg }, () => this._syncFloatingAction())
         return
       }
-      // Capability OK — now load preview count
-      this._updatePreviewCount()
+      this._schedulePreviewCount(true)
     } catch (e) {
-      // Capability check failed — safe degrade
+      if (this._pageDestroyed) return
+      // A capability endpoint failure must not leave the page permanently in
+      // "checking" state. Continue in PDF-safe mode and try the actual count
+      // endpoint; if the current selected range is known locally, it remains
+      // exportable even while the lightweight warning is shown.
       const msg = exportApi.getExportCapabilityErrorMessage(e, null)
+      const knownCount = this._knownRangeCount()
       this.setData({
         wordDisabled: true,
-        _exportEnabled: false,
+        wordTip: '能力检查失败，暂仅提供 PDF 导出',
+        format: 'pdf',
+        _exportEnabled: true,
         capabilityLoading: false,
         capabilityError: msg,
         countLoading: false,
-        previewCount: 0,
+        previewCount: knownCount !== null ? knownCount : this.data.previewCount,
+        previewCountReady: knownCount !== null,
+      }, () => {
+        this._syncFloatingAction()
+        this._schedulePreviewCount(true)
       })
     }
   },
 
   onRetryCapability() {
+    this._registerInteraction()
     this._checkCapabilities()
+  },
+
+  onRetryPreviewCount() {
+    this._registerInteraction()
+    this._schedulePreviewCount(true)
   },
 
   // ── Navigation ──
@@ -232,10 +391,18 @@ Page({
       return
     }
 
-    this.setData({ rangeType: value, countError: '' }, () => {
-      if (this.data._exportEnabled) {
-        this._updatePreviewCount()
-      }
+    const selectedCount = value === 'selected'
+      ? this._normalizeSelectedIds(this.data._selectedIds).length
+      : null
+    this.setData({
+      rangeType: value,
+      countError: '',
+      submitError: '',
+      previewCount: selectedCount !== null ? selectedCount : this.data.previewCount,
+      previewCountReady: selectedCount !== null,
+    }, () => {
+      this._registerInteraction()
+      if (this.data._exportEnabled) this._schedulePreviewCount()
     })
   },
 
@@ -243,21 +410,12 @@ Page({
   onFormatChange(e) {
     const value = e.currentTarget.dataset.value
     if (!value || (value === 'docx' && this.data.wordDisabled)) return
-    this.setData({ format: value })
+    this.setData({ format: value, submitError: '' }, () => this._registerInteraction())
   },
 
   // ── Title ──
   onTitleInput(e) {
-    this.setData({ title: e.detail.value })
-  },
-
-  // ── Date ──
-  onDateToggle(e) {
-    this.setData({ showDate: !!(e.detail && e.detail.value) })
-  },
-
-  onDateChange(e) {
-    this.setData({ exportDate: e.detail.value })
+    this.setData({ title: e.detail.value, submitError: '' }, () => this._registerInteraction())
   },
 
   // ── Sort: picker e.detail.value is an index into SORT_OPTIONS ──
@@ -265,7 +423,7 @@ Page({
     const idx = parseInt(e.detail.value, 10)
     const option = SORT_OPTIONS[idx]
     if (!option) return
-    this.setData({ sortBy: option.value, sortByLabel: option.label, sortByIndex: idx })
+    this.setData({ sortBy: option.value, sortByLabel: option.label, sortByIndex: idx, submitError: '', pickerOpen: false }, () => this._registerInteraction())
   },
 
   // ── Group: picker e.detail.value is an index into GROUP_OPTIONS ──
@@ -273,7 +431,7 @@ Page({
     const idx = parseInt(e.detail.value, 10)
     const option = GROUP_OPTIONS[idx]
     if (!option) return
-    this.setData({ groupBy: option.value, groupByLabel: option.label, groupByIndex: idx })
+    this.setData({ groupBy: option.value, groupByLabel: option.label, groupByIndex: idx, submitError: '', pickerOpen: false }, () => this._registerInteraction())
   },
 
   // ── Answer position: picker e.detail.value is an index ──
@@ -281,7 +439,7 @@ Page({
     const idx = parseInt(e.detail.value, 10)
     const option = POSITION_OPTIONS[idx]
     if (!option) return
-    this.setData({ answerPosition: option.value, answerPositionLabel: option.label, answerPositionIndex: idx })
+    this.setData({ answerPosition: option.value, answerPositionLabel: option.label, answerPositionIndex: idx, submitError: '', pickerOpen: false }, () => this._registerInteraction())
   },
 
   // ── Analysis position: picker e.detail.value is an index ──
@@ -289,7 +447,7 @@ Page({
     const idx = parseInt(e.detail.value, 10)
     const option = POSITION_OPTIONS[idx]
     if (!option) return
-    this.setData({ analysisPosition: option.value, analysisPositionLabel: option.label, analysisPositionIndex: idx })
+    this.setData({ analysisPosition: option.value, analysisPositionLabel: option.label, analysisPositionIndex: idx, submitError: '', pickerOpen: false }, () => this._registerInteraction())
   },
 
   // ── Space style: picker e.detail.value is an index ──
@@ -297,26 +455,51 @@ Page({
     const idx = parseInt(e.detail.value, 10)
     const option = SPACE_OPTIONS[idx]
     if (!option) return
-    this.setData({ spaceStyle: option.value, spaceStyleLabel: option.label, spaceStyleIndex: idx })
+    this.setData({ spaceStyle: option.value, spaceStyleLabel: option.label, spaceStyleIndex: idx, submitError: '', pickerOpen: false }, () => this._registerInteraction())
   },
 
   // ── Preview count ──
+  _schedulePreviewCount(immediate = false) {
+    if (!this.data._exportEnabled) return
+    if (this._previewDebounceTimer) {
+      clearTimeout(this._previewDebounceTimer)
+      this._previewDebounceTimer = null
+    }
+    if (immediate) {
+      this._updatePreviewCount()
+      return
+    }
+    this._previewDebounceTimer = setTimeout(() => {
+      this._previewDebounceTimer = null
+      this._updatePreviewCount()
+    }, 180)
+  },
+
   async _updatePreviewCount() {
     if (!this.data._exportEnabled) return
-    this.setData({ countLoading: true, countError: '' })
+    const requestSeq = ++this._previewRequestSeq
+    const hadReadyCount = !!this.data.previewCountReady
+    this.setData({ countLoading: true, countError: '' }, () => this._syncFloatingAction())
     try {
       const params = this._buildRangeParams()
       const res = await exportApi.previewCount(params)
+      if (requestSeq !== this._previewRequestSeq || this._pageDestroyed) return
       this.setData({
-        previewCount: res.count || 0,
+        previewCount: Number(res && res.count) || 0,
+        previewCountReady: true,
         countLoading: false,
-      })
+        countError: '',
+      }, () => this._syncFloatingAction())
     } catch (err) {
+      if (requestSeq !== this._previewRequestSeq || this._pageDestroyed) return
+      const knownCount = this._knownRangeCount()
+      const countReady = hadReadyCount || knownCount !== null
       this.setData({
+        previewCount: knownCount !== null ? knownCount : this.data.previewCount,
+        previewCountReady: countReady,
         countLoading: false,
-        countError: err.message || '获取数量失败',
-        previewCount: -1,
-      })
+        countError: (err && err.message) || '获取数量失败',
+      }, () => this._syncFloatingAction())
     }
   },
 
@@ -326,20 +509,32 @@ Page({
     if (this.data.submitting || this._navigating) return
     if (this.data.capabilityLoading) return
     if (!this.data._exportEnabled) return
+    this._registerInteraction()
+
+    if (!this.data.previewCountReady) {
+      const msg = '请先完成题目数量计算'
+      this.setData({ submitError: msg }, () => this._syncFloatingAction())
+      wx.showToast({ title: msg, icon: 'none' })
+      return
+    }
 
     // Validate count
     const count = this.data.previewCount
     const max = this.data.maxQuestionCount || 100
     if (count === 0) {
-      wx.showToast({ title: '没有可导出的错题', icon: 'none' })
+      const msg = '没有可导出的错题'
+      this.setData({ submitError: msg }, () => this._syncFloatingAction())
+      wx.showToast({ title: msg, icon: 'none' })
       return
     }
     if (count > max) {
-      wx.showToast({ title: '单次最多导出 ' + max + ' 道，请调整导出范围。', icon: 'none' })
+      const msg = '单次最多导出 ' + max + ' 道，请调整导出范围。'
+      this.setData({ submitError: msg }, () => this._syncFloatingAction())
+      wx.showToast({ title: msg, icon: 'none' })
       return
     }
 
-    this.setData({ submitting: true, submitError: '' })
+    this.setData({ submitting: true, submitError: '' }, () => this._syncFloatingAction())
 
     try {
       const rangeParams = this._buildRangeParams()
@@ -348,8 +543,8 @@ Page({
         filters: rangeParams.filters,
         selected_ids: rangeParams.selected_ids,
         title: this.data.title || this.data.titleDefault,
-        show_date: this.data.showDate,
-        export_date: this.data.showDate ? this.data.exportDate : '',
+        show_date: false,
+        export_date: '',
         sort_by: this.data.sortBy,
         group_by: this.data.groupBy,
         answer_position: this.data.answerPosition,
@@ -361,7 +556,7 @@ Page({
       const task = await exportApi.createExport(params)
 
       // Task created — reset submitting immediately, don't wait for file generation
-      this.setData({ submitting: false })
+      this.setData({ submitting: false }, () => this._syncFloatingAction())
 
       if (!task || !task.id) {
         throw new Error('导出任务创建成功，但未返回任务编号')
@@ -382,12 +577,12 @@ Page({
       }
     } catch (err) {
       const msg = err.message || '创建导出任务失败'
-      this.setData({ submitError: msg, submitting: false })
+      this.setData({ submitError: msg, submitting: false }, () => this._syncFloatingAction())
       wx.showToast({ title: msg, icon: 'none' })
     } finally {
       // Safety net: ensure submitting is reset regardless of path
       if (this.data.submitting) {
-        this.setData({ submitting: false })
+        this.setData({ submitting: false }, () => this._syncFloatingAction())
       }
     }
   },
@@ -417,10 +612,16 @@ Page({
 
   // ── View records ──
   onViewRecords() {
+    this._registerInteraction()
     wx.navigateTo({ url: '/pages/export-records/export-records' })
   },
 
   // ── Helpers ──
+  _knownRangeCount() {
+    if (this.data.rangeType !== 'selected') return null
+    return this._normalizeSelectedIds(this.data._selectedIds).length
+  },
+
   _normalizeSelectedIds(ids) {
     if (!Array.isArray(ids)) return []
     const seen = {}
@@ -473,14 +674,19 @@ Page({
     if (rangeType === 'selected' && !selectedIds.length) rangeType = hasActiveFilters ? 'filtered' : 'all'
     if (rangeType === 'filtered' && !hasActiveFilters) rangeType = selectedIds.length ? 'selected' : 'all'
 
+    const knownCount = rangeType === 'selected' ? selectedIds.length : null
     this.setData({
       _selectedIds: selectedIds,
       filters,
       hasActiveFilters,
       rangeType,
       countError: '',
+      submitError: '',
+      previewCount: knownCount !== null ? knownCount : this.data.previewCount,
+      previewCountReady: knownCount !== null,
     }, () => {
-      if (this.data._exportEnabled) this._updatePreviewCount()
+      this._registerInteraction()
+      if (this.data._exportEnabled) this._schedulePreviewCount()
     })
   },
 
@@ -501,10 +707,10 @@ Page({
       filters: rangeType === 'filtered' ? filters : null,
       selected_ids: rangeType === 'selected' ? selectedIds : null,
       title: '',
-      show_date: true,
+      show_date: false,
       export_date: '',
       sort_by: 'newest',
-      group_by: 'none',
+      group_by: 'question_type',
       answer_position: 'none',
       analysis_position: 'none',
       space_style: 'standard',

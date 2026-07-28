@@ -39,9 +39,9 @@
           />
         </view>
       </view>
-      <view class="fc-formula-scroll-shell {{block.isScrollable ? 'is-scrollable' : ''}}" wx:else>
+      <view class="fc-formula-scroll-shell {{block.isScrollable ? 'is-scrollable' : ''}} {{block.isMultiline ? 'is-multiline' : ''}} {{block.lineCount >= 3 ? 'has-many-lines' : ''}}" wx:else>
         <scroll-view
-          class="fc-formula-scroll"
+          class="fc-formula-scroll {{block.isMultiline ? 'is-multiline' : ''}} {{block.lineCount >= 3 ? 'has-many-lines' : ''}}"
           scroll-x
           enhanced
           scroll-left="{{block.scrollLeft}}"
@@ -51,7 +51,7 @@
           bindtouchend="onFormulaTouchEnd"
           bindtouchcancel="onFormulaTouchEnd"
         >
-          <view class="fc-formula-track {{block.isScrollable ? 'is-long' : ''}} {{block.sizeClass}}">
+          <view class="fc-formula-track {{block.isScrollable ? 'is-long' : ''}} {{block.isMultiline ? 'is-multiline' : ''}} {{block.lineCount >= 3 ? 'has-many-lines' : ''}} {{block.sizeClass}}">
             <rich-text
               class="fc-formula-rich"
               nodes="{{block.mathNodes}}"
