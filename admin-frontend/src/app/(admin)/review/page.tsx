@@ -238,7 +238,7 @@ export default function ReviewPage() {
                   {textFromContent(question.content) || `题目 #${question.id}`}
                 </h4>
                 <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-                  {question.subject || "未分类"} · 难度 {question.difficulty} · {question.question_type || "未标注题型"}
+                  {question.subject_name || "未分类"} · 难度 {question.difficulty} · {question.question_type || "未标注题型"}
                 </p>
                 {tab === "re_pending" ? (
                   <div className="mt-2"><StatusBadge tone="warning">re_pending</StatusBadge></div>
