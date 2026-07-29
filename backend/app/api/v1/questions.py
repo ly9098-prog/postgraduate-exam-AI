@@ -2,10 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_app_permission
 from app.models.user import User
 from app.schemas.common import paginated_response
-from app.schemas.question import QuestionCreate, QuestionResponse
+from app.schemas.question import (
+    QuestionCreate,
+    QuestionPublicResponse,
+    QuestionResponse,
+)
 from app.services import question_service as svc
 
 router = APIRouter(prefix="/api/v1/questions")
@@ -23,11 +27,16 @@ def _sanitize_content(content: dict | None) -> dict | None:
     return sanitized
 
 
+def _public_question(question) -> QuestionPublicResponse:
+    payload = QuestionPublicResponse.model_validate(question)
+    return payload.model_copy(update={"content": _sanitize_content(payload.content)})
+
+
 @router.post("", response_model=QuestionResponse)
 async def create_question(
     data: QuestionCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("question:write")),
 ):
     q = await svc.create(
         db=db,
@@ -55,19 +64,15 @@ async def list_questions(
     _: User = Depends(get_current_user),
 ):
     items, total = await svc.list_questions(db, subject, question_type, page, page_size)
-    sanitized_items = []
-    for q in items:
-        q.content = _sanitize_content(q.content)
-        sanitized_items.append(q)
     return paginated_response(
-        items=[QuestionResponse.model_validate(q) for q in sanitized_items],
+        items=[_public_question(q) for q in items],
         total=total,
         page=page,
         page_size=page_size,
     )
 
 
-@router.get("/random", response_model=QuestionResponse | None)
+@router.get("/random", response_model=QuestionPublicResponse | None)
 async def random_question(
     subject: str | None = Query(None),
     question_type: str | None = Query(None),
@@ -81,8 +86,7 @@ async def random_question(
     q = await svc.get_random(db, subject, question_type, exclude)
     if not q:
         raise HTTPException(status_code=404, detail="没有符合条件的题目")
-    q.content = _sanitize_content(q.content)
-    return q
+    return _public_question(q)
 
 
 @router.get("/{question_id}/similar")
@@ -144,7 +148,7 @@ async def get_question_detail(
     }
 
 
-@router.get("/{question_id}", response_model=QuestionResponse)
+@router.get("/{question_id}", response_model=QuestionPublicResponse)
 async def get_question(
     question_id: int,
     db: AsyncSession = Depends(get_db),
@@ -153,5 +157,4 @@ async def get_question(
     q = await svc.get_by_id(db, question_id)
     if not q:
         raise HTTPException(status_code=404, detail="题目不存在")
-    q.content = _sanitize_content(q.content)
-    return q
+    return _public_question(q)

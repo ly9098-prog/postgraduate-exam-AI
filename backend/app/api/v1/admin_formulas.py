@@ -54,6 +54,8 @@ from app.services.formula_graph_spec_service import (
     delete_generated_asset as delete_spec_generated_asset,
 )
 
+from app.services.streaming_upload_handler import stream_to_temp
+
 router = APIRouter(prefix="/api/admin/v1/formulas", tags=["admin-formulas"])
 
 
@@ -1270,18 +1272,26 @@ async def upload_graph_asset_endpoint(
     if not file_field:
         raise HTTPException(status_code=422, detail="未提供文件（字段名: file）")
 
-    try:
-        file_data = await file_field.read()
-    except Exception:
-        raise HTTPException(status_code=422, detail="文件读取失败")
-
-    # Validate
-    if not file_data:
-        raise HTTPException(status_code=422, detail="文件为空")
-    if len(file_data) > MAX_IMAGE_SIZE:
-        raise HTTPException(status_code=413, detail=f"文件大小超过 {MAX_IMAGE_SIZE // (1024 * 1024)}MB 限制")
-
     filename = getattr(file_field, "filename", "image.png") or "image.png"
+    suffix = "." + filename.rsplit(".", 1)[-1] if "." in filename else ".png"
+    try:
+        tmp = await stream_to_temp(
+            file_field, max_size=MAX_IMAGE_SIZE, suffix=suffix,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail=f"文件大小超过 {MAX_IMAGE_SIZE // (1024 * 1024)}MB 限制",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="文件读取失败") from exc
+    try:
+        if tmp.size == 0:
+            raise HTTPException(status_code=422, detail="文件为空")
+        with open(tmp.path, "rb") as fh:
+            file_data = fh.read(MAX_IMAGE_SIZE + 1)
+    finally:
+        tmp.close()
 
     try:
         asset, is_new = await upload_graph_asset(db, card, file_data, filename, admin.id)

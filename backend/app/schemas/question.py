@@ -44,3 +44,20 @@ class QuestionResponse(BaseModel):
     image_url: list | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class QuestionPublicResponse(BaseModel):
+    """Student-facing question payload; deliberately excludes answer/analysis."""
+
+    id: int
+    subject: str
+    question_type: str
+    content: dict
+    options: dict | None = None
+    knowledge_points: list | None = None
+    difficulty: int
+    source: str | None = None
+    year: int | None = None
+    image_url: list | None = None
+
+    model_config = ConfigDict(from_attributes=True)

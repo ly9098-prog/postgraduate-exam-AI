@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import text
 
 from app.api.router import api_router
@@ -284,7 +285,14 @@ async def lifespan(app: FastAPI):
                     AND contype = 'u'
                 """))).scalar_one_or_none()
                 if _row:
-                    await _s.execute(text(f'ALTER TABLE export_tasks DROP CONSTRAINT "{_row}"'))
+                    # Constraint names come from PostgreSQL metadata, but still
+                    # escape identifier quotes before interpolating into DDL.
+                    _quoted_constraint = str(_row).replace('"', '""')
+                    await _s.execute(
+                        text(
+                            f'ALTER TABLE export_tasks DROP CONSTRAINT "{_quoted_constraint}"'
+                        )
+                    )
                     await _s.execute(text(
                         'CREATE INDEX IF NOT EXISTS ix_export_tasks_idempotency_key '
                         'ON export_tasks (idempotency_key)'
@@ -771,9 +779,22 @@ async def lifespan(app: FastAPI):
             logger.warning("Active children check failed: %s", e)
 
 
-app = FastAPI(title="2240AI", version="0.1.0", lifespan=lifespan)
+_production_mode = settings.APP_ENV.lower() == "production"
+app = FastAPI(
+    title="2240AI",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url=None if _production_mode else "/docs",
+    redoc_url=None if _production_mode else "/redoc",
+    openapi_url=None if _production_mode else "/openapi.json",
+)
 
 # --- 中间件 ---
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=settings.ALLOWED_HOSTS,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -782,6 +803,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), payment=()",
+    )
+    if settings.APP_ENV.lower() == "production":
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    if request.url.path.startswith(("/api/v1/auth", "/api/admin/v1/auth")):
+        response.headers.setdefault("Cache-Control", "no-store")
+        response.headers.setdefault("Pragma", "no-cache")
+    return response
 
 
 @app.middleware("http")

@@ -72,6 +72,23 @@ class StorageBackend(ABC):
     def __init__(self, prefix: str = "static/formulas"):
         self._prefix = prefix.rstrip("/")
 
+    @staticmethod
+    def _validated_upload_key(filename: str) -> str:
+        """Return a normalized relative object key or reject path traversal."""
+        raw = str(filename or "").strip()
+        if not raw or len(raw) > 512:
+            raise ValueError("invalid storage filename")
+        if "\x00" in raw or "\\" in raw or any(ord(ch) < 32 for ch in raw):
+            raise ValueError("invalid storage filename")
+        if raw.startswith("/") or os.path.isabs(raw) or os.path.splitdrive(raw)[0]:
+            raise ValueError("absolute storage paths are not allowed")
+        normalized = posixpath.normpath(raw)
+        if normalized in {"", ".", ".."} or normalized.startswith("../"):
+            raise ValueError("storage path traversal is not allowed")
+        if any(part in {"", ".", ".."} for part in normalized.split("/")):
+            raise ValueError("invalid storage filename")
+        return normalized
+
     @abstractmethod
     async def upload(self, filename: str, data: bytes) -> str:
         """上传文件，返回绝对 URL 或可访问路径"""
@@ -102,13 +119,24 @@ class LocalFileStorage(StorageBackend):
         super().__init__(prefix)
 
     async def upload(self, filename: str, data: bytes) -> str:
+        safe_key = self._validated_upload_key(filename)
+        base_dir = (
+            os.path.realpath(self._prefix)
+            if os.path.isabs(self._prefix)
+            else os.path.realpath(os.path.join(_BACKEND_ROOT, self._prefix))
+        )
+        filepath = os.path.realpath(os.path.join(base_dir, safe_key))
+        if not filepath.startswith(base_dir + os.sep):
+            raise ValueError("storage path traversal is not allowed")
         loop = asyncio.get_running_loop()
-        filepath = os.path.join(_BACKEND_ROOT, self._prefix, filename)
         await loop.run_in_executor(
             _storage_executor, self._sync_upload, filepath, data,
         )
         url_prefix = self._prefix.rstrip("/")
-        return f"{settings.PUBLIC_BASE_URL}/{url_prefix}/{filename}"
+        if os.path.isabs(url_prefix):
+            # Absolute local export directories are not directly public.
+            return safe_key
+        return f"{settings.PUBLIC_BASE_URL}/{url_prefix}/{safe_key}"
 
     @staticmethod
     def _sync_upload(filepath: str, data: bytes) -> None:
@@ -263,7 +291,8 @@ class COSStorage(StorageBackend):
             return None
 
     def _build_key(self, filename: str) -> str:
-        return f"{self._cos_prefix.rstrip('/')}/{filename.lstrip('/')}"
+        safe_key = self._validated_upload_key(filename)
+        return f"{self._cos_prefix.rstrip('/')}/{safe_key}"
 
     def _normalize_key(self, key: str) -> str:
         """Ensure a storage key includes the COS prefix.

@@ -34,7 +34,6 @@ import unicodedata
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from urllib.parse import urlparse
 
 from docx import Document
 from docx.enum.section import WD_ORIENT
@@ -58,6 +57,7 @@ from app.services.export.question_content import (
 from app.services.export.space_allocator import get_answer_space_mm
 from app.services.export.table_parser import parse_table
 from app.services.export.table_renderer import render_table_to_docx
+from app.services.safe_remote_fetch import fetch_remote_bytes, is_safe_remote_url
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +87,7 @@ _LOCAL_ASSET_ROOTS = (
 _MAX_IMAGE_DOWNLOAD_SEC = 15
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024
 _MAX_IMAGE_DIMENSION = 2000
+_MAX_IMAGE_PIXELS = 25_000_000
 _MAX_CONCURRENT_DOWNLOADS = 4
 _MAX_TOTAL_IMAGE_BYTES = 50 * 1024 * 1024
 
@@ -598,8 +599,6 @@ class DocxExporter(Exporter):
             return dest
 
         try:
-            import urllib.request
-
             local_source = self._resolve_local_asset(url)
             if local_source:
                 with open(local_source, "rb") as source:
@@ -609,13 +608,17 @@ class DocxExporter(Exporter):
                 if not remote_url or not self._is_safe_url(remote_url):
                     logger.warning("Blocked unsafe image URL: %s", url)
                     return None
-                req = urllib.request.Request(remote_url, headers={"User-Agent": "MemoGrad-Export/2.0"})
-                with urllib.request.urlopen(req, timeout=_MAX_IMAGE_DOWNLOAD_SEC) as resp:
-                    content_type = resp.headers.get("Content-Type", "")
-                    if not self._is_safe_mime(content_type):
-                        logger.warning("Unsafe image MIME: %s", content_type)
-                        return None
-                    data = resp.read(_MAX_IMAGE_BYTES + 1)
+                response = fetch_remote_bytes(
+                    remote_url,
+                    max_bytes=_MAX_IMAGE_BYTES,
+                    timeout=_MAX_IMAGE_DOWNLOAD_SEC,
+                    allow_http=settings.EXPORT_ALLOW_HTTP_IMAGE_URLS,
+                    headers={"User-Agent": "MemoGrad-Export/2.0"},
+                )
+                if not self._is_safe_mime(response.content_type):
+                    logger.warning("Unsafe image MIME: %s", response.content_type)
+                    return None
+                data = response.data
 
             if len(data) > _MAX_IMAGE_BYTES:
                 logger.warning("Image too large: %d bytes from %s", len(data), url)
@@ -664,6 +667,10 @@ class DocxExporter(Exporter):
 
         try:
             with PILImage.open(io.BytesIO(data)) as image:
+                width, height = image.size
+                if width < 1 or height < 1 or width * height > _MAX_IMAGE_PIXELS:
+                    logger.warning("Image pixel budget exceeded for %s", source)
+                    return None
                 image.load()
                 if max(image.size) > _MAX_IMAGE_DIMENSION:
                     image.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION))
@@ -924,27 +931,10 @@ class DocxExporter(Exporter):
 
     @staticmethod
     def _is_safe_url(url: str) -> bool:
-        """SSRF protection (same as PdfExporter)."""
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            return False
-        if parsed.scheme == "http" and not settings.OCR_ALLOW_HTTP:
-            return False
-
-        host = parsed.hostname or ""
-        if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
-            return False
-        import ipaddress
-        try:
-            ip = ipaddress.ip_address(host)
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
-                return False
-            if host == "169.254.169.254":
-                return False
-        except ValueError:
-            pass
-
-        return True
+        return is_safe_remote_url(
+            url,
+            allow_http=settings.EXPORT_ALLOW_HTTP_IMAGE_URLS,
+        )
 
     @staticmethod
     def _is_safe_mime(content_type: str) -> bool:

@@ -9,7 +9,7 @@ from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.cache import cache
+from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.time_utils import utcnow
@@ -32,12 +32,16 @@ def _resolve_refresh_cookie_secure(request: Request | None = None) -> bool:
         2. ``X-Forwarded-Proto: https`` header set by nginx reverse proxy.
         3. ``settings.APP_ENV == "production"`` — production always uses HTTPS.
     """
+    # Production must never emit a non-Secure refresh cookie, even when a
+    # reverse proxy forgets to forward the original scheme.
+    if settings.APP_ENV.lower() == "production":
+        return True
     if request is not None:
         if request.url.scheme == "https":
             return True
         forwarded = request.headers.get("x-forwarded-proto", "")
-        return forwarded == "https"
-    return settings.APP_ENV == "production"
+        return forwarded.lower() == "https"
+    return False
 
 
 def set_refresh_cookie(
@@ -126,18 +130,37 @@ def verify_admin_password(password: str, password_hash: str) -> bool:
 
 async def blacklist_admin_token(jti: str, exp: int) -> None:
     ttl = max(exp - int(utcnow().timestamp()), 1)
-    await cache.set(f"admin:jwt:blacklist:{jti}", 1, ttl=ttl)
+    try:
+        await cache.set_strict(f"admin:jwt:blacklist:{jti}", 1, ttl=ttl)
+    except CacheUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
 
 
 async def set_admin_user_nbf(user_id: int, timestamp: int | None = None) -> None:
-    await cache.set(f"admin:user:nbf:{user_id}", timestamp or int(utcnow().timestamp()), ttl=60 * 60 * 24 * 30)
+    try:
+        await cache.set_strict(
+            f"admin:user:nbf:{user_id}",
+            timestamp or (int(utcnow().timestamp()) + 1),
+            ttl=60 * 60 * 24 * 30,
+        )
+    except CacheUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
 
 
-def create_admin_token(admin_user: AdminUser) -> str:
-    now = datetime.now(UTC)
+def create_admin_token(admin_user: AdminUser, *, issued_at: int | None = None) -> str:
+    current = int(datetime.now(UTC).timestamp())
+    now = datetime.fromtimestamp(max(current, issued_at or current), tz=UTC)
     payload = {
         "sub": str(admin_user.id),
         "type": "admin",
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.ADMIN_JWT_AUDIENCE,
         "roleId": admin_user.role_id,
         "jti": uuid4().hex,
         "iat": int(now.timestamp()),
@@ -146,11 +169,14 @@ def create_admin_token(admin_user: AdminUser) -> str:
     return jwt.encode(payload, settings.APP_SECRET, algorithm="HS256")
 
 
-def create_admin_refresh_token(admin_user: AdminUser) -> str:
-    now = datetime.now(UTC)
+def create_admin_refresh_token(admin_user: AdminUser, *, issued_at: int | None = None) -> str:
+    current = int(datetime.now(UTC).timestamp())
+    now = datetime.fromtimestamp(max(current, issued_at or current), tz=UTC)
     payload = {
         "sub": str(admin_user.id),
         "type": "admin_refresh",
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.ADMIN_JWT_AUDIENCE,
         "roleId": admin_user.role_id,
         "jti": uuid4().hex,
         "iat": int(now.timestamp()),
@@ -159,24 +185,96 @@ def create_admin_refresh_token(admin_user: AdminUser) -> str:
     return jwt.encode(payload, settings.APP_SECRET, algorithm="HS256")
 
 
-def decode_admin_refresh_token(token: str) -> dict[str, Any]:
+def _decode_admin_jwt(token: str, expected_type: str) -> dict[str, Any]:
     try:
-        payload = jwt.decode(token, settings.APP_SECRET, algorithms=["HS256"])
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-    if payload.get("type") != "admin_refresh":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-    return payload
+        payload = jwt.decode(
+            token,
+            settings.APP_SECRET,
+            algorithms=["HS256"],
+            audience=settings.ADMIN_JWT_AUDIENCE,
+            issuer=settings.JWT_ISSUER,
+            options={"require": ["sub", "type", "iss", "aud", "jti", "iat", "exp"]},
+            leeway=2,
+        )
+        if payload.get("type") != expected_type:
+            raise jwt.InvalidTokenError("wrong token type")
+        int(payload["sub"])
+        int(payload["iat"])
+        int(payload["exp"])
+        return payload
+    except (jwt.PyJWTError, ValueError, KeyError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+
+
+async def get_admin_token_issued_at(user_id: int) -> int | None:
+    """Return the minimum safe iat for newly issued admin tokens."""
+    try:
+        user_nbf = await cache.get_strict(f"admin:user:nbf:{user_id}")
+    except CacheUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
+    return int(user_nbf) if user_nbf else None
+
+
+def decode_admin_refresh_token(token: str) -> dict[str, Any]:
+    return _decode_admin_jwt(token, "admin_refresh")
 
 
 def decode_admin_token(token: str) -> dict[str, Any]:
+    return _decode_admin_jwt(token, "admin")
+
+
+async def consume_admin_refresh_token(
+    payload: dict[str, Any],
+    db: AsyncSession,
+) -> AdminUser:
+    """Validate and atomically consume a refresh token for one-time rotation."""
+    user_id = int(payload["sub"])
+    token_iat = int(payload["iat"])
+    token_exp = int(payload["exp"])
+    jti = str(payload["jti"])
+
     try:
-        payload = jwt.decode(token, settings.APP_SECRET, algorithms=["HS256"])
-    except jwt.PyJWTError:
+        is_blacklisted = await cache.get_strict(f"admin:jwt:blacklist:{jti}")
+        user_nbf = await cache.get_strict(f"admin:user:nbf:{user_id}")
+    except CacheUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
+    if is_blacklisted:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-    if payload.get("type") != "admin":
+
+    if user_nbf and token_iat < int(user_nbf):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-    return payload
+
+    ttl = max(token_exp - int(utcnow().timestamp()), 1)
+    try:
+        consumed = await cache.acquire_lock_strict(
+            f"admin:refresh:used:{jti}",
+            uuid4().hex,
+            ttl=ttl,
+        )
+    except CacheUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
+    if not consumed:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+    result = await db.execute(
+        select(AdminUser).where(AdminUser.id == user_id, AdminUser.is_active.is_(True))
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+    return user
 
 
 async def _get_permission_names(db: AsyncSession, role_id: int) -> set[str]:
@@ -194,12 +292,20 @@ async def get_current_admin(
 ) -> AdminPrincipal:
     payload = decode_admin_token(credentials.credentials)
     jti = payload.get("jti")
-    if jti and await cache.get(f"admin:jwt:blacklist:{jti}"):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-
     user_id = int(payload["sub"])
     token_iat = int(payload.get("iat", 0))
-    user_nbf = await cache.get(f"admin:user:nbf:{user_id}")
+    try:
+        is_blacklisted = bool(
+            jti and await cache.get_strict(f"admin:jwt:blacklist:{jti}")
+        )
+        user_nbf = await cache.get_strict(f"admin:user:nbf:{user_id}")
+    except CacheUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
+    if is_blacklisted:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     if user_nbf and token_iat < int(user_nbf):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 

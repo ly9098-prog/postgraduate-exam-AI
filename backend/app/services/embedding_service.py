@@ -5,11 +5,14 @@
 当 config 为 None 时，自动从环境变量构建配置（保持向后兼容）。
 """
 
+import asyncio
 import hashlib
+import json
 import logging
 from typing import Any
 
-import httpx
+from app.core.config import settings
+from app.services.safe_remote_fetch import request_remote_bytes
 
 logger = logging.getLogger("postgraduate-ai.embedding")
 
@@ -106,6 +109,27 @@ def _is_embedding_configured(cfg=None) -> bool:
     return bool(cfg.api_key and cfg.base_url and cfg.model)
 
 
+async def _request_embeddings(url: str, payload: dict, cfg) -> tuple[int, dict]:
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    response = await asyncio.to_thread(
+        request_remote_bytes,
+        url,
+        method="POST",
+        body=body,
+        max_bytes=64 * 1024 * 1024,
+        timeout=float(cfg.timeout),
+        allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
+        follow_redirects=False,
+        headers={
+            "Authorization": f"Bearer {cfg.api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    data = json.loads(response.data.decode("utf-8", errors="strict"))
+    return response.status, data
+
+
 async def get_embedding(text: str, *, config=None) -> list[float] | None:
     """调用 OpenAI-compatible embeddings API 获取单条文本的 embedding 向量。
 
@@ -124,26 +148,16 @@ async def get_embedding(text: str, *, config=None) -> list[float] | None:
         return None
 
     url = f"{cfg.base_url.rstrip('/')}/v1/embeddings"
-    headers = {
-        "Authorization": f"Bearer {cfg.api_key}",
-        "Content-Type": "application/json",
-    }
     payload = {
         "model": cfg.model,
         "input": text,
     }
 
     try:
-        async with httpx.AsyncClient(timeout=cfg.timeout) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.TimeoutException:
-        logger.warning("Embedding API 请求超时")
-        return None
-    except httpx.HTTPStatusError as exc:
-        logger.warning("Embedding API 返回错误: status=%s", exc.response.status_code)
-        return None
+        status_code, data = await _request_embeddings(url, payload, cfg)
+        if status_code != 200:
+            logger.warning("Embedding API 返回错误: status=%s", status_code)
+            return None
     except Exception:
         logger.warning("Embedding API 请求失败", exc_info=True)
         return None
@@ -211,20 +225,16 @@ async def get_embeddings_batch(texts: list[str], *, config=None) -> list[list[fl
 async def _fetch_batch_embeddings(texts: list[str], cfg) -> list[list[float]] | None:
     """尝试批量调用 embedding API。失败返回 None。"""
     url = f"{cfg.base_url.rstrip('/')}/v1/embeddings"
-    headers = {
-        "Authorization": f"Bearer {cfg.api_key}",
-        "Content-Type": "application/json",
-    }
     payload = {
         "model": cfg.model,
         "input": texts,
     }
 
     try:
-        async with httpx.AsyncClient(timeout=cfg.timeout) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+        status_code, data = await _request_embeddings(url, payload, cfg)
+        if status_code != 200:
+            logger.warning("Embedding 批量 API 返回错误: status=%s", status_code)
+            return None
     except Exception:
         logger.warning("Embedding 批量 API 请求失败", exc_info=True)
         return None

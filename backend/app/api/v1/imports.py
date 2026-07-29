@@ -347,17 +347,20 @@ async def resume_pipeline(
     if pipeline_row is None:
         raise HTTPException(status_code=404, detail="流水线不存在")
 
+    requester_id = str(current_user.id) if current_user is not None else None
     if pipeline_row.created_by is None:
         logger.warning(
-            "legacy pipeline without created_by, allowing import:write to resume "
+            "legacy pipeline without created_by rejected for user resume "
             "(pipeline_id=%s, requester=%s)",
             pipeline_id,
-            getattr(current_user, "id", None),
+            requester_id,
         )
-    else:
-        requester_id = str(current_user.id) if current_user is not None else None
-        if requester_id != pipeline_row.created_by:
-            raise HTTPException(status_code=403, detail="not the pipeline creator")
+        raise HTTPException(
+            status_code=403,
+            detail="legacy pipeline ownership cannot be verified; use the admin recovery flow",
+        )
+    if requester_id != pipeline_row.created_by:
+        raise HTTPException(status_code=403, detail="not the pipeline creator")
 
     if pipeline_row.status not in _RESUMABLE_PIPELINE_STATUSES:
         raise HTTPException(

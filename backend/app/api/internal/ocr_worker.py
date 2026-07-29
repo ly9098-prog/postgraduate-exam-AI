@@ -10,6 +10,8 @@ Worker authentication:
 from __future__ import annotations
 
 import logging
+import re
+import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -28,13 +30,13 @@ from app.schemas.ocr_job import (
 )
 from app.services import ocr_job_service as svc
 from app.services.worker_credential_service import (
-    hash_key,
     verify_credential,
 )
 
 logger = logging.getLogger("postgraduate-ai.internal.ocr-worker")
 
 router = APIRouter(prefix="/api/internal/ocr-worker", tags=["ocr-worker"])
+_WORKER_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 
 
 # ── Auth dependency ───────────────────────────────────────
@@ -46,7 +48,8 @@ async def verify_worker_api_key(
     """Verify the Worker-API-Key header.
 
     Database-backed verification (preferred) — checks hashed credentials.
-    Falls back to INTERNAL_API_KEY / APP_SECRET when DB is unavailable.
+    Optional legacy fallback is disabled by default and can use only the
+    dedicated INTERNAL_API_KEY (never APP_SECRET).
 
     Returns worker_id on success, raises 401 on failure.
     """
@@ -62,6 +65,11 @@ async def verify_worker_api_key(
     else:
         worker_id = "unknown"
         token = worker_api_key
+    if not _WORKER_ID_RE.fullmatch(worker_id) or not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Worker-API-Key",
+        )
 
     # 1. Try database-backed credential verification
     try:
@@ -69,11 +77,15 @@ async def verify_worker_api_key(
         if matched is not None:
             return worker_id
     except Exception as exc:
-        logger.warning("DB credential verification unavailable, falling back: %s", exc)
+        logger.warning("DB credential verification unavailable: %s", exc)
 
-    # 2. Fallback: check against INTERNAL_API_KEY / APP_SECRET
-    expected = settings.INTERNAL_API_KEY or settings.APP_SECRET
-    if expected and hash_key(token) == hash_key(expected):
+    # 2. Explicitly enabled legacy fallback. Never reuse the application secret.
+    expected = settings.INTERNAL_API_KEY
+    if (
+        settings.INTERNAL_API_FALLBACK_ENABLED
+        and expected
+        and secrets.compare_digest(token, expected)
+    ):
         return worker_id
 
     raise HTTPException(

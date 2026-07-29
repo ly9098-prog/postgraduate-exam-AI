@@ -1,6 +1,8 @@
+import asyncio
+import json
 import logging
 import time
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +25,11 @@ from app.schemas.admin_ai_config import (
     AdminAiModelConfigResponse,
 )
 from app.services.admin_audit_service import write_admin_audit
+from app.services.safe_remote_fetch import (
+    UnsafeRemoteURLError,
+    request_remote_bytes,
+    validate_remote_url,
+)
 
 # ---------------------------------------------------------------------------
 # In-memory TTL cache — avoids DB query on every single-question completion.
@@ -147,6 +154,44 @@ _DEFAULT_MODELS: list[dict] = [
 def _parse_features(features_val: list[str] | None) -> list[str]:
     """安全解析 features 字段，处理 None 情况。"""
     return features_val if features_val else []
+
+
+def _validated_api_base_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().rstrip("/")
+    if not normalized:
+        return None
+    parsed = urlsplit(normalized)
+    if parsed.query or parsed.fragment:
+        raise ValueError("API Base URL 不能包含查询参数或片段")
+    try:
+        validate_remote_url(
+            normalized,
+            allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
+        )
+    except UnsafeRemoteURLError as exc:
+        raise ValueError(f"API Base URL 不安全或不可用: {exc}") from exc
+    return normalized
+
+
+def _same_origin(left: str, right: str) -> bool:
+    try:
+        l = urlsplit(left)
+        r = urlsplit(right)
+        l_port = l.port or (443 if l.scheme == "https" else 80)
+        r_port = r.port or (443 if r.scheme == "https" else 80)
+    except ValueError:
+        return False
+    return (
+        l.scheme.lower(),
+        (l.hostname or "").lower(),
+        l_port,
+    ) == (
+        r.scheme.lower(),
+        (r.hostname or "").lower(),
+        r_port,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -303,12 +348,20 @@ async def patch_model(
     if data.is_default is not None:
         model.is_default = data.is_default
         changes["is_default"] = data.is_default
-    if data.api_base_url is not None:
-        model.api_base_url = data.api_base_url
-        changes["api_base_url"] = data.api_base_url
-
     # API key: use get_api_key_value() which handles None and mask placeholders
     new_key = data.get_api_key_value()
+    if data.api_base_url is not None:
+        new_base_url = _validated_api_base_url(data.api_base_url)
+        old_base_url = (model.api_base_url or "").rstrip("/") or None
+        if (
+            new_base_url != old_base_url
+            and model.api_key_encrypted
+            and new_key is None
+        ):
+            raise ValueError("修改 API Base URL 时必须同时重新提交 API Key")
+        model.api_base_url = new_base_url
+        changes["api_base_url"] = new_base_url
+
     if new_key is not None:
         model.api_key_encrypted = encrypt_secret(new_key)
         changes["api_key_updated"] = True
@@ -397,11 +450,12 @@ async def create_model(
     if "features" not in data.model_fields_set and data.feature:
         new_features = [data.feature]
 
+    api_base_url = _validated_api_base_url(data.api_base_url)
     model = AdminAiModelConfig(
         name=data.name,
         display_name=data.display_name,
         provider=data.provider,
-        api_base_url=data.api_base_url,
+        api_base_url=api_base_url,
         is_enabled=True,
         is_default=False,
         sort_order=next_order,
@@ -603,12 +657,29 @@ async def test_model_connection(
                             "latency_ms": 0,
                         }
 
-    # Key priority 3: env var fallback for deepseek provider
+    try:
+        api_base_url = _validated_api_base_url(api_base_url) or ""
+    except ValueError as exc:
+        return {
+            "success": False,
+            "status": "network_error",
+            "message": str(exc),
+            "latency_ms": 0,
+        }
+
+    # Key priority 3: env fallback is restricted to the configured DeepSeek
+    # origin so a saved environment secret cannot be sent to an arbitrary URL.
     if effective_api_key is None and effective_provider == "deepseek":
         from app.core.config import settings as app_settings
 
         env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
-        if env_key and env_key != "sk-your-key-here":
+        configured_base = getattr(app_settings, "DEEPSEEK_BASE_URL", "")
+        if (
+            env_key
+            and env_key != "sk-your-key-here"
+            and configured_base
+            and _same_origin(api_base_url, configured_base)
+        ):
             effective_api_key = env_key
 
     # Key priority 4: no key available
@@ -638,11 +709,7 @@ async def _test_chat_connection(
     model_name: str,
 ) -> dict:
     """对 Chat 模型发起一次最小 chat/completions 调用。"""
-    import time
-
-    import httpx
-
-    base = api_base_url.rstrip("/")
+    base = _validated_api_base_url(api_base_url) or ""
     if base.endswith("/v1"):
         base = base[:-3]
     url = f"{base}/v1/chat/completions"
@@ -656,28 +723,34 @@ async def _test_chat_connection(
 
     start = time.time()
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
+        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        remote = await asyncio.to_thread(
+            request_remote_bytes,
+            url,
+            method="POST",
+            body=body,
+            max_bytes=10 * 1024 * 1024,
+            timeout=15.0,
+            allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
+            follow_redirects=False,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+        )
         elapsed = int((time.time() - start) * 1000)
+        response_text = remote.data.decode("utf-8", errors="replace")
 
-        if resp.status_code in (401, 403):
-            body = resp.text[:500]
+        if remote.status in (401, 403):
             return {
                 "success": False,
                 "status": "auth_error",
-                "message": f"API Key 无效或无权限访问 (HTTP {resp.status_code}): {body}",
+                "message": f"API Key 无效或无权限访问 (HTTP {remote.status})",
                 "latency_ms": elapsed,
             }
 
-        if resp.status_code == 404:
-            body = resp.text[:200]
+        if remote.status == 404:
             return {
                 "success": False,
                 "status": "model_not_found",
@@ -685,8 +758,8 @@ async def _test_chat_connection(
                 "latency_ms": elapsed,
             }
 
-        if resp.status_code == 400:
-            body_lower = resp.text.lower()
+        if remote.status == 400:
+            body_lower = response_text.lower()
             if any(kw in body_lower for kw in ("model", "does not exist", "not found", "not_found", "invalid model")):
                 return {
                     "success": False,
@@ -695,17 +768,16 @@ async def _test_chat_connection(
                     "latency_ms": elapsed,
                 }
 
-        if resp.status_code != 200:
-            body = resp.text[:300]
+        if remote.status != 200:
             return {
                 "success": False,
                 "status": "unknown_error",
-                "message": f"接口返回异常状态码 {resp.status_code}: {body}",
+                "message": f"接口返回异常状态码 {remote.status}",
                 "latency_ms": elapsed,
             }
 
         try:
-            data = resp.json()
+            data = json.loads(response_text)
         except Exception:
             return {
                 "success": False,
@@ -714,7 +786,7 @@ async def _test_chat_connection(
                 "latency_ms": elapsed,
             }
 
-        if "choices" not in data or not isinstance(data["choices"], list) or len(data["choices"]) == 0:
+        if "choices" not in data or not isinstance(data["choices"], list) or not data["choices"]:
             return {
                 "success": False,
                 "status": "format_error",
@@ -739,29 +811,12 @@ async def _test_chat_connection(
             "latency_ms": elapsed,
             "model_returned": returned_model or None,
         }
-
-    except httpx.ConnectError:
-        elapsed = int((time.time() - start) * 1000)
-        return {
-            "success": False,
-            "status": "network_error",
-            "message": f"无法连接到 {base}，请检查接口地址是否正确、网络是否可达",
-            "latency_ms": elapsed,
-        }
-    except httpx.TimeoutException:
-        elapsed = int((time.time() - start) * 1000)
-        return {
-            "success": False,
-            "status": "timeout",
-            "message": f"连接 {base} 超时（15s），请检查网络或 API 地址是否可达",
-            "latency_ms": elapsed,
-        }
     except Exception as exc:
         elapsed = int((time.time() - start) * 1000)
         return {
             "success": False,
             "status": "network_error",
-            "message": f"请求失败: {exc}",
+            "message": f"请求失败: {str(exc)[:160]}",
             "latency_ms": elapsed,
         }
 
@@ -770,72 +825,49 @@ async def _test_paddleocr_vl_connection(
     api_base_url: str,
     api_key: str,
 ) -> dict:
-    """测试 PaddleOCR-VL 连接：验证服务端可达性与 API Key 有效性。
-
-    轻量检测方案：向 ``/api/v2/ocr/jobs`` 发送带有认证头的 GET 请求。
-    该端点在 PaddleOCR-VL API 中通常返回 405/404（GET 方法不支持），
-    但能验证：
-      - 服务端是否可达（非 ConnectError/Timeout）
-      - API Key 是否有效（401/403 → auth_error）
-      - 响应速度（latency_ms）
-
-    注意：真正的 OCR 调用开销很大（提交作业→轮询→下载结果），因此不做
-    完整的 OCR 调用验证。
-    """
-    import time
-
-    import httpx
-
-    # Use same path logic as PaddleOCRVLClient._submit_job — urljoin with
-    # an absolute path (leading /) handles base URLs with or without
-    # /api/v2/ocr/jobs already included.
-    base = api_base_url.rstrip("/")
+    """测试 PaddleOCR-VL 连接，不跟随携带凭据的重定向。"""
+    base = _validated_api_base_url(api_base_url) or ""
     url = urljoin(base + "/", "/api/v2/ocr/jobs")
 
     start = time.time()
     try:
-        headers = {"Authorization": f"Bearer {api_key}"}
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(url, headers=headers, follow_redirects=True)
+        remote = await asyncio.to_thread(
+            request_remote_bytes,
+            url,
+            method="GET",
+            max_bytes=1024 * 1024,
+            timeout=15.0,
+            allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
+            follow_redirects=False,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Accept": "application/json",
+            },
+        )
         elapsed = int((time.time() - start) * 1000)
 
-        # 401/403 → API Key 无效
-        if resp.status_code in (401, 403):
-            body = resp.text[:300]
+        if remote.status in (401, 403):
             return {
                 "success": False,
                 "status": "auth_error",
-                "message": f"API Key 无效或无权限访问 (HTTP {resp.status_code}): {body}",
+                "message": f"API Key 无效或无权限访问 (HTTP {remote.status})",
                 "latency_ms": elapsed,
             }
 
-        # 任意其他 HTTP 响应都说明服务可达、API Key 通过基本校验
+        if remote.status in {301, 302, 303, 307, 308}:
+            return {
+                "success": False,
+                "status": "network_error",
+                "message": "服务返回重定向；为防止凭据泄露，测试请求不会跟随重定向",
+                "latency_ms": elapsed,
+            }
+
         return {
             "success": True,
             "status": "ok",
             "message": (
-                f"连接成功（HTTP {resp.status_code}），API Key 有效，"
+                f"连接成功（HTTP {remote.status}），API Key 通过基本校验，"
                 f"服务端响应时延 {elapsed}ms"
-            ),
-            "latency_ms": elapsed,
-        }
-
-    except httpx.ConnectError:
-        elapsed = int((time.time() - start) * 1000)
-        return {
-            "success": False,
-            "status": "network_error",
-            "message": f"无法连接到 {base}，请检查接口地址是否正确、网络是否可达",
-            "latency_ms": elapsed,
-        }
-    except httpx.TimeoutException:
-        elapsed = int((time.time() - start) * 1000)
-        return {
-            "success": False,
-            "status": "timeout",
-            "message": (
-                f"连接 {base} 超时（15s），请检查网络或 API 地址是否可达，"
-                f"或确认 PaddleOCR-VL 服务是否正常运行"
             ),
             "latency_ms": elapsed,
         }
@@ -844,6 +876,6 @@ async def _test_paddleocr_vl_connection(
         return {
             "success": False,
             "status": "network_error",
-            "message": f"请求失败: {exc}",
+            "message": f"请求失败: {str(exc)[:160]}",
             "latency_ms": elapsed,
         }

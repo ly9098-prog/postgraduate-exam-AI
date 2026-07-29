@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_app_permission
 from app.models.user import User
 from app.schemas.tag import TagCreate, TagResponse, TagSubjectGroup
 from app.services import knowledge_service as svc
@@ -55,7 +55,7 @@ async def get_knowledge_tree(
 async def create_knowledge_point(
     data: TagCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("question:write")),
 ):
     tag = await svc.create_tag(db, data.name, data.subject, data.parent_id)
     return TagResponse(
@@ -68,7 +68,7 @@ async def create_knowledge_point(
 async def delete_knowledge_point(
     tag_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_app_permission("question:write")),
 ):
     ok = await svc.delete_tag(db, tag_id)
     if not ok:

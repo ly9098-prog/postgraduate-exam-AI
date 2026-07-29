@@ -6,6 +6,7 @@ from app.core.admin_security import (
     AdminPrincipal,
     create_admin_refresh_token,
     create_admin_token,
+    get_admin_token_issued_at,
     hash_admin_password,
     set_admin_user_nbf,
     verify_admin_password,
@@ -37,8 +38,9 @@ async def build_admin_login_response(db: AsyncSession, admin_user: AdminUser):
     result = await db.execute(select(Role).where(Role.id == admin_user.role_id))
     role = result.scalar_one()
     permissions = await get_admin_permission_names(db, admin_user.role_id)
-    token = create_admin_token(admin_user)
-    refresh_token = create_admin_refresh_token(admin_user)
+    issued_at = await get_admin_token_issued_at(admin_user.id)
+    token = create_admin_token(admin_user, issued_at=issued_at)
+    refresh_token = create_admin_refresh_token(admin_user, issued_at=issued_at)
     return token, refresh_token, admin_user, role, permissions
 
 
@@ -144,7 +146,10 @@ async def change_admin_password(
         raise ValueError("用户名或密码错误")
     # hash_admin_password 内部已有字节长度校验，超长会抛 ValueError
     admin_user.password_hash = hash_admin_password(data.new_password)
-    await set_admin_user_nbf(admin_user.id)
+    invalid_after = None
+    if operator is not None:
+        invalid_after = int(operator.token_payload.get("iat", 0)) + 1
+    await set_admin_user_nbf(admin_user.id, invalid_after)
     await write_admin_audit(
         db, operator, "admin_user.change_password", "admin_user", admin_user.id,
         severity="critical", detail={"username": admin_user.username},

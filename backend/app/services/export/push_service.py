@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -35,6 +36,7 @@ _MAX_CONNECTIONS_PER_USER = 5
 
 # Heartbeat interval (seconds)
 _HEARTBEAT_INTERVAL = 25
+_AUTH_RECHECK_INTERVAL = 30
 
 # Max message payload size (bytes)
 _MAX_MESSAGE_BYTES = 65_536
@@ -277,7 +279,13 @@ async def publish_via_redis(event: dict, user_id: int) -> None:
 # ═══════════════════════════════════════════════════
 
 
-async def handle_export_ws(ws: WebSocket, user_id: int) -> None:
+async def handle_export_ws(
+    ws: WebSocket,
+    user_id: int,
+    *,
+    auth_token: str,
+    subprotocol: str | None = None,
+) -> None:
     """Main WebSocket handler for export status subscriptions.
 
     Args:
@@ -292,7 +300,7 @@ async def handle_export_ws(ws: WebSocket, user_id: int) -> None:
     Note: Redis events are handled by the per-instance ``_subscribe_all``
     subscriber, not per-connection. This avoids N×N fanout.
     """
-    await ws.accept()
+    await ws.accept(subprotocol=subprotocol)
 
     accepted = await register(user_id, ws)
     if not accepted:
@@ -301,8 +309,22 @@ async def handle_export_ws(ws: WebSocket, user_id: int) -> None:
         return
 
     try:
+        last_auth_check = time.monotonic()
         # Heartbeat loop — respond to PING from client
         while True:
+            if time.monotonic() - last_auth_check >= _AUTH_RECHECK_INTERVAL:
+                try:
+                    from app.core.database import async_session
+                    from app.core.security import authenticate_user_token
+
+                    async with async_session() as db:
+                        user, _ = await authenticate_user_token(auth_token, db)
+                    if user.id != user_id:
+                        raise ValueError("user mismatch")
+                    last_auth_check = time.monotonic()
+                except Exception:
+                    await ws.close(code=4001, reason="Session expired")
+                    break
             try:
                 data = await asyncio.wait_for(ws.receive_text(), timeout=_HEARTBEAT_INTERVAL + 5)
                 msg = json.loads(data)

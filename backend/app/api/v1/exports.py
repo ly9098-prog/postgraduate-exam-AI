@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import decode_token, get_current_user
+from app.core.security import get_current_user
 from app.core.time_utils import utcnow
 from app.models.export_task import ExportTask
 from app.models.user import User
@@ -553,107 +553,11 @@ async def re_export(
 
 
 @router.get("/health")
-async def export_health(
-    db: AsyncSession = Depends(get_db),
-):
-    """Export subsystem health check with processor diagnostics.
-
-    Returns:
-    - ``status``: ``ok`` (healthy), ``degraded`` (web-only, no local processor),
-      ``error`` (processor should be running but is not responding)
-    - ``processor_enabled``: whether the export processor is active
-    - ``processor_running``: whether the processor loop is running (not draining)
-    - ``processor_last_heartbeat_at``: timestamp of last processor loop iteration
-    - ``pending_task_count``: total pending export tasks in DB
-    - ``processing_task_count``: total processing export tasks in DB
-    - ``processor_mode``: ``internal`` (same process), ``external`` (separate scheduler), ``none``
-    """
-    from app.core.config import settings
-    from app.services.export.processor import get_processor_health
-
-    role = settings.PROCESS_ROLE
-
-    processor_local = role in ("scheduler", "all")
-    ph = get_processor_health()
-    processor_running = bool(ph.get("running", False))
-    processor_last_heartbeat_at = ph.get("last_heartbeat_at")
-
-    # Count pending/processing tasks
-    pending_count = 0
-    processing_count = 0
-    try:
-        from app.models.export_task import ExportTask
-        from app.schemas.export_task import ExportTaskStatus
-
-        pending_result = await db.execute(
-            select(ExportTask).where(ExportTask.status == ExportTaskStatus.PENDING)
-        )
-        pending_count = len(pending_result.scalars().all())
-
-        processing_result = await db.execute(
-            select(ExportTask).where(ExportTask.status == ExportTaskStatus.PROCESSING)
-        )
-        processing_count = len(processing_result.scalars().all())
-    except Exception:
-        pass
-
-    # Redis push capability
-    redis_push_enabled = False
-    try:
-        from app.core.cache import cache
-        redis_push_enabled = cache.is_enabled
-    except Exception:
-        pass
-
-    # Active WS connections in this process
-    active_ws = 0
-    try:
-        from app.services.export.push_service import get_active_connections
-        active_ws = get_active_connections()
-    except Exception:
-        pass
-
-    if processor_local:
-        if ph:
-            # We SHOULD have a running processor — check heartbeat
-            if processor_running:
-                status = "ok"
-                message = None
-            else:
-                status = "error"
-                message = "导出处理器已停止响应"
-        else:
-            # Processor should start in scheduler/all role but hasn't yet
-            status = "degraded"
-            message = "导出处理器正在启动中"
-        processor_mode = "internal"
-    else:
-        # Web-only role — processor is external or non-existent
-        status = "degraded"
-        message = "导出处理器未运行，需要单独启动 scheduler 进程"
-        processor_mode = "external"
-
-    # Check if pending tasks exist without a running local processor
-    if pending_count > 0 and not processor_running:
-        message = "存在待处理任务但导出处理器未运行"
-        if status == "ok":
-            status = "degraded"
-        if status == "error":
-            status = "error"  # keep error
-
-    return {
-        "status": status,
-        "process_role": role,
-        "processor_enabled": processor_local,
-        "processor_running": processor_running,
-        "processor_last_heartbeat_at": processor_last_heartbeat_at,
-        "processor_mode": processor_mode,
-        "pending_task_count": pending_count,
-        "processing_task_count": processing_count,
-        "redis_push_enabled": redis_push_enabled,
-        "active_websocket_connections": active_ws,
-        "message": message,
-    }
+async def export_health():
+    """Minimal public probe; detailed diagnostics live under admin APIs."""
+    if not settings.EXPORT_FEATURE_ENABLED:
+        raise HTTPException(status_code=503, detail="Export service unavailable")
+    return {"status": "ok"}
 
 
 # ── WebSocket: real-time export status push ──
@@ -663,7 +567,9 @@ async def export_health(
 async def export_status_ws(ws: WebSocket):
     """WebSocket endpoint for real-time export task status.
 
-    Authentication: pass JWT token as ``token`` query parameter.
+    Authentication: pass ``["bearer", "<JWT>"]`` as WebSocket subprotocols.
+    Query-string tokens are accepted only in local development or when the
+    explicitly unsafe compatibility flag is enabled.
     The user will receive export task status events for their own tasks.
 
     Protocol:
@@ -683,14 +589,37 @@ async def export_status_ws(ws: WebSocket):
         await ws.close(code=4001, reason="实时推送功能已关闭")
         return
 
-    # Authenticate via query param
-    token = ws.query_params.get("token", "")
+    # Prefer WebSocket subprotocols so credentials do not appear in URLs,
+    # reverse-proxy access logs, browser history or monitoring traces.
+    offered_protocols = [
+        item.strip()
+        for item in ws.headers.get("sec-websocket-protocol", "").split(",")
+        if item.strip()
+    ]
+    token = ""
+    selected_subprotocol = None
+    if "bearer" in offered_protocols:
+        index = offered_protocols.index("bearer")
+        if index + 1 < len(offered_protocols):
+            token = offered_protocols[index + 1]
+            selected_subprotocol = "bearer"
+
+    local_env = settings.APP_ENV.lower() in {"development", "local", "test"}
+    if not token and (
+        local_env or settings.ALLOW_LEGACY_WEBSOCKET_QUERY_TOKEN
+    ):
+        token = ws.query_params.get("token", "")
     if not token:
         await ws.close(code=4001, reason="Missing token")
         return
 
     try:
-        user_id = decode_token(token)
+        from app.core.database import async_session
+        from app.core.security import authenticate_user_token
+
+        async with async_session() as db:
+            user, _payload = await authenticate_user_token(token, db)
+        user_id = user.id
     except Exception:
         await ws.close(code=4001, reason="Invalid token")
         return
@@ -708,7 +637,12 @@ async def export_status_ws(ws: WebSocket):
 
     from app.services.export.push_service import handle_export_ws
 
-    await handle_export_ws(ws, user_id)
+    await handle_export_ws(
+        ws,
+        user_id,
+        auth_token=token,
+        subprotocol=selected_subprotocol,
+    )
 
 
 # ── Internal helpers ──

@@ -58,7 +58,10 @@ rsync -av --delete \
     --exclude=.backend_cache \
     --exclude=tmp \
     --exclude=uploads \
-    --exclude=static \
+    --exclude=static/uploads \
+    --exclude=static/.staging \
+    --exclude=static/staging \
+    --exclude=static/exports \
     --exclude=artifacts \
     --exclude=ocr_test \
     --exclude=backups \

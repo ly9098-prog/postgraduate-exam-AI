@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, text
 
 from app.core.admin_security import require_permissions
-from app.core.cache import cache
+from app.core.cache import CacheUnavailableError, cache
 from app.core.database import async_session
 
 router = APIRouter(prefix="/api/admin/v1/health", tags=["admin-health"])
@@ -28,11 +28,11 @@ async def ready_health(_=Depends(require_permissions("dashboard:read"))):
 
     if db_status == "ok":
         try:
-            await cache.set("admin:health:ping", "pong", ttl=10)
-            pong = await cache.get("admin:health:ping")
+            await cache.set_strict("admin:health:ping", "pong", ttl=10)
+            pong = await cache.get_strict("admin:health:ping")
             if pong == "pong":
                 redis_status = "ok"
-        except Exception:
+        except CacheUnavailableError:
             redis_status = "degraded"
 
     status_value = "ok" if db_status == "ok" else "degraded"

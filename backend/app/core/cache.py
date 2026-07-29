@@ -18,6 +18,10 @@ return 0
 """
 
 
+class CacheUnavailableError(RuntimeError):
+    """Raised when a security-sensitive Redis operation cannot be completed."""
+
+
 class CacheClient:
     """Redis 缓存客户端封装。
 
@@ -115,6 +119,19 @@ class CacheClient:
         except Exception:
             return self._local_get(key)
 
+    async def get_strict(self, key: str) -> Any | None:
+        """Get without falling back across processes when Redis is configured."""
+        if not self._enabled:
+            return self._local_get(key)
+        client = await self._ensure_client()
+        if client is None:
+            raise CacheUnavailableError("Redis unavailable")
+        try:
+            val = await client.get(key)
+            return json.loads(val) if val else None
+        except Exception as exc:
+            raise CacheUnavailableError("Redis unavailable") from exc
+
     async def set(self, key: str, value: Any, ttl: int = 300) -> None:
         if not self._enabled:
             self._local_set(key, value, ttl)
@@ -127,6 +144,18 @@ class CacheClient:
             await client.set(key, json.dumps(value, default=str), ex=ttl)
         except Exception:
             self._local_set(key, value, ttl)
+
+    async def set_strict(self, key: str, value: Any, ttl: int = 300) -> None:
+        if not self._enabled:
+            self._local_set(key, value, ttl)
+            return
+        client = await self._ensure_client()
+        if client is None:
+            raise CacheUnavailableError("Redis unavailable")
+        try:
+            await client.set(key, json.dumps(value, default=str), ex=ttl)
+        except Exception as exc:
+            raise CacheUnavailableError("Redis unavailable") from exc
 
     @staticmethod
     def jitter_ttl(base: int = 300, percent: float = 0.1) -> int:
@@ -160,6 +189,17 @@ class CacheClient:
             return bool(await client.set(key, value, nx=True, ex=ttl))
         except Exception:
             return False
+
+    async def acquire_lock_strict(self, key: str, value: str, ttl: int = 10) -> bool:
+        if not self._enabled:
+            return await self.acquire_lock(key, value, ttl)
+        client = await self._ensure_client()
+        if client is None:
+            raise CacheUnavailableError("Redis unavailable")
+        try:
+            return bool(await client.set(key, value, nx=True, ex=ttl))
+        except Exception as exc:
+            raise CacheUnavailableError("Redis unavailable") from exc
 
     async def release_lock(self, key: str, value: str) -> None:
         if not self._enabled:
@@ -199,6 +239,46 @@ class CacheClient:
         except Exception:
             return False
 
+    async def increment(self, key: str, *, ttl: int) -> int:
+        """Atomically increment a short-lived counter and return its value."""
+        if not self._enabled:
+            current = self._local_get(key) or 0
+            value = int(current) + 1
+            self._local_set(key, value, ttl)
+            return value
+        try:
+            client = await self._ensure_client()
+            if client is None:
+                current = self._local_get(key) or 0
+                value = int(current) + 1
+                self._local_set(key, value, ttl)
+                return value
+            value = int(await client.incr(key))
+            if value == 1:
+                await client.expire(key, ttl)
+            return value
+        except Exception:
+            current = self._local_get(key) or 0
+            value = int(current) + 1
+            self._local_set(key, value, ttl)
+            return value
+
+    async def increment_strict(self, key: str, *, ttl: int) -> int:
+        if not self._enabled:
+            return await self.increment(key, ttl=ttl)
+        client = await self._ensure_client()
+        if client is None:
+            raise CacheUnavailableError("Redis unavailable")
+        script = """
+        local value = redis.call('INCR', KEYS[1])
+        if value == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+        return value
+        """
+        try:
+            return int(await client.eval(script, 1, key, ttl))
+        except Exception as exc:
+            raise CacheUnavailableError("Redis unavailable") from exc
+
     async def delete(self, pattern: str) -> int:
         """按模式删除缓存，返回删除的 key 数量。
 
@@ -213,6 +293,18 @@ class CacheClient:
             return await self._scan_delete(client, pattern)
         except Exception:
             return self._local_delete(pattern)
+
+    async def delete_strict(self, key: str) -> int:
+        """Delete one exact security key without cross-process fallback."""
+        if not self._enabled:
+            return self._local_delete(key)
+        client = await self._ensure_client()
+        if client is None:
+            raise CacheUnavailableError("Redis unavailable")
+        try:
+            return int(await client.delete(key))
+        except Exception as exc:
+            raise CacheUnavailableError("Redis unavailable") from exc
 
     async def _scan_delete(self, client, pattern: str, batch_size: int = 500) -> int:
         """Delete keys matching *pattern* via SCAN iteration.

@@ -75,14 +75,22 @@ async def test_embedding(
 ):
     """对给定 Embedding 配置发起一次最小连通性测试，不保存任何状态。"""
     api_key = data.get_api_key_value()
+    api_base_url = data.api_base_url
+    model = data.model
+    dim = data.dim
+    timeout = data.timeout
     # 前端未传 key 时（用户刷新页面后未重新输入），从 DB 读取已存储的 key
     if not api_key:
         stored = await resolve_embedding_config(db)
         api_key = stored.api_key
+        api_base_url = stored.base_url
+        model = stored.model
+        dim = stored.dim
+        timeout = stored.timeout
     return await test_embedding_connection(
-        api_base_url=data.api_base_url,
+        api_base_url=api_base_url,
         api_key=api_key,
-        model=data.model,
-        dim=data.dim,
-        timeout=data.timeout,
+        model=model,
+        dim=dim,
+        timeout=timeout,
     )

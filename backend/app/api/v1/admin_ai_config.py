@@ -53,7 +53,9 @@ async def update_model(
         return result
     except ValueError as exc:
         await db.rollback()
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        msg = str(exc)
+        code = status.HTTP_404_NOT_FOUND if "不存在" in msg else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=code, detail=msg)
     except SecretEncryptionError:
         await db.rollback()
         raise HTTPException(
@@ -79,6 +81,9 @@ async def create_model_endpoint(
         result = await create_model(db, data, current_admin)
         await db.commit()
         return result
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except SecretEncryptionError:
         await db.rollback()
         raise HTTPException(

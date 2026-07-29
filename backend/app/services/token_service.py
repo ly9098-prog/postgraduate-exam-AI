@@ -32,11 +32,7 @@ async def create_refresh_token(db: AsyncSession, user_id: int) -> str:
 
 
 async def verify_refresh_token(db: AsyncSession, raw_token: str) -> RefreshToken | None:
-    """Verify a raw refresh token. Returns the token record if valid, None otherwise.
-
-    Handles rotation grace period: a token revoked within the last 60 seconds
-    is still accepted to handle concurrent refresh race conditions.
-    """
+    """Verify a raw refresh token. Revoked tokens are never accepted."""
     token_hash = _hash_token(raw_token)
     result = await db.execute(
         select(RefreshToken).where(RefreshToken.token_hash == token_hash)
@@ -51,30 +47,39 @@ async def verify_refresh_token(db: AsyncSession, raw_token: str) -> RefreshToken
     if token.expires_at < now:
         return None
 
-    # Check revocation with 60-second grace period for rotation races
+    # A refresh token is single-use. A grace window would permit replay.
     if token.revoked_at is not None:
-        if (now - token.revoked_at).total_seconds() > 60:
-            return None
+        return None
 
     return token
 
 
 async def rotate_refresh_token(db: AsyncSession, current_token: RefreshToken) -> str:
-    """Revoke current token and issue a new one. Returns the new raw token.
+    """Atomically consume the current token and issue a replacement."""
+    now = utcnow()
+    consumed = await db.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.id == current_token.id,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at >= now,
+        )
+        .values(revoked_at=now)
+        .execution_options(synchronize_session=False)
+    )
+    if consumed.rowcount != 1:
+        await db.rollback()
+        raise ValueError("refresh token has already been consumed")
 
-    INSERT (new) → UPDATE (revoke old) ordering in a single transaction:
-    if the second step fails, the old token remains valid (safe degradation).
-    """
     raw = _generate_raw_token()
     token_hash = _hash_token(raw)
-    expires_at = utcnow() + timedelta(days=REFRESH_TOKEN_DAYS)
+    expires_at = now + timedelta(days=REFRESH_TOKEN_DAYS)
     new_token = RefreshToken(
         user_id=current_token.user_id,
         token_hash=token_hash,
         expires_at=expires_at,
     )
     db.add(new_token)
-    current_token.revoked_at = utcnow()
     await db.commit()
     return raw
 

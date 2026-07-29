@@ -1,3 +1,5 @@
+import asyncio
+import json
 import logging
 import time
 from urllib.parse import urlparse
@@ -6,6 +8,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.log_context import log_event
+from app.services.safe_remote_fetch import request_remote_bytes
 from app.utils.sentry_utils import capture_exception, set_tag, start_span
 
 _ai_logger = logging.getLogger("app.ai")
@@ -85,31 +88,46 @@ class DeepSeekClient:
                 _url = _base_url.rstrip("/")
                 if _url.endswith("/v1"):
                     _url = _url[:-3]
-                resp = await self.client.post(
+                request_body = json.dumps(
+                    payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                remote = await asyncio.to_thread(
+                    request_remote_bytes,
                     f"{_url}/v1/chat/completions",
+                    method="POST",
+                    body=request_body,
+                    max_bytes=10 * 1024 * 1024,
+                    timeout=float(self.timeout),
+                    allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
+                    follow_redirects=False,
                     headers={
                         "Authorization": f"Bearer {_api_key}",
                         "Content-Type": "application/json",
+                        "Accept": "application/json",
                     },
-                    json=payload,
                 )
+                response_text = remote.data.decode("utf-8", errors="replace")
                 elapsed = int((time.time() - start) * 1000)
 
-                if resp.status_code != 200:
+                if remote.status != 200:
                     # Truncate error body — never log full response
-                    error_body = resp.text[:300] if resp.text else ""
+                    error_body = response_text[:300]
                     log_event(
                         _ai_logger, "ai.chat.error",
                         level="error",
                         provider="deepseek", model=model,
                         duration_ms=elapsed,
-                        status_code=resp.status_code,
+                        status_code=remote.status,
                         error_type="HTTPError",
                         error_message=error_body,
                     )
-                    raise RuntimeError(f"DeepSeek API error: {resp.status_code} {resp.text}")
+                    raise RuntimeError(
+                        f"DeepSeek API error: {remote.status} {error_body}"
+                    )
 
-                data = resp.json()
+                data = json.loads(response_text)
                 choice = data["choices"][0]
                 tokens = data["usage"]["total_tokens"]
                 response_chars = len(choice["message"].get("content", ""))
