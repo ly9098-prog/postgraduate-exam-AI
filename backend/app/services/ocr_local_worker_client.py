@@ -29,6 +29,7 @@ class LocalOcrWorkerClient:
 
     def __init__(self, config: Any) -> None:
         self._pool = OcrWorkerPool(config)
+        self._batch_concurrency = max(1, int(config.worker_count))
 
     # ── Async API ───────────────────────────────────────────────────────────
 
@@ -60,30 +61,55 @@ class LocalOcrWorkerClient:
         if not images:
             return []
 
-        tasks = [
-            self._pool.submit(png, idx, mode=mode, options=options)
-            for idx, png in images
+        # Do not create one long-lived task per page.  Large PDFs otherwise
+        # flood the bounded pool queue, causing avoidable QUEUE_FULL failures
+        # and retaining every page coroutine until the slowest page finishes.
+        resolved: list[WorkerResult | None] = [None] * len(images)
+        next_pos = 0
+
+        async def _batch_worker() -> None:
+            nonlocal next_pos
+            while True:
+                pos = next_pos
+                next_pos += 1
+                if pos >= len(images):
+                    return
+                idx, png = images[pos]
+                try:
+                    resolved[pos] = await self._pool.submit(
+                        png, idx, mode=mode, options=options,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    resolved[pos] = WorkerResult(
+                        request_id="",
+                        page_index=idx,
+                        status="failed",
+                        stable_error_code=STABLE_ERROR_CODES["ENGINE_ERROR"],
+                        error_type=str(exc) or "Unknown error",
+                    )
+
+        workers = [
+            asyncio.create_task(_batch_worker())
+            for _ in range(min(self._batch_concurrency, len(images)))
+        ]
+        await asyncio.gather(*workers)
+
+        final = [
+            r if isinstance(r, WorkerResult) else WorkerResult(
+                request_id="",
+                page_index=images[i][0],
+                status="failed",
+                stable_error_code=STABLE_ERROR_CODES["ENGINE_ERROR"],
+                error_type="Missing batch result",
+            )
+            for i, r in enumerate(resolved)
         ]
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        resolved: list[WorkerResult] = []
-        for i, r in enumerate(results):
-            if isinstance(r, WorkerResult):
-                resolved.append(r)
-            else:
-                # Exception from gather (shouldn't happen with return_exceptions)
-                resolved.append(WorkerResult(
-                    request_id="",
-                    page_index=images[i][0],
-                    status="failed",
-                    stable_error_code=STABLE_ERROR_CODES["ENGINE_ERROR"],
-                    error_type=str(r) if r is not None else "Unknown error",
-                ))
-
         # Sort by page_index
-        resolved.sort(key=lambda wr: wr.page_index)
-        return resolved
+        final.sort(key=lambda wr: wr.page_index)
+        return final
 
     async def shutdown(self) -> None:
         """Graceful shutdown."""

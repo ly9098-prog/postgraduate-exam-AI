@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from concurrent.futures import Future, ProcessPoolExecutor, TimeoutError
 from concurrent.futures.process import BrokenProcessPool
 
@@ -140,21 +142,23 @@ class OcrProcessPool:
         self._total_timeouts: int = 0
         self._total_crashes: int = 0
         self._shut_down: bool = False
+        self._lock = threading.RLock()
 
     def _ensure(self) -> ProcessPoolExecutor:
-        if self._shut_down:
-            raise RuntimeError("OCR process pool has been shut down")
-        if self._executor is None:
-            self._executor = ProcessPoolExecutor(
-                max_workers=self._max_workers,
-                initializer=_init_worker,
-            )
-            self._spawn_count += 1
-            logger.info(
-                "OCR process pool spawned (pid=%d, spawn=%d)",
-                os.getpid(), self._spawn_count,
-            )
-        return self._executor
+        with self._lock:
+            if self._shut_down:
+                raise RuntimeError("OCR process pool has been shut down")
+            if self._executor is None:
+                self._executor = ProcessPoolExecutor(
+                    max_workers=self._max_workers,
+                    initializer=_init_worker,
+                )
+                self._spawn_count += 1
+                logger.info(
+                    "OCR process pool spawned (pid=%d, spawn=%d)",
+                    os.getpid(), self._spawn_count,
+                )
+            return self._executor
 
     def submit(
         self,
@@ -169,20 +173,23 @@ class OcrProcessPool:
         Returns:
             A ``Future`` whose ``.result()`` returns the OCR text.
         """
+        executor = self._ensure()
         try:
-            future = self._ensure().submit(_run_one_page, image_bytes, page_index)
+            future = executor.submit(_run_one_page, image_bytes, page_index)
         except BrokenProcessPool:
             self._total_crashes += 1
             logger.warning(
                 "OCR process pool broken, recreating (crash=%d)",
                 self._total_crashes,
             )
-            self._shutdown_nonblocking()
-            future = self._ensure().submit(_run_one_page, image_bytes, page_index)
+            self._shutdown_nonblocking(expected=executor)
+            executor = self._ensure()
+            future = executor.submit(_run_one_page, image_bytes, page_index)
         except RuntimeError:
             # From _ensure() during shutdown — do not retry, do not count as crash
             raise
 
+        setattr(future, "_ocr_pool_executor", executor)
         self._total_submitted += 1
         return future
 
@@ -211,10 +218,14 @@ class OcrProcessPool:
                 "OCR process timed out after %ds, recycling pool (timeout=%d)",
                 effective_timeout, self._total_timeouts,
             )
-            self._shutdown_nonblocking()
+            self._shutdown_nonblocking(
+                expected=getattr(future, "_ocr_pool_executor", None),
+            )
             raise
         except Exception:
-            self._shutdown_nonblocking()
+            self._shutdown_nonblocking(
+                expected=getattr(future, "_ocr_pool_executor", None),
+            )
             raise
 
     def get_text_with_boxes(
@@ -232,14 +243,16 @@ class OcrProcessPool:
         On timeout the process pool is recycled (worker terminated).
         """
         effective_timeout = timeout or _PROCESS_TIMEOUT
+        executor = self._ensure()
         try:
-            future = self._ensure().submit(
+            future = executor.submit(
                 _run_one_page_with_boxes, image_bytes, page_index, skip_rotation,
             )
         except BrokenProcessPool:
             self._total_crashes += 1
-            self._shutdown_nonblocking()
-            future = self._ensure().submit(
+            self._shutdown_nonblocking(expected=executor)
+            executor = self._ensure()
+            future = executor.submit(
                 _run_one_page_with_boxes, image_bytes, page_index, skip_rotation,
             )
         except RuntimeError:
@@ -250,10 +263,10 @@ class OcrProcessPool:
             return future.result(timeout=effective_timeout)
         except TimeoutError:
             self._total_timeouts += 1
-            self._shutdown_nonblocking()
+            self._shutdown_nonblocking(expected=executor)
             raise
         except Exception:
-            self._shutdown_nonblocking()
+            self._shutdown_nonblocking(expected=executor)
             raise
 
     def get_lightweight_text(
@@ -268,14 +281,16 @@ class OcrProcessPool:
         cls=False for speed. Runs in child process.
         """
         effective_timeout = timeout or _PROCESS_TIMEOUT
+        executor = self._ensure()
         try:
-            future = self._ensure().submit(
+            future = executor.submit(
                 _run_lightweight_ocr, image_bytes, page_index,
             )
         except BrokenProcessPool:
             self._total_crashes += 1
-            self._shutdown_nonblocking()
-            future = self._ensure().submit(
+            self._shutdown_nonblocking(expected=executor)
+            executor = self._ensure()
+            future = executor.submit(
                 _run_lightweight_ocr, image_bytes, page_index,
             )
         except RuntimeError:
@@ -287,65 +302,126 @@ class OcrProcessPool:
             return result.get("text", "")
         except TimeoutError:
             self._total_timeouts += 1
-            self._shutdown_nonblocking()
+            self._shutdown_nonblocking(expected=executor)
             raise
         except Exception:
-            self._shutdown_nonblocking()
+            self._shutdown_nonblocking(expected=executor)
             raise
 
-    def _shutdown_nonblocking(self) -> None:
-        """Request non-blocking shutdown of the current executor.
-
-        Cancels pending futures and returns immediately without
-        waiting for running tasks. The executor reference is cleared
-        so the next ``submit()`` will spawn a fresh one (crash
-        recovery path).
-
-        This is *not* a forced kill — it signals ``cancel_futures``
-        but running tasks may continue briefly in their worker
-        process.
-        """
-        if self._executor is not None:
-            try:
-                self._executor.shutdown(wait=False, cancel_futures=True)
-            except Exception as exc:
-                logger.warning("OCR process pool shutdown error: %s", exc)
+    def _detach_executor(
+        self,
+        expected: ProcessPoolExecutor | None = None,
+    ) -> ProcessPoolExecutor | None:
+        with self._lock:
+            if expected is not None and self._executor is not expected:
+                return None
+            executor = self._executor
             self._executor = None
+            return executor
+
+    @staticmethod
+    def _stop_executor(
+        executor: ProcessPoolExecutor,
+        *,
+        grace_timeout: float,
+    ) -> None:
+        """Stop an executor and guarantee its worker processes do not leak.
+
+        ``ProcessPoolExecutor.shutdown(wait=False)`` does not terminate a native
+        OCR call that is already running.  Snapshot the private process handles
+        before shutdown, allow a bounded grace period, then terminate/kill any
+        survivors.  This is intentionally isolated here because the public
+        executor API has no force-stop primitive.
+        """
+        processes = list(
+            (getattr(executor, "_processes", None) or {}).values()
+        )
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except Exception as exc:
+            logger.warning("OCR process pool shutdown signal error: %s", exc)
+
+        deadline = time.monotonic() + max(0.0, grace_timeout)
+        for process in processes:
+            remaining = max(0.0, deadline - time.monotonic())
+            if remaining > 0:
+                try:
+                    process.join(remaining)
+                except Exception:
+                    pass
+
+        survivors = [p for p in processes if p.is_alive()]
+        for process in survivors:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+        for process in survivors:
+            try:
+                process.join(1.0)
+            except Exception:
+                pass
+        for process in survivors:
+            if process.is_alive():
+                try:
+                    process.kill()
+                except (AttributeError, OSError):
+                    try:
+                        process.terminate()
+                    except Exception:
+                        pass
+                try:
+                    process.join(1.0)
+                except Exception:
+                    pass
+        for process in processes:
+            try:
+                process.close()
+            except (AttributeError, ValueError, OSError):
+                pass
+
+    def _shutdown_nonblocking(
+        self,
+        *,
+        expected: ProcessPoolExecutor | None = None,
+    ) -> None:
+        """Immediately recycle the current executor and kill running OCR."""
+        executor = self._detach_executor(expected)
+        if executor is not None:
+            self._stop_executor(executor, grace_timeout=0.0)
 
     def shutdown(self, wait: bool = True) -> None:
-        """Graceful shutdown.
+        """Permanently stop the pool with a bounded shutdown.
 
-        If *wait* is True (default), waits for running tasks to finish.
-        If False, returns immediately (non-blocking, cancels pending futures).
-
-        After shutdown, new submissions raise ``RuntimeError``.
-        Call ``reset()`` to re-enable if needed.
+        ``wait=True`` allows up to five seconds for a running page to finish,
+        then force-stops the child.  This avoids an application shutdown hanging
+        forever in native OCR code.
         """
-        self._shut_down = True
-        if self._executor is not None:
-            try:
-                self._executor.shutdown(wait=wait, cancel_futures=not wait)
-            except Exception as exc:
-                logger.warning("OCR process pool graceful shutdown error: %s", exc)
-            self._executor = None
+        with self._lock:
+            self._shut_down = True
+        executor = self._detach_executor()
+        if executor is not None:
+            self._stop_executor(executor, grace_timeout=5.0 if wait else 0.0)
 
     def reset(self) -> None:
         """Re-enable the pool after shutdown.
 
         Allows new submissions to create a fresh executor.
         """
-        self._shut_down = False
-        self._executor = None
+        with self._lock:
+            self._shut_down = False
+            self._executor = None
 
     @property
     def stats(self) -> dict:
-        return {
-            "spawn_count": self._spawn_count,
-            "total_submitted": self._total_submitted,
-            "total_timeouts": self._total_timeouts,
-            "total_crashes": self._total_crashes,
-            "alive": self._executor is not None,
-        }
+        with self._lock:
+            return {
+                "spawn_count": self._spawn_count,
+                "total_submitted": self._total_submitted,
+                "total_timeouts": self._total_timeouts,
+                "total_crashes": self._total_crashes,
+                "alive": self._executor is not None,
+            }
 
 
 # Process-wide singleton

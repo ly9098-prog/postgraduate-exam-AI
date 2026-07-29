@@ -145,32 +145,45 @@ OCR_JOB_TRANSITIONS: dict[str, set[str]] = {
         OCRJobStatus.CANCELLED.value,
     },
     OCRJobStatus.LEASED.value: {
+        OCRJobStatus.PENDING.value,
         OCRJobStatus.DOWNLOADING.value,
+        OCRJobStatus.RETRYABLE.value,
+        OCRJobStatus.FAILED.value,
+        OCRJobStatus.DEAD_LETTER.value,
         OCRJobStatus.CANCELLED.value,
     },
     OCRJobStatus.DOWNLOADING.value: {
         OCRJobStatus.RUNNING.value,
         OCRJobStatus.RETRYABLE.value,
+        OCRJobStatus.FAILED.value,
+        OCRJobStatus.DEAD_LETTER.value,
+        OCRJobStatus.CANCELLED.value,
     },
     OCRJobStatus.RUNNING.value: {
         OCRJobStatus.UPLOADING.value,
         OCRJobStatus.RETRYABLE.value,
         OCRJobStatus.FAILED.value,
+        OCRJobStatus.DEAD_LETTER.value,
+        OCRJobStatus.CANCELLED.value,
     },
     OCRJobStatus.UPLOADING.value: {
         OCRJobStatus.COMPLETED.value,
         OCRJobStatus.RETRYABLE.value,
         OCRJobStatus.FAILED.value,
+        OCRJobStatus.DEAD_LETTER.value,
+        OCRJobStatus.CANCELLED.value,
     },
     OCRJobStatus.RETRYABLE.value: {
-        OCRJobStatus.PENDING.value,
+        OCRJobStatus.LEASED.value,
         OCRJobStatus.DEAD_LETTER.value,
+        OCRJobStatus.CANCELLED.value,
     },
     OCRJobStatus.COMPLETED.value: set(),
     OCRJobStatus.FAILED.value: set(),
     OCRJobStatus.DEAD_LETTER.value: set(),
     OCRJobStatus.CANCELLED.value: set(),
 }
+
 
 
 def guard_ocr_job_transition(current: str, next_status: str) -> None:

@@ -7,7 +7,7 @@ This module provides backward-compatible wrappers that delegate to
 DO NOT add new OCR logic here. Use ``OCRGateway.recognize_pages()`` instead.
 
 Cloud API: all legacy paths are rejected with RuntimeError.
-Gateway path runs async via ThreadPoolExecutor bridge.
+Synchronous wrappers fail fast when invoked on an event-loop thread.
 """
 
 from __future__ import annotations
@@ -50,41 +50,40 @@ def get_gateway():
     return _gateway_singleton
 
 
-def _run_async(coro):
-    """Run a coroutine from sync context.
+def _ensure_sync_context() -> None:
+    """Reject sync OCR wrappers on an active event-loop thread.
 
-    Three strategies, tried in order:
-    1. No running loop → ``asyncio.run(coro)`` (called from a plain thread).
-    2. Loop is running but we are in a **worker thread** → submit via
-       ``run_coroutine_threadsafe`` and block (safe, loop advances on
-       its own thread).
-    3. Loop is running on the **calling thread** (sync code called from
-       within an async handler on the event-loop thread) → offload the
-       entire operation to the shared ``_executor`` threadpool so the
-       event loop remains unblocked.
+    A synchronous function cannot wait for async OCR on the same loop without
+    freezing every request served by that loop.  Callers in async code must use
+    ``OCRGateway`` directly, or offload this whole sync wrapper with
+    ``await asyncio.to_thread(...)``.
     """
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise RuntimeError(
+        "Synchronous OCR API called from an event-loop thread; use "
+        "`await OCRGateway.recognize_pages(...)` or wrap the sync call with "
+        "`await asyncio.to_thread(...)`"
+    )
+
+
+def _run_async(coro):
+    """Run a coroutine only from a true synchronous context."""
+    try:
+        asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
 
-    # We are on the event-loop thread — offload to executor to avoid
-    # blocking the loop.
-    from concurrent.futures import ThreadPoolExecutor
-    _executor: ThreadPoolExecutor = _get_or_create_executor()
-    future = _executor.submit(asyncio.run, coro)
-    return future.result(timeout=600)
-
-
-_executor_instance = None
-
-
-def _get_or_create_executor():
-    global _executor_instance
-    if _executor_instance is None:
-        from concurrent.futures import ThreadPoolExecutor
-        _executor_instance = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ocr_bridge")
-    return _executor_instance
+    # Prevent an un-awaited-coroutine warning when rejecting the call.
+    close = getattr(coro, "close", None)
+    if callable(close):
+        close()
+    raise RuntimeError(
+        "Cannot synchronously wait for OCR on the running event loop; use the "
+        "async OCRGateway API or `await asyncio.to_thread(...)`"
+    )
 
 
 # ── Deprecated OCR functions ────────────────────────────────────────────────
@@ -121,6 +120,8 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
 
     if not page_images:
         return {}
+
+    _ensure_sync_context()
 
     # Try Gateway
     gateway = get_gateway()
@@ -164,6 +165,8 @@ def ocr_pages_with_boxes(
     if not page_images:
         return {}
 
+    _ensure_sync_context()
+
     # Try Gateway
     gateway = get_gateway()
     if gateway is not None and gateway.is_gateway:
@@ -200,6 +203,8 @@ def ocr_raw_text(image_bytes: bytes) -> str:
         "ocr_service.ocr_raw_text() is deprecated.",
         DeprecationWarning, stacklevel=2,
     )
+
+    _ensure_sync_context()
 
     gateway = get_gateway()
     if gateway is not None and gateway.is_gateway:

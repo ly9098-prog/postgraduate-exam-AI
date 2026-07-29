@@ -120,6 +120,11 @@ def _worker_main(
             conn.send({"status": "error", "error": str(exc)})
         except Exception:
             pass
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def _dict_to_worker_request(d: dict) -> WorkerRequest:
@@ -208,17 +213,32 @@ class OcrWorkerProcess:
             args=(self._child_conn, self._config, self._worker_id),
             name=f"ocr-worker-{self._worker_id}-g{self._generation}",
         )
-        self._process.start()
-        self._started_at = time.monotonic()
-        self._pid = self._process.pid
+        try:
+            self._process.start()
+            self._started_at = time.monotonic()
+            self._pid = self._process.pid
 
-        logger.info(
-            "Worker[%d] g%d started (pid=%d)",
-            self._worker_id, self._generation, self._pid,
-        )
+            # The parent must close its duplicate of the child endpoint.  Keeping
+            # it open prevents EOF from propagating when the worker crashes and
+            # can leave a receiver thread blocked until the outer timeout.
+            if self._child_conn is not None:
+                self._child_conn.close()
+                self._child_conn = None
 
-        # Wait for readiness handshake
-        self._wait_for_handshake()
+            logger.info(
+                "Worker[%d] g%d started (pid=%d)",
+                self._worker_id, self._generation, self._pid,
+            )
+
+            # Wait for readiness handshake
+            self._wait_for_handshake()
+        except BaseException:
+            # A failed/timeout handshake can otherwise leave a model-loading
+            # subprocess alive indefinitely.
+            self.ensure_dead(kill_timeout=self._config.kill_timeout)
+            self.close_pipe()
+            self.close_process_handle()
+            raise
 
     def _wait_for_handshake(self) -> None:
         """Wait for worker readiness handshake with timeout."""
@@ -228,8 +248,13 @@ class OcrWorkerProcess:
         while time.monotonic() < deadline:
             if self._parent_conn is None:
                 raise RuntimeError("Worker pipe not initialized")
+            if self._process is not None and not self._process.is_alive():
+                raise RuntimeError(
+                    f"Worker exited during handshake (exitcode={self._process.exitcode})"
+                )
             try:
-                if self._parent_conn.poll(timeout=min(1.0, deadline - time.monotonic())):
+                remaining = max(0.0, deadline - time.monotonic())
+                if self._parent_conn.poll(timeout=min(1.0, remaining)):
                     msg = self._parent_conn.recv()
                     if isinstance(msg, dict) and msg.get("status") == "ready":
                         self._fingerprint = msg.get("fingerprint", "")
@@ -357,13 +382,6 @@ class OcrWorkerProcess:
             raise RuntimeError(f"Worker pipe broken during blocking receive: {exc}") from exc
 
         raise RuntimeError("Unexpected data from worker pipe")
-        """Check if the worker pipe is still usable."""
-        if self._parent_conn is None:
-            return True
-        try:
-            return self._parent_conn.closed
-        except Exception:
-            return True
 
     # ── Termination ─────────────────────────────────────────────────────────
 
@@ -383,7 +401,13 @@ class OcrWorkerProcess:
             logger.info("Worker[%d] g%d sending SIGKILL (pid=%d)",
                         self._worker_id, self._generation, self._pid)
             try:
-                os.kill(self._pid, signal.SIGKILL)
+                # ``Process.kill`` is cross-platform.  Fall back to os.kill for
+                # older runtimes where it is unavailable.
+                kill_fn = getattr(self._process, "kill", None)
+                if kill_fn is not None:
+                    kill_fn()
+                elif self._pid is not None:
+                    os.kill(self._pid, signal.SIGKILL)
             except (ProcessLookupError, PermissionError) as exc:
                 logger.warning("Worker[%d] kill error: %s", self._worker_id, exc)
             except Exception as exc:
@@ -412,6 +436,19 @@ class OcrWorkerProcess:
                 pass
             self._child_conn = None
 
+    def close_process_handle(self) -> None:
+        """Release the multiprocessing process handle after the child exits."""
+        if self._process is None or self._process.is_alive():
+            return
+        try:
+            close_fn = getattr(self._process, "close", None)
+            if close_fn is not None:
+                close_fn()
+        except (ValueError, OSError):
+            pass
+        finally:
+            self._process = None
+
     def is_alive(self) -> bool:
         return self._process is not None and self._process.is_alive()
 
@@ -422,6 +459,7 @@ class OcrWorkerProcess:
             True if process is confirmed dead.
         """
         if not self.is_alive():
+            self.close_process_handle()
             return True
 
         self.terminate()
@@ -431,7 +469,34 @@ class OcrWorkerProcess:
             self.kill()
             self.join(timeout=kill_timeout / 2)
 
-        return not self.is_alive()
+        dead = not self.is_alive()
+        if dead:
+            self.close_process_handle()
+        return dead
+
+    def rss_mb(self) -> float | None:
+        """Best-effort resident memory size for lifecycle recycling.
+
+        ``psutil`` is used when available.  Linux falls back to ``/proc`` so
+        the configured RSS guard still works without adding a hard dependency.
+        """
+        if self._pid is None or not self.is_alive():
+            return None
+
+        try:
+            import psutil  # type: ignore
+
+            return psutil.Process(self._pid).memory_info().rss / (1024 * 1024)
+        except Exception:
+            pass
+
+        try:
+            with open(f"/proc/{self._pid}/statm", "r", encoding="ascii") as fh:
+                resident_pages = int(fh.read().split()[1])
+            page_size = os.sysconf("SC_PAGE_SIZE")
+            return resident_pages * page_size / (1024 * 1024)
+        except Exception:
+            return None
 
     # ── Properties ──────────────────────────────────────────────────────────
 

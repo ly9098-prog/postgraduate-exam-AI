@@ -14,7 +14,7 @@ import re
 import secrets
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -120,9 +120,9 @@ async def claim_job(
     Returns the job details and lease token, or 204 No Content if no job available.
     """
     result = await svc.claim_job(db, worker_id=worker_id)
+    await db.commit()
     if result is None:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(content={"ok": True, "data": None}, status_code=204)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     job, lease_token = result
     resp = OCRClaimResponse(
@@ -152,6 +152,7 @@ async def heartbeat_job(
     except ValueError as e:
         _err(str(e), status_code=status.HTTP_409_CONFLICT)
 
+    await db.commit()
     return _ok(OCRJobResponse.model_validate(job).model_dump(mode="json"))
 
 
@@ -172,6 +173,7 @@ async def start_job(
     except ValueError as e:
         _err(str(e), status_code=status.HTTP_409_CONFLICT)
 
+    await db.commit()
     return _ok(OCRJobResponse.model_validate(job).model_dump(mode="json"))
 
 
@@ -195,6 +197,7 @@ async def complete_job(
     except ValueError as e:
         _err(str(e), status_code=status.HTTP_409_CONFLICT)
 
+    await db.commit()
     return _ok(OCRJobResponse.model_validate(job).model_dump(mode="json"))
 
 
@@ -217,6 +220,7 @@ async def fail_job(
     except ValueError as e:
         _err(str(e), status_code=status.HTTP_409_CONFLICT)
 
+    await db.commit()
     return _ok(OCRJobResponse.model_validate(job).model_dump(mode="json"))
 
 
@@ -233,6 +237,7 @@ async def release_job(
     except ValueError as e:
         _err(str(e), status_code=status.HTTP_409_CONFLICT)
 
+    await db.commit()
     return _ok(OCRJobResponse.model_validate(job).model_dump(mode="json"))
 
 

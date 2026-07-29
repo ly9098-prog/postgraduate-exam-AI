@@ -695,14 +695,16 @@ async def _run_vl_ocr(content: bytes, source_file: str) -> str:
 
     vl_start = _now()
     logger.info("【OCR-VL】提交远程 OCR | file=%s model=%s", source_file, model)
-    result = await client.ocr_image(image_bytes=content, filename=source_file)
-    vl_duration = int((_now() - vl_start).total_seconds() * 1000)
-
-    logger.info(
-        "【OCR-VL】识别完成 | file=%s %s (%dms)",
-        source_file, safe_text_preview(result.text), vl_duration,
-    )
-    return result.text
+    try:
+        result = await client.ocr_image(image_bytes=content, filename=source_file)
+        vl_duration = int((_now() - vl_start).total_seconds() * 1000)
+        logger.info(
+            "【OCR-VL】识别完成 | file=%s %s (%dms)",
+            source_file, safe_text_preview(result.text), vl_duration,
+        )
+        return result.text
+    finally:
+        await client.close()
 
 
 async def _run_single_image(

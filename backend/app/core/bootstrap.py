@@ -138,9 +138,27 @@ class TaskRegistry:
         return running
 
     async def wait_all(self, timeout: float = 30) -> None:
+        """Cancel all tasks and wait once for the whole registry.
+
+        Waiting task-by-task multiplied shutdown latency by the number of
+        registered loops (for example, six tasks × 30 seconds).  A single
+        bounded wait keeps the process shutdown deadline predictable.
+        """
         running = self.cancel_all()
-        for t in running:
-            await t.wait(timeout=timeout)
+        if not running:
+            return
+
+        tasks = {managed._task for managed in running}
+        _done, pending = await asyncio.wait(tasks, timeout=timeout)
+        if pending:
+            names = sorted(task.get_name() for task in pending)
+            logger.warning(
+                "Managed tasks did not stop within %ss grace: %s",
+                timeout,
+                names,
+            )
+            for task in pending:
+                task.cancel()
 
     def __len__(self) -> int:
         return len(self._tasks)
@@ -179,8 +197,6 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
     from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 
     profile = detect_deployment_profile()
-    _report = _startup_failure_reporter(profile)
-
     # Worker scratch dir
     _ensure_scratch_dir()
 
@@ -195,28 +211,15 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
     init_executor_registry(executors)
     logger.info("Worker executors initialized: %s", {k: v.name for k, v in executors.items()})
 
-    # OCR Gateway (external HTTP client only — no local Paddle)
+    # OCR Gateway (external HTTP client only — no local Paddle).
+    # Let the worker client own its AsyncClient so gateway.shutdown() closes it.
     from app.core.ocr_runtime_config import get_runtime_config
     from app.features.ocr_gateway import OCRGateway
     from app.services.ocr_worker_client import create_ocr_worker_client
 
     cfg = get_runtime_config()
     if cfg.enabled:
-        import httpx
-
-        _ocr_http = httpx.AsyncClient(
-            timeout=httpx.Timeout(
-                connect=cfg.remote_connect_timeout_sec,
-                read=cfg.remote_read_timeout_sec,
-                write=cfg.remote_connect_timeout_sec,
-                pool=cfg.remote_connect_timeout_sec,
-            ),
-            limits=httpx.Limits(
-                max_keepalive_connections=cfg.remote_max_concurrency,
-                max_connections=cfg.remote_max_concurrency,
-            ),
-        )
-        worker_client = create_ocr_worker_client(cfg, http_client=_ocr_http)
+        worker_client = create_ocr_worker_client(cfg)
         ocr_gateway = OCRGateway(
             mode="gateway",
             profile=profile,
@@ -337,7 +340,6 @@ async def _periodic_token_cleanup() -> None:
 
 async def _periodic_staging_cleanup() -> None:
     """Clean up expired staging files hourly."""
-    await asyncio.sleep(3600)
     while True:
         await asyncio.sleep(3600)
         try:
