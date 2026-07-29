@@ -50,28 +50,27 @@ async def update_vector_config(
     current_admin=Depends(require_roles("super_admin")),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.admin_ai_config_service import write_audit
-    from app.core.secret_crypto import encrypt_secret, SecretEncryptionError
-    from sqlalchemy import text as _sql
+    from app.core.secret_crypto import encrypt_secret
+    from app.models.admin_ai_config import AdminAiConfig
 
     changed = []
     for key, value in data.items():
         if key == "embedding_api_key":
-            str_value = encrypt_secret(value) if value else ""
-            await db.execute(
-                _sql("INSERT OR REPLACE INTO admin_ai_configs (config_key, config_value) VALUES (:k, :v)"),
-                {"k": "embedding_api_key_encrypted", "v": str_value},
-            )
+            encrypted_val = encrypt_secret(value) if value else ""
+            row = AdminAiConfig(config_key="embedding_api_key_encrypted", config_value=encrypted_val)
+            await db.merge(row)
             changed.append("embedding_api_key_encrypted")
             continue
         if key not in VECTOR_KEYS:
             continue
         str_value = str(value).lower() if isinstance(value, bool) else str(value)
-        await db.execute(
-            _sql("INSERT OR REPLACE INTO admin_ai_configs (config_key, config_value) VALUES (:k, :v)"),
-            {"k": key, "v": str_value},
-        )
+        row = AdminAiConfig(config_key=key, config_value=str_value)
+        await db.merge(row)
         changed.append(key)
+    await db.flush()
+    from app.services.admin_ai_config_service import write_audit
+    await write_audit(db, current_admin, "vector_config.update", detail={"changed_fields": changed})
+
     await db.commit()
 
     # Read back

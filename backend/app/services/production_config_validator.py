@@ -678,9 +678,11 @@ async def _check_stored_outbound_urls(errors: list[str]) -> None:
             ai_urls = list(
                 (await session.execute(select(AdminAiModelConfig.api_base_url))).scalars().all()
             )
-            vector_urls = list(
-                (await session.execute(select(AdminAiModelConfig.api_base_url))).scalars().all()
-            )
+            from app.models.admin_ai_config import AdminAiConfig
+            vector_rows = (await session.execute(
+                select(AdminAiConfig.config_value).where(AdminAiConfig.config_key == "embedding_base_url")
+            )).scalars().all()
+            vector_urls = [v for v in vector_rows if v]
     except Exception as exc:
         errors.append(f"无法检查数据库中的外部服务 URL: {exc}")
         return
