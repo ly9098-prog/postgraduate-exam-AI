@@ -21,7 +21,6 @@ import base64
 import hashlib
 import json
 import logging
-import math
 import random
 import re
 import time
@@ -124,8 +123,8 @@ def _parse_retry_after(response: httpx.Response) -> float | None:
 
 
 def _compute_base64_size(raw_bytes: int) -> int:
-    """Estimate Base64 encoded size (1.37x overhead)."""
-    return int(math.ceil(raw_bytes * 1.37))
+    """Return the exact Base64 payload size for *raw_bytes*."""
+    return 4 * ((max(0, raw_bytes) + 2) // 3)
 
 
 def _compute_engine_fingerprint(config: OcrRuntimeConfig) -> str:
@@ -289,12 +288,37 @@ class PaddleXHttpOcrWorkerClient:
                 "Client is shut down",
             )
 
+        self._metrics["accepted"] += 1
+
+        # Reject invalid/oversized input before reserving local or distributed
+        # capacity. These are caller-side failures and must not trip the remote
+        # circuit breaker.
+        if not image_bytes:
+            self._metrics["failed"] += 1
+            self._metrics["request_size_rejected"] += 1
+            return self._make_error(
+                page_index,
+                STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
+                "Image payload is empty",
+            )
+        max_req_bytes = self._config.remote_request_max_bytes
+        if max_req_bytes > 0 and len(image_bytes) > max_req_bytes:
+            self._metrics["failed"] += 1
+            self._metrics["request_size_rejected"] += 1
+            encoded_size = _compute_base64_size(len(image_bytes))
+            return self._make_error(
+                page_index,
+                STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
+                f"Image too large: {len(image_bytes)} raw bytes "
+                f"(about {encoded_size} Base64 bytes) exceeds "
+                f"{max_req_bytes} raw-byte limit",
+            )
+
         # Circuit breaker — fast sync check first, then async with lock
         half_open_probe = False
         if not self._circuit_may_attempt():
             allowed = await self._circuit_may_attempt_async()
             if not allowed:
-                self._metrics["accepted"] += 1
                 self._metrics["failed"] += 1
                 self._metrics["circuit_breaker_rejected"] += 1
                 return self._make_error(
@@ -304,8 +328,6 @@ class PaddleXHttpOcrWorkerClient:
                     f"recovery in {max(0.0, self._circuit_recovery_timeout - (time.time() - self._circuit_last_failure)):.0f}s)",
                 )
             half_open_probe = True
-
-        self._metrics["accepted"] += 1
 
         request_id = uuid.uuid4().hex[:16]
         start = time.monotonic()
@@ -477,8 +499,14 @@ class PaddleXHttpOcrWorkerClient:
         final.sort(key=lambda wr: wr.page_index)
         return final
 
-    async def shutdown(self) -> None:
+    async def shutdown(
+        self,
+        *,
+        graceful_timeout: float | None = None,
+        kill_timeout: float | None = None,
+    ) -> None:
         """Graceful shutdown — idempotent."""
+        del graceful_timeout, kill_timeout  # HTTP requests are closed by httpx.
         if self._closed:
             return
         self._closed = True
@@ -662,18 +690,6 @@ class PaddleXHttpOcrWorkerClient:
         Includes pre-request size check, retry with backoff, and
         streamed response with size budget enforcement.
         """
-        # Pre-request size check: reject if base64-encoded payload would
-        # exceed the configured maximum request size.
-        max_req_bytes = self._config.remote_request_max_bytes
-        if max_req_bytes > 0 and len(image_bytes) > max_req_bytes:
-            self._metrics["request_size_rejected"] += 1
-            return self._make_error(
-                page_index,
-                STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
-                f"Image too large: {len(image_bytes)} raw bytes exceeds "
-                f"{max_req_bytes} raw-byte limit",
-            )
-
         # Build auth headers
         headers = {}
         if self._auth_token:
@@ -801,6 +817,9 @@ class PaddleXHttpOcrWorkerClient:
             payload["useTextlineOrientation"] = True
 
         request_body = await asyncio.to_thread(_encode_json_body, payload)
+        # Do not retain the large Base64 string and payload dict for the entire
+        # network round trip; request_body is the only representation needed.
+        del b64_data, payload
         request_headers = dict(headers)
         request_headers.setdefault("Content-Type", "application/json")
 

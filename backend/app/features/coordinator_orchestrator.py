@@ -125,9 +125,20 @@ class CoordinatorPipeline:
     ) -> list[ModuleResult]:
         """Stage 3: OCR recognition via OCRCoordinator."""
         results = []
-        for page in pages:
-            result = await OCRCoordinator().run(page, trace_id=trace_id)
-            results.append(result)
+        coordinator = OCRCoordinator(profile=self.profile)
+        try:
+            for page in pages:
+                result = await coordinator.run(
+                    page,
+                    trace_id=trace_id,
+                    context=self._context,
+                )
+                results.append(result)
+        finally:
+            # A temporary fallback Gateway (when no application-level Gateway
+            # exists) is shared for the whole page batch and closed once.
+            await coordinator.close()
+
         self._results.append({
             "stage": "ocr",
             "pages": len(pages),

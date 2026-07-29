@@ -41,6 +41,7 @@ class OcrWorkerPool:
 
     def __init__(self, config: Any) -> None:
         self._config = config
+        self._accepting = True
         self._stopped = False
 
         # Pending queue (bounded)
@@ -53,14 +54,9 @@ class OcrWorkerPool:
             None for _ in range(config.worker_count)
         ]
         self._started_once: list[bool] = [False for _ in range(config.worker_count)]
-        # Per-worker asyncio.Event: set when worker is idle
-        self._worker_events: list[asyncio.Event] = [
-            asyncio.Event() for _ in range(config.worker_count)
-        ]
-        for event in self._worker_events:
-            event.set()  # All workers start idle
-
-        # Active tasks: request_id → (asyncio.Future[WorkerResult], worker_id, worker_generation)
+        # Active tasks: request_id → (future, worker_id, page_index).
+        # Keep page_index here so infrastructure failures (startup/shutdown/
+        # timeout) still return a result associated with the correct page.
         self._active_tasks: dict[
             str, tuple[asyncio.Future, int, int]
         ] = {}
@@ -101,9 +97,10 @@ class OcrWorkerPool:
         Raises:
             asyncio.TimeoutError: Task waited too long in queue or execution.
         """
-        if self._stopped:
+        if not self._accepting:
             return WorkerResult(
                 request_id="",
+                page_index=page_index,
                 status="failed",
                 stable_error_code=STABLE_ERROR_CODES["SHUTDOWN"],
                 error_type="Pool is shut down",
@@ -116,7 +113,7 @@ class OcrWorkerPool:
         # Register before enqueueing.  The old order allowed a fast consumer to
         # dequeue the request before its Future existed, discard it as stale,
         # and leave the caller blocked until the total deadline.
-        self._active_tasks[req.request_id] = (future, -1, req.worker_generation)
+        self._active_tasks[req.request_id] = (future, -1, page_index)
         self._metrics.queued += 1
 
         # Try to add to pending queue (bounded wait for backpressure)
@@ -207,15 +204,42 @@ class OcrWorkerPool:
         graceful_timeout: float | None = None,
         kill_timeout: float | None = None,
     ) -> None:
-        """Stop accepting → drain queue → cancel active → kill workers."""
-        self._stopped = True
+        """Stop accepting, drain within grace, then cancel and kill workers."""
+        if self._stopped:
+            return
 
-        gt = graceful_timeout or self._config.shutdown_grace_timeout
-        kt = kill_timeout or self._config.kill_timeout
+        self._accepting = False
+
+        gt = (
+            self._config.shutdown_grace_timeout
+            if graceful_timeout is None
+            else max(0.0, graceful_timeout)
+        )
+        kt = (
+            self._config.kill_timeout
+            if kill_timeout is None
+            else max(0.0, kill_timeout)
+        )
 
         logger.info("OcrWorkerPool shutting down (graceful=%.0fs kill=%.0fs)", gt, kt)
 
-        # Cancel consumers
+        # Let queued/running work finish for the configured grace period.
+        # asyncio.Queue.join() includes items already taken by consumers until
+        # task_done() is called, so this also waits for active OCR calls.
+        if gt > 0:
+            try:
+                await asyncio.wait_for(self._pending.join(), timeout=gt)
+            except TimeoutError:
+                logger.warning(
+                    "OcrWorkerPool graceful shutdown timed out after %.1fs; "
+                    "cancelling remaining work",
+                    gt,
+                )
+
+        self._stopped = True
+
+        # Cancel consumers after the grace period. Cancellation of an active
+        # consumer kills its native worker so no receive thread is left blocked.
         for task in self._consumers:
             task.cancel()
         await asyncio.gather(*self._consumers, return_exceptions=True)
@@ -241,17 +265,23 @@ class OcrWorkerPool:
                 "Pool shutting down",
             )
 
-        # Kill workers without blocking the event loop.  A hung native OCR
-        # process can consume the full kill timeout.
-        for wid, worker in enumerate(self._workers):
-            if worker is not None:
-                try:
-                    await asyncio.to_thread(worker.ensure_dead, kt)
-                except Exception as exc:
-                    logger.warning("Worker[%d] shutdown error: %s", wid, exc)
+        # Kill all remaining workers concurrently. Sequential termination makes
+        # shutdown duration scale as worker_count * kill_timeout.
+        async def _stop_worker(wid: int, worker: OcrWorkerProcess) -> None:
+            try:
+                await asyncio.to_thread(worker.ensure_dead, kt)
+            except Exception as exc:
+                logger.warning("Worker[%d] shutdown error: %s", wid, exc)
+            finally:
                 worker.close_pipe()
                 worker.close_process_handle()
                 self._workers[wid] = None
+
+        await asyncio.gather(*(
+            _stop_worker(wid, worker)
+            for wid, worker in enumerate(self._workers)
+            if worker is not None
+        ))
 
         # Log final metrics
         logger.info(
@@ -265,6 +295,7 @@ class OcrWorkerPool:
         m["capacity"] = self._config.worker_count
         m["capacity_available"] = self._config.worker_count - m["running"]
         m["generation"] = self._generation
+        m["accepting"] = self._accepting
         m["stopped"] = self._stopped
         m["alive_workers"] = sum(
             1 for w in self._workers if w is not None and w.is_alive()
@@ -329,7 +360,7 @@ class OcrWorkerPool:
                 # results are not discarded as stale.
                 req.worker_generation = worker.generation
                 self._active_tasks[req.request_id] = (
-                    entry[0], worker_id, worker.generation,
+                    entry[0], worker_id, req.page_index,
                 )
                 self._metrics.running += 1
 
@@ -608,6 +639,7 @@ class OcrWorkerPool:
         if not future.done():
             result = WorkerResult(
                 request_id=request_id,
+                page_index=entry[2],
                 status="failed",
                 stable_error_code=code,
                 error_type=message,
@@ -621,11 +653,8 @@ class OcrWorkerPool:
         mode: str,
         options: dict | None,
     ) -> WorkerRequest:
-        import hashlib
-
         request_id = uuid.uuid4().hex
         now = time.monotonic()
-        image_hash = hashlib.sha256(image_bytes).hexdigest()[:16]
 
         return WorkerRequest(
             request_id=request_id,
@@ -634,7 +663,9 @@ class OcrWorkerPool:
             worker_generation=self._generation,
             submitted_monotonic=now,
             deadline_monotonic=now + self._config.total_deadline,
-            image_hash=image_hash,
+            # The hash was previously computed synchronously on the event loop
+            # for every page but was never consumed by the worker or metrics.
+            image_hash="",
             image_bytes=image_bytes,
             options=options or {},
         )

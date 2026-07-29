@@ -19,8 +19,9 @@ import asyncio
 import logging
 import math
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 from app.core.module_result import (
     AdapterCapabilities,
@@ -42,6 +43,37 @@ def _get_image_dimensions(source: bytes) -> tuple[int, int]:
             return img.size
     except Exception:
         return 0, 0
+
+
+def _raw_blocks_if_small(
+    blocks: list[dict],
+    *,
+    max_bytes: int = 100 * 1024,
+) -> list[dict] | None:
+    """Return raw blocks only when their estimated payload stays bounded.
+
+    ``len(str(blocks))`` used to duplicate the complete OCR result in memory
+    merely to decide whether to retain it. Large documents could therefore
+    create a sizeable temporary allocation on the event-loop thread.
+    """
+    estimated = 0
+    for block in blocks:
+        estimated += 256
+        text = block.get("text", "")
+        if isinstance(text, str):
+            # Four bytes per code point is a conservative UTF-8 upper bound
+            # and avoids allocating a second encoded copy of a large string.
+            estimated += len(text) * 4
+        elif isinstance(text, (bytes, bytearray, memoryview)):
+            estimated += len(text)
+        else:
+            estimated += 256
+        boxes = block.get("boxes")
+        if isinstance(boxes, list):
+            estimated += len(boxes) * 96
+        if estimated > max_bytes:
+            return None
+    return blocks
 
 
 # ---------------------------------------------------------------------------
@@ -233,14 +265,20 @@ class ReadingOrderTransformAdapter:
 class PaddleOCRLocalAdapter:
     """OcrAdapter: 包装本地 PaddleOCR 引擎。
 
-    使用现有 ``app.services.ocr_service.ocr_pages_with_boxes()`` 接口，
-    将输出 blocks 转换为 DocumentIR。
+    直接调用进程隔离的 ``OcrWorkerClient``，避免通过同步兼容层创建新的
+    event loop。PDF 渲染固定在单独线程中，OCR 调用仍在当前主事件循环执行。
     """
 
-    def __init__(self, engine: str = "paddleocr") -> None:
+    def __init__(
+        self,
+        engine: str = "paddleocr",
+        *,
+        worker_client_provider: Callable[[], Any] | None = None,
+    ) -> None:
         self._engine = engine
-        self._device_resolved = True  # Will be set to False if resolution was done.
-        self._resolved_device = ""
+        self._worker_client_provider = worker_client_provider
+        self._owned_worker_client: Any = None
+        self._call_semaphore = asyncio.Semaphore(1)
         self._capabilities = AdapterCapabilities(
             backend=engine,
             adapter_type="ocr",
@@ -290,98 +328,22 @@ class PaddleOCRLocalAdapter:
         start = time.monotonic()
 
         try:
-            # Resolve OCR device (GPU/CPU) — cache result to avoid
-            # redundant paddle import + CUDA enumeration per page.
-            # run in thread pool to avoid blocking event loop.
-            if not self._resolved_device:
-                from app.ocr_worker.device import resolve_ocr_device
-                device_res = await asyncio.to_thread(resolve_ocr_device)
-                self._resolved_device = device_res.resolved_device
-                self._device_resolved = True
-
-            # Delegate OCR to the worker client / Gateway path
-            # instead of importing from legacy pipeline_orchestrator.
-            from app.services.ocr_service import ocr_pages_with_boxes
-
-            blocks: list[dict] = []
-            is_pdf = request.source_type == "pdf"
-            if is_pdf:
-                # Render PDF pages via PyMuPDF, then OCR each page image.
-                # Run in thread pool to avoid blocking event loop.
-                import fitz
-
-                from app.core.config import settings
-                from app.core.ocr_profile import get_ocr_profile
-
-                ocr_profile = get_ocr_profile()
-                batch_size = max(1, ocr_profile.max_workers)
-
-                def _pdf_ocr(source: bytes) -> list[dict]:
-                    import gc
-
-                    doc = fitz.open(stream=source, filetype="pdf")
-                    try:
-                        max_pages = settings.MAX_OCR_PAGES
-                        total_pages = len(doc)
-                        pages_to_process = (
-                            min(total_pages, max_pages) if max_pages > 0 else total_pages
-                        )
-                        all_blocks: list[dict] = []
-                        # Process pages in batches to manage memory
-                        for batch_start in range(0, pages_to_process, batch_size):
-                            batch_end = min(batch_start + batch_size, pages_to_process)
-                            page_images: list[tuple[int, bytes]] = []
-                            page_dims: dict[int, tuple[int, int]] = {}
-                            for i in range(batch_start, batch_end):
-                                page = doc[i]
-                                pix = page.get_pixmap(dpi=150)
-                                img_bytes = pix.tobytes("png")
-                                page_images.append((i + 1, img_bytes))
-                                page_dims[i + 1] = (pix.width, pix.height)
-
-                            results = ocr_pages_with_boxes(page_images, skip_rotation=True)
-                            for page_idx, result in results.items():
-                                pw, ph = page_dims.get(page_idx, (0, 0))
-                                all_blocks.append({
-                                    "page": page_idx,
-                                    "text": result.text,
-                                    "boxes": result.boxes or [],
-                                    "page_width": pw,
-                                    "page_height": ph,
-                                    "source": "ocr",
-                                    "has_boxes": bool(result.boxes),
-                                    "_ocr_boxes_failed": result.failed,
-                                })
-
-                            # Release batch memory before next iteration
-                            del page_images, page_dims, results
-                            gc.collect()
-
-                        return all_blocks
-                    finally:
-                        doc.close()
-
-                blocks = await asyncio.to_thread(_pdf_ocr, request.source)
-            else:
-                # Image: use ocr_pages_with_boxes.
-                # Run in thread pool to avoid blocking event loop.
-                page_results = await asyncio.to_thread(
-                    ocr_pages_with_boxes,
-                    [(1, request.source)],
-                    True,  # skip_rotation
-                )
-                for page_idx, result in page_results.items():
-                    pw, ph = _get_image_dimensions(request.source)
-                    blocks.append({
-                        "page": page_idx,
-                        "text": result.text,
-                        "boxes": result.boxes or [],
-                        "page_width": pw or 0,
-                        "page_height": ph or 0,
-                        "source": "ocr",
-                        "has_boxes": bool(result.boxes),
-                        "_ocr_boxes_failed": result.failed,
-                    })
+            async with self._call_semaphore:
+                client = self._get_worker_client()
+                if request.source_type == "pdf":
+                    blocks = await self._recognize_pdf(client, request.source)
+                else:
+                    dimensions = {
+                        1: await asyncio.to_thread(
+                            _get_image_dimensions, request.source,
+                        ),
+                    }
+                    results = await client.recognize_batch(
+                        [(1, request.source)],
+                        mode="boxes",
+                        options={"skip_rotation": True},
+                    )
+                    blocks = self._worker_results_to_blocks(results, dimensions)
 
             latency_ms = round((time.monotonic() - start) * 1000, 2)
 
@@ -443,17 +405,16 @@ class PaddleOCRLocalAdapter:
                 data_schema_version=doc_ir.schema_version,
                 module_name="paddleocr_local",
                 module_version="1.0.0",
-                raw=blocks if len(str(blocks)) < 100 * 1024 else None,
+                raw=_raw_blocks_if_small(blocks),
                 trace_id=trace_id,
                 backend="paddleocr",
                 latency_ms=latency_ms,
             )
 
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             latency_ms = round((time.monotonic() - start) * 1000, 2)
-            # Catch known error types
-            if isinstance(exc, asyncio.CancelledError):
-                raise  # never swallow CancelledError
             return ModuleResult.failure(
                 ModuleError(
                     code="PADDLE_CRASH",
@@ -469,8 +430,132 @@ class PaddleOCRLocalAdapter:
                 latency_ms=latency_ms,
             )
 
+    def _get_worker_client(self) -> Any:
+        if self._worker_client_provider is not None:
+            client = self._worker_client_provider()
+            if client is None:
+                raise RuntimeError("Local OCR worker client is unavailable")
+            return client
+
+        if self._owned_worker_client is None:
+            from app.core.ocr_runtime_config import get_runtime_config
+            from app.services.ocr_worker_client import create_ocr_worker_client
+
+            config = get_runtime_config()
+            if config.execution_backend != "local_process":
+                raise RuntimeError(
+                    "PaddleOCRLocalAdapter requires execution_backend='local_process'"
+                )
+            self._owned_worker_client = create_ocr_worker_client(config)
+        if self._owned_worker_client is None:
+            raise RuntimeError("Local OCR execution backend is disabled")
+        return self._owned_worker_client
+
+    @staticmethod
+    def _worker_results_to_blocks(
+        results: list[Any],
+        dimensions: dict[int, tuple[int, int]],
+    ) -> list[dict]:
+        blocks: list[dict] = []
+        for worker_result in results:
+            page_idx = int(getattr(worker_result, "page_index", 0) or 0)
+            result = getattr(worker_result, "result", None)
+            data = result if isinstance(result, dict) else {}
+            boxes = data.get("boxes")
+            if not isinstance(boxes, list):
+                boxes = []
+            width, height = dimensions.get(page_idx, (0, 0))
+            failed = (
+                getattr(worker_result, "status", "failed") != "success"
+                or bool(data.get("failed"))
+            )
+            blocks.append({
+                "page": page_idx,
+                "text": str(data.get("text", "") or ""),
+                "boxes": boxes,
+                "page_width": width,
+                "page_height": height,
+                "source": "ocr",
+                "has_boxes": bool(boxes),
+                "_ocr_boxes_failed": failed,
+            })
+        return blocks
+
+    async def _recognize_pdf(self, client: Any, source: bytes) -> list[dict]:
+        """Render and OCR a PDF in bounded batches without nested event loops."""
+        import fitz
+
+        from app.core.config import settings
+        from app.core.ocr_profile import get_ocr_profile
+
+        batch_size = max(1, get_ocr_profile().max_workers)
+        loop = asyncio.get_running_loop()
+        render_executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="ocr-pdf-render",
+        )
+        doc: Any = None
+
+        def _open_pdf() -> Any:
+            return fitz.open(stream=source, filetype="pdf")
+
+        def _render_batch(
+            start_index: int,
+            end_index: int,
+        ) -> tuple[list[tuple[int, bytes]], dict[int, tuple[int, int]]]:
+            page_images: list[tuple[int, bytes]] = []
+            page_dims: dict[int, tuple[int, int]] = {}
+            for index in range(start_index, end_index):
+                page = doc[index]
+                pix = page.get_pixmap(dpi=150)
+                page_index = index + 1
+                page_images.append((page_index, pix.tobytes("png")))
+                page_dims[page_index] = (pix.width, pix.height)
+            return page_images, page_dims
+
+        try:
+            doc = await loop.run_in_executor(render_executor, _open_pdf)
+            total_pages = await loop.run_in_executor(render_executor, len, doc)
+            max_pages = settings.MAX_OCR_PAGES
+            pages_to_process = (
+                min(total_pages, max_pages) if max_pages > 0 else total_pages
+            )
+            blocks: list[dict] = []
+
+            for batch_start in range(0, pages_to_process, batch_size):
+                batch_end = min(batch_start + batch_size, pages_to_process)
+                page_images, page_dims = await loop.run_in_executor(
+                    render_executor,
+                    _render_batch,
+                    batch_start,
+                    batch_end,
+                )
+                results = await client.recognize_batch(
+                    page_images,
+                    mode="boxes",
+                    options={"skip_rotation": True},
+                )
+                blocks.extend(self._worker_results_to_blocks(results, page_dims))
+
+            return blocks
+        finally:
+            # Queue close behind any in-flight render and let the dedicated
+            # thread exit. wait=False keeps event-loop shutdown non-blocking.
+            if doc is not None:
+                try:
+                    render_executor.submit(doc.close)
+                except RuntimeError:
+                    pass
+            render_executor.shutdown(wait=False, cancel_futures=False)
+
     async def close(self) -> None:
-        self._closed = True
+        client = self._owned_worker_client
+        self._owned_worker_client = None
+        try:
+            if client is not None:
+                await client.shutdown()
+        finally:
+            self._closed = True
 
 
 # ---------------------------------------------------------------------------
@@ -943,33 +1028,38 @@ class AdapterRegistry:
         """List all registered DocumentTransformAdapters."""
         return list(self._transform_adapters.values())
 
-    def close_all(self) -> None:
-        """Close all registered adapters.
+    async def close_all(self) -> None:
+        """Close all registered adapters and wait for resource release.
 
-        Attempts to call ``close()`` on each adapter. Async close methods
-        are scheduled via ``asyncio.ensure_future`` if an event loop is running.
+        The previous fire-and-forget implementation returned before remote
+        ``AsyncClient`` instances were closed, so application shutdown could
+        leak sockets or cancel the close tasks when the loop stopped.
         """
-        import asyncio as _asyncio
-
-        for adapter in list(self._ocr_adapters.values()) + list(self._transform_adapters.values()):
-            try:
-                close_fn = getattr(adapter, "close", None)
-                if close_fn is None:
-                    continue
-                coro = close_fn()
-                try:
-                    _loop = _asyncio.get_running_loop()
-                    _asyncio.ensure_future(coro)
-                except RuntimeError:
-                    # No running loop — close synchronously via asyncio.run
-                    try:
-                        _asyncio.run(coro)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+        adapters = (
+            list(self._ocr_adapters.values())
+            + list(self._transform_adapters.values())
+        )
         self._ocr_adapters.clear()
         self._transform_adapters.clear()
+
+        async def _close_one(adapter: Any) -> None:
+            close_fn = getattr(adapter, "close", None)
+            if close_fn is None:
+                return
+            try:
+                result = close_fn()
+                if hasattr(result, "__await__"):
+                    await result
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "OCR adapter close failed (%s): %s",
+                    type(adapter).__name__,
+                    exc,
+                )
+
+        await asyncio.gather(*(_close_one(adapter) for adapter in adapters))
 
     def __len__(self) -> int:
         return len(self._ocr_adapters) + len(self._transform_adapters)

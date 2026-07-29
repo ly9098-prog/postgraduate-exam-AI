@@ -162,8 +162,6 @@ class OcrDistributedConcurrency:
                     )
                 return None
 
-            import redis.asyncio as redis_async
-
             if not self._redis_url:
                 self._last_init_error = (
                     "REDIS_URL not configured — distributed OCR concurrency unavailable"
@@ -180,6 +178,12 @@ class OcrDistributedConcurrency:
 
             client: Any = None
             try:
+                # Redis is optional for local/development deployments. Import it
+                # inside the guarded block so a missing optional dependency
+                # falls open locally and becomes a stable fail-closed error in
+                # cloud, rather than leaking ModuleNotFoundError to every OCR.
+                import redis.asyncio as redis_async
+
                 # redis.asyncio.from_url returns a client object; it is not an
                 # awaitable.  Validate the lazy connection explicitly with PING.
                 client = redis_async.from_url(
@@ -309,6 +313,8 @@ class OcrDistributedConcurrency:
             True if the token was found and released, False otherwise.
         """
         if not token:
+            return True
+        if token.startswith("local_"):
             return True
 
         redis = await self._ensure_redis()
