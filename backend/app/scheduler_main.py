@@ -15,9 +15,9 @@ is already running it).
 
 import os
 
-from app.core.bootstrap import run_role
+os.environ["PROCESS_ROLE"] = "scheduler"
 
-os.environ.setdefault("PROCESS_ROLE", "scheduler")
+from app.core.bootstrap import run_role
 
 if __name__ == "__main__":
     run_role("scheduler")

@@ -2,8 +2,5 @@
   "navigationBarTitleText": "专注统计",
   "navigationBarBackgroundColor": "#F4F4EE",
   "navigationBarTextStyle": "black",
-  "backgroundColor": "#F4F4EE",
-  "usingComponents": {
-    "loading-lottie": "/components/loading-lottie/loading-lottie"
-  }
+  "backgroundColor": "#F4F4EE"
 }

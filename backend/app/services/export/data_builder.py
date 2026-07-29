@@ -10,6 +10,12 @@ from sqlalchemy.orm import selectinload
 
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
+from app.services.export.question_content import (
+    extract_option_text,
+    extract_question_text,
+    has_visual_question_content,
+    iter_question_image_urls,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +66,9 @@ async def build_snapshot_data(
         # Validate and normalize core content. Older imported questions can
         # store their visible stem in text segments or raw_content rather than
         # content.stem/content.text. Keep image-only stems as valid questions.
-        content = dict(q.content or {})
-        stem = _extract_stem_text(content, q.raw_content)
-        has_stem_image = _has_stem_image(content, q.image_url)
-        if not stem and not has_stem_image:
+        content = dict(q.content) if isinstance(q.content, dict) else {}
+        stem = extract_question_text(q)
+        if not stem and not has_visual_question_content(q):
             skip_count += 1
             skip_reasons.setdefault("题干为空", 0)
             skip_reasons["题干为空"] += 1
@@ -73,7 +78,7 @@ async def build_snapshot_data(
 
         # For choice questions, validate options
         is_choice = q.question_type in ("single_choice", "multiple_choice")
-        options = q.options or {}
+        options = _normalize_options(q.options)
         if is_choice and not options:
             skip_count += 1
             skip_reasons.setdefault("选择题缺少选项", 0)
@@ -89,13 +94,13 @@ async def build_snapshot_data(
             "question_type": q.question_type,
             "content": content,
             "raw_content": q.raw_content or "",
-            "options": q.options,
+            "options": options,
             "answer": q.answer or "",
             "analysis": q.analysis or "",
             "subject": {"id": q.subject_id, "label": subject_label} if subject_label else {"id": q.subject_id},
             "knowledge_points": q.knowledge_points or [],
             "primary_knowledge_point": _get_primary_kp(q),
-            "image_urls": q.image_url or [],
+            "image_urls": iter_question_image_urls(q),
             "source": q.source,
         }
 
@@ -115,52 +120,23 @@ async def build_snapshot_data(
         "questions": questions_data,
         "config": config,
         "user_id": user_id,
-        "total_count": len(questions_data),
+        "total_count": len(wq_ids),
+        "success_count": len(questions_data),
         "skip_count": skip_count,
         "skip_reasons": skip_reasons if skip_reasons else None,
     }
 
 
-def _extract_stem_text(content: dict, raw_content: str | None) -> str:
-    """Return the best available textual stem without inventing content."""
-    direct = content.get("stem") or content.get("text")
-    if isinstance(direct, str) and direct.strip():
-        return direct.strip()
-
-    segment_texts: list[str] = []
-    segments = content.get("segments")
-    if isinstance(segments, list):
-        for segment in segments:
-            if not isinstance(segment, dict):
-                continue
-            if segment.get("type", "text") == "text":
-                text = segment.get("text")
-                if isinstance(text, str) and text.strip():
-                    segment_texts.append(text.strip())
-            elif segment.get("type") == "newline" and segment_texts:
-                segment_texts.append("\n")
-    segment_stem = "".join(segment_texts).strip()
-    if segment_stem:
-        return segment_stem
-
-    if isinstance(raw_content, str) and raw_content.strip():
-        return raw_content.strip()
-    return ""
-
-
-def _has_stem_image(content: dict, image_urls: list | None) -> bool:
-    if isinstance(image_urls, list) and any(bool(url) for url in image_urls):
-        return True
-    segments = content.get("segments")
-    if not isinstance(segments, list):
-        return False
-    image_types = {"image", "code_image", "math_image", "table_image"}
-    return any(
-        isinstance(segment, dict)
-        and segment.get("type") in image_types
-        and bool(segment.get("url"))
-        for segment in segments
-    )
+def _normalize_options(options) -> dict[str, str]:
+    """Return printable option text for plain and rich option payloads."""
+    if not isinstance(options, dict):
+        return {}
+    normalized: dict[str, str] = {}
+    for key, value in options.items():
+        text = extract_option_text(value)
+        if text:
+            normalized[str(key)] = text
+    return normalized
 
 
 def _get_subject_label(q):
@@ -176,7 +152,14 @@ def _get_subject_label(q):
 def _get_primary_kp(q):
     """Return the first knowledge point."""
     if q.knowledge_points and len(q.knowledge_points) > 0:
-        return str(q.knowledge_points[0])
+        first = q.knowledge_points[0]
+        if isinstance(first, dict):
+            for key in ("name", "label", "title", "id"):
+                value = first.get(key)
+                if value not in (None, ""):
+                    return str(value)
+            return None
+        return str(first)
     return None
 
 

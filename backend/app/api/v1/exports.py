@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_token, get_current_user
 from app.core.time_utils import utcnow
@@ -36,6 +37,8 @@ from app.services.export.capability import (
     validate_export_range,
 )
 from app.services.export.service import (
+    REEXPORTING_ERROR_CODE,
+    REEXPORT_FAILED_ERROR_CODE,
     create_export_task as _create_export_task,
 )
 from app.services.export.service import (
@@ -174,6 +177,7 @@ async def create_export(
             **req.model_dump(),
             "_idempotency_key": idempotency_key,
         })
+        task.total_count = count
     except IntegrityError:
         await db.rollback()
         # Another task with the same config was created concurrently, or the
@@ -271,7 +275,7 @@ async def download_export(
     if task.status not in previewable_statuses:
         raise_export_error(400, ExportErrorCode.FILE_NOT_READY, "文件尚未生成或已过期")
 
-    if task.status == ExportTaskStatus.COMPLETED and task.expires_at and task.expires_at < utcnow():
+    if task.expires_at and task.expires_at < utcnow():
         raise_export_error(400, ExportErrorCode.FILE_EXPIRED, "文件已过期")
 
     storage = get_export_storage()
@@ -325,7 +329,7 @@ async def stream_export_file(
     if task.status not in previewable_statuses:
         raise_export_error(400, ExportErrorCode.FILE_NOT_READY, "文件尚未生成")
 
-    if task.status == ExportTaskStatus.COMPLETED and task.expires_at and task.expires_at < utcnow():
+    if task.expires_at and task.expires_at < utcnow():
         raise_export_error(400, ExportErrorCode.FILE_EXPIRED, "文件已过期")
 
     file_path = _resolve_local_path(task.file_key or "")
@@ -436,6 +440,7 @@ async def retry_export(
     new_task = await _create_export_task(db, current_user.id, config)
     new_task.source_task_id = task.id
     new_task.retry_count = (task.retry_count or 0) + 1
+    new_task.total_count = count
     await db.commit()
     await db.refresh(new_task)
     logger.info("export_task_retried", extra={
@@ -507,17 +512,28 @@ async def re_export(
         )
         task.snapshot_id = None
 
-    # Keep file_key/file_size/completed_at untouched so the old version remains
-    # previewable until the new bytes have been generated and atomically stored.
+    now = utcnow()
+    has_valid_previous_file = bool(
+        task.file_key
+        and task.completed_at
+        and (task.expires_at is None or task.expires_at > now)
+    )
+    if not has_valid_previous_file:
+        task.file_key = None
+        task.file_size = None
+        task.completed_at = None
+        task.expires_at = None
+
     task.status = ExportTaskStatus.PENDING
     task.error_message = None
-    task.error_code = None
+    task.error_code = REEXPORTING_ERROR_CODE if has_valid_previous_file else None
     task.processing_started_at = None
     task.started_at = None
     task.heartbeat_at = None
     task.retry_count = (task.retry_count or 0) + 1
     task.version = (task.version or 0) + 1
     task.idempotency_key = None
+    task.generator_version = settings.GENERATOR_VERSION
 
     await db.commit()
     await db.refresh(task)
@@ -736,9 +752,27 @@ def _task_to_response(task: ExportTask) -> ExportTaskResponse:
                 else:
                     status_message = "导出处理服务暂不可用，请稍后重试或联系管理员"
 
+    now = utcnow()
+    has_file = bool(
+        task.file_key
+        and (task.expires_at is None or task.expires_at > now)
+    )
+    response_status = (
+        ExportTaskStatus.EXPIRED
+        if task.status == ExportTaskStatus.COMPLETED
+        and task.expires_at is not None
+        and task.expires_at <= now
+        else task.status
+    )
+    is_reexporting = bool(
+        task.error_code == REEXPORTING_ERROR_CODE
+        and task.status in (ExportTaskStatus.PENDING, ExportTaskStatus.PROCESSING)
+    )
+    reexport_failed = task.error_code == REEXPORT_FAILED_ERROR_CODE and has_file
+
     return ExportTaskResponse(
         id=task.id,
-        status=task.status,
+        status=response_status,
         file_format=task.file_format,
         file_name=task.file_name,
         file_size=task.file_size,
@@ -746,6 +780,9 @@ def _task_to_response(task: ExportTask) -> ExportTaskResponse:
         range_type=task.range_type,
         sort_by=task.sort_by,
         group_by=task.group_by,
+        answer_position=task.answer_position,
+        analysis_position=task.analysis_position,
+        space_style=task.space_style,
         total_count=task.total_count,
         success_count=task.success_count,
         skip_count=task.skip_count,
@@ -758,6 +795,9 @@ def _task_to_response(task: ExportTask) -> ExportTaskResponse:
         source_task_id=task.source_task_id,
         retry_count=task.retry_count,
         generator_version=task.generator_version,
+        has_file=has_file,
+        is_reexporting=is_reexporting,
+        reexport_failed=reexport_failed,
     )
 
 

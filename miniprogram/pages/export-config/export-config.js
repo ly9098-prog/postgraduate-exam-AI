@@ -2,7 +2,6 @@
  * Export configuration page — range, format, title, date, answer/analysis, sort, group, space.
  */
 const exportApi = require('../../services/export')
-const api = require('../../utils/api')
 
 const SORT_OPTIONS = [
   { value: 'newest', label: '加入时间最新优先' },
@@ -33,6 +32,39 @@ const POSITION_OPTIONS = [
   { value: 'at_end', label: '集中在末尾' },
 ]
 
+const LAYOUT_PRESETS = [
+  {
+    value: 'paper',
+    label: '真题试卷',
+    caption: '题型分区，答案与解析集中在末尾',
+    sortBy: 'question_type',
+    groupBy: 'question_type',
+    answerPosition: 'at_end',
+    analysisPosition: 'at_end',
+    spaceStyle: 'standard',
+  },
+  {
+    value: 'review',
+    label: '逐题复盘',
+    caption: '每题紧跟答案解析，适合订正复习',
+    sortBy: 'newest',
+    groupBy: 'subject',
+    answerPosition: 'after_question',
+    analysisPosition: 'after_question',
+    spaceStyle: 'compact',
+  },
+  {
+    value: 'blank',
+    label: '空白练习',
+    caption: '隐藏答案解析，并预留更多书写空间',
+    sortBy: 'question_type',
+    groupBy: 'question_type',
+    answerPosition: 'none',
+    analysisPosition: 'none',
+    spaceStyle: 'spacious',
+  },
+]
+
 Page({
   data: {
     // Expose options to WXML (cannot use require or global vars in WXML)
@@ -40,6 +72,7 @@ Page({
     GROUP_OPTIONS: GROUP_OPTIONS,
     SPACE_OPTIONS: SPACE_OPTIONS,
     POSITION_OPTIONS: POSITION_OPTIONS,
+    LAYOUT_PRESETS: LAYOUT_PRESETS,
 
     // Navigation context
     _selectedIds: [],
@@ -68,25 +101,27 @@ Page({
     exportDate: '',
 
     // Sort & Group
-    sortBy: 'newest',
-    sortByLabel: '加入时间最新优先',
-    sortByIndex: 0,
+    sortBy: 'question_type',
+    sortByLabel: '按题型排序',
+    sortByIndex: 5,
     groupBy: 'question_type',
     groupByLabel: '按题型',
     groupByIndex: 4,
 
     // Answer & Analysis
-    answerPosition: 'none',
-    answerPositionLabel: '不打印',
-    answerPositionIndex: 0,
-    analysisPosition: 'none',
-    analysisPositionLabel: '不打印',
-    analysisPositionIndex: 0,
+    answerPosition: 'at_end',
+    answerPositionLabel: '集中在末尾',
+    answerPositionIndex: 2,
+    analysisPosition: 'at_end',
+    analysisPositionLabel: '集中在末尾',
+    analysisPositionIndex: 2,
 
     // Space
     spaceStyle: 'standard',
     spaceStyleLabel: '标准',
     spaceStyleIndex: 1,
+    layoutPreset: 'paper',
+    layoutSummary: '按题型排序 · 按题型分区 · 答案解析集中在末尾 · 标准留白',
 
     // Preview count
     previewCount: 0,
@@ -143,7 +178,6 @@ Page({
       globalData.exportSelectedIds = null
     }
 
-    this._autoGenerateTitle()
     this._checkCapabilities()
   },
 
@@ -423,7 +457,16 @@ Page({
     const idx = parseInt(e.detail.value, 10)
     const option = SORT_OPTIONS[idx]
     if (!option) return
-    this.setData({ sortBy: option.value, sortByLabel: option.label, sortByIndex: idx, submitError: '', pickerOpen: false }, () => this._registerInteraction())
+    const next = {
+      sortBy: option.value,
+      sortByLabel: option.label,
+      sortByIndex: idx,
+      layoutPreset: 'custom',
+      submitError: '',
+      pickerOpen: false,
+    }
+    next.layoutSummary = this._buildLayoutSummary({ ...this.data, ...next })
+    this.setData(next, () => this._registerInteraction())
   },
 
   // ── Group: picker e.detail.value is an index into GROUP_OPTIONS ──
@@ -431,7 +474,16 @@ Page({
     const idx = parseInt(e.detail.value, 10)
     const option = GROUP_OPTIONS[idx]
     if (!option) return
-    this.setData({ groupBy: option.value, groupByLabel: option.label, groupByIndex: idx, submitError: '', pickerOpen: false }, () => this._registerInteraction())
+    const next = {
+      groupBy: option.value,
+      groupByLabel: option.label,
+      groupByIndex: idx,
+      layoutPreset: 'custom',
+      submitError: '',
+      pickerOpen: false,
+    }
+    next.layoutSummary = this._buildLayoutSummary({ ...this.data, ...next })
+    this.setData(next, () => this._registerInteraction())
   },
 
   // ── Answer position: picker e.detail.value is an index ──
@@ -439,7 +491,16 @@ Page({
     const idx = parseInt(e.detail.value, 10)
     const option = POSITION_OPTIONS[idx]
     if (!option) return
-    this.setData({ answerPosition: option.value, answerPositionLabel: option.label, answerPositionIndex: idx, submitError: '', pickerOpen: false }, () => this._registerInteraction())
+    const next = {
+      answerPosition: option.value,
+      answerPositionLabel: option.label,
+      answerPositionIndex: idx,
+      layoutPreset: 'custom',
+      submitError: '',
+      pickerOpen: false,
+    }
+    next.layoutSummary = this._buildLayoutSummary({ ...this.data, ...next })
+    this.setData(next, () => this._registerInteraction())
   },
 
   // ── Analysis position: picker e.detail.value is an index ──
@@ -447,7 +508,16 @@ Page({
     const idx = parseInt(e.detail.value, 10)
     const option = POSITION_OPTIONS[idx]
     if (!option) return
-    this.setData({ analysisPosition: option.value, analysisPositionLabel: option.label, analysisPositionIndex: idx, submitError: '', pickerOpen: false }, () => this._registerInteraction())
+    const next = {
+      analysisPosition: option.value,
+      analysisPositionLabel: option.label,
+      analysisPositionIndex: idx,
+      layoutPreset: 'custom',
+      submitError: '',
+      pickerOpen: false,
+    }
+    next.layoutSummary = this._buildLayoutSummary({ ...this.data, ...next })
+    this.setData(next, () => this._registerInteraction())
   },
 
   // ── Space style: picker e.detail.value is an index ──
@@ -455,7 +525,49 @@ Page({
     const idx = parseInt(e.detail.value, 10)
     const option = SPACE_OPTIONS[idx]
     if (!option) return
-    this.setData({ spaceStyle: option.value, spaceStyleLabel: option.label, spaceStyleIndex: idx, submitError: '', pickerOpen: false }, () => this._registerInteraction())
+    const next = {
+      spaceStyle: option.value,
+      spaceStyleLabel: option.label,
+      spaceStyleIndex: idx,
+      layoutPreset: 'custom',
+      submitError: '',
+      pickerOpen: false,
+    }
+    next.layoutSummary = this._buildLayoutSummary({ ...this.data, ...next })
+    this.setData(next, () => this._registerInteraction())
+  },
+
+  onPresetChange(e) {
+    const value = e.currentTarget.dataset.value
+    const preset = LAYOUT_PRESETS.find(item => item.value === value)
+    if (!preset) return
+
+    const sortByIndex = SORT_OPTIONS.findIndex(item => item.value === preset.sortBy)
+    const groupByIndex = GROUP_OPTIONS.findIndex(item => item.value === preset.groupBy)
+    const answerPositionIndex = POSITION_OPTIONS.findIndex(item => item.value === preset.answerPosition)
+    const analysisPositionIndex = POSITION_OPTIONS.findIndex(item => item.value === preset.analysisPosition)
+    const spaceStyleIndex = SPACE_OPTIONS.findIndex(item => item.value === preset.spaceStyle)
+    const next = {
+      layoutPreset: preset.value,
+      sortBy: preset.sortBy,
+      sortByLabel: SORT_OPTIONS[sortByIndex].label,
+      sortByIndex,
+      groupBy: preset.groupBy,
+      groupByLabel: GROUP_OPTIONS[groupByIndex].label,
+      groupByIndex,
+      answerPosition: preset.answerPosition,
+      answerPositionLabel: POSITION_OPTIONS[answerPositionIndex].label,
+      answerPositionIndex,
+      analysisPosition: preset.analysisPosition,
+      analysisPositionLabel: POSITION_OPTIONS[analysisPositionIndex].label,
+      analysisPositionIndex,
+      spaceStyle: preset.spaceStyle,
+      spaceStyleLabel: SPACE_OPTIONS[spaceStyleIndex].label,
+      spaceStyleIndex,
+      submitError: '',
+    }
+    next.layoutSummary = this._buildLayoutSummary(next)
+    this.setData(next, () => this._registerInteraction())
   },
 
   // ── Preview count ──
@@ -717,22 +829,20 @@ Page({
     }
   },
 
-  _formatDate(date) {
-    const y = date.getFullYear()
-    const m = String(date.getMonth() + 1).padStart(2, '0')
-    const d = String(date.getDate()).padStart(2, '0')
-    return `${y}-${m}-${d}`
-  },
-
-  async _autoGenerateTitle() {
-    // Try to get subjects from the resolved questions
-    try {
-      const params = this._buildRangeParams()
-      // We need an API that returns subject context for the title
-      // For now, the default title will be set server-side
-      // Client can optionally fetch subjects from existing endpoint
-    } catch (e) {
-      // Ignore — server will use default title logic
-    }
+  _buildLayoutSummary(data) {
+    const state = data || this.data
+    const answer = state.answerPosition === 'at_end'
+      ? '答案末尾'
+      : (state.answerPosition === 'after_question' ? '答案逐题' : '不含答案')
+    const analysis = state.analysisPosition === 'at_end'
+      ? '解析末尾'
+      : (state.analysisPosition === 'after_question' ? '解析逐题' : '不含解析')
+    return [
+      state.sortByLabel,
+      state.groupByLabel + '分区',
+      answer,
+      analysis,
+      state.spaceStyleLabel + '留白',
+    ].join(' · ')
   },
 })

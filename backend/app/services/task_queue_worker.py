@@ -1070,6 +1070,40 @@ async def _try_claim_any_v2(task_types: list[str], lease_sec: int) -> Task | Non
     return None
 
 
+async def _complete_with_retry_v2(task: Task, max_attempts: int = 3) -> int:
+    """Retry the terminal completion transition while the lease heartbeat is alive."""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await task_queue.complete_v2(task)
+        except TaskQueueUnavailableError as exc:
+            if attempt >= max_attempts:
+                raise
+            delay = min(max(float(exc.retry_after), 0.1) * attempt, 5.0)
+            logger.warning(
+                "v2 Complete transition unavailable; retrying: task_id=%s attempt=%d/%d delay=%.1fs",
+                task.task_id, attempt, max_attempts, delay,
+            )
+            await asyncio.sleep(delay)
+    return 0
+
+
+async def _fail_with_retry_v2(task: Task, error: str, max_attempts: int = 3) -> int:
+    """Retry the atomic fail/retry/dead transition without mutating task ownership."""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await task_queue.fail_v2(task, error)
+        except TaskQueueUnavailableError as exc:
+            if attempt >= max_attempts:
+                raise
+            delay = min(max(float(exc.retry_after), 0.1) * attempt, 5.0)
+            logger.warning(
+                "v2 Fail transition unavailable; retrying: task_id=%s attempt=%d/%d delay=%.1fs",
+                task.task_id, attempt, max_attempts, delay,
+            )
+            await asyncio.sleep(delay)
+    return 0
+
+
 async def _process_claimed_task_v2(task: Task, lease_sec: int, sem: asyncio.Semaphore) -> None:
     """Process a claimed v2 task with heartbeat, cancellation, and lifecycle.
 
@@ -1107,7 +1141,7 @@ async def _process_claimed_task_v2(task: Task, lease_sec: int, sem: asyncio.Sema
                 )
         else:
             try:
-                ok = await task_queue.complete_v2(task)
+                ok = await _complete_with_retry_v2(task)
                 if ok == 1:
                     logger.info("v2 Task completed: task_id=%s", task.task_id)
                 elif ok == 0:
@@ -1139,7 +1173,7 @@ async def _process_claimed_task_v2(task: Task, lease_sec: int, sem: asyncio.Sema
             queue_metrics["owner_fencing_rejected"] += 1
         else:
             try:
-                await task_queue.fail_v2(task, str(e)[:500])
+                await _fail_with_retry_v2(task, str(e)[:500])
             except Exception as fe:
                 logger.warning("v2 Fail error: task_id=%s error=%s", task.task_id, fe)
     finally:
@@ -1396,14 +1430,14 @@ async def graceful_shutdown_v2(grace_sec: int | None = None) -> None:
         grace_sec = max(grace_sec, 5)
 
     # Step 1: Stop claiming
-    set_draining_v2()
+    await set_draining_v2()
     logger.info(
         "v2 Graceful shutdown: draining set, waiting up to %ds for %d active tasks",
         grace_sec, len(_v2_active_processing),
     )
 
     if not _v2_active_processing:
-        stop_worker_v2()
+        await stop_worker_v2()
         logger.info("v2 Graceful shutdown: no active tasks, stopped immediately")
         return
 
@@ -1427,7 +1461,7 @@ async def graceful_shutdown_v2(grace_sec: int | None = None) -> None:
             logger.info("v2 Graceful shutdown: remaining tasks cancelled")
 
     # Step 4: Signal dispatcher to stop
-    stop_worker_v2()
+    await stop_worker_v2()
 
 
 async def _cancel_on_owner_loss(

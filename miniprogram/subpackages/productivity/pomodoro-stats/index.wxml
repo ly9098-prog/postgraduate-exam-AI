@@ -1,14 +1,15 @@
 <view class="page theme-{{themeMode}}">
   <view class="theme-backdrop"></view>
-  <view class="page-inner animation-entrance {{pageEntered ? 'entered' : ''}}">
+  <view class="page-inner">
 
-    <block wx:if="{{loading}}">
+    <view class="initial-state-layer" wx:if="{{loading && !contentReady}}" catchtouchmove="noop">
       <view class="loading-wrap">
-        <loading-lottie text="加载中..." size="large" theme="{{themeMode}}" />
+        <view class="initial-loading-ring"></view>
+        <text class="initial-loading-text">加载中...</text>
       </view>
-    </block>
+    </view>
 
-    <block wx:elif="{{errorText}}">
+    <view class="initial-state-layer" wx:elif="{{errorText}}" catchtouchmove="noop">
       <view class="error-state">
         <view class="error-icon-wrap">
           <text class="line-icon icon-exclamation" style="width:48rpx;height:48rpx;color:#EF4444;"></text>
@@ -18,10 +19,9 @@
           <button class="gradient-btn" hover-class="gradient-btn-pressed" hover-start-time="20" hover-stay-time="80" bindtap="loadData">重新加载</button>
         </view>
       </view>
-    </block>
+    </view>
 
-    <block wx:elif="{{!loading}}">
-      <view class="stats-content">
+    <view class="stats-content {{contentReady ? 'stats-content-ready' : 'stats-content-pending'}}">
         <!-- ===== OVERVIEW ===== -->
         <view class="overview-section">
           <view class="overview-main-card">
@@ -123,14 +123,18 @@
           <view class="section-header">
             <text class="section-title">最近记录</text>
           </view>
-          <view wx:if="{{history.length === 0}}" class="empty-hint">
+          <view wx:if="{{!historyReady}}" class="history-placeholder">
+            <view class="history-placeholder-line history-placeholder-line-long"></view>
+            <view class="history-placeholder-line"></view>
+            <view class="history-placeholder-line history-placeholder-line-short"></view>
+          </view>
+          <view wx:elif="{{history.length === 0}}" class="empty-hint">
             <view class="empty-icon"></view>
             <text class="empty-text" wx:if="{{selectedDate === _todayDate}}">今天还没有学习记录<br/>开始一个番茄钟吧</text>
             <text class="empty-text" wx:else>{{selectedDate}} 暂无学习记录</text>
           </view>
-          <view class="history-list" wx:if="{{history.length > 0}}">
-            <view class="history-item" wx:for="{{history}}" wx:key="id"
-                  style="--idx: {{index}};">
+          <view class="history-list" wx:elif="{{history.length > 0}}">
+            <view class="history-item" wx:for="{{history}}" wx:key="id">
               <view class="hist-accent" style="background: {{item._color}};"></view>
               <view class="hist-left">
                 <text class="hist-subject">{{item._subjectLabel}}</text>
@@ -146,8 +150,7 @@
 
         <!-- bottom spacer -->
         <view class="bottom-spacer"></view>
-      </view>
-    </block>
+    </view>
 
   </view>
 

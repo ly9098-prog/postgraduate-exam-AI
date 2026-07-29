@@ -1313,6 +1313,13 @@
   background: #FFFFFF;
 }
 
+.runner-scroll-top-anchor {
+  width: 1rpx;
+  height: 1rpx;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .runner-q-wrap {
   min-height: 100%;
   padding-bottom: 40rpx;

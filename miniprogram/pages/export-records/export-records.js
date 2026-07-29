@@ -54,6 +54,35 @@ const FORMAT_MAP = {
   docx: 'Word',
 }
 
+const SORT_MAP = {
+  newest: '最新优先',
+  oldest: '最早优先',
+  original: '原练习顺序',
+  random: '随机排序',
+  knowledge_point: '知识点排序',
+  question_type: '题型排序',
+}
+
+const GROUP_MAP = {
+  none: '连续排列',
+  subject: '按学科分区',
+  chapter: '按章节分区',
+  knowledge_point: '按知识点分区',
+  question_type: '按题型分区',
+}
+
+const POSITION_MAP = {
+  none: '不含',
+  after_question: '逐题附',
+  at_end: '末尾集中',
+}
+
+const SPACE_MAP = {
+  compact: '紧凑留白',
+  standard: '标准留白',
+  spacious: '宽松留白',
+}
+
 const TERMINAL_STATES = ['completed', 'failed', 'expired']
 const PENDING_WARNING_SECONDS = 30
 const PROCESSING_WARNING_SECONDS = 300  // 5 minutes
@@ -147,12 +176,15 @@ Page({
   data: {
     list: [],
     page: 1,
+    totalRecords: 0,
     hasMore: false,
     loading: false,
     highlightId: null,
     expandedActionId: null,
     previewingTaskId: null,
     reExportingTaskId: null,
+    retryingTaskId: null,
+    deletingTaskId: null,
     skeletonItems: [1, 2],
 
     // Custom dialog
@@ -309,7 +341,8 @@ Page({
     const normalized = this._normalizeUpdate(taskId, data)
 
     // Check if this is a transition INTO completed
-    const oldTask = this.data.list.find(t => t.id === taskId)
+    const numericTaskId = Number(taskId)
+    const oldTask = this.data.list.find(t => Number(t.id) === numericTaskId)
     const wasCompleted = oldTask && TERMINAL_STATES.includes(oldTask.status)
     const isNowCompleted = TERMINAL_STATES.includes(normalized.status)
 
@@ -324,7 +357,7 @@ Page({
     }
 
     // Enrich and merge
-    const enriched = this._enrichTask(normalized)
+    const enriched = this._enrichTask({ ...(oldTask || {}), ...normalized, id: numericTaskId })
     this._mergeTask(enriched)
 
     // Show completion toast once per task
@@ -340,12 +373,13 @@ Page({
    * Normalize a status update to a consistent shape.
    */
   _normalizeUpdate(taskId, data) {
-    const base = { id: taskId }
+    const numericTaskId = Number(taskId)
+    const base = { id: numericTaskId }
     // WS events use task_id/status; API responses use id/status
     if (data.task_id !== undefined && data.id === undefined) {
       base.id = Number(data.task_id)
     }
-    return { ...base, ...data, id: taskId }
+    return { ...base, ...data, id: numericTaskId }
   },
 
   /**
@@ -374,12 +408,14 @@ Page({
     const taskId = Number(task && task.id)
     if (!taskId) return
 
+    const existed = this.data.list.some(item => Number(item.id) === taskId)
     const enriched = this._enrichTask({ ...task, id: taskId })
     const list = [enriched].concat(
       this.data.list.filter(item => Number(item.id) !== taskId)
     )
     this.setData({
       list,
+      totalRecords: existed ? this.data.totalRecords : this.data.totalRecords + 1,
       highlightId: taskId,
       expandedActionId: null,
     })
@@ -405,12 +441,24 @@ Page({
         const res = await exportApi.listExports(page, 20)
         const tasks = res.items || []
         const enriched = tasks.map(t => this._enrichTask(t))
-        const list = reset ? enriched : [...this.data.list, ...enriched]
+        const combined = reset ? enriched : [...this.data.list, ...enriched]
+        const seen = {}
+        const list = combined.filter(function(item) {
+          const id = Number(item.id)
+          if (!id || seen[id]) return false
+          seen[id] = true
+          return true
+        })
+        const responseTotal = Number(res.total)
+        const totalRecords = Number.isFinite(responseTotal)
+          ? responseTotal
+          : list.length
 
         this.setData({
           list,
+          totalRecords,
           page: res.page || page,
-          hasMore: tasks.length === 20,
+          hasMore: list.length < totalRecords,
           loading: false,
         })
 
@@ -524,12 +572,32 @@ Page({
   },
 
   _enrichTask(task) {
-    const st = STATUS_MAP[task.status] || {
+    const reexportFailed = !!(task.reexport_failed || task.error_code === 'reexport_failed')
+    const reexporting = !!(
+      task.is_reexporting ||
+      (task.error_code === 'reexporting' && ['pending', 'processing'].includes(task.status))
+    )
+    let st = STATUS_MAP[task.status] || {
       label: task.status || '未知状态',
       summary: '状态更新中',
       tone: 'neutral',
       glyph: '···',
       terminal: false,
+    }
+    if (reexportFailed) {
+      st = {
+        label: '新版生成失败',
+        summary: '已保留上一版文件，可继续打开',
+        tone: 'warning',
+        glyph: '!',
+        terminal: true,
+      }
+    } else if (reexporting) {
+      st = {
+        ...st,
+        label: task.status === 'processing' ? '正在重新导出' : '等待重新导出',
+        summary: '上一版文件仍可预览',
+      }
     }
     const fmtText = FORMAT_MAP[task.file_format] || task.file_format || '文件'
     const expiry = formatExpiry(task.expires_at, task.status)
@@ -542,6 +610,8 @@ Page({
       if (!this._taskWatchStartedAt.has(task.id)) {
         this._taskWatchStartedAt.set(task.id, Date.now())
       }
+    } else if (st.terminal && this._taskWatchStartedAt) {
+      this._taskWatchStartedAt.delete(task.id)
     }
 
     // Use server-provided status_message as initial warning
@@ -556,12 +626,20 @@ Page({
 
     let resultText = ''
     if (successCount != null) {
-      resultText = successCount + ' 道成功'
+      resultText = successCount + ' 道已导出'
       if (skipCount > 0) resultText += ' · ' + skipCount + ' 道跳过'
     }
+    const layoutSummary = this._buildLayoutSummary(task)
+    const hasPreviousFile = !!(
+      reexporting &&
+      (task.has_file || task.file_size)
+    )
 
     return {
       ...task,
+      is_reexporting: reexporting,
+      reexport_failed: reexportFailed,
+      visualStatus: reexportFailed ? 'warning' : task.status,
       statusLabel: st.label,
       statusSummary: st.summary,
       statusTone: st.tone,
@@ -571,12 +649,31 @@ Page({
       fileSizeText: formatFileSize(task.file_size),
       formatText: fmtText,
       dateText: formatDateTime(task.completed_at || task.created_at),
-      hasPreviousFile: !!task.file_size && ['pending', 'processing', 'failed'].includes(task.status),
+      hasPreviousFile,
       questionCountText: totalCount + ' 道题',
       resultText,
       displayFileName: task.file_name || '未命名导出文件',
+      layoutSummary,
       ...expiry,
     }
+  },
+
+  _buildLayoutSummary(task) {
+    const sortText = SORT_MAP[task.sort_by] || ''
+    const groupText = GROUP_MAP[task.group_by] || ''
+    const answer = task.answer_position || 'none'
+    const analysis = task.analysis_position || 'none'
+    let contentText = ''
+    if (answer === analysis) {
+      if (answer === 'at_end') contentText = '答案解析置于末尾'
+      else if (answer === 'after_question') contentText = '逐题附答案解析'
+      else contentText = '不含答案解析'
+    } else {
+      contentText = (POSITION_MAP[answer] || '') + '答案 · ' +
+        (POSITION_MAP[analysis] || '') + '解析'
+    }
+    const spaceText = SPACE_MAP[task.space_style] || ''
+    return [sortText, groupText, contentText, spaceText].filter(Boolean).join(' · ')
   },
 
   onToggleMore(e) {
@@ -852,7 +949,8 @@ Page({
   // ── Delete ──
 
   async onDelete(e) {
-    const taskId = e.currentTarget.dataset.id
+    const taskId = Number(e.currentTarget.dataset.id)
+    if (!taskId || this.data.deletingTaskId) return
     const result = await this._showDialog({
       title: '确认删除',
       content: '删除后将同时清理文件和导出记录，且无法恢复。',
@@ -862,6 +960,7 @@ Page({
     })
     if (!result.confirm) return
 
+    this.setData({ deletingTaskId: taskId })
     try {
       await exportApi.deleteExport(taskId)
       if (this._statusSyncManager) {
@@ -870,7 +969,8 @@ Page({
       if (this._completedNotified) this._completedNotified.delete(taskId)
       this._invalidatePreviewCache(taskId)
       this.setData({
-        list: this.data.list.filter(function(t) { return t.id !== taskId }),
+        list: this.data.list.filter(function(t) { return Number(t.id) !== taskId }),
+        totalRecords: Math.max(0, this.data.totalRecords - 1),
         expandedActionId: this.data.expandedActionId === taskId
           ? null
           : this.data.expandedActionId,
@@ -884,20 +984,27 @@ Page({
         showCancel: false,
         tone: 'danger',
       })
+    } finally {
+      if (!this._pageDestroyed) this.setData({ deletingTaskId: null })
     }
   },
 
   // ── Retry ──
 
-  onRetry(e) {
-    const taskId = e.currentTarget.dataset.id
-    const self = this
-    exportApi.retryExport(taskId).then(function() {
+  async onRetry(e) {
+    const taskId = Number(e.currentTarget.dataset.id)
+    if (!taskId || this.data.retryingTaskId) return
+    this.setData({ retryingTaskId: taskId })
+    try {
+      const task = await exportApi.retryExport(taskId)
+      if (!task || !task.id) throw new Error('服务端未返回新的导出任务')
+      this._upsertTaskAtTop(task)
       wx.showToast({ title: '已重新提交', icon: 'success' })
-      self._loadList(true)
-    }).catch(function(err) {
+    } catch (err) {
       wx.showToast({ title: err.message || '重试失败', icon: 'none' })
-    })
+    } finally {
+      if (!this._pageDestroyed) this.setData({ retryingTaskId: null })
+    }
   },
 
   // ── Re-export ──

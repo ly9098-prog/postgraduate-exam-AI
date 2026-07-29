@@ -5,7 +5,6 @@ API Router 层只负责：鉴权、参数解析、调用 service、返回 respon
 """
 
 import hashlib
-import importlib.util
 import logging
 import os
 import uuid
@@ -201,22 +200,12 @@ def _build_ocr_text_diagnostics(raw_ocr_text: str, cleaned_text: str) -> dict:
 
 
 def _build_ocr_runtime_diagnostics() -> dict:
-    result: dict = {
+    from app.core.ocr_isolation import local_paddleocr_available
+
+    return {
         "ocr_enabled": settings.OCR_ENABLED,
+        "paddleocr_available": local_paddleocr_available(),
     }
-    try:
-        from app.core.deployment_profile import (
-            DeploymentProfile,
-            detect_deployment_profile,
-        )
-        profile = detect_deployment_profile()
-        if profile == DeploymentProfile.CLOUD_API:
-            result["paddleocr_available"] = False
-        else:
-            result["paddleocr_available"] = importlib.util.find_spec("paddleocr") is not None
-    except Exception:
-        result["paddleocr_available"] = False
-    return result
 
 
 async def _run_ocr_in_thread(image_bytes: bytes) -> str:
@@ -583,12 +572,13 @@ async def start_import_pipeline(
         if not settings.OCR_ENABLED:
             raise ValueError("图片 OCR 功能未启用")
         # 云端使用外部 OCR API，无需本地 PaddleOCR
-        from app.core.deployment_profile import (
-            DeploymentProfile,
-            detect_deployment_profile,
-        )
-        profile = detect_deployment_profile()
-        if profile != DeploymentProfile.CLOUD_API and importlib.util.find_spec("paddleocr") is None:
+        from app.core.ocr_isolation import local_paddleocr_available
+        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+
+        if (
+            detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT
+            and not local_paddleocr_available()
+        ):
             raise ValueError("OCR 依赖未安装：paddleocr")
 
         image_width, image_height, image_format = _validate_image_path(file_path)

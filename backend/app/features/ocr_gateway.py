@@ -361,8 +361,11 @@ class OCRGateway:
             if len(fallback_chain) >= 3:
                 break
 
-        # Enforce profile fallback policy
+        # Enforce profile fallback policy before exposing the selected route.
         fallback_chain = self._enforce_fallback_policy(fallback_chain)
+        if backend not in fallback_chain:
+            backend = fallback_chain[0]
+            reason_codes.append(f"PROFILE_POLICY_SELECTED:{backend}")
 
         return GatewayRouteDecision(
             selected_backend=backend,

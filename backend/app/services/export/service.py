@@ -49,14 +49,14 @@ from app.services.export.sorter import sort_questions
 logger = logging.getLogger(__name__)
 
 
-_REEXPORTING_CODE = "reexporting"
-_REEXPORT_FAILED_CODE = "reexport_failed"
+REEXPORTING_ERROR_CODE = "reexporting"
+REEXPORT_FAILED_ERROR_CODE = "reexport_failed"
 
 
 def _is_reexport_with_old_file(task: ExportTask) -> bool:
     """Return whether a replacement export can safely fall back to its old file."""
     return (
-        task.error_code == _REEXPORTING_CODE
+        task.error_code == REEXPORTING_ERROR_CODE
         and bool(task.file_key)
         and task.completed_at is not None
         and (task.expires_at is None or task.expires_at > utcnow())
@@ -72,7 +72,7 @@ def _apply_export_failure(
     safe_message = (message or "导出失败")[:420]
     if _is_reexport_with_old_file(task):
         task.status = ExportTaskStatus.COMPLETED
-        task.error_code = _REEXPORT_FAILED_CODE
+        task.error_code = REEXPORT_FAILED_ERROR_CODE
         task.error_message = f"重新导出失败：{safe_message}"[:500]
         # Keep file_key/file_size/completed_at/expires_at from the valid old version.
     else:
@@ -309,15 +309,22 @@ async def process_task(
                 db, task.user_id, sorted_ids, wq_order_map, config_for_snapshot,
             )
 
-            snapshot_data["config"]["total_count"] = snapshot_data.get("total_count", 0)
+            snapshot_data["config"]["total_count"] = snapshot_data.get(
+                "success_count",
+                len(snapshot_data.get("questions", [])),
+            )
             snapshot_data["config"]["skip_count"] = snapshot_data.get("skip_count", 0)
+            snapshot_data["config"]["skip_reasons"] = snapshot_data.get("skip_reasons")
 
             # 5. Save snapshot
             snapshot_id = await create_snapshot(db, task.user_id, snapshot_data)
             task.snapshot_id = snapshot_id
 
         # 6. Update task counts
-        task.total_count = snapshot_data.get("total_count", 0)
+        task.total_count = snapshot_data.get(
+            "total_count",
+            len(snapshot_data.get("questions", [])),
+        )
 
         await db.flush()
 
@@ -356,10 +363,14 @@ async def process_task(
             _file_url = await storage.upload(file_key, result.file_bytes)
 
             validate_transition(ExportTaskStatus.PROCESSING, ExportTaskStatus.COMPLETED, task.id)
+            processing_started_at = task.processing_started_at
             task.status = ExportTaskStatus.COMPLETED
             task.file_key = file_key
             task.file_size = len(result.file_bytes)
-            task.success_count = snapshot_data.get("total_count", 0) - (result.skip_count or 0)
+            task.success_count = snapshot_data.get(
+                "success_count",
+                len(snapshot_data.get("questions", [])),
+            )
             task.skip_count = result.skip_count
             task.skip_reasons = result.skip_reasons
             task.completed_at = utcnow()
@@ -371,11 +382,11 @@ async def process_task(
 
             inc_completed()
             observe_file_size_bytes(len(result.file_bytes))
-            if task.processing_started_at:
+            if processing_started_at:
                 observe_processing_seconds(
-                    (task.completed_at - task.processing_started_at).total_seconds()
+                    (task.completed_at - processing_started_at).total_seconds()
                 )
-            _record_queue_wait(task)
+            _record_queue_wait(task, processing_started_at)
 
             logger.info(
                 "Export task %d completed: %d questions, %d skipped, %d bytes",
@@ -405,10 +416,14 @@ async def process_task(
     return task
 
 
-def _record_queue_wait(task: ExportTask) -> None:
+def _record_queue_wait(
+    task: ExportTask,
+    processing_started_at: dt.datetime | None = None,
+) -> None:
     """Record queue wait time from created_at to processing_started_at."""
-    if task.created_at and task.processing_started_at:
-        wait = (task.processing_started_at - task.created_at).total_seconds()
+    started_at = processing_started_at or task.processing_started_at
+    if task.created_at and started_at:
+        wait = (started_at - task.created_at).total_seconds()
         observe_queue_wait_seconds(max(0, wait))
 
 

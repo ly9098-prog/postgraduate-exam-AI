@@ -218,7 +218,7 @@ async def _init_worker_dependencies(registry: TaskRegistry) -> None:
         )
         worker_client = create_ocr_worker_client(cfg, http_client=_ocr_http)
         ocr_gateway = OCRGateway(
-            mode="worker",
+            mode="gateway",
             profile=profile,
             worker_client=worker_client,
         )
@@ -661,8 +661,13 @@ def run_role(role: str) -> None:
         from app.core.bootstrap import run_role
         run_role("scheduler")
     """
+    if role not in _FORBIDDEN_HTTP_ROLES:
+        raise ValueError(f"Unknown standalone role: {role!r}")
     _guard_http_role(role)
-    os.environ.setdefault("PROCESS_ROLE", role)
+    # Settings is imported at module load time, so update both the process
+    # environment and the singleton before any role-aware validation/pool setup.
+    os.environ["PROCESS_ROLE"] = role
+    settings.PROCESS_ROLE = role
 
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

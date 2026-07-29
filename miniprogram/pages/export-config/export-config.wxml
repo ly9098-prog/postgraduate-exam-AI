@@ -108,7 +108,54 @@
             <text wx:if="{{wordDisabled}}" class="format-disabled-tip">暂未开放</text>
           </view>
         </view>
-        <text wx:if="{{wordTip && !wordDisabled}}" class="inline-hint inline-hint-warn">{{wordTip}}</text>
+        <text wx:if="{{wordTip}}" class="inline-hint inline-hint-warn">{{wordTip}}</text>
+      </view>
+
+      <!-- Reference-paper layout presets -->
+      <view class="config-card layout-preset-card">
+        <view class="section-heading section-heading-row">
+          <view>
+            <text class="section-title">版式模板</text>
+            <text class="section-caption">默认采用上传真题的字体层级与试卷结构</text>
+          </view>
+          <text wx:if="{{layoutPreset === 'custom'}}" class="custom-layout-badge">已自定义</text>
+        </view>
+
+        <view class="preset-grid">
+          <view
+            wx:for="{{LAYOUT_PRESETS}}"
+            wx:key="value"
+            class="preset-card {{layoutPreset === item.value ? 'preset-card-active' : ''}}"
+            data-value="{{item.value}}"
+            bindtap="onPresetChange"
+          >
+            <view class="preset-radio"><view class="preset-radio-core"></view></view>
+            <view class="preset-copy">
+              <text class="preset-title">{{item.label}}</text>
+              <text class="preset-caption">{{item.caption}}</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="paper-style-preview">
+          <view class="paper-sheet" aria-hidden="true">
+            <view class="paper-mini-title"></view>
+            <view class="paper-mini-subtitle"></view>
+            <view class="paper-mini-section"></view>
+            <view class="paper-mini-line paper-mini-line-one"></view>
+            <view class="paper-mini-line paper-mini-line-two"></view>
+            <view class="paper-mini-options">
+              <view></view><view></view><view></view><view></view>
+            </view>
+            <view class="paper-mini-line paper-mini-line-three"></view>
+            <view class="paper-mini-page">· 1 ·</view>
+          </view>
+          <view class="paper-preview-copy">
+            <text class="paper-preview-title">真题式打印效果</text>
+            <text class="paper-preview-caption">宋体正文、黑体分区标题、紧凑选项与居中页码</text>
+            <text class="paper-preview-summary">{{layoutSummary}}</text>
+          </view>
+        </view>
       </view>
 
       <!-- Paper information -->
@@ -141,7 +188,7 @@
       <view class="config-card settings-card">
         <view class="section-heading">
           <text class="section-title">内容与排版</text>
-          <text class="section-caption">调整题目顺序、答案和留白方式</text>
+          <text class="section-caption">可在模板基础上继续调整，修改后自动标记为自定义</text>
         </view>
 
         <picker class="setting-picker" mode="selector" range="{{SORT_OPTIONS}}" range-key="label" value="{{sortByIndex}}" bindtap="onPickerOpen" bindchange="onSortChange" bindcancel="onPickerCancel">
@@ -257,7 +304,7 @@
       <text wx:elif="{{!previewCountReady}}">等待题目数量</text>
       <text wx:elif="{{previewCount > maxQuestionCount}}">最多 {{maxQuestionCount}} 道</text>
       <text wx:elif="{{previewCount === 0}}">暂无可导出题目</text>
-      <text wx:else>开始导出 · {{previewCount}} 道</text>
+      <text wx:else>生成 {{format === 'docx' ? 'Word' : 'PDF'}} · {{previewCount}} 道</text>
       <view
         wx:if="{{!submitting && !capabilityLoading && !countLoading && _exportEnabled && previewCountReady && previewCount > 0 && previewCount <= maxQuestionCount}}"
         class="floating-submit-arrow"
