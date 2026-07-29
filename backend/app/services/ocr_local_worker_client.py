@@ -111,9 +111,17 @@ class LocalOcrWorkerClient:
         final.sort(key=lambda wr: wr.page_index)
         return final
 
-    async def shutdown(self) -> None:
+    async def shutdown(
+        self,
+        *,
+        graceful_timeout: float | None = None,
+        kill_timeout: float | None = None,
+    ) -> None:
         """Graceful shutdown."""
-        await self._pool.shutdown()
+        await self._pool.shutdown(
+            graceful_timeout=graceful_timeout,
+            kill_timeout=kill_timeout,
+        )
 
     @property
     def metrics(self) -> dict:

@@ -255,13 +255,13 @@ class OCRGateway:
             ]
 
         # Initialize worker client for gateway mode
-        if self._worker_client is None:
-            try:
-                self._worker_client = self._init_worker_client()
-            except Exception as exc:
-                logger.warning("Worker client init failed: %s", exc)
+        try:
+            worker_client = self._get_or_init_worker_client()
+        except Exception as exc:
+            logger.warning("Worker client init failed: %s", exc)
+            worker_client = None
 
-        if self._worker_client is None:
+        if worker_client is None:
             return [
                 WorkerResult(
                     request_id="", page_index=idx,
@@ -272,7 +272,7 @@ class OCRGateway:
                 for idx, _ in images
             ]
 
-        return await self._worker_client.recognize_batch(images)
+        return await worker_client.recognize_batch(images)
 
     async def shutdown(
         self,
@@ -287,9 +287,20 @@ class OCRGateway:
             "OCRGateway shutting down (graceful=%.0fs kill=%.0fs)",
             graceful_timeout, kill_timeout,
         )
-        if self._worker_client is not None:
-            await self._worker_client.shutdown()
-        self._registry.close_all()
+        worker_client = self._worker_client
+        self._worker_client = None
+        try:
+            if worker_client is not None:
+                await worker_client.shutdown(
+                    graceful_timeout=graceful_timeout,
+                    kill_timeout=kill_timeout,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("OCR worker client shutdown failed: %s", exc)
+        finally:
+            await self._registry.close_all()
 
     @property
     def worker_metrics(self) -> dict:
@@ -313,6 +324,12 @@ class OCRGateway:
         from app.services.ocr_worker_client import create_ocr_worker_client
         cfg = self._get_runtime_config()
         return create_ocr_worker_client(cfg)
+
+    def _get_or_init_worker_client(self):
+        """Return the shared worker client, creating it once on demand."""
+        if self._worker_client is None:
+            self._worker_client = self._init_worker_client()
+        return self._worker_client
 
     async def route_page(
         self,
@@ -456,8 +473,24 @@ class OCRGateway:
         if self._profile == DeploymentProfile.LOCAL_IMPORT:
             try:
                 from app.features.ocr_adapter import PaddleOCRLocalAdapter
-                self._registry.register_ocr(PaddleOCRLocalAdapter(engine="paddleocr"))
-                logger.info("OCRGateway[%s]: registered PaddleOCRLocalAdapter", self._profile.value)
+
+                cfg = self._get_runtime_config()
+                if cfg.execution_backend == "local_process":
+                    self._registry.register_ocr(PaddleOCRLocalAdapter(
+                        engine="paddleocr",
+                        worker_client_provider=self._get_or_init_worker_client,
+                    ))
+                    logger.info(
+                        "OCRGateway[%s]: registered PaddleOCRLocalAdapter",
+                        self._profile.value,
+                    )
+                else:
+                    logger.info(
+                        "OCRGateway[%s]: skipping local adapter because "
+                        "execution_backend=%s",
+                        self._profile.value,
+                        cfg.execution_backend,
+                    )
             except Exception as e:
                 logger.debug("OCRGateway: could not register local adapter: %s", e)
         else:

@@ -43,7 +43,12 @@ class OcrWorkerClient(Protocol):
     ) -> list[Any]:  # list[WorkerResult]
         ...
 
-    async def shutdown(self) -> None:
+    async def shutdown(
+        self,
+        *,
+        graceful_timeout: float | None = None,
+        kill_timeout: float | None = None,
+    ) -> None:
         ...
 
     @property

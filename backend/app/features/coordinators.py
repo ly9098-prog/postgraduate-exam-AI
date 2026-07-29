@@ -106,6 +106,8 @@ class OCRCoordinator:
 
     def __init__(self, profile: DeploymentProfile | None = None) -> None:
         self._profile = profile
+        self._gateway: Any = None
+        self._owns_gateway = False
 
     async def run(
         self,
@@ -145,21 +147,31 @@ class OCRCoordinator:
                             vl_base_url = endpoint
                         break
 
-            profile = self._profile or detect_deployment_profile()
-            gateway = OCRGateway(
-                profile=profile,
-                vl_api_token=vl_api_token,
-                vl_base_url=vl_base_url,
-                vl_model=vl_model,
-            )
+            if self._gateway is None:
+                # Prefer the application-lifespan Gateway so worker processes
+                # and HTTP connection pools are reused across documents/pages.
+                from app.services.ocr_service import get_gateway
 
-            # Actually call the Gateway with the rendered page
-            result = await gateway.recognize_page(
+                shared_gateway = get_gateway()
+                if shared_gateway is not None:
+                    self._gateway = shared_gateway
+                    self._owns_gateway = False
+                else:
+                    profile = self._profile or detect_deployment_profile()
+                    self._gateway = OCRGateway(
+                        mode="gateway",
+                        profile=profile,
+                        vl_api_token=vl_api_token,
+                        vl_base_url=vl_base_url,
+                        vl_model=vl_model,
+                    )
+                    self._owns_gateway = True
+
+            # Actually call the shared Gateway with the rendered page.
+            return await self._gateway.recognize_page(
                 document,
                 trace_id=trace_id,
             )
-
-            return result
         except Exception as e:
             return ModuleResult.failure(
                 ModuleError(
@@ -171,6 +183,15 @@ class OCRCoordinator:
                 trace_id=trace_id,
                 latency_ms=round((time.monotonic() - start) * 1000, 2),
             )
+
+    async def close(self) -> None:
+        """Close only a Gateway created by this coordinator."""
+        gateway = self._gateway
+        owns_gateway = self._owns_gateway
+        self._gateway = None
+        self._owns_gateway = False
+        if owns_gateway and gateway is not None:
+            await gateway.shutdown()
 
 
 # ---------------------------------------------------------------------------
