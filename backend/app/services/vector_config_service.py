@@ -96,7 +96,7 @@ async def test_embedding_connection(
 
     try:
         from app.services.safe_remote_fetch import validate_remote_url as _validated_embedding_base_url
-        api_base_url = _validated_embedding_base_url(api_base_url)
+        _validated_embedding_base_url(api_base_url)  # validates scheme & host — returns tuple, discard it
     except ValueError as exc:
         return EmbeddingTestResponse(
             success=False, status="network_error",
