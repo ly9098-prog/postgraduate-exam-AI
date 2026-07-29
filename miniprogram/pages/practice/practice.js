@@ -235,6 +235,7 @@ Page({
     currentIndex: 0,
     totalQuestions: 0,
     currentQuestion: null,
+    currentAnswerState: null,
 
     // 答题卡
     answeredCount: 0,
@@ -294,7 +295,8 @@ Page({
       questionTimeMap: {},
       currentQuestionStartedAt: 0,
       requestId: '',
-      optionKeys: []
+      optionKeys: [],
+      questionRenderCache: Object.create(null),
     }
   },
 
@@ -775,6 +777,7 @@ Page({
           questions: [],
           totalQuestions: 0,
           currentQuestion: null,
+          currentAnswerState: null,
         })
         wx.showToast({ title: '请选择科目', icon: 'none' })
         return
@@ -824,6 +827,7 @@ Page({
             questions: [],
             totalQuestions: 0,
             currentQuestion: null,
+            currentAnswerState: null,
             errorText: '题目解析失败，可重试或返回选题',
           })
           return
@@ -835,6 +839,7 @@ Page({
         totalQuestions: questions.length,
         currentIndex: firstIndex,
         currentQuestion: firstQuestion,
+        currentAnswerState: viewModelResult ? viewModelResult.answerState : null,
         loading: false,
       })
       if (questions.length > 0 && firstQuestion) {
@@ -845,7 +850,7 @@ Page({
       } else if (questions.length === 0) {
         const name = this.data.selectedSubjectName || String(subjectId)
         this._clearTimer()
-        this.setData({ started: false, loading: false, questions: [], totalQuestions: 0, currentQuestion: null })
+        this.setData({ started: false, loading: false, questions: [], totalQuestions: 0, currentQuestion: null, currentAnswerState: null })
         await this._showSubmitConfirm({
           scenario: 'info',
           eyebrow: 'NO QUESTIONS',
@@ -864,6 +869,7 @@ Page({
         questions: [],
         totalQuestions: 0,
         currentQuestion: null,
+        currentAnswerState: null,
         errorText: '加载题目失败，请重试或返回重新选择科目',
       })
       wx.showToast({ title: '加载题目失败', icon: 'none' })
@@ -871,51 +877,101 @@ Page({
   },
 
   /**
-   * Unified ViewModel builder for quiz-runner rendering.
-   * Used by both _loadQuestions (first question) and _showQuestion (switching).
-   * Returns { question, optionKeys } or null if q is falsy.
+   * Build and cache the immutable half of a quiz question.
+   *
+   * Stem parsing, math/code rendering and option-source normalization are
+   * content work. They must not be repeated when the user only toggles an
+   * answer, otherwise the component receives a new render payload and may
+   * treat the update like navigation.
    */
-  _buildQuestionViewModel(q) {
+  _getQuestionRenderView(q, forceRebuild) {
     if (!q) return null
+    const session = this._practiceSession
+    if (!session.questionRenderCache) session.questionRenderCache = Object.create(null)
+    const questionId = String(q.id == null ? '' : q.id)
+    const cacheKey = [
+      questionId || 'anonymous',
+      session.safeModeActive ? 'safe' : 'normal',
+      config.enableMathImage ? 'math-image' : 'math-native',
+    ].join(':')
+    if (!forceRebuild && session.questionRenderCache[cacheKey]) {
+      return session.questionRenderCache[cacheKey]
+    }
 
     const isBlankChoice = adapter.isMultiBlankChoice(q)
-    const answer = this._practiceSession.answerMap[String(q.id)] || ''
     const rawBlankOptionGroups = isBlankChoice
       ? adapter.getBlankOptionGroups(q)
       : []
-    const blankOptionGroups = rawBlankOptionGroups.length > 0
-      ? adapter.enrichBlankOptionGroups(rawBlankOptionGroups, answer)
-      : []
     const isTrueFalse = q.question_type === 'true_false' || q.question_type === 'judgement'
     // Older multi-blank records may only contain a flat options map. If no
-    // usable blank groups could be built, keep that map as a normal option
-    // list instead of dropping every option from the render model.
+    // usable groups exist, keep that map on the ordinary option path.
     const flatOptions = typeof adapter.getQuestionOptions === 'function'
       ? adapter.getQuestionOptions(q)
       : q.options
     const hasFlatOptions = flatOptions && Object.keys(flatOptions).length > 0
-    const opts = (!isBlankChoice || blankOptionGroups.length === 0) && hasFlatOptions
+    const opts = (!isBlankChoice || rawBlankOptionGroups.length === 0) && hasFlatOptions
       ? flatOptions
       : (!isBlankChoice && isTrueFalse ? { A: '正确', B: '错误' } : null)
     const optionKeys = opts ? Object.keys(opts) : []
-    const isMulti = q.question_type === 'multiple_choice'
-    const selectedFlags = {}
-    for (const key of optionKeys) {
-      selectedFlags[key] = isMulti ? answer.split(',').indexOf(key) >= 0 : answer === key
-    }
     const renderCfg = { enableMathImage: config.enableMathImage || false, DEV: config.DEV }
-    if (this._practiceSession.safeModeActive) renderCfg.SAFE_MODE = true
+    if (session.safeModeActive) renderCfg.SAFE_MODE = true
     const renderModel = buildRenderModel(q, opts, renderCfg)
-
-    return {
+    const result = {
       question: Object.assign({}, q, {
         _renderModel: renderModel,
         _opts: opts,
-        _optionList: adapter.buildOptionListFromFlags(opts, optionKeys, selectedFlags),
-        _blankOptionGroups: blankOptionGroups,
-        _hasBlankOptionGroups: blankOptionGroups.length > 0,
+        _optionKeys: optionKeys,
+        _hasBlankOptionGroups: rawBlankOptionGroups.length > 0,
       }),
       optionKeys,
+      rawBlankOptionGroups,
+    }
+    session.questionRenderCache[cacheKey] = result
+    return result
+  },
+
+  /**
+   * Build only the mutable answer half. This object is passed through the
+   * dedicated quiz-runner answerState property and can change without
+   * replacing currentQuestion or its _renderModel.
+   */
+  _buildQuestionAnswerState(renderView, answer) {
+    if (!renderView || !renderView.question) return null
+    const q = renderView.question
+    const normalizedAnswer = answer || ''
+    const blankOptionGroups = renderView.rawBlankOptionGroups.length > 0
+      ? adapter.enrichBlankOptionGroups(renderView.rawBlankOptionGroups, normalizedAnswer)
+      : []
+    const isMulti = q.question_type === 'multiple_choice'
+    const selectedFlags = {}
+    for (const key of renderView.optionKeys) {
+      selectedFlags[key] = isMulti
+        ? normalizedAnswer.split(',').indexOf(key) >= 0
+        : normalizedAnswer === key
+    }
+    return {
+      questionId: String(q.id == null ? '' : q.id),
+      optionList: blankOptionGroups.length > 0
+        ? []
+        : adapter.buildOptionListFromFlags(q._opts, renderView.optionKeys, selectedFlags),
+      blankOptionGroups,
+      hasBlankOptionGroups: blankOptionGroups.length > 0,
+    }
+  },
+
+  /**
+   * Compose the immutable render view and mutable answer state for initial
+   * display/navigation while keeping the two lifecycles independent.
+   */
+  _buildQuestionViewModel(q, forceRebuild) {
+    const renderView = this._getQuestionRenderView(q, forceRebuild)
+    if (!renderView) return null
+    const answer = this._practiceSession.answerMap[String(q.id)] || ''
+    return {
+      question: renderView.question,
+      answerState: this._buildQuestionAnswerState(renderView, answer),
+      optionKeys: renderView.optionKeys,
+      renderView,
     }
   },
 
@@ -959,7 +1015,7 @@ Page({
         questionId: q.id,
         index,
         optionKeys,
-        blankGroupCount: (currentQuestion._blankOptionGroups || []).length,
+        blankGroupCount: (viewModelResult.answerState.blankOptionGroups || []).length,
         renderMode: (currentQuestion._renderModel || {}).mode,
         sourceLen: ((q.content && (q.content.stem || q.content.text)) || '').length,
       })
@@ -969,6 +1025,7 @@ Page({
     this.setData({
       currentIndex: index,
       currentQuestion: currentQuestion,
+      currentAnswerState: viewModelResult.answerState,
     }, () => {
       this._updateComputedFields()
     })
@@ -1019,6 +1076,7 @@ Page({
       submitted: false,
       questions: [],
       currentQuestion: null,
+      currentAnswerState: null,
       currentIndex: 0,
       totalQuestions: 0,
       answeredCount: 0,
@@ -1075,21 +1133,14 @@ Page({
         answeredCount,
       })
     }
-    const optionKeys = this._practiceSession.optionKeys
-    const selectedFlags = {}
-    for (const k of optionKeys) {
-      selectedFlags[k] = isMulti
-        ? newAnswer.split(',').indexOf(k) >= 0
-        : newAnswer === k
-    }
-    const optionList = adapter.buildOptionListFromFlags(q._opts, optionKeys, selectedFlags)
-    const cq = Object.assign({}, this.data.currentQuestion, { _optionList: optionList })
+    const renderView = this._getQuestionRenderView(q)
+    const answerState = this._buildQuestionAnswerState(renderView, newAnswer)
     this._practiceSession.answerMap = answerMap
     this._practiceSession.answeredFlags = answeredFlags
     this.setData({
       [`questions[${currentIdx}]._answered`]: answered,
       answeredCount,
-      currentQuestion: cq,
+      currentAnswerState: answerState,
     }, () => {
       this._updateComputedFields()
     })
@@ -1111,7 +1162,8 @@ Page({
       blankAnswers[blankId] = opt
     }
 
-    const rawGroups = adapter.getBlankOptionGroups(q)
+    const renderView = this._getQuestionRenderView(q)
+    const rawGroups = renderView ? renderView.rawBlankOptionGroups : adapter.getBlankOptionGroups(q)
     const newAnswer = adapter.serializeBlankAnswer(rawGroups, blankAnswers)
     const answerMap = { ...this._practiceSession.answerMap }
     if (newAnswer) {
@@ -1121,7 +1173,7 @@ Page({
     }
     const answeredFlags = adapter.buildAnsweredFlags(this.data.questions, answerMap, 'id')
     const answeredCount = adapter.countAnswered(answeredFlags)
-    const groups = adapter.enrichBlankOptionGroups(rawGroups, newAnswer)
+    const answerState = this._buildQuestionAnswerState(renderView, newAnswer)
 
     if (shouldDebugQuestion(q.id)) {
       debugLog(this._practiceSession.traceId || q.trace_id, 'STATE_CHANGE', {
@@ -1140,17 +1192,16 @@ Page({
 
     this._practiceSession.answerMap = answerMap
     this._practiceSession.answeredFlags = answeredFlags
-    // 使用精确数据路径更新，避免传输完整 currentQuestion 对象
+    // Selection state travels through its own component property. The
+    // immutable currentQuestion/render model is deliberately untouched.
     const currentIdx = this.data.currentIndex
     const answered = !!newAnswer
     const totalQuestions = this.data.totalQuestions || 0
-    // 精确路径：只更新 blankOptionGroups，避免触发 WXML 无关节点 diff
     this.setData({
       [`questions[${currentIdx}]._answered`]: answered,
       answeredCount,
       progressPercent: totalQuestions > 0 ? Math.round(answeredCount / totalQuestions * 100) : 0,
-      'currentQuestion._blankOptionGroups': groups,
-      'currentQuestion._hasBlankOptionGroups': groups.length > 0,
+      currentAnswerState: answerState,
     })
   },
 
@@ -1314,13 +1365,14 @@ Page({
   _reRenderCurrentQuestion() {
     const q = this.data.questions[this.data.currentIndex]
     if (!q) return
-    var renderCfg = { enableMathImage: config.enableMathImage || false, DEV: config.DEV, SAFE_MODE: true }
-    const renderModel = buildRenderModel(q, q.options && Object.keys(q.options).length > 0 ? q.options : null, renderCfg)
-    const currentQuestion = Object.assign({}, this.data.currentQuestion, {
-      _renderModel: renderModel,
+    this._practiceSession.questionRenderCache = Object.create(null)
+    const viewModelResult = this._buildQuestionViewModel(q, true)
+    if (!viewModelResult) return
+    this.setData({
+      currentQuestion: viewModelResult.question,
+      currentAnswerState: viewModelResult.answerState,
     })
-    this.setData({ currentQuestion })
-    console.warn('[SELF_HEAL] Re-rendered q' + q.id + ' in SAFE_MODE, mode=' + renderModel.mode)
+    console.warn('[SELF_HEAL] Re-rendered q' + q.id + ' in SAFE_MODE, mode=' + viewModelResult.question._renderModel.mode)
   },
 
 

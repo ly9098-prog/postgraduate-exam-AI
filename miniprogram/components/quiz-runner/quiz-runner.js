@@ -29,6 +29,10 @@ Component({
 
     questions: { type: Array, value: [] },
     currentQuestion: { type: Object, value: null },
+    // Mutable selection state is intentionally separate from the immutable
+    // question/render payload. Legacy callers may omit it and continue to
+    // provide _optionList/_blankOptionGroups on currentQuestion.
+    answerState: { type: Object, value: null },
     currentIndex: { type: Number, value: 0 },
     totalCount: { type: Number, value: 0 },
 
@@ -96,10 +100,12 @@ Component({
     this._lastQuestionId = null
     this._hasRenderedQuestion = false
     this._questionResetPending = false
+    this._lastQuestionScrollTop = 0
+    this._heroCollapseLockUntil = 0
   },
 
   observers: {
-    currentQuestion: function (q) {
+    'currentQuestion, answerState': function (q, answerState) {
       if (!q) {
         this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [], _optionList: [], _blankOptionGroups: [], _hasBlankOptionGroups: false, _renderUnknownMode: false, _renderFallbackText: '' })
         this._lastRenderModel = null
@@ -107,14 +113,19 @@ Component({
         this._hasRenderedQuestion = false
         return
       }
-      var questionId = q.id == null ? null : String(q.id)
-      var questionChanged = questionId !== this._lastQuestionId
+      var questionId = q.id == null ? '' : String(q.id)
+      var questionIdentity = questionId
+        ? 'id:' + questionId
+        : 'index:' + String(this.data.currentIndex)
+      var questionChanged = questionIdentity !== this._lastQuestionId
       var wasRendered = this._hasRenderedQuestion
-      this._lastQuestionId = questionId
+      this._lastQuestionId = questionIdentity
       var model = q._renderModel || {}
-      // _renderModel reference is stable when only blank selection changes
       var renderModelChanged = this._lastRenderModel !== model
-      var shouldResetViewport = wasRendered && (questionChanged || renderModelChanged)
+      // Rendering can legitimately be replaced in-place (for example SAFE
+      // MODE self-healing). Only a real question identity change owns the
+      // viewport; answer/render updates must preserve scroll and hero state.
+      var shouldResetViewport = wasRendered && questionChanged
       this._hasRenderedQuestion = true
       this._lastRenderModel = model
 
@@ -157,13 +168,16 @@ Component({
         data._renderFallbackText = fallbackText
       }
 
-      // Always update blank option groups (change on every selection). Some
-      // legacy API records mark the question as multi_blank_choice but only
-      // provide a flat `options` map; resolve that shape here as a final
-      // component-level fallback so the option area never renders empty.
-      var blankOptionGroups = Array.isArray(q._blankOptionGroups)
-        ? q._blankOptionGroups
-        : []
+      var answerStateMatches = !!(
+        answerState &&
+        String(answerState.questionId == null ? '' : answerState.questionId) === questionId
+      )
+
+      // Answer-state consumers update this branch without replacing the
+      // immutable currentQuestion. Legacy consumers retain the old fallback.
+      var blankOptionGroups = answerStateMatches && Array.isArray(answerState.blankOptionGroups)
+        ? answerState.blankOptionGroups
+        : (Array.isArray(q._blankOptionGroups) ? q._blankOptionGroups : [])
       if (questionAdapter && typeof questionAdapter.getBlankOptionGroups === 'function') {
         try {
           var rawGroups = blankOptionGroups
@@ -188,10 +202,9 @@ Component({
       data._blankOptionGroups = blankOptionGroups
       data._hasBlankOptionGroups = blankOptionGroups.length > 0
 
-      // Direct component consumers may provide only q.options. Build the
-      // ordinary option list here when the page-level view model has not
-      // already supplied one (blank groups take precedence in the template).
-      var optionList = Array.isArray(q._optionList) ? q._optionList : []
+      var optionList = answerStateMatches && Array.isArray(answerState.optionList)
+        ? answerState.optionList
+        : (Array.isArray(q._optionList) ? q._optionList : [])
       if (!optionList.length && !blankOptionGroups.length &&
         questionAdapter && typeof questionAdapter.buildOptionListFromFlags === 'function') {
         try {
@@ -232,6 +245,8 @@ Component({
       var self = this
       if (this._questionResetPending) return
       this._questionResetPending = true
+      this._lastQuestionScrollTop = 0
+      this._heroCollapseLockUntil = 0
       setTimeout(function () {
         self._questionResetPending = false
         self.setData({
@@ -381,6 +396,23 @@ Component({
       var absDx = Math.abs(dx)
       var absDy = Math.abs(dy)
 
+      // Collapsing the hero changes the available viewport and may emit a
+      // synthetic scrollTop=0 event. Expanding only after an intentional
+      // downward finger gesture at the real top prevents collapse/expand
+      // feedback loops while preserving the expected pull-down behavior.
+      if (
+        absDy > absDx &&
+        dy > 24 &&
+        this.data.heroCollapsed &&
+        this._lastQuestionScrollTop <= 8 &&
+        Date.now() >= this._heroCollapseLockUntil
+      ) {
+        this.data._touchX = undefined
+        this.data._touchY = undefined
+        this.setData({ heroCollapsed: false })
+        return
+      }
+
       if (absDx < 44 || absDx <= absDy * 1.10) {
         this.data._touchX = undefined
         this.data._touchY = undefined
@@ -403,13 +435,17 @@ Component({
     onQuestionScroll: function (e) {
       if (this.data.flowLayout || this.data.compactReviewMode) return
       var top = e && e.detail ? Number(e.detail.scrollTop || 0) : 0
+      if (!isFinite(top) || top < 0) top = 0
+      this._lastQuestionScrollTop = top
       if (this.data.heroCollapseEnabled === false) {
         if (this.data.heroCollapsed) this.setData({ heroCollapsed: false })
         return
       }
-      var nextCollapsed = this.data.heroCollapsed ? top > 8 : top > 34
-      if (nextCollapsed !== this.data.heroCollapsed) {
-        this.setData({ heroCollapsed: nextCollapsed })
+      // Once collapsed, keep the state latched while the viewport settles.
+      // An actual pull-down gesture at the top expands it in onTouchEnd.
+      if (!this.data.heroCollapsed && top > 34) {
+        this._heroCollapseLockUntil = Date.now() + 260
+        this.setData({ heroCollapsed: true })
       }
     },
 

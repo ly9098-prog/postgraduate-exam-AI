@@ -305,6 +305,7 @@
       subjectName="{{selectedSubjectName}}"
       questions="{{questions}}"
       currentQuestion="{{currentQuestion}}"
+      answerState="{{currentAnswerState}}"
       currentIndex="{{currentIndex}}"
       totalCount="{{totalQuestions}}"
       answeredCount="{{answeredCount}}"
