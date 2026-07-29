@@ -3561,7 +3561,7 @@ class ImportPipeline:
         # DeepSeek env var fallback for backward compat only
         import os
         if "deepseek_api_key" not in config:
-            config["deepseek_api_key"] = os.environ.get("DEEPSEEK_API_KEY", "")
+            config["deepseek_api_key"] = ""  # managed via admin_ai_model_configs
 
         return config
 

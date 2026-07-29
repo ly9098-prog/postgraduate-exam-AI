@@ -22,9 +22,18 @@ logger = logging.getLogger("postgraduate-ai.embedding")
 # ---------------------------------------------------------------------------
 
 def _get_embedding_config():
-    """同步获取 Embedding 配置（环境变量兜底）。"""
-    from app.services.vector_config_service import get_embedding_config_sync
-    return get_embedding_config_sync()
+    """同步获取 Embedding 配置。"""
+    from app.core.config import settings
+    from app.services.vector_config_service import EmbeddingConfig
+    return EmbeddingConfig(
+        api_key="",
+        base_url=settings.EMBEDDING_BASE_URL,
+        model=settings.EMBEDDING_MODEL,
+        dim=settings.EMBEDDING_DIM,
+        timeout=settings.EMBEDDING_TIMEOUT,
+        batch_size=settings.EMBEDDING_BATCH_SIZE,
+        provider=settings.EMBEDDING_PROVIDER,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,335 +1,69 @@
-"""向量检索 & Embedding 配置服务。
+"""Embedding + vector config helpers — data stored in admin_ai_configs keys."""
 
-提供 DB-first 的配置读取，环境变量仅作为兜底。
-参考 ``admin_ai_config_service.py`` 的 seed-on-read + TTL cache 模式。
-"""
-
-from __future__ import annotations
-
-import logging
-import re
-import time
-from dataclasses import dataclass
-from typing import Any
-from urllib.parse import urlsplit
-
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.admin_security import AdminPrincipal
 from app.core.config import settings
-from app.core.secret_crypto import (
-    SecretDecryptionError,
-    SecretEncryptionError,
-    decrypt_secret,
-    encrypt_secret,
-)
-from app.models.admin_vector_config import AdminVectorConfig
-from app.schemas.admin_vector_config import (
-    EmbeddingTestResponse,
-    VectorConfigPatchRequest,
-    VectorConfigResponse,
-)
-from app.services.admin_audit_service import write_admin_audit
-from app.services.safe_remote_fetch import (
-    UnsafeRemoteURLError,
-    request_remote_bytes,
-    validate_remote_url,
-)
-
-logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# TTL Cache — 避免每次向量操作都查 DB
-# ---------------------------------------------------------------------------
-
-_vector_config_cache: AdminVectorConfig | None = None
-_vector_config_cache_time: float = 0
-_VECTOR_CONFIG_CACHE_TTL = 30  # seconds
+from app.models.admin_ai_config import AdminAiConfig
 
 
-def _validated_embedding_base_url(value: str) -> str:
-    normalized = str(value or "").strip().rstrip("/")
-    if not normalized:
-        raise ValueError("Embedding Base URL 不能为空")
-    parsed = urlsplit(normalized)
-    if parsed.query or parsed.fragment:
-        raise ValueError("Embedding Base URL 不能包含查询参数或片段")
-    try:
-        validate_remote_url(
-            normalized,
-            allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
-        )
-    except UnsafeRemoteURLError as exc:
-        raise ValueError(f"Embedding Base URL 不安全或不可用: {exc}") from exc
-    return normalized
-
-
-def _same_origin(left: str, right: str) -> bool:
-    try:
-        l = urlsplit(left)
-        r = urlsplit(right)
-        l_port = l.port or (443 if l.scheme == "https" else 80)
-        r_port = r.port or (443 if r.scheme == "https" else 80)
-    except ValueError:
-        return False
-    return (
-        l.scheme.lower(),
-        (l.hostname or "").lower(),
-        l_port,
-    ) == (
-        r.scheme.lower(),
-        (r.hostname or "").lower(),
-        r_port,
-    )
-
-
-def _clear_cache() -> None:
-    global _vector_config_cache, _vector_config_cache_time
-    _vector_config_cache = None
-    _vector_config_cache_time = 0
-
-
-# ---------------------------------------------------------------------------
-# Seed — 首次读取时从环境变量初始化 DB 记录
-# ---------------------------------------------------------------------------
-
-
-async def _seed_if_empty(db: AsyncSession) -> AdminVectorConfig:
-    """DB 为空时从环境变量 seed 一条默认配置。"""
-    result = await db.execute(select(AdminVectorConfig).limit(1))
-    row = result.scalar_one_or_none()
-    if row is not None:
-        return row
-
-    logger.info("admin_vector_configs 表为空，从环境变量 seed 默认配置")
-    encrypted_key = None
-    if settings.EMBEDDING_API_KEY:
-        try:
-            encrypted_key = encrypt_secret(settings.EMBEDDING_API_KEY)
-        except SecretEncryptionError:
-            logger.warning("AI_CONFIG_ENCRYPT_KEY not configured — skipping seed of embedding API key")
-    row = AdminVectorConfig(
-        vector_enabled=settings.VECTOR_ENABLED,
-        vector_mode=settings.VECTOR_MODE,
-        vector_allowlist=settings.VECTOR_ALLOWLIST,
-        vector_cache_ttl_sec=settings.VECTOR_CACHE_TTL_SEC,
-        vector_top_k=settings.VECTOR_TOP_K,
-        vector_similarity_threshold=settings.VECTOR_SIMILARITY_THRESHOLD,
-        embedding_provider=settings.EMBEDDING_PROVIDER,
-        embedding_api_key_encrypted=encrypted_key,
-        embedding_base_url=settings.EMBEDDING_BASE_URL,
-        embedding_model=settings.EMBEDDING_MODEL,
-        embedding_dim=settings.EMBEDDING_DIM,
-        embedding_timeout=settings.EMBEDDING_TIMEOUT,
-        embedding_batch_size=settings.EMBEDDING_BATCH_SIZE,
-    )
-    db.add(row)
-    await db.flush()
-    # flush 后属性过期，必须在 async 上下文中 refresh，
-    # 否则后续 _to_response 访问属性时触发同步 lazy load → MissingGreenlet
-    await db.refresh(row)
-    return row
-
-
-# ---------------------------------------------------------------------------
-# CRUD
-# ---------------------------------------------------------------------------
-
-
-async def get_vector_config(db: AsyncSession) -> VectorConfigResponse:
-    """读取向量配置（seed-on-read + TTL cache）。"""
-    global _vector_config_cache, _vector_config_cache_time
-
-    now = time.monotonic()
-    if _vector_config_cache and (now - _vector_config_cache_time) < _VECTOR_CONFIG_CACHE_TTL:
-        return _to_response(_vector_config_cache)
-
-    row = await _seed_if_empty(db)
-    _vector_config_cache = row
-    _vector_config_cache_time = now
-    return _to_response(row)
-
-
-async def patch_vector_config(
-    db: AsyncSession,
-    data: VectorConfigPatchRequest,
-    operator: AdminPrincipal,
-    request: Any | None = None,
-) -> VectorConfigResponse:
-    """部分更新向量配置。"""
-    row = await _seed_if_empty(db)
-    update_data = data.model_dump(exclude_unset=True)
-
-    requested_dim = update_data.get("embedding_dim")
-    if requested_dim is not None and requested_dim != row.embedding_dim:
-        bind = db.get_bind()
-        if bind is not None and bind.dialect.name == "postgresql":
-            type_result = await db.execute(text("""
-                SELECT pg_catalog.format_type(a.atttypid, a.atttypmod)
-                FROM pg_catalog.pg_attribute a
-                JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
-                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname = current_schema()
-                  AND c.relname = 'question_embeddings'
-                  AND a.attname = 'embedding'
-                  AND a.attnum > 0
-                  AND NOT a.attisdropped
-                LIMIT 1
-            """))
-            type_name = type_result.scalar()
-            match = re.fullmatch(
-                r"vector\((\d+)\)",
-                type_name.strip(),
-                flags=re.IGNORECASE,
-            ) if isinstance(type_name, str) else None
-            database_dim = int(match.group(1)) if match else None
-            if database_dim is not None and database_dim != requested_dim:
-                raise ValueError(
-                    "embedding_dim 与现有 pgvector 列维度不一致："
-                    f"database={database_dim}, requested={requested_dim}。"
-                    "请先执行向量表维度迁移，不能仅修改运行时配置。"
-                )
-
-    # 记录实际变更字段（含 API key）
-    changed_fields = list(update_data.keys())
-
-    # API key 特殊处理：加密存储
-    emb_key = data.get_embedding_api_key_value()
-    if "embedding_base_url" in update_data:
-        new_base_url = _validated_embedding_base_url(update_data["embedding_base_url"])
-        old_base_url = (row.embedding_base_url or "").rstrip("/")
-        if (
-            new_base_url != old_base_url
-            and row.embedding_api_key_encrypted
-            and emb_key is None
-        ):
-            raise ValueError("修改 Embedding Base URL 时必须同时重新提交 API Key")
-        update_data["embedding_base_url"] = new_base_url
-
-    if "embedding_api_key" in update_data:
-        update_data.pop("embedding_api_key")
-        # get_embedding_api_key_value returns:
-        #   None  → not provided (keep existing)
-        #   ""    → explicit clear
-        #   other → new key to encrypt
-        if emb_key is not None:
-            row.embedding_api_key_encrypted = encrypt_secret(emb_key) if emb_key else None
-        # If emb_key is None — keep existing, don't touch
-
-    for field, value in update_data.items():
-        if hasattr(row, field):
-            setattr(row, field, value)
-
-    row.updated_by = operator.id
-    await db.flush()
-    _clear_cache()
-    # 同步失效向量服务的基础设施与 DB-first 配置缓存，确保新配置在下一次
-    # 推荐请求立即生效，而不是继续使用旧值 30~60 秒。
-    try:
-        from app.services.vector_retrieval_service import (
-            _reset_vector_enabled_cache,
-        )
-
-        _reset_vector_enabled_cache()
-    except ImportError:
-        logger.debug("vector retrieval cache reset skipped", exc_info=True)
-
-    await write_admin_audit(
-        db, operator, "vector_config.update", "vector_config", str(row.id),
-        severity="important",
-        detail={"changed_fields": changed_fields},
-        request=request,
-    )
-
-    # flush + audit 写入触发 autoflush，导致 row 属性过期；
-    # 必须在 async 上下文中 refresh，否则 _to_response 访问属性时
-    # 会触发同步 lazy load → MissingGreenlet (aiosqlite)
-    await db.refresh(row)
-    return _to_response(row)
-
-
-# ---------------------------------------------------------------------------
-# Runtime Resolver — 供 embedding_service / vector_retrieval_service 使用
-# ---------------------------------------------------------------------------
-
-
-@dataclass
 class EmbeddingConfig:
     """解析后的 Embedding 运行时配置（明文 key）。"""
 
-    api_key: str
-    base_url: str
-    model: str
-    dim: int
-    timeout: int
-    batch_size: int
-    provider: str
+    api_key: str = ""
+    base_url: str = ""
+    model: str = ""
+    dim: int = 0
+    timeout: int = 0
+    batch_size: int = 0
+    provider: str = ""
+
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
 
-@dataclass
 class VectorSearchConfig:
-    """解析后的向量检索运行时配置。"""
+    """向量检索运行时配置。"""
 
-    enabled: bool
-    mode: str
-    allowlist: str
-    cache_ttl_sec: int
-    top_k: int
-    similarity_threshold: float
+    enabled: bool = False
+    cache_ttl_sec: int = 300
+    top_k: int = 100
+    similarity_threshold: float = 0.15
+
+
+async def _read_cfg(db: AsyncSession) -> dict[str, str]:
+    result = await db.execute(select(AdminAiConfig))
+    return {r.config_key: r.config_value for r in result.scalars().all()}
 
 
 async def resolve_embedding_config(db: AsyncSession) -> EmbeddingConfig:
-    """从 DB 读取 Embedding 配置，解密 API key。DB 无记录时 fallback 到环境变量。"""
-    row = await _seed_if_empty(db)
+    """从 DB (admin_ai_configs) 读取 Embedding 配置，解密 API key。"""
+    cfg = await _read_cfg(db)
+    from app.core.secret_crypto import SecretDecryptionError, SecretEncryptionError, decrypt_secret
 
     api_key = ""
-    if row.embedding_api_key_encrypted:
+    encrypted = cfg.get("embedding_api_key_encrypted", "")
+    if encrypted:
         try:
-            api_key = decrypt_secret(row.embedding_api_key_encrypted)
+            api_key = decrypt_secret(encrypted)
         except (SecretDecryptionError, SecretEncryptionError):
             api_key = ""
 
-    # 如果 DB 中 key 为空但环境变量有值，fallback
-    resolved_base_url = row.embedding_base_url or settings.EMBEDDING_BASE_URL
-    if (
-        not api_key
-        and settings.EMBEDDING_API_KEY
-        and _same_origin(resolved_base_url, settings.EMBEDDING_BASE_URL)
-    ):
-        api_key = settings.EMBEDDING_API_KEY
-
     return EmbeddingConfig(
         api_key=api_key,
-        base_url=resolved_base_url,
-        model=row.embedding_model or settings.EMBEDDING_MODEL,
-        dim=row.embedding_dim or settings.EMBEDDING_DIM,
-        timeout=row.embedding_timeout or settings.EMBEDDING_TIMEOUT,
-        batch_size=row.embedding_batch_size or settings.EMBEDDING_BATCH_SIZE,
-        provider=row.embedding_provider or settings.EMBEDDING_PROVIDER,
-    )
-
-
-async def resolve_vector_search_config(db: AsyncSession) -> VectorSearchConfig:
-    """从 DB 读取向量检索配置。"""
-    row = await _seed_if_empty(db)
-    return VectorSearchConfig(
-        enabled=row.vector_enabled,
-        mode=row.vector_mode,
-        allowlist=row.vector_allowlist,
-        cache_ttl_sec=row.vector_cache_ttl_sec,
-        top_k=row.vector_top_k,
-        similarity_threshold=row.vector_similarity_threshold,
+        base_url=cfg.get("embedding_base_url") or settings.EMBEDDING_BASE_URL,
+        model=cfg.get("embedding_model") or settings.EMBEDDING_MODEL,
+        dim=int(cfg.get("embedding_dim", settings.EMBEDDING_DIM)),
+        timeout=int(cfg.get("embedding_timeout", settings.EMBEDDING_TIMEOUT)),
+        batch_size=int(cfg.get("embedding_batch_size", settings.EMBEDDING_BATCH_SIZE)),
+        provider=cfg.get("embedding_provider") or settings.EMBEDDING_PROVIDER,
     )
 
 
 def get_embedding_config_sync() -> EmbeddingConfig:
-    """同步 fallback：当无 DB session 时直接读环境变量。
-
-    仅用于无法获取 AsyncSession 的上下文（如纯函数调用）。
-    """
     return EmbeddingConfig(
-        api_key=settings.EMBEDDING_API_KEY,
+        api_key="",
         base_url=settings.EMBEDDING_BASE_URL,
         model=settings.EMBEDDING_MODEL,
         dim=settings.EMBEDDING_DIM,
@@ -339,19 +73,15 @@ def get_embedding_config_sync() -> EmbeddingConfig:
     )
 
 
-# ---------------------------------------------------------------------------
-# Embedding API 连通性测试
-# ---------------------------------------------------------------------------
-
-
 async def test_embedding_connection(
     api_base_url: str,
     api_key: str | None,
     model: str,
     dim: int = 1024,
     timeout: int = 30,
-) -> EmbeddingTestResponse:
+) -> "EmbeddingTestResponse":
     """对给定 Embedding 配置发起一次最小连通性测试。"""
+    from app.schemas.admin_vector_config import EmbeddingTestResponse
     if not api_key:
         return EmbeddingTestResponse(
             success=False, status="auth_error",
@@ -359,40 +89,32 @@ async def test_embedding_connection(
             latency_ms=0,
         )
 
-    import asyncio
-    import json
-    import time as _time
+    import asyncio, json, time as _time
 
     try:
+        from app.services.safe_remote_fetch import validate_remote_url as _validated_embedding_base_url
         api_base_url = _validated_embedding_base_url(api_base_url)
     except ValueError as exc:
         return EmbeddingTestResponse(
-            success=False,
-            status="network_error",
-            message=str(exc),
-            latency_ms=0,
+            success=False, status="network_error",
+            message=str(exc), latency_ms=0,
         )
 
     url = f"{api_base_url}/v1/embeddings"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {"model": model, "input": "test"}
-
     start = _time.monotonic()
+
     try:
+        from app.services.safe_remote_fetch import request_remote_bytes
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         remote = await asyncio.to_thread(
-            request_remote_bytes,
-            url,
-            method="POST",
-            body=body,
+            request_remote_bytes, url,
+            method="POST", body=body,
             max_bytes=64 * 1024 * 1024,
             timeout=float(timeout),
             allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
-            follow_redirects=False,
-            headers=headers,
+            follow_redirects=False, headers=headers,
         )
     except Exception as exc:
         return EmbeddingTestResponse(
@@ -402,81 +124,37 @@ async def test_embedding_connection(
         )
 
     latency_ms = int((_time.monotonic() - start) * 1000)
-
     response_text = remote.data.decode("utf-8", errors="replace")
     if remote.status in (401, 403):
         return EmbeddingTestResponse(
             success=False, status="auth_error",
-            message=f"认证失败 (HTTP {remote.status})",
-            latency_ms=latency_ms,
+            message=f"认证失败 (HTTP {remote.status})", latency_ms=latency_ms,
         )
-
     if remote.status != 200:
         return EmbeddingTestResponse(
             success=False, status="network_error",
-            message=f"HTTP {remote.status}: {response_text[:200]}",
-            latency_ms=latency_ms,
+            message=f"HTTP {remote.status}: {response_text[:200]}", latency_ms=latency_ms,
         )
 
     try:
-        data = json.loads(response_text)
+        import json as _json
+        data = _json.loads(response_text)
         embedding = data["data"][0]["embedding"]
         returned_dim = len(embedding)
     except (KeyError, IndexError, TypeError, ValueError):
         return EmbeddingTestResponse(
             success=False, status="format_error",
-            message="API 返回格式异常",
-            latency_ms=latency_ms,
+            message="API 返回格式异常", latency_ms=latency_ms,
         )
 
     if returned_dim != dim:
         return EmbeddingTestResponse(
             success=False, status="dimension_mismatch",
             message=f"期望维度 {dim}，实际返回 {returned_dim}",
-            latency_ms=latency_ms,
-            returned_dim=returned_dim,
+            latency_ms=latency_ms, returned_dim=returned_dim,
         )
-
     return EmbeddingTestResponse(
         success=True, status="ok",
         message="连接成功，维度匹配",
-        latency_ms=latency_ms,
-        returned_dim=returned_dim,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Response Builder
-# ---------------------------------------------------------------------------
-
-
-def _to_response(row: AdminVectorConfig) -> VectorConfigResponse:
-    """ORM 行 → 前端响应（API key 掩码处理，固定长度为 "********"）。"""
-    key_configured = False
-    key_masked = ""
-    if row.embedding_api_key_encrypted:
-        try:
-            plain = decrypt_secret(row.embedding_api_key_encrypted)
-            if plain:
-                key_configured = True
-                key_masked = "********"
-        except (SecretDecryptionError, SecretEncryptionError):
-            pass
-
-    return VectorConfigResponse(
-        vector_enabled=row.vector_enabled,
-        vector_mode=row.vector_mode,
-        vector_allowlist=row.vector_allowlist,
-        vector_cache_ttl_sec=row.vector_cache_ttl_sec,
-        vector_top_k=row.vector_top_k,
-        vector_similarity_threshold=row.vector_similarity_threshold,
-        embedding_provider=row.embedding_provider,
-        embedding_api_key_configured=key_configured,
-        embedding_api_key_masked=key_masked,
-        embedding_base_url=row.embedding_base_url,
-        embedding_model=row.embedding_model,
-        embedding_dim=row.embedding_dim,
-        embedding_timeout=row.embedding_timeout,
-        embedding_batch_size=row.embedding_batch_size,
-        updated_at=row.updated_at,
+        latency_ms=latency_ms, returned_dim=returned_dim,
     )

@@ -34,10 +34,7 @@ class Settings(BaseSettings):
     DEBUG_MODE: bool = False
     DEBUG_QUESTION_ID: int | None = None
 
-    # DeepSeek
-    DEEPSEEK_API_KEY: str = ""
-    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
-    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
+    # DeepSeek (model-specific configs like api_base_url are managed per-model in admin_ai_model_configs)
     AI_TIMEOUT: int = 150
     AI_DAILY_TOKEN_LIMIT: int = 50000
     AI_MONTHLY_TOKEN_LIMIT: int = 500000
@@ -248,7 +245,6 @@ class Settings(BaseSettings):
 
     # ── Embedding ──
     EMBEDDING_PROVIDER: str = "openai_compatible"
-    EMBEDDING_API_KEY: str = ""
     EMBEDDING_BASE_URL: str = ""
     EMBEDDING_MODEL: str = "BAAI/bge-m3"
     EMBEDDING_DIM: int = 1024

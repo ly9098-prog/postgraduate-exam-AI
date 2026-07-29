@@ -213,59 +213,14 @@ async def _seed_models_if_empty(db: AsyncSession):
     result = await db.execute(select(AdminAiModelConfig).limit(1))
     if result.scalar_one_or_none() is not None:
         return
-    env_key = settings.DEEPSEEK_API_KEY
     for m in _DEFAULT_MODELS:
         model = AdminAiModelConfig(**m)
-        if m["name"] == "deepseek-v4-flash" and env_key and env_key != "sk-your-key-here":
-            try:
-                model.api_key_encrypted = encrypt_secret(env_key)
-            except SecretEncryptionError:
-                logger.warning("AI_CONFIG_ENCRYPT_KEY not available — skipping seed of API key")
         db.add(model)
     await db.flush()
 
 
 async def _ensure_env_key_synced(db: AsyncSession):
-    """For existing DB, sync the deepseek-v4-flash model key from env.
-
-    Only syncs when:
-    - DB field is empty (no stored key), OR
-    - Existing value decrypts successfully AND differs from env key.
-
-    On decrypt failure (wrong key, corrupted data) the DB value is
-    NEVER overwritten — a clear error is logged instead.
-    """
-    env_key = settings.DEEPSEEK_API_KEY
-    if not env_key or env_key == "sk-your-key-here":
-        return
-    model = (
-        await db.execute(
-            select(AdminAiModelConfig).where(AdminAiModelConfig.name == "deepseek-v4-flash")
-        )
-    ).scalar_one_or_none()
-    if model is None:
-        return
-
-    # Case 1: DB field is empty — always sync from env
-    if not model.api_key_encrypted:
-        model.api_key_encrypted = encrypt_secret(env_key)
-        await db.flush()
-        return
-
-    # Case 2: DB has a value — try to decrypt and compare
-    try:
-        existing = decrypt_secret(model.api_key_encrypted)
-        if existing == env_key:
-            return  # already in sync
-        # Different key — update
-        model.api_key_encrypted = encrypt_secret(env_key)
-        await db.flush()
-    except (SecretDecryptionError, SecretEncryptionError):
-        # Cannot decrypt — do NOT overwrite. Log and move on.
-        logger.error(
-            "Cannot sync DEEPSEEK_API_KEY env var to DB: existing encrypted value "
-            "cannot be decrypted (key may have been rotated). DB value preserved."
-        )
+    pass  # removed: API keys are DB-only
 
 
 # ---------------------------------------------------------------------------
@@ -667,22 +622,7 @@ async def test_model_connection(
             "latency_ms": 0,
         }
 
-    # Key priority 3: env fallback is restricted to the configured DeepSeek
-    # origin so a saved environment secret cannot be sent to an arbitrary URL.
-    if effective_api_key is None and effective_provider == "deepseek":
-        from app.core.config import settings as app_settings
-
-        env_key = getattr(app_settings, "DEEPSEEK_API_KEY", "")
-        configured_base = getattr(app_settings, "DEEPSEEK_BASE_URL", "")
-        if (
-            env_key
-            and env_key != "sk-your-key-here"
-            and configured_base
-            and _same_origin(api_base_url, configured_base)
-        ):
-            effective_api_key = env_key
-
-    # Key priority 4: no key available
+    # Key priority 3: no key available
     if not effective_api_key:
         return {
             "success": False,

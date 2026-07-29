@@ -133,7 +133,6 @@ def main(argv: list[str] | None = None) -> None:
     # Tables to migrate: (table, pk_column, secret_column, display_name)
     tables = [
         ("admin_ai_model_configs", "id", "api_key_encrypted", "AI model config"),
-        ("admin_vector_configs", "id", "embedding_api_key_encrypted", "Vector config"),
     ]
 
     total_processed = 0

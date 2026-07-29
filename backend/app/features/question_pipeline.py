@@ -1493,7 +1493,7 @@ async def _call_or_fallback(
             {
                 "content": "", "tokens_used": 0, "model": "fallback",
                 "duration_ms": 0, "fallback_value": fallback_value,
-                "error": "DEEPSEEK_API_KEY 未配置",
+                "error": "AI模型API Key未配置",
             },
             None, None,
         )

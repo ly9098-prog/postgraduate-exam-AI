@@ -229,7 +229,7 @@ async def enrich_batch(
     async def _call(item: dict) -> dict:
         async with sem:
             if not (_api_key or deepseek.is_available()):
-                item["error"] = "DEEPSEEK_API_KEY 未配置"
+                item["error"] = "AI模型API Key未配置"
                 return item
             from app.core.config import settings
             from app.features.token_budget import check_token_limit, estimate_tokens
