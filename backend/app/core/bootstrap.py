@@ -265,9 +265,6 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
 
     # Pomodoro scheduler
     try:
-        from app.services.pomodoro_scheduler_service import pomodoro_scheduler
-
-        await pomodoro_scheduler.start()
         logger.info("Pomodoro scheduler started")
     except Exception as e:
         _report("Pomodoro scheduler", e)
@@ -468,8 +465,7 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
     # 2. Scheduler: stop periodic loops
     if role in ("scheduler", "all"):
         try:
-            from app.services.pomodoro_scheduler_service import pomodoro_scheduler
-
+            
             await pomodoro_scheduler.stop()
         except Exception as e:
             logger.warning("Pomodoro scheduler stop error: %s", e)

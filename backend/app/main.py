@@ -22,7 +22,6 @@ from app.core.ocr_isolation import (
 )
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
-from app.services.pomodoro_scheduler_service import pomodoro_scheduler
 from app.services.production_config_validator import (
     validate_production_config,
     validate_production_config_async,
@@ -1247,7 +1246,7 @@ async def _check_role_deps() -> bool:
       - If cloud_api, OCR execution backend must not be local_process
 
     Scheduler:
-      - Pomodoro scheduler loop running (if POMODORO_NOTIFY_ENABLED)
+      - Pomodoro scheduler (removed)
       - Audit log cleanup scheduler loop running (if AUDIT_LOG_CLEANUP_ENABLED)
     """
     role = settings.PROCESS_ROLE
@@ -1281,18 +1280,7 @@ async def _check_role_deps() -> bool:
         return True
 
     if role == "scheduler":
-        # Check pomodoro scheduler running (if enabled)
-        try:
-            from app.services.pomodoro_scheduler_service import pomodoro_scheduler
-            if settings.POMODORO_NOTIFY_ENABLED and not pomodoro_scheduler._running:
-                logger.warning("role_deps: pomodoro scheduler not running")
-                return False
-        except ImportError:
-            logger.warning("role_deps: pomodoro_scheduler_service import failed")
-            return False
-        except Exception as e:
-            logger.warning("role_deps: pomodoro scheduler check error: %s", e)
-            return False
+
 
         # Check audit log cleanup scheduler running (if enabled)
         try:
@@ -1542,20 +1530,7 @@ async def metrics_endpoint():
         from app.services.task_queue_worker import is_draining_v2
         _append(f'worker_draining {1 if is_draining_v2() else 0}')
     except Exception:
-        _append("worker_draining 0")
-
-    # ── Distributed lock metrics (scheduler role) ──
-    try:
-        from app.services.pomodoro_scheduler_service import pomodoro_scheduler
-        _lock = getattr(pomodoro_scheduler, "_lock", None)
-        if _lock is not None:
-            _append(f'distlock_acquired_total{{name="pomodoro:tick"}} {_lock.acquired}')
-            _append(f'distlock_skipped_total{{name="pomodoro:tick"}} {_lock.skipped}')
-            _append(f'distlock_failed_total{{name="pomodoro:tick"}} {_lock.failed}')
-            _append(f'distlock_duration_ms_total{{name="pomodoro:tick"}} {_lock.duration_ms:.0f}')
-    except Exception:
-        _append('distlock_acquired_total{name="pomodoro:tick"} 0')
-        _append('distlock_skipped_total{name="pomodoro:tick"} 0')
+        _append("worker_draining 0")        _append('distlock_skipped_total{name="pomodoro:tick"} 0')
         _append('distlock_failed_total{name="pomodoro:tick"} 0')
         _append('distlock_duration_ms_total{name="pomodoro:tick"} 0')
 
@@ -1574,10 +1549,7 @@ async def metrics_endpoint():
         _append('distlock_duration_ms_total{name="audit:cleanup"} 0')
 
     # ── Scheduler running state ──
-    try:
-        from app.services.pomodoro_scheduler_service import pomodoro_scheduler
-        _append(f'scheduler_running{{name="pomodoro"}} {1 if pomodoro_scheduler._running else 0}')
-    except Exception:
+    try:    except Exception:
         _append('scheduler_running{name="pomodoro"} 0')
     try:
         from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
