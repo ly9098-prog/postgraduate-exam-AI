@@ -21,6 +21,11 @@ warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
 compose() {
+  # Unset env vars that may be set in shell from previous deployments
+  # These are managed via backend/.env — shell values shadow .env and break substitution
+  for _var in OCR_EXECUTION_BACKEND PDF_RENDER_PAGE_WINDOW PDF_MAX_RENDER_PAGES_CONCURRENT PDF_MAX_PAGES; do
+    unset "$_var" 2>/dev/null || true
+  done
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
