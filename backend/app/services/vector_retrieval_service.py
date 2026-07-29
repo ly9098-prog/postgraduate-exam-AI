@@ -68,8 +68,6 @@ class _VectorSettings:
 
             vec = VectorSearchConfig(
                 enabled=configs.get("vector_enabled", "false").lower() == "true",
-                mode=configs.get("vector_mode", "off"),
-                allowlist=configs.get("vector_allowlist", ""),
                 cache_ttl_sec=int(configs.get("vector_cache_ttl_sec", 300)),
                 top_k=int(configs.get("vector_top_k", 100)),
                 similarity_threshold=float(configs.get("vector_similarity_threshold", "0.15")),
@@ -297,64 +295,19 @@ def decide_vector_access(
     *,
     infra_available: bool = True,
 ) -> VectorDecision:
-    """统一向量访问决策。
+    """统一向量访问决策。所有向量入口必须调用此函数。
 
-    所有向量入口（相似题推荐、smart 推荐、smart path、知识路径、AI learning、
-    文本向量召回）必须调用此函数，不得自行判断。
-
-    语义：
-    - off: execute=False, use_result=False
-    - shadow: execute=True, use_result=False
-    - allowlist 命中: execute=True, use_result=True
-    - allowlist 未命中: execute=False, use_result=False
-    - all: execute=True, use_result=True
-
-    安全约束：
-    - allowlist 模式且白名单为空 → 全部拒绝。
-    - 基础设施不可用 → 全部拒绝。
+    向量检索始终全局启用（mode=all），不再支持影子模式或科目白名单。
     """
-    mode = resolve_vector_mode()
-
     if not infra_available:
         return VectorDecision(
             enabled=False, execute=False, use_result=False,
-            mode=mode, reason="infra_unavailable",
-        )
-
-    if mode == "off":
-        return VectorDecision(
-            enabled=True, execute=False, use_result=False,
-            mode=mode, reason="mode_off",
-        )
-
-    if mode == "shadow":
-        return VectorDecision(
-            enabled=True, execute=True, use_result=False,
-            mode=mode, reason="shadow_mode",
-        )
-
-    if mode == "all":
-        return VectorDecision(
-            enabled=True, execute=True, use_result=True,
-            mode=mode, reason="mode_all",
-        )
-
-    # mode == "allowlist"
-    if _is_allowlist_empty():
-        return VectorDecision(
-            enabled=True, execute=False, use_result=False,
-            mode=mode, reason="allowlist_empty_deny",
-        )
-
-    if _allowlist_matches(user_id=user_id, subject=subject):
-        return VectorDecision(
-            enabled=True, execute=True, use_result=True,
-            mode=mode, reason="allowlist_hit",
+            mode="all", reason="infra_unavailable",
         )
 
     return VectorDecision(
-        enabled=True, execute=False, use_result=False,
-        mode=mode, reason="allowlist_miss",
+        enabled=True, execute=True, use_result=True,
+        mode="all", reason="mode_all",
     )
 
 
@@ -1439,48 +1392,5 @@ def is_shadow_mode() -> bool:
 # ── allowlist 解析 ──
 
 
-def _parse_allowlist() -> dict:
-    """解析 VECTOR_ALLOWLIST JSON 配置。
-
-    返回:
-        {"user_ids": list[int], "subjects": list[str]}
-    """
-    raw = (_vs.vec.allowlist or "").strip()
-    if not raw:
-        return {"user_ids": [], "subjects": []}
-
-    try:
-        parsed = _json.loads(raw)
-        if not isinstance(parsed, list):
-            return {"user_ids": [], "subjects": []}
-
-        user_ids: list[int] = []
-        subjects: list[str] = []
-        for item in parsed:
-            if isinstance(item, int):
-                user_ids.append(item)
-            elif isinstance(item, str):
-                stripped = item.strip()
-                if stripped:
-                    subjects.append(stripped.lower())
-        return {"user_ids": user_ids, "subjects": subjects}
-    except (_json.JSONDecodeError, ValueError):
-        logger.warning("VECTOR_ALLOWLIST 解析失败: %s", raw)
-        return {"user_ids": [], "subjects": []}
-
-
-def is_vector_allowed_for(user_id: int | None = None, subject: str | None = None) -> bool:
-    """检查指定用户或科目是否被允许使用向量检索。
-
-    非 allowlist 模式总是返回 True。
-    allowlist 模式：空 allowlist 全部拒绝；否则按 user_ids / subjects 过滤。
-    """
-    mode = resolve_vector_mode()
-    if mode != "allowlist":
-        return True
-
-    # 空 allowlist = 全部拒绝（安全默认）
-    if _is_allowlist_empty():
-        return False
-
-    return _allowlist_matches(user_id=user_id, subject=subject)
+def is_vector_allowed_for(user_id=None, subject=None):
+    return is_vector_enabled()

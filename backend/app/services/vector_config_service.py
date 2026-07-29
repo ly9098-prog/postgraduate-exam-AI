@@ -1,5 +1,7 @@
 """Embedding + vector config helpers — data stored in admin_ai_configs keys."""
 
+from dataclasses import dataclass
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +25,7 @@ class EmbeddingConfig:
             setattr(self, k, v)
 
 
+@dataclass
 class VectorSearchConfig:
     """向量检索运行时配置。"""
 
