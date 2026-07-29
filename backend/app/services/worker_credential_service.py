@@ -27,8 +27,8 @@ def generate_key() -> str:
 
 
 def constant_time_compare(a: str, b: str) -> bool:
-    """Constant-time string comparison to prevent timing side-channels."""
-    return hashlib.sha256(a.encode()).digest() == hashlib.sha256(b.encode()).digest()
+    """Compare two same-format digests in constant time."""
+    return secrets.compare_digest(a, b)
 
 
 async def create_credential(
@@ -79,8 +79,9 @@ async def verify_credential(
     )
     credentials = list(result.scalars().all())
 
+    candidate_hash = hash_key(raw_key)
     for cred in credentials:
-        if constant_time_compare(raw_key, cred.key_hash):
+        if constant_time_compare(candidate_hash, cred.key_hash):
             return cred
 
     return None

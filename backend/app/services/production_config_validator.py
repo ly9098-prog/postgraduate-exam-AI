@@ -23,6 +23,8 @@ Checks:
 16. Staging directory writable with sufficient free space
 17. DB connection pool budget within MAX_CONNECTIONS
 18. Queue capacity limits are reasonable
+19. Debug/verbose SQL logging is disabled
+20. Development default administrator credentials are not active
 """
 
 from __future__ import annotations
@@ -53,6 +55,7 @@ def validate_production_config() -> None:
 
     checks = (
         _check_app_secret,
+        _check_debug_settings,
         _check_database_url,
         _check_cors,
         _check_allowed_hosts,
@@ -104,7 +107,7 @@ def _is_restricted_environment() -> bool:
     silently skip validation — a corrupted profile should not bypass
     production safety checks.
     """
-    if settings.APP_ENV == "production":
+    if settings.APP_ENV.strip().lower() == "production":
         return True
     try:
         profile = detect_deployment_profile()
@@ -131,6 +134,18 @@ def _check_app_secret(errors: list[str]) -> None:
         errors.append(
             f"APP_SECRET 长度不足（当前 {len(secret)} 字符），至少需要 32 字符"
         )
+
+
+def _check_debug_settings(errors: list[str]) -> None:
+    """Reject settings that can expose sensitive runtime or SQL details."""
+    if settings.DEBUG_MODE:
+        errors.append("生产环境必须设置 DEBUG_MODE=false")
+    if settings.SQL_ECHO:
+        errors.append("生产环境必须设置 SQL_ECHO=false，避免 SQL 与参数写入日志")
+    if str(settings.LOG_LEVEL).strip().upper() == "DEBUG":
+        errors.append("生产环境 LOG_LEVEL 不得为 DEBUG")
+    if str(settings.SQL_LOG_LEVEL).strip().upper() == "DEBUG":
+        errors.append("生产环境 SQL_LOG_LEVEL 不得为 DEBUG")
 
 
 def _check_database_url(errors: list[str]) -> None:
@@ -565,6 +580,7 @@ async def validate_production_config_async() -> None:
         _check_alembic_current(errors),
         _check_pg_extensions(errors),
         _check_stored_outbound_urls(errors),
+        _check_default_admin_credentials(errors),
     )
 
     if errors:
@@ -686,6 +702,47 @@ async def _check_stored_outbound_urls(errors: list[str]) -> None:
             errors.append(f"数据库中的{kind} URL 不安全: {exc}")
         except Exception as exc:
             errors.append(f"数据库中的{kind} URL 无法验证: {exc}")
+
+
+async def _check_default_admin_credentials(errors: list[str]) -> None:
+    """Fail startup when the local-development admin/admin account is active."""
+    from sqlalchemy import select
+
+    from app.core.admin_security import verify_admin_password
+    from app.core.database import async_session
+    from app.models.admin import AdminUser
+
+    try:
+        async with async_session() as session:
+            password_hash = (
+                await session.execute(
+                    select(AdminUser.password_hash).where(
+                        AdminUser.username == "admin",
+                        AdminUser.is_active.is_(True),
+                    )
+                )
+            ).scalar_one_or_none()
+    except Exception as exc:
+        errors.append(f"无法检查默认管理员凭据: {exc}")
+        return
+
+    if not password_hash:
+        return
+
+    try:
+        is_default = await asyncio.to_thread(
+            verify_admin_password,
+            "admin",
+            password_hash,
+        )
+    except Exception as exc:
+        errors.append(f"默认管理员密码哈希无法验证: {type(exc).__name__}")
+        return
+
+    if is_default:
+        errors.append(
+            "检测到启用中的开发默认管理员 admin/admin；请修改密码或禁用该账号"
+        )
 
 
 async def _check_pg_extensions(errors: list[str]) -> None:

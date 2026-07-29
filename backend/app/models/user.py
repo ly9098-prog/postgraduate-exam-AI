@@ -11,7 +11,6 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     openid: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    session_key: Mapped[str | None] = mapped_column(String(256), nullable=True)
     nickname: Mapped[str | None] = mapped_column(String(64), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_banned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

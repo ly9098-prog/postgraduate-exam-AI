@@ -95,7 +95,7 @@ from app.services.import_pipeline_service import (
 from app.services.import_pipeline_service import (
     start_import_pipeline as svc_start_import_pipeline,
 )
-from app.services.streaming_upload_handler import stream_to_temp
+from app.services.streaming_upload_handler import stream_to_temp, validate_image
 
 logger = logging.getLogger(__name__)
 
@@ -1055,6 +1055,12 @@ async def batch_image_upload(
             if tmp.size == 0:
                 tmp.close()
                 rejected_files.append(f"{filename}: 图片内容为空")
+                continue
+
+            validation_error = await asyncio.to_thread(validate_image, tmp.path)
+            if validation_error:
+                tmp.close()
+                rejected_files.append(f"{filename}: {validation_error}")
                 continue
 
             # Compute source_sha256 for content-level dedup

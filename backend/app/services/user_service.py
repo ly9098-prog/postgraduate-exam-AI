@@ -27,7 +27,6 @@ async def wechat_login(db: AsyncSession, code: str) -> tuple[str, int, User]:
         raise ValueError("微信登录凭证不能为空")
 
     openid: str | None = None
-    session_key: str | None = None
 
     has_app_id = bool(
         settings.WECHAT_APP_ID
@@ -59,11 +58,11 @@ async def wechat_login(db: AsyncSession, code: str) -> tuple[str, int, User]:
         if "openid" not in data:
             raise ValueError("微信登录凭证无效")
         openid = str(data["openid"])
-        session_key = data.get("session_key")
+        # The WeChat session_key is not needed after jscode2session succeeds.
+        # Do not persist it: it is a short-lived sensitive credential.
     elif settings.APP_ENV.lower() in LOCAL_APP_ENVS:
         # 开发环境：从 code 派生 openid
         openid = _dev_openid(code)
-        session_key = "dev_mode"
     else:
         # 生产环境禁止回退到可预测的开发身份。
         raise ValueError("微信登录服务未配置")
@@ -77,9 +76,8 @@ async def wechat_login(db: AsyncSession, code: str) -> tuple[str, int, User]:
             raise ValueError("账号已注销")
         if user.is_banned:
             raise ValueError("账号已封禁")
-        user.session_key = session_key
     else:
-        user = User(openid=openid, session_key=session_key)
+        user = User(openid=openid)
         db.add(user)
 
     await db.commit()
