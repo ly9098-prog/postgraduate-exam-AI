@@ -123,7 +123,7 @@ def _report_startup_failure(component: str, exc: Exception) -> None:
     try:
         is_prod = (
             detect_deployment_profile() == DeploymentProfile.CLOUD_API
-            or settings.APP_ENV == "production"
+            or _production_mode
         )
     except Exception:
         is_prod = False
@@ -792,7 +792,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Active children check failed: %s", e)
 
 
-_production_mode = settings.APP_ENV.lower() == "production"
+_production_mode = settings.APP_ENV.strip().lower() == "production"
 app = FastAPI(
     title="2240AI",
     version="0.1.0",
@@ -828,7 +828,7 @@ async def add_security_headers(request: Request, call_next):
         "Permissions-Policy",
         "camera=(), microphone=(), geolocation=(), payment=()",
     )
-    if settings.APP_ENV.lower() == "production":
+    if _production_mode:
         response.headers.setdefault(
             "Strict-Transport-Security",
             "max-age=31536000; includeSubDomains",
@@ -994,7 +994,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         pass  # Never let logging crash the exception handler
 
     safe_detail = "服务器内部错误"
-    if settings.APP_ENV != "production":
+    if not _production_mode:
         safe_detail = f"{type(exc).__name__}: {exc}"
 
     response = JSONResponse(
@@ -1114,7 +1114,7 @@ async def ready_health():
         "event_loop_lag_ms": _elapsed_monitor_event_loop_lag_ms,
         "draining": "ok" if not draining else "draining",
     }
-    if settings.REDIS_URL or settings.APP_ENV == "production":
+    if settings.REDIS_URL or _production_mode:
         checks["redis"] = "ok" if redis_ok else "unavailable"
     if ocr_status:
         checks["ocr"] = ocr_status
@@ -1165,7 +1165,7 @@ async def _check_redis() -> bool:
             detect_deployment_profile,
         )
         try:
-            if detect_deployment_profile() == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production":
+            if detect_deployment_profile() == DeploymentProfile.CLOUD_API or _production_mode:
                 return False
         except Exception:
             return False
@@ -1413,7 +1413,7 @@ async def _check_queue() -> str | None:
         return "ok"
     except Exception:
         # Redis error is a critical infrastructure failure — not "degraded"
-        if settings.APP_ENV == "production":
+        if _production_mode:
             return "unavailable"
         return "degraded"
 

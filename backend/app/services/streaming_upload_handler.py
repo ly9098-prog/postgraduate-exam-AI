@@ -26,6 +26,7 @@ import logging
 import os
 import struct
 import tempfile
+import warnings
 from dataclasses import dataclass, field
 
 logger = logging.getLogger("postgraduate-ai.upload")
@@ -214,7 +215,7 @@ def guess_file_type_from_magic(path: str) -> str | None:
     """
     try:
         with open(path, "rb") as f:
-            header = f.read(8)
+            header = f.read(12)
 
         for ftype, magic in _MAGIC_BYTES.items():
             if header.startswith(magic):
@@ -284,23 +285,50 @@ def validate_image(
     max_height: int = 4096,
     max_pixels: int = 4096 * 4096,
 ) -> str | None:
-    """Validate an image file.
+    """Validate an image signature, decoder format, integrity and dimensions.
 
     Returns an error string if validation fails, None if OK.
     """
-    # Check magic bytes
     ftype = guess_file_type_from_magic(path)
-    if ftype not in ("png", "jpeg", "webp"):
+    expected_formats = {"png": "PNG", "jpeg": "JPEG", "webp": "WEBP"}
+    expected_format = expected_formats.get(ftype or "")
+    if expected_format is None:
         return f"不支持的文件类型: {ftype or 'unknown'}"
 
-    # Check dimensions
-    dims = quick_validate_image(path)
-    if dims:
-        w, h = dims
-        if w > max_width or h > max_height:
-            return f"图片尺寸过大 ({w}x{h}, 最大 {max_width}x{max_height})"
-        if w * h > max_pixels:
-            return f"图片像素数过多 ({w*h}, 最大 {max_pixels})"
+    try:
+        from PIL import Image, UnidentifiedImageError
+    except ImportError:
+        logger.error("Pillow is unavailable; image upload validation cannot run")
+        return "服务器图片校验组件不可用"
+
+    try:
+        # Pillow emits a warning before raising for larger decompression bombs.
+        # Treat both conditions as hard validation failures for untrusted uploads.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(path) as image:
+                if image.format != expected_format:
+                    return "图片文件头与实际解码格式不一致"
+                width, height = image.size
+                if width <= 0 or height <= 0:
+                    return "图片尺寸无效"
+                if width > max_width or height > max_height:
+                    return (
+                        f"图片尺寸过大 ({width}x{height}, "
+                        f"最大 {max_width}x{max_height})"
+                    )
+                if width * height > max_pixels:
+                    return f"图片像素数过多 ({width * height}, 最大 {max_pixels})"
+                image.verify()
+    except Image.DecompressionBombWarning:
+        logger.warning("Rejected image decompression bomb warning")
+        return "图片像素数超过安全限制"
+    except Image.DecompressionBombError:
+        logger.warning("Rejected image decompression bomb error")
+        return "图片像素数超过安全限制"
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError) as exc:
+        logger.warning("Rejected invalid image upload: %s", type(exc).__name__)
+        return "图片文件损坏或无法解码"
 
     return None
 
