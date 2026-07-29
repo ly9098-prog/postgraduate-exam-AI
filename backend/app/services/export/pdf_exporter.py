@@ -41,6 +41,7 @@ from app.services.export.question_content import (
 from app.services.export.space_allocator import get_answer_space_mm
 from app.services.export.table_parser import parse_table
 from app.services.export.table_renderer_pdf import render_table_to_pdf
+from app.services.safe_remote_fetch import fetch_remote_bytes, is_safe_remote_url
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,7 @@ _FONT_NAME = _BODY_FONT_NAME
 _MAX_IMAGE_DOWNLOAD_SEC = 15
 _MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB per image
 _MAX_IMAGE_DIMENSION = 2000  # px
+_MAX_IMAGE_PIXELS = 25_000_000
 _MAX_CONCURRENT_DOWNLOADS = 4
 _MAX_TOTAL_IMAGE_BYTES = 50 * 1024 * 1024  # 50 MB total
 
@@ -689,8 +691,6 @@ class PdfExporter(Exporter):
     def _download_image_sync(self, url: str, ctx: PdfContext) -> str | None:
         """Download an image to the temp directory with safety checks."""
         import hashlib
-        import urllib.request
-
         filename = hashlib.md5(url.encode()).hexdigest() + ".png"
         dest = os.path.join(ctx.temp_dir, filename)
 
@@ -707,16 +707,17 @@ class PdfExporter(Exporter):
                 if not remote_url or not self._is_safe_url(remote_url):
                     logger.warning("Blocked unsafe image URL: %s", url)
                     return None
-                req = urllib.request.Request(
+                response = fetch_remote_bytes(
                     remote_url,
+                    max_bytes=_MAX_IMAGE_BYTES,
+                    timeout=_MAX_IMAGE_DOWNLOAD_SEC,
+                    allow_http=settings.EXPORT_ALLOW_HTTP_IMAGE_URLS,
                     headers={"User-Agent": "MemoGrad-Export/2.0"},
                 )
-                with urllib.request.urlopen(req, timeout=_MAX_IMAGE_DOWNLOAD_SEC) as resp:
-                    content_type = resp.headers.get("Content-Type", "")
-                    if not self._is_safe_mime(content_type):
-                        logger.warning("Unsafe image MIME: %s", content_type)
-                        return None
-                    data = resp.read(_MAX_IMAGE_BYTES + 1)
+                if not self._is_safe_mime(response.content_type):
+                    logger.warning("Unsafe image MIME: %s", response.content_type)
+                    return None
+                data = response.data
 
             if len(data) > _MAX_IMAGE_BYTES:
                 logger.warning("Image too large: %d bytes from %s", len(data), url)
@@ -764,6 +765,10 @@ class PdfExporter(Exporter):
 
         try:
             with PILImage.open(io.BytesIO(data)) as image:
+                width, height = image.size
+                if width < 1 or height < 1 or width * height > _MAX_IMAGE_PIXELS:
+                    logger.warning("Image pixel budget exceeded for %s", source)
+                    return None
                 image.load()
                 if max(image.size) > _MAX_IMAGE_DIMENSION:
                     logger.info("Resizing oversized image %s (%dpx)", source, max(image.size))
@@ -779,36 +784,10 @@ class PdfExporter(Exporter):
 
     @staticmethod
     def _is_safe_url(url: str) -> bool:
-        """SSRF protection: reject private/internal URLs."""
-        import urllib.parse
-
-        parsed = urllib.parse.urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            return False
-        if parsed.scheme == "http" and not settings.OCR_ALLOW_HTTP:
-            return False
-
-        host = parsed.hostname or ""
-        # Reject localhost
-        if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
-            return False
-        # Reject private IP ranges
-        import ipaddress
-        try:
-            ip = ipaddress.ip_address(host)
-            if ip.is_private or ip.is_loopback or ip.is_link_local:
-                return False
-            # Cloud metadata
-            if host == "169.254.169.254":
-                return False
-        except ValueError:
-            pass  # hostname (not IP) — allow
-
-        # Reject file://, ftp://, etc.
-        if parsed.scheme not in ("http", "https"):
-            return False
-
-        return True
+        return is_safe_remote_url(
+            url,
+            allow_http=settings.EXPORT_ALLOW_HTTP_IMAGE_URLS,
+        )
 
     @staticmethod
     def _is_safe_mime(content_type: str) -> bool:

@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import time
+import uuid
 
 from fastapi import (
     APIRouter,
@@ -154,15 +155,34 @@ async def upload_segment_image(
     if ctype and not ctype.startswith("image/"):
         raise HTTPException(status_code=400, detail="仅支持图片文件")
     MAX_SIZE = 10 * 1024 * 1024
-    data = await file.read()
-    if len(data) > MAX_SIZE:
-        raise HTTPException(status_code=413, detail="图片大小超过 10MB 限制")
-
     filename = file.filename or "segment.png"
-    storage = get_storage()
-    compressed = compress_image(data)
-    url = await storage.upload(filename, compressed)
-    return {"url": url, "filename": filename}
+    suffix = os.path.splitext(filename)[1] or ".png"
+    try:
+        tmp = await stream_to_temp(file, max_size=MAX_SIZE, suffix=suffix)
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    try:
+        if tmp.size == 0:
+            raise HTTPException(status_code=400, detail="图片内容为空")
+        with open(tmp.path, "rb") as fh:
+            data = fh.read(MAX_SIZE + 1)
+        storage = get_storage()
+        compressed = compress_image(data)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="图片格式无效或尺寸过大") from exc
+    finally:
+        tmp.close()
+    if compressed.startswith(b"\x89PNG\r\n\x1a\n"):
+        extension = ".png"
+    elif compressed.startswith(b"RIFF") and compressed[8:12] == b"WEBP":
+        extension = ".webp"
+    else:
+        extension = ".jpg"
+    storage_key = f"segments/{uuid.uuid4().hex}{extension}"
+    url = await storage.upload(storage_key, compressed)
+    return {"url": url, "filename": storage_key.rsplit("/", 1)[-1]}
 
 
 @router.get("/pipelines/{pipeline_id}", response_model=PipelineStatusResponse)
@@ -764,6 +784,7 @@ async def batch_answer_apply(
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 _IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _IMAGE_MAX_FILES = 50
+_IMAGE_MAX_TOTAL_BYTES = 50 * 1024 * 1024
 
 
 def _get_image_max_bytes() -> int:
@@ -825,19 +846,39 @@ async def batch_answer_image_preview(
     # 读取并校验图片
     images_data: list[dict] = []
     rejected: list[str] = []
+    total_bytes = 0
     for f in files:
+        filename = f.filename or f"image_{len(images_data)}"
+        suffix = os.path.splitext(filename)[1] or ".png"
         try:
-            content = await f.read()
+            tmp = await stream_to_temp(
+                f, max_size=_get_image_max_bytes(), suffix=suffix,
+            )
+        except ValueError as exc:
+            rejected.append(f"{filename}: {exc}")
+            continue
         except Exception:
-            rejected.append(f"{f.filename}: 读取失败")
+            rejected.append(f"{filename}: 读取失败")
             continue
 
-        err = _validate_answer_image(f.filename or "", content, f.content_type)
+        try:
+            total_bytes += tmp.size
+            if total_bytes > _IMAGE_MAX_TOTAL_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"上传图片总量超过 {_IMAGE_MAX_TOTAL_BYTES // (1024*1024)}MB 限制",
+                )
+            with open(tmp.path, "rb") as fh:
+                content = fh.read(_get_image_max_bytes() + 1)
+        finally:
+            tmp.close()
+
+        err = _validate_answer_image(filename, content, f.content_type)
         if err:
-            rejected.append(f"{f.filename}: {err}")
+            rejected.append(f"{filename}: {err}")
             continue
 
-        images_data.append({"filename": f.filename or f"image_{len(images_data)}", "bytes": content})
+        images_data.append({"filename": filename, "bytes": content})
 
     if not images_data:
         raise HTTPException(

@@ -5,13 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.security import create_token
+from app.core.security import issue_user_token
 from app.models.admin import AdminUser, Permission, Role, RolePermission
 from app.models.app_user_admin_binding import AppUserAdminBinding
 from app.models.user import User
 from app.schemas.user import UserResponse
 
 WX_URL = "https://api.weixin.qq.com/sns/jscode2session"
+LOCAL_APP_ENVS = {"development", "local", "test"}
 
 
 def _dev_openid(code: str) -> str:
@@ -21,33 +22,61 @@ def _dev_openid(code: str) -> str:
 
 async def wechat_login(db: AsyncSession, code: str) -> tuple[str, int, User]:
     """Returns (token, expires_at, user) tuple."""
+    code = code.strip()
+    if not code:
+        raise ValueError("微信登录凭证不能为空")
+
     openid: str | None = None
     session_key: str | None = None
 
-    if settings.WECHAT_APP_ID and settings.WECHAT_APP_ID != "your-app-id-here":
+    has_app_id = bool(
+        settings.WECHAT_APP_ID
+        and settings.WECHAT_APP_ID != "your-app-id-here"
+    )
+    has_app_secret = bool(
+        settings.WECHAT_APP_SECRET
+        and settings.WECHAT_APP_SECRET != "your-app-secret-here"
+    )
+
+    if has_app_id and has_app_secret:
         # 生产环境：调用微信 jscode2session
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(WX_URL, params={
-                "appid": settings.WECHAT_APP_ID,
-                "secret": settings.WECHAT_APP_SECRET,
-                "js_code": code,
-                "grant_type": "authorization_code",
-            })
-            data = resp.json()
-            if "openid" not in data:
-                raise ValueError(f"微信登录失败: {data.get('errmsg', '未知错误')}")
-            openid = data["openid"]
-            session_key = data.get("session_key")
-    else:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    WX_URL,
+                    params={
+                        "appid": settings.WECHAT_APP_ID,
+                        "secret": settings.WECHAT_APP_SECRET,
+                        "js_code": code,
+                        "grant_type": "authorization_code",
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise ValueError("微信登录服务暂时不可用") from exc
+
+        if "openid" not in data:
+            raise ValueError("微信登录凭证无效")
+        openid = str(data["openid"])
+        session_key = data.get("session_key")
+    elif settings.APP_ENV.lower() in LOCAL_APP_ENVS:
         # 开发环境：从 code 派生 openid
         openid = _dev_openid(code)
         session_key = "dev_mode"
+    else:
+        # 生产环境禁止回退到可预测的开发身份。
+        raise ValueError("微信登录服务未配置")
 
     # 查找或创建用户
     result = await db.execute(select(User).where(User.openid == openid))
     user = result.scalar_one_or_none()
 
     if user:
+        if user.deleted_at is not None:
+            raise ValueError("账号已注销")
+        if user.is_banned:
+            raise ValueError("账号已封禁")
         user.session_key = session_key
     else:
         user = User(openid=openid, session_key=session_key)
@@ -56,7 +85,7 @@ async def wechat_login(db: AsyncSession, code: str) -> tuple[str, int, User]:
     await db.commit()
     await db.refresh(user)
 
-    token, expires_at = create_token(user.id)
+    token, expires_at = await issue_user_token(user.id)
     return token, expires_at, user
 
 

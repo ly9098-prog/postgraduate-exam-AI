@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 
 
 class WechatLogin(BaseModel):
-    code: str
+    code: str = Field(min_length=1, max_length=256)
 
 
 class UserResponse(BaseModel):
@@ -24,12 +24,12 @@ class TokenResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(min_length=32, max_length=512)
 
 
 class UserUpdate(BaseModel):
-    nickname: str | None = None
-    avatar_url: str | None = None
+    nickname: str | None = Field(default=None, max_length=64)
+    avatar_url: str | None = Field(default=None, max_length=2048)
 
 
 class DeletionResponse(BaseModel):

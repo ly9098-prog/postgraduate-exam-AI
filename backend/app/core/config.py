@@ -8,10 +8,14 @@ logger = logging.getLogger("postgraduate-ai.config")
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="allow")
-    APP_ENV: str = "development"
+    # Fail closed: local development must opt in with APP_ENV=development.
+    APP_ENV: str = "production"
     APP_SECRET: str = "change-me-in-production"
     PROCESS_ROLE: str = "web"  # "web" | "worker" | "scheduler" | "all"
-    JWT_EXPIRE_DAYS: int = 30
+    JWT_EXPIRE_DAYS: int = 1
+    JWT_ISSUER: str = "memograd-api"
+    USER_JWT_AUDIENCE: str = "memograd-user"
+    ADMIN_JWT_AUDIENCE: str = "memograd-admin"
     DATABASE_URL: str = "sqlite+aiosqlite:///./postgraduate.db"
 
     # CORS — 使用凭证请求时必须是显式 origin，不能使用 "*"
@@ -19,6 +23,9 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+    # Host header allowlist. Production startup validation rejects these
+    # development defaults until explicit public hostnames are configured.
+    ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver"]
 
     # 日志级别
     LOG_LEVEL: str = "INFO"
@@ -36,6 +43,7 @@ class Settings(BaseSettings):
     AI_MONTHLY_TOKEN_LIMIT: int = 500000
     AI_SINGLE_MAX_TOKENS: int = 2000
     AI_CONFIG_ENCRYPT_KEY: str = ""
+    AI_ALLOW_HTTP_BASE_URLS: bool = False
 
     # 文本导入 LLM 结构化层（仅做格式整理，不补全/不推测）
     TEXT_IMPORT_LLM_ENABLED: bool = True
@@ -174,6 +182,7 @@ class Settings(BaseSettings):
 
     # Internal API (worker auth)
     INTERNAL_API_KEY: str = ""
+    INTERNAL_API_FALLBACK_ENABLED: bool = False
     PRODUCTION_THIN_MODE: bool = False
 
     # Sentry
@@ -269,6 +278,7 @@ class Settings(BaseSettings):
     EXPORT_PDF_CONCURRENCY: int = 1
     EXPORT_DOCX_CONCURRENCY: int = 1
     EXPORT_IMAGE_DOWNLOAD_CONCURRENCY: int = 4
+    EXPORT_ALLOW_HTTP_IMAGE_URLS: bool = False
     EXPORT_DIR: str = "var/exports"
     EXPORT_RETENTION_DAYS: int = 7  # how long completed files remain available
     # Optional explicit CJK font files for the exam-paper PDF renderer.
@@ -282,8 +292,15 @@ class Settings(BaseSettings):
     EXPORT_FEATURE_ENABLED: bool = True
     EXPORT_DOCX_ENABLED: bool = True
     EXPORT_WEBSOCKET_ENABLED: bool = True
+    ALLOW_LEGACY_WEBSOCKET_QUERY_TOKEN: bool = False
     EXPORT_ALLOWED_USER_IDS: str = ""  # comma-separated user IDs for whitelist
     EXPORT_ALLOW_ALL_USERS: bool = False  # explicit opt-in; False + empty whitelist = no access
+
+    # ── Authentication abuse controls ──
+    ADMIN_LOGIN_MAX_FAILURES: int = 5
+    ADMIN_LOGIN_WINDOW_SEC: int = 15 * 60
+    USER_LOGIN_MAX_FAILURES: int = 20
+    USER_LOGIN_WINDOW_SEC: int = 15 * 60
 
     # ── Adaptive Learning ──
     ADAPTIVE_LEARNING_ENABLED: bool = True

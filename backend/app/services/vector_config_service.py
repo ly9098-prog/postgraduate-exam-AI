@@ -11,8 +11,8 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
-import httpx
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,11 @@ from app.schemas.admin_vector_config import (
     VectorConfigResponse,
 )
 from app.services.admin_audit_service import write_admin_audit
+from app.services.safe_remote_fetch import (
+    UnsafeRemoteURLError,
+    request_remote_bytes,
+    validate_remote_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +46,42 @@ logger = logging.getLogger(__name__)
 _vector_config_cache: AdminVectorConfig | None = None
 _vector_config_cache_time: float = 0
 _VECTOR_CONFIG_CACHE_TTL = 30  # seconds
+
+
+def _validated_embedding_base_url(value: str) -> str:
+    normalized = str(value or "").strip().rstrip("/")
+    if not normalized:
+        raise ValueError("Embedding Base URL 不能为空")
+    parsed = urlsplit(normalized)
+    if parsed.query or parsed.fragment:
+        raise ValueError("Embedding Base URL 不能包含查询参数或片段")
+    try:
+        validate_remote_url(
+            normalized,
+            allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
+        )
+    except UnsafeRemoteURLError as exc:
+        raise ValueError(f"Embedding Base URL 不安全或不可用: {exc}") from exc
+    return normalized
+
+
+def _same_origin(left: str, right: str) -> bool:
+    try:
+        l = urlsplit(left)
+        r = urlsplit(right)
+        l_port = l.port or (443 if l.scheme == "https" else 80)
+        r_port = r.port or (443 if r.scheme == "https" else 80)
+    except ValueError:
+        return False
+    return (
+        l.scheme.lower(),
+        (l.hostname or "").lower(),
+        l_port,
+    ) == (
+        r.scheme.lower(),
+        (r.hostname or "").lower(),
+        r_port,
+    )
 
 
 def _clear_cache() -> None:
@@ -155,6 +196,17 @@ async def patch_vector_config(
 
     # API key 特殊处理：加密存储
     emb_key = data.get_embedding_api_key_value()
+    if "embedding_base_url" in update_data:
+        new_base_url = _validated_embedding_base_url(update_data["embedding_base_url"])
+        old_base_url = (row.embedding_base_url or "").rstrip("/")
+        if (
+            new_base_url != old_base_url
+            and row.embedding_api_key_encrypted
+            and emb_key is None
+        ):
+            raise ValueError("修改 Embedding Base URL 时必须同时重新提交 API Key")
+        update_data["embedding_base_url"] = new_base_url
+
     if "embedding_api_key" in update_data:
         update_data.pop("embedding_api_key")
         # get_embedding_api_key_value returns:
@@ -239,12 +291,17 @@ async def resolve_embedding_config(db: AsyncSession) -> EmbeddingConfig:
             api_key = ""
 
     # 如果 DB 中 key 为空但环境变量有值，fallback
-    if not api_key and settings.EMBEDDING_API_KEY:
+    resolved_base_url = row.embedding_base_url or settings.EMBEDDING_BASE_URL
+    if (
+        not api_key
+        and settings.EMBEDDING_API_KEY
+        and _same_origin(resolved_base_url, settings.EMBEDDING_BASE_URL)
+    ):
         api_key = settings.EMBEDDING_API_KEY
 
     return EmbeddingConfig(
         api_key=api_key,
-        base_url=row.embedding_base_url or settings.EMBEDDING_BASE_URL,
+        base_url=resolved_base_url,
         model=row.embedding_model or settings.EMBEDDING_MODEL,
         dim=row.embedding_dim or settings.EMBEDDING_DIM,
         timeout=row.embedding_timeout or settings.EMBEDDING_TIMEOUT,
@@ -302,9 +359,21 @@ async def test_embedding_connection(
             latency_ms=0,
         )
 
+    import asyncio
+    import json
     import time as _time
 
-    url = f"{api_base_url.rstrip('/')}/v1/embeddings"
+    try:
+        api_base_url = _validated_embedding_base_url(api_base_url)
+    except ValueError as exc:
+        return EmbeddingTestResponse(
+            success=False,
+            status="network_error",
+            message=str(exc),
+            latency_ms=0,
+        )
+
+    url = f"{api_base_url}/v1/embeddings"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -313,19 +382,17 @@ async def test_embedding_connection(
 
     start = _time.monotonic()
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-    except httpx.TimeoutException:
-        return EmbeddingTestResponse(
-            success=False, status="timeout",
-            message=f"请求超时 ({timeout}s)",
-            latency_ms=int((_time.monotonic() - start) * 1000),
-        )
-    except httpx.ConnectError:
-        return EmbeddingTestResponse(
-            success=False, status="network_error",
-            message="无法连接到 Embedding API 地址",
-            latency_ms=int((_time.monotonic() - start) * 1000),
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        remote = await asyncio.to_thread(
+            request_remote_bytes,
+            url,
+            method="POST",
+            body=body,
+            max_bytes=64 * 1024 * 1024,
+            timeout=float(timeout),
+            allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
+            follow_redirects=False,
+            headers=headers,
         )
     except Exception as exc:
         return EmbeddingTestResponse(
@@ -336,22 +403,23 @@ async def test_embedding_connection(
 
     latency_ms = int((_time.monotonic() - start) * 1000)
 
-    if resp.status_code in (401, 403):
+    response_text = remote.data.decode("utf-8", errors="replace")
+    if remote.status in (401, 403):
         return EmbeddingTestResponse(
             success=False, status="auth_error",
-            message=f"认证失败 (HTTP {resp.status_code})",
+            message=f"认证失败 (HTTP {remote.status})",
             latency_ms=latency_ms,
         )
 
-    if resp.status_code != 200:
+    if remote.status != 200:
         return EmbeddingTestResponse(
             success=False, status="network_error",
-            message=f"HTTP {resp.status_code}: {resp.text[:200]}",
+            message=f"HTTP {remote.status}: {response_text[:200]}",
             latency_ms=latency_ms,
         )
 
     try:
-        data = resp.json()
+        data = json.loads(response_text)
         embedding = data["data"][0]["embedding"]
         returned_dim = len(embedding)
     except (KeyError, IndexError, TypeError, ValueError):

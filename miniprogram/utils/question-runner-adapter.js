@@ -662,7 +662,7 @@ function getQuestionImages(q) {
     q.image_url.forEach(function (url) {
       if (url && typeof url === 'string' && !seen[url]) {
         seen[url] = true
-        urls.push(url)
+        urls.push(stemRender.resolveAssetUrl(url))
       }
     })
   }
@@ -671,7 +671,7 @@ function getQuestionImages(q) {
     q.content.image_url.forEach(function (url) {
       if (url && typeof url === 'string' && !seen[url]) {
         seen[url] = true
-        urls.push(url)
+        urls.push(stemRender.resolveAssetUrl(url))
       }
     })
   }

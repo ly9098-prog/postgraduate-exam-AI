@@ -55,10 +55,15 @@ def validate_production_config() -> None:
         _check_app_secret,
         _check_database_url,
         _check_cors,
+        _check_allowed_hosts,
+        _check_public_base_url,
         _check_directories,
         _check_deployment_profile,
         _check_process_role,
         _check_ai_encrypt_key,
+        _check_outbound_url_policy,
+        _check_wechat_credentials,
+        _check_internal_api_auth,
         _check_ocr_production_rules,
         _check_ocr_no_local_deps,
         _check_pdf_production_rules,
@@ -156,6 +161,36 @@ def _check_cors(errors: list[str]) -> None:
             )
         elif not _is_valid_origin(origin):
             errors.append(f"CORS_ORIGINS 包含非法 origin: {origin}")
+        elif not origin.startswith("https://"):
+            errors.append(f"生产环境 CORS_ORIGINS 必须使用 HTTPS: {origin}")
+
+
+def _check_allowed_hosts(errors: list[str]) -> None:
+    hosts = [str(value).strip().lower() for value in settings.ALLOWED_HOSTS]
+    if not hosts:
+        errors.append("ALLOWED_HOSTS 不能为空")
+        return
+    for host in hosts:
+        if host == "*":
+            errors.append("ALLOWED_HOSTS 不允许使用通配符 '*'")
+        elif host in {"localhost", "127.0.0.1", "::1", "testserver"}:
+            errors.append(f"生产环境 ALLOWED_HOSTS 不得包含开发主机: {host}")
+        elif "/" in host or "://" in host or any(ch.isspace() for ch in host):
+            errors.append(f"ALLOWED_HOSTS 包含非法主机名: {host}")
+
+
+def _check_public_base_url(errors: list[str]) -> None:
+    from urllib.parse import urlsplit
+
+    try:
+        parsed = urlsplit(settings.PUBLIC_BASE_URL)
+    except ValueError as exc:
+        errors.append(f"PUBLIC_BASE_URL 格式无效: {exc}")
+        return
+    if parsed.scheme != "https" or not parsed.hostname:
+        errors.append("生产环境 PUBLIC_BASE_URL 必须是有效的 HTTPS URL")
+    if parsed.query or parsed.fragment or parsed.username or parsed.password:
+        errors.append("PUBLIC_BASE_URL 不得包含凭据、查询参数或片段")
 
 
 def _check_directories(errors: list[str]) -> None:
@@ -210,6 +245,35 @@ def _check_ai_encrypt_key(errors: list[str]) -> None:
         )
 
 
+
+def _check_wechat_credentials(errors: list[str]) -> None:
+    """Production login must never fall back to deterministic development identities."""
+    app_id = (settings.WECHAT_APP_ID or "").strip()
+    app_secret = (settings.WECHAT_APP_SECRET or "").strip()
+    if not app_id or app_id == "your-app-id-here":
+        errors.append("WECHAT_APP_ID 未设置——生产环境禁止使用开发登录回退")
+    if not app_secret or app_secret == "your-app-secret-here":
+        errors.append("WECHAT_APP_SECRET 未设置——生产环境禁止使用开发登录回退")
+
+
+def _check_outbound_url_policy(errors: list[str]) -> None:
+    """Production outbound requests must use HTTPS-only policies."""
+    if settings.AI_ALLOW_HTTP_BASE_URLS:
+        errors.append("生产环境禁止 AI_ALLOW_HTTP_BASE_URLS")
+    if settings.EXPORT_ALLOW_HTTP_IMAGE_URLS:
+        errors.append("生产环境禁止 EXPORT_ALLOW_HTTP_IMAGE_URLS")
+    if settings.ALLOW_LEGACY_WEBSOCKET_QUERY_TOKEN:
+        errors.append("生产环境禁止在 WebSocket URL 查询参数中传递访问令牌")
+    if settings.OCR_ALLOW_HTTP:
+        errors.append("生产环境禁止 OCR_ALLOW_HTTP；OCR 凭据与图像必须通过 HTTPS 传输")
+
+
+def _check_internal_api_auth(errors: list[str]) -> None:
+    """Forbid the legacy shared-key fallback in restricted environments."""
+    if settings.INTERNAL_API_FALLBACK_ENABLED:
+        errors.append("生产环境禁止 INTERNAL_API_FALLBACK_ENABLED；内部 Worker 必须使用数据库凭据")
+
+
 def _check_deployment_profile(errors: list[str]) -> None:
     """Production must use cloud_api profile, never local_import."""
     if detect_deployment_profile() != DeploymentProfile.CLOUD_API:
@@ -257,10 +321,18 @@ def _check_ocr_production_rules(errors: list[str]) -> None:
     ocr_url = (settings.OCR_REMOTE_URL or "").strip()
     if not ocr_url:
         errors.append("OCR_EXECUTION_BACKEND=paddlex_http 时必须设置 OCR_REMOTE_URL")
-    elif not ocr_url.startswith("https://") and not settings.OCR_ALLOW_HTTP:
-        errors.append(
-            "OCR_REMOTE_URL 必须使用 HTTPS；仅可信内网可显式设置 OCR_ALLOW_HTTP=true"
-        )
+    else:
+        from urllib.parse import urlsplit
+
+        try:
+            parsed = urlsplit(ocr_url)
+        except ValueError as exc:
+            errors.append(f"OCR_REMOTE_URL 格式无效: {exc}")
+        else:
+            if parsed.scheme != "https" or not parsed.hostname:
+                errors.append("生产环境 OCR_REMOTE_URL 必须是有效的 HTTPS URL")
+            if parsed.username or parsed.password or parsed.query or parsed.fragment:
+                errors.append("OCR_REMOTE_URL 不得包含凭据、查询参数或片段")
     if not (settings.OCR_REMOTE_TOKEN or "").strip():
         errors.append("OCR_EXECUTION_BACKEND=paddlex_http 时必须设置 OCR_REMOTE_TOKEN")
 
@@ -492,6 +564,7 @@ async def validate_production_config_async() -> None:
         _check_database_actual_pg(errors),
         _check_alembic_current(errors),
         _check_pg_extensions(errors),
+        _check_stored_outbound_urls(errors),
     )
 
     if errors:
@@ -574,6 +647,45 @@ async def _check_alembic_current(errors: list[str]) -> None:
             )
     except Exception as exc:
         errors.append(f"无法验证迁移版本: {exc}")
+
+
+async def _check_stored_outbound_urls(errors: list[str]) -> None:
+    """Reject legacy DB-stored service URLs that can reach private networks."""
+    from sqlalchemy import select
+
+    from app.core.database import async_session
+    from app.models.admin_ai_config import AdminAiModelConfig
+    from app.models.admin_vector_config import AdminVectorConfig
+    from app.services.safe_remote_fetch import UnsafeRemoteURLError, validate_remote_url
+
+    try:
+        async with async_session() as session:
+            ai_urls = list(
+                (await session.execute(select(AdminAiModelConfig.api_base_url))).scalars().all()
+            )
+            vector_urls = list(
+                (await session.execute(select(AdminVectorConfig.embedding_base_url))).scalars().all()
+            )
+    except Exception as exc:
+        errors.append(f"无法检查数据库中的外部服务 URL: {exc}")
+        return
+
+    candidates = [("AI 模型", value) for value in ai_urls]
+    candidates.extend(("向量模型", value) for value in vector_urls)
+    for kind, raw_url in candidates:
+        value = (raw_url or "").strip()
+        if not value:
+            continue
+        try:
+            await asyncio.to_thread(
+                validate_remote_url,
+                value,
+                allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
+            )
+        except UnsafeRemoteURLError as exc:
+            errors.append(f"数据库中的{kind} URL 不安全: {exc}")
+        except Exception as exc:
+            errors.append(f"数据库中的{kind} URL 无法验证: {exc}")
 
 
 async def _check_pg_extensions(errors: list[str]) -> None:

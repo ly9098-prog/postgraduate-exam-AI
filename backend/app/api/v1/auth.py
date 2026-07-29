@@ -1,11 +1,14 @@
+import hashlib
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import CacheUnavailableError, cache
+from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import create_token, get_current_user
+from app.core.security import get_current_user, issue_user_token, set_user_nbf
 from app.models.user import User
 from app.schemas.user import (
     DeletionResponse,
@@ -20,12 +23,48 @@ from app.services import token_service, user_service
 router = APIRouter(prefix="/api/v1")
 
 
+def _user_login_rate_key(request: Request) -> str:
+    client_ip = request.client.host if request.client else "unknown"
+    digest = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()
+    return f"user:login:fail:{digest}"
+
+
 @router.post("/auth/login", response_model=TokenResponse)
-async def login(data: WechatLogin, db: AsyncSession = Depends(get_db)):
+async def login(data: WechatLogin, request: Request, db: AsyncSession = Depends(get_db)):
+    rate_key = _user_login_rate_key(request)
+    try:
+        failures = int(await cache.get_strict(rate_key) or 0)
+    except CacheUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
+    if failures >= settings.USER_LOGIN_MAX_FAILURES:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="登录尝试过于频繁，请稍后重试",
+            headers={"Retry-After": str(settings.USER_LOGIN_WINDOW_SEC)},
+        )
+
     try:
         token, expires_at, user = await user_service.wechat_login(db, data.code)
     except ValueError as e:
+        try:
+            await cache.increment_strict(rate_key, ttl=settings.USER_LOGIN_WINDOW_SEC)
+        except CacheUnavailableError as cache_exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service temporarily unavailable",
+            ) from cache_exc
         raise HTTPException(status_code=401, detail=str(e))
+
+    try:
+        await cache.delete_strict(rate_key)
+    except CacheUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
 
     refresh_token = await token_service.create_refresh_token(db, user.id)
 
@@ -43,16 +82,25 @@ async def refresh(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
     if not token_record:
         raise HTTPException(status_code=401, detail="刷新令牌无效或已过期")
 
-    # Rotate: issue new, revoke old
-    new_refresh_token = await token_service.rotate_refresh_token(db, token_record)
-
-    # Issue new JWT
+    # Validate account state before consuming/rotating the token.
     result = await db.execute(select(User).where(User.id == token_record.user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="用户不存在")
+    if user.deleted_at is not None:
+        await token_service.revoke_all_user_tokens(db, user.id)
+        raise HTTPException(status_code=401, detail="账号已注销")
+    if user.is_banned:
+        await token_service.revoke_all_user_tokens(db, user.id)
+        raise HTTPException(status_code=403, detail="账号已封禁")
 
-    new_jwt, new_expires_at = create_token(user.id)
+    # Rotate atomically: every refresh token can be consumed only once.
+    try:
+        new_refresh_token = await token_service.rotate_refresh_token(db, token_record)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="刷新令牌无效或已使用")
+
+    new_jwt, new_expires_at = await issue_user_token(user.id)
 
     return TokenResponse(
         access_token=new_jwt,
@@ -94,6 +142,7 @@ async def logout(
     The frontend should also clear local auth state after this call.
     """
     await token_service.revoke_all_user_tokens(db, current_user.id)
+    await set_user_nbf(current_user.id)
     return {"message": "已退出登录"}
 
 
@@ -124,6 +173,7 @@ async def request_deletion(
 
     # Revoke all tokens so ongoing sessions are immediately invalidated
     await token_service.revoke_all_user_tokens(db, current_user.id)
+    await set_user_nbf(current_user.id)
 
     return DeletionResponse(
         message="账号注销申请已提交，相关数据将按隐私政策处理",
