@@ -218,8 +218,9 @@ function _escapeRegExp(text) {
 function _toPlainInlineMathText(text) {
   if (!text) return ''
   var source = String(text)
-  if (/\n/.test(source)) return null
   if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
+  // OCR may insert a visual newline beside a simple command such as \geq.
+  // Convert it first; _buildRichTextNodes preserves any remaining line breaks.
   var plain = formatInlineMathText(source)
   if (/\\[a-zA-Z]+/.test(plain)) return null
   plain = plain.replace(/[ \t]+/g, ' ').replace(/\s+([，。！？；：,.!?;:])/g, '$1').trim()

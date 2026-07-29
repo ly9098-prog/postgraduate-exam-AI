@@ -700,10 +700,6 @@ Page({
     })
   },
 
-  chooseMode(e) {
-    this.setData({ selectedMode: e.currentTarget.dataset.mode })
-  },
-
   setCount(e) {
     this.setData({ count: Number(e.currentTarget.dataset.count) }, () => {
       this._updateComputedFields()
@@ -796,10 +792,8 @@ Page({
         use_leitner: true,
         _traceId: this._practiceSession.traceId,
       }
-      // V4: smart 模式默认使用综合打分策略
-      if (params.mode === 'smart') {
-        params.smart_strategy = 'scored'
-      }
+      // smart 策略由后端统一解析（默认 weakness_vector，并可被实验配置覆盖）。
+      // 小程序不再强制 scored，避免绕过 pgvector 召回链路。
       const res = await api.get('/practice/questions', params)
       const questions = adapter.applyAnsweredFlags(res.questions || [], {}, 'id')
       debugLog(this._practiceSession.traceId, 'STATE_AFTER_API', {
@@ -886,12 +880,22 @@ Page({
 
     const isBlankChoice = adapter.isMultiBlankChoice(q)
     const answer = this._practiceSession.answerMap[String(q.id)] || ''
-    const blankOptionGroups = isBlankChoice
-      ? adapter.enrichBlankOptionGroups(adapter.getBlankOptionGroups(q), answer)
+    const rawBlankOptionGroups = isBlankChoice
+      ? adapter.getBlankOptionGroups(q)
+      : []
+    const blankOptionGroups = rawBlankOptionGroups.length > 0
+      ? adapter.enrichBlankOptionGroups(rawBlankOptionGroups, answer)
       : []
     const isTrueFalse = q.question_type === 'true_false' || q.question_type === 'judgement'
-    const opts = !isBlankChoice && q.options && Object.keys(q.options).length > 0
-      ? q.options
+    // Older multi-blank records may only contain a flat options map. If no
+    // usable blank groups could be built, keep that map as a normal option
+    // list instead of dropping every option from the render model.
+    const flatOptions = typeof adapter.getQuestionOptions === 'function'
+      ? adapter.getQuestionOptions(q)
+      : q.options
+    const hasFlatOptions = flatOptions && Object.keys(flatOptions).length > 0
+    const opts = (!isBlankChoice || blankOptionGroups.length === 0) && hasFlatOptions
+      ? flatOptions
       : (!isBlankChoice && isTrueFalse ? { A: '正确', B: '错误' } : null)
     const optionKeys = opts ? Object.keys(opts) : []
     const isMulti = q.question_type === 'multiple_choice'

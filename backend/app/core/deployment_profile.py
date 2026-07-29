@@ -21,64 +21,55 @@ class DeploymentProfile(StrEnum):
 
 
 def detect_deployment_profile() -> DeploymentProfile:
-    """Detect the current deployment profile from environment / config.
+    """Resolve one deployment profile from the canonical and legacy settings.
 
-    Resolution order:
-      1. DEPLOYMENT_PROFILE env var (highest priority)
-      2. DEPLOY_PROFILE setting (local → local_import, production → cloud_api)
-      3. APP_ENV setting (development → local_import, production → cloud_api)
-      4. Default to local_import for development
-
-    Conflict detection:
-      If DEPLOYMENT_PROFILE env var AND DEPLOY_PROFILE setting are both set
-      AND they disagree, raises ValueError with all conflicting sources.
-
-    Returns:
-        DeploymentProfile value.
+    ``DEPLOYMENT_PROFILE`` is canonical and may come from the process
+    environment or the Settings object (including ``.env``). Legacy
+    ``DEPLOY_PROFILE`` is accepted only for ``local``/``production`` and is
+    checked for conflicts. Invalid or conflicting configuration raises instead
+    of silently selecting a permissive local profile.
     """
-    # Collect all sources for conflict detection
-    sources: dict[str, str | None] = {
-        "DEPLOYMENT_PROFILE": os.environ.get("DEPLOYMENT_PROFILE"),
-        "DEPLOY_PROFILE": settings.DEPLOY_PROFILE or None,
-        "APP_ENV": settings.APP_ENV or None,
-    }
+    explicit = (
+        os.environ.get("DEPLOYMENT_PROFILE")
+        or settings.DEPLOYMENT_PROFILE
+        or ""
+    ).strip().lower()
+    legacy = (settings.DEPLOY_PROFILE or "").strip().lower()
+    app_env = (settings.APP_ENV or "").strip().lower()
 
-    # 1. Explicit DEPLOYMENT_PROFILE env var
-    explicit = sources["DEPLOYMENT_PROFILE"]
+    legacy_map = {
+        "local": DeploymentProfile.LOCAL_IMPORT,
+        "production": DeploymentProfile.CLOUD_API,
+    }
+    if legacy and legacy not in legacy_map:
+        raise ValueError(
+            f"无效的 DEPLOY_PROFILE={legacy!r}，必须为 {sorted(legacy_map)}"
+        )
+
     if explicit:
         try:
             profile = DeploymentProfile(explicit)
-        except ValueError:
+        except ValueError as exc:
             raise ValueError(
                 f"无效的 DEPLOYMENT_PROFILE={explicit!r}，"
                 f"必须为 {[p.value for p in DeploymentProfile]}"
+            ) from exc
+        if legacy and profile != legacy_map[legacy]:
+            raise ValueError(
+                "部署档案冲突: "
+                f"DEPLOYMENT_PROFILE={explicit!r} 与 DEPLOY_PROFILE={legacy!r} 不一致"
             )
-        # Conflict detection: DEPLOYMENT_PROFILE env var vs DEPLOY_PROFILE setting
-        deploy_profile = sources["DEPLOY_PROFILE"]
-        if deploy_profile:
-            expected = DeploymentProfile.LOCAL_IMPORT if deploy_profile == "local" else DeploymentProfile.CLOUD_API
-            if profile != expected:
-                raise ValueError(
-                    f"部署档案冲突: DEPLOYMENT_PROFILE={explicit!r} "
-                    f"与 DEPLOY_PROFILE={deploy_profile!r} 不一致。"
-                    f"请只设置其中一个，或确保两者一致。"
-                    f"来源: {sources}"
-                )
+        if app_env == "production" and profile != DeploymentProfile.CLOUD_API:
+            raise ValueError(
+                "部署档案冲突: APP_ENV='production' 时 "
+                "DEPLOYMENT_PROFILE 必须为 'cloud_api'"
+            )
         return profile
 
-    # 2. DEPLOY_PROFILE setting
-    deploy = settings.DEPLOY_PROFILE
-    if deploy == "local":
-        return DeploymentProfile.LOCAL_IMPORT
-    if deploy == "production":
+    if legacy:
+        return legacy_map[legacy]
+    if app_env == "production":
         return DeploymentProfile.CLOUD_API
-
-    # 3. APP_ENV setting
-    env = settings.APP_ENV
-    if env == "production":
-        return DeploymentProfile.CLOUD_API
-
-    # 4. Default to local_import for development
     return DeploymentProfile.LOCAL_IMPORT
 
 

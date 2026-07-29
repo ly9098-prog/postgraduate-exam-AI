@@ -12,6 +12,13 @@
  *   currentQuestion._renderModel missing/unknown → fallback plain text
  */
 
+var questionAdapter = null
+try {
+  questionAdapter = require('../../utils/question-runner-adapter')
+} catch (e) {
+  // Keep the component usable in isolated previews where utils are mocked.
+}
+
 Component({
   properties: {
     mode: { type: String, value: 'practice' },
@@ -52,6 +59,9 @@ Component({
 
     flowLayout: { type: Boolean, value: false },
     compactBottom: { type: Boolean, value: false },
+    // Allow callers such as embedded review/detail surfaces to opt out of
+    // the normal scroll-driven hero collapse behavior.
+    heroCollapseEnabled: { type: Boolean, value: true },
 
     // State fallback properties
     loading: { type: Boolean, value: false },
@@ -63,7 +73,7 @@ Component({
   data: {
     showSheet: false,
     heroCollapsed: false,
-    questionScrollTop: 0,
+    questionScrollIntoView: '',
     animClass: '',
     _animating: false,
     _touchX: undefined,
@@ -74,6 +84,7 @@ Component({
     _codeLines: [],
     _mixedBlocks: [],
     _questionImages: [],
+    _optionList: [],
     _blankOptionGroups: [],
     _hasBlankOptionGroups: false,
     _renderUnknownMode: false,
@@ -82,18 +93,29 @@ Component({
 
   created: function () {
     this._lastRenderModel = null
+    this._lastQuestionId = null
+    this._hasRenderedQuestion = false
+    this._questionResetPending = false
   },
 
   observers: {
     currentQuestion: function (q) {
       if (!q) {
-        this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [], _blankOptionGroups: [], _hasBlankOptionGroups: false, _renderUnknownMode: false, _renderFallbackText: '' })
+        this.setData({ _qTypeLabel: '', _codeLines: [], _mixedBlocks: [], _questionImages: [], _optionList: [], _blankOptionGroups: [], _hasBlankOptionGroups: false, _renderUnknownMode: false, _renderFallbackText: '' })
         this._lastRenderModel = null
+        this._lastQuestionId = null
+        this._hasRenderedQuestion = false
         return
       }
+      var questionId = q.id == null ? null : String(q.id)
+      var questionChanged = questionId !== this._lastQuestionId
+      var wasRendered = this._hasRenderedQuestion
+      this._lastQuestionId = questionId
       var model = q._renderModel || {}
       // _renderModel reference is stable when only blank selection changes
       var renderModelChanged = this._lastRenderModel !== model
+      var shouldResetViewport = wasRendered && (questionChanged || renderModelChanged)
+      this._hasRenderedQuestion = true
       this._lastRenderModel = model
 
       var data = {}
@@ -135,21 +157,92 @@ Component({
         data._renderFallbackText = fallbackText
       }
 
-      // Always update blank option groups (change on every selection)
-      data._blankOptionGroups = q._blankOptionGroups || []
-      data._hasBlankOptionGroups = !!(q._hasBlankOptionGroups && q._blankOptionGroups && q._blankOptionGroups.length > 0)
+      // Always update blank option groups (change on every selection). Some
+      // legacy API records mark the question as multi_blank_choice but only
+      // provide a flat `options` map; resolve that shape here as a final
+      // component-level fallback so the option area never renders empty.
+      var blankOptionGroups = Array.isArray(q._blankOptionGroups)
+        ? q._blankOptionGroups
+        : []
+      if (questionAdapter && typeof questionAdapter.getBlankOptionGroups === 'function') {
+        try {
+          var rawGroups = blankOptionGroups
+          if (!rawGroups.length) rawGroups = questionAdapter.getBlankOptionGroups(q)
+          var firstGroup = rawGroups[0]
+          var firstOption = firstGroup && Array.isArray(firstGroup.options)
+            ? firstGroup.options[0]
+            : null
+          var needsEnrich = !!(rawGroups.length && (!firstOption || !firstOption._text))
+          if (needsEnrich && typeof questionAdapter.enrichBlankOptionGroups === 'function') {
+            rawGroups = questionAdapter.enrichBlankOptionGroups(
+              rawGroups,
+              q._blankAnswer || q.user_answer || ''
+            )
+          }
+          if (rawGroups.length) blankOptionGroups = rawGroups
+        } catch (e) {
+          // A malformed optional field must not prevent the stem from
+          // rendering; the page-provided values remain usable.
+        }
+      }
+      data._blankOptionGroups = blankOptionGroups
+      data._hasBlankOptionGroups = blankOptionGroups.length > 0
 
+      // Direct component consumers may provide only q.options. Build the
+      // ordinary option list here when the page-level view model has not
+      // already supplied one (blank groups take precedence in the template).
+      var optionList = Array.isArray(q._optionList) ? q._optionList : []
+      if (!optionList.length && !blankOptionGroups.length &&
+        questionAdapter && typeof questionAdapter.buildOptionListFromFlags === 'function') {
+        try {
+          var optionSource = q._opts && Object.keys(q._opts).length > 0
+            ? q._opts
+            : (typeof questionAdapter.getQuestionOptions === 'function'
+              ? questionAdapter.getQuestionOptions(q)
+              : q.options)
+          if (optionSource && typeof optionSource === 'object') {
+            var optionKeys = Array.isArray(q._optionKeys)
+              ? q._optionKeys
+              : Object.keys(optionSource)
+            optionList = questionAdapter.buildOptionListFromFlags(
+              optionSource,
+              optionKeys,
+              q._selectedFlags || {}
+            )
+          }
+        } catch (e) {
+          // Leave the list empty only when the source itself is malformed.
+        }
+      }
+      data._optionList = optionList
+
+      if (shouldResetViewport) data.heroCollapsed = false
       this.setData(data)
-    },
-    currentIndex: function () {
-      var self = this
-      this.setData({ heroCollapsed: false, questionScrollTop: 1 }, function () {
-        self.setData({ questionScrollTop: 0 })
-      })
+      if (shouldResetViewport) this._requestQuestionViewportReset()
     },
   },
 
   methods: {
+    /**
+     * Reset the question viewport without writing a transient scrollTop.
+     * The old 1→0 workaround caused a first-frame jump and could race the
+     * currentQuestion observer while blank groups were mounting.
+     */
+    _requestQuestionViewportReset: function () {
+      var self = this
+      if (this._questionResetPending) return
+      this._questionResetPending = true
+      setTimeout(function () {
+        self._questionResetPending = false
+        self.setData({
+          heroCollapsed: false,
+          questionScrollIntoView: 'runner-scroll-top-anchor',
+        }, function () {
+          self.setData({ questionScrollIntoView: '' })
+        })
+      }, 0)
+    },
+
     _typeLabel: function (q) {
       if (!q) return ''
       if (q._hasBlankOptionGroups || q.question_type === 'multi_blank_choice') return '多空选择题'
@@ -310,6 +403,10 @@ Component({
     onQuestionScroll: function (e) {
       if (this.data.flowLayout || this.data.compactReviewMode) return
       var top = e && e.detail ? Number(e.detail.scrollTop || 0) : 0
+      if (this.data.heroCollapseEnabled === false) {
+        if (this.data.heroCollapsed) this.setData({ heroCollapsed: false })
+        return
+      }
       var nextCollapsed = this.data.heroCollapsed ? top > 8 : top > 34
       if (nextCollapsed !== this.data.heroCollapsed) {
         this.setData({ heroCollapsed: nextCollapsed })
@@ -364,7 +461,7 @@ Component({
       var src = e && e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.src
       if (!src) return
       var cq = this.data.currentQuestion
-      var list = cq && cq._optionList
+      var list = (cq && cq._optionList) || this.data._optionList
       if (!Array.isArray(list)) { wx.previewImage({ current: src, urls: [src] }); return }
       var seen = {}
       var urls = []

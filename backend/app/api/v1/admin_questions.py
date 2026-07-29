@@ -114,9 +114,13 @@ async def backfill_embeddings(
                 "limit": data.limit,
                 "force": data.force,
                 "after_id": data.after_id or 0,
-                "processed": result.get("processed", 0),
-                "success_count": result.get("success_count", 0),
-                "failed_count": result.get("failed_count", 0),
+                "processed": result.get("total", 0),
+                "success_count": (
+                    result.get("created", 0)
+                    + result.get("updated", 0)
+                    + result.get("skipped", 0)
+                ),
+                "failed_count": result.get("failed", 0),
             },
             request=request,
         )

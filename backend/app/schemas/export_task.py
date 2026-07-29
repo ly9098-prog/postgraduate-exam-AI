@@ -174,6 +174,9 @@ class ExportTaskResponse(BaseModel):
     range_type: str
     sort_by: str
     group_by: str
+    answer_position: str = "none"
+    analysis_position: str = "none"
+    space_style: str = "standard"
     total_count: int
     success_count: int | None = None
     skip_count: int | None = None

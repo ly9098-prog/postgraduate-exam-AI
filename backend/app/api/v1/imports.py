@@ -1,6 +1,5 @@
 import asyncio
 import hashlib
-import importlib
 import logging
 import os
 from datetime import datetime
@@ -148,9 +147,11 @@ def _build_ocr_text_diagnostics(raw_ocr_text: str, cleaned_text: str) -> dict:
 
 
 def _build_ocr_runtime_diagnostics() -> dict:
+    from app.core.ocr_isolation import local_paddleocr_available
+
     return {
         "ocr_enabled": settings.OCR_ENABLED,
-        "paddleocr_available": importlib.util.find_spec("paddleocr") is not None,
+        "paddleocr_available": local_paddleocr_available(),
     }
 
 

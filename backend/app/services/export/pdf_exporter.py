@@ -18,9 +18,9 @@ Safe HTML handling:
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import os
-import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -33,6 +33,11 @@ from app.services.export.latex_render import (
     has_latex,
     render_latex_to_png,
 )
+from app.services.export.question_content import (
+    clean_printable_text,
+    extract_option_text,
+    extract_question_text,
+)
 from app.services.export.space_allocator import get_answer_space_mm
 from app.services.export.table_parser import parse_table
 from app.services.export.table_renderer_pdf import render_table_to_pdf
@@ -42,11 +47,11 @@ logger = logging.getLogger(__name__)
 # ── Page layout constants (mm) ──
 PAGE_W = 210  # A4 width
 PAGE_H = 297  # A4 height
-MARGIN_L = 18
-MARGIN_R = 18
-MARGIN_T = 17
-MARGIN_B = 16
-BODY_W = PAGE_W - MARGIN_L - MARGIN_R  # 174 mm
+MARGIN_L = 20
+MARGIN_R = 20
+MARGIN_T = 18
+MARGIN_B = 17
+BODY_W = PAGE_W - MARGIN_L - MARGIN_R  # 170 mm
 
 # Monochrome exam-paper palette. Keep the document suitable for ordinary
 # black-and-white printing and avoid decorative fills or brand colours.
@@ -57,9 +62,17 @@ _COLOR_LIGHT_LINE = (205, 205, 205)
 
 # Fonts: a Song-style body and a restrained sans-serif heading mirror the
 # conventional Chinese examination typography used by the reference paper.
-_DEFAULT_BODY_FONT_PATH = "/usr/share/fonts/truetype/arphic-gbsn00lp/gbsn00lp.ttf"
-_DEFAULT_HEADING_FONT_PATH = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
-_FALLBACK_FONT_PATH = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"
+_BODY_FONT_CANDIDATES = (
+    "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/arphic-gbsn00lp/gbsn00lp.ttf",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+)
+_HEADING_FONT_CANDIDATES = (
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+)
 _BODY_FONT_NAME = "ExamSong"
 _HEADING_FONT_NAME = "ExamHei"
 _FONT_NAME = _BODY_FONT_NAME
@@ -71,8 +84,11 @@ _MAX_IMAGE_DIMENSION = 2000  # px
 _MAX_CONCURRENT_DOWNLOADS = 4
 _MAX_TOTAL_IMAGE_BYTES = 50 * 1024 * 1024  # 50 MB total
 
-# Text sanitisation: strip angle-bracket content as defense-in-depth
-_HTML_TAG_RE = re.compile(r"<[^>]*>")
+_BACKEND_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+_LOCAL_ASSET_ROOTS = (
+    os.path.join(_BACKEND_ROOT, "static", "question-assets"),
+    os.path.join(_BACKEND_ROOT, "static", "formulas"),
+)
 
 # Thread pool for blocking image downloads
 _image_executor = ThreadPoolExecutor(max_workers=_MAX_CONCURRENT_DOWNLOADS, thread_name_prefix="pdf-img")
@@ -90,11 +106,13 @@ class PdfExporter(Exporter):
     """Generate A4 portrait exam-paper PDF using fpdf2."""
 
     def __init__(self, font_path: str | None = None):
-        self._body_font_path = font_path or (
-            _DEFAULT_BODY_FONT_PATH if os.path.exists(_DEFAULT_BODY_FONT_PATH) else _FALLBACK_FONT_PATH
+        configured_body = getattr(settings, "EXPORT_PDF_BODY_FONT", "")
+        configured_heading = getattr(settings, "EXPORT_PDF_HEADING_FONT", "")
+        self._body_font_path = self._first_existing_font(
+            font_path, configured_body, *_BODY_FONT_CANDIDATES,
         )
-        self._heading_font_path = (
-            _DEFAULT_HEADING_FONT_PATH if os.path.exists(_DEFAULT_HEADING_FONT_PATH) else self._body_font_path
+        self._heading_font_path = self._first_existing_font(
+            configured_heading, *_HEADING_FONT_CANDIDATES, self._body_font_path,
         )
 
     @property
@@ -145,6 +163,9 @@ class PdfExporter(Exporter):
     ) -> bytes:
         """Synchronous PDF generation — runs in a thread-pool executor."""
         from fpdf import FPDF
+
+        if not self._body_font_path:
+            raise RuntimeError("未找到可用的中文 PDF 字体，请配置 EXPORT_PDF_BODY_FONT")
 
         pdf = FPDF(orientation="P", unit="mm", format="A4")
         pdf.set_margins(MARGIN_L, MARGIN_T, MARGIN_R)
@@ -231,18 +252,16 @@ class PdfExporter(Exporter):
         if answer_section:
             pdf.add_page()
             self._write_end_section_title(pdf, "参考答案")
-            for item in answer_section:
-                self._check_page_break(pdf, 10)
-                self._write_numbered_item(
-                    pdf, item["num"], item.get("answer") or "未提供答案", compact=True,
-                )
+            self._write_answer_grid(pdf, answer_section)
 
+        analysis_section = [item for item in analysis_section if item.get("analysis")]
         if analysis_section:
-            pdf.add_page()
+            if not answer_section or PAGE_H - MARGIN_B - pdf.get_y() < 38:
+                pdf.add_page()
+            else:
+                pdf.ln(6)
             self._write_end_section_title(pdf, "答案解析")
             for item in analysis_section:
-                if not item.get("analysis"):
-                    continue
                 self._check_page_break(pdf, 16)
                 self._write_numbered_item(
                     pdf, item["num"], item["analysis"], compact=False,
@@ -250,9 +269,16 @@ class PdfExporter(Exporter):
 
         self._add_running_headers(pdf, config)
         self._add_page_numbers(pdf)
-        return pdf.output()
+        return bytes(pdf.output())
 
     # ── Internal helpers ──
+
+    @staticmethod
+    def _first_existing_font(*paths: str | None) -> str | None:
+        for path in paths:
+            if path and os.path.isfile(path):
+                return path
+        return None
 
     @staticmethod
     def _chinese_section_number(value: int) -> str:
@@ -277,14 +303,14 @@ class PdfExporter(Exporter):
         """Render a clean, centered first-page title like a printed exam."""
         title = self._sanitize_text(config.get("title", "错题巩固练习")) or "错题巩固练习"
         pdf.set_text_color(*_COLOR_TEXT)
-        pdf.set_font(_HEADING_FONT_NAME, "", 18)
+        pdf.set_font(_HEADING_FONT_NAME, "", 16)
         pdf.multi_cell(
-            BODY_W, 10, text=title, new_x="LMARGIN", new_y="NEXT",
+            BODY_W, 8.8, text=title, new_x="LMARGIN", new_y="NEXT",
             align="C", wrapmode="CHAR",
         )
         # No date, total-count strip, brand line, or decorative rule. The first
         # section heading carries the useful question count instead.
-        pdf.ln(8)
+        pdf.ln(6.5)
 
     def _write_group_header(self, pdf, title: str, index: int, count: int) -> None:
         self._check_page_break(pdf, 15)
@@ -292,9 +318,9 @@ class PdfExporter(Exporter):
         suffix = f"（共{count}题）" if count else ""
         text = f"{self._chinese_section_number(index)}、{formal}{suffix}"
         pdf.set_text_color(*_COLOR_TEXT)
-        pdf.set_font(_HEADING_FONT_NAME, "", 13)
-        pdf.multi_cell(BODY_W, 7.2, text=text, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
-        pdf.ln(3.2)
+        pdf.set_font(_HEADING_FONT_NAME, "", 11)
+        pdf.multi_cell(BODY_W, 6.5, text=text, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+        pdf.ln(2.6)
 
     def _write_question_stem(
         self,
@@ -315,11 +341,11 @@ class PdfExporter(Exporter):
         stem = self._sanitize_text(content_text).strip()
 
         pdf.set_text_color(*_COLOR_TEXT)
-        pdf.set_font(_BODY_FONT_NAME, "", 10.5)
+        pdf.set_font(_BODY_FONT_NAME, "", 10)
 
         if stem and not has_latex(stem):
             pdf.multi_cell(
-                BODY_W, 6.2, text=f"{prefix}{stem}",
+                BODY_W, 5.9, text=f"{prefix}{stem}",
                 new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
             )
             # Some records store the textual stem separately and only put
@@ -332,7 +358,7 @@ class PdfExporter(Exporter):
             if visual_segments:
                 self._write_segments(pdf, visual_segments, ctx)
         elif stem:
-            pdf.multi_cell(BODY_W, 6.2, text=prefix, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+            pdf.multi_cell(BODY_W, 5.9, text=prefix, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
             self._write_latex_content(pdf, stem, ctx)
             visual_segments = [
                 seg for seg in segments
@@ -341,18 +367,19 @@ class PdfExporter(Exporter):
             if visual_segments:
                 self._write_segments(pdf, visual_segments, ctx)
         elif segments:
-            pdf.multi_cell(BODY_W, 6.2, text=prefix, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+            pdf.multi_cell(BODY_W, 5.9, text=prefix, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
             self._write_segments(pdf, segments, ctx)
         else:
             pdf.set_text_color(*_COLOR_MUTED)
             pdf.multi_cell(
-                BODY_W, 6.2, text=f"{prefix}（题干内容未提供）",
+                BODY_W, 5.9, text=f"{prefix}（题干内容未提供）",
                 new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
             )
             pdf.set_text_color(*_COLOR_TEXT)
 
         segment_urls = {
-            str(seg.get("url")) for seg in segments if seg.get("url")
+            str(seg.get("url") or seg.get("src"))
+            for seg in segments if seg.get("url") or seg.get("src")
         }
         for url in question.get("image_urls") or []:
             if url and str(url) not in segment_urls:
@@ -364,7 +391,7 @@ class PdfExporter(Exporter):
             return 1
         indent = 7.0
         gap = 4.0
-        rendered = [f"{key}．{self._sanitize_text(text)}" for key, text in items]
+        rendered = [f"{key}．{extract_option_text(text)}" for key, text in items]
         for columns in (4, 2):
             cell_w = (BODY_W - indent - gap * (columns - 1)) / columns
             if all(pdf.get_string_width(text) <= cell_w - 1.5 for text in rendered):
@@ -372,13 +399,13 @@ class PdfExporter(Exporter):
         return 1
 
     def _write_options(self, pdf, options: dict) -> None:
-        items = [(str(key), str(options[key])) for key in sorted(options.keys())]
+        items = [(str(key), extract_option_text(options[key])) for key in sorted(options.keys())]
         columns = self._choose_option_columns(pdf, items)
         indent = 7.0
         gap = 4.0
         cell_w = (BODY_W - indent - gap * (columns - 1)) / columns
         line_h = 5.8
-        pdf.set_font(_BODY_FONT_NAME, "", 10.3)
+        pdf.set_font(_BODY_FONT_NAME, "", 9.8)
         pdf.set_text_color(*_COLOR_TEXT)
 
         for row_start in range(0, len(items), columns):
@@ -417,9 +444,53 @@ class PdfExporter(Exporter):
 
     def _write_end_section_title(self, pdf, title: str) -> None:
         pdf.set_text_color(*_COLOR_TEXT)
-        pdf.set_font(_HEADING_FONT_NAME, "", 15)
-        pdf.cell(BODY_W, 9, text=title, align="C", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(8)
+        pdf.set_font(_HEADING_FONT_NAME, "", 14)
+        pdf.cell(BODY_W, 8, text=title, align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(5)
+
+    def _write_answer_grid(self, pdf, items: list[dict]) -> None:
+        """Render short answers as the compact grid used by printed answer keys."""
+        if not items:
+            return
+        groups: list[tuple[int, list[dict]]] = []
+        for item in items:
+            answer = self._sanitize_text(item.get("answer")) or "—"
+            columns = 8 if len(answer) <= 2 else 4 if len(answer) <= 8 else 1
+            if groups and groups[-1][0] == columns:
+                groups[-1][1].append(item)
+            else:
+                groups.append((columns, [item]))
+
+        for columns, group in groups:
+            self._write_answer_grid_group(pdf, group, columns)
+
+    def _write_answer_grid_group(self, pdf, items: list[dict], columns: int) -> None:
+        gap = 2.2
+        cell_w = (BODY_W - gap * (columns - 1)) / columns
+        line_h = 5.4
+        pdf.set_font(_BODY_FONT_NAME, "", 9.6)
+        pdf.set_text_color(*_COLOR_TEXT)
+
+        for row_start in range(0, len(items), columns):
+            row = items[row_start:row_start + columns]
+            texts = [
+                f"{item['num']}．{self._sanitize_text(item.get('answer')) or '—'}"
+                for item in row
+            ]
+            row_h = max(
+                self._estimate_wrapped_height(pdf, text, cell_w, line_h)
+                for text in texts
+            )
+            self._check_page_break(pdf, row_h + 1.2)
+            y = pdf.get_y()
+            for col, text in enumerate(texts):
+                x = MARGIN_L + col * (cell_w + gap)
+                pdf.set_xy(x, y)
+                pdf.multi_cell(
+                    cell_w, line_h, text=text,
+                    new_x="RIGHT", new_y="TOP", wrapmode="CHAR",
+                )
+            pdf.set_xy(MARGIN_L, y + row_h + 1.0)
 
     def _write_numbered_item(self, pdf, number: int, text: str, compact: bool) -> None:
         pdf.set_text_color(*_COLOR_TEXT)
@@ -512,13 +583,15 @@ class PdfExporter(Exporter):
             seg_type = seg.get("type", "text")
 
             if seg_type == "text":
-                pdf.multi_cell(BODY_W, 5.9, text=seg.get("text", ""), new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+                text = self._sanitize_text(seg.get("text", ""))
+                if text:
+                    pdf.multi_cell(BODY_W, 5.9, text=text, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
 
             elif seg_type == "newline":
                 pdf.ln(2)
 
             elif seg_type in ("code_image", "math_image", "table_image", "image"):
-                url = seg.get("url", "")
+                url = seg.get("url") or seg.get("src") or ""
                 if url:
                     self._embed_image(pdf, url, ctx)
                     alt = seg.get("alt", "")
@@ -564,21 +637,20 @@ class PdfExporter(Exporter):
                     pdf.set_text_color(0, 0, 0)
 
     def _embed_image(self, pdf, url: str, ctx: PdfContext) -> bool:
-        """Download and embed an image in the PDF."""
+        """Resolve, validate, and embed an image at a readable natural size."""
         local_path = ctx.downloaded.get(url)
         if local_path and os.path.exists(local_path):
             try:
-                pdf.image(local_path, w=BODY_W)
+                self._place_image(pdf, local_path)
                 return True
             except Exception:
                 pass
 
-        # Download image
         try:
             local_path = self._download_image_sync(url, ctx)
             if local_path:
                 ctx.downloaded[url] = local_path
-                pdf.image(local_path, w=BODY_W)
+                self._place_image(pdf, local_path)
                 return True
         except Exception as e:
             logger.warning("Image embed failed for %s: %s", url, e)
@@ -590,64 +662,120 @@ class PdfExporter(Exporter):
         pdf.set_text_color(0, 0, 0)
         return False
 
+    @staticmethod
+    def _place_image(pdf, image_path: str) -> None:
+        from PIL import Image as PILImage
+
+        with PILImage.open(image_path) as image:
+            px_w, px_h = image.size
+            dpi = image.info.get("dpi") or (96, 96)
+        dpi_x = float(dpi[0] or 96)
+        natural_w = max(8.0, px_w * 25.4 / dpi_x)
+        draw_w = min(BODY_W, natural_w)
+        draw_h = draw_w * px_h / max(1, px_w)
+        remaining = PAGE_H - MARGIN_B - pdf.get_y()
+        if remaining < min(draw_h, 45) and pdf.get_y() > MARGIN_T + 5:
+            pdf.add_page()
+            remaining = PAGE_H - MARGIN_B - pdf.get_y()
+        if draw_h > remaining:
+            scale = remaining / draw_h
+            draw_w *= scale
+            draw_h *= scale
+        x = MARGIN_L + max(0, (BODY_W - draw_w) / 2)
+        y = pdf.get_y()
+        pdf.image(image_path, x=x, y=y, w=draw_w, h=draw_h)
+        pdf.set_y(y + draw_h + 2)
+
     def _download_image_sync(self, url: str, ctx: PdfContext) -> str | None:
         """Download an image to the temp directory with safety checks."""
         import hashlib
-        import urllib.parse
         import urllib.request
 
-        # Validate URL — SSRF protection
-        if not self._is_safe_url(url):
-            logger.warning("Blocked unsafe image URL: %s", url)
-            return None
-
-        ext = self._guess_extension(url)
-        filename = hashlib.md5(url.encode()).hexdigest() + ext
+        filename = hashlib.md5(url.encode()).hexdigest() + ".png"
         dest = os.path.join(ctx.temp_dir, filename)
 
         if os.path.exists(dest):
             return dest
 
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "MemoGrad-Export/1.0"})
-            with urllib.request.urlopen(req, timeout=_MAX_IMAGE_DOWNLOAD_SEC) as resp:
-                data = resp.read()
+            local_source = self._resolve_local_asset(url)
+            if local_source:
+                with open(local_source, "rb") as source:
+                    data = source.read(_MAX_IMAGE_BYTES + 1)
+            else:
+                remote_url = self._normalize_remote_url(url)
+                if not remote_url or not self._is_safe_url(remote_url):
+                    logger.warning("Blocked unsafe image URL: %s", url)
+                    return None
+                req = urllib.request.Request(
+                    remote_url,
+                    headers={"User-Agent": "MemoGrad-Export/2.0"},
+                )
+                with urllib.request.urlopen(req, timeout=_MAX_IMAGE_DOWNLOAD_SEC) as resp:
+                    content_type = resp.headers.get("Content-Type", "")
+                    if not self._is_safe_mime(content_type):
+                        logger.warning("Unsafe image MIME: %s", content_type)
+                        return None
+                    data = resp.read(_MAX_IMAGE_BYTES + 1)
 
             if len(data) > _MAX_IMAGE_BYTES:
                 logger.warning("Image too large: %d bytes from %s", len(data), url)
                 return None
-
             if ctx.total_image_bytes + len(data) > _MAX_TOTAL_IMAGE_BYTES:
                 logger.warning("Total image budget exceeded")
                 return None
-
-            content_type = resp.headers.get("Content-Type", "")
-            if not self._is_safe_mime(content_type):
-                logger.warning("Unsafe image MIME: %s", content_type)
-                return None
-
-            # Validate actual file content (PIL check)
-            import io
-
-            from PIL import Image as PILImage
-            try:
-                img = PILImage.open(io.BytesIO(data))
-                img.verify()
-                # Resize if too large
-                if max(img.size) > _MAX_IMAGE_DIMENSION:
-                    logger.info("Resizing oversized image %s (%dpx)", url, max(img.size))
-            except Exception as e:
-                logger.warning("Invalid image data from %s: %s", url, e)
-                return None
-
-            with open(dest, "wb") as f:
-                f.write(data)
-            ctx.total_image_bytes += len(data)
-            return dest
+            return self._save_normalized_image(data, dest, url, ctx)
 
         except Exception as e:
             logger.warning("Image download failed for %s: %s", url, e)
             return None
+
+    @staticmethod
+    def _resolve_local_asset(url: str) -> str | None:
+        import urllib.parse
+
+        parsed = urllib.parse.urlsplit(str(url))
+        path = urllib.parse.unquote(parsed.path or str(url).split("?", 1)[0])
+        if not path.startswith(("/static/question-assets/", "/static/formulas/")):
+            return None
+        candidate = os.path.abspath(os.path.join(_BACKEND_ROOT, path.lstrip("/")))
+        if not any(
+            os.path.commonpath((candidate, root)) == root
+            for root in _LOCAL_ASSET_ROOTS
+        ):
+            return None
+        return candidate if os.path.isfile(candidate) else None
+
+    @staticmethod
+    def _normalize_remote_url(url: str) -> str | None:
+        import urllib.parse
+
+        parsed = urllib.parse.urlsplit(str(url))
+        if parsed.scheme:
+            return str(url)
+        base = str(getattr(settings, "PUBLIC_BASE_URL", "") or "").strip()
+        if not base:
+            return None
+        return urllib.parse.urljoin(base.rstrip("/") + "/", str(url).lstrip("/"))
+
+    @staticmethod
+    def _save_normalized_image(data: bytes, dest: str, source: str, ctx: PdfContext) -> str | None:
+        from PIL import Image as PILImage
+
+        try:
+            with PILImage.open(io.BytesIO(data)) as image:
+                image.load()
+                if max(image.size) > _MAX_IMAGE_DIMENSION:
+                    logger.info("Resizing oversized image %s (%dpx)", source, max(image.size))
+                    image.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION))
+                if image.mode not in ("RGB", "RGBA"):
+                    image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+                image.save(dest, format="PNG", optimize=True)
+        except Exception as exc:
+            logger.warning("Invalid image data from %s: %s", source, exc)
+            return None
+        ctx.total_image_bytes += len(data)
+        return dest
 
     @staticmethod
     def _is_safe_url(url: str) -> bool:
@@ -688,12 +816,6 @@ class PdfExporter(Exporter):
         return any(content_type.startswith(s) for s in safe) if content_type else True
 
     @staticmethod
-    def _guess_extension(url: str) -> str:
-        import os
-        _, ext = os.path.splitext(url.split("?")[0])
-        return ext if ext in (".png", ".jpg", ".jpeg", ".webp", ".gif") else ".png"
-
-    @staticmethod
     def _save_temp_image(ctx: PdfContext, data: bytes, prefix: str) -> str:
         import hashlib
         filename = f"{prefix}_{hashlib.md5(data).hexdigest()[:12]}.png"
@@ -704,29 +826,11 @@ class PdfExporter(Exporter):
 
     @staticmethod
     def _get_question_text(q: dict) -> str:
-        """Extract display text with the same fallback order as DataBuilder."""
-        content = q.get("content") or {}
-        if isinstance(content, dict):
-            direct = content.get("stem") or content.get("text")
-            if direct:
-                return str(direct)
-            segment_text = "".join(
-                str(seg.get("text") or "")
-                for seg in (content.get("segments") or [])
-                if isinstance(seg, dict) and seg.get("type", "text") == "text"
-            ).strip()
-            if segment_text:
-                return segment_text
-        elif content:
-            return str(content)
-        return str(q.get("raw_content") or "")
+        return extract_question_text(q)
 
     @staticmethod
-    def _sanitize_text(text: str | None) -> str:
-        """Strip angle-bracket content as defense-in-depth."""
-        if not text:
-            return ""
-        return _HTML_TAG_RE.sub("", text)
+    def _sanitize_text(text) -> str:
+        return clean_printable_text(text)
 
     @staticmethod
     def _get_question_type_label(qt: str | None) -> str:
@@ -755,7 +859,7 @@ class PdfExporter(Exporter):
             pdf.set_xy(MARGIN_L, 6.2)
             pdf.set_font(_BODY_FONT_NAME, "", 7.8)
             pdf.set_text_color(*_COLOR_MUTED)
-            pdf.cell(BODY_W, 4, text=title, align="C", new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(BODY_W, 4, text=title, align="L", new_x="LMARGIN", new_y="NEXT")
             pdf.set_draw_color(175, 175, 175)
             pdf.set_line_width(0.15)
             pdf.line(MARGIN_L, 12.2, PAGE_W - MARGIN_R, 12.2)

@@ -7,12 +7,13 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
@@ -119,6 +120,36 @@ async def patch_vector_config(
     row = await _seed_if_empty(db)
     update_data = data.model_dump(exclude_unset=True)
 
+    requested_dim = update_data.get("embedding_dim")
+    if requested_dim is not None and requested_dim != row.embedding_dim:
+        bind = db.get_bind()
+        if bind is not None and bind.dialect.name == "postgresql":
+            type_result = await db.execute(text("""
+                SELECT pg_catalog.format_type(a.atttypid, a.atttypmod)
+                FROM pg_catalog.pg_attribute a
+                JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = current_schema()
+                  AND c.relname = 'question_embeddings'
+                  AND a.attname = 'embedding'
+                  AND a.attnum > 0
+                  AND NOT a.attisdropped
+                LIMIT 1
+            """))
+            type_name = type_result.scalar()
+            match = re.fullmatch(
+                r"vector\((\d+)\)",
+                type_name.strip(),
+                flags=re.IGNORECASE,
+            ) if isinstance(type_name, str) else None
+            database_dim = int(match.group(1)) if match else None
+            if database_dim is not None and database_dim != requested_dim:
+                raise ValueError(
+                    "embedding_dim 与现有 pgvector 列维度不一致："
+                    f"database={database_dim}, requested={requested_dim}。"
+                    "请先执行向量表维度迁移，不能仅修改运行时配置。"
+                )
+
     # 记录实际变更字段（含 API key）
     changed_fields = list(update_data.keys())
 
@@ -141,6 +172,16 @@ async def patch_vector_config(
     row.updated_by = operator.id
     await db.flush()
     _clear_cache()
+    # 同步失效向量服务的基础设施与 DB-first 配置缓存，确保新配置在下一次
+    # 推荐请求立即生效，而不是继续使用旧值 30~60 秒。
+    try:
+        from app.services.vector_retrieval_service import (
+            _reset_vector_enabled_cache,
+        )
+
+        _reset_vector_enabled_cache()
+    except ImportError:
+        logger.debug("vector retrieval cache reset skipped", exc_info=True)
 
     await write_admin_audit(
         db, operator, "vector_config.update", "vector_config", str(row.id),

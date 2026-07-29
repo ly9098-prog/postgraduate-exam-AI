@@ -58,9 +58,10 @@ function formatDuration(sec) {
 var pageConfig = {
   data: {
     loading: true,
+    contentReady: false,
+    historyReady: false,
     themeMode: 'light',
     errorText: '',
-    pageEntered: false,
     todaySessions: 0,
     todayDurationText: '0分钟',
     selectedDurationLabel: '今日专注',
@@ -100,6 +101,10 @@ var pageConfig = {
     this._displayTodayDurationSec = 0
     this._durationAnimationToken = 0
     this._durationAnimationTimer = null
+    this._deferredHistoryTimer = null
+    this._pendingHistoryCommit = null
+    this._canvasInitPending = false
+    this._canvasInitCallbacks = []
     const themeMode = pomodoroTheme.getTheme()
     pomodoroTheme.applyNativeTheme(themeMode)
     const now = new Date()
@@ -128,11 +133,18 @@ var pageConfig = {
     this._isVisible = true
     this._requestId++
     this.loadData()
+    const warmCanvases = () => {
+      if (!this._alive || !this._isVisible) return
+      this._initCanvases(() => {})
+    }
+    if (wx.nextTick) wx.nextTick(warmCanvases)
+    else setTimeout(warmCanvases, 0)
   },
 
   onHide() {
     this._isVisible = false
     this._cancelDurationAnimation(false)
+    this._cancelDeferredHistory(true)
   },
 
   onUnload() {
@@ -321,6 +333,45 @@ var pageConfig = {
     this._shadeCache = null
   },
 
+  _cancelDeferredHistory(clearPending) {
+    if (this._deferredHistoryTimer) {
+      clearTimeout(this._deferredHistoryTimer)
+      this._deferredHistoryTimer = null
+    }
+    if (clearPending) this._pendingHistoryCommit = null
+  },
+
+  _queueDeferredHistory(reqId, dateSeq, selectedDate, sessions, total) {
+    this._cancelDeferredHistory(true)
+    this._pendingHistoryCommit = {
+      reqId,
+      dateSeq,
+      selectedDate,
+      sessions: Array.isArray(sessions) ? sessions : [],
+      total: Number(total) || 0,
+    }
+    // The history list is below the fold. Mount it after the chart/count-up
+    // animations have finished so its view creation never competes with them.
+    this._deferredHistoryTimer = setTimeout(() => {
+      this._deferredHistoryTimer = null
+      const pending = this._pendingHistoryCommit
+      this._pendingHistoryCommit = null
+      if (
+        !pending ||
+        !this._alive ||
+        !this._isVisible ||
+        pending.reqId !== this._requestId ||
+        pending.dateSeq !== this._dateRequestSeq ||
+        pending.selectedDate !== this.data.selectedDate
+      ) return
+      this.setData({
+        history: pending.sessions.map(item => this._formatSession(item)),
+        historyTotal: pending.total,
+        historyReady: true,
+      })
+    }, 1300)
+  },
+
   _cancelDurationAnimation(resetState) {
     this._durationAnimationToken = (this._durationAnimationToken || 0) + 1
     if (this._durationAnimationTimer) {
@@ -425,6 +476,7 @@ var pageConfig = {
     const selectedDate = this.data.selectedDate
     this._dateRequestSeq = (this._dateRequestSeq || 0) + 1
     const dateSeq = this._dateRequestSeq
+    if (this._hasData) this._cancelDeferredHistory(true)
     this.setData({ loading: true, errorText: '' })
     try {
       const [stats, trends, dayData] = await Promise.all([
@@ -456,9 +508,22 @@ var pageConfig = {
       this._resetPieCache()
 
       const willAnimate = !this._hasData
+      const recentSessions = daySessions.slice(0, 20)
       this._hasData = true
       this._cancelDurationAnimation(false)
       this._displayTodayDurationSec = willAnimate ? 0 : selectedDurationSec
+
+      const historyPatch = willAnimate
+        ? {
+            history: [],
+            historyTotal: dayData.total || 0,
+            historyReady: false,
+          }
+        : {
+            history: recentSessions.map(item => this._formatSession(item)),
+            historyTotal: dayData.total || 0,
+            historyReady: true,
+          }
 
       this.setData({
         todaySessions: selectedSessionCount,
@@ -474,18 +539,26 @@ var pageConfig = {
         subjects: this._buildSubjectItems(subjectBreakdown),
         pieDateLabel: this._formatPieDateLabel(selectedDate),
         pieLoading: false,
-        history: daySessions.slice(0, 20).map(this._formatSession),
-        historyTotal: dayData.total || 0,
         loading: false,
+        contentReady: true,
         errorText: '',
-        pageEntered: true,
         _dispTodaySessions: willAnimate ? 0 : selectedSessionCount,
         _dispTodayDurationText: willAnimate ? '0分钟' : this._fmtMin(selectedDurationSec),
         durationValueAnimating: willAnimate,
         _dispWeekSessions: willAnimate ? 0 : (stats.week_sessions || 0),
         _dispWeekDurationText: willAnimate ? '0分钟' : this._fmtMin(stats.week_duration_sec || 0),
+        ...historyPatch,
       }, () => {
         if (!this._alive || !this._isVisible || reqId !== this._requestId) return
+        if (willAnimate) {
+          this._queueDeferredHistory(
+            reqId,
+            dateSeq,
+            selectedDate,
+            recentSessions,
+            dayData.total || 0
+          )
+        }
         this._initCanvases(() => {
           if (!this._alive || !this._isVisible) return
           if (willAnimate) {
@@ -534,6 +607,7 @@ var pageConfig = {
   onDateChange(e) {
     const date = e && e.detail ? e.detail.value : ''
     if (!date || date === this.data.selectedDate) return
+    this._cancelDeferredHistory(true)
     this.setData({
       selectedDate: date,
       pieDateLabel: this._formatPieDateLabel(date),
@@ -546,6 +620,7 @@ var pageConfig = {
   goToToday() {
     const today = this.data._todayDate
     if (!today || today === this.data.selectedDate) return
+    this._cancelDeferredHistory(true)
     this.setData({
       selectedDate: today,
       pieDateLabel: '今日',
@@ -591,8 +666,9 @@ var pageConfig = {
         subjects: this._buildSubjectItems(subjectBreakdown),
         todayDurationText: this._fmtMin(selectedDurationSec),
         selectedDurationLabel: this._formatSelectedDurationLabel(requestDate),
-        history: daySessions.slice(0, 20).map(this._formatSession),
+        history: daySessions.slice(0, 20).map(item => this._formatSession(item)),
         historyTotal: dayData.total || 0,
+        historyReady: true,
         pieDateLabel: this._formatPieDateLabel(requestDate),
         pieLoading: false,
         selectedSubjectDetail: null,
@@ -682,6 +758,7 @@ var pageConfig = {
 
   _cancelPendingWork() {
     this._cancelDurationAnimation(false)
+    this._cancelDeferredHistory(true)
     this._animActive = false
     this._finalDrawn = false
     this._requestId++
@@ -706,15 +783,28 @@ var pageConfig = {
   },
 
   _initCanvases(callback) {
+    const doneCallback = typeof callback === 'function' ? callback : () => {}
     if (
       this._pieCanvasNode && this._pieCtx && this._pieRect &&
       this._trendCanvasNode && this._trendCtx && this._trendBarsRect
     ) {
-      callback()
+      doneCallback()
       return
     }
+    if (this._canvasInitPending) {
+      this._canvasInitCallbacks.push(doneCallback)
+      return
+    }
+    this._canvasInitPending = true
+    this._canvasInitCallbacks = [doneCallback]
     let pending = 2
-    const done = () => { if (--pending === 0) callback() }
+    const done = () => {
+      if (--pending !== 0) return
+      this._canvasInitPending = false
+      const callbacks = this._canvasInitCallbacks.slice()
+      this._canvasInitCallbacks.length = 0
+      callbacks.forEach(cb => cb())
+    }
     // Cap DPR at 2 — backbuffer cost grows quadratically and DPR=3 on iPhones
     // produces ~56% more pixel-fill work for negligible visual gain on a 250px pie.
     const windowInfo = wx.getWindowInfo ? wx.getWindowInfo() : {}
@@ -726,6 +816,7 @@ var pageConfig = {
         .select(selector)
         .fields({ node: true, size: true })
         .exec(res => {
+          if (!this._alive) { done(); return }
           if (!res || !res[0] || !res[0].node) { done(); return }
           const node = res[0].node
           const ctx = node.getContext('2d')

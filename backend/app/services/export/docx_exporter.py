@@ -43,12 +43,18 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
+from docx.text.paragraph import Paragraph
 
 from app.core.config import settings
 from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
 from app.services.export.exporter_base import Exporter, ExportResult
 from app.services.export.latex_render import find_latex_segments, has_latex
 from app.services.export.omml_converter import render_latex_as_omml_or_fallback
+from app.services.export.question_content import (
+    clean_printable_text,
+    extract_option_text,
+    extract_question_text,
+)
 from app.services.export.space_allocator import get_answer_space_mm
 from app.services.export.table_parser import parse_table
 from app.services.export.table_renderer import render_table_to_docx
@@ -58,11 +64,11 @@ logger = logging.getLogger(__name__)
 # ── Page layout constants ──
 PAGE_W_CM = 21.0  # A4 width
 PAGE_H_CM = 29.7  # A4 height
-MARGIN_L_CM = 1.8
-MARGIN_R_CM = 1.8
-MARGIN_T_CM = 1.7
-MARGIN_B_CM = 1.6
-BODY_W_CM = PAGE_W_CM - MARGIN_L_CM - MARGIN_R_CM  # 17.4 cm
+MARGIN_L_CM = 2.0
+MARGIN_R_CM = 2.0
+MARGIN_T_CM = 1.8
+MARGIN_B_CM = 1.7
+BODY_W_CM = PAGE_W_CM - MARGIN_L_CM - MARGIN_R_CM  # 17 cm
 
 # ── Font names ──
 _BODY_FONT = "SimSun"  # 宋体 — Chinese body
@@ -71,6 +77,11 @@ _HEADING_FONT = "SimHei"  # 黑体 — Chinese heading
 _EN_FONT = "Times New Roman"  # English / numbers
 _CODE_FONT = "Consolas"
 _CODE_FONT_CJK = "DengXian"  # 等线 — Chinese in code blocks
+_BACKEND_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+_LOCAL_ASSET_ROOTS = (
+    os.path.join(_BACKEND_ROOT, "static", "question-assets"),
+    os.path.join(_BACKEND_ROOT, "static", "formulas"),
+)
 
 # ── Image resource limits (same as PdfExporter) ──
 _MAX_IMAGE_DOWNLOAD_SEC = 15
@@ -83,9 +94,6 @@ _MAX_TOTAL_IMAGE_BYTES = 50 * 1024 * 1024
 _image_executor = ThreadPoolExecutor(
     max_workers=_MAX_CONCURRENT_DOWNLOADS, thread_name_prefix="docx-img"
 )
-
-# Angle-bracket content stripping (defense-in-depth)
-_HTML_TAG_RE = re.compile(r"<[^>]*>")
 
 # Inline formatting regex for <b>, <strong>, <i>, <em>, <sub>, <sup>, <br>
 _INLINE_FORMAT_RE = re.compile(
@@ -165,7 +173,7 @@ class DocxExporter(Exporter):
         style = doc.styles["Normal"]
         font = style.font
         font.name = _EN_FONT
-        font.size = Pt(10.5)
+        font.size = Pt(10)
         rpr = style.element.get_or_add_rPr()
         rfonts = rpr.find(qn("w:rFonts"))
         if rfonts is None:
@@ -178,7 +186,7 @@ class DocxExporter(Exporter):
         pf = style.paragraph_format
         pf.space_before = Pt(0)
         pf.space_after = Pt(0)
-        pf.line_spacing = 1.45
+        pf.line_spacing = 1.35
 
         self._add_header(doc, config)
         self._setup_header_footer(doc, config)
@@ -214,7 +222,7 @@ class DocxExporter(Exporter):
                 prefix += f"[{self._formal_group_title(qt_label)}]"
             prefix_run = stem_p.add_run(prefix)
             prefix_run.bold = False
-            prefix_run.font.size = Pt(10.5)
+            prefix_run.font.size = Pt(10)
             prefix_run.font.name = _BODY_FONT
             self._set_east_asian_font(prefix_run, _BODY_FONT_EA)
 
@@ -227,7 +235,7 @@ class DocxExporter(Exporter):
                     self._write_latex_content_to_doc(stem_p, cleaned_stem, ctx)
                 else:
                     run = stem_p.add_run(cleaned_stem)
-                    run.font.size = Pt(10.5)
+                    run.font.size = Pt(10)
                     run.font.name = _BODY_FONT
                     self._set_east_asian_font(run, _BODY_FONT_EA)
                 visual_segments = [
@@ -240,12 +248,15 @@ class DocxExporter(Exporter):
                 self._write_segments_to_doc(stem_p, segments, ctx, doc)
             else:
                 run = stem_p.add_run("（题干内容未提供）")
-                run.font.size = Pt(10.5)
+                run.font.size = Pt(10)
                 run.font.name = _BODY_FONT
                 self._set_east_asian_font(run, _BODY_FONT_EA)
             question_paragraphs.append(stem_p)
 
-            segment_urls = {str(seg.get("url")) for seg in segments if seg.get("url")}
+            segment_urls = {
+                str(seg.get("url") or seg.get("src"))
+                for seg in segments if seg.get("url") or seg.get("src")
+            }
             for url in q.get("image_urls") or []:
                 if url and str(url) not in segment_urls:
                     self._embed_image_in_doc(stem_p, str(url), ctx)
@@ -300,29 +311,26 @@ class DocxExporter(Exporter):
         if answer_section:
             doc.add_page_break()
             self._add_end_section_title(doc, "参考答案")
-            for item in answer_section:
-                p = doc.add_paragraph()
-                p.paragraph_format.space_after = Pt(3)
-                run = p.add_run(f"{item['num']}．{item.get('answer') or '未提供答案'}")
-                run.font.size = Pt(10.5)
-                run.font.name = _BODY_FONT
-                self._set_east_asian_font(run, _BODY_FONT_EA)
+            self._add_answer_grid(doc, answer_section)
 
+        analysis_section = [item for item in analysis_section if item.get("analysis")]
         if analysis_section:
-            doc.add_page_break()
+            if not answer_section:
+                doc.add_page_break()
+            else:
+                spacer = doc.add_paragraph()
+                spacer.paragraph_format.space_after = Pt(7)
             self._add_end_section_title(doc, "答案解析")
             for item in analysis_section:
-                if not item.get("analysis"):
-                    continue
                 p = doc.add_paragraph()
                 p.paragraph_format.space_after = Pt(6)
                 number_run = p.add_run(f"{item['num']}．")
                 number_run.bold = True
-                number_run.font.size = Pt(10.5)
+                number_run.font.size = Pt(10)
                 number_run.font.name = _BODY_FONT
                 self._set_east_asian_font(number_run, _BODY_FONT_EA)
                 run = p.add_run(item["analysis"])
-                run.font.size = Pt(10.5)
+                run.font.size = Pt(10)
                 run.font.name = _BODY_FONT
                 self._set_east_asian_font(run, _BODY_FONT_EA)
 
@@ -343,7 +351,7 @@ class DocxExporter(Exporter):
         p.paragraph_format.keep_with_next = True
         run = p.add_run(title)
         run.bold = False
-        run.font.size = Pt(18)
+        run.font.size = Pt(16)
         run.font.name = _HEADING_FONT
         self._set_east_asian_font(run, _HEADING_FONT)
 
@@ -363,7 +371,7 @@ class DocxExporter(Exporter):
         header.is_linked_to_previous = False
         hp = header.paragraphs[0]
         hp.text = ""
-        hp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        hp.alignment = WD_ALIGN_PARAGRAPH.LEFT
         hp.paragraph_format.space_after = Pt(2)
         run = hp.add_run(title)
         run.font.size = Pt(8)
@@ -422,6 +430,13 @@ class DocxExporter(Exporter):
 
     # ── Content rendering ──
 
+    @staticmethod
+    def _add_paragraph_to_doc(paragraph) -> Paragraph:
+        """Insert a paragraph immediately after another paragraph."""
+        new_element = OxmlElement("w:p")
+        paragraph._p.addnext(new_element)
+        return Paragraph(new_element, paragraph._parent)
+
     def _write_content_to_paragraph(
         self, paragraph, text: str, question: dict, ctx: DocxContext, doc: Document,
     ):
@@ -440,7 +455,7 @@ class DocxExporter(Exporter):
             # Plain text — add as a single run
             cleaned = self._sanitize_text(text)
             run = paragraph.add_run(cleaned)
-            run.font.size = Pt(10.5)
+            run.font.size = Pt(10)
             run.font.name = _BODY_FONT
             self._set_east_asian_font(run, _BODY_FONT_EA)
 
@@ -461,7 +476,7 @@ class DocxExporter(Exporter):
                     cleaned = self._sanitize_text(text)
                     if cleaned:
                         run = parent_paragraph.add_run(cleaned)
-                        run.font.size = Pt(10.5)
+                        run.font.size = Pt(10)
                         run.font.name = _BODY_FONT
                         self._set_east_asian_font(run, _BODY_FONT_EA)
 
@@ -472,7 +487,7 @@ class DocxExporter(Exporter):
                 parent_paragraph = p
 
             elif seg_type in ("code_image", "math_image", "table_image", "image"):
-                url = seg.get("url", "")
+                url = seg.get("url") or seg.get("src") or ""
                 if url:
                     self._embed_image_in_doc(parent_paragraph, url, ctx)
                     alt = seg.get("alt", "")
@@ -511,7 +526,7 @@ class DocxExporter(Exporter):
                 cleaned = self._sanitize_text(seg["content"])
                 if cleaned:
                     run = paragraph.add_run(cleaned)
-                    run.font.size = Pt(10.5)
+                    run.font.size = Pt(10)
                     run.font.name = _BODY_FONT
                     self._set_east_asian_font(run, _BODY_FONT_EA)
             else:
@@ -538,7 +553,7 @@ class DocxExporter(Exporter):
         if local_path and os.path.exists(local_path):
             try:
                 run = paragraph.add_run()
-                run.add_picture(local_path, width=Cm(BODY_W_CM))
+                run.add_picture(local_path, width=Cm(self._image_width_cm(local_path)))
                 return True
             except Exception:
                 pass
@@ -549,7 +564,7 @@ class DocxExporter(Exporter):
             if local_path:
                 ctx.downloaded[url] = local_path
                 run = paragraph.add_run()
-                run.add_picture(local_path, width=Cm(BODY_W_CM))
+                run.add_picture(local_path, width=Cm(self._image_width_cm(local_path)))
                 return True
         except Exception as e:
             logger.warning("Image embed failed for %s: %s", url, e)
@@ -562,14 +577,21 @@ class DocxExporter(Exporter):
         self._set_east_asian_font(run, _BODY_FONT_EA)
         return False
 
+    @staticmethod
+    def _image_width_cm(image_path: str) -> float:
+        from PIL import Image as PILImage
+
+        with PILImage.open(image_path) as image:
+            px_w, px_h = image.size
+            dpi = image.info.get("dpi") or (96, 96)
+        natural_w = max(0.8, px_w * 2.54 / float(dpi[0] or 96))
+        natural_h = max(0.8, px_h * 2.54 / float(dpi[1] or 96))
+        scale = min(1.0, BODY_W_CM / natural_w, 20.0 / natural_h)
+        return max(0.8, natural_w * scale)
+
     def _download_image_sync(self, url: str, ctx: DocxContext) -> str | None:
         """Download an image with safety checks (same as PdfExporter)."""
-        if not self._is_safe_url(url):
-            logger.warning("Blocked unsafe image URL: %s", url)
-            return None
-
-        ext = self._guess_extension(url)
-        filename = hashlib.md5(url.encode()).hexdigest() + ext
+        filename = hashlib.md5(url.encode()).hexdigest() + ".png"
         dest = os.path.join(ctx.temp_dir, filename)
 
         if os.path.exists(dest):
@@ -578,9 +600,22 @@ class DocxExporter(Exporter):
         try:
             import urllib.request
 
-            req = urllib.request.Request(url, headers={"User-Agent": "MemoGrad-Export/2.0"})
-            with urllib.request.urlopen(req, timeout=_MAX_IMAGE_DOWNLOAD_SEC) as resp:
-                data = resp.read()
+            local_source = self._resolve_local_asset(url)
+            if local_source:
+                with open(local_source, "rb") as source:
+                    data = source.read(_MAX_IMAGE_BYTES + 1)
+            else:
+                remote_url = self._normalize_remote_url(url)
+                if not remote_url or not self._is_safe_url(remote_url):
+                    logger.warning("Blocked unsafe image URL: %s", url)
+                    return None
+                req = urllib.request.Request(remote_url, headers={"User-Agent": "MemoGrad-Export/2.0"})
+                with urllib.request.urlopen(req, timeout=_MAX_IMAGE_DOWNLOAD_SEC) as resp:
+                    content_type = resp.headers.get("Content-Type", "")
+                    if not self._is_safe_mime(content_type):
+                        logger.warning("Unsafe image MIME: %s", content_type)
+                        return None
+                    data = resp.read(_MAX_IMAGE_BYTES + 1)
 
             if len(data) > _MAX_IMAGE_BYTES:
                 logger.warning("Image too large: %d bytes from %s", len(data), url)
@@ -590,31 +625,56 @@ class DocxExporter(Exporter):
                 logger.warning("Total image budget exceeded")
                 return None
 
-            content_type = resp.headers.get("Content-Type", "")
-            if not self._is_safe_mime(content_type):
-                logger.warning("Unsafe image MIME: %s", content_type)
-                return None
-
-            # Validate with PIL
-            from PIL import Image as PILImage
-
-            try:
-                img = PILImage.open(io.BytesIO(data))
-                img.verify()
-                if max(img.size) > _MAX_IMAGE_DIMENSION:
-                    logger.info("Resizing oversized image %s (%dpx)", url, max(img.size))
-            except Exception as e:
-                logger.warning("Invalid image data from %s: %s", url, e)
-                return None
-
-            with open(dest, "wb") as f:
-                f.write(data)
-            ctx.total_image_bytes += len(data)
-            return dest
+            return self._save_normalized_image(data, dest, url, ctx)
 
         except Exception as e:
             logger.warning("Image download failed for %s: %s", url, e)
             return None
+
+    @staticmethod
+    def _resolve_local_asset(url: str) -> str | None:
+        from urllib.parse import unquote, urlsplit
+
+        parsed = urlsplit(str(url))
+        path = unquote(parsed.path or str(url).split("?", 1)[0])
+        if not path.startswith(("/static/question-assets/", "/static/formulas/")):
+            return None
+        candidate = os.path.abspath(os.path.join(_BACKEND_ROOT, path.lstrip("/")))
+        if not any(
+            os.path.commonpath((candidate, root)) == root
+            for root in _LOCAL_ASSET_ROOTS
+        ):
+            return None
+        return candidate if os.path.isfile(candidate) else None
+
+    @staticmethod
+    def _normalize_remote_url(url: str) -> str | None:
+        from urllib.parse import urljoin, urlsplit
+
+        if urlsplit(str(url)).scheme:
+            return str(url)
+        base = str(getattr(settings, "PUBLIC_BASE_URL", "") or "").strip()
+        if not base:
+            return None
+        return urljoin(base.rstrip("/") + "/", str(url).lstrip("/"))
+
+    @staticmethod
+    def _save_normalized_image(data: bytes, dest: str, source: str, ctx: DocxContext) -> str | None:
+        from PIL import Image as PILImage
+
+        try:
+            with PILImage.open(io.BytesIO(data)) as image:
+                image.load()
+                if max(image.size) > _MAX_IMAGE_DIMENSION:
+                    image.thumbnail((_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION))
+                if image.mode not in ("RGB", "RGBA"):
+                    image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+                image.save(dest, format="PNG", optimize=True)
+        except Exception as exc:
+            logger.warning("Invalid image data from %s: %s", source, exc)
+            return None
+        ctx.total_image_bytes += len(data)
+        return dest
 
     @staticmethod
     def _display_units(text: str) -> int:
@@ -624,7 +684,7 @@ class DocxExporter(Exporter):
         return units
 
     def _choose_option_columns(self, items: list[tuple[str, str]]) -> int:
-        rendered = [f"{key}．{self._sanitize_text(text)}" for key, text in items]
+        rendered = [f"{key}．{extract_option_text(text)}" for key, text in items]
         # Approximate capacities at 10.5 pt in a 17.4 cm body width. These
         # thresholds match conventional four/two/one-column exam choices.
         if rendered and all(self._display_units(text) <= 20 for text in rendered):
@@ -634,7 +694,7 @@ class DocxExporter(Exporter):
         return 1
 
     def _add_options_table(self, doc: Document, options: dict):
-        items = [(str(key), str(options[key])) for key in sorted(options.keys())]
+        items = [(str(key), extract_option_text(options[key])) for key in sorted(options.keys())]
         columns = self._choose_option_columns(items)
         rows = (len(items) + columns - 1) // columns
         table = doc.add_table(rows=rows, cols=columns)
@@ -658,7 +718,38 @@ class DocxExporter(Exporter):
                 if item_index < len(items):
                     key, value = items[item_index]
                     run = p.add_run(f"{key}．{self._sanitize_text(value)}")
-                    run.font.size = Pt(10.5)
+                    run.font.size = Pt(9.8)
+                    run.font.name = _BODY_FONT
+                    self._set_east_asian_font(run, _BODY_FONT_EA)
+        return table
+
+    def _add_answer_grid(self, doc: Document, items: list[dict]):
+        answers = [self._sanitize_text(item.get("answer")) or "—" for item in items]
+        max_units = max((self._display_units(answer) for answer in answers), default=1)
+        columns = 8 if max_units <= 4 else 4 if max_units <= 16 else 2 if max_units <= 36 else 1
+        rows = (len(items) + columns - 1) // columns
+        table = doc.add_table(rows=rows, cols=columns)
+        table.alignment = WD_TABLE_ALIGNMENT.LEFT
+        table.autofit = False
+        self._set_table_borders_none(table)
+        self._set_table_indent(table, 0)
+        cell_width = Cm(BODY_W_CM / columns)
+
+        for row_index, row in enumerate(table.rows):
+            self._set_row_cant_split(row)
+            for col_index, cell in enumerate(row.cells):
+                cell.width = cell_width
+                cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                self._set_cell_margins(cell, top=0, left=0, bottom=0.02, right=0.08)
+                item_index = row_index * columns + col_index
+                paragraph = cell.paragraphs[0]
+                paragraph.paragraph_format.space_after = Pt(1.5)
+                paragraph.paragraph_format.line_spacing = 1.15
+                if item_index < len(items):
+                    item = items[item_index]
+                    answer = self._sanitize_text(item.get("answer")) or "—"
+                    run = paragraph.add_run(f"{item['num']}．{answer}")
+                    run.font.size = Pt(9.5)
                     run.font.name = _BODY_FONT
                     self._set_east_asian_font(run, _BODY_FONT_EA)
         return table
@@ -735,7 +826,7 @@ class DocxExporter(Exporter):
         text = f"{self._chinese_section_number(index)}、{self._formal_group_title(title)}" + (f"（共{count}题）" if count else "")
         run = p.add_run(text)
         run.bold = True
-        run.font.size = Pt(13)
+        run.font.size = Pt(11)
         run.font.name = _HEADING_FONT
         self._set_east_asian_font(run, _HEADING_FONT)
 
@@ -746,7 +837,7 @@ class DocxExporter(Exporter):
         p.paragraph_format.space_after = Pt(10)
         run = p.add_run(title)
         run.bold = True
-        run.font.size = Pt(15)
+        run.font.size = Pt(14)
         run.font.name = _HEADING_FONT
         self._set_east_asian_font(run, _HEADING_FONT)
 
@@ -754,11 +845,11 @@ class DocxExporter(Exporter):
     def _add_labeled_text(paragraph, label: str, text: str) -> None:
         label_run = paragraph.add_run(f"{label}：")
         label_run.bold = True
-        label_run.font.size = Pt(10.5)
+        label_run.font.size = Pt(10)
         label_run.font.name = _BODY_FONT
         DocxExporter._set_east_asian_font(label_run, _BODY_FONT_EA)
         run = paragraph.add_run(text)
-        run.font.size = Pt(10.5)
+        run.font.size = Pt(10)
         run.font.name = _BODY_FONT
         DocxExporter._set_east_asian_font(run, _BODY_FONT_EA)
 
@@ -816,29 +907,11 @@ class DocxExporter(Exporter):
 
     @staticmethod
     def _get_question_text(q: dict) -> str:
-        """Extract display text with the same fallback order as DataBuilder."""
-        content = q.get("content") or {}
-        if isinstance(content, dict):
-            direct = content.get("stem") or content.get("text")
-            if direct:
-                return str(direct)
-            segment_text = "".join(
-                str(seg.get("text") or "")
-                for seg in (content.get("segments") or [])
-                if isinstance(seg, dict) and seg.get("type", "text") == "text"
-            ).strip()
-            if segment_text:
-                return segment_text
-        elif content:
-            return str(content)
-        return str(q.get("raw_content") or "")
+        return extract_question_text(q)
 
     @staticmethod
-    def _sanitize_text(text: str | None) -> str:
-        """Strip angle-bracket content as defense-in-depth."""
-        if not text:
-            return ""
-        return _HTML_TAG_RE.sub("", text)
+    def _sanitize_text(text) -> str:
+        return clean_printable_text(text)
 
     @staticmethod
     def _get_question_type_label(qt: str | None) -> str:

@@ -310,7 +310,26 @@ async def _ensure_vector_schema(conn):
         if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
             return
 
+        # 已存在 DB-first 配置时以其维度建表，避免管理端配置与
+        # settings.EMBEDDING_DIM 不一致而创建出不可查询的 vector 列。
         dim = int(settings.EMBEDDING_DIM)
+        try:
+            inspector = inspect(sync_conn)
+            if "admin_vector_configs" in set(inspector.get_table_names()):
+                configured_dim = sync_conn.execute(
+                    text(
+                        "SELECT embedding_dim FROM admin_vector_configs "
+                        "ORDER BY id ASC LIMIT 1"
+                    )
+                ).scalar()
+                if configured_dim:
+                    dim = int(configured_dim)
+        except Exception:
+            logger.warning(
+                "failed to resolve DB embedding dimension; using settings value %d",
+                dim,
+                exc_info=True,
+            )
 
         # 1. pgvector extension（独立 savepoint）
         try:
@@ -342,6 +361,37 @@ async def _ensure_vector_schema(conn):
                 '''))
         except Exception:
             logger.warning("question_embeddings table creation failed", exc_info=True)
+            return
+
+        # CREATE TABLE IF NOT EXISTS 不会修复已有列的维度；显式检查并告警，
+        # 由迁移脚本处理，禁止在启动阶段隐式丢弃已有 embedding。
+        try:
+            type_name = sync_conn.execute(text("""
+                SELECT pg_catalog.format_type(a.atttypid, a.atttypmod)
+                FROM pg_catalog.pg_attribute a
+                JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = current_schema()
+                  AND c.relname = 'question_embeddings'
+                  AND a.attname = 'embedding'
+                  AND a.attnum > 0
+                  AND NOT a.attisdropped
+                LIMIT 1
+            """)).scalar()
+            expected_type = f"vector({dim})"
+            if type_name != expected_type:
+                logger.error(
+                    "question_embeddings.embedding type mismatch: "
+                    "expected=%s actual=%s; vector retrieval will stay disabled",
+                    expected_type,
+                    type_name,
+                )
+                return
+        except Exception:
+            logger.warning(
+                "failed to verify question_embeddings vector dimension",
+                exc_info=True,
+            )
             return
 
         # 3. B-tree 索引

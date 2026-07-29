@@ -271,8 +271,12 @@ class Settings(BaseSettings):
     EXPORT_IMAGE_DOWNLOAD_CONCURRENCY: int = 4
     EXPORT_DIR: str = "var/exports"
     EXPORT_RETENTION_DAYS: int = 7  # how long completed files remain available
+    # Optional explicit CJK font files for the exam-paper PDF renderer.
+    # Body should preferably be a Song/serif face; heading a Hei/sans face.
+    EXPORT_PDF_BODY_FONT: str = ""
+    EXPORT_PDF_HEADING_FONT: str = ""
     PRODUCT_NAME: str = "MemoGrad"
-    GENERATOR_VERSION: str = "2.0"  # v2 = DOCX support added
+    GENERATOR_VERSION: str = "2.1"  # v2.1 = reference-paper layout and export fixes
 
     # ── Export feature flags (gray release) ──
     EXPORT_FEATURE_ENABLED: bool = True

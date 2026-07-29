@@ -318,6 +318,7 @@
       submitDisabled="{{submitted}}"
       showBackButton="{{true}}"
       customNavigation="{{true}}"
+      heroCollapseEnabled="{{true}}"
       swipeThroughOptions="{{true}}"
       bind:selectoption="selectOption"
       bind:selectblankoption="selectBlankOption"

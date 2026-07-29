@@ -35,6 +35,7 @@ import sys
 
 from app.core.config import settings
 from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+from app.core.ocr_isolation import loaded_local_ocr_modules
 
 logger = logging.getLogger("postgraduate-ai.startup")
 
@@ -50,21 +51,30 @@ def validate_production_config() -> None:
 
     errors: list[str] = []
 
-    _check_app_secret(errors)
-    _check_database_url(errors)
-    _check_cors(errors)
-    _check_directories(errors)
-    _check_deployment_profile(errors)
-    _check_process_role(errors)
-    _check_ai_encrypt_key(errors)
-    _check_ocr_production_rules(errors)
-    _check_ocr_no_local_deps(errors)
-    _check_pdf_production_rules(errors)
-    _check_staging_production(errors)
-    _check_db_pool_budget(errors)
-    _check_queue_capacity(errors)
-    _check_worker_scratch_dir(errors)
-    _check_gunicorn_fork_safety(errors)
+    checks = (
+        _check_app_secret,
+        _check_database_url,
+        _check_cors,
+        _check_directories,
+        _check_deployment_profile,
+        _check_process_role,
+        _check_ai_encrypt_key,
+        _check_ocr_production_rules,
+        _check_ocr_no_local_deps,
+        _check_pdf_production_rules,
+        _check_staging_production,
+        _check_db_pool_budget,
+        _check_queue_capacity,
+        _check_worker_scratch_dir,
+        _check_gunicorn_fork_safety,
+    )
+    for check in checks:
+        try:
+            check(errors)
+        except Exception as exc:
+            errors.append(
+                f"{check.__name__} 检查异常: {type(exc).__name__}: {exc}"
+            )
 
     if errors:
         raise SystemError(
@@ -209,107 +219,61 @@ def _check_deployment_profile(errors: list[str]) -> None:
 
 
 def _check_ocr_production_rules(errors: list[str]) -> None:
-    """Cloud OCR must use external API or be disabled.
-
-    Even when OCR is disabled, we check GPU and backend settings to
-    prevent unsafe configuration drift.
-
-    Banned in production:
-    - local_process execution backend
-    - unsafe_thread_fallback
-    - OCR_USE_GPU=true
-    """
-    # Always check GPU setting (must be false in restricted environments)
+    """Reject every local/fallback OCR configuration in restricted profiles."""
     if settings.OCR_USE_GPU is not False:
         errors.append("生产环境必须设置 OCR_USE_GPU=false")
 
-    exec_backend = (settings.OCR_EXECUTION_BACKEND or "").lower()
+    exec_backend = (settings.OCR_EXECUTION_BACKEND or "").strip().lower()
     allowed_cloud_backends = {"paddlex_http", "disabled"}
     if exec_backend not in allowed_cloud_backends:
         errors.append(
-            f"生产环境 OCR_EXECUTION_BACKEND='{exec_backend}' 不允许。"
-            f" 必须为以下之一: {', '.join(sorted(allowed_cloud_backends))}"
+            f"生产环境 OCR_EXECUTION_BACKEND={exec_backend!r} 不允许，"
+            "必须为 paddlex_http 或 disabled"
         )
 
-    # Check OCR profile GPU consistency
-    from app.core.ocr_profile import get_ocr_profile
+    # Unsafe fallbacks are forbidden even while OCR is disabled; otherwise a
+    # later feature toggle could silently activate a local path.
+    if os.environ.get("OCR_REMOTE_FALLBACK_ENABLED", "").lower() in {"1", "true", "yes"}:
+        errors.append("生产环境禁止 OCR_REMOTE_FALLBACK_ENABLED")
+    if os.environ.get("OCR_UNSAFE_THREAD_FALLBACK_ENABLED", "").lower() in {"1", "true", "yes"}:
+        errors.append("生产环境禁止 OCR_UNSAFE_THREAD_FALLBACK_ENABLED")
 
+    from app.core.ocr_profile import get_ocr_profile
     try:
         profile = get_ocr_profile()
         if profile.use_gpu:
-            errors.append(
-                "OCR profile 设置了 use_gpu=True，但生产环境必须 use_gpu=False。"
-                " 请检查 ocr_profile.py 的 cloud 配置或设置 OCR_USE_GPU=false"
-            )
+            errors.append("生产 OCR profile 必须设置 use_gpu=False")
     except Exception as exc:
         errors.append(f"OCR profile 检查失败: {exc}")
 
     if not settings.OCR_ENABLED:
-        # When OCR is disabled, the above checks on backend/GPU are sufficient
-        if settings.OCR_REMOTE_URL and exec_backend == "disabled":
-            logger.warning(
-                "OCR_REMOTE_URL set but OCR_EXECUTION_BACKEND=disabled — "
-                "remote URL config is unused but harmless"
-            )
+        return
+    if exec_backend == "disabled":
+        errors.append("OCR_ENABLED=true 时 OCR_EXECUTION_BACKEND 不能为 disabled")
+        return
+    if exec_backend != "paddlex_http":
         return
 
-    # OCR enabled — check fallback flags (must be false in production)
-    if os.environ.get("OCR_REMOTE_FALLBACK_ENABLED") == "1":
+    ocr_url = (settings.OCR_REMOTE_URL or "").strip()
+    if not ocr_url:
+        errors.append("OCR_EXECUTION_BACKEND=paddlex_http 时必须设置 OCR_REMOTE_URL")
+    elif not ocr_url.startswith("https://") and not settings.OCR_ALLOW_HTTP:
         errors.append(
-            "生产环境禁止设置 OCR_REMOTE_FALLBACK_ENABLED=1。"
-            " OCR 失败不得回退到本地处理。"
+            "OCR_REMOTE_URL 必须使用 HTTPS；仅可信内网可显式设置 OCR_ALLOW_HTTP=true"
         )
-
-    if os.environ.get("OCR_UNSAFE_THREAD_FALLBACK_ENABLED") == "1":
-        errors.append(
-            "生产环境禁止设置 OCR_UNSAFE_THREAD_FALLBACK_ENABLED=1。"
-            " OCR 必须使用进程隔离 worker。"
-        )
-
-    # OCR enabled — additional checks
-    # Check external OCR URL is HTTPS (or explicitly allowed HTTP in trusted network)
-    ocr_url = settings.OCR_REMOTE_URL or ""
-    if exec_backend == "paddlex_http" and ocr_url:
-        if not ocr_url.startswith("https://"):
-            if settings.OCR_ALLOW_HTTP:
-                logger.warning(
-                    "OCR_REMOTE_URL uses HTTP (OCR_ALLOW_HTTP=true) — "
-                    "only use in trusted networks"
-                )
-            else:
-                errors.append(
-                    "外部 OCR URL (OCR_REMOTE_URL) 必须使用 HTTPS。 "
-                    "如在内网可信环境，可设置 OCR_ALLOW_HTTP=true。"
-                )
-        if not settings.OCR_REMOTE_TOKEN:
-            errors.append(
-                "外部 OCR 已启用 (OCR_EXECUTION_BACKEND=paddlex_http) "
-                "但 OCR_REMOTE_TOKEN 未设置"
-            )
+    if not (settings.OCR_REMOTE_TOKEN or "").strip():
+        errors.append("OCR_EXECUTION_BACKEND=paddlex_http 时必须设置 OCR_REMOTE_TOKEN")
 
 
 def _check_ocr_no_local_deps(errors: list[str]) -> None:
-    """Fail startup if local OCR modules are loaded in cloud_api deployment.
-
-    In cloud_api, the process must never import or initialize local OCR
-    packages. We check sys.modules for already-loaded banned modules,
-    but never probe for their availability (no find_spec / import attempt).
-
-    Config-level OCR checks (backend, GPU, fallback flags) are handled
-    separately by _check_ocr_production_rules.
-    """
-    import sys
-
-    profile = detect_deployment_profile()
-    if profile != DeploymentProfile.CLOUD_API:
+    """Detect already-loaded local OCR modules without probing packages."""
+    if detect_deployment_profile() != DeploymentProfile.CLOUD_API:
         return
-
-    banned_modules = ["paddleocr", "paddle"]
-    loaded = [mod for mod in banned_modules if mod in sys.modules]
+    loaded = loaded_local_ocr_modules()
     if loaded:
         errors.append(
-            f"cloud_api 部署检测到已加载的本地 OCR 模块: {loaded}。"
-            f" 云端部署不得包含本地 OCR 包。请卸载: pip uninstall {' '.join(loaded)}"
+            "cloud_api 部署检测到已加载的本地 OCR 模块: "
+            + ", ".join(loaded)
         )
 
 

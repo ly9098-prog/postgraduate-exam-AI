@@ -29,29 +29,46 @@ page {
   padding-top: 48rpx;
 }
 
-/* ── Entrance Animation ── */
-.animation-entrance {
-  opacity: 0;
-}
-
-.animation-entrance.entered {
-  animation: page-enter 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-@keyframes page-enter {
-  to {
-    opacity: 1;
-  }
+.stats-content-pending {
+  visibility: hidden;
 }
 
 /* ── Loading ── */
+.initial-state-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  background: #0B1121;
+}
+
 .loading-wrap {
   flex: 1;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 24rpx;
+}
+
+.initial-loading-ring {
+  width: 54rpx;
+  height: 54rpx;
+  border: 4rpx solid rgba(96, 165, 250, 0.16);
+  border-top-color: #60A5FA;
+  border-radius: 50%;
+  animation: initial-loading-spin 720ms linear infinite;
+}
+
+.initial-loading-text {
+  font-size: 23rpx;
+  color: rgba(255, 255, 255, 0.42);
+  letter-spacing: 2rpx;
+}
+
+@keyframes initial-loading-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ============================================
@@ -447,19 +464,28 @@ page {
   position: relative;
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
-  animation: hist-item-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: calc(var(--idx, 0) * 40ms);
 }
 
-@keyframes hist-item-in {
-  from {
-    opacity: 0;
-    transform: translateY(16rpx);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.history-placeholder {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+  padding: 20rpx 0 10rpx;
+}
+
+.history-placeholder-line {
+  width: 74%;
+  height: 20rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.history-placeholder-line-long {
+  width: 92%;
+}
+
+.history-placeholder-line-short {
+  width: 56%;
 }
 
 /* Left accent bar — subject color */
@@ -810,6 +836,7 @@ page {
 
 @media (prefers-reduced-motion: reduce) {
   .page,
+  .initial-loading-ring,
   .pie-wrap,
   .pie-loading-mask,
   .pie-loading-ring {
@@ -927,6 +954,19 @@ page {
 /* Home-inspired light analytics desk. */
 .theme-light {
   color: #15231A;
+}
+
+.theme-light .initial-state-layer {
+  background: #F4F4EE;
+}
+
+.theme-light .initial-loading-ring {
+  border-color: rgba(21, 51, 35, 0.13);
+  border-top-color: #173426;
+}
+
+.theme-light .initial-loading-text {
+  color: #71806F;
 }
 
 .theme-light .overview-main-card {
@@ -1095,6 +1135,10 @@ page {
   background: rgba(247, 248, 244, 0.92);
   border: 1rpx solid #E5E8E1;
   box-shadow: 0 8rpx 20rpx rgba(21, 51, 35, 0.035);
+}
+
+.theme-light .history-placeholder-line {
+  background: rgba(21, 51, 35, 0.075);
 }
 
 .theme-light .hist-subject {

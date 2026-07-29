@@ -417,7 +417,10 @@ async def get_aggregated_smart_questions(
             "[AGG_SMART] subject_code=%s subject_ids=%s count=%d buckets=%d returned=%d (single)",
             subject_code, subject_ids, count, len(all_buckets), len(merged_qs),
         )
-        return merged_qs, merged_meta
+        return await _finalize_smart(
+            merged_qs, merged_meta, db, user_id, subject_code,
+            request_id=request_id,
+        )
 
     merged_qs, merged_meta = _round_robin_merge_with_metadata(
         all_buckets, count, randomize_order=False,
@@ -1704,10 +1707,9 @@ async def get_smart_scored_questions(
         fallback_level,
     )
 
-    return await _finalize_smart(
-        selected[:count], metadata, db, user_id, subject,
-        request_id=request_id,
-    )
+    # 统一由 get_smart_practice_questions / get_aggregated_smart_questions
+    # 收尾，避免 scored 策略重复写推荐日志，并保证 skip_finalize 生效。
+    return selected[:count], metadata
 
 
 async def _compute_weak_knowledge_points(

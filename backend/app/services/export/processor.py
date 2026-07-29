@@ -47,7 +47,11 @@ from app.core.time_utils import utcnow
 from app.models.export_task import ExportTask
 from app.schemas.export_task import ExportTaskStatus
 from app.services.export.generation_token import GenerationToken
-from app.services.export.service import process_task
+from app.services.export.service import (
+    _apply_export_failure,
+    _is_reexport_with_old_file,
+    process_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -189,10 +193,13 @@ async def _recover_stale_tasks():
                 "Reclaiming stale task %d (started_at=%s, heartbeat=%s)",
                 task.id, task.processing_started_at, task.heartbeat_at,
             )
-            validate_transition(task.status, ExportTaskStatus.FAILED, task.id)
-            task.status = ExportTaskStatus.FAILED
-            task.error_message = "ERR_TASK_TIMEOUT"
-            task.completed_at = utcnow()
+            target = (
+                ExportTaskStatus.COMPLETED
+                if _is_reexport_with_old_file(task)
+                else ExportTaskStatus.FAILED
+            )
+            validate_transition(task.status, target, task.id)
+            _apply_export_failure(task, "导出处理超时", "generation_failed")
 
         if stale:
             await db.commit()
@@ -422,10 +429,13 @@ async def _execute_task_with_heartbeat(slot: _TaskSlot) -> None:
                 result = await db.execute(select(ExportTask).where(ExportTask.id == slot.task_id))
                 t = result.scalar_one_or_none()
                 if t and t.status == ExportTaskStatus.PROCESSING:
-                    validate_transition(t.status, ExportTaskStatus.FAILED, slot.task_id)
-                    t.status = ExportTaskStatus.FAILED
-                    t.error_message = "ERR_TASK_TIMEOUT"
-                    t.completed_at = utcnow()
+                    target = (
+                        ExportTaskStatus.COMPLETED
+                        if _is_reexport_with_old_file(t)
+                        else ExportTaskStatus.FAILED
+                    )
+                    validate_transition(t.status, target, slot.task_id)
+                    _apply_export_failure(t, "导出处理超时", "generation_failed")
                     await db.commit()
                     await _publish_task_event(slot.task_id, t)
         except Exception as e:

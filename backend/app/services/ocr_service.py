@@ -18,6 +18,7 @@ import warnings
 
 from app.core.config import settings
 from app.core.ocr_types import OcrPageResult
+from app.core.ocr_isolation import is_restricted_ocr_environment
 
 logger = logging.getLogger(__name__)
 
@@ -133,9 +134,16 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
                 for r in results
             }
         except Exception as exc:
-            logger.warning("Gateway OCR failed, falling back: %s", exc)
+            if is_restricted_ocr_environment():
+                raise RuntimeError(
+                    "External OCR gateway failed; local OCR fallback is forbidden"
+                ) from exc
+            logger.warning("Gateway OCR failed, using local fallback: %s", exc)
 
-    # Fallback: executor service
+    if is_restricted_ocr_environment():
+        raise RuntimeError(
+            "OCR gateway is unavailable; local OCR fallback is forbidden"
+        )
     return _legacy_ocr_pages(page_images)
 
 
@@ -170,9 +178,16 @@ def ocr_pages_with_boxes(
                 for r in results
             }
         except Exception as exc:
-            logger.warning("Gateway OCR boxes failed, falling back: %s", exc)
+            if is_restricted_ocr_environment():
+                raise RuntimeError(
+                    "External OCR gateway failed; local OCR fallback is forbidden"
+                ) from exc
+            logger.warning("Gateway OCR boxes failed, using local fallback: %s", exc)
 
-    # Fallback: executor service
+    if is_restricted_ocr_environment():
+        raise RuntimeError(
+            "OCR gateway is unavailable; local OCR fallback is forbidden"
+        )
     return _legacy_ocr_pages_with_boxes(page_images, skip_rotation)
 
 
@@ -197,8 +212,16 @@ def ocr_raw_text(image_bytes: bytes) -> str:
             if results and results[0].result:
                 return results[0].result.get("text", "")
         except Exception as exc:
-            logger.warning("Gateway raw OCR failed, falling back: %s", exc)
+            if is_restricted_ocr_environment():
+                raise RuntimeError(
+                    "External OCR gateway failed; local OCR fallback is forbidden"
+                ) from exc
+            logger.warning("Gateway raw OCR failed, using local fallback: %s", exc)
 
+    if is_restricted_ocr_environment():
+        raise RuntimeError(
+            "OCR gateway is unavailable; local OCR fallback is forbidden"
+        )
     return _legacy_ocr_raw_text(image_bytes)
 
 
@@ -275,15 +298,8 @@ def get_last_transform_tracker():
 
 
 def _is_cloud_api() -> bool:
-    """Check if the current deployment profile is cloud_api."""
-    try:
-        from app.core.deployment_profile import (
-            DeploymentProfile,
-            detect_deployment_profile,
-        )
-        return detect_deployment_profile() == DeploymentProfile.CLOUD_API
-    except Exception:
-        return False
+    """Compatibility alias for the central fail-closed isolation decision."""
+    return is_restricted_ocr_environment()
 
 
 def _reject_cloud_legacy(name: str) -> None:

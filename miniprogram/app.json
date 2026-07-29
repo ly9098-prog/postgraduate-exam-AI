@@ -46,6 +46,12 @@
       ]
     }
   ],
+  "preloadRule": {
+    "pages/pomodoro/pomodoro": {
+      "network": "all",
+      "packages": ["productivity"]
+    }
+  },
   "style": "v2",
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"

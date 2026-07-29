@@ -13,9 +13,20 @@ import ast
 import json
 import re
 from html import unescape
-from typing import Any, Iterable
+from typing import Any
 
-_HTML_TAG_RE = re.compile(r"<[^>]*>")
+_SCRIPT_STYLE_RE = re.compile(
+    r"<\s*(script|style)\b[^>]*>.*?</\s*\1\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+_HTML_BREAK_RE = re.compile(r"<\s*br\s*/?\s*>", re.IGNORECASE)
+_HTML_BLOCK_END_RE = re.compile(r"</\s*(?:p|div|li)\s*>", re.IGNORECASE)
+_KNOWN_FORMAT_TAG_RE = re.compile(
+    r"</?\s*(?:b|strong|i|em|sub|sup|p|div|span|ul|ol|li)"
+    r"(?:\s+[^>]*)?\s*>",
+    re.IGNORECASE,
+)
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _WS_RE = re.compile(r"[ \t\f\v]+")
 _DICT_LIKE_RE = re.compile(r"^\s*[\[{].*[\]}]\s*$", re.S)
 
@@ -62,13 +73,23 @@ def _value(obj: Any, key: str, default: Any = None) -> Any:
     return getattr(obj, key, default)
 
 
-def _clean_text(value: Any) -> str:
+def clean_printable_text(value: Any) -> str:
+    """Normalize text for PDF/DOCX output without destroying code operators.
+
+    Exporters render plain text and therefore cannot execute HTML.  Only known
+    formatting tags are removed; angle-bracket code such as ``#include
+    <stdio.h>`` and comparisons such as ``x < y`` remain printable.
+    """
     if value is None:
         return ""
     if not isinstance(value, str):
         return ""
-    text = unescape(value).replace("\r\n", "\n").replace("\r", "\n")
-    text = _HTML_TAG_RE.sub("", text)
+    text = value.replace("\r\n", "\n").replace("\r", "\n")
+    text = _SCRIPT_STYLE_RE.sub("", text)
+    text = _HTML_BREAK_RE.sub("\n", text)
+    text = _HTML_BLOCK_END_RE.sub("\n", text)
+    text = _KNOWN_FORMAT_TAG_RE.sub("", text)
+    text = _CONTROL_RE.sub("", unescape(text))
     lines = [_WS_RE.sub(" ", line).strip() for line in text.split("\n")]
     # Preserve meaningful paragraph/newline structure but discard empty edges.
     while lines and not lines[0]:
@@ -76,6 +97,11 @@ def _clean_text(value: Any) -> str:
     while lines and not lines[-1]:
         lines.pop()
     return "\n".join(lines).strip()
+
+
+def _clean_text(value: Any) -> str:
+    """Backward-compatible internal alias."""
+    return clean_printable_text(value)
 
 
 def extract_segment_text(segments: Any) -> str:

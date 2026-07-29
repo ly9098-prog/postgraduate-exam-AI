@@ -92,6 +92,11 @@ button::after {
   animation: card-enter 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) both, highlight-pulse 1.8s ease-in-out 0.35s 2;
 }
 
+.record-card-warning {
+  border-color: rgba(220, 170, 91, 0.62);
+  background: linear-gradient(180deg, #FFFEFB 0%, #FFFFFF 100%);
+}
+
 .record-status-row {
   display: flex;
   align-items: flex-start;
@@ -141,6 +146,11 @@ button::after {
 .status-mark-expired {
   background: #EEF0ED;
   color: #838B85;
+}
+
+.status-mark-warning {
+  background: #FFF3DF;
+  color: #A96821;
 }
 
 .status-glyph {
@@ -215,6 +225,14 @@ button::after {
 .record-filename,
 .record-date {
   display: block;
+}
+
+.record-layout {
+  display: block;
+  margin-top: 8rpx;
+  color: #66736A;
+  font-size: 20rpx;
+  line-height: 1.5;
 }
 
 .record-filename {

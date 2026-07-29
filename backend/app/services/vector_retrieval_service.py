@@ -4,12 +4,15 @@ import hashlib
 import json as _json
 import logging
 import math
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import and_, func, select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.cache import cache
 from app.core.config import settings
@@ -22,7 +25,12 @@ from app.services.vector_config_service import EmbeddingConfig, VectorSearchConf
 logger = logging.getLogger("postgraduate-ai.vector_retrieval")
 
 # 模块级缓存：避免每次请求都查询 pgvector 可用性（TTL 60 秒）
-_vector_enabled_cache: dict[str, Any] = {"value": None, "checked": False, "checked_at": 0.0}
+_vector_enabled_cache: dict[str, Any] = {
+    "value": None,
+    "checked": False,
+    "checked_at": 0.0,
+    "config_key": None,
+}
 
 _VECTOR_CACHE_TTL = 60  # 秒
 
@@ -164,9 +172,68 @@ def _reset_vector_enabled_cache():
     _vector_enabled_cache["value"] = None
     _vector_enabled_cache["checked"] = False
     _vector_enabled_cache["checked_at"] = 0.0
+    _vector_enabled_cache["config_key"] = None
     # 同步清理 DB-first 配置缓存
     _vs._cached = None
     _vs._cached_at = 0
+
+
+def _dialect_name(db: AsyncSession) -> str:
+    """安全获取当前 Session 的数据库 dialect。"""
+    try:
+        bind = db.get_bind()
+    except (AttributeError, TypeError):
+        bind = getattr(db, "bind", None)
+    return bind.dialect.name if bind is not None else "unknown"
+
+
+_VECTOR_TYPE_RE = re.compile(r"^vector\((\d+)\)$", re.IGNORECASE)
+
+
+def _parse_vector_dimension(type_name: object) -> int | None:
+    """从 PostgreSQL ``format_type`` 结果解析 vector 维度。"""
+    if not isinstance(type_name, str):
+        return None
+    match = _VECTOR_TYPE_RE.fullmatch(type_name.strip())
+    return int(match.group(1)) if match else None
+
+
+async def _get_vector_column_dimension(db: AsyncSession) -> int | None:
+    """读取当前 schema 中 question_embeddings.embedding 的物理维度。"""
+    result = await db.execute(text("""
+        SELECT pg_catalog.format_type(a.atttypid, a.atttypmod)
+        FROM pg_catalog.pg_attribute a
+        JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+        JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = current_schema()
+          AND c.relname = 'question_embeddings'
+          AND a.attname = 'embedding'
+          AND a.attnum > 0
+          AND NOT a.attisdropped
+        LIMIT 1
+    """))
+    return _parse_vector_dimension(result.scalar())
+
+
+async def _resolve_question_subject_code(
+    db: AsyncSession,
+    question: Question,
+) -> str:
+    """获取题目科目代码；relationship 未预加载时按 subject_id 回查。"""
+    subject_ref = getattr(question, "subject_ref", None)
+    if subject_ref is not None and getattr(subject_ref, "code", None):
+        return str(subject_ref.code)
+
+    subject_id = getattr(question, "subject_id", None)
+    if subject_id is None:
+        return ""
+
+    from app.models.admin import Subject
+
+    result = await db.execute(
+        select(Subject.code).where(Subject.id == subject_id)
+    )
+    return str(result.scalar() or "")
 
 
 # ── embedding 校验 ──
@@ -320,18 +387,30 @@ async def is_vector_enabled(db: AsyncSession) -> bool:
     ):
         return False
 
-    # 使用缓存避免重复查询（TTL 60 秒）
-    if _vector_enabled_cache["checked"]:
+    config_key = (
+        _vs.vec.enabled,
+        _vs.emb.base_url,
+        _vs.emb.model,
+        _vs.emb.dim,
+        bool(_vs.emb.api_key),
+    )
+
+    # 使用缓存避免重复查询（TTL 60 秒）；配置变化后不得复用旧结果。
+    if (
+        _vector_enabled_cache["checked"]
+        and _vector_enabled_cache["config_key"] == config_key
+    ):
         elapsed = time.monotonic() - _vector_enabled_cache["checked_at"]
         if elapsed < _VECTOR_CACHE_TTL:
             return bool(_vector_enabled_cache["value"])
 
     try:
-        dialect_name = db.bind.dialect.name if db.bind else "unknown"
+        dialect_name = _dialect_name(db)
         if dialect_name != "postgresql":
             _vector_enabled_cache["value"] = False
             _vector_enabled_cache["checked"] = True
             _vector_enabled_cache["checked_at"] = time.monotonic()
+            _vector_enabled_cache["config_key"] = config_key
             return False
 
         result = await db.execute(
@@ -341,23 +420,40 @@ async def is_vector_enabled(db: AsyncSession) -> bool:
             _vector_enabled_cache["value"] = False
             _vector_enabled_cache["checked"] = True
             _vector_enabled_cache["checked_at"] = time.monotonic()
+            _vector_enabled_cache["config_key"] = config_key
             return False
 
         result = await db.execute(
             text(
                 "SELECT 1 FROM information_schema.tables "
-                "WHERE table_name = 'question_embeddings'"
+                "WHERE table_schema = current_schema() "
+                "AND table_name = 'question_embeddings'"
             )
         )
         if result.scalar() is None:
             _vector_enabled_cache["value"] = False
             _vector_enabled_cache["checked"] = True
             _vector_enabled_cache["checked_at"] = time.monotonic()
+            _vector_enabled_cache["config_key"] = config_key
+            return False
+
+        database_dim = await _get_vector_column_dimension(db)
+        if database_dim != _vs.emb.dim:
+            logger.warning(
+                "pgvector 维度不匹配: configured=%s database=%s",
+                _vs.emb.dim,
+                database_dim,
+            )
+            _vector_enabled_cache["value"] = False
+            _vector_enabled_cache["checked"] = True
+            _vector_enabled_cache["checked_at"] = time.monotonic()
+            _vector_enabled_cache["config_key"] = config_key
             return False
 
         _vector_enabled_cache["value"] = True
         _vector_enabled_cache["checked"] = True
         _vector_enabled_cache["checked_at"] = time.monotonic()
+        _vector_enabled_cache["config_key"] = config_key
         return True
 
     except Exception:
@@ -365,6 +461,7 @@ async def is_vector_enabled(db: AsyncSession) -> bool:
         _vector_enabled_cache["value"] = False
         _vector_enabled_cache["checked"] = True
         _vector_enabled_cache["checked_at"] = time.monotonic()
+        _vector_enabled_cache["config_key"] = config_key
         return False
 
 
@@ -379,11 +476,17 @@ async def upsert_question_embedding(
     返回:
         {"question_id": int, "status": "created"|"updated"|"skipped"|"failed", "reason": str}
     """
+    await _vs.refresh_async(db)
+
     qid = question.id
     model = _vs.emb.model
 
     try:
-        content_text = embedding_service.build_question_embedding_text(question)
+        subject_code = await _resolve_question_subject_code(db, question)
+        content_text = embedding_service.build_question_embedding_text(
+            question,
+            subject_code=subject_code,
+        )
         content_hash = embedding_service.compute_content_hash(content_text)
 
         result = await db.execute(
@@ -398,7 +501,10 @@ async def upsert_question_embedding(
         if existing and existing[1] == content_hash and not force:
             return {"question_id": qid, "status": "skipped", "reason": "content unchanged"}
 
-        embedding = await embedding_service.get_embedding(content_text)
+        embedding = await embedding_service.get_embedding(
+            content_text,
+            config=_vs.emb,
+        )
         if embedding is None:
             return {"question_id": qid, "status": "failed", "reason": "embedding api failed"}
 
@@ -427,7 +533,7 @@ async def upsert_question_embedding(
                     "text": content_text,
                     "emb": pg_literal,
                     "dim": dim,
-                    "subject": question.subject_ref.code if question.subject_ref else "",
+                    "subject": subject_code,
                     "qtype": question.question_type,
                     "qid": qid,
                     "model": model,
@@ -445,7 +551,7 @@ async def upsert_question_embedding(
                 ),
                 {
                     "qid": qid,
-                    "subject": question.subject_ref.code if question.subject_ref else "",
+                    "subject": subject_code,
                     "qtype": question.question_type,
                     "model": model,
                     "dim": dim,
@@ -457,6 +563,15 @@ async def upsert_question_embedding(
             await db.flush()
             return {"question_id": qid, "status": "created", "reason": ""}
 
+    except SQLAlchemyError:
+        # 让调用方的 SAVEPOINT 看见数据库异常并正确回滚，避免事务停留在
+        # aborted 状态。非批量调用方会在上层降级为规则推荐。
+        logger.warning(
+            "upsert embedding database error for question_id=%d",
+            qid,
+            exc_info=True,
+        )
+        raise
     except Exception as exc:
         logger.warning("upsert embedding failed for question_id=%d: %s", qid, exc, exc_info=True)
         return {"question_id": qid, "status": "failed", "reason": str(exc)[:200]}
@@ -501,11 +616,16 @@ async def backfill_question_embeddings(
         conditions.append(Question.subject_id.in_(ids))
 
     if not force:
-        # 优先查询当前 model 下不存在 embedding 的题目
+        # 查询当前 model 下缺少“可召回”embedding 的题目。历史版本可能
+        # 因 subject_ref 未预加载写入空 subject，也必须自动进入修复批次。
         conditions.append(
             ~Question.id.in_(
                 select(text("question_id")).select_from(text("question_embeddings")).where(
-                    text("embedding_model = :model")
+                    text(
+                        "embedding_model = :embedding_model "
+                        "AND embedding_dim = :embedding_dim "
+                        "AND subject IS NOT NULL AND subject <> ''"
+                    )
                 )
             )
         )
@@ -513,12 +633,23 @@ async def backfill_question_embeddings(
     query = (
         select(Question)
         .where(and_(*conditions))
+        .options(selectinload(Question.subject_ref))
         .order_by(Question.id.asc())
-        .limit(limit)
+        .limit(limit + 1)
     )
 
-    result = await db.execute(query)
-    questions = list(result.scalars().all())
+    query_params = (
+        {
+            "embedding_model": _vs.emb.model,
+            "embedding_dim": _vs.emb.dim,
+        }
+        if not force
+        else {}
+    )
+    result = await db.execute(query, query_params)
+    fetched_questions = list(result.scalars().all())
+    has_more = len(fetched_questions) > limit
+    questions = fetched_questions[:limit]
 
     stats = {
         "total": len(questions), "created": 0, "updated": 0,
@@ -549,8 +680,6 @@ async def backfill_question_embeddings(
 
     # 计算游标
     last_qid = questions[-1].id if questions else after_id
-    has_more = len(questions) >= limit
-
     return {
         **stats,
         "enabled": True,
@@ -585,8 +714,18 @@ async def _ensure_source_embedding(
             logger.warning("解析 pgvector 向量文本失败 question_id=%d", question.id)
             return None
 
-    # 不存在，尝试生成
-    res = await upsert_question_embedding(db, question)
+    # 不存在，尝试生成。用 SAVEPOINT 隔离现场写入失败，确保后续规则
+    # fallback 仍可继续使用当前 Session。
+    try:
+        async with db.begin_nested():
+            res = await upsert_question_embedding(db, question)
+    except SQLAlchemyError:
+        logger.warning(
+            "现场生成源题 embedding 失败 question_id=%d",
+            question.id,
+            exc_info=True,
+        )
+        return None
     if res["status"] in ("created", "updated"):
         result = await db.execute(
             text(
@@ -693,7 +832,9 @@ async def search_similar_questions(
 
     # 获取源题
     source = await db.execute(
-        select(Question).where(Question.id == question_id, Question.is_active)
+        select(Question)
+        .where(Question.id == question_id, Question.is_active)
+        .options(selectinload(Question.subject_ref))
     )
     source_q = source.scalar_one_or_none()
     if not source_q:
@@ -716,8 +857,22 @@ async def search_similar_questions(
             return base_result
 
     # 确保源题有 embedding
-    source_embedding = await _ensure_source_embedding(db, source_q)
+    try:
+        source_embedding = await _ensure_source_embedding(db, source_q)
+    except SQLAlchemyError:
+        logger.warning(
+            "源题 embedding 读取或生成失败 question_id=%d",
+            question_id,
+            exc_info=True,
+        )
+        return base_result
     if source_embedding is None:
+        return base_result
+
+    try:
+        source_embedding = validate_embedding(source_embedding, _vs.emb.dim)
+    except ValueError:
+        logger.warning("源题 embedding 维度或数值非法 question_id=%d", question_id)
         return base_result
 
     # 缓存检查（仅 use_result=True 时读写缓存）
@@ -959,9 +1114,18 @@ async def vector_recall_by_text(
         )
         return []
 
-    query_embedding = await embedding_service.get_embedding(query_text)
+    query_embedding = await embedding_service.get_embedding(
+        query_text,
+        config=_vs.emb,
+    )
     if query_embedding is None:
         logger.warning("smart 模式 query embedding 生成失败")
+        return []
+
+    try:
+        query_embedding = validate_embedding(query_embedding, _vs.emb.dim)
+    except ValueError:
+        logger.warning("smart 模式 query embedding 维度或数值非法")
         return []
 
     # 缓存检查（仅 use_result=True 时）
@@ -976,7 +1140,7 @@ async def vector_recall_by_text(
             return cached
 
     pg_literal = embedding_service.vector_to_pg_literal(query_embedding)
-    top_k = max(count * 3, 50)
+    top_k = max(count * 3, _vs.vec.top_k)
 
     try:
         # V1: 构建排除子查询，支持 no_repeat_days 时间窗口
@@ -1112,7 +1276,9 @@ async def get_embedding_status(db: AsyncSession) -> dict:
     实际查询 PostgreSQL catalog 检查 extension、表、列类型、维度、索引。
     不发起 embedding 请求。不返回 API key 等敏感信息。
     """
-    dialect_name = db.bind.dialect.name if db.bind else "unknown"
+    await _vs.refresh_async(db)
+
+    dialect_name = _dialect_name(db)
     mode = resolve_vector_mode()
     decide_vector_access(infra_available=False)  # 仅获取 mode 信息
 
@@ -1160,49 +1326,41 @@ async def get_embedding_status(db: AsyncSession) -> dict:
         result = await db.execute(
             text(
                 "SELECT 1 FROM information_schema.tables "
-                "WHERE table_name = 'question_embeddings'"
+                "WHERE table_schema = current_schema() "
+                "AND table_name = 'question_embeddings'"
             )
         )
         if result.scalar() is not None:
             info["table_exists"] = True
 
-            # 检查实际维度
+            # 从列类型读取实际物理维度；即使表中还没有数据也能正确判断。
             try:
-                await db.execute(text(
-                    "SELECT character_maximum_length "
-                    "FROM information_schema.columns "
-                    "WHERE table_name = 'question_embeddings' AND column_name = 'embedding'"
-                ))
-                # pgvector 维度不能从 character_maximum_length 获取
-                # 尝试从数据推断
+                database_dim = await _get_vector_column_dimension(db)
+                info["database_dimension"] = database_dim
+                info["dimension_matches"] = (database_dim == _vs.emb.dim)
+                if not info["dimension_matches"]:
+                    issues.append(
+                        f"dimension mismatch: configured={_vs.emb.dim}, "
+                        f"database={database_dim}"
+                    )
+
                 count_result = await db.execute(
-                    text("SELECT COUNT(*) FROM question_embeddings")
+                    text(
+                        "SELECT COUNT(*) FROM question_embeddings "
+                        "WHERE embedding_model = :model"
+                    ),
+                    {"model": _vs.emb.model},
                 )
                 info["total_embeddings"] = count_result.scalar() or 0
-
-                # 尝试获取第一条记录的维度
-                sample_result = await db.execute(
-                    text(
-                        "SELECT embedding_dim FROM question_embeddings LIMIT 1"
-                    )
-                )
-                sample_dim = sample_result.scalar()
-                if sample_dim is not None:
-                    info["database_dimension"] = sample_dim
-                    info["dimension_matches"] = (sample_dim == _vs.emb.dim)
-                    if not info["dimension_matches"]:
-                        issues.append(
-                            f"dimension mismatch: configured={_vs.emb.dim}, "
-                            f"database={sample_dim}"
-                        )
             except Exception:
-                pass
+                issues.append("could not inspect vector dimension or embedding count")
 
             # 检查 HNSW 索引
             try:
                 idx_result = await db.execute(text(
                     "SELECT 1 FROM pg_indexes "
-                    "WHERE tablename = 'question_embeddings' "
+                    "WHERE schemaname = current_schema() "
+                    "AND tablename = 'question_embeddings' "
                     "AND indexname LIKE '%hnsw%'"
                 ))
                 if idx_result.scalar() is not None:
@@ -1234,12 +1392,19 @@ async def get_embedding_status(db: AsyncSession) -> dict:
     decision_full = decide_vector_access(infra_available=await is_vector_enabled(db))
     info["execute_enabled"] = decision_full.execute
     info["result_enabled"] = decision_full.use_result
-    info["healthy"] = (
-        info["configured"]
-        and info["extension_installed"]
-        and info["table_exists"]
-        and info["embedding_api_configured"]
-        and (info["dimension_matches"] is not False)
+    if not info["configured"]:
+        issues.append("vector search is disabled")
+    if not info["embedding_api_configured"]:
+        issues.append("embedding API is not fully configured")
+    if info["table_exists"] and info["total_embeddings"] == 0:
+        issues.append(
+            f"no embeddings found for model {_vs.emb.model}; run embedding backfill"
+        )
+
+    info["healthy"] = bool(
+        decision_full.enabled
+        and info["dimension_matches"] is True
+        and info["total_embeddings"] > 0
     )
     info["issues"] = issues
 

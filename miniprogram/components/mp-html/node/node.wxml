@@ -1,5 +1,4 @@
 <!-- node 递归子组件 -->
-<!-- #ifdef MP-WEIXIN || MP-QQ -->
 <wxs module="isInline">
   // 行内标签列表
   var inlineTags = {
@@ -26,7 +25,6 @@
     return inlineTags[tagName] || (style || '').indexOf('inline') !== -1
   }
 </wxs>
-<!-- #endif -->
 <template name="el">
   <!-- 图片 -->
   <block wx:if="{{n.name==='img'}}">
@@ -40,46 +38,21 @@
     </block>
   </block>
   <!-- 文本 -->
-  <!-- #ifdef MP-WEIXIN || MP-QQ || MP-TOUTIAO -->
   <text wx:elif="{{n.text}}" mp-weixin:user-select="{{opts[4]=='force'&&isiOS}}" decode>{{n.text}}</text>
-  <!-- #endif -->
   <text wx:elif="{{n.name==='br'}}">{{'\n'}}</text>
   <!-- 链接 -->
   <view wx:elif="{{n.name==='a'}}" id="{{n.attrs.id}}" class="{{n.attrs.href?'_a ':''}}{{n.attrs.class}}" hover-class="_hover" style="display:inline;{{n.attrs.style}}" data-i="{{i}}" catchtap="linkTap">
-    <!-- #ifdef MP-WEIXIN || MP-QQ -->
     <node childs="{{n.children}}" opts="{{opts}}" style="display:inherit" />
-    <!-- #endif -->
-    <!-- #ifdef MP-BAIDU -->
-    <block wx:for="{{n.children}}" wx:key="index">
-      <template is="el" data="{{n:item,i:i+'_'+index,opts:opts,ctrl:ctrl}}"></template>
-    </block>
-    <!-- #endif -->
-    <!-- #ifdef MP-ALIPAY || MP-TOUTIAO -->
-    <template is="node" data="{{childs:n.children,path:i+'_',opts:opts,ctrl:ctrl}}"></template>
-    <!-- #endif -->
   </view>
   <!-- 视频 -->
   <video wx:elif="{{n.name==='video'}}" id="{{n.attrs.id}}" class="{{n.attrs.class}}" style="{{n.attrs.style}}" autoplay="{{n.attrs.autoplay}}" controls="{{n.attrs.controls}}" loop="{{n.attrs.loop}}" muted="{{n.attrs.muted}}" object-fit="{{n.attrs['object-fit']}}" poster="{{n.attrs.poster}}" src="{{n.src[ctrl[i]||0]}}" data-i="{{i}}" bindplay="play" bindpause="mediaEvent" bindfullscreenchange="mediaEvent" binderror="mediaError" />
-  <!-- #ifndef MP-TOUTIAO -->
   <!-- 音频 -->
   <audio wx:elif="{{n.name==='audio'}}" id="{{n.attrs.id}}" class="{{n.attrs.class}}" style="{{n.attrs.style}}" author="{{n.attrs.author}}" controls="{{n.attrs.controls}}" loop="{{n.attrs.loop}}" name="{{n.attrs.name}}" poster="{{n.attrs.poster}}" src="{{n.src[ctrl[i]||0]}}" data-i="{{i}}" bindplay="play" bindpause="mediaEvent" binderror="mediaError" />
-  <!-- #endif -->
   <!-- insert -->
   <!-- 富文本 -->
   <rich-text wx:else id="{{n.attrs.id}}" mp-weixin:mp-qq:mp-baidu:mp-toutiao:style="{{n.f}}" mp-alipay:style="display:inline;{{n.f}}" mp-baidu:selectable="{{opts[4]}}" mp-weixin:user-select="{{opts[4]}}" nodes="{{[n]}}" />
 </template>
-<!-- #ifdef MP-ALIPAY || MP-TOUTIAO -->
-<template name="node">
-  <block wx:for="{{childs}}" wx:for-item="n" wx:for-index="i" wx:key="i">
-    <template wx:if="{{!n.c}}" is="el" data="{{n:n,i:path+i,opts:opts,ctrl:ctrl}}" />
-    <view wx:else id="{{n.attrs.id}}" class="_{{n.name}} {{n.attrs.class}}" style="{{n.attrs.style}}">
-      <template is="node" data="{{childs:n.children,path:path+i+'_',opts:opts,ctrl:ctrl}}"></template>
-    </view>
-  </block>
-</template>
-<template is="node" data="{{childs:nodes,path:'',opts:opts,ctrl:ctrl}}"></template>
-<!-- #endif -->
-<!-- #ifndef MP-ALIPAY || MP-TOUTIAO -->
+<!-- 微信原生小程序：节点树只能从这一条路径渲染 -->
 <!-- 第 1 层 -->
 <block wx:for="{{nodes}}" wx:for-item="n1" wx:for-index="i1" wx:key="i1">
   <template wx:if="{{!n1.c&&(!n1.children||n1.name==='a'||n1.l||!isInline(n1.name,n1.attrs.style))}}" is="el" data="{{n:n1,i:''+i1,opts:opts,ctrl:ctrl}}" />
@@ -109,4 +82,3 @@
     </block>
   </view>
 </block>
-<!-- #endif -->

@@ -1,4 +1,4 @@
-<view class="quiz-runner runner-theme-{{theme}} runner-mode-{{mode}} {{compactReviewMode ? 'runner-compact' : ''}} {{flowLayout ? 'runner-flow' : ''}} {{compactBottom ? 'runner-bottom-compact' : ''}} {{customNavigation ? 'runner-custom-navigation' : ''}} {{readonly ? 'runner-readonly' : ''}}">
+<view class="quiz-runner runner-theme-{{theme}} runner-mode-{{mode}} {{compactReviewMode ? 'runner-compact' : ''}} {{flowLayout ? 'runner-flow' : ''}} {{compactBottom ? 'runner-bottom-compact' : ''}} {{customNavigation ? 'runner-custom-navigation' : ''}} {{readonly ? 'runner-readonly' : ''}} {{currentQuestion && (currentQuestion._hasBlankOptionGroups || currentQuestion.question_type === 'multi_blank_choice') ? 'runner-multi-blank' : ''}}">
   <!-- ==================== 深色数字化顶部 ==================== -->
   <view class="runner-hero {{heroCollapsed ? 'runner-hero-collapsed' : ''}}" wx:if="{{!compactReviewMode}}">
     <view class="runner-hero-glow"></view>
@@ -61,8 +61,9 @@
   <scroll-view
     class="runner-question-area"
     scroll-y="{{!flowLayout && !compactReviewMode}}"
-    scroll-top="{{questionScrollTop}}"
+    scroll-into-view="{{questionScrollIntoView}}"
     scroll-with-animation="{{false}}"
+    scroll-anchoring="{{false}}"
     enhanced
     show-scrollbar="{{false}}"
     bindscroll="onQuestionScroll"
@@ -70,6 +71,7 @@
     bindtouchend="onTouchEnd"
     bindtouchcancel="onTouchCancel"
   >
+    <view id="runner-scroll-top-anchor" class="runner-scroll-top-anchor"></view>
     <!-- ===== Loading State ===== -->
     <view class="runner-state-card" wx:if="{{loading}}">
       <view class="runner-loading-ring"></view>
@@ -257,9 +259,9 @@
       </view>
 
       <!-- ===== 普通选项 ===== -->
-      <view class="runner-options" wx:elif="{{currentQuestion._optionList && currentQuestion._optionList.length > 0}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
+      <view class="runner-options" wx:elif="{{_optionList && _optionList.length > 0}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
         <view
-          wx:for="{{currentQuestion._optionList}}"
+          wx:for="{{_optionList}}"
           wx:key="key"
           class="runner-option-item {{item._selected ? 'runner-selected' : ''}} {{readonly && item._isBoth ? 'runner-both' : ''}} {{readonly && item._isCorrect && !item._isBoth ? 'runner-correct' : ''}} {{readonly && item._isUserAnswer && !item._isBoth ? 'runner-user-answer' : ''}}"
           hover-class="{{readonly ? '' : 'runner-option-pressed'}}"

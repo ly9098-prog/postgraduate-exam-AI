@@ -379,6 +379,230 @@ button::after {
   color: #A86629;
 }
 
+/* ── Reference-paper layout presets ── */
+.section-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.section-heading-row > view {
+  min-width: 0;
+  flex: 1;
+}
+
+.custom-layout-badge {
+  flex-shrink: 0;
+  padding: 5rpx 11rpx;
+  border-radius: 999rpx;
+  background: #EEF1EC;
+  color: #667169;
+  font-size: 18rpx;
+  font-weight: 780;
+  line-height: 1.4;
+}
+
+.preset-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 11rpx;
+}
+
+.preset-card {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 15rpx 16rpx;
+  border: 2rpx solid transparent;
+  border-radius: 18rpx;
+  background: #F5F7F2;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.preset-card-active {
+  border-color: #73B38B;
+  background: #EAF5ED;
+}
+
+.preset-radio {
+  width: 32rpx;
+  height: 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 2rpx solid #B7C0B9;
+  border-radius: 50%;
+  background: #FFFFFF;
+}
+
+.preset-radio-core {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: transparent;
+  transform: scale(0.5);
+  transition: transform 0.16s ease, background-color 0.16s ease;
+}
+
+.preset-card-active .preset-radio {
+  border-color: #2F8A55;
+}
+
+.preset-card-active .preset-radio-core {
+  background: #2F8A55;
+  transform: scale(1);
+}
+
+.preset-copy {
+  min-width: 0;
+  flex: 1;
+  margin-left: 14rpx;
+}
+
+.preset-title,
+.preset-caption {
+  display: block;
+}
+
+.preset-title {
+  color: #2A382F;
+  font-size: 24rpx;
+  font-weight: 820;
+  line-height: 1.35;
+}
+
+.preset-caption {
+  margin-top: 3rpx;
+  color: #849087;
+  font-size: 19rpx;
+  line-height: 1.45;
+}
+
+.paper-style-preview {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 20rpx;
+  margin-top: 18rpx;
+  padding: 18rpx;
+  border: 1rpx solid #E0E5DE;
+  border-radius: 19rpx;
+  background: #FAFBF8;
+}
+
+.paper-sheet {
+  position: relative;
+  width: 118rpx;
+  height: 156rpx;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1rpx solid #D5DAD4;
+  border-radius: 3rpx;
+  background: #FFFFFF;
+  box-shadow: 0 7rpx 16rpx rgba(35, 50, 40, 0.09);
+}
+
+.paper-mini-title,
+.paper-mini-subtitle,
+.paper-mini-section,
+.paper-mini-line,
+.paper-mini-options view {
+  position: absolute;
+  left: 18rpx;
+  height: 2rpx;
+  border-radius: 2rpx;
+  background: #475048;
+}
+
+.paper-mini-title {
+  top: 18rpx;
+  left: 34rpx;
+  width: 50rpx;
+  height: 4rpx;
+  background: #252C27;
+}
+
+.paper-mini-subtitle {
+  top: 26rpx;
+  left: 42rpx;
+  width: 34rpx;
+  background: #6E766F;
+}
+
+.paper-mini-section {
+  top: 43rpx;
+  width: 52rpx;
+  height: 3rpx;
+  background: #2D342F;
+}
+
+.paper-mini-line-one { top: 55rpx; width: 82rpx; }
+.paper-mini-line-two { top: 63rpx; width: 72rpx; }
+.paper-mini-line-three { top: 98rpx; width: 78rpx; }
+
+.paper-mini-options {
+  position: absolute;
+  left: 22rpx;
+  right: 16rpx;
+  top: 76rpx;
+  display: flex;
+  justify-content: space-between;
+}
+
+.paper-mini-options view {
+  position: static;
+  width: 14rpx;
+  height: 2rpx;
+  background: #697169;
+}
+
+.paper-mini-page {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 7rpx;
+  color: #788078;
+  font-family: serif;
+  font-size: 10rpx;
+  line-height: 1;
+  text-align: center;
+}
+
+.paper-preview-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.paper-preview-title,
+.paper-preview-caption,
+.paper-preview-summary {
+  display: block;
+}
+
+.paper-preview-title {
+  color: #29362D;
+  font-size: 24rpx;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.paper-preview-caption {
+  margin-top: 6rpx;
+  color: #7D8880;
+  font-size: 19rpx;
+  line-height: 1.5;
+}
+
+.paper-preview-summary {
+  margin-top: 9rpx;
+  color: #34724B;
+  font-size: 18rpx;
+  font-weight: 720;
+  line-height: 1.5;
+}
+
 /* ── Paper information ── */
 .field-block {
   min-width: 0;

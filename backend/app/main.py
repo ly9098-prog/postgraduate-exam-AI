@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import sys
 import time
 from contextlib import asynccontextmanager
 
@@ -16,6 +15,10 @@ from app.core.config import settings
 from app.core.database import async_session, init_db
 from app.core.error_codes import ApiError, ErrorCode
 from app.core.logging_config import setup_logging
+from app.core.ocr_isolation import (
+    is_restricted_ocr_environment,
+    loaded_local_ocr_modules,
+)
 from app.core.sentry import init_sentry
 from app.services.admin_bootstrap_service import ensure_dev_super_admin
 from app.services.pomodoro_scheduler_service import pomodoro_scheduler
@@ -136,11 +139,9 @@ async def lifespan(app: FastAPI):
     # Guard: worker/scheduler roles should not serve HTTP.
     # Use app.worker_main or app.scheduler_main entry points instead.
     if role in ("worker", "scheduler"):
-        logger.warning(
-            "Role=%s started with FastAPI HTTP server. "
-            "For production, use 'python -m app.%s_main' instead "
-            "to avoid exposing an HTTP port on worker/scheduler processes.",
-            role, role,
+        raise SystemError(
+            f"PROCESS_ROLE={role} must not start the FastAPI HTTP application; "
+            f"use python -m app.{role}_main"
         )
 
     # Background asyncio task references (initialized per role block)
@@ -164,21 +165,20 @@ async def lifespan(app: FastAPI):
             detect_deployment_profile,
         )
         if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
-            banned = {"paddle", "paddleocr"}
-            loaded = {mod for mod in banned if mod in sys.modules}
+            loaded = loaded_local_ocr_modules()
             if loaded:
                 logger.critical(
-                    "cloud_api deployment detected banned modules in sys.modules: %s. "
-                    "The process must not import local OCR packages.",
+                    "cloud_api deployment detected banned modules in sys.modules: %s",
                     loaded,
                 )
                 raise SystemError(
-                    f"Banned modules loaded in cloud_api: {loaded}. "
-                    "Remove paddle/paddleocr from the deployment image."
+                    f"Banned local OCR modules loaded in cloud_api: {loaded}"
                 )
     except SystemError:
         raise
     except Exception as e:
+        if is_restricted_ocr_environment():
+            raise SystemError(f"OCR module isolation check failed: {e}") from e
         logger.warning("OCR module isolation check failed: %s", e)
 
     from app.core.ocr_profile import get_ocr_profile
@@ -1196,24 +1196,14 @@ async def _check_role_deps() -> bool:
       - Audit log cleanup scheduler loop running (if AUDIT_LOG_CLEANUP_ENABLED)
     """
     role = settings.PROCESS_ROLE
-    is_cloud = False
-    try:
-        from app.core.deployment_profile import (
-            DeploymentProfile,
-            detect_deployment_profile,
-        )
-        is_cloud = detect_deployment_profile() == DeploymentProfile.CLOUD_API
-    except Exception:
-        pass
+    is_cloud = is_restricted_ocr_environment()
 
     if role == "web":
-        if is_cloud:
-            import sys
-            if "paddle" in sys.modules or "paddleocr" in sys.modules:
-                logger.warning(
-                    "role_deps: cloud_api web role detected banned OCR modules in sys.modules"
-                )
-                return False
+        if is_cloud and loaded_local_ocr_modules():
+            logger.warning(
+                "role_deps: cloud web role detected banned OCR modules in sys.modules"
+            )
+            return False
         return True
 
     if role == "worker":
@@ -1292,17 +1282,11 @@ async def _check_ocr_config() -> str | None:
     if exec_backend == "paddlex_http" and not settings.OCR_REMOTE_TOKEN:
         issues.append("remote token not set")
 
-    from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
-    try:
-        is_cloud = detect_deployment_profile() == DeploymentProfile.CLOUD_API or settings.APP_ENV == "production"
-    except Exception:
-        is_cloud = False
+    is_cloud = is_restricted_ocr_environment()
 
     # Local paddle in sys.modules under cloud → unavailable
-    if is_cloud:
-        import sys
-        if "paddle" in sys.modules or "paddleocr" in sys.modules:
-            issues.append("local paddle modules loaded in cloud deployment")
+    if is_cloud and loaded_local_ocr_modules():
+        issues.append("local paddle modules loaded in cloud deployment")
 
     if issues:
         if is_cloud:
@@ -1367,8 +1351,8 @@ async def _check_queue() -> str | None:
         from app.services.task_queue_service import task_queue
         total = 0
         for tt in ("import_pipeline", "image_pipeline", "excel_pipeline"):
-            total += await task_queue.queue_length(tt)
-            total += await task_queue.processing_length(tt)
+            total += await task_queue.ready_length_v2(tt)
+            total += await task_queue.processing_length_v2(tt)
         if total > 100:
             return "degraded"
         return "ok"
@@ -1401,12 +1385,12 @@ async def metrics_endpoint():
     try:
         from app.services.task_queue_service import task_queue
         for tt in task_types:
-            ready = await task_queue.queue_length(tt)
-            processing = await task_queue.processing_length(tt)
-            retry_count = await task_queue.retry_length(tt)
-            dead = await task_queue.dead_length(tt)
-            corrupt = await task_queue.corrupt_length(tt)
-            oldest_age = await task_queue.oldest_ready_age(tt)
+            ready = await task_queue.ready_length_v2(tt)
+            processing = await task_queue.processing_length_v2(tt)
+            retry_count = await task_queue.retry_length_v2(tt)
+            dead = await task_queue.dead_length_v2(tt)
+            corrupt = await task_queue.corrupt_length_v2(tt)
+            oldest_age = await task_queue.oldest_ready_age_v2(tt)
             _append(f'task_queue_ready{{type="{tt}"}} {ready}')
             _append(f'task_queue_processing{{type="{tt}"}} {processing}')
             _append(f'task_queue_retry{{type="{tt}"}} {retry_count}')

@@ -52,7 +52,7 @@
         <view class="records-intro">
           <view class="intro-title-row">
             <text class="intro-title">最近导出</text>
-            <text class="intro-count">{{list.length}} 条</text>
+            <text class="intro-count">{{totalRecords}} 条</text>
           </view>
           <text class="intro-caption">文件到期前可随时预览或分享</text>
         </view>
@@ -60,11 +60,11 @@
         <view
           wx:for="{{list}}"
           wx:key="id"
-          class="record-card record-card-{{item.status}} {{highlightId === item.id ? 'record-card-highlight' : ''}}"
+          class="record-card record-card-{{item.visualStatus}} {{highlightId === item.id ? 'record-card-highlight' : ''}}"
         >
           <view class="record-status-row">
             <view class="status-identity">
-              <view class="status-mark status-mark-{{item.status}}">
+              <view class="status-mark status-mark-{{item.visualStatus}}">
                 <view wx:if="{{item.status === 'processing'}}" class="status-spinner"></view>
                 <text wx:else class="status-glyph">{{item.statusGlyph}}</text>
               </view>
@@ -80,6 +80,7 @@
           <view class="record-file-block">
             <text class="record-filename">{{item.displayFileName}}</text>
             <text class="record-date">导出于 {{item.dateText}}</text>
+            <text wx:if="{{item.layoutSummary}}" class="record-layout">{{item.layoutSummary}}</text>
           </view>
 
           <view class="record-facts">
@@ -112,7 +113,7 @@
             </view>
           </view>
 
-          <view wx:if="{{item.error_message}}" class="message-panel message-panel-error">
+          <view wx:if="{{item.error_message}}" class="message-panel {{item.reexport_failed ? 'message-panel-warning' : 'message-panel-error'}}">
             <view class="message-icon">!</view>
             <text class="message-text">{{item.error_message}}</text>
           </view>
@@ -127,7 +128,7 @@
               <view class="progress-bar progress-bar-{{item.status}}"></view>
             </view>
             <text class="progress-caption">
-              {{item.status === 'pending' ? '正在等待处理，状态会自动更新' : '正在排版并生成文件，完成后状态会自动更新'}}
+              {{item.is_reexporting ? '正在生成新版文件，上一版仍可正常打开' : (item.status === 'pending' ? '正在等待处理，状态会自动更新' : '正在排版并生成文件，完成后状态会自动更新')}}
             </text>
           </view>
 
@@ -147,16 +148,20 @@
                   class="action-btn action-btn-subtle action-btn-danger-text"
                   hover-class="button-pressed"
                   data-id="{{item.id}}"
+                  disabled="{{deletingTaskId === item.id}}"
+                  loading="{{deletingTaskId === item.id}}"
                   bindtap="onDelete"
-                >删除任务</button>
+                >{{deletingTaskId === item.id ? '删除中' : '删除任务'}}</button>
               </view>
               <button
                 wx:else
                 class="action-btn action-btn-subtle action-btn-danger-text action-btn-full"
                 hover-class="button-pressed"
                 data-id="{{item.id}}"
+                disabled="{{deletingTaskId === item.id}}"
+                loading="{{deletingTaskId === item.id}}"
                 bindtap="onDelete"
-              >删除任务</button>
+              >{{deletingTaskId === item.id ? '删除中' : '删除任务'}}</button>
             </block>
 
             <!-- Completed -->
@@ -168,13 +173,13 @@
                   data-id="{{item.id}}"
                   disabled="{{previewingTaskId === item.id}}"
                   bindtap="onPreview"
-                >{{previewingTaskId === item.id ? '打开中' : '预览文件'}}</button>
+                >{{previewingTaskId === item.id ? '打开中' : '打开文件'}}</button>
                 <button
                   class="action-btn action-btn-secondary"
                   hover-class="button-pressed"
                   open-type="share"
                   data-id="{{item.id}}"
-                >分享页面</button>
+                >转发记录</button>
               </view>
 
               <button
@@ -201,8 +206,10 @@
                   class="secondary-action secondary-action-danger"
                   hover-class="secondary-action-pressed"
                   data-id="{{item.id}}"
+                  disabled="{{deletingTaskId === item.id}}"
+                  loading="{{deletingTaskId === item.id}}"
                   bindtap="onDelete"
-                >删除记录</button>
+                >{{deletingTaskId === item.id ? '删除中' : '删除记录'}}</button>
               </view>
             </block>
 
@@ -221,14 +228,18 @@
                   class="action-btn action-btn-primary"
                   hover-class="button-pressed"
                   data-id="{{item.id}}"
+                  disabled="{{retryingTaskId === item.id}}"
+                  loading="{{retryingTaskId === item.id}}"
                   bindtap="onRetry"
-                >重试导出</button>
+                >{{retryingTaskId === item.id ? '提交中' : '重试导出'}}</button>
                 <button
                   class="action-btn action-btn-subtle action-btn-danger-text"
                   hover-class="button-pressed"
                   data-id="{{item.id}}"
+                  disabled="{{deletingTaskId === item.id}}"
+                  loading="{{deletingTaskId === item.id}}"
                   bindtap="onDelete"
-                >删除记录</button>
+                >{{deletingTaskId === item.id ? '删除中' : '删除记录'}}</button>
               </view>
             </block>
 
@@ -247,8 +258,10 @@
                   class="action-btn action-btn-subtle action-btn-danger-text"
                   hover-class="button-pressed"
                   data-id="{{item.id}}"
+                  disabled="{{deletingTaskId === item.id}}"
+                  loading="{{deletingTaskId === item.id}}"
                   bindtap="onDelete"
-                >删除记录</button>
+                >{{deletingTaskId === item.id ? '删除中' : '删除记录'}}</button>
               </view>
             </block>
           </view>

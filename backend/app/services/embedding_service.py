@@ -29,16 +29,27 @@ def _get_embedding_config():
 # ---------------------------------------------------------------------------
 
 
-def build_question_embedding_text(question: Any) -> str:
+def build_question_embedding_text(
+    question: Any,
+    *,
+    subject_code: str | None = None,
+) -> str:
     """将题目信息组装为 embedding 文本。
 
     包含: subject, question_type, difficulty, knowledge_points, stem, options, analysis。
     **不包含 answer**，防止 embedding 泄露答案信息。
+
+    ``subject_code`` 用于调用方已经解析出科目代码、但 ORM relationship
+    没有预加载的场景。未提供时保持原有的自动推断行为。
     """
     parts: list[str] = []
 
     subj_ref = getattr(question, "subject_ref", None)
-    subject = subj_ref.code if subj_ref else (getattr(question, "subject_id", "") or "")
+    subject = (
+        subject_code
+        or (subj_ref.code if subj_ref else "")
+        or (getattr(question, "subject_id", "") or "")
+    )
     if subject:
         parts.append(f"科目：{subject}")
 
