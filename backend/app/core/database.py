@@ -441,9 +441,6 @@ async def init_db():
     if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
         return
 
-    from app.models.admin_vector_config import (
-        AdminVectorConfig,  # noqa: F401 — Phase 5 vector config
-    )
     from app.models.ai_feedback_log import AiFeedbackLog  # noqa: F401
     from app.models.formula import (  # noqa: F401
         FormulaCard,

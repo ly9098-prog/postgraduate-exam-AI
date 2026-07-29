@@ -641,7 +641,7 @@ async def batch_complete_questions(
             if not (_api_key or deepseek.is_available()):
                 item["resp_raw"] = None
                 item["parsed_raw"] = item["fallback_value"]
-                item["error"] = "DEEPSEEK_API_KEY 未配置"
+                item["error"] = "AI模型API Key未配置"
                 return item
             if not skip_budget_check:
                 from app.core.config import settings

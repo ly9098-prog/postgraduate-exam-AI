@@ -190,7 +190,6 @@ cp .env.example .env
 APP_SECRET=change-me-in-production
 WECHAT_APP_ID=
 WECHAT_APP_SECRET=
-DEEPSEEK_API_KEY=
 ```
 
 #### 4）启动服务
@@ -537,21 +536,14 @@ GET  /api/admin/v1/health/ready
 |---|---:|---|
 | `WECHAT_APP_ID` | — | **必填**。微信小程序 AppID |
 | `WECHAT_APP_SECRET` | — | **必填**。微信小程序 AppSecret |
-| `WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID` | 空 | 番茄钟订阅消息模板 ID |
-| `POMODORO_NOTIFY_ENABLED` | `false` | 番茄钟微信订阅提醒总开关 |
-| `POMODORO_NOTIFY_PAGE` | `pages/pomodoro/pomodoro` | 番茄钟通知跳转页面 |
-| `POMODORO_SCHEDULER_INTERVAL_SEC` | `60` | 调度器扫描间隔 |
 
 ### AI / LLM
 
 | 变量 | 默认值 | 说明 |
 |---|---:|---|
-| `DEEPSEEK_API_KEY` | — | DeepSeek / 兼容模型 API Key |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | API Base URL |
-| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 默认模型名 |
 | `AI_TIMEOUT` | `150` | AI 调用超时（秒） |
 | `AI_DAILY_TOKEN_LIMIT` | `50000` | 单日 Token 上限 |
-| `AI_CONFIG_ENCRYPT_KEY` | 空 | AI 模型配置加密密钥 |
+| `AI_CONFIG_ENCRYPT_KEY` | 空 | AI 模型配置加密密钥（Fernet），AI API Key/Base URL/模型等通过后台页面配置后加密存入 `admin_ai_model_configs` 表 |
 
 ### OCR
 
@@ -585,12 +577,7 @@ GET  /api/admin/v1/health/ready
 
 | 变量 | 默认值 | 说明 |
 |---|---:|---|
-| `VECTOR_ENABLED` | `false` | 是否启用向量检索 |
-| `VECTOR_MODE` | `off` | 模式：`off` / `shadow` / `allowlist` / `all` |
-| `EMBEDDING_API_KEY` | 空 | Embedding API Key |
-| `EMBEDDING_BASE_URL` | 空 | Embedding Base URL |
-| `EMBEDDING_MODEL` | `BAAI/bge-m3` | Embedding 模型 |
-| `EMBEDDING_DIM` | `1024` | Embedding 维度 |
+| `VECTOR_ENABLED` | `false` | 是否启用向量检索（也支持通过后台页面配置） |
 
 ### 生产部署
 

@@ -1530,9 +1530,7 @@ async def metrics_endpoint():
         from app.services.task_queue_worker import is_draining_v2
         _append(f'worker_draining {1 if is_draining_v2() else 0}')
     except Exception:
-        _append("worker_draining 0")        _append('distlock_skipped_total{name="pomodoro:tick"} 0')
-        _append('distlock_failed_total{name="pomodoro:tick"} 0')
-        _append('distlock_duration_ms_total{name="pomodoro:tick"} 0')
+        _append("worker_draining 0")
 
     try:
         from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
@@ -1549,8 +1547,6 @@ async def metrics_endpoint():
         _append('distlock_duration_ms_total{name="audit:cleanup"} 0')
 
     # ── Scheduler running state ──
-    try:    except Exception:
-        _append('scheduler_running{name="pomodoro"} 0')
     try:
         from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
         _append(f'scheduler_running{{name="audit_cleanup"}} {1 if audit_log_cleanup_scheduler._running else 0}')

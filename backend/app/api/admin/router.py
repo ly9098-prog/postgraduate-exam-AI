@@ -38,12 +38,12 @@ admin_api_router.include_router(admin_subjects_router)
 admin_api_router.include_router(admin_users_router)
 admin_api_router.include_router(admin_watermark_rules_router)
 admin_api_router.include_router(admin_ai_config_router)
-admin_api_router.include_router(admin_vector_config_router)
 admin_api_router.include_router(admin_system_health_router)
 admin_api_router.include_router(admin_tasks_router)
 admin_api_router.include_router(admin_knowledge_router)
 admin_api_router.include_router(admin_recommendation_router)
 admin_api_router.include_router(admin_formulas_router)
 admin_api_router.include_router(admin_metadata_router)
+admin_api_router.include_router(admin_vector_config_router)
 
 __all__ = ["admin_api_router"]

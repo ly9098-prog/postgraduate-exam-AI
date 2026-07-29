@@ -7,6 +7,25 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from app.core.secret_crypto import is_mask_placeholder
 
 
+def _configs_to_response(configs: dict[str, str]) -> "VectorConfigResponse":
+    """从 admin_ai_configs 键值对构建 VectorConfigResponse。"""
+    encrypted = configs.get("embedding_api_key_encrypted", "")
+    return VectorConfigResponse(
+        vector_enabled=configs.get("vector_enabled", "false").lower() == "true",
+
+        vector_cache_ttl_sec=int(configs.get("vector_cache_ttl_sec", 300)),
+        vector_top_k=int(configs.get("vector_top_k", 100)),
+        vector_similarity_threshold=float(configs.get("vector_similarity_threshold", "0.15")),
+        embedding_provider=configs.get("embedding_provider", "openai_compatible"),
+        embedding_api_key_configured=bool(encrypted),
+        embedding_base_url=configs.get("embedding_base_url", ""),
+        embedding_model=configs.get("embedding_model", "BAAI/bge-m3"),
+        embedding_dim=int(configs.get("embedding_dim", 1024)),
+        embedding_timeout=int(configs.get("embedding_timeout", 30)),
+        embedding_batch_size=int(configs.get("embedding_batch_size", 16)),
+    )
+
+
 class VectorConfigResponse(BaseModel):
     """返回给前端的完整向量配置。API key 以掩码形式返回，不暴露明文。"""
 
@@ -14,8 +33,6 @@ class VectorConfigResponse(BaseModel):
 
     # ── Vector Search ──
     vector_enabled: bool
-    vector_mode: str
-    vector_allowlist: str
     vector_cache_ttl_sec: int
     vector_top_k: int
     vector_similarity_threshold: float
@@ -39,8 +56,6 @@ class VectorConfigPatchRequest(BaseModel):
 
     # ── Vector Search ──
     vector_enabled: bool | None = None
-    vector_mode: str | None = Field(default=None, pattern="^(off|shadow|allowlist|all)$")
-    vector_allowlist: str | None = None
     vector_cache_ttl_sec: int | None = Field(default=None, ge=0, le=86400)
     vector_top_k: int | None = Field(default=None, ge=1, le=10000)
     vector_similarity_threshold: float | None = Field(default=None, ge=0.0, le=1.0)

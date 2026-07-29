@@ -16,8 +16,8 @@ _ai_logger = logging.getLogger("app.ai")
 
 class DeepSeekClient:
     def __init__(self):
-        self._api_key = settings.DEEPSEEK_API_KEY
-        self._base_url = settings.DEEPSEEK_BASE_URL
+        self._api_key = ""  # managed via admin_ai_model_configs
+        self._base_url = ""  # managed per-model in admin_ai_model_configs
         self.timeout = settings.AI_TIMEOUT
         self._client: httpx.AsyncClient | None = None
 
@@ -36,7 +36,7 @@ class DeepSeekClient:
         return self._client
 
     def is_available(self) -> bool:
-        return bool(self._api_key) and self._api_key != "sk-your-key-here"
+        return bool(self._api_key)
 
     async def chat(
         self,
@@ -49,11 +49,11 @@ class DeepSeekClient:
         _api_key = api_key if api_key is not None else self._api_key
         _base_url = base_url if base_url is not None else self._base_url
 
-        if not _api_key or _api_key == "sk-your-key-here":
-            raise RuntimeError("DEEPSEEK_API_KEY 未配置")
+        if not _api_key:
+            raise RuntimeError("AI模型API Key未配置，请先在后台AI设置页面配置模型API Key")
 
         # 兜底：显式传 None 不会覆盖默认值，确保 payload["model"] 永远是字符串
-        model = model or getattr(settings, "DEEPSEEK_MODEL", None) or "deepseek-v4-flash"
+        model = model or "deepseek-v4-flash"
 
         # Extract host only — never log full URL (may contain tokens)
         try:

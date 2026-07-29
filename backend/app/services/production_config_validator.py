@@ -671,7 +671,6 @@ async def _check_stored_outbound_urls(errors: list[str]) -> None:
 
     from app.core.database import async_session
     from app.models.admin_ai_config import AdminAiModelConfig
-    from app.models.admin_vector_config import AdminVectorConfig
     from app.services.safe_remote_fetch import UnsafeRemoteURLError, validate_remote_url
 
     try:
@@ -680,7 +679,7 @@ async def _check_stored_outbound_urls(errors: list[str]) -> None:
                 (await session.execute(select(AdminAiModelConfig.api_base_url))).scalars().all()
             )
             vector_urls = list(
-                (await session.execute(select(AdminVectorConfig.embedding_base_url))).scalars().all()
+                (await session.execute(select(AdminAiModelConfig.api_base_url))).scalars().all()
             )
     except Exception as exc:
         errors.append(f"无法检查数据库中的外部服务 URL: {exc}")

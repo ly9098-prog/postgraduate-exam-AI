@@ -25,13 +25,6 @@ import type {
   VectorConfigPatchRequest,
 } from "@/lib/api/types";
 
-const VECTOR_MODES = [
-  { value: "off", label: "关闭", desc: "禁用向量检索" },
-  { value: "shadow", label: "影子", desc: "检索但不使用" },
-  { value: "allowlist", label: "白名单", desc: "仅指定科目" },
-  { value: "all", label: "全部", desc: "全局启用" },
-] as const;
-
 type Tab = "search" | "api" | "model";
 
 const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
@@ -137,7 +130,6 @@ export function VectorConfigSection() {
   }
 
   const isEnabled = form.vector_enabled ?? c.vector_enabled;
-  const currentMode = form.vector_mode ?? c.vector_mode;
 
   return (
     <section className="overflow-hidden rounded-2xl border border-[var(--color-border)]/80 bg-white/80 shadow-[var(--shadow-card)] animate-rise-in">
@@ -236,41 +228,7 @@ export function VectorConfigSection() {
           {tab === "search" && (
             <div className="space-y-5 animate-rise-in">
               {/* Mode selector */}
-              <fieldset>
-                <legend className="mb-2.5 text-xs font-semibold text-[var(--color-text-secondary)]">
-                  检索模式
-                </legend>
-                <div className="grid grid-cols-2 gap-2">
-                  {VECTOR_MODES.map((m) => {
-                    const active = currentMode === m.value;
-                    return (
-                      <button
-                        key={m.value}
-                        type="button"
-                        onClick={() => set("vector_mode", m.value)}
-                        className={cn(
-                          "rounded-lg border px-3 py-2.5 text-left transition-all",
-                          active
-                            ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] shadow-sm"
-                            : "border-[var(--color-border)]/60 bg-white/60 hover:border-[var(--color-primary)]/40",
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "text-xs font-semibold",
-                            active ? "text-[var(--color-primary)]" : "text-[var(--ink)]",
-                          )}
-                        >
-                          {m.label}
-                        </span>
-                        <p className="mt-0.5 text-[11px] leading-tight text-[var(--color-text-hint)]">
-                          {m.desc}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </fieldset>
+
 
               {/* Search parameters */}
               <div className="grid grid-cols-3 gap-3">
@@ -310,18 +268,7 @@ export function VectorConfigSection() {
                 </label>
               </div>
 
-              {currentMode === "allowlist" && (
-                <label className="block">
-                  <span className={labelCls}>白名单 (JSON 数组)</span>
-                  <input
-                    type="text"
-                    placeholder='["exam408-ds","exam408-os"]'
-                    className={monoCls}
-                    value={form.vector_allowlist ?? c.vector_allowlist}
-                    onChange={(e) => set("vector_allowlist", e.target.value)}
-                  />
-                </label>
-              )}
+
             </div>
           )}
 

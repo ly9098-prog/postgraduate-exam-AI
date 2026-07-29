@@ -62,31 +62,28 @@ class _VectorSettings:
         if hasattr(db, "_mock_name") or hasattr(db, "assert_called"):
             return
         try:
-            from app.services.vector_config_service import (
-                _seed_if_empty,
-            )
-            row = await _seed_if_empty(db)
+            from app.models.admin_ai_config import AdminAiConfig
+            result = await db.execute(select(AdminAiConfig))
+            configs = {r.config_key: r.config_value for r in result.scalars().all()}
 
-            # 只缓存非敏感配置 (vec)，不缓存包含解密后 api_key 的 EmbeddingConfig
             vec = VectorSearchConfig(
-                enabled=row.vector_enabled,
-                mode=row.vector_mode,
-                allowlist=row.vector_allowlist,
-                cache_ttl_sec=row.vector_cache_ttl_sec,
-                top_k=row.vector_top_k,
-                similarity_threshold=row.vector_similarity_threshold,
+                enabled=configs.get("vector_enabled", "false").lower() == "true",
+                mode=configs.get("vector_mode", "off"),
+                allowlist=configs.get("vector_allowlist", ""),
+                cache_ttl_sec=int(configs.get("vector_cache_ttl_sec", 300)),
+                top_k=int(configs.get("vector_top_k", 100)),
+                similarity_threshold=float(configs.get("vector_similarity_threshold", "0.15")),
             )
 
-            # embedding 配置只保存非敏感字段，api_key 在需要时通过 _resolve_embedding_api_key 获取
             self._cached = {
                 "vec": vec,
-                "_embedding_base_url": row.embedding_base_url or settings.EMBEDDING_BASE_URL,
-                "_embedding_model": row.embedding_model or settings.EMBEDDING_MODEL,
-                "_embedding_dim": row.embedding_dim or settings.EMBEDDING_DIM,
-                "_embedding_timeout": row.embedding_timeout or settings.EMBEDDING_TIMEOUT,
-                "_embedding_batch_size": row.embedding_batch_size or settings.EMBEDDING_BATCH_SIZE,
-                "_embedding_provider": row.embedding_provider or settings.EMBEDDING_PROVIDER,
-                "_embedding_api_key_encrypted": row.embedding_api_key_encrypted,
+                "_embedding_base_url": configs.get("embedding_base_url") or settings.EMBEDDING_BASE_URL,
+                "_embedding_model": configs.get("embedding_model") or settings.EMBEDDING_MODEL,
+                "_embedding_dim": int(configs.get("embedding_dim", settings.EMBEDDING_DIM)),
+                "_embedding_timeout": int(configs.get("embedding_timeout", settings.EMBEDDING_TIMEOUT)),
+                "_embedding_batch_size": int(configs.get("embedding_batch_size", settings.EMBEDDING_BATCH_SIZE)),
+                "_embedding_provider": configs.get("embedding_provider") or settings.EMBEDDING_PROVIDER,
+                "_embedding_api_key_encrypted": configs.get("embedding_api_key_encrypted") or "",
             }
             self._cached_at = now
         except BaseException:
@@ -106,8 +103,6 @@ class _VectorSettings:
                     return decrypt_secret(encrypted)
                 except (SecretDecryptionError, SecretEncryptionError):
                     pass
-        if settings.EMBEDDING_API_KEY:
-            return settings.EMBEDDING_API_KEY
         return ""
 
     def _build_embedding_config(self) -> EmbeddingConfig:
@@ -123,7 +118,7 @@ class _VectorSettings:
                 provider=self._cached.get("_embedding_provider", settings.EMBEDDING_PROVIDER),
             )
         return EmbeddingConfig(
-            api_key=settings.EMBEDDING_API_KEY,
+            api_key="",
             base_url=settings.EMBEDDING_BASE_URL,
             model=settings.EMBEDDING_MODEL,
             dim=settings.EMBEDDING_DIM,
@@ -138,8 +133,9 @@ class _VectorSettings:
             return self._build_embedding_config()
         # Fallback: use local settings (patchable in tests)
         from app.services.vector_config_service import EmbeddingConfig
+        # fallback
         return EmbeddingConfig(
-            api_key=settings.EMBEDDING_API_KEY,
+            api_key="",
             base_url=settings.EMBEDDING_BASE_URL,
             model=settings.EMBEDDING_MODEL,
             dim=settings.EMBEDDING_DIM,
@@ -1471,30 +1467,6 @@ def _parse_allowlist() -> dict:
     except (_json.JSONDecodeError, ValueError):
         logger.warning("VECTOR_ALLOWLIST 解析失败: %s", raw)
         return {"user_ids": [], "subjects": []}
-
-
-def _is_allowlist_empty() -> bool:
-    """检查 allowlist 是否为空。"""
-    al = _parse_allowlist()
-    return not al["user_ids"] and not al["subjects"]
-
-
-def _allowlist_matches(user_id: int | None = None, subject: str | None = None) -> bool:
-    """检查 user_id 或 subject 是否命中 allowlist。
-
-    subject 匹配时忽略大小写和首尾空格。
-    """
-    al = _parse_allowlist()
-    if not al["user_ids"] and not al["subjects"]:
-        return False
-
-    if user_id is not None and user_id in al["user_ids"]:
-        return True
-    if subject is not None:
-        normalized_subject = subject.strip().lower()
-        if normalized_subject in al["subjects"]:
-            return True
-    return False
 
 
 def is_vector_allowed_for(user_id: int | None = None, subject: str | None = None) -> bool:
