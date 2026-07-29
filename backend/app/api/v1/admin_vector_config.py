@@ -68,8 +68,12 @@ async def update_vector_config(
         await db.merge(row)
         changed.append(key)
     await db.flush()
-    from app.services.admin_ai_config_service import write_audit
-    await write_audit(db, current_admin, "vector_config.update", detail={"changed_fields": changed})
+    from app.services.admin_audit_service import write_admin_audit
+    await write_admin_audit(
+        db, current_admin, "vector_config.update",
+        resource_type="vector_config", resource_id="config",
+        severity="important", detail={"changed_fields": changed},
+    )
 
     await db.commit()
 
