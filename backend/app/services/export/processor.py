@@ -65,8 +65,10 @@ _TASK_TIMEOUT_SEC = getattr(settings, "EXPORT_TASK_TIMEOUT_SEC", 600)
 _PDF_CONCURRENCY = getattr(settings, "EXPORT_PDF_CONCURRENCY", 1)
 _DOCX_CONCURRENCY = getattr(settings, "EXPORT_DOCX_CONCURRENCY", 1)
 
-# In-flight tracking for graceful shutdown
+# In-flight tracking for graceful shutdown.  Keep strong references to
+# asyncio.Tasks; the event loop only keeps weak references to scheduled tasks.
 _in_flight: set[int] = set()
+_worker_tasks: set[asyncio.Task[None]] = set()
 _draining = False
 _processor_started_at: float | None = None
 _processor_heartbeat_at: float | None = None
@@ -120,13 +122,72 @@ class _TaskSlot:
     file_format: str
 
 
+def _on_worker_done(task: asyncio.Task[None]) -> None:
+    """Release a completed worker task and surface unexpected failures."""
+    _worker_tasks.discard(task)
+    if task.cancelled():
+        return
+    try:
+        exc = task.exception()
+    except asyncio.CancelledError:
+        return
+    if exc is not None:
+        logger.error(
+            "Export worker %s failed unexpectedly: %s: %s",
+            task.get_name(),
+            type(exc).__name__,
+            exc,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+
+
+def _spawn_worker(slot: _TaskSlot) -> None:
+    task = asyncio.create_task(
+        _process_claimed_task(slot),
+        name=f"export-task-{slot.task_id}",
+    )
+    _worker_tasks.add(task)
+    task.add_done_callback(_on_worker_done)
+
+
+async def _drain_worker_tasks() -> None:
+    """Wait a bounded time for workers, then cancel remaining tasks."""
+    running = {task for task in _worker_tasks if not task.done()}
+    if not running:
+        return
+
+    configured_grace = float(
+        getattr(
+            settings,
+            "EXPORT_SHUTDOWN_GRACE_SEC",
+            getattr(settings, "WORKER_SHUTDOWN_GRACE_SEC", 30),
+        )
+    )
+    # Parent lifecycle managers use a 30s timeout; leave headroom for cleanup.
+    grace = max(0.0, min(configured_grace, 25.0))
+    logger.info("Export processor draining %d worker task(s)", len(running))
+    _done, pending = await asyncio.wait(running, timeout=grace)
+    if not pending:
+        return
+
+    logger.warning(
+        "Cancelling %d export worker task(s) after %.1fs shutdown grace",
+        len(pending),
+        grace,
+    )
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+
 async def run_export_processor():
     """Main loop — poll for pending tasks and spawn concurrent workers.
 
     Unlike the old serial loop, this spawns an ``asyncio.Task`` per claimed
     task so multiple exports process concurrently (up to ``_MAX_CONCURRENT``).
     """
-    global _concurrency_semaphore, _pdf_semaphore, _docx_semaphore
+    global _concurrency_semaphore, _pdf_semaphore, _docx_semaphore, _draining
+    _draining = False
     _concurrency_semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
     _pdf_semaphore = asyncio.Semaphore(_PDF_CONCURRENCY)
     _docx_semaphore = asyncio.Semaphore(_DOCX_CONCURRENCY)
@@ -148,7 +209,7 @@ async def run_export_processor():
             slot = await _try_claim_task()
             if slot is not None:
                 logger.info("Claimed task %d for user %d (%s)", slot.task_id, slot.user_id, slot.file_format)
-                asyncio.create_task(_process_claimed_task(slot))
+                _spawn_worker(slot)
         except asyncio.CancelledError:
             logger.info("Export processor cancelled")
             break
@@ -160,13 +221,13 @@ async def run_export_processor():
 
     logger.info("export_processor_stopped role=%s", getattr(settings, "PROCESS_ROLE", "unknown"))
 
-    # Drain: wait for in_flight tasks to complete
-    if _in_flight:
-        logger.info("Export processor draining %d in-flight tasks...", len(_in_flight))
-        while _in_flight:
-            await asyncio.sleep(1)
-
-    logger.info("Export processor stopped (draining=%s, in_flight=%d)", _draining, len(_in_flight))
+    await _drain_worker_tasks()
+    logger.info(
+        "Export processor stopped (draining=%s, in_flight=%d, worker_tasks=%d)",
+        _draining,
+        len(_in_flight),
+        len(_worker_tasks),
+    )
 
 
 async def _recover_stale_tasks():
@@ -245,32 +306,48 @@ async def _try_claim_task() -> _TaskSlot | None:
     async with async_session() as db:
         now = utcnow()
 
-        # Find a candidate task whose user hasn't exceeded the per-user limit
-        subq = (
-            select(ExportTask.id)
+        # Scan a small ordered window rather than looking at only the oldest
+        # row.  Otherwise one user already at the processing limit can block
+        # every later user's task indefinitely.
+        scan_limit = max(20, _MAX_CONCURRENT * 10)
+        candidate_result = await db.execute(
+            select(ExportTask.id, ExportTask.user_id)
             .where(ExportTask.status == ExportTaskStatus.PENDING)
             .order_by(ExportTask.created_at)
-            .limit(1)
-            .scalar_subquery()
+            .limit(scan_limit)
         )
-        # First peek at the candidate without claiming
-        peek = await db.execute(
-            select(ExportTask.id, ExportTask.user_id)
-            .where(ExportTask.id == subq)
-        )
-        row = peek.one_or_none()
-        if row is None:
+        candidates = candidate_result.all()
+        if not candidates:
             return None
 
-        candidate_id, candidate_user_id = row.tuple()
-
-        # Check per-user limit
-        pending_count = await get_user_pending_count(db, candidate_user_id)
-        if pending_count >= _MAX_PER_USER:
-            logger.debug(
-                "Skipping task %d for user %d (pending=%d >= max=%d)",
-                candidate_id, candidate_user_id, pending_count, _MAX_PER_USER,
+        user_ids = {row.user_id for row in candidates}
+        processing_result = await db.execute(
+            select(ExportTask.user_id, sa.func.count(ExportTask.id))
+            .where(
+                ExportTask.user_id.in_(user_ids),
+                ExportTask.status == ExportTaskStatus.PROCESSING,
             )
+            .group_by(ExportTask.user_id)
+        )
+        processing_counts = dict(processing_result.all())
+
+        candidate_id = None
+        candidate_user_id = None
+        for row in candidates:
+            processing_count = int(processing_counts.get(row.user_id, 0))
+            if processing_count < _MAX_PER_USER:
+                candidate_id = row.id
+                candidate_user_id = row.user_id
+                break
+            logger.debug(
+                "Skipping task %d for user %d (processing=%d >= max=%d)",
+                row.id,
+                row.user_id,
+                processing_count,
+                _MAX_PER_USER,
+            )
+
+        if candidate_id is None or candidate_user_id is None:
             return None
 
         # Atomic claim: UPDATE the candidate task

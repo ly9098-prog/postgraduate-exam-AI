@@ -619,16 +619,29 @@ async def lifespan(app: FastAPI):
             _outbox_reconciler_task.cancel()
             _shutdown_tasks.append(("outbox-reconciler", _outbox_reconciler_task))
 
-        for name, task in _shutdown_tasks:
-            try:
-                await asyncio.wait_for(task, timeout=30)
-                logger.info("Task %s: completed after cancel", name)
-            except asyncio.CancelledError:
-                logger.info("Task %s: cancelled", name)
-            except TimeoutError:
-                logger.warning("Task %s: did not stop within 30s grace period", name)
-            except Exception as e:
-                logger.warning("Task %s: cancel error: %s", name, e)
+        if _shutdown_tasks:
+            task_names = {task: name for name, task in _shutdown_tasks}
+            done, pending = await asyncio.wait(task_names, timeout=30)
+            for task in done:
+                name = task_names[task]
+                if task.cancelled():
+                    logger.info("Task %s: cancelled", name)
+                    continue
+                try:
+                    exc = task.exception()
+                except asyncio.CancelledError:
+                    logger.info("Task %s: cancelled", name)
+                    continue
+                if exc is None:
+                    logger.info("Task %s: completed after cancel", name)
+                else:
+                    logger.warning("Task %s: cancel error: %s", name, exc)
+            for task in pending:
+                logger.warning(
+                    "Task %s: did not stop within shared 30s grace period",
+                    task_names[task],
+                )
+                task.cancel()
 
         # 4. Stop schedulers (if running in this role)
         if role in ("scheduler", "all"):

@@ -9,13 +9,13 @@ API flow:
 from __future__ import annotations
 
 import asyncio
-import codecs
 import ipaddress
 import json
 import logging
 import random
 import socket
 import time
+import uuid
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -148,7 +148,7 @@ _DEFAULT_POLL_INTERVAL = 5.0  # seconds between polls (官方建议 ≥5s)
 _DEFAULT_POLL_TIMEOUT = 120  # max total poll time
 _MAX_RETRIES = 3
 _RETRY_DELAY = 2.0  # seconds between retries
-_OCR_VL_SEM_KEY = "semaphore:ocr_vl"
+_OCR_VL_SEM_KEY = "semaphore:ocr_vl:v2"
 _OCR_VL_SEM_MAX = 2  # max concurrent remote OCR calls across all processes
 
 # SSRF and size limits for result URL download
@@ -233,7 +233,7 @@ def _check_content_length(response: httpx.Response) -> None:
             pass
 
 
-def _validate_result_url(url: str) -> str:
+def _validate_result_url_sync(url: str) -> str:
     """Validate a result download URL for safety.
 
     Checks: https scheme, non-private resolved IP, no loopback/link-local.
@@ -265,6 +265,11 @@ def _validate_result_url(url: str) -> str:
         ) from exc
 
     return url
+
+
+async def _validate_result_url(url: str) -> str:
+    """Resolve and validate a result URL without blocking the event loop."""
+    return await asyncio.to_thread(_validate_result_url_sync, url)
 
 
 def _normalize_layout_block(lr: dict) -> dict | None:
@@ -512,40 +517,78 @@ class PaddleOCRVLClient:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
-        await self._release_semaphore()
 
-    async def _acquire_semaphore(self) -> bool:
-        """Acquire a Redis semaphore slot for cross-process OCR concurrency.
+    async def _acquire_semaphore(self) -> str | bool | None:
+        """Acquire one expiring cross-process lease for an OCR operation.
 
-        Uses INCR with TTL for a counting semaphore (not a binary lock).
-        Returns True if acquired or Redis is unavailable (best-effort).
+        Returns the unique Redis lease token when acquired, ``False`` when
+        capacity is full, and ``None`` when Redis is unavailable and the
+        request is allowed to proceed in best-effort local mode.  A sorted-set
+        lease is used instead of a shared counter so a crashed request expires
+        independently and cannot leak capacity under sustained traffic.
         """
         if not _OCR_VL_SEM_KEY:
-            return True
+            return None
+        token = uuid.uuid4().hex
+        ttl = int(max(600, self._poll_timeout + _RESULT_DOWNLOAD_TIMEOUT + 180))
         try:
             from app.core.cache import cache
             client = await cache._ensure_client()
             if client is None:
-                return True
-            count = await client.incr(_OCR_VL_SEM_KEY)
-            if count == 1:
-                await client.expire(_OCR_VL_SEM_KEY, 300)
-            if count <= _OCR_VL_SEM_MAX:
-                return True
-            await client.decr(_OCR_VL_SEM_KEY)
-            return False
-        except Exception:
-            return True  # Redis unavailable — allow (best-effort)
+                return None
+            acquired = await client.eval(
+                """
+                local now_parts = redis.call('TIME')
+                local now = tonumber(now_parts[1]) + tonumber(now_parts[2]) / 1000000
+                redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+                if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[2]) then
+                    return 0
+                end
+                redis.call('ZADD', KEYS[1], now + tonumber(ARGV[3]), ARGV[1])
+                redis.call('EXPIRE', KEYS[1], math.ceil(tonumber(ARGV[3])) + 60)
+                return 1
+                """,
+                1,
+                _OCR_VL_SEM_KEY,
+                token,
+                _OCR_VL_SEM_MAX,
+                ttl,
+            )
+            return token if int(acquired) == 1 else False
+        except Exception as exc:
+            logger.warning(
+                "[PaddleOCR-VL] distributed semaphore unavailable; "
+                "continuing without global limit: %s",
+                exc,
+            )
+            return None
 
-    async def _release_semaphore(self) -> None:
-        """Release the Redis semaphore slot if held."""
+    async def _release_semaphore(self, token: str) -> None:
+        """Release only the exact Redis lease held by this operation."""
+        if not _OCR_VL_SEM_KEY or not token:
+            return
         try:
             from app.core.cache import cache
             client = await cache._ensure_client()
-            if client is not None:
-                await client.decr(_OCR_VL_SEM_KEY)
-        except Exception:
-            pass
+            if client is None:
+                return
+            await client.eval(
+                """
+                local removed = redis.call('ZREM', KEYS[1], ARGV[1])
+                if redis.call('ZCARD', KEYS[1]) == 0 then
+                    redis.call('DEL', KEYS[1])
+                end
+                return removed
+                """,
+                1,
+                _OCR_VL_SEM_KEY,
+                token,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[PaddleOCR-VL] failed to release distributed semaphore lease: %s",
+                exc,
+            )
 
     @staticmethod
     def _jitter_delay(base: float, attempt: int, max_delay: float = 30.0) -> float:
@@ -628,16 +671,31 @@ class PaddleOCRVLClient:
         image_bytes: bytes,
         filename: str = "image.png",
     ) -> PaddleOCRVLResult:
-        """Submit a single image for OCR and return the result."""
+        """Submit one image while holding one distributed slot."""
         self._circuit_breaker.check()
+        redis_slot_held = await self._acquire_semaphore()
+        if redis_slot_held is False:
+            raise JobSubmissionError("PaddleOCR-VL concurrency is at capacity")
+        job_id: str | None = None
         try:
             job_id = await self._submit_with_retry(image_bytes, filename)
-            self._circuit_breaker.record_success()
             result_data = await self._poll_with_timeout(job_id)
-            return await self._parse_result(result_data)
+            result = await self._parse_result(result_data)
+            self._circuit_breaker.record_success()
+            return result
         except asyncio.CancelledError:
             logger.info("[PaddleOCR-VL] ocr_image cancelled")
+            if job_id:
+                await self.cancel_job(job_id)
             raise
+        except Exception:
+            self._circuit_breaker.record_failure()
+            if job_id:
+                await self.cancel_job(job_id)
+            raise
+        finally:
+            if isinstance(redis_slot_held, str):
+                await self._release_semaphore(redis_slot_held)
 
     async def batch_ocr(
         self,
@@ -646,69 +704,78 @@ class PaddleOCRVLClient:
         max_concurrency: int = 2,
         progress_callback: callable | None = None,
     ) -> list[PaddleOCRVLResult | None]:
-        """Submit multiple images for OCR with bounded concurrency.
-
-        Args:
-            images: List of ``(image_bytes, filename)`` tuples.
-            max_concurrency: Max concurrent OCR submissions (semaphore).
-            progress_callback: Optional ``(done, total)`` callback after
-                each image completes.
-
-        Returns:
-            List of results in the same order as ``images``.  ``None`` entries
-            indicate individual failures (other images continue processing).
-        """
-        sem = asyncio.Semaphore(max_concurrency)
+        """OCR a batch without creating one retained task per image."""
+        if not images:
+            return []
+        worker_count = max(1, min(int(max_concurrency), len(images)))
         results: list[PaddleOCRVLResult | None] = [None] * len(images)
+        next_index = 0
         completed = 0
 
-        async def _process_one(idx: int, data: bytes, name: str) -> None:
-            nonlocal completed
-            try:
-                async with sem:
-                    result = await self.ocr_image(image_bytes=data, filename=name)
-                    results[idx] = result
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.warning(
-                    "[PaddleOCR-VL] batch_ocr image %d/%d failed: %s",
-                    idx + 1, len(images), exc,
-                )
-                results[idx] = None
-            finally:
-                completed += 1
-                if progress_callback:
-                    progress_callback(completed, len(images))
+        async def _worker() -> None:
+            nonlocal next_index, completed
+            while True:
+                idx = next_index
+                next_index += 1
+                if idx >= len(images):
+                    return
+                data, name = images[idx]
+                try:
+                    results[idx] = await self.ocr_image(data, name)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.warning(
+                        "[PaddleOCR-VL] batch image %d/%d failed: %s",
+                        idx + 1, len(images), exc,
+                    )
+                finally:
+                    completed += 1
+                    if progress_callback:
+                        progress_callback(completed, len(images))
 
         tasks = [
-            asyncio.create_task(_process_one(i, data, name), name=f"ocr-batch-{i}")
-            for i, (data, name) in enumerate(images)
+            asyncio.create_task(_worker(), name=f"ocr-vl-batch-{i}")
+            for i in range(worker_count)
         ]
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
-            for t in tasks:
-                t.cancel()
+            for task in tasks:
+                task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-
         return results
 
     async def ocr_image_url(
         self,
         file_url: str,
     ) -> PaddleOCRVLResult:
-        """Submit an image URL for OCR and return the result."""
+        """Submit one URL while holding one distributed slot."""
         self._circuit_breaker.check()
+        redis_slot_held = await self._acquire_semaphore()
+        if redis_slot_held is False:
+            raise JobSubmissionError("PaddleOCR-VL concurrency is at capacity")
+        job_id: str | None = None
         try:
             job_id = await self._submit_url_with_retry(file_url)
-            self._circuit_breaker.record_success()
             result_data = await self._poll_with_timeout(job_id)
-            return await self._parse_result(result_data)
+            result = await self._parse_result(result_data)
+            self._circuit_breaker.record_success()
+            return result
         except asyncio.CancelledError:
             logger.info("[PaddleOCR-VL] ocr_image_url cancelled")
+            if job_id:
+                await self.cancel_job(job_id)
             raise
+        except Exception:
+            self._circuit_breaker.record_failure()
+            if job_id:
+                await self.cancel_job(job_id)
+            raise
+        finally:
+            if isinstance(redis_slot_held, str):
+                await self._release_semaphore(redis_slot_held)
 
     # ------------------------------------------------------------------
     # Job submission
@@ -757,7 +824,6 @@ class PaddleOCRVLClient:
 
     async def _submit_with_retry(self, image_bytes: bytes, filename: str) -> str:
         """Submit job with retry. Returns job_id or raises."""
-        await self._acquire_semaphore()
         return await self._retry_submit(
             lambda: self._submit_job(image_bytes, filename),
             "file submit",
@@ -765,7 +831,6 @@ class PaddleOCRVLClient:
 
     async def _submit_url_with_retry(self, file_url: str) -> str:
         """Submit URL job with retry."""
-        await self._acquire_semaphore()
         return await self._retry_submit(
             lambda: self._submit_url_job(file_url),
             "URL submit",
@@ -930,7 +995,7 @@ class PaddleOCRVLClient:
         the full response. SSRF validation is applied to the initial URL and each
         redirect hop before connecting.
         """
-        url = _validate_result_url(url)
+        url = await _validate_result_url(url)
 
         client = self._get_client()
 
@@ -940,11 +1005,12 @@ class PaddleOCRVLClient:
             _check_content_length(response)
 
             if response.status_code in (301, 302, 303, 307, 308):
-                redirect_url = str(response.headers.get("location", ""))
-                if not redirect_url:
+                location = str(response.headers.get("location", ""))
+                if not location:
                     raise ResultDownloadError("Redirect with no Location header")
-                # Validate redirect target before connecting
-                _validate_result_url(redirect_url)
+                # Resolve relative redirects, then validate DNS off the event loop.
+                redirect_url = urljoin(str(response.url), location)
+                redirect_url = await _validate_result_url(redirect_url)
                 async with client.stream("GET", redirect_url, follow_redirects=False) as final_resp:
                     final_resp.raise_for_status()
                     # Content-Length pre-check on final response too
@@ -967,9 +1033,8 @@ class PaddleOCRVLClient:
         This implementation is *bounded streaming* — it never buffers the full
         response, but raw_entries and the final result are retained in memory.
         """
-        decoder = codecs.getincrementaldecoder("utf-8")("replace")
-        total_compressed = 0
-        byte_buffer = b""
+        total_downloaded = 0
+        byte_buffer = bytearray()
         line_count = 0
         first_line = True
 
@@ -980,40 +1045,30 @@ class PaddleOCRVLClient:
 
         async for chunk in response.aiter_bytes():
             chunk_len = len(chunk)
-            total_compressed += chunk_len
+            total_downloaded += chunk_len
 
-            if total_compressed > _MAX_CONTENT_LENGTH_HEADER_BYTES:
+            if total_downloaded > _MAX_DECODED_DOWNLOAD_BYTES:
                 raise ResultDownloadError(
-                    f"Result download exceeded {_MAX_CONTENT_LENGTH_HEADER_BYTES} bytes"
-                    f" (compressed) at {total_compressed} bytes"
+                    f"Result download exceeded {_MAX_DECODED_DOWNLOAD_BYTES} decoded bytes"
+                    f" at {total_downloaded} bytes"
                 )
 
-            byte_buffer += chunk
+            byte_buffer.extend(chunk)
 
-            # Guard: a single line without newline must not consume unlimited memory
-            if b"\n" not in byte_buffer:
-                raw_so_far = len(byte_buffer)
-                decoded_estimate = raw_so_far  # upper bound (ASCII) or less (multi-byte)
-                if decoded_estimate > _MAX_DECODED_DOWNLOAD_BYTES:
-                    raise ResultDownloadError(
-                        f"Result line exceeds {_MAX_DECODED_DOWNLOAD_BYTES} decoded bytes"
-                        f" without newline"
-                    )
-                continue
-
-            # Split on newlines and process complete lines
-            parts = byte_buffer.split(b"\n")
-            # Everything except the last element — the last may be incomplete
-            complete_parts = parts[:-1]
-            byte_buffer = parts[-1]
-
-            for part in complete_parts:
+            # Process complete lines incrementally.  Avoid repeated immutable-byte
+            # concatenation/splitting, which becomes quadratic for large results.
+            while True:
+                newline_pos = byte_buffer.find(b"\n")
+                if newline_pos < 0:
+                    break
+                part = bytes(byte_buffer[:newline_pos])
+                del byte_buffer[: newline_pos + 1]
                 if not part and not first_line:
                     # Empty line (not the first, which could be BOM)
                     continue
 
                 # Decode one complete line
-                line_text = decoder.decode(part)
+                line_text = part.decode("utf-8", errors="replace")
                 if first_line:
                     first_line = False
                     # Strip UTF-8 BOM if present
@@ -1054,9 +1109,18 @@ class PaddleOCRVLClient:
                     layout_blocks=layout_blocks,
                 )
 
+            # UTF-8 needs at most four bytes per code point.  Reject an
+            # unterminated oversized line long before it can grow to the full
+            # response limit.
+            if len(byte_buffer) > _MAX_JSONL_LINE_LENGTH * 4:
+                raise ResultDownloadError(
+                    f"JSONL line byte length exceeds safe bound of "
+                    f"{_MAX_JSONL_LINE_LENGTH * 4}"
+                )
+
         # Handle final partial line (no trailing newline)
         if byte_buffer:
-            line_text = decoder.decode(byte_buffer, final=True)
+            line_text = bytes(byte_buffer).decode("utf-8", errors="replace")
             if first_line and line_text.startswith("﻿"):
                 line_text = line_text[1:]
             if line_text.endswith("\r"):

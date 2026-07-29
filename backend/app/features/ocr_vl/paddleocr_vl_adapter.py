@@ -120,3 +120,5 @@ class PaddleOCRVLAdapter:
                 raw_response=f"error:{exc}",
                 duration_ms=duration_ms,
             )
+        finally:
+            await client.close()

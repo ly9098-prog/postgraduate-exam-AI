@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+import asyncio
 from typing import Any
 
 from app.core.config import settings
@@ -100,6 +101,14 @@ redis.call("EXPIRE", key, ttl * 2)
 return 1  -- renewed
 """
 
+_COUNT_LUA = """
+local key = KEYS[1]
+local redis_now = redis.call("TIME")
+local now = tonumber(redis_now[1])
+redis.call("ZREMRANGEBYSCORE", key, "-inf", now)
+return redis.call("ZCARD", key)
+"""
+
 
 class DistributedConcurrencyError(Exception):
     """Raised when Redis operations fail for distributed concurrency."""
@@ -122,44 +131,117 @@ class OcrDistributedConcurrency:
         self._lua_acquire: Any = None
         self._lua_release: Any = None
         self._lua_renew: Any = None
+        self._lua_count: Any = None
+        self._init_lock = asyncio.Lock()
+        self._retry_after_monotonic = 0.0
+        self._last_init_error = ""
 
     async def _ensure_redis(self) -> Any:
         """Lazy-init the Redis client and register Lua scripts."""
         if self._redis is not None:
             return self._redis
 
-        import redis.asyncio as redis_async
-
-        if not self._redis_url:
+        now_mono = time.monotonic()
+        if now_mono < self._retry_after_monotonic:
             if self._profile == DeploymentProfile.CLOUD_API:
                 raise DistributedConcurrencyError(
-                    "REDIS_URL not configured — distributed OCR concurrency unavailable "
-                    "in cloud profile"
+                    self._last_init_error
+                    or "Redis temporarily unavailable for distributed OCR concurrency"
                 )
-            logger.warning(
-                "REDIS_URL not configured — distributed OCR concurrency disabled"
-            )
-            self._redis = None
             return None
 
-        try:
-            self._redis = await redis_async.from_url(
-                self._redis_url, decode_responses=True, socket_connect_timeout=5,
-            )
-            self._lua_acquire = self._redis.register_script(_ACQUIRE_LUA)
-            self._lua_release = self._redis.register_script(_RELEASE_LUA)
-            self._lua_renew = self._redis.register_script(_RENEW_LUA)
-            return self._redis
-        except Exception as exc:
-            self._redis = None
-            if self._profile == DeploymentProfile.CLOUD_API:
-                raise DistributedConcurrencyError(
+        async with self._init_lock:
+            if self._redis is not None:
+                return self._redis
+            now_mono = time.monotonic()
+            if now_mono < self._retry_after_monotonic:
+                if self._profile == DeploymentProfile.CLOUD_API:
+                    raise DistributedConcurrencyError(
+                        self._last_init_error
+                        or "Redis temporarily unavailable for distributed OCR concurrency"
+                    )
+                return None
+
+            import redis.asyncio as redis_async
+
+            if not self._redis_url:
+                self._last_init_error = (
+                    "REDIS_URL not configured — distributed OCR concurrency unavailable"
+                )
+                self._retry_after_monotonic = float("inf")
+                if self._profile == DeploymentProfile.CLOUD_API:
+                    raise DistributedConcurrencyError(
+                        self._last_init_error + " in cloud profile"
+                    )
+                logger.warning(
+                    "REDIS_URL not configured — distributed OCR concurrency disabled"
+                )
+                return None
+
+            client: Any = None
+            try:
+                # redis.asyncio.from_url returns a client object; it is not an
+                # awaitable.  Validate the lazy connection explicitly with PING.
+                client = redis_async.from_url(
+                    self._redis_url,
+                    decode_responses=True,
+                    socket_connect_timeout=5,
+                    socket_timeout=5,
+                    health_check_interval=30,
+                )
+                await client.ping()
+                self._lua_acquire = client.register_script(_ACQUIRE_LUA)
+                self._lua_release = client.register_script(_RELEASE_LUA)
+                self._lua_renew = client.register_script(_RENEW_LUA)
+                self._lua_count = client.register_script(_COUNT_LUA)
+                self._redis = client
+                self._retry_after_monotonic = 0.0
+                self._last_init_error = ""
+                return self._redis
+            except Exception as exc:
+                if client is not None:
+                    try:
+                        await client.aclose()
+                    except Exception:
+                        pass
+                self._redis = None
+                self._last_init_error = (
                     f"Failed to connect to Redis for distributed OCR concurrency: {exc}"
-                ) from exc
-            logger.warning(
-                "Failed to connect to Redis for distributed OCR concurrency: %s", exc
+                )
+                # Avoid a connection storm and repetitive warning logs while a
+                # dependency is down; retry periodically instead of per page.
+                self._retry_after_monotonic = time.monotonic() + 30.0
+                if self._profile == DeploymentProfile.CLOUD_API:
+                    raise DistributedConcurrencyError(
+                        self._last_init_error
+                    ) from exc
+                logger.warning("%s", self._last_init_error)
+                return None
+
+    async def _invalidate_redis(self, exc: BaseException) -> None:
+        """Drop a failed Redis client and apply reconnect backoff.
+
+        Without invalidation, every OCR page would keep using the same broken
+        connection and immediately retry/log again, creating an outage-time
+        reconnect and logging storm.
+        """
+        client: Any = None
+        async with self._init_lock:
+            client = self._redis
+            self._redis = None
+            self._lua_acquire = None
+            self._lua_release = None
+            self._lua_renew = None
+            self._lua_count = None
+            self._last_init_error = (
+                f"Redis unavailable for distributed OCR concurrency: {exc}"
             )
-            return None
+            self._retry_after_monotonic = time.monotonic() + 30.0
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
 
     async def acquire_global(
         self,
@@ -173,7 +255,8 @@ class OcrDistributedConcurrency:
             ttl_sec: Lease duration in seconds (default from settings).
 
         Returns:
-            Reservation token (opaque string), or None if at capacity / Redis unavailable.
+            Reservation token (opaque string), or None if at capacity.  A
+            ``local_`` token indicates non-production fall-open mode.
 
         Raises:
             DistributedConcurrencyError: In cloud/production when Redis is unavailable.
@@ -194,7 +277,7 @@ class OcrDistributedConcurrency:
             # Non-production: fall open (local semaphore still applies)
             return _local_token()
 
-        token = _local_token()
+        token = _redis_token()
         try:
             result = await self._lua_acquire(
                 keys=[_OCR_CONCURRENCY_KEY],
@@ -208,6 +291,7 @@ class OcrDistributedConcurrency:
             )
             return None
         except Exception as exc:
+            await self._invalidate_redis(exc)
             if self._profile == DeploymentProfile.CLOUD_API:
                 raise DistributedConcurrencyError(
                     f"Redis error acquiring OCR concurrency slot: {exc}"
@@ -238,6 +322,7 @@ class OcrDistributedConcurrency:
             )
             return result == 1
         except Exception as exc:
+            await self._invalidate_redis(exc)
             logger.warning("Redis error releasing OCR concurrency slot: %s", exc)
             return True  # best-effort
 
@@ -274,6 +359,7 @@ class OcrDistributedConcurrency:
                 logger.warning("OCR concurrency lease lost: token=%s", token[:8])
             return renewed
         except Exception as exc:
+            await self._invalidate_redis(exc)
             logger.warning("Redis error renewing OCR concurrency slot: %s", exc)
             if self._profile == DeploymentProfile.CLOUD_API:
                 raise DistributedConcurrencyError(
@@ -289,6 +375,10 @@ class OcrDistributedConcurrency:
             except Exception:
                 pass
             self._redis = None
+        self._lua_acquire = None
+        self._lua_release = None
+        self._lua_renew = None
+        self._lua_count = None
 
     @property
     def is_connected(self) -> bool:
@@ -301,16 +391,22 @@ class OcrDistributedConcurrency:
         if redis is None:
             return None
         try:
-            # Clean expired first
-            await redis.zremrangebyscore(_OCR_CONCURRENCY_KEY, "-inf", time.time())
-            return await redis.zcard(_OCR_CONCURRENCY_KEY)
-        except Exception:
+            # Use Redis server time, matching acquire/renew and avoiding clock
+            # skew between application hosts.
+            return int(await self._lua_count(keys=[_OCR_CONCURRENCY_KEY], args=[]))
+        except Exception as exc:
+            await self._invalidate_redis(exc)
             return None
 
 
 def _local_token() -> str:
     """Generate a local-only reservation token."""
     return f"local_{uuid.uuid4().hex[:16]}"
+
+
+def _redis_token() -> str:
+    """Generate a Redis-backed reservation token that requires renewal."""
+    return f"redis_{uuid.uuid4().hex[:16]}"
 
 
 # Module-level singleton

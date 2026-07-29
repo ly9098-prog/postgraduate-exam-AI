@@ -68,6 +68,16 @@ class OCRWorkerConfig:
             errors.append("LEASE_SECONDS must be >= 60")
         if cls.HEARTBEAT_SECONDS < 10:
             errors.append("HEARTBEAT_SECONDS must be >= 10")
+        if cls.HEARTBEAT_SECONDS >= cls.LEASE_SECONDS // 2:
+            errors.append("HEARTBEAT_SECONDS must be less than half LEASE_SECONDS")
+        if cls.POLL_INTERVAL_SECONDS < 1:
+            errors.append("POLL_INTERVAL_SECONDS must be >= 1")
+        if cls.OCR_TIMEOUT_SECONDS < 1:
+            errors.append("OCR_TIMEOUT_SECONDS must be >= 1")
+        if cls.MAX_TASKS_PER_CHILD < 1:
+            errors.append("MAX_TASKS_PER_CHILD must be >= 1")
+        if cls.RESULT_RETENTION_HOURS < 0:
+            errors.append("RESULT_RETENTION_HOURS must be >= 0")
         if cls.MAX_WORKSPACE_GB < 1:
             errors.append("MAX_WORKSPACE_GB must be >= 1")
         return errors

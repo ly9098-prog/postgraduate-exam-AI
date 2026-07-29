@@ -307,11 +307,31 @@ def _validate_config(cfg: OcrRuntimeConfig) -> None:
             f"worker_count must be >= 1, got {cfg.worker_count}"
         )
 
-    # Timeouts must be positive
-    if cfg.execution_timeout <= 0:
+    # Queue/lifecycle limits must be usable; invalid values otherwise fail at
+    # runtime with hangs, immediate queue-full errors, or divide-by-zero waits.
+    if cfg.queue_capacity < 1:
+        errors.append(f"queue_capacity must be >= 1, got {cfg.queue_capacity}")
+    for name, value in (
+        ("startup_timeout", cfg.startup_timeout),
+        ("queue_wait_timeout", cfg.queue_wait_timeout),
+        ("execution_timeout", cfg.execution_timeout),
+        ("total_deadline", cfg.total_deadline),
+        ("kill_timeout", cfg.kill_timeout),
+        ("restart_window_seconds", cfg.restart_window_seconds),
+    ):
+        if value <= 0:
+            errors.append(f"{name} must be > 0, got {value}")
+    if cfg.total_deadline < cfg.queue_wait_timeout:
         errors.append(
-            f"execution_timeout must be > 0, got {cfg.execution_timeout}"
+            "total_deadline must be >= queue_wait_timeout "
+            f"({cfg.total_deadline} < {cfg.queue_wait_timeout})"
         )
+    if cfg.max_tasks_per_worker < 0:
+        errors.append(
+            f"max_tasks_per_worker must be >= 0, got {cfg.max_tasks_per_worker}"
+        )
+    if cfg.max_rss_mb < 0:
+        errors.append(f"max_rss_mb must be >= 0, got {cfg.max_rss_mb}")
 
     # Remote backend validation
     valid_backends = ("local_process", "paddlex_http", "disabled")

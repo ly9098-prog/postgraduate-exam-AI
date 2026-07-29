@@ -14,8 +14,9 @@ import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.ocr_job import OCRJob
 from app.models.pipeline_enums import (
@@ -58,6 +59,19 @@ def _hash_token(token: str) -> str:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Normalize DB datetimes before comparing them with aware UTC values.
+
+    The existing schema uses timezone-naive ``DateTime`` columns, so SQLite
+    and some database drivers return naive values even when an aware UTC value
+    was written.  Treat those values as UTC rather than raising a mixed-aware
+    comparison ``TypeError`` on heartbeat/start/complete calls.
+    """
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _compute_retry_at(attempt: int) -> datetime:
@@ -124,60 +138,102 @@ async def claim_job(
 ) -> tuple[OCRJob, str] | None:
     """Atomically claim the next available OCR job.
 
-    Finds a PENDING or RETRYABLE job where:
-    - next_retry_at IS NULL or <= now
-    - lease is not held by another worker (lease_expires_at IS NULL or expired)
-
-    Returns (job, raw_lease_token) or None if no job available.
-
-    Uses a single UPDATE with subquery for atomicity (avoids race conditions).
+    In addition to PENDING/RETRYABLE jobs, expired active leases are reclaimed.
+    Expired jobs that already exhausted ``max_attempts`` are moved to
+    DEAD_LETTER so they cannot remain RUNNING forever.
     """
+    if lease_seconds <= 0:
+        raise ValueError("lease_seconds must be positive")
+
     now = _now()
     lease_expires_at = now + timedelta(seconds=lease_seconds)
     lease_token = _generate_lease_token()
     token_hash = _hash_token(lease_token)
-
-    # Subquery: find the highest-priority claimable job
-    # Use UPDATE ... FROM (SELECT ...) for atomic claim
-    subq = (
-        select(OCRJob.id)
-        .where(
-            OCRJob.status.in_([
-                OCRJobStatus.PENDING.value,
-                OCRJobStatus.RETRYABLE.value,
-            ])
-        )
-        .where(
-            (OCRJob.next_retry_at.is_(None))
-            | (OCRJob.next_retry_at <= now)
-        )
-        .where(
-            (OCRJob.lease_expires_at.is_(None))
-            | (OCRJob.lease_expires_at <= now)
-        )
-        .order_by(OCRJob.priority.desc(), OCRJob.created_at.asc())
-        .limit(1)
-        .cte("claimable")
+    active_statuses = (
+        OCRJobStatus.LEASED.value,
+        OCRJobStatus.DOWNLOADING.value,
+        OCRJobStatus.RUNNING.value,
+        OCRJobStatus.UPLOADING.value,
     )
 
-    # Single atomic UPDATE
+    # Reap expired active jobs that have no attempts left.  Without this, a
+    # worker crash on the final attempt leaves the row permanently active.
+    await db.execute(
+        update(OCRJob)
+        .where(
+            OCRJob.status.in_(active_statuses),
+            OCRJob.lease_expires_at.is_not(None),
+            OCRJob.lease_expires_at <= now,
+            OCRJob.attempt_count >= OCRJob.max_attempts,
+        )
+        .values(
+            status=OCRJobStatus.DEAD_LETTER.value,
+            completed_at=now,
+            last_error_code="LEASE_EXPIRED",
+            last_error_message="Worker lease expired after maximum attempts",
+            lease_owner=None,
+            lease_token_hash=None,
+            lease_expires_at=None,
+            heartbeat_at=None,
+            next_retry_at=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+
+    claimable_statuses = (
+        OCRJobStatus.PENDING.value,
+        OCRJobStatus.RETRYABLE.value,
+        *active_statuses,
+    )
+    candidate = aliased(OCRJob)
+    candidate_id = (
+        select(candidate.id)
+        .where(
+            candidate.status.in_(claimable_statuses),
+            candidate.attempt_count < candidate.max_attempts,
+            (candidate.next_retry_at.is_(None))
+            | (candidate.next_retry_at <= now),
+            (
+                candidate.status.in_((
+                    OCRJobStatus.PENDING.value,
+                    OCRJobStatus.RETRYABLE.value,
+                ))
+            )
+            | (
+                candidate.lease_expires_at.is_not(None)
+                & (candidate.lease_expires_at <= now)
+            ),
+        )
+        .order_by(candidate.priority.desc(), candidate.created_at.asc())
+        .limit(1)
+        .scalar_subquery()
+    )
+
+    # A single UPDATE ... RETURNING statement keeps selection and mutation in
+    # one database operation.  This remains atomic on SQLite (where
+    # SELECT ... FOR UPDATE is ignored) and prevents two workers from claiming
+    # the same row under concurrent requests.
     result = await db.execute(
-        select(OCRJob)
-        .where(OCRJob.id.in_(select(subq.c.id)))
-        .with_for_update(skip_locked=True)
+        update(OCRJob)
+        .where(OCRJob.id == candidate_id)
+        .values(
+            status=OCRJobStatus.LEASED.value,
+            lease_owner=worker_id,
+            lease_token_hash=token_hash,
+            lease_expires_at=lease_expires_at,
+            heartbeat_at=now,
+            attempt_count=OCRJob.attempt_count + 1,
+            next_retry_at=None,
+            started_at=None,
+            completed_at=None,
+        )
+        .returning(OCRJob)
+        .execution_options(synchronize_session=False)
     )
     job = result.scalar_one_or_none()
     if job is None:
+        await db.flush()
         return None
-
-    guard_ocr_job_transition(job.status, OCRJobStatus.LEASED.value)
-
-    job.status = OCRJobStatus.LEASED.value
-    job.lease_owner = worker_id
-    job.lease_token_hash = token_hash
-    job.lease_expires_at = lease_expires_at
-    job.heartbeat_at = now
-    job.attempt_count += 1
     await db.flush()
 
     return job, lease_token
@@ -197,6 +253,15 @@ async def heartbeat(
     """
     job = await _get_job_or_raise(db, job_id)
     _verify_lease(job, lease_token)
+    if job.status not in {
+        OCRJobStatus.LEASED.value,
+        OCRJobStatus.DOWNLOADING.value,
+        OCRJobStatus.RUNNING.value,
+        OCRJobStatus.UPLOADING.value,
+    }:
+        raise ValueError(
+            f"Job {job.id} cannot heartbeat in status {job.status}"
+        )
 
     now = _now()
     job.heartbeat_at = now
@@ -213,13 +278,21 @@ async def start_job(
     worker_fingerprint: str | None = None,
     model_fingerprint: str | None = None,
 ) -> OCRJob:
-    """Mark job as running (downloading → running)."""
+    """Mark a leased job as downloading and then running."""
     job = await _get_job_or_raise(db, job_id)
     _verify_lease(job, lease_token)
 
-    guard_ocr_job_transition(job.status, OCRJobStatus.RUNNING.value)
-    job.status = OCRJobStatus.RUNNING.value
-    job.started_at = _now()
+    if job.status == OCRJobStatus.LEASED.value:
+        guard_ocr_job_transition(job.status, OCRJobStatus.DOWNLOADING.value)
+        job.status = OCRJobStatus.DOWNLOADING.value
+    if job.status == OCRJobStatus.DOWNLOADING.value:
+        guard_ocr_job_transition(job.status, OCRJobStatus.RUNNING.value)
+        job.status = OCRJobStatus.RUNNING.value
+    elif job.status != OCRJobStatus.RUNNING.value:
+        guard_ocr_job_transition(job.status, OCRJobStatus.RUNNING.value)
+
+    if job.started_at is None:
+        job.started_at = _now()
     if worker_fingerprint is not None:
         job.worker_fingerprint = worker_fingerprint
     if model_fingerprint is not None:
@@ -257,15 +330,20 @@ async def complete_job(
         )
 
     _verify_lease(job, lease_token)
+    if job.status == OCRJobStatus.RUNNING.value:
+        guard_ocr_job_transition(job.status, OCRJobStatus.UPLOADING.value)
+        job.status = OCRJobStatus.UPLOADING.value
     guard_ocr_job_transition(job.status, OCRJobStatus.COMPLETED.value)
 
     job.status = OCRJobStatus.COMPLETED.value
     job.output_artifact_key = output_artifact_key
     job.output_sha256 = output_sha256
     job.completed_at = _now()
+    job.lease_owner = None
     job.lease_expires_at = None
     job.lease_token_hash = None
     job.heartbeat_at = None
+    job.next_retry_at = None
     if complete_idempotency_key is not None:
         job.complete_idempotency_key = complete_idempotency_key
     if worker_fingerprint is not None:
@@ -312,12 +390,17 @@ async def fail_job(
     job.status = target_status
     job.last_error_code = error_code
     job.last_error_message = error_message[:1024]
-    job.completed_at = _now()
+    job.lease_owner = None
     job.lease_token_hash = None
     job.lease_expires_at = None
+    job.heartbeat_at = None
 
     if target_status == OCRJobStatus.RETRYABLE.value:
+        job.completed_at = None
         job.next_retry_at = _compute_retry_at(job.attempt_count - 1)
+    else:
+        job.completed_at = _now()
+        job.next_retry_at = None
 
     if worker_fingerprint is not None:
         job.worker_fingerprint = worker_fingerprint
@@ -331,22 +414,41 @@ async def release_job(
     job_id: str,
     lease_token: str,
 ) -> OCRJob:
-    """Release a claimed job back to PENDING (e.g., worker crashing, graceful shutdown).
+    """Release a leased/active job during worker shutdown.
 
-    Only valid from LEASED state. Clears lease fields without advancing attempt_count.
+    A job that never started returns to PENDING and the claim attempt is undone.
+    Once processing started it becomes immediately RETRYABLE and keeps the
+    attempt count, preserving retry accounting.
     """
     job = await _get_job_or_raise(db, job_id)
     _verify_lease(job, lease_token)
 
     if job.status == OCRJobStatus.LEASED.value:
+        guard_ocr_job_transition(job.status, OCRJobStatus.PENDING.value)
         job.status = OCRJobStatus.PENDING.value
-        job.lease_owner = None
-        job.lease_token_hash = None
-        job.lease_expires_at = None
-        job.heartbeat_at = None
-        job.attempt_count = max(0, job.attempt_count - 1)  # undo the claim increment
-        await db.flush()
+        job.attempt_count = max(0, job.attempt_count - 1)
+        job.next_retry_at = None
+    elif job.status in {
+        OCRJobStatus.DOWNLOADING.value,
+        OCRJobStatus.RUNNING.value,
+        OCRJobStatus.UPLOADING.value,
+    }:
+        guard_ocr_job_transition(job.status, OCRJobStatus.RETRYABLE.value)
+        job.status = OCRJobStatus.RETRYABLE.value
+        job.last_error_code = "WORKER_RELEASED"
+        job.last_error_message = "Worker released the job before completion"
+        job.next_retry_at = _now()
+        job.completed_at = None
+    else:
+        raise ValueError(
+            f"Job {job.id} cannot be released from status {job.status}"
+        )
 
+    job.lease_owner = None
+    job.lease_token_hash = None
+    job.lease_expires_at = None
+    job.heartbeat_at = None
+    await db.flush()
     return job
 
 
@@ -359,8 +461,11 @@ async def cancel_job(
 
     guard_ocr_job_transition(job.status, OCRJobStatus.CANCELLED.value)
     job.status = OCRJobStatus.CANCELLED.value
+    job.lease_owner = None
     job.lease_token_hash = None
     job.lease_expires_at = None
+    job.heartbeat_at = None
+    job.next_retry_at = None
     job.completed_at = _now()
     await db.flush()
     return job
@@ -428,7 +533,10 @@ def _verify_lease(job: OCRJob, lease_token: str) -> None:
 
     # Warn but don't reject expired leases — the caller can decide.
     # The claim mechanism will eventually reclaim expired leases.
-    if job.lease_expires_at is not None and _now() > job.lease_expires_at:
+    if (
+        job.lease_expires_at is not None
+        and _now() > _as_utc(job.lease_expires_at)
+    ):
         raise ValueError(
             f"Lease expired for job {job.id} at {job.lease_expires_at.isoformat()}"
         )

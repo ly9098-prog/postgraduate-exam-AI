@@ -26,6 +26,8 @@ import random
 import re
 import time
 import uuid
+from datetime import UTC
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -36,6 +38,11 @@ from app.core.ocr_runtime_config import (
     sanitize_url_strip_credentials,
 )
 from app.core.ocr_types import STABLE_ERROR_CODES, WorkerResult
+from app.core.config import settings
+from app.services.ocr_distributed_concurrency import (
+    DistributedConcurrencyError,
+    get_global_concurrency,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +113,11 @@ def _parse_retry_after(response: httpx.Response) -> float | None:
 
     # HTTP-date format
     try:
-        parsed = time.strptime(raw, "%a, %d %b %Y %H:%M:%S %Z")
-        return max(0.0, time.mktime(parsed) - time.time())
-    except (ValueError, OSError):
+        parsed = parsedate_to_datetime(raw)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return max(0.0, parsed.timestamp() - time.time())
+    except (TypeError, ValueError, OverflowError):
         pass
 
     return None
@@ -133,6 +142,40 @@ def _compute_engine_fingerprint(config: OcrRuntimeConfig) -> str:
         f"drop={config.drop_score}"
     )
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+
+def _encode_base64_ascii(data: bytes) -> str:
+    return base64.b64encode(data).decode("ascii")
+
+
+def _encode_json_body(payload: dict[str, Any]) -> bytes:
+    """Serialize a potentially large request body off the event-loop thread."""
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+async def _read_limited_response(
+    response: httpx.Response,
+    limit: int,
+) -> tuple[bytes, bool]:
+    """Read a streamed response with a hard memory bound.
+
+    Returns ``(body, exceeded)``.  When ``limit <= 0`` the response is read
+    without an application-level cap.
+    """
+    buffer = bytearray()
+    async for chunk in response.aiter_bytes():
+        if limit > 0 and len(buffer) + len(chunk) > limit:
+            remaining = max(0, limit - len(buffer))
+            if remaining:
+                buffer.extend(chunk[:remaining])
+            return bytes(buffer), True
+        buffer.extend(chunk)
+    return bytes(buffer), False
 
 
 class PaddleXHttpOcrWorkerClient:
@@ -161,6 +204,7 @@ class PaddleXHttpOcrWorkerClient:
         self._closed = False
         self._fingerprint = _compute_engine_fingerprint(config)
         self._semaphore = asyncio.Semaphore(config.remote_max_concurrency)
+        self._batch_concurrency = max(1, int(config.remote_max_concurrency))
         self._health_url = _derive_health_url(config.remote_url)
 
         # Remote auth — validate header name to prevent injection
@@ -246,11 +290,10 @@ class PaddleXHttpOcrWorkerClient:
             )
 
         # Circuit breaker — fast sync check first, then async with lock
-        cb_rejected = False
+        half_open_probe = False
         if not self._circuit_may_attempt():
             allowed = await self._circuit_may_attempt_async()
             if not allowed:
-                cb_rejected = True
                 self._metrics["accepted"] += 1
                 self._metrics["failed"] += 1
                 self._metrics["circuit_breaker_rejected"] += 1
@@ -260,38 +303,98 @@ class PaddleXHttpOcrWorkerClient:
                     f"(failures={self._circuit_failures}, "
                     f"recovery in {max(0.0, self._circuit_recovery_timeout - (time.time() - self._circuit_last_failure)):.0f}s)",
                 )
+            half_open_probe = True
 
         self._metrics["accepted"] += 1
 
         request_id = uuid.uuid4().hex[:16]
         start = time.monotonic()
-
-        # Acquire distributed OCR concurrency slot (cross-process)
+        dist_guard: Any = None
         dist_token: str | None = None
-        try:
-            from app.services.ocr_distributed_concurrency import get_global_concurrency
-            dist_guard = get_global_concurrency()
-            dist_token = await dist_guard.acquire_global()
-        except Exception as exc:
-            logger.warning("Distributed OCR concurrency acquire failed: %s", exc)
-            # Fail closed in production (DistributedConcurrencyError already raised)
-            # In dev, continue with local semaphore only
+        acquired_local = False
+        backend_attempted = False
+        result: WorkerResult
 
+        # Acquire local capacity first.  Reserving the distributed slot while
+        # waiting behind the local semaphore wastes global capacity and lets the
+        # lease expire before the request even starts.
+        self._metrics["queued"] += 1
         try:
-            self._metrics["queued"] += 1
-            async with self._semaphore:
-                self._metrics["queued"] -= 1
-                self._metrics["running"] += 1
-                try:
-                    result = await self._do_recognize(
-                        image_bytes, page_index, request_id, options,
+            queue_budget = min(
+                float(self._config.queue_wait_timeout),
+                float(self._config.total_deadline),
+            )
+            await asyncio.wait_for(
+                self._semaphore.acquire(),
+                timeout=max(0.001, queue_budget),
+            )
+            acquired_local = True
+            self._metrics["queued"] = max(0, self._metrics["queued"] - 1)
+            self._metrics["running"] += 1
+
+            try:
+                dist_guard = get_global_concurrency()
+                dist_token = await dist_guard.acquire_global()
+                if dist_token is None:
+                    result = self._make_error(
+                        page_index,
+                        STABLE_ERROR_CODES["QUEUE_FULL"],
+                        "Global OCR concurrency is at capacity",
                     )
-                finally:
-                    self._metrics["running"] -= 1
+                else:
+                    remaining = self._config.total_deadline - (
+                        time.monotonic() - start
+                    )
+                    if remaining <= 0:
+                        raise TimeoutError
+                    backend_attempted = True
+                    result = await asyncio.wait_for(
+                        self._run_with_distributed_lease(
+                            image_bytes=image_bytes,
+                            page_index=page_index,
+                            request_id=request_id,
+                            options=options,
+                            dist_guard=dist_guard,
+                            dist_token=dist_token,
+                        ),
+                        timeout=remaining,
+                    )
+            except DistributedConcurrencyError as exc:
+                logger.error("Distributed OCR concurrency unavailable: %s", exc)
+                result = self._make_error(
+                    page_index,
+                    STABLE_ERROR_CODES["ENGINE_NOT_AVAILABLE"],
+                    "Distributed OCR concurrency unavailable",
+                )
+            except TimeoutError:
+                self._metrics["timed_out"] += 1
+                result = self._make_error(
+                    page_index,
+                    STABLE_ERROR_CODES["REMOTE_TIMEOUT"],
+                    f"OCR total deadline ({self._config.total_deadline}s) exceeded",
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("Distributed OCR execution failed")
+                result = self._make_error(
+                    page_index,
+                    STABLE_ERROR_CODES["ENGINE_NOT_AVAILABLE"],
+                    f"OCR execution unavailable: {exc}",
+                )
+        except TimeoutError:
+            self._metrics["queued"] = max(0, self._metrics["queued"] - 1)
+            result = self._make_error(
+                page_index,
+                STABLE_ERROR_CODES["QUEUE_TIMEOUT"],
+                f"Local OCR queue wait exceeded {self._config.queue_wait_timeout}s",
+            )
         except asyncio.CancelledError:
+            if not acquired_local:
+                self._metrics["queued"] = max(0, self._metrics["queued"] - 1)
             self._metrics["failed"] += 1
-            if not cb_rejected:
-                await self._record_failure()
+            if half_open_probe:
+                await self._abandon_half_open_probe()
             raise
         finally:
             if dist_token is not None:
@@ -299,6 +402,9 @@ class PaddleXHttpOcrWorkerClient:
                     await dist_guard.release_global(dist_token)
                 except Exception:
                     pass
+            if acquired_local:
+                self._metrics["running"] = max(0, self._metrics["running"] - 1)
+                self._semaphore.release()
 
         elapsed = time.monotonic() - start
         if result.status == "success":
@@ -309,8 +415,10 @@ class PaddleXHttpOcrWorkerClient:
             result.finished_monotonic = start + elapsed
         else:
             self._metrics["failed"] += 1
-            if not cb_rejected:
+            if backend_attempted:
                 await self._record_failure()
+            elif half_open_probe:
+                await self._abandon_half_open_probe()
 
         return result
 
@@ -329,31 +437,45 @@ class PaddleXHttpOcrWorkerClient:
         if not images:
             return []
 
-        async def _task(idx: int, png: bytes) -> WorkerResult:
-            return await self.recognize(png, page_index=idx, mode=mode, options=options)
+        resolved: list[WorkerResult | None] = [None] * len(images)
+        next_pos = 0
 
-        tasks = [_task(idx, png) for idx, png in images]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        async def _batch_worker() -> None:
+            nonlocal next_pos
+            while True:
+                pos = next_pos
+                next_pos += 1
+                if pos >= len(images):
+                    return
+                idx, png = images[pos]
+                try:
+                    resolved[pos] = await self.recognize(
+                        png, page_index=idx, mode=mode, options=options,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    resolved[pos] = self._make_error(
+                        idx,
+                        STABLE_ERROR_CODES["ENGINE_ERROR"],
+                        str(exc) or "Unknown error",
+                    )
 
-        resolved: list[WorkerResult] = []
-        for i, r in enumerate(results):
-            if isinstance(r, WorkerResult):
-                resolved.append(r)
-            elif isinstance(r, BaseException):
-                resolved.append(self._make_error(
-                    images[i][0],
-                    STABLE_ERROR_CODES["REMOTE_CANCELLED"],
-                    str(r) if str(r) else "Task raised exception",
-                ))
-            else:
-                resolved.append(self._make_error(
-                    images[i][0],
-                    STABLE_ERROR_CODES["ENGINE_ERROR"],
-                    "Unknown error",
-                ))
+        workers = [
+            asyncio.create_task(_batch_worker())
+            for _ in range(min(self._batch_concurrency, len(images)))
+        ]
+        await asyncio.gather(*workers)
 
-        resolved.sort(key=lambda wr: wr.page_index)
-        return resolved
+        final = [
+            r if isinstance(r, WorkerResult) else self._make_error(
+                images[i][0], STABLE_ERROR_CODES["ENGINE_ERROR"],
+                "Missing batch result",
+            )
+            for i, r in enumerate(resolved)
+        ]
+        final.sort(key=lambda wr: wr.page_index)
+        return final
 
     async def shutdown(self) -> None:
         """Graceful shutdown — idempotent."""
@@ -406,6 +528,12 @@ class PaddleXHttpOcrWorkerClient:
                 return False
             self._half_open_probe_in_flight = True
             return True
+
+    async def _abandon_half_open_probe(self) -> None:
+        """Release a half-open probe reservation that never reached the backend."""
+        async with self._circuit_lock:
+            if self._circuit_state == "half-open":
+                self._half_open_probe_in_flight = False
 
     async def _record_success(self) -> None:
         """Record a successful OCR call — resets circuit breaker.
@@ -460,6 +588,68 @@ class PaddleXHttpOcrWorkerClient:
 
     # ── Request execution ──
 
+    async def _run_with_distributed_lease(
+        self,
+        *,
+        image_bytes: bytes,
+        page_index: int,
+        request_id: str,
+        options: dict | None,
+        dist_guard: Any,
+        dist_token: str,
+    ) -> WorkerResult:
+        """Run OCR while keeping a Redis-backed concurrency lease alive.
+
+        Local fallback tokens do not need renewal.  For Redis tokens, a lost
+        lease cancels the in-flight HTTP request so this process cannot keep
+        using GPU capacity after another process has legitimately acquired the
+        expired slot.
+        """
+        ocr_task = asyncio.create_task(
+            self._do_recognize(image_bytes, page_index, request_id, options)
+        )
+        if dist_token.startswith("local_"):
+            return await ocr_task
+
+        ttl_sec = max(3, int(settings.OCR_DISTRIBUTED_LEASE_SEC))
+        renew_task = asyncio.create_task(
+            self._renew_distributed_lease(dist_guard, dist_token, ttl_sec)
+        )
+        try:
+            done, _ = await asyncio.wait(
+                {ocr_task, renew_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            # Renewal only completes on lease loss or an operational failure.
+            if renew_task in done:
+                exc = renew_task.exception()
+                if exc is not None:
+                    raise exc
+                raise DistributedConcurrencyError(
+                    "Distributed OCR concurrency lease was lost"
+                )
+            return await ocr_task
+        finally:
+            for task in (ocr_task, renew_task):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(ocr_task, renew_task, return_exceptions=True)
+
+    async def _renew_distributed_lease(
+        self,
+        dist_guard: Any,
+        dist_token: str,
+        ttl_sec: int,
+    ) -> None:
+        interval = max(1.0, min(float(ttl_sec) / 3.0, 30.0))
+        while True:
+            await asyncio.sleep(interval)
+            renewed = await dist_guard.renew_global(dist_token, ttl_sec=ttl_sec)
+            if not renewed:
+                raise DistributedConcurrencyError(
+                    "Distributed OCR concurrency lease was lost"
+                )
+
     async def _do_recognize(
         self,
         image_bytes: bytes,
@@ -475,14 +665,13 @@ class PaddleXHttpOcrWorkerClient:
         # Pre-request size check: reject if base64-encoded payload would
         # exceed the configured maximum request size.
         max_req_bytes = self._config.remote_request_max_bytes
-        if max_req_bytes > 0 and _compute_base64_size(len(image_bytes)) > max_req_bytes:
+        if max_req_bytes > 0 and len(image_bytes) > max_req_bytes:
             self._metrics["request_size_rejected"] += 1
             return self._make_error(
                 page_index,
                 STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
-                f"Image too large: {len(image_bytes)} raw bytes "
-                f"(~{_compute_base64_size(len(image_bytes))} base64) exceeds "
-                f"{max_req_bytes} limit",
+                f"Image too large: {len(image_bytes)} raw bytes exceeds "
+                f"{max_req_bytes} raw-byte limit",
             )
 
         # Build auth headers
@@ -490,8 +679,10 @@ class PaddleXHttpOcrWorkerClient:
         if self._auth_token:
             headers[self._auth_header] = f"{self._auth_scheme} {self._auth_token}"
 
-        # Compute deadline for retries (default: no strict deadline)
-        deadline = time.time() + _RETRY_MAX_DELAY * _RETRY_MAX
+        # The public method enforces the total deadline.  This inner deadline
+        # additionally prevents retry/backoff from consuming more than the
+        # configured request budget when called directly in tests or tooling.
+        deadline = time.monotonic() + float(self._config.total_deadline)
 
         # Retry loop
         last_exc: BaseException | None = None
@@ -522,14 +713,14 @@ class PaddleXHttpOcrWorkerClient:
                     last_error_code = e.error_code
                 elif last_status and _is_retryable_status(last_status):
                     last_error_code = STABLE_ERROR_CODES["REMOTE_HTTP_ERROR"]
-                delay = _compute_backoff(attempt)
+                delay = _compute_backoff(attempt, retry_after=e.retry_after)
                 # Cap delay at remaining deadline
-                remaining = deadline - time.time()
+                remaining = deadline - time.monotonic()
                 if remaining < 0:
                     remaining = 0
                 delay = min(delay, remaining)
 
-                if attempt < _RETRY_MAX:
+                if attempt < _RETRY_MAX and remaining > 0:
                     t2 = asyncio.current_task()
                     if t2 is not None and t2.cancelled():
                         raise asyncio.CancelledError()
@@ -583,7 +774,7 @@ class PaddleXHttpOcrWorkerClient:
         Raises:
             _RetryableError: transient failure that should be retried.
         """
-        b64_data = base64.b64encode(image_bytes).decode("ascii")
+        b64_data = await asyncio.to_thread(_encode_base64_ascii, image_bytes)
 
         payload: dict[str, Any] = {
             "file": b64_data,
@@ -609,9 +800,16 @@ class PaddleXHttpOcrWorkerClient:
         if cfg.remote_use_textline_orientation:
             payload["useTextlineOrientation"] = True
 
+        request_body = await asyncio.to_thread(_encode_json_body, payload)
+        request_headers = dict(headers)
+        request_headers.setdefault("Content-Type", "application/json")
+
         try:
             async with self._client.stream(
-                "POST", cfg.remote_url, json=payload, headers=headers,
+                "POST",
+                cfg.remote_url,
+                content=request_body,
+                headers=request_headers,
             ) as response:
                 status_code = response.status_code
 
@@ -622,13 +820,20 @@ class PaddleXHttpOcrWorkerClient:
                         f"Retryable HTTP {status_code}"
                         + (f" (Retry-After: {retry_after:.0f}s)" if retry_after else ""),
                         status_code=status_code,
+                        retry_after=retry_after,
                     )
 
                 if status_code != 200:
                     # Read body for error message (limited)
                     try:
-                        body_bytes = await response.aread()
-                        body_text = body_bytes[:500].decode("utf-8", errors="replace")
+                        body_bytes, truncated = await _read_limited_response(
+                            response, 4096
+                        )
+                        body_text = body_bytes[:500].decode(
+                            "utf-8", errors="replace"
+                        )
+                        if truncated:
+                            body_text += " …(truncated)"
                     except Exception:
                         body_text = f"HTTP {status_code} (body unreadable)"
 
@@ -642,24 +847,21 @@ class PaddleXHttpOcrWorkerClient:
                         status_code,
                     )
 
-                # Stream response body with size budget
+                # Stream into a single bytearray so peak memory remains close
+                # to the configured response budget (rather than chunks + join).
                 max_resp_bytes = cfg.remote_response_max_bytes
-                chunks: list[bytes] = []
-                total = 0
-                async for chunk in response.aiter_bytes():
-                    total += len(chunk)
-                    if max_resp_bytes > 0 and total > max_resp_bytes:
-                        self._metrics["response_aborted"] += 1
-                        return (
-                            self._make_error(
-                                page_index, STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
-                                f"Response exceeded {max_resp_bytes} byte limit",
-                            ),
-                            status_code,
-                        )
-                    chunks.append(chunk)
-
-                body_bytes = b"".join(chunks)
+                body_bytes, exceeded = await _read_limited_response(
+                    response, max_resp_bytes
+                )
+                if exceeded:
+                    self._metrics["response_aborted"] += 1
+                    return (
+                        self._make_error(
+                            page_index, STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"],
+                            f"Response exceeded {max_resp_bytes} byte limit",
+                        ),
+                        status_code,
+                    )
 
         except httpx.ConnectError as exc:
             self._metrics["connection_errors"] += 1
@@ -712,7 +914,7 @@ class PaddleXHttpOcrWorkerClient:
 
         # Parse JSON from streamed body
         try:
-            body = json.loads(body_bytes)
+            body = await asyncio.to_thread(json.loads, body_bytes)
         except Exception as exc:
             self._metrics["protocol_errors"] += 1
             self._metrics["last_error_code"] = STABLE_ERROR_CODES["REMOTE_PROTOCOL_ERROR"]
@@ -834,10 +1036,12 @@ class _RetryableError(Exception):
         *,
         status_code: int | None = None,
         error_code: str = "",
+        retry_after: float | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.error_code = error_code
+        self.retry_after = retry_after
 
 
 # ---------------------------------------------------------------------------

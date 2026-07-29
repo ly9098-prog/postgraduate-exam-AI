@@ -9,6 +9,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urljoin
 
@@ -17,6 +18,18 @@ import httpx
 from app.ocr_worker.config import OCRWorkerConfig
 
 logger = logging.getLogger("postgraduate-ai.ocr-worker.client")
+
+
+def parse_iso_timestamp(value: Any, *, fallback: float) -> float:
+    if not value:
+        return fallback
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.timestamp()
+    except (ValueError, TypeError, OverflowError):
+        return fallback
 
 
 class WorkerClientError(Exception):
@@ -46,6 +59,10 @@ class WorkerAPIClient:
         self._api_key = config.API_KEY
         self._worker_id = config.WORKER_ID
         self._timeout = httpx.Timeout(30.0, connect=10.0)
+        self._client = httpx.Client(
+            timeout=self._timeout,
+            limits=httpx.Limits(max_connections=4, max_keepalive_connections=2),
+        )
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -59,13 +76,12 @@ class WorkerAPIClient:
     def _request(self, method: str, path: str, **kwargs: Any) -> dict:
         """Make an HTTP request and return parsed JSON response data."""
         try:
-            with httpx.Client(timeout=self._timeout) as client:
-                resp = client.request(
-                    method,
-                    self._url(path),
-                    headers=self._headers(),
-                    **kwargs,
-                )
+            resp = self._client.request(
+                method,
+                self._url(path),
+                headers=self._headers(),
+                **kwargs,
+            )
         except httpx.RequestError as e:
             raise WorkerClientError(f"Request failed: {e}") from e
 
@@ -83,6 +99,11 @@ class WorkerAPIClient:
 
         return body.get("data", {})
 
+
+    def close(self) -> None:
+        """Close pooled HTTP connections."""
+        self._client.close()
+
     # ── Job lifecycle ────────────────────────────────────
 
     def claim(self) -> ClaimResult | None:
@@ -92,15 +113,10 @@ class WorkerAPIClient:
             return None
 
         # Convert lease_expires_at from ISO string to float
-        expires_str = data.get("lease_expires_at", "")
-        expires_float = 0.0
-        if expires_str:
-            try:
-                from datetime import datetime
-                expires_dt = datetime.fromisoformat(expires_str.replace("Z", "+00:00"))
-                expires_float = expires_dt.timestamp()
-            except (ValueError, TypeError):
-                expires_float = time.time() + 300
+        expires_float = parse_iso_timestamp(
+            data.get("lease_expires_at"),
+            fallback=time.time() + 300,
+        )
 
         return ClaimResult(
             job_id=data["job_id"],

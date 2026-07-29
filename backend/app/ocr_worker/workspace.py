@@ -167,6 +167,95 @@ class JobWorkspace:
                             pass
         return total
 
+
+    @staticmethod
+    def prune(
+        root: str,
+        *,
+        retention_hours: int,
+        max_bytes: int,
+    ) -> tuple[int, int, int]:
+        """Delete old terminal workspaces and enforce a bounded disk budget.
+
+        Active/incomplete jobs are never deleted. Returns
+        ``(deleted_count, deleted_bytes, remaining_bytes)``.
+        """
+        jobs_dir = Path(root) / "jobs"
+        if not jobs_dir.exists():
+            return 0, 0, 0
+
+        now = datetime.now(UTC)
+        terminal = {"completed", "failed", "cancelled", "dead_letter"}
+        records: list[tuple[Path, str, datetime, int]] = []
+        total = 0
+
+        for job_dir in jobs_dir.iterdir():
+            if not job_dir.is_dir():
+                continue
+            size = _directory_size(job_dir)
+            total += size
+            status = "unknown"
+            updated = datetime.fromtimestamp(job_dir.stat().st_mtime, tz=UTC)
+            manifest_path = job_dir / "manifest.json"
+            if manifest_path.exists():
+                try:
+                    manifest = json.loads(manifest_path.read_text())
+                    status = str(manifest.get("status", "unknown"))
+                    raw_ts = (
+                        manifest.get("completed_at")
+                        or manifest.get("updated_at")
+                        or manifest.get("created_at")
+                    )
+                    if raw_ts:
+                        parsed = datetime.fromisoformat(
+                            str(raw_ts).replace("Z", "+00:00")
+                        )
+                        updated = (
+                            parsed.replace(tzinfo=UTC)
+                            if parsed.tzinfo is None
+                            else parsed.astimezone(UTC)
+                        )
+                except (json.JSONDecodeError, OSError, ValueError, TypeError):
+                    pass
+            records.append((job_dir, status, updated, size))
+
+        deleted_count = 0
+        deleted_bytes = 0
+        cutoff_seconds = max(0, retention_hours) * 3600
+
+        def _delete(record: tuple[Path, str, datetime, int]) -> None:
+            nonlocal deleted_count, deleted_bytes, total
+            job_dir, _, _, size = record
+            shutil.rmtree(job_dir, ignore_errors=True)
+            if not job_dir.exists():
+                deleted_count += 1
+                deleted_bytes += size
+                total = max(0, total - size)
+
+        remaining: list[tuple[Path, str, datetime, int]] = []
+        for record in records:
+            _, status, updated, _ = record
+            age_seconds = max(0.0, (now - updated).total_seconds())
+            # Corrupt/missing manifests can otherwise accumulate forever after
+            # a crash.  Only treat them as removable once they are older than
+            # the same retention window used for terminal jobs.
+            if status in terminal | {"unknown"} and age_seconds >= cutoff_seconds:
+                _delete(record)
+            else:
+                remaining.append(record)
+
+        if max_bytes > 0 and total > max_bytes:
+            terminal_remaining = sorted(
+                (r for r in remaining if r[1] in terminal | {"unknown"}),
+                key=lambda r: r[2],
+            )
+            for record in terminal_remaining:
+                if total <= max_bytes:
+                    break
+                _delete(record)
+
+        return deleted_count, deleted_bytes, total
+
     @staticmethod
     def list_incomplete(root: str) -> list[dict[str, Any]]:
         """Scan all workspaces and return incomplete (non-completed) jobs for resume."""
@@ -187,3 +276,14 @@ class JobWorkspace:
             except (json.JSONDecodeError, OSError):
                 pass
         return incomplete
+
+
+def _directory_size(path: Path) -> int:
+    total = 0
+    for dirpath, _, filenames in os.walk(path):
+        for filename in filenames:
+            try:
+                total += (Path(dirpath) / filename).stat().st_size
+            except OSError:
+                pass
+    return total

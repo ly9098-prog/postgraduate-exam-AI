@@ -775,6 +775,8 @@ def _prune_store() -> None:
         for old_id in sorted_ids[: len(_pipeline_store) - _MAX_STORE_SIZE]:
             _pipeline_store.pop(old_id, None)
             _pipeline_diagnostics_store.pop(old_id, None)
+            _pipeline_stage_checkpoints.pop(old_id, None)
+            _ocr_progress.pop(old_id, None)
 
 
 def _prune_diagnostics_store() -> None:
@@ -863,6 +865,7 @@ async def _get_stage_checkpoint(pipeline_id: str) -> dict | None:
         data = await cache.get(f"{_CHECKPOINT_REDIS_PREFIX}:{pipeline_id}")
         if data:
             _pipeline_stage_checkpoints[pipeline_id] = data
+            _prune_stage_checkpoints()
             return data
     except Exception:
         pass
@@ -942,6 +945,7 @@ async def _get_pipeline_diagnostics(pipeline_id: str) -> dict | None:
         data = await cache.get(f"{_PIPELINE_DIAGNOSTICS_REDIS_PREFIX}:{pipeline_id}")
         if data:
             _pipeline_diagnostics_store[pipeline_id] = data
+            _prune_diagnostics_store()
             return data
     except Exception:
         pass
@@ -971,20 +975,12 @@ async def _set_pipeline_store(pipeline_id: str, data: dict) -> None:
         pass
     if diagnostics:
         await _set_pipeline_diagnostics(pipeline_id, diagnostics)
+    if slim.get("status") in {"completed", "failed", "cancelled"}:
+        _ocr_progress.pop(pipeline_id, None)
     # 不主动 evict 终态条目——SSE 轮询需要持续读取结果。
     # 内存由 _prune_store 的 LRU 上限控制，终态条目自然老化后被淘汰。
 
 
-def _evict_pipeline_store(pipeline_id: str) -> None:
-    """从 in-memory 存储中移除 pipeline 条目。
-
-    幂等操作；Redis 中的缓存不会被删除，SSE/轮询可通过 Redis 继续读取。
-    """
-    _pipeline_store.pop(pipeline_id, None)
-    _pipeline_diagnostics_store.pop(pipeline_id, None)
-    _ocr_progress.pop(pipeline_id, None)
-
-
 async def _get_pipeline_store(pipeline_id: str) -> dict | None:
     if pipeline_id in _pipeline_store:
         return _pipeline_store[pipeline_id]
@@ -993,34 +989,13 @@ async def _get_pipeline_store(pipeline_id: str) -> dict | None:
         data = await cache.get(f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}")
         if data:
             _pipeline_store[pipeline_id] = data
+            _prune_store()
             return data
     except Exception:
         pass
     return None
 
 
-async def _set_pipeline_store(pipeline_id: str, data: dict) -> None:
-    _pipeline_store[pipeline_id] = data
-    _prune_store()
-    try:
-        from app.core.cache import cache
-        await cache.set(f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}", data, ttl=_PIPELINE_STATUS_TTL)
-    except Exception:
-        pass
-
-
-async def _get_pipeline_store(pipeline_id: str) -> dict | None:
-    if pipeline_id in _pipeline_store:
-        return _pipeline_store[pipeline_id]
-    try:
-        from app.core.cache import cache
-        data = await cache.get(f"{_PIPELINE_REDIS_PREFIX}:{pipeline_id}")
-        if data:
-            _pipeline_store[pipeline_id] = data
-            return data
-    except Exception:
-        pass
-    return None
 
 
 # ---------------------------------------------------------------------------
