@@ -1,13 +1,22 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
-import { FileText, Braces, Filter, Rows3, Save, Brain, WandSparkles } from "lucide-react";
+import { CheckCircle2, FileText, Braces, Filter, Rows3, Save, Brain, WandSparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
 import { Toggle } from "@/components/ui/toggle";
 import type { AdminAiConfigsPatchRequest, AdminAiConfigsResponse } from "@/lib/api/types";
+
+function showToast(msg: string) {
+  const el = document.createElement("div");
+  el.className = "fixed left-1/2 top-4 z-[200] -translate-x-1/2 rounded-xl border border-[var(--color-success)]/30 bg-white px-5 py-3 text-sm font-semibold text-[var(--color-success)] shadow-[var(--shadow-card)] animate-rise-in";
+  el.innerHTML = `<svg class="-mt-0.5 mr-1.5 inline-block h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>${msg}`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
 
 interface TabItem {
   id: string;
@@ -64,7 +73,10 @@ function PromptPanel({ configs }: { configs: Record<string, string | number | bo
   const mutation = useMutation({
     mutationFn: (data: AdminAiConfigsPatchRequest) =>
       apiRequest<AdminAiConfigsResponse>("/ai-configs", { method: "PATCH", body: JSON.stringify(data) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-configs"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-configs"] });
+      showToast("Prompt 已保存");
+    },
   });
 
   const hasChanges = prompt !== savedPrompt;
@@ -76,7 +88,7 @@ function PromptPanel({ configs }: { configs: Record<string, string | number | bo
         <p className="mt-0.5 text-xs text-[var(--color-text-hint)]">自定义 OCR 纠错提示词，修改后需要点击保存</p>
         <div className="relative mt-2">
           <textarea
-            className="h-32 w-full resize-none rounded-xl border border-[var(--color-border)] bg-white p-3 pr-12 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
+            className="h-80 w-full resize-y rounded-xl border border-[var(--color-border)] bg-white p-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
           />
@@ -114,7 +126,10 @@ function StrategyPanel({ configs }: { configs: Record<string, string | number | 
   const mutation = useMutation({
     mutationFn: (data: AdminAiConfigsPatchRequest) =>
       apiRequest<AdminAiConfigsResponse>("/ai-configs", { method: "PATCH", body: JSON.stringify(data) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-configs"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-configs"] });
+      showToast("纠错策略已更新");
+    },
   });
 
   const toggle = (key: string) => {
@@ -171,6 +186,7 @@ function FilterPanel({ configs }: { configs: Record<string, string | number | bo
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ai-configs"] });
       setDirty(false);
+      showToast("过滤设置已保存");
     },
   });
 
@@ -255,7 +271,10 @@ function StructurePanel({ configs }: { configs: Record<string, string | number |
   const mutation = useMutation({
     mutationFn: (data: AdminAiConfigsPatchRequest) =>
       apiRequest<AdminAiConfigsResponse>("/ai-configs", { method: "PATCH", body: JSON.stringify(data) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-configs"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-configs"] });
+      showToast("结构修复规则已更新");
+    },
   });
 
   const structureItems = [

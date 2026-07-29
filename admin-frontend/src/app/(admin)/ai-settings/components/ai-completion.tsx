@@ -2,12 +2,20 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { WandSparkles, ArrowRight, FileQuestion, ListChecks, MessageSquareText } from "lucide-react";
+import { WandSparkles, ArrowRight, FileQuestion, ListChecks, MessageSquareText, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
 import { Toggle } from "@/components/ui/toggle";
 import type { AdminAiConfigsResponse, AdminAiConfigsPatchRequest } from "@/lib/api/types";
+
+function showToast(msg: string) {
+  const el = document.createElement("div");
+  el.className = "fixed left-1/2 top-4 z-[200] -translate-x-1/2 rounded-xl border border-[var(--color-success)]/30 bg-white px-5 py-3 text-sm font-semibold text-[var(--color-success)] shadow-[var(--shadow-card)] animate-rise-in";
+  el.innerHTML = `<svg class="-mt-0.5 mr-1.5 inline-block h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>${msg}`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
 
 type PreviewType = "question" | "answer" | "explanation";
 
@@ -73,7 +81,10 @@ export function AiCompletionPreview({
   const saveMutation = useMutation({
     mutationFn: (patch: AdminAiConfigsPatchRequest) =>
       apiRequest<AdminAiConfigsResponse>("/ai-configs", { method: "PATCH", body: JSON.stringify(patch) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-configs"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ai-configs"] });
+      showToast("补全配置已保存");
+    },
   });
 
   const currentPreview = previewData[activePreview];

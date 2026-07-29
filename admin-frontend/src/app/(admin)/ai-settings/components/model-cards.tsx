@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from "react";
-import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Brain, Cpu, Globe, Key,
@@ -264,11 +263,13 @@ function DetailPanel({
     onSaveApiConfig(model.id, payload);
     setApiKeyInput("");
     setKeyEditing(false);
+    showToast("API 配置已保存");
   };
 
   return (
     <tr>
-      <td colSpan={5} className="border-b border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/30 px-5 py-4">
+      <td colSpan={5} className="relative border-b border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/30 px-5 py-4">
+
         <div className="flex gap-6">
           {/* Left: API config */}
           <div className="flex-1 space-y-3">
@@ -389,6 +390,14 @@ function DetailPanel({
 // Main Export
 // ---------------------------------------------------------------------------
 
+function showToast(msg: string) {
+  const el = document.createElement("div");
+  el.className = "fixed left-1/2 top-4 z-[200] -translate-x-1/2 rounded-xl border border-[var(--color-success)]/30 bg-white px-5 py-3 text-sm font-semibold text-[var(--color-success)] shadow-[var(--shadow-card)] animate-rise-in";
+  el.innerHTML = `<svg class="-mt-0.5 mr-1.5 inline-block h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>${msg}`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
 export function ModelCards() {
   const queryClient = useQueryClient();
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -408,7 +417,7 @@ export function ModelCards() {
         if (!old) return [result];
         return old.map((m) => (m.id === result.id ? { ...result } : m));
       });
-      setSelectedId(null);
+      showToast("模型配置已保存");
     },
     onError: () => queryClient.invalidateQueries({ queryKey: ["ai-models"] }),
   });
@@ -416,7 +425,7 @@ export function ModelCards() {
   const createMutation = useMutation({
     mutationFn: (data: AdminAiModelConfigCreateRequest) =>
       apiRequest<AdminAiModelConfig>("/ai-models", { method: "POST", body: JSON.stringify(data) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-models"] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["ai-models"] }); showToast("模型已添加"); },
   });
 
   const deleteMutation = useMutation({

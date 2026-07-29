@@ -50,8 +50,16 @@ export function VectorConfigSection() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<VectorConfigPatchRequest>({});
   const [testResult, setTestResult] = useState<EmbeddingTestResponse | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("search");
+
+  function showToast(msg: string, isError = false) {
+    const el = document.createElement("div");
+    el.className = "fixed left-1/2 top-4 z-[200] -translate-x-1/2 rounded-xl border bg-white px-5 py-3 text-sm font-semibold shadow-[var(--shadow-card)] animate-rise-in" + (isError ? " border-[var(--color-danger)]/30 text-[var(--color-danger)]" : " border-[var(--color-success)]/30 text-[var(--color-success)]");
+    const icon = isError ? "alert-circle" : "check-circle";
+    el.innerHTML = `<svg class="-mt-0.5 mr-1.5 inline-block h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>${msg}`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2500);
+  }
   const [keyEditing, setKeyEditing] = useState(false);
 
   const config = useQuery({
@@ -70,10 +78,9 @@ export function VectorConfigSection() {
       queryClient.setQueryData(["vector-config"], data);
       setForm({});
       setKeyEditing(false);
-      setMessage("配置已保存");
-      setTimeout(() => setMessage(null), 3000);
+      showToast("配置已保存");
     },
-    onError: (err) => setMessage(getErrorMessage(err)),
+    onError: (err) => showToast(getErrorMessage(err), true),
   });
 
   const testMutation = useMutation({
@@ -154,12 +161,7 @@ export function VectorConfigSection() {
         </Button>
       </div>
 
-      {/* ── Message ── */}
-      {message && (
-        <div className="border-b border-[var(--color-border)]/40 px-5 py-2.5">
-          <p className="text-sm text-[var(--color-text-secondary)]">{message}</p>
-        </div>
-      )}
+
 
       {/* ── Body: Sidebar + Content ── */}
       <div className="flex min-h-[380px]">
