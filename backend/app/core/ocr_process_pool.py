@@ -28,6 +28,7 @@ import threading
 import time
 from concurrent.futures import Future, ProcessPoolExecutor, TimeoutError
 from concurrent.futures.process import BrokenProcessPool
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,20 @@ logger = logging.getLogger(__name__)
 # Longer than the thread-pool timeout since process startup + model load
 # adds overhead on recovery.
 _PROCESS_TIMEOUT = 120
+
+# One OCR engine per child process.  ProcessPoolExecutor's initializer creates
+# it eagerly; the lazy getter is a defensive fallback for direct helper calls
+# (for example in tests).  Re-creating PaddleOCR per page reloads model state,
+# repeats health checks and causes severe CPU/GPU memory churn.
+_WORKER_ENGINE: Any | None = None
+
+
+def _get_worker_engine() -> Any:
+    global _WORKER_ENGINE
+    if _WORKER_ENGINE is None:
+        from app.core.ocr_engine import create_engine_for_child
+        _WORKER_ENGINE = create_engine_for_child()
+    return _WORKER_ENGINE
 
 
 def _init_worker() -> None:
@@ -45,8 +60,7 @@ def _init_worker() -> None:
     """
     os.environ["GLOG_minloglevel"] = "2"
     try:
-        from app.core.ocr_engine import create_engine_for_child
-        _ = create_engine_for_child()
+        _get_worker_engine()
         logger.info("Process worker PaddleOCR initialized (pid=%d)", os.getpid())
     except Exception as exc:
         logger.error("Process worker PaddleOCR init failed (pid=%d): %s",
@@ -59,8 +73,7 @@ def _run_one_page(image_bytes: bytes, page_index: int) -> str:
 
     This MUST be a module-level function (pickled across process boundary).
     """
-    from app.core.ocr_engine import create_engine_for_child
-    engine = create_engine_for_child()
+    engine = _get_worker_engine()
     result = engine.recognize(image_bytes, page_index, mode="text")
     return result.get("text", "")
 
@@ -75,8 +88,7 @@ def _run_one_page_with_boxes(
 
     Module-level for pickling across process boundary.
     """
-    from app.core.ocr_engine import create_engine_for_child
-    engine = create_engine_for_child()
+    engine = _get_worker_engine()
     result = engine.recognize(image_bytes, page_index, skip_rotation=skip_rotation, mode="boxes")
     return {
         "page_index": result.get("page_index", page_index),
@@ -99,9 +111,7 @@ def _run_lightweight_ocr(image_bytes: bytes, page_index: int) -> dict:
     import numpy as np
     from PIL import Image, ImageOps
 
-    from app.core.ocr_engine import create_engine_for_child
-
-    engine = create_engine_for_child()
+    engine = _get_worker_engine()
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = ImageOps.autocontrast(img.convert("L"), cutoff=1).convert("RGB")
     img = engine._resize(img)

@@ -308,7 +308,7 @@ class OcrEngine:
         from PIL import Image
 
         img = self._load_image(image_bytes)
-        orig_w, orig_h = img.size if tracker is None else (0, 0)
+        orig_w, orig_h = img.size
         if tracker is not None:
             tracker.orig_width = orig_w
             tracker.orig_height = orig_h

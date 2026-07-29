@@ -61,8 +61,11 @@ class OcrWorkerPool:
             str, tuple[asyncio.Future, int, int]
         ] = {}
 
-        # Consumer tasks (one per worker slot)
+        # Consumer tasks are started lazily on first submit.  Constructing the
+        # pool must not bind it to a possibly non-running/wrong event loop, and
+        # an OCR-disabled/unused process should not keep idle polling tasks.
         self._consumers: list[asyncio.Task] = []
+        self._consumers_started = False
         self._generation: int = 0
 
         # Metrics
@@ -72,15 +75,6 @@ class OcrWorkerPool:
         self._restart_times: deque[float] = deque(
             maxlen=config.max_restarts_per_window,
         )
-
-        # Start consumers
-        loop = asyncio.get_event_loop()
-        for wid in range(config.worker_count):
-            task = loop.create_task(
-                self._consumer_loop(wid),
-                name=f"ocr-worker-consumer-{wid}",
-            )
-            self._consumers.append(task)
 
     # ── Public API ──────────────────────────────────────────────────────────
 
@@ -106,8 +100,10 @@ class OcrWorkerPool:
                 error_type="Pool is shut down",
             )
 
-        req = self._build_request(image_bytes, page_index, mode, options)
         loop = asyncio.get_running_loop()
+        self._ensure_consumers_started(loop)
+
+        req = self._build_request(image_bytes, page_index, mode, options)
         future: asyncio.Future[WorkerResult] = loop.create_future()
 
         # Register before enqueueing.  The old order allowed a fast consumer to
@@ -304,17 +300,24 @@ class OcrWorkerPool:
 
     # ── Internal: Consumer ──────────────────────────────────────────────────
 
+    def _ensure_consumers_started(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Start one consumer per worker slot on the active event loop."""
+        if self._consumers_started:
+            return
+        self._consumers_started = True
+        for wid in range(self._config.worker_count):
+            task = loop.create_task(
+                self._consumer_loop(wid),
+                name=f"ocr-worker-consumer-{wid}",
+            )
+            self._consumers.append(task)
+
     async def _consumer_loop(self, worker_id: int) -> None:
         """Consumer task for a single worker slot."""
         while not self._stopped:
-            try:
-                # Wait for a task from pending queue (with timeout for poll)
-                req = await asyncio.wait_for(
-                    self._pending.get(),
-                    timeout=1.0,
-                )
-            except TimeoutError:
-                continue  # Re-check _stopped flag
+            # Queue.get() is cancellation-friendly, so shutdown can cancel the
+            # consumer directly instead of waking every worker once per second.
+            req = await self._pending.get()
 
             try:
                 entry = self._active_tasks.get(req.request_id)

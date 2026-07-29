@@ -51,20 +51,11 @@ _VALID_HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 # ── Retry configuration ─────────────────────────────────────────────────────
 
 _RETRYABLE_HTTP_STATUSES = frozenset({429, 502, 503, 504})
-_RETRYABLE_EXCEPTION_TYPES = (
-    httpx.ConnectError,
-    httpx.ReadTimeout,
-    httpx.WriteError,
-)
-
 _RETRY_MAX = 3
 _RETRY_BASE_DELAY: float = 1.0
 _RETRY_MAX_DELAY: float = 30.0
 _RETRY_JITTER: float = 0.1
 
-
-def _is_retryable_exception(exc: BaseException) -> bool:
-    return isinstance(exc, _RETRYABLE_EXCEPTION_TYPES)
 
 
 def _is_retryable_status(status_code: int) -> bool:
