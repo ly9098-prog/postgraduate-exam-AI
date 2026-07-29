@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Ban, Power, Save, Sparkles, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, Ban, Power, Save, Sparkles, SlidersHorizontal, CheckCircle2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -36,8 +36,15 @@ export default function AISettingsPage() {
   const [monthlyLimit, setMonthlyLimit] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+
+  function showToast(msg: string) {
+    const el = document.createElement("div");
+    el.className = "fixed left-1/2 top-4 z-[200] -translate-x-1/2 rounded-xl border border-[var(--color-success)]/30 bg-white px-5 py-3 text-sm font-semibold text-[var(--color-success)] shadow-[var(--shadow-card)] animate-rise-in";
+    el.innerHTML = `<svg class="-mt-0.5 mr-1.5 inline-block h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>${msg}`;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2500);
+  }
 
   const settings = useQuery({
     queryKey: ["ai-settings"],
@@ -88,13 +95,13 @@ export default function AISettingsPage() {
     mutationFn: (payload: AISettingsPatchRequest) =>
       apiRequest<AISettings>("/ai-settings", { method: "PATCH", body: JSON.stringify(payload) }),
     onSuccess: (data) => {
-      setMessage("AI 解析设置已更新");
       setConfirmOpen(false);
       setEnabled(data.ai_parse_enabled);
       setMonthlyLimit(String(data.monthly_call_limit));
       queryClient.setQueryData(["ai-settings"], data);
+      showToast("AI 解析设置已保存");
     },
-    onError: (error) => setMessage(getErrorMessage(error)),
+    onError: (error) => showToast(getErrorMessage(error)),
   });
 
   const parsedLimit = Number(monthlyLimit);
@@ -237,12 +244,7 @@ export default function AISettingsPage() {
               </span>
             </div>
 
-            {/* Messages */}
-            {message && (
-              <p className="rounded-lg border border-[var(--color-border)] bg-white/70 px-3 py-2 text-sm text-[var(--color-text-secondary)]">
-                {message}
-              </p>
-            )}
+            {/* Error */}
             {settings.isError && (
               <p className="rounded-lg border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-3 py-2 text-sm text-[var(--color-danger)]">
                 {getErrorMessage(settings.error)}
