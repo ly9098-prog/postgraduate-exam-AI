@@ -30,9 +30,7 @@ from app.schemas.export_task import (
 )
 from app.services.export.capability import (
     build_capability,
-    ensure_export_allowed,
     ensure_format_allowed,
-    is_user_allowed,
     raise_export_error,
     validate_export_range,
 )
@@ -65,22 +63,11 @@ def _mime_for_format(file_format: str) -> str:
     return _FORMAT_MIME.get(file_format, "application/octet-stream")
 
 
-# ── Whitelist / access control ──
-# Helpers are in app.services.export.capability:
-#   is_user_allowed, ensure_export_allowed, ensure_format_allowed,
-#   build_capability, raise_export_error
-
-
 @router.get("/capabilities", response_model=ExportCapabilityResponse)
 async def export_capabilities(
     current_user: User = Depends(get_current_user),
 ):
-    """Return export capabilities for the current user.
-
-    Used by the mini-program to decide whether to show the export entry
-    point and which options to enable.  Does NOT leak internal config or
-    the whitelist contents.
-    """
+    """Return global export formats and operational limits."""
     return build_capability(current_user)
 
 
@@ -91,7 +78,6 @@ async def preview_export_count(
     current_user: User = Depends(get_current_user),
 ):
     """Preview how many questions match the given export range + filters."""
-    ensure_export_allowed(current_user.id)
     try:
         count = await _preview_count(
             db, current_user.id,
@@ -121,9 +107,6 @@ async def create_export(
     ``_IDEMPOTENCY_WINDOW_SEC`` return the existing pending/processing task.
     Re-export and retry create new tasks (call those endpoints instead).
     """
-    # Feature flag check
-    ensure_export_allowed(current_user.id)
-
     if req.file_format == "docx":
         ensure_format_allowed("docx")
 
@@ -409,9 +392,6 @@ async def retry_export(
     if task.status != ExportTaskStatus.FAILED:
         raise_export_error(400, ExportErrorCode.ACCESS_DENIED, "只有失败的任务可以重试")
 
-    # Feature flag check
-    ensure_export_allowed(current_user.id)
-
     if task.file_format == "docx":
         ensure_format_allowed("docx")
 
@@ -466,7 +446,6 @@ async def re_export(
     """
     task = await _get_user_task(db, task_id, current_user.id)
 
-    ensure_export_allowed(current_user.id)
     if task.file_format == "docx":
         ensure_format_allowed("docx")
 
@@ -555,8 +534,6 @@ async def re_export(
 @router.get("/health")
 async def export_health():
     """Minimal public probe; detailed diagnostics live under admin APIs."""
-    if not settings.EXPORT_FEATURE_ENABLED:
-        raise HTTPException(status_code=503, detail="Export service unavailable")
     return {"status": "ok"}
 
 
@@ -577,14 +554,8 @@ async def export_status_ws(ws: WebSocket):
     - Server sends ``{"type": "export_status", "task_id": ..., ...}``
     - Server sends ``{"type": "ping"}`` periodically (heartbeat)
     """
-    # Feature flag
     from app.core.config import settings
 
-    # Check global feature flag before auth
-
-    if not settings.EXPORT_FEATURE_ENABLED:
-        await ws.close(code=4001, reason="导出功能已关闭")
-        return
     if not settings.EXPORT_WEBSOCKET_ENABLED:
         await ws.close(code=4001, reason="实时推送功能已关闭")
         return
@@ -622,15 +593,6 @@ async def export_status_ws(ws: WebSocket):
         user_id = user.id
     except Exception:
         await ws.close(code=4001, reason="Invalid token")
-        return
-
-    # Whitelist check (after auth, so we know who the user is)
-    if not is_user_allowed(user_id):
-        logger.info("export_websocket_failed", extra={
-            "user_id": user_id,
-            "reason": "user_not_allowed",
-        })
-        await ws.close(code=4001, reason="导出功能未开放")
         return
 
     logger.info("export_websocket_connected", extra={"user_id": user_id})

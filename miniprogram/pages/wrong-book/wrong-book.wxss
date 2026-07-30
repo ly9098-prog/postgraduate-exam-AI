@@ -13,8 +13,8 @@ page {
     linear-gradient(180deg, #F7F9F6 0%, #F1F4F1 100%);
 }
 
-.page-batch-padding {
-  padding-bottom: calc(138rpx + env(safe-area-inset-bottom));
+.page.page-batch-padding {
+  padding-bottom: calc(200rpx + env(safe-area-inset-bottom));
 }
 
 /* ===== 顶部 ===== */
@@ -117,10 +117,8 @@ page {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  position: relative;
-  z-index: 1;
-  box-shadow: 0 4rpx 18rpx rgba(43, 60, 80, 0.06);
-  border: 10rpx solid #F5F1EB;
+  padding: 10rpx;
+  background: transparent;
 }
 
 .hero-badge-num {
@@ -1833,13 +1831,30 @@ page {
   border-radius: 999rpx;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 14rpx 38rpx rgba(13, 39, 24, 0.12);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
   transform: translateX(-50%);
-  animation: capsuleDockIn 0.28s cubic-bezier(0.2, 0.82, 0.24, 1) both;
+  transition:
+    opacity 0.32s ease,
+    transform 0.32s cubic-bezier(0.2, 0.82, 0.24, 1),
+    visibility 0s linear;
 }
 
 .batch-capsule.submitting {
   pointer-events: none;
   opacity: 0.66;
+}
+
+.batch-capsule.capsule-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 24rpx) scale(0.98);
+  transition:
+    opacity 0.32s ease,
+    transform 0.32s cubic-bezier(0.2, 0.82, 0.24, 1),
+    visibility 0s linear 0.32s;
 }
 
 .capsule-count,
@@ -1946,11 +1961,6 @@ page {
 .capsule-count.capsule-item-pressed {
   background: #102F20;
   transform: scale(0.95);
-}
-
-@keyframes capsuleDockIn {
-  from { opacity: 0; transform: translate(-50%, 24rpx) scale(0.96); }
-  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
 @keyframes selectionBadgePulse {

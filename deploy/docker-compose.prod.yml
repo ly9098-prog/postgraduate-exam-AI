@@ -105,7 +105,7 @@ services:
       - staging_data:/opt/2240ai-v2/staging
       - exports_data:/opt/2240ai-v2/exports
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; resp = urllib.request.urlopen('http://localhost:8000/health/live', timeout=5); assert resp.status == 200\""]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; req = urllib.request.Request('http://127.0.0.1:8000/health/live', headers={'Host': 'xzshub.top'}); resp = urllib.request.urlopen(req, timeout=5); assert resp.status == 200\""]
       interval: 30s
       timeout: 5s
       retries: 3

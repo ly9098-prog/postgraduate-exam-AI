@@ -7,6 +7,7 @@ const aiCache = require('../../utils/ai-diagnosis-cache')
 const { getSubjectName, getSubjectShortName } = require('../../utils/subject-meta')
 
 const AI_AUTO_SETTING_PREFIX = 'ai_wrong_book_auto_v1_'
+const BATCH_CAPSULE_IDLE_MS = 5000
 
 const ERROR_TYPES = [
   { value: '', label: '全部类型' },
@@ -41,6 +42,7 @@ Page({
     ungroupedCount: 0,
     highFrequencyCount: 0,
     batchMode: false,
+    batchCapsuleVisible: true,
     selectedIds: [],
     selectedIdMap: {},
     selectedCount: 0,
@@ -104,6 +106,7 @@ Page({
   _listRequestSeq: 0,
   _suppressQuestionTapUntil: 0,
   _selectionPulseTimer: null,
+  _batchCapsuleIdleTimer: null,
   _batchMasterUndoIds: [],
   _batchMasterUndoTimer: null,
   _aiAutoSwitchTimer: null,
@@ -136,6 +139,7 @@ Page({
 
   onShow() {
     this._alive = true
+    if (this.data.batchMode) this._showBatchCapsuleAndRefreshTimer()
     if (!this._ready) return
     // 页面重新可见时先统一刷新数据，再根据本机开关决定是否自动生成 AI 洞察。
     Promise.all([
@@ -147,10 +151,12 @@ Page({
 
   onHide() {
     this._alive = false
+    this._clearBatchCapsuleIdleTimer()
   },
 
   onUnload() {
     this._alive = false
+    this._clearBatchCapsuleIdleTimer()
     if (this._selectionPulseTimer) {
       clearTimeout(this._selectionPulseTimer)
       this._selectionPulseTimer = null
@@ -515,8 +521,10 @@ Page({
 
   toggleBatchMode() {
     const next = !this.data.batchMode
+    if (!next) this._clearBatchCapsuleIdleTimer()
     this.setData({
       batchMode: next,
+      batchCapsuleVisible: true,
       batchMoreVisible: false,
       showFilter: next ? false : this.data.showFilter,
       selectedIds: [],
@@ -524,6 +532,43 @@ Page({
       selectedCount: 0,
       allVisibleSelected: false,
       selectionPulse: false,
+    }, () => {
+      if (next) this._showBatchCapsuleAndRefreshTimer()
+    })
+  },
+
+  onPageInteraction() {
+    this._showBatchCapsuleAndRefreshTimer()
+  },
+
+  onPageScroll() {
+    this._showBatchCapsuleAndRefreshTimer()
+  },
+
+  _clearBatchCapsuleIdleTimer() {
+    if (!this._batchCapsuleIdleTimer) return
+    clearTimeout(this._batchCapsuleIdleTimer)
+    this._batchCapsuleIdleTimer = null
+  },
+
+  _scheduleBatchCapsuleAutoHide() {
+    this._clearBatchCapsuleIdleTimer()
+    if (!this._alive || !this.data.batchMode) return
+    this._batchCapsuleIdleTimer = setTimeout(() => {
+      this._batchCapsuleIdleTimer = null
+      if (!this._alive || !this.data.batchMode || !this.data.batchCapsuleVisible) return
+      this.setData({ batchCapsuleVisible: false })
+    }, BATCH_CAPSULE_IDLE_MS)
+  },
+
+  _showBatchCapsuleAndRefreshTimer() {
+    if (!this.data.batchMode) return
+    if (this.data.batchCapsuleVisible) {
+      this._scheduleBatchCapsuleAutoHide()
+      return
+    }
+    this.setData({ batchCapsuleVisible: true }, () => {
+      this._scheduleBatchCapsuleAutoHide()
     })
   },
 
@@ -541,7 +586,9 @@ Page({
     if (Date.now() < this._suppressQuestionTapUntil) return
     const id = e.currentTarget.dataset.id
     if (!this.data.batchMode) {
-      this.setData({ batchMode: true, showFilter: false })
+      this.setData({ batchMode: true, batchCapsuleVisible: true, showFilter: false }, () => {
+        this._showBatchCapsuleAndRefreshTimer()
+      })
     }
     this._toggleQuestionSelection(id)
   },
@@ -551,7 +598,9 @@ Page({
     // 微信长按结束后可能继续派发 tap，短暂屏蔽，避免刚选中又被取消。
     this._suppressQuestionTapUntil = Date.now() + 700
     if (!this.data.batchMode) {
-      this.setData({ batchMode: true, showFilter: false })
+      this.setData({ batchMode: true, batchCapsuleVisible: true, showFilter: false }, () => {
+        this._showBatchCapsuleAndRefreshTimer()
+      })
     }
     try {
       wx.vibrateShort({ type: 'light' })
@@ -723,9 +772,11 @@ Page({
         title: `${labels[action]}成功 ${result.updated_count != null ? result.updated_count : ids.length} 项`,
         icon: 'success',
       })
+      this._clearBatchCapsuleIdleTimer()
       this.setData({
         batchSubmitting: false,
         batchMode: false,
+        batchCapsuleVisible: true,
         batchMoreVisible: false,
         selectionPulse: false,
         selectedIds: [],
@@ -778,24 +829,14 @@ Page({
       return
     }
 
-    // Check export capability before navigating
-    const exportApi = require('../../services/export')
-    exportApi.getCapabilities().then(cap => {
-      if (!cap.export_enabled) {
-        const msg = exportApi.getExportCapabilityErrorMessage(null, cap)
-        wx.showToast({ title: msg, icon: 'none', duration: 3000 })
-        return
-      }
-      // Pass selected IDs via global data (not URL params — too many for URL)
-      const app = getApp()
-      const gd = app.getGlobalData()
-      gd.exportSelectedIds = ids
+    // Pass selected IDs via global data (not URL params — too many for URL).
+    // Export is globally available, so navigation has no rollout or
+    // per-user access check.
+    const app = getApp()
+    const gd = app.getGlobalData()
+    gd.exportSelectedIds = ids
 
-      wx.navigateTo({ url: '/pages/export-config/export-config' })
-    }).catch(err => {
-      const msg = exportApi.getExportCapabilityErrorMessage(err, null)
-      wx.showToast({ title: msg, icon: 'none', duration: 3000 })
-    })
+    wx.navigateTo({ url: '/pages/export-config/export-config' })
   },
 
   onViewExportRecords() {
