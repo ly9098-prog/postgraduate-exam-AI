@@ -278,13 +278,10 @@ class Settings(BaseSettings):
     PRODUCT_NAME: str = "MemoGrad"
     GENERATOR_VERSION: str = "2.1"  # v2.1 = reference-paper layout and export fixes
 
-    # ── Export feature flags (gray release) ──
-    EXPORT_FEATURE_ENABLED: bool = True
+    # ── Export capabilities (globally available to authenticated users) ──
     EXPORT_DOCX_ENABLED: bool = True
     EXPORT_WEBSOCKET_ENABLED: bool = True
     ALLOW_LEGACY_WEBSOCKET_QUERY_TOKEN: bool = False
-    EXPORT_ALLOWED_USER_IDS: str = ""  # comma-separated user IDs for whitelist
-    EXPORT_ALLOW_ALL_USERS: bool = False  # explicit opt-in; False + empty whitelist = no access
 
     # ── Authentication abuse controls ──
     ADMIN_LOGIN_MAX_FAILURES: int = 5

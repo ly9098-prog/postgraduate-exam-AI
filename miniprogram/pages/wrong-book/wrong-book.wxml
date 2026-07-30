@@ -1,6 +1,6 @@
 <premium-nav title="错题本" variant="light" bind:back="goBack" />
 <submit-confirm id="actionConfirm" />
-<view class="page {{batchMode ? 'page-batch-padding' : ''}}">
+<view class="page {{batchMode ? 'page-batch-padding' : ''}}" bindtouchstart="onPageInteraction">
   <!-- 顶部视图切换与编辑模式 -->
   <view class="topbar {{batchMode ? 'topbar-editing' : ''}}">
     <block wx:if="{{!batchMode}}">
@@ -428,7 +428,10 @@
   </view>
 
   <!-- 极简悬浮胶囊：已选数量 / 两项核心动作 / 更多 -->
-  <view class="batch-capsule {{batchSubmitting ? 'submitting' : ''}}" wx:if="{{batchMode}}">
+  <view
+    class="batch-capsule {{batchCapsuleVisible ? 'capsule-visible' : 'capsule-hidden'}} {{batchSubmitting ? 'submitting' : ''}}"
+    wx:if="{{batchMode}}"
+  >
     <view
       class="capsule-count {{selectionPulse ? 'pulse' : ''}} {{allVisibleSelected ? 'all-selected' : ''}}"
       hover-class="capsule-item-pressed"

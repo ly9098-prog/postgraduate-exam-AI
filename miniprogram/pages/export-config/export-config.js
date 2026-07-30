@@ -133,8 +133,7 @@ Page({
     submitting: false,
     submitError: '',
 
-    // Capability
-    _exportEnabled: false,
+    // Capability metadata
     _wsEnabled: false,
     capabilityLoading: true,
     capabilityError: '',
@@ -335,12 +334,10 @@ Page({
       if (this._pageDestroyed) return
       const wordDisabled = !cap.docx_enabled
       const wordTip = wordDisabled ? 'Word 导出暂未开放' : ''
-      const exportEnabled = cap.export_enabled !== false
       this.setData({
         wordDisabled,
         wordTip,
         _wsEnabled: cap.websocket_enabled,
-        _exportEnabled: exportEnabled,
         maxQuestionCount: cap.max_question_count || 100,
         capabilityLoading: false,
         capabilityError: '',
@@ -349,11 +346,6 @@ Page({
       if (wordDisabled && this.data.format === 'docx') {
         this.setData({ format: 'pdf' })
       }
-      if (!exportEnabled) {
-        const msg = exportApi.getExportCapabilityErrorMessage(null, cap)
-        this.setData({ capabilityError: msg }, () => this._syncFloatingAction())
-        return
-      }
       this._schedulePreviewCount(true)
     } catch (e) {
       if (this._pageDestroyed) return
@@ -361,13 +353,12 @@ Page({
       // "checking" state. Continue in PDF-safe mode and try the actual count
       // endpoint; if the current selected range is known locally, it remains
       // exportable even while the lightweight warning is shown.
-      const msg = exportApi.getExportCapabilityErrorMessage(e, null)
+      const msg = exportApi.getExportCapabilityErrorMessage(e)
       const knownCount = this._knownRangeCount()
       this.setData({
         wordDisabled: true,
         wordTip: '能力检查失败，暂仅提供 PDF 导出',
         format: 'pdf',
-        _exportEnabled: true,
         capabilityLoading: false,
         capabilityError: msg,
         countLoading: false,
@@ -436,7 +427,7 @@ Page({
       previewCountReady: selectedCount !== null,
     }, () => {
       this._registerInteraction()
-      if (this.data._exportEnabled) this._schedulePreviewCount()
+      this._schedulePreviewCount()
     })
   },
 
@@ -572,7 +563,6 @@ Page({
 
   // ── Preview count ──
   _schedulePreviewCount(immediate = false) {
-    if (!this.data._exportEnabled) return
     if (this._previewDebounceTimer) {
       clearTimeout(this._previewDebounceTimer)
       this._previewDebounceTimer = null
@@ -588,7 +578,6 @@ Page({
   },
 
   async _updatePreviewCount() {
-    if (!this.data._exportEnabled) return
     const requestSeq = ++this._previewRequestSeq
     const hadReadyCount = !!this.data.previewCountReady
     this.setData({ countLoading: true, countError: '' }, () => this._syncFloatingAction())
@@ -620,7 +609,6 @@ Page({
   async onSubmit() {
     if (this.data.submitting || this._navigating) return
     if (this.data.capabilityLoading) return
-    if (!this.data._exportEnabled) return
     this._registerInteraction()
 
     if (!this.data.previewCountReady) {
@@ -798,7 +786,7 @@ Page({
       previewCountReady: knownCount !== null,
     }, () => {
       this._registerInteraction()
-      if (this.data._exportEnabled) this._schedulePreviewCount()
+      this._schedulePreviewCount()
     })
   },
 

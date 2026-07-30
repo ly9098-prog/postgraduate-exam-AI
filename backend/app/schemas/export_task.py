@@ -55,8 +55,6 @@ class ExportSortBy(StrEnum):
 
 class ExportErrorCode(StrEnum):
     """Structured error codes for export API responses."""
-    FEATURE_DISABLED = "feature_disabled"
-    USER_NOT_ALLOWED = "user_not_allowed"
     DOCX_DISABLED = "docx_disabled"
     TOO_MANY_QUESTIONS = "too_many_questions"
     NO_QUESTIONS = "no_questions"
@@ -224,14 +222,9 @@ class ExportRecordListItem(BaseModel):
 
 
 class ExportCapabilityResponse(BaseModel):
-    """Per-user export capability — returned by the capabilities endpoint.
-
-    Does NOT leak internal config or whitelist contents.
-    When ``export_enabled`` is ``False``, ``reason_code`` and ``message``
-    provide a diagnostic hint for the frontend (no sensitive info leaked).
-    """
-    export_enabled: bool = False
-    pdf_enabled: bool = False
+    """Global export capability returned to authenticated users."""
+    export_enabled: bool = True
+    pdf_enabled: bool = True
     docx_enabled: bool = False
     websocket_enabled: bool = False
     max_question_count: int = 100
