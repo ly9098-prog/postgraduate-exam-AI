@@ -31,10 +31,10 @@
           bindtap="toggleBatchMode"
         >选择</view>
         <view
-          class="top-action"
-          hover-class="top-action-pressed"
+          class="top-action {{exportAvailable ? '' : 'export-unavailable'}}"
+          hover-class="{{exportAvailable ? 'top-action-pressed' : 'none'}}"
           bindtap="onViewExportRecords"
-        >导出记录</view>
+        >{{exportAvailable ? '导出记录' : '导出不可用'}}</view>
       </view>
     </block>
 
@@ -464,10 +464,10 @@
     >更多</view>
 
     <view
-      class="capsule-action capsule-action-export {{selectedCount === 0 ? 'disabled' : ''}}"
-      hover-class="{{selectedCount > 0 ? 'capsule-primary-pressed' : 'none'}}"
+      class="capsule-action capsule-action-export {{selectedCount === 0 || !exportAvailable ? 'disabled' : ''}}"
+      hover-class="{{selectedCount > 0 && exportAvailable ? 'capsule-primary-pressed' : 'none'}}"
       bindtap="onExportSelected"
-    >导出</view>
+    >{{exportAvailable ? '导出' : '导出不可用'}}</view>
   </view>
 
   <!-- 批量标记已掌握撤销 -->

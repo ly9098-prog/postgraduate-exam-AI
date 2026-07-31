@@ -10,6 +10,7 @@
 const exportApi = require('../../services/export')
 const { ExportStatusSyncManager } = require('../../services/export_status_sync')
 const previewTempFiles = require('../../utils/preview-temp-files')
+const config = require('../../config')
 
 const STATUS_MAP = {
   pending: {
@@ -187,6 +188,14 @@ Page({
     deletingTaskId: null,
     skeletonItems: [1, 2],
 
+    // Safe initial state: do not expose export records/actions until the
+    // capability endpoint explicitly confirms PDF export is available.
+    exportAvailable: false,
+    exportCapabilityChecked: false,
+    exportCapabilityLoading: false,
+    exportCapabilityRetryable: false,
+    exportUnavailableText: '当前导出功能不可用',
+
     // Custom dialog
     dialogVisible: false,
     dialogTitle: '',
@@ -212,6 +221,8 @@ Page({
   _previewDownloadPromises: null,
   _suppressNextShowRefresh: false,
   _pageDestroyed: false,
+  _capabilityPromise: null,
+  _capabilityRequestId: 0,
 
   onLoad(options) {
     this._pageDestroyed = false
@@ -221,17 +232,11 @@ Page({
     this._previewFileCache = new Map()
     this._previewDownloadPromises = new Map()
     this._suppressNextShowRefresh = false
-    this._startWatchTimer()
-
     if (options.highlight) {
       this.setData({ highlightId: parseInt(options.highlight, 10) })
     }
 
-    // Create a single status sync manager for this page
-    this._createSyncManager()
-
-    // Load list (first call — both onLoad and onShow will run, dedup via _hasLoadedOnce)
-    this._loadList(true)
+    this._checkExportCapability()
   },
 
   onShow() {
@@ -243,6 +248,11 @@ Page({
     if (this.data.previewingTaskId !== null) {
       this.setData({ previewingTaskId: null })
     }
+    if (!this.data.exportAvailable) {
+      this._checkExportCapability()
+      return
+    }
+
     this._startWatchTimer()
 
     if (this._hasLoadedOnce) {
@@ -274,6 +284,7 @@ Page({
   onUnload() {
     this._pageDestroyed = true
     this._pageAlive = false
+    this._capabilityRequestId++
     this._stopWatchTimer()
     this._destroySyncManager()
     if (this._completedNotified) this._completedNotified.clear()
@@ -286,6 +297,83 @@ Page({
       this._dialogResolver({ confirm: false, cancel: true })
       this._dialogResolver = null
     }
+  },
+
+  async _checkExportCapability(force = false) {
+    if (this._pageDestroyed) return false
+    if (this._capabilityPromise && !force) return this._capabilityPromise
+
+    const requestId = ++this._capabilityRequestId
+    this.setData({
+      exportAvailable: false,
+      exportCapabilityChecked: false,
+      exportCapabilityLoading: true,
+      exportCapabilityRetryable: true,
+      exportUnavailableText: '当前导出功能不可用',
+      loading: false,
+    })
+    this._stopWatchTimer()
+    this._destroySyncManager()
+
+    if (config.WRONG_BOOK_EXPORT_ENABLED !== true) {
+      this.setData({
+        exportCapabilityChecked: true,
+        exportCapabilityLoading: false,
+        exportCapabilityRetryable: false,
+        exportUnavailableText: '该功能暂未开放，请稍后再试。',
+      })
+      return false
+    }
+
+    const check = async () => {
+      try {
+        const capability = await exportApi.getCapabilities()
+        if (this._pageDestroyed || requestId !== this._capabilityRequestId) return false
+        const available = !!(
+          capability &&
+          capability.export_enabled === true &&
+          capability.pdf_enabled === true
+        )
+
+        this.setData({
+          exportAvailable: available,
+          exportCapabilityChecked: true,
+          exportCapabilityLoading: false,
+          exportCapabilityRetryable: !available,
+          exportUnavailableText: available
+            ? ''
+            : exportApi.getExportCapabilityErrorMessage(null, capability),
+        })
+
+        if (!available) return false
+        this._createSyncManager()
+        this._startWatchTimer()
+        await this._loadList(true)
+        return true
+      } catch (error) {
+        if (this._pageDestroyed || requestId !== this._capabilityRequestId) return false
+        this.setData({
+          exportAvailable: false,
+          exportCapabilityChecked: true,
+          exportCapabilityLoading: false,
+          exportCapabilityRetryable: true,
+          exportUnavailableText: exportApi.getExportCapabilityErrorMessage(error),
+        })
+        return false
+      }
+    }
+
+    this._capabilityPromise = check()
+    try {
+      return await this._capabilityPromise
+    } finally {
+      if (requestId === this._capabilityRequestId) this._capabilityPromise = null
+    }
+  },
+
+  onRetryCapability() {
+    if (this.data.exportCapabilityLoading) return
+    this._checkExportCapability(true)
   },
 
   // ── Single status sync manager ──
@@ -426,6 +514,7 @@ Page({
 
   async _loadList(reset = false) {
     if (!this._pageAlive) return
+    if (!this.data.exportAvailable) return
     if (this.data.loading) return
 
     // Dedup concurrent loads
@@ -567,6 +656,7 @@ Page({
   },
 
   onLoadMore() {
+    if (!this.data.exportAvailable) return
     if (!this.data.hasMore || this.data.loading) return
     this._loadList(false)
   },
@@ -688,7 +778,9 @@ Page({
     const pages = getCurrentPages()
     const fallback = () => {
       wx.redirectTo({
-        url: '/pages/export-config/export-config',
+        url: this.data.exportAvailable
+          ? '/pages/export-config/export-config'
+          : '/pages/wrong-book/wrong-book',
       })
     }
 
@@ -704,6 +796,13 @@ Page({
   },
 
   onGoExport() {
+    if (!this.data.exportAvailable) {
+      wx.showToast({
+        title: this.data.exportUnavailableText || '当前导出功能不可用',
+        icon: 'none',
+      })
+      return
+    }
     // Keep the empty records page in the stack so the export settings page
     // can return here normally. redirectTo previously replaced this page and
     // caused confusing back-navigation loops.

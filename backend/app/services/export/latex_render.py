@@ -29,6 +29,145 @@ _INLINE_MATH_RE = re.compile(r"(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)")
 _DISPLAY_MATH_RE = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
 
 
+_LATEX_SYMBOLS = {
+    r"\cdot": "·",
+    r"\times": "×",
+    r"\div": "÷",
+    r"\pm": "±",
+    r"\mp": "∓",
+    r"\leq": "≤",
+    r"\le": "≤",
+    r"\geq": "≥",
+    r"\ge": "≥",
+    r"\neq": "≠",
+    r"\ne": "≠",
+    r"\approx": "≈",
+    r"\equiv": "≡",
+    r"\infty": "∞",
+    r"\rightarrow": "→",
+    r"\to": "→",
+    r"\leftarrow": "←",
+    r"\Rightarrow": "⇒",
+    r"\Leftarrow": "⇐",
+    r"\in": "∈",
+    r"\notin": "∉",
+    r"\subseteq": "⊆",
+    r"\subset": "⊂",
+    r"\supseteq": "⊇",
+    r"\supset": "⊃",
+    r"\cup": "∪",
+    r"\cap": "∩",
+    r"\sum": "∑",
+    r"\prod": "∏",
+    r"\int": "∫",
+    r"\partial": "∂",
+    r"\nabla": "∇",
+    r"\ldots": "…",
+    r"\cdots": "…",
+    r"\dots": "…",
+    r"\forall": "∀",
+    r"\exists": "∃",
+    r"\land": "∧",
+    r"\lor": "∨",
+    r"\neg": "¬",
+    r"\alpha": "α",
+    r"\beta": "β",
+    r"\gamma": "γ",
+    r"\delta": "δ",
+    r"\epsilon": "ε",
+    r"\varepsilon": "ε",
+    r"\theta": "θ",
+    r"\lambda": "λ",
+    r"\mu": "μ",
+    r"\pi": "π",
+    r"\rho": "ρ",
+    r"\sigma": "σ",
+    r"\phi": "φ",
+    r"\varphi": "φ",
+    r"\omega": "ω",
+    r"\Delta": "Δ",
+    r"\Theta": "Θ",
+    r"\Lambda": "Λ",
+    r"\Pi": "Π",
+    r"\Sigma": "Σ",
+    r"\Omega": "Ω",
+}
+
+
+def _replace_braced_command(text: str, command: str) -> str:
+    """Remove a one-argument formatting command while preserving its content."""
+    pattern = re.compile(rf"\\{command}\s*\{{([^{{}}]*)\}}")
+    previous = None
+    while previous != text:
+        previous = text
+        text = pattern.sub(r"\1", text)
+    return text
+
+
+def latex_expression_to_text(latex: str) -> str:
+    """Convert common inline LaTeX into compact, printable Unicode text.
+
+    PDF body text cannot reliably flow bitmap formula images inline.  This
+    converter intentionally targets the common notation used in question
+    stems and options so expressions such as ``$2n$`` and ``$a_i$`` remain on
+    the surrounding line instead of becoming page-wide images.  Unsupported
+    commands are preserved without the leading backslash rather than dropped.
+    """
+    value = str(latex or "").strip()
+    if not value:
+        return ""
+
+    value = re.sub(r"\\(?:displaystyle|textstyle|scriptstyle|scriptscriptstyle)\b", "", value)
+    value = re.sub(r"\\(?:left|right)\b", "", value)
+    value = re.sub(r"\\(?:,|;|:|!)", " ", value)
+    value = re.sub(r"\\(?:quad|qquad)\b", " ", value)
+
+    # Resolve simple fractions and roots repeatedly so nested basic formulas
+    # degrade into readable text rather than leaking TeX control sequences.
+    fraction_re = re.compile(r"\\(?:d?frac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
+    root_re = re.compile(r"\\sqrt\s*\{([^{}]*)\}")
+    previous = None
+    while previous != value:
+        previous = value
+        value = fraction_re.sub(lambda m: f"({m.group(1)})/({m.group(2)})", value)
+        value = root_re.sub(lambda m: f"√({m.group(1)})", value)
+
+    for command in ("text", "textrm", "textit", "textbf", "mathrm", "mathbf", "mathit", "operatorname"):
+        value = _replace_braced_command(value, command)
+
+    # Replace longest commands first (e.g. \subseteq before \subset).
+    for source in sorted(_LATEX_SYMBOLS, key=len, reverse=True):
+        value = value.replace(source, _LATEX_SYMBOLS[source])
+
+    value = re.sub(r"_\{([^{}]+)\}", r"_\1", value)
+    value = re.sub(r"\^\{([^{}]+)\}", r"^\1", value)
+    value = value.replace("{", "(").replace("}", ")")
+    value = re.sub(r"\\([A-Za-z]+)", r"\1", value)
+    value = value.replace(r"\_", "_").replace(r"\%", "%").replace(r"\$", "$")
+    value = re.sub(r"\s+", " ", value).strip()
+    return value
+
+
+def latex_to_plain_text(text: str) -> str:
+    """Replace all inline/display LaTeX delimiters with printable text."""
+    if not text:
+        return ""
+    parts: list[str] = []
+    for segment in find_latex_segments(str(text)):
+        if segment["type"] == "text":
+            parts.append(segment["content"])
+        else:
+            rendered = latex_expression_to_text(segment["content"])
+            if segment.get("display"):
+                if parts and not parts[-1].endswith("\n"):
+                    parts.append("\n")
+                parts.append(rendered)
+                parts.append("\n")
+            else:
+                parts.append(rendered)
+    return "".join(parts).strip()
+
+
 def find_latex_segments(text: str) -> list[dict]:
     """Split text into segments alternating between plain text and LaTeX.
 
