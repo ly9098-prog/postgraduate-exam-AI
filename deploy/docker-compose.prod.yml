@@ -60,8 +60,8 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       WECHAT_APP_ID: ${WECHAT_APP_ID:?必须设置 WECHAT_APP_ID}
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?必须设置 WECHAT_APP_SECRET}
-      CORS_ORIGINS: ${CORS_ORIGINS:-["https://xzshub.top"]}
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-["xzshub.top"]}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["https://xzshub.top","https://www.xzshub.top"]}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-["xzshub.top","www.xzshub.top"]}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://xzshub.top}
       OCR_ENABLED: ${OCR_ENABLED:-false}
       OCR_MAX_WORKERS: ${OCR_MAX_WORKERS:-1}
