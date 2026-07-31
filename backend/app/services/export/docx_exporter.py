@@ -90,6 +90,7 @@ _MAX_IMAGE_DIMENSION = 2000
 _MAX_IMAGE_PIXELS = 25_000_000
 _MAX_CONCURRENT_DOWNLOADS = 4
 _MAX_TOTAL_IMAGE_BYTES = 50 * 1024 * 1024
+_QUESTION_IMAGE_MAX_WIDTH_RATIO = 0.90
 
 # Thread pool for blocking image downloads
 _image_executor = ThreadPoolExecutor(
@@ -491,15 +492,6 @@ class DocxExporter(Exporter):
                 url = seg.get("url") or seg.get("src") or ""
                 if url:
                     self._embed_image_in_doc(parent_paragraph, url, ctx)
-                    alt = seg.get("alt", "")
-                    if alt:
-                        alt_p = self._add_paragraph_to_doc(parent_paragraph)
-                        run = alt_p.add_run(f"({alt})")
-                        run.font.size = Pt(8)
-                        run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-                        run.font.name = _BODY_FONT
-                        self._set_east_asian_font(run, _BODY_FONT_EA)
-                        parent_paragraph = alt_p
 
             elif seg_type == "table_markdown":
                 md_text = seg.get("text", "")
@@ -587,7 +579,7 @@ class DocxExporter(Exporter):
             dpi = image.info.get("dpi") or (96, 96)
         natural_w = max(0.8, px_w * 2.54 / float(dpi[0] or 96))
         natural_h = max(0.8, px_h * 2.54 / float(dpi[1] or 96))
-        scale = min(1.0, BODY_W_CM / natural_w, 20.0 / natural_h)
+        scale = min(1.0, (BODY_W_CM * _QUESTION_IMAGE_MAX_WIDTH_RATIO) / natural_w, 20.0 / natural_h)
         return max(0.8, natural_w * scale)
 
     def _download_image_sync(self, url: str, ctx: DocxContext) -> str | None:

@@ -87,6 +87,7 @@ _MAX_IMAGE_DIMENSION = 2000  # px
 _MAX_IMAGE_PIXELS = 25_000_000
 _MAX_CONCURRENT_DOWNLOADS = 4
 _MAX_TOTAL_IMAGE_BYTES = 50 * 1024 * 1024  # 50 MB total
+_QUESTION_IMAGE_MAX_WIDTH_RATIO = 0.90
 
 _BACKEND_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
 _LOCAL_ASSET_ROOTS = (
@@ -621,12 +622,6 @@ class PdfExporter(Exporter):
                 url = seg.get("url") or seg.get("src") or ""
                 if url:
                     self._embed_image(pdf, url, ctx)
-                    alt = seg.get("alt", "")
-                    if alt:
-                        pdf.set_font(_FONT_NAME, "", 8)
-                        pdf.set_text_color(128, 128, 128)
-                        pdf.multi_cell(BODY_W, 4, text=f"({alt})", new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
-                        pdf.set_text_color(0, 0, 0)
 
             elif seg_type == "table_markdown":
                 # Parse and render as PDF table using unified TableBlock
@@ -736,7 +731,7 @@ class PdfExporter(Exporter):
             dpi = image.info.get("dpi") or (96, 96)
         dpi_x = float(dpi[0] or 96)
         natural_w = max(8.0, px_w * 25.4 / dpi_x)
-        draw_w = min(BODY_W, natural_w)
+        draw_w = min(BODY_W * _QUESTION_IMAGE_MAX_WIDTH_RATIO, natural_w)
         draw_h = draw_w * px_h / max(1, px_w)
         remaining = PAGE_H - MARGIN_B - pdf.get_y()
         if remaining < min(draw_h, 45) and pdf.get_y() > MARGIN_T + 5:
