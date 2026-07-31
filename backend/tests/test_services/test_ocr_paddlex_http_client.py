@@ -415,10 +415,10 @@ class TestRetryFunctions:
         assert _is_retryable_exception(ValueError("no")) is False
 
     def test_compute_base64_size(self):
-        """Verify base64 expansion estimate (1.37x)."""
-        assert _compute_base64_size(1000) == 1370
+        """Verify exact base64 expansion (4 bytes per 3 raw bytes)."""
+        assert _compute_base64_size(1000) == 1336
         assert _compute_base64_size(0) == 0
-        assert _compute_base64_size(1) == 2  # ceil(1 * 1.37)
+        assert _compute_base64_size(1) == 4  # ceil(1/3) * 4
 
 
 # ===================================================================

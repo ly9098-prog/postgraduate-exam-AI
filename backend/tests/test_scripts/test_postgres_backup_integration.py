@@ -1,5 +1,5 @@
 
-测试真实 pg_dump → pg_restore 流程。
+"""测试真实 pg_dump → pg_restore 流程。
 
 运行要求：
   - docker compose -f deploy/docker-compose.prod.yml up -d postgres

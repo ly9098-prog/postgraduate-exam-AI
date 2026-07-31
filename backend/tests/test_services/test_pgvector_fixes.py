@@ -23,8 +23,6 @@ import pytest
 from app.services.embedding_service import vector_to_pg_literal
 from app.services.vector_retrieval_service import (
     VectorDecision,
-    _allowlist_matches,
-    _parse_allowlist,
     decide_vector_access,
     invalidate_vector_cache,
     is_vector_allowed_for,
@@ -96,61 +94,17 @@ class TestValidateEmbedding:
 
 
 class TestVectorDecisionMatrix:
-    """VectorDecision 各模式决策测试。"""
+    """VectorDecision 决策测试（全量开放，无灰度和白名单）。"""
 
-    @patch("app.services.vector_retrieval_service.resolve_vector_mode", return_value="off")
-    def test_off_mode(self, mock_mode):
+    def test_all_mode(self):
         d = decide_vector_access(user_id=1, subject="math", infra_available=True)
-        assert d.execute is False
-        assert d.use_result is False
-        assert d.mode == "off"
-        assert d.reason == "mode_off"
-
-    @patch("app.services.vector_retrieval_service.resolve_vector_mode", return_value="shadow")
-    def test_shadow_mode(self, mock_mode):
-        d = decide_vector_access(user_id=1, subject="math", infra_available=True)
-        assert d.execute is True
-        assert d.use_result is False
-        assert d.mode == "shadow"
-        assert d.reason == "shadow_mode"
-
-    @patch("app.services.vector_retrieval_service.resolve_vector_mode", return_value="all")
-    def test_all_mode(self, mock_mode):
-        d = decide_vector_access(user_id=1, subject="math", infra_available=True)
+        assert d.enabled is True
         assert d.execute is True
         assert d.use_result is True
         assert d.mode == "all"
         assert d.reason == "mode_all"
 
-    @patch("app.services.vector_retrieval_service._allowlist_matches", return_value=True)
-    @patch("app.services.vector_retrieval_service._is_allowlist_empty", return_value=False)
-    @patch("app.services.vector_retrieval_service.resolve_vector_mode", return_value="allowlist")
-    def test_allowlist_hit(self, mock_mode, mock_empty, mock_match):
-        d = decide_vector_access(user_id=1, subject="math", infra_available=True)
-        assert d.execute is True
-        assert d.use_result is True
-        assert d.reason == "allowlist_hit"
-
-    @patch("app.services.vector_retrieval_service._allowlist_matches", return_value=False)
-    @patch("app.services.vector_retrieval_service._is_allowlist_empty", return_value=False)
-    @patch("app.services.vector_retrieval_service.resolve_vector_mode", return_value="allowlist")
-    def test_allowlist_miss(self, mock_mode, mock_empty, mock_match):
-        d = decide_vector_access(user_id=99, subject="art", infra_available=True)
-        assert d.execute is False
-        assert d.use_result is False
-        assert d.reason == "allowlist_miss"
-
-    @patch("app.services.vector_retrieval_service._is_allowlist_empty", return_value=True)
-    @patch("app.services.vector_retrieval_service.resolve_vector_mode", return_value="allowlist")
-    def test_allowlist_empty_deny(self, mock_mode, mock_empty):
-        """allowlist 为空时默认全部拒绝。"""
-        d = decide_vector_access(user_id=1, subject="math", infra_available=True)
-        assert d.execute is False
-        assert d.use_result is False
-        assert d.reason == "allowlist_empty_deny"
-
-    @patch("app.services.vector_retrieval_service.resolve_vector_mode", return_value="all")
-    def test_infra_unavailable(self, mock_mode):
+    def test_infra_unavailable(self):
         d = decide_vector_access(user_id=1, subject="math", infra_available=False)
         assert d.enabled is False
         assert d.execute is False
@@ -163,89 +117,9 @@ class TestVectorDecisionMatrix:
             d.execute = False  # type: ignore[misc]
 
 
-# ── 3. allowlist 解析和匹配 ──
+# ── 3. SQL 绑定参数验证 ──
 
 
-class TestAllowlistParsing:
-    """allowlist 解析和匹配测试。"""
-
-    @patch("app.services.vector_retrieval_service.settings")
-    def test_empty_allowlist(self, mock_settings):
-        mock_settings.VECTOR_ALLOWLIST = ""
-        result = _parse_allowlist()
-        assert result == {"user_ids": [], "subjects": []}
-
-    @patch("app.services.vector_retrieval_service.settings")
-    def test_subject_allowlist(self, mock_settings):
-        mock_settings.VECTOR_ALLOWLIST = '["exam408-ds", "exam408-os"]'
-        result = _parse_allowlist()
-        assert "exam408-ds" in result["subjects"]
-        assert "exam408-os" in result["subjects"]
-
-    @patch("app.services.vector_retrieval_service.settings")
-    def test_user_id_allowlist(self, mock_settings):
-        mock_settings.VECTOR_ALLOWLIST = "[1, 2, 3]"
-        result = _parse_allowlist()
-        assert result["user_ids"] == [1, 2, 3]
-
-    @patch("app.services.vector_retrieval_service.settings")
-    def test_mixed_allowlist(self, mock_settings):
-        mock_settings.VECTOR_ALLOWLIST = '["exam408-ds", 42]'
-        result = _parse_allowlist()
-        assert 42 in result["user_ids"]
-        assert "exam408-ds" in result["subjects"]
-
-    @patch("app.services.vector_retrieval_service.settings")
-    def test_invalid_json(self, mock_settings):
-        mock_settings.VECTOR_ALLOWLIST = "not json"
-        result = _parse_allowlist()
-        assert result == {"user_ids": [], "subjects": []}
-
-    @patch("app.services.vector_retrieval_service.settings")
-    def test_subject_normalization(self, mock_settings):
-        """subject 匹配时忽略大小写和空格。"""
-        mock_settings.VECTOR_ALLOWLIST = '["Exam408-DS"]'
-        result = _parse_allowlist()
-        # 存储时已转为小写
-        assert "exam408-ds" in result["subjects"]
-
-    @patch("app.services.vector_retrieval_service.settings")
-    def test_whitespace_subject_filtered(self, mock_settings):
-        mock_settings.VECTOR_ALLOWLIST = '["  ", "valid"]'
-        result = _parse_allowlist()
-        assert len(result["subjects"]) == 1
-        assert "valid" in result["subjects"]
-
-
-class TestAllowlistMatching:
-
-    @patch("app.services.vector_retrieval_service.settings")
-    def test_user_id_match(self, mock_settings):
-        mock_settings.VECTOR_ALLOWLIST = "[1, 2]"
-        assert _allowlist_matches(user_id=1) is True
-        assert _allowlist_matches(user_id=3) is False
-
-    @patch("app.services.vector_retrieval_service.settings")
-    def test_subject_match_case_insensitive(self, mock_settings):
-        mock_settings.VECTOR_ALLOWLIST = '["exam408-ds"]'
-        assert _allowlist_matches(subject="Exam408-DS") is True
-        assert _allowlist_matches(subject="exam408-os") is False
-
-    @patch("app.services.vector_retrieval_service.settings")
-    def test_empty_allowlist_no_match(self, mock_settings):
-        mock_settings.VECTOR_ALLOWLIST = ""
-        assert _allowlist_matches(user_id=1) is False
-
-    @patch("app.services.vector_retrieval_service.settings")
-    def test_is_vector_allowed_for_empty_deny(self, mock_settings):
-        """allowlist 模式 + 空白名单 = 全部拒绝。"""
-        mock_settings.VECTOR_MODE = "allowlist"
-        mock_settings.VECTOR_ENABLED = True
-        mock_settings.VECTOR_ALLOWLIST = ""
-        assert is_vector_allowed_for(user_id=1, subject="math") is False
-
-
-# ── 4. SQL 绑定参数验证 ──
 
 
 class TestSQLBindingParameters:
@@ -315,6 +189,7 @@ class TestBackfillCursorPagination:
         mock_db = MagicMock()
         mock_db.bind = MagicMock()
         mock_db.bind.dialect.name = "postgresql"
+        mock_db.get_bind.return_value = mock_db.bind
         mock_db.execute = AsyncMock()
 
         # Mock is_vector_enabled → True
@@ -400,6 +275,7 @@ class TestStatusEndpoint:
         mock_db = MagicMock()
         mock_db.bind = MagicMock()
         mock_db.bind.dialect.name = "postgresql"
+        mock_db.get_bind.return_value = mock_db.bind
         mock_db.execute = AsyncMock()
 
         # Mock 各种查询结果
@@ -411,8 +287,9 @@ class TestStatusEndpoint:
                 result.scalar.return_value = 1
             elif "information_schema.tables" in sql_text:
                 result.scalar.return_value = 1
-            elif "embedding_dim" in sql_text:
-                result.scalar.return_value = 512  # 与配置的 1024 不匹配
+            elif "format_type" in sql_text:
+                # _get_vector_column_dimension 查询 format_type 返回类型字符串
+                result.scalar.return_value = "vector(512)"  # 与配置的 1024 不匹配
             elif "COUNT" in sql_text:
                 result.scalar.return_value = 10
             elif "pg_indexes" in sql_text:
