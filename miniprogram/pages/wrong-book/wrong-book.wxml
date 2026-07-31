@@ -331,11 +331,11 @@
           data-id="{{question.id}}"
         >
           <view
-            class="question-select {{batchMode ? 'batch-visible' : ''}} {{selectedIdMap[question.id] ? 'selected' : ''}} {{!batchMode && question._isMastered ? 'mastered' : ''}}"
+            class="question-select {{batchMode ? 'batch-visible' : ''}} {{selectedIdMap[question.id] ? 'selected' : ''}}"
             catchtap="onSelectControlTap"
             data-id="{{question.id}}"
           >
-            <text wx:if="{{selectedIdMap[question.id] || (!batchMode && question._isMastered)}}">✓</text>
+            <text wx:if="{{selectedIdMap[question.id]}}">✓</text>
           </view>
           <view class="question-main">
             <view class="question-tags">
@@ -392,11 +392,11 @@
         data-id="{{question.id}}"
       >
         <view
-          class="question-select {{batchMode ? 'batch-visible' : ''}} {{selectedIdMap[question.id] ? 'selected' : ''}} {{!batchMode && question._isMastered ? 'mastered' : ''}}"
+          class="question-select {{batchMode ? 'batch-visible' : ''}} {{selectedIdMap[question.id] ? 'selected' : ''}}"
           catchtap="onSelectControlTap"
           data-id="{{question.id}}"
         >
-          <text wx:if="{{selectedIdMap[question.id] || (!batchMode && question._isMastered)}}">✓</text>
+          <text wx:if="{{selectedIdMap[question.id]}}">✓</text>
         </view>
         <view class="question-main">
           <view class="question-tags">

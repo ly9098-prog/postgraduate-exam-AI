@@ -1600,8 +1600,7 @@ page {
   transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
-.question-select.selected,
-.question-select.mastered {
+.question-select.selected {
   border-color: #29C467;
   background: #29C467;
   box-shadow: 0 0 0 7rpx rgba(41, 196, 103, 0.08);

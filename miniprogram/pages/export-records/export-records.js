@@ -8,6 +8,7 @@
  * - Completion toast shown only once per task via ``_completedNotified`` set.
  */
 const exportApi = require('../../services/export')
+const requestApi = require('../../utils/api')
 const { ExportStatusSyncManager } = require('../../services/export_status_sync')
 const previewTempFiles = require('../../utils/preview-temp-files')
 const config = require('../../config')
@@ -467,7 +468,20 @@ Page({
     if (data.task_id !== undefined && data.id === undefined) {
       base.id = Number(data.task_id)
     }
-    return { ...base, ...data, id: numericTaskId }
+
+    const normalized = { ...base, ...data, id: numericTaskId }
+
+    // status_message/status_reason are transient diagnostics for the pending
+    // state. WebSocket updates are partial, so explicitly clear them once a
+    // task starts processing or reaches a terminal state; otherwise the old
+    // "processor unavailable" warning can remain visible after progress has
+    // already resumed.
+    if (normalized.status && normalized.status !== 'pending') {
+      if (data.status_message === undefined) normalized.status_message = null
+      if (data.status_reason === undefined) normalized.status_reason = null
+    }
+
+    return normalized
   },
 
   /**
@@ -630,19 +644,18 @@ Page({
 
       if (t.status === 'pending') {
         if (elapsed > PENDING_WARNING_SECONDS) {
-          if (t.status_reason === 'processor_unavailable') {
-            warning = '导出处理服务可能未启动，请稍后重试'
-          } else {
-            warning = '等待时间较长，导出处理服务可能未启动'
-          }
+          warning = '等待时间较长，任务仍在导出队列中'
         }
       } else if (t.status === 'processing') {
         if (elapsed > PROCESSING_WARNING_SECONDS) {
-          warning = '导出处理超时，可尝试删除后重新导出'
+          warning = '生成时间较长，任务仍在处理中'
         }
       }
 
-      const newWarning = warning || t._warning
+      // Recompute the warning from the current task state instead of retaining
+      // a previous pending-state warning forever. This also removes stale
+      // service-unavailable copy as soon as the task begins processing.
+      const newWarning = warning || this._getTaskStatusWarning(t)
       if (newWarning !== t._warning) {
         needsUpdate = true
         return { ...nextTask, _warning: newWarning }
@@ -659,6 +672,22 @@ Page({
     if (!this.data.exportAvailable) return
     if (!this.data.hasMore || this.data.loading) return
     this._loadList(false)
+  },
+
+  _getTaskStatusWarning(task) {
+    if (!task || !['pending', 'processing'].includes(task.status)) return null
+
+    const message = task.status_message ? String(task.status_message).trim() : ''
+    if (!message) return null
+
+    // Processor-health diagnostics are an internal snapshot, not the task's
+    // final result. Showing them on an active task is misleading because the
+    // worker may pick up and complete the task immediately afterwards.
+    const misleadingProcessorWarning =
+      /导出处理服务.*(?:不可用|未启动)/.test(message) ||
+      /处理服务可能未启动/.test(message)
+
+    return misleadingProcessorWarning ? null : message
   },
 
   _enrichTask(task) {
@@ -704,14 +733,12 @@ Page({
       this._taskWatchStartedAt.delete(task.id)
     }
 
-    // Use server-provided status_message as initial warning
-    var warning = task.status_message || null
-    if (!warning && task.status === 'pending') {
-      if (task.status_reason === 'processor_unavailable') {
-        warning = '导出处理服务暂不可用'
-      } else if (task.status_reason === 'pending_timeout') {
-        warning = '等待时间较长，导出处理服务可能未启动'
-      }
+    // Only expose task-specific, actionable status messages. Processor
+    // availability diagnostics are deliberately hidden while the task is
+    // pending/processing because they can become stale before the next render.
+    var warning = this._getTaskStatusWarning(task)
+    if (!warning && task.status === 'pending' && task.status_reason === 'pending_timeout') {
+      warning = '等待时间较长，任务仍在导出队列中'
     }
 
     let resultText = ''
@@ -936,11 +963,20 @@ Page({
     const downloadPromise = (async () => {
       const info = await exportApi.getDownloadInfo(taskId)
       const version = cacheKey
-      const useAuth = info.method === 'stream'
-      const url = useAuth
+      const useApiStream = info.method === 'stream'
+      const url = useApiStream
         ? exportApi.getFileUrl(taskId, version)
         : (info.url || exportApi.getFileUrl(taskId, version))
-      const filePath = await this._downloadFile(url, useAuth)
+
+      // Authenticated export files use the same wx.request transport as the
+      // rest of the API, then persist the returned ArrayBuffer locally before
+      // wx.openDocument is called. This avoids a separate wx.downloadFile
+      // connection to the API host, which can fail on real devices even while
+      // normal API requests and the export task itself are working correctly.
+      const filePath = useApiStream
+        ? await this._requestStreamFile(url, task, cacheKey)
+        : await this._downloadFile(url, false)
+
       if (this._previewFileCache) this._previewFileCache.set(cacheKey, filePath)
       previewTempFiles.register(filePath, {
         taskId: taskId,
@@ -987,7 +1023,7 @@ Page({
       this._invalidatePreviewCache(taskId)
       const content = task.file_format === 'docx'
         ? 'Word 文件暂时无法预览，可稍后重试或在支持 Word 的设备上打开。'
-        : ((err && (err.message || err.errMsg)) || '文件暂时无法预览，请稍后重试。')
+        : this._getPreviewErrorMessage(err)
       await this._showDialog({
         title: '预览失败',
         content,
@@ -1003,6 +1039,102 @@ Page({
         this.setData({ previewingTaskId: null })
       }
     }
+  },
+
+  _getPreviewErrorMessage(err) {
+    const statusCode = Number(err && err.statusCode)
+    if (statusCode === 401) return '登录状态已过期，请重新登录后再打开文件。'
+    if (statusCode === 404 || statusCode === 410) return '导出文件不存在或已过期，请重新导出。'
+    return '文件下载或打开失败，请检查网络后重试。'
+  },
+
+  _buildPreviewFilePath(task, cacheKey) {
+    const userDataPath = wx.env && wx.env.USER_DATA_PATH
+    if (!userDataPath) return ''
+    const taskId = Number(task && task.id) || Date.now()
+    const extension = task && task.file_format === 'docx' ? 'docx' : 'pdf'
+    const version = String(cacheKey || Date.now())
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .slice(-72)
+    return userDataPath + '/export-preview-' + taskId + '-' + version + '.' + extension
+  },
+
+  _writePreviewFile(filePath, data) {
+    const fs = wx.getFileSystemManager && wx.getFileSystemManager()
+    return new Promise(function(resolve, reject) {
+      if (!fs || typeof fs.writeFile !== 'function' || !filePath) {
+        reject(new Error('当前微信版本无法保存预览文件'))
+        return
+      }
+      if (!data || typeof data.byteLength !== 'number' || data.byteLength <= 0) {
+        reject(new Error('导出文件内容为空'))
+        return
+      }
+      fs.writeFile({
+        filePath: filePath,
+        data: data,
+        success: function() { resolve(filePath) },
+        fail: function(err) {
+          reject(new Error((err && err.errMsg) || '保存预览文件失败'))
+        },
+      })
+    })
+  },
+
+  _requestFileBuffer(url, token) {
+    const header = {}
+    if (token) header.Authorization = 'Bearer ' + token
+
+    return new Promise(function(resolve, reject) {
+      wx.request({
+        url: url,
+        method: 'GET',
+        header: header,
+        responseType: 'arraybuffer',
+        timeout: 60000,
+        success: function(res) {
+          if (res.statusCode === 200 && res.data && typeof res.data.byteLength === 'number') {
+            resolve(res.data)
+            return
+          }
+          const error = new Error('文件请求失败（' + (res.statusCode || '未知状态') + '）')
+          error.statusCode = Number(res.statusCode) || 0
+          reject(error)
+        },
+        fail: function(err) {
+          reject(new Error((err && err.errMsg) || '文件请求失败'))
+        },
+      })
+    })
+  },
+
+  async _requestStreamFile(url, task, cacheKey) {
+    const filePath = this._buildPreviewFilePath(task, cacheKey)
+    if (!filePath) return this._downloadFile(url, true)
+
+    const tokenReady = await requestApi.ensureValidToken()
+    if (!tokenReady) {
+      const error = new Error('登录状态已过期')
+      error.statusCode = 401
+      throw error
+    }
+
+    let token = wx.getStorageSync('token')
+    let data
+    try {
+      data = await this._requestFileBuffer(url, token)
+    } catch (err) {
+      if (Number(err && err.statusCode) === 401) {
+        token = await requestApi.forceRefreshToken()
+        data = await this._requestFileBuffer(url, token)
+      } else {
+        // Some older base-library versions handle binary responses more
+        // reliably through downloadFile. Keep it as a compatibility fallback.
+        return this._downloadFile(url, true)
+      }
+    }
+
+    return this._writePreviewFile(filePath, data)
   },
 
   _downloadFile(url, useAuth = true) {

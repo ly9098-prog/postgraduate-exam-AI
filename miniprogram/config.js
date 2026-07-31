@@ -60,8 +60,7 @@ module.exports = {
   ENV: runtimeEnv,
   resolveRuntimeConfig,
   enableMathImage: false,
-  // Wrong-book export is closed by default. Set to true only when the product
-  // is ready to expose the entry and the backend capability check is enabled.
-  WRONG_BOOK_EXPORT_ENABLED: false,
+  // Wrong-book export entry for all users (backend capability check enabled).
+  WRONG_BOOK_EXPORT_ENABLED: true,
   EXPORT_WS_ENABLED: true,
 }

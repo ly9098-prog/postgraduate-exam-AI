@@ -297,19 +297,22 @@
       disabled="{{submitting || capabilityLoading || countLoading || !previewCountReady || previewCount <= 0 || previewCount > maxQuestionCount}}"
       bindtap="onSubmit"
     >
-      <text wx:if="{{submitting}}">正在创建导出…</text>
-      <text wx:elif="{{capabilityLoading}}">正在检查导出能力…</text>
-      <text wx:elif="{{countLoading}}">正在计算题目数量…</text>
-      <text wx:elif="{{!previewCountReady}}">等待题目数量</text>
-      <text wx:elif="{{previewCount > maxQuestionCount}}">最多 {{maxQuestionCount}} 道</text>
-      <text wx:elif="{{previewCount === 0}}">暂无可导出题目</text>
-      <text wx:else>生成 {{format === 'docx' ? 'Word' : 'PDF'}} · {{previewCount}} 道</text>
-      <view
-        wx:if="{{!submitting && !capabilityLoading && !countLoading && previewCountReady && previewCount > 0 && previewCount <= maxQuestionCount}}"
-        class="floating-submit-arrow"
-        aria-hidden="true"
-      >
-        <view class="floating-submit-arrow-line"></view>
+      <view class="floating-submit-edge-slot floating-submit-edge-slot-left" aria-hidden="true"></view>
+      <view class="floating-submit-label-slot">
+        <text class="floating-submit-label" wx:if="{{submitting}}">正在创建导出</text>
+        <text class="floating-submit-label" wx:elif="{{capabilityLoading || countLoading || !previewCountReady || previewCount === 0}}">导出 {{format === 'docx' ? 'Word' : 'PDF'}}</text>
+        <view class="floating-submit-label floating-submit-label-ready" wx:else>
+          <text>导出 {{format === 'docx' ? 'Word' : 'PDF'}}</text>
+          <text class="floating-submit-count">· {{previewCount}} 道</text>
+        </view>
+      </view>
+      <view class="floating-submit-edge-slot floating-submit-edge-slot-right" aria-hidden="true">
+        <view
+          wx:if="{{!submitting && !capabilityLoading && !countLoading && previewCountReady && previewCount > 0 && previewCount <= maxQuestionCount}}"
+          class="floating-submit-arrow"
+        >
+          <view class="floating-submit-arrow-line"></view>
+        </view>
       </view>
     </button>
   </view>

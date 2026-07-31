@@ -133,12 +133,12 @@
             </view>
           </view>
 
-          <view wx:if="{{item.error_message}}" class="message-panel {{item.reexport_failed ? 'message-panel-warning' : 'message-panel-error'}}">
+          <view wx:if="{{item.error_message && (item.status === 'failed' || item.reexport_failed)}}" class="message-panel {{item.reexport_failed ? 'message-panel-warning' : 'message-panel-error'}}">
             <view class="message-icon">!</view>
             <text class="message-text">{{item.error_message}}</text>
           </view>
 
-          <view wx:if="{{item._warning}}" class="message-panel message-panel-warning">
+          <view wx:if="{{item._warning && (item.status === 'pending' || item.status === 'processing')}}" class="message-panel message-panel-warning">
             <view class="message-icon">!</view>
             <text class="message-text">{{item._warning}}</text>
           </view>
