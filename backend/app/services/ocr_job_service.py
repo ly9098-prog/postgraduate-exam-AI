@@ -74,6 +74,28 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
+def _normalize_job_datetimes(job: OCRJob) -> OCRJob:
+    """Normalize naive DB datetimes on a freshly-read job to aware UTC.
+
+    ``UPDATE ... RETURNING`` and fresh SELECTs return naive values from the
+    naive ``DateTime`` columns, while in-memory assignments in the service use
+    aware UTC.  Normalize so callers can compare job timestamps consistently.
+    """
+    for field in (
+        "lease_expires_at",
+        "heartbeat_at",
+        "next_retry_at",
+        "started_at",
+        "completed_at",
+        "created_at",
+        "updated_at",
+    ):
+        value = getattr(job, field)
+        if value is not None:
+            setattr(job, field, _as_utc(value))
+    return job
+
+
 def _compute_retry_at(attempt: int) -> datetime:
     """Compute next_retry_at based on attempt number (0-indexed)."""
     if attempt < 0 or attempt >= len(RETRY_BACKOFF_SECONDS):
@@ -235,7 +257,7 @@ async def claim_job(
         await db.flush()
         return None
     await db.flush()
-
+    _normalize_job_datetimes(job)
     return job, lease_token
 
 

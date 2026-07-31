@@ -10,6 +10,7 @@ _TEST_DB_PATH = f"/tmp/_test_ocr_jobs_{uuid.uuid4().hex[:8]}.db"
 os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{_TEST_DB_PATH}")
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session, engine
@@ -322,6 +323,8 @@ async def test_get_job_found():
 @pytest.mark.asyncio
 async def test_list_jobs_empty():
     async with async_session() as db:
+        await db.execute(text("DELETE FROM ocr_jobs"))
+        await db.commit()
         jobs, total = await list_jobs(db)
         assert jobs == []
         assert total == 0
@@ -330,6 +333,8 @@ async def test_list_jobs_empty():
 @pytest.mark.asyncio
 async def test_list_jobs_with_data():
     async with async_session() as db:
+        await db.execute(text("DELETE FROM ocr_jobs"))
+        await db.commit()
         await _make_job(db, request_id="a")
         await _make_job(db, request_id="b")
         jobs, total = await list_jobs(db)
@@ -339,6 +344,8 @@ async def test_list_jobs_with_data():
 @pytest.mark.asyncio
 async def test_list_jobs_filter_by_status():
     async with async_session() as db:
+        await db.execute(text("DELETE FROM ocr_jobs"))
+        await db.commit()
         await _make_job(db, request_id="a")
         j2 = await _make_job(db, request_id="b")
         j2.status = OCRJobStatus.LEASED.value

@@ -62,6 +62,19 @@ def _is_retryable_status(status_code: int) -> bool:
     return status_code in _RETRYABLE_HTTP_STATUSES
 
 
+def _is_retryable_exception(exc: Exception) -> bool:
+    """Return True for transient httpx failures that warrant a retry.
+
+    Matches the retryable set documented on the request path: ConnectError,
+    ReadTimeout, WriteError. HTTP 429/502/503/504 are handled separately via
+    ``_is_retryable_status``.
+    """
+    return isinstance(
+        exc,
+        (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteError),
+    )
+
+
 def _compute_backoff(
     attempt: int,
     *,
