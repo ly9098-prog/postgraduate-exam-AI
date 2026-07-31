@@ -50,6 +50,18 @@ def get_gateway():
     return _gateway_singleton
 
 
+def _gateway_results_all_failed(results) -> bool:
+    """Detect a gateway that returned no successful results.
+
+    The remote OCR worker client converts connection/timeout errors into
+    failed ``WorkerResult`` objects instead of raising, so callers must
+    check the results explicitly to trigger the local CPU fallback.
+    """
+    if not results:
+        return True
+    return all(r.status != "success" or not r.result for r in results)
+
+
 def _ensure_sync_context() -> None:
     """Reject sync OCR wrappers on an active event-loop thread.
 
@@ -130,6 +142,8 @@ def ocr_pages(page_images: list[tuple[int, bytes]]) -> dict[int, str]:
             results = _run_async(
                 gateway.recognize_pages(page_images),
             )
+            if _gateway_results_all_failed(results):
+                raise RuntimeError("OCR gateway returned no successful results")
             return {
                 r.page_index: (r.result.get("text", "") if r.result else "")
                 for r in results
@@ -176,6 +190,8 @@ def ocr_pages_with_boxes(
                     page_images,
                 ),
             )
+            if _gateway_results_all_failed(results):
+                raise RuntimeError("OCR gateway returned no successful results")
             return {
                 r.page_index: _worker_result_to_page_result(r)
                 for r in results
