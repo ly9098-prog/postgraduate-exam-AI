@@ -73,10 +73,7 @@ sudo systemctl stop ocr-worker
 # 1. Sync code
 cd /opt/2240ai-v2 && git pull
 
-# 2. Rebuild GPU env if dependencies changed
-cd backend && bash scripts/setup_local_ocr_gpu_env.sh
-
-# 3. Restart
+# 2. Restart
 sudo systemctl restart ocr-worker
 ```
 

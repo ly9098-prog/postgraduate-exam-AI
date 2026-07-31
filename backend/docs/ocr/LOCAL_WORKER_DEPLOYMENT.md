@@ -31,26 +31,23 @@ The worker uses **pull mode**: it polls the production server's internal API, cl
 
 ## Installation
 
-### 1. Create GPU-isolated Python environment
+### 1. Prepare Python environment
 
 ```bash
 cd /opt/2240ai-v2/backend
-bash scripts/setup_local_ocr_gpu_env.sh
+source .venv/bin/activate
+PYTHONPATH=. python -c "import paddleocr; print(paddleocr.__version__)"
 ```
 
-This creates `backend/.venv-ocr-gpu/` with PaddlePaddle GPU and PaddleOCR.
+Worker runs in CPU mode (`.venv` 使用 CPU paddlepaddle)。GPU OCR 环境已废弃删除（WSL2 dxgkrnl 限制）。
 
-### 2. Verify GPU environment
+### 2. Verify OCR runtime
 
 ```bash
-source .venv-ocr-gpu/bin/activate
-PYTHONPATH=. python scripts/preflight_local_ocr_gpu.py
+source .venv/bin/activate
+PYTHONPATH=. python -c "import paddle; print('cpu devices:', paddle.device.cuda.device_count())"
 ```
-
-Expected output:
-- `paddle.is_compiled_with_cuda()` = True
-- `paddle.device.cuda.device_count()` >= 1
-- `paddle.utils.run_check()` = passed
+Expected: OCR 走 CPU / remote paddlex backend。
 
 ### 3. Register worker credential
 

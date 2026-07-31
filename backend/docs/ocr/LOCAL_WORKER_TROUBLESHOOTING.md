@@ -5,21 +5,11 @@
 ### 1. Environment not activated
 ```bash
 # Error: ModuleNotFoundError: No module named 'app'
-source .venv-ocr-gpu/bin/activate
+source .venv/bin/activate
 PYTHONPATH=. python -m app.ocr_worker.daemon
 ```
 
-### 2. GPU environment broken
-```bash
-source .venv-ocr-gpu/bin/activate
-python scripts/preflight_local_ocr_gpu.py
-```
-If `preflight` fails:
-- Rebuild env: `bash scripts/setup_local_ocr_gpu_env.sh`
-- Check NVIDIA driver: `nvidia-smi`
-- Check CUDA compatibility: `python -c "import paddle; print(paddle.is_compiled_with_cuda())"`
-
-### 3. API key invalid
+### 2. API key invalid
 ```bash
 # Verify the key works
 curl -s -H "Worker-API-Key: local-ocr-01/$(cat deploy/ocr-worker/ocr-worker.env | grep OCR_WORKER_API_KEY | cut -d= -f2)" \
@@ -27,7 +17,7 @@ curl -s -H "Worker-API-Key: local-ocr-01/$(cat deploy/ocr-worker/ocr-worker.env 
 # Should return {"ok":true,"data":null} or job list
 ```
 
-### 4. Server unreachable
+### 3. Server unreachable
 ```bash
 curl https://xzshub.top/health
 # Should return 200 OK
@@ -51,15 +41,14 @@ curl -s https://xzshub.top/api/admin/v1/ocr-jobs?status=leased
 
 ## OCR Processing Issues
 
-### GPU OOM
+### Slow Inference
 ```text
-Error: CUDA out of memory
+OCR takes a long time per image
 ```
 Solutions:
-1. Reduce `OCR_WORKER_GPU_MEMORY_LIMIT_MB` to 3000
-2. Check for other GPU processes: `nvidia-smi`
+1. Worker runs in CPU mode (`.venv` 使用 CPU paddlepaddle)
+2. Reduce concurrency / queue depth if memory constrained
 3. Restart worker: `sudo systemctl restart ocr-worker`
-4. If persistent, enable CPU fallback: `OCR_WORKER_CPU_FALLBACK=true`
 
 ### PaddleOCR Model Download Fails
 ```text

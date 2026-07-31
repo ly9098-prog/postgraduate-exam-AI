@@ -111,7 +111,8 @@ backend/tests/fixtures/*.pdf
 logs/
 
 # GPU OCR virtualenv (too large for git)
-backend/.venv-ocr-gpu-330/
+backend/.venv-ocr-gpu/
 backend/.venv-ocr-gpu-*/
+backend/backend/.venv-ocr-gpu/
 ocr_test/
 artifacts/**/*.pdf
