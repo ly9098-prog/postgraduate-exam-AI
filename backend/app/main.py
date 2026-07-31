@@ -1573,5 +1573,8 @@ app.include_router(api_router)
 # 静态文件服务（开发用公式图片和题图）
 os.makedirs("static/formulas", exist_ok=True)
 os.makedirs("static/question-assets", exist_ok=True)
+# Python 3.11 的 mimetypes 未注册 .webp，需显式注册以保证正确的 image/webp Content-Type
+import mimetypes
+mimetypes.add_type("image/webp", ".webp")
 app.mount("/static/formulas", StaticFiles(directory="static/formulas", html=False), name="static_formulas")
 app.mount("/static/question-assets", StaticFiles(directory="static/question-assets", html=False), name="static_question_assets")
