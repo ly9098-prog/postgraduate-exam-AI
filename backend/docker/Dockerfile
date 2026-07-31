@@ -35,6 +35,8 @@ COPY --chown=app:app . .
 
 ENV PATH=/home/app/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
+# matplotlib 缓存写入可写目录（app 用户无 /home/app/.config 写权限）
+ENV MPLCONFIGDIR=/tmp/matplotlib
 
 # Pre-create staging dir for durable task files (Docker volume mount point)
 RUN mkdir -p /opt/2240ai-v2/staging && chown app:app /opt/2240ai-v2/staging && chmod 700 /opt/2240ai-v2/staging

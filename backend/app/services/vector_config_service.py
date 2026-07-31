@@ -30,6 +30,8 @@ class VectorSearchConfig:
     """向量检索运行时配置。"""
 
     enabled: bool = False
+    mode: str = "off"        # off | shadow | allowlist | all
+    allowlist: str = ""      # JSON list: subjects or user ids
     cache_ttl_sec: int = 300
     top_k: int = 100
     similarity_threshold: float = 0.15
