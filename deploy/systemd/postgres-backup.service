@@ -1,29 +1,17 @@
 [Unit]
-Description=Postgraduate PostgreSQL Database Backup
+Description=Postgraduate PostgreSQL Database Backup (Docker mode)
 Documentation=https://github.com/ly9098-prog/postgraduate-ai
 Wants=network-online.target
-After=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
 
 [Service]
+Environment=DOCKER_CONFIG=/opt/2240ai-v2/.docker
 Type=oneshot
-
-# === 方案 A：宿主机直接执行（默认） ===
-# 前提：宿主机已安装 postgresql-client，Python 虚拟环境位于 /opt/2240ai-v2/.venv
 WorkingDirectory=/opt/2240ai-v2
-EnvironmentFile=/opt/2240ai-v2/.env
-ExecStart=/opt/2240ai-v2/.venv/bin/python scripts/postgres_backup.py
+ExecStartPre=-/usr/bin/docker compose --profile manual -f /opt/2240ai-v2/deploy/docker-compose.prod.yml --env-file /opt/2240ai-v2/backend/.env build backup
+ExecStart=/usr/bin/docker compose --profile manual -f /opt/2240ai-v2/deploy/docker-compose.prod.yml --env-file /opt/2240ai-v2/backend/.env run --rm backup
 
-# === 方案 B：Docker Compose 执行（替换上面三行） ===
-# 前提：宿主机已安装 docker compose v2，以下路径需根据实际情况调整
-# WorkingDirectory=/opt/2240ai-v2
-# EnvironmentFile=/opt/2240ai-v2/backend/.env
-# ExecStart=/usr/bin/docker compose -f /opt/2240ai-v2/deploy/docker-compose.prod.yml --env-file /opt/2240ai-v2/backend/.env run --rm backup
-
-# 低权限用户运行
-User=deploy
-Group=deploy
-
-# 日志标识（journalctl -u postgres-backup.service）
 SyslogIdentifier=pg-backup
 
 # 安全加固
@@ -31,19 +19,11 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=/var/backups/postgraduate /opt/2240ai-v2/logs /opt/2240ai-v2/backups
+# docker compose 需要写 DOCKER_CONFIG（/root/.docker 被 ProtectHome 只读，
+# 故指向 /opt/2240ai-v2/.docker 并加入可写路径）
+ReadWritePaths=/var/backups/postgraduate /opt/2240ai-v2/logs /opt/2240ai-v2/.docker
 
-# 资源限制（防止 pg_dump 耗尽系统内存）
-CPUQuota=80%
-MemoryMax=1G
-
-# 超时：pg_dump 超时由脚本内部 BACKUP_COMMAND_TIMEOUT_SEC 控制，
-# 这里设置更大的系统级超时防止 systemd 被意外冻结
-TimeoutStopSec=30
-
-# 失败后不自动重启（由 systemd timer 控制下次触发）
+TimeoutStopSec=60
 Restart=no
-
-# 标准日志也写入 systemd journal
 StandardOutput=journal+console
 StandardError=journal+console
