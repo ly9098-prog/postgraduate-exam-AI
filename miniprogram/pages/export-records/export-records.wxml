@@ -11,8 +11,28 @@
     bindscrolltolower="onLoadMore"
   >
     <view class="records-content">
+      <!-- Safe default: unavailable until capability check succeeds -->
+      <view wx:if="{{!exportAvailable}}" class="unavailable-state">
+        <view class="unavailable-icon" aria-hidden="true">
+          <view class="unavailable-icon-line"></view>
+          <view class="unavailable-icon-dot"></view>
+        </view>
+        <text class="unavailable-title">当前导出功能不可用</text>
+        <text class="unavailable-text">
+          {{exportCapabilityLoading ? '正在检查导出服务状态，请稍候。' : (exportUnavailableText || '请稍后再试。')}}
+        </text>
+        <button
+          wx:if="{{exportCapabilityRetryable}}"
+          class="unavailable-action"
+          hover-class="button-pressed"
+          disabled="{{exportCapabilityLoading}}"
+          loading="{{exportCapabilityLoading}}"
+          bindtap="onRetryCapability"
+        >{{exportCapabilityLoading ? '正在检查' : '重新检查'}}</button>
+      </view>
+
       <!-- First-load skeleton -->
-      <view wx:if="{{loading && list.length === 0}}" class="skeleton-list">
+      <view wx:elif="{{loading && list.length === 0}}" class="skeleton-list">
         <view wx:for="{{skeletonItems}}" wx:key="*this" class="skeleton-card">
           <view class="skeleton-row skeleton-row-top">
             <view class="skeleton-circle"></view>

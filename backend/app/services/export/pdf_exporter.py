@@ -31,6 +31,8 @@ from app.services.export.exporter_base import Exporter, ExportResult
 from app.services.export.latex_render import (
     find_latex_segments,
     has_latex,
+    latex_expression_to_text,
+    latex_to_plain_text,
     render_latex_to_png,
 )
 from app.services.export.question_content import (
@@ -227,24 +229,24 @@ class PdfExporter(Exporter):
                 self._write_answer_space(pdf, space_mm)
 
             if config.get("answer_position") == "after_question":
-                ans = self._sanitize_text(q.get("answer", ""))
+                ans = latex_to_plain_text(self._sanitize_text(q.get("answer", "")))
                 if ans:
                     self._write_labeled_paragraph(pdf, "答案", ans)
 
             if config.get("analysis_position") == "after_question":
-                analysis_text = self._sanitize_text(q.get("analysis", ""))
+                analysis_text = latex_to_plain_text(self._sanitize_text(q.get("analysis", "")))
                 if analysis_text:
                     self._write_labeled_paragraph(pdf, "解析", analysis_text)
 
             if config.get("answer_position") == "at_end":
                 answer_section.append({
                     "num": question_num,
-                    "answer": self._sanitize_text(q.get("answer", "")),
+                    "answer": latex_to_plain_text(self._sanitize_text(q.get("answer", ""))),
                 })
             if config.get("analysis_position") == "at_end":
                 analysis_section.append({
                     "num": question_num,
-                    "analysis": self._sanitize_text(q.get("analysis", "")),
+                    "analysis": latex_to_plain_text(self._sanitize_text(q.get("analysis", ""))),
                 })
 
             # Traditional exam layout uses whitespace rather than decorative
@@ -360,8 +362,7 @@ class PdfExporter(Exporter):
             if visual_segments:
                 self._write_segments(pdf, visual_segments, ctx)
         elif stem:
-            pdf.multi_cell(BODY_W, 5.9, text=prefix, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
-            self._write_latex_content(pdf, stem, ctx)
+            self._write_latex_content(pdf, f"{prefix}{stem}", ctx)
             visual_segments = [
                 seg for seg in segments
                 if seg.get("type") in ("code_image", "math_image", "table_image", "image", "table_markdown")
@@ -393,7 +394,10 @@ class PdfExporter(Exporter):
             return 1
         indent = 7.0
         gap = 4.0
-        rendered = [f"{key}．{extract_option_text(text)}" for key, text in items]
+        rendered = [
+            f"{key}．{latex_to_plain_text(extract_option_text(text))}"
+            for key, text in items
+        ]
         for columns in (4, 2):
             cell_w = (BODY_W - indent - gap * (columns - 1)) / columns
             if all(pdf.get_string_width(text) <= cell_w - 1.5 for text in rendered):
@@ -412,7 +416,10 @@ class PdfExporter(Exporter):
 
         for row_start in range(0, len(items), columns):
             row = items[row_start:row_start + columns]
-            texts = [f"{key}．{self._sanitize_text(text)}" for key, text in row]
+            texts = [
+                f"{key}．{latex_to_plain_text(self._sanitize_text(text))}"
+                for key, text in row
+            ]
             heights = [self._estimate_wrapped_height(pdf, text, cell_w, line_h) for text in texts]
             row_h = max(heights or [line_h])
             self._check_page_break(pdf, row_h + 1.2)
@@ -530,7 +537,9 @@ class PdfExporter(Exporter):
         qt_label = self._get_question_type_label(q.get("question_type", ""))
         prefix = "1．" + (f"[{self._formal_group_title(qt_label)}]" if group_by != "question_type" and qt_label else "")
         content = self._get_question_text(q)
-        height = self._estimate_wrapped_height(pdf, prefix + content, BODY_W, 6.2)
+        height = self._estimate_wrapped_height(
+            pdf, prefix + latex_to_plain_text(content), BODY_W, 6.2,
+        )
 
         segments = (
             q.get("content", {}).get("segments")
@@ -554,7 +563,10 @@ class PdfExporter(Exporter):
                 row = items[row_start:row_start + columns]
                 height += max(
                     self._estimate_wrapped_height(
-                        pdf, f"{key}．{self._sanitize_text(text)}", cell_w, 5.8,
+                        pdf,
+                        f"{key}．{latex_to_plain_text(self._sanitize_text(text))}",
+                        cell_w,
+                        5.8,
                     )
                     for key, text in row
                 ) + 0.7
@@ -563,9 +575,19 @@ class PdfExporter(Exporter):
             config.get("space_style", "standard"), q.get("question_type"),
         )))
         if config.get("answer_position") == "after_question" and q.get("answer"):
-            height += self._estimate_wrapped_height(pdf, f"答案：{q.get('answer')}", BODY_W, 6) + 2
+            height += self._estimate_wrapped_height(
+                pdf,
+                f"答案：{latex_to_plain_text(self._sanitize_text(q.get('answer')))}",
+                BODY_W,
+                6,
+            ) + 2
         if config.get("analysis_position") == "after_question" and q.get("analysis"):
-            height += self._estimate_wrapped_height(pdf, f"解析：{q.get('analysis')}", BODY_W, 6) + 2
+            height += self._estimate_wrapped_height(
+                pdf,
+                f"解析：{latex_to_plain_text(self._sanitize_text(q.get('analysis')))}",
+                BODY_W,
+                6,
+            ) + 2
         return height + 6
 
     def _write_content(self, pdf, text: str, question: dict, ctx: PdfContext):
@@ -587,7 +609,10 @@ class PdfExporter(Exporter):
             if seg_type == "text":
                 text = self._sanitize_text(seg.get("text", ""))
                 if text:
-                    pdf.multi_cell(BODY_W, 5.9, text=text, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+                    if has_latex(text):
+                        self._write_latex_content(pdf, text, ctx)
+                    else:
+                        pdf.multi_cell(BODY_W, 5.9, text=text, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
 
             elif seg_type == "newline":
                 pdf.ln(2)
@@ -614,29 +639,67 @@ class PdfExporter(Exporter):
                             pdf.ln(2)
 
     def _write_latex_content(self, pdf, text: str, ctx: PdfContext):
-        """Split text into plain + LaTeX segments and render each."""
+        """Render mixed text without promoting inline formulas to block images.
+
+        Inline math is converted to compact Unicode/plain text and written in
+        the same paragraph.  Display math remains an image, but is placed at
+        its natural size with a conservative page-width cap.
+        """
         segments = find_latex_segments(text)
+        inline_parts: list[str] = []
+
+        def flush_inline() -> None:
+            content = "".join(inline_parts)
+            inline_parts.clear()
+            if content:
+                pdf.multi_cell(
+                    BODY_W, 5.9, text=content,
+                    new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+                )
+
         for seg in segments:
             if seg["type"] == "text":
-                pdf.multi_cell(BODY_W, 5.9, text=seg["content"], new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+                inline_parts.append(seg["content"])
+            elif not seg.get("display", False):
+                inline_parts.append(latex_expression_to_text(seg["content"]))
             else:
-                png = render_latex_to_png(seg["content"], seg.get("display", False))
+                flush_inline()
+                png = render_latex_to_png(seg["content"], True)
                 if png:
                     img_path = self._save_temp_image(ctx, png, "latex")
                     try:
-                        pdf.image(img_path, w=BODY_W * 0.8)
+                        self._place_latex_image(pdf, img_path)
                     except Exception:
-                        pdf.multi_cell(BODY_W, 5.9, text=seg["content"], new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
+                        fallback = latex_expression_to_text(seg["content"])
+                        pdf.multi_cell(BODY_W, 5.9, text=fallback, new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR")
                 else:
-                    # Fallback: raw LaTeX
-                    pdf.set_font(_FONT_NAME, "", 8)
-                    pdf.set_text_color(128, 128, 128)
+                    fallback = latex_expression_to_text(seg["content"])
                     pdf.multi_cell(
-                        BODY_W, 4,
-                        text=f"[公式] {seg['content']}",
+                        BODY_W, 5.9, text=fallback,
                         new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
                     )
-                    pdf.set_text_color(0, 0, 0)
+
+        flush_inline()
+
+    @staticmethod
+    def _place_latex_image(pdf, image_path: str) -> None:
+        """Place a display formula at natural size instead of page-wide scale."""
+        from PIL import Image as PILImage
+
+        with PILImage.open(image_path) as image:
+            px_w, px_h = image.size
+            dpi = image.info.get("dpi") or (150, 150)
+        dpi_x = float(dpi[0] or 150)
+        natural_w = max(5.0, px_w * 25.4 / dpi_x)
+        draw_w = min(BODY_W * 0.85, natural_w)
+        draw_h = draw_w * px_h / max(1, px_w)
+        remaining = PAGE_H - MARGIN_B - pdf.get_y()
+        if remaining < draw_h + 2 and pdf.get_y() > MARGIN_T + 5:
+            pdf.add_page()
+        x = MARGIN_L + max(0, (BODY_W - draw_w) / 2)
+        y = pdf.get_y()
+        pdf.image(image_path, x=x, y=y, w=draw_w, h=draw_h)
+        pdf.set_y(y + draw_h + 2)
 
     def _embed_image(self, pdf, url: str, ctx: PdfContext) -> bool:
         """Resolve, validate, and embed an image at a readable natural size."""

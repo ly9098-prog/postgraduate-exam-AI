@@ -5,6 +5,7 @@ const { toPlainInlineMathText } = require('../../utils/stem-render')
 const storage = require('../../utils/storage')
 const aiCache = require('../../utils/ai-diagnosis-cache')
 const { getSubjectName, getSubjectShortName } = require('../../utils/subject-meta')
+const exportApi = require('../../services/export')
 
 const AI_AUTO_SETTING_PREFIX = 'ai_wrong_book_auto_v1_'
 const BATCH_CAPSULE_IDLE_MS = 5000
@@ -78,6 +79,12 @@ Page({
     loading: false,
     enableMathImage: false,
 
+    // Export capability defaults to unavailable until the server explicitly
+    // confirms that PDF export is enabled for the current account.
+    exportAvailable: false,
+    exportCapabilityChecked: false,
+    exportUnavailableText: '当前导出功能不可用',
+
     // filters
     selectedSubject: '',
     selectedErrorType: '',
@@ -110,6 +117,7 @@ Page({
   _batchMasterUndoIds: [],
   _batchMasterUndoTimer: null,
   _aiAutoSwitchTimer: null,
+  _exportCapabilityRequestId: 0,
 
   onLoad(options) {
     this.setData({ enableMathImage: config.enableMathImage || false })
@@ -123,6 +131,7 @@ Page({
       this.setData({ selectedTopic: topic })
     }
     this._updateFilterCount()
+    this._checkExportCapability()
 
     // 自动分析偏好按当前用户保存在本机，默认关闭。
     this._restoreAiAutoSetting()
@@ -156,6 +165,7 @@ Page({
 
   onUnload() {
     this._alive = false
+    this._exportCapabilityRequestId++
     this._clearBatchCapsuleIdleTimer()
     if (this._selectionPulseTimer) {
       clearTimeout(this._selectionPulseTimer)
@@ -166,6 +176,47 @@ Page({
       this._aiAutoSwitchTimer = null
     }
     this._clearBatchMasterUndo()
+  },
+
+  async _checkExportCapability() {
+    const requestId = ++this._exportCapabilityRequestId
+    this.setData({
+      exportAvailable: false,
+      exportCapabilityChecked: false,
+      exportUnavailableText: '当前导出功能不可用',
+    })
+
+    if (config.WRONG_BOOK_EXPORT_ENABLED !== true) {
+      this.setData({
+        exportCapabilityChecked: true,
+        exportUnavailableText: '当前导出功能不可用',
+      })
+      return
+    }
+
+    try {
+      const capability = await exportApi.getCapabilities()
+      if (requestId !== this._exportCapabilityRequestId) return
+      const available = !!(
+        capability &&
+        capability.export_enabled === true &&
+        capability.pdf_enabled === true
+      )
+      this.setData({
+        exportAvailable: available,
+        exportCapabilityChecked: true,
+        exportUnavailableText: available
+          ? ''
+          : exportApi.getExportCapabilityErrorMessage(null, capability),
+      })
+    } catch (error) {
+      if (requestId !== this._exportCapabilityRequestId) return
+      this.setData({
+        exportAvailable: false,
+        exportCapabilityChecked: true,
+        exportUnavailableText: exportApi.getExportCapabilityErrorMessage(error),
+      })
+    }
   },
 
   // ════════════════════════════════════════════
@@ -814,6 +865,14 @@ Page({
   },
 
   onExportSelected() {
+    if (!this.data.exportAvailable) {
+      wx.showToast({
+        title: this.data.exportUnavailableText || '当前导出功能不可用',
+        icon: 'none',
+      })
+      return
+    }
+
     const ids = (this.data.selectedIds || []).map(id => {
       const n = Number(id)
       return Number.isFinite(n) ? n : null
@@ -830,8 +889,6 @@ Page({
     }
 
     // Pass selected IDs via global data (not URL params — too many for URL).
-    // Export is globally available, so navigation has no rollout or
-    // per-user access check.
     const app = getApp()
     const gd = app.getGlobalData()
     gd.exportSelectedIds = ids

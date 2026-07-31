@@ -89,6 +89,14 @@ page {
   color: #198C4B;
 }
 
+.top-action.export-unavailable {
+  min-width: 132rpx;
+  border-color: #E2E4DF;
+  background: #F0F1ED;
+  color: #8A918C;
+  box-shadow: none;
+}
+
 .top-action-pressed {
   transform: scale(0.97);
   opacity: 0.86;
