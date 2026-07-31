@@ -54,7 +54,7 @@ app
 
 do_build() {
   info "构建 app 镜像（保留 Docker layer cache）..."
-  compose build app
+  compose build app scheduler
   info "构建完成"
 }
 
@@ -114,16 +114,10 @@ do_scheduler_health_check() {
   info "检查 scheduler 服务健康状态..."
   local attempt
   for attempt in 1 2 3 4 5; do
-    if compose exec -T app python -c "
-import urllib.request, json
-resp = urllib.request.urlopen('http://localhost:8000/api/v1/exports/health', timeout=5)
-data = json.loads(resp.read())
-assert data.get('processor_running') is True, 'Processor not running: ' + str(data)
-assert data.get('status') == 'ok', 'Status not ok: ' + str(data)
-" >/dev/null 2>&1; then
-      info "scheduler 健康检查通过（processor_running=true）"
-      return 0
-    fi
+    if compose exec -T scheduler sh -c 'kill -0 1 2>/dev/null' >/dev/null 2>&1; then
+	      info "scheduler 健康检查通过（进程存活）"
+	      return 0
+	    fi
     sleep 3
   done
   warn "scheduler 健康检查未通过，请检查 scheduler 日志"
@@ -144,7 +138,7 @@ do_health_check() {
   info "检查 app 容器内健康接口..."
   local attempt
   for attempt in 1 2 3 4 5; do
-    if compose exec -T app python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)" >/dev/null 2>&1; then
+      if compose exec -T app python -c "import urllib.request; req = urllib.request.Request('http://127.0.0.1:8000/health/live', headers={'Host': 'xzshub.top'}); resp = urllib.request.urlopen(req, timeout=5); assert resp.status == 200" >/dev/null 2>&1; then
       break
     fi
 
@@ -160,7 +154,7 @@ do_health_check() {
 
   if command -v curl >/dev/null 2>&1; then
     info "检查 nginx 本机 HTTPS 健康接口..."
-    curl -skf -H "Host: $HEALTH_HOST" https://127.0.0.1/health >/dev/null || warn "nginx HTTPS 健康检查未通过"
+    curl -skf -H "Host: $HEALTH_HOST" https://127.0.0.1/health/live >/dev/null || warn "nginx HTTPS 健康检查未通过"
   else
     warn "未安装 curl，跳过 nginx HTTPS 健康检查"
   fi
