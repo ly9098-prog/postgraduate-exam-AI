@@ -60,6 +60,8 @@ module.exports = {
   ENV: runtimeEnv,
   resolveRuntimeConfig,
   enableMathImage: false,
+  // Wrong-book export is closed by default. Set to true only when the product
+  // is ready to expose the entry and the backend capability check is enabled.
+  WRONG_BOOK_EXPORT_ENABLED: false,
   EXPORT_WS_ENABLED: true,
-  POMODORO_SUBSCRIBE_TMPL_ID: 'Dc2tD7nbZn4FQi9nYOXZCtpmK3KUbcG_vrJ57UokMUQ',
 }
