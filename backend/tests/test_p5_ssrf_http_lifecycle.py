@@ -9,6 +9,11 @@ import httpx
 import pytest
 
 
+def _run(coro):
+    import asyncio
+    return asyncio.new_event_loop().run_until_complete(coro)
+
+
 class _MockStreamResponse:
     """A minimal async response mock that supports ``async with`` and ``aiter_bytes``."""
 
@@ -76,16 +81,16 @@ class TestSSRFValidation:
     def test_rejects_unsafe_schemes(self):
         for url in self._UNSAFE_URLS:
             with pytest.raises(ResultDownloadError):
-                _validate_result_url(url)
+                _run(_validate_result_url(url))
 
     def test_rejects_no_hostname(self):
         with pytest.raises(ResultDownloadError, match="no hostname"):
-            _validate_result_url("https:///path")
+            _run(_validate_result_url("https:///path"))
 
     def test_accepts_public_url(self):
         url = "https://example.com/results/ocr-output.jsonl"
         try:
-            result = _validate_result_url(url)
+            result = _run(_validate_result_url(url))
             assert result == url
         except ResultDownloadError as e:
             if "resolution failed" in str(e):
@@ -95,7 +100,7 @@ class TestSSRFValidation:
     def test_rejects_dns_failure(self):
         with patch("socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
             with pytest.raises(ResultDownloadError, match="resolution failed"):
-                _validate_result_url("https://definitely-nonexistent-test.example/result.json")
+                _run(_validate_result_url("https://definitely-nonexistent-test.example/result.json"))
 
 
 class TestDownloadValidation:
@@ -115,9 +120,10 @@ class TestDownloadValidation:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                new_callable=AsyncMock,
                 return_value="https://storage.example.com/big.jsonl",
             ):
-                with pytest.raises(ResultDownloadError, match="exceeded"):
+                with pytest.raises(ResultDownloadError, match="exceeds safe bound|exceeds limit|download exceeded"):
                     await client._download_and_parse_jsonl("https://storage.example.com/big.jsonl")
 
     @pytest.mark.asyncio
@@ -134,6 +140,7 @@ class TestDownloadValidation:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                new_callable=AsyncMock,
                 return_value="https://storage.example.com/many.jsonl",
             ):
                 with pytest.raises(ResultDownloadError, match="exceeds limit"):
@@ -167,6 +174,7 @@ class TestDownloadValidation:
             mock_get_client.return_value = _MockStreamClient(redirect_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                new_callable=AsyncMock,
                 side_effect=validate_side_effect,
             ):
                 with pytest.raises(ResultDownloadError, match="private|loopback|link-local"):
@@ -188,6 +196,7 @@ class TestDownloadValidation:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                new_callable=AsyncMock,
                 return_value="https://storage.example.com/result.jsonl",
             ):
                 text, conf, blocks, raw = await client._download_and_parse_jsonl(
@@ -210,6 +219,7 @@ class TestDownloadValidation:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                new_callable=AsyncMock,
                 return_value="https://storage.example.com/data.jsonl",
             ):
                 text, conf, blocks, raw = await client._download_and_parse_jsonl(
@@ -235,6 +245,7 @@ class TestDownloadValidation:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                new_callable=AsyncMock,
                 return_value="https://storage.example.com/data.jsonl",
             ):
                 text, conf, blocks, raw = await client._download_and_parse_jsonl(
@@ -257,6 +268,7 @@ class TestDownloadValidation:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                new_callable=AsyncMock,
                 return_value="https://storage.example.com/data.jsonl",
             ):
                 text, conf, blocks, raw = await client._download_and_parse_jsonl(
@@ -279,6 +291,7 @@ class TestDownloadValidation:
             mock_get_client.return_value = _MockStreamClient(mock_resp)
             with patch(
                 "app.features.ocr_vl.paddleocr_vl_client._validate_result_url",
+                new_callable=AsyncMock,
                 return_value="https://storage.example.com/data.jsonl",
             ):
                 text, conf, blocks, raw = await client._download_and_parse_jsonl(

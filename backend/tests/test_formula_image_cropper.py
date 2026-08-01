@@ -245,6 +245,7 @@ async def test_crop_and_upload_performance(tmp_path, monkeypatch):
 async def test_crop_and_upload_file_exists_on_disk(tmp_path, monkeypatch):
     """上传后文件应实际存在于磁盘。"""
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("app.services.storage_backend._BACKEND_ROOT", str(tmp_path))
     storage = LocalFileStorage()
 
     doc, _ = _make_math_page()

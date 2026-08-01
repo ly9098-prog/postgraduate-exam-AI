@@ -29,6 +29,14 @@ from app.features.pipeline_orchestrator import (
 from app.models.import_pipeline import ImportPipeline as ImportPipelineRow
 from app.models.import_pipeline import ImportPipelineChunk
 
+
+@pytest.fixture(autouse=True)
+def _bypass_resource_guard():
+    """Bypass the temp-disk resource guard on dev machines (cwd /tmp is large)."""
+    with patch("app.core.resource_guard.ResourceGuard.can_accept_work",
+               return_value=(True, "")):
+        yield
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -336,10 +344,12 @@ class TestResumeEndpointValidation:
                         total_pages=40,
                         chunk_size=40,
                         status="completed",
+                        created_by="user_a",
                     )
                 )
                 await db.commit()
                 user = MagicMock()
+                user.id = "user_a"
                 with pytest.raises(Exception) as exc_info:
                     await resume_pipeline(
                         pipeline_id="pl_done",
@@ -366,10 +376,12 @@ class TestResumeEndpointValidation:
                         total_pages=40,
                         chunk_size=40,
                         status="paused",
+                        created_by="user_a",
                     )
                 )
                 await db.commit()
                 user = MagicMock()
+                user.id = "user_a"
                 with pytest.raises(Exception) as exc_info:
                     await resume_pipeline(
                         pipeline_id="pl_paused",
@@ -497,17 +509,13 @@ class TestResumeSecurityChecks:
 
         _run(_go())
 
-    def test_resume_legacy_pipeline_without_created_by_allowed(self, tmp_path):
-        """created_by IS NULL（历史数据）→ 任意 import:write 用户均可 resume。"""
+    def test_resume_legacy_pipeline_without_created_by_rejected(self, tmp_path):
+        """created_by IS NULL（历史数据）→ 用户 resume 被 403 拒绝（需走管理员恢复）。"""
         from app.api.v1.imports import resume_pipeline
-        from app.schemas.import_review import PipelineResumeResponse
 
         async def _go():
             sm, _ = await _make_session(tmp_path)
             async with sm() as db:
-                # Legacy pipeline: both fields NULL. No pending chunks → endpoint
-                # short-circuits before background dispatch (avoids needing to
-                # patch asyncio.create_task / fitz).
                 await self._seed_pipeline(
                     db,
                     pipeline_id="pl_legacy_owner",
@@ -515,22 +523,16 @@ class TestResumeSecurityChecks:
                     source_sha256=None,
                 )
 
-                fake_doc = MagicMock()
-                fake_doc.__enter__ = MagicMock(return_value=fake_doc)
-                fake_doc.__exit__ = MagicMock(return_value=False)
-                fake_doc.__len__ = MagicMock(return_value=10)
-                with patch("fitz.open", return_value=fake_doc):
-                    user_x = self._make_user("user_x")
-                    response = await resume_pipeline(
+                user_x = self._make_user("user_x")
+                with pytest.raises(Exception) as exc_info:
+                    await resume_pipeline(
                         pipeline_id="pl_legacy_owner",
                         file=self._make_upload_file(),
                         db=db,
                         current_user=user_x,
                     )
-                    assert isinstance(response, PipelineResumeResponse)
-                    assert response.pipeline_id == "pl_legacy_owner"
-                    # No chunks → resumed_chunks empty, status echoes paused.
-                    assert response.resumed_chunks == []
+                assert exc_info.value.status_code == 403
+                assert "ownership" in exc_info.value.detail
 
         _run(_go())
 

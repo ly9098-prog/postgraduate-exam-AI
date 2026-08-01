@@ -129,8 +129,10 @@ class TestRedisPublishSubscribe:
         """publish_via_redis silently fails when Redis is down."""
         from app.services.export.push_service import publish_via_redis
 
+        from app.core.cache import cache
+        saved_enabled = cache._enabled
+        saved_client = cache._client
         try:
-            from app.core.cache import cache
             cache._enabled = True
             cache._client = None
             await publish_via_redis(
@@ -139,3 +141,6 @@ class TestRedisPublishSubscribe:
             )
         except Exception:
             pytest.fail("publish_via_redis should not raise when Redis is unavailable")
+        finally:
+            cache._enabled = saved_enabled
+            cache._client = saved_client

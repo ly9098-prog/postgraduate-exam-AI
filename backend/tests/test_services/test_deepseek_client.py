@@ -7,72 +7,72 @@ Covers:
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.ai.client import DeepSeekClient
+from app.services.safe_remote_fetch import RemoteResponse
 
 
-def _make_mock_response(status=200, model="deepseek-v4-flash"):
-    """httpx.Response.json() 是同步方法，使用 MagicMock 而非 AsyncMock。"""
-    resp = MagicMock()
-    resp.status_code = status
-    resp.json.return_value = {
+def _make_remote(status=200, model="deepseek-v4-flash"):
+    """Build a RemoteResponse with a chat-completions body."""
+    data = json.dumps({
         "choices": [{"message": {"content": "ok"}}],
         "usage": {"total_tokens": 10},
         "model": model,
-    }
-    return resp
+    }).encode("utf-8")
+    return RemoteResponse(
+        status=status, data=data,
+        content_type="application/json", final_url="https://api.deepseek.com",
+    )
 
 
 def _make_client(api_key="sk-test-key", base_url="https://api.deepseek.com"):
-    """Create a client instance with patched settings."""
-    with patch("app.ai.client.settings") as ms:
-        ms.DEEPSEEK_API_KEY = api_key
-        ms.DEEPSEEK_BASE_URL = base_url
-        ms.DEEPSEEK_MODEL = "deepseek-v4-flash"
-        ms.AI_TIMEOUT = 60
-        return DeepSeekClient()
+    """Create a client instance with the key configured for runtime use."""
+    client = DeepSeekClient()
+    client._api_key = api_key
+    client._base_url = base_url
+    client.timeout = 60
+    return client
 
 
 @pytest.mark.asyncio
 async def test_chat_model_none_falls_back():
-    """model=None 时应使用 settings.DEEPSEEK_MODEL 或硬编码默认值。"""
+    """model=None 时应使用默认模型名（字符串）。"""
     client = _make_client()
-    client._client = AsyncMock()
-    client._client.post.return_value = _make_mock_response()
 
-    result = await client.chat(
-        messages=[{"role": "user", "content": "hello"}],
-        model=None,
-    )
+    with patch("app.ai.client.request_remote_bytes", return_value=_make_remote()) as mock_req:
+        result = await client.chat(
+            messages=[{"role": "user", "content": "hello"}],
+            model=None,
+        )
 
     assert result is not None
-    payload = client._client.post.call_args.kwargs["json"]
+    request_body = mock_req.call_args.args[0]
+    assert "/v1/chat/completions" in request_body
+    payload = json.loads(mock_req.call_args.kwargs["body"])
     assert isinstance(payload["model"], str), f"model 应是字符串, 实际: {payload['model']}"
     assert payload["model"] == "deepseek-v4-flash"
 
 
 @pytest.mark.asyncio
 async def test_chat_model_none_no_settings_field():
-    """settings 没有 DEEPSEEK_MODEL 字段时也应兜底到硬编码默认值。"""
-    with patch("app.ai.client.settings", spec=object()) as ms:
-        ms.DEEPSEEK_API_KEY = "sk-test-key"
-        ms.DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-        ms.AI_TIMEOUT = 60
-        client = DeepSeekClient()
+    """没有显式模型配置时也应兜底到默认模型名。"""
+    client = DeepSeekClient()
+    client._api_key = "sk-test-key"
+    client._base_url = "https://api.deepseek.com"
+    client.timeout = 60
 
-    client._client = AsyncMock()
-    client._client.post.return_value = _make_mock_response()
-
-    result = await client.chat(
-        messages=[{"role": "user", "content": "hello"}],
-        model=None,
-    )
+    with patch("app.ai.client.request_remote_bytes", return_value=_make_remote()) as mock_req:
+        result = await client.chat(
+            messages=[{"role": "user", "content": "hello"}],
+            model=None,
+        )
 
     assert result is not None
-    payload = client._client.post.call_args.kwargs["json"]
+    payload = json.loads(mock_req.call_args.kwargs["body"])
     assert isinstance(payload["model"], str)
     assert payload["model"] == "deepseek-v4-flash"
 
@@ -81,15 +81,15 @@ async def test_chat_model_none_no_settings_field():
 async def test_chat_passes_model_str():
     """显式传模型名时不应被兜底覆盖。"""
     client = _make_client()
-    client._client = AsyncMock()
-    client._client.post.return_value = _make_mock_response(model="custom-model")
 
-    await client.chat(
-        messages=[{"role": "user", "content": "hello"}],
-        model="custom-model",
-    )
+    with patch("app.ai.client.request_remote_bytes",
+               return_value=_make_remote(model="custom-model")) as mock_req:
+        await client.chat(
+            messages=[{"role": "user", "content": "hello"}],
+            model="custom-model",
+        )
 
-    payload = client._client.post.call_args.kwargs["json"]
+    payload = json.loads(mock_req.call_args.kwargs["body"])
     assert payload["model"] == "custom-model"
 
 
@@ -97,10 +97,9 @@ async def test_chat_passes_model_str():
 async def test_chat_model_none_sentry_tag_uses_fallback():
     """Sentry tag 应使用兜底后的模型名。"""
     client = _make_client()
-    client._client = AsyncMock()
-    client._client.post.return_value = _make_mock_response()
 
-    with patch("app.ai.client.set_tag") as mock_set_tag:
+    with patch("app.ai.client.request_remote_bytes", return_value=_make_remote()), \
+         patch("app.ai.client.set_tag") as mock_set_tag:
         await client.chat(messages=[{"role": "user", "content": "hi"}], model=None)
 
     ai_model_calls = [

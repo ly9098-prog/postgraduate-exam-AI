@@ -15,6 +15,7 @@ import math
 import statistics
 import time
 from collections import Counter
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.models.question import Question
@@ -35,6 +36,7 @@ def _make_mock_db(dialect_name="sqlite"):
     db.rollback = AsyncMock()
     db.bind = MagicMock()
     db.bind.dialect.name = dialect_name
+    db.get_bind = MagicMock(return_value=db.bind)
     return db
 
 
@@ -106,6 +108,50 @@ def _run(coro):
 def _reset_cache():
     from app.services.vector_retrieval_service import _reset_vector_enabled_cache
     _reset_vector_enabled_cache()
+
+
+@contextmanager
+def _vector_enabled_config(*, api_key="test-key", enabled=True, mode="all", dim=1024):
+    """模拟 DB 已启用向量配置（DB-first 配置访问器走加密 key 路径）。"""
+    from app.services.vector_config_service import VectorSearchConfig
+    from app.services.vector_retrieval_service import _vs
+
+    _vs._cached = {
+        "vec": VectorSearchConfig(
+            enabled=enabled, mode=mode, allowlist="",
+            cache_ttl_sec=300, top_k=100, similarity_threshold=0.15,
+        ),
+        "_embedding_base_url": "http://test",
+        "_embedding_model": "test-model",
+        "_embedding_dim": dim,
+        "_embedding_timeout": 30,
+        "_embedding_batch_size": 16,
+        "_embedding_provider": "openai_compatible",
+        "_embedding_api_key_encrypted": "",
+    }
+    with patch.object(_vs, "_resolve_embedding_api_key", return_value=api_key):
+        yield
+
+
+def _make_pgvector_db(dim="vector(1024)"):
+    """构造 pgvector 基础设施就绪的 mock db（扩展/表/维度检查均通过）。"""
+    db = _make_mock_db("postgresql")
+
+    async def _execute(sql, *args, **kwargs):
+        s = str(sql)
+        result = MagicMock()
+        if "pg_extension" in s:
+            result.scalar.return_value = 1
+        elif "information_schema.tables" in s:
+            result.scalar.return_value = 1
+        elif "format_type" in s:
+            result.scalar.return_value = dim
+        else:
+            result.scalar.return_value = None
+        return result
+
+    db.execute = AsyncMock(side_effect=_execute)
+    return db
 
 
 # ──────────────────────────────────────────────────────────────
@@ -239,150 +285,56 @@ class TestVectorModeOff:
 # 3. VECTOR_MODE shadow 模式测试
 # ──────────────────────────────────────────────────────────────
 
-class TestVectorModeShadow:
-    """shadow 模式：向量检索执行但不改变用户结果。"""
+class TestVectorAlwaysAll:
+    """shadow/allowlist 已移除，向量始终对所有用户/科目开放（mode=all）。"""
 
     def setup_method(self):
         _reset_cache()
+
+    def test_decide_vector_access_ignores_shadow(self):
+        """即使配置 VECTOR_MODE=shadow，访问决策仍为 all。"""
+        from app.services.vector_retrieval_service import decide_vector_access
+
+        with patch("app.services.vector_retrieval_service.settings") as s:
+            s.VECTOR_MODE = "shadow"
+            s.VECTOR_ENABLED = False
+
+            d = decide_vector_access(user_id=1, subject="exam408-ds", infra_available=True)
+            assert d.enabled is True
+            assert d.execute is True
+            assert d.use_result is True
+            assert d.mode == "all"
+            assert d.reason == "mode_all"
+
+    def test_decide_vector_access_ignores_allowlist(self):
+        """allowlist 配置不再影响访问决策。"""
+        from app.services.vector_retrieval_service import decide_vector_access
+
+        with patch("app.services.vector_retrieval_service.settings") as s:
+            s.VECTOR_MODE = "allowlist"
+            s.VECTOR_ALLOWLIST = '["exam408-ds"]'
+
+            # 不在 allowlist 的 subject 仍被允许
+            d = decide_vector_access(user_id=3, subject="exam408-os", infra_available=True)
+            assert d.enabled is True
+            assert d.mode == "all"
+
+    def test_vector_allowed_for_everyone(self):
+        """is_vector_allowed_for 对任何用户/科目返回 True。"""
+        from app.services.vector_retrieval_service import is_vector_allowed_for
+
+        assert is_vector_allowed_for(user_id=1, subject="exam408-ds") is True
+        assert is_vector_allowed_for(user_id=999, subject="anything") is True
+        assert is_vector_allowed_for(user_id=3) is True
+        assert is_vector_allowed_for(subject="exam408-os") is True
 
     def test_shadow_mode_is_vector_enabled(self):
-        """shadow 模式 is_vector_enabled 返回 True（基础设施可用）。"""
+        """is_vector_enabled 不依赖 mode：基础设施就绪即返回 True。"""
         from app.services.vector_retrieval_service import is_vector_enabled
-        with patch("app.services.vector_retrieval_service.settings") as s:
-            s.VECTOR_MODE = "shadow"
-            s.VECTOR_ENABLED = True  # 基础设施必须启用
-            s.EMBEDDING_API_KEY = "test-key"
-            s.EMBEDDING_BASE_URL = "http://test"
-            s.EMBEDDING_MODEL = "test-model"
-            db = _make_mock_db("postgresql")
-            # Mock pgvector extension check
-            mock_ext_result = MagicMock()
-            mock_ext_result.scalar.return_value = 1
-            mock_table_result = MagicMock()
-            mock_table_result.scalar.return_value = 1
-            db.execute = AsyncMock(side_effect=[mock_ext_result, mock_table_result])
+
+        db = _make_pgvector_db()
+        with _vector_enabled_config(mode="shadow"):
             assert _run(is_vector_enabled(db)) is True
-
-    def test_shadow_mode_does_not_change_similar_results(self):
-        """shadow 模式下 similar 模式返回 fallback 结果而非向量结果。"""
-        from app.services import practice_service
-
-        [_make_question(id=i, subject="exam408-ds") for i in range(1, 11)]
-        fallback_q = [_make_question(id=i + 100, subject="exam408-ds") for i in range(5)]
-
-        db = _make_mock_db("sqlite")
-        # First execute: vector search returns results
-        # Second execute: fallback random fill
-        vector_result = _make_execute_result(scalars_all=fallback_q)
-        db.execute = AsyncMock(return_value=vector_result)
-
-        with patch("app.services.vector_retrieval_service.settings") as s, \
-             patch("app.services.vector_retrieval_service.is_shadow_mode", return_value=True):
-            s.VECTOR_MODE = "shadow"
-            s.VECTOR_ENABLED = False
-
-            qs, meta = _run(practice_service.get_similar_practice_questions(
-                db=db, user_id=1, subject="exam408-ds",
-                source_question_id=1, count=5,
-            ))
-            # shadow 模式下不使用向量结果，全部走 fallback
-            for qid, m in meta.items():
-                assert m["strategy"] == "fallback", f"shadow 模式不应使用向量结果: {m}"
-
-    def test_shadow_mode_does_not_change_smart_results(self):
-        """shadow 模式下 smart 模式返回非向量结果。"""
-        from app.services import practice_service
-
-        fallback_questions = [_make_question(id=i + 200, subject="exam408-ds") for i in range(5)]
-
-        db = _make_mock_db("sqlite")
-        mock_result = _make_execute_result(scalars_all=fallback_questions)
-        db.execute = AsyncMock(return_value=mock_result)
-
-        weak_kps = [{"name": "数据结构", "total": 5, "correct": 1, "accuracy": 0.2}]
-
-        with patch("app.services.vector_retrieval_service.is_shadow_mode", return_value=True), \
-             patch("app.services.mastery_service.get_user_weak_knowledge_points",
-                   new_callable=AsyncMock, return_value=weak_kps), \
-             patch("app.services.vector_retrieval_service.vector_recall_by_text",
-                   new_callable=AsyncMock, return_value=[{"question_id": 999, "similarity": 0.9}]), \
-             patch("app.services.recommendation_experiment_service.resolve_strategy_for_user",
-                   new_callable=AsyncMock, return_value={"source": "default"}), \
-             patch("app.services.recommendation_log_service.create_recommendation_logs",
-                   new_callable=AsyncMock):
-            qs, meta = _run(practice_service.get_smart_practice_questions(
-                db=db, user_id=1, subject="exam408-ds", count=5,
-            ))
-            # shadow 模式下向量结果(999)不应出现在结果中
-            returned_ids = {q.id for q in qs}
-            assert 999 not in returned_ids, "shadow 模式不应返回向量结果"
-
-
-# ──────────────────────────────────────────────────────────────
-# 4. VECTOR_MODE allowlist 测试
-# ──────────────────────────────────────────────────────────────
-
-class TestVectorModeAllowlist:
-    """allowlist 模式：仅对指定 subject/user 启用向量。"""
-
-    def setup_method(self):
-        _reset_cache()
-
-    def test_allowlist_subject_allowed(self):
-        """allowlist 中的 subject 允许向量。"""
-        from app.services.vector_retrieval_service import is_vector_allowed_for
-        with patch("app.services.vector_retrieval_service.settings") as s:
-            s.VECTOR_MODE = "allowlist"
-            s.VECTOR_ENABLED = False
-            s.VECTOR_ALLOWLIST = '["exam408-ds", "exam408-os"]'
-            assert is_vector_allowed_for(subject="exam408-ds") is True
-
-    def test_allowlist_subject_denied(self):
-        """不在 allowlist 中的 subject 拒绝向量。"""
-        from app.services.vector_retrieval_service import is_vector_allowed_for
-        with patch("app.services.vector_retrieval_service.settings") as s:
-            s.VECTOR_MODE = "allowlist"
-            s.VECTOR_ENABLED = False
-            s.VECTOR_ALLOWLIST = '["exam408-ds"]'
-            assert is_vector_allowed_for(subject="exam408-os") is False
-
-    def test_allowlist_user_allowed(self):
-        """allowlist 中的 user_id 允许向量。"""
-        from app.services.vector_retrieval_service import is_vector_allowed_for
-        with patch("app.services.vector_retrieval_service.settings") as s:
-            s.VECTOR_MODE = "allowlist"
-            s.VECTOR_ENABLED = False
-            s.VECTOR_ALLOWLIST = '[1, 2, 3]'
-            assert is_vector_allowed_for(user_id=1) is True
-
-    def test_allowlist_user_denied(self):
-        """不在 allowlist 中的 user_id 拒绝向量。"""
-        from app.services.vector_retrieval_service import is_vector_allowed_for
-        with patch("app.services.vector_retrieval_service.settings") as s:
-            s.VECTOR_MODE = "allowlist"
-            s.VECTOR_ENABLED = False
-            s.VECTOR_ALLOWLIST = '[1, 2, 3]'
-            assert is_vector_allowed_for(user_id=999) is False
-
-    def test_empty_allowlist_denies_all(self):
-        """空 allowlist 拒绝所有（安全默认）。"""
-        from app.services.vector_retrieval_service import is_vector_allowed_for
-        with patch("app.services.vector_retrieval_service.settings") as s:
-            s.VECTOR_MODE = "allowlist"
-            s.VECTOR_ENABLED = False
-            s.VECTOR_ALLOWLIST = ""
-            assert is_vector_allowed_for(subject="anything") is False
-            assert is_vector_allowed_for(user_id=999) is False
-
-    def test_non_allowlist_mode_unrestricted(self):
-        """非 allowlist 模式不受 allowlist 限制。"""
-        from app.services.vector_retrieval_service import is_vector_allowed_for
-        with patch("app.services.vector_retrieval_service.settings") as s:
-            s.VECTOR_MODE = "all"
-            s.VECTOR_ENABLED = False
-            s.VECTOR_ALLOWLIST = '["exam408-ds"]'
-            # all 模式不受 allowlist 限制
-            assert is_vector_allowed_for(subject="anything") is True
 
 
 # ──────────────────────────────────────────────────────────────
@@ -398,27 +350,16 @@ class TestVectorModeAll:
     def test_all_mode_is_vector_enabled(self):
         """all 模式 + 基础设施可用 → is_vector_enabled=True。"""
         from app.services.vector_retrieval_service import is_vector_enabled
-        with patch("app.services.vector_retrieval_service.settings") as s:
-            s.VECTOR_MODE = "all"
-            s.VECTOR_ENABLED = True  # 基础设施必须启用
-            s.EMBEDDING_API_KEY = "test-key"
-            s.EMBEDDING_BASE_URL = "http://test"
-            s.EMBEDDING_MODEL = "test-model"
-            db = _make_mock_db("postgresql")
-            mock_result = MagicMock()
-            mock_result.scalar.return_value = 1
-            db.execute = AsyncMock(return_value=mock_result)
+
+        db = _make_pgvector_db()
+        with _vector_enabled_config():
             assert _run(is_vector_enabled(db)) is True
 
     def test_all_mode_unrestricted(self):
         """all 模式不受 allowlist 限制。"""
         from app.services.vector_retrieval_service import is_vector_allowed_for
-        with patch("app.services.vector_retrieval_service.settings") as s:
-            s.VECTOR_MODE = "all"
-            s.VECTOR_ENABLED = False
-            s.VECTOR_ALLOWLIST = ""
-            assert is_vector_allowed_for(subject="any_subject") is True
-            assert is_vector_allowed_for(user_id=999) is True
+        assert is_vector_allowed_for(subject="any_subject") is True
+        assert is_vector_allowed_for(user_id=999) is True
 
 
 # ──────────────────────────────────────────────────────────────
@@ -509,25 +450,18 @@ class TestFaultInjection:
         _reset_cache()
 
     def test_fault_1_embedding_api_timeout(self):
-        """故障 1: embedding API 超时 → fallback 正常。"""
-        import httpx
-
+        """故障 1: embedding API 超时 → get_embedding 返回 None。"""
         from app.services.embedding_service import get_embedding
+        from app.services.vector_config_service import EmbeddingConfig
 
-        with patch("app.services.embedding_service.settings") as s, \
-             patch("app.services.embedding_service.httpx.AsyncClient") as mock_client_cls:
-            s.EMBEDDING_API_KEY = "test"
-            s.EMBEDDING_BASE_URL = "http://test"
-            s.EMBEDDING_MODEL = "test-model"
-            s.EMBEDDING_TIMEOUT = 1
+        cfg = EmbeddingConfig(
+            api_key="test", base_url="http://test", model="test-model",
+            dim=32, timeout=1, batch_size=1, provider="openai_compatible",
+        )
 
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_client
-
-            result = _run(get_embedding("test text"))
+        with patch("app.services.embedding_service.request_remote_bytes",
+                   side_effect=TimeoutError("timeout")):
+            result = _run(get_embedding("test text", config=cfg))
             assert result is None, "超时应返回 None"
 
     def test_fault_2_pgvector_query_error(self):
@@ -571,24 +505,24 @@ class TestFaultInjection:
     def test_fault_3_embedding_dimension_mismatch(self):
         """故障 3: embedding 维度错误 → get_embedding 返回 None。"""
         from app.services.embedding_service import get_embedding
+        from app.services.safe_remote_fetch import RemoteResponse
+        from app.services.vector_config_service import EmbeddingConfig
 
-        with patch("app.services.embedding_service.settings") as s, \
-             patch("app.services.embedding_service.httpx.AsyncClient") as mock_client_cls:
-            s.EMBEDDING_API_KEY = "test"
-            s.EMBEDDING_BASE_URL = "http://test"
-            s.EMBEDDING_MODEL = "test-model"
-            s.EMBEDDING_DIM = 1024  # 期望 1024 维
+        cfg = EmbeddingConfig(
+            api_key="test", base_url="http://test", model="test-model",
+            dim=1024, timeout=1, batch_size=1, provider="openai_compatible",
+        )
+        payload = b'{"data": [{"embedding": [0.1] * 512}]}'  # 实际 512 维
 
-            mock_client = AsyncMock()
-            mock_resp = MagicMock()
-            mock_resp.json.return_value = {"data": [{"embedding": [0.1] * 512}]}  # 实际 512 维
-            mock_resp.raise_for_status = MagicMock()
-            mock_client.post = AsyncMock(return_value=mock_resp)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client_cls.return_value = mock_client
+        def _fake_request(*args, **kwargs):
+            return RemoteResponse(
+                status=200, data=payload,
+                content_type="application/json", final_url="http://test",
+            )
 
-            result = _run(get_embedding("test"))
+        with patch("app.services.embedding_service.request_remote_bytes",
+                   side_effect=_fake_request):
+            result = _run(get_embedding("test", config=cfg))
             assert result is None, "维度不匹配应返回 None"
 
     def test_fault_4_embedding_missing(self):
@@ -618,6 +552,8 @@ class TestFaultInjection:
         mock_ext.scalar.return_value = 1
         mock_table = MagicMock()
         mock_table.scalar.return_value = 1
+        mock_dim = MagicMock()
+        mock_dim.scalar.return_value = "vector(3)"
         mock_source = _make_execute_result(scalars_all=[source_q])
         # embedding 查询返回空
         mock_emb_row = MagicMock()
@@ -630,19 +566,11 @@ class TestFaultInjection:
         mock_query.fetchall.return_value = []
 
         db.execute = AsyncMock(side_effect=[
-            mock_ext, mock_table, mock_source, mock_emb_row,
+            mock_ext, mock_table, mock_dim, mock_source, mock_emb_row,
             mock_answer_count, mock_query,
         ])
 
-        with patch("app.services.vector_retrieval_service.settings") as s:
-            s.VECTOR_MODE = "all"
-            s.VECTOR_ENABLED = True  # 基础设施必须启用
-            s.EMBEDDING_API_KEY = "test"
-            s.EMBEDDING_BASE_URL = "http://test"
-            s.EMBEDDING_MODEL = "test-model"
-            s.VECTOR_TOP_K = 100
-            s.VECTOR_SIMILARITY_THRESHOLD = 0.15
-            s.VECTOR_CACHE_TTL_SEC = 300
+        with _vector_enabled_config(dim=3):
             result = _run(search_similar_questions(db, 1, 1, 5))
             assert result["enabled"] is True
             assert result["recommendations"] == []
@@ -926,13 +854,13 @@ class TestSeedQuestionSampling:
     """验证从 active+approved 题目中自动抽样 ≥50 个 seed question。"""
 
     def test_seed_sampling_logic(self):
-        """验证 seed 抽样逻辑：is_active=True + review_status=approved。"""
+        """验证 seed 抽样逻辑：is_active + review_status='approved'。"""
         import inspect
 
         from app.services.vector_retrieval_service import backfill_question_embeddings
         source = inspect.getsource(backfill_question_embeddings)
-        assert "is_active == True" in source
-        assert "review_status == \"approved\"" in source
+        assert "Question.is_active" in source
+        assert 'Question.review_status == "approved"' in source
 
     def test_seed_embedding_text_construction(self):
         """验证 seed question 的 embedding 文本构造正确。"""

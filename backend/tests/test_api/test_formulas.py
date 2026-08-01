@@ -29,7 +29,7 @@ client = TestClient(app)
 
 
 def _mock_user():
-    return User(id=1, openid="test", session_key="test", nickname="test")
+    return User(id=1, openid="test", nickname="test")
 
 
 # ── Helpers ──

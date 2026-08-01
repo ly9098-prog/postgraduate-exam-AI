@@ -16,16 +16,13 @@ def test_simple_health():
 
 
 def test_api_health_endpoint():
-    """API 健康检查返回 200 并包含服务状态。"""
+    """API 健康检查返回 200 并包含最小状态信息。"""
     resp = client.get("/api/v1/health")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] in ("ok", "degraded")
-    assert "services" in data
-    assert "database" in data["services"]
-    assert "redis" in data["services"]
     assert "version" in data
-    assert "uptime" in data
+    assert "timestamp" in data
 
 
 def test_version_endpoint():
@@ -34,18 +31,14 @@ def test_version_endpoint():
     assert resp.status_code == 200
     data = resp.json()
     assert "version" in data
-    assert "commit" in data
-    assert "environment" in data
 
 
 def test_version_contains_build_info():
-    """版本端点包含构建信息字段。"""
+    """版本端点包含版本号。"""
     resp = client.get("/api/v1/version")
     assert resp.status_code == 200
     data = resp.json()
     assert data["version"] == "1.0.0"
-    assert data["environment"] == "development"
-    assert "build_at" in data
 
 
 def test_live_health_endpoint():

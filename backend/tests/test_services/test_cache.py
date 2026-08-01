@@ -92,7 +92,9 @@ class TestCacheClient:
                 assert result is None
                 await client.set("key", "val")
                 stats = client.get_stats()
-                assert stats["enabled"] is False
+                # Redis is configured (enabled=True) but unreachable; reads/writes
+                # silently degrade to the in-process fallback.
+                assert stats["enabled"] is True
 
     @pytest.mark.asyncio
     async def test_cache_delete_pattern(self):

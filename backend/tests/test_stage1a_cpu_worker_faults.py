@@ -25,6 +25,8 @@ os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{_TEST_DB_PATH}")
 from datetime import timedelta
 
 import pytest
+import pytest_asyncio
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session, engine
@@ -70,6 +72,20 @@ async def _make_job(db: AsyncSession, **overrides) -> OCRJob:
     )
     params.update(overrides)
     return await create_job(db, **params)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _clean_ocr_jobs():
+    """Clear the ocr_jobs table before each test.
+
+    DATABASE_URL uses setdefault, so the engine is shared with whichever module
+    set it first; other modules may commit ocr_jobs rows that leak in and break
+    claim/heartbeat state assertions. Delete them per-test so ordering can't matter.
+    """
+    await _ensure_table()
+    async with engine.begin() as conn:
+        await conn.execute(text("DELETE FROM ocr_jobs"))
+    yield
 
 
 def _cleanup():
@@ -317,7 +333,7 @@ class TestFaultServerRestart:
     async def test_heartbeat_fails_after_restart(self):
         async with async_session() as db:
             await _make_job(db, request_id="fault-restart-hb")
-            job, _ = await claim_job(db, worker_id="w1", lease_seconds=0)
+            job, _ = await claim_job(db, worker_id="w1")
             # Invalid token after "restart"
             with pytest.raises((ValueError, RuntimeError)):
                 await heartbeat(db, job.id, "invalid-token")

@@ -88,9 +88,10 @@ class TestGatewayWithRemoteClient:
 
         gateway = OCRGateway(mode="gateway", profile=DeploymentProfile.CLOUD_API, worker_client=client)
         await gateway.recognize_pages([(0, _FAKE_PNG)])
-        await gateway.shutdown()
 
         m = gateway.worker_metrics
+        await gateway.shutdown()
+
         assert m["accepted"] >= 1
         assert m["finished"] >= 1
         assert m["backend"] == "paddlex_http"

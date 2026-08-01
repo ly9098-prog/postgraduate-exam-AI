@@ -434,7 +434,7 @@ class TestSmartModeIntegration:
         mock_vrs.vector_recall_by_text = AsyncMock(side_effect=Exception("vector disabled"))
 
         # Mock db.execute: return questions for the kp-filter fallback query
-        db.execute = AsyncMock(return_value=_make_execute_result(scalars=[q1]))
+        db.execute = AsyncMock(return_value=_make_execute_result(scalars=[q1], scalar=0))
 
         mock_ms = MagicMock()
         mock_ms.get_user_weak_knowledge_points = AsyncMock(return_value=[
@@ -444,8 +444,10 @@ class TestSmartModeIntegration:
         mock_rls.create_recommendation_logs = AsyncMock(return_value=[1])
 
         # Patch at the app.services package attribute level so `from app.services import X` picks up the mock
-        with patch.object(app.services, "mastery_service", mock_ms), \
-             patch.object(app.services, "recommendation_log_service", mock_rls):
+        with patch("app.services.mastery_service", mock_ms, create=True), \
+             patch("app.services.recommendation_log_service", mock_rls, create=True), \
+             patch("app.services.recommendation_experiment_service.resolve_strategy_for_user",
+                   new_callable=AsyncMock, return_value={"source": "default"}):
             result = _run(get_smart_practice_questions(
                 db, user_id=1, subject="math2", count=5, request_id="test-req-1",
             ))

@@ -58,6 +58,7 @@ def _make_pipeline_with_routing(
 ) -> ImportPipeline:
     """Create a pipeline with controlled routing and split behavior."""
     pipeline = ImportPipeline(options={})
+    pipeline.pipeline_id = "test_pipeline"
 
     # Resolve effective split mode (use router if not forced)
     effective_split_mode = split_mode

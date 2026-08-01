@@ -336,27 +336,17 @@ class TestCleanup:
 
 
 class TestCapabilityService:
-    def test_parse_allowed_ids_empty(self):
-        from app.services.export.capability import _parse_allowed_ids
-        assert _parse_allowed_ids("") == set()
-        assert _parse_allowed_ids("  ") == set()
-        assert _parse_allowed_ids(None) == set()
+    def test_build_capability_always_open(self):
+        """Export is open to every authenticated user (no whitelist)."""
+        from app.services.export.capability import build_capability
 
-    def test_parse_allowed_ids_normal(self):
-        from app.services.export.capability import _parse_allowed_ids
-        assert _parse_allowed_ids("1,2,3") == {1, 2, 3}
+        class FakeUser:
+            id = 1
 
-    def test_parse_allowed_ids_with_spaces(self):
-        from app.services.export.capability import _parse_allowed_ids
-        assert _parse_allowed_ids(" 1 , 2 , 3 ") == {1, 2, 3}
-
-    def test_parse_allowed_ids_invalid_skipped(self):
-        from app.services.export.capability import _parse_allowed_ids
-        assert _parse_allowed_ids("1,,abc,2") == {1, 2}
-
-    def test_parse_allowed_ids_duplicates(self):
-        from app.services.export.capability import _parse_allowed_ids
-        assert _parse_allowed_ids("1,2,2,3,1") == {1, 2, 3}
+        cap = build_capability(FakeUser())
+        assert cap.export_enabled is True
+        assert cap.pdf_enabled is True
+        assert cap.reason_code is None
 
     def test_ensure_format_allowed_pdf_always(self):
         from app.services.export.capability import ensure_format_allowed

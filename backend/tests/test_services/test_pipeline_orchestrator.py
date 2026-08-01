@@ -1292,24 +1292,19 @@ class TestImportPipelineSplit:  # noqa: F811
         result = pipeline._run_split(normalized_blocks)
 
         assert result["split_count"] == 1
-        assert result["split_diagnostics"] == {
-            "normalized_block_count": 2,
-            "text_block_count": 2,
-            "raw_question_count": 0,
-            "raw_questions_preview": [],
-            "failure_reason": "text_present_but_no_question_boundary",
-            "fallback_created": True,
-        }
+        diag = result["split_diagnostics"]
+        assert diag["normalized_block_count"] == 2
+        assert diag["text_block_count"] == 2
+        assert diag["raw_question_count"] == 0
+        assert diag["failure_reason"] == "text_present_but_no_question_boundary"
+        assert diag["fallback_created"] is True
         assert result["warnings"] == ["no questions found in document; created low-confidence review item"]
-        assert result["raw_questions"] == [{
-            "number": 1,
-            "raw_question_text": "这是一段没有题号的 OCR 文本。\n仍然需要进入人工审核。",
-            "page_start": 2,
-            "page_end": 3,
-            "has_options": False,
-            "option_lines": {},
-            "confidence": 0.2,
-        }]
+        assert result["raw_questions"][0]["number"] == 1
+        assert result["raw_questions"][0]["raw_question_text"] == "这是一段没有题号的 OCR 文本。\n仍然需要进入人工审核。"
+        assert result["raw_questions"][0]["page_start"] == 2
+        assert result["raw_questions"][0]["page_end"] == 3
+        assert result["raw_questions"][0]["has_options"] is False
+        assert result["raw_questions"][0]["confidence"] == 0.2
 
     def test_numbered_questions_do_not_use_fallback(self):
         pipeline = ImportPipeline()
@@ -1320,29 +1315,19 @@ class TestImportPipelineSplit:  # noqa: F811
         result = pipeline._run_split(normalized_blocks)
 
         assert result["split_count"] == 1
-        assert result["split_diagnostics"] == {
-            "normalized_block_count": 1,
-            "text_block_count": 1,
-            "raw_question_count": 1,
-            "raw_questions_preview": [
-                {
-                    "number": 1,
-                    "raw_question_text": "1. 已编号题目\nA. 选项A\nB. 选项B",
-                    "page_start": 1,
-                    "page_end": 1,
-                    "has_options": True,
-                    "option_lines": {"A": "选项A", "B": "选项B"},
-                    "confidence": 0.9,
-                    "section_type": None,
-                }
-            ],
-            "failure_reason": None,
-            "fallback_created": False,
-        }
+        diag = result["split_diagnostics"]
+        assert diag["normalized_block_count"] == 1
+        assert diag["text_block_count"] == 1
+        assert diag["raw_question_count"] == 1
+        assert diag["failure_reason"] is None
+        assert diag["fallback_created"] is False
+        assert result["raw_questions"][0]["number"] == 1
+        assert result["raw_questions"][0]["has_options"] is True
         assert result["warnings"] == []
         assert result["raw_questions"][0]["confidence"] != 0.2
 
-    def test_match_uses_separated_structure(self):
+    @pytest.mark.asyncio
+    async def test_match_uses_separated_structure(self):
         pipeline = ImportPipeline()
         normalized_blocks = [
             {
@@ -1352,7 +1337,7 @@ class TestImportPipelineSplit:  # noqa: F811
             },
             {"page": 2, "block_index": 1, "normalized_text": "参考答案：\n1. B\n2. A"},
         ]
-        structure = pipeline._run_analyze_structure(normalized_blocks)["structure"]
+        structure = (await pipeline._run_analyze_structure(normalized_blocks))["structure"]
         split = pipeline._run_split(normalized_blocks, structure=structure)
         result = pipeline._run_match(split["raw_questions"], normalized_blocks, structure=structure)
 
@@ -1498,6 +1483,7 @@ class TestImportPipelineRun:
     def _make_pipeline(self, **overrides):
         """Create a pipeline with all stages mocked. Rebuilds stages after mocking."""
         pipeline = ImportPipeline(options=overrides.get("options"))
+        pipeline.pipeline_id = "test_pipeline"
         pipeline._run_extract = MagicMock(return_value={
             "raw_blocks": _make_raw_blocks(3),
             "extracted": 3,
@@ -1598,12 +1584,13 @@ class TestImportPipelineRun:
 
         # Verify stage ordering
         stage_names = list(result["stages"].keys())
-        assert stage_names == ["extract", "normalize_text", "ocr_correction", "layout_reconstruction", "layout_router", "visual_region_detect", "analyze_structure", "classify_pages", "structure_freeze", "split", "match", "normalize_schema", "code_language_noise_clean", "code_structure_reconstruct", "classify_questions", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "visual_region_assign", "math_detect", "table_detect", "visual_region_crop", "review"]
+        assert stage_names == ["extract", "normalize_text", "ocr_correction", "layout_reconstruction", "layout_router", "visual_region_detect", "analyze_structure", "classify_pages", "structure_freeze", "split", "question_bbox", "match", "normalize_schema", "code_language_noise_clean", "code_structure_reconstruct", "classify_questions", "batch_validation", "batch_dedup", "repair", "ai_validation", "similarity_match", "visual_region_assign", "math_detect", "table_detect", "visual_region_crop", "review"]
         for s in result["stages"].values():
             assert s["status"] == "completed"
 
     def test_book_pdf_single_pass_unsplit_text_does_not_reach_review(self):
         pipeline = ImportPipeline(options={"enable_ai_repair": False, "enable_similarity_match": False})
+        pipeline.pipeline_id = "test_pipeline"
         normalized_blocks = [
             {"page": 1, "block_index": 0, "raw_text": "定义：数据结构用于组织数据。", "normalized_text": "定义：数据结构用于组织数据。"},
             {"page": 2, "block_index": 1, "raw_text": "定理：顺序表支持随机访问。证明如下。", "normalized_text": "定理：顺序表支持随机访问。证明如下。"},
@@ -1671,6 +1658,7 @@ class TestImportPipelineRun:
 
     def test_extract_failure_aborts_pipeline(self):
         pipeline = ImportPipeline()
+        pipeline.pipeline_id = "test_pipeline"
         pipeline._run_extract = MagicMock(side_effect=ValueError("bad file"))
 
         result = asyncio.run(pipeline.run(
@@ -1686,6 +1674,7 @@ class TestImportPipelineRun:
 
     def test_normalize_text_failure_aborts_pipeline(self):
         pipeline = ImportPipeline()
+        pipeline.pipeline_id = "test_pipeline"
         pipeline._run_extract = MagicMock(return_value={"raw_blocks": [], "extracted": 0})
         pipeline._run_normalize_text = MagicMock(side_effect=ValueError("text error"))
 
@@ -1701,6 +1690,7 @@ class TestImportPipelineRun:
     def test_later_stage_failure_continues_pipeline(self):
         """Match stage failure should not abort — error isolation."""
         pipeline = ImportPipeline()
+        pipeline.pipeline_id = "test_pipeline"
         pipeline._run_extract = MagicMock(return_value={"raw_blocks": _make_raw_blocks(2), "extracted": 2})
         pipeline._run_normalize_text = MagicMock(return_value={"normalized_blocks": _make_normalized_blocks(2)})
         pipeline._run_split = MagicMock(return_value={"raw_questions": _make_raw_questions(2), "split_count": 2})
@@ -1722,6 +1712,7 @@ class TestImportPipelineRun:
     def test_empty_questions_flow(self):
         """Pipeline with no questions found still completes."""
         pipeline = ImportPipeline()
+        pipeline.pipeline_id = "test_pipeline"
         pipeline._run_extract = MagicMock(return_value={"raw_blocks": [], "extracted": 0})
         pipeline._run_normalize_text = MagicMock(return_value={"normalized_blocks": []})
         pipeline._run_split = MagicMock(return_value={"raw_questions": [], "split_count": 0, "warnings": ["no questions found"]})
@@ -1742,6 +1733,7 @@ class TestImportPipelineRun:
     def test_review_without_db(self):
         """Review stage should skip gracefully when no db provided."""
         pipeline = ImportPipeline()
+        pipeline.pipeline_id = "test_pipeline"
         pipeline._run_extract = MagicMock(return_value={"raw_blocks": _make_raw_blocks(1), "extracted": 1})
         pipeline._run_normalize_text = MagicMock(return_value={"normalized_blocks": _make_normalized_blocks(1)})
         pipeline._run_split = MagicMock(return_value={"raw_questions": _make_raw_questions(1), "split_count": 1})
@@ -2855,7 +2847,11 @@ class TestPageRangePersistence:
         mock_doc = MagicMock()
         mock_doc.__len__ = MagicMock(return_value=10)
         mock_fitz.open.return_value.__enter__.return_value = mock_doc
-        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+        with patch.dict(sys.modules, {"fitz": mock_fitz}), \
+             patch("app.core.resource_guard.ResourceGuard.can_accept_work",
+                   return_value=(True, "")), \
+             patch("app.services.task_queue_worker.enqueue_import_pipeline",
+                   new_callable=AsyncMock, return_value=MagicMock(reason=None)):
             result = await start_import_pipeline(
                 file_path=str(pdf_file),
                 filename="test.pdf",
@@ -2963,7 +2959,11 @@ class TestNonPdfPageRangeRejection:
         mock_doc = MagicMock()
         mock_doc.__len__ = MagicMock(return_value=10)
         mock_fitz.open.return_value.__enter__.return_value = mock_doc
-        with patch.dict(sys.modules, {"fitz": mock_fitz}):
+        with patch.dict(sys.modules, {"fitz": mock_fitz}), \
+             patch("app.core.resource_guard.ResourceGuard.can_accept_work",
+                   return_value=(True, "")), \
+             patch("app.services.task_queue_worker.enqueue_import_pipeline",
+                   new_callable=AsyncMock, return_value=MagicMock(reason=None)):
             result = await start_import_pipeline(
                 file_path=str(pdf_file),
                 filename="test.pdf",

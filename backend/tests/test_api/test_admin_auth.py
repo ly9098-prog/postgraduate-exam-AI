@@ -306,7 +306,8 @@ def test_admin_refresh_returns_token(monkeypatch):
     permissions = ["dashboard:read"]
     token = create_admin_token(user)
 
-    monkeypatch.setattr(admin_auth, "refresh_admin_access_token", AsyncMock(return_value=(token, user, role, permissions)))
+    monkeypatch.setattr(admin_auth, "consume_admin_refresh_token", AsyncMock(return_value=user))
+    monkeypatch.setattr(admin_auth, "build_admin_login_response", AsyncMock(return_value=(token, "new-refresh-token", user, role, permissions)))
     monkeypatch.setattr(admin_auth, "decode_admin_refresh_token", MagicMock(return_value={"sub": "1", "type": "admin_refresh"}))
 
     app.dependency_overrides[get_db] = _override_db
@@ -394,7 +395,8 @@ def test_admin_bootstrap_refresh_after_token_loss(monkeypatch):
     permissions = ["dashboard:read"]
     token = create_admin_token(user)
 
-    monkeypatch.setattr(admin_auth, "refresh_admin_access_token", AsyncMock(return_value=(token, user, role, permissions)))
+    monkeypatch.setattr(admin_auth, "consume_admin_refresh_token", AsyncMock(return_value=user))
+    monkeypatch.setattr(admin_auth, "build_admin_login_response", AsyncMock(return_value=(token, "new-refresh-token", user, role, permissions)))
     monkeypatch.setattr(admin_auth, "decode_admin_refresh_token", MagicMock(return_value={"sub": "1", "type": "admin_refresh"}))
 
     app.dependency_overrides[get_db] = _override_db

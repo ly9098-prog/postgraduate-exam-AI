@@ -1,9 +1,10 @@
 """API-level tests for export permission, storage, and lifecycle completeness.
 
+Export is open to every authenticated user (no whitelist / feature flag).
 Covers:
-1. preview-count respects whitelist and feature flags
+1. preview-count works for any authenticated user
 2. delete_export uses the correct storage backend
-3. WebSocket permission check
+3. Capability endpoint is always-open, reflects docx/websocket flags
 4. Storage backend dependency: API layer uses get_export_storage(), not get_storage()
 """
 
@@ -37,14 +38,13 @@ def _override_user(user_id: int = 1):
     from app.models.user import User
 
     async def _get():
-        return User(id=user_id, openid="test", session_key="test", nickname="test")
+        return User(id=user_id, openid="test", nickname="test")
 
     return _get
 
 
 def _override_db():
     """Override get_db to return a minimal mock."""
-
 
     db = AsyncMock()
     db.execute = AsyncMock()
@@ -94,101 +94,49 @@ def _get_detail(resp):
     return data
 
 
+def _setup_auth(user_id: int = 1):
+    """Install get_current_user + get_db overrides for a user."""
+    from app.core.database import get_db
+    from app.core.security import get_current_user
+
+    app.dependency_overrides[get_current_user] = _override_user(user_id)
+    app.dependency_overrides[get_db] = _override_db()
+
+
 # ═══════════════════════════════════════════════════
-# 1. preview-count permission checks
+# 1. preview-count works for any authenticated user
 # ═══════════════════════════════════════════════════
 
 
 class TestPreviewCountPermission:
-    """preview-count must respect feature flag and whitelist."""
+    """preview-count is open to every authenticated user."""
 
     def setup_method(self):
         self.url = "/api/v1/exports/preview-count"
         self.payload = {"range_type": "all"}
 
-    def test_preview_count_blocked_when_feature_disabled(self):
-        """EXPORT_FEATURE_ENABLED=False blocks preview-count."""
-        with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = False
-            mock_settings.EXPORT_ALLOW_ALL_USERS = False
-            mock_settings.EXPORT_ALLOWED_USER_IDS = ""
-            app.dependency_overrides.clear()
-            from app.core.database import get_db
-            from app.core.security import get_current_user
-
-            app.dependency_overrides[get_current_user] = _override_user(1)
-            app.dependency_overrides[get_db] = _override_db()
-            resp = client.post(self.url, json=self.payload)
-        assert resp.status_code == 403
-        detail = _get_detail(resp)
-        assert detail["error_code"] == "feature_disabled"
-
-    def test_preview_count_blocked_when_user_not_in_whitelist(self):
-        """User not in EXPORT_ALLOWED_USER_IDS gets 403."""
-        with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = True
-            mock_settings.EXPORT_ALLOW_ALL_USERS = False
-            mock_settings.EXPORT_ALLOWED_USER_IDS = "2,3"
-            app.dependency_overrides.clear()
-            from app.core.database import get_db
-            from app.core.security import get_current_user
-
-            app.dependency_overrides[get_current_user] = _override_user(1)
-            app.dependency_overrides[get_db] = _override_db()
-            resp = client.post(self.url, json=self.payload)
-        assert resp.status_code == 403
-        assert _get_detail(resp)["error_code"] == "user_not_allowed"
-
-    def test_preview_count_allowed_when_user_in_whitelist(self):
-        """User in whitelist can preview count."""
-        with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = True
-            mock_settings.EXPORT_ALLOW_ALL_USERS = False
-            mock_settings.EXPORT_ALLOWED_USER_IDS = "1"
-            app.dependency_overrides.clear()
-            from app.core.database import get_db
-            from app.core.security import get_current_user
-
-            app.dependency_overrides[get_current_user] = _override_user(1)
-            app.dependency_overrides[get_db] = _override_db()
-            resp = client.post(self.url, json=self.payload)
-        # May fail because DB mock isn't realistic enough
-        assert resp.status_code == 200, f"Whitelisted user should get 200, got {resp.status_code}: {resp.text[:200]}"
+    def test_preview_count_allowed_for_any_user(self):
+        """Any authenticated user can preview count (no whitelist)."""
+        _setup_auth(1)
+        resp = client.post(self.url, json=self.payload)
+        assert resp.status_code == 200, f"got {resp.status_code}: {resp.text[:200]}"
         assert resp.json()["count"] >= 0
 
-    def test_preview_count_allowed_when_allow_all(self):
-        """EXPORT_ALLOW_ALL_USERS=True allows preview count."""
-        with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = True
-            mock_settings.EXPORT_ALLOW_ALL_USERS = True
-            mock_settings.EXPORT_ALLOWED_USER_IDS = ""
-            app.dependency_overrides.clear()
-            from app.core.database import get_db
-            from app.core.security import get_current_user
-
-            app.dependency_overrides[get_current_user] = _override_user(999)
-            app.dependency_overrides[get_db] = _override_db()
-            resp = client.post(self.url, json=self.payload)
-        assert resp.status_code == 200, f"allow-all user should get 200, got {resp.status_code}: {resp.text[:200]}"
+    def test_preview_count_allowed_for_high_user_id(self):
+        """A non-whitelisted-style user id still gets 200."""
+        _setup_auth(999)
+        resp = client.post(self.url, json=self.payload)
+        assert resp.status_code == 200, f"got {resp.status_code}: {resp.text[:200]}"
         assert resp.json()["count"] >= 0
 
-    def test_preview_count_returns_structured_error(self):
-        """preview-count returns structured error codes."""
-        with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = False
-            mock_settings.EXPORT_ALLOW_ALL_USERS = False
-            mock_settings.EXPORT_ALLOWED_USER_IDS = ""
-            app.dependency_overrides.clear()
-            from app.core.database import get_db
-            from app.core.security import get_current_user
-
-            app.dependency_overrides[get_current_user] = _override_user(1)
-            app.dependency_overrides[get_db] = _override_db()
-            resp = client.post(self.url, json=self.payload)
-        assert resp.status_code == 403
-        detail = _get_detail(resp)
-        assert "error_code" in detail
-        assert "message" in detail
+    def test_preview_count_returns_count_field(self):
+        """Response includes count and range_type."""
+        _setup_auth(1)
+        resp = client.post(self.url, json=self.payload)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "count" in data
+        assert data["range_type"] == "all"
 
 
 # ═══════════════════════════════════════════════════
@@ -253,15 +201,9 @@ class TestDeleteExportStorage:
     async def test_delete_export_endpoint_404_for_nonexistent(self):
         """DELETE on non-existent task returns 404."""
         app.dependency_overrides.clear()
-        from app.core.database import get_db
-        from app.core.security import get_current_user
-
-        app.dependency_overrides[get_current_user] = _override_user(1)
-        app.dependency_overrides[get_db] = _override_db()
+        _setup_auth(1)
 
         with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = True
-            mock_settings.EXPORT_ALLOW_ALL_USERS = True
             mock_settings.EXPORT_DIR = "static/exports"
             mock_settings.STORAGE_BACKEND = "local"
             mock_settings.PUBLIC_BASE_URL = "http://test"
@@ -274,15 +216,9 @@ class TestDeleteExportStorage:
     async def test_deleted_export_not_downloadable(self):
         """After delete, task should return 404."""
         app.dependency_overrides.clear()
-        from app.core.database import get_db
-        from app.core.security import get_current_user
-
-        app.dependency_overrides[get_current_user] = _override_user(1)
-        app.dependency_overrides[get_db] = _override_db()
+        _setup_auth(1)
 
         with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = True
-            mock_settings.EXPORT_ALLOW_ALL_USERS = True
             mock_settings.EXPORT_DIR = "static/exports"
             mock_settings.STORAGE_BACKEND = "local"
             mock_settings.PUBLIC_BASE_URL = "http://test"
@@ -292,103 +228,64 @@ class TestDeleteExportStorage:
 
 
 # ═══════════════════════════════════════════════════
-# 3. Capability endpoint consistency
+# 3. Capability endpoint is always-open
 # ═══════════════════════════════════════════════════
 
 
 class TestCapabilityEndpoint:
-    """Capability endpoint returns correct per-user response."""
+    """Capability endpoint returns global capabilities for any user."""
 
-    def test_capability_blocked_for_non_whitelist(self):
-        """Non-whitelist user gets export_enabled=False."""
-        with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = True
-            mock_settings.EXPORT_ALLOW_ALL_USERS = False
-            mock_settings.EXPORT_ALLOWED_USER_IDS = "2"
-            mock_settings.EXPORT_DOCX_ENABLED = True
-            mock_settings.EXPORT_WEBSOCKET_ENABLED = True
-            app.dependency_overrides.clear()
-            from app.core.security import get_current_user
-
-            app.dependency_overrides[get_current_user] = _override_user(1)
-            resp = client.get("/api/v1/exports/capabilities")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["export_enabled"] is False
-        assert data["pdf_enabled"] is False
-        assert data["docx_enabled"] is False
-        assert data["websocket_enabled"] is False
-
-    def test_capability_allowed_for_whitelist_user(self):
-        """Whitelist user gets correct capabilities."""
-        with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = True
-            mock_settings.EXPORT_ALLOW_ALL_USERS = False
-            mock_settings.EXPORT_ALLOWED_USER_IDS = "1"
-            mock_settings.EXPORT_DOCX_ENABLED = True
-            mock_settings.EXPORT_WEBSOCKET_ENABLED = True
-            app.dependency_overrides.clear()
-            from app.core.security import get_current_user
-
-            app.dependency_overrides[get_current_user] = _override_user(1)
-            resp = client.get("/api/v1/exports/capabilities")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["export_enabled"] is True
-        assert data["pdf_enabled"] is True
-        assert data["docx_enabled"] is True
-        assert data["websocket_enabled"] is True
-
-    def test_capability_docx_disabled(self):
-        """Export enabled but DOCX specifically disabled."""
-        with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = True
-            mock_settings.EXPORT_ALLOW_ALL_USERS = True
-            mock_settings.EXPORT_DOCX_ENABLED = False
-            mock_settings.EXPORT_WEBSOCKET_ENABLED = True
-            mock_settings.EXPORT_ALLOWED_USER_IDS = ""
-            app.dependency_overrides.clear()
-            from app.core.security import get_current_user
-
-            app.dependency_overrides[get_current_user] = _override_user(1)
-            resp = client.get("/api/v1/exports/capabilities")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["export_enabled"] is True
-        assert data["pdf_enabled"] is True
-        assert data["docx_enabled"] is False
-        assert data["websocket_enabled"] is True
-
-    def test_capability_all_disabled_when_feature_disabled(self):
-        """EXPORT_FEATURE_ENABLED=False disables everything."""
-        with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = False
-            mock_settings.EXPORT_ALLOW_ALL_USERS = True
-            mock_settings.EXPORT_DOCX_ENABLED = True
-            mock_settings.EXPORT_WEBSOCKET_ENABLED = True
-            mock_settings.EXPORT_ALLOWED_USER_IDS = ""
-            app.dependency_overrides.clear()
-            from app.core.security import get_current_user
-
-            app.dependency_overrides[get_current_user] = _override_user(1)
-            resp = client.get("/api/v1/exports/capabilities")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["export_enabled"] is False
-
-    def test_capability_always_returns_max_question_count(self):
-        """Capability always returns max_question_count and retention_days."""
+    def test_capability_allowed_for_any_user(self):
+        """Any user gets export_enabled=True (no whitelist)."""
         app.dependency_overrides.clear()
         from app.core.security import get_current_user
 
         app.dependency_overrides[get_current_user] = _override_user(1)
+        resp = client.get("/api/v1/exports/capabilities")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["export_enabled"] is True
+        assert data["pdf_enabled"] is True
+
+    def test_capability_no_reason_code_when_open(self):
+        """No rollout gate means reason_code/message are null."""
+        app.dependency_overrides.clear()
+        from app.core.security import get_current_user
+
+        app.dependency_overrides[get_current_user] = _override_user(1)
+        resp = client.get("/api/v1/exports/capabilities")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["reason_code"] is None
+        assert data["message"] is None
+
+    def test_capability_docx_disabled(self):
+        """Export enabled but DOCX specifically disabled."""
+        with patch("app.core.config.settings") as mock_settings:
+            mock_settings.EXPORT_DOCX_ENABLED = False
+            mock_settings.EXPORT_WEBSOCKET_ENABLED = True
+            mock_settings.EXPORT_MAX_QUESTIONS = 100
+            mock_settings.EXPORT_RETENTION_DAYS = 7
+            app.dependency_overrides.clear()
+            from app.core.security import get_current_user
+
+            app.dependency_overrides[get_current_user] = _override_user(1)
+            resp = client.get("/api/v1/exports/capabilities")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["export_enabled"] is True
+        assert data["pdf_enabled"] is True
+        assert data["docx_enabled"] is False
+        assert data["websocket_enabled"] is True
+
+    def test_capability_always_returns_max_question_count(self):
+        """Capability always returns max_question_count and retention_days."""
+        app.dependency_overrides.clear()
+        _setup_auth(1)
 
         with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = True
-            mock_settings.EXPORT_ALLOW_ALL_USERS = True
             mock_settings.EXPORT_DOCX_ENABLED = True
             mock_settings.EXPORT_WEBSOCKET_ENABLED = True
-            mock_settings.EXPORT_ALLOWED_USER_IDS = ""
             mock_settings.EXPORT_MAX_QUESTIONS = 100
             mock_settings.EXPORT_RETENTION_DAYS = 7
             resp = client.get("/api/v1/exports/capabilities")
@@ -399,45 +296,19 @@ class TestCapabilityEndpoint:
 
 
 # ═══════════════════════════════════════════════════
-# 4. Create/retry/re-export use capability service
+# 4. Create export: DOCX gate only
 # ═══════════════════════════════════════════════════
 
 
 class TestCreateExportPermission:
-    """Create export must use capability service."""
-
-    def test_create_export_blocked_when_feature_disabled(self):
-        """EXPORT_FEATURE_ENABLED=False blocks create."""
-        with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = False
-            mock_settings.EXPORT_ALLOW_ALL_USERS = False
-            mock_settings.EXPORT_ALLOWED_USER_IDS = ""
-            app.dependency_overrides.clear()
-            from app.core.database import get_db
-            from app.core.security import get_current_user
-
-            app.dependency_overrides[get_current_user] = _override_user(1)
-            app.dependency_overrides[get_db] = _override_db()
-            resp = client.post("/api/v1/exports", json={
-                "range_type": "all",
-                "file_format": "pdf",
-            })
-        assert resp.status_code == 403
-        assert _get_detail(resp)["error_code"] == "feature_disabled"
+    """Create export is open; only DOCX can be format-gated."""
 
     def test_create_export_docx_blocked_when_disabled(self):
         """DOCX create blocked when EXPORT_DOCX_ENABLED=False."""
         with patch("app.core.config.settings") as mock_settings:
-            mock_settings.EXPORT_FEATURE_ENABLED = True
-            mock_settings.EXPORT_ALLOW_ALL_USERS = True
             mock_settings.EXPORT_DOCX_ENABLED = False
-            mock_settings.EXPORT_ALLOWED_USER_IDS = ""
             app.dependency_overrides.clear()
-            from app.core.database import get_db
-            from app.core.security import get_current_user
-
-            app.dependency_overrides[get_current_user] = _override_user(1)
-            app.dependency_overrides[get_db] = _override_db()
+            _setup_auth(1)
             resp = client.post("/api/v1/exports", json={
                 "range_type": "all",
                 "file_format": "docx",

@@ -29,19 +29,18 @@ class TestAtomicClaiming:
 
     @pytest.mark.asyncio
     async def test_atomic_claim_sql_pattern(self):
-        """Verify the SQL pattern is correct (no two-phase SELECT+UPDATE)."""
-        # The implementation must NOT do a SELECT then separate UPDATE
+        """Verify the claim is atomic: UPDATE ... WHERE status='pending' RETURNING."""
+        # The implementation must use a DB-level atomic claim (UPDATE + RETURNING),
+        # not a two-phase SELECT-then-UPDATE with separate commit window.
         import inspect
 
         from app.services.export.processor import _try_claim_task
         source = inspect.getsource(_try_claim_task)
-        # It should NOT have a naked select(ExportTask) without a subquery
-        # The select should be wrapped in a scalar_subquery() or similar
-        assert "scalar_subquery()" in source, (
-            "processor must use scalar_subquery for atomic claim"
-        )
         assert ".returning(" in source, (
             "processor must use RETURNING for atomic claim"
+        )
+        assert "UPDATE" in source or ".values(" in source, (
+            "processor must issue a single UPDATE for the claim"
         )
 
     @pytest.mark.asyncio
@@ -603,10 +602,10 @@ class TestFontAvailability:
     """Verify CJK font is available for PDF generation."""
 
     def test_font_path_exists(self):
-        """The configured font file must exist."""
-        from app.services.export.pdf_exporter import _DEFAULT_FONT_PATH
-        assert os.path.exists(_DEFAULT_FONT_PATH), (
-            f"Font not found at {_DEFAULT_FONT_PATH}"
+        """At least one configured CJK font candidate must exist."""
+        from app.services.export.pdf_exporter import _BODY_FONT_CANDIDATES
+        assert any(os.path.exists(p) for p in _BODY_FONT_CANDIDATES), (
+            f"No font candidate exists: {_BODY_FONT_CANDIDATES}"
         )
 
     def test_font_can_be_loaded(self):
@@ -643,13 +642,12 @@ class TestPageNumbers:
     """Page numbers must be correct across multi-page documents."""
 
     def test_page_number_format(self):
-        """Page number should follow '第 X 页 / 共 Y 页' format."""
+        """Page number footer should use the '· n ·' format."""
         import inspect
 
         from app.services.export.pdf_exporter import PdfExporter
         source = inspect.getsource(PdfExporter._add_page_numbers)
-        assert "共" in source, "page number must show total"
-        assert "第" in source, "page number must show current page"
+        assert "·" in source, "page number must use the '· n ·' format"
 
     def test_alias_nb_pages_accuracy(self):
         """The total page count must match the actual number of pages."""

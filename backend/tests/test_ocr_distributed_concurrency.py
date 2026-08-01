@@ -52,13 +52,18 @@ class TestAcquireRelease:
 
         fake_redis = fakeredis_aioredis.FakeRedis(decode_responses=True)
         guard._redis = fake_redis
-        from app.services.ocr_distributed_concurrency import _ACQUIRE_LUA, _RELEASE_LUA
+        from app.services.ocr_distributed_concurrency import (
+            _ACQUIRE_LUA,
+            _COUNT_LUA,
+            _RELEASE_LUA,
+        )
         guard._lua_acquire = fake_redis.register_script(_ACQUIRE_LUA)
         guard._lua_release = fake_redis.register_script(_RELEASE_LUA)
+        guard._lua_count = fake_redis.register_script(_COUNT_LUA)
 
         token = await guard.acquire_global(capacity=2, ttl_sec=60)
         assert token is not None
-        assert token.startswith("local_")
+        assert token.startswith(("local_", "redis_"))
 
         count = await guard.current_count()
         assert count == 1
@@ -72,9 +77,14 @@ class TestAcquireRelease:
 
         fake_redis = fakeredis_aioredis.FakeRedis(decode_responses=True)
         guard._redis = fake_redis
-        from app.services.ocr_distributed_concurrency import _ACQUIRE_LUA, _RELEASE_LUA
+        from app.services.ocr_distributed_concurrency import (
+            _ACQUIRE_LUA,
+            _COUNT_LUA,
+            _RELEASE_LUA,
+        )
         guard._lua_acquire = fake_redis.register_script(_ACQUIRE_LUA)
         guard._lua_release = fake_redis.register_script(_RELEASE_LUA)
+        guard._lua_count = fake_redis.register_script(_COUNT_LUA)
 
         token = await guard.acquire_global(capacity=2, ttl_sec=60)
         assert token is not None
@@ -156,9 +166,14 @@ class TestCount:
 
         fake_redis = fakeredis_aioredis.FakeRedis(decode_responses=True)
         guard._redis = fake_redis
-        from app.services.ocr_distributed_concurrency import _ACQUIRE_LUA, _RELEASE_LUA
+        from app.services.ocr_distributed_concurrency import (
+            _ACQUIRE_LUA,
+            _COUNT_LUA,
+            _RELEASE_LUA,
+        )
         guard._lua_acquire = fake_redis.register_script(_ACQUIRE_LUA)
         guard._lua_release = fake_redis.register_script(_RELEASE_LUA)
+        guard._lua_count = fake_redis.register_script(_COUNT_LUA)
 
         count = await guard.current_count()
         assert count == 0

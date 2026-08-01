@@ -198,8 +198,27 @@ class TestSeedProductionGuard:
     def test_production_override(self):
         """Production guard should allow --allow-production flag."""
         import subprocess
+        import tempfile
+
+        from sqlalchemy import create_engine
+
+        from app.core.database import Base
+        import app.models.formula  # noqa: F401  register Formula* models
+
+        # The seed script calls init_db(), which returns early under
+        # APP_ENV=production (detected as CLOUD_API) and creates no tables.
+        # Point it at a fresh temp DB whose schema we create here so the test
+        # does not depend on whichever DATABASE_URL earlier test modules left
+        # in the process environment.
+        tmpdir = tempfile.mkdtemp()
+        db_path = Path(tmpdir) / "seed_test.db"
+        engine = create_engine(f"sqlite:///{db_path}")
+        Base.metadata.create_all(engine)
+        engine.dispose()
+
         env = os.environ.copy()
         env["APP_ENV"] = "production"
+        env["DATABASE_URL"] = f"sqlite+aiosqlite:///{db_path}"
         result = subprocess.run(
             [sys.executable, "scripts/seed_formula_library_v2.py", "--apply",
              "--allow-production"],

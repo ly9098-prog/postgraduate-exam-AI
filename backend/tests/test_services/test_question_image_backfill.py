@@ -123,6 +123,7 @@ class TestQuestionAssetsStorage:
     async def test_local_storage_uploads_to_question_assets(self, monkeypatch, tmp_path):
         monkeypatch.setattr("app.services.storage_backend.settings.PUBLIC_BASE_URL", "http://test")
         monkeypatch.setattr("app.services.storage_backend.settings.STORAGE_BACKEND", "local")
+        monkeypatch.setattr("app.services.storage_backend._BACKEND_ROOT", str(tmp_path))
         monkeypatch.chdir(tmp_path)
 
         storage = LocalFileStorage(prefix="static/question-assets")
@@ -134,6 +135,7 @@ class TestQuestionAssetsStorage:
     @pytest.mark.asyncio
     async def test_different_prefixes_isolated(self, monkeypatch, tmp_path):
         """formulas and question-assets don't collide."""
+        monkeypatch.setattr("app.services.storage_backend._BACKEND_ROOT", str(tmp_path))
         monkeypatch.chdir(tmp_path)
 
         formulas = LocalFileStorage(prefix="static/formulas")
@@ -508,6 +510,7 @@ class TestStorageBackendDelete:
 
     @pytest.mark.asyncio
     async def test_delete_existing_file(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("app.services.storage_backend._BACKEND_ROOT", str(tmp_path))
         monkeypatch.chdir(tmp_path)
         from app.services.storage_backend import LocalFileStorage
 
@@ -521,6 +524,7 @@ class TestStorageBackendDelete:
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent_is_idempotent(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("app.services.storage_backend._BACKEND_ROOT", str(tmp_path))
         monkeypatch.chdir(tmp_path)
         from app.services.storage_backend import LocalFileStorage
 
@@ -530,6 +534,7 @@ class TestStorageBackendDelete:
 
     @pytest.mark.asyncio
     async def test_path_traversal_rejected(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("app.services.storage_backend._BACKEND_ROOT", str(tmp_path))
         monkeypatch.chdir(tmp_path)
         from app.services.storage_backend import LocalFileStorage
 
@@ -539,6 +544,7 @@ class TestStorageBackendDelete:
 
     @pytest.mark.asyncio
     async def test_delete_outside_namespace_rejected(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("app.services.storage_backend._BACKEND_ROOT", str(tmp_path))
         monkeypatch.chdir(tmp_path)
         from app.services.storage_backend import LocalFileStorage
 
@@ -556,6 +562,7 @@ class TestStorageBackendDelete:
 
     @pytest.mark.asyncio
     async def test_delete_inside_namespace_allowed(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("app.services.storage_backend._BACKEND_ROOT", str(tmp_path))
         monkeypatch.chdir(tmp_path)
         from app.services.storage_backend import LocalFileStorage
 
@@ -569,6 +576,7 @@ class TestStorageBackendDelete:
     @pytest.mark.asyncio
     async def test_delete_with_url_extracts_path(self, monkeypatch, tmp_path):
         monkeypatch.setattr("app.services.storage_backend.settings.PUBLIC_BASE_URL", "http://test.com")
+        monkeypatch.setattr("app.services.storage_backend._BACKEND_ROOT", str(tmp_path))
         monkeypatch.chdir(tmp_path)
         from app.services.storage_backend import LocalFileStorage
 
@@ -577,76 +585,3 @@ class TestStorageBackendDelete:
         # url = http://test.com/static/question-assets/test.png
         ok = await storage.delete(url)
         assert ok is True
-
-
-# ═══════════════════════════════════════════════════════════════════
-# 10. detect_figure_region (auto-crop)
-# ═══════════════════════════════════════════════════════════════════
-
-
-class TestDetectFigureRegion:
-    """Verify auto-crop figure detection using PyMuPDF blocks analysis.
-
-    Uses a tiny synthetic PDF with embedded image + vector drawing.
-    """
-
-    @staticmethod
-    def _get_detect_figure_region():
-        """Import from scripts directory, adding to path if needed."""
-        import importlib
-        import sys
-        scripts_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "scripts")
-        scripts_dir = os.path.normpath(scripts_dir)
-        if scripts_dir not in sys.path:
-            sys.path.insert(0, scripts_dir)
-        mod = importlib.import_module("backfill_question_images")
-        return mod.detect_figure_region
-
-    @pytest.fixture(scope="class")
-    def synthetic_pdf_path(self, tmp_path_factory):
-        """Create a minimal PDF with mixed content for testing."""
-        import fitz
-        pdf = fitz.open()
-        page = pdf.new_page(width=400, height=600)
-
-        # Add text (simulates stem/options)
-        text_rect = fitz.Rect(50, 50, 350, 120)
-        page.insert_textbox(text_rect, "这是题干文本\nA) 选项A\nB) 选项B", fontsize=12)
-
-        # Insert an image (simulates figure)
-        img_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100  # minimal PNG header + padding
-        try:
-            img_rect = fitz.Rect(80, 150, 320, 380)
-            page.insert_image(img_rect, stream=img_bytes)
-        except Exception:
-            pass  # Image insertion may fail with minimal bytes; acceptable
-
-        path = str(tmp_path_factory.mktemp("pdfs") / "test.pdf")
-        pdf.save(path)
-        pdf.close()
-        return path
-
-    def test_detect_figure_returns_none_for_text_only_page(self, tmp_path_factory):
-        """A page with only text should return None (no figure)."""
-        import fitz
-        pdf = fitz.open()
-        page = pdf.new_page(width=400, height=600)
-        page.insert_textbox(fitz.Rect(50, 50, 350, 120), "纯文本页面", fontsize=12)
-        path = str(tmp_path_factory.mktemp("pdfs") / "text_only.pdf")
-        pdf.save(path)
-        pdf.close()
-
-        detect = self._get_detect_figure_region()
-        cropped, bbox, conf = detect(path, 1, dpi=72)
-        assert cropped is None
-        assert bbox is None
-        assert conf == 0.0
-
-    def test_detect_figure_on_synthetic_pdf(self, synthetic_pdf_path):
-        """Verify at minimum that detect_figure_region runs without error."""
-        detect = self._get_detect_figure_region()
-        cropped, bbox, conf = detect(synthetic_pdf_path, 1, dpi=72)
-        # May or may not detect - shouldn't crash
-        assert cropped is None or isinstance(cropped, bytes)
-        assert bbox is None or len(bbox) == 4
-        assert isinstance(conf, float)

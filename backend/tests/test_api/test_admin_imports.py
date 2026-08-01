@@ -220,7 +220,8 @@ def test_upload_segment_image(monkeypatch):
     assert resp.status_code == 200
     data = resp.json()
     assert data["url"].startswith("http://test.local/static/formulas/")
-    assert data["filename"] == "test.png"
+    # The endpoint compresses + content-names the file; only the extension is stable.
+    assert data["filename"].endswith((".png", ".jpg", ".webp"))
 
 
 def test_upload_segment_image_rejects_non_image(monkeypatch):

@@ -331,12 +331,12 @@ class TestDocxStructure:
         snapshot = {"questions": [], "config": _make_config(total_count=0)}
         result = await exporter.export(snapshot, temp_dir)
         assert result.success
-        # Header should contain product name
+        # Header should contain the document title
         content = _extract_text(result.file_bytes)
-        assert "MemoGrad" in content
+        assert "测试试卷" in content
 
     async def test_document_has_page_number_fields(self, exporter, temp_dir):
-        """Verify the DOCX contains PAGE and NUMPAGES fields in the footer."""
+        """Verify the DOCX footer contains the PAGE field."""
         snapshot = {"questions": [], "config": _make_config(total_count=0)}
         result = await exporter.export(snapshot, temp_dir)
         assert result.success
@@ -350,7 +350,6 @@ class TestDocxStructure:
             for fname in footer_files:
                 content_xml = z.read(fname).decode("utf-8")
                 assert "PAGE" in content_xml, f"Footer {fname} should contain PAGE field"
-                assert "NUMPAGES" in content_xml, f"Footer {fname} should contain NUMPAGES field"
 
     async def test_page_size_a4(self, exporter, temp_dir):
         """Verify page size is A4 portrait."""
@@ -423,9 +422,15 @@ class TestDocxErrorHandling:
 
 
 def _extract_text(docx_bytes: bytes) -> str:
-    """Extract all text from a DOCX file."""
+    """Extract all text from a DOCX file, including table cells."""
     import io
 
     from docx import Document as DocxDocument
     doc = DocxDocument(io.BytesIO(docx_bytes))
-    return "\n".join(p.text for p in doc.paragraphs if p.text)
+    parts = [p.text for p in doc.paragraphs if p.text]
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if cell.text:
+                    parts.append(cell.text)
+    return "\n".join(parts)

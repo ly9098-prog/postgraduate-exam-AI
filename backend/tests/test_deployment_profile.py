@@ -25,7 +25,7 @@ class TestDeploymentProfileDetection:
     ) -> None:
         monkeypatch.delenv("DEPLOYMENT_PROFILE", raising=False)
         monkeypatch.setattr(
-            "app.core.deployment_profile.settings.DEPLOY_PROFILE", "local",
+            "app.core.config.settings.DEPLOY_PROFILE", "local",
         )
         assert detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT
 
@@ -34,17 +34,17 @@ class TestDeploymentProfileDetection:
     ) -> None:
         monkeypatch.delenv("DEPLOYMENT_PROFILE", raising=False)
         monkeypatch.setattr(
-            "app.core.deployment_profile.settings.DEPLOY_PROFILE", "production",
+            "app.core.config.settings.DEPLOY_PROFILE", "production",
         )
         assert detect_deployment_profile() == DeploymentProfile.CLOUD_API
 
     def test_default_is_local_import(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("DEPLOYMENT_PROFILE", raising=False)
         monkeypatch.setattr(
-            "app.core.deployment_profile.settings.DEPLOY_PROFILE", "",
+            "app.core.config.settings.DEPLOY_PROFILE", "",
         )
         monkeypatch.setattr(
-            "app.core.deployment_profile.settings.APP_ENV", "development",
+            "app.core.config.settings.APP_ENV", "development",
         )
         assert detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT
 

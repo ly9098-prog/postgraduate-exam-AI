@@ -107,9 +107,9 @@ class TestConvertBbox:
         result = convert_bbox((100, 200, 500, 400), CoordinateSpace.IMAGE_PIXELS, 800, 600)
         assert result == (100, 200, 500, 400)
 
-    def test_unknown_space_treated_as_pixels(self):
-        result = convert_bbox((100, 200, 500, 400), "unknown_space", 800, 600)
-        assert result == (100, 200, 500, 400)
+    def test_unknown_space_rejected(self):
+        with pytest.raises(ValueError, match="unsupported coordinate_space"):
+            convert_bbox((100, 200, 500, 400), "unknown_space", 800, 600)
 
 
 # ---------------------------------------------------------------------------
