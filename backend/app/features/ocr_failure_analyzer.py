@@ -359,13 +359,17 @@ def _check_tables(
             "source": "risk_flag_counts",
         }))
 
-    # Check if table_markdown_count reported but expected tables not found
-    table_count = (quality_report or {}).get("table_markdown_count", 0)
+    # Prefer the canonical structured-table count while retaining the legacy
+    # Markdown metric for old reports.
+    table_count = (quality_report or {}).get(
+        "table_structured_count",
+        (quality_report or {}).get("table_markdown_count", 0),
+    )
     expected_tables = (expected or {}).get("expected_table_count")
     if expected_tables is not None and expected_tables > 0:
         if table_count < expected_tables * 0.5:
             failures.append(_make_failure("table_structure_lost", {
-                "table_markdown_count": table_count,
+                "table_structured_count": table_count,
                 "expected_table_count": expected_tables,
                 "reason": "实际表格数不足预期的 50%",
             }))

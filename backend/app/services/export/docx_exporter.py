@@ -250,7 +250,7 @@ class DocxExporter(Exporter):
                     self._set_east_asian_font(run, _BODY_FONT_EA)
                 visual_segments = [
                     seg for seg in segments
-                    if seg.get("type") in ("code_image", "math_image", "table_image", "image", "table_markdown")
+                    if seg.get("type") in ("code_image", "math_image", "table_image", "image", "table", "table_markdown")
                 ]
                 if visual_segments:
                     self._write_segments_to_doc(stem_p, visual_segments, ctx, doc)
@@ -501,15 +501,13 @@ class DocxExporter(Exporter):
                 if url:
                     self._embed_image_in_doc(parent_paragraph, url, ctx)
 
-            elif seg_type == "table_markdown":
-                md_text = seg.get("text", "")
-                if md_text:
-                    blocks = parse_table(md_text, source_type="markdown")
-                    if blocks:
-                        for block in blocks:
-                            render_table_to_docx(doc, block, BODY_W_CM)
-                            parent_paragraph = doc.add_paragraph()
-                            parent_paragraph.paragraph_format.space_after = Pt(4)
+            elif seg_type in ("table", "table_markdown"):
+                blocks = parse_table(seg, source_type="segment")
+                if blocks:
+                    for block in blocks:
+                        render_table_to_docx(doc, block, BODY_W_CM)
+                        parent_paragraph = doc.add_paragraph()
+                        parent_paragraph.paragraph_format.space_after = Pt(4)
 
     def _write_latex_content_to_doc(
         self, paragraph, text: str, ctx: DocxContext,

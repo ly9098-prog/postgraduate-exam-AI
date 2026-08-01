@@ -286,144 +286,22 @@ def _filter_sensitive(text: str) -> str:
 
 
 # ── 选项结构修复层 ────────────────────────────────────────────────────
-# PaddleOCR-VL 输出有时会去掉 A/B/C/D 前缀（list 格式/LaTeX 污染）。
-# 这个函数在 VL 输出作为 fallback 时尝试恢复选项结构。
-
-# 常见无前缀选项文本模式（出现在 VL 输出中）
-_OPTION_BARE_PATTERNS: list[tuple[re.Pattern, str]] = [
-    # "找到头结点 找到尾结点 删除所有节点 逆置链表" → inline list
-    (re.compile(r"[，,]\s*(找到|计算|删除|统计|插入|输出|返回|得到|执行|获取|判断|查看|显示|增加|减少|设置)"), None),
-    # 换行分隔的列表项（无前缀）
-    (re.compile(r"\n([^\n]+?)\n([^\n]+?)\n([^\n]+?)\n([^\n]+?)(?:\n|$)"), None),
-]
-
-# LaTeX 污染的选项：数学符号包裹的内容
-_LATEX_OPTION = re.compile(r"\$\$\s*([A-Da-d])\s*\..*?\$\$")
-
-# 列表项常见前缀（<li> 标签、- 无序列表等）
-_LIST_ITEM_PREFIX = re.compile(r"^[\s]*[•\-*◆◇>]+|\blitem\b|<li[^>]*>|</li>", re.MULTILINE)
-
-# 常见选项种子文本 — 用于在无前缀文本中识别选项边界
-_COMMON_OPTION_STEMS = [
-    "找到头结点", "找到尾结点", "删除所有节点", "逆置链表",
-    "统计所有节点", "统计叶子节点数量", "删除叶子节点", "层序遍历",
-    "计算所有元素和", "计算负数和", "计算正数元素之和", "查找最大值",
-    "入栈操作", "出栈并输出栈中元素", "判断栈满", "初始化栈",
-]
+#
+# The implementation lives in ``option_recovery`` so the same deterministic
+# recovery is shared by VL rebuild, classifier fallback and regression tests.
 
 
-def _repair_latex_options(text: str) -> str:
-    """修复 LaTeX 污染的选项标记。
+def repair_option_structure(text: str, *reference_texts: str) -> str:
+    """Restore incomplete A-D option structure without inventing content.
 
-    将 ``$$ A. xxx $$`` 恢复为 ``A. xxx``。
-    """
-    def _replace_latex(m: re.Match) -> str:
-        key = m.group(1)
-        rest = m.group(0).replace("$$", "").replace(key, "").strip().lstrip(".）)").strip()
-        if rest and len(rest) < 100:
-            return f"{key}. {rest}"
-        return m.group(0)
-    return _LATEX_OPTION.sub(_replace_latex, text)
-
-
-def _line_is_option_like(line: str) -> bool:
-    """检查一行文本是否看起来像是一个选项（有内容但无 A/B/C/D 前缀）。"""
-    stripped = line.strip()
-    if not stripped:
-        return False
-    # 已经有 A./B. 前缀的不算"bare"
-    import re
-    if re.match(r'^[A-Da-d]\s*[.．、:：)）\s]', stripped):
-        return False
-    # 太短的不算
-    if len(stripped) < 2:
-        return False
-    # 看起来像代码行的不算（包含 C 语言关键词）
-    code_keywords = {"int", "char", "void", "return", "if", "while", "for", "printf", "struct", "typedef", "#define", "#include", "LNode", "LinkList"}
-    first_word = stripped.split()[0] if stripped.split() else ""
-    if first_word in code_keywords or stripped.startswith("#"):
-        return False
-    # 包含中文（题干/说明行）→ 不算 bare option
-    if any("一" <= c <= "鿿" or "　" <= c <= "〿" for c in stripped):
-        return False
-    # 看起来像自然语言选项
-    return True
-
-
-def repair_option_structure(text: str) -> str:
-    """修复 PaddleOCR-VL 输出中的选项结构。
-
-    VL 输出常见问题：
-    1. **LaTeX 污染**：选项被 ``$$`` 数学符号包裹
-    2. **列表化输出**：选项变为无前缀的独立行
-    3. **HTML 标签污染**：包含 ``<li>`` 等列表标签
-
-    Returns:
-        修复后的文本，尽可能恢复 A./B./C./D. 前缀。
+    ``reference_texts`` may contain PP-OCR raw text, the original extraction,
+    or a second VL candidate.  Per-key candidates are merged and mirrored
+    linked-list expressions such as ``xau<-s`` are normalized.
     """
     if not text:
         return text
 
-    original = text
+    from app.features.option_recovery import recover_options_from_sources
 
-    # Step 1: 清理 HTML/标记标签
-    text = _LIST_ITEM_PREFIX.sub("", text)
-
-    # Step 2: 修复 LaTeX 污染的选项
-    text = _repair_latex_options(text)
-
-    # Step 3: 如果已经有 detectable options，无需进一步修复
-    from app.features.question_type_classifier import (
-        detect_options_from_text,
-    )
-    if detect_options_from_text(text):
-        return text
-
-    # Step 4: 尝试在无前缀行前恢复 A./B./C./D.
-    # 策略：找到连续4行类似选项的文字，按顺序标记为 A/B/C/D
-    lines = text.split("\n")
-    bare_option_block: list[int] = []  # 连续无前缀但像选项的行索引
-
-    for i, line in enumerate(lines):
-        if _line_is_option_like(line):
-            bare_option_block.append(i)
-        else:
-            # 如果积累了 2-6 条 bare 行，尝试标记为选项
-            if 2 <= len(bare_option_block) <= 6:
-                keys = ["A", "B", "C", "D", "E", "F"]
-                for j, idx in enumerate(bare_option_block):
-                    if j < len(keys):
-                        lines[idx] = f"{keys[j]}. {lines[idx].strip()}"
-            bare_option_block = []
-
-    # 处理文件末尾的 bare 块
-    if 2 <= len(bare_option_block) <= 6:
-        keys = ["A", "B", "C", "D", "E", "F"]
-        for j, idx in enumerate(bare_option_block):
-            if j < len(keys):
-                lines[idx] = f"{keys[j]}. {lines[idx].strip()}"
-
-    text = "\n".join(lines)
-
-    # Step 5: 如果修复后有了 options，返回修复结果
-    if detect_options_from_text(text):
-        return text
-
-    # Step 6: 如果修复仍然失败，尝试将已知选项种子文本映射回 A/B/C/D
-    # 对 VL 输出的每行，检查是否匹配已知选项
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped in _COMMON_OPTION_STEMS:
-            idx = _COMMON_OPTION_STEMS.index(stripped)
-            idx // 4
-            opt_idx = idx % 4
-            keys = ["A", "B", "C", "D"]
-            lines[i] = f"{keys[opt_idx]}. {stripped}"
-
-    text = "\n".join(lines)
-
-    if detect_options_from_text(text):
-        return text
-
-    # 如果所有修复都失败，返回原始文本
-    return original
+    result = recover_options_from_sources(text, *reference_texts)
+    return result.text

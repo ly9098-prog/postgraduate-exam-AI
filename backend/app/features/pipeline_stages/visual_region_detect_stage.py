@@ -65,15 +65,18 @@ def run_visual_region_detect_stage(
     Returns:
         dict with ``questions``, ``warnings``, ``risk_flag_counts`` keys.
     """
-    if not questions:
-        return {"questions": questions, "warnings": ["visual_region_detect: empty questions"]}
-
+    questions = questions or []
     warnings: list[str] = []
     region_count = 0
 
     if not layout_blocks_by_page:
         warnings.append("visual_region_detect: no layout_blocks available")
-        return {"questions": questions, "warnings": warnings, "risk_flag_counts": _count_risk_flags(questions)}
+        return {
+            "questions": questions,
+            "page_visual_regions": {},
+            "warnings": warnings,
+            "risk_flag_counts": _count_risk_flags(questions),
+        }
 
     # Page-level detection: process all layout blocks and create VisualRegions
     all_regions: list[VisualRegion] = []
@@ -84,7 +87,12 @@ def run_visual_region_detect_stage(
 
     if not all_regions:
         warnings.append("visual_region_detect: no visual regions found")
-        return {"questions": questions, "warnings": warnings, "risk_flag_counts": _count_risk_flags(questions)}
+        return {
+            "questions": questions,
+            "page_visual_regions": {},
+            "warnings": warnings,
+            "risk_flag_counts": _count_risk_flags(questions),
+        }
 
     region_count = len(all_regions)
     logger.info(
@@ -124,6 +132,10 @@ def run_visual_region_detect_stage(
 
     return {
         "questions": questions,
+        "page_visual_regions": {
+            page: [region.to_dict() for region in regions]
+            for page, regions in regions_by_page.items()
+        },
         "warnings": warnings,
         "risk_flag_counts": _count_risk_flags(questions),
     }
@@ -138,16 +150,12 @@ def _detect_page_regions(
     """Detect visual regions from normalized layout blocks on one page."""
     regions: list[VisualRegion] = []
 
-    for block in blocks:
+    for block_index, block in enumerate(blocks):
         block_type = (block.get("type") or block.get("label") or "").lower()
         bbox = block.get("bbox")
 
         # Skip noise blocks
         if block_type in _NOISE_BLOCK_TYPES:
-            continue
-
-        # Skip non-visual text blocks
-        if not bbox:
             continue
 
         # Check if this is a visual block worth preserving
@@ -156,39 +164,52 @@ def _detect_page_regions(
             # For text blocks, skip — they're handled by the text pipeline
             continue
 
-        # Check if region is too small (likely noise)
-        try:
-            x0, y0, x1, y1 = bbox
-            area = (x1 - x0) * (y1 - y0)
-        except (ValueError, TypeError):
-            continue
-        if area < _MIN_REGION_AREA:
+        # Provider-native table structures are useful even when the VL model
+        # omitted coordinates.  Keep them for structured recovery; cropping is
+        # simply unavailable and assignment will use text overlap/review.
+        allow_without_bbox = block_type in {"table", "table_caption"}
+        if not bbox and not allow_without_bbox:
             continue
 
-        # Check if region covers almost full page (likely a page background/image)
-        page_area = page_width * page_height
-        if page_area > 0 and area / page_area > _FULL_PAGE_RATIO:
-            continue
+        if bbox:
+            # Check if region is too small (likely noise)
+            try:
+                x0, y0, x1, y1 = bbox
+                area = (x1 - x0) * (y1 - y0)
+            except (ValueError, TypeError):
+                continue
+            if area < _MIN_REGION_AREA:
+                continue
 
-        # Check if region is at page edge (likely decoration/header/footer)
-        edge_margin_x = page_width * _PAGE_EDGE_MARGIN
-        edge_margin_y = page_height * _PAGE_EDGE_MARGIN
-        if x0 < edge_margin_x and y0 < edge_margin_y:
-            continue  # top-left corner decoration
-        if x1 > page_width - edge_margin_x and y0 < edge_margin_y:
-            continue  # top-right corner decoration
+            # Check if region covers almost full page (likely a page background/image)
+            page_area = page_width * page_height
+            if page_area > 0 and area / page_area > _FULL_PAGE_RATIO:
+                continue
+
+            # Check if region is at page edge (likely decoration/header/footer)
+            edge_margin_x = page_width * _PAGE_EDGE_MARGIN
+            edge_margin_y = page_height * _PAGE_EDGE_MARGIN
+            if x0 < edge_margin_x and y0 < edge_margin_y:
+                continue  # top-left corner decoration
+            if x1 > page_width - edge_margin_x and y0 < edge_margin_y:
+                continue  # top-right corner decoration
 
         # Classify region type
         region_type = _classify_region_type(block_type, block)
 
-        region_id = VisualRegion.generate_region_id(page_idx, tuple(bbox))
+        bbox_tuple = tuple(bbox) if bbox else None
+        source_key = (
+            f"vl_{block_type}_{block_index}_"
+            f"{str(block.get('text') or block.get('markdown') or block.get('html') or '')[:80]}"
+        )
+        region_id = VisualRegion.generate_region_id(page_idx, bbox_tuple, source=source_key)
 
         vr = VisualRegion(
             region_id=region_id,
             region_type=region_type,
             source_page=page_idx,
-            bbox=tuple(bbox),
-            coordinate_space="normalized_1000",  # default VL space
+            bbox=bbox_tuple,
+            coordinate_space=block.get("coordinate_space") or "normalized_1000",
             confidence=block.get("confidence", 0.5),
             alt=block.get("text", "")[:200],
             raw_data=block,

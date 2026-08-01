@@ -15,6 +15,7 @@ Assignment rules:
 from __future__ import annotations
 
 import logging
+import re
 
 from app.features.pipeline_stages._helpers import _count_risk_flags
 from app.services.visual_region_types import (
@@ -86,6 +87,7 @@ def run_visual_region_assign_stage(
             continue
 
         for region in regions:
+            target_questions = qs_on_page
             assignment = _assign_region_to_question(region, qs_on_page, page_idx)
 
             if assignment["method"] == AssignmentMethod.UNASSIGNED:
@@ -96,6 +98,7 @@ def run_visual_region_assign_stage(
                     if cross["method"] != AssignmentMethod.UNASSIGNED:
                         assignment = cross
                         assignment["method"] = AssignmentMethod.PAGE_CROSS
+                        target_questions = next_qs
                         # Mark the target question as cross-page
                         q_idx, target_q = next_qs[cross["question_index"]]
                         if "cross_page_regions" not in target_q:
@@ -112,7 +115,7 @@ def run_visual_region_assign_stage(
                 continue
 
             # Apply assignment to the target question
-            q_idx, target_q = qs_on_page[assignment["question_index"]]
+            q_idx, target_q = target_questions[assignment["question_index"]]
             _attach_region_to_question(target_q, region, assignment)
 
             if assignment.get("ambiguous"):
@@ -137,9 +140,15 @@ def run_visual_region_assign_stage(
 def _collect_page_regions(questions: list[dict]) -> dict[int, list[dict]]:
     """Reconstruct page_regions from visual_regions on question dicts."""
     page_regions: dict[int, list[dict]] = {}
+    seen: set[str] = set()
     for q in questions:
         for vr in (q.get("visual_regions") or []):
             if isinstance(vr, dict):
+                region_id = str(vr.get("region_id") or "")
+                if region_id and region_id in seen:
+                    continue
+                if region_id:
+                    seen.add(region_id)
                 page = vr.get("source_page") or q.get("page_start") or 1
                 page_regions.setdefault(page, []).append(vr)
     return page_regions
@@ -170,6 +179,9 @@ def _assign_region_to_question(
 
     region_bbox = region.get("bbox")
     if not region_bbox or len(region_bbox) != 4:
+        text_match = _assign_region_by_text(region, questions_on_page)
+        if text_match is not None:
+            return text_match
         return {
             "question_index": 0 if len(questions_on_page) == 1 else -1,
             "method": AssignmentMethod.UNASSIGNED if len(questions_on_page) > 1 else AssignmentMethod.BBOX_OVERLAP,
@@ -179,11 +191,11 @@ def _assign_region_to_question(
         }
 
     # Strategy 1: Check option_key if region is inside an option area
-    for qi, q in questions_on_page:
+    for position, (_question_index, q) in enumerate(questions_on_page):
         option_key = _find_region_in_options(region, q)
         if option_key:
             return {
-                "question_index": qi,
+                "question_index": position,
                 "method": AssignmentMethod.OPTION_REGION,
                 "ambiguous": False,
                 "assignment_confidence": 0.9,
@@ -193,13 +205,13 @@ def _assign_region_to_question(
     # Strategy 2: IoU overlap with question stem/option spatial bounds
     best_match = -1
     best_iou = 0.0
-    for qi, q in questions_on_page:
+    for position, (_question_index, q) in enumerate(questions_on_page):
         q_bbox = _get_question_bbox(q)
         if q_bbox:
             iou = _compute_iou(region_bbox, q_bbox)
             if iou > best_iou:
                 best_iou = iou
-                best_match = qi
+                best_match = position
 
     if best_match >= 0 and best_iou >= _STRONG_IOU_THRESHOLD:
         return {
@@ -213,25 +225,30 @@ def _assign_region_to_question(
     # Strategy 3: Between-questions — region falls between start of question A
     # and start of question B → assign to question A
     if len(questions_on_page) >= 2:
-        sorted_qs = sorted(questions_on_page, key=lambda x: _get_question_top_y(x[1]))
+        sorted_qs = sorted(
+            enumerate(questions_on_page),
+            key=lambda item: _get_question_top_y(item[1][1]),
+        )
         region_top = region_bbox[1]
         for i in range(len(sorted_qs) - 1):
-            q_top = _get_question_top_y(sorted_qs[i][1])
-            next_q_top = _get_question_top_y(sorted_qs[i + 1][1])
+            current_position, (_current_index, current_question) = sorted_qs[i]
+            _next_position, (_next_index, next_question) = sorted_qs[i + 1]
+            q_top = _get_question_top_y(current_question)
+            next_q_top = _get_question_top_y(next_question)
             if q_top <= region_top <= next_q_top:
                 # Check if region is also close to the next question
                 dist_to_next = next_q_top - region_top
                 if dist_to_next < _BETWEEN_QUESTIONS_Y_THRESHOLD * 0.3:
                     # Too close to the next question — ambiguous
                     return {
-                        "question_index": sorted_qs[i][0],
+                        "question_index": current_position,
                         "method": AssignmentMethod.BETWEEN_QUESTIONS,
                         "ambiguous": True,
                         "assignment_confidence": 0.5,
                         "option_key": None,
                     }
                 return {
-                    "question_index": sorted_qs[i][0],
+                    "question_index": current_position,
                     "method": AssignmentMethod.BETWEEN_QUESTIONS,
                     "ambiguous": False,
                     "assignment_confidence": 0.7,
@@ -241,7 +258,7 @@ def _assign_region_to_question(
     # Fallback: attach to the only question on this page
     if len(questions_on_page) == 1:
         return {
-            "question_index": questions_on_page[0][0],
+            "question_index": 0,
             "method": AssignmentMethod.UNCERTAIN,
             "ambiguous": False,
             "assignment_confidence": 0.4,
@@ -258,6 +275,71 @@ def _assign_region_to_question(
     }
 
 
+def _assign_region_by_text(
+    region: dict,
+    questions_on_page: list[tuple[int, dict]],
+) -> dict | None:
+    """Assign coordinate-free provider tables by literal cell/text overlap."""
+    source = region.get("table_source") or region.get("raw_data") or {}
+    snippets = _collect_distinctive_strings(source)
+    if not snippets:
+        return None
+
+    scored: list[tuple[int, int]] = []
+    for position, (_question_index, question) in enumerate(questions_on_page):
+        haystack = "\n".join(
+            str(value or "")
+            for value in (
+                question.get("stem"),
+                (question.get("parsed_content") or {}).get("text"),
+                question.get("raw_text"),
+            )
+        )
+        normalized_haystack = re.sub(r"\s+", "", haystack).lower()
+        score = sum(
+            min(len(snippet), 40)
+            for snippet in snippets
+            if re.sub(r"\s+", "", snippet).lower() in normalized_haystack
+        )
+        scored.append((score, position))
+
+    scored.sort(reverse=True)
+    # One distinctive five-character cell value (for example a process or
+    # algorithm name) is sufficient when it matches only one question.
+    if not scored or scored[0][0] < 4:
+        return None
+    if len(scored) > 1 and scored[0][0] == scored[1][0]:
+        return None
+    return {
+        "question_index": scored[0][1],
+        "method": AssignmentMethod.UNCERTAIN,
+        "ambiguous": False,
+        "assignment_confidence": min(0.85, 0.45 + scored[0][0] / 100),
+        "option_key": None,
+    }
+
+
+def _collect_distinctive_strings(value, depth: int = 0) -> list[str]:
+    if depth > 5:
+        return []
+    results: list[str] = []
+    if isinstance(value, str):
+        # Prefer complete cell-like lines, then stable word/number chunks.
+        for line in re.split(r"[\r\n|]", value):
+            text = re.sub(r"<[^>]+>", " ", line).strip(" -:\t")
+            if 3 <= len(text) <= 80:
+                results.append(text)
+        return list(dict.fromkeys(results))[:40]
+    if isinstance(value, dict):
+        for key in ("text", "content", "markdown", "html", "caption", "headers", "rows", "cells"):
+            if key in value:
+                results.extend(_collect_distinctive_strings(value[key], depth + 1))
+    elif isinstance(value, (list, tuple)):
+        for item in value[:200]:
+            results.extend(_collect_distinctive_strings(item, depth + 1))
+    return list(dict.fromkeys(results))[:80]
+
+
 def _attach_region_to_question(
     question: dict,
     region: dict,
@@ -268,6 +350,11 @@ def _attach_region_to_question(
     vr["assignment_method"] = assignment["method"].value if hasattr(assignment["method"], "value") else str(assignment["method"])
     vr["assignment_confidence"] = assignment["assignment_confidence"]
     vr["option_key"] = assignment.get("option_key")
+    vr["requires_review"] = bool(
+        assignment.get("ambiguous")
+        or assignment["assignment_confidence"] < 0.65
+        or assignment["method"] in {AssignmentMethod.UNCERTAIN, AssignmentMethod.PAGE_CROSS}
+    )
 
     # Store in visual_regions list
     q_vrs: list[dict] = list(question.get("visual_regions") or [])

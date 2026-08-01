@@ -118,7 +118,7 @@ def extract_segment_text(segments: Any) -> str:
             if parts and parts[-1] != "\n":
                 parts.append("\n")
             continue
-        if seg_type in _IMAGE_SEGMENT_TYPES or seg_type == "table_markdown":
+        if seg_type in _IMAGE_SEGMENT_TYPES or seg_type in {"table", "table_markdown"}:
             continue
         for key in ("text", "content", "value"):
             text = _clean_text(segment.get(key))
@@ -301,7 +301,7 @@ def has_visual_question_content(question: Any) -> bool:
                 if not isinstance(segment, dict):
                     continue
                 seg_type = str(segment.get("type") or "").lower()
-                if seg_type in _IMAGE_SEGMENT_TYPES or seg_type == "table_markdown":
+                if seg_type in _IMAGE_SEGMENT_TYPES or seg_type in {"table", "table_markdown"}:
                     return True
     return bool(iter_question_image_urls(question))
 

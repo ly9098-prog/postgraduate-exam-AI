@@ -128,8 +128,13 @@ class VisualRegion:
         return seg
 
     def to_dict(self) -> dict:
-        """Full serialization for persistence."""
-        return {
+        """Full serialization for persistence.
+
+        Table regions retain a bounded provider payload so the later
+        ``table_detect`` stage can reconstruct rows/cells after OCR blocks have
+        been released from memory.
+        """
+        result = {
             "region_id": self.region_id,
             "region_type": self.region_type.value,
             "source_page": self.source_page,
@@ -145,6 +150,47 @@ class VisualRegion:
             "risk_flags": self.risk_flags,
             "crop_failed": self.crop_failed,
         }
+        if self.region_type == VisualRegionType.TABLE and self.raw_data:
+            result["table_source"] = _bounded_table_source(self.raw_data)
+        return result
+
+
+def _bounded_table_source(raw: dict) -> dict:
+    """Keep only table-recovery fields and cap provider payload size."""
+    allowed = {
+        "type", "label", "category", "text", "markdown", "html",
+        "table_html", "table_markdown", "content", "value", "alt", "url", "src",
+        "bbox", "cell_bbox", "polygon", "confidence", "width", "height",
+        "rows", "headers", "header", "cells", "tokens", "ocr_tokens",
+        "row_span", "rowspan", "col_span", "colspan", "is_header",
+        "alignment", "align", "style", "caption", "column_widths",
+        "source_page", "source_pages", "page", "page_num", "coordinate_space",
+        "region_id", "table_id", "schema_version", "source_format",
+        "signals", "continuation", "table", "data", "structure",
+        "raw_block", "raw_data",
+    }
+
+    def sanitize(value, depth: int = 0):
+        # A normal table payload reaches depth five at ``rows[].cells[].text``.
+        # Leave enough room for rich cell content while still bounding hostile
+        # or accidentally recursive provider data.
+        if depth > 8:
+            return None
+        if isinstance(value, str):
+            return value[:50000]
+        if isinstance(value, (int, float, bool)) or value is None:
+            return value
+        if isinstance(value, (list, tuple)):
+            return [sanitize(item, depth + 1) for item in list(value)[:1000]]
+        if isinstance(value, dict):
+            return {
+                str(key): sanitize(item, depth + 1)
+                for key, item in value.items()
+                if str(key) in allowed
+            }
+        return str(value)[:1000]
+
+    return sanitize(raw) or {}
 
 
 @dataclass

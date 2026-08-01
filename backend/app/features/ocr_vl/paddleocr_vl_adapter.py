@@ -106,6 +106,10 @@ class PaddleOCRVLAdapter:
                 model_used=self.model_name,
                 tokens_used=0,
                 duration_ms=duration_ms,
+                metadata={
+                    "layout_blocks": result.layout_blocks,
+                    "raw_entries": result.raw_entries[:200],
+                },
             )
         except Exception as exc:
             duration_ms = round((time.monotonic() - start) * 1000)

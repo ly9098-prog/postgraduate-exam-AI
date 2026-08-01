@@ -126,7 +126,12 @@ def detect_options_from_text(raw_text: str) -> bool:
     if len(unique_broad) >= 2:
         return True
 
-    return False
+    # 方法 8: Phase 8 deterministic recovery.  This covers incomplete labeled
+    # blocks plus source-grounded bare lists and mirrored linked-list code.
+    from app.features.option_recovery import recover_options_from_sources
+
+    recovered = recover_options_from_sources(raw_text)
+    return len(recovered.options) >= 2
 
 
 def force_options_probe(raw_text: str) -> dict:
@@ -338,6 +343,14 @@ def extract_options_from_text(raw_text: str) -> dict[str, str]:
                 options[key] = text
         if len(options) >= 2:
             return options
+
+    # Method 5: shared Phase 8 recovery.  Unlike padding, every recovered value
+    # must exist in the OCR source and mirrored code is normalized first.
+    from app.features.option_recovery import recover_options_from_sources
+
+    recovered = recover_options_from_sources(raw_text)
+    if len(recovered.options) >= 2:
+        return recovered.options
 
     return {}
 

@@ -297,10 +297,23 @@ def _normalize_layout_block(lr: dict) -> dict | None:
     else:
         block["text"] = lr.get("text") or lr.get("content") or ""
 
-    # Type/label/category from various possible keys
-    block["type"] = lr.get("type") or lr.get("label") or lr.get("category") or "unknown"
+    # Type/label/category from various possible keys.  Some API versions emit
+    # a page-level Markdown block without a semantic label; promote it to a
+    # table block when the markup itself is unambiguous.
+    declared_type = lr.get("type") or lr.get("label") or lr.get("category") or "unknown"
+    if str(declared_type).lower() in {"", "unknown", "text", "paragraph"}:
+        table_text = str(block.get("markdown") or block.get("text") or "")
+        if _contains_table_markup(table_text) or isinstance(lr.get("rows"), list):
+            declared_type = "table"
+    block["type"] = declared_type
     block["label"] = lr.get("label") or lr.get("type") or ""
     block["category"] = lr.get("category") or lr.get("type") or ""
+
+    # Preserve provider-native table structures when available.  These fields
+    # are bounded later by VisualRegion serialization before persistence.
+    for key in ("html", "rows", "headers", "cells", "tokens", "ocr_tokens"):
+        if key in lr:
+            block[key] = lr[key]
 
     # Bbox from various possible keys
     bbox = lr.get("bbox") or lr.get("box") or lr.get("polygon") or lr.get("rect")
@@ -344,6 +357,27 @@ def _normalize_layout_block(lr: dict) -> dict | None:
         return None
 
     return block
+
+
+def _contains_table_markup(text: str) -> bool:
+    if not text:
+        return False
+    lowered = text.lower()
+    if "<table" in lowered and "</table>" in lowered:
+        return True
+    lines = text.splitlines()
+    for index in range(len(lines) - 1):
+        if "|" not in lines[index]:
+            continue
+        separator = lines[index + 1].strip().strip("|")
+        parts = [part.strip() for part in separator.split("|")]
+        if len(parts) >= 2 and all(
+            part and set(part.replace(":", "").replace(" ", "")) <= {"-"}
+            and part.count("-") >= 3
+            for part in parts
+        ):
+            return True
+    return False
 
 
 class PaddleOCRVLClientError(Exception):
