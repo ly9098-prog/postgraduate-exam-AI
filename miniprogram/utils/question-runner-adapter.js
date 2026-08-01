@@ -691,12 +691,19 @@ function getEmbeddedImageUrls(content) {
   for (var i = 0; i < content.segments.length; i++) {
     var seg = content.segments[i]
     if (!seg || typeof seg !== 'object') continue
-    var url = seg.url
-    if (url && typeof url === 'string') {
-      var normalized = _normalizeUrl(url)
-      if (normalized && !seen[normalized]) {
-        seen[normalized] = true
-        urls.push(normalized)
+    var candidateUrls = [seg.url]
+    if (String(seg.type || '').toLowerCase() === 'table') {
+      candidateUrls.push(seg.source_image_url)
+      candidateUrls.push(seg.fallback_image_url)
+    }
+    for (var ui = 0; ui < candidateUrls.length; ui++) {
+      var url = candidateUrls[ui]
+      if (url && typeof url === 'string') {
+        var normalized = _normalizeUrl(url)
+        if (normalized && !seen[normalized]) {
+          seen[normalized] = true
+          urls.push(normalized)
+        }
       }
     }
   }

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { DATA_SOURCE_LABELS } from "./action-labels";
 import { cn } from "@/lib/utils";
 import type { QuestionAuditDetail } from "@/lib/api/types";
+import { QuestionContentRenderer } from "@/components/question-content-renderer";
 
 function renderValue(value: unknown): string {
   if (value === undefined || value === null) return "—";
@@ -48,7 +49,7 @@ export function QuestionDetailCard({ qd }: { qd: QuestionAuditDetail }) {
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
         <p className="mb-2 text-xs font-medium text-[var(--color-text-hint)]">题干</p>
         <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-[var(--color-text-primary)]">
-          {qd.content_text || renderValue(qd.content)}
+          <QuestionContentRenderer content={qd.content} fallbackText={qd.content_text || renderValue(qd.content)} showTableMetadata />
         </div>
       </div>
 

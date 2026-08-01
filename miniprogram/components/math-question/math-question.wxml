@@ -29,6 +29,68 @@
       <text wx:else class="seg-math-fallback seg-math-fallback-inline">{{item.alt}}</text>
     </view>
 
+    <view wx:elif="{{item.type === 'table'}}" class="seg-table-wrap {{item.requires_review ? 'seg-table-review' : ''}}">
+      <view class="seg-table-caption" wx:if="{{item.caption || item.requires_review}}">
+        <text class="seg-table-title">{{item.caption || '结构化表格'}}</text>
+        <text wx:if="{{item.requires_review}}" class="seg-table-review-badge">需核对</text>
+      </view>
+      <scroll-view scroll-x enhanced show-scrollbar class="seg-table-scroll">
+        <view class="seg-table-grid" style="{{item._gridStyle}}">
+          <view
+            wx:for="{{item._cells}}"
+            wx:for-item="cell"
+            wx:for-index="cellIndex"
+            wx:key="_key"
+            class="{{cell._className}}"
+            style="{{cell._cellStyle}}"
+          >
+            <block wx:for="{{cell._blocks}}" wx:for-item="block" wx:for-index="blockIndex" wx:key="blockIndex">
+              <view wx:if="{{block.type === 'newline'}}" class="seg-table-cell-newline" />
+              <image
+                wx:elif="{{block.type === 'image' && block.url && !block._error}}"
+                src="{{block.url}}"
+                mode="widthFix"
+                class="seg-table-cell-image"
+                binderror="onTableCellImageError"
+                catchtap="onDirectImageTap"
+                data-table-index="{{index}}"
+                data-cell-index="{{cellIndex}}"
+                data-block-index="{{blockIndex}}"
+                data-url="{{block.url}}"
+              />
+              <text wx:elif="{{block.type === 'image'}}" class="seg-table-cell-image-fallback">{{block.alt || '单元格图片加载失败'}}</text>
+              <mp-html
+                wx:elif="{{block.type === 'text' && block.needsRich}}"
+                content="{{block.html}}"
+                set-title="{{false}}"
+                copy-link="{{false}}"
+                class="seg-table-cell-rich"
+              />
+              <text wx:else class="seg-table-cell-text">{{block.text}}</text>
+            </block>
+          </view>
+        </view>
+      </scroll-view>
+      <view class="seg-table-meta">
+        <text>{{item.row_count}}行 × {{item.column_count}}列</text>
+        <text>置信度 {{item._confidenceText}}</text>
+        <text wx:if="{{item._pageLabel}}">{{item._pageLabel}}</text>
+      </view>
+      <view wx:if="{{item._invalid && item._issueText}}" class="seg-table-warning">{{item._issueText}}</view>
+      <view wx:if="{{item.requires_review && item._sourceImageUrl && !item._sourceImageError}}" class="seg-table-source">
+        <text class="seg-table-source-label">原始表格截图</text>
+        <image
+          src="{{item._sourceImageUrl}}"
+          mode="widthFix"
+          class="seg-table-source-image"
+          binderror="onTableSourceError"
+          catchtap="onDirectImageTap"
+          data-index="{{index}}"
+          data-url="{{item._sourceImageUrl}}"
+        />
+      </view>
+    </view>
+
     <view wx:elif="{{item.type === 'image' || item.type === 'table_image' || item.type === 'code_image'}}" class="seg-image-wrap">
       <image
         wx:if="{{!item._error}}"

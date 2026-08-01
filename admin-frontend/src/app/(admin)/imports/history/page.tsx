@@ -8,6 +8,7 @@ import { Eye, RefreshCw, Send, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { QuestionContentRenderer } from "@/components/question-content-renderer";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { apiRequest, toQuery } from "@/lib/api/client";
@@ -165,7 +166,13 @@ export default function ImportHistoryPage() {
                   <StatusBadge tone={item.status === "published" ? "primary" : item.status === "approved" ? "success" : item.status === "rejected" ? "danger" : "warning"}>{item.status}</StatusBadge>
                   <Link className="text-sm font-semibold text-[var(--color-primary-dark)] underline" href={`/imports/review?batch_id=${encodeURIComponent(item.batch_id)}`}>进入审核</Link>
                 </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm font-semibold text-[var(--ink)]">{String(item.parsed_content?.text ?? item.parsed_content?.stem ?? item.raw_data?.text ?? `导入题目 #${item.id}`)}</p>
+                <div className="mt-3 text-sm font-semibold text-[var(--ink)]">
+                  <QuestionContentRenderer
+                    content={item.parsed_content}
+                    fallbackText={String(item.parsed_content?.text ?? item.parsed_content?.stem ?? item.raw_data?.text ?? `导入题目 #${item.id}`)}
+                    showTableMetadata
+                  />
+                </div>
                 <p className="mt-2 text-xs text-[var(--color-text-secondary)]">{item.subject_name || item.subject_code || "未分类"} · {item.question_type || "未识别"}</p>
               </article>
             ))}

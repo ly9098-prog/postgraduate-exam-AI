@@ -24,6 +24,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MathFormula } from "@/components/ui/math-formula";
+import { QuestionContentRenderer } from "@/components/question-content-renderer";
+import { StructuredTableEditor } from "@/components/structured-table-editor";
 import { QuestionOptions } from "@/components/question-options";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import {
@@ -34,6 +36,7 @@ import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, getQuestionTypeLabel, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
+import { isTableSegment, normalizeStructuredTableSegment } from "@/lib/structured-table";
 import type {
   AdminQuestion,
   AdminQuestionDetail,
@@ -62,6 +65,21 @@ type BatchDeleteResult = {
   failed_items?: Array<{ id: number; error: string }>;
   failedItems?: Array<{ id: number; error: string }>;
 };
+
+function contentRecord(content: unknown): Record<string, unknown> {
+  return content && typeof content === "object" && !Array.isArray(content)
+    ? (content as Record<string, unknown>)
+    : {};
+}
+
+function contentSegments(content: unknown): Array<Record<string, unknown>> {
+  const record = contentRecord(content);
+  if (!Array.isArray(record.segments)) return [];
+  return record.segments.filter(
+    (segment): segment is Record<string, unknown> =>
+      Boolean(segment) && typeof segment === "object" && !Array.isArray(segment),
+  );
+}
 
 function textFromContent(
   content: Record<string, unknown> | string | null | undefined,
@@ -439,6 +457,37 @@ export default function QuestionsPage() {
   const allChecked =
     items.length > 0 && items.every((item) => selectedIds.has(item.id));
   const selectedQuestion = detail.data;
+  const editingSegments = useMemo(
+    () => contentSegments(editForm.content),
+    [editForm.content],
+  );
+  const unresolvedEditingTableCount = useMemo(
+    () => editingSegments.reduce((count, segment) => {
+      const table = normalizeStructuredTableSegment(segment);
+      return count + (table?.requires_review ? 1 : 0);
+    }, 0),
+    [editingSegments],
+  );
+
+  const replaceEditingSegments = useCallback(
+    (segments: Array<Record<string, unknown>>) => {
+      setEditForm((current) => {
+        const currentContent = contentRecord(current.content);
+        const stem = textFromContent(currentContent);
+        return {
+          ...current,
+          content: {
+            ...currentContent,
+            stem,
+            text: stem,
+            render_mode: "segments",
+            segments,
+          },
+        };
+      });
+    },
+    [],
+  );
 
   const updateFilter = (key: keyof typeof filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -480,7 +529,8 @@ export default function QuestionsPage() {
     if (!selectedQuestion) return;
     // Pre-fill form from current question data
     const content = selectedQuestion.content;
-    const stem = textFromContent(content);
+    const clonedContent = JSON.parse(JSON.stringify(content ?? {})) as Record<string, unknown>;
+    const stem = textFromContent(clonedContent);
     const rawOpts = resolveQuestionOptions(selectedQuestion);
     let editOpts: Record<string, unknown> | undefined;
     if (rawOpts && typeof rawOpts === "object" && !Array.isArray(rawOpts)) {
@@ -499,7 +549,7 @@ export default function QuestionsPage() {
       answer: selectedQuestion.answer || "",
       analysis: selectedQuestion.analysis || "",
       options: editOpts,
-      content: { ...content, stem },
+      content: { ...clonedContent, stem, text: stem },
       knowledge_points: selectedQuestion.knowledge_points ?? undefined,
     });
     setEditing(true);
@@ -763,8 +813,9 @@ export default function QuestionsPage() {
                         </span>
                       </p>
                       <div className="whitespace-pre-wrap text-base leading-8 text-[var(--ink)]">
-                        <MathFormula
-                          text={textFromContent(selectedQuestion.content)}
+                        <QuestionContentRenderer
+                          content={selectedQuestion.content}
+                          fallbackText={textFromContent(selectedQuestion.content)}
                         />
                       </div>
                     </section>
@@ -1097,17 +1148,44 @@ export default function QuestionsPage() {
                     <textarea
                       className="min-h-32 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm"
                       value={textFromContent(editForm.content) ?? ""}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const currentContent = contentRecord(editForm.content);
                         setEditForm({
                           ...editForm,
                           content: {
-                            ...editForm.content,
+                            ...currentContent,
                             stem: e.target.value,
+                            text: e.target.value,
                           },
-                        })
-                      }
+                        });
+                      }}
                     />
                   </div>
+
+                  {editingSegments.some((segment) => isTableSegment(segment)) ? (
+                    <div className="space-y-4">
+                      {editingSegments.map((segment, segmentIndex) => {
+                        const table = normalizeStructuredTableSegment(segment);
+                        if (!table) return null;
+                        return (
+                          <StructuredTableEditor
+                            key={table.table_id || segmentIndex}
+                            segment={table}
+                            onChange={(nextTable) => {
+                              const next = [...editingSegments];
+                              next[segmentIndex] = nextTable;
+                              replaceEditingSegments(next);
+                            }}
+                            onDelete={() => {
+                              replaceEditingSegments(
+                                editingSegments.filter((_, index) => index !== segmentIndex),
+                              );
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  ) : null}
 
                   {/* Options inline editor */}
                   {(() => {
@@ -1273,6 +1351,12 @@ export default function QuestionsPage() {
                     />
                   </div>
 
+                  {unresolvedEditingTableCount > 0 ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      仍有 {unresolvedEditingTableCount} 个结构化表格需要人工核验。请检查单元格和合并关系，并点击“标记人工已核验”后再保存。
+                    </div>
+                  ) : null}
+
                   <div className="flex justify-end gap-3">
                     <Button variant="secondary" onClick={cancelEditing}>
                       <X className="h-4 w-4" />
@@ -1281,7 +1365,7 @@ export default function QuestionsPage() {
                     <Button
                       variant="primary"
                       onClick={() => updateMutation.mutate()}
-                      disabled={updateMutation.isPending}
+                      disabled={updateMutation.isPending || unresolvedEditingTableCount > 0}
                     >
                       <Save className="h-4 w-4" />
                       {updateMutation.isPending ? "保存中..." : "保存修改"}
@@ -1304,8 +1388,10 @@ export default function QuestionsPage() {
                       </div>
                     </div>
                     <div className="whitespace-pre-wrap font-sans text-base leading-8 text-[var(--ink)]">
-                      <MathFormula
-                        text={textFromContent(selectedQuestion.content)}
+                      <QuestionContentRenderer
+                        content={selectedQuestion.content}
+                        fallbackText={textFromContent(selectedQuestion.content)}
+                        showTableMetadata
                       />
                     </div>
                   </section>
@@ -1320,36 +1406,6 @@ export default function QuestionsPage() {
                         if (src) {
                           const key = src.length > 8 && src.endsWith("/") ? src.slice(0, -1) : src;
                           allUrls.set(key, src);
-                        }
-                      });
-                    }
-                    const contentObj = selectedQuestion.content;
-                    if (
-                      contentObj &&
-                      typeof contentObj === "object" &&
-                      !Array.isArray(contentObj) &&
-                      Array.isArray((contentObj as Record<string, unknown>).segments)
-                    ) {
-                      const segs = (contentObj as Record<string, unknown>).segments as unknown[];
-                      segs.forEach((seg: unknown) => {
-                        if (!seg || typeof seg !== "object") return;
-                        const s = seg as Record<string, unknown>;
-                        const segType = String(s.type ?? "");
-                        if (
-                          segType === "image" ||
-                          segType === "math_image" ||
-                          segType === "table_image" ||
-                          segType === "code_image"
-                        ) {
-                          const url = s.url;
-                          if (url && typeof url === "string") {
-                            const trimmed = url.trim();
-                            const key =
-                              trimmed.length > 8 && trimmed.endsWith("/")
-                                ? trimmed.slice(0, -1)
-                                : trimmed;
-                            if (!allUrls.has(key)) allUrls.set(key, trimmed);
-                          }
                         }
                       });
                     }

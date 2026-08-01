@@ -8,13 +8,25 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { QuestionContentRenderer } from "@/components/question-content-renderer";
 import { apiRequest, toQuery } from "@/lib/api/client";
+import { normalizeStructuredTableSegment } from "@/lib/structured-table";
 import type { AdminQuestion, AdminQuestionDetail, AdminQuestionImportSummary, PaginatedResponse, QuestionVersionDetail } from "@/lib/api/types";
 
 type ConfirmState =
   | { action: "approve"; id: number }
   | { action: "reject"; id: number }
   | null;
+
+function unresolvedTableCount(content: unknown): number {
+  if (!content || typeof content !== "object" || Array.isArray(content)) return 0;
+  const segments = (content as Record<string, unknown>).segments;
+  if (!Array.isArray(segments)) return 0;
+  return segments.reduce((count, segment) => {
+    const table = normalizeStructuredTableSegment(segment);
+    return count + (table?.requires_review ? 1 : 0);
+  }, 0);
+}
 
 function textFromContent(content: Record<string, unknown> | string | null | undefined) {
   if (!content) return "";
@@ -146,7 +158,16 @@ export default function ReviewPage() {
 
   const reviewMutation = useMutation({
     mutationFn: async (state: Exclude<ConfirmState, null>) => {
-      if (state.action === "approve") return apiRequest<AdminQuestion>(`/questions/${state.id}/approve`, { method: "POST" });
+      if (state.action === "approve") {
+        const target = preview.data?.id === state.id
+          ? preview.data
+          : await apiRequest<AdminQuestionDetail>(`/questions/${state.id}`);
+        const tableCount = unresolvedTableCount(target.content);
+        if (tableCount > 0) {
+          throw new Error(`无法通过：仍有 ${tableCount} 个结构化表格需要在题库编辑页完成核验。`);
+        }
+        return apiRequest<AdminQuestion>(`/questions/${state.id}/approve`, { method: "POST" });
+      }
       return apiRequest<AdminQuestion>(`/questions/${state.id}/reject`, {
         method: "POST",
         body: JSON.stringify({ reason: rejectReason }),
@@ -168,6 +189,7 @@ export default function ReviewPage() {
   });
 
   const pendingQuestion: AdminQuestionDetail | undefined = preview.data;
+  const pendingQuestionTableReviewCount = unresolvedTableCount(pendingQuestion?.content);
   const previousVersion = previewVersionDetail.data;
   const baselineVersion = previewVersions.data?.items?.[0]?.version;
   const diffUnreliable = tab === "re_pending" && (
@@ -224,7 +246,11 @@ export default function ReviewPage() {
                       <Eye className="h-4 w-4" />
                       预览
                     </Button>
-                    <Button variant="secondary" onClick={() => setConfirmState({ action: "approve", id: question.id })}>
+                    <Button
+                      variant="secondary"
+                      disabled={unresolvedTableCount(question.content) > 0}
+                      onClick={() => setConfirmState({ action: "approve", id: question.id })}
+                    >
                       <CheckCircle2 className="h-4 w-4" />
                       通过
                     </Button>
@@ -240,6 +266,9 @@ export default function ReviewPage() {
                 <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
                   {question.subject_name || "未分类"} · 难度 {question.difficulty} · {question.question_type || "未标注题型"}
                 </p>
+                {unresolvedTableCount(question.content) > 0 ? (
+                  <div className="mt-2"><StatusBadge tone="warning">表格待核验</StatusBadge></div>
+                ) : null}
                 {tab === "re_pending" ? (
                   <div className="mt-2"><StatusBadge tone="warning">re_pending</StatusBadge></div>
                 ) : null}
@@ -259,7 +288,11 @@ export default function ReviewPage() {
             <div className="flex items-center justify-between gap-4">
               <h3 className="font-display text-2xl font-bold text-[var(--ink)]">题目详情与 Diff</h3>
               <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => setConfirmState({ action: "approve", id: previewId })}>
+                <Button
+                  variant="secondary"
+                  disabled={pendingQuestionTableReviewCount > 0}
+                  onClick={() => setConfirmState({ action: "approve", id: previewId })}
+                >
                   <CheckCircle2 className="h-4 w-4" />
                   通过
                 </Button>
@@ -280,6 +313,19 @@ export default function ReviewPage() {
                   {diffUnreliable ? <p className="mt-2 text-sm font-semibold text-[var(--color-warning)]">无法获取历史版本，diff 不可靠</p> : null}
                 </div>
               ) : null}
+              {pendingQuestionTableReviewCount > 0 ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                  当前题目仍有 {pendingQuestionTableReviewCount} 个结构化表格需要人工核验，暂不能审核通过。
+                </div>
+              ) : null}
+              <section className="rounded-2xl border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-4">
+                <p className="mb-3 font-semibold text-[var(--ink)]">当前题干预览</p>
+                <QuestionContentRenderer
+                  content={pendingQuestion.content}
+                  fallbackText={textFromContent(pendingQuestion.content)}
+                  showTableMetadata
+                />
+              </section>
               {renderDiff("题干", textFromContent(pendingQuestion.content), previousVersion ? textFromContent(previousVersion.content) : "")}
               {renderDiff("选项", pendingQuestion.options ?? null, previousVersion ? previousVersion.options ?? null : null)}
               {renderDiff("答案", pendingQuestion.answer, previousVersion ? previousVersion.answer : "")}
