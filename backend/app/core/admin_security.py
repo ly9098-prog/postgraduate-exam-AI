@@ -185,6 +185,48 @@ def create_admin_refresh_token(admin_user: AdminUser, *, issued_at: int | None =
     return jwt.encode(payload, settings.APP_SECRET, algorithm="HS256")
 
 
+_2FA_PENDING_TTL_SEC = 300  # 5 minutes to complete the second factor
+
+
+def create_admin_2fa_pending_token(admin_user: AdminUser) -> str:
+    """Short-lived single-use token proving step-1 (password) succeeded."""
+    current = int(datetime.now(UTC).timestamp())
+    payload = {
+        "sub": str(admin_user.id),
+        "type": "admin_2fa_pending",
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.ADMIN_JWT_AUDIENCE,
+        "jti": uuid4().hex,
+        "iat": current,
+        "exp": current + _2FA_PENDING_TTL_SEC,
+    }
+    return jwt.encode(payload, settings.APP_SECRET, algorithm="HS256")
+
+
+def decode_admin_2fa_pending_token(token: str) -> dict[str, Any]:
+    return _decode_admin_jwt(token, "admin_2fa_pending")
+
+
+async def consume_admin_2fa_pending_token(payload: dict[str, Any]) -> None:
+    """Atomically consume a 2FA pending token so it cannot be replayed."""
+    jti = str(payload["jti"])
+    exp = int(payload["exp"])
+    ttl = max(exp - int(utcnow().timestamp()), 1)
+    try:
+        consumed = await cache.acquire_lock_strict(
+            f"admin:2fa:pending:{jti}",
+            uuid4().hex,
+            ttl=ttl,
+        )
+    except CacheUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
+    if not consumed:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+
 def _decode_admin_jwt(token: str, expected_type: str) -> dict[str, Any]:
     try:
         payload = jwt.decode(

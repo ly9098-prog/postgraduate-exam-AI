@@ -87,6 +87,13 @@ class AdminUser(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    # TOTP 2FA — secret is the pending/active base32 secret; backup codes are
+    # stored as bcrypt hashes (JSON list) and are single-use.
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=func.false())
+    totp_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    totp_backup_codes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     role: Mapped[Role] = relationship(back_populates="users")
     audit_logs: Mapped[list["AuditLog"]] = relationship(back_populates="operator")
     question_versions: Mapped[list["QuestionVersion"]] = relationship(back_populates="editor")
