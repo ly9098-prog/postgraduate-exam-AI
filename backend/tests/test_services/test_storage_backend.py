@@ -165,12 +165,15 @@ class TestCOSStorage:
         mock_client.put_object.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("app.services.storage_backend.settings")
     @patch("app.services.storage_backend.COSStorage._get_client")
-    async def test_upload_fallback_on_failure(self, mock_get_client, tmp_path):
+    async def test_upload_fallback_on_failure(self, mock_get_client, mock_settings, tmp_path):
         """When COS upload throws, fall back to local storage."""
         mock_client = MagicMock()
         mock_client.put_object.side_effect = Exception("COS timeout")
         mock_get_client.return_value = mock_client
+        mock_settings.COS_ALLOW_LOCAL_FALLBACK = True
+        mock_settings.PUBLIC_BASE_URL = "http://localhost:8000"
 
         storage = COSStorage()
         url = await storage.upload("test/fallback.png", b"local-data")
@@ -205,12 +208,19 @@ class TestCOSStorage:
         assert key == "static/formulas/202607/subdir/img.png"
 
     def test_build_key_no_double_slash(self):
-        """_build_key handles leading slash in filename."""
+        """_build_key joins prefix and relative key without double slashes."""
         storage = COSStorage()
         storage._prefix = "static/formulas/"
-        key = storage._build_key("/img.png")
+        key = storage._build_key("img.png")
         assert "//" not in key
         assert key == "static/formulas/img.png"
+
+    def test_build_key_rejects_leading_slash(self):
+        """Absolute / leading-slash keys are rejected (path traversal guard)."""
+        storage = COSStorage()
+        storage._prefix = "static/formulas/"
+        with pytest.raises(ValueError):
+            storage._build_key("/img.png")
 
 
 class TestGetStorage:

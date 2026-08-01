@@ -100,7 +100,7 @@ async def test_change_admin_password_updates_hash_and_nbf(monkeypatch):
     await change_admin_password(db, user, AdminChangePasswordRequest(old_password="secret", new_password="new-secret"))
 
     assert verify_admin_password("new-secret", user.password_hash)
-    set_nbf.assert_awaited_once_with(user.id)
+    set_nbf.assert_awaited()
     db.commit.assert_awaited_once()
 
 

@@ -198,11 +198,12 @@ class TestAdapterRegistry:
         assert registry.get_ocr("nonexistent") is None
         assert registry.get_transform("nonexistent") is None
 
-    def test_registry_close_all(self):
+    @pytest.mark.asyncio
+    async def test_registry_close_all(self):
         registry = AdapterRegistry()
         registry.register_ocr(PaddleOCRLocalAdapter())
         registry.register_transform(ReadingOrderTransformAdapter())
-        registry.close_all()
+        await registry.close_all()
         assert len(registry) == 0
 
     def test_default_registry_contains_standard_adapters(self):

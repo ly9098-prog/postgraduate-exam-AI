@@ -137,34 +137,40 @@ class TestCheckRoleDeps:
             result = await check()
         assert result is False
 
-    async def test_scheduler_role_pomodoro_running_ok(self):
-        """Scheduler role with running pomodoro scheduler passes."""
+    async def test_scheduler_role_audit_running_ok(self):
+        """Scheduler role with audit cleanup running passes."""
         check = self._import_check_role_deps()
         with (
             patch("app.main.settings") as mock_settings,
-            patch("app.services.pomodoro_scheduler_service.pomodoro_scheduler") as mock_scheduler,
             patch("app.services.audit_cleanup_scheduler.audit_log_cleanup_scheduler") as mock_audit,
         ):
             mock_settings.PROCESS_ROLE = "scheduler"
-            mock_settings.POMODORO_NOTIFY_ENABLED = True
             mock_settings.AUDIT_LOG_CLEANUP_ENABLED = True
-            mock_scheduler._running = True
             mock_audit._running = True
             result = await check()
         assert result is True
 
-    async def test_scheduler_role_pomodoro_not_running_fails(self):
-        """Scheduler role with pomodoro not running (and enabled) must fail."""
+    async def test_scheduler_role_audit_not_running_fails(self):
+        """Scheduler role with audit enabled but not running must fail."""
         check = self._import_check_role_deps()
         with (
             patch("app.main.settings") as mock_settings,
-            patch("app.services.pomodoro_scheduler_service.pomodoro_scheduler") as mock_scheduler,
+            patch("app.services.audit_cleanup_scheduler.audit_log_cleanup_scheduler") as mock_audit,
         ):
             mock_settings.PROCESS_ROLE = "scheduler"
-            mock_settings.POMODORO_NOTIFY_ENABLED = True
-            mock_scheduler._running = False
+            mock_settings.AUDIT_LOG_CLEANUP_ENABLED = True
+            mock_audit._running = False
             result = await check()
         assert result is False
+
+    async def test_scheduler_role_audit_disabled_passes(self):
+        """Scheduler role with audit cleanup disabled passes."""
+        check = self._import_check_role_deps()
+        with patch("app.main.settings") as mock_settings:
+            mock_settings.PROCESS_ROLE = "scheduler"
+            mock_settings.AUDIT_LOG_CLEANUP_ENABLED = False
+            result = await check()
+        assert result is True
 
     async def test_unknown_role_fails(self):
         """Unknown PROCESS_ROLE must fail the probe."""

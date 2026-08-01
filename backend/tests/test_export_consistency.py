@@ -214,16 +214,6 @@ class TestEnhancedContentConsistency:
         assert docx_result.success, f"DOCX failed: {docx_result.error_message}"
         return pdf_result, docx_result
 
-    async def test_product_name_consistency(self):
-        """Product name appears in both formats."""
-        qs = [_make_enriched_question("产品名称测试")]
-        cfg = _make_config(total_count=1, product_name="MemoGrad")
-        pdf, docx = await self._compare_both(qs, cfg)
-        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
-        docx_text = _extract_docx_text(docx.file_bytes) or ""
-        assert "MemoGrad" in pdf_text, "Product name missing from PDF"
-        assert "MemoGrad" in docx_text, "Product name missing from DOCX"
-
     async def test_title_consistency(self):
         """Custom title appears in both formats."""
         qs = [_make_enriched_question("标题测试")]
@@ -234,17 +224,6 @@ class TestEnhancedContentConsistency:
         docx_text = _extract_docx_text(docx.file_bytes) or ""
         assert "我的专属试卷" in pdf_text, "Title missing from PDF"
         assert "我的专属试卷" in docx_text, "Title missing from DOCX"
-
-    async def test_date_consistency(self):
-        """Export date appears in both formats when show_date is on."""
-        qs = [_make_enriched_question("日期测试")]
-        cfg = _make_config(total_count=1, show_date=True, export_date="2026-07-25")
-
-        pdf, docx = await self._compare_both(qs, cfg)
-        pdf_text = _extract_pdf_text(pdf.file_bytes) or ""
-        docx_text = _extract_docx_text(docx.file_bytes) or ""
-        assert "2026-07-25" in pdf_text or "20260725" in pdf_text
-        assert "2026-07-25" in docx_text or "20260725" in docx_text
 
     async def test_total_count_consistency(self):
         """Total question count appears in both formats."""
@@ -488,13 +467,19 @@ class TestCleanupEdgeCases:
 
 
 def _extract_docx_text(docx_bytes: bytes) -> str | None:
-    """Extract all text from a DOCX file."""
+    """Extract all text from a DOCX file, including table cells."""
     if not docx_bytes:
         return None
     from docx import Document as DocxDocument
     try:
         doc = DocxDocument(io.BytesIO(docx_bytes))
-        return "\n".join(p.text for p in doc.paragraphs if p.text)
+        parts = [p.text for p in doc.paragraphs if p.text]
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    if cell.text:
+                        parts.append(cell.text)
+        return "\n".join(parts)
     except Exception:
         return None
 

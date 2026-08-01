@@ -6,12 +6,20 @@ This test checks the basic integrity of the migration chain:
 3. Downgrade one step and re-upgrade
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 HERE = Path(__file__).resolve().parent  # tests/test_features
 BACKEND = HERE.parent.parent  # backend
+
+
+def _has_postgres() -> bool:
+    """True when the active DATABASE_URL targets PostgreSQL."""
+    return (os.environ.get("DATABASE_URL") or "").startswith("postgresql")
 
 
 def test_alembic_single_head():
@@ -27,10 +35,13 @@ def test_alembic_single_head():
     assert len(lines) == 1, f"Expected 1 head, got {len(lines)}:\n{lines}"
 
 
+@pytest.mark.skipif(
+    not _has_postgres(),
+    reason="migration chain uses Postgres-specific ALTER/FK operations, not SQLite-compatible",
+)
 def test_alembic_upgrade_downgrade_cycle(tmp_path):
-    """Fresh SQLite DB: upgrade head → downgrade -1 → upgrade head."""
-    db_path = tmp_path / "test_migration.db"
-    db_url = f"sqlite+aiosqlite:///{db_path}"
+    """Fresh Postgres DB: upgrade head → downgrade -1 → upgrade head."""
+    db_url = os.environ["DATABASE_URL"]
 
     # Upgrade to head
     result = subprocess.run(

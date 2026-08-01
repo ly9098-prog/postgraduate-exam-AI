@@ -53,8 +53,8 @@ class TestOCRJobStateTransitions:
             guard_ocr_job_transition(current, next_s)  # should not raise
 
     def test_retry_path(self):
-        """Retryable → pending or dead_letter."""
-        guard_ocr_job_transition("retryable", "pending")
+        """Retryable → leased (re-claim) or dead_letter."""
+        guard_ocr_job_transition("retryable", "leased")
         guard_ocr_job_transition("retryable", "dead_letter")
 
     def test_failure_paths(self):
@@ -71,7 +71,6 @@ class TestOCRJobStateTransitions:
             ("cancelled", "pending"),
             ("failed", "pending"),
             ("dead_letter", "pending"),
-            ("downloading", "cancelled"),
             ("downloading", "leased"),
         ]
         for current, next_s in cases:

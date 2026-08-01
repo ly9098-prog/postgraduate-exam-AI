@@ -36,7 +36,7 @@ class TestCloudGatewayProfileRestricted:
         )
 
     def test_local_profile_registers_local_adapter(self):
-        """OCRGateway(profile='local_import') does register local paddleocr."""
+        """OCRGateway(profile='local_import') registers the VL OCR backend."""
         from app.features.ocr_adapter import AdapterRegistry
         from app.features.ocr_gateway import OCRGateway
 
@@ -44,8 +44,8 @@ class TestCloudGatewayProfileRestricted:
         gw = OCRGateway(registry=registry, mode="shadow", profile=DeploymentProfile.LOCAL_IMPORT)
 
         backends = {a.capabilities.backend for a in gw._registry.list_ocr()}
-        assert "paddleocr" in backends, (
-            f"Local 'paddleocr' must be registered for local_import. "
+        assert "paddleocr-vl" in backends, (
+            f"Remote 'paddleocr-vl' must be registered for local_import. "
             f"Found: {backends}"
         )
 

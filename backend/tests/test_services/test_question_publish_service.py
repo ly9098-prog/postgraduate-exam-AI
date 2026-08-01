@@ -186,14 +186,18 @@ class TestPublishSingleQuestion:
             "app.features.question_publish_service.process_question_pipeline",
             return_value=_make_pipeline_result(),
         ), patch(
-            "app.features.question_publish_service._find_duplicate_by_hash",
-            return_value=dup_q,
+            "app.features.question_publish_service._find_duplicate_questions",
+            return_value=[dup_q],
+        ), patch(
+            "app.features.question_publish_service._retain_latest_duplicate",
+            new_callable=AsyncMock,
+            return_value=(dup_q, False),
         ):
             result = asyncio.run(publish_single_question(db, qi))
 
         assert result["status"] == "duplicate"
         assert result["question_id"] == 99
-        assert result["reason"] == "question_hash collision"
+        assert result["reason"] == "newer_import_already_retained"
         db.add.assert_not_called()
 
     def test_invalid_data(self):

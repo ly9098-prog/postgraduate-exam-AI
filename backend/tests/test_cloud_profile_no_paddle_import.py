@@ -65,6 +65,14 @@ class TestNoPaddleOcrTopLevelImport:
 
     def test_no_paddle_at_startup(self) -> None:
         """After importing core modules, paddleocr must not be in sys.modules."""
+        # Other tests may have already imported paddle/paddleocr (ordering
+        # pollution). Remove them so this check reflects only what the core
+        # module imports add, not earlier test activity.
+        saved = {}
+        for mod in list(sys.modules):
+            if mod.startswith(("paddle", "paddleocr")):
+                saved[mod] = sys.modules.pop(mod)
+
         # Import core modules that the app loads at startup
         import app.core.config  # noqa: F401
         import app.core.deployment_profile  # noqa: F401
@@ -73,3 +81,9 @@ class TestNoPaddleOcrTopLevelImport:
         assert (
             "paddleocr" not in sys.modules
         ), "paddleocr was imported during core module loading — must be lazy"
+
+        # Restore popped modules so later tests importing them (e.g.
+        # paddleocr_vl_client) don't get a NEW module object while code imported
+        # earlier still holds the old one — that split breaks patch() identity.
+        for mod, obj in saved.items():
+            sys.modules[mod] = obj

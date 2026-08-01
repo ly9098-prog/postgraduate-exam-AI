@@ -1349,6 +1349,12 @@ def test_ocr_regression(case_name: str):
     is_ci = os.environ.get("CI", "").strip() == "true"
     skip_pending = os.environ.get("CI_SKIP_PENDING", "").strip() == "true"
 
+    # These cases need the remote PaddleOCR-VL service configured in the DB
+    # (admin_ai_model_configs). In a full-suite run DATABASE_URL points at a
+    # scratch DB without that config — skip instead of failing.
+    if _load_vl_config_from_db() is None:
+        pytest.skip(f"[{case_name}] PaddleOCR-VL not configured in DB")
+
     if is_ci and review_status == REVIEW_PENDING:
         if skip_pending:
             pytest.skip(f"[{case_name}] Skipped: review_status=pending (CI_SKIP_PENDING=true)")

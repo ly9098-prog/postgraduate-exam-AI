@@ -10,6 +10,7 @@ _TEST_DB_PATH = f"/tmp/_test_ocr_jobs_{uuid.uuid4().hex[:8]}.db"
 os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{_TEST_DB_PATH}")
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,6 +59,20 @@ async def _make_job(db: AsyncSession, **overrides) -> OCRJob:
     )
     params.update(overrides)
     return await create_job(db, **params)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _clean_ocr_jobs():
+    """Clear the ocr_jobs table before each test.
+
+    DATABASE_URL uses setdefault so the engine is shared with whichever module
+    set it first; other modules may commit ocr_jobs rows that leak into this
+    file's empty-state assertions. Delete them per-test so ordering can't matter.
+    """
+    await _ensure_table()
+    async with engine.begin() as conn:
+        await conn.execute(text("DELETE FROM ocr_jobs"))
+    yield
 
 
 # ── Tests ─────────────────────────────────────────────────

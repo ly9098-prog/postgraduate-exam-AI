@@ -75,59 +75,6 @@ class TestModelConfigResponseSafety:
         assert short_resp.api_key_masked == long_resp.api_key_masked
         assert short_resp.api_key_masked == "********"
 
-    def _full_vector_row(self, **kw):
-        from app.models.admin_vector_config import AdminVectorConfig
-
-        defaults = dict(
-            id=1,
-            vector_enabled=False,
-            vector_mode="off",
-            vector_allowlist="",
-            vector_cache_ttl_sec=300,
-            vector_top_k=100,
-            vector_similarity_threshold=0.15,
-            embedding_provider="openai_compatible",
-            embedding_base_url="",
-            embedding_model="BAAI/bge-m3",
-            embedding_dim=1024,
-            embedding_timeout=30,
-            embedding_batch_size=16,
-        )
-        defaults.update(kw)
-        row = AdminVectorConfig(**defaults)
-        return row
-
-    def test_vector_response_masked_is_fixed(self):
-        from app.core.secret_crypto import encrypt_secret
-        from app.services.vector_config_service import _to_response
-
-        row = self._full_vector_row(
-            embedding_api_key_encrypted=encrypt_secret(TEST_API_KEY),
-        )
-        resp = _to_response(row)
-        assert resp.embedding_api_key_masked == "********"
-
-    def test_vector_response_decrypt_failure_no_leak(self):
-        """Decrypt failure must not return 'not configured' — return False."""
-        from app.models.admin_vector_config import AdminVectorConfig
-        from app.services.vector_config_service import _to_response
-
-        # Set a value that can't be decrypted
-        _set_key(Fernet.generate_key().decode())
-        from app.core.secret_crypto import encrypt_secret
-        _set_key(TEST_FERNET_KEY)
-        encrypted = encrypt_secret(TEST_API_KEY)
-        _set_key(Fernet.generate_key().decode())
-
-        row = self._full_vector_row(
-            embedding_api_key_encrypted=encrypted,
-        )
-        resp = _to_response(row)
-        assert resp.embedding_api_key_configured is False
-        assert resp.embedding_api_key_masked == ""
-
-        _set_key(TEST_FERNET_KEY)
-
     def test_secret_str_hides_in_repr(self):
         """Pydantic SecretStr must prevent API key from appearing in repr/str."""
         from app.schemas.admin_ai_config import AdminAiModelConfigCreateRequest

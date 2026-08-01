@@ -1,61 +1,22 @@
-"""番茄钟通知调度器单元测试。
+"""番茄钟 service 层单元测试。
 
-使用临时 SQLite，覆盖：
-- 到期任务被认领并发送
-- 未到期任务不被认领
-- notification_enabled=false 不被认领
-- notification_sent=true 不重复发送
-- 模板未配置时写入 notification_error
-- complete_session/interrupt_session 关闭通知通道
-- access_token 失效时强刷重发
+使用临时 SQLite，覆盖 pomodoro_service 的核心生命周期：
+- start_session 写 expected_end_time / openid_snapshot / notification 状态
+- pause / resume 对 expected_end_time 与 paused_at 的影响（含幂等、noop）
+- complete_session / interrupt_session 关闭通知通道（置 notification_sent）
+
+注：原 PomodoroScheduler 认领发送链路与 wechat_notify_service 已随
+订阅消息功能一并移除，相关测试一并删除。
 """
 from __future__ import annotations
 
 import asyncio
 import os
 import tempfile
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
-
-
-class _MockHandle:
-    """Minimal mock of LeaseHandle for testing."""
-    def __init__(self, is_held: bool = True):
-        self._is_held = is_held
-
-    def is_still_held(self) -> bool:
-        return self._is_held
-
-
-@asynccontextmanager
-async def _always_lock(*args, **kwargs):
-    """Replacement for DistributedLock.acquire_and_renew that always succeeds."""
-    yield _MockHandle(is_held=True)
-
-
-class _MockLock:
-    """Replaces DistributedLock in tests — lock always acquired."""
-    def __init__(self, *args, **kwargs):
-        self.acquire_and_renew = _always_lock
-        self.acquired = 0
-        self.skipped = 0
-        self.failed = 0
-        self.duration_ms = 0.0
-
-    async def acquire(self, ttl=60):
-        return True
-
-    async def renew(self, ttl=60):
-        return True
-
-    async def release(self):
-        return True
-
-    async def close(self):
-        pass
 
 
 @pytest.fixture(scope="module")
@@ -72,11 +33,6 @@ async def isolated_db(monkeypatch_module):
 
     monkeypatch_module.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp.name}")
     monkeypatch_module.setenv("REDIS_URL", "")
-    monkeypatch_module.setenv("POMODORO_NOTIFY_ENABLED", "true")
-
-    # Mock DistributedLock so tests don't need Redis
-    import app.services.pomodoro_scheduler_service as ssvc
-    monkeypatch_module.setattr(ssvc, "DistributedLock", _MockLock)
 
     # 强制重新加载 settings 以应用 env
     import importlib
@@ -94,7 +50,6 @@ async def isolated_db(monkeypatch_module):
     import app.models  # noqa: F401 — registers all models on Base
     from app.core.database import Base
     from app.models import admin as _admin  # noqa: F401
-    from app.models import app_user_admin_binding as _aub  # noqa: F401
     from app.models.pomodoro import PomodoroSession  # noqa: F401
     from app.models.user import User  # noqa: F401
 
@@ -153,32 +108,10 @@ async def reset_tables(isolated_db):
 
 async def _make_user(db, openid: str = "openid_test") -> int:
     from app.models.user import User
-    u = User(openid=openid, session_key="t")
+    u = User(openid=openid)
     db.add(u)
     await db.flush()
     return u.id
-
-
-async def _insert(db, *, user_id: int, openid: str, due_offset_sec: int,
-                 enabled: bool = True, sent: bool = False,
-                 status: str = "running", work: int = 25,
-                 paused_at: datetime | None = None):
-    from app.models.pomodoro import PomodoroSession
-    now = datetime.now(UTC)
-    s = PomodoroSession(
-        user_id=user_id, chapter_id=None, preset="standard",
-        work_duration=work, break_duration=5,
-        start_time=now - timedelta(minutes=work),
-        expected_end_time=now + timedelta(seconds=due_offset_sec),
-        status=status,
-        notification_enabled=enabled,
-        notification_sent=sent,
-        openid_snapshot=openid,
-        paused_at=paused_at,
-    )
-    db.add(s)
-    await db.flush()
-    return s.id
 
 
 async def _make_subject(db) -> int:
@@ -190,188 +123,6 @@ async def _make_subject(db) -> int:
     db.add(subj)
     await db.flush()
     return subj.id
-
-
-# ============================================================
-# 测试用例
-# ============================================================
-
-class TestSchedulerClaiming:
-    @pytest.mark.asyncio
-    async def test_due_session_is_claimed_and_sent(self, isolated_db, monkeypatch):
-        from app.services import pomodoro_scheduler_service as ssvc
-
-        sent: list[dict] = []
-
-        async def _fake_send(**kwargs):
-            sent.append(kwargs)
-            return {"errcode": 0}
-
-        monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
-        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
-        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
-
-        async with isolated_db.async_session() as db:
-            uid = await _make_user(db, "u_due")
-            sid = await _insert(db, user_id=uid, openid="u_due", due_offset_sec=-30)
-            await db.commit()
-
-        await ssvc.PomodoroScheduler().tick()
-
-        async with isolated_db.async_session() as db:
-            from sqlalchemy import select
-
-            from app.models.pomodoro import PomodoroSession
-            row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
-
-        assert row.notification_sent is True
-        assert row.notification_sent_at is not None
-        assert row.notification_error is None
-        assert len(sent) == 1
-        assert sent[0]["template_id"] == "TPL_X"
-        assert sent[0]["openid"] == "u_due"
-
-    @pytest.mark.asyncio
-    async def test_future_session_not_claimed(self, isolated_db, monkeypatch):
-        from app.services import pomodoro_scheduler_service as ssvc
-
-        sent: list[dict] = []
-        monkeypatch.setattr(ssvc.wechat, "send_subscribe_message",
-                            lambda **kw: sent.append(kw) or {"errcode": 0})
-        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
-        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
-
-        async with isolated_db.async_session() as db:
-            uid = await _make_user(db, "u_future")
-            sid = await _insert(db, user_id=uid, openid="u_future", due_offset_sec=300)
-            await db.commit()
-
-        await ssvc.PomodoroScheduler().tick()
-
-        async with isolated_db.async_session() as db:
-            from sqlalchemy import select
-
-            from app.models.pomodoro import PomodoroSession
-            row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
-
-        assert row.notification_sent is False
-        assert sent == []
-
-    @pytest.mark.asyncio
-    async def test_disabled_session_not_claimed(self, isolated_db, monkeypatch):
-        from app.services import pomodoro_scheduler_service as ssvc
-
-        sent: list[dict] = []
-
-        async def _fake_send(**kwargs):
-            sent.append(kwargs)
-            return {"errcode": 0}
-
-        monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
-        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
-        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
-
-        async with isolated_db.async_session() as db:
-            uid = await _make_user(db, "u_disabled")
-            sid = await _insert(db, user_id=uid, openid="u_disabled", due_offset_sec=-30, enabled=False)
-            await db.commit()
-
-        await ssvc.PomodoroScheduler().tick()
-
-        async with isolated_db.async_session() as db:
-            from sqlalchemy import select
-
-            from app.models.pomodoro import PomodoroSession
-            row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
-
-        assert row.notification_sent is False
-        assert sent == []
-
-    @pytest.mark.asyncio
-    async def test_already_sent_not_resent(self, isolated_db, monkeypatch):
-        from app.services import pomodoro_scheduler_service as ssvc
-
-        sent: list[dict] = []
-
-        async def _fake_send(**kwargs):
-            sent.append(kwargs)
-            return {"errcode": 0}
-
-        monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
-        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
-        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
-
-        async with isolated_db.async_session() as db:
-            uid = await _make_user(db, "u_sent")
-            await _insert(db, user_id=uid, openid="u_sent", due_offset_sec=-30, sent=True)
-            await db.commit()
-
-        await ssvc.PomodoroScheduler().tick()
-        assert sent == []
-
-    @pytest.mark.asyncio
-    async def test_template_missing_marks_error_and_skips_send(self, isolated_db, monkeypatch):
-        from app.services import pomodoro_scheduler_service as ssvc
-
-        sent: list[dict] = []
-
-        async def _fake_send(**kwargs):
-            sent.append(kwargs)
-            return {"errcode": 0}
-
-        monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
-        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "")
-        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
-
-        async with isolated_db.async_session() as db:
-            uid = await _make_user(db, "u_no_tpl")
-            sid = await _insert(db, user_id=uid, openid="u_no_tpl", due_offset_sec=-30)
-            await db.commit()
-
-        await ssvc.PomodoroScheduler().tick()
-
-        async with isolated_db.async_session() as db:
-            from sqlalchemy import select
-
-            from app.models.pomodoro import PomodoroSession
-            row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
-
-        assert row.notification_sent is True  # 至多一次：仍置位
-        assert "template_id not configured" in (row.notification_error or "")
-        assert sent == []
-
-    @pytest.mark.asyncio
-    async def test_paused_session_not_claimed(self, isolated_db, monkeypatch):
-        from app.services import pomodoro_scheduler_service as ssvc
-
-        sent: list[dict] = []
-
-        async def _fake_send(**kwargs):
-            sent.append(kwargs)
-            return {"errcode": 0}
-
-        monkeypatch.setattr(ssvc.wechat, "send_subscribe_message", _fake_send)
-        monkeypatch.setattr(ssvc.settings, "WECHAT_SUBSCRIBE_POMODORO_TEMPLATE_ID", "TPL_X")
-        monkeypatch.setattr(ssvc, "async_session", isolated_db.async_session)
-
-        async with isolated_db.async_session() as db:
-            uid = await _make_user(db, "u_paused")
-            sid = await _insert(
-                db, user_id=uid, openid="u_paused",
-                due_offset_sec=-30, paused_at=datetime.now(UTC) - timedelta(seconds=60),
-            )
-            await db.commit()
-
-        await ssvc.PomodoroScheduler().tick()
-
-        async with isolated_db.async_session() as db:
-            from sqlalchemy import select
-
-            from app.models.pomodoro import PomodoroSession
-            row = (await db.execute(select(PomodoroSession).where(PomodoroSession.id == sid))).scalar_one()
-
-        assert row.notification_sent is False, "paused session must not be claimed"
-        assert sent == []
 
 
 class TestServiceLayer:
@@ -400,7 +151,7 @@ class TestServiceLayer:
 
         assert row.status == "completed"
         assert row.notification_sent is True
-        assert "user completed" in (row.notification_error or "")
+        assert "skipped: user completed" in (row.notification_error or "")
 
     @pytest.mark.asyncio
     async def test_interrupt_session_closes_notification_channel(self, isolated_db):
@@ -427,7 +178,7 @@ class TestServiceLayer:
 
         assert row.status == "interrupted"
         assert row.notification_sent is True
-        assert "user interrupted" in (row.notification_error or "")
+        assert "skipped: user interrupted" in (row.notification_error or "")
 
     @pytest.mark.asyncio
     async def test_start_session_writes_expected_end_time_and_openid(self, isolated_db):
@@ -562,48 +313,3 @@ class TestServiceLayer:
         assert row.paused_at is None
         # 未暂停的 resume 不应改 expected_end_time
         assert abs((row.expected_end_time - original_eet).total_seconds()) < 1
-
-
-class TestWechatTokenRetry:
-    @pytest.mark.asyncio
-    async def test_send_retries_on_token_invalid(self, monkeypatch):
-        from app.services import wechat_notify_service as wn
-
-        token_calls = {"n": 0}
-        send_calls: list[str] = []
-
-        async def fake_get_token(force_refresh: bool = False) -> str:
-            token_calls["n"] += 1
-            return f"tok-{token_calls['n']}"
-
-        monkeypatch.setattr(wn, "get_access_token", fake_get_token)
-
-        # 第一次调用返回 40001，第二次成功
-        responses = iter([
-            {"errcode": 40001, "errmsg": "invalid credential"},
-            {"errcode": 0, "errmsg": "ok"},
-        ])
-
-        class _Resp:
-            def __init__(self, payload):
-                self._p = payload
-            def json(self):
-                return self._p
-
-        class _Client:
-            async def __aenter__(self):
-                return self
-            async def __aexit__(self, *a):
-                return False
-            async def post(self, url, params, json, timeout):
-                send_calls.append(params["access_token"])
-                return _Resp(next(responses))
-
-        monkeypatch.setattr(wn.httpx, "AsyncClient", lambda: _Client())
-
-        result = await wn.send_subscribe_message(
-            openid="o", template_id="t", data={"thing1": {"value": "x"}}, page="p"
-        )
-        assert result["errcode"] == 0
-        assert send_calls == ["tok-1", "tok-2"]
-        assert token_calls["n"] == 2  # 第二次是 force_refresh

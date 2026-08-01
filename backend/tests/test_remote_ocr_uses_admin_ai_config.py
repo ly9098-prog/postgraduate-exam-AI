@@ -51,10 +51,10 @@ class TestOCRGatewayDbConfig:
         assert "paddleocr" not in registered_names, "cloud_api must not register local PaddleOCR"
 
     def test_gateway_config_for_local_profile(self):
-        """Local profile should register local paddleocr."""
+        """Local profile registers the remote PaddleOCR-VL backend."""
         gw = OCRGateway(profile=DeploymentProfile.LOCAL_IMPORT)
         allowed_backends = {a.capabilities.backend for a in gw._registry.list_ocr()}
-        assert "paddleocr" in allowed_backends, "local_import must register local PaddleOCR"
+        assert "paddleocr-vl" in allowed_backends, "local_import must register the remote PaddleOCR-VL"
 
     def test_gateway_forbidden_fallback_cloud(self):
         """Cloud profile forbids local fallback backends."""

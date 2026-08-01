@@ -69,8 +69,9 @@ class _Result:
 class _Db:
     """Mock DB with a queue of results per execute call."""
 
-    def __init__(self, *results):
+    def __init__(self, *results, reload_card=None):
         self._queue = list(results)
+        self._reload_card = reload_card
         self.commit = AsyncMock()
         self.rollback = AsyncMock()
         self.refresh = AsyncMock()
@@ -80,6 +81,14 @@ class _Db:
         self.get = AsyncMock()
 
     async def execute(self, _statement):
+        # Post-commit FormulaCard reloads return the card regardless of queue
+        # position (the intermediate _card_to_dict queries consume the queue).
+        if (
+            self._reload_card is not None
+            and "formula_cards" in str(_statement)
+            and "SELECT" in str(_statement).upper()
+        ):
+            return _Result([self._reload_card])
         if self._queue:
             return _Result(self._queue.pop(0))
         return _Result([])
@@ -376,7 +385,7 @@ class TestCardCreate:
         card = _card()
         # Queue: permissions, get(category) for validity, then the created card
         cat = _category(id=1, is_active=True)
-        db = _Db(_permissions())
+        db = _Db(_permissions(), reload_card=card)
         db.get = AsyncMock(side_effect=[cat, card])
         app.dependency_overrides[get_current_admin] = _override_current_admin
         app.dependency_overrides[get_db] = lambda: db
@@ -546,7 +555,7 @@ class TestCardUpdate:
     def test_update_title(self):
         card = _card()
         # Queue: permissions, card (for SELECT), tags (for _card_to_dict in snapshot), tags (for response)
-        db = _Db(_permissions(), [card], [], [])
+        db = _Db(_permissions(), [], [], [], [], reload_card=card)
         app.dependency_overrides[get_current_admin] = _override_current_admin
         app.dependency_overrides[get_db] = _db_lambda(db)
         try:
@@ -573,7 +582,7 @@ class TestCardUpdate:
 
     def test_update_resets_status_to_draft(self):
         card = _card(status="approved")
-        db = _Db(_permissions(), [card], [], [])
+        db = _Db(_permissions(), [], [], [], [], reload_card=card)
         app.dependency_overrides[get_current_admin] = _override_current_admin
         app.dependency_overrides[get_db] = _db_lambda(db)
         try:

@@ -438,89 +438,27 @@ class TestTask6ShadowMode:
 # ═══════════════════════════════════════════════════════════════════
 
 class TestTask7Allowlist:
-    """任务七：本人账号 Allowlist。"""
+    """任务七（已废除）：allowlist 已移除，向量始终全量开放。"""
 
-    def test_allowlist_parse_user_ids(self):
-        """测试 allowlist 解析 user_ids。"""
-        from app.services.vector_retrieval_service import _parse_allowlist
-
-        with patch("app.services.vector_retrieval_service.settings") as mock_s:
-            mock_s.VECTOR_ALLOWLIST = '[1, 2, 3]'
-            result = _parse_allowlist()
-            assert result["user_ids"] == [1, 2, 3]
-            assert result["subjects"] == []
-
-    def test_allowlist_parse_subjects(self):
-        """测试 allowlist 解析 subjects。"""
-        from app.services.vector_retrieval_service import _parse_allowlist
-
-        with patch("app.services.vector_retrieval_service.settings") as mock_s:
-            mock_s.VECTOR_ALLOWLIST = '["exam408-ds", "exam408-os"]'
-            result = _parse_allowlist()
-            assert result["subjects"] == ["exam408-ds", "exam408-os"]
-
-    def test_allowlist_parse_mixed(self):
-        """测试 allowlist 解析混合内容。"""
-        from app.services.vector_retrieval_service import _parse_allowlist
-
-        with patch("app.services.vector_retrieval_service.settings") as mock_s:
-            mock_s.VECTOR_ALLOWLIST = '["exam408-ds", 1, 2]'
-            result = _parse_allowlist()
-            assert "exam408-ds" in result["subjects"]
-            assert 1 in result["user_ids"]
-            assert 2 in result["user_ids"]
-
-    def test_allowlist_empty_allows_all(self):
-        """测试空 allowlist 全部拒绝（安全默认）。"""
+    def test_vector_allowed_for_all_users_and_subjects(self):
+        """is_vector_allowed_for 始终返回 True（不再有白名单限制）。"""
         from app.services.vector_retrieval_service import is_vector_allowed_for
 
-        with patch("app.services.vector_retrieval_service.settings") as mock_s:
-            mock_s.VECTOR_MODE = "allowlist"
-            mock_s.VECTOR_ALLOWLIST = ""
-            assert not is_vector_allowed_for(subject="exam408-ds", user_id=1)
-            assert not is_vector_allowed_for(subject="anything", user_id=999)
+        assert is_vector_allowed_for(subject="exam408-ds", user_id=1)
+        assert is_vector_allowed_for(subject="anything", user_id=999)
+        assert is_vector_allowed_for(user_id=3)
+        assert is_vector_allowed_for(subject="exam408-os")
 
-    def test_allowlist_user_filtering(self):
-        """测试 allowlist 用户过滤。"""
+    def test_allowlist_no_longer_restricts(self):
+        """allowlist 配置不再影响向量访问决策。"""
         from app.services.vector_retrieval_service import is_vector_allowed_for
 
         with patch("app.services.vector_retrieval_service.settings") as mock_s:
             mock_s.VECTOR_MODE = "allowlist"
             mock_s.VECTOR_ALLOWLIST = '[1, 2]'
+            # 即使配置了 allowlist，仍对所有用户开放
             assert is_vector_allowed_for(user_id=1)
-            assert is_vector_allowed_for(user_id=2)
-            assert not is_vector_allowed_for(user_id=3)
-
-    def test_allowlist_subject_filtering(self):
-        """测试 allowlist subject 过滤。"""
-        from app.services.vector_retrieval_service import is_vector_allowed_for
-
-        with patch("app.services.vector_retrieval_service.settings") as mock_s:
-            mock_s.VECTOR_MODE = "allowlist"
-            mock_s.VECTOR_ALLOWLIST = '["exam408-ds"]'
-            assert is_vector_allowed_for(subject="exam408-ds")
-            assert not is_vector_allowed_for(subject="exam408-os")
-
-    def test_non_allowlist_mode_ignores_filter(self):
-        """测试非 allowlist 模式不受 allowlist 限制。"""
-        from app.services.vector_retrieval_service import is_vector_allowed_for
-
-        with patch("app.services.vector_retrieval_service.settings") as mock_s:
-            mock_s.VECTOR_MODE = "all"
-            mock_s.VECTOR_ALLOWLIST = '[1]'
-            # all 模式下，is_vector_allowed_for 总是返回 True
-            assert is_vector_allowed_for(user_id=999)
-            assert is_vector_allowed_for(subject="anything")
-
-    def test_allowlist_invalid_json(self):
-        """测试无效 JSON 的 allowlist。"""
-        from app.services.vector_retrieval_service import _parse_allowlist
-
-        with patch("app.services.vector_retrieval_service.settings") as mock_s:
-            mock_s.VECTOR_ALLOWLIST = "not valid json"
-            result = _parse_allowlist()
-            assert result["subjects"] == []
-            assert result["user_ids"] == []
+            assert is_vector_allowed_for(user_id=3)
 
     def test_kickback_to_off_conditions(self):
         """测试立即切换为 off 的条件。"""
@@ -642,7 +580,6 @@ class TestDockerComposeConfig:
         content = compose_path.read_text(encoding="utf-8")
         assert "VECTOR_ENABLED" in content
         assert "VECTOR_MODE" in content
-        assert "EMBEDDING_API_KEY" in content
 
     def test_deploy_env_example_has_vector_settings(self):
         """测试 deploy/.env.example 包含向量设置。"""

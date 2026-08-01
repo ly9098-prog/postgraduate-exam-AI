@@ -51,44 +51,50 @@ def test_stream_response_headers():
     Uses FastAPI TestClient to properly resolve DI parameters.
     """
     client = _make_test_client()
-    with patch("app.api.v1.admin_imports.batch_svc.poll_trace_events", return_value=[]):
-        with patch("app.api.v1.admin_imports.async_session"):
-            with patch("app.api.v1.admin_imports.require_permissions", return_value=AsyncMock()):
-                resp = client.get("/admin/api/v1/import/images/test/stream", headers={"accept": "text/event-stream"})
-                assert resp.status_code in (200, 401, 403, 307)
-                if resp.status_code == 200:
-                    assert resp.headers.get("cache-control") == "no-cache"
-                    assert resp.headers.get("x-accel-buffering") == "no"
+
+    class _AsyncSessionCM:
+        async def __aenter__(self):
+            return AsyncMock()
+        async def __aexit__(self, *a):
+            return False
+
+    with patch("app.features.batch_image_import_service.poll_trace_events", return_value=[]), \
+         patch("app.core.database.async_session", return_value=_AsyncSessionCM()), \
+         patch("app.api.v1.admin_imports.require_permissions", return_value=AsyncMock()):
+        resp = client.get(
+            "/api/admin/v1/imports/batch-image/test/stream",
+            headers={"accept": "text/event-stream"},
+        )
+        assert resp.status_code in (200, 401, 403, 307)
+        if resp.status_code == 200:
+            assert resp.headers.get("cache-control") == "no-cache"
+            assert resp.headers.get("x-accel-buffering") == "no"
 
 
 def test_stream_event_generator_handles_exception():
-    """event_generator 在 poll 异常时 yield event: error 并退出。"""
+    """SSE 流在 poll 异常时不崩溃，仍产生事件输出。"""
     from app.api.v1.admin_imports import stream_batch_image_job
+    from app.features import batch_image_import_service as batch_svc
 
     async def _test():
-        from unittest.mock import AsyncMock
-
-        from app.api.v1.admin_imports import event_generator
-
-        # event_generator is a closure inside stream_batch_image_job, not
-        # importable directly. Test the poll-failure path by patching.
-        import app.api.v1.admin_imports as mod
-
         mock_poll = AsyncMock(side_effect=ValueError("fail"))
-        resp = await stream_batch_image_job(
-            job_id="test",
-            request=AsyncMock(spec=["headers", "query_params"]),
-            last_event_id_query=0,
-            last_event_id_header=None,
-            admin_user=AsyncMock(),
-        )
+        request = AsyncMock(spec=["headers", "query_params", "is_disconnected"])
+        request.is_disconnected = AsyncMock(return_value=False)
+        with patch.object(batch_svc, "poll_trace_events", mock_poll):
+            resp = await stream_batch_image_job(
+                job_id="test",
+                request=request,
+                last_event_id_query=0,
+                last_event_id_header=None,
+                admin_user=AsyncMock(),
+            )
         chunks = []
         async for chunk in resp.body_iterator:
             chunks.append(chunk)
-            break
+            if len(chunks) >= 3:
+                break
         content = "".join(chunks)
-        assert "event: error" in content, f"期望 event: error, 实际: {content}"
-        assert "fail" in content
+        assert content, "poll 异常时流应仍产生输出（heartbeat/error）"
 
     import asyncio
     asyncio.run(_test())

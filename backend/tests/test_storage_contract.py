@@ -18,7 +18,8 @@ class TestLocalFileStorageContract:
 
         url = await storage.upload("test/file.pdf", b"test content")
         assert url is not None
-        assert str(tmpdir) in url
+        # Absolute local prefixes return the storage key (no public URL).
+        assert url.endswith("test/file.pdf")
 
         exists = await storage.exists("test/file.pdf")
         assert exists is True

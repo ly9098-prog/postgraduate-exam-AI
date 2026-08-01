@@ -180,24 +180,25 @@ class TestGetEmbedding:
     async def test_returns_none_on_dimension_mismatch(self):
         """维度不匹配时返回 None。"""
         from app.services.embedding_service import get_embedding
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "data": [{"embedding": [0.1, 0.2, 0.3]}]  # dim=3
-        }
-        mock_response.raise_for_status = MagicMock()
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        from app.services.safe_remote_fetch import RemoteResponse
+        from app.services.vector_config_service import EmbeddingConfig
 
-        with patch("app.core.config.settings") as mock_settings, \
-             patch("app.services.embedding_service.httpx.AsyncClient", return_value=mock_client):
-            mock_settings.EMBEDDING_API_KEY = "test-key"
-            mock_settings.EMBEDDING_BASE_URL = "http://test.api"
-            mock_settings.EMBEDDING_MODEL = "test-model"
-            mock_settings.EMBEDDING_DIM = 1024  # 期望 1024 维
-            mock_settings.EMBEDDING_TIMEOUT = 30
-            result = await get_embedding("test text")
+        cfg = EmbeddingConfig(
+            api_key="test-key", base_url="http://test.api",
+            model="test-model", dim=1024, timeout=30, batch_size=16,
+            provider="openai_compatible",
+        )
+        payload = b'{"data": [{"embedding": [0.1, 0.2, 0.3]}]}'  # dim=3
+
+        def _fake_request(*a, **k):
+            return RemoteResponse(
+                status=200, data=payload,
+                content_type="application/json", final_url="http://test.api",
+            )
+
+        with patch("app.services.embedding_service.request_remote_bytes",
+                   side_effect=_fake_request):
+            result = await get_embedding("test text", config=cfg)
             assert result is None
 
 

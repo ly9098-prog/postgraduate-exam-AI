@@ -13,6 +13,24 @@ from app.features.pipeline_orchestrator import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _bypass_resource_guard():
+    """Bypass the temp-disk resource guard and Redis task queue on dev machines."""
+    with patch("app.core.resource_guard.ResourceGuard.can_accept_work",
+               return_value=(True, "")), \
+         patch("app.core.resource_guard.ResourceGuard.acquire_reservation",
+               new_callable=AsyncMock, return_value="fake-reservation-token"), \
+         patch("app.core.resource_guard.ResourceGuard.release_reservation",
+               new_callable=AsyncMock), \
+         patch("app.services.task_queue_worker.enqueue_import_pipeline",
+               new_callable=AsyncMock, return_value=MagicMock(reason=None)), \
+         patch("app.services.task_queue_worker.enqueue_excel_pipeline",
+               new_callable=AsyncMock, return_value=MagicMock(reason=None)), \
+         patch("app.services.task_queue_worker.enqueue_image_pipeline",
+               new_callable=AsyncMock, return_value=MagicMock(reason=None)):
+        yield
+
+
 def _mock_stream_to_temp(path: str | None = None, content: bytes = b"dummy content"):
     """Return a context manager that patches ``stream_to_temp``.
 

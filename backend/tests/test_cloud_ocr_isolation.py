@@ -30,6 +30,10 @@ def _patch_settings():
     original = settings.APP_ENV
     yield
     settings.APP_ENV = original
+    # get_ocr_profile() is lru_cached from the current settings; a production
+    # profile cached here would leak into later tests, so drop it on teardown.
+    from app.core.ocr_profile import get_ocr_profile
+    get_ocr_profile.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -41,17 +45,23 @@ def _unload_paddle_modules():
     legitimately installed in the dev environment but must not appear
     *loaded* when the cloud_api config validator checks for local OCR deps.
 
-    This fixture temporarily removes them before each test, then restores
-    the original state so other test files are unaffected.
+    This fixture temporarily removes every ``paddle*`` key (top-level and all
+    submodules such as ``paddle._C`` / ``paddle.base.libpaddle.pir``) before
+    each test, then restores the original state so other test files are
+    unaffected.
     """
     saved = {}
-    for mod in ("paddleocr", "paddle"):
-        if mod in sys.modules:
+    for mod in list(sys.modules):
+        if mod.startswith(("paddle", "paddleocr")):
             saved[mod] = sys.modules.pop(mod)
     yield
+    # Always restore the original module objects. If any module was re-imported
+    # during the test (e.g. paddleocr_vl_client), sys.modules now holds a NEW
+    # instance while code imported earlier still references the old one — that
+    # split state breaks patch() identity later (e.g. test_p5_ssrf). Restoring
+    # the originals keeps every import on the same module instance.
     for mod, obj in saved.items():
-        if mod not in sys.modules:
-            sys.modules[mod] = obj
+        sys.modules[mod] = obj
 
 
 class TestCloudProfileDetection:
@@ -146,15 +156,32 @@ class TestCloudOcrNoPaddleSpec:
 
         # Ensure the staging dir parent exists
         staging_dir = env_patch.get("STAGING_STORAGE_DIR", "/tmp/test_staging")
-        sys.modules.pop("app.services.staging_storage", None)
-        sys.modules.pop("app.services.import_pipeline_service", None)
-        with patch.object(settings, "STAGING_STORAGE_DIR", staging_dir):
-            with patch.dict(os.environ, env_patch, clear=False):
-                from app.services.import_pipeline_service import (
-                    _build_ocr_runtime_diagnostics,
-                )
+        # Popping forces a fresh import under the patched env, but the re-import
+        # replaces the sys.modules entries with NEW module objects. Restore the
+        # originals afterwards so modules imported earlier in the suite (e.g.
+        # app.api.v1.imports) keep the same function objects — otherwise
+        # identity checks against the service module fail later.
+        saved = {}
+        for mod in ("app.services.staging_storage", "app.services.import_pipeline_service"):
+            saved[mod] = sys.modules.pop(mod, None)
+        try:
+            with patch.object(settings, "STAGING_STORAGE_DIR", staging_dir):
+                with patch.dict(os.environ, env_patch, clear=False):
+                    from app.services.import_pipeline_service import (
+                        _build_ocr_runtime_diagnostics,
+                    )
 
-                return _build_ocr_runtime_diagnostics()
+                    return _build_ocr_runtime_diagnostics()
+        finally:
+            for mod, obj in saved.items():
+                if obj is None:
+                    sys.modules.pop(mod, None)
+                else:
+                    # Always restore the original module object. Without this,
+                    # the fresh import leaves a NEW module in sys.modules, and
+                    # modules imported before (top-level) point at the old one
+                    # while run-time imports get the new one — split state.
+                    sys.modules[mod] = obj
 
     def test_build_ocr_diagnostics_no_paddle_check_in_cloud(self):
         """In cloud_api mode, diagnostics report paddleocr as unavailable without checking."""
@@ -201,6 +228,10 @@ os.environ["DATABASE_URL"] = "postgresql+asyncpg://u:p@localhost:5432/db"
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 os.environ["APP_SECRET"] = "a" * 32
 os.environ["CORS_ORIGINS"] = '["https://example.com"]'
+os.environ["ALLOWED_HOSTS"] = '["example.com"]'
+os.environ["PUBLIC_BASE_URL"] = "https://example.com"
+os.environ["WECHAT_APP_ID"] = "wx-test-app-id"
+os.environ["WECHAT_APP_SECRET"] = "wx-test-app-secret"
 os.environ["STAGING_STORAGE_DIR"] = "/tmp"
 os.environ["WORKER_SCRATCH_DIR"] = "/tmp/worker-scratch-test"
 # Cloud OCR config
@@ -280,6 +311,10 @@ os.environ["PROCESS_ROLE"] = "worker"
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://u:p@localhost:5432/db"
 os.environ["APP_SECRET"] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 os.environ["CORS_ORIGINS"] = '["https://example.com"]'
+os.environ["ALLOWED_HOSTS"] = '["example.com"]'
+os.environ["PUBLIC_BASE_URL"] = "https://example.com"
+os.environ["WECHAT_APP_ID"] = "wx-test-app-id"
+os.environ["WECHAT_APP_SECRET"] = "wx-test-app-secret"
 os.environ["STAGING_STORAGE_DIR"] = "/tmp"
 os.environ["VECTOR_ENABLED"] = "false"
 os.environ["REDIS_URL"] = "redis://localhost:6379/0"
