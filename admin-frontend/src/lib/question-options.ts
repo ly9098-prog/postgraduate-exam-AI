@@ -77,7 +77,7 @@ function _isEmptyOptionsValue(val: unknown): boolean {
  *  - null / undefined / "" → []
  */
 export function normalizeQuestionOptions(
-  raw: QuestionOptionsValue,
+  raw: QuestionOptionsValue | undefined,
 ): NormalizedQuestionOption[] {
   if (raw == null) return [];
   if (typeof raw === "string") {
