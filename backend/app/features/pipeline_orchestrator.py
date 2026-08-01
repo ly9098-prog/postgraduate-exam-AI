@@ -1972,7 +1972,7 @@ def _build_quality_report(data: dict, diagnostics: dict) -> dict:
         # Count segment types
         segments = q.get("segments") or (q.get("parsed_content") or {}).get("segments") or []
         for seg in segments:
-            if seg.get("type") == "table_markdown":
+            if seg.get("type") in {"table", "table_markdown"}:
                 table_count += 1
             elif seg.get("type") == "math_image":
                 math_image_count += 1
@@ -2012,6 +2012,8 @@ def _build_quality_report(data: dict, diagnostics: dict) -> dict:
     if math_image_count > 0:
         report["math_image_count"] = math_image_count
     if table_count > 0:
+        report["table_structured_count"] = table_count
+        # Compatibility key for older failure analyzers and admin clients.
         report["table_markdown_count"] = table_count
     if repair_skipped > 0:
         report["repair_skipped"] = repair_skipped
@@ -2974,7 +2976,9 @@ class ImportPipeline:
 
             for page_idx, png_bytes, pw, ph in page_batches:
                 best_text = ""
+                pp_text = ""
                 pp_opt_count = 0
+                page_table_blocks: list[dict] = []
 
                 # Phase 1: Run PP-OCRv4 locally (structure primary)
                 # Skipped in cloud_api — cloud uses VL API as primary, not fallback
@@ -3004,7 +3008,13 @@ class ImportPipeline:
 
                     if result and result.fixed_text:
                         vl_raw = result.fixed_text.strip()
-                        repaired = repair_option_structure(vl_raw)
+                        page_table_blocks = [
+                            item for item in ((getattr(result, "metadata", None) or {}).get("layout_blocks") or [])
+                            if isinstance(item, dict)
+                            and str(item.get("type") or item.get("label") or "").lower()
+                            in {"table", "table_image", "table_caption"}
+                        ]
+                        repaired = repair_option_structure(vl_raw, pp_text, original_raw_text)
                         vl_has_opts = detect_options_from_text(repaired)
                         vl_text = repaired if vl_has_opts else vl_raw
                         vl_opt_count = len(extract_options_from_text(vl_text)) if vl_has_opts else 0
@@ -3048,6 +3058,22 @@ class ImportPipeline:
                                         break
 
                 if best_text:
+                    # Final Phase 8 merge: select the best value for each A-D
+                    # key across VL, PP-OCR and original raw text.  This also
+                    # repairs the narrow mirrored ``xau<-s`` signature.
+                    from app.features.option_recovery import recover_options_from_sources
+
+                    recovered = recover_options_from_sources(
+                        best_text, pp_text, original_raw_text,
+                    )
+                    if len(recovered.options) >= max(2, len(extract_options_from_text(best_text))):
+                        best_text = recovered.text
+                        if recovered.repaired_keys:
+                            logger.info(
+                                "VL_REBUILD page %d: Phase 8 recovered keys=%s mirror_repairs=%d",
+                                page_idx, recovered.repaired_keys, recovered.mirror_repairs,
+                            )
+
                     # Clean standalone page/order markers (<1>, <2>, <>, etc.)
                     # that OCR introduces as transition noise
                     best_text = re.sub(
@@ -3064,6 +3090,7 @@ class ImportPipeline:
                         "page_height": ph,
                         "source": "vl_rebuild",
                         "has_boxes": False,
+                        "vl_layout_blocks": page_table_blocks,
                     })
 
             if not new_blocks:
@@ -3282,6 +3309,19 @@ class ImportPipeline:
 
             _, result = fix_result
             new_block = dict(block)
+
+            # Preserve bounded provider layout metadata even when the text
+            # candidate is unchanged or rejected.  Later table recovery only
+            # consumes blocks explicitly labelled as tables.
+            layout_blocks = (getattr(result, "metadata", None) or {}).get("layout_blocks") or []
+            table_layout_blocks = [
+                item for item in layout_blocks
+                if isinstance(item, dict)
+                and str(item.get("type") or item.get("label") or "").lower()
+                in {"table", "table_image", "table_caption"}
+            ]
+            if table_layout_blocks:
+                new_block["vl_layout_blocks"] = table_layout_blocks
 
             # PaddleOCR-VL may return confidence=0.0 when the API doesn't
             # provide per-document confidence — treat VL results as valid
@@ -4615,9 +4655,19 @@ class ImportPipeline:
                     pw = block.get("page_width") or 1000
                     ph = block.get("page_height") or 1000
                     page_dimensions[page] = (int(pw), int(ph))
-                # Build layout-like entries from OCR boxes for gap analysis
+                # Build layout-like entries from OCR boxes for gap analysis.
                 if boxes and isinstance(boxes, list):
                     layout_blocks_by_page.setdefault(page, []).extend(boxes)
+                # PaddleOCR-VL provider blocks carry semantic type + table
+                # markup and must be preserved for the late table stage.
+                vl_blocks = block.get("vl_layout_blocks") or block.get("layout_blocks") or []
+                if isinstance(vl_blocks, list):
+                    for vl_block in vl_blocks:
+                        if not isinstance(vl_block, dict):
+                            continue
+                        item = dict(vl_block)
+                        item.setdefault("page", page)
+                        layout_blocks_by_page.setdefault(page, []).append(item)
 
         return run_visual_region_detect_stage(
             questions,
@@ -4639,13 +4689,19 @@ class ImportPipeline:
             run_visual_region_assign_stage,
         )
 
-        # Collect visual_regions from questions (set by visual_region_detect)
-        page_regions: dict[int, list[dict]] = {}
-        for q in questions:
-            for vr in (q.get("visual_regions") or []):
-                if isinstance(vr, dict):
-                    page = vr.get("source_page") or q.get("page_start") or 1
-                    page_regions.setdefault(page, []).append(vr)
+        # Prefer the page-level artifact emitted before split.  The legacy
+        # question-attached path remains as a compatibility fallback.
+        page_regions: dict[int, list[dict]] = {
+            int(page): list(regions)
+            for page, regions in (_kw.get("page_visual_regions") or {}).items()
+            if isinstance(regions, list)
+        }
+        if not page_regions:
+            for q in questions:
+                for vr in (q.get("visual_regions") or []):
+                    if isinstance(vr, dict):
+                        page = vr.get("source_page") or q.get("page_start") or 1
+                        page_regions.setdefault(int(page), []).append(vr)
 
         return run_visual_region_assign_stage(
             questions,
@@ -4730,6 +4786,7 @@ class ImportPipeline:
                     confidence=vr_dict.get("confidence", 0.5),
                     alt=vr_dict.get("alt", ""),
                     option_key=vr_dict.get("option_key"),
+                    requires_review=bool(vr_dict.get("requires_review", True)),
                 )
 
                 if region.bbox:
@@ -4739,7 +4796,32 @@ class ImportPipeline:
 
                 if region.image_url:
                     seg = region.to_segment()
-                    segments.append(seg)
+                    matching_tables = []
+                    if rt == VisualRegionType.TABLE:
+                        for existing in segments:
+                            if (
+                                existing.get("type") == "table"
+                                and existing.get("region_id") == region_id
+                            ):
+                                matching_tables.append(existing)
+                                existing["source_image_url"] = region.image_url
+                                existing["fallback_image_url"] = region.image_url
+                    # A high-confidence native table should not be followed by
+                    # a duplicate screenshot.  Keep the image segment only as
+                    # an audit fallback for uncertain tables or when no
+                    # structured table could be restored.
+                    should_append_image = (
+                        rt != VisualRegionType.TABLE
+                        or not matching_tables
+                        or any(table.get("requires_review") for table in matching_tables)
+                    )
+                    if should_append_image and not any(
+                        existing.get("type") == seg.get("type")
+                        and existing.get("region_id") == region_id
+                        and existing.get("url") == region.image_url
+                        for existing in segments
+                    ):
+                        segments.append(seg)
                     crop_warnings.append(
                         f"visual region {region_id} cropped for page {region.source_page}"
                     )

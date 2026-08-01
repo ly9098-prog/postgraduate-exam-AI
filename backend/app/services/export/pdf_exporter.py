@@ -358,7 +358,7 @@ class PdfExporter(Exporter):
             # without discarding or duplicating the stem.
             visual_segments = [
                 seg for seg in segments
-                if seg.get("type") in ("code_image", "math_image", "table_image", "image", "table_markdown")
+                if seg.get("type") in ("code_image", "math_image", "table_image", "image", "table", "table_markdown")
             ]
             if visual_segments:
                 self._write_segments(pdf, visual_segments, ctx)
@@ -366,7 +366,7 @@ class PdfExporter(Exporter):
             self._write_latex_content(pdf, f"{prefix}{stem}", ctx)
             visual_segments = [
                 seg for seg in segments
-                if seg.get("type") in ("code_image", "math_image", "table_image", "image", "table_markdown")
+                if seg.get("type") in ("code_image", "math_image", "table_image", "image", "table", "table_markdown")
             ]
             if visual_segments:
                 self._write_segments(pdf, visual_segments, ctx)
@@ -550,7 +550,7 @@ class PdfExporter(Exporter):
         for seg in segments:
             if seg.get("type") in ("code_image", "math_image", "table_image", "image"):
                 height += 45
-            elif seg.get("type") == "table_markdown":
+            elif seg.get("type") in ("table", "table_markdown"):
                 height += 25
 
         options = q.get("options") or {}
@@ -623,15 +623,14 @@ class PdfExporter(Exporter):
                 if url:
                     self._embed_image(pdf, url, ctx)
 
-            elif seg_type == "table_markdown":
-                # Parse and render as PDF table using unified TableBlock
-                md_text = seg.get("text", "")
-                if md_text:
-                    blocks = parse_table(md_text, source_type="markdown")
-                    if blocks:
-                        for block in blocks:
-                            render_table_to_pdf(pdf, block)
-                            pdf.ln(2)
+            elif seg_type in ("table", "table_markdown"):
+                # Parse and render canonical or legacy tables through the
+                # unified TableBlock model.
+                blocks = parse_table(seg, source_type="segment")
+                if blocks:
+                    for block in blocks:
+                        render_table_to_pdf(pdf, block)
+                        pdf.ln(2)
 
     def _write_latex_content(self, pdf, text: str, ctx: PdfContext):
         """Render mixed text without promoting inline formulas to block images.

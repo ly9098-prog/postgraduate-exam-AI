@@ -42,6 +42,7 @@ class OCRFixResult:
     risk_flags: list[str] = field(default_factory=list)
     safety: dict | None = None
     source: str = "unknown"
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable
