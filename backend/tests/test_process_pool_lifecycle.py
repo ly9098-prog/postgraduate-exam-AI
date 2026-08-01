@@ -184,6 +184,11 @@ class TestOcrProcessPoolLifecycle:
         opp.ocr_process_pool._executor = None
         opp.ocr_process_pool._spawn_count = 0
         yield
+        # Teardown: these tests call shutdown() and would otherwise leave the
+        # global pool permanently shut down, which strips later test files
+        # (e.g. ocr_regression image cases) of their PP-OCR source text.
+        opp.ocr_process_pool.shutdown()
+        opp.ocr_process_pool.reset()
 
     def test_no_executor_before_first_submit(self):
         import app.core.ocr_process_pool as opp
