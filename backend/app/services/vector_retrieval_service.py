@@ -1395,4 +1395,5 @@ def is_shadow_mode() -> bool:
 
 
 def is_vector_allowed_for(user_id=None, subject=None):
-    return is_vector_enabled()
+    """向量检索始终对所有用户/科目开放（allowlist 已移除）。"""
+    return True

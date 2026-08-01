@@ -148,7 +148,7 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
     unmastered_q = select(func.count(WrongQuestion.id)).where(
         WrongQuestion.user_id == user_id,
         WrongQuestion.is_active,
-        not WrongQuestion.mastered,
+        ~WrongQuestion.mastered,
     )
     unmastered = (await db.execute(unmastered_q)).scalar() or 0
 
@@ -162,7 +162,7 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
     hf_q = select(func.count(WrongQuestion.id)).where(
         WrongQuestion.user_id == user_id,
         WrongQuestion.is_active,
-        not WrongQuestion.mastered,
+        ~WrongQuestion.mastered,
         WrongQuestion.review_count >= 3,
     )
     high_frequency_count = (await db.execute(hf_q)).scalar() or 0
@@ -172,7 +172,7 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
     today_due_q = await db.execute(
         select(func.count(func.distinct(ReviewSchedule.question_id))).where(
             ReviewSchedule.user_id == user_id,
-            not ReviewSchedule.mastered,
+            ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= today_end,
             ReviewSchedule.question_id.in_(
                 select(WrongQuestion.question_id).where(
@@ -263,7 +263,7 @@ async def list_wrong_enriched(
         select(ReviewSchedule.next_review_at)
         .where(ReviewSchedule.question_id == WrongQuestion.question_id)
         .where(ReviewSchedule.user_id == WrongQuestion.user_id)
-        .where(not ReviewSchedule.mastered)
+        .where(~ReviewSchedule.mastered)
         .correlate(WrongQuestion)
         .order_by(ReviewSchedule.next_review_at.asc().nulls_last())
         .limit(1)

@@ -54,7 +54,7 @@ async def aggregate_recommendation_metrics_daily(
                 func.sum(case((RecommendationLog.is_correct, 1), else_=0)), 0
             ).label("correct_count"),
             func.coalesce(
-                func.sum(case((not RecommendationLog.is_correct, 1), else_=0)), 0
+                func.sum(case((~RecommendationLog.is_correct, 1), else_=0)), 0
             ).label("wrong_count"),
             func.avg(RecommendationLog.recommend_score).label("avg_recommend_score"),
             func.avg(RecommendationLog.similarity).label("avg_similarity"),

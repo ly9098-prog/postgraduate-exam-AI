@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from enum import StrEnum
 
-from app.core.config import settings
+from app.core import config as app_config
 
 
 class DeploymentProfile(StrEnum):
@@ -31,11 +31,11 @@ def detect_deployment_profile() -> DeploymentProfile:
     """
     explicit = (
         os.environ.get("DEPLOYMENT_PROFILE")
-        or settings.DEPLOYMENT_PROFILE
+        or app_config.settings.DEPLOYMENT_PROFILE
         or ""
     ).strip().lower()
-    legacy = (settings.DEPLOY_PROFILE or "").strip().lower()
-    app_env = (settings.APP_ENV or "").strip().lower()
+    legacy = (app_config.settings.DEPLOY_PROFILE or "").strip().lower()
+    app_env = (app_config.settings.APP_ENV or "").strip().lower()
 
     legacy_map = {
         "local": DeploymentProfile.LOCAL_IMPORT,
@@ -95,7 +95,7 @@ def validate_profile_flags(profile: DeploymentProfile) -> list[str]:
         if profile.value != prof:
             continue
         key, val = flag.split("=", 1)
-        env_val = os.environ.get(key, settings.model_dump().get(key.split("_")[0].lower(), ""))
+        env_val = os.environ.get(key, app_config.settings.model_dump().get(key.split("_")[0].lower(), ""))
         if str(env_val).lower() == val.lower():
             errors.append(msg)
     return errors

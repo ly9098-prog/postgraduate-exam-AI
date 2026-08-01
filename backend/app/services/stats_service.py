@@ -29,7 +29,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
                 func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(
-                func.sum(case((not PracticeRecord.is_correct, 1), else_=0)), 0
+                func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         ).where(PracticeRecord.user_id == user_id)
@@ -66,7 +66,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
     due_count = await db.execute(
         select(func.count(ReviewSchedule.id)).where(
             ReviewSchedule.user_id == user_id,
-            not ReviewSchedule.mastered,
+            ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= utcnow(),
         )
     )
@@ -126,7 +126,7 @@ async def get_subject_stats(db: AsyncSession, user_id: int) -> list[dict]:
                 func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(
-                func.sum(case((not PracticeRecord.is_correct, 1), else_=0)), 0
+                func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         )
@@ -179,7 +179,7 @@ async def get_trends(
                 func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(
-                func.sum(case((not PracticeRecord.is_correct, 1), else_=0)), 0
+                func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0
             ),
         )
         .where(
@@ -272,7 +272,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     stuck = await db.execute(
         select(func.count(WrongQuestion.id)).where(
             WrongQuestion.user_id == user_id,
-            not WrongQuestion.mastered,
+            ~WrongQuestion.mastered,
             WrongQuestion.review_count >= 3,
         )
     )
@@ -319,7 +319,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     long_unmastered = await db.execute(
         select(func.count(ReviewSchedule.id)).where(
             ReviewSchedule.user_id == user_id,
-            not ReviewSchedule.mastered,
+            ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= datetime.combine(
                 today - timedelta(days=7), datetime.min.time()
             ),
@@ -332,7 +332,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
         .join(WrongQuestion, WrongQuestion.question_id == Question.id)
         .where(
             WrongQuestion.user_id == user_id,
-            not WrongQuestion.mastered,
+            ~WrongQuestion.mastered,
         )
     )
     kp_counter: dict[str, int] = {}
