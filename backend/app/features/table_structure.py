@@ -24,7 +24,7 @@ _MAX_COLUMNS = 100
 _MAX_SOURCE_CHARS = 50_000
 
 _OPTION_LINE_RE = re.compile(r"^\s*[A-Da-d]\s*[.．、:：)）]\s*")
-_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$")
+_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+(?:\s*:?-{3,}:?\s*\|?)?\s*$")
 _MULTI_SPACE_RE = re.compile(r"\t+| {2,}")
 _NUMERIC_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d+)?|\.\d+)%?$")
 _HEADER_RE = re.compile(
@@ -383,7 +383,9 @@ def _parse_markdown_tables(text: str) -> list[RestoredTable]:
             body.append(_split_markdown_row(lines[end]))
             end += 1
         target = max([len(header), *[len(row) for row in body]] or [0])
-        if target >= 2:
+        # Single-column markdown tables are valid (e.g. label/value lists); the
+        # separator regex already filters out non-table pipe lines.
+        if target >= 1:
             rows: list[dict] = [{"cells": [
                 _make_cell(value, is_header=True, alignment=alignments[i] if i < len(alignments) else "left")
                 for i, value in enumerate(_pad_row(header, target))
@@ -732,19 +734,10 @@ def _can_merge_tables(first: dict, second: dict) -> bool:
     if caption_a and caption_b and caption_a == caption_b:
         return True
 
-    # Coordinate-backed continuation: first part ends near page bottom and the
-    # next starts near page top.  Normalized coordinate spaces are preferred;
-    # pixel coordinates need explicit page dimensions and therefore are not
-    # guessed here.
-    bbox_a = first.get("bbox")
-    bbox_b = second.get("bbox")
-    space_a = str(first.get("coordinate_space") or "")
-    space_b = str(second.get("coordinate_space") or "")
-    if bbox_a and bbox_b and space_a == space_b:
-        if space_a == "normalized_1000":
-            return float(bbox_a[3]) >= 850 and float(bbox_b[1]) <= 150
-        if space_a == "normalized_1":
-            return float(bbox_a[3]) >= 0.85 and float(bbox_b[1]) <= 0.15
+    # No explicit continuation marker, no repeated header and no matching
+    # caption: do not merge on coordinates alone, otherwise two unrelated
+    # tables that happen to sit at the bottom/top of adjacent pages would be
+    # spliced into one and corrupt question content.
     return False
 
 
