@@ -219,10 +219,12 @@ def _load_vl_config_from_db() -> dict | None:
         conn.close()
         if not row:
             return None
+        from app.core.secret_crypto import decrypt_secret
+
         return {
             "model_name": row[0],
             "api_base_url": row[1],
-            "paddleocr_vl_api_token": row[2],
+            "paddleocr_vl_api_token": decrypt_secret(row[2]),
         }
     except Exception:
         return None
