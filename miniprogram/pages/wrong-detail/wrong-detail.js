@@ -8,6 +8,20 @@ const { isTrueFalseType } = require('../../utils/answer')
 const adapter = require('../../utils/question-runner-adapter')
 const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../../utils/ai-analysis-normalizer')
 
+const AI_REQUEST_TIMEOUT_MS = 58000
+const AI_CACHE_POLL_INTERVAL_MS = 1500
+const AI_CACHE_POLL_ATTEMPTS = 6
+
+function _sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function _fallbackMessage(model) {
+  if (model === 'timeout') return 'AI 分析生成超时，请稍后重试'
+  if (model === 'parse_failed') return 'AI 返回格式异常，请重新生成'
+  return 'AI 服务暂时不可用，请稍后重试'
+}
+
 function _subjectLabel(s) {
   const { getSubjectName } = require('../../utils/subject-meta')
   return getSubjectName(s)
@@ -317,6 +331,49 @@ Page({
     this.loadAiAnalysis(wqId)
   },
 
+  _isCurrentAiRequest(requestId, wqId) {
+    return requestId === this._aiRequestId &&
+      this._alive &&
+      this.data.wq &&
+      String(this.data.wq.id) === String(wqId)
+  },
+
+  async _pollPersistedAiAnalysis(wqId, requestId) {
+    for (var attempt = 0; attempt < AI_CACHE_POLL_ATTEMPTS; attempt++) {
+      if (!this._isCurrentAiRequest(requestId, wqId)) return null
+      if (attempt > 0) await _sleep(AI_CACHE_POLL_INTERVAL_MS)
+      if (!this._isCurrentAiRequest(requestId, wqId)) return null
+
+      try {
+        const latestWq = await api.get(`/wrong-questions/${wqId}`, {}, { timeout: 10000 })
+        if (!this._isCurrentAiRequest(requestId, wqId)) return null
+        if (!_detectAiCache(latestWq)) continue
+        const normalized = _normalizeAiPayload(latestWq.ai_analysis)
+        if (_hasAiContent(normalized)) {
+          return { normalized, latestWq }
+        }
+      } catch (_) {
+        // 轮询是恢复手段，单次网络失败继续下一次，不覆盖主请求错误。
+      }
+    }
+    return null
+  },
+
+  _applyRecoveredAiResult(recovered) {
+    if (!recovered) return false
+    this._resetAiLoadingState()
+    this._aiResult = recovered.normalized
+    this.setData({
+      wq: recovered.latestWq || this.data.wq,
+      aiCards: _normalizeAiResult(recovered.normalized),
+      aiFallback: false,
+      aiFromCache: true,
+      aiErrorText: '',
+      aiInlineNotice: '',
+    })
+    return true
+  },
+
   async loadAiAnalysis(wqId) {
     if (!wqId) return
     if (this.data.aiLoading) return
@@ -329,9 +386,9 @@ Page({
       aiInlineNotice: '',
     })
     try {
-      const result = await api.post('/ai/error-analysis', { wrong_question_id: wqId }, { timeout: 60000 })
+      const result = await api.post('/ai/error-analysis', { wrong_question_id: wqId }, { timeout: AI_REQUEST_TIMEOUT_MS })
       // Stale response guard
-      if (requestId !== this._aiRequestId || !this._alive || !this.data.wq || String(this.data.wq.id) !== String(wqId)) {
+      if (!this._isCurrentAiRequest(requestId, wqId)) {
         this._resetAiLoadingState()
         return
       }
@@ -341,13 +398,17 @@ Page({
       const fromFallback = !!(result && result.from_fallback)
 
       if (model === 'generating') {
+        const recovered = await this._pollPersistedAiAnalysis(wqId, requestId)
+        if (this._applyRecoveredAiResult(recovered)) return
+        if (!this._isCurrentAiRequest(requestId, wqId)) return
         this._resetAiLoadingState()
         this.setData({ aiFallback: true, aiErrorText: 'AI 分析正在生成中，请稍后重试' })
         return
       }
-      if (fromFallback && !hasContent) {
+      // fallback 本身带有三段通用文案，不能仅凭“有内容”判定为成功。
+      if (fromFallback) {
         this._resetAiLoadingState()
-        this.setData({ aiFallback: true, aiErrorText: 'AI 服务暂时不可用，请稍后重试' })
+        this.setData({ aiFallback: true, aiErrorText: _fallbackMessage(model) })
         return
       }
       if (!hasContent) {
@@ -365,7 +426,12 @@ Page({
       })
     } catch (e) {
       console.error('加载 AI 分析失败', e)
-      if (requestId === this._aiRequestId && this._alive && this.data.wq && String(this.data.wq.id) === String(wqId)) {
+      if (this._isCurrentAiRequest(requestId, wqId)) {
+        // 客户端超时/断网时，服务端可能已经完成并持久化；先短轮询恢复结果。
+        const recovered = await this._pollPersistedAiAnalysis(wqId, requestId)
+        if (this._applyRecoveredAiResult(recovered)) return
+      }
+      if (this._isCurrentAiRequest(requestId, wqId)) {
         const msg = e && e.message && String(e.message).includes('timeout')
           ? 'AI 分析生成超时，请稍后重试'
           : 'AI 分析生成失败，请稍后重试'
@@ -393,9 +459,9 @@ Page({
       const result = await api.post('/ai/error-analysis', {
         wrong_question_id: wqId,
         force_regenerate: true,
-      }, { timeout: 60000 })
+      }, { timeout: AI_REQUEST_TIMEOUT_MS })
       // Stale response guard — 必须复位 ai state
-      if (requestId !== this._aiRequestId || !this._alive || !this.data.wq || String(this.data.wq.id) !== String(wqId)) {
+      if (!this._isCurrentAiRequest(requestId, wqId)) {
         this._resetAiLoadingState()
         return
       }
@@ -426,14 +492,18 @@ Page({
         return
       }
 
-      // from_fallback 且有旧内容 — 保留旧内容
-      if (fromFallback && oldCards) {
+      // fallback 带有通用正文，必须按失败处理，不能覆盖成“生成成功”。
+      if (fromFallback) {
         this._resetAiLoadingState()
-        this.setData({
-          aiFallback: false,
-          aiInlineNotice: '重新生成失败，已保留当前解析',
-        })
-        wx.showToast({ title: '重新生成失败，已保留当前解析', icon: 'none' })
+        if (oldCards) {
+          this.setData({
+            aiFallback: false,
+            aiInlineNotice: '重新生成失败，已保留当前解析',
+          })
+          wx.showToast({ title: '重新生成失败，已保留当前解析', icon: 'none' })
+        } else {
+          this.setData({ aiFallback: true, aiErrorText: _fallbackMessage(model) })
+        }
         return
       }
 
@@ -465,7 +535,7 @@ Page({
       wx.showToast({ title: '已重新生成', icon: 'success' })
     } catch (e) {
       console.error('重新生成 AI 分析失败', e)
-      if (requestId === this._aiRequestId && this._alive && this.data.wq && String(this.data.wq.id) === String(wqId)) {
+      if (this._isCurrentAiRequest(requestId, wqId)) {
         if (oldCards) {
           this._resetAiLoadingState()
           this.setData({

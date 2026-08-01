@@ -45,6 +45,7 @@ class DeepSeekClient:
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        timeout: float | None = None,
     ) -> dict:
         _api_key = api_key if api_key is not None else self._api_key
         _base_url = base_url if base_url is not None else self._base_url
@@ -63,6 +64,10 @@ class DeepSeekClient:
 
         # Estimate prompt size without logging content
         prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
+
+        request_timeout = float(timeout if timeout is not None else self.timeout)
+        if request_timeout <= 0:
+            raise ValueError("timeout must be positive")
 
         payload = {
             "model": model,
@@ -99,7 +104,7 @@ class DeepSeekClient:
                     method="POST",
                     body=request_body,
                     max_bytes=10 * 1024 * 1024,
-                    timeout=float(self.timeout),
+                    timeout=request_timeout,
                     allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
                     follow_redirects=False,
                     headers={
@@ -134,7 +139,7 @@ class DeepSeekClient:
 
                 set_tag("ai.tokens", tokens)
                 set_tag("ai.duration_ms", elapsed)
-                if elapsed >= self.timeout * 1000:
+                if elapsed >= request_timeout * 1000:
                     set_tag("ai.timeout", True)
 
                 log_event(

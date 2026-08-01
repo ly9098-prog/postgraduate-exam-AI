@@ -1,7 +1,9 @@
 import asyncio
+import ast
 import json
 import logging
 import re
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -15,26 +17,173 @@ from app.ai.prompts import (
     build_error_analysis,
     build_study_advice,
 )
+from app.core.config import settings
 from app.models.ai_chat import AiChat
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 
 logger = logging.getLogger(__name__)
 
-ERROR_ANALYSIS_TIMEOUT_SECONDS = 25
-ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS = 45
+# 微信小程序请求链路通常只有约 60 秒可用。模型调用必须在该预算内结束，
+# 同时不能继续沿用原来的 25 秒硬截断，否则大量本可成功的请求会被误判超时。
+_CONFIGURED_AI_TIMEOUT_SECONDS = max(10, int(settings.AI_TIMEOUT or 50))
+ERROR_ANALYSIS_TIMEOUT_SECONDS = min(_CONFIGURED_AI_TIMEOUT_SECONDS, 48)
+ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS = min(_CONFIGURED_AI_TIMEOUT_SECONDS, 50)
+ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS = 2
+ERROR_ANALYSIS_LOCK_GRACE_SECONDS = 15
 
 # 同进程内生成中锁，防止并发重复调用大模型
 _generating: set[int] = set()
 
 
 def _pick_field(d: dict, candidates: list[str]) -> str:
-    """Return the first non-empty string value from a list of candidate keys."""
+    """Return the first non-empty normalized value from candidate keys."""
     for key in candidates:
-        val = d.get(key)
-        if val and isinstance(val, str) and val.strip():
-            return val.strip()
+        if key not in d:
+            continue
+        val = _coerce_analysis_text(d.get(key))
+        if val:
+            return val
     return ""
+
+
+_ANALYSIS_WRAPPER_KEYS = ("content", "data", "result", "analysis", "ai_analysis", "payload")
+_ANALYSIS_TEXT_KEYS = ("text", "content", "value", "description")
+_DIAGNOSIS_KEYS = ("mistake_diagnosis", "error_analysis", "diagnosis", "mistakeDiagnosis", "mistakediagnosis", "错因诊断")
+_KNOWLEDGE_KEYS = ("knowledge_patch", "knowledge_weakness", "knowledge", "knowledgePatch", "knowledgepatch", "补漏重点")
+_TASK_KEYS = ("review_task", "suggestion", "task", "reviewTask", "reviewtask", "reviewask", "复练任务")
+_EMPTY_ANALYSIS = {"mistake_diagnosis": "", "knowledge_patch": "", "review_task": ""}
+
+
+def _coerce_analysis_text(value, depth: int = 0) -> str:
+    """Normalize common model field shapes (string/list/nested object) to text."""
+    if value is None or depth > 6:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            text = _coerce_analysis_text(item, depth + 1)
+            if text and text not in parts:
+                parts.append(text)
+        return "\n".join(parts)
+    if isinstance(value, dict):
+        for key in _ANALYSIS_TEXT_KEYS:
+            if key in value:
+                text = _coerce_analysis_text(value.get(key), depth + 1)
+                if text:
+                    return text
+        # 某些模型会把正文放进只有一个字段的对象中。
+        if len(value) == 1:
+            return _coerce_analysis_text(next(iter(value.values())), depth + 1)
+    return ""
+
+
+def _extract_analysis_fields(value, depth: int = 0) -> dict:
+    if depth > 6 or value is None:
+        return dict(_EMPTY_ANALYSIS)
+
+    if isinstance(value, str):
+        decoded = _decode_structured_content(value)
+        if decoded is not None and not (
+            isinstance(decoded, str) and decoded.strip() == value.strip()
+        ):
+            return _extract_analysis_fields(decoded, depth + 1)
+        return _parse_titled_analysis_text(value)
+
+    if isinstance(value, list):
+        best = dict(_EMPTY_ANALYSIS)
+        best_score = -1
+        for item in value:
+            candidate = _extract_analysis_fields(item, depth + 1)
+            score = sum(bool(candidate.get(k)) for k in _EMPTY_ANALYSIS)
+            if score > best_score:
+                best = candidate
+                best_score = score
+        if best_score > 0:
+            return best
+        text = _coerce_analysis_text(value, depth + 1)
+        return {"mistake_diagnosis": text, "knowledge_patch": "", "review_task": ""}
+
+    if not isinstance(value, dict):
+        text = _coerce_analysis_text(value, depth + 1)
+        return {"mistake_diagnosis": text, "knowledge_patch": "", "review_task": ""}
+
+    direct = {
+        "mistake_diagnosis": _pick_field(value, list(_DIAGNOSIS_KEYS)),
+        "knowledge_patch": _pick_field(value, list(_KNOWLEDGE_KEYS)),
+        "review_task": _pick_field(value, list(_TASK_KEYS)),
+    }
+    if is_valid_ai_analysis(direct):
+        return direct
+
+    # 优先解包常见响应包装层，再兜底搜索其余嵌套对象。
+    nested_values = [value[key] for key in _ANALYSIS_WRAPPER_KEYS if key in value]
+    nested_values.extend(v for k, v in value.items() if k not in _ANALYSIS_WRAPPER_KEYS and isinstance(v, (dict, list, str)))
+    best = direct
+    best_score = 0
+    for nested in nested_values:
+        candidate = _extract_analysis_fields(nested, depth + 1)
+        score = sum(bool(candidate.get(k)) for k in _EMPTY_ANALYSIS)
+        if score > best_score:
+            best = candidate
+            best_score = score
+            if score == 3:
+                break
+    return best
+
+
+def _strip_code_fence(text: str) -> str:
+    match = re.search(r"```(?:json|javascript|js)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
+    return match.group(1).strip() if match else text.strip()
+
+
+def _decode_structured_content(raw: str):
+    """Decode JSON/Python-literal model output, including text around the object."""
+    text = _strip_code_fence((raw or "").strip())
+    if not text:
+        return None
+
+    starts = [0]
+    starts.extend(i for i, ch in enumerate(text) if i > 0 and ch in "{[")
+    decoder = json.JSONDecoder()
+    for start in starts:
+        candidate = text[start:].lstrip()
+        if not candidate:
+            continue
+        try:
+            value, _ = decoder.raw_decode(candidate)
+            return value
+        except (json.JSONDecodeError, ValueError):
+            pass
+        try:
+            value = ast.literal_eval(candidate)
+            if isinstance(value, (dict, list, str)):
+                return value
+        except (SyntaxError, ValueError):
+            pass
+    return None
+
+
+def _parse_titled_analysis_text(text: str) -> dict:
+    stripped = _strip_code_fence(text)
+    heading_re = re.compile(
+        r"(?im)^\s*(?:#{1,6}\s*)?(?:\d+[.、)]\s*)?(?:[-*]\s*)?"
+        r"(?:\*\*)?\s*(错因诊断|补漏重点|复练任务)\s*(?:\*\*)?\s*[：:]\s*(?:\*\*)?\s*"
+    )
+    matches = list(heading_re.finditer(stripped))
+    if not matches:
+        return {"mistake_diagnosis": stripped, "knowledge_patch": "", "review_task": ""}
+
+    result = dict(_EMPTY_ANALYSIS)
+    key_map = {"错因诊断": "mistake_diagnosis", "补漏重点": "knowledge_patch", "复练任务": "review_task"}
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(stripped)
+        result[key_map[match.group(1)]] = stripped[match.end():end].strip()
+    return result
 
 
 def parse_error_analysis_content(raw: str) -> dict:
@@ -50,54 +199,9 @@ def parse_error_analysis_content(raw: str) -> dict:
     """
     text = (raw or '').strip()
     if not text:
-        return {"mistake_diagnosis": "", "knowledge_patch": "", "review_task": ""}
-
-    # 去掉 markdown code fence
-    stripped = re.sub(r'^```(?:json)?\s*\n?', '', text)
-    stripped = re.sub(r'\n?```\s*$', '', stripped)
-
-    parsed = None
-    # 尝试直接 JSON 解析
-    try:
-        parsed = json.loads(stripped)
-    except (json.JSONDecodeError, ValueError):
-        pass
-
-    # 尝试提取第一个 {…}
-    if not parsed:
-        brace_start = stripped.find('{')
-        brace_end = stripped.rfind('}')
-        if brace_start >= 0 and brace_end > brace_start:
-            try:
-                parsed = json.loads(stripped[brace_start:brace_end + 1])
-            except (json.JSONDecodeError, ValueError):
-                pass
-
-    if isinstance(parsed, dict):
-        result = {
-            "mistake_diagnosis": _pick_field(parsed, ["mistake_diagnosis", "error_analysis", "diagnosis", "mistakeDiagnosis", "mistakediagnosis", "错因诊断"]),
-            "knowledge_patch": _pick_field(parsed, ["knowledge_patch", "knowledge_weakness", "knowledge", "knowledgePatch", "knowledgepatch", "补漏重点"]),
-            "review_task": _pick_field(parsed, ["review_task", "suggestion", "task", "reviewTask", "reviewtask", "reviewask", "复练任务"]),
-        }
-        # 字段值本身可能是 JSON 字符串，需要递归解包
-        for key in result:
-            val = result[key]
-            if isinstance(val, str) and val.strip().startswith("{"):
-                try:
-                    inner = json.loads(val)
-                    if isinstance(inner, dict):
-                        result[key] = _pick_field(inner, ["mistake_diagnosis", "error_analysis", "diagnosis", "mistakeDiagnosis", "mistakediagnosis", "错因诊断", "knowledge_patch", "knowledge", "review_task", "suggestion", "text", "content"])
-                except (json.JSONDecodeError, ValueError):
-                    pass
-        return result
-
-    # 非 JSON：尝试按中文标题切分
-    sections = re.split(r'(?:^|\n)(?:(?:错因诊断|补漏重点|复练任务)\s*[：:]\s*)', stripped)
-    return {
-        "mistake_diagnosis": sections[1].strip() if len(sections) > 1 else stripped,
-        "knowledge_patch": sections[2].strip() if len(sections) > 2 else "",
-        "review_task": sections[3].strip() if len(sections) > 3 else "",
-    }
+        return dict(_EMPTY_ANALYSIS)
+    decoded = _decode_structured_content(text)
+    return _extract_analysis_fields(decoded if decoded is not None else text)
 
 
 def is_valid_ai_analysis(content: dict) -> bool:
@@ -106,16 +210,7 @@ def is_valid_ai_analysis(content: dict) -> bool:
 
 def _normalize_ai_analysis(cached: dict) -> dict:
     """Convert any field-name format to canonical snake_case."""
-    if not cached:
-        return {"mistake_diagnosis": "", "knowledge_patch": "", "review_task": ""}
-    # If canonical fields already have content, return as-is
-    if str(cached.get("mistake_diagnosis", "")).strip() or str(cached.get("knowledge_patch", "")).strip() or str(cached.get("review_task", "")).strip():
-        return cached
-    return {
-        "mistake_diagnosis": _pick_field(cached, ["mistake_diagnosis", "error_analysis", "diagnosis", "mistakeDiagnosis", "mistakediagnosis", "错因诊断"]),
-        "knowledge_patch": _pick_field(cached, ["knowledge_patch", "knowledge_weakness", "knowledge", "knowledgePatch", "knowledgepatch", "补漏重点"]),
-        "review_task": _pick_field(cached, ["review_task", "suggestion", "task", "reviewTask", "reviewtask", "reviewask", "复练任务"]),
-    }
+    return _extract_analysis_fields(cached) if cached else dict(_EMPTY_ANALYSIS)
 
 
 def is_ai_analysis_fresh(ai_analysis: dict | None) -> bool:
@@ -195,6 +290,8 @@ async def analyze_error(
             "force regenerate error analysis wq_id=%d user_id=%d", wq.id, user_id,
         )
 
+    timeout_sec = ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS if force_regenerate else ERROR_ANALYSIS_TIMEOUT_SECONDS
+
     # 分布式锁：防止并发重复调用大模型（跨进程）
     # 先用进程内集合做快速检测，再用 Redis 分布式锁
     wq_pk = wq.id
@@ -211,9 +308,12 @@ async def analyze_error(
 
     from app.core.cache import cache
     lock_key = f"ai:error_analysis:{wq_pk}"
-    lock_value = str(user_id)
+    # 必须使用每次请求唯一的 owner token。仅用 user_id 时，旧请求可能误删
+    # 同一用户后续请求重新获取的锁。
+    lock_value = f"{user_id}:{uuid.uuid4().hex}"
+    lock_ttl = timeout_sec + ERROR_ANALYSIS_LOCK_GRACE_SECONDS
     try:
-        have_lock = await cache.acquire_lock(lock_key, lock_value, ttl=60)
+        have_lock = await cache.acquire_lock(lock_key, lock_value, ttl=lock_ttl)
     except Exception:
         # acquire_lock 异常时清除进程内锁，防止泄漏
         _generating.discard(wq_pk)
@@ -268,10 +368,17 @@ async def analyze_error(
             context["question"], wq.wrong_answer, q.answer
         )
 
-        timeout_sec = ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS if force_regenerate else ERROR_ANALYSIS_TIMEOUT_SECONDS
         try:
-            async with asyncio.timeout(timeout_sec):
-                result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
+            # deepseek.chat 内部是阻塞 HTTP 在线程池中执行。把相同的超时显式传入
+            # 底层 socket，避免只取消 await、但后台线程仍继续占用资源并丢失结果。
+            async with asyncio.timeout(timeout_sec + ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS):
+                result = await deepseek.chat(
+                    messages,
+                    model=model_name,
+                    api_key=api_key,
+                    base_url=base_url,
+                    timeout=timeout_sec,
+                )
         except TimeoutError:
             old_cache = build_any_cached_error_analysis_response(wq)
             logger.warning(
