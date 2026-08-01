@@ -2962,6 +2962,10 @@ class TestNonPdfPageRangeRejection:
         with patch.dict(sys.modules, {"fitz": mock_fitz}), \
              patch("app.core.resource_guard.ResourceGuard.can_accept_work",
                    return_value=(True, "")), \
+             patch("app.core.resource_guard.ResourceGuard.acquire_reservation",
+                   new_callable=AsyncMock, return_value="fake-reservation-token"), \
+             patch("app.core.resource_guard.ResourceGuard.release_reservation",
+                   new_callable=AsyncMock), \
              patch("app.services.task_queue_worker.enqueue_import_pipeline",
                    new_callable=AsyncMock, return_value=MagicMock(reason=None)):
             result = await start_import_pipeline(
