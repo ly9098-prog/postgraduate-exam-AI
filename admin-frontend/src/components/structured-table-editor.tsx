@@ -33,16 +33,18 @@ export function StructuredTableEditor({
 }) {
   const table = useMemo(() => normalizeStructuredTableSegment(segment), [segment]);
   if (!table) return null;
-  const layout = buildTableLayout(table.rows);
+  // Narrowed non-null alias so TS keeps the type inside the closures below.
+  const current = table;
+  const layout = buildTableLayout(current.rows);
 
   function commit(rows: StructuredTableRow[]) {
-    onChange(updateStructuredTableRows(table, rows));
+    onChange(updateStructuredTableRows(current, rows));
   }
 
   function updateCell(rowIndex: number, cellIndex: number, patch: Partial<StructuredTableCell>) {
-    const rows = cloneRows(table.rows);
-    const current = rows[rowIndex].cells[cellIndex];
-    const next = { ...current, ...patch };
+    const rows = cloneRows(current.rows);
+    const currentCell = rows[rowIndex].cells[cellIndex];
+    const next = { ...currentCell, ...patch };
     if (patch.text !== undefined) next.content = [{ type: "text", text: patch.text }];
     rows[rowIndex].cells[cellIndex] = next;
     commit(rows);
@@ -50,22 +52,22 @@ export function StructuredTableEditor({
 
   function addRow() {
     const width = Math.max(1, layout.columnCount);
-    commit([...cloneRows(table.rows), { cells: Array.from({ length: width }, () => createTableCell()) }]);
+    commit([...cloneRows(current.rows), { cells: Array.from({ length: width }, () => createTableCell()) }]);
   }
 
   function deleteRow(rowIndex: number) {
-    const rows = cloneRows(table.rows).filter((_, index) => index !== rowIndex);
+    const rows = cloneRows(current.rows).filter((_, index) => index !== rowIndex);
     if (rows.length > 0) commit(rows);
   }
 
   function addCell(rowIndex: number) {
-    const rows = cloneRows(table.rows);
+    const rows = cloneRows(current.rows);
     rows[rowIndex].cells.push(createTableCell());
     commit(rows);
   }
 
   function deleteCell(rowIndex: number, cellIndex: number) {
-    const rows = cloneRows(table.rows);
+    const rows = cloneRows(current.rows);
     rows[rowIndex].cells = rows[rowIndex].cells.filter((_, index) => index !== cellIndex);
     commit(rows);
   }

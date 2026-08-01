@@ -166,27 +166,33 @@ def recover_options_from_sources(
         normalized_sources.append(normalized)
         mirror_repairs += count
 
-    candidates: dict[str, list[tuple[int, int, str]]] = {key: [] for key in expected}
+    # Labeled candidates from any source always win over bare candidates; bare
+    # recovery only fills keys that have no labeled candidate anywhere, so code
+    # fragments in answer text cannot overwrite real labeled options.
+    labeled: dict[str, list[tuple[int, int, str]]] = {key: [] for key in expected}
+    bare: dict[str, list[tuple[int, int, str]]] = {key: [] for key in expected}
     primary_existing = extract_labeled_options(normalized_sources[0])
 
     for source_idx, source in enumerate(normalized_sources):
         for key, value in extract_labeled_options(source).items():
-            if key in candidates:
-                candidates[key].append((_option_quality(value), -source_idx, value))
+            if key in labeled:
+                labeled[key].append((_option_quality(value), -source_idx, value))
         for group in _KNOWN_OPTION_GROUPS:
             for idx, literal in enumerate(group):
                 key = _OPTION_KEYS[idx]
-                if key in candidates and literal in source:
-                    candidates[key].append((_option_quality(literal) + 10, -source_idx, literal))
+                if key in labeled and literal in source:
+                    labeled[key].append((_option_quality(literal) + 10, -source_idx, literal))
         for key, value in _recover_bare_sequence(source, expected).items():
-            candidates[key].append((_option_quality(value), -source_idx, value))
+            if key in bare:
+                bare[key].append((_option_quality(value), -source_idx, value))
 
     options: dict[str, str] = {}
     for key in expected:
-        if not candidates[key]:
+        pool = labeled[key] or bare[key]
+        if not pool:
             continue
-        candidates[key].sort(reverse=True)
-        options[key] = candidates[key][0][2]
+        pool.sort(reverse=True)
+        options[key] = pool[0][2]
 
     repaired_keys = [key for key in options if key not in primary_existing or options[key] != primary_existing.get(key)]
     warnings: list[str] = []
@@ -318,10 +324,16 @@ def _render_canonical_text(primary: str, options: dict[str, str], expected: tupl
     lines = primary.splitlines()
     kept: list[str] = []
     for line in lines:
-        if _LABEL_LINE_RE.match(line.strip()) or _BROAD_LINE_RE.match(line.strip()):
+        stripped = line.strip()
+        # Only drop a labeled line when its key will be re-emitted canonically;
+        # keep lines for keys that failed recovery so real content is not lost.
+        match = _LABEL_LINE_RE.match(stripped) or _BROAD_LINE_RE.match(stripped)
+        if match and match.group(1).upper() in options:
             continue
-        # Remove a line containing a complete inline option block.
-        if len(list(_INLINE_LABEL_RE.finditer(line))) >= 2:
+        # Remove a line containing a complete inline option block only when every
+        # inline label key survived recovery.
+        inline_matches = list(_INLINE_LABEL_RE.finditer(line))
+        if len(inline_matches) >= 2 and all(m.group(1).upper() in options for m in inline_matches):
             prefix = re.split(r"(?<![A-Za-z])[A-Da-d]\s*[.．、:：)）]", line, maxsplit=1)[0].strip()
             if prefix:
                 kept.append(prefix)

@@ -63,7 +63,7 @@ def detect_tables_in_blocks(blocks: list[dict]) -> list[dict]:
                 candidates.append(text)
 
         for candidate in candidates:
-            tables.extend(restore_tables_from_source(
+            restored = restore_tables_from_source(
                 candidate,
                 source_page=page,
                 bbox=bbox,
@@ -71,6 +71,10 @@ def detect_tables_in_blocks(blocks: list[dict]) -> list[dict]:
                 confidence=confidence,
                 region_id=region_id,
                 source_format="auto",
-            ))
+            )
+            for table in restored:
+                # Backward-compatible legacy key: callers may read `page`.
+                table["page"] = int(table.get("source_page") or page)
+            tables.extend(restored)
 
     return deduplicate_table_segments(tables)
