@@ -10,7 +10,7 @@ class AdminLoginRequest(BaseModel):
 
 class AdminChangePasswordRequest(BaseModel):
     old_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=12, max_length=128)
 
 
 class AdminRoleResponse(BaseModel):
@@ -44,45 +44,7 @@ class AdminTokenResponse(BaseModel):
     permissions: list[str] = []
 
 
-class AdminLoginResponse(BaseModel):
-    """Login/2FA-verify response. When two_factor_required, tokens are absent."""
-
-    access_token: str | None = None
-    token_type: str = "bearer"
-    user: AdminUserResponse | None = None
-    role: AdminRoleResponse | None = None
-    permissions: list[str] = []
-    two_factor_required: bool = False
-    pending_token: str | None = None
-
-
-class TwoFactorVerifyRequest(BaseModel):
-    pending_token: str = Field(min_length=1)
-    code: str = Field(min_length=6, max_length=16)
-
-
-class TwoFactorConfirmRequest(BaseModel):
-    code: str = Field(min_length=6, max_length=16)
-
-
-class TwoFactorDisableRequest(BaseModel):
-    code: str = Field(min_length=6, max_length=16)
-
-
-class TwoFactorSetupResponse(BaseModel):
-    secret: str
-    otpauth_uri: str
-    issuer: str
-    username: str
-    already_enabled: bool = False
-
-
-class TwoFactorConfirmResponse(BaseModel):
-    backup_codes: list[str]
-
-
 class AdminMeResponse(BaseModel):
     user: AdminUserResponse
     role: AdminRoleResponse
     permissions: list[str]
-    two_factor_enabled: bool = False
