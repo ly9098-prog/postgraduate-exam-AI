@@ -8,6 +8,8 @@ import { AlertTriangle, Check, CheckCircle2, ChevronDown, Code2, Eye, FileText, 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MathFormula } from "@/components/ui/math-formula";
+import { QuestionContentRenderer } from "@/components/question-content-renderer";
+import { StructuredTableEditor } from "@/components/structured-table-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CustomSelect } from "@/components/ui/custom-select";
@@ -43,6 +45,7 @@ import { OptionVisualPreview } from "./components/option-visual-preview";
 import { OptionVisualEditor } from "./components/option-visual-editor";
 import { MissingOptionImageAlert } from "./components/missing-option-image-alert";
 import { extractOptionVisualModel, normalizeOptionTextForDisplay, type OptionVisualModel } from "@/lib/option-visual-utils";
+import { isTableSegment, normalizeStructuredTableSegment } from "@/lib/structured-table";
 
 type FilterDropdownOption = {
   value: string;
@@ -410,6 +413,7 @@ export default function ImportReviewPage() {
   // Track which segment index is uploading a replacement image (-1 = none)
   const [segmentUploading, setSegmentUploading] = useState(-1);
   const editSnapshotRef = useRef("");
+  const segmentSnapshotRef = useRef("");
 
   const [viewMode, setViewMode] = useState<"list" | "table">("list");
   const [showBatchComplete, setShowBatchComplete] = useState(false);
@@ -562,10 +566,21 @@ export default function ImportReviewPage() {
     return extractOptionVisualModel(previewItem.parsed_content, previewItem.parsed_options);
   }, [previewItem]);
 
+  const unresolvedTableCount = useMemo(() => {
+    const sourceSegments = editing
+      ? (editedSegments ?? [])
+      : ((previewItem?.parsed_content?.segments as Array<Record<string, unknown>> | undefined) ?? []);
+    return sourceSegments.reduce((count, segment) => {
+      const table = normalizeStructuredTableSegment(segment);
+      return count + (table?.requires_review ? 1 : 0);
+    }, 0);
+  }, [editing, editedSegments, previewItem]);
+
   const isBlockedByVisualIssues =
     optionVisualModel.mode === "placeholder_missing" ||
     optionVisualModel.mode === "unknown_visual" ||
     (optionVisualModel.legacy && optionVisualModel.issues.length > 0) ||
+    unresolvedTableCount > 0 ||
     runtimeIssues.length > 0;
 
   // When full detail loads for the first time after drawer open, sync editState
@@ -730,11 +745,12 @@ export default function ImportReviewPage() {
         const reasons: string[] = [];
         if (optionVisualModel.mode === "placeholder_missing") reasons.push("选项图片缺失");
         if (optionVisualModel.mode === "unknown_visual") reasons.push("选项状态未知，需人工确认");
+        if (unresolvedTableCount > 0) reasons.push(`${unresolvedTableCount} 个结构化表格尚未人工核验`);
         if (runtimeIssues.length > 0) reasons.push(...runtimeIssues);
-        throw new Error(`无法保存：${reasons.join("；")}。请先生成选项图片或确认选项内容。`);
+        throw new Error(`无法保存：${reasons.join("；")}。请先完成视觉内容和表格结构核验。`);
       }
       const { options: _, multiBlank: __, ...rest } = editState;
-      const hasSegmentEdits = !!(editedSegments && editedSegments.length > 0 && previewItem?.parsed_content);
+      const hasSegmentEdits = editedSegments !== null && Boolean(previewItem?.parsed_content);
 
       if (isMultiBlankChoice(editState.question_type) && editState.multiBlank) {
         const mb = editState.multiBlank;
@@ -767,9 +783,16 @@ export default function ImportReviewPage() {
         ? {
             subject_id: rest.subject_id,
             question_type: rest.question_type,
+            stem: rest.stem,
             answer: rest.answer,
             analysis: rest.analysis,
-            parsed_content: { ...previewItem!.parsed_content, segments: editedSegments },
+            parsed_content: {
+              ...previewItem!.parsed_content,
+              stem: rest.stem,
+              text: rest.stem,
+              render_mode: "segments",
+              segments: editedSegments,
+            },
           }
         : { ...rest, subject_id: rest.subject_id };
       basePayload.options = editState.options.map((o) => {
@@ -1046,12 +1069,15 @@ export default function ImportReviewPage() {
     const snapshot = editStateFromItem(item);
     setEditState(snapshot);
     editSnapshotRef.current = JSON.stringify(snapshot);
+    segmentSnapshotRef.current = JSON.stringify(item.parsed_content?.segments ?? []);
     setEditing(false);
     setDetailView("formatted");
   };
 
   const closeDrawer = () => {
-    if (editing && editState && JSON.stringify(editState) !== editSnapshotRef.current) {
+    const hasEditStateChanges = editing && editState && JSON.stringify(editState) !== editSnapshotRef.current;
+    const hasSegmentChanges = editing && JSON.stringify(editedSegments ?? []) !== segmentSnapshotRef.current;
+    if (hasEditStateChanges || hasSegmentChanges) {
       if (!window.confirm("有未保存的修改，确定关闭吗？")) return;
     }
     setPreviewId(null);
@@ -1066,7 +1092,12 @@ export default function ImportReviewPage() {
     if (!previewId) return;
     // Copy current segments from previewItem for editing
     const segs = previewItem?.parsed_content?.segments as Array<Record<string, unknown>> | undefined;
-    setEditedSegments(segs && segs.length > 0 ? segs.map((s) => ({ ...s })) : null);
+    const clonedSegments = segs && segs.length > 0
+      ? JSON.parse(JSON.stringify(segs)) as Array<Record<string, unknown>>
+      : null;
+    setEditedSegments(clonedSegments);
+    segmentSnapshotRef.current = JSON.stringify(clonedSegments ?? []);
+    editSnapshotRef.current = JSON.stringify(editState);
     setEditing(true);
   };
 
@@ -1960,168 +1991,9 @@ export default function ImportReviewPage() {
                       <span className="text-sm font-semibold text-[var(--ink)]">题干</span>
                     </div>
                     <div className="ml-9 stem-text">
-                      {editState.stem ? <MathFormula text={editState.stem} /> : <span className="italic text-[var(--color-text-hint)]">（空）</span>}
+                      <QuestionContentRenderer content={previewItem?.parsed_content} fallbackText={editState.stem} showTableMetadata ignoredSegmentIds={optionVisualModel.consumedSegmentIds} />
                     </div>
                   </section>
-
-                  {/* ── Segments (math_image / table_markdown / source_region) ── */}
-                  {(() => {
-                    const pc = previewItem?.parsed_content as Record<string, unknown> | undefined;
-                    const segments = (pc?.segments as Array<Record<string, unknown>> | undefined) ?? [];
-                    if (segments.length === 0) return null;
-                    // Filter out segments already consumed by option visual preview
-                    const consumed = new Set(optionVisualModel.consumedSegmentIds);
-                    // Stable segment identity: region_id > asset_hash > fingerprint > index
-                    function segId(seg: Record<string, unknown>, idx: number): string {
-                      const rid = seg.region_id as string | undefined;
-                      if (rid && typeof rid === "string" && rid.trim()) return rid;
-                      const hash = seg.asset_hash as string | undefined;
-                      if (hash && typeof hash === "string" && hash.trim()) return `ah:${hash}`;
-                      // Fingerprint from (type+url+bbox)
-                      const t = String(seg.type ?? "");
-                      const u = String(seg.url ?? "");
-                      const b = Array.isArray(seg.bbox) ? JSON.stringify(seg.bbox) : "";
-                      const fp = `${t}|${u}|${b}`;
-                      if (fp.length > 3) { let h = 0; for (let i = 0; i < fp.length; i++) h = ((h << 5) - h + fp.charCodeAt(i)) | 0; return `fp:${(h >>> 0).toString(36)}`; }
-                      return `idx:${idx}`;
-                    }
-                    const filteredSegments = segments.filter((_seg, idx) => !consumed.has(segId(_seg, idx)));
-                    if (filteredSegments.length === 0) return null;
-                    return (
-                      <section className="animate-fade-up section-scroll section-scroll-purple rounded-2xl border border-[var(--color-border)]/70 bg-gradient-to-br from-white via-white to-purple-50/30 p-5 shadow-sm transition-all hover:shadow-md">
-                        <div className="flex items-center gap-2.5 mb-4">
-                          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-purple-50 shadow-sm">
-                            <svg className="h-4 w-4 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                          </span>
-                          <div>
-                            <span className="text-sm font-bold text-[var(--ink)]">内容片段</span>
-                            <span className="ml-2 text-[10px] text-[var(--color-text-hint)]">{filteredSegments.length} 个片段</span>
-                          </div>
-                        </div>
-                        <div className="ml-9 space-y-3">
-                          {filteredSegments.map((seg, si) => {
-                            const segType = String(seg.type ?? "").toLowerCase();
-                            // Text segments
-                            if (segType === "text") {
-                              return (
-                                <div key={si} className="rounded-xl border border-[var(--color-border)]/60 bg-white/70 p-3">
-                                  <p className="text-sm text-[var(--ink)] whitespace-pre-wrap">{String(seg.text ?? "")}</p>
-                                </div>
-                              );
-                            }
-                            // Newline
-                            if (segType === "newline") {
-                              return <div key={si} className="h-px bg-[var(--color-border)]/40" />;
-                            }
-                            // Image segments (image, math_image, table_image, code_image)
-                            const isImageSegment = ["image", "math_image", "table_image", "code_image"].includes(segType);
-                            if (isImageSegment) {
-                              const segLabel =
-                                segType === "math_image" ? "公式截图" :
-                                segType === "table_image" ? "表格截图" :
-                                segType === "code_image" ? "代码截图" : "图片";
-                              const srcUrl = String(seg.url ?? "");
-                              const regionType = String(seg.region_type ?? "");
-                              const sourcePage = seg.source_page;
-                              const bbox = seg.bbox;
-                              const confidence = seg.confidence;
-                              const requiresReview = seg.requires_review;
-                              const assignmentMethod = String(seg.assignment_method ?? "");
-                              const riskFlags = Array.isArray(seg.risk_flags) ? seg.risk_flags : [];
-                              const optionKey = seg.option_key ? String(seg.option_key) : null;
-                              const coordSpace = String(seg.coordinate_space ?? "");
-                              return (
-                                <div key={si} className="rounded-xl border border-[var(--color-border)]/50 bg-white/80 p-3.5 shadow-sm transition-all hover:border-[var(--color-border)] hover:shadow-md">
-                                  <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
-                                    <span className="rounded-full bg-purple-50 px-2.5 py-0.5 text-[10px] font-bold text-purple-600">{segLabel}</span>
-                                    {requiresReview ? (
-                                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">需核对</span>
-                                    ) : null}
-                                    {typeof confidence === "number" ? (
-                                      <span className="rounded-full bg-[var(--color-bg-input)] px-2 py-0.5 text-[10px] text-[var(--color-text-hint)]">{(confidence * 100).toFixed(0)}%</span>
-                                    ) : null}
-                                    {optionKey ? (
-                                      <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-600">选项 {optionKey}</span>
-                                    ) : null}
-                                    {riskFlags.length > 0 ? (
-                                      <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-500" title={riskFlags.join("; ")}>
-                                        {riskFlags.length} 风险
-                                      </span>
-                                    ) : null}
-                                  </div>
-                                  {srcUrl ? (
-                                    <div className="relative group/img overflow-hidden rounded-xl border border-[var(--color-border)]/50">
-                                      <img
-                                        src={srcUrl}
-                                        alt={String(seg.alt ?? segLabel)}
-                                        className="max-w-full cursor-zoom-in transition-transform duration-300 group-hover/img:scale-[1.02]"
-                                        style={{ maxHeight: "240px" }}
-                                        onClick={() => window.open(srcUrl, "_blank")}
-                                      />
-                                      <div className="absolute inset-0 rounded-xl ring-1 ring-inset ring-black/5 pointer-events-none" />
-                                    </div>
-                                  ) : (
-                                    <div className="rounded-lg border border-dashed border-amber-300 bg-amber-50/50 px-3 py-4 text-center text-xs text-amber-700">
-                                      {seg.upload_failed ? "图片生成失败" : "图片（暂未生成）"}
-                                    </div>
-                                  )}
-                                  {/* Metadata */}
-                                  <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-[var(--color-text-hint)]">
-                                    {regionType && regionType !== "unknown" ? (
-                                      <span className="rounded-md bg-[var(--color-bg-input)] px-1.5 py-0.5 font-medium">类型: {regionType}</span>
-                                    ) : null}
-                                    {sourcePage != null ? (
-                                      <span className="rounded-md bg-[var(--color-bg-input)] px-1.5 py-0.5 font-medium">第 {String(sourcePage)} 页</span>
-                                    ) : null}
-                                    {bbox && Array.isArray(bbox) ? (
-                                      <span className="rounded-md bg-[var(--color-bg-input)] px-1.5 py-0.5 font-mono text-[9px]">定位: {JSON.stringify(bbox)}</span>
-                                    ) : null}
-                                    {coordSpace && coordSpace !== "unknown" ? (
-                                      <span className="rounded-md bg-[var(--color-bg-input)] px-1.5 py-0.5 font-medium">坐标: {coordSpace}</span>
-                                    ) : null}
-                                    {assignmentMethod && !["unknown", "unassigned", ""].includes(assignmentMethod) ? (
-                                      <span className="rounded-md bg-[var(--color-bg-input)] px-1.5 py-0.5 font-medium">归属: {assignmentMethod}</span>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              );
-                            }
-                            // table_markdown (legacy text-based table)
-                            if (segType === "table_markdown") {
-                              return (
-                                <div key={si} className="rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/50 p-3">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <span className="text-xs font-semibold text-[var(--color-text-secondary)]">表格内容</span>
-                                    {seg.requires_review ? (
-                                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">需核对</span>
-                                    ) : null}
-                                    {((): React.ReactNode => {
-                                      const conf = seg.confidence;
-                                      const confText = typeof conf === "number" ? `${(conf * 100).toFixed(0)}%` : conf != null ? String(conf) : null;
-                                      return confText ? (
-                                        <span className="text-[10px] text-[var(--color-text-hint)]">置信度: {confText}</span>
-                                      ) : null;
-                                    })()}
-                                  </div>
-                                  {seg.markdown ? (
-                                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--color-border)]/50 bg-white p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)]">{String(seg.markdown)}</pre>
-                                  ) : (
-                                    <p className="text-xs text-[var(--color-text-hint)]">（表格文本内容）</p>
-                                  )}
-                                </div>
-                              );
-                            }
-                            // Unknown segment type — safe fallback, don't crash
-                            return (
-                              <div key={si} className="rounded-xl border border-dashed border-[var(--color-border)]/40 bg-white/50 p-3">
-                                <p className="text-xs text-[var(--color-text-hint)]">未知片段类型: {segType}</p>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    );
-                  })()}
 
                   {/* ── Options Card ── */}
                   {(() => {
@@ -2515,6 +2387,30 @@ export default function ImportReviewPage() {
                     <textarea className="min-h-36 w-full rounded-xl border border-[var(--color-border)] bg-white/90 px-3 py-2.5 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15" value={editState.stem} onChange={(event) => setEditState({ ...editState, stem: event.target.value })} />
                   </label>
 
+                  {/* ── Structured Table Editor ── */}
+                  {editedSegments && editedSegments.some((segment) => isTableSegment(segment)) ? (
+                    <div className="space-y-4 animate-fade-up drawer-section-delay-3">
+                      {editedSegments.map((segment, segmentIndex) => {
+                        const table = normalizeStructuredTableSegment(segment);
+                        if (!table) return null;
+                        return (
+                          <StructuredTableEditor
+                            key={table.table_id || segmentIndex}
+                            segment={table}
+                            onChange={(nextTable) => {
+                              const next = [...editedSegments];
+                              next[segmentIndex] = nextTable;
+                              setEditedSegments(next);
+                            }}
+                            onDelete={() => {
+                              setEditedSegments(editedSegments.filter((_, index) => index !== segmentIndex));
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
                   {/* ── Visual Segment Editor (stem) ── */}
                   {(() => {
                     const segs = editedSegments;
@@ -2662,7 +2558,7 @@ export default function ImportReviewPage() {
                                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[var(--color-text-hint)] transition-all hover:bg-red-50 hover:text-red-500"
                                   onClick={() => {
                                     const next = deleteSegmentAtIndex(segs!, si);
-                                    setEditedSegments(next.length > 0 ? next : null);
+                                    setEditedSegments(next);
                                   }}
                                   title="删除此片段"
                                 ><X className="h-3.5 w-3.5" /></button>

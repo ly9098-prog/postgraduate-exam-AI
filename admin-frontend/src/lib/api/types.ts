@@ -86,6 +86,8 @@ export type ImportPipelineStatusResponse = {
     requires_manual_review?: number;
     ai_answer_count?: number;
     math_image_count?: number;
+    table_structured_count?: number;
+    table_review_count?: number;
     table_markdown_count?: number;
     repair_skipped?: number;
     repair_called?: number;

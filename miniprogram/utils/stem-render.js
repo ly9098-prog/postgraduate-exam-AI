@@ -7,8 +7,8 @@
  *
  * RENDER MODES (in priority order):
  *   SEGMENTS  — Uses <math-question> component with pre-rendered formula images.
- *               Applicable only when config.enableMathImage=true AND
- *               content.render_mode === 'segments'.
+ *               Applicable when content.render_mode === 'segments' and either
+ *               formula-image rendering is enabled or a native table.v2 segment exists.
  *   MIXED     — Multiple block types within a single stem (text + code, etc.).
  *               Each block renders independently via its own path.
  *   LATEX     — Uses <mp-html> with KaTeX plugin. Applicable when stem contains
@@ -34,6 +34,7 @@
 var appConfig = require('../config')
 var { formatInlineMathText, replaceSimpleLatexCommands } = require('./math-format')
 var { containsCode, shouldReconstructCode, reconstructCode, sanitizeImportedCodeArtifacts } = require('./code-reconstructor')
+var tableStructure = require('./table-structure')
 
 // Derive static asset origin from API base URL
 var _assetOrigin = (function () {
@@ -356,7 +357,9 @@ function _segmentsToText(segments) {
   if (!Array.isArray(segments)) return ''
   return segments.map(function (seg) {
     if (!seg) return ''
-    if (seg.type === 'text' || seg.type === 'newline') return seg.text || ''
+    if (seg.type === 'text') return seg.text || ''
+    if (seg.type === 'newline') return '\n'
+    if (seg.type === 'table' || seg.type === 'table_markdown') return tableStructure.tableToText(seg)
     if (seg.type === 'image' || seg.type === 'math_image' || seg.type === 'table_image' || seg.type === 'code_image') {
       return seg.alt ? '$' + seg.alt + '$' : ''
     }
@@ -833,6 +836,13 @@ function _assertExclusiveRenderPayload(model) {
     }
   }
 
+  if (mode === RENDER_MODE.SEGMENTS) {
+    active += m.segments && m.segments.length ? 1 : 0
+    if (m.html || m.rawText || (m.richTextNodes && m.richTextNodes.length) || (m.blocks && m.blocks.length)) {
+      console.error('[RENDER_PAYLOAD_CONFLICT] SEGMENTS has extra payload')
+    }
+  }
+
   if (active !== 1) {
     console.error('[RENDER_PAYLOAD_CONFLICT] expected exactly one active payload for mode=' + mode)
   }
@@ -935,12 +945,19 @@ function buildRenderModel(q, options, cfg) {
   var mode, richTextNodes, html, segments, rawText, blocks
 
   // Priority 1: SEGMENTS (math-question with pre-rendered formula images)
-  if (effectiveConfig.enableMathImage && content && content.render_mode === 'segments') {
+  if (content && content.render_mode === 'segments' && (effectiveConfig.enableMathImage || tableStructure.hasTableSegments(content.segments))) {
     mode = RENDER_MODE.SEGMENTS
     // Use API segments if available (includes text, image, math_image, table_image, code_image)
     segments = (content.segments && content.segments.length > 0)
       ? content.segments.map(function (s) { return Object.assign({}, s) })
       : _textToSegments(cleanedStem)
+    var hasTextualSegment = segments.some(function (segment) {
+      var type = segment && typeof segment === 'object' ? String(segment.type || '').toLowerCase() : ''
+      return type === 'text' || type === 'newline'
+    })
+    if (!hasTextualSegment && cleanedStem) {
+      segments = _textToSegments(cleanedStem).concat(segments)
+    }
     richTextNodes = []
     html = ''
     blocks = []

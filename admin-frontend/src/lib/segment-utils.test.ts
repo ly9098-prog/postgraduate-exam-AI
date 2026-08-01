@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   hasVisualSegments,
+  hasTableSegments,
+  isTableSegmentType,
   isImageSegmentType,
   getSegmentTypeLabel,
   reorderSegmentUp,
@@ -99,6 +101,21 @@ describe("isImageSegmentType", () => {
   });
 });
 
+// ── table segment helpers ────────────────────────────────────────────────
+
+describe("table segment helpers", () => {
+  it("recognizes canonical and legacy table segments", () => {
+    expect(isTableSegmentType("table")).toBe(true);
+    expect(isTableSegmentType("TABLE_MARKDOWN")).toBe(true);
+    expect(isTableSegmentType("table_image")).toBe(false);
+  });
+
+  it("detects table segments in mixed content", () => {
+    expect(hasTableSegments([seg("text"), seg("table")])).toBe(true);
+    expect(hasTableSegments([seg("text"), seg("table_image")])).toBe(false);
+  });
+});
+
 // ── getSegmentTypeLabel ─────────────────────────────────────────────────
 
 describe("getSegmentTypeLabel", () => {
@@ -126,9 +143,13 @@ describe("getSegmentTypeLabel", () => {
     expect(getSegmentTypeLabel("Math_Image")).toBe("公式");
   });
 
+  it("labels canonical and legacy table segments", () => {
+    expect(getSegmentTypeLabel("table")).toBe("结构化表格");
+    expect(getSegmentTypeLabel("table_markdown")).toBe("结构化表格");
+  });
+
   it("returns the type as-is for unknown types", () => {
     expect(getSegmentTypeLabel("unknown")).toBe("unknown");
-    expect(getSegmentTypeLabel("table_markdown")).toBe("table_markdown");
   });
 });
 

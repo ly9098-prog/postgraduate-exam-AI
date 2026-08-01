@@ -1,3 +1,6 @@
+var stemRender = require('../../utils/stem-render')
+var tableStructure = require('../../utils/table-structure')
+
 Component({
   properties: {
     segments: { type: Array, value: [] }
@@ -30,7 +33,20 @@ Component({
           this._devWarn('segment[' + i + '] is not an object, skipped')
           continue
         }
-        result.push(Object.assign({}, s, { _error: false }))
+        var type = String(s.type || '').toLowerCase()
+        if (type === 'table' || type === 'table_markdown') {
+          var prepared = tableStructure.prepareTableForRender(s, {
+            needsRichRender: stemRender.needsRichRender,
+            textToHtml: stemRender.textToHtml,
+            resolveAssetUrl: stemRender.resolveAssetUrl,
+          })
+          if (prepared) result.push(prepared)
+          else this._devWarn('table segment[' + i + '] could not be normalized')
+          continue
+        }
+        var copy = Object.assign({}, s, { _error: false })
+        if (copy.url) copy.url = stemRender.resolveAssetUrl(copy.url)
+        result.push(copy)
       }
       return result
     },
@@ -67,6 +83,26 @@ Component({
       if (currentUrl && urls.length > 0) {
         wx.previewImage({ current: currentUrl, urls: urls })
       }
+    },
+    onTableSourceError: function(e) {
+      var index = e.currentTarget.dataset.index
+      var key = 'localSegments[' + index + ']._sourceImageError'
+      var update = {}
+      update[key] = true
+      this.setData(update)
+    },
+    onTableCellImageError: function(e) {
+      var tableIndex = e.currentTarget.dataset.tableIndex
+      var cellIndex = e.currentTarget.dataset.cellIndex
+      var blockIndex = e.currentTarget.dataset.blockIndex
+      var key = 'localSegments[' + tableIndex + ']._cells[' + cellIndex + ']._blocks[' + blockIndex + ']._error'
+      var update = {}
+      update[key] = true
+      this.setData(update)
+    },
+    onDirectImageTap: function(e) {
+      var url = e.currentTarget.dataset.url
+      if (url) wx.previewImage({ current: url, urls: [url] })
     }
   }
 })

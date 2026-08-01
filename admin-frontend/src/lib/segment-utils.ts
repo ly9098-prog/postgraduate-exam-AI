@@ -12,6 +12,7 @@ export type EditableOption = {
 };
 
 const IMAGE_SEGMENT_TYPES = ["image", "math_image", "table_image", "code_image"];
+const TABLE_SEGMENT_TYPES = ["table", "table_markdown"];
 
 /** Check if a type string is an image-type segment. */
 export function isImageSegmentType(type: string): boolean {
@@ -24,10 +25,22 @@ export function hasVisualSegments(segs: SegmentData[] | null | undefined): boole
   return segs.some((s) => isImageSegmentType(String(s.type ?? "")));
 }
 
+
+/** Check if a type string is a structured or legacy table segment. */
+export function isTableSegmentType(type: string): boolean {
+  return TABLE_SEGMENT_TYPES.includes(type.toLowerCase());
+}
+
+/** Check whether a segments array contains editable structured tables. */
+export function hasTableSegments(segs: SegmentData[] | null | undefined): boolean {
+  if (!segs) return false;
+  return segs.some((s) => isTableSegmentType(String(s.type ?? "")));
+}
 /** Human-readable label for a segment type. */
 export function getSegmentTypeLabel(type: string): string {
   const t = type.toLowerCase();
   if (t === "math_image") return "公式";
+  if (t === "table" || t === "table_markdown") return "结构化表格";
   if (t === "table_image") return "表格";
   if (t === "code_image") return "代码";
   if (t === "newline") return "换行";
