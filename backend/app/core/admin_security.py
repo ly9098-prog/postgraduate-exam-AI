@@ -5,7 +5,9 @@ from uuid import uuid4
 import jwt
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from passlib.context import CryptContext
+from pwdlib import PasswordHash
+from pwdlib.exceptions import UnknownHashError
+from pwdlib.hashers.bcrypt import BcryptHasher
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +18,8 @@ from app.core.time_utils import utcnow
 from app.models.admin import AdminUser, Permission, Role, RolePermission
 
 admin_security = HTTPBearer()
-password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt rounds=12/prefix=2b 与旧 passlib 默认一致，存量 $2b$ 哈希可直接验证
+password_context = PasswordHash((BcryptHasher(),))
 
 # ── Refresh Token Cookie Config ──
 
@@ -144,7 +147,11 @@ def hash_admin_password(password: str) -> str:
 def verify_admin_password(password: str, password_hash: str) -> bool:
     if len(password.encode("utf-8")) > BCRYPT_MAX_BYTES:
         raise ValueError(f"密码长度不能超过 {BCRYPT_MAX_BYTES} 字节")
-    return password_context.verify(password, password_hash)
+    try:
+        return password_context.verify(password, password_hash)
+    except (UnknownHashError, ValueError):
+        # 未知/畸形哈希：保持 passlib 时代"返回 False"的契约，不抛 500
+        return False
 
 
 async def blacklist_admin_token(jti: str, exp: int) -> None:
