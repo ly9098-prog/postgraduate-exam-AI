@@ -35,7 +35,7 @@ rapidfuzz
 pyyaml
 python-docx
 beautifulsoup4
-fonttools>=4.24.0
+fonttools>=4.63.0
 fire>=0.3.0
 requests
 albumentations
