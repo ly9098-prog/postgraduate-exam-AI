@@ -234,6 +234,7 @@ class LocalFileStorage(StorageBackend):
             if not normalized.startswith(prefix_normalized + "/"):
                 logger.warning("Delete rejected: path %s outside prefix %s", normalized, self._prefix)
                 return None
+            return normalized
         else:
             prefix_clean = self._prefix.lstrip("/")
             # If the key already starts with the prefix, use it as-is

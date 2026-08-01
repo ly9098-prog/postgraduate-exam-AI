@@ -239,7 +239,7 @@ async def compute_weak_topic_ranking(
         .join(WrongQuestion, WrongQuestion.question_id == Question.id)
         .where(
             WrongQuestion.user_id == user_id,
-            not WrongQuestion.mastered,
+            ~WrongQuestion.mastered,
         )
     )
     kp_counter: dict[str, int] = {}
@@ -282,7 +282,7 @@ async def _compute_kp_due_review_counts(db: AsyncSession, user_id: int) -> dict[
         .join(ReviewSchedule, ReviewSchedule.question_id == QuestionKnowledgePoint.question_id)
         .where(
             ReviewSchedule.user_id == user_id,
-            not ReviewSchedule.mastered,
+            ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= now,
             QuestionKnowledgePoint.role == "main",
         )
@@ -312,7 +312,7 @@ async def compute_repeat_wrong_analysis(
     repeat = await db.execute(
         select(func.count(WrongQuestion.id)).where(
             WrongQuestion.user_id == user_id,
-            not WrongQuestion.mastered,
+            ~WrongQuestion.mastered,
             WrongQuestion.review_count >= 1,
         )
     )
@@ -325,7 +325,7 @@ async def compute_repeat_wrong_analysis(
         .join(WrongQuestion, WrongQuestion.question_id == Question.id)
         .where(
             WrongQuestion.user_id == user_id,
-            not WrongQuestion.mastered,
+            ~WrongQuestion.mastered,
             WrongQuestion.review_count >= 1,
         )
     )
@@ -375,7 +375,7 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
                 func.avg(case((PracticeRecord.is_correct == False, PracticeRecord.used_time))), 0  # noqa: E712
             ),
             func.coalesce(
-                func.sum(case((not PracticeRecord.is_correct, 1), else_=0)), 0
+                func.sum(case((~PracticeRecord.is_correct, 1), else_=0)), 0
             ),
         ).where(
             PracticeRecord.user_id == user_id,
@@ -398,7 +398,7 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
             func.coalesce(func.sum(case((PracticeRecord.used_time > 120, 1), else_=0)), 0),
         ).where(
             PracticeRecord.user_id == user_id,
-            not PracticeRecord.is_correct,
+            ~PracticeRecord.is_correct,
             PracticeRecord.used_time.isnot(None),
         )
     )

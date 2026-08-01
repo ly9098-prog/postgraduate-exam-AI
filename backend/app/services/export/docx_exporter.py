@@ -232,7 +232,15 @@ class DocxExporter(Exporter):
             content = q.get("content") if isinstance(q.get("content"), dict) else {}
             segments = (content or {}).get("segments") or []
             cleaned_stem = self._sanitize_text(content_text).strip()
-            if cleaned_stem:
+            text_segments = [
+                seg for seg in segments
+                if seg.get("type") in ("text", "newline")
+            ]
+            if text_segments:
+                # Segments carry the authoritative layout (multi-line, mixed
+                # content); the flattened ``stem`` is only a fallback.
+                self._write_segments_to_doc(stem_p, segments, ctx, doc)
+            elif cleaned_stem:
                 if has_latex(cleaned_stem):
                     self._write_latex_content_to_doc(stem_p, cleaned_stem, ctx)
                 else:

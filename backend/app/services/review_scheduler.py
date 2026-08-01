@@ -121,7 +121,7 @@ async def get_today_review(
     conditions = [
         ReviewSchedule.user_id == user_id,
         ReviewSchedule.next_review_at <= now,
-        not ReviewSchedule.mastered,
+        ~ReviewSchedule.mastered,
     ]
     if subject:
         conditions.append(ReviewSchedule.subject == subject)
@@ -314,7 +314,7 @@ async def get_review_stats(
     remaining_q = select(func.count(ReviewSchedule.id)).where(
         ReviewSchedule.user_id == user_id,
         ReviewSchedule.next_review_at <= now,
-        not ReviewSchedule.mastered,
+        ~ReviewSchedule.mastered,
     )
     remaining_today = (await db.execute(remaining_q)).scalar()
 
@@ -322,7 +322,7 @@ async def get_review_stats(
     overdue_q = select(func.count(ReviewSchedule.id)).where(
         ReviewSchedule.user_id == user_id,
         ReviewSchedule.next_review_at < now,
-        not ReviewSchedule.mastered,
+        ~ReviewSchedule.mastered,
     )
     overdue = (await db.execute(overdue_q)).scalar()
 
@@ -350,7 +350,7 @@ async def get_review_stats(
             func.count(ReviewSchedule.id).label("scheduled"),
             func.sum(
                 case(
-                    (and_(ReviewSchedule.next_review_at <= now, not ReviewSchedule.mastered), 1), else_=0
+                    (and_(ReviewSchedule.next_review_at <= now, ~ReviewSchedule.mastered), 1), else_=0
                 )
             ).label("remaining"),
         )
@@ -539,7 +539,7 @@ async def get_today_review_overview(
     all_schedules_q = await db.execute(
         select(ReviewSchedule).where(
             ReviewSchedule.user_id == user_id,
-            not ReviewSchedule.mastered,
+            ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= today_end,
         ).order_by(ReviewSchedule.next_review_at.asc(), ReviewSchedule.id.asc())
     )
@@ -635,7 +635,7 @@ async def get_next_today_review_batch(
     # Query due schedules
     conditions = [
         ReviewSchedule.user_id == user_id,
-        not ReviewSchedule.mastered,
+        ~ReviewSchedule.mastered,
         ReviewSchedule.next_review_at <= today_end,
     ]
 
@@ -803,7 +803,7 @@ async def get_today_review_result(
     tomorrow_q = await db.execute(
         select(func.count(ReviewSchedule.id)).where(
             ReviewSchedule.user_id == user_id,
-            not ReviewSchedule.mastered,
+            ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at >= tomorrow_start,
             ReviewSchedule.next_review_at <= tomorrow_end,
         )
@@ -814,7 +814,7 @@ async def get_today_review_result(
     due_q = await db.execute(
         select(func.count(ReviewSchedule.id)).where(
             ReviewSchedule.user_id == user_id,
-            not ReviewSchedule.mastered,
+            ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= today_end,
         )
     )

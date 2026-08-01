@@ -250,7 +250,7 @@ async def claim_job(
             completed_at=None,
         )
         .returning(OCRJob)
-        .execution_options(synchronize_session=False)
+        .execution_options(synchronize_session="fetch")
     )
     job = result.scalar_one_or_none()
     if job is None:

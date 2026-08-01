@@ -23,6 +23,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import multiprocessing as mp
 import os
 import threading
 import time
@@ -159,9 +160,16 @@ class OcrProcessPool:
             if self._shut_down:
                 raise RuntimeError("OCR process pool has been shut down")
             if self._executor is None:
+                # spawn context: workers re-import everything fresh instead of
+                # forking the parent. Fork inherits the parent's partial
+                # paddle/paddleocr state (e.g. paddle.base.libpaddle.pir marked
+                # as a non-package), which makes worker PaddleOCR init fail if
+                # anything imported paddle earlier in the same process.
+                ctx = mp.get_context("spawn")
                 self._executor = ProcessPoolExecutor(
                     max_workers=self._max_workers,
                     initializer=_init_worker,
+                    mp_context=ctx,
                 )
                 self._spawn_count += 1
                 logger.info(

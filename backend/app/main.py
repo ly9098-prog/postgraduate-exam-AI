@@ -487,12 +487,6 @@ async def lifespan(app: FastAPI):
     # ── Role: scheduler — periodic background tasks ──
     if role in ("scheduler", "all"):
         try:
-            await pomodoro_scheduler.start()
-            logger.info("Pomodoro scheduler started")
-        except Exception as e:
-            logger.warning("Pomodoro scheduler start failed (non-fatal): %s", e)
-
-        try:
             from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
             await audit_log_cleanup_scheduler.start()
             logger.info("Audit log cleanup scheduler started")
@@ -644,12 +638,6 @@ async def lifespan(app: FastAPI):
 
         # 4. Stop schedulers (if running in this role)
         if role in ("scheduler", "all"):
-            try:
-                await pomodoro_scheduler.stop()
-                logger.info("Pomodoro scheduler stopped")
-            except Exception as e:
-                logger.warning("Pomodoro scheduler stop error: %s", e)
-
             try:
                 from app.services.audit_cleanup_scheduler import (
                     audit_log_cleanup_scheduler,

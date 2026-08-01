@@ -465,12 +465,6 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
     # 2. Scheduler: stop periodic loops
     if role in ("scheduler", "all"):
         try:
-            
-            await pomodoro_scheduler.stop()
-        except Exception as e:
-            logger.warning("Pomodoro scheduler stop error: %s", e)
-
-        try:
             from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
 
             await audit_log_cleanup_scheduler.stop()
