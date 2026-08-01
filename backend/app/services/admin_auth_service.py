@@ -62,6 +62,7 @@ async def get_admin_me_response(db: AsyncSession, admin_user: AdminUser) -> dict
         "user": admin_user,
         "role": role,
         "permissions": permissions,
+        "two_factor_enabled": bool(admin_user.totp_enabled),
     }
 
 

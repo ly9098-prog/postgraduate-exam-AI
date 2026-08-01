@@ -277,17 +277,32 @@ export type AdminUserPatchRequest = {
 export type AuthUser = AdminUserSummary;
 
 export type LoginResponse = {
-  access_token: string;
+  access_token?: string | null;
   token_type: string;
-  user: AuthUser;
-  role: Role;
+  user?: AuthUser | null;
+  role?: Role | null;
   permissions: string[];
+  two_factor_required?: boolean;
+  pending_token?: string | null;
 };
 
 export type MeResponse = {
   user: AuthUser;
   role: Role;
   permissions: string[];
+  two_factor_enabled?: boolean;
+};
+
+export type TwoFactorSetupResponse = {
+  secret: string;
+  otpauth_uri: string;
+  issuer: string;
+  username: string;
+  already_enabled?: boolean;
+};
+
+export type TwoFactorConfirmResponse = {
+  backup_codes: string[];
 };
 
 export type Permission = {
