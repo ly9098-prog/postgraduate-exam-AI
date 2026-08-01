@@ -1,6 +1,3 @@
-import json
-import time
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import HTTPException
@@ -11,7 +8,7 @@ from app.api.v1 import admin_auth
 from app.core.admin_security import (
     REFRESH_COOKIE_KEY,
     AdminPrincipal,
-    create_admin_2fa_pending_token,
+    PasswordPolicyError,
     create_admin_token,
     delete_refresh_cookie,
     hash_admin_password,
@@ -21,12 +18,6 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.main import app
 from app.models.admin import AdminUser, Role
-from app.services.totp_service import (
-    _totp_at,
-    generate_backup_codes,
-    generate_totp_secret,
-    hash_backup_code,
-)
 
 client = TestClient(app)
 
@@ -426,312 +417,79 @@ def test_admin_bootstrap_refresh_after_token_loss(monkeypatch):
     assert data["role"]["name"] == "super_admin"
 
 
-# ── TOTP 2FA ──
+# ── 账号级登录锁定 ──
 
 
-class _UserDb:
-    """Fake AsyncSession with execute()/get() returning a single admin user."""
+def _ip_rate_key(username: str = "admin") -> str:
+    import hashlib
 
-    def __init__(self, user):
-        self.user = user
-        self.commit = AsyncMock()
-
-    async def execute(self, *args, **kwargs):
-        result = MagicMock()
-        result.scalar_one_or_none.return_value = self.user
-        return result
-
-    async def get(self, model, pk):
-        return self.user
+    identity = f"testclient|{username.strip().lower()}"
+    return "admin:login:fail:" + hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
-def _override_user_db(user):
-    db = _UserDb(user)
+def test_login_consecutive_failures_set_account_lock(monkeypatch):
+    """Repeated failures on the same account set the temporary lock flag."""
+    import asyncio
 
-    async def _gen():
-        yield db
+    from app.core.cache import cache
 
-    return _gen
+    monkeypatch.setattr(admin_auth, "authenticate_admin", AsyncMock(side_effect=ValueError("用户名或密码错误")))
+    app.dependency_overrides[get_db] = _override_db
+    asyncio.run(cache.delete_strict(_ip_rate_key("admin")))
+    try:
+        for _ in range(settings.ADMIN_LOGIN_MAX_FAILURES):
+            client.post("/api/admin/v1/auth/login", json={"username": "admin", "password": "x"})
+    finally:
+        app.dependency_overrides.pop(get_db, None)
 
-
-def _2fa_user(*, enabled: bool = True):
-    user = _admin_user()
-    user.totp_secret = generate_totp_secret()
-    user.totp_enabled = enabled
-    user.totp_confirmed_at = datetime.now() if enabled else None
-    return user
-
-
-def _override_current_admin(user):
-    async def _dep():
-        return AdminPrincipal(user, {"jti": "token-id", "exp": 4102444800})
-
-    return _dep
+    locked = asyncio.run(cache.get_strict("admin:login:account_lock:admin"))
+    asyncio.run(cache.delete_strict("admin:login:account_fail:admin"))
+    asyncio.run(cache.delete_strict("admin:login:account_lock:admin"))
+    asyncio.run(cache.delete_strict(_ip_rate_key("admin")))
+    assert locked is not None
 
 
-def _valid_code(user) -> str:
-    return _totp_at(user.totp_secret, time.time())
+def test_login_blocked_when_account_locked(monkeypatch):
+    """A locked account is rejected before password verification."""
+    import asyncio
+
+    from app.core.cache import cache
+
+    asyncio.run(cache.set_strict("admin:login:account_lock:admin", 1, ttl=900))
+    try:
+        resp = client.post("/api/admin/v1/auth/login", json={"username": "admin", "password": "x"})
+    finally:
+        asyncio.run(cache.delete_strict("admin:login:account_lock:admin"))
+
+    assert resp.status_code == 429
+    assert "临时锁定" in resp.json()["detail"]
 
 
-class Test2faLoginGate:
-    def test_login_returns_pending_when_2fa_enabled(self, monkeypatch):
-        user = _2fa_user(enabled=True)
-        role = _role()
-        permissions = ["dashboard:read"]
-        monkeypatch.setattr(admin_auth, "authenticate_admin", AsyncMock(return_value=user))
-        monkeypatch.setattr(
-            admin_auth, "build_admin_login_response",
-            AsyncMock(return_value=("tok", "rt", user, role, permissions)),
+# ── 密码策略 ──
+
+
+def test_change_password_weak_password_returns_400(monkeypatch):
+    """PasswordPolicyError from the service is surfaced as 400, not 401."""
+
+    async def override_current_admin():
+        return AdminPrincipal(_admin_user(), {"jti": "token-id", "exp": 4102444800})
+
+    async def _weak(*args, **kwargs):
+        raise PasswordPolicyError("密码需包含大写字母")
+
+    monkeypatch.setattr(admin_auth, "change_admin_password", _weak)
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[admin_auth.get_current_admin] = override_current_admin
+    try:
+        resp = client.post(
+            "/api/admin/v1/auth/change-password",
+            json={"old_password": "old-password", "new_password": "lowercasepassword12"},
         )
-        app.dependency_overrides[get_db] = _override_db
-        try:
-            resp = client.post("/api/admin/v1/auth/login", json={"username": "admin", "password": "old-password"})
-        finally:
-            app.dependency_overrides.pop(get_db, None)
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(admin_auth.get_current_admin, None)
 
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["two_factor_required"] is True
-        assert data["pending_token"]
-        assert data["access_token"] is None
-        # No session cookie is set until the second factor completes.
-        assert "admin_refresh_token=" not in resp.headers.get("set-cookie", "")
-
-    def test_login_full_tokens_when_2fa_disabled(self, monkeypatch):
-        user = _2fa_user(enabled=False)
-        role = _role()
-        permissions = ["dashboard:read"]
-        token = create_admin_token(user)
-        monkeypatch.setattr(admin_auth, "authenticate_admin", AsyncMock(return_value=user))
-        monkeypatch.setattr(
-            admin_auth, "build_admin_login_response",
-            AsyncMock(return_value=(token, "rt", user, role, permissions)),
-        )
-        app.dependency_overrides[get_db] = _override_db
-        try:
-            resp = client.post("/api/admin/v1/auth/login", json={"username": "admin", "password": "old-password"})
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-
-        assert resp.status_code == 200
-        assert resp.json()["two_factor_required"] is False
-        assert resp.json()["access_token"] == token
+    assert resp.status_code == 400
+    assert "大写" in resp.json()["detail"]
 
 
-class Test2faVerify:
-    def test_verify_with_valid_totp_succeeds(self, monkeypatch):
-        user = _2fa_user(enabled=True)
-        role = _role()
-        permissions = ["dashboard:read"]
-        token = create_admin_token(user)
-        pending = create_admin_2fa_pending_token(user)
-        monkeypatch.setattr(
-            admin_auth, "build_admin_login_response",
-            AsyncMock(return_value=(token, "new-refresh", user, role, permissions)),
-        )
-        app.dependency_overrides[get_db] = _override_user_db(user)
-        try:
-            resp = client.post(
-                "/api/admin/v1/auth/2fa/verify",
-                json={"pending_token": pending, "code": _valid_code(user)},
-            )
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["access_token"] == token
-        assert data["two_factor_required"] is False
-        assert "admin_refresh_token=new-refresh" in resp.headers.get("set-cookie", "")
-        assert user.last_login_at is not None
-
-    def test_verify_with_wrong_code_rejected(self, monkeypatch):
-        user = _2fa_user(enabled=True)
-        pending = create_admin_2fa_pending_token(user)
-        app.dependency_overrides[get_db] = _override_user_db(user)
-        try:
-            resp = client.post(
-                "/api/admin/v1/auth/2fa/verify",
-                json={"pending_token": pending, "code": "000000"},
-            )
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-
-        assert resp.status_code == 401
-
-    def test_verify_with_backup_code_consumes_it(self, monkeypatch):
-        user = _2fa_user(enabled=True)
-        codes = generate_backup_codes(4)
-        user.totp_backup_codes = json.dumps([hash_backup_code(c) for c in codes])
-        hashes_before = json.loads(user.totp_backup_codes)
-        pending = create_admin_2fa_pending_token(user)
-        monkeypatch.setattr(
-            admin_auth, "build_admin_login_response",
-            AsyncMock(return_value=(create_admin_token(user), "rt", user, _role(), [])),
-        )
-        app.dependency_overrides[get_db] = _override_user_db(user)
-        try:
-            resp = client.post(
-                "/api/admin/v1/auth/2fa/verify",
-                json={"pending_token": pending, "code": codes[1]},
-            )
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-
-        assert resp.status_code == 200
-        hashes_after = json.loads(user.totp_backup_codes)
-        assert len(hashes_after) == len(hashes_before) - 1
-        assert hashes_before[1] not in hashes_after
-
-    def test_verify_pending_token_is_single_use(self, monkeypatch):
-        user = _2fa_user(enabled=True)
-        pending = create_admin_2fa_pending_token(user)
-        monkeypatch.setattr(
-            admin_auth, "build_admin_login_response",
-            AsyncMock(return_value=(create_admin_token(user), "rt", user, _role(), [])),
-        )
-        app.dependency_overrides[get_db] = _override_user_db(user)
-        try:
-            first = client.post(
-                "/api/admin/v1/auth/2fa/verify",
-                json={"pending_token": pending, "code": _valid_code(user)},
-            )
-            second = client.post(
-                "/api/admin/v1/auth/2fa/verify",
-                json={"pending_token": pending, "code": _valid_code(user)},
-            )
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-
-        assert first.status_code == 200
-        assert second.status_code == 401
-
-    def test_verify_with_invalid_pending_token_rejected(self, monkeypatch):
-        app.dependency_overrides[get_db] = _override_user_db(_2fa_user())
-        try:
-            resp = client.post(
-                "/api/admin/v1/auth/2fa/verify",
-                json={"pending_token": "garbage", "code": "123456"},
-            )
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-
-        assert resp.status_code == 401
-
-
-class Test2faLifecycle:
-    def test_setup_returns_secret_and_persists(self, monkeypatch):
-        user = _2fa_user(enabled=False)
-        app.dependency_overrides[get_db] = _override_user_db(user)
-        app.dependency_overrides[admin_auth.get_current_admin] = _override_current_admin(user)
-        try:
-            resp = client.get("/api/admin/v1/auth/2fa/setup")
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-            app.dependency_overrides.pop(admin_auth.get_current_admin, None)
-
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["secret"] == user.totp_secret
-        assert data["otpauth_uri"].startswith("otpauth://totp/")
-        assert data["already_enabled"] is False
-
-    def test_setup_rejected_when_already_enabled(self, monkeypatch):
-        user = _2fa_user(enabled=True)
-        app.dependency_overrides[get_db] = _override_user_db(user)
-        app.dependency_overrides[admin_auth.get_current_admin] = _override_current_admin(user)
-        try:
-            resp = client.get("/api/admin/v1/auth/2fa/setup")
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-            app.dependency_overrides.pop(admin_auth.get_current_admin, None)
-
-        assert resp.status_code == 409
-
-    def test_confirm_enables_2fa_and_returns_backup_codes(self, monkeypatch):
-        user = _2fa_user(enabled=False)
-        monkeypatch.setattr(admin_auth, "write_admin_audit", AsyncMock())
-        app.dependency_overrides[get_db] = _override_user_db(user)
-        app.dependency_overrides[admin_auth.get_current_admin] = _override_current_admin(user)
-        try:
-            resp = client.post(
-                "/api/admin/v1/auth/2fa/confirm",
-                json={"code": _valid_code(user)},
-            )
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-            app.dependency_overrides.pop(admin_auth.get_current_admin, None)
-
-        assert resp.status_code == 200
-        backup_codes = resp.json()["backup_codes"]
-        assert len(backup_codes) == 8
-        assert user.totp_enabled is True
-        assert user.totp_confirmed_at is not None
-        assert user.totp_backup_codes is not None
-
-    def test_confirm_rejects_wrong_code(self, monkeypatch):
-        user = _2fa_user(enabled=False)
-        app.dependency_overrides[get_db] = _override_user_db(user)
-        app.dependency_overrides[admin_auth.get_current_admin] = _override_current_admin(user)
-        try:
-            resp = client.post(
-                "/api/admin/v1/auth/2fa/confirm",
-                json={"code": "000000"},
-            )
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-            app.dependency_overrides.pop(admin_auth.get_current_admin, None)
-
-        assert resp.status_code == 401
-        assert user.totp_enabled is False
-
-    def test_confirm_without_pending_secret_rejected(self, monkeypatch):
-        user = _2fa_user(enabled=False)
-        user.totp_secret = None
-        app.dependency_overrides[get_db] = _override_user_db(user)
-        app.dependency_overrides[admin_auth.get_current_admin] = _override_current_admin(user)
-        try:
-            resp = client.post(
-                "/api/admin/v1/auth/2fa/confirm",
-                json={"code": "123456"},
-            )
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-            app.dependency_overrides.pop(admin_auth.get_current_admin, None)
-
-        assert resp.status_code == 409
-
-    def test_disable_clears_2fa(self, monkeypatch):
-        user = _2fa_user(enabled=True)
-        monkeypatch.setattr(admin_auth, "write_admin_audit", AsyncMock())
-        app.dependency_overrides[get_db] = _override_user_db(user)
-        app.dependency_overrides[admin_auth.get_current_admin] = _override_current_admin(user)
-        try:
-            resp = client.post(
-                "/api/admin/v1/auth/2fa/disable",
-                json={"code": _valid_code(user)},
-            )
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-            app.dependency_overrides.pop(admin_auth.get_current_admin, None)
-
-        assert resp.status_code == 200
-        assert user.totp_enabled is False
-        assert user.totp_secret is None
-        assert user.totp_backup_codes is None
-
-    def test_disable_rejects_wrong_code(self, monkeypatch):
-        user = _2fa_user(enabled=True)
-        app.dependency_overrides[get_db] = _override_user_db(user)
-        app.dependency_overrides[admin_auth.get_current_admin] = _override_current_admin(user)
-        try:
-            resp = client.post(
-                "/api/admin/v1/auth/2fa/disable",
-                json={"code": "000000"},
-            )
-        finally:
-            app.dependency_overrides.pop(get_db, None)
-            app.dependency_overrides.pop(admin_auth.get_current_admin, None)
-
-        assert resp.status_code == 401
-        assert user.totp_enabled is True

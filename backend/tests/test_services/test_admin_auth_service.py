@@ -97,9 +97,9 @@ async def test_change_admin_password_updates_hash_and_nbf(monkeypatch):
     set_nbf = AsyncMock()
     monkeypatch.setattr("app.services.admin_auth_service.set_admin_user_nbf", set_nbf)
 
-    await change_admin_password(db, user, AdminChangePasswordRequest(old_password="secret", new_password="new-secret"))
+    await change_admin_password(db, user, AdminChangePasswordRequest(old_password="secret", new_password="NewSecret1234"))
 
-    assert verify_admin_password("new-secret", user.password_hash)
+    assert verify_admin_password("NewSecret1234", user.password_hash)
     set_nbf.assert_awaited()
     db.commit.assert_awaited_once()
 

@@ -9,6 +9,7 @@ from app.core.admin_security import (
     get_admin_token_issued_at,
     hash_admin_password,
     set_admin_user_nbf,
+    validate_admin_password_strength,
     verify_admin_password,
 )
 from app.models.admin import AdminUser, Permission, Role, RolePermission
@@ -62,7 +63,6 @@ async def get_admin_me_response(db: AsyncSession, admin_user: AdminUser) -> dict
         "user": admin_user,
         "role": role,
         "permissions": permissions,
-        "two_factor_enabled": bool(admin_user.totp_enabled),
     }
 
 
@@ -145,6 +145,7 @@ async def change_admin_password(
         raise ValueError("密码长度不能超过72字节")
     if not old_ok:
         raise ValueError("用户名或密码错误")
+    validate_admin_password_strength(data.new_password)
     # hash_admin_password 内部已有字节长度校验，超长会抛 ValueError
     admin_user.password_hash = hash_admin_password(data.new_password)
     invalid_after = None

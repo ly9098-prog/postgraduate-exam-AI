@@ -97,6 +97,25 @@ def delete_refresh_cookie(
 # bcrypt 协议硬限制：超过 72 bytes 会抛异常或被截断
 BCRYPT_MAX_BYTES = 72
 
+# 管理员密码强度策略：长度 + 字符类别组合（轻量加固，无 2FA 依赖）
+ADMIN_PASSWORD_MIN_LENGTH = 12
+
+
+class PasswordPolicyError(ValueError):
+    """Raised when an admin password does not meet the strength policy."""
+
+
+def validate_admin_password_strength(password: str) -> None:
+    """Enforce the admin password policy; raises ``PasswordPolicyError``."""
+    if len(password) < ADMIN_PASSWORD_MIN_LENGTH:
+        raise PasswordPolicyError(f"密码长度至少需要 {ADMIN_PASSWORD_MIN_LENGTH} 位")
+    if not any(ch.isupper() for ch in password):
+        raise PasswordPolicyError("密码需包含大写字母")
+    if not any(ch.islower() for ch in password):
+        raise PasswordPolicyError("密码需包含小写字母")
+    if not any(ch.isdigit() for ch in password):
+        raise PasswordPolicyError("密码需包含数字")
+
 
 class AdminPrincipal:
     def __init__(self, user: AdminUser, token_payload: dict[str, Any]):
@@ -183,48 +202,6 @@ def create_admin_refresh_token(admin_user: AdminUser, *, issued_at: int | None =
         "exp": int((now + timedelta(days=7)).timestamp()),
     }
     return jwt.encode(payload, settings.APP_SECRET, algorithm="HS256")
-
-
-_2FA_PENDING_TTL_SEC = 300  # 5 minutes to complete the second factor
-
-
-def create_admin_2fa_pending_token(admin_user: AdminUser) -> str:
-    """Short-lived single-use token proving step-1 (password) succeeded."""
-    current = int(datetime.now(UTC).timestamp())
-    payload = {
-        "sub": str(admin_user.id),
-        "type": "admin_2fa_pending",
-        "iss": settings.JWT_ISSUER,
-        "aud": settings.ADMIN_JWT_AUDIENCE,
-        "jti": uuid4().hex,
-        "iat": current,
-        "exp": current + _2FA_PENDING_TTL_SEC,
-    }
-    return jwt.encode(payload, settings.APP_SECRET, algorithm="HS256")
-
-
-def decode_admin_2fa_pending_token(token: str) -> dict[str, Any]:
-    return _decode_admin_jwt(token, "admin_2fa_pending")
-
-
-async def consume_admin_2fa_pending_token(payload: dict[str, Any]) -> None:
-    """Atomically consume a 2FA pending token so it cannot be replayed."""
-    jti = str(payload["jti"])
-    exp = int(payload["exp"])
-    ttl = max(exp - int(utcnow().timestamp()), 1)
-    try:
-        consumed = await cache.acquire_lock_strict(
-            f"admin:2fa:pending:{jti}",
-            uuid4().hex,
-            ttl=ttl,
-        )
-    except CacheUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Authentication service temporarily unavailable",
-        ) from exc
-    if not consumed:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
 
 def _decode_admin_jwt(token: str, expected_type: str) -> dict[str, Any]:

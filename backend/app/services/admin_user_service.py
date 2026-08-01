@@ -7,6 +7,7 @@ from app.core.admin_security import (
     AdminPrincipal,
     hash_admin_password,
     set_admin_user_nbf,
+    validate_admin_password_strength,
 )
 from app.models.admin import AdminUser, Role
 from app.schemas.admin_users import (
@@ -94,6 +95,7 @@ async def create_admin_user(
     request: Request | None = None,
 ) -> AdminUser:
     await _ensure_assignable_role(db, data.role_id)
+    validate_admin_password_strength(data.password)
     admin_user = AdminUser(
         username=data.username,
         password_hash=hash_admin_password(data.password),
@@ -235,6 +237,7 @@ async def reset_admin_user_password(
     if admin_user.id == operator.id:
         raise ValueError("禁止重置自己的密码")
     await _ensure_not_super_admin(db, admin_user)
+    validate_admin_password_strength(data.new_password)
     admin_user.password_hash = hash_admin_password(data.new_password)
     await set_admin_user_nbf(admin_user.id)
     await write_admin_audit(

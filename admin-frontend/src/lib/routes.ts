@@ -52,5 +52,4 @@ export const adminRoutes: AdminRoute[] = [
   { href: "/audit-logs", label: "审计日志", description: "操作追踪", permission: "audit:read", icon: History },
   { href: "/formulas", label: "公式库", description: "公式管理与审核", permission: "formula:read", icon: Sigma },
   { href: "/formulas/categories", label: "公式分类", description: "分类树管理", permission: "formula-category:read", icon: ListTree },
-  { href: "/security", label: "安全设置", description: "两步验证与登录安全", icon: ShieldCheck },
 ];

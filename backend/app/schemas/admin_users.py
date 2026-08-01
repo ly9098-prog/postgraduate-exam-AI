@@ -33,7 +33,7 @@ class AdminUserDetail(AdminUserListItem):
 
 class AdminUserCreateRequest(BaseModel):
     username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=12, max_length=128)
     display_name: str | None = Field(default=None, max_length=64)
     email: str | None = Field(default=None, max_length=128)
     role_id: int
@@ -48,4 +48,4 @@ class AdminUserPatchRequest(BaseModel):
 
 
 class AdminUserResetPasswordRequest(BaseModel):
-    new_password: str = Field(min_length=8, max_length=128)
+    new_password: str = Field(min_length=12, max_length=128)

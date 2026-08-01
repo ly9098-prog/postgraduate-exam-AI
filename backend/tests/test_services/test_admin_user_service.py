@@ -80,13 +80,13 @@ async def test_create_admin_user_hashes_password_and_audits(monkeypatch):
 
     result = await create_admin_user(
         db,
-        AdminUserCreateRequest(username="new-admin", password="new-password", role_id=2),
+        AdminUserCreateRequest(username="new-admin", password="NewPassword123", role_id=2),
         _principal(),
     )
 
     assert result.username == "new-admin"
-    assert verify_admin_password("new-password", result.password_hash)
-    assert "new-password" not in str(audit.await_args.kwargs["detail"])
+    assert verify_admin_password("NewPassword123", result.password_hash)
+    assert "NewPassword123" not in str(audit.await_args.kwargs["detail"])
 
 
 @pytest.mark.asyncio
@@ -96,7 +96,7 @@ async def test_create_admin_user_rejects_super_admin_role():
     with pytest.raises(PermissionError, match="禁止分配超级管理员角色"):
         await create_admin_user(
             db,
-            AdminUserCreateRequest(username="new-admin", password="new-password", role_id=1),
+            AdminUserCreateRequest(username="new-admin", password="NewPassword123", role_id=1),
             _principal(),
         )
 
@@ -129,8 +129,8 @@ async def test_reset_password_updates_hash_and_nbf(monkeypatch):
     monkeypatch.setattr(admin_user_service, "write_admin_audit", audit)
     monkeypatch.setattr(admin_user_service, "set_admin_user_nbf", nbf)
 
-    await reset_admin_user_password(db, 2, AdminUserResetPasswordRequest(new_password="new-password"), _principal())
+    await reset_admin_user_password(db, 2, AdminUserResetPasswordRequest(new_password="NewPassword123"), _principal())
 
-    assert verify_admin_password("new-password", target.password_hash)
+    assert verify_admin_password("NewPassword123", target.password_hash)
     nbf.assert_awaited_once_with(2)
-    assert "new-password" not in str(audit.await_args.kwargs["detail"])
+    assert "NewPassword123" not in str(audit.await_args.kwargs["detail"])
