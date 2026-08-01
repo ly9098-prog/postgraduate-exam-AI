@@ -9,9 +9,13 @@ that source.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import logging
 import re
+from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from typing import Iterable
+
+logger = logging.getLogger(__name__)
 
 _OPTION_KEYS = ("A", "B", "C", "D")
 _LABEL_LINE_RE = re.compile(
@@ -46,6 +50,27 @@ _KNOWN_OPTION_GROUPS: tuple[tuple[str, str, str, str], ...] = (
     ("计算所有元素和", "计算负数和", "计算正数元素之和", "查找最大值"),
     ("入栈操作", "出栈并输出栈中元素", "判断栈满", "初始化栈"),
 )
+
+
+# ── Conservative fuzzy known-group recovery ────────────────────────────────
+#
+# A known option group may arrive OCR-degraded: the leading label is dropped,
+# a prefix/suffix is lost, or a char is misread (链→连).  Recovery only fires
+# when the whole group scores high enough that the fragments cannot be random
+# prose — at least one member must already be recognized in full, every missing
+# key must map to a concrete OCR line, and the winning group must beat every
+# other known group by a clear margin.  These thresholds were chosen so that a
+# lone fragment floating in unrelated text can never synthesize a group.
+
+_OCR_CHAR_EQUIV = str.maketrans("连练", "链链")  # 链/连/练 homophone misreads
+_FRAGMENT_SUBSTRING_BASE = 0.6      # substring containment starts at this
+_FRAGMENT_SUBSTRING_WEIGHT = 0.4    # …plus coverage * this (max 1.0)
+_FRAGMENT_MIN_COVERAGE = 0.4        # a 1-char fragment must never count alone
+_FRAGMENT_MIN_SCORE = 0.62          # floor below which a fragment is ignored
+_GROUP_FULL_MEMBER_SCORE = 1.0      # a fully-recognized member contributes 1.0
+_GROUP_MIN_ANCHORS = 1              # need ≥1 already-recognized member
+_GROUP_COMPLETE_SCORE = 1.9         # sum over members; weaker groups are untrusted
+_GROUP_MIN_GAP = 0.45               # winner must beat runner-up by this much
 
 
 @dataclass(slots=True)
@@ -139,6 +164,224 @@ def extract_labeled_options(text: str) -> dict[str, str]:
     return options
 
 
+def _normalize_for_match(text: str) -> str:
+    """Collapse OCR noise for matching only — never emitted as option text."""
+    t = str(text or "").translate(_OCR_CHAR_EQUIV)
+    t = re.sub(r"[\s　]+", "", t)
+    t = re.sub(r"[.,;:!?。，；：！？、'\"‘’“”`<>()\[\]{}]", "", t)
+    return t.casefold()
+
+
+def _match_known_option_fragment(fragment: str, canonical: str) -> float:
+    """Confidence (0..1) that an OCR line is a degraded form of a canonical.
+
+    Exact match is 1.0; a contiguous substring of the canonical (or vice
+    versa) scores by coverage; anything else falls back to SequenceMatcher.
+    A 1-char overlap never counts on its own — short fragments must ride on
+    stronger group evidence.
+    """
+    a, b = _normalize_for_match(fragment), _normalize_for_match(canonical)
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    if len(a) >= 2 and a in b:
+        coverage = len(a) / len(b)
+        if coverage >= _FRAGMENT_MIN_COVERAGE:
+            return _FRAGMENT_SUBSTRING_BASE + _FRAGMENT_SUBSTRING_WEIGHT * coverage
+    if len(b) >= 2 and b in a:
+        coverage = len(b) / len(a)
+        if coverage >= _FRAGMENT_MIN_COVERAGE:
+            return _FRAGMENT_SUBSTRING_BASE + _FRAGMENT_SUBSTRING_WEIGHT * coverage
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def _collect_fragment_lines(sources: list[str]) -> list[str]:
+    """Non-labeled OCR lines that could be degraded option fragments.
+
+    Kept deliberately permissive — safety comes from whole-group scoring, not
+    from pre-filtering every line.  Labeled lines are excluded because labeled
+    extraction already owns them.
+    """
+    fragments: list[str] = []
+    seen: set[str] = set()
+    for source in sources:
+        for line in source.splitlines():
+            stripped = line.strip()
+            if not stripped or len(stripped) > 240:
+                continue
+            if _LABEL_LINE_RE.match(stripped) or _BROAD_LINE_RE.match(stripped):
+                continue
+            if stripped in seen:
+                continue
+            seen.add(stripped)
+            fragments.append(stripped)
+    return fragments
+
+
+def _score_known_group(
+    group: tuple[str, str, str, str],
+    options: dict[str, str],
+    expected: tuple[str, ...],
+    fragments: list[str],
+) -> tuple[float, dict[str, str], dict[str, str]]:
+    """Score one known group against the recovered options + OCR fragments.
+
+    Returns (score, recovered, sources) where ``recovered`` maps every *missing*
+    key to the group's canonical literal, and ``sources`` maps that key to the
+    concrete OCR line that justified it (each recovered value must have one).
+    """
+    group_keys = _OPTION_KEYS[: len(group)]
+    if len(group_keys) < len(expected):
+        return 0.0, {}, {}
+    score = 0.0
+    anchors = 0
+    recovered: dict[str, str] = {}
+    sources: dict[str, str] = {}
+    for key, literal in zip(group_keys, group):
+        if key not in expected:
+            continue
+        existing = options.get(key)
+        if existing is not None:
+            if _normalize_for_match(existing) == _normalize_for_match(literal):
+                score += _GROUP_FULL_MEMBER_SCORE
+                anchors += 1
+            continue
+        best = 0.0
+        best_line = ""
+        for line in fragments:
+            candidate = _match_known_option_fragment(line, literal)
+            if candidate > best:
+                best, best_line = candidate, line
+        if best >= _FRAGMENT_MIN_SCORE:
+            score += best
+            recovered[key] = literal
+            sources[key] = best_line
+    if anchors < _GROUP_MIN_ANCHORS or not recovered:
+        return 0.0, {}, {}
+    return score, recovered, sources
+
+
+def _recover_known_group_fragments(
+    sources: list[str],
+    options: dict[str, str],
+    expected: tuple[str, ...],
+) -> tuple[dict[str, str], set[str]]:
+    """Fill missing option keys from a known option group using conservative
+    fuzzy evidence (see the module comment for the safety model).
+
+    Returns (recovered, consumed_lines): consumed_lines are the OCR source
+    lines that justified the recovery, so they can be dropped from the rendered
+    option block instead of being duplicated next to the canonical options.
+    """
+    missing = [key for key in expected if key not in options]
+    if not missing:
+        return {}, set()
+    fragments = _collect_fragment_lines(sources)
+    if not fragments:
+        return {}, set()
+    missing_set = set(missing)
+
+    scored: list[tuple[float, dict[str, str], dict[str, str]]] = []
+    for group in _KNOWN_OPTION_GROUPS:
+        score, recovered, sources_map = _score_known_group(group, options, expected, fragments)
+        if score > 0 and set(recovered) == missing_set:
+            scored.append((score, recovered, sources_map))
+
+    if not scored:
+        return {}, set()
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    best_score, best_recovered, best_sources = scored[0]
+    runner_up = scored[1][0] if len(scored) > 1 else 0.0
+    if best_score < _GROUP_COMPLETE_SCORE or (best_score - runner_up) < _GROUP_MIN_GAP:
+        return {}, set()
+    logger.debug("known-group fragment recovery: %s (score=%.2f, gap=%.2f)",
+                 best_recovered, best_score, best_score - runner_up)
+    return best_recovered, set(best_sources.values())
+
+
+def _leading_bare_in_source(
+    source: str,
+    options: dict[str, str],
+    expected: tuple[str, ...],
+) -> tuple[dict[str, str], set[str]]:
+    """Recover ``A`` from a single code line sitting immediately before ``B.``.
+
+    Guards are intentionally strict — only fires when B is the first labeled
+    option, the following labels are an ordered contiguous run, the predecessor
+    line is a code-shaped bare line (no Chinese prose), and A is actually
+    missing — so stems, headers, page footers and code blocks cannot be
+    swallowed into the option block.
+
+    Returns (recovered, consumed_lines); the bare line is consumed so it is
+    dropped from the rendered block instead of duplicating the canonical ``A.``.
+    """
+    lines = [ln.strip() for ln in source.splitlines()]
+    first_idx: int | None = None
+    first_key: str | None = None
+    for i, line in enumerate(lines):
+        if not line:
+            continue
+        m = _LABEL_LINE_RE.match(line) or _BROAD_LINE_RE.match(line)
+        if m and m.group(1).upper() in expected:
+            first_idx, first_key = i, m.group(1).upper()
+            break
+    if first_key != "B":
+        return {}, set()
+    if "A" not in expected or "A" in options:
+        return {}, set()
+
+    keys_after: list[str] = []
+    for line in lines[first_idx + 1:]:
+        if not line.strip():
+            continue
+        m = _LABEL_LINE_RE.match(line.strip()) or _BROAD_LINE_RE.match(line.strip())
+        if m and m.group(1).upper() in expected:
+            keys_after.append(m.group(1).upper())
+    if keys_after != [chr(ord("B") + n) for n in range(1, len(keys_after) + 1)]:
+        return {}, set()
+
+    prev_idx = first_idx - 1
+    while prev_idx >= 0 and (
+        not lines[prev_idx]
+        or re.fullmatch(r"[\s<>*·◇\d'\"`‘’“”|:;,.\-—]+", lines[prev_idx])
+    ):
+        prev_idx -= 1
+    if prev_idx < 0:
+        return {}, set()
+    bare = lines[prev_idx]
+    if not _is_bare_candidate(bare):
+        return {}, set()
+    cleaned = re.sub(r"^[\s'\"`‘’“”]+", "", bare).strip()
+    cleaned = _clean_option_text(cleaned)
+    if not cleaned:
+        return {}, set()
+    logger.debug("leading bare option recovered as A: %r", cleaned)
+    return {"A": cleaned}, {bare}
+
+
+def _recover_single_leading_bare_option(
+    sources: list[str],
+    options: dict[str, str],
+    expected: tuple[str, ...],
+) -> tuple[dict[str, str], set[str]]:
+    """Recover the missing leading option from a lone bare code line.
+
+    Handles images where OCR drops the leading label (typically ``A.``) but
+    keeps the option's code intact::
+
+        <bare code line>
+        B. ...
+        C. ...
+        D. ...
+    """
+    for source in sources:
+        recovered, consumed = _leading_bare_in_source(source, options, expected)
+        if recovered:
+            return recovered, consumed
+    return {}, set()
+
+
 def recover_options_from_sources(
     primary_text: str,
     *reference_texts: str,
@@ -194,15 +437,51 @@ def recover_options_from_sources(
         pool.sort(reverse=True)
         options[key] = pool[0][2]
 
+    # Fuzzy known-group recovery runs before the leading-bare rule so a
+    # group-grounded option never competes with a guessed A.
+    consumed_lines: set[str] = set()
+    if any(key not in options for key in expected):
+        group_recovered, group_consumed = _recover_known_group_fragments(
+            normalized_sources, options, expected,
+        )
+        consumed_lines |= group_consumed
+        for key, value in group_recovered.items():
+            if key not in options:
+                options[key] = value
+    else:
+        group_recovered = {}
+
+    # Single leading bare code line before the first labeled option → A.
+    if "A" not in options:
+        leading_recovered, leading_consumed = _recover_single_leading_bare_option(
+            normalized_sources, options, expected,
+        )
+        consumed_lines |= leading_consumed
+        for key, value in leading_recovered.items():
+            if key not in options:
+                options[key] = value
+    else:
+        leading_recovered = {}
+
     repaired_keys = [key for key in options if key not in primary_existing or options[key] != primary_existing.get(key)]
     warnings: list[str] = []
     missing = [key for key in expected if key not in options]
     if missing:
         warnings.append(f"missing_options:{','.join(missing)}")
+    if group_recovered:
+        warnings.append(
+            f"known_group_fragment_recovered:{','.join(sorted(group_recovered))}"
+        )
+    if leading_recovered:
+        warnings.append(
+            f"leading_bare_recovered:{','.join(sorted(leading_recovered))}"
+        )
     if mirror_repairs:
         warnings.append(f"mirror_code_repaired:{mirror_repairs}")
 
-    recovered_text = _render_canonical_text(normalized_sources[0], options, expected)
+    recovered_text = _render_canonical_text(
+        normalized_sources[0], options, expected, drop_lines=consumed_lines,
+    )
     return OptionRecoveryResult(
         text=recovered_text,
         options=options,
@@ -317,14 +596,25 @@ def _option_quality(value: str) -> int:
     return score
 
 
-def _render_canonical_text(primary: str, options: dict[str, str], expected: tuple[str, ...]) -> str:
+def _render_canonical_text(
+    primary: str,
+    options: dict[str, str],
+    expected: tuple[str, ...],
+    *,
+    drop_lines: set[str] | None = None,
+) -> str:
     if not options:
         return primary
 
+    drop = drop_lines or set()
     lines = primary.splitlines()
     kept: list[str] = []
     for line in lines:
         stripped = line.strip()
+        # Drop a line that was consumed as the OCR source for a recovery so it
+        # is not duplicated next to the canonical option re-emitted below.
+        if stripped in drop:
+            continue
         # Only drop a labeled line when its key will be re-emitted canonically;
         # keep lines for keys that failed recovery so real content is not lost.
         match = _LABEL_LINE_RE.match(stripped) or _BROAD_LINE_RE.match(stripped)
