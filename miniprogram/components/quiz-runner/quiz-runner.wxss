@@ -1349,46 +1349,354 @@
   box-shadow: 0 10rpx 28rpx rgba(16,37,26,0.055);
 }
 
-/* ==================== wrong-detail scoped fixes ==================== */
-/* Keep the embedded wrong-detail surface continuous with its page background. */
+/* ==================== wrong-detail scoped layout ==================== */
+/* Editorial review surface: one reading column, restrained state color, no nested cards. */
 .runner-mode-wrong-detail {
-  background: #F4F4EE;
+  background: #FFFEFB;
+  border-bottom: 1rpx solid #E2E1DA;
+}
+
+.runner-mode-wrong-detail.runner-compact .runner-question-area {
+  padding: 0 30rpx;
+  background: #FFFEFB;
+}
+
+.runner-mode-wrong-detail.runner-compact .runner-q-wrap,
+.runner-mode-wrong-detail.runner-flow .runner-q-wrap {
+  min-height: 0;
+  margin: 0;
+  padding: 24rpx 0 12rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-weight: 400;
+}
+
+.runner-mode-wrong-detail .runner-q-card-head {
+  min-height: 28rpx;
+  margin-bottom: 24rpx;
+  align-items: center;
+}
+
+.runner-mode-wrong-detail .runner-q-labels {
+  gap: 14rpx;
+}
+
+.runner-mode-wrong-detail .runner-q-badge {
+  position: relative;
+  padding: 0 0 0 18rpx;
+  border-radius: 0;
+  background: transparent;
+  color: #69736C;
+  font-size: 19rpx;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+}
+
+.runner-mode-wrong-detail .runner-q-badge::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 9rpx;
+  height: 2rpx;
+  border-radius: 999rpx;
+  background: #1A4A36;
+  transform: translateY(-50%);
+}
+
+.runner-mode-wrong-detail .runner-q-badge-smart {
+  padding-left: 0;
+  color: #8A918B;
+  font-weight: 600;
+}
+
+.runner-mode-wrong-detail .runner-q-badge-smart::before,
+.runner-mode-wrong-detail .runner-q-badge-review,
+.runner-mode-wrong-detail .runner-compact-counter {
+  display: none;
+}
+
+.runner-mode-wrong-detail .runner-recommend-bar {
+  margin: -2rpx 0 24rpx;
+  padding: 14rpx 0 14rpx 18rpx;
+  border: 0;
+  border-left: 3rpx solid #C4D3CA;
+  border-radius: 0;
+  background: transparent;
+}
+
+.runner-mode-wrong-detail .runner-recommend-label {
+  color: #6D7871;
+  font-size: 18rpx;
+  font-weight: 700;
+}
+
+.runner-mode-wrong-detail .runner-recommend-text {
+  color: #7E8781;
+  font-size: 21rpx;
+  line-height: 1.55;
+}
+
+.runner-mode-wrong-detail .runner-q-content,
+.runner-mode-wrong-detail .runner-mixed-text-block,
+.runner-mode-wrong-detail .runner-mixed-latex-block,
+.runner-mode-wrong-detail .runner-fallback-text {
+  color: #1D2A23;
+  font-size: 30rpx;
+  line-height: 1.78;
+  font-weight: 400;
+}
+
+.runner-mode-wrong-detail .runner-q-content,
+.runner-mode-wrong-detail .runner-mixed-text-block,
+.runner-mode-wrong-detail .runner-mixed-latex-block {
+  margin-bottom: 27rpx;
+}
+
+.runner-mode-wrong-detail .runner-code-wrapper {
+  margin-bottom: 27rpx;
+  border-radius: 12rpx;
+  border-color: #E0E2DD;
+  background: #F7F7F3;
+}
+
+.runner-mode-wrong-detail .runner-options,
+.runner-mode-wrong-detail .runner-blank-group-options {
+  gap: 0;
+  border-top: 1rpx solid #E4E5DF;
+}
+
+.runner-mode-wrong-detail .runner-option-item {
+  position: relative;
+  gap: 14rpx;
+  min-height: 76rpx;
+  padding: 20rpx 4rpx 20rpx 18rpx;
+  border: 0;
+  border-bottom: 1rpx solid #E4E5DF;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  transition: background .14s ease, padding .14s ease;
+}
+
+.runner-mode-wrong-detail .runner-option-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 16rpx;
+  bottom: 16rpx;
+  width: 3rpx;
+  border-radius: 999rpx;
+  background: transparent;
+}
+
+.runner-mode-wrong-detail .runner-option-pressed {
+  transform: none;
+  background: #F8F8F4;
+}
+
+.runner-mode-wrong-detail .runner-option-item.runner-selected {
+  border-color: #E4E5DF;
+  background: linear-gradient(90deg, rgba(183,232,42,.055), rgba(183,232,42,0) 58%);
+  box-shadow: none;
+}
+
+.runner-mode-wrong-detail .runner-option-item.runner-selected::before {
+  background: #8CAF20;
+}
+
+.runner-mode-wrong-detail .runner-option-item.runner-correct,
+.runner-mode-wrong-detail .runner-option-item.runner-both {
+  border-color: #E4E5DF;
+  background: linear-gradient(90deg, rgba(31,112,77,.055), rgba(31,112,77,0) 58%);
+  box-shadow: none;
+}
+
+.runner-mode-wrong-detail .runner-option-item.runner-correct::before,
+.runner-mode-wrong-detail .runner-option-item.runner-both::before {
+  background: #2E7654;
+}
+
+.runner-mode-wrong-detail .runner-option-item.runner-user-answer {
+  border-color: #E4E5DF;
+  background: linear-gradient(90deg, rgba(177,82,63,.055), rgba(177,82,63,0) 58%);
+  box-shadow: none;
+}
+
+.runner-mode-wrong-detail .runner-option-item.runner-user-answer::before {
+  background: #B45C49;
+}
+
+.runner-mode-wrong-detail .runner-option-indicator {
+  width: 28rpx;
+  height: 28rpx;
+  margin-top: 6rpx;
+  border-width: 1rpx;
+  border-color: #BBC2BC;
+  background: transparent;
+}
+
+.runner-mode-wrong-detail .runner-option-indicator.runner-checked {
+  border-color: #8CAF20;
+  background: #8CAF20;
+}
+
+.runner-mode-wrong-detail .runner-option-indicator.runner-indicator-correct {
+  border-color: #2E7654;
+  background: #2E7654;
+}
+
+.runner-mode-wrong-detail .runner-option-indicator.runner-indicator-user {
+  border-color: #B45C49;
+  background: #B45C49;
+}
+
+.runner-mode-wrong-detail .runner-option-key,
+.runner-mode-wrong-detail .runner-option-text {
+  font-size: 26rpx;
+  line-height: 1.58;
+}
+
+.runner-mode-wrong-detail .runner-option-key {
+  color: #536159;
+  font-weight: 750;
+}
+
+.runner-mode-wrong-detail .runner-option-text {
+  color: #303A34;
+  font-weight: 500;
+}
+
+.runner-mode-wrong-detail .runner-option-item.runner-user-answer .runner-option-key {
+  color: #A85140;
+}
+
+.runner-mode-wrong-detail .runner-option-item.runner-correct .runner-option-key,
+.runner-mode-wrong-detail .runner-option-item.runner-both .runner-option-key {
+  color: #246B4A;
+}
+
+.runner-mode-wrong-detail .runner-blank-options {
+  gap: 26rpx;
+}
+
+.runner-mode-wrong-detail .runner-blank-group {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.runner-mode-wrong-detail .runner-blank-group-head {
+  margin-bottom: 12rpx;
 }
 
 .runner-mode-wrong-detail .runner-bottom-bar {
-  border-top: 0;
+  margin: 0;
+  padding: 0 30rpx 24rpx;
+  border: 0;
+  background: #FFFEFB;
+  box-shadow: none;
+}
+
+.runner-mode-wrong-detail .runner-bottom-inner {
+  min-height: 76rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid #E2E3DD;
+  gap: 12rpx;
+}
+
+.runner-mode-wrong-detail .runner-bottom-inner > .runner-nav-btn {
+  flex: 0 0 150rpx;
+  min-width: 0;
+  min-height: 58rpx;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   background: transparent;
   box-shadow: none;
 }
 
-/* The shared line icons use a 30rpx drawing canvas. Re-center them inside the
- * smaller readonly answer indicator without changing other quiz-runner modes. */
+.runner-mode-wrong-detail .runner-prev {
+  justify-content: flex-start;
+}
+
+.runner-mode-wrong-detail .runner-next {
+  justify-content: flex-end;
+}
+
+.runner-mode-wrong-detail .runner-nav-label {
+  font-size: 22rpx;
+  font-weight: 700;
+  letter-spacing: .5rpx;
+}
+
+.runner-mode-wrong-detail .runner-nav-arrow {
+  width: 34rpx;
+  height: 34rpx;
+  border-radius: 50%;
+  border: 1rpx solid #D3D7D2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.runner-mode-wrong-detail .runner-prev .runner-nav-label,
+.runner-mode-wrong-detail .runner-prev .runner-nav-arrow {
+  color: #657068;
+}
+
+.runner-mode-wrong-detail .runner-next .runner-nav-label {
+  color: #173B2B;
+}
+
+.runner-mode-wrong-detail .runner-next .runner-nav-arrow {
+  border-color: #173B2B;
+  background: #173B2B;
+  color: #FFFFFF;
+}
+
+.runner-mode-wrong-detail .runner-nav-pressed {
+  background: transparent;
+  opacity: .62;
+}
+
+.runner-mode-wrong-detail .runner-nav-btn.runner-disabled {
+  opacity: .24;
+}
+
+/* Re-center shared line icons inside the smaller readonly indicators. */
 .runner-mode-wrong-detail .runner-option-indicator .runner-check-mark {
-  width: 24rpx;
-  height: 24rpx;
+  width: 21rpx;
+  height: 21rpx;
 }
 
 .runner-mode-wrong-detail .runner-option-indicator .runner-check-mark.icon-check::before {
   left: 50%;
   top: 50%;
-  width: 7rpx;
-  height: 12rpx;
+  width: 6rpx;
+  height: 11rpx;
   transform: translate(-50%, -56%) rotate(45deg);
 }
 
 .runner-mode-wrong-detail .runner-option-indicator .runner-check-mark.icon-exclamation::before {
   left: 50%;
-  top: 4rpx;
-  width: 4rpx;
-  height: 11rpx;
+  top: 3rpx;
+  width: 3rpx;
+  height: 10rpx;
   transform: translateX(-50%);
 }
 
 .runner-mode-wrong-detail .runner-option-indicator .runner-check-mark.icon-exclamation::after {
   left: 50%;
-  top: 17rpx;
-  width: 4rpx;
-  height: 4rpx;
+  top: 15rpx;
+  width: 3rpx;
+  height: 3rpx;
   transform: translateX(-50%);
 }
 

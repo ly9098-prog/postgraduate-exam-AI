@@ -14,9 +14,16 @@ from app.services.sm2_service import calc_sm2
 _SHANGHAI_TZ = timezone(timedelta(hours=8))
 
 
-async def _sync_schedule_to_wq(db: AsyncSession, schedule: ReviewSchedule) -> None:
-    """单向同步 ReviewSchedule → WrongQuestion（仅同步 last_review_at / mastered）。
-    不写 SM-2 字段，不单独 commit。"""
+async def _sync_schedule_to_wq(
+    db: AsyncSession,
+    schedule: ReviewSchedule,
+    latest_wrong_answer: str | None = None,
+) -> None:
+    """同步 ReviewSchedule → WrongQuestion，不单独 commit。
+
+    ``latest_wrong_answer`` 仅在自动批改确认本次仍答错时传入，用于把错题详情
+    中的“我的错题”刷新为本次选择；普通调度更新不会覆盖历史错题答案。
+    """
     result = await db.execute(
         select(WrongQuestion).where(
             WrongQuestion.user_id == schedule.user_id,
@@ -28,6 +35,12 @@ async def _sync_schedule_to_wq(db: AsyncSession, schedule: ReviewSchedule) -> No
         if schedule.last_reviewed_at is not None:
             wq.last_review_at = schedule.last_reviewed_at
         wq.mastered = schedule.mastered
+
+        if latest_wrong_answer is not None:
+            wq.wrong_answer = latest_wrong_answer
+            wq.review_count = (wq.review_count or 0) + 1
+            wq.mastered = False
+            wq.mastered_at = None
 
 
 async def set_mastered_state(
@@ -186,6 +199,7 @@ async def submit_review(
     rating: int,
     *,
     auto_commit: bool = True,
+    latest_wrong_answer: str | None = None,
 ) -> dict:
     if rating < 0 or rating > 5:
         raise ValueError(f"评分必须在 0-5 之间，收到: {rating}")
@@ -221,8 +235,12 @@ async def submit_review(
     )
     schedule.last_reviewed_at = utcnow()
 
-    # 同步 last_review_at / mastered 到 WrongQuestion
-    await _sync_schedule_to_wq(db, schedule)
+    # 同步复习状态；本次仍答错时，同时刷新错题详情中的“我的错题”。
+    await _sync_schedule_to_wq(
+        db,
+        schedule,
+        latest_wrong_answer=latest_wrong_answer if rating < 3 else None,
+    )
 
     record = ReviewRecord(
         user_id=user_id,
