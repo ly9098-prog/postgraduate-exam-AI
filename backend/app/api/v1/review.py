@@ -159,12 +159,16 @@ async def grade_submit(
     rating = 4 if is_correct else 1
 
     try:
+        latest_wrong_answer = (
+            (data.user_answer or "").strip() if not is_correct else None
+        )
         review_result = await review_scheduler.submit_review(
             db,
             current_user.id,
             schedule_id=data.schedule_id,
             question_id=data.question_id,
             rating=rating,
+            latest_wrong_answer=latest_wrong_answer or None,
         )
         await cache.delete(f"review:*:{current_user.id}*")
         await cache.delete(f"stats:*:{current_user.id}*")
@@ -255,12 +259,16 @@ async def grade_batch(
         rating = 4 if is_correct else 1
 
         try:
+            latest_wrong_answer = (
+                (item.user_answer or "").strip() if not is_correct else None
+            )
             review_result = await review_scheduler.submit_review(
                 db,
                 current_user.id,
                 schedule_id=item.schedule_id,
                 question_id=item.question_id,
                 rating=rating,
+                latest_wrong_answer=latest_wrong_answer or None,
             )
             results.append({
                 "schedule_id": review_result["schedule_id"],

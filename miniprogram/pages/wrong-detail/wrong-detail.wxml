@@ -38,12 +38,28 @@
     <view class="switch-pill"><view class="switch-dot"></view><text>正在切换题目</text></view>
   </view>
 
-  <view class="detail-intro">
-    <view>
-      <text class="detail-intro-kicker">{{subjectLabelText || '错题复盘'}}</text>
-      <text class="detail-intro-title">先看题目，再看为什么会错。</text>
+  <view class="detail-meta">
+    <view class="detail-meta-row">
+      <view class="detail-meta-left">
+        <text class="detail-meta-subject">{{subjectLabelText || '综合'}}</text>
+        <view class="detail-meta-separator"></view>
+        <text class="detail-meta-label">错题复盘</text>
+      </view>
+      <view class="detail-meta-progress">
+        <view class="detail-progress-dots">
+          <view
+            wx:for="{{questionIds}}"
+            wx:key="*this"
+            class="detail-progress-dot {{currentIdx > index ? 'is-done' : ''}} {{index === currentIdx ? 'is-current' : ''}}"
+          ></view>
+        </view>
+        <view class="detail-progress-count">
+          <text class="detail-meta-current">{{currentIdx + 1}}</text>
+          <text class="detail-meta-slash">/</text>
+          <text class="detail-meta-total">{{totalQuestions || 1}}</text>
+        </view>
+      </view>
     </view>
-    <text class="detail-intro-count">{{currentIdx + 1}} / {{totalQuestions || 1}}</text>
   </view>
 
   <quiz-runner
@@ -74,12 +90,11 @@
   />
 
   <!-- AI 分析 -->
-  <view class="ai-card" id="ai-card">
-    <view class="ai-card-head">
+  <view class="ai-card {{!aiRequested && !aiCards && !aiFallback ? 'is-idle' : ''}}" id="ai-card">
+    <view class="ai-card-head" wx:if="{{aiRequested || aiCards || aiFallback}}">
       <view class="ai-head-copy">
-        <text class="ai-kicker">AI REVIEW</text>
-        <text class="ai-title">AI 错题复盘</text>
-        <text class="ai-subtitle">定位错因、补齐考点、安排复练</text>
+        <text class="ai-title">AI 学习建议</text>
+        <text class="ai-subtitle">错因、知识补漏与下一步练习</text>
       </view>
       <view class="ai-mark"><view class="ai-mark-dot"></view><text>AI</text></view>
     </view>
@@ -139,7 +154,9 @@
 
       <text wx:if="{{aiInlineNotice}}" class="ai-inline-notice">{{aiInlineNotice}}</text>
       <text wx:else class="ai-hint">{{aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考'}}</text>
-      <button class="ai-secondary-btn" disabled="{{aiRegenerating}}" bindtap="regenerateAiAnalysis">{{aiRegenerating ? '重新生成中…' : '重新生成解析'}}</button>
+      <button class="ai-secondary-btn" disabled="{{aiRegenerating}}" bindtap="regenerateAiAnalysis">
+        <text class="ai-secondary-btn-label">{{aiRegenerating ? '重新生成中…' : '重新生成解析'}}</text>
+      </button>
     </view>
 
     <!-- 失败 -->
@@ -152,13 +169,17 @@
 
     <!-- 未请求 -->
     <view wx:elif="{{!aiRequested && !aiCards}}" class="ai-idle">
-      <view class="ai-idle-curve">
-        <view class="idle-line il-1"></view><view class="idle-line il-2"></view><view class="idle-line il-3"></view>
-        <view class="idle-dot id-1"></view><view class="idle-dot id-2"></view><view class="idle-dot id-3"></view><view class="idle-dot id-4"></view>
+      <view class="ai-idle-main">
+        <view class="ai-idle-mark"><text>AI</text><view class="ai-idle-mark-dot"></view></view>
+        <view class="ai-idle-copy">
+          <text class="ai-idle-title">生成错因分析</text>
+          <text class="ai-idle-desc">结合你的答案，给出补漏与复练建议</text>
+        </view>
       </view>
-      <text class="ai-idle-title">把“做错了”变成“下次会做”。</text>
-      <text class="ai-idle-desc">AI 会结合题目、你的答案和正确答案生成三段复盘。</text>
-      <button class="ai-action-btn ai-generate-btn" bindtap="onTapAiAnalysis"><text class="ai-action-btn-label">生成 AI 解析</text></button>
+      <button class="ai-action-btn ai-generate-btn" bindtap="onTapAiAnalysis">
+        <text class="ai-action-btn-label">生成分析</text>
+        <text class="ai-action-arrow">→</text>
+      </button>
     </view>
   </view>
 
@@ -166,10 +187,12 @@
 
   <view class="detail-bottom-actions">
     <button class="master-action {{isCurrentMastered ? 'is-mastered' : ''}}" disabled="{{masterSubmitting || isCurrentMastered}}" bindtap="openMasterConfirm">
-      <view class="master-action-icon">{{isCurrentMastered ? '✓' : '○'}}</view>
-      <view class="master-action-copy"><text>{{isCurrentMastered ? '已经掌握' : '标记已掌握'}}</text><text>{{isCurrentMastered ? '不会再进入复习计划' : '保留历史记录，停止后续调度'}}</text></view>
+      <view class="master-action-icon">{{isCurrentMastered ? '✓' : ''}}</view>
+      <text class="master-action-label">{{isCurrentMastered ? '已经掌握' : '标记已掌握'}}</text>
     </button>
-    <button class="more-action" bindtap="openMoreMenu"><text class="more-dots">•••</text><text class="more-label">更多</text></button>
+    <button class="more-action" bindtap="openMoreMenu">
+      <text class="more-action-label">更多</text>
+    </button>
   </view>
 </view>
 
