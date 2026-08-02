@@ -521,6 +521,11 @@ def _is_false_question_number(num: int, line: str) -> bool:
         m = _ocr_opt_re.match(line)
         if m:
             rest = m.group(1)
+            # A line ending with an open paren expects an answer in brackets —
+            # a hallmark of question stems (e.g. "8.MAR和MDR的位数分别为("),
+            # never an OCR'd option line. Don't reject those.
+            if rest and re.search(r"[（(]\s*$", rest):
+                return False
             if rest and not _HAS_QUESTION_CHARACTERISTICS_RE.search(rest):
                 return True
     return False

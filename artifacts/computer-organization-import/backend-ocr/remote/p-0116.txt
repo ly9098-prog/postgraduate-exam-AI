@@ -1,0 +1,10 @@
+风中易小生·24考研计算机WD计组做题本【选择题】
+35.【2012 统考真题】假定编译器规定 int 和 short 类型长度分别为 32 位和 16 位，执行下列 C 语言
+语句：
+unsigned short x=65530;
+unsigned int y=x;
+得到y的机器数为( )。
+A.0000 7FFAH
+B.0000 FFFAH
+C. FFFF 7FFAH
+D. FFFF FFFAH

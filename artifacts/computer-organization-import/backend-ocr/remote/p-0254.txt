@@ -1,0 +1,8 @@
+风中易小生·24考研计算机WD计组做题本【选择题
+0
+9.【2010 统考真题】下列命令组合的一次访存过程中，不可能发生的是(
+)o
+A.TLB 未命中，Cache 未命中，Page 未命中
+B.TLB 未命中，Cache 命中，Page 命中
+C.TLB 命中，Cache 未命中，Page 命中
+D.TLB 命中，Cache 命中，Page 未命中

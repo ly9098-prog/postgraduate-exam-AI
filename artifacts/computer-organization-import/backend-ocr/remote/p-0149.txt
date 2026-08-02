@@ -1,0 +1,13 @@
+风中易小生·24考研计算机WD计组做题本【选择题
+0
+23.【2010 统考真题】假定变量i、f和d 的数据类型分别为 int、float 和 double(int 用补码表示，float
+和 double 分别用 IEEE754 单精度和双精度浮点数格式表示)，已知i=785、f=1.5678E3、d=1.5E100，
+若在32位机器中执行下列关系表达式，则结果为“真”的是（
+I.i= (in)(float)i
+II.f=(float)(int)f
+III.f=(float)(double)f
+IV. (d+f)-d=f
+A.仅I和ⅡI
+B.仅I和Ⅲ.
+C.仅Ⅱ和Ⅲ
+D.仅 IⅢ和 IV

@@ -1,0 +1,16 @@
+# 528-page 300-DPI renders are large and regenerable from the PDF; only the
+# trial pages (1-10) are kept as evidence (matches the DS import precedent).
+source-pages/page-*.png
+!source-pages/page-0001.png
+!source-pages/page-0002.png
+!source-pages/page-0003.png
+!source-pages/page-0004.png
+!source-pages/page-0005.png
+!source-pages/page-0006.png
+!source-pages/page-0007.png
+!source-pages/page-0008.png
+!source-pages/page-0009.png
+!source-pages/page-0010.png
+
+# DB backup is gitignored globally (*.db); be explicit.
+backups/
