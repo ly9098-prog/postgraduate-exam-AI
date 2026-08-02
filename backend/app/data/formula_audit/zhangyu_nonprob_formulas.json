@@ -1,0 +1,928 @@
+{
+  "source_document": "27张宇数学公式手册.pdf",
+  "document_path": "/home/lmh/projects/postgraduate-ai/ocr_test/import/27张宇数学公式手册.pdf",
+  "analysis_date": "2026-08-02",
+  "total_added_cards": 30,
+  "inventory": [
+    {
+      "id": 228,
+      "part": "高等数学",
+      "category": "高等数学 / 向量代数与空间解析几何 / 向量代数",
+      "title": "向量的数量积、向量积与混合积",
+      "aliases": "[\"\\u6570\\u91cf\\u79ef\", \"\\u5411\\u91cf\\u79ef\", \"\\u6df7\\u5408\\u79ef\", \"\\u70b9\\u79ef\", \"\\u53c9\\u79ef\"]",
+      "printed_page": "39",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "数量积(坐标式)",
+          "latex": "\\boldsymbol{a}\\cdot\\boldsymbol{b}=a_x b_x+a_y b_y+a_z b_z"
+        },
+        {
+          "label": "数量积(定义式)",
+          "latex": "\\boldsymbol{a}\\cdot\\boldsymbol{b}=|\\boldsymbol{a}||\\boldsymbol{b}|\\cos\\theta"
+        },
+        {
+          "label": "向量积(坐标式)",
+          "latex": "\\boldsymbol{a}\\times\\boldsymbol{b}=\\begin{vmatrix}\\boldsymbol{i}&\\boldsymbol{j}&\\boldsymbol{k}\\\\a_x&a_y&a_z\\\\b_x&b_y&b_z\\end{vmatrix}"
+        },
+        {
+          "label": "混合积(坐标式)",
+          "latex": "(\\boldsymbol{a}\\times\\boldsymbol{b})\\cdot\\boldsymbol{c}=\\begin{vmatrix}a_x&a_y&a_z\\\\b_x&b_y&b_z\\\\c_x&c_y&c_z\\end{vmatrix}"
+        },
+        {
+          "label": "几何意义",
+          "latex": "|\\boldsymbol{a}\\times\\boldsymbol{b}|\\ \\text{为以}\\ \\boldsymbol{a},\\boldsymbol{b}\\ \\text{为邻边的平行四边形面积；}|(\\boldsymbol{a}\\times\\boldsymbol{b})\\cdot\\boldsymbol{c}|\\ \\text{为以}\\ \\boldsymbol{a},\\boldsymbol{b},\\boldsymbol{c}\\ \\text{为棱的平行六面体体积}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 229,
+      "part": "高等数学",
+      "category": "高等数学 / 向量代数与空间解析几何 / 向量代数",
+      "title": "两向量的夹角、垂直与平行条件",
+      "aliases": "[\"\\u5411\\u91cf\\u5939\\u89d2\", \"\\u5782\\u76f4\\u6761\\u4ef6\", \"\\u5e73\\u884c\\u6761\\u4ef6\", \"\\u65b9\\u5411\\u4f59\\u5f26\"]",
+      "printed_page": "40",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "夹角余弦",
+          "latex": "\\cos\\theta=\\frac{\\boldsymbol{a}\\cdot\\boldsymbol{b}}{|\\boldsymbol{a}||\\boldsymbol{b}|}=\\frac{a_x b_x+a_y b_y+a_z b_z}{\\sqrt{a_x^2+a_y^2+a_z^2}\\sqrt{b_x^2+b_y^2+b_z^2}}"
+        },
+        {
+          "label": "垂直条件",
+          "latex": "\\boldsymbol{a}\\perp\\boldsymbol{b}\\iff\\boldsymbol{a}\\cdot\\boldsymbol{b}=0\\iff a_x b_x+a_y b_y+a_z b_z=0"
+        },
+        {
+          "label": "平行条件",
+          "latex": "\\boldsymbol{a}\\parallel\\boldsymbol{b}\\iff\\boldsymbol{a}\\times\\boldsymbol{b}=\\boldsymbol{0}\\iff\\frac{a_x}{b_x}=\\frac{a_y}{b_y}=\\frac{a_z}{b_z}"
+        },
+        {
+          "label": "方向余弦",
+          "latex": "\\cos\\alpha=\\frac{a_x}{|\\boldsymbol{a}|},\\ \\cos\\beta=\\frac{a_y}{|\\boldsymbol{a}|},\\ \\cos\\gamma=\\frac{a_z}{|\\boldsymbol{a}|}"
+        },
+        {
+          "label": "方向余弦关系",
+          "latex": "\\cos^2\\alpha+\\cos^2\\beta+\\cos^2\\gamma=1"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 230,
+      "part": "高等数学",
+      "category": "高等数学 / 向量代数与空间解析几何 / 空间平面与直线",
+      "title": "平面的方程与点到平面的距离",
+      "aliases": "[\"\\u5e73\\u9762\\u65b9\\u7a0b\", \"\\u70b9\\u6cd5\\u5f0f\", \"\\u622a\\u8ddd\\u5f0f\", \"\\u5e73\\u9762\\u8ddd\\u79bb\"]",
+      "printed_page": "40-41",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "点法式方程",
+          "latex": "A(x-x_0)+B(y-y_0)+C(z-z_0)=0"
+        },
+        {
+          "label": "一般式方程",
+          "latex": "Ax+By+Cz+D=0"
+        },
+        {
+          "label": "截距式方程",
+          "latex": "\\frac{x}{a}+\\frac{y}{b}+\\frac{z}{c}=1"
+        },
+        {
+          "label": "点到平面距离",
+          "latex": "d=\\frac{|Ax_0+By_0+Cz_0+D|}{\\sqrt{A^2+B^2+C^2}}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 231,
+      "part": "高等数学",
+      "category": "高等数学 / 向量代数与空间解析几何 / 空间平面与直线",
+      "title": "直线的方程与点到直线的距离",
+      "aliases": "[\"\\u76f4\\u7ebf\\u65b9\\u7a0b\", \"\\u5bf9\\u79f0\\u5f0f\\u65b9\\u7a0b\", \"\\u53c2\\u6570\\u5f0f\\u65b9\\u7a0b\", \"\\u4e24\\u70b9\\u5f0f\\u65b9\\u7a0b\", \"\\u70b9\\u7ebf\\u8ddd\\u79bb\"]",
+      "printed_page": "41-42",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "标准式(对称式)",
+          "latex": "\\frac{x-x_0}{m}=\\frac{y-y_0}{n}=\\frac{z-z_0}{p}"
+        },
+        {
+          "label": "一般式",
+          "latex": "\\begin{cases}A_1 x+B_1 y+C_1 z+D_1=0\\\\A_2 x+B_2 y+C_2 z+D_2=0\\end{cases}"
+        },
+        {
+          "label": "参数式",
+          "latex": "\\begin{cases}x=x_0+mt\\\\y=y_0+nt\\\\z=z_0+pt\\end{cases}"
+        },
+        {
+          "label": "两点式",
+          "latex": "\\frac{x-x_1}{x_2-x_1}=\\frac{y-y_1}{y_2-y_1}=\\frac{z-z_1}{z_2-z_1}"
+        },
+        {
+          "label": "点到直线距离",
+          "latex": "d=\\frac{\\left|\\begin{vmatrix}\\boldsymbol{i}&\\boldsymbol{j}&\\boldsymbol{k}\\\\x_1-x_0&y_1-y_0&z_1-z_0\\\\m&n&p\\end{vmatrix}\\right|}{\\sqrt{m^2+n^2+p^2}}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 232,
+      "part": "高等数学",
+      "category": "高等数学 / 向量代数与空间解析几何 / 空间曲面与曲线",
+      "title": "空间曲面与曲线的方程",
+      "aliases": "[\"\\u66f2\\u9762\\u65b9\\u7a0b\", \"\\u66f2\\u7ebf\\u65b9\\u7a0b\", \"\\u53c2\\u6570\\u5f0f\", \"\\u6295\\u5f71\\u66f2\\u7ebf\"]",
+      "printed_page": "42-43",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "曲面一般式",
+          "latex": "F(x,y,z)=0"
+        },
+        {
+          "label": "曲面参数式",
+          "latex": "\\begin{cases}x=x(u,v)\\\\y=y(u,v)\\\\z=z(u,v)\\end{cases}"
+        },
+        {
+          "label": "曲线一般式",
+          "latex": "\\begin{cases}F(x,y,z)=0\\\\G(x,y,z)=0\\end{cases}"
+        },
+        {
+          "label": "曲线参数式",
+          "latex": "\\begin{cases}x=x(t)\\\\y=y(t)\\\\z=z(t)\\end{cases}"
+        },
+        {
+          "label": "投影曲线",
+          "latex": "\\text{从}\\ \\begin{cases}F(x,y,z)=0\\\\G(x,y,z)=0\\end{cases}\\ \\text{中消去}\\ z\\ \\text{得}\\ H(x,y)=0,\\ \\text{则}\\ \\Gamma\\ \\text{在}\\ xOy\\ \\text{面上的投影曲线为}\\ \\begin{cases}H(x,y)=0\\\\z=0\\end{cases}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 233,
+      "part": "高等数学",
+      "category": "高等数学 / 向量代数与空间解析几何 / 空间曲面与曲线",
+      "title": "常见二次曲面",
+      "aliases": "[\"\\u7403\\u9762\", \"\\u692d\\u7403\\u9762\", \"\\u5355\\u53f6\\u53cc\\u66f2\\u9762\", \"\\u53cc\\u53f6\\u53cc\\u66f2\\u9762\", \"\\u629b\\u7269\\u9762\", \"\\u9525\\u9762\"]",
+      "printed_page": "43-44",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "球面",
+          "latex": "(x-a)^2+(y-b)^2+(z-c)^2=R^2"
+        },
+        {
+          "label": "椭球面",
+          "latex": "\\frac{x^2}{a^2}+\\frac{y^2}{b^2}+\\frac{z^2}{c^2}=1"
+        },
+        {
+          "label": "单叶双曲面",
+          "latex": "\\frac{x^2}{a^2}+\\frac{y^2}{b^2}-\\frac{z^2}{c^2}=1"
+        },
+        {
+          "label": "双叶双曲面",
+          "latex": "\\frac{x^2}{a^2}+\\frac{y^2}{b^2}-\\frac{z^2}{c^2}=-1"
+        },
+        {
+          "label": "椭圆抛物面",
+          "latex": "\\frac{x^2}{2p}+\\frac{y^2}{2q}=z\\ (p,q\\ \\text{同号})"
+        },
+        {
+          "label": "双曲抛物面",
+          "latex": "\\frac{x^2}{2p}-\\frac{y^2}{2q}=z\\ (p,q\\ \\text{同号})"
+        },
+        {
+          "label": "锥面",
+          "latex": "\\frac{x^2}{a^2}+\\frac{y^2}{b^2}-\\frac{z^2}{c^2}=0"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "manual_review"
+    },
+    {
+      "id": 234,
+      "part": "高等数学",
+      "category": "高等数学 / 多元函数微分学 / 偏导数在几何中的应用",
+      "title": "空间曲线的切线与法平面",
+      "aliases": "[\"\\u66f2\\u7ebf\\u5207\\u7ebf\", \"\\u6cd5\\u5e73\\u9762\", \"\\u5207\\u7ebf\\u65b9\\u7a0b\"]",
+      "printed_page": "47-48",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "切向量",
+          "latex": "\\boldsymbol{T}=(\\varphi'(t_0),\\psi'(t_0),\\omega'(t_0))\\ \\text{其中}\\ \\Gamma:\\ x=\\varphi(t),y=\\psi(t),z=\\omega(t)"
+        },
+        {
+          "label": "切线方程",
+          "latex": "\\frac{x-x_0}{\\varphi'(t_0)}=\\frac{y-y_0}{\\psi'(t_0)}=\\frac{z-z_0}{\\omega'(t_0)}"
+        },
+        {
+          "label": "法平面方程",
+          "latex": "\\varphi'(t_0)(x-x_0)+\\psi'(t_0)(y-y_0)+\\omega'(t_0)(z-z_0)=0"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 235,
+      "part": "高等数学",
+      "category": "高等数学 / 多元函数微分学 / 偏导数在几何中的应用",
+      "title": "曲面的切平面与法线",
+      "aliases": "[\"\\u66f2\\u9762\\u5207\\u5e73\\u9762\", \"\\u6cd5\\u7ebf\\u65b9\\u7a0b\", \"\\u6cd5\\u5411\\u91cf\"]",
+      "printed_page": "48",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "法向量",
+          "latex": "\\boldsymbol{n}=(F_x(x_0,y_0,z_0),F_y(x_0,y_0,z_0),F_z(x_0,y_0,z_0))"
+        },
+        {
+          "label": "切平面方程",
+          "latex": "F_x(x_0,y_0,z_0)(x-x_0)+F_y(x_0,y_0,z_0)(y-y_0)+F_z(x_0,y_0,z_0)(z-z_0)=0"
+        },
+        {
+          "label": "法线方程",
+          "latex": "\\frac{x-x_0}{F_x(x_0,y_0,z_0)}=\\frac{y-y_0}{F_y(x_0,y_0,z_0)}=\\frac{z-z_0}{F_z(x_0,y_0,z_0)}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 236,
+      "part": "高等数学",
+      "category": "高等数学 / 二重积分 / 三重积分的计算",
+      "title": "三重积分的直角坐标与柱坐标计算",
+      "aliases": "[\"\\u5148\\u4e00\\u540e\\u4e8c\", \"\\u5148\\u4e8c\\u540e\\u4e00\", \"\\u67f1\\u5750\\u6807\", \"\\u4e09\\u91cd\\u79ef\\u5206\"]",
+      "printed_page": "51-52",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "先一后二",
+          "latex": "\\iiint_\\Omega f(x,y,z)\\,dv=\\iint_D dxdy\\int_{z_1(x,y)}^{z_2(x,y)}f(x,y,z)\\,dz"
+        },
+        {
+          "label": "先二后一",
+          "latex": "\\iiint_\\Omega f(x,y,z)\\,dv=\\int_c^d dz\\iint_{D_z} f(x,y,z)\\,dxdy"
+        },
+        {
+          "label": "柱坐标变换",
+          "latex": "x=r\\cos\\theta,\\ y=r\\sin\\theta,\\ z=z,\\ \\text{体积元素}\\ dv=r\\,dr\\,d\\theta\\,dz"
+        },
+        {
+          "label": "柱坐标积分次序",
+          "latex": "\\iiint_\\Omega f\\,dv=\\int_\\alpha^\\beta d\\theta\\int_{r_1(\\theta)}^{r_2(\\theta)} r\\,dr\\int_{z_1(r,\\theta)}^{z_2(r,\\theta)} f(r\\cos\\theta,r\\sin\\theta,z)\\,dz"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 237,
+      "part": "高等数学",
+      "category": "高等数学 / 二重积分 / 三重积分的计算",
+      "title": "三重积分的球坐标计算",
+      "aliases": "[\"\\u7403\\u5750\\u6807\", \"\\u4e09\\u91cd\\u79ef\\u5206\\u7403\\u5750\\u6807\"]",
+      "printed_page": "52",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "球坐标变换",
+          "latex": "x=r\\sin\\varphi\\cos\\theta,\\ y=r\\sin\\varphi\\sin\\theta,\\ z=r\\cos\\varphi"
+        },
+        {
+          "label": "体积元素",
+          "latex": "dv=r^2\\sin\\varphi\\,dr\\,d\\theta\\,d\\varphi"
+        },
+        {
+          "label": "球坐标积分次序",
+          "latex": "\\iiint_\\Omega f\\,dv=\\int d\\theta\\int d\\varphi\\int f(r\\sin\\varphi\\cos\\theta,r\\sin\\varphi\\sin\\theta,r\\cos\\varphi)\\,r^2\\sin\\varphi\\,dr"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 238,
+      "part": "高等数学",
+      "category": "高等数学 / 二重积分 / 重积分的应用",
+      "title": "重积分的几何应用",
+      "aliases": "[\"\\u66f2\\u9762\\u9762\\u79ef\", \"\\u4f53\\u79ef\", \"\\u5f62\\u5fc3\", \"\\u91cd\\u5fc3\"]",
+      "printed_page": "53-54",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "曲面面积",
+          "latex": "A=\\iint_D\\sqrt{1+f_x^2+f_y^2}\\,d\\sigma\\ (z=f(x,y))"
+        },
+        {
+          "label": "体积",
+          "latex": "V=\\iiint_\\Omega dv=\\iint_D[z_2(x,y)-z_1(x,y)]\\,dxdy"
+        },
+        {
+          "label": "平面图形形心",
+          "latex": "\\bar{x}=\\frac{\\iint_D x\\,dxdy}{\\iint_D dxdy},\\ \\bar{y}=\\frac{\\iint_D y\\,dxdy}{\\iint_D dxdy}"
+        },
+        {
+          "label": "空间立体形心",
+          "latex": "\\bar{x}=\\frac{\\iiint_\\Omega x\\,dv}{\\iiint_\\Omega dv},\\ \\bar{y}=\\frac{\\iiint_\\Omega y\\,dv}{\\iiint_\\Omega dv},\\ \\bar{z}=\\frac{\\iiint_\\Omega z\\,dv}{\\iiint_\\Omega dv}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 239,
+      "part": "高等数学",
+      "category": "高等数学 / 二重积分 / 重积分的应用",
+      "title": "重积分的物理应用",
+      "aliases": "[\"\\u8d28\\u5fc3\", \"\\u8f6c\\u52a8\\u60ef\\u91cf\", \"\\u5f15\\u529b\", \"\\u7269\\u7406\\u5e94\\u7528\"]",
+      "printed_page": "54-55",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "平面薄片质心",
+          "latex": "\\bar{x}=\\frac{\\iint_D x\\rho(x,y)\\,dxdy}{\\iint_D \\rho(x,y)\\,dxdy},\\ \\bar{y}=\\frac{\\iint_D y\\rho(x,y)\\,dxdy}{\\iint_D \\rho(x,y)\\,dxdy}"
+        },
+        {
+          "label": "立体质心",
+          "latex": "\\bar{x}=\\frac{\\iiint_\\Omega x\\rho(x,y,z)\\,dv}{\\iiint_\\Omega \\rho(x,y,z)\\,dv},\\ \\bar{y},\\bar{z}\\ \\text{同理}"
+        },
+        {
+          "label": "薄片转动惯量",
+          "latex": "I_x=\\iint_D y^2\\rho(x,y)\\,dxdy,\\ I_y=\\iint_D x^2\\rho(x,y)\\,dxdy"
+        },
+        {
+          "label": "立体转动惯量",
+          "latex": "I_x=\\iiint_\\Omega(y^2+z^2)\\rho\\,dv,\\ I_y=\\iiint_\\Omega(x^2+z^2)\\rho\\,dv,\\ I_z=\\iiint_\\Omega(x^2+y^2)\\rho\\,dv"
+        },
+        {
+          "label": "薄片对质点引力",
+          "latex": "F_x=\\iint_D\\frac{Gm\\rho(x,y)(x-x_0)}{[(x-x_0)^2+(y-y_0)^2]^{3/2}}\\,dxdy,\\ F_y\\ \\text{同理用}\\ (y-y_0)"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 240,
+      "part": "高等数学",
+      "category": "高等数学 / 二重积分 / 曲线积分",
+      "title": "两类曲线积分的计算(化定积分)",
+      "aliases": "[\"\\u7b2c\\u4e00\\u7c7b\\u66f2\\u7ebf\\u79ef\\u5206\", \"\\u7b2c\\u4e8c\\u7c7b\\u66f2\\u7ebf\\u79ef\\u5206\", \"\\u5bf9\\u5f27\\u957f\", \"\\u5bf9\\u5750\\u6807\"]",
+      "printed_page": "56",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "第一类(对弧长)",
+          "latex": "\\int_\\Gamma f(x,y,z)\\,ds=\\int_\\alpha^\\beta f[\\varphi(t),\\psi(t),\\omega(t)]\\sqrt{\\varphi'^2+\\psi'^2+\\omega'^2}\\,dt"
+        },
+        {
+          "label": "第二类(对坐标)",
+          "latex": "\\int_\\Gamma Pdx+Qdy+Rdz=\\int_\\alpha^\\beta[P\\varphi'+Q\\psi'+R\\omega']\\,dt"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 241,
+      "part": "高等数学",
+      "category": "高等数学 / 二重积分 / 曲线积分",
+      "title": "格林公式、路径无关与斯托克斯公式",
+      "aliases": "[\"\\u683c\\u6797\\u516c\\u5f0f\", \"\\u65af\\u6258\\u514b\\u65af\\u516c\\u5f0f\", \"\\u8def\\u5f84\\u65e0\\u5173\", \"\\u5168\\u5fae\\u5206\\u6c42\\u79ef\"]",
+      "printed_page": "56-57",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "格林公式",
+          "latex": "\\oint_L P(x,y)dx+Q(x,y)dy=\\iint_D\\left(\\frac{\\partial Q}{\\partial x}-\\frac{\\partial P}{\\partial y}\\right)dxdy\\ (L\\ \\text{为取正向的边界曲线})"
+        },
+        {
+          "label": "与路径无关条件",
+          "latex": "\\int_L Pdx+Qdy\\ \\text{与路径无关}\\iff\\frac{\\partial P}{\\partial y}=\\frac{\\partial Q}{\\partial x}\\ (\\text{单连通域内})"
+        },
+        {
+          "label": "斯托克斯公式",
+          "latex": "\\oint_\\Gamma Pdx+Qdy+Rdz=\\iint_\\Sigma\\begin{vmatrix}\\cos\\alpha&\\cos\\beta&\\cos\\gamma\\\\\\frac{\\partial}{\\partial x}&\\frac{\\partial}{\\partial y}&\\frac{\\partial}{\\partial z}\\\\P&Q&R\\end{vmatrix}dS"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 242,
+      "part": "高等数学",
+      "category": "高等数学 / 二重积分 / 曲线积分",
+      "title": "全微分求积",
+      "aliases": "[\"\\u5168\\u5fae\\u5206\\u65b9\\u7a0b\", \"\\u4e8c\\u5143\\u51fd\\u6570\\u5168\\u5fae\\u5206\", \"\\u6c42\\u79ef\\u516c\\u5f0f\"]",
+      "printed_page": "57-58",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "充要条件",
+          "latex": "du=P(x,y)dx+Q(x,y)dy\\ \\text{为某二元函数全微分}\\iff\\frac{\\partial P}{\\partial y}=\\frac{\\partial Q}{\\partial x}"
+        },
+        {
+          "label": "求积公式",
+          "latex": "u(x,y)=\\int_{x_0}^x P(x,y_0)\\,dx+\\int_{y_0}^y Q(x,y)\\,dy+C"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 243,
+      "part": "高等数学",
+      "category": "高等数学 / 二重积分 / 曲面积分",
+      "title": "两类曲面积分的计算(化二重积分)",
+      "aliases": "[\"\\u7b2c\\u4e00\\u7c7b\\u66f2\\u9762\\u79ef\\u5206\", \"\\u7b2c\\u4e8c\\u7c7b\\u66f2\\u9762\\u79ef\\u5206\", \"\\u5bf9\\u9762\\u79ef\", \"\\u5bf9\\u5750\\u6807\"]",
+      "printed_page": "58",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "对面积",
+          "latex": "\\iint_\\Sigma f(x,y,z)\\,dS=\\iint_D f[x,y,z(x,y)]\\sqrt{1+z_x^2+z_y^2}\\,dxdy\\ (\\Sigma:z=z(x,y))"
+        },
+        {
+          "label": "对坐标R",
+          "latex": "\\iint_\\Sigma R(x,y,z)dxdy=\\pm\\iint_D R[x,y,z(x,y)]\\,dxdy\\ (\\text{上}``+''\\ \\text{下}``-''\\ )"
+        },
+        {
+          "label": "对坐标P、Q",
+          "latex": "\\iint_\\Sigma P(x,y,z)dydz=\\pm\\iint_D P[x(y,z),y,z]\\,dydz\\ (\\text{前}``+''\\ \\text{后}``-''\\ );\\ Q\\ \\text{类似，右}``+''\\ \\text{左}``-''\\ "
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 244,
+      "part": "高等数学",
+      "category": "高等数学 / 二重积分 / 曲面积分",
+      "title": "高斯公式",
+      "aliases": "[\"\\u9ad8\\u65af\\u516c\\u5f0f\", \"\\u6563\\u5ea6\\u5b9a\\u7406\", \"\\u95ed\\u66f2\\u9762\\u901a\\u91cf\"]",
+      "printed_page": "59",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "高斯公式",
+          "latex": "\\oiint_\\Sigma Pdydz+Qdzdx+Rdxdy=\\iiint_\\Omega\\left(\\frac{\\partial P}{\\partial x}+\\frac{\\partial Q}{\\partial y}+\\frac{\\partial R}{\\partial z}\\right)dv\\ (\\Sigma\\ \\text{取外侧})"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 245,
+      "part": "高等数学",
+      "category": "高等数学 / 二重积分 / 曲面积分",
+      "title": "两类积分的关系与梯度散度旋度",
+      "aliases": "[\"\\u68af\\u5ea6\", \"\\u6563\\u5ea6\", \"\\u65cb\\u5ea6\", \"\\u4e24\\u7c7b\\u79ef\\u5206\\u5173\\u7cfb\"]",
+      "printed_page": "59-60",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "两类曲线积分关系",
+          "latex": "\\int_\\Gamma Pdx+Qdy+Rdz=\\int_\\Gamma(P\\cos\\alpha+Q\\cos\\beta+R\\cos\\gamma)\\,ds"
+        },
+        {
+          "label": "两类曲面积分关系",
+          "latex": "\\iint_\\Sigma Pdydz+Qdzdx+Rdxdy=\\iint_\\Sigma(P\\cos\\alpha+Q\\cos\\beta+R\\cos\\gamma)\\,dS"
+        },
+        {
+          "label": "梯度",
+          "latex": "\\text{grad}\\,f=\\left(\\frac{\\partial f}{\\partial x},\\frac{\\partial f}{\\partial y},\\frac{\\partial f}{\\partial z}\\right)"
+        },
+        {
+          "label": "散度",
+          "latex": "\\text{div}\\,\\boldsymbol{A}=\\frac{\\partial P}{\\partial x}+\\frac{\\partial Q}{\\partial y}+\\frac{\\partial R}{\\partial z}\\ (\\boldsymbol{A}=P\\boldsymbol{i}+Q\\boldsymbol{j}+R\\boldsymbol{k})"
+        },
+        {
+          "label": "旋度",
+          "latex": "\\text{rot}\\,\\boldsymbol{A}=\\begin{vmatrix}\\boldsymbol{i}&\\boldsymbol{j}&\\boldsymbol{k}\\\\\\frac{\\partial}{\\partial x}&\\frac{\\partial}{\\partial y}&\\frac{\\partial}{\\partial z}\\\\P&Q&R\\end{vmatrix}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 246,
+      "part": "高等数学",
+      "category": "高等数学 / 级数 / 数项级数",
+      "title": "数项级数的定义与基本性质",
+      "aliases": "[\"\\u7ea7\\u6570\\u5b9a\\u4e49\", \"\\u90e8\\u5206\\u548c\", \"\\u6536\\u655b\", \"\\u5fc5\\u8981\\u6761\\u4ef6\"]",
+      "printed_page": "61-62",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "级数定义",
+          "latex": "\\sum_{n=1}^{\\infty}u_n=u_1+u_2+\\cdots+u_n+\\cdots"
+        },
+        {
+          "label": "部分和与收敛",
+          "latex": "S_n=\\sum_{k=1}^n u_k,\\ \\text{若}\\ \\lim_{n\\to\\infty}S_n=A\\ \\text{则级数收敛且}\\ \\sum_{n=1}^{\\infty}u_n=A"
+        },
+        {
+          "label": "线性性质",
+          "latex": "\\sum_{n=1}^{\\infty}(u_n\\pm v_n)=\\sum u_n\\pm\\sum v_n,\\ \\sum_{n=1}^{\\infty}ku_n=k\\sum_{n=1}^{\\infty}u_n"
+        },
+        {
+          "label": "收敛必要条件",
+          "latex": "\\text{若}\\ \\sum u_n\\ \\text{收敛，则}\\ \\lim_{n\\to\\infty}u_n=0\\ (\\text{逆命题不成立})"
+        },
+        {
+          "label": "有限项与加括号",
+          "latex": "\\text{改变级数的前有限项不改变其敛散性；收敛级数在不改变次序的前提下任意加括号所得级数仍收敛且和不变}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 247,
+      "part": "高等数学",
+      "category": "高等数学 / 级数 / 数项级数",
+      "title": "正项级数的敛散性判别法",
+      "aliases": "[\"\\u6bd4\\u8f83\\u5224\\u522b\\u6cd5\", \"\\u6bd4\\u503c\\u5224\\u522b\\u6cd5\", \"\\u6839\\u503c\\u5224\\u522b\\u6cd5\", \"\\u8fbe\\u6717\\u8d1d\\u5c14\", \"\\u67ef\\u897f\"]",
+      "printed_page": "62-64",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "基本定理",
+          "latex": "\\text{正项级数}\\ \\sum u_n\\ \\text{收敛}\\iff\\text{部分和数列}\\ \\{S_n\\}\\ \\text{有界}"
+        },
+        {
+          "label": "比较判别法(非极限形式)",
+          "latex": "u_n\\leq v_n\\ \\text{且}\\ \\sum v_n\\ \\text{收敛}\\Rightarrow\\sum u_n\\ \\text{收敛；}u_n\\geq v_n\\ \\text{且}\\ \\sum v_n\\ \\text{发散}\\Rightarrow\\sum u_n\\ \\text{发散}"
+        },
+        {
+          "label": "比较判别法(极限形式)",
+          "latex": "\\lim_{n\\to\\infty}\\frac{u_n}{v_n}=\\rho,\\ \\rho\\ \\text{为非零常数时同敛散；}\\rho=0\\ \\text{时}\\ \\sum v_n\\ \\text{收敛则}\\ \\sum u_n\\ \\text{收敛；}\\rho=+\\infty\\ \\text{时}\\ \\sum u_n\\ \\text{发散则}\\ \\sum v_n\\ \\text{发散}"
+        },
+        {
+          "label": "比值判别法(达朗贝尔)",
+          "latex": "\\lim_{n\\to\\infty}\\frac{u_{n+1}}{u_n}=\\rho,\\ \\rho<1\\ \\text{收敛；}\\rho>1\\ \\text{发散；}\\rho=1\\ \\text{敛散性不确定}"
+        },
+        {
+          "label": "根值判别法(柯西)",
+          "latex": "\\lim_{n\\to\\infty}\\sqrt[n]{u_n}=\\rho,\\ \\rho<1\\ \\text{收敛；}\\rho>1\\ \\text{发散；}\\rho=1\\ \\text{敛散性不确定}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 248,
+      "part": "高等数学",
+      "category": "高等数学 / 级数 / 数项级数",
+      "title": "交错级数与任意项级数",
+      "aliases": "[\"\\u83b1\\u5e03\\u5c3c\\u8328\\u5224\\u522b\\u6cd5\", \"\\u7edd\\u5bf9\\u6536\\u655b\", \"\\u6761\\u4ef6\\u6536\\u655b\"]",
+      "printed_page": "64-65",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "交错级数定义",
+          "latex": "\\sum_{n=1}^{\\infty}(-1)^{n-1}u_n\\ (u_n>0)\\ \\text{或}\\ \\sum_{n=1}^{\\infty}(-1)^n u_n\\ (u_n>0)"
+        },
+        {
+          "label": "莱布尼茨判别法",
+          "latex": "\\text{若}\\ ①\\ u_n\\geq u_{n+1}\\ (n=1,2,\\cdots)\\ \\ ②\\ \\lim_{n\\to\\infty}u_n=0\\ \\text{，则交错级数收敛，和}\\ S\\leq u_1\\ \\text{，余项}\\ |S-S_n|\\leq u_{n+1}"
+        },
+        {
+          "label": "绝对收敛",
+          "latex": "\\text{若}\\ \\sum_{n=1}^{\\infty}|u_n|\\ \\text{收敛，则}\\ \\sum_{n=1}^{\\infty}u_n\\ \\text{收敛（绝对收敛的级数必收敛）}"
+        },
+        {
+          "label": "条件收敛",
+          "latex": "\\text{若}\\ \\sum |u_n|\\ \\text{发散但}\\ \\sum u_n\\ \\text{收敛，则称}\\ \\sum u_n\\ \\text{条件收敛}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 249,
+      "part": "高等数学",
+      "category": "高等数学 / 级数 / 幂级数",
+      "title": "幂级数的定义与收敛半径",
+      "aliases": "[\"\\u963f\\u8d1d\\u5c14\\u5b9a\\u7406\", \"\\u6536\\u655b\\u534a\\u5f84\", \"\\u6536\\u655b\\u57df\"]",
+      "printed_page": "65-66",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "幂级数定义",
+          "latex": "\\sum_{n=0}^{\\infty}a_n(x-x_0)^n\\ \\text{称为}\\ x_0\\ \\text{处的幂级数}"
+        },
+        {
+          "label": "阿贝尔定理",
+          "latex": "\\text{若幂级数在}\\ x_1\\ \\text{收敛，则}|x-x_0|<|x_1-x_0|\\ \\text{内绝对收敛；若在}\\ x_2\\ \\text{发散，则}|x-x_0|>|x_2-x_0|\\ \\text{内发散}"
+        },
+        {
+          "label": "收敛半径(系数比)",
+          "latex": "R=\\lim_{n\\to\\infty}\\left|\\frac{a_n}{a_{n+1}}\\right|\\ (\\text{若极限存在})"
+        },
+        {
+          "label": "收敛半径(根值)",
+          "latex": "R=\\frac{1}{\\lim_{n\\to\\infty}\\sqrt[n]{|a_n|}}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 250,
+      "part": "高等数学",
+      "category": "高等数学 / 级数 / 幂级数",
+      "title": "幂级数的性质",
+      "aliases": "[\"\\u548c\\u51fd\\u6570\", \"\\u9010\\u9879\\u6c42\\u5bfc\", \"\\u9010\\u9879\\u79ef\\u5206\", \"\\u5e42\\u7ea7\\u6570\\u8fd0\\u7b97\"]",
+      "printed_page": "66-67",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "加减",
+          "latex": "\\sum a_n(x-x_0)^n\\pm\\sum b_n(x-x_0)^n=\\sum(a_n\\pm b_n)(x-x_0)^n,\\ R\\geq\\min(R_1,R_2)"
+        },
+        {
+          "label": "乘法",
+          "latex": "\\left(\\sum_{n=0}^{\\infty}a_n x^n\\right)\\left(\\sum_{n=0}^{\\infty}b_n x^n\\right)=\\sum_{n=0}^{\\infty}c_n x^n,\\ c_n=\\sum_{i=0}^n a_i b_{n-i}"
+        },
+        {
+          "label": "和函数连续",
+          "latex": "\\text{幂级数的和函数}\\ S(x)\\ \\text{在其收敛域上连续}"
+        },
+        {
+          "label": "逐项求导",
+          "latex": "S'(x)=\\left[\\sum_{n=0}^{\\infty}a_n(x-x_0)^n\\right]'=\\sum_{n=1}^{\\infty}na_n(x-x_0)^{n-1},\\ \\text{收敛半径不变}"
+        },
+        {
+          "label": "逐项积分",
+          "latex": "\\int_{x_0}^x S(t)\\,dt=\\sum_{n=0}^{\\infty}\\frac{a_n}{n+1}(x-x_0)^{n+1},\\ \\text{收敛半径不变}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 251,
+      "part": "高等数学",
+      "category": "高等数学 / 级数 / 幂级数",
+      "title": "泰勒级数与麦克劳林级数",
+      "aliases": "[\"\\u6cf0\\u52d2\\u7ea7\\u6570\", \"\\u9ea6\\u514b\\u52b3\\u6797\\u7ea7\\u6570\", \"\\u5c55\\u5f00\\u552f\\u4e00\\u6027\"]",
+      "printed_page": "67-68",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "泰勒级数",
+          "latex": "f(x)=\\sum_{n=0}^{\\infty}\\frac{f^{(n)}(x_0)}{n!}(x-x_0)^n=f(x_0)+\\frac{f'(x_0)}{1!}(x-x_0)+\\cdots"
+        },
+        {
+          "label": "麦克劳林级数",
+          "latex": "f(x)=\\sum_{n=0}^{\\infty}\\frac{f^{(n)}(0)}{n!}x^n=f(0)+\\frac{f'(0)}{1!}x+\\cdots"
+        },
+        {
+          "label": "展开系数唯一性",
+          "latex": "\\text{展开式唯一，且}\\ a_n=\\frac{f^{(n)}(x_0)}{n!}\\ (n=0,1,2,\\cdots)"
+        },
+        {
+          "label": "收敛充要条件",
+          "latex": "\\text{泰勒级数在}\\ I\\ \\text{上收敛到}\\ f(x)\\iff\\lim_{n\\to\\infty}R_n(x)=0\\ (x\\in I)"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 252,
+      "part": "高等数学",
+      "category": "高等数学 / 级数 / 幂级数",
+      "title": "常用幂级数展开式",
+      "aliases": "[\"\\u4e03\\u4e2a\\u5c55\\u5f00\\u5f0f\", \"e\\u7684x\\u6b21\\u65b9\", \"sinx\", \"cosx\", \"ln1\\u52a0x\", \"\\u4e8c\\u9879\\u5f0f\\u5c55\\u5f00\"]",
+      "printed_page": "68-69",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "e^x",
+          "latex": "e^x=\\sum_{n=0}^{\\infty}\\frac{x^n}{n!}=1+x+\\frac{x^2}{2!}+\\cdots\\ (x\\in\\mathbb{R})"
+        },
+        {
+          "label": "sin x",
+          "latex": "\\sin x=\\sum_{n=0}^{\\infty}(-1)^n\\frac{x^{2n+1}}{(2n+1)!}\\ (x\\in\\mathbb{R})"
+        },
+        {
+          "label": "cos x",
+          "latex": "\\cos x=\\sum_{n=0}^{\\infty}(-1)^n\\frac{x^{2n}}{(2n)!}\\ (x\\in\\mathbb{R})"
+        },
+        {
+          "label": "ln(1+x)",
+          "latex": "\\ln(1+x)=\\sum_{n=0}^{\\infty}(-1)^n\\frac{x^{n+1}}{n+1}\\ (-1<x\\leq1)"
+        },
+        {
+          "label": "(1+x)^α",
+          "latex": "(1+x)^\\alpha=1+\\alpha x+\\frac{\\alpha(\\alpha-1)}{2!}x^2+\\cdots\\ (-1<x<1)"
+        },
+        {
+          "label": "1/(1-x)",
+          "latex": "\\frac{1}{1-x}=\\sum_{n=0}^{\\infty}x^n\\ (-1<x<1)"
+        },
+        {
+          "label": "1/(1+x)",
+          "latex": "\\frac{1}{1+x}=\\sum_{n=0}^{\\infty}(-1)^n x^n\\ (-1<x<1)"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 253,
+      "part": "高等数学",
+      "category": "高等数学 / 级数 / 傅里叶级数",
+      "title": "周期为2π的傅里叶级数",
+      "aliases": "[\"\\u5085\\u91cc\\u53f6\\u7cfb\\u6570\", \"\\u5085\\u91cc\\u53f6\\u7ea7\\u6570\", \"\\u72c4\\u5229\\u514b\\u96f7\\u6536\\u655b\\u5b9a\\u7406\"]",
+      "printed_page": "70-71",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "傅里叶系数",
+          "latex": "a_n=\\frac{1}{\\pi}\\int_{-\\pi}^{\\pi}f(x)\\cos nx\\,dx\\ (n=0,1,2,\\cdots),\\ b_n=\\frac{1}{\\pi}\\int_{-\\pi}^{\\pi}f(x)\\sin nx\\,dx\\ (n=1,2,\\cdots)"
+        },
+        {
+          "label": "傅里叶级数",
+          "latex": "f(x)\\sim\\frac{a_0}{2}+\\sum_{n=1}^{\\infty}(a_n\\cos nx+b_n\\sin nx)"
+        },
+        {
+          "label": "狄利克雷收敛定理",
+          "latex": "S(x)=\\frac{f(x-0)+f(x+0)}{2}\\ (x\\in(-\\pi,\\pi)),\\ S(\\pm\\pi)=\\frac{f(-\\pi+0)+f(\\pi-0)}{2}"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 254,
+      "part": "高等数学",
+      "category": "高等数学 / 级数 / 傅里叶级数",
+      "title": "周期为2l的傅里叶级数与奇偶延拓",
+      "aliases": "[\"\\u5468\\u671f2l\", \"\\u6b63\\u5f26\\u7ea7\\u6570\", \"\\u4f59\\u5f26\\u7ea7\\u6570\", \"\\u4e09\\u89d2\\u7ea7\\u6570\"]",
+      "printed_page": "71-73",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "2l周期系数",
+          "latex": "a_n=\\frac{1}{l}\\int_{-l}^{l}f(x)\\cos\\frac{n\\pi x}{l}\\,dx\\ (n=0,1,2,\\cdots),\\ b_n=\\frac{1}{l}\\int_{-l}^{l}f(x)\\sin\\frac{n\\pi x}{l}\\,dx\\ (n=1,2,\\cdots)"
+        },
+        {
+          "label": "2l周期级数",
+          "latex": "f(x)\\sim\\frac{a_0}{2}+\\sum_{n=1}^{\\infty}\\left(a_n\\cos\\frac{n\\pi x}{l}+b_n\\sin\\frac{n\\pi x}{l}\\right)"
+        },
+        {
+          "label": "偶函数",
+          "latex": "f(x)\\sim\\frac{a_0}{2}+\\sum_{n=1}^{\\infty}a_n\\cos\\frac{n\\pi x}{l},\\ a_n=\\frac{2}{l}\\int_0^l f(x)\\cos\\frac{n\\pi x}{l}\\,dx"
+        },
+        {
+          "label": "奇函数",
+          "latex": "f(x)\\sim\\sum_{n=1}^{\\infty}b_n\\sin\\frac{n\\pi x}{l},\\ b_n=\\frac{2}{l}\\int_0^l f(x)\\sin\\frac{n\\pi x}{l}\\,dx"
+        },
+        {
+          "label": "[0,l]正弦级数",
+          "latex": "f(x)\\sim\\sum_{n=1}^{\\infty}b_n\\sin\\frac{n\\pi x}{l},\\ b_n=\\frac{2}{l}\\int_0^l f(x)\\sin\\frac{n\\pi x}{l}\\,dx"
+        },
+        {
+          "label": "[0,l]余弦级数",
+          "latex": "f(x)\\sim\\frac{a_0}{2}+\\sum_{n=1}^{\\infty}a_n\\cos\\frac{n\\pi x}{l},\\ a_n=\\frac{2}{l}\\int_0^l f(x)\\cos\\frac{n\\pi x}{l}\\,dx"
+        },
+        {
+          "label": "[0,l]三角级数(周期延拓)",
+          "latex": "f(x)\\sim\\frac{a_0}{2}+\\sum_{n=1}^{\\infty}\\left(a_n\\cos\\frac{2n\\pi x}{l}+b_n\\sin\\frac{2n\\pi x}{l}\\right)"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 255,
+      "part": "高等数学",
+      "category": "高等数学 / 常微分方程 / 差分方程",
+      "title": "差分的定义与一阶线性差分方程",
+      "aliases": "[\"\\u5dee\\u5206\", \"\\u5dee\\u5206\\u65b9\\u7a0b\", \"\\u4e00\\u9636\\u5dee\\u5206\\u65b9\\u7a0b\", \"\\u7279\\u5f81\\u65b9\\u7a0b\"]",
+      "printed_page": "81-82",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "一阶差分",
+          "latex": "\\Delta y_t=y_{t+1}-y_t"
+        },
+        {
+          "label": "二阶差分",
+          "latex": "\\Delta^2 y_t=y_{t+2}-2y_{t+1}+y_t"
+        },
+        {
+          "label": "一阶线性齐次",
+          "latex": "y_{t+1}-ay_t=0,\\ \\text{特征方程}\\ r-a=0,\\ \\text{通解}\\ y_t=Ca^t"
+        },
+        {
+          "label": "一阶线性非齐次",
+          "latex": "y_{t+1}-ay_t=f(t),\\ \\text{通解}=\\text{齐次通解}+\\text{特解}\\ y_t^*"
+        },
+        {
+          "label": "特解形式",
+          "latex": "①\\ f(t)=P_m(t)\\ \\text{时}\\ y_t^*=Q_m(t);\\ ②\\ f(t)=P_m(t)b^t\\ \\text{时}\\ y_t^*=t^k Q_m(t)b^t,\\ b\\ \\text{非特征根}\\ k=0,\\ b\\ \\text{为特征根}\\ k=1"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 256,
+      "part": "线性代数",
+      "category": "线性代数 / 向量 / n维向量空间",
+      "title": "向量空间、基与坐标",
+      "aliases": "[\"\\u5411\\u91cf\\u7a7a\\u95f4\", \"\\u5b50\\u7a7a\\u95f4\", \"\\u57fa\", \"\\u7ef4\\u6570\", \"\\u5750\\u6807\"]",
+      "printed_page": "119-120",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "向量空间",
+          "latex": "V\\ \\text{是}n\\ \\text{维向量的非空集合，且对向量加法与数乘封闭，则称}\\ V\\ \\text{为向量空间}"
+        },
+        {
+          "label": "子空间",
+          "latex": "W\\ \\text{是向量空间}\\ V\\ \\text{的非空子集，且对加法与数乘封闭，则称}\\ W\\ \\text{为}\\ V\\ \\text{的子空间}"
+        },
+        {
+          "label": "基与维数",
+          "latex": "\\text{若}\\ \\varepsilon_1,\\varepsilon_2,\\cdots,\\varepsilon_n\\ \\text{线性无关且可线性表出}\\ V\\ \\text{中任一向量，则}\\ \\dim V=n,\\ \\varepsilon_1,\\cdots,\\varepsilon_n\\ \\text{为}\\ V\\ \\text{的一组基}"
+        },
+        {
+          "label": "坐标",
+          "latex": "\\alpha=x_1\\varepsilon_1+x_2\\varepsilon_2+\\cdots+x_n\\varepsilon_n,\\ \\text{坐标}\\ X=(x_1,x_2,\\ldots,x_n)^T,\\ \\alpha=(\\varepsilon_1,\\varepsilon_2,\\ldots,\\varepsilon_n)X"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    },
+    {
+      "id": 257,
+      "part": "线性代数",
+      "category": "线性代数 / 向量 / n维向量空间",
+      "title": "基变换与坐标变换",
+      "aliases": "[\"\\u8fc7\\u6e21\\u77e9\\u9635\", \"\\u57fa\\u53d8\\u6362\\u516c\\u5f0f\", \"\\u5750\\u6807\\u53d8\\u6362\\u516c\\u5f0f\"]",
+      "printed_page": "120-121",
+      "pdf_page": "见 printed_page",
+      "recognition_source": "PaddleOCR（paddlex_http 172.27.64.1:8080）+ 人工校验",
+      "formula_blocks": [
+        {
+          "label": "基变换公式",
+          "latex": "(\\eta_1,\\eta_2,\\ldots,\\eta_n)=(\\varepsilon_1,\\varepsilon_2,\\ldots,\\varepsilon_n)A"
+        },
+        {
+          "label": "过渡矩阵",
+          "latex": "\\text{矩阵}\\ A\\ \\text{称为由旧基到新基的过渡矩阵，必为可逆矩阵，其第}\\ j\\ \\text{列是}\\ \\eta_j\\ \\text{在旧基下的坐标}"
+        },
+        {
+          "label": "坐标变换公式",
+          "latex": "X=AY\\ \\text{或}\\ Y=A^{-1}X\\ (X,Y\\ \\text{分别为}\\ \\alpha\\ \\text{在两组基下的坐标})"
+        }
+      ],
+      "has_diagram": false,
+      "review_status": "verified"
+    }
+  ]
+}

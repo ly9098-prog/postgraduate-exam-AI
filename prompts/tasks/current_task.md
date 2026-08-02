@@ -1,411 +1,494 @@
-你是一名资深 Python/FastAPI 后端安全工程师。请直接检查并修改当前项目，解决 AI 模型 API Key 在数据库中可能以明文存储的问题。
-
-## 一、已知问题
-
-重点检查以下文件及其所有调用方：
-
-- `app/models/admin_ai_config.py`
-- `app/services/admin_ai_config_service.py`
-- `app/services/model_config_resolver.py`
-- `app/services/vector_config_service.py`
-- `app/models/admin_vector_config.py`
-- `app/api/v1/admin_ai_config.py`
-- `app/api/v1/admin_vector_config.py`
-- `app/schemas/admin_ai_config.py`
-- `app/core/config.py`
-- `app/services/production_config_validator.py`
-
-当前 `encrypt_api_key()` 和 `decrypt_api_key()` 存在严重的 fail-open 行为：
-
-```python
-if f is None:
-    return plain
-```
-
-当 `AI_CONFIG_ENCRYPT_KEY` 未配置或格式无效时，API Key 会直接以明文写入名为 `api_key_encrypted` 的字段。
-
-当前数据库中需要关注的字段包括：
-
-- `admin_ai_model_configs.api_key_encrypted`
-- `admin_vector_configs.embedding_api_key_encrypted`
-
-不要输出、打印、复制或记录数据库中的任何真实 API Key。
-
-## 二、改造目标
-
-实现可靠、可迁移、可测试的敏感凭据加密方案，必须满足：
-
-1. API Key 绝不能因为加密配置缺失、格式错误或加密失败而以明文写入数据库。
-2. 生产环境缺少有效加密主密钥时必须启动失败。
-3. 已存在的明文 API Key 可以安全迁移为密文。
-4. 迁移必须幂等，重复执行不能重复加密。
-5. 加密密钥不能写入数据库、源代码、日志或 API 响应。
-6. API 响应、审计日志、异常信息和应用日志中不得泄露 API Key。
-7. 保持现有模型配置、向量配置和 AI 调用功能正常。
-8. 同时兼容 SQLite 开发环境和 PostgreSQL 生产环境。
-
-## 三、加密模块
-
-将加解密逻辑从 ORM Model 中拆出，建立独立模块，例如：
-
-```text
-app/core/secret_crypto.py
-```
-
-使用 `cryptography.fernet.Fernet`，或者项目中已有的等价成熟加密库。
-
-禁止自行实现加密算法。
-
-建议提供以下接口，具体命名可根据项目规范调整：
-
-```python
-class SecretEncryptionError(RuntimeError):
-    pass
-
-class SecretDecryptionError(RuntimeError):
-    pass
-
-def encrypt_secret(plaintext: str) -> str:
-    ...
-
-def decrypt_secret(ciphertext: str) -> str:
-    ...
-
-def is_encrypted_secret(value: str) -> bool:
-    ...
-```
-
-### 强制要求
-
-- 加密配置缺失时，`encrypt_secret()` 必须抛出明确异常，绝不能返回明文。
-- 加密配置无效时必须抛出明确异常。
-- 解密失败时不得返回空字符串伪装成“未配置”。
-- 解密失败不得自动使用原字符串作为明文。
-- 不要通过是否以 `gAAAA` 开头作为唯一的长期数据格式判断。
-- 数据库存储建议使用带版本的 envelope 格式，例如：
-
-```text
-enc:v1:<fernet-token>
-```
-
-如实现密钥轮换，也可以加入 key id：
-
-```text
-enc:v1:<key-id>:<fernet-token>
-```
-
-- `is_encrypted_secret()` 应根据明确的版本前缀判断。
-- 普通业务运行期间不得自动把无前缀字符串当作明文凭据使用。
-- 对旧明文的兼容只能放在专门的数据迁移流程中。
-
-不要使用哈希代替加密，因为系统调用第三方模型 API 时需要恢复原始 API Key。
-
-## 四、配置校验
-
-继续支持现有环境变量：
-
-```text
-AI_CONFIG_ENCRYPT_KEY
-```
-
-要求：
-
-1. 验证它是否是合法的 Fernet key。
-2. 不要从 `APP_SECRET`、数据库密码或其他弱配置直接派生加密密钥。
-3. 不要提供代码内默认密钥。
-4. 在 production 或 cloud_api 等受限部署环境中：
-   - 未配置时启动失败；
-   - 格式错误时启动失败；
-   - 错误信息可以说明变量名称，但不得包含变量值。
-5. 开发环境未配置密钥时，可以允许应用启动，但任何保存 API Key 的操作必须失败并返回清晰、安全的错误，绝不能保存明文。
-
-将检查加入现有的：
-
-```text
-app/services/production_config_validator.py
-```
-
-并复用项目已有的 restricted environment 判断方式。
-
-如项目存在 `.env.example` 或部署文档，请增加配置示例，但不要填写真实密钥。
-
-可在文档中给出生成方式：
-
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
-
-## 五、数据库明文迁移
-
-检查项目的 Alembic 结构和迁移规范，增加安全的数据迁移方案。
-
-迁移范围至少包括：
-
-```text
-admin_ai_model_configs.api_key_encrypted
-admin_vector_configs.embedding_api_key_encrypted
-```
-
-迁移逻辑：
-
-1. 空值跳过。
-2. 已是 `enc:v1:` 格式的值跳过。
-3. 旧值视为历史明文，仅在迁移程序中读取。
-4. 使用当前有效的 `AI_CONFIG_ENCRYPT_KEY` 加密后写回。
-5. 整个迁移尽可能在事务中执行。
-6. 任意一条加密失败时回滚，不能留下部分迁移状态。
-7. 重复执行迁移时不得二次加密。
-8. 日志只能记录：
-   - 处理记录数量；
-   - 跳过数量；
-   - 成功数量；
-   - 失败记录的主键。
-9. 日志不得记录：
-   - 明文；
-   - 密文；
-   - API Key 前缀；
-   - API Key 长度；
-   - 请求体。
-10. 迁移前检查现有字段长度是否足以保存带版本前缀的 Fernet 密文；如不足，通过 Alembic 扩容。
-11. 不要在迁移文件或测试 fixture 中写入真实数据库凭据。
-
-如果项目规范不适合在 Alembic upgrade 中依赖运行时密钥，则增加一个明确、幂等的 CLI 迁移命令，例如：
-
-```bash
-python -m app.cli.encrypt_ai_secrets
-```
-
-该命令应：
-
-- 默认执行真实迁移前展示待处理记录数量；
-- 支持 `--dry-run`；
-- 缺少加密密钥时直接退出；
-- 失败时返回非零退出码；
-- 不输出任何凭据；
-- 可安全重复执行。
-
-优先采用最符合当前项目部署流程的方案，不要同时保留两套互相冲突的迁移入口。
-
-## 六、业务层改造
-
-替换所有对旧函数的调用：
-
-```python
-encrypt_api_key
-decrypt_api_key
-```
-
-重点检查：
-
-- 模型创建；
-- 模型更新；
-- 默认模型 seed；
-- 环境变量同步；
-- 模型连接测试；
-- 模型配置解析；
-- 向量配置创建与更新；
-- Embedding 配置解析；
-- OCR/视觉模型配置解析。
-
-### 保存规则
-
-- 请求未提交 `api_key`：保留原有凭据。
-- 请求提交非空新 `api_key`：加密后保存。
-- 如系统支持清除凭据，应使用明确语义，不要把 `"****"` 当成真正的 API Key。
-- 保留现有前端兼容性时，必须确保 `"****"`、`"********"` 等掩码永远不会被写入数据库。
-- 加密失败时：
-  - 回滚数据库事务；
-  - 返回安全、明确的服务端错误；
-  - 不得退化为明文保存。
-
-### 读取规则
-
-- 普通业务只能接受带受支持版本前缀的密文。
-- 无前缀历史值不得在普通运行路径中直接作为 API Key 使用。
-- 遇到历史明文时返回明确的“需要执行凭据迁移”错误。
-- 遇到无法解密的密文时返回明确的配置错误。
-- 不要把解密失败简单解释为“没有配置 API Key”。
-- 解密后的值只保存在调用第三方服务所需的局部变量中。
-- 不得放入长期缓存、序列化对象、Pipeline context、任务元数据或响应对象。
-
-## 七、API 安全
-
-检查管理端相关 API。
-
-### 响应
-
-API 响应只允许包含：
+你现在位于我的本地项目仓库中。请直接执行一次“数学公式库完整性审计与补全”，不要只给建议或示例代码。
+
+## 一、任务目标
+
+以本地《27张宇数学公式手册.pdf》的目录为公式库覆盖边界，对本地 SQLite 数据库中的公式分类和公式卡片进行审计，补充确认缺失的公式。
+
+唯一需要排除的内容是：
+
+- 第三部分：概率论与数理统计
+- 该部分下的随机事件、概率分布、随机变量数字特征、大数定律、中心极限定理、数理统计、参数估计等全部内容
+
+除此之外，PDF 目录中的其他章节全部属于本次范围。
+
+特别注意：
+
+1. 不要按照“数学二是否要求”决定范围。
+2. 即使目录标注“数学二不作要求”，本次仍然要纳入。
+3. 包括但不限于：
+   - 向量代数和空间解析几何
+   - 偏导数在几何中的应用
+   - 重积分的应用
+   - 曲线积分与曲面积分
+   - 数项级数、幂级数、傅里叶级数
+   - 差分方程
+   - n 维向量空间
+4. 初等数学附录也要审计，但已有内容不得重复插入。
+5. 压缩包中已有的旧审计文件可能采用“仅数学二”的旧范围，必须重新核实，不能直接采信其“只有初等数学缺失”等结论。
+
+## 二、首先定位并检查项目文件
+
+不要假定绝对路径，先在仓库内查找：
+
+- `27张宇数学公式手册.pdf`
+- `postgraduate.db`
+- `models/formula.py`
+- `schemas/formula.py`
+- `services/formula_normalizer.py`
+- `api/v1/admin_formulas.py`
+- `data/formula_library/`
+- `data/formula_audit/`
+- 所有名称中含 `seed_formula`、`formula_library`、`zhangyu` 的脚本和数据文件
+
+如果仓库结构带有 `app/`、`backend/` 等前缀，请自动适配。
+
+检查实际代码和数据库后再操作，不要仅依赖本提示中的字段说明。
+
+## 三、PDF 目录覆盖清单
+
+先根据 PDF 目录生成结构化 coverage manifest，至少包含以下部分。
+
+### 第一部分：高等数学
+
+#### 第一章 函数、极限、连续
+- 函数
+- 极限
+- 无穷小量与无穷大量
+- 连续
+
+#### 第二章 一元函数微分学
+- 导数与微分
+- 导数的计算
+- 微分中值定理
+- 洛必达法则
+- 函数及其性态的研究
+- 曲率、曲率半径、曲率圆
+
+#### 第三章 一元函数积分学
+- 不定积分
+- 定积分
+- 反常积分
+
+#### 第四章 向量代数和空间解析几何
+- 向量代数
+- 空间平面与直线
+- 空间曲面与曲线
+
+#### 第五章 多元函数微分学
+- 偏导数与全微分
+- 隐函数求导法
+- 方向导数
+- 偏导数在几何中的应用
+- 多元函数的极值
+
+#### 第六章 多元函数积分学
+- 重积分的计算
+- 重积分的应用
+- 曲线积分
+- 曲面积分
+
+#### 第七章 级数
+- 数项级数
+- 幂级数
+- 傅里叶级数
+
+#### 第八章 常微分方程及差分方程
+- 一阶微分方程的类型及解法
+- 可降阶的高阶微分方程
+- 线性微分方程解的结构定理
+- 常系数齐次线性微分方程
+- 二阶常系数非齐次线性微分方程
+- 欧拉方程
+- 差分方程
+
+### 第二部分：线性代数
+
+#### 第一章 行列式
+- 行列式的定义与性质
+- 行列式的展开定理
+- 几种特殊行列式
+- n 阶行列式的重要公式
+
+#### 第二章 矩阵
+- 矩阵的定义与运算
+- 矩阵的秩
+- 分块矩阵
+- 初等变换与初等矩阵
+
+#### 第三章 向量
+- n 维向量的定义及运算
+- 向量组的线性相关与线性无关
+- 极大无关组与向量组的秩
+- 内积与施密特正交化
+- n 维向量空间
+
+#### 第四章 线性方程组
+- 四种表示形式
+- 有解的判别条件
+- 齐次线性方程组解的结构
+- 非齐次线性方程组解的结构
+
+#### 第五章 特征值和特征向量
+- 特征值和特征向量
+- 矩阵的对角化
+
+#### 第六章 二次型
+- 二次型及其表示法
+- 正定二次型及其判定
+
+### 附录：初等数学
+- 初等代数
+- 初等几何
+- 三角函数
+- 平面解析几何
+
+不要创建“概率论与数理统计”分类或卡片。
+
+## 四、审计数据库
+
+使用 Python 的 `sqlite3` 模块读取数据库，至少检查：
+
+- `formula_categories`
+- `formula_cards`
+- `formula_card_tags`
+- `formula_tags`
+- `formula_card_versions`
+- 与公式图形相关的表
+
+输出当前：
+
+- 分类树
+- 每个章节、分组的卡片数
+- 每张卡片的标题、aliases、search_text、formula_blocks、source_ref
+- 卡片状态和 card_type
+- 重复 source_ref
+- 同分类重复标题
+- 空 formula_blocks
+- JSON 格式错误
+- 外键异常
+
+比较时不能只按标题精确匹配。需要综合使用：
+
+- 分类路径
+- title
+- aliases
+- search_text
+- formula_blocks 中的 LaTeX
+- source_ref
+- 公式语义
+
+对每个 PDF 目录小节给出以下状态之一：
+
+- `existing_complete`
+- `existing_incomplete`
+- `missing`
+- `manual_review`
+- `excluded_probability_statistics`
+
+章节名称存在，不代表其公式已经完整覆盖。
+
+重点检查但不要预设最终结论：
+
+- “向量代数和空间解析几何”是否完全缺失
+- “级数”是否完全缺失
+- 多元积分是否只有二重积分而缺少三重积分、重积分应用、曲线积分和曲面积分
+- 多元微分是否缺少几何应用
+- 常微分方程是否缺少差分方程
+- 线性代数各章节是否只有概括卡片而缺少目录所列的重要公式
+- 初等数学已有卡片是否已经真实存在，避免重复导入
+
+## 五、从 PDF 提取缺失内容
+
+PDF 是主要内容依据，目录只是覆盖边界。
+
+操作要求：
+
+1. 先根据章节标题确定“印刷页码”和实际 PDF 页码的对应关系，不要写死页码偏移。
+2. 只对确认缺失或不完整的章节进行局部页面渲染/OCR，不要无目的地重复 OCR 整本 PDF。
+3. 保存每个公式对应的 PDF 页码或印刷页码。
+4. OCR 识别后必须检查：
+   - 分子分母
+   - 上下标
+   - 根号范围
+   - 积分上下限
+   - 求和上下限
+   - 矩阵行列
+   - 正负号
+   - 希腊字母
+   - `\left`、`\right`
+   - 括号和花括号配对
+5. PDF 字符无法明确辨认时，不要猜测，将该项列入 `manual_review`。
+6. 通用数学知识只能用于校验和规范 LaTeX，不能用来凭空扩大 PDF 的章节范围。
+
+## 六、补全数据的格式要求
+
+必须先检查当前模型和 Pydantic schema，并完全遵循现有格式。
+
+已知公式卡片通常包含：
+
+- `title`
+- `aliases`
+- `search_text`
+- `card_type`
+- `summary`
+- `formula_blocks`
+- `conditions`
+- `symbol_notes`
+- `secondary_conclusions`
+- `error_tips`
+- `examples`
+- `function_properties`
+- `sort_order`
+- `status`
+- `source_type`
+- `source_title`
+- `source_ref`
+- `content_hash`
+- `version`
+
+`formula_blocks` 中每项通常为：
 
 ```json
 {
-  "api_configured": true,
-  "api_key_masked": "********"
+  "label": "公式名称",
+  "latex": "规范 LaTeX",
+  "note": "可选说明"
 }
 ```
 
 要求：
 
-- 绝不返回明文。
-- 建议统一返回固定长度掩码，例如 `********`。
-- 不要根据真实 API Key 长度生成掩码，避免泄露长度信息。
-- 解密失败时不要返回看似正常的 `api_configured=true`。
-
-### 连接测试接口
-
-当前连接测试请求中的 `api_key` 不应强制前端重复提交已经保存的密钥。
-
-将其改为可选：
-
-```python
-api_key: str | None = None
-```
-
-行为：
-
-- 提供 `model_id` 且未提供新 API Key时，服务端从数据库安全解密。
-- 新建模型尚未保存时，可以临时提交 API Key进行测试。
-- 临时 API Key只能存在于请求生命周期内，不能写日志或写数据库。
-- 同时传入 `model_id` 和新 API Key时，应明确使用临时新 Key，或者保持项目现有行为，但必须写测试固定该优先级。
-- 不要记录连接测试请求体。
-
-### 审计日志
-
-审计记录只能写：
-
-```json
-{
-  "api_key_updated": true
-}
-```
-
-或：
-
-```json
-{
-  "api_key_cleared": true
-}
-```
-
-不得写入明文、密文、前缀或长度。
-
-## 八、日志和异常检查
-
-全局搜索以下关键词及其变体：
+1. 每张卡片至少 1 个 formula block。
+2. 遵守项目 schema 对 formula block 数量的限制；若当前限制为最多 8 个，超过时拆分为多张语义清晰的卡片。
+3. 不要把整章所有公式塞进一张超大卡片。
+4. 优先使用 `pure_formula`。
+5. 只有确实需要函数图像并且项目已有成熟 graph spec 时才使用 `function_graph`。
+6. 新卡片默认设为 `draft`，不要自动发布。
+7. `source_type` 使用项目已有合法值，优先 `manual` 或项目现有导入约定。
+8. 新公式的 `source_ref` 必须稳定、唯一、可重复运行，例如：
 
 ```text
-api_key
-apikey
-authorization
-bearer
-secret
-token
-embedding_api_key
+zhangyu_formula_manual:nonprob:<chapter_code>:<slug>
 ```
 
-确认：
+1. 已有 `source_ref` 不得重新创建。
+2. source_ref 为空的旧卡片要通过分类、标题、别名和公式语义判断重复。
+3. aliases、search_text、conditions、error_tips 使用简体中文，LaTeX 使用项目已有风格。
+4. 不要在 LaTeX 中使用无法被前端渲染的自定义宏。
+5. 复用项目现有的 content hash 计算函数和公式 normalizer，不要自行设计不兼容算法。
+6. 标签只能使用 `formula_tags` 中真实存在的标签 code/ID。
 
-- ORM SQL 日志隐藏参数；
-- HTTP 客户端调试日志不输出 Authorization；
-- FastAPI 请求日志不输出敏感请求体；
-- 异常对象中不拼接 API Key；
-- 审计日志不包含密钥；
-- `repr()`、Pydantic dump 和 dataclass dump 不会输出密钥；
-- 测试失败信息不包含密钥。
+## 七、分类处理
 
-不要在日志中输出掩码后的前几位或后几位。
-
-## 九、密钥轮换
-
-至少保证下面场景不会破坏数据：
-
-- 修改 `AI_CONFIG_ENCRYPT_KEY` 后，旧密文不会被误认为明文并再次加密；
-- 使用错误密钥解密时，不会覆盖原数据库数据；
-- 不会将解密失败后的空字符串重新写入数据库。
-
-如果在不显著增加复杂度的情况下可以支持轮换，请实现：
-
-- 当前密钥用于加密；
-- 一个或多个旧密钥仅用于解密；
-- 成功使用旧密钥解密后，可在明确的轮换命令中重新加密；
-- 普通读取路径不要隐式批量修改数据库。
-
-如果项目暂时不适合实现多密钥支持，请提供独立的轮换步骤和文档，不要假装自动支持。
-
-## 十、测试
-
-为加密模块、服务层、API 层和迁移流程补充测试。
-
-至少覆盖：
-
-1. 正常加密、解密 round trip。
-2. 同一明文多次加密产生不同密文。
-3. 数据库密文不包含明文。
-4. 未配置加密密钥时保存失败。
-5. 加密密钥格式错误时保存失败。
-6. 生产环境缺少密钥时启动校验失败。
-7. 解密密钥错误时抛出明确异常。
-8. 解密失败不会返回原始字符串。
-9. 解密失败不会返回空字符串伪装成未配置。
-10. 历史明文迁移成功。
-11. 已加密记录不会二次加密。
-12. 迁移重复执行保持幂等。
-13. 迁移中途失败时事务回滚。
-14. 模型配置 API 永远不返回明文。
-15. API 使用固定长度掩码。
-16. PATCH 未提交 API Key时保留旧值。
-17. PATCH 提交新 API Key时数据库只保存密文。
-18. 掩码字符串不会被当作新 Key 保存。
-19. 模型连接测试可以通过 `model_id` 使用数据库凭据。
-20. 日志、审计数据和错误信息中不出现测试 API Key。
-21. `admin_vector_configs` 使用相同的安全规则。
-22. 旧密文解密失败时不会被环境变量同步逻辑错误覆盖，除非有明确的新凭据需要更新。
-
-测试中使用随机生成的 Fernet key和明显的假 API Key，例如：
+保持现有三级结构：
 
 ```text
-sk-test-do-not-use-123456
+subject -> chapter -> group
 ```
 
-不要使用真实凭据。
+新增分类时：
 
-## 十一、完成标准
+- 使用稳定的 ASCII `snake_case` code
+- 不硬编码数据库 ID
+- 通过父级 code 查找 parent_id
+- 继承父分类的 `exam_scope`
+- 不擅自新增新的 exam_scope 枚举或重构学科系统
+- 不修改已有分类的 ID
+- 不删除已有分类
+- 新章节加入已有“高等数学”“线性代数”或“初等数学”根分类下
 
-修改完成后执行项目现有的：
+本次收录范围由 PDF 决定，不再依据旧文件中的 `math2_relevant` 字段过滤。
 
-- 单元测试；
-- 集成测试；
-- lint；
-- type check；
-- Alembic migration check；
-- 生产配置检查。
+## 八、持久化方式
 
-如项目缺少某项命令，应说明，而不是伪造执行结果。
+不要只直接修改数据库。
 
-最后输出：
+优先采用项目现有的“源数据文件 + 幂等 seed/upsert 脚本”机制：
 
-1. 根因总结；
-2. 修改的文件列表；
-3. 加密数据格式；
-4. 明文迁移命令和执行顺序；
-5. 新增环境变量；
-6. 测试结果；
-7. 部署注意事项；
-8. 回滚方案；
-9. 需要人工执行的安全操作。
+1. 保留已有 v1、v2、v3 历史源文件。
+2. 新建独立扩展文件，建议名称：
 
-## 十二、额外安全要求
+```text
+data/formula_library/zhangyu_nonprob_extensions_v1.json
+```
 
-- 不要修改或打印我提供的数据库中的真实 API Key。
-- 不要把真实数据库加入测试、Git 或迁移 fixture。
-- 不要在代码中硬编码任何加密密钥。
-- 不要为了兼容旧数据继续保留“缺少密钥则明文保存”的逻辑。
-- 不要静默吞掉加解密异常。
-- 不要只修改字段名而不实现真正加密。
-- 不要只依赖前端掩码保护。
-- 不要在完成后展示数据库密文。
-- 不要删除现有凭据记录。
-- 修改前先搜索所有调用点，避免只修复模型管理页面而遗漏向量、OCR、Embedding 和后台任务路径。
+实际路径按仓库结构调整。
 
-完成代码修复后，请明确提醒运维人员：
+1. 新建或扩展幂等导入脚本，建议：
 
-数据库中已经出现过明文 API Key，应当把相关第三方平台凭据视为可能泄露。完成数据库加密迁移并验证服务正常后，需要在 DeepSeek、PaddleOCR、Embedding 服务等供应商后台轮换原 API Key，再通过管理端写入新 Key。数据库加密只能保护后续静态存储，不能使已经暴露过的旧 Key重新变得安全。
+```text
+scripts/seed_zhangyu_nonprob_formulas.py
+```
+
+1. 支持：
+
+```bash
+python scripts/seed_zhangyu_nonprob_formulas.py --dry-run
+python scripts/seed_zhangyu_nonprob_formulas.py --apply
+```
+
+1. 幂等判定顺序：
+   - source_ref
+   - category_id + 规范化 title
+   - aliases 和 LaTeX 语义相似性检查
+2. 第二次执行必须：
+   - 0 个重复新增
+   - 不重复创建分类
+   - 不重复创建标签关系
+   - 不重复创建无意义版本记录
+
+如果仓库已经有统一 seed 框架，应接入现有框架，而不是重复造轮子。
+
+## 九、数据库安全
+
+正式修改前：
+
+1. 确认实际使用的数据库路径。
+2. 使用 SQLite backup API 或文件复制创建带时间戳备份：
+
+```text
+postgraduate.db.bak_before_zhangyu_nonprob_<timestamp>
+```
+
+1. 开启外键检查。
+2. 所有写操作放在事务内。
+3. 发生任意校验失败时回滚。
+4. 不删除任何现有公式卡片。
+5. 不改变用户收藏关系。
+6. 不改变已有 published 卡片的发布状态。
+7. 修改已有卡片时：
+   - 保存修改前快照
+   - 正确递增 version
+   - 创建 `formula_card_versions` 记录
+   - 重新计算 content_hash
+8. 新卡片也应按项目现有约定创建初始 version snapshot。
+
+如果一个 published 卡片疑似不完整但修改风险较高，优先生成明确的待审核补丁并列入报告，不要静默破坏线上内容。
+
+## 十、需要重新生成的审计文件
+
+已有以下文件可能是旧的“仅数学二”审计结果：
+
+- `zhangyu_formula_manual_inventory.json`
+- `zhangyu_formula_manual_diff.json`
+- `zhangyu_formula_manual_formulas.json`
+- `execution_report.md`
+
+不要覆盖历史文件，建议新建：
+
+```text
+data/formula_audit/zhangyu_nonprob_inventory.json
+data/formula_audit/zhangyu_nonprob_diff.json
+data/formula_audit/zhangyu_nonprob_formulas.json
+data/formula_audit/zhangyu_nonprob_execution_report.md
+```
+
+diff 文件中必须分别列出：
+
+- 已完整覆盖
+- 已有但不完整
+- 完全缺失
+- OCR 或符号需人工复核
+- 明确排除的概率统计内容
+- 新增分类
+- 新增卡片
+- 更新卡片
+- 因重复而跳过的卡片
+
+## 十一、验证
+
+应用后必须运行以下检查：
+
+### SQLite
+
+```sql
+PRAGMA integrity_check;
+PRAGMA foreign_key_check;
+```
+
+### 数据完整性
+
+- formula_blocks 均为合法 JSON 数组
+- 每张卡片至少一个公式块
+- 每个 formula block 均有非空 latex
+- source_ref 无重复
+- 同分类 title 无重复
+- category 的 parent_id 合法
+- formula_card_tags 无重复关系
+- 每张新卡片都有初始版本记录
+- 更新卡片的 version 与版本表一致
+
+### LaTeX
+
+检查：
+
+- `{}` 配对
+- `()`、`[]` 配对
+- `\left` 与 `\right` 配对
+- `\begin` 与 `\end` 配对
+- 不存在 OCR 控制字符和乱码
+- 不存在 Unicode 上下标残留
+- 不存在明显的 `O/0`、`l/1`、`x/×` 混淆
+- 矩阵和 cases 环境可以被项目渲染器处理
+
+### 范围隔离
+
+扫描新增内容的：
+
+- 分类名称
+- 标题
+- aliases
+- search_text
+- summary
+- source_ref
+
+确保没有新增概率论与数理统计章节或卡片。
+
+注意：“排列组合”和“二项式定理”属于初等代数，不应因含有组合记号而错误排除。
+
+### 幂等性
+
+连续运行两次 apply：
+
+- 第二次 inserted = 0
+- 第二次 updated = 0，除非源数据确实发生变化
+- 分类数、卡片数、标签关系数不再变化
+
+### 项目测试
+
+运行与公式模型、公式 API、seed 脚本有关的现有测试；如果没有测试，至少增加：
+
+- seed dry-run 测试
+- seed 幂等测试
+- formula schema 校验测试
+- source_ref 去重测试
+- 概率统计排除测试
+
+## 十二、最终交付
+
+任务完成后，不要只说“已完成”。请输出：
+
+1. 实际 PDF 路径和数据库路径
+2. 备份数据库路径
+3. 修改前后的分类数、卡片数和版本记录数
+4. 新增分类清单
+5. 新增卡片清单，包含：
+   - 分类路径
+   - title
+   - source_ref
+   - PDF 页码
+   - formula block 数量
+6. 更新卡片清单及更新原因
+7. 跳过的重复项
+8. manual_review 项
+9. 明确排除的概率统计范围
+10. 新增或修改的文件路径
+11. 完整验证结果
+12. 回滚方法
+13. dry-run 和 apply 的运行命令
+
+请现在开始检查实际仓库、PDF 和数据库，并执行完整流程。除非缺少必要文件或无法确认数据库路径，否则不要停下来向我询问。
+
+```
+
+```

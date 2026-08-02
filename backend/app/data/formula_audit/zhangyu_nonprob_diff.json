@@ -1,0 +1,326 @@
+{
+  "summary": {
+    "pdf_pages": 190,
+    "scope": "以 PDF 目录为覆盖边界，仅排除第三部分概率论与数理统计",
+    "existing_complete": 0,
+    "existing_incomplete": 3,
+    "missing_chapters_fully_added": 2,
+    "added_cards": 30,
+    "added_categories": 15,
+    "manual_review": 1,
+    "excluded_probability_statistics": 1
+  },
+  "existing_complete": [
+    "高等数学：第一章 函数极限连续、第二章 一元微分、第三章 一元积分",
+    "高等数学：第八章 一阶/可降阶/线性结构/常系数齐次/非齐次/欧拉方程",
+    "线性代数：行列式、矩阵、线性方程组、特征值特征向量、二次型",
+    "附录初等数学（v3 已覆盖）"
+  ],
+  "existing_incomplete": [
+    {
+      "chapter": "第五章 多元函数微分学",
+      "missing_section": "四、偏导数在几何中的应用",
+      "added": true
+    },
+    {
+      "chapter": "第六章 多元函数积分学",
+      "missing_section": "三重积分、重积分的应用、曲线积分、曲面积分",
+      "added": true
+    },
+    {
+      "chapter": "第八章 常微分方程及差分方程",
+      "missing_section": "七、差分方程",
+      "added": true
+    },
+    {
+      "chapter": "线性代数 第三章 向量",
+      "missing_section": "五、n维向量空间",
+      "added": true
+    }
+  ],
+  "missing_chapters": [
+    {
+      "chapter": "第四章 向量代数和空间解析几何",
+      "note": "旧“仅数学二”范围排除，本次全量补入"
+    },
+    {
+      "chapter": "第七章 级数",
+      "note": "旧“仅数学二”范围排除，本次全量补入（数项/幂/傅里叶）"
+    }
+  ],
+  "manual_review": [
+    {
+      "section": "常见二次曲面·双叶双曲面",
+      "issue": "PDF 印刷页44 符号形式在 OCR 中模糊，采用标准式 x²/a²+y²/b²-z²/c²=-1，建议对照原页复核"
+    },
+    {
+      "section": "双曲抛物面",
+      "issue": "PDF 印刷页44 方程为 x²/2p-y²/2q=z（p,q同号），符号约定与部分教材相反，建议复核"
+    }
+  ],
+  "excluded_probability_statistics": [
+    "随机事件、概率分布、随机变量数字特征、大数定律、中心极限定理、数理统计、参数估计",
+    "printed pages 138-168, PDF idx 145-175 — 未创建任何分类或卡片"
+  ],
+  "added_categories": [
+    "高等数学/向量代数与空间解析几何 (chapter)",
+    "高等数学/向量代数与空间解析几何/向量代数",
+    "高等数学/向量代数与空间解析几何/空间平面与直线",
+    "高等数学/向量代数与空间解析几何/空间曲面与曲线",
+    "高等数学/多元函数微分学/偏导数在几何中的应用",
+    "高等数学/二重积分/三重积分的计算",
+    "高等数学/二重积分/重积分的应用",
+    "高等数学/二重积分/曲线积分",
+    "高等数学/二重积分/曲面积分",
+    "高等数学/级数 (chapter)",
+    "高等数学/级数/数项级数",
+    "高等数学/级数/幂级数",
+    "高等数学/级数/傅里叶级数",
+    "高等数学/常微分方程/差分方程",
+    "线性代数/向量/n维向量空间"
+  ],
+  "added_cards": [
+    {
+      "id": 228,
+      "category": "高等数学 / 向量代数与空间解析几何 / 向量代数",
+      "title": "向量的数量积、向量积与混合积",
+      "source_ref": "zhangyu_formula_manual:nonprob:vector_space_geometry:scalar_vector_mixed_product",
+      "formula_blocks": 5,
+      "status": "draft"
+    },
+    {
+      "id": 229,
+      "category": "高等数学 / 向量代数与空间解析几何 / 向量代数",
+      "title": "两向量的夹角、垂直与平行条件",
+      "source_ref": "zhangyu_formula_manual:nonprob:vector_space_geometry:vector_angle_direction_cosines",
+      "formula_blocks": 5,
+      "status": "draft"
+    },
+    {
+      "id": 230,
+      "category": "高等数学 / 向量代数与空间解析几何 / 空间平面与直线",
+      "title": "平面的方程与点到平面的距离",
+      "source_ref": "zhangyu_formula_manual:nonprob:vector_space_geometry:plane_equations_point_distance",
+      "formula_blocks": 4,
+      "status": "draft"
+    },
+    {
+      "id": 231,
+      "category": "高等数学 / 向量代数与空间解析几何 / 空间平面与直线",
+      "title": "直线的方程与点到直线的距离",
+      "source_ref": "zhangyu_formula_manual:nonprob:vector_space_geometry:line_equations_point_distance",
+      "formula_blocks": 5,
+      "status": "draft"
+    },
+    {
+      "id": 232,
+      "category": "高等数学 / 向量代数与空间解析几何 / 空间曲面与曲线",
+      "title": "空间曲面与曲线的方程",
+      "source_ref": "zhangyu_formula_manual:nonprob:vector_space_geometry:surface_curve_equations",
+      "formula_blocks": 5,
+      "status": "draft"
+    },
+    {
+      "id": 233,
+      "category": "高等数学 / 向量代数与空间解析几何 / 空间曲面与曲线",
+      "title": "常见二次曲面",
+      "source_ref": "zhangyu_formula_manual:nonprob:vector_space_geometry:quadric_surfaces",
+      "formula_blocks": 7,
+      "status": "draft"
+    },
+    {
+      "id": 234,
+      "category": "高等数学 / 多元函数微分学 / 偏导数在几何中的应用",
+      "title": "空间曲线的切线与法平面",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:tangent_normal_plane_curve",
+      "formula_blocks": 3,
+      "status": "draft"
+    },
+    {
+      "id": 235,
+      "category": "高等数学 / 多元函数微分学 / 偏导数在几何中的应用",
+      "title": "曲面的切平面与法线",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:tangent_plane_normal_surface",
+      "formula_blocks": 3,
+      "status": "draft"
+    },
+    {
+      "id": 236,
+      "category": "高等数学 / 二重积分 / 三重积分的计算",
+      "title": "三重积分的直角坐标与柱坐标计算",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:triple_integral_rectangular_cylindrical",
+      "formula_blocks": 4,
+      "status": "draft"
+    },
+    {
+      "id": 237,
+      "category": "高等数学 / 二重积分 / 三重积分的计算",
+      "title": "三重积分的球坐标计算",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:triple_integral_spherical",
+      "formula_blocks": 3,
+      "status": "draft"
+    },
+    {
+      "id": 238,
+      "category": "高等数学 / 二重积分 / 重积分的应用",
+      "title": "重积分的几何应用",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:multiple_integral_geometric_apps",
+      "formula_blocks": 4,
+      "status": "draft"
+    },
+    {
+      "id": 239,
+      "category": "高等数学 / 二重积分 / 重积分的应用",
+      "title": "重积分的物理应用",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:multiple_integral_physical_apps",
+      "formula_blocks": 5,
+      "status": "draft"
+    },
+    {
+      "id": 240,
+      "category": "高等数学 / 二重积分 / 曲线积分",
+      "title": "两类曲线积分的计算(化定积分)",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:line_integral_to_definite",
+      "formula_blocks": 2,
+      "status": "draft"
+    },
+    {
+      "id": 241,
+      "category": "高等数学 / 二重积分 / 曲线积分",
+      "title": "格林公式、路径无关与斯托克斯公式",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:green_stokes_path_independent",
+      "formula_blocks": 3,
+      "status": "draft"
+    },
+    {
+      "id": 242,
+      "category": "高等数学 / 二重积分 / 曲线积分",
+      "title": "全微分求积",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:exact_differential",
+      "formula_blocks": 2,
+      "status": "draft"
+    },
+    {
+      "id": 243,
+      "category": "高等数学 / 二重积分 / 曲面积分",
+      "title": "两类曲面积分的计算(化二重积分)",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:surface_integral_to_double",
+      "formula_blocks": 3,
+      "status": "draft"
+    },
+    {
+      "id": 244,
+      "category": "高等数学 / 二重积分 / 曲面积分",
+      "title": "高斯公式",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:gauss_formula",
+      "formula_blocks": 1,
+      "status": "draft"
+    },
+    {
+      "id": 245,
+      "category": "高等数学 / 二重积分 / 曲面积分",
+      "title": "两类积分的关系与梯度散度旋度",
+      "source_ref": "zhangyu_formula_manual:nonprob:multivariable:grad_div_rot_relations",
+      "formula_blocks": 5,
+      "status": "draft"
+    },
+    {
+      "id": 246,
+      "category": "高等数学 / 级数 / 数项级数",
+      "title": "数项级数的定义与基本性质",
+      "source_ref": "zhangyu_formula_manual:nonprob:series:numerical_series_basics",
+      "formula_blocks": 5,
+      "status": "draft"
+    },
+    {
+      "id": 247,
+      "category": "高等数学 / 级数 / 数项级数",
+      "title": "正项级数的敛散性判别法",
+      "source_ref": "zhangyu_formula_manual:nonprob:series:positive_series_criteria",
+      "formula_blocks": 5,
+      "status": "draft"
+    },
+    {
+      "id": 248,
+      "category": "高等数学 / 级数 / 数项级数",
+      "title": "交错级数与任意项级数",
+      "source_ref": "zhangyu_formula_manual:nonprob:series:alternating_absolute_conditional",
+      "formula_blocks": 4,
+      "status": "draft"
+    },
+    {
+      "id": 249,
+      "category": "高等数学 / 级数 / 幂级数",
+      "title": "幂级数的定义与收敛半径",
+      "source_ref": "zhangyu_formula_manual:nonprob:series:power_series_radius",
+      "formula_blocks": 4,
+      "status": "draft"
+    },
+    {
+      "id": 250,
+      "category": "高等数学 / 级数 / 幂级数",
+      "title": "幂级数的性质",
+      "source_ref": "zhangyu_formula_manual:nonprob:series:power_series_properties",
+      "formula_blocks": 5,
+      "status": "draft"
+    },
+    {
+      "id": 251,
+      "category": "高等数学 / 级数 / 幂级数",
+      "title": "泰勒级数与麦克劳林级数",
+      "source_ref": "zhangyu_formula_manual:nonprob:series:taylor_maclaurin_series",
+      "formula_blocks": 4,
+      "status": "draft"
+    },
+    {
+      "id": 252,
+      "category": "高等数学 / 级数 / 幂级数",
+      "title": "常用幂级数展开式",
+      "source_ref": "zhangyu_formula_manual:nonprob:series:common_maclaurin_expansions",
+      "formula_blocks": 7,
+      "status": "draft"
+    },
+    {
+      "id": 253,
+      "category": "高等数学 / 级数 / 傅里叶级数",
+      "title": "周期为2π的傅里叶级数",
+      "source_ref": "zhangyu_formula_manual:nonprob:series:fourier_series_2pi",
+      "formula_blocks": 3,
+      "status": "draft"
+    },
+    {
+      "id": 254,
+      "category": "高等数学 / 级数 / 傅里叶级数",
+      "title": "周期为2l的傅里叶级数与奇偶延拓",
+      "source_ref": "zhangyu_formula_manual:nonprob:series:fourier_series_2l_extension",
+      "formula_blocks": 7,
+      "status": "draft"
+    },
+    {
+      "id": 255,
+      "category": "高等数学 / 常微分方程 / 差分方程",
+      "title": "差分的定义与一阶线性差分方程",
+      "source_ref": "zhangyu_formula_manual:nonprob:ode:difference_equation_first_order",
+      "formula_blocks": 5,
+      "status": "draft"
+    },
+    {
+      "id": 256,
+      "category": "线性代数 / 向量 / n维向量空间",
+      "title": "向量空间、基与坐标",
+      "source_ref": "zhangyu_formula_manual:nonprob:linalg:n_dim_vector_space_basis",
+      "formula_blocks": 4,
+      "status": "draft"
+    },
+    {
+      "id": 257,
+      "category": "线性代数 / 向量 / n维向量空间",
+      "title": "基变换与坐标变换",
+      "source_ref": "zhangyu_formula_manual:nonprob:linalg:n_dim_vector_space_change_of_basis",
+      "formula_blocks": 3,
+      "status": "draft"
+    }
+  ],
+  "updated_cards": [],
+  "skipped_duplicates": []
+}
