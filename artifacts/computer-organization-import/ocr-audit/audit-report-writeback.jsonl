@@ -1,0 +1,533 @@
+{"id": 589, "field": "question_hash", "old": "093cd7b96536c90d6820112a17adde60", "new": "efc889751f514a28ad277c6475bdc286", "reason": "内容修正后重算hash"}
+{"id": 590, "field": "question_hash", "old": "a70c62b1f38a0457c4711cf595ba0a27", "new": "15ea88a73ed8928f34f76e9ee1f22618", "reason": "内容修正后重算hash"}
+{"id": 591, "field": "question_hash", "old": "ee4416b81bd76b34258491b538e153e9", "new": "4f236f857289e5931d26f62897b18bf3", "reason": "内容修正后重算hash"}
+{"id": 592, "field": "question_hash", "old": "5a1a0299116209720856044240870361", "new": "a6940635fb49f214745d9e42d622bee1", "reason": "内容修正后重算hash"}
+{"id": 593, "field": "question_hash", "old": "eebefd2ac91100dfd0e21be71a8779f8", "new": "7375809c9bb1d5d54a1254f3c80ee54e", "reason": "内容修正后重算hash"}
+{"id": 594, "field": "question_hash", "old": "913dcfd88589530291825dbd4736dc1e", "new": "e3842cca75b9460d29752faa4c30227c", "reason": "内容修正后重算hash"}
+{"id": 595, "field": "question_hash", "old": "e46dc8386202b722680122275abbd575", "new": "75a610bc354a942554ecba37e0380ba1", "reason": "内容修正后重算hash"}
+{"id": 596, "field": "question_hash", "old": "7f544da10ca4bb28ba017c8c5c9c733b", "new": "9bd4075263111147819d133588ac0fc7", "reason": "内容修正后重算hash"}
+{"id": 597, "field": "question_hash", "old": "204436518a71fb8db3a99f4dc3fc4bf5", "new": "bcdeab37e20b7c8963c7b33c7e536522", "reason": "内容修正后重算hash"}
+{"id": 599, "field": "question_hash", "old": "8bdcf6d019460e2e8119dd3f06ff2a77", "new": "1eea3a71cf50abc7063f207e458554f8", "reason": "内容修正后重算hash"}
+{"id": 600, "field": "question_hash", "old": "b40a4f3e2a0cc967300be9b58ead539f", "new": "3dd812e8442b13754a4f0f8e25e1ded4", "reason": "内容修正后重算hash"}
+{"id": 602, "field": "question_hash", "old": "3a6369db09df58d3eb36ac53f6b19c71", "new": "ab2c542aa4b635a7e4c93fa0cc750140", "reason": "内容修正后重算hash"}
+{"id": 603, "field": "stem", "old": "可以在计算机中直接执行的语言和用助记符编写的语言分别是(\nI.机器语言\nII.汇编语言\nIII.高级语言\nIV.操作系统原语\nV.正则语言", "new": "可以在计算机中直接执行的语言和用助记符编写的语言分别是()\nI.机器语言\nII.汇编语言\nIII.高级语言\nIV.操作系统原语\nV.正则语言", "reason": "题干缺失右括号"}
+{"id": 603, "field": "question_hash", "old": "2052a125b183bd95299aa04b8ac6a6ef", "new": "89316c21fd338a1a62486378b0de2dd6", "reason": "内容修正后重算hash"}
+{"id": 604, "field": "question_hash", "old": "725c9dc2303763b2efd7f8c71f2a6f06", "new": "ab620493ab2ba7bd73570bedae5a104e", "reason": "内容修正后重算hash"}
+{"id": 605, "field": "stem", "old": "下列叙述中，正确的是(\nI.实际应用程序的测试结果能够全面代表计算机的性能\nII.系列机的基本特性是指令系统向后兼容\nIII.软件和硬件在逻辑功能上是等价的", "new": "下列叙述中，正确的是()\nI.实际应用程序的测试结果能够全面代表计算机的性能\nII.系列机的基本特性是指令系统向后兼容\nIII.软件和硬件在逻辑功能上是等价的", "reason": "题干缺失右括号"}
+{"id": 605, "field": "question_hash", "old": "2c80aca35ca43cf5d851b7831855bb0d", "new": "d870d632115f3d228c1388929014ee4b", "reason": "内容修正后重算hash"}
+{"id": 606, "field": "question_hash", "old": "a7aa253110824538b75f3a302bea80a1", "new": "c955f6e45fe1feb95e3ced01da7a454e", "reason": "内容修正后重算hash"}
+{"id": 608, "field": "question_hash", "old": "7969c131ae47778cdd1be073ef077305", "new": "4ec066256005ebac6981023c2e304e61", "reason": "内容修正后重算hash"}
+{"id": 609, "field": "question_hash", "old": "624a48e8f6b01273af7444ad62efb175", "new": "faedc5172fdb132f4fac3cba5f6d0627", "reason": "内容修正后重算hash"}
+{"id": 610, "field": "question_hash", "old": "8236202cad64de6b435089413de6cd6b", "new": "084a3ccdf156966d77a7a333242f336e", "reason": "内容修正后重算hash"}
+{"id": 611, "field": "question_hash", "old": "bd0947afe5ac9931174e37d5caca1c70", "new": "6b9c217ad70fb06dbee466527f258d7e", "reason": "内容修正后重算hash"}
+{"id": 612, "field": "stem", "old": "【2015 统考真题】计算机硬件能够直接执行的是(\nI.机器语言程序\nII.汇编语言程序\nIII.硬件描述语言程序", "new": "【2015 统考真题】计算机硬件能够直接执行的是()\nI.机器语言程序\nII.汇编语言程序\nIII.硬件描述语言程序", "reason": "题干缺失右括号"}
+{"id": 612, "field": "question_hash", "old": "ba5bc9498e08f73466e49fa542e94b71", "new": "0da60923d81b12a78e9d935e9da3649c", "reason": "内容修正后重算hash"}
+{"id": 613, "field": "question_hash", "old": "372da168136d5fb4fe2489f46da17807", "new": "156575950b0d71864a8bf1709640f1dd", "reason": "内容修正后重算hash"}
+{"id": 614, "field": "question_hash", "old": "8b79f861f7eb9d93318f93f716da9df1", "new": "6ea9afaa8534b87721fce9f5ada97d85", "reason": "内容修正后重算hash"}
+{"id": 616, "field": "question_hash", "old": "3cb9af13d951fbdeaa3298a738133b28", "new": "de418838912b812d08e2e914e6f2af89", "reason": "内容修正后重算hash"}
+{"id": 617, "field": "question_hash", "old": "e2afeda42ee387cdb37dbde104701f9a", "new": "244e5ba72870760c351dec5ea905dc57", "reason": "内容修正后重算hash"}
+{"id": 618, "field": "stem", "old": "下列关于机器字长、指令字长和存储字长的说法中，正确的是(\nI.三者在数值上总是相等的\nII.三者在数值上可能不等\nIII.存储字长是存放在一个存储单元中的二进制代码位数\nIV.数据字长就是MDR的位数", "new": "下列关于机器字长、指令字长和存储字长的说法中，正确的是()\nI.三者在数值上总是相等的\nII.三者在数值上可能不等\nIII.存储字长是存放在一个存储单元中的二进制代码位数\nIV.数据字长就是MDR的位数", "reason": "题干缺失右括号"}
+{"id": 618, "field": "question_hash", "old": "33818461b2330384aedbab8af1b11ea1", "new": "2e69cc8bf7dbf7996ec9423efed0e7ca", "reason": "内容修正后重算hash"}
+{"id": 619, "field": "question_hash", "old": "7fbb4ede6db905f2084d47957cb8479b", "new": "9b81260d20379328bdc454cfdb5811d6", "reason": "内容修正后重算hash"}
+{"id": 620, "field": "question_hash", "old": "4869e90b61ded89b962a54994c675d0a", "new": "87d44861e8e77444e7af60c72c81f76d", "reason": "内容修正后重算hash"}
+{"id": 623, "field": "question_hash", "old": "bde98a7eb3494b86be865f0694286588", "new": "5159b3ed6e38e319a7095ad85812a652", "reason": "内容修正后重算hash"}
+{"id": 624, "field": "question_hash", "old": "fd89d95135565b3af4b4848755690e0a", "new": "374a24ac8175be17b4cfc0f8baef70d3", "reason": "内容修正后重算hash"}
+{"id": 626, "field": "question_hash", "old": "4d1f7c180513d3028edcaa3159182df5", "new": "bdccdb22a055bef970f5902e65812485", "reason": "内容修正后重算hash"}
+{"id": 627, "field": "question_hash", "old": "3c50c159480b687d526886e84d37f1fa", "new": "215eb60a39cca13c2a639194ec0fe0e3", "reason": "内容修正后重算hash"}
+{"id": 628, "field": "question_hash", "old": "3a8c8193a82e8c53e73acd907f139206", "new": "1ddfded0c78c0bc268769d41dd0e8fac", "reason": "内容修正后重算hash"}
+{"id": 629, "field": "stem", "old": "下列说法中，正确的是(\nI.在微型计算机的广泛应用中，会计电算化属于科学计算方面的应用.\nII.决定计算机计算精度的主要技术是计算机的字长\nIII.计算机运算速度指标的含义是每秒能执行多少条操作系统的命令\nIV.利用大规模集成电路技术把计算机的运算部件和控制部件做在一块集成电路芯片上，这样的一块芯片称为单片机", "new": "下列说法中，正确的是()\nI.在微型计算机的广泛应用中，会计电算化属于科学计算方面的应用.\nII.决定计算机计算精度的主要技术是计算机的字长\nIII.计算机运算速度指标的含义是每秒能执行多少条操作系统的命令\nIV.利用大规模集成电路技术把计算机的运算部件和控制部件做在一块集成电路芯片上，这样的一块芯片称为单片机", "reason": "题干缺失右括号"}
+{"id": 629, "field": "question_hash", "old": "8fe76cc6c128d8ef7264dcc1f9ef765d", "new": "132316bdbbde37e6665be9dab9c8c71e", "reason": "内容修正后重算hash"}
+{"id": 630, "field": "stem", "old": "【2010 统考真题】下列选项中，能缩短程序执行时间的措施是(\nI.提高CPU时钟频率\nII.优化数据通路结构\nIII.对程序进行编译优化", "new": "【2010 统考真题】下列选项中，能缩短程序执行时间的措施是()\nI.提高CPU时钟频率\nII.优化数据通路结构\nIII.对程序进行编译优化", "reason": "题干缺失右括号"}
+{"id": 630, "field": "question_hash", "old": "1438aba9940176928ad67434b848fd7b", "new": "ac3a1d81d53b27c2f8947dcab165c501", "reason": "内容修正后重算hash"}
+{"id": 631, "field": "question_hash", "old": "1802f773980761cd258b6a02b55b52a8", "new": "8d738d7a7e6780043668ec69c01ca395", "reason": "内容修正后重算hash"}
+{"id": 632, "field": "question_hash", "old": "db7eacdcf89fd8418e8064c3914cba9e", "new": "9a97eaba601b25098331117a1c7753f2", "reason": "内容修正后重算hash"}
+{"id": 633, "field": "media_files", "old": null, "new": {"file": "media/id_633_page_045.png", "kind": "必需截图：表格", "page": 45}, "reason": "需关联源页截图"}
+{"id": 633, "field": "question_hash", "old": "c56543b92c3d71e61570660831ec045d", "new": "0e772266ffbee743d89f4759b55099f9", "reason": "内容修正后重算hash"}
+{"id": 634, "field": "question_hash", "old": "52e41b889043fe1e9e6cef2fdade332e", "new": "a4aa907536a07211c0d95946efb07b62", "reason": "内容修正后重算hash"}
+{"id": 635, "field": "stem", "old": "【2017统考真题】假定计算机 M1和M2 具有相同的指令集体系结构(ISA),主频分别为1.5GHz\n和1.2GHz.在M1和M2上运行某基准程序P,平均CPI分别为2 和1,则程序P在 M1和 M^{2}.上运行时间的比值是()。", "new": "【2017统考真题】假定计算机 M1和M2 具有相同的指令集体系结构(ISA),主频分别为1.5GHz\n和1.2GHz.在M1和M2上运行某基准程序P,平均CPI分别为2 和1,则程序P在 M1和 M2上运行时间的比值是()。", "reason": "题干内容错识别/缺失"}
+{"id": 635, "field": "question_hash", "old": "75df7060773a797ba253a79163f0a929", "new": "cc5d42ab632a28db090336619d68e14d", "reason": "内容修正后重算hash"}
+{"id": 636, "field": "stem", "old": "【2020 统考真题】下列给出的部件中，其位数(宽度)一定与机器字长相同的是(\nI.ALU\nII.指令寄存器\nIII.通用寄存器\nIV.浮点寄存器", "new": "【2020 统考真题】下列给出的部件中，其位数(宽度)一定与机器字长相同的是()\nI.ALU\nII.指令寄存器\nIII.通用寄存器\nIV.浮点寄存器", "reason": "题干缺失右括号"}
+{"id": 636, "field": "question_hash", "old": "da422618e7762350e2484daf7d111b71", "new": "eddbc291f1bdbdf2a1f2e7a821d03373", "reason": "内容修正后重算hash"}
+{"id": 639, "field": "question_hash", "old": "1edd81b50b6bf033d00bdc222d496f84", "new": "a28dcf9ab74b76ab06b984fe46a6774d", "reason": "内容修正后重算hash"}
+{"id": 640, "field": "question_hash", "old": "d8e67d63ab36568a8dfffa38c3febf3a", "new": "d72ef0b3233ced0e8a87962e38d216dc", "reason": "内容修正后重算hash"}
+{"id": 641, "field": "question_hash", "old": "deaeab0cd6d9281a0a32e5d73b8ec307", "new": "e0c92448e01b074ab6b434a37a294214", "reason": "内容修正后重算hash"}
+{"id": 642, "field": "stem", "old": "一个16 位无符号二进制数的表示范围是(\n)o", "new": "一个16 位无符号二进制数的表示范围是()", "reason": "题干尾部/空格噪声"}
+{"id": 642, "field": "question_hash", "old": "29212dddb82fa11d5815dd3aa065a811", "new": "22e32600bc8284a9615939eabe15a156", "reason": "内容修正后重算hash"}
+{"id": 643, "field": "question_hash", "old": "6471d2a1197eebd67062ed7a58a9d606", "new": "baac8aab7fb40ebcca8961dd9bac3fb1", "reason": "内容修正后重算hash"}
+{"id": 644, "field": "question_hash", "old": "54d05498ff640acc47f57ef96ad55d52", "new": "d11e8dccaad36597796937c6543dd6a5", "reason": "内容修正后重算hash"}
+{"id": 646, "field": "question_hash", "old": "cc1e1ca27147079057f4ed3ae925c9bd", "new": "8defbf36462185083b128401e671e8fd", "reason": "内容修正后重算hash"}
+{"id": 647, "field": "question_hash", "old": "28a0a4df9b744b9c24d106352a319218", "new": "46566d81742eefa223f3b64416147092", "reason": "内容修正后重算hash"}
+{"id": 648, "field": "question_hash", "old": "8c452cc4410eeca960b936d26028d29a", "new": "6eea6a965cdf4b9df3b420f5ee6cd21a", "reason": "内容修正后重算hash"}
+{"id": 649, "field": "question_hash", "old": "5328b5038ce19607ae6b7da4cb9fcc17", "new": "b453bee613a537e37bfa94c8c8380c3a", "reason": "内容修正后重算hash"}
+{"id": 650, "field": "question_hash", "old": "d690e52f441ad8d4cda2fe583a6473b9", "new": "645a3b6b4b4189686b9b2699a6d0cb2b", "reason": "内容修正后重算hash"}
+{"id": 652, "field": "stem", "old": "若[x]补=1,x1X2X3X4X5X6,其中xi取0或1,若要x>-32,应当满足()", "new": "若[x]补=1,x1x2x3x4x5x6,其中xi取0或1,若要x>-32,应当满足()。", "reason": "题干内容错识别/缺失；选项内容错识别"}
+{"id": 652, "field": "option_C", "old": "x1为1,X^{2}.X6中至少有一位为1", "new": "x1为1，x2~x6中至少有一位为1", "reason": "题干内容错识别/缺失；选项内容错识别"}
+{"id": 652, "field": "option_D", "old": "x1为0,x^{2}.X6中至少有一位为1.", "new": "x1为0，x2~x6中至少有一位为1", "reason": "题干内容错识别/缺失；选项内容错识别"}
+{"id": 652, "field": "question_hash", "old": "200e5308e10d4a68afe292f0ba5f59e0", "new": "adc97ee6cd47cd7082833e29ed4a5d85", "reason": "内容修正后重算hash"}
+{"id": 653, "field": "stem", "old": "设x为整数,[x]补=1,x1X2X3X4X5,若要x<-16,x1~x5应满足的条件是()", "new": "设x为整数,[x]补=1,x1x2x3x4x5,若要x<-16,x1~x5应满足的条件是()。", "reason": "题干内容错识别/缺失；选项内容错识别"}
+{"id": 653, "field": "option_B", "old": "x1必须为0,X^{2}~x5至少有一个为1", "new": "x1必须为0，x2~x5至少有一个为1", "reason": "题干内容错识别/缺失；选项内容错识别"}
+{"id": 653, "field": "option_C", "old": "x1必须为0,X^{2}~X5任意", "new": "x1必须为0，x2~x5任意", "reason": "题干内容错识别/缺失；选项内容错识别"}
+{"id": 653, "field": "option_D", "old": "x1必须为1,X^{2}~X5任意", "new": "x1必须为1，x2~x5任意", "reason": "题干内容错识别/缺失；选项内容错识别"}
+{"id": 653, "field": "question_hash", "old": "c68741ed539c6b2bca8a15169afa368d", "new": "887f34e8952f838c7059d4aea9994d00", "reason": "内容修正后重算hash"}
+{"id": 654, "field": "question_hash", "old": "111933c497e56033a9c15f51b1ecdc73", "new": "23ad95785fac78e7e1015a2641bd966a", "reason": "内容修正后重算hash"}
+{"id": 655, "field": "question_hash", "old": "e52249cc36e6d138fa95830f00152bb6", "new": "a5b2117a187165b8ee3918e867392557", "reason": "内容修正后重算hash"}
+{"id": 657, "field": "question_hash", "old": "0f8c298360ad8da852254eb3d38ee149", "new": "601ecb54065bd6d19a4cd8fe58145d7f", "reason": "内容修正后重算hash"}
+{"id": 658, "field": "question_hash", "old": "dd9db376e58a8f97f00ba4532fae0cf3", "new": "d0ebd075a48802c655074d01941c448d", "reason": "内容修正后重算hash"}
+{"id": 659, "field": "question_hash", "old": "d12c0949d657b18494d0c0ac52bd449a", "new": "df2b1fabf6d46916b26113f154ea488d", "reason": "内容修正后重算hash"}
+{"id": 660, "field": "question_hash", "old": "77c5567059bb158ebab547ef22bcd7dd", "new": "82acfba84962a4fc55c35d0f61923631", "reason": "内容修正后重算hash"}
+{"id": 661, "field": "question_hash", "old": "05286a3c1528170929b7f69f0ec0a80c", "new": "68f448d57f9a7546c2c8c9223f0d3a50", "reason": "内容修正后重算hash"}
+{"id": 663, "field": "question_hash", "old": "92833a1b8d72060e0bc229e0462c3e8c", "new": "3f932b071fd603775743f4e5490005a7", "reason": "内容修正后重算hash"}
+{"id": 665, "field": "question_hash", "old": "0608d47f0b73312c6a7a4d2cc8fd3f5f", "new": "297cf2101edbf163b18c0621a018ce23", "reason": "内容修正后重算hash"}
+{"id": 666, "field": "stem", "old": "【2018 统考真题】冯诺依曼结构计算机中的数据采用二进制编码表示，其主要原因是(\nI.二进制的运算规则简单\nII.制造两个稳态的物理器件较容易\nIII.便于用逻辑门电路实现算术运算", "new": "【2018 统考真题】冯诺依曼结构计算机中的数据采用二进制编码表示，其主要原因是()\nI.二进制的运算规则简单\nII.制造两个稳态的物理器件较容易\nIII.便于用逻辑门电路实现算术运算", "reason": "题干缺失右括号"}
+{"id": 666, "field": "question_hash", "old": "6a9fe141b3234ddb5fc76dbe840979ee", "new": "e42f5e728ead920cf0b852beb2a82883", "reason": "内容修正后重算hash"}
+{"id": 670, "field": "question_hash", "old": "14863787c969e15ed45bb60a4f73a8dd", "new": "29b11ededac0ef2fee74a265d65ec540", "reason": "内容修正后重算hash"}
+{"id": 671, "field": "stem", "old": "在串行进位的并行加法器中，影响加法器运算速度的关键因素是(\n)c", "new": "在串行进位的并行加法器中，影响加法器运算速度的关键因素是()", "reason": "题干尾部/空格噪声"}
+{"id": 671, "field": "question_hash", "old": "56a49d071e54c39eaad914dae71cfece", "new": "6d8000c73ee8449422a0b307b4b492be", "reason": "内容修正后重算hash"}
+{"id": 672, "field": "question_hash", "old": "6dbf37de8f95042412833b7f2f7fce1c", "new": "b58d1d5312cc789bba66ed8d5b07d17d", "reason": "内容修正后重算hash"}
+{"id": 674, "field": "question_hash", "old": "1c1040503c403aa6e70eb6f6f4c504d1", "new": "fe492f21b7feceb6fdeaaed81e4f165d", "reason": "内容修正后重算hash"}
+{"id": 675, "field": "question_hash", "old": "cfa17cf76bf41e834caff1e9812191c2", "new": "3242dd250f393c016f582847ba1e1d39", "reason": "内容修正后重算hash"}
+{"id": 676, "field": "question_hash", "old": "4fef77f522ce7af4564cdf8627e92944", "new": "86a9c11caee1f4cde0d08ea6c993b622", "reason": "内容修正后重算hash"}
+{"id": 677, "field": "question_hash", "old": "5d3dfd6a9514f590f40fd207214e989e", "new": "99d863bdd763c28818a9fd4856519eb8", "reason": "内容修正后重算hash"}
+{"id": 678, "field": "question_hash", "old": "1e08c739d1d50bdb774bbd6473f72c9f", "new": "8592c740554bfc789e242b6f98107676", "reason": "内容修正后重算hash"}
+{"id": 680, "field": "question_hash", "old": "d17367081fb05dd547337a6ca31224e8", "new": "57494a6f3c0fdd57f0e48e1ea7e86df8", "reason": "内容修正后重算hash"}
+{"id": 681, "field": "stem", "old": "在定点运算器中，无论是采用双符号位还是采用单符号位，必须有(\n)o", "new": "在定点运算器中，无论是采用双符号位还是采用单符号位，必须有()", "reason": "题干尾部/空格噪声"}
+{"id": 681, "field": "question_hash", "old": "62a3043c00db373c89c02ddd6e42e003", "new": "9474dcb131ece7fbca33fd90fa00f00b", "reason": "内容修正后重算hash"}
+{"id": 682, "field": "question_hash", "old": "f57a3001aa5394c960b38f9b1b11e0e6", "new": "820d5fa3bf3ae74a6dcf52dd06dd425e", "reason": "内容修正后重算hash"}
+{"id": 684, "field": "stem", "old": "判断加减法溢出时，可采用判断进位的方式，若符号位的进位为 Co,最高位的进位为C1,则产生溢出的条件是(\nI.Co产生进位\nII.C1产生进位\nIII.Co、C1都产生进位\nIV.Co、C1都不产生进位\nV.Co产生进位,C1不产生进位\nVI.Co不产生进位,C1产生进位", "new": "判断加减法溢出时，可采用判断进位的方式，若符号位的进位为 Co,最高位的进位为C1,则产生溢出的条件是()\nI.Co产生进位\nII.C1产生进位\nIII.Co、C1都产生进位\nIV.Co、C1都不产生进位\nV.Co产生进位,C1不产生进位\nVI.Co不产生进位,C1产生进位", "reason": "题干缺失右括号"}
+{"id": 684, "field": "question_hash", "old": "f2ce5b071adc9a496b1e43866c3cead4", "new": "1677a64028c84d551b60cc6c57c3c692", "reason": "内容修正后重算hash"}
+{"id": 685, "field": "question_hash", "old": "01bd18539b22a9fa2f3f2a5e48183b6c", "new": "8c5508519d7d3fab644ab4a2067592ab", "reason": "内容修正后重算hash"}
+{"id": 686, "field": "question_hash", "old": "83476a2741e6e342ff396fe33b541814", "new": "4bcefd3d03aea90cb77680bfc8778018", "reason": "内容修正后重算hash"}
+{"id": 687, "field": "question_hash", "old": "f1b551bea792b2877bfdbd38f8c90b63", "new": "4499761cb444c1fc7b0bca530b53e670", "reason": "内容修正后重算hash"}
+{"id": 688, "field": "stem", "old": "x、y为定点整数，其格式为1位符号位、n位数值位，若采用补码一位乘法实现乘法运算，则最多需要(\n()次加法运算。", "new": "x、y为定点整数，其格式为1位符号位、n位数值位，若采用补码一位乘法实现乘法运算，则最多需要()次加法运算。", "reason": "题干缺失右括号"}
+{"id": 688, "field": "question_hash", "old": "1eb39fcc9b408b3880f8520b4ae50608", "new": "093ef8e4691e0659cfd888db6be7faec", "reason": "内容修正后重算hash"}
+{"id": 689, "field": "question_hash", "old": "c0a13542dec4fcafad70ea0b1bd012c4", "new": "818c5a0ca8ccbeb12834e9535beccaad", "reason": "内容修正后重算hash"}
+{"id": 690, "field": "question_hash", "old": "282394e74042b8bd398a57de05ceda4e", "new": "41291db29deeac8a3c95441a57c167a2", "reason": "内容修正后重算hash"}
+{"id": 693, "field": "question_hash", "old": "0480ef11326c52a3c20909fd2bd4a3ab", "new": "88940b08069a88ae5f8984bf6aab6bb3", "reason": "内容修正后重算hash"}
+{"id": 694, "field": "stem", "old": "下列关于各种移位的说法正确的是(\nI.假设机器数采用反码表示，当机器数为负时，左移时最高数位丢0，结果出错；右移时最低数位丢0，影响精度\nII.在算术移位的情况下，补码左移的前提条件是其原最高有效位与原符号位要相同\nIII.在算术移位的情况下，双符号位的移位操作只有低符号位需要参加移位操作", "new": "下列关于各种移位的说法正确的是()\nI.假设机器数采用反码表示，当机器数为负时，左移时最高数位丢0，结果出错；右移时最低数位丢0，影响精度\nII.在算术移位的情况下，补码左移的前提条件是其原最高有效位与原符号位要相同\nIII.在算术移位的情况下，双符号位的移位操作只有低符号位需要参加移位操作", "reason": "题干缺失右括号"}
+{"id": 694, "field": "question_hash", "old": "59012173a472b89c256b27bc87b845ac", "new": "9685a76e5ebc11930eea6ae52ae235e0", "reason": "内容修正后重算hash"}
+{"id": 696, "field": "question_hash", "old": "67357c646963ff65309b35a4645c2ce9", "new": "4acc0b297f0818708876d897c6ccfbbf", "reason": "内容修正后重算hash"}
+{"id": 698, "field": "question_hash", "old": "0ba2eb0e99b45089613a74cf53b36c2d", "new": "b1ec0146c952cafedb885ce98e03cc95", "reason": "内容修正后重算hash"}
+{"id": 707, "field": "question_hash", "old": "a186115f41e5e0e4988705461a52b460", "new": "f7fca7de85a3f2eb8310a23294e993e4", "reason": "内容修正后重算hash"}
+{"id": 709, "field": "question_hash", "old": "156ea01db76da1a66678c6544be7e18b", "new": "a62b88b0413e558fab5b27deb4e1d00f", "reason": "内容修正后重算hash"}
+{"id": 710, "field": "question_hash", "old": "cd2fd72d935305b1a3accdda7a76af65", "new": "e83e91db525d737212c149dc7a2d029e", "reason": "内容修正后重算hash"}
+{"id": 711, "field": "question_hash", "old": "9e1f19415a357729248995cff12aacd9", "new": "9db0418c934c95a80894254474b9277e", "reason": "内容修正后重算hash"}
+{"id": 712, "field": "question_hash", "old": "a128a37e0829e435c914e33699bea82e", "new": "737fa8373c06125f2e7c3f30d4573dbf", "reason": "内容修正后重算hash"}
+{"id": 713, "field": "question_hash", "old": "4b98a8c87265a8b201c9597af477f1a0", "new": "6834a5fc5306e925f57b353dffb4b3d8", "reason": "内容修正后重算hash"}
+{"id": 714, "field": "question_hash", "old": "46b67dd412ea348b3a38bc21173bfc35", "new": "9e4ced53f27f24715100b2d3fda8e88d", "reason": "内容修正后重算hash"}
+{"id": 715, "field": "question_hash", "old": "96a7ed0fcd5776e3dbc8c9599febf4b9", "new": "e7d578a176402d01807f7f1a8fa7a892", "reason": "内容修正后重算hash"}
+{"id": 718, "field": "stem", "old": "下列关于舍入的说法，正确的是(\nI.不仅仅只有浮点数需要舍入，定点数在运算时也可能要舍入\nII.在浮点数舍入中，只有左规格化时可能要舍入\nIII.在浮点数舍入中，只有右规格化时可能要舍入\nIV.在浮点数舍入中，左、右规格化均可能要舍入\nV.舍入不一定产生误差.", "new": "下列关于舍入的说法，正确的是()\nI.不仅仅只有浮点数需要舍入，定点数在运算时也可能要舍入\nII.在浮点数舍入中，只有左规格化时可能要舍入\nIII.在浮点数舍入中，只有右规格化时可能要舍入\nIV.在浮点数舍入中，左、右规格化均可能要舍入\nV.舍入不一定产生误差.", "reason": "题干缺失右括号"}
+{"id": 718, "field": "question_hash", "old": "8e0c21289ad98218248f5cd5d512b05a", "new": "984b648824a89e53ccf9332ada152c54", "reason": "内容修正后重算hash"}
+{"id": 719, "field": "question_hash", "old": "69145335612ebfce0b8a8f6ef48b7e17", "new": "4a3d701147c02c4327e9f0e074a32103", "reason": "内容修正后重算hash"}
+{"id": 720, "field": "stem", "old": "【2010 统考真题】假定变量i、f和d 的数据类型分别为 int、float 和double(int 用补码表示,float\n和 double分别用 IEEE754 单精度和双精度浮点数格式表示),已知i=785、f=1.5678E3、d=1.5E100,若在32位机器中执行下列关系表达式，则结果为真的是()。\nI.i= (in)(float)i\nII.f=(float)(int)f\nIII.f=(float)(double)f\nIV. (d+f)-d=f", "new": "【2010 统考真题】假定变量i、f和d 的数据类型分别为 int、float 和double(int 用补码表示,float\n和 double分别用 IEEE754 单精度和双精度浮点数格式表示),已知i=785、f=1.5678E3、d=1.5E100,若在32位机器中执行下列关系表达式，则结果为真的是()。\nI.i=(int)(float)i\nII.f=(float)(int)f\nIII.f=(float)(double)f\nIV.(d+f)-d=f", "reason": "题干内容错识别/缺失"}
+{"id": 720, "field": "question_hash", "old": "ba416f1e57798b2f98e003abde49826f", "new": "775a41ba23ce04e546bbeed2856e7465", "reason": "内容修正后重算hash"}
+{"id": 721, "field": "option_A", "old": "C^{104} 0000H", "new": "C104 0000H", "reason": "选项内容错识别"}
+{"id": 721, "field": "option_B", "old": "C^{242} 0000H", "new": "C242 0000H", "reason": "选项内容错识别"}
+{"id": 721, "field": "option_C", "old": "C^{184} 0000H", "new": "C184 0000H", "reason": "选项内容错识别"}
+{"id": 721, "field": "question_hash", "old": "3f6163ccb12ab0498b81f5793a3204ca", "new": "783a851a43667abef2669c02a4bb2959", "reason": "内容修正后重算hash"}
+{"id": 722, "field": "question_hash", "old": "1fec27e6e354e0b55ffe2a4c51bbefcd", "new": "509d29a8f017187d2ef2c9866da1d098", "reason": "内容修正后重算hash"}
+{"id": 724, "field": "stem", "old": "【2014统考真题】float 型数据常用IEEE754单精度浮点格式表示。假设两个float型变量x和\ny分别存放在 32位寄存器fl 和f2 中，若(f1)=CC90 0000H,(f^{2})=B0C00000H,则x和y之间的关系为()。", "new": "【2014统考真题】float 型数据常用IEEE754单精度浮点格式表示。假设两个float型变量x和\ny分别存放在32位寄存器f1和f2中，若(f1)=CC90 0000H，(f2)=B0C0 0000H，则x和y之间的关系为()。", "reason": "题干内容错识别/缺失"}
+{"id": 724, "field": "question_hash", "old": "d952e556fe22a6f0d67c6d3de766cfc2", "new": "30bebb80c155ff7e420a22344a9c810a", "reason": "内容修正后重算hash"}
+{"id": 725, "field": "stem", "old": "【2015 统考真题】下列有关浮点数加减运算的叙述中，正确的是(\nI.对阶操作不会引起阶码上溢或下溢\nII.右规和尾数舍入都可能引起阶码上溢\nIII.左规时可能引起阶码下溢\nIV.尾数溢出时结果不一定溢出.", "new": "【2015 统考真题】下列有关浮点数加减运算的叙述中，正确的是()\nI.对阶操作不会引起阶码上溢或下溢\nII.右规和尾数舍入都可能引起阶码上溢\nIII.左规时可能引起阶码下溢\nIV.尾数溢出时结果不一定溢出.", "reason": "题干缺失右括号"}
+{"id": 725, "field": "question_hash", "old": "56637eec32df166690aef2b97e27ae18", "new": "48a68803cab72125404c21bc079d35cb", "reason": "内容修正后重算hash"}
+{"id": 726, "field": "question_hash", "old": "f96df792de555790c8dd7d4ee056a407", "new": "90f4485c1af4ab3d45ae73b2d74a0479", "reason": "内容修正后重算hash"}
+{"id": 728, "field": "question_hash", "old": "90c9815ae40060832564594db6bdc0b2", "new": "422dfe46777b7fc530f2107a41553be8", "reason": "内容修正后重算hash"}
+{"id": 729, "field": "question_hash", "old": "3c32d3f113b0ca883ca3a53bffc94434", "new": "acaeadff35093d5c5d13239291969ec9", "reason": "内容修正后重算hash"}
+{"id": 731, "field": "question_hash", "old": "39d43ee94dc73967bbede7664b55e42a", "new": "a9deb4458c984fa613044390a5982367", "reason": "内容修正后重算hash"}
+{"id": 732, "field": "stem", "old": "30.某计算机中有一个8 位加法器，带符号整数x和y的机器数用补码表示,[x]补=F5H,[y]补=7EH,如果在该加法器中计算x-y,则加法器的低位进位输入信息和运算后的溢出标志 OF分别是()。", "new": "某计算机中有一个8 位加法器，带符号整数x和y的机器数用补码表示,[x]补=F5H,[y]补=7EH,如果在该加法器中计算x-y,则加法器的低位进位输入信息和运算后的溢出标志 OF分别是()。", "reason": "源题号残留"}
+{"id": 732, "field": "question_hash", "old": "86552de420e5e62999b4b4c21aca95c3", "new": "e9dd93a1b933b4cb1b0cbbbe77cf977c", "reason": "内容修正后重算hash"}
+{"id": 733, "field": "stem", "old": "31.某8位计算机中,x和y是两个带符号整数，用补码表示,[x]补=44H, [y]补=DCH,则x/2+2y 的机器数及相应的溢出标志 OF分别是()。", "new": "某8位计算机中,x和y是两个带符号整数，用补码表示,[x]补=44H, [y]补=DCH,则x/2+2y 的机器数及相应的溢出标志 OF分别是()。", "reason": "源题号残留"}
+{"id": 733, "field": "question_hash", "old": "9834724f902b649f79a58cc1040a72b9", "new": "975d5b44a863993f1a6d594d66f933dc", "reason": "内容修正后重算hash"}
+{"id": 734, "field": "stem", "old": "32.【2009统考真题】一个C语言程序在一台32位机器上运行。程序中定义了三个变量x、y、Z,其中x和z为int型,y为short型。当x=127、y=-9时，执行赋值语句z=x+y后,x、y、z的值分别是()。", "new": "【2009统考真题】一个C语言程序在一台32位机器上运行。程序中定义了三个变量x、y、Z,其中x和z为int型,y为short型。当x=127、y=-9时，执行赋值语句z=x+y后,x、y、z的值分别是()。", "reason": "源题号残留"}
+{"id": 734, "field": "question_hash", "old": "b20cce0b383a49a566d5e424630a77c7", "new": "635fd531437bc23791dd451e8026935f", "reason": "内容修正后重算hash"}
+{"id": 735, "field": "stem", "old": "33.【2010统考真题】假定有4个整数用8位补码分别表示:r1=FEH、r^{2}=F2H、r^{3}=90H、r^{4}=F8H,若将运算结果存放在一个8位寄存器中，则下列运算会发生溢出的是()。", "new": "【2010统考真题】假定有4个整数用8位补码分别表示：r1=FEH、r2=F2H、r3=90H、r4=F8H，若将运算结果存放在一个8位寄存器中，则下列运算会发生溢出的是()。", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 735, "field": "option_A", "old": "r1r2", "new": "r1×r2", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 735, "field": "option_B", "old": "r2r3", "new": "r2×r3", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 735, "field": "option_C", "old": "r1r4", "new": "r1×r4", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 735, "field": "option_D", "old": "r2r4", "new": "r2×r4", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 735, "field": "question_hash", "old": "c35e7e436823dc7d6cec5779cfdef5f2", "new": "531be3f9cded9bd7ac02217f779850dd", "reason": "内容修正后重算hash"}
+{"id": 736, "field": "media_files", "old": null, "new": {"file": "media/id_736_page_115.png", "kind": "辅助截图：C代码", "page": 115}, "reason": "需关联源页截图"}
+{"id": 736, "field": "stem", "old": "34.【2012统考真题】某计算机存储器按字节编址，采用小端方式存放数据。假定编译器规定 int 和 short 型长度分别为32 位和16位，并且数据按边界对齐存储。某C语言程序段如下: structl\nint\na;\nchar\nb;\nshort\nc;\nrecord;\nrecord.a=273;\n若record 变量的首地址为 0xC008,地址 0xC008中的内容及 record.c 的地址分别为()", "new": "【2012统考真题】某计算机存储器按字节编址，采用小端方式存放数据。假定编译器规定int和short型长度分别为32位和16位，并且数据按边界对齐存储。某C语言程序段如下：\nstruct {\n    int a;\n    char b;\n    short c;\n} record;\nrecord.a=273;\n若record变量的首地址为0xC008，地址0xC008中的内容及record.c的地址分别为()。", "reason": "源题号残留；题干内容错识别/缺失；复杂代码/版式建议截图"}
+{"id": 736, "field": "question_hash", "old": "1c97a01bd4ddc79f2290f34c2340c0d5", "new": "7f2874c4ef450c02c7f0ccf4f0fd8a61", "reason": "内容修正后重算hash"}
+{"id": 737, "field": "media_files", "old": null, "new": {"file": "media/id_737_page_116.png", "kind": "辅助截图：C代码", "page": 116}, "reason": "需关联源页截图"}
+{"id": 737, "field": "stem", "old": "35.【2012统考真题】假定编译器规定 int和 short 类型长度分别为32 位和16位，执行下列C语言语句:\nunsigned short x=65530;\nunsigned int y=x;\n得到y的机器数为( )。", "new": "【2012统考真题】假定编译器规定 int和 short 类型长度分别为32 位和16位，执行下列C语言语句:\nunsigned short x=65530;\nunsigned int y=x;\n得到y的机器数为( )。", "reason": "源题号残留；复杂代码/版式建议截图"}
+{"id": 737, "field": "question_hash", "old": "f05a4110e43a56266dc06935556e4eb3", "new": "4f51f3ff54a6d1f95c984e9f49e416d9", "reason": "内容修正后重算hash"}
+{"id": 738, "field": "stem", "old": "36.【2013统考真题】某字长为8位的计算机中，已知整型变量xy的机器数分别为[x]补= 11110100,[y]补=10110000.若整型变量z=2x+y/2,贝则z的机器数为()", "new": "【2013统考真题】某字长为8位的计算机中，已知整型变量x、y的机器数分别为[x]补=11110100，[y]补=10110000。若整型变量z=2x+y/2，则z的机器数为()。", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 738, "field": "option_B", "old": "0 0100100", "new": "00100100", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 738, "field": "option_C", "old": "1 0101010", "new": "10101010", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 738, "field": "question_hash", "old": "6eb390ea38aa9da5e3109ec08c4d82ec", "new": "ad103246558c452520471c5c9ac556e4", "reason": "内容修正后重算hash"}
+{"id": 739, "field": "stem", "old": "37.【2014 统考真题】若x=103，y=-25，则下列表达式采用8位定点补码运算实现时，会发生溢出的是()。", "new": "【2014 统考真题】若x=103，y=-25，则下列表达式采用8位定点补码运算实现时，会发生溢出的是()。", "reason": "源题号残留"}
+{"id": 739, "field": "question_hash", "old": "8485de3e70d1376ee32cf90f84b4672b", "new": "10f9065e45a0dcb30b2dea5423fa6ab6", "reason": "内容修正后重算hash"}
+{"id": 740, "field": "media_files", "old": null, "new": {"file": "media/id_740_page_119.png", "kind": "辅助截图：C代码", "page": 119}, "reason": "需关联源页截图"}
+{"id": 740, "field": "stem", "old": "38.【2016统考真题】有如下C语言程序段:\nshort si = -32767;\nunsigned short usi = si;\n执行上述两条语句后,usi的值为()", "new": "【2016统考真题】有如下C语言程序段:\nshort si = -32767;\nunsigned short usi = si;\n执行上述两条语句后,usi的值为()", "reason": "源题号残留；复杂代码/版式建议截图"}
+{"id": 740, "field": "question_hash", "old": "b5fa9c5cafe953218826ac24fde2b684", "new": "752532baed5d2df93a0a5e62e61b824b", "reason": "内容修正后重算hash"}
+{"id": 741, "field": "stem", "old": "39.【2016 统考真题】某计算机字长为32 位，按字节编址，采用小端方式存放数据。假定有一个\ndouble 型变量，其机器数表示为1122 3344 55667788H,存放在0000 8040H开始的连续存储单元中，则存储单元 0000 8046H中存放的是()。", "new": "【2016 统考真题】某计算机字长为32 位，按字节编址，采用小端方式存放数据。假定有一个\ndouble 型变量，其机器数表示为1122 3344 55667788H,存放在0000 8040H开始的连续存储单元中，则存储单元 0000 8046H中存放的是()。", "reason": "源题号残留"}
+{"id": 741, "field": "question_hash", "old": "2419010ecc8de62e0e26db6d05162aa0", "new": "9c7d2cb83f26b56e2a559333183d6edf", "reason": "内容修正后重算hash"}
+{"id": 742, "field": "stem", "old": "40.【2018统考真题】假定有符号整数采用补码表示，若int型变量x和y的机器数分别是FFFFFFDFH 和 0000 0041H,则x、y的值及x-y的机器数分别是().", "new": "【2018统考真题】假定有符号整数采用补码表示，若int型变量x和y的机器数分别是FFFFFFDFH 和 0000 0041H,则x、y的值及x-y的机器数分别是().", "reason": "源题号残留"}
+{"id": 742, "field": "question_hash", "old": "19a3c23fd1df13b440b0d047e3d3cc9d", "new": "bb22e55fdde63e01122041efc2f85d27", "reason": "内容修正后重算hash"}
+{"id": 743, "field": "stem", "old": "41.【2018统考真题】某32 位计算机按字节编址，采用小端方式。若语句\"inti=0;对应指令的机器代码为C7 45 FC 00 00 00 00,则语句int i=-64;对应指令的机器代码是()。", "new": "【2018统考真题】某32位计算机按字节编址，采用小端方式。若语句“int i=0;”对应指令的机器代码为C7 45 FC 00 00 00 00，则语句“int i=-64;”对应指令的机器代码是()。", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 743, "field": "option_A", "old": "C^{7} 45 FC C0FF FF FF", "new": "C7 45 FC C0 FF FF FF", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 743, "field": "option_B", "old": "C^{7} 45 FC 0C FFFF FF", "new": "C7 45 FC 0C FF FF FF", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 743, "field": "option_C", "old": "C^{7} 45 FC FF FF FF C0", "new": "C7 45 FC FF FF FF C0", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 743, "field": "option_D", "old": "C^{7} 45 FC FF FF FF 0C", "new": "C7 45 FC FF FF FF 0C", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 743, "field": "question_hash", "old": "e46f5ae8adba5615d4848abdcef0a234", "new": "a5b213426685f90a996d4f5fb089e351", "reason": "内容修正后重算hash"}
+{"id": 744, "field": "stem", "old": "42.【2018统考真题】整数x的机器数为11011000,分别对x进行逻辑右移1位和算术右移1位操作，得到的机器数各是()。", "new": "【2018统考真题】整数x的机器数为11011000,分别对x进行逻辑右移1位和算术右移1位操作，得到的机器数各是()。", "reason": "源题号残留"}
+{"id": 744, "field": "question_hash", "old": "00e753b71e678ce91718ddd233255b3d", "new": "a0a0d67c5c1f7247473eec06251b4543", "reason": "内容修正后重算hash"}
+{"id": 745, "field": "stem", "old": "43.【2018统考真题】减法指令subR1, R^{2}, R3的功能为(R1)-(R^{2})→R^{3}\",该指令执行后将生成进位/借位标志 CF 和溢出标志 OF.若(R1)=FFFF FFFFH,(R^{2})=FFFF FFFOH,则该减法指令执行后, CF与OF分别为()。", "new": "【2018统考真题】减法指令sub R1, R2, R3的功能为(R1)-(R2)→R3，该指令执行后将生成进位/借位标志CF和溢出标志OF。若(R1)=FFFF FFFFH，(R2)=FFFF FFF0H，则该减法指令执行后，CF与OF分别为()。", "reason": "源题号残留；题干内容错识别/缺失"}
+{"id": 745, "field": "question_hash", "old": "1555dfbb176b7fc50fdea2b5f73a2cca", "new": "1e6c6fd2f6f14c206a9c5df3cd3f5d87", "reason": "内容修正后重算hash"}
+{"id": 746, "field": "media_files", "old": null, "new": {"file": "media/id_746_page_125.png", "kind": "辅助截图：C代码", "page": 125}, "reason": "需关联源页截图"}
+{"id": 746, "field": "stem", "old": "44.【2019 统考真题】考虑以下C语言代码:\nunsigned short usi = 65535;\nshort si = usi;\n执行上述程序段后,si的值是()", "new": "【2019 统考真题】考虑以下C语言代码:\nunsigned short usi = 65535;\nshort si = usi;\n执行上述程序段后,si的值是()", "reason": "源题号残留；复杂代码/版式建议截图"}
+{"id": 746, "field": "question_hash", "old": "39216180a6511ec7f984eba0a619f71c", "new": "328d1d47b6b6016a5b97d51d9504e4e4", "reason": "内容修正后重算hash"}
+{"id": 747, "field": "media_files", "old": null, "new": {"file": "media/id_747_page_126.png", "kind": "辅助截图：C结构体", "page": 126}, "reason": "需关联源页截图"}
+{"id": 747, "field": "stem", "old": "45.【2020 统考真题】在按字节编址，采用小端方式的32位计算机中，按边界对齐方式为以下C语言结构型变量a分配存储空间。\nstruct recordl\nshort x1;\nint x2;\na;\n若a的首地址为2020 FE00H，a的成员变量x2的机器数为1234 0000H，则其中34H所在存储单元的地址是()", "new": "【2020 统考真题】在按字节编址、采用小端方式的32位计算机中，按边界对齐方式为以下C语言结构型变量a分配存储空间。\nstruct record {\n    short x1;\n    int x2;\n} a;\n若a的首地址为2020 FE00H，a的成员变量x2的机器数为1234 0000H，则其中34H所在存储单元的地址是()。", "reason": "源题号残留；题干内容错识别/缺失；复杂代码/版式建议截图"}
+{"id": 747, "field": "question_hash", "old": "73e1b20ae598e7be0bebeb6ff1c53d05", "new": "df2a3997f3858b56455b391b6dcbf2e3", "reason": "内容修正后重算hash"}
+{"id": 748, "field": "stem", "old": "2.长度相同但格式不同的两种浮点数，假设前者阶码长、尾数短，后者阶码短、尾数长，其他规定均相同，则它们可表示的数的范围和精度为()。", "new": "长度相同但格式不同的两种浮点数，假设前者阶码长、尾数短，后者阶码短、尾数长，其他规定均相同，则它们可表示的数的范围和精度为()。", "reason": "源题号残留"}
+{"id": 748, "field": "question_hash", "old": "bfc6a79c83ff8d1ae72138d60eed65c1", "new": "c701a631a8ab6f27bc32bbfaa47b60f3", "reason": "内容修正后重算hash"}
+{"id": 749, "field": "stem", "old": "3.长度相同、格式相同的两种浮点数，假设前者基数大，后者基数小，其他规定均相同，则它们可表示的数的范围和精度为()。", "new": "长度相同、格式相同的两种浮点数，假设前者基数大，后者基数小，其他规定均相同，则它们可表示的数的范围和精度为()。", "reason": "源题号残留"}
+{"id": 749, "field": "question_hash", "old": "c7663e8ea966a1b3f73d2b68f5a2bd38", "new": "5ec4e09466415da7d30d14213ca6bc3b", "reason": "内容修正后重算hash"}
+{"id": 750, "field": "stem", "old": "4.下列说法中正确的是()", "new": "下列说法中正确的是()", "reason": "源题号残留"}
+{"id": 750, "field": "question_hash", "old": "0352d037d6c95fc4f5c270ca56a5b15f", "new": "ad5effd9c2721ff8b8154348546df6e6", "reason": "内容修正后重算hash"}
+{"id": 751, "field": "stem", "old": "5.在规格化浮点运算中，若某浮点数为2⁵×1.10101,其中尾数为补码表示，则该数()", "new": "在规格化浮点运算中，若某浮点数为2⁵×1.10101,其中尾数为补码表示，则该数()", "reason": "源题号残留"}
+{"id": 751, "field": "question_hash", "old": "39a862d37e2478a9c9e23e027ada917c", "new": "3769fbb1681171ec349fd51dca5a4cf7", "reason": "内容修正后重算hash"}
+{"id": 752, "field": "stem", "old": "6.某浮点机，采用规格化浮点数表示，阶码用移码表示(最高位代表符号位),尾数用原码表示。下列()的表示不是规格化浮点数。", "new": "某浮点机，采用规格化浮点数表示，阶码用移码表示(最高位代表符号位),尾数用原码表示。下列()的表示不是规格化浮点数。", "reason": "源题号残留"}
+{"id": 752, "field": "question_hash", "old": "179c457a2f70df0bc31b402c28b6cbab", "new": "ebbf84aad3057eb7ccd737fc7a0e9504", "reason": "内容修正后重算hash"}
+{"id": 753, "field": "stem", "old": "7.下列关于对阶操作说法正确的是()", "new": "下列关于对阶操作说法正确的是()", "reason": "源题号残留"}
+{"id": 753, "field": "question_hash", "old": "b133b1bc92fffd624036f3090af763d1", "new": "c3a7124596c1f746918809dca5eae01b", "reason": "内容修正后重算hash"}
+{"id": 754, "field": "stem", "old": "8.浮点数的 IEEE 754 标准对尾数编码采用的是()", "new": "浮点数的 IEEE 754 标准对尾数编码采用的是()", "reason": "源题号残留"}
+{"id": 754, "field": "question_hash", "old": "232101be02d66218d6518759f98ccaa0", "new": "1e288a092345708401d4e3d9474283db", "reason": "内容修正后重算hash"}
+{"id": 755, "field": "stem", "old": "9.在 IEEE 754标准规定的 64 位浮点数格式中，符号位为1位，阶码为11位，尾数为 52 位，则它所能表示的最小规格化负数为().", "new": "在IEEE 754标准规定的64位浮点数格式中，符号位为1位，阶码为11位，尾数为52位，则它所能表示的最小规格化负数为()。", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 755, "field": "option_A", "old": "-(2-25²)>2-1023", "new": "-(2-2^-52)>2^-1023", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 755, "field": "option_B", "old": "-(2-252²)×2+1023", "new": "-(2-2^-52)×2^+1023", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 755, "field": "option_C", "old": "-1×2-1024", "new": "-1×2^-1024", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 755, "field": "option_D", "old": "-(1-2-52)<2+2047", "new": "-(1-2^-52)<2^+2047", "reason": "源题号残留；题干内容错识别/缺失；选项内容错识别"}
+{"id": 755, "field": "question_hash", "old": "c67bf2f3106d2e2ccbb71689fb55e0a3", "new": "b289de13ec329be8a8efed5cafc21319", "reason": "内容修正后重算hash"}
+{"id": 759, "field": "question_hash", "old": "800abbe2df01f0db798abb111e3ceec9", "new": "d408b4cffc33a087749d084c88e90625", "reason": "内容修正后重算hash"}
+{"id": 760, "field": "question_hash", "old": "d93b43603d424ab21f9918cced46635b", "new": "d38bd7b3820e25eed89dd5b7344c6cd3", "reason": "内容修正后重算hash"}
+{"id": 761, "field": "question_hash", "old": "be9e77b6cbc5493c7b6b49f4427c0e83", "new": "ed572b9164e6c2b265ebd57a41bbbc42", "reason": "内容修正后重算hash"}
+{"id": 762, "field": "question_hash", "old": "43a884a0730fb1f1dacf8e8881ef866b", "new": "911905f838668fae466e30e24155f01f", "reason": "内容修正后重算hash"}
+{"id": 763, "field": "question_hash", "old": "7a5c799904b9a292fe3dd33ffabe04da", "new": "fa7ac7061363753078c13193184c1c71", "reason": "内容修正后重算hash"}
+{"id": 765, "field": "question_hash", "old": "a08419e9f831aa93e30ff10b40b2b1f0", "new": "9f176c81d55ac709eba450914105223e", "reason": "内容修正后重算hash"}
+{"id": 767, "field": "stem", "old": "下列关于多级存储系统的说法中，正确的有(\nI.多级存储系统是为了降低存储成本\nII.虚拟存储器中主存和辅存之间的数据调动对任何程序员是透明的\nIII.CPU只能与 Cache直接交换信息,CPU与主存交换信息也需要经过Cache", "new": "下列关于多级存储系统的说法中，正确的有()\nI.多级存储系统是为了降低存储成本\nII.虚拟存储器中主存和辅存之间的数据调动对任何程序员是透明的\nIII.CPU只能与 Cache直接交换信息,CPU与主存交换信息也需要经过Cache", "reason": "题干缺失右括号"}
+{"id": 767, "field": "question_hash", "old": "3c858605356654e505c6d222be58298e", "new": "2a841b905040443bbf1d1e656e3db029", "reason": "内容修正后重算hash"}
+{"id": 768, "field": "question_hash", "old": "98d299559d82341f2a6ef4201cf183e3", "new": "f948592badc546d55a9c24ccf8577383", "reason": "内容修正后重算hash"}
+{"id": 770, "field": "question_hash", "old": "e248a3872818b40c38c4b147ecd4b1a0", "new": "495a69f218b482d357eca3d68fce2c3a", "reason": "内容修正后重算hash"}
+{"id": 771, "field": "question_hash", "old": "358f4e5b363b77da280cd5a71c9b32e2", "new": "f01f217646af8c1c1a9ab41477a25ff7", "reason": "内容修正后重算hash"}
+{"id": 773, "field": "question_hash", "old": "a44b7ec83f39d7a8bfcbff44ee263edf", "new": "6b9a352d209c0d16c4326ef536da6f74", "reason": "内容修正后重算hash"}
+{"id": 774, "field": "question_hash", "old": "3f22e0fb014038748da69bcdd3fc41a8", "new": "b1aeacdb89ab6e12a94ac0a43a43a7cd", "reason": "内容修正后重算hash"}
+{"id": 775, "field": "question_hash", "old": "c5ce858cf5487e26c0906f02d5447176", "new": "839f96cb24024bae2fd9ff3ec6b0a746", "reason": "内容修正后重算hash"}
+{"id": 778, "field": "question_hash", "old": "45c088072dcd57411d6817cc64ce4e85", "new": "f95275acf6efe915148998c3a7cc3c50", "reason": "内容修正后重算hash"}
+{"id": 780, "field": "question_hash", "old": "2d9d0102414803dfc35aa6e27127e430", "new": "2a1061605bd521add72121250f15b33a", "reason": "内容修正后重算hash"}
+{"id": 781, "field": "question_hash", "old": "c45a2fc2d878f7146f8aed9c70aeed45", "new": "91f770ebdd117bb794e120ca3559e455", "reason": "内容修正后重算hash"}
+{"id": 782, "field": "question_hash", "old": "aca44c8a98c6521772e30fe8311bf392", "new": "b5ef548723a4fe79cfae5a588f5ed007", "reason": "内容修正后重算hash"}
+{"id": 783, "field": "question_hash", "old": "9c4af05da610ab062a0753c8d20987d8", "new": "371141dfaf4ff856b6d5d3f82c99885c", "reason": "内容修正后重算hash"}
+{"id": 785, "field": "stem", "old": "下列说法中，正确的是(\nI.高位多体交叉存储器能很好地满足程序的局部性原理\nII.高位四体交叉存储器可能在一个存储周期内连续访问4个模块\nIII.双端口存储器可以同时访问同一区间、同一单元\nIV.双端口存储器当两个端口的地址码相同时，必然会发生冲突", "new": "下列说法中，正确的是()\nI.高位多体交叉存储器能很好地满足程序的局部性原理\nII.高位四体交叉存储器可能在一个存储周期内连续访问4个模块\nIII.双端口存储器可以同时访问同一区间、同一单元\nIV.双端口存储器当两个端口的地址码相同时，必然会发生冲突", "reason": "题干缺失右括号"}
+{"id": 785, "field": "question_hash", "old": "4341475998c33ea2600034fdab703376", "new": "bbf397be6ac4ffc31989d7985cca2c09", "reason": "内容修正后重算hash"}
+{"id": 786, "field": "question_hash", "old": "932a231387cd5837ca1c2eb8f07cd494", "new": "489eee37da8b7e64488c0ff1246e8677", "reason": "内容修正后重算hash"}
+{"id": 787, "field": "stem", "old": "【2010 统考真题】下列有关RAM和ROM的叙述中，正确的是(\nI.RAM是易失性存储器,ROM是非易失性存储器\nII.RAM 和 ROM 都采用随机存取方式进行信息访问\nIII.RAM和 ROM都可用作Cache\nIV.RAM和 ROM 都需要进行刷新", "new": "【2010 统考真题】下列有关RAM和ROM的叙述中，正确的是()\nI.RAM是易失性存储器,ROM是非易失性存储器\nII.RAM 和 ROM 都采用随机存取方式进行信息访问\nIII.RAM和 ROM都可用作Cache\nIV.RAM和 ROM 都需要进行刷新", "reason": "题干缺失右括号"}
+{"id": 787, "field": "question_hash", "old": "0351470883960a9477747a8a615936d6", "new": "4083ba39caccc077dc8ab44281cc1519", "reason": "内容修正后重算hash"}
+{"id": 788, "field": "question_hash", "old": "7a66125198c806f675cc52ec2240a55c", "new": "2dc8d10797e9e3949d9fac1d87d784ce", "reason": "内容修正后重算hash"}
+{"id": 789, "field": "question_hash", "old": "1c5649dd8fb287d77135f10e03e5d03b", "new": "d9bf9e5238f9487cb732b3aa7a3d1ef4", "reason": "内容修正后重算hash"}
+{"id": 790, "field": "question_hash", "old": "52a138aee72b2c256ff02826153fe1d9", "new": "85ce7b30b610ef34f7ab358d5194d1a1", "reason": "内容修正后重算hash"}
+{"id": 791, "field": "question_hash", "old": "32c72dd4e11a3ced66d27501ae7661c6", "new": "dbbdbc051d835de3f9847b44e6e8473d", "reason": "内容修正后重算hash"}
+{"id": 793, "field": "question_hash", "old": "50f1f8087514386c1ca01f325082ee44", "new": "fe475b376f55a03bfb177c51b97cf516", "reason": "内容修正后重算hash"}
+{"id": 794, "field": "question_hash", "old": "5dd6e14629ca1162fe4a5c6d07c78f5c", "new": "414771c39d8b7f49049ab463526a2573", "reason": "内容修正后重算hash"}
+{"id": 795, "field": "question_hash", "old": "b3ada8936f10271bc7bf4eeaefa16d73", "new": "3a82ab402d0e70f6ab1414c85e23485d", "reason": "内容修正后重算hash"}
+{"id": 796, "field": "question_hash", "old": "ba55e9013c346cb005b29900e1dd78dc", "new": "91edfdf1d36a46285ce1478ed1000a0b", "reason": "内容修正后重算hash"}
+{"id": 797, "field": "question_hash", "old": "ea889b5f83f8353bbf56b52403ee6f32", "new": "630a3168fdeb6cf18aaa298914315625", "reason": "内容修正后重算hash"}
+{"id": 798, "field": "question_hash", "old": "d010459b6b6a93e36ee5e9921f389243", "new": "72bd4d26d107567e4728b4be3d0d14f4", "reason": "内容修正后重算hash"}
+{"id": 800, "field": "question_hash", "old": "10250557b38730aa4f9fc37b12ce57c0", "new": "f3edbc51f714362351b5f1949acf50cf", "reason": "内容修正后重算hash"}
+{"id": 801, "field": "media_files", "old": null, "new": {"file": "media/id_801_page_209.png", "kind": "必需截图：译码电路图", "page": 209}, "reason": "需关联源页截图"}
+{"id": 801, "field": "question_hash", "old": "84ee267bf8cb6ad7fdae53334ed61fbc", "new": "df0e06b0682e4f5a368abcce7dc60e5c", "reason": "内容修正后重算hash"}
+{"id": 802, "field": "question_hash", "old": "8230ebb2fb7087b9d1f5bdd6a7758f00", "new": "8b8e76b4e9f6a3b40ce5e4326bef8cb7", "reason": "内容修正后重算hash"}
+{"id": 807, "field": "question_hash", "old": "f40bc36e56d1931347b0f43f58200112", "new": "3ba2effd0280578a9f4668ff1bc2bd42", "reason": "内容修正后重算hash"}
+{"id": 809, "field": "question_hash", "old": "2706de5e4357880f54f4ec4b2a8a3973", "new": "b222e0e69e478890407c8e3d0d60030d", "reason": "内容修正后重算hash"}
+{"id": 810, "field": "question_hash", "old": "06d65ae11baed967c7508bd484a0475c", "new": "2462dad5269c0e44074162d93862bb74", "reason": "内容修正后重算hash"}
+{"id": 811, "field": "question_hash", "old": "9fd07defdb11223f7455ef5fb0b56172", "new": "1946fee91a52974096d488dfdc057cca", "reason": "内容修正后重算hash"}
+{"id": 812, "field": "question_hash", "old": "b1f6fb1ac696926112adb59a571eabd0", "new": "6442882c1326ccb0fb890f13c3fbd4fb", "reason": "内容修正后重算hash"}
+{"id": 813, "field": "question_hash", "old": "b5f20f3027b2d254bb21a6477d1393e6", "new": "f276892b552db8a6d53d3a554413fef5", "reason": "内容修正后重算hash"}
+{"id": 814, "field": "question_hash", "old": "04965c1ac6879ae2cdba8fbac4f3637e", "new": "e7d780d40c304cb344f29e817380c7cc", "reason": "内容修正后重算hash"}
+{"id": 815, "field": "question_hash", "old": "e5f697231a70bea299c878188d3804c7", "new": "caa0f7de20817f56e5bfc6c72ee45b1d", "reason": "内容修正后重算hash"}
+{"id": 816, "field": "stem", "old": "【2013 统考真题】下列选项中，用于提高RAID可靠性的措施有(\nI.磁盘镜像\nII.条带化\nIII.奇偶校验\nIV.增加Cache机制", "new": "【2013 统考真题】下列选项中，用于提高RAID可靠性的措施有()\nI.磁盘镜像\nII.条带化\nIII.奇偶校验\nIV.增加Cache机制", "reason": "题干缺失右括号"}
+{"id": 816, "field": "question_hash", "old": "0a554294f2a83c4dfb53dcdd9b9cc3bc", "new": "93b6a426aebc4348c80fa3b71458225d", "reason": "内容修正后重算hash"}
+{"id": 818, "field": "question_hash", "old": "ffea72606e4d79c92616e693d6484bc5", "new": "b670f8d8a30a568632a7d1de954912c9", "reason": "内容修正后重算hash"}
+{"id": 819, "field": "question_hash", "old": "3623cde70ec8f4caa6cf2593ffd2f18b", "new": "718650b2c87f5e5b9366e982f273b433", "reason": "内容修正后重算hash"}
+{"id": 820, "field": "question_hash", "old": "99eb5f3758c87ea5f73fec846ef9cbcb", "new": "2202a1fda8d9411824ea3b393566d8c7", "reason": "内容修正后重算hash"}
+{"id": 821, "field": "question_hash", "old": "b79f7b99d63e8b3e2b24fa7735682b90", "new": "3aa569ab8529e525ed297c3673f3a5fc", "reason": "内容修正后重算hash"}
+{"id": 822, "field": "question_hash", "old": "b6e62a0c720c7d36448c9594c42afded", "new": "c2ece72541b89af2e8dd6e9559133095", "reason": "内容修正后重算hash"}
+{"id": 824, "field": "question_hash", "old": "ea47cffebf5a0830a656cf0055744fa1", "new": "9af833815adfcb44ec0455c987ae7c90", "reason": "内容修正后重算hash"}
+{"id": 825, "field": "question_hash", "old": "56d2cb49e905641ce70c20ff15f57e4e", "new": "c205f3db7d4f6db950fe3b53cf30e55d", "reason": "内容修正后重算hash"}
+{"id": 827, "field": "question_hash", "old": "34b7a5366f4a068ca6f247c297f93ced", "new": "55f1af30ee95b8d8e7a5223b4b6c20bc", "reason": "内容修正后重算hash"}
+{"id": 833, "field": "stem", "old": "假定采用多模块交叉存储器组织方式，存储器芯片和总线支持突发传送,CPU通过存储器总线读取数据的过程为:发送首地址和读命令需1个时钟周期，存储器准备第一个数据需8个时钟周期，随后每个时钟周期总线上传送1个数据，可连续传送8个数据(即突发长度为8)。若主存和Cache\n之间交换的主存块大小为64B,存取宽度和总线宽度都为8B,则Cache的一次缺失损失至少为(\n个时钟周期。", "new": "假定采用多模块交叉存储器组织方式，存储器芯片和总线支持突发传送,CPU通过存储器总线读取数据的过程为:发送首地址和读命令需1个时钟周期，存储器准备第一个数据需8个时钟周期，随后每个时钟周期总线上传送1个数据，可连续传送8个数据(即突发长度为8)。若主存和Cache\n之间交换的主存块大小为64B,存取宽度和总线宽度都为8B,则Cache的一次缺失损失至少为()个时钟周期。", "reason": "题干缺失右括号"}
+{"id": 833, "field": "question_hash", "old": "875f0d91b60394f3b38e5ab571c32822", "new": "5f30d451124e1a4d04b46435e43f232b", "reason": "内容修正后重算hash"}
+{"id": 834, "field": "question_hash", "old": "157eac4741a2e56a9c3f6faed4b95593", "new": "c9fe2fd3221bef58792a07c76b5236d1", "reason": "内容修正后重算hash"}
+{"id": 837, "field": "question_hash", "old": "5448addb0b2f348992eae72d017462ea", "new": "614300efaf571205c6c1290ee30e51c8", "reason": "内容修正后重算hash"}
+{"id": 838, "field": "media_files", "old": null, "new": {"file": "media/id_838_page_242.png", "kind": "辅助截图：C代码", "page": 242}, "reason": "需关联源页截图"}
+{"id": 838, "field": "stem", "old": "【2016统考真题】有如下C语言程序段:\nfor(k=0;k<1000;k++)\na[k]=a[k]+32;\n若数组a和变量k均为int 型,imt 型数据占4B,数据Cache 采用直接映射方式，数据区大小为1KB、\n块大小为16B,该程序段执行前Cache为空，则该程序段执行过程中访问数组a的 Cache 缺失率约为()。", "new": "【2016统考真题】有如下C语言程序段：\nfor(k=0;k<1000;k++)\n    a[k]=a[k]+32;\n若数组a和变量k均为int型，int型数据占4B，数据Cache采用直接映射方式，数据区大小为1KB、块大小为16B，该程序段执行前Cache为空，则该程序段执行过程中访问数组a的Cache缺失率约为()。", "reason": "题干内容错识别/缺失；复杂代码/版式建议截图"}
+{"id": 838, "field": "question_hash", "old": "1a3dbea72fdbd79aaf3bcb9e3a3093d5", "new": "2c468cbd2e4977424ec0cebb247008e7", "reason": "内容修正后重算hash"}
+{"id": 839, "field": "media_files", "old": null, "new": {"file": "media/id_839_page_243.png", "kind": "辅助截图：C代码", "page": 243}, "reason": "需关联源页截图"}
+{"id": 839, "field": "question_hash", "old": "4699a1e9ed45546a234d03db8eecfd40", "new": "e735638771ae54eda52b6ca5e2840d95", "reason": "内容修正后重算hash"}
+{"id": 842, "field": "question_hash", "old": "a2a6249c401ef136c26d02bbf0886f3e", "new": "49ef68d992908ed3ec5b01c2a766b429", "reason": "内容修正后重算hash"}
+{"id": 843, "field": "question_hash", "old": "f0ce806d678343382851b738b7aba76f", "new": "eedfcbf2dd1f1ed5c762bff5cd19df46", "reason": "内容修正后重算hash"}
+{"id": 845, "field": "question_hash", "old": "85e8c3e7b79e079171cf83ec5e5c9d27", "new": "6cd546cfee329227ab6add156e9b3e2e", "reason": "内容修正后重算hash"}
+{"id": 847, "field": "question_hash", "old": "7c98d352a3ee3fb7fa63cfb13d8ec12b", "new": "946fe80b87f5c50c30f66ac3d00026c2", "reason": "内容修正后重算hash"}
+{"id": 848, "field": "question_hash", "old": "a202657362863bba1701cc7987e0759e", "new": "05c1ca47d344692a4213c6475dade64e", "reason": "内容修正后重算hash"}
+{"id": 849, "field": "question_hash", "old": "ec379c2cd9fc84676d93e0d6087cad36", "new": "fc6bd85c53936c3cee05b37c0483d9f0", "reason": "内容修正后重算hash"}
+{"id": 850, "field": "question_hash", "old": "936ce3c8476b9b7027bb052e65968168", "new": "389a119e71f37f743d5a720ad823e109", "reason": "内容修正后重算hash"}
+{"id": 851, "field": "media_files", "old": null, "new": {"file": "media/id_851_page_255.png", "kind": "必需截图：TLB表", "page": 255}, "reason": "需关联源页截图"}
+{"id": 851, "field": "stem", "old": "【2013 统考真题】某计算机主存地址空间大小为256MB，按字节编址。虚拟地址空间大小为4GB，采用页式存储管理，页面大小为4KB，TLB(快表)采用全相联映射，有4个页表项，内容如下表所示。\n有效位  标记  页框号\n?  FF180H  0002H\n?  3FFF1H  0035H\n?  02FF3H  0351H\n?  03FFFH  0153H\n则对虚拟地址03FFF180H进行虚实地址变换的结果是()", "new": "【2013 统考真题】某计算机主存地址空间大小为256MB，按字节编址。虚拟地址空间大小为4GB，采用页式存储管理，页面大小为4KB，TLB(快表)采用全相联映射，有4个页表项，内容如下表所示。\n有效位  标记  页框号\n0  FF180H  0002H\n1  3FFF1H  0035H\n0  02FF3H  0351H\n1  03FFFH  0153H\n则对虚拟地址03FF F180H进行虚实地址变换的结果是()。", "reason": "题干内容错识别/缺失；题干图表未独立放置"}
+{"id": 851, "field": "question_hash", "old": "3e61b05d870ee6e81525402f4f0fbd01", "new": "0d38c28feb736e2a6d0930880d6867e6", "reason": "内容修正后重算hash"}
+{"id": 854, "field": "question_hash", "old": "da59edcb91a5bbefcf9bf07538077f47", "new": "e4868e1841551c2ae4de5c2510757d79", "reason": "内容修正后重算hash"}
+{"id": 855, "field": "question_hash", "old": "1a507056df269db02878bcbd2ffa1309", "new": "9971b77bbace6c84a3001b9b961326fe", "reason": "内容修正后重算hash"}
+{"id": 856, "field": "media_files", "old": null, "new": {"file": "media/id_856_page_260.png", "kind": "必需截图：页表", "page": 260}, "reason": "需关联源页截图"}
+{"id": 856, "field": "stem", "old": "【2022 统考真题】某计算机主存地址为24位，采用分页虚拟存储管理方式，虚拟地址空间大小为4GB，页大小为4KB，按字节编址。某进程的页表部分内容如下表所示。\n虚页号  实页号(页框号)  存在位\n082H  024H  ?\n129H  180H  ?\n130H  018H  ?\n当CPU访问虚拟地址0008 2840H时，虚-实地址转换的结果是()。", "new": "【2022 统考真题】某计算机主存地址为24位，采用分页虚拟存储管理方式，虚拟地址空间大小为4GB，页大小为4KB，按字节编址。某进程的页表部分内容如下表所示。\n虚页号  实页号(页框号)  存在位\n82H  024H  0\n129H  180H  1\n130H  018H  1\n当CPU访问虚拟地址0008 2840H时，虚-实地址转换的结果是()。", "reason": "题干内容错识别/缺失；选项内容错识别；题干图表未独立放置"}
+{"id": 856, "field": "option_A", "old": "得到主存地址024840H", "new": "得到主存地址02 4840H", "reason": "题干内容错识别/缺失；选项内容错识别；题干图表未独立放置"}
+{"id": 856, "field": "option_C", "old": "得到主存地址018840H", "new": "得到主存地址01 8840H", "reason": "题干内容错识别/缺失；选项内容错识别；题干图表未独立放置"}
+{"id": 856, "field": "question_hash", "old": "ee255b6a3048f1acc5cddf690d0073b3", "new": "dfb264337b102b6b495531900a6e349e", "reason": "内容修正后重算hash"}
+{"id": 857, "field": "question_hash", "old": "93a2a414265d469fb835daf0a5a6f229", "new": "641e0787374d7d3e185bba3b0d943e79", "reason": "内容修正后重算hash"}
+{"id": 859, "field": "question_hash", "old": "0a09e1f3c8d432b10b923c00eb3712a4", "new": "1effb219cb28fbf0be5c6c9df1d1ade9", "reason": "内容修正后重算hash"}
+{"id": 860, "field": "question_hash", "old": "72cfc158ccf5c40d80391e42687cd431", "new": "8cbe289df5a4c4987485a2b9a56bd911", "reason": "内容修正后重算hash"}
+{"id": 861, "field": "question_hash", "old": "c266c219571f531456b427a8b073b4c5", "new": "cc3876483e8bc6ce8883e7b3531e3434", "reason": "内容修正后重算hash"}
+{"id": 862, "field": "question_hash", "old": "a6aa21d0d29b89ab00e249176bb7e0f0", "new": "f6a3e60e3472e176fc951358e5306997", "reason": "内容修正后重算hash"}
+{"id": 864, "field": "question_hash", "old": "0ba560cc3f2ad760bd21b3b0c5e67a01", "new": "c6e930393cf501e12db08fc6c9c7777f", "reason": "内容修正后重算hash"}
+{"id": 866, "field": "question_hash", "old": "b37ae074e7b3750cc65462515eb5f48f", "new": "9b1b5dd418c0305e0d6795acd94a46e8", "reason": "内容修正后重算hash"}
+{"id": 868, "field": "question_hash", "old": "1254e583b2fcf365982e827d5f015d70", "new": "8d3e2709c68f1deed4d4d9f8424fbf0e", "reason": "内容修正后重算hash"}
+{"id": 871, "field": "stem", "old": "【2022 统考真题】下列选项中，属于指令集体系结构(ISA)规定的内容是(\nI.指令字格式和指令类型\nII.CPU的时钟周期\nIII.通用寄存器个数和位数\nIV.加法器的进位方式", "new": "【2022 统考真题】下列选项中，属于指令集体系结构(ISA)规定的内容是()\nI.指令字格式和指令类型\nII.CPU的时钟周期\nIII.通用寄存器个数和位数\nIV.加法器的进位方式", "reason": "题干缺失右括号；选项内容错识别"}
+{"id": 871, "field": "option_D", "old": "仅 I、I、IV", "new": "仅I、III、IV", "reason": "题干缺失右括号；选项内容错识别"}
+{"id": 871, "field": "question_hash", "old": "e88daf3ccf29d89a74f9e3a283e47419", "new": "04bbe19b0b8d6fc7e8115aa3e910c8f3", "reason": "内容修正后重算hash"}
+{"id": 873, "field": "question_hash", "old": "462a38307b7bc60cf91110c7693d27dd", "new": "56e5389a2629ac54e367b9911a08a5e6", "reason": "内容修正后重算hash"}
+{"id": 874, "field": "question_hash", "old": "0a980475ac8eb1499523537523e32db6", "new": "ac07e724fe62ccbd029ed569ddf625ed", "reason": "内容修正后重算hash"}
+{"id": 875, "field": "stem", "old": "为了缩短指令中某个地址段的位数，有效的方法是采取(\n)o", "new": "为了缩短指令中某个地址段的位数，有效的方法是采取()", "reason": "题干尾部/空格噪声"}
+{"id": 875, "field": "question_hash", "old": "3cba5b79dcf219754c5759468aecd4f7", "new": "e5a994d93ee712f5484f21a9c08c7722", "reason": "内容修正后重算hash"}
+{"id": 876, "field": "question_hash", "old": "6102e9911895e46cf39c79b8f9b88d48", "new": "9acdd97a0efcec55dd32ff8b0531b59d", "reason": "内容修正后重算hash"}
+{"id": 877, "field": "question_hash", "old": "441d16070eefe0f4379e9ff22a230303", "new": "3b3a48041893c19eb5027d1709efbc02", "reason": "内容修正后重算hash"}
+{"id": 878, "field": "question_hash", "old": "6f6fb684e06aa33fdd14578cb44d66aa", "new": "981849a71eebcd421fe9cde6111fd22c", "reason": "内容修正后重算hash"}
+{"id": 879, "field": "question_hash", "old": "44f2466e3a88b817caac095c0b933dd3", "new": "fedca0f34d8f702a7178848421218ff0", "reason": "内容修正后重算hash"}
+{"id": 880, "field": "question_hash", "old": "12b9e8ed098caae532538a71e7e9d701", "new": "b8861e8dc4c22e16ea85f875f234e208", "reason": "内容修正后重算hash"}
+{"id": 883, "field": "question_hash", "old": "3152fab0fc5344cdebbda4294252e27e", "new": "a6acfc14f8789a62d3b099bfa57ba794", "reason": "内容修正后重算hash"}
+{"id": 884, "field": "question_hash", "old": "377ff40dc8a36007f97d4226e3a24654", "new": "b8f70aca947599b880f6e4c72f5d37f5", "reason": "内容修正后重算hash"}
+{"id": 885, "field": "question_hash", "old": "340edefb477fda342cb29afdca674fed", "new": "352b3c3d656058e0a0ddba88773e8047", "reason": "内容修正后重算hash"}
+{"id": 886, "field": "question_hash", "old": "039df712731c3a2af3ba3455e6caa7bd", "new": "5faa2be6899b08713c74ff05c2d90b58", "reason": "内容修正后重算hash"}
+{"id": 889, "field": "question_hash", "old": "f9078b764ea5cab1c137276bfa0b3f4f", "new": "ed36873f26b9ac36bc393eb470f70b04", "reason": "内容修正后重算hash"}
+{"id": 890, "field": "question_hash", "old": "c57e175c75ab31b5622b27e270e537be", "new": "c4a431a8603972809f032a89d0bec0d0", "reason": "内容修正后重算hash"}
+{"id": 895, "field": "stem", "old": "【2013 统考真题】假设变址寄存器R的内容为1000H,指令中的形式地址为2000H;地址1000H\n中的内容为2000H,地址 2000H 中的内容为 3000H,地址 3000H 中的内容为 4000H,则变址寻址方式下访问到的操作数是(\n(b", "new": "【2013 统考真题】假设变址寄存器R的内容为1000H,指令中的形式地址为2000H;地址1000H\n中的内容为2000H,地址 2000H 中的内容为 3000H,地址 3000H 中的内容为 4000H,则变址寻址方式下访问到的操作数是()。", "reason": "题干缺失右括号"}
+{"id": 895, "field": "question_hash", "old": "47d2dbeec187e63d57bd3e738842eba9", "new": "3a27f6850080abf045582d50916af371", "reason": "内容修正后重算hash"}
+{"id": 896, "field": "question_hash", "old": "52ed5d07bbf0046d82643075e3e7a9b7", "new": "9ff0e63d0c2f2cb89fed683c7c66f7d6", "reason": "内容修正后重算hash"}
+{"id": 897, "field": "media_files", "old": null, "new": {"file": "media/id_897_page_300.png", "kind": "必需截图：指令格式图", "page": 300}, "reason": "需关联源页截图"}
+{"id": 897, "field": "stem", "old": "【2016统考真题】某指令格式如下所示。\nOP\nM\nI\n其中M为寻址方式，为变址寄存器编号,D为形式地址。若采用先变址后间址的寻址方式，则操作数的有效地址是()。", "new": "【2016统考真题】某指令格式如下所示。\nOP | M | I | D\n其中M为寻址方式，I为变址寄存器编号，D为形式地址。若采用先变址后间址的寻址方式，则操作数的有效地址是()。", "reason": "题干内容错识别/缺失；题干图表未独立放置"}
+{"id": 897, "field": "question_hash", "old": "b4a06ae19b985727c038b20ddce98e9a", "new": "2b47e602e6823205637a4c9b21817640", "reason": "内容修正后重算hash"}
+{"id": 898, "field": "question_hash", "old": "1ee7ba9a82b712b358577da2961f2154", "new": "d37814ad7608cc6aa7143e4ee18a3a9c", "reason": "内容修正后重算hash"}
+{"id": 900, "field": "option_A", "old": "F^{000} FF12H", "new": "F000 FF12H", "reason": "选项内容错识别"}
+{"id": 900, "field": "option_B", "old": "F^{000} FF15H", "new": "F000 FF15H", "reason": "选项内容错识别"}
+{"id": 900, "field": "question_hash", "old": "80fd77146845d8774b7e0a8d5fa2c956", "new": "a0aa6d6c47f0fcb3ed1d6f2ed0378ce6", "reason": "内容修正后重算hash"}
+{"id": 903, "field": "question_hash", "old": "c91425876aef7be35dd15e2db5c73dd1", "new": "6e691c3587812426691ed135718b901e", "reason": "内容修正后重算hash"}
+{"id": 904, "field": "question_hash", "old": "1502a57005b67c669b893949533e6ba2", "new": "5eeca9768f01642b0fa53fea8debf533", "reason": "内容修正后重算hash"}
+{"id": 906, "field": "question_hash", "old": "351029847d1a15440f48d8eb218e31b4", "new": "0651b89884a003df2373c30198382dff", "reason": "内容修正后重算hash"}
+{"id": 907, "field": "question_hash", "old": "81bdf2148b0be727e20a6bff97679ff0", "new": "3d30f1c3a5e9ee262d9dcf47852ca74c", "reason": "内容修正后重算hash"}
+{"id": 908, "field": "question_hash", "old": "af0153dec712e1e4dea0805164ffa882", "new": "57cd7d4b8f018c6978f3caac19c32300", "reason": "内容修正后重算hash"}
+{"id": 909, "field": "stem", "old": "【2011统考真题】下列指令系统的特点中，有利于实现指令流水线的是(\nI.指令格式规整且长度一致,\nII.指令和数据按边界对齐存放\nIII.只有Load/Store 指令才能对操作数进行存储访问.", "new": "【2011统考真题】下列指令系统的特点中，有利于实现指令流水线的是()\nI.指令格式规整且长度一致,\nII.指令和数据按边界对齐存放\nIII.只有Load/Store 指令才能对操作数进行存储访问.", "reason": "题干缺失右括号"}
+{"id": 909, "field": "question_hash", "old": "f40ffd7c22a2af92c85be85d204e8eda", "new": "815d834a01040b8af70342db1918924f", "reason": "内容修正后重算hash"}
+{"id": 910, "field": "question_hash", "old": "2f1424ac28ba70e2e83587400a194d43", "new": "d4b99ed23531eb24753deea55b64bc35", "reason": "内容修正后重算hash"}
+{"id": 911, "field": "question_hash", "old": "cac6e15c484b74dc2216c66e966c4449", "new": "cc47bd20d9458c324cf46c2fdd17244b", "reason": "内容修正后重算hash"}
+{"id": 912, "field": "stem", "old": "CPU中保存当前正在执行指令的寄存器是(\n)c", "new": "CPU中保存当前正在执行指令的寄存器是()", "reason": "题干尾部/空格噪声"}
+{"id": 912, "field": "question_hash", "old": "5398b0c5b31b4a3b9a61e6cc50ae7cca", "new": "ba48bc158aae18bba4e11f420edee618", "reason": "内容修正后重算hash"}
+{"id": 913, "field": "question_hash", "old": "93f54f222349ab56cd26bd10df440a15", "new": "592f2b594456faa8ec93a0c5b3731136", "reason": "内容修正后重算hash"}
+{"id": 914, "field": "question_hash", "old": "ebd86d98f42b4cc702ab6a20ca4e85c5", "new": "bd3e77c404e0091bf6f5aa672a9fc073", "reason": "内容修正后重算hash"}
+{"id": 915, "field": "question_hash", "old": "488ecc5dac49e2d0f810aa7b9b0d70c2", "new": "d5afd09b7c52f2cd5646de0dfccbe081", "reason": "内容修正后重算hash"}
+{"id": 917, "field": "question_hash", "old": "00ce9d03b7fa223fe5c0ae5a30f0609c", "new": "9edd8fe6d7259aa8fbb7743d432b67b8", "reason": "内容修正后重算hash"}
+{"id": 919, "field": "question_hash", "old": "18f63c13cf79347b17409d7acd2a22b5", "new": "249f8bb4500ad8d5e1fa18970f87e6a5", "reason": "内容修正后重算hash"}
+{"id": 920, "field": "question_hash", "old": "9247905b9f0c96d9b99907815b270db5", "new": "cbbd8829619b3895dc235d32cee95c31", "reason": "内容修正后重算hash"}
+{"id": 921, "field": "question_hash", "old": "17b44c0f76b58e8d64701bfb1407fb84", "new": "8d76af64905ccfe02f16007147801a5c", "reason": "内容修正后重算hash"}
+{"id": 923, "field": "question_hash", "old": "3d45112507215e18e70fe2e81586e994", "new": "62ea43a51f2bdb2198390441920cc81f", "reason": "内容修正后重算hash"}
+{"id": 924, "field": "question_hash", "old": "e0c081f290a9345f5286e23d66eea779", "new": "e8b68648e58cedbebb4c948bfb414571", "reason": "内容修正后重算hash"}
+{"id": 925, "field": "question_hash", "old": "210e4e1684df248a77163f0f11c0920e", "new": "b2221112de5fc76fee19f7e0d0575eb8", "reason": "内容修正后重算hash"}
+{"id": 927, "field": "question_hash", "old": "4322c47c4a240bde59f1fbab258c4c7a", "new": "472b5bb3f9e7393361db1b4cf6188bd7", "reason": "内容修正后重算hash"}
+{"id": 928, "field": "stem", "old": "以下关于计算机系统的概念中，正确的是(\nI.CPU不包括地址译码器\nII.CPU的程序计数器中存放的是操作数地址\nIII.CPU中决定指令执行顺序的是程序计数器\nIV.CPU的状态寄存器对用户是完全透明的", "new": "以下关于计算机系统的概念中，正确的是()\nI.CPU不包括地址译码器\nII.CPU的程序计数器中存放的是操作数地址\nIII.CPU中决定指令执行顺序的是程序计数器\nIV.CPU的状态寄存器对用户是完全透明的", "reason": "题干缺失右括号"}
+{"id": 928, "field": "question_hash", "old": "1c73405851716c55d33c1a101320b4cf", "new": "1dffc17933e7bb068793c3315ebb1bbd", "reason": "内容修正后重算hash"}
+{"id": 929, "field": "question_hash", "old": "a490c9fcf6d4c55642cf6bcdf33591ff", "new": "8052010a4d93d9c98ed752c3acf80d28", "reason": "内容修正后重算hash"}
+{"id": 930, "field": "question_hash", "old": "50648b8327c9f03b3410ea731d635834", "new": "3fdd7c92bd9b17a9638c9d3264aaaebe", "reason": "内容修正后重算hash"}
+{"id": 932, "field": "question_hash", "old": "3170a011bc52cc26b7418061029c4947", "new": "806e4dce07f4ab0881a91cb46b881a55", "reason": "内容修正后重算hash"}
+{"id": 933, "field": "question_hash", "old": "f78e491bcedef77747de8b38786207b0", "new": "0da42a7e8c45c6c63c666e7343296f7f", "reason": "内容修正后重算hash"}
+{"id": 934, "field": "question_hash", "old": "7b5069610d732531c74e0ac0a95a59e9", "new": "25df8efdb5e775434c551bd4e7850e9f", "reason": "内容修正后重算hash"}
+{"id": 935, "field": "question_hash", "old": "2fb971d59d8c81852737c2e804003df8", "new": "402b12fba58ab78bd6e0f711fbe4f45c", "reason": "内容修正后重算hash"}
+{"id": 937, "field": "question_hash", "old": "638323497f9ee74d7f0277dbfa16794d", "new": "33a798d6a79781b9e61d6103edcdce5e", "reason": "内容修正后重算hash"}
+{"id": 938, "field": "question_hash", "old": "f91eb93509a2c8d7806664b942eed36b", "new": "722c2bfe322673ae6c70722ba657faab", "reason": "内容修正后重算hash"}
+{"id": 939, "field": "question_hash", "old": "0ac95c17f80a615b777c6f3a847155da", "new": "0d875967e26ad93c6eb777616703429a", "reason": "内容修正后重算hash"}
+{"id": 940, "field": "stem", "old": "由于 CPU内部操作的速度较快，而CPU访问一次存储器的时间较长，因此机器周期通常由(\n来确定。", "new": "由于 CPU内部操作的速度较快，而CPU访问一次存储器的时间较长，因此机器周期通常由()来确定。", "reason": "题干缺失右括号"}
+{"id": 940, "field": "question_hash", "old": "df4c748befa779c8715d6e01fa449cb0", "new": "32708fcd15c92345c9bc73d1df170db1", "reason": "内容修正后重算hash"}
+{"id": 941, "field": "question_hash", "old": "656839852b2257be2a221dd3a04b1e8c", "new": "fc58b12b158759df985b514969096657", "reason": "内容修正后重算hash"}
+{"id": 942, "field": "question_hash", "old": "5ff7d6cad442132dc72c6a0bb80ab478", "new": "7f64a0ac7dacaa1255b258802d698161", "reason": "内容修正后重算hash"}
+{"id": 943, "field": "question_hash", "old": "05319ed0cafd2adb9f8bd4b08d3e48ab", "new": "58ba04405bda3d8bf6f9984e83a1d0f8", "reason": "内容修正后重算hash"}
+{"id": 944, "field": "question_hash", "old": "84236a8e5145a8f46e1a19f3e5960acd", "new": "773856b9b988bf65752e1fef4f6be423", "reason": "内容修正后重算hash"}
+{"id": 945, "field": "question_hash", "old": "ad55c4e5a0f1f2a47ee8ccd52afff3c1", "new": "ffdeddcffa4b6406973b707da1699d60", "reason": "内容修正后重算hash"}
+{"id": 946, "field": "stem", "old": "下列说法中，正确的是（\nI.指令字长等于机器字长的前提下，取指周期等于机器周期\nII.指令字长等于存储字长的前提下，取指周期等于机器周期\nIII.指令字长和机器字长的长度没有任何关系\nIV.为了硬件设计方便，指令字长都和存储字长一样大", "new": "下列说法中，正确的是（）\nI.指令字长等于机器字长的前提下，取指周期等于机器周期\nII.指令字长等于存储字长的前提下，取指周期等于机器周期\nIII.指令字长和机器字长的长度没有任何关系\nIV.为了硬件设计方便，指令字长都和存储字长一样大", "reason": "题干缺失右括号"}
+{"id": 946, "field": "question_hash", "old": "0bc350d9034e5842c6de1fe4d0cc0650", "new": "4c60b6e4a58711c073d1942858215490", "reason": "内容修正后重算hash"}
+{"id": 949, "field": "question_hash", "old": "cbc3b73504da316c8a9c0539e3cadf60", "new": "e8925bcdefb7b4952786020ec3628d41", "reason": "内容修正后重算hash"}
+{"id": 950, "field": "question_hash", "old": "98d40955ced3e98b5b6017b75c695d31", "new": "2af4ca9c20b13ff1184983ef59484839", "reason": "内容修正后重算hash"}
+{"id": 952, "field": "stem", "old": "CPU的读/写控制信号的作用是(\n)o", "new": "CPU的读/写控制信号的作用是()", "reason": "题干尾部/空格噪声"}
+{"id": 952, "field": "question_hash", "old": "5749512d2ae880313141f4e86072e0d2", "new": "10223340cea635751cc9cca8517f102e", "reason": "内容修正后重算hash"}
+{"id": 953, "field": "question_hash", "old": "01937dd2a24af72f853fb9cbd7226c6f", "new": "f871c8714bae0c9c331a469de9b473de", "reason": "内容修正后重算hash"}
+{"id": 954, "field": "question_hash", "old": "99103109cbe31a3632b5671ad52cddd2", "new": "4c2a94c52f6962e817997c4ade586ea1", "reason": "内容修正后重算hash"}
+{"id": 955, "field": "question_hash", "old": "b7421107fb326c431191d4377160d180", "new": "548155616fb38fdb85574526cdeeae38", "reason": "内容修正后重算hash"}
+{"id": 957, "field": "question_hash", "old": "1cc485eb13ab93e7ff7121257fb357a3", "new": "ef17e6bb5bf0b3ceda307505dc141a15", "reason": "内容修正后重算hash"}
+{"id": 958, "field": "question_hash", "old": "05414be6ff4bcdb6b113989d9d4d92db", "new": "9f517d140466b9f3199d0be51b3dda9a", "reason": "内容修正后重算hash"}
+{"id": 959, "field": "question_hash", "old": "8087960147633bed92839e52126e7efb", "new": "25af921725933be6b01b6bdf75eb5fdc", "reason": "内容修正后重算hash"}
+{"id": 961, "field": "question_hash", "old": "c6ba44baa6947af3d74e9f9aa7011a70", "new": "1b8c09006e37a732c373a31f21eb011e", "reason": "内容修正后重算hash"}
+{"id": 963, "field": "question_hash", "old": "54e5f66a8e5ace86cdefdd0b4cfb32bf", "new": "9ffe76544c4b0fc732140bc2bc3be55b", "reason": "内容修正后重算hash"}
+{"id": 964, "field": "question_hash", "old": "c9125631dd6778d5cea2e8a4be7435bf", "new": "5c232405dd5b5482a0a2afcea8d0b7e7", "reason": "内容修正后重算hash"}
+{"id": 965, "field": "question_hash", "old": "aaa7145176311dbaa1fd54fb82dd9e49", "new": "14daf956de38108eff24b49c0c4e0f00", "reason": "内容修正后重算hash"}
+{"id": 966, "field": "question_hash", "old": "2304c841b15af74c2e2dc40c95cbcb23", "new": "c9ae5b3f664e79a0797cc8e1ca8aa2af", "reason": "内容修正后重算hash"}
+{"id": 967, "field": "stem", "old": "在微程序控制方式中，以下说法正确的是(\nI.采用微程序控制器的处理器称为微处理器\nII.每条机器指令由一段微程序来解释执行\nIII.在微指令的编码中，效率最低的是直接编码方式\nIV.水平型微指令能充分利用数据通路的并行结构", "new": "在微程序控制方式中，以下说法正确的是()\nI.采用微程序控制器的处理器称为微处理器\nII.每条机器指令由一段微程序来解释执行\nIII.在微指令的编码中，效率最低的是直接编码方式\nIV.水平型微指令能充分利用数据通路的并行结构", "reason": "题干缺失右括号"}
+{"id": 967, "field": "question_hash", "old": "986cd58393e330250ad4d7f163a294a3", "new": "8e55fbcac967e90c56fbe6f81a83af51", "reason": "内容修正后重算hash"}
+{"id": 968, "field": "stem", "old": "下列说法中，正确的是(\nI.微程序控制方式和硬布线方式相比较，前者可以使指令的执行速度更快\nII.若采用微程序控制方式，则可用\\muPC取代PC\nIII.控制存储器可以用 ROM实现\nIV.指令周期也称 CPU周期", "new": "下列说法中，正确的是()\nI.微程序控制方式和硬布线方式相比较，前者可以使指令的执行速度更快\nII.若采用微程序控制方式，则可用μPC取代PC\nIII.控制存储器可以用 ROM实现\nIV.指令周期也称 CPU周期", "reason": "题干缺失右括号；题干内容错识别/缺失"}
+{"id": 968, "field": "question_hash", "old": "a62467cde6bcbac92c7f3b2ff2fb6699", "new": "691ebce78fcc13f50c50fb4bb8394ee9", "reason": "内容修正后重算hash"}
+{"id": 969, "field": "stem", "old": "通常情况下，一个微程序的周期对应一个(\n)o", "new": "通常情况下，一个微程序的周期对应一个()", "reason": "题干尾部/空格噪声"}
+{"id": 969, "field": "question_hash", "old": "4d616ea35ce053d8e77002541e12ca3c", "new": "298d9612d564b752afbc00536acb476c", "reason": "内容修正后重算hash"}
+{"id": 970, "field": "stem", "old": "下列部件中属于控制部件的是(\nI.指令寄存器\nII.操作控制器\nIII.程序计数器\nIV.状态条件寄存器", "new": "下列部件中属于控制部件的是()\nI.指令寄存器\nII.操作控制器\nIII.程序计数器\nIV.状态条件寄存器", "reason": "题干缺失右括号"}
+{"id": 970, "field": "question_hash", "old": "c40d27132d2de1a545145b64c3dcb478", "new": "d841bc45673a83ba97d789c3056d97a1", "reason": "内容修正后重算hash"}
+{"id": 971, "field": "option_B", "old": "II、II、IV", "new": "II、III、IV", "reason": "选项内容错识别"}
+{"id": 971, "field": "question_hash", "old": "5cf271ffed1d02b2b9f21071514f9ada", "new": "ff820199f01f48aeea44db1cd611b493", "reason": "内容修正后重算hash"}
+{"id": 972, "field": "question_hash", "old": "079edbf96f7ac3c5d33dca345af22fd4", "new": "dd4ac82ef6b4c12456953e65fb804962", "reason": "内容修正后重算hash"}
+{"id": 975, "field": "stem", "old": "【2017统考真题】下列关于主存储器(MM)和控制存储器(CS)的叙述，错误的是(\n)o", "new": "【2017统考真题】下列关于主存储器(MM)和控制存储器(CS)的叙述，错误的是()", "reason": "题干尾部/空格噪声"}
+{"id": 975, "field": "question_hash", "old": "f78db2d7ce6999fcf7982a49944e3d8a", "new": "b3eee2e66b9c4eb1afe6fd40b5b93913", "reason": "内容修正后重算hash"}
+{"id": 976, "field": "question_hash", "old": "39540632fcebe4e80d846d2f814cad62", "new": "a8a79fa6c6163ff061b7005966de8fb8", "reason": "内容修正后重算hash"}
+{"id": 977, "field": "option_C", "old": "仅II、II、IV", "new": "仅II、III、IV", "reason": "选项内容错识别"}
+{"id": 977, "field": "question_hash", "old": "86c5e24525e68ce837f1781581ff655d", "new": "9bf63e2663047e80d6457114036ed756", "reason": "内容修正后重算hash"}
+{"id": 978, "field": "stem", "old": "【2021统考真题】下列寄存器中，汇编语言程序员可见的是(\nI.指令寄存器\nII.微指令寄存器\nIII..基址寄存器\nIV.标志/状态寄存器", "new": "【2021统考真题】下列寄存器中，汇编语言程序员可见的是()\nI.指令寄存器\nII.微指令寄存器\nIII.基址寄存器\nIV.标志/状态寄存器", "reason": "题干缺失右括号；题干内容错识别/缺失"}
+{"id": 978, "field": "question_hash", "old": "0f583d7afc79cd379b83cec2a0564737", "new": "f8d5ea25daa0f33492cef817aba5ff06", "reason": "内容修正后重算hash"}
+{"id": 979, "field": "question_hash", "old": "58e11e24b533fafa77e2ef425f3e1b0a", "new": "34b5dda4b515888ce691b0116b18398d", "reason": "内容修正后重算hash"}
+{"id": 980, "field": "question_hash", "old": "48e0fb3a178ff0b72b3e6a42d74e0fb2", "new": "e506d9da6412ec5084c983e80bbdc72a", "reason": "内容修正后重算hash"}
+{"id": 981, "field": "question_hash", "old": "ae9b28aa826e8e27da077844dafc9f41", "new": "182197ddff7f09bda76d998c50b5dee1", "reason": "内容修正后重算hash"}
+{"id": 983, "field": "question_hash", "old": "eab3f51bbfa5fb376186fd7c961fc450", "new": "f3e11dfe1234ca77377ca97927c21750", "reason": "内容修正后重算hash"}
+{"id": 984, "field": "question_hash", "old": "4afa3631f19517e69ff44e09150d0af3", "new": "7657d6d4579ed29ff3fb02951fa969b6", "reason": "内容修正后重算hash"}
+{"id": 985, "field": "question_hash", "old": "25c9fc4bdcdcdd49d4914a119df8a045", "new": "ee303ad7a8cdfeb8551182e0bae148f2", "reason": "内容修正后重算hash"}
+{"id": 988, "field": "question_hash", "old": "c19e2bf1a997166f6345baa0a122e3ff", "new": "2a1ce82800607a189718cffcebf0a580", "reason": "内容修正后重算hash"}
+{"id": 989, "field": "question_hash", "old": "cac94d375cf10dd7fba7394f91569e5e", "new": "1e1682c35ce43c931fc87de4f5fac951", "reason": "内容修正后重算hash"}
+{"id": 990, "field": "question_hash", "old": "7c567ab13602fcbd14b9521b952564cd", "new": "d788a66448e044b976c2ecca30a72aad", "reason": "内容修正后重算hash"}
+{"id": 991, "field": "question_hash", "old": "418c175fe1e7854770acdf1574f81198", "new": "90ee8de2c61ac7a96520d70786b5ba33", "reason": "内容修正后重算hash"}
+{"id": 992, "field": "question_hash", "old": "8761c72ff4462a533791f4bdfb66bb6f", "new": "bd882ca0b94436989feaf57b1393297c", "reason": "内容修正后重算hash"}
+{"id": 994, "field": "question_hash", "old": "94ce3291c18e8e9311ea52cbce071514", "new": "5c724cc953791992db999009c78f9803", "reason": "内容修正后重算hash"}
+{"id": 995, "field": "question_hash", "old": "4aade0f611dc9bb4081648c3fa71b716", "new": "fe1d00bd17a98c3bc995d590c33b1fea", "reason": "内容修正后重算hash"}
+{"id": 996, "field": "question_hash", "old": "e350901ad88e0394b6e9783cbc50faa7", "new": "9f90b45d48bff4fda5b3f02ec32d681f", "reason": "内容修正后重算hash"}
+{"id": 997, "field": "question_hash", "old": "cf2d1c422ef09cc76b7a53ba3af3c81b", "new": "bed92d1d9c2f3890530dbea9c6116367", "reason": "内容修正后重算hash"}
+{"id": 999, "field": "question_hash", "old": "b0100bf8c7d0eea99e8030e917e7a361", "new": "269e3523db8de98d8d3e20387bfd53a3", "reason": "内容修正后重算hash"}
+{"id": 1000, "field": "question_hash", "old": "8d2d12b26d78271475d87ec4bc5bd010", "new": "296b3b21af4af6bc3eabcd95cfc3706e", "reason": "内容修正后重算hash"}
+{"id": 1002, "field": "question_hash", "old": "87f5f1006b698a0eb9303431e0e7670c", "new": "65a17a1ced7d6b20bf709139f9d7198d", "reason": "内容修正后重算hash"}
+{"id": 1003, "field": "question_hash", "old": "458567aea92eb84b4270779db8f1dceb", "new": "a4e15d870c06348ac22e616beda4ba34", "reason": "内容修正后重算hash"}
+{"id": 1004, "field": "stem", "old": "【2016 统考真题】在无转发机制的五段基本流水线(取指、译码/读寄存器、运算、访存、写回寄存器)中，下列指令序列存在数据冒险的指令对是()。\nI1: add RI, R^{2}, R^{3};\nI^{2}: add R^{5}, R^{2}, R^{4};\nI^{3}: add R^{4}, R^{5}, R^{3};\n14: add R^{5}, R^{2}, R^{6};", "new": "【2016 统考真题】在无转发机制的五段基本流水线(取指、译码/读寄存器、运算、访存、写回寄存器)中，下列指令序列存在数据冒险的指令对是()。\nI1: add R1, R2, R3;    (R2)+(R3)→R1\nI2: add R5, R2, R4;    (R2)+(R4)→R5\nI3: add R4, R5, R3;    (R5)+(R3)→R4\nI4: add R5, R2, R6;    (R2)+(R6)→R5", "reason": "题干内容错识别/缺失"}
+{"id": 1004, "field": "question_hash", "old": "1b377825a240b144efede3c5270c3da0", "new": "c183168c2914fb280ad24af418b4049c", "reason": "内容修正后重算hash"}
+{"id": 1005, "field": "stem", "old": "【2017统考真题】下列关于超标量流水线特性的叙述中，正确的是(\nI.能缩短流水线功能段的处理时间\nII.能在一个时钟周期内同时发射多条指令\nIII.能结合动态调度技术提高指令执行并行性", "new": "【2017统考真题】下列关于超标量流水线特性的叙述中，正确的是()\nI.能缩短流水线功能段的处理时间\nII.能在一个时钟周期内同时发射多条指令\nIII.能结合动态调度技术提高指令执行并行性", "reason": "题干缺失右括号"}
+{"id": 1005, "field": "question_hash", "old": "188f1d56c61b222077cd936ca2e1da16", "new": "e5f743350fed27638708bfc0dc082b84", "reason": "内容修正后重算hash"}
+{"id": 1006, "field": "question_hash", "old": "9201e54936a4b1d6795c9988c0be86ad", "new": "19d6eb4f3d57ededc9696d99d9ad14fe", "reason": "内容修正后重算hash"}
+{"id": 1008, "field": "media_files", "old": null, "new": {"file": "media/id_1008_page_411.png", "kind": "辅助截图：指令序列", "page": 411}, "reason": "需关联源页截图"}
+{"id": 1008, "field": "stem", "old": "【2019 统考真题】在采用取指、译码/取数、执行、访存、写回5段流水线的处理器中，执行如下指令序列，其中s0、s1、s^{2}、s3和t2表示寄存器编号。\nI1: add s^{2},s1,s0\n12: 1oad s^{3},0(t^{2})\nI^{3}: add s^{2},s^{2},s^{3}\n14: store s^{2},0(t^{2})\n下列指令对中，不存在数据冒险的是()。", "new": "【2019 统考真题】在采用取指、译码/取数、执行、访存、写回5段流水线的处理器中，执行如下指令序列，其中s0、s1、s2、s3和t2表示寄存器编号。\nI1: add s2,s1,s0    //R[s2]←R[s1]+R[s0]\nI2: load s3,0(t2)   //R[s3]←M[R[t2]+0]\nI3: add s2,s2,s3    //R[s2]←R[s2]+R[s3]\nI4: store s2,0(t2)  //M[R[t2]+0]←R[s2]\n下列指令对中，不存在数据冒险的是()。", "reason": "题干内容错识别/缺失；复杂代码/版式建议截图"}
+{"id": 1008, "field": "question_hash", "old": "81e0e09365e53f9dda7a6a61d77cb4f2", "new": "500265f1ff2b4a470cdec78a6f433fe0", "reason": "内容修正后重算hash"}
+{"id": 1009, "field": "stem", "old": "【2020统考真题】下列给出的处理器类型中，理想情况下,CPI为1的是(\nI.单周期CPU\nII.多周期CPU\nIII.基本流水线CPU\nIV.超标量流水线CPU", "new": "【2020统考真题】下列给出的处理器类型中，理想情况下,CPI为1的是()\nI.单周期CPU\nII.多周期CPU\nIII.基本流水线CPU\nIV.超标量流水线CPU", "reason": "题干缺失右括号"}
+{"id": 1009, "field": "question_hash", "old": "254001fc8b3380f0b82834c8393b445f", "new": "61fa979c09abd4216c9063956c65d15f", "reason": "内容修正后重算hash"}
+{"id": 1010, "field": "question_hash", "old": "bf168abaaecd3f1c38153275c2cc7c85", "new": "524ddcc1720ef35fdea1f8d69472964d", "reason": "内容修正后重算hash"}
+{"id": 1012, "field": "question_hash", "old": "b105648e613a597180bd46103dc87ba9", "new": "3cdc3df464b2457175746a92eb97b968", "reason": "内容修正后重算hash"}
+{"id": 1013, "field": "question_hash", "old": "9ff58cbd1877fc83f4343ef80535d4c4", "new": "44aa18d5ff992c645aa0d0b920fd13cc", "reason": "内容修正后重算hash"}
+{"id": 1014, "field": "question_hash", "old": "59580927fe1ce3ca36a14b858a5f12b3", "new": "c0f6463c0ad325c42e8d054cbf718976", "reason": "内容修正后重算hash"}
+{"id": 1015, "field": "question_hash", "old": "7e7ad8ed3d34b5cfea23233439c9e51d", "new": "93ff079bbc4b2d02be4fb53b31140647", "reason": "内容修正后重算hash"}
+{"id": 1016, "field": "question_hash", "old": "ec53d218411d446455bebc21b3e62820", "new": "5411b0e3ad7f60c4e159e8d82ffcfea2", "reason": "内容修正后重算hash"}
+{"id": 1017, "field": "stem", "old": "下列关于多处理器的说法中，正确的是(\nI.一般采用偶数路CPU,如2路、4路、6路等\nII.NUMA构架比UMA构架的运算扩展性要強\nIII.UMA 构架需要解决的重要问题是 Cache一致性", "new": "下列关于多处理器的说法中，正确的是()\nI.一般采用偶数路CPU,如2路、4路、6路等\nII.NUMA构架比UMA构架的运算扩展性要強\nIII.UMA 构架需要解决的重要问题是 Cache一致性", "reason": "题干缺失右括号"}
+{"id": 1017, "field": "question_hash", "old": "3785d1967001512f8d177c799eb89bd5", "new": "92bae0d8b26d414433b01bf11426640a", "reason": "内容修正后重算hash"}
+{"id": 1018, "field": "question_hash", "old": "6b8a39201ff0953799bf750470076d48", "new": "aff7c52d86d39fd4cbe1446446b4bbb2", "reason": "内容修正后重算hash"}
+{"id": 1019, "field": "question_hash", "old": "f87a9b4ed02ec06025437b64edf00889", "new": "67e019e6788f52b3aeb143d1a9850dae", "reason": "内容修正后重算hash"}
+{"id": 1021, "field": "question_hash", "old": "23003166d89dc85736b8714a402afd7c", "new": "00f73e82a9f60d9c9fc79682773f68d0", "reason": "内容修正后重算hash"}
+{"id": 1022, "field": "question_hash", "old": "67ba6f25d02ff2621105f9f894335da4", "new": "c108117139d91a3a6544e4dda45c0b05", "reason": "内容修正后重算hash"}
+{"id": 1024, "field": "question_hash", "old": "6e6f19c3fed36fdc4d2b7a9c4cf5e611", "new": "d3662661a61e33304234b09463c492e6", "reason": "内容修正后重算hash"}
+{"id": 1025, "field": "question_hash", "old": "e8974b1ea7a13ff162c6649b0b3d3fa0", "new": "1ca3577deafb5786b0c761975a99be77", "reason": "内容修正后重算hash"}
+{"id": 1026, "field": "question_hash", "old": "73655ff78338f2ccf1d2a8a8528e5884", "new": "d4eac68ced0f51ddaa0a60ffa5cde626", "reason": "内容修正后重算hash"}
+{"id": 1028, "field": "question_hash", "old": "bbdbeedec73bbc0e1ba049badf22b4b1", "new": "d2e945d2c173cf722c118104aab03605", "reason": "内容修正后重算hash"}
+{"id": 1029, "field": "question_hash", "old": "9c9a5940d9ed76c9809920667ad23ec3", "new": "a40d4f92b14e3a0e47bd4ededf66c32d", "reason": "内容修正后重算hash"}
+{"id": 1031, "field": "question_hash", "old": "fd3dc59e92f83a4e5ace766e422f8309", "new": "b5aff00591e8e9c821e87b351a750c81", "reason": "内容修正后重算hash"}
+{"id": 1032, "field": "stem", "old": "微机中控制总线上完整传输的信号有(\nI.存储器和I/O设备的地址码\nII.所有存储器和I/O设备的时序信号与控制信号\nIII.来自I/O设备和存储器的响应信号", "new": "微机中控制总线上完整传输的信号有()\nI.存储器和I/O设备的地址码\nII.所有存储器和I/O设备的时序信号与控制信号\nIII.来自I/O设备和存储器的响应信号", "reason": "题干缺失右括号"}
+{"id": 1032, "field": "question_hash", "old": "afff8aedc4d3f1e5fcda8ab216ed0efc", "new": "e773434b0bb49bd1887db86e09ce4fbd", "reason": "内容修正后重算hash"}
+{"id": 1033, "field": "question_hash", "old": "9c1cf8f294f9f884860e203b926d4ca5", "new": "821526b091a166f0c13fa6ebe37bf863", "reason": "内容修正后重算hash"}
+{"id": 1034, "field": "question_hash", "old": "44c1c6759bfe98b42c19f64d856da968", "new": "aaeb9f5aeff99a86d6856ba2da177987", "reason": "内容修正后重算hash"}
+{"id": 1035, "field": "question_hash", "old": "6212713d8a8543d9eb4d53ad65e54c20", "new": "2b3c50b11a8f6256c199ce1bb6d85d27", "reason": "内容修正后重算hash"}
+{"id": 1036, "field": "question_hash", "old": "16e122225f67fd0a760d355749d69558", "new": "1685a5acf384a753c461e3857a2163a3", "reason": "内容修正后重算hash"}
+{"id": 1037, "field": "question_hash", "old": "860bfc7ec7b67c330cd1453390ad14cd", "new": "89abd5c3e22da2817b8684f35c7ccfa7", "reason": "内容修正后重算hash"}
+{"id": 1040, "field": "question_hash", "old": "cfdb940e1053bd93d71d18c9c102f847", "new": "4ebd818b4177220c5cb78f1a3bcfb61a", "reason": "内容修正后重算hash"}
+{"id": 1043, "field": "question_hash", "old": "81be575b3d0776099fbd7155e4224576", "new": "479770fedc63d820da5113539076c5ae", "reason": "内容修正后重算hash"}
+{"id": 1044, "field": "question_hash", "old": "4b120851d74c3926ee88308d4989d54a", "new": "14acb66fff7047c123523f6fc5bce417", "reason": "内容修正后重算hash"}
+{"id": 1045, "field": "question_hash", "old": "589b377f5a03c2e8447615f3696a6408", "new": "5f0953b296332faf6dc685374228b17f", "reason": "内容修正后重算hash"}
+{"id": 1046, "field": "question_hash", "old": "6068f8752074f37a97118a4b10e174c8", "new": "11daa54b5bdfcfc521b1146ddc738ffc", "reason": "内容修正后重算hash"}
+{"id": 1047, "field": "stem", "old": "【2018统考真题】下列选项中，可提高同步总线数据传输率的是(\nI.增加总线宽度\nII.提高总线工作频率\nIII.支持突发传输\nIV.采用地址/数据线复用", "new": "【2018统考真题】下列选项中，可提高同步总线数据传输率的是()\nI.增加总线宽度\nII.提高总线工作频率\nIII.支持突发传输\nIV.采用地址/数据线复用", "reason": "题干缺失右括号"}
+{"id": 1047, "field": "question_hash", "old": "211de18b2b29fcda9f35aeff63847395", "new": "797638d88a0117cd3fc4eca976486c58", "reason": "内容修正后重算hash"}
+{"id": 1050, "field": "question_hash", "old": "a597ec74b4f307c4c298f525f8ec143c", "new": "d2bf7ec468b58c7f329bcfcadcdb61d0", "reason": "内容修正后重算hash"}
+{"id": 1052, "field": "question_hash", "old": "74ea967a819372d358d8d0e027605e06", "new": "b7a906a51b21391c9b5d92d2dca52dbd", "reason": "内容修正后重算hash"}
+{"id": 1053, "field": "question_hash", "old": "be8f7ae238233439b43803074406cee5", "new": "480f00d98845187e050f1d0d86c81ed6", "reason": "内容修正后重算hash"}
+{"id": 1055, "field": "question_hash", "old": "7dd195910495234b1bfb27b26313efdb", "new": "86048541a02111798773f9080cecdcf6", "reason": "内容修正后重算hash"}
+{"id": 1056, "field": "question_hash", "old": "3b10973f64191a77f4fc195075fe3969", "new": "477f4c31b837e7399508d47d36f74ae7", "reason": "内容修正后重算hash"}
+{"id": 1059, "field": "question_hash", "old": "30d049ff792d1be396f15c852eb53f08", "new": "382d7b9495033575d74f6876f78ff878", "reason": "内容修正后重算hash"}
+{"id": 1060, "field": "question_hash", "old": "538ec01e0a4e2f7e7873d38761577322", "new": "5efca7415a20e3d98bdfeba4938203ab", "reason": "内容修正后重算hash"}
+{"id": 1061, "field": "question_hash", "old": "b41df8f22da3e1c004dd25f1c3732840", "new": "2dba1a369af4548af5685ef2bd3c169f", "reason": "内容修正后重算hash"}
+{"id": 1062, "field": "question_hash", "old": "ef13139100d65868aa6d9c3759ed2bfa", "new": "e26698a8d805cc26a1b9e4b697548cf4", "reason": "内容修正后重算hash"}
+{"id": 1063, "field": "stem", "old": "下列关于I/O 设备的说法中，正确的是（\nI.键盘、鼠标、显示器、打印机属于人机交互设备\nII.在微型计算机中,VGA代表的是视频传输标准\nIII.打印机从打字原理的角度来区分，可分为点阵式打印机和活字式打印机\nIV.鼠标适合于用中断方式来实现输入操作", "new": "下列关于I/O 设备的说法中，正确的是（）\nI.键盘、鼠标、显示器、打印机属于人机交互设备\nII.在微型计算机中,VGA代表的是视频传输标准\nIII.打印机从打字原理的角度来区分，可分为点阵式打印机和活字式打印机\nIV.鼠标适合于用中断方式来实现输入操作", "reason": "题干缺失右括号"}
+{"id": 1063, "field": "question_hash", "old": "5392277aa1dc62b8b01d91c69b59aeb6", "new": "d7e32e2cf6c26fe4b56dfcfb281ecc90", "reason": "内容修正后重算hash"}
+{"id": 1064, "field": "question_hash", "old": "f0fe1fe50fd27493674066f3ca501d37", "new": "53a77d1825198f5b35c2a5d222da23f5", "reason": "内容修正后重算hash"}
+{"id": 1065, "field": "question_hash", "old": "19381afd29883162e4c8dfe36fb08519", "new": "95d77975a219ce651706822edb902ffb", "reason": "内容修正后重算hash"}
+{"id": 1066, "field": "question_hash", "old": "db496e4c9a8e074f45ba695fccfd64ef", "new": "bc4f1b9a192eabdc8ee1e27d9da63d99", "reason": "内容修正后重算hash"}
+{"id": 1067, "field": "question_hash", "old": "a54bdbbc65e64e6988223e8d538204d2", "new": "eff279facb54e58f58270247a01fe727", "reason": "内容修正后重算hash"}
+{"id": 1068, "field": "question_hash", "old": "542806af9a70daee8bfa72872cd3bccc", "new": "805e6e3e7243aab2090ae004ea15d885", "reason": "内容修正后重算hash"}
+{"id": 1069, "field": "stem", "old": "下列功能中，属于I/O接口的功能的是(\nI.数据格式的转换\nII.I/O 过程中错误与状态检测\nIII.I/O操作的控制与定时\nIV.与主机和外设通信", "new": "下列功能中，属于I/O接口的功能的是()\nI.数据格式的转换\nII.I/O 过程中错误与状态检测\nIII.I/O操作的控制与定时\nIV.与主机和外设通信", "reason": "题干缺失右括号"}
+{"id": 1069, "field": "question_hash", "old": "40405165cbd0ea3021189e529e1ed1c2", "new": "197f995142e080de7cdcfe8b7cba3f51", "reason": "内容修正后重算hash"}
+{"id": 1070, "field": "question_hash", "old": "14d73032d0ad6e90bb03a6d78efa4070", "new": "0a6a2a72cc1ad3fdd0de97b9da0c802a", "reason": "内容修正后重算hash"}
+{"id": 1071, "field": "question_hash", "old": "1ae1a6eb722160f43c3eaa7af289dee5", "new": "efd09de210e04fbcc26810199d39211f", "reason": "内容修正后重算hash"}
+{"id": 1072, "field": "question_hash", "old": "0f99714866d4df9ffdebc3c0d23bbc65", "new": "151bd9631f8821dfda3879b3044b49a6", "reason": "内容修正后重算hash"}
+{"id": 1073, "field": "stem", "old": "在统一编址情况下，就IO 设备而言，其对应的IO 地址说法不可取的是(\n)o", "new": "在统一编址情况下，就IO 设备而言，其对应的IO 地址说法不可取的是()", "reason": "题干尾部/空格噪声"}
+{"id": 1073, "field": "question_hash", "old": "cc6503c75c36b4cce4049edc547d5429", "new": "ae60c96f8dbcfe3dcd32c25602d8edb4", "reason": "内容修正后重算hash"}
+{"id": 1075, "field": "question_hash", "old": "cff6fe690696d51e8ba4fbb042c3c911", "new": "2e67979177f8e5130df96785ebbaf6d1", "reason": "内容修正后重算hash"}
+{"id": 1076, "field": "stem", "old": "【2012 统考真题】下列选项中，在I/O总线的数据线上传输的信息包括(\nI.I/O 接口中的命令字\nII.IO 接口中的状态字\nIII.中断类型号", "new": "【2012 统考真题】下列选项中，在I/O总线的数据线上传输的信息包括()\nI.I/O 接口中的命令字\nII.IO 接口中的状态字\nIII.中断类型号", "reason": "题干缺失右括号"}
+{"id": 1076, "field": "question_hash", "old": "2937417e180e25f80159cc3551c0ffd1", "new": "20756afcbf3aa7d43c422500e5db5417", "reason": "内容修正后重算hash"}
+{"id": 1077, "field": "question_hash", "old": "901ed07367bc3c996dcd6dd896e88808", "new": "184fb47b9f3c4c1485fa443e15bb756c", "reason": "内容修正后重算hash"}
+{"id": 1078, "field": "question_hash", "old": "7dcb37b52479873ae8c227e0626bbfcc", "new": "2492b2ee0bd9b650927d9c6a21ab62b6", "reason": "内容修正后重算hash"}
+{"id": 1079, "field": "question_hash", "old": "2f2bb7492a0d562336aa258012de002c", "new": "f388cb46d0c625c40f9f2c4068bb38ca", "reason": "内容修正后重算hash"}
+{"id": 1080, "field": "question_hash", "old": "bb4e261f2a51fb8ad4b8c4a0d53b414e", "new": "60feb6cf6cef886a82140eda8a31a725", "reason": "内容修正后重算hash"}
+{"id": 1081, "field": "question_hash", "old": "0548dd737268b227fdae9aedb247c178", "new": "10704af235184c2cfe99bc35d1224709", "reason": "内容修正后重算hash"}
+{"id": 1082, "field": "stem", "old": "当有中断源发出请求时,CPU可执行相应的中断服务程序，可以提出中断的有(\nI.外部事件\nII.Cache\nIII.虚拟存储器失效.\nIV.浮点数运算下溢\nV.浮点数运算上溢", "new": "当有中断源发出请求时,CPU可执行相应的中断服务程序，可以提出中断的有()\nI.外部事件\nII.Cache\nIII.虚拟存储器失效.\nIV.浮点数运算下溢\nV.浮点数运算上溢", "reason": "题干缺失右括号"}
+{"id": 1082, "field": "question_hash", "old": "e163e3bc20197700135a12ec6fbb04da", "new": "4b34f7b014226a189de8cfa2d950cea5", "reason": "内容修正后重算hash"}
+{"id": 1083, "field": "stem", "old": "关于程序中断方式和DMA方式的叙述，错误的是(\nI.DMA的优先级比程序中断的优先级要高\nII.程序中断方式需要保护现场，DMA方式不需要保护现场\nIII.程序中断方式的中断请求是为了报告CPU数据的传输结束，而DMA方式的中断请求完全是为了传送数据", "new": "关于程序中断方式和DMA方式的叙述，错误的是()\nI.DMA的优先级比程序中断的优先级要高\nII.程序中断方式需要保护现场，DMA方式不需要保护现场\nIII.程序中断方式的中断请求是为了报告CPU数据的传输结束，而DMA方式的中断请求完全是为了传送数据", "reason": "题干缺失右括号"}
+{"id": 1083, "field": "question_hash", "old": "1d45dcbaa54d1ec65499923ded52a853", "new": "025e7a03658e641a7af69e6f0d910104", "reason": "内容修正后重算hash"}
+{"id": 1084, "field": "stem", "old": "下列说法中，错误的是(\nI.程序中断过程是由硬件和中断服务程序共同完成的\nII.在每条指令的执行过程中，每个总线周期要检查一次有无中断请求\nIII.检测有无DMA 请求，一般安排在一条指令执行过程的末尾\nIV.中断服务程序的最后指令是无条件转移指令", "new": "下列说法中，错误的是()\nI.程序中断过程是由硬件和中断服务程序共同完成的\nII.在每条指令的执行过程中，每个总线周期要检查一次有无中断请求\nIII.检测有无DMA 请求，一般安排在一条指令执行过程的末尾\nIV.中断服务程序的最后指令是无条件转移指令", "reason": "题干缺失右括号"}
+{"id": 1084, "field": "question_hash", "old": "2d436eb612312bb20941e09e9c493544", "new": "56b5e332b99e02a399d2cd8d9f548f05", "reason": "内容修正后重算hash"}
+{"id": 1085, "field": "stem", "old": "能产生 DMA 请求的总线部件是(\nI.高速外设\nII.需要与主机批量交换数据的外设\nIII.具有 DMA接口的设备", "new": "能产生 DMA 请求的总线部件是()\nI.高速外设\nII.需要与主机批量交换数据的外设\nIII.具有 DMA接口的设备", "reason": "题干缺失右括号"}
+{"id": 1085, "field": "question_hash", "old": "d795a08f95cee47c44d793226a10c111", "new": "6f5ffd080f1fef9c4f5766635358cce1", "reason": "内容修正后重算hash"}
+{"id": 1086, "field": "question_hash", "old": "a4bb22923ea72045f4a6fd9ff0d05c3c", "new": "f813c0753c618c9dd066ca9a58fa1a4d", "reason": "内容修正后重算hash"}
+{"id": 1087, "field": "question_hash", "old": "5cd335f42478d9421e566ea94b638b19", "new": "821d1dc5dc109a985e588e1a379eb80f", "reason": "内容修正后重算hash"}
+{"id": 1088, "field": "question_hash", "old": "32f09324c3dc966905d998ac5f5ada83", "new": "1d36d57f37b26c1d26f4fa555a7b9577", "reason": "内容修正后重算hash"}
+{"id": 1089, "field": "stem", "old": "在下列情况下，可能不发生中断请求的是(\n)o", "new": "在下列情况下，可能不发生中断请求的是()", "reason": "题干尾部/空格噪声"}
+{"id": 1089, "field": "question_hash", "old": "3e35bc6e79f6a91bba248d21dd84c25a", "new": "f8e8075a99a4d9bfde29af6b9e84ec56", "reason": "内容修正后重算hash"}
+{"id": 1090, "field": "question_hash", "old": "3843f72caace5fdb56ec6819217a0d00", "new": "e0f9e28be61bb3fc1988543f44beb9b8", "reason": "内容修正后重算hash"}
+{"id": 1091, "field": "question_hash", "old": "85b2cf8d46e1ea3e9de35a48ab59502f", "new": "2cc17c863e76bb11c3bd30e79dd988e4", "reason": "内容修正后重算hash"}
+{"id": 1092, "field": "question_hash", "old": "d517fea1938011669e1cabdacb4b096c", "new": "35e8a847a5795bb7956bef85bcce907a", "reason": "内容修正后重算hash"}
+{"id": 1093, "field": "question_hash", "old": "5a87faf94dafe22f137d288beb3b1456", "new": "6a17a27ac45713cdc61a7f9590e376fd", "reason": "内容修正后重算hash"}
+{"id": 1094, "field": "stem", "old": "在中断响应周期中，由(\n)将允许中断触发器置0.", "new": "在中断响应周期中，由()将允许中断触发器置0.", "reason": "题干尾部/空格噪声"}
+{"id": 1094, "field": "question_hash", "old": "a33a563967bd60feca8256a1851bb2ba", "new": "0a61f1df51acf05fb09a158fd4c24aeb", "reason": "内容修正后重算hash"}
+{"id": 1095, "field": "question_hash", "old": "a87be1f46464a9499b661b59532ae8f5", "new": "d8b60bc8ebc32bce9773ecedbccb9d80", "reason": "内容修正后重算hash"}
+{"id": 1096, "field": "question_hash", "old": "69f760028415d03c627d751398f4ef9b", "new": "258bf3decd25aaece4f0fe8bd3d0d5bf", "reason": "内容修正后重算hash"}
+{"id": 1097, "field": "question_hash", "old": "324847b1ff93779274d5904da4c8b0d9", "new": "05831855faf835f8ab62aee45f879188", "reason": "内容修正后重算hash"}
+{"id": 1098, "field": "question_hash", "old": "7aacfeffb517fed7b3de0b31f6238981", "new": "5baf45abdf7593a83538832e2b8a0e69", "reason": "内容修正后重算hash"}
+{"id": 1101, "field": "question_hash", "old": "83bb7e245b658dc6ed121f956cd71d42", "new": "f4c95b81c63f08d343db19e4212f0d81", "reason": "内容修正后重算hash"}
+{"id": 1103, "field": "stem", "old": "关于外中断(故障除外)和DMA,下列说法中正确的是(\n。", "new": "关于外中断(故障除外)和DMA,下列说法中正确的是()。", "reason": "题干缺失右括号"}
+{"id": 1103, "field": "question_hash", "old": "a17ff5d9928faee35c16ccb22c2c2465", "new": "8fa0036553311cf5f5f947c3741eb840", "reason": "内容修正后重算hash"}
+{"id": 1104, "field": "question_hash", "old": "7fe10f6342883728fc79926770a66634", "new": "8c4c9eda6ffed6feea55ea673fdb7e36", "reason": "内容修正后重算hash"}
+{"id": 1108, "field": "question_hash", "old": "de4ca5bd934ca3a8b80b9b6046731831", "new": "70879f5f8064571591222bf6bc754750", "reason": "内容修正后重算hash"}
+{"id": 1109, "field": "question_hash", "old": "2cf9757733044de2e260198705977b11", "new": "4b16fe265e9d9c3d444b6bebed3950e4", "reason": "内容修正后重算hash"}
+{"id": 1110, "field": "stem", "old": "【2010统考真题】单级中断系统中，中断服务程序内的执行顺序是(\nI.保护现场\nII.开中断\nIII.关中断\nIV.保存断点\nV.中断事件处理\nVI.恢复现场\nVII.中断返回", "new": "【2010统考真题】单级中断系统中，中断服务程序内的执行顺序是()\nI.保护现场\nII.开中断\nIII.关中断\nIV.保存断点\nV.中断事件处理\nVI.恢复现场\nVII.中断返回", "reason": "题干缺失右括号"}
+{"id": 1110, "field": "question_hash", "old": "3a48ff5cc7c7641c0b33deba1f34d4ea", "new": "dd0bd9e26ca5fc513dfa1cef942be8e9", "reason": "内容修正后重算hash"}
+{"id": 1111, "field": "stem", "old": "【2011 统考真题】某计算机有五级中断L4~Lo,中断屏蔽字为M4M3MMMo,Mi=1(0\\leqi\\leq\n4)表示对Li级中断进行屏蔽。若中断响应优先级从高到低的顺序是L4LoLLL3,则L的中断处理程序中设置的中断屏蔽字是()。", "new": "【2011 统考真题】某计算机有五级中断L4~L0，中断屏蔽字为M4M3M2M1M0，Mi=1(0≤i≤4)表示对Li级中断进行屏蔽。若中断响应优先级从高到低的顺序是L4→L0→L2→L1→L3，则L1的中断处理程序中设置的中断屏蔽字是()。", "reason": "题干内容错识别/缺失"}
+{"id": 1111, "field": "question_hash", "old": "6f9b98105df830a6fcd5e4527288fab2", "new": "b7d6a6d53a654cee95ab386a9f7b7ce9", "reason": "内容修正后重算hash"}
+{"id": 1113, "field": "stem", "old": "【2012统考真题】响应外部中断的过程中，中断隐指令完成的操作，除保护断点外，还包括(\nI.关中断\nII.保存通用寄存器的内容\nIII.形成中断服务程序入口地址并送PC", "new": "【2012统考真题】响应外部中断的过程中，中断隐指令完成的操作，除保护断点外，还包括()\nI.关中断\nII.保存通用寄存器的内容\nIII.形成中断服务程序入口地址并送PC", "reason": "题干缺失右括号"}
+{"id": 1113, "field": "question_hash", "old": "9e3a94a41edaada4f46a367d30c9479d", "new": "dee61976e9566c97887f0bae48c40391", "reason": "内容修正后重算hash"}
+{"id": 1114, "field": "question_hash", "old": "82f2b7f32a8b025fce47da803e20e9ba", "new": "c447cbb6f07e864c11a48c2e810ea01e", "reason": "内容修正后重算hash"}
+{"id": 1116, "field": "question_hash", "old": "285dbef5fa5931993ece8e0d770652ad", "new": "a606341343d2a3a89bf03559833996e6", "reason": "内容修正后重算hash"}
+{"id": 1117, "field": "question_hash", "old": "e7c4e33ce0802667f542cb6f20eab3ee", "new": "ed7084d258ae088b19cf91ea1c5e8c8c", "reason": "内容修正后重算hash"}
+{"id": 1118, "field": "question_hash", "old": "2f9b436679006117d4859378a7fcc8db", "new": "e5a2064a284d07a26e250751df925bb5", "reason": "内容修正后重算hash"}
+{"id": 1119, "field": "question_hash", "old": "35bc8d40b4591e8a45cd4923c136b23d", "new": "115921da2a000bb22557429bed319538", "reason": "内容修正后重算hash"}
+{"id": 1120, "field": "stem", "old": "【2020统考真题】下列事件中，属于外部中断事件的是()。", "new": "【2020统考真题】下列事件中，属于外部中断事件的是()。\nI.访存时缺页\nII.定时器到时\nIII.网络数据包到达", "reason": "题干内容错识别/缺失"}
+{"id": 1120, "field": "question_hash", "old": "3b4f8383d7652e642c2715543f796f7e", "new": "1e7ded5684244fc425ca6aaaebfe5f3b", "reason": "内容修正后重算hash"}
+{"id": 1124, "field": "question_hash", "old": "355c2ff8eb639c47578705a3b4bd05ec", "new": "699f370bfe472d37d17baaa90c5d2080", "reason": "内容修正后重算hash"}
+{"id": 1125, "field": "question_hash", "old": "4c715d5702e8299672ebfb52d45a4d84", "new": "0fd8763ad38b46c9f854bf17511be196", "reason": "内容修正后重算hash"}
+{"id": 1126, "field": "stem", "old": "下列关于DMA方式的叙述中，正确的是()。I.DMA传送前由设备驱动程序设置传送参数 II.数据传送前由DMA控制器请求总线使用权 III.数据传送由DMA控制器直接控制总线完成 IV.DMA传送结束后的处理由中断服务程序完成", "new": "下列关于DMA方式的叙述中，正确的是()。\nI.DMA传送前由设备驱动程序设置传送参数\nII.数据传送前由DMA控制器请求总线使用权\nIII.数据传送由DMA控制器直接控制总线完成\nIV.DMA传送结束后的处理由中断服务程序完成", "reason": "题干内容错识别/缺失"}
+{"id": 1126, "field": "question_hash", "old": "c78e1b52dc3ba631bb6197c432c1425d", "new": "7e6b591450c196a5a7862665916ca620", "reason": "内容修正后重算hash"}

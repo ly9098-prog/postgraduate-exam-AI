@@ -1,0 +1,77 @@
+﻿id,source_page,field,current_text,source_expected,content_status,rendering_risk,recommended_handling,review_category,media_file,media_status
+672,85,A-D,X_i⊕Y_i；X_iY_i；X_iY_iC_i；X_i+Y_i+C_i,X_i⊕Y_i；X_iY_i；X_iY_iC_i；X_i+Y_i+C_i,正确,低,纯文本可读；支持公式渲染时按下标显示。,公式渲染,,不涉及历史截图
+684,98,stem,C_0、C_1,C_0、C_1,正确,低,纯文本可读；支持公式渲染时按下标显示。,公式渲染,,不涉及历史截图
+685,99,stem,在补码的加减法中，用两位符号位判断溢出，两位符号位S_1S_2=10时，表示(),在补码的加减法中，用两位符号位判断溢出，两位符号位S_{s1}S_{s2}=10时，表示(),已在修正版中更正,中,使用 S_{s1}S_{s2}，避免简化成 S_1S_2。,公式渲染,,不涉及历史截图
+686,100,stem/A-D,X_0、X_1、X_2…X_n,X_0、X_1、X_2…X_n,正确,低,支持公式渲染时按下标显示。,公式渲染,,不涉及历史截图
+713,142,A-D,(+1.125)_10×2^10 等,十进制下标和二次幂,内容可识别,中,发布端应将 _10 和 ^10 渲染为下标/上标；否则使用结构化公式或截图。,公式渲染,,不涉及历史截图
+880,285,stem/A-D,M_SP,M 的下标为 SP,内容可识别,中,建议显示为 M_{SP}；纯文本保留 M_SP 时需防止误读。,公式渲染,,不涉及历史截图
+894,297,B-D,\overline{SF}、\overline{CF+ZF}、\overline{CF+SF},对应逻辑表达式带上划线,内容正确,高,必须确认LaTeX/公式渲染；不能渲染时关联源页公式截图。,公式渲染,,不涉及历史截图
+1111,514,stem,L_4~L_0、M_4M_3M_2M_1M_0、M_i、L_i,对应数字及i均为下标,正确,中,发布端按数学下标渲染，或使用Unicode/结构化公式。,公式渲染,,不涉及历史截图
+633,45,stem/figure,"【2013统考真题】某计算机的主频为1.2GHz，其指令分为4类，它们在基准程序中所占比例及CPI如下表所示。
+指令类型  所占比例  CPI
+A  50%  2
+B  20%  3
+C  10%  4
+D  20%  5
+该机的MIPS数是()。",需保留源页图表或代码截图,正文结构已审计,中,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_633_page_045.png,无法由当前CSV验证
+736,115,stem/figure,"【2012统考真题】某计算机存储器按字节编址，采用小端方式存放数据。假定编译器规定int和short型长度分别为32位和16位，并且数据按边界对齐存储。某C语言程序段如下：
+struct {
+    int a;
+    char b;
+    short c;
+} record;
+record.a=273;
+若record变量的首地址为0xC008，地址0xC008中的内容及record.c的地址分别为()。",需保留源页图表或代码截图,正文结构已审计,中,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_736_page_115.png,无法由当前CSV验证
+737,116,stem/figure,"【2012统考真题】假定编译器规定 int和 short 类型长度分别为32 位和16位，执行下列C语言语句:
+unsigned short x=65530;
+unsigned int y=x;
+得到y的机器数为( )。",需保留源页图表或代码截图,正文结构已审计,中,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_737_page_116.png,无法由当前CSV验证
+740,119,stem/figure,"【2016统考真题】有如下C语言程序段:
+short si = -32767;
+unsigned short usi = si;
+执行上述两条语句后,usi的值为()",需保留源页图表或代码截图,正文结构已审计,中,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_740_page_119.png,无法由当前CSV验证
+746,125,stem/figure,"【2019 统考真题】考虑以下C语言代码:
+unsigned short usi = 65535;
+short si = usi;
+执行上述程序段后,si的值是()",需保留源页图表或代码截图,正文结构已审计,中,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_746_page_125.png,无法由当前CSV验证
+747,126,stem/figure,"【2020 统考真题】在按字节编址、采用小端方式的32位计算机中，按边界对齐方式为以下C语言结构型变量a分配存储空间。
+struct record {
+    short x1;
+    int x2;
+} a;
+若a的首地址为2020 FE00H，a的成员变量x2的机器数为1234 0000H，则其中34H所在存储单元的地址是()。",需保留源页图表或代码截图,正文结构已审计,中,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_747_page_126.png,无法由当前CSV验证
+801,209,stem/figure,如下图所示，若低位地址(A0~A11)接在内存芯片地址引脚上，高位地址(A12~A19)进行片选译码(其中A14和A16未参加译码)，且片选信号低电平有效，则对图中所示的译码电路，不属于此译码空间的地址是()。,需保留源页图表或代码截图,正文结构已审计,高,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_801_page_209.png,无法由当前CSV验证
+838,242,stem/figure,"【2016统考真题】有如下C语言程序段：
+for(k=0;k<1000;k++)
+    a[k]=a[k]+32;
+若数组a和变量k均为int型，int型数据占4B，数据Cache采用直接映射方式，数据区大小为1KB、块大小为16B，该程序段执行前Cache为空，则该程序段执行过程中访问数组a的Cache缺失率约为()。",需保留源页图表或代码截图,正文结构已审计,中,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_838_page_242.png,无法由当前CSV验证
+839,243,stem/figure,"【2017统考真题】某C语言程序段如下:
+for (i=0; i<=9; i++) {
+    temp=1;
+    for (j=0; j<=i; j++)
+        temp *= a[j];
+    sum += temp;
+}
+下列关于数组a的访问局部性的描述中，正确的是()",需保留源页图表或代码截图,正文结构已审计,中,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_839_page_243.png,无法由当前CSV验证
+851,255,stem/figure,"【2013 统考真题】某计算机主存地址空间大小为256MB，按字节编址。虚拟地址空间大小为4GB，采用页式存储管理，页面大小为4KB，TLB(快表)采用全相联映射，有4个页表项，内容如下表所示。
+有效位  标记  页框号
+0  FF180H  0002H
+1  3FFF1H  0035H
+0  02FF3H  0351H
+1  03FFFH  0153H
+则对虚拟地址03FF F180H进行虚实地址变换的结果是()。",需保留源页图表或代码截图,正文结构已审计,中,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_851_page_255.png,无法由当前CSV验证
+856,260,stem/figure,"【2022 统考真题】某计算机主存地址为24位，采用分页虚拟存储管理方式，虚拟地址空间大小为4GB，页大小为4KB，按字节编址。某进程的页表部分内容如下表所示。
+虚页号  实页号(页框号)  存在位
+82H  024H  0
+129H  180H  1
+130H  018H  1
+当CPU访问虚拟地址0008 2840H时，虚-实地址转换的结果是()。",需保留源页图表或代码截图,正文结构已审计,高,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_856_page_260.png,无法由当前CSV验证
+897,300,stem/figure,"【2016统考真题】某指令格式如下所示。
+OP | M | I | D
+其中M为寻址方式，I为变址寄存器编号，D为形式地址。若采用先变址后间址的寻址方式，则操作数的有效地址是()。",需保留源页图表或代码截图,正文结构已审计,中,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_897_page_300.png,无法由当前CSV验证
+1008,411,stem/figure,"【2019 统考真题】在采用取指、译码/取数、执行、访存、写回5段流水线的处理器中，执行如下指令序列，其中s0、s1、s2、s3和t2表示寄存器编号。
+I1: add s2,s1,s0    //R[s2]←R[s1]+R[s0]
+I2: load s3,0(t2)   //R[s3]←M[R[t2]+0]
+I3: add s2,s2,s3    //R[s2]←R[s2]+R[s3]
+I4: store s2,0(t2)  //M[R[t2]+0]←R[s2]
+下列指令对中，不存在数据冒险的是()。",需保留源页图表或代码截图,正文结构已审计,中,确认截图已上传，并通过media_files/parsed_content与当前题目ID关联。,媒体关联,media/id_1008_page_411.png,无法由当前CSV验证

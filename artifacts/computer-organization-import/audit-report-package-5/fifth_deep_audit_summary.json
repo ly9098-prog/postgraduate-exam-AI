@@ -1,0 +1,21 @@
+{
+  "total_rows": 528,
+  "auto_corrected_records": 1,
+  "auto_corrected_fields": 1,
+  "critical_omission_records": 1,
+  "formula_fidelity_review_records": 5,
+  "exact_duplicate_groups": 1,
+  "near_duplicate_groups": 1,
+  "duplicate_records_in_groups": 4,
+  "source_page_suspicion_records": 10,
+  "missing_required_fields_records": 0,
+  "answer_format_error_records": 0,
+  "duplicate_id_count": 0,
+  "unbalanced_parenthesis_records": 0,
+  "historical_media_rows": 13,
+  "media_fields_present": false,
+  "id822_answer_verified": true,
+  "id822_fault_rate": 0.3,
+  "input_sha256": "ceb1b372beddc26e75d98834e8e22c2421c4a101863a8358240a096bea6c278d",
+  "output_sha256": "3a9fd8a3ac12cf4a2f0dd89f71c4bcefd5b9b974f54f07530a6d68e7cf3d8f4b"
+}

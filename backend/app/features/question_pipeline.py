@@ -455,7 +455,9 @@ class QuestionNormalizer:
             prev_empty = False
             lines.append(line)
         text = "\n".join(lines)
-        text = re.sub(r"^\d+\s*[.、)）]\s*", "", text)
+        # 题号前缀剥离：仅在分隔符后非数字时剥离，避免误伤小数/二进制选项
+        # （如 "1.0010101"、"8.4s"、"9.3×10^13" 中的前导数字是选项内容）。
+        text = re.sub(r"^\d+\s*[.、)）](?!\d)\s*", "", text)
         text = deduplicate_repeated_text(text)
         # Repair comparison operators broken across lines (e.g. "if (n <=\n1) return n;")
         text = re.sub(r"(<=|>=|==|!=)\s*\n\s*", r"\1 ", text)
@@ -889,10 +891,14 @@ class QuestionNormalizer:
             return True
         if re.fullmatch(r"[-—_=]{3,}", line):
             return True
-        # Repeating-character separators (xxxxxxxxxx, ==========, etc.) — boundary artifact
-        if re.fullmatch(r"([A-Za-z0-9])\1{4,}", line):
+        # Repeating-letter separators (xxxxxxxxxx, ==========, etc.) — boundary artifact.
+        # Digits excluded: all-same-digit strings are legitimate binary/bit options
+        # (e.g. 11111111, 00000000) in register/bus questions.
+        if re.fullmatch(r"([A-Za-z])\1{4,}", line):
             return True
-        if len(line) <= 2 and not re.search(r"[一-鿿A-Za-z0-9{}\[\]()]", line):
+        # 短行内容判定需把圈号数字（①-⑳）计入内容字符，否则“①、”等题号/序号行会被
+        # 当噪声丢弃（如“①、②所花费的时间之比”中的“①、”）。
+        if len(line) <= 2 and not re.search(r"[一-鿿A-Za-z0-9{}\[\]()①-⑳]", line):
             return True
         return False
 

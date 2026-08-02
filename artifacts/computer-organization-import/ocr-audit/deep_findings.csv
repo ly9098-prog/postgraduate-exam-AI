@@ -1,0 +1,61 @@
+class,severity,id,page,field,db_value,correct_value,note
+A,high,732,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,733,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,734,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,735,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,736,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,737,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,738,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,740,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,741,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,742,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,743,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,744,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,745,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,746,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,748,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,749,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,750,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,751,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,752,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,753,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,754,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,755,,parsed_content.text,嵌入选项行,剥离尾部 A-D 选项行,p111-135 块
+A,high,603,16,parsed_content.text,尾部孤立 'A.',删除孤立 'A.',
+A,high,740,119,parsed_content.text,unsigned short usi 执行,unsigned short usi = si; 执行,块内缺 '= si;'
+A,high,745,124,parsed_content.text,(R1)-(R^{2})R^{3},(R1)-(R^{2})→R^{3},块内缺 '→'
+A,low,746,125,parsed_content.text,```text ... ``` 围栏,去围栏,格式不一致
+B,high,770,174,parsed_content.text,32K16位,32K×16位,
+B,high,783,188,parsed_content.text,64K32 位,64K×32 位,
+B,high,786,191,parsed_content.text,16K8 位 / 64K8 位,16K×8 位 / 64K×8 位,
+B,high,793,198,parsed_content.text,819281928 位,8192×8192×8 位,
+B,high,794,199,parsed_content.text,16K1位 / 64K8位,16K×1位 / 64K×8位,
+B,high,796,204,parsed_content.text,512K8 位,512K×8 位,
+B,high,800,208,parsed_content.text,32K16 位,32K×16 位,
+B,high,802,210,parsed_content.text,2K8位 / 4K4位,2K×8位 / 4K×4位,
+B,high,807,211,parsed_content.text,2K4位 / 8K8位,2K×4位 / 8K×8位,
+B,high,810,214,parsed_content.text,2K1位,2K×1位,
+B,high,1029,432,parsed_content.text,640480,640×480,
+B,high,1065,468,parsed_content.text,1616,16×16,
+B,high,1067,470,parsed_content.text,16001200,1600×1200,
+B,high,719,148,parsed_content.text,X=2729/32,X=2⁷×29/32,
+B,high,719,148,parsed_content.text,Y=\frac{255}{8},Y=2⁵×5/8,
+B,high,751,131,parsed_content.text,若某浮点数为251.10101,若某浮点数为2⁵×1.10101,
+B,high,711,140,parsed_content.text,N1=2mM1和N=2M2,N₁=2ᵐ×M₁和N₂=2ⁿ×M₂,
+C,high,760,164,parsed_options.A,410B/s,4×10⁶B/s,755 需对照原页定稿上下标
+C,high,760,164,parsed_options.C,810B/s,8×10⁶B/s,755 需对照原页定稿上下标
+C,high,760,164,parsed_options.D,8220B/s,8×2²⁰B/s,755 需对照原页定稿上下标
+C,high,755,135,parsed_options.A,-(2-25)>2-1023,-(2-25²)>2-1023,755 需对照原页定稿上下标
+C,high,755,135,parsed_options.B,-(2-252)2+1023,-(2-252²)×2+1023,755 需对照原页定稿上下标
+C,high,755,135,parsed_options.C,-12-1024,-1×2-1024,755 需对照原页定稿上下标
+C,high,1003,406,parsed_options.A,0.25109条指令/秒,0.25×10⁹条指令/秒,755 需对照原页定稿上下标
+C,high,648,61,parsed_options.B,"2""-1",2^(n-1)-1,755 需对照原页定稿上下标
+D,high,880,285,stem,"(A)Msp, (SP)-1SP","(A)→Msp, (SP)-1→SP",
+D,high,880,285,options,"(Msp)A, (SP)+1SP 等","(Msp)→A, (SP)+1→SP 等",
+D,high,1086,489,options,访管程序性机器故障 等,访管→程序性→机器故障 等,
+D,high,1108,511,options,内存数据总线数据通路外设 等,内存→数据总线→数据通路→外设 等,
+D,low,1091,494,options,1234 等,1→2→3→4 等,
+E,medium,866,270,parsed_options.B,23,223,2²³，底数 2 丢失
+F,low,1060,463,parsed_options.D,IVO端口,I/O 端口,
+F,low,1060,463,parsed_options.A,DMA 控製器,DMA 控制器,繁体『製』
+F,low,753,133,parsed_options.B,贝则尾数右移,则尾数右移,OCR 噪声 '贝'

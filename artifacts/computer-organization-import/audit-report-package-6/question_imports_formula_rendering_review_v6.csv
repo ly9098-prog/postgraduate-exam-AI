@@ -1,0 +1,9 @@
+﻿id,source_page,field,current_text,source_expected,content_status,rendering_risk,recommended_handling
+672,85,A-D,X_i⊕Y_i；X_iY_i；X_iY_iC_i；X_i+Y_i+C_i,X_i⊕Y_i；X_iY_i；X_iY_iC_i；X_i+Y_i+C_i,正确,低,纯文本可读；支持公式渲染时按下标显示。
+684,98,stem,C_0、C_1,C_0、C_1,正确,低,纯文本可读；支持公式渲染时按下标显示。
+685,99,stem,在补码的加减法中，用两位符号位判断溢出，两位符号位S_1S_2=10时，表示(),在补码的加减法中，用两位符号位判断溢出，两位符号位S_{s1}S_{s2}=10时，表示(),已在修正版中更正,中,使用 S_{s1}S_{s2}，避免简化成 S_1S_2。
+686,100,stem/A-D,X_0、X_1、X_2…X_n,X_0、X_1、X_2…X_n,正确,低,支持公式渲染时按下标显示。
+713,142,A-D,(+1.125)_10×2^10 等,十进制下标和二次幂,内容可识别,中,发布端应将 _10 和 ^10 渲染为下标/上标；否则使用结构化公式或截图。
+880,285,stem/A-D,M_SP,M 的下标为 SP,内容可识别,中,建议显示为 M_{SP}；纯文本保留 M_SP 时需防止误读。
+894,297,B-D,\overline{SF}、\overline{CF+ZF}、\overline{CF+SF},对应逻辑表达式带上划线,内容正确,高,必须确认LaTeX/公式渲染；不能渲染时关联源页公式截图。
+1111,514,stem,L_4~L_0、M_4M_3M_2M_1M_0、M_i、L_i,对应数字及i均为下标,正确,中,发布端按数学下标渲染，或使用Unicode/结构化公式。

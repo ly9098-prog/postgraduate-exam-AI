@@ -1,0 +1,14 @@
+{"id": 652, "field_changes": {"stem": null, "options": {"A": ["X1为0,其他各位任意", "x1为0,其他各位任意"], "B": ["X1为1,其他各位任意", "x1为1,其他各位任意"]}}, "old_hash": "c895f8de37ae3ca3ca3f34df20cadcde", "new_hash": "ae279d9cc856ba4d8ff198a8f849089d"}
+{"id": 653, "field_changes": {"stem": null, "options": {"A": ["X1~x5至少有一个为1", "x1~x5至少有一个为1"]}}, "old_hash": "5baf74cb6e5e45f05fc0830d28f9392e", "new_hash": "aefce95d744421c8fb44232e6335cf31"}
+{"id": 752, "field_changes": {"stem": null, "options": {"A": ["11111111，1.1000...00", "1111111，1.1000...00"]}}, "old_hash": "e093f0fc7a4158762014654fe20dc8cd", "new_hash": "8be02402764ccf8be0f138de1b672219"}
+{"id": 880, "field_changes": {"stem": ["堆栈寻址方式中，设A为累加器,SP 为堆栈指示器,MsP为 SP指示的栈顶单元。若进栈操作的动作是(A)→Msp, (SP)-1→SP,则出栈操作的动作应为()。", "堆栈寻址方式中，设A为累加器,SP 为堆栈指示器,M_SP为 SP指示的栈顶单元。若进栈操作的动作是(A)→M_SP, (SP)-1→SP,则出栈操作的动作应为()。"], "options": {"A": ["(Msp)→A, (SP)+1→SP", "(M_SP)→A, (SP)+1→SP"], "B": ["(SP)+1→SP, (MsP)→A", "(SP)+1→SP, (M_SP)→A"], "C": ["(SP)-1→SP, (MsP)→A", "(SP)-1→SP, (M_SP)→A"], "D": ["(MsP)→A, (SP)-1→SP", "(M_SP)→A, (SP)-1→SP"]}}, "old_hash": "bef146a48deee4be1bb676e7dc723ad6", "new_hash": "bf7f5245a34fa4d4453d1d60861540f8"}
+{"id": 894, "field_changes": {"stem": null, "options": {"B": ["SF+ OF =1", "\\overline{SF}+OF=1"], "C": ["CF+ ZF =1", "\\overline{CF+ZF}=1"], "D": ["CF+SF =1", "\\overline{CF+SF}=1"]}}, "old_hash": "b56a4c82488309f0294d9e2f81ec63ad", "new_hash": "4e92d6425270681b663ed63390ca4803"}
+{"id": 1012, "field_changes": {"stem": null, "options": {"A": ["超线程技术可以令四核的 IntelCorei7处理器变成八核", "超线程技术可以令四核的 Intel Corei7处理器变成八核"]}}, "old_hash": "9871d307dceb02e6764de9e27f711187", "new_hash": "7431cd841d3a579a50d70d8002ad1222"}
+{"id": 634, "field": "review_note_append", "note": "四次审计：题干中“M.上的”疑似“M上的”，PDF源页亦如此，未自动修改"}
+{"id": 677, "field": "review_note_append", "note": "四次审计：B项“010010101”为9位，而该题为8位补码定点整数，A/C/D均为8位，PDF源页亦如此，疑似源题录入错误，未自动修改"}
+{"id": 678, "field": "review_note_append", "note": "四次审计：源页末尾中英文句号并存，疑似排版笔误，未自动修改"}
+{"id": 755, "field": "review_note_append", "note": "四次审计：A/D 中“>”“<”疑似应为“×”，需以权威教材/真题为准，未自动修改"}
+{"id": 826, "field": "review_note_append", "note": "四次审计：“IMB”疑似“1MB”，但 PDF 源页亦为 IMB，未自动修改"}
+{"id": 903, "field": "review_note_append", "note": "四次审计：“寄存器的内存”疑似“寄存器的内容”，但 PDF 源页如此，未自动修改"}
+{"id": 996, "field": "review_note_append", "note": "四次审计：“取值”疑似“取指”，但 PDF 源页如此，未自动修改"}
+{"id": 1049, "field": "review_note_append", "note": "四次审计：“全工同步”疑似“全双工”，但 PDF 源页如此，未改"}
