@@ -579,6 +579,12 @@ def _merge_cross_page_blocks(
     cross_page_links: list[dict] = []
     merge_results: list[dict] = []
 
+    # Workbooks with exactly one self-contained question per page have no real
+    # cross-page continuations; the heuristic falsely merges every page pair.
+    # Env DISABLE_CROSS_PAGE_MERGING=1 turns it off (cs_ds.pdf case).
+    if os.environ.get("DISABLE_CROSS_PAGE_MERGING", "") == "1":
+        return blocks, cross_page_links, warnings, merge_results
+
     if len(blocks) < 2:
         return blocks, cross_page_links, warnings, merge_results
 
@@ -1225,7 +1231,11 @@ def _ocr_scanned_pdf(
 
             for i in range(batch_start, batch_end):
                 page_idx = start_idx + i
-                pix = doc[page_idx].get_pixmap(dpi=150)
+                # 150 DPI OCR is prone to digit/letter confusions (8↔B, 0↔O,
+                # 1↔I) on dense scanned pages; 200 DPI is a reliable middle
+                # ground (env-tunable).
+                _ocr_dpi = int(os.environ.get("OCR_RENDER_DPI", "200"))
+                pix = doc[page_idx].get_pixmap(dpi=_ocr_dpi)
                 png_bytes = pix.tobytes("png")
                 page_dimensions[page_idx + 1] = (pix.width, pix.height)
                 del pix
@@ -4851,7 +4861,10 @@ class ImportPipeline:
                     q_bbox = q.get("question_bbox")
                     if q_bbox and len(q_bbox) == 4:
                         from app.core.executor_registry import get_executor
-                        from app.services.visual_region_cropper import crop_region
+                        from app.services.visual_region_cropper import (
+                            CoordinateSpace,
+                            crop_region,
+                        )
 
                         png_bytes = await get_executor("image").run(
                             crop_region,

@@ -1,0 +1,17 @@
+{
+  "absolute_path": "/home/lmh/projects/postgraduate-ai/ocr_test/import/cs_ds.pdf",
+  "filename": "cs_ds.pdf",
+  "display_name": "计算机组成原理.pdf",
+  "sha256": "b37ea6501536bc1a96a0b528cde64c9bf8c04325c43491663c1a072eac90f939",
+  "file_size": 54452210,
+  "total_pages": 528,
+  "page_width": 567.0,
+  "page_height": 425.3399963378906,
+  "page_orientation": "landscape",
+  "embedded_text_available": false,
+  "scanned_pdf": true,
+  "created_at": "2023-11-18T18:06:54",
+  "analyzed_at": "2026-08-02T00:00:00",
+  "page_count_verified_by": ["pypdf", "PyMuPDF"],
+  "notes": "纯扫描版 PDF，无文本层。528 页为 pypdf 与 PyMuPDF 双引擎一致结果（任务描述中的 532 为估算值，以实测为准）。页面为横向 A4 尺寸。"
+}

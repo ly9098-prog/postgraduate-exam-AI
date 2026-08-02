@@ -1,0 +1,11 @@
+风中易小生·24考研计算机WD计组做题本【选择题
+0
+2.3 浮点数的表示与运算
+一、单项选择题（本部分答案在书 P55）1.在C 语言的不同类型的数据混合运算中，要先转换成同
+一类型后进行运算。设一表达式中包含有 int、long、char 和 double 类型的变量与数据，则表达式
+最后的运算结果是(
+),这4种类型数据的转换规律是(
+A. long，int→char→→double→long
+B. long， char→int→long→double
+C.double，char→int→→long→double
+D.double，char→int→double→long
