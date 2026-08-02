@@ -1,0 +1,219 @@
+{
+  "source_document": "27张宇数学公式手册.pdf",
+  "document_path": "/home/lmh/projects/postgraduate-ai/ocr_test/import/27张宇数学公式手册.pdf",
+  "total_pdf_pages": 190,
+  "page_mapping": "0-indexed PDF page = printed page + 7 (offset +7 verified against printed page corners on PDF pages 46-90/126)",
+  "analysis_date": "2026-08-02",
+  "parts": [
+    {
+      "part": "第一部分 高等数学",
+      "chapters": [
+        {
+          "chapter": "第一章 函数、极限、连续",
+          "printed_start": 2,
+          "pdf_start": 9,
+          "status": "existing_complete",
+          "note": "函数/极限/无穷小量/连续 均有卡片覆盖"
+        },
+        {
+          "chapter": "第二章 一元函数微分学",
+          "printed_start": 13,
+          "pdf_start": 20,
+          "status": "existing_complete",
+          "note": "导数微分/中值定理/洛必达/函数性态/曲率 均有覆盖"
+        },
+        {
+          "chapter": "第三章 一元函数积分学",
+          "printed_start": 24,
+          "pdf_start": 31,
+          "status": "existing_complete",
+          "note": "不定积分/定积分/反常积分 均有覆盖"
+        },
+        {
+          "chapter": "第四章 向量代数和空间解析几何",
+          "printed_start": 39,
+          "pdf_start": 46,
+          "status": "missing",
+          "note": "旧范围排除，本次全部补全（向量代数/平面与直线/曲面与曲线）",
+          "sections": [
+            {
+              "section": "一、向量代数",
+              "printed": "39-40",
+              "pdf": "46-47",
+              "status": "added"
+            },
+            {
+              "section": "二、空间平面与直线",
+              "printed": "40-42",
+              "pdf": "47-49",
+              "status": "added"
+            },
+            {
+              "section": "三、空间曲面与曲线",
+              "printed": "42-44",
+              "pdf": "49-51",
+              "status": "added"
+            }
+          ]
+        },
+        {
+          "chapter": "第五章 多元函数微分学",
+          "printed_start": 45,
+          "pdf_start": 52,
+          "status": "existing_incomplete",
+          "note": "偏导数/隐函数/方向导数/极值已有；补全“偏导数在几何中的应用”",
+          "sections": [
+            {
+              "section": "四、偏导数在几何中的应用",
+              "printed": "47-48",
+              "pdf": "54-55",
+              "status": "added"
+            }
+          ]
+        },
+        {
+          "chapter": "第六章 多元函数积分学",
+          "printed_start": 50,
+          "pdf_start": 57,
+          "status": "existing_incomplete",
+          "note": "二重积分已有；补全三重积分、重积分应用、曲线积分、曲面积分",
+          "sections": [
+            {
+              "section": "一(续)、三重积分的计算",
+              "printed": "51-52",
+              "pdf": "58-59",
+              "status": "added"
+            },
+            {
+              "section": "二、重积分的应用",
+              "printed": "53-55",
+              "pdf": "60-62",
+              "status": "added"
+            },
+            {
+              "section": "三、曲线积分",
+              "printed": "56-58",
+              "pdf": "63-65",
+              "status": "added"
+            },
+            {
+              "section": "三、曲面积分",
+              "printed": "58-60",
+              "pdf": "65-67",
+              "status": "added"
+            }
+          ]
+        },
+        {
+          "chapter": "第七章 级数",
+          "printed_start": 61,
+          "pdf_start": 68,
+          "status": "missing",
+          "note": "旧范围排除，本次全部补全",
+          "sections": [
+            {
+              "section": "一、数项级数",
+              "printed": "61-65",
+              "pdf": "68-72",
+              "status": "added"
+            },
+            {
+              "section": "二、幂级数",
+              "printed": "65-69",
+              "pdf": "72-76",
+              "status": "added"
+            },
+            {
+              "section": "三、傅里叶级数",
+              "printed": "70-73",
+              "pdf": "77-80",
+              "status": "added"
+            }
+          ]
+        },
+        {
+          "chapter": "第八章 常微分方程及差分方程",
+          "printed_start": 74,
+          "pdf_start": 81,
+          "status": "existing_incomplete",
+          "note": "一阶/高阶/结构定理/欧拉方程已有；补全“差分方程”",
+          "sections": [
+            {
+              "section": "七、差分方程",
+              "printed": "81-82",
+              "pdf": "88-89",
+              "status": "added"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "第二部分 线性代数",
+      "chapters": [
+        {
+          "chapter": "第一章 行列式",
+          "printed_start": 84,
+          "pdf_start": 91,
+          "status": "existing_complete",
+          "note": "定义性质/展开定理/特殊行列式/重要公式 均有覆盖"
+        },
+        {
+          "chapter": "第二章 矩阵",
+          "printed_start": 91,
+          "pdf_start": 98,
+          "status": "existing_complete",
+          "note": "定义运算/秩/分块/初等变换 均有覆盖"
+        },
+        {
+          "chapter": "第三章 向量",
+          "printed_start": 111,
+          "pdf_start": 118,
+          "status": "existing_incomplete",
+          "note": "n维向量/线性相关/极大无关组/施密特已有；补全“n维向量空间”",
+          "sections": [
+            {
+              "section": "五、n维向量空间",
+              "printed": "119-121",
+              "pdf": "126-128",
+              "status": "added"
+            }
+          ]
+        },
+        {
+          "chapter": "第四章 线性方程组",
+          "printed_start": 123,
+          "pdf_start": 130,
+          "status": "existing_complete",
+          "note": "表示形式/判别条件/解的结构 均有覆盖"
+        },
+        {
+          "chapter": "第五章 矩阵的特征值和特征向量",
+          "printed_start": 128,
+          "pdf_start": 135,
+          "status": "existing_complete",
+          "note": "特征值/特征向量/对角化 均有覆盖"
+        },
+        {
+          "chapter": "第六章 二次型",
+          "printed_start": 132,
+          "pdf_start": 139,
+          "status": "existing_complete",
+          "note": "表示法/正定判定 均有覆盖"
+        }
+      ]
+    },
+    {
+      "part": "第三部分 概率论与数理统计",
+      "printed_range": "138-168",
+      "status": "excluded_probability_statistics",
+      "note": "本任务唯一排除的部分，未创建任何分类或卡片"
+    },
+    {
+      "part": "附录 初等数学",
+      "printed_start": 170,
+      "status": "existing_complete",
+      "note": "已由 v3 源文件（math2_core_v3_elementary.json）完整覆盖，本次不重复导入"
+    }
+  ]
+}
