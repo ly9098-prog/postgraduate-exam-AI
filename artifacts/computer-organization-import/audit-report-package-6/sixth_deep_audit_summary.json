@@ -1,0 +1,33 @@
+{
+  "total_rows": 526,
+  "previous_rows": 528,
+  "removed_records": [
+    "866",
+    "947"
+  ],
+  "added_records": [],
+  "updated_record_ids": [
+    "672",
+    "684",
+    "685",
+    "686",
+    "1111"
+  ],
+  "confirmed_new_error_records": 1,
+  "confirmed_new_error_ids": [
+    "685"
+  ],
+  "near_duplicate_groups_remaining": 2,
+  "formula_rendering_review_records": 8,
+  "source_page_suspicion_records": 10,
+  "historical_media_rows": 13,
+  "missing_required_fields": 0,
+  "missing_option_records": 0,
+  "answer_format_errors": 0,
+  "duplicate_id_count": 0,
+  "unbalanced_parentheses": 0,
+  "roman_sequence_errors": 0,
+  "media_fields_present": false,
+  "input_sha256": "2c1a5d6cae0de9f7119e1fdbfceb875a762df072f86594b412275ac9915ee058",
+  "corrected_sha256": "26a4eb61d29cd055f8d1f95c5bdf7c641c727b5c55c222c7c31cd9b7d05b942d"
+}

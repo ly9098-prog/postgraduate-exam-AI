@@ -1,0 +1,48 @@
+{
+  "total_rows": 528,
+  "auto_corrected_records": 75,
+  "source_page_suspicion_records": 7,
+  "unique_flagged_records": 81,
+  "specific_content_or_completeness_records": 8,
+  "io_slash_records": 17,
+  "blank_newline_noise_records": 44,
+  "english_period_records": 10,
+  "high_severity": 2,
+  "medium_severity": 4,
+  "low_severity": 69,
+  "missing_required_fields_records": 0,
+  "duplicate_id_count": 0,
+  "answer_format_error_records": 0,
+  "duplicate_question_answer_conflicts": 0,
+  "unbalanced_parenthesis_records_after_correction": 0,
+  "question_type_counts": {
+    "single_choice": 526,
+    "multi_blank_choice": 2
+  },
+  "answer_counts": {
+    "B": 144,
+    "D": 138,
+    "A": 101,
+    "C": 143,
+    "1:D;2:C": 1,
+    "1:B;2:D": 1
+  },
+  "media_rows_from_previous_audit": 13,
+  "media_fields_present_in_current_export": false,
+  "issue_category_counts": {
+    "括号内换行噪声": 44,
+    "公式指数丢失": 1,
+    "I/O斜杠丢失": 17,
+    "时间单位符号丢失": 1,
+    "中文句号误识别": 10,
+    "题干末尾缺失": 3,
+    "题干严重截断": 1,
+    "繁简字误识别": 1,
+    "繁简字及I/O符号误识别": 1
+  },
+  "source_csv_sha256": "5bfddd64921d2b7ca4418553ffd018273bec63fc37e441c211ee7aa60eab5fd3",
+  "corrected_csv_sha256": "f1283b4916c2eca95a2eccb08b3656497a8b54b6efa9685cd4bca7bee0be5816",
+  "answer_format_error_ids": [],
+  "duplicate_answer_conflict_groups": [],
+  "unbalanced_parenthesis_ids": []
+}

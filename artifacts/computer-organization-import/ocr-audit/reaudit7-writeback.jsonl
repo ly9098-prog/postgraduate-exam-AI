@@ -1,0 +1,8 @@
+{"id": 648, "fields": ["answer"], "old_hash": "e547830f507978439a176590e29357a5", "new_hash": "7e32ed3ad189d2c6d1ed05adb1356d2e", "note": "七次审计：答案键错误修正，n位有符号定点整数最大值=2^(n-1)-1，B→D（2026-08-02）"}
+{"id": 856, "fields": ["answer"], "old_hash": "c3b2fbfdf663f053702cb45e5dad5731", "new_hash": "787cbd060f81f2862894d0635ba933dd", "note": "七次审计：答案键错误修正，虚页号82H 存在位0→缺页异常，A→D（2026-08-02）"}
+{"id": 678, "fields": ["stem"], "old_hash": "317819bb723955d264e6aa5c1b607550", "new_hash": "4b1405a5203071f755f32dd025162310", "note": "七次审计：题干末尾“。.”重复标点清理为“。”（2026-08-02）"}
+{"id": 730, "fields": ["opt_B", "opt_D"], "old_hash": "4ed3f206f1095f39719c690535279dd5", "new_hash": "d2d2a2a59917030b1b6ce4a6ee7e525d", "note": "七次审计：B项末尾、D项开头混入英文句点已清理（2026-08-02）"}
+{"id": 884, "fields": ["opt_C"], "old_hash": "62e64cab06acf968051df8a682497d8b", "new_hash": "1a892fc7dc2ace8c49b07bf37b1e7ddf", "note": "七次审计：C项“条件转”截断补全为“条件转移”（2026-08-02）"}
+{"id": 1031, "fields": ["opt_C"], "old_hash": "643e18acaec8ad5e178971c6924956ec", "new_hash": "64a22d144e37d808f2e083dc5ca38d1f", "note": "七次审计：C项“16MB/s .”规范为“16MB/s”（2026-08-02）"}
+{"id": 991, "field": "review_note_append", "note": "七次审计：源页疑点复核，C项“同时执行多个处理器”疑似“同时执行多条指令”，源页如此，未自动修改（2026-08-02）"}
+{"id": 1105, "field": "review_note_append", "note": "七次审计：答案口径疑义，DMA/通道控制是否属“非程序控制方式”依教材分类口径，当前答案 C 未自动修改（2026-08-02）"}

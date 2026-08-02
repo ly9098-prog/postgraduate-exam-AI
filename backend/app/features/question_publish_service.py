@@ -212,14 +212,15 @@ async def _find_duplicate_questions(
         if existing_stem != target_stem:
             continue
 
-        # 两类指纹都不包含答案：题干指纹、题干+选项指纹。
+        # 指纹不含答案。仅题干相同不够判重：408 类题库存在大量同题干不同选项的题
+        # （如“以下说法中，错误的是()”），题干单指纹会把它们误合并导致丢题。
+        # 必须题干 + 选项都一致才判为重复。
         existing_options = _normalize_dedupe_options(question.options)
-        stem_duplicate = existing_stem == target_stem
         stem_options_duplicate = (existing_stem, existing_options) == (
             target_stem,
             target_options,
         )
-        if stem_duplicate or stem_options_duplicate:
+        if stem_options_duplicate:
             matches.append(question)
     return matches
 

@@ -1,0 +1,4 @@
+{"id": 610, "field": "review_note_append_keep", "note": "五次审计：与 id 947 完全重复（2009 统考真题：CPU 区分指令与数据存放依据，题干仅空格差异），已按业务规则硬删除 947，本行保留（2026-08-02）"}
+{"id": 757, "field": "review_note_append_keep", "note": "五次审计：与 id 866 近似重复（16MB 半字寻址可寻址单元数，题意/选项/答案相同，仅“可寻址的/寻址”及句末标点差异），已按业务规则硬删除 866，本行保留（2026-08-02）"}
+{"id": 947, "field": "hard_delete", "status": "pending", "hash": "bd3878747663a3f93615846291e4c6f0"}
+{"id": 866, "field": "hard_delete", "status": "pending", "hash": "3383fda5d784b01e79689cad7eb3ee18"}

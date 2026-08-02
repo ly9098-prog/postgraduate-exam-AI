@@ -6,7 +6,6 @@
 import re
 
 from app.features.roman_schema import _ROMAN_SUBITEM_TOKEN
-from app.features.text_normalizer import _split_inline_roman_subitems
 
 # 行首结构标记正则（这些行不能被合并到上一行）
 _STRUCTURE_LINE_RE = re.compile(
@@ -114,7 +113,6 @@ def deduplicate_repeated_text(text: str) -> str:
     if not text or not text.strip():
         return text
 
-    text = _split_inline_roman_subitems(text)
     stripped = text.strip()
 
     # —— 行级折叠：前半行 == 后半行 ——
@@ -142,12 +140,15 @@ def deduplicate_repeated_text(text: str) -> str:
     # —— 整体折叠：前半 == 后半 ——
     half = len(stripped) // 2
     if half > 0:
+        # 折叠门槛：多行重复视为 OCR 双打；单行仅在足够长时才折叠，
+        # 避免误折叠短对称 token（如二进制选项 11111111 / 10101010 / II）。
+        can_fold = "\n" in stripped or len(stripped) >= 16
         # 精确折叠（含分隔换行）
-        if stripped[:half] == stripped[half:]:
+        if can_fold and stripped[:half] == stripped[half:]:
             return stripped[:half].rstrip("\n")
         # 允许中间有换行分隔
         candidate = stripped[:half].strip()
-        if candidate and stripped[half:].strip() == candidate:
+        if can_fold and candidate and stripped[half:].strip() == candidate:
             return candidate
 
         # 句末边界折叠：在中点附近按句末标点（。！？；）切分，处理单行重复
@@ -177,10 +178,11 @@ def deduplicate_repeated_text(text: str) -> str:
     # 再次整体折叠（逐行去重后可能使前后相等）
     half2 = len(result) // 2
     if half2 > 0:
-        if result[:half2] == result[half2:]:
+        can_fold2 = "\n" in result or len(result) >= 16
+        if can_fold2 and result[:half2] == result[half2:]:
             return result[:half2].rstrip("\n")
         candidate2 = result[:half2].strip()
-        if candidate2 and result[half2:].strip() == candidate2:
+        if can_fold2 and candidate2 and result[half2:].strip() == candidate2:
             return candidate2
 
     return result
