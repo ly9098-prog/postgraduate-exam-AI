@@ -83,6 +83,10 @@ exports/
 backend/exports/
 artifacts/**/*.pdf
 artifacts/**/*.docx
+
+# Sync tool generated files
+backend/sync_package.json
+backend/.last_sync
 !artifacts/**/office-acceptance-checklist.md
 
 # Downloaded font files
