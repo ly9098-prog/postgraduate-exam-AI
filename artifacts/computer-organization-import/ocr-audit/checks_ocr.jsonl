@@ -1,0 +1,240 @@
+{"id": 605, "page": 18, "check": "C6", "rule": "low_relevance", "stem_sim": 0.941, "opt_sim": {"A": 0.5, "B": 1.0, "C": 0.4, "D": 0.667}, "low_opt_keys": ["C"], "db_stem": "下列叙述中，正确的是(\nI.实际应用程序的测试结果能够全面代表计算机的性能\nII.系列机的基本特性是指令系统向后兼容\nIII.软件和硬件在逻辑功能上是等价的", "ocr_stem": "17.下列叙述中，正确的是(1.实际应用程序的测试结果能够全面代表计算机的性能ⅡI.系列机的基本特性是指令系统向后兼容IⅢI.软件和硬件在逻辑功能上是等价的"}
+{"id": 623, "page": 32, "check": "C6", "rule": "low_relevance", "stem_sim": 0.0, "opt_sim": {"A": 1.0, "B": 1.0, "C": 1.0, "D": 1.0}, "low_opt_keys": [], "db_stem": "32位微机是指该计算机所用CPU()", "ocr_stem": ""}
+{"id": 629, "page": 41, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 630, "page": 42, "check": "C3", "rule": "image_ref", "keywords": ["数据通路"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 630, "page": 42, "check": "C6", "rule": "contamination", "from_page": 43, "dir": "next", "shared_snippet": "统考真题】下列选项中，描述浮点数操作速度指标的是"}
+{"id": 631, "page": 43, "check": "C6", "rule": "contamination", "from_page": 42, "dir": "prev", "shared_snippet": "统考真题】下列选项中，能缩短程序执行时间的措施是"}
+{"id": 633, "page": 45, "check": "C3", "rule": "image_ref", "keywords": ["如下表"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 633, "page": 45, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 2, 4, 2, 3, 10, 4, 5], "stem_preview": "【2013统考真题】某计算机的主频为1.2GHz，其指令分为4类，它们在基准程序中所占比例及CPI如下表所示。\n指令类型  所占比例  CPI\nA  50%  "}
+{"id": 635, "page": 47, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 2, 1, 5, 1, 2, 1, 2, 2, 1, 1, 2], "stem_preview": "【2017统考真题】假定计算机 M1和M2 具有相同的指令集体系结构(ISA),主频分别为1.5GHz\n和1.2GHz.在M1和M2上运行某基准程序P,平均CP"}
+{"id": 638, "page": 50, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 1, 10], "stem_preview": "【2022统考真题】某计算机主频为1GHZ,程序P运行过程中，共执行了10000条指令，其中,\n80%的指令执行平均需1个时钟周期,20%的指令执行平均需10个"}
+{"id": 640, "page": 52, "check": "C4", "rule": "stem_roman_seq", "seq": [7, 5, 4, 3], "stem_preview": "两个数 7E5H 和 4D3H 相加，得()。"}
+{"id": 645, "page": 57, "check": "C4", "rule": "stem_roman_seq", "seq": [10, 1, 10], "stem_preview": "若[X]补=1.1101010,则[X]原=()。"}
+{"id": 646, "page": 58, "check": "C4", "rule": "stem_roman_seq", "seq": [10, 10, 10], "stem_preview": "若X为负数，则由[X]补求[-X]补是将("}
+{"id": 652, "page": 65, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 1], "stem_preview": "若[x]补=1,x1X2X3X4X5X6,其中xi取0或1,若要x>-32,应当满足("}
+{"id": 652, "page": 65, "check": "C6", "rule": "contamination", "from_page": 66, "dir": "next", "shared_snippet": "[x]补=1,x1X2X3X4x5，若要x<-1"}
+{"id": 653, "page": 66, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 1, 5], "stem_preview": "设x为整数,[x]补=1,x1X2X3X4X5,若要x<-16,x1~x5应满足的条件是("}
+{"id": 653, "page": 66, "check": "C6", "rule": "contamination", "from_page": 65, "dir": "prev", "shared_snippet": "[x]补=1,x1X2X3X4XsX6，其中xj"}
+{"id": 656, "page": 69, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 9], "stem_preview": "设机器数采用补码表示(含1位符号位),若寄存器内容为9BH,则对应的十进制数为"}
+{"id": 658, "page": 71, "check": "C6", "rule": "contamination", "from_page": 72, "dir": "next", "shared_snippet": "若寄存器内容为11111111，若它等于-1，则"}
+{"id": 659, "page": 72, "check": "C6", "rule": "contamination", "from_page": 71, "dir": "prev", "shared_snippet": "若寄存器内容为11111111若它等于+127，"}
+{"id": 661, "page": 74, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 10], "stem_preview": "若二进制定点小数真值是-0.1101，机器表示为1.0010，则为（"}
+{"id": 663, "page": 76, "check": "C6", "rule": "low_relevance", "stem_sim": 0.964, "opt_sim": {"A": 0.571, "B": 0.5, "C": 0.462, "D": 0.857}, "low_opt_keys": ["C"], "db_stem": "计算机内部的定点数大多用补码表示，以下是一些关于补码特点的叙述:\nI.零的表示是唯一的\nII.符号位可以和数值部分一起参加运算\nIII.和其真值的对应关系简单、", "ocr_stem": "26.计算机内部的定点数大多用补码表示，以下是一些关于补码特点的叙述:I.零的表示是唯一的II.符号位可以和数值部分一起参加运算ⅢI.和其真值的对应关系简单、直"}
+{"id": 665, "page": 78, "check": "C4", "rule": "stem_roman_seq", "seq": [3, 1, 5, 8], "stem_preview": "【2015统考真题】由3个1和5个0组成的8位二进制补码，能表示的最小整数是("}
+{"id": 678, "page": 91, "check": "C4", "rule": "stem_roman_seq", "seq": [8, 8, 1, 8], "stem_preview": "一个8位寄存器内的数值为11001010,进位标志寄存器C为0,若将此8 位寄存器循环左移(不带进位位)1位，则该8位寄存器和标志寄存器内的数值分别为()。."}
+{"id": 679, "page": 92, "check": "C4", "rule": "stem_roman_seq", "seq": [8, 1, 1, 1], "stem_preview": "设机器数字长 8位(含1位符号位),若机器数BAH为原码，算术左移1位和算术右移1位分别得()。"}
+{"id": 698, "page": 94, "check": "C6", "rule": "low_relevance", "stem_sim": 0.0, "opt_sim": {"A": 1.0, "B": 1.0, "C": 0.8, "D": 1.0}, "low_opt_keys": [], "db_stem": "16位补码0x8FA0扩展为32位应该是(", "ocr_stem": ""}
+{"id": 684, "page": 98, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 1, 2, 1, 3, 1, 4, 1, 5, 1, 6, 1], "stem_preview": "判断加减法溢出时，可采用判断进位的方式，若符号位的进位为 Co,最高位的进位为C1,则产生溢出的条件是(\nI.Co产生进位\nII.C1产生进位\nIII.Co、C"}
+{"id": 685, "page": 99, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 2, 10], "stem_preview": "在补码的加减法中，用两位符号位判断溢出，两位符号位Ss1Ss2=10时，表示("}
+{"id": 686, "page": 100, "check": "C4", "rule": "stem_roman_seq", "seq": [10, 10, 10, 10], "stem_preview": "若[X]补=XoX1X2.Xn,其中Xo为符号位,X1为最高数位。若(\n),则当补码左移时，将会发生溢出."}
+{"id": 689, "page": 103, "check": "C6", "rule": "low_relevance", "stem_sim": 0.474, "opt_sim": {"A": 1.0, "B": 1.0, "C": 1.0, "D": 1.0}, "low_opt_keys": [], "db_stem": "在原码一位乘法中,()。", "ocr_stem": "22.在原码一位乘法中，（）。[公众号：风中易小生]"}
+{"id": 690, "page": 104, "check": "C5", "rule": "option_truncated", "k": "C", "db": "两个操作数符号相异或", "ocr": "两个操作数符号相“异或'id"}
+{"id": 696, "page": 110, "check": "C4", "rule": "stem_roman_seq", "seq": [8, 8], "stem_preview": "某计算机字长为8位,CPU中有一个8位加法器。已知无符号数x=69,y=38,如果在该加法器中计算x-y,则加法器的两个输入端信息和输入的低位进位信息分别为("}
+{"id": 696, "page": 110, "check": "C6", "rule": "contamination", "from_page": 111, "dir": "next", "shared_snippet": "如果在该加法器中计算x-y，则加法器的低位进位输"}
+{"id": 732, "page": 111, "check": "C4", "rule": "stem_roman_seq", "seq": [8, 5, 7, 1, 1, 1, 1], "stem_preview": "30.某计算机中有一个8 位加法器，带符号整数x和y的机器数用补码表示,[x]补=F5H,[y]补=7EH,如果在该加法器中计算x-y,则加法器的低位进位输入信"}
+{"id": 732, "page": 111, "check": "C6", "rule": "contamination", "from_page": 110, "dir": "prev", "shared_snippet": "如果在该加法器中计算x-y，则加法器的两个输入端"}
+{"id": 732, "page": 111, "check": "C6", "rule": "contamination", "from_page": 112, "dir": "next", "shared_snippet": "的溢出标志OF分别是（）。"}
+{"id": 733, "page": 112, "check": "C4", "rule": "stem_roman_seq", "seq": [8, 2, 2, 1, 1], "stem_preview": "31.某8位计算机中,x和y是两个带符号整数，用补码表示,[x]补=44H, [y]补=DCH,则x/2+2y 的机器数及相应的溢出标志 OF分别是(\nA.CA"}
+{"id": 733, "page": 112, "check": "C6", "rule": "contamination", "from_page": 111, "dir": "prev", "shared_snippet": "的溢出标志OF分别是()。"}
+{"id": 734, "page": 113, "check": "C4", "rule": "stem_roman_seq", "seq": [9, 7, 9, 7, 9, 7, 7, 7, 7], "stem_preview": "32.【2009统考真题】一个C语言程序在一台32位机器上运行。程序中定义了三个变量x、y、Z,其中x和z为int型,y为short型。当x=127、y=-9时"}
+{"id": 735, "page": 114, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 8, 1, 2, 2, 3, 4, 8, 8, 1, 2, 2, 3, 1, 4, 2, 4], "stem_preview": "33.【2010统考真题】假定有4个整数用8位补码分别表示:r1=FEH、r^{2}=F2H、r^{3}=90H、r^{4}=F8H,若将运算结果存放在一个8位"}
+{"id": 736, "page": 115, "check": "C4", "rule": "stem_roman_seq", "seq": [8, 8], "stem_preview": "34.【2012统考真题】某计算机存储器按字节编址，采用小端方式存放数据。假定编译器规定 int 和 short 型长度分别为32 位和16位，并且数据按边界对"}
+{"id": 736, "page": 115, "check": "C6", "rule": "contamination", "from_page": 116, "dir": "next", "shared_snippet": ".【2012统考真题】假定编译器规定int和sh"}
+{"id": 737, "page": 116, "check": "C4", "rule": "stem_roman_seq", "seq": [7, 7], "stem_preview": "35.【2012统考真题】假定编译器规定 int和 short 类型长度分别为32 位和16位，执行下列C语言语句:\n```text\nunsigned shor"}
+{"id": 737, "page": 116, "check": "C6", "rule": "contamination", "from_page": 115, "dir": "prev", "shared_snippet": ".【2012统考真题】某计算机存储器按字节编址，"}
+{"id": 738, "page": 117, "check": "C4", "rule": "stem_roman_seq", "seq": [8, 2, 2, 1], "stem_preview": "36.【2013统考真题】某字长为8位的计算机中，已知整型变量xy的机器数分别为[x]补= 11110100,[y]补=10110000.若整型变量z=2x+y"}
+{"id": 740, "page": 119, "check": "C6", "rule": "contamination", "from_page": 120, "dir": "next", "shared_snippet": ".【2016统考真题】某计算机字长为32位，按字"}
+{"id": 741, "page": 120, "check": "C6", "rule": "contamination", "from_page": 119, "dir": "prev", "shared_snippet": ".【2016统考真题】有如下C语言程序段:sho"}
+{"id": 742, "page": 121, "check": "C4", "rule": "stem_roman_seq", "seq": [10, 9, 10, 9, 10], "stem_preview": "40.【2018统考真题】假定有符号整数采用补码表示，若int型变量x和y的机器数分别是FFFFFFDFH 和 0000 0041H,则x、y的值及x-y的机器"}
+{"id": 742, "page": 121, "check": "C6", "rule": "contamination", "from_page": 122, "dir": "next", "shared_snippet": "【2018统考真题】某32位计算机按字节编址，采"}
+{"id": 743, "page": 122, "check": "C4", "rule": "stem_roman_seq", "seq": [7, 7, 7, 7, 7], "stem_preview": "41.【2018统考真题】某32 位计算机按字节编址，采用小端方式。若语句\"inti=0;对应指令的机器代码为C7 45 FC 00 00 00 00,则语句i"}
+{"id": 743, "page": 122, "check": "C6", "rule": "contamination", "from_page": 121, "dir": "prev", "shared_snippet": ".【2018统考真题】假定有符号整数采用补码表示"}
+{"id": 743, "page": 122, "check": "C6", "rule": "contamination", "from_page": 123, "dir": "next", "shared_snippet": ".【2018统考真题】整数x的机器数为11011"}
+{"id": 744, "page": 123, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 1], "stem_preview": "42.【2018统考真题】整数x的机器数为11011000,分别对x进行逻辑右移1位和算术右移1位操作，得到的机器数各是( b−\nB.01101100、1110"}
+{"id": 744, "page": 123, "check": "C6", "rule": "contamination", "from_page": 122, "dir": "prev", "shared_snippet": "【2018统考真题】某32位计算机按字节编址，采"}
+{"id": 744, "page": 123, "check": "C6", "rule": "contamination", "from_page": 124, "dir": "next", "shared_snippet": ".【2018统考真题】减法指令“subR1,R2"}
+{"id": 745, "page": 124, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 2, 3, 1, 2, 3, 1, 2, 1, 1, 1, 1], "stem_preview": "43.【2018统考真题】减法指令subR1, R^{2}, R3的功能为(R1)-(R^{2})R^{3}\",该指令执行后将生成进位/借位标志 CF 和溢出标"}
+{"id": 745, "page": 124, "check": "C6", "rule": "contamination", "from_page": 123, "dir": "prev", "shared_snippet": ".【2018统考真题】整数x的机器数为11011"}
+{"id": 747, "page": 126, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 2, 2], "stem_preview": "45.【2020 统考真题】在按字节编址，采用小端方式的32位计算机中，按边界对齐方式为以下C语言结构型变量a分配存储空间。\nstruct recordl\nsh"}
+{"id": 748, "page": 128, "check": "C6", "rule": "contamination", "from_page": 129, "dir": "next", "shared_snippet": "同的两种浮点数，假设前者基数大，后者基数小，其他"}
+{"id": 749, "page": 129, "check": "C6", "rule": "contamination", "from_page": 128, "dir": "prev", "shared_snippet": "同的两种浮点数，假设前者阶码长、尾数短，后者阶码"}
+{"id": 752, "page": 132, "check": "C4", "rule": "stem_roman_seq", "seq": [6, 1, 1, 1, 1, 10], "stem_preview": "6.某浮点机，采用规格化浮点数表示，阶码用移码表示(最高位代表符号位),尾数用原码表示。下列()的表示不是规格化浮点数。\nA.11111111, 1.1000."}
+{"id": 755, "page": 135, "check": "C4", "rule": "stem_roman_seq", "seq": [9, 1, 2, 2, 1, 2, 2, 2, 2], "stem_preview": "9.在 IEEE 754标准规定的 64 位浮点数格式中，符号位为1位，阶码为11位，尾数为 52 位，则它所能表示的最小规格化负数为().\nB.-(2-252"}
+{"id": 755, "page": 135, "check": "C6", "rule": "contamination", "from_page": 136, "dir": "next", "shared_snippet": "IEEE754标准规定的32位单精度浮点数41A"}
+{"id": 707, "page": 136, "check": "C6", "rule": "contamination", "from_page": 135, "dir": "prev", "shared_snippet": "IEEE754标准规定的64位浮点数格式中，符号"}
+{"id": 711, "page": 140, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 2, 3, 4, 1, 2, 2, 2, 1, 2], "stem_preview": "下列说法中，正确的是()。\nI.在计算机中，表示的数有时会发生溢出，根本原因是计算机的字长有限\nII.8421码就是二进制数\nIII.一个正数的补码和这个数的原"}
+{"id": 714, "page": 143, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 4, 2, 1, 8], "stem_preview": "设浮点数共12 位。其中阶码含1位阶符共4位，以2为底，补码表示；尾数含1位数符共8位，补码表示，规格化。则该浮点数所能表示的最大正数是("}
+{"id": 718, "page": 147, "check": "C5", "rule": "roman_option_mismatch", "k": "A", "db": "I、III、V", "db_set": [1, 3, 5], "ocr": "I、I、V", "ocr_set": [1, 5]}
+{"id": 719, "page": 148, "check": "C4", "rule": "stem_roman_seq", "seq": [5, 7, 2, 10, 8, 10], "stem_preview": "【2009 统考真题】浮点数加、减运算过程一般包括对阶、尾数运算、规格化、舍入和判断溢出等步骤。设浮点数的阶码和尾数均采用补码表示，且位数分别为5 和7 (均含"}
+{"id": 720, "page": 149, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 3, 1, 5, 1, 2, 3, 4], "stem_preview": "【2010 统考真题】假定变量i、f和d 的数据类型分别为 int、float 和double(int 用补码表示,float\n和 double分别用 IEEE"}
+{"id": 720, "page": 149, "check": "C6", "rule": "low_relevance", "stem_sim": 0.966, "opt_sim": {"A": 0.8, "B": 0.545, "C": 0.364, "D": 0.769}, "low_opt_keys": ["C"], "db_stem": "【2010 统考真题】假定变量i、f和d 的数据类型分别为 int、float 和double(int 用补码表示,float\n和 double分别用 IEEE", "ocr_stem": "23.【2010 统考真题】假定变量i、f和d 的数据类型分别为 int、float 和 double(int 用补码表示，float和 double 分别用 "}
+{"id": 720, "page": 149, "check": "C6", "rule": "contamination", "from_page": 150, "dir": "next", "shared_snippet": "用IEEE754单精度格式表示。若编译器将flo"}
+{"id": 721, "page": 150, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 8, 1], "stem_preview": "【2011统考真题】float型数据通常用IEEE 754 单精度格式表示。若编译器将 float 型变量x分配在一个32 位浮点寄存器FR1中，且x=-8.2"}
+{"id": 721, "page": 150, "check": "C6", "rule": "contamination", "from_page": 149, "dir": "prev", "shared_snippet": "用IEEE754单精度和双精度浮点数格式表示)，"}
+{"id": 721, "page": 150, "check": "C6", "rule": "contamination", "from_page": 151, "dir": "next", "shared_snippet": "统考真题】float类型(即IEEE754单精度"}
+{"id": 722, "page": 151, "check": "C6", "rule": "contamination", "from_page": 150, "dir": "prev", "shared_snippet": "统考真题】float型数据通常用IEEE754单"}
+{"id": 722, "page": 151, "check": "C6", "rule": "contamination", "from_page": 152, "dir": "next", "shared_snippet": "IEEE754单精度浮点数格式表示为C64000"}
+{"id": 723, "page": 152, "check": "C6", "rule": "contamination", "from_page": 151, "dir": "prev", "shared_snippet": "IEEE754单精度浮点数格式)能表示的最大正整"}
+{"id": 723, "page": 152, "check": "C6", "rule": "contamination", "from_page": 153, "dir": "next", "shared_snippet": "用IEEE754单精度浮点格式表示。假设两个fl"}
+{"id": 724, "page": 153, "check": "C4", "rule": "stem_roman_seq", "seq": [2, 1, 2], "stem_preview": "【2014统考真题】float 型数据常用IEEE754单精度浮点格式表示。假设两个float型变量x和\ny分别存放在 32位寄存器fl 和f2 中，若(f1)"}
+{"id": 724, "page": 153, "check": "C6", "rule": "contamination", "from_page": 152, "dir": "prev", "shared_snippet": "用IEEE754单精度浮点数格式表示为C6400"}
+{"id": 725, "page": 154, "check": "C5", "rule": "roman_option_mismatch", "k": "B", "db": "仅I、II、IV", "db_set": [2, 4], "ocr": "仅I、I、IV", "ocr_set": [1, 4]}
+{"id": 725, "page": 154, "check": "C5", "rule": "roman_option_mismatch", "k": "C", "db": "仅I、III、IV", "db_set": [3, 4], "ocr": "仅I、II、IV", "ocr_set": [2, 4]}
+{"id": 769, "page": 173, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 803, "page": 178, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 776, "page": 181, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 784, "page": 189, "check": "C4", "rule": "stem_roman_seq", "seq": [6, 8], "stem_preview": "某机器采用四体低位交叉存储器，现分别执行下述操作:\n①读取6个连续地址单元中存放的存储字，重复80次;\n②读取8个连续地址单元中存放的存储字，重复60次。则\n①"}
+{"id": 785, "page": 190, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 2, 4, 3, 4], "stem_preview": "下列说法中，正确的是(\nI.高位多体交叉存储器能很好地满足程序的局部性原理\nII.高位四体交叉存储器可能在一个存储周期内连续访问4个模块\nIII.双端口存储器可"}
+{"id": 786, "page": 191, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 786, "page": 191, "check": "C4", "rule": "stem_roman_seq", "seq": [8, 8], "stem_preview": "假定用若干16K8 位的存储芯片组成一个64K8 位的存储器，芯片各单元采用交叉编址方式，则地址BFFFH所在的芯片的最小地址为("}
+{"id": 789, "page": 194, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 789, "page": 194, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 8], "stem_preview": "【2014 统考真题】某容量为256MB 的存储器由若干4Mx8位的 DRAM芯片构成，该DRAM芯片的地址引脚和数据引脚总数是()。"}
+{"id": 790, "page": 195, "check": "C6", "rule": "contamination", "from_page": 196, "dir": "next", "shared_snippet": "【2015统考真题】某计算机使用四体交叉编址存储"}
+{"id": 791, "page": 196, "check": "C6", "rule": "contamination", "from_page": 195, "dir": "prev", "shared_snippet": "【2015统考真题】下列存储器中，在工作期间需要"}
+{"id": 792, "page": 197, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 792, "page": 197, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 8], "stem_preview": "【2017统考真题】某计算机主存按字节编址，由4个64M×8位的DRAM芯片采用交叉编址方式构成，并与宽度为32位的存储器总线相连，主存每次最多读写32位数据。"}
+{"id": 792, "page": 197, "check": "C6", "rule": "contamination", "from_page": 198, "dir": "next", "shared_snippet": "×8位的DRAM芯片，按字节编址，支持突发(bu"}
+{"id": 793, "page": 198, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 794, "page": 199, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 794, "page": 199, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 8], "stem_preview": "用存储容量为16K1位的存储器芯片来组成一个 64K8位的存储器，则在字方向和位方向分别扩展了(\n)倍。"}
+{"id": 804, "page": 200, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 804, "page": 200, "check": "C4", "rule": "stem_roman_seq", "seq": [10, 4, 8, 8, 8], "stem_preview": "80386DX是32位系统，以4B为编址单位，当在该系统中用8KB(8K×8位)的存储芯片构造32KB的存储体时，应完成存储器的()设计。"}
+{"id": 804, "page": 200, "check": "C6", "rule": "low_relevance", "stem_sim": 0.431, "opt_sim": {"A": 1.0, "B": 1.0, "C": 1.0, "D": 1.0}, "low_opt_keys": [], "db_stem": "80386DX是32位系统，以4B为编址单位，当在该系统中用8KB(8K×8位)的存储芯片构造32KB的存储体时，应完成存储器的()设计。", "ocr_stem": "32KB的存储体时，应完成存储器的()设计。【公众号：风中易小生】"}
+{"id": 805, "page": 202, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 805, "page": 202, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 8], "stem_preview": "4个16K×8位的存储芯片，可设计为()容量的存储器。"}
+{"id": 806, "page": 203, "check": "C4", "rule": "stem_roman_seq", "seq": [2, 4], "stem_preview": "16片2K×4位的存储器可以设计为()存储容量的16位存储器。"}
+{"id": 796, "page": 204, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 797, "page": 205, "check": "C3", "rule": "image_ref", "keywords": ["芯片", "译码"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 797, "page": 205, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 4], "stem_preview": "地址总线A0(高位)~A15(低位)，用4K×4位的存储芯片组成16KB存储器，则产生片选信号的译码器的输入地址线应该是()。"}
+{"id": 798, "page": 206, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 799, "page": 207, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 800, "page": 208, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 801, "page": 209, "check": "C3", "rule": "image_ref", "keywords": ["如下图", "芯片", "译码"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 802, "page": 210, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 802, "page": 210, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 2, 8, 4, 4], "stem_preview": "【2009统考真题】某计算机主存容量为 64KB,其中ROM区为4KB,其余为RAM 区，按字节编址。现要用2K8位的ROM芯片和4K4位的RAM芯片来设计该存"}
+{"id": 807, "page": 211, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 807, "page": 211, "check": "C4", "rule": "stem_roman_seq", "seq": [2, 4, 8, 8, 1], "stem_preview": "【2010统考真题】假定用若干2K4位的芯片组成一个8K8位的存储器，则地址0B1FH所在芯片的最小地址是("}
+{"id": 808, "page": 212, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 808, "page": 212, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 8], "stem_preview": "【2011统考真题】某计算机存储器按字节编址，主存地址空间大小为64MB,现用4Mx8位的\nRAM芯片组成 32MB 的主存储器，则存储器地址寄存器 MAR 的"}
+{"id": 809, "page": 213, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 809, "page": 213, "check": "C4", "rule": "stem_roman_seq", "seq": [5, 8, 4], "stem_preview": "【2016统考真题】某存储器容量为64KB，按字节编址，地址4000H～5FFFH为ROM区，其余为RAM区。若采用8Kx4位的SRAM芯片进行设计，则需要该芯"}
+{"id": 810, "page": 214, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 810, "page": 214, "check": "C4", "rule": "stem_roman_seq", "seq": [2, 1], "stem_preview": "【2018 统考真题】假定DRAM芯片中存储阵列的行数为r、列数为c,对于一个2K1位的DRAM芯片，为保证其地址引脚数最少，并尽量减少刷新开销，则r、c的取值"}
+{"id": 811, "page": 215, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 811, "page": 215, "check": "C4", "rule": "stem_roman_seq", "seq": [3, 8], "stem_preview": "【2021统考真题】某计算机的存储器总线中有24位地址线和 32 位数据线，按字编址，字长为32 位。如果00 0000H~3F FFFFH为RAM 区，那么需"}
+{"id": 813, "page": 217, "check": "C5", "rule": "option_truncated", "k": "D", "db": "计算磁盘的存取时间时，寻道时间和旋转等待时间常取其平均值", "ocr": "计算磁盘的存取时间时，“寻道时间”和“旋转等待时间”常取其平均值"}
+{"id": 813, "page": 217, "check": "C6", "rule": "contamination", "from_page": 218, "dir": "next", "shared_snippet": "的说法中，错误的是()o"}
+{"id": 814, "page": 218, "check": "C6", "rule": "contamination", "from_page": 217, "dir": "prev", "shared_snippet": "的说法中，错误的是("}
+{"id": 815, "page": 219, "check": "C4", "rule": "stem_roman_seq", "seq": [6, 2, 4], "stem_preview": "【2013 统考真题】某磁盘的转速为10000转/分，平均寻道时间是6ms,磁盘传输速率是20MB/s,磁盘控制器延迟为0.2ms,读取一个4KB 的扇区所需的"}
+{"id": 815, "page": 219, "check": "C6", "rule": "contamination", "from_page": 220, "dir": "next", "shared_snippet": "【2013统考真题】下列选项中，用于提高RAID"}
+{"id": 816, "page": 220, "check": "C6", "rule": "contamination", "from_page": 219, "dir": "prev", "shared_snippet": "【2013统考真题】某磁盘的转速为10000转/"}
+{"id": 823, "page": 227, "check": "C4", "rule": "stem_roman_seq", "seq": [8, 8], "stem_preview": "某 32 位计算机的 Cache 容量为16KB,Cache行的大小为16B,若主存与 Cache 地址映像采用直接映像方式，则主存地址为 0x1234E8F8"}
+{"id": 829, "page": 234, "check": "C6", "rule": "contamination", "from_page": 235, "dir": "next", "shared_snippet": "相联映射方式，主存块大小为32字节，所有编号都从"}
+{"id": 830, "page": 235, "check": "C6", "rule": "contamination", "from_page": 234, "dir": "prev", "shared_snippet": "相联映射方式，主存块大小为1个字，每字32位，采"}
+{"id": 832, "page": 236, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 8, 1, 1, 8], "stem_preview": "假定CPU通过存储器总线读取数据的过程为:发送地址和读命令需1个时钟周期，存储器准备一个数据需8个时钟周期，总线上每传送1个数据需1个时钟周期。若主存和Cach"}
+{"id": 832, "page": 236, "check": "C6", "rule": "contamination", "from_page": 237, "dir": "next", "shared_snippet": "CPU通过存储器总线读取数据的过程为:发送首地址"}
+{"id": 833, "page": 237, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 833, "page": 237, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 8, 1, 8, 8, 8], "stem_preview": "假定采用多模块交叉存储器组织方式，存储器芯片和总线支持突发传送,CPU通过存储器总线读取数据的过程为:发送首地址和读命令需1个时钟周期，存储器准备第一个数据需8"}
+{"id": 833, "page": 237, "check": "C6", "rule": "contamination", "from_page": 236, "dir": "prev", "shared_snippet": "CPU通过存储器总线读取数据的过程为:发送地址和"}
+{"id": 834, "page": 238, "check": "C6", "rule": "contamination", "from_page": 239, "dir": "next", "shared_snippet": "【2009统考真题】某计算机的Cache共有16"}
+{"id": 835, "page": 239, "check": "C6", "rule": "contamination", "from_page": 238, "dir": "prev", "shared_snippet": "【2009统考真题】假设某计算机的存储系统由Ca"}
+{"id": 835, "page": 239, "check": "C6", "rule": "contamination", "from_page": 240, "dir": "next", "shared_snippet": "，采用二路组相联映射方式和LRU替换策略，则访问"}
+{"id": 836, "page": 240, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 1, 4, 8, 2, 6, 8, 6, 4, 8], "stem_preview": "【2012统考真题】假设某计算机按字编址，Cache有4行，Cache和主存之间交换的块大小为1个字。若Cache的内容初始为空，采用二路组相联映射方式和LRU"}
+{"id": 836, "page": 240, "check": "C6", "rule": "contamination", "from_page": 239, "dir": "prev", "shared_snippet": "，采用二路组相联映射方式(即每组2块)。每个主存"}
+{"id": 838, "page": 242, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 1], "stem_preview": "【2016统考真题】有如下C语言程序段:\nfor(k=0;k<1000;k++)\na[k]=a[k]+32;\n若数组a和变量k均为int 型,imt 型数据占4"}
+{"id": 839, "page": 243, "check": "C4", "rule": "stem_roman_seq", "seq": [9, 1], "stem_preview": "【2017统考真题】某C语言程序段如下:\n```text\nfor (i=0; i<=9; i++) {\n    temp=1;\n    for (j=0; j<"}
+{"id": 840, "page": 244, "check": "C6", "rule": "contamination", "from_page": 245, "dir": "next", "shared_snippet": "统考真题】若计算机主存地址为32位，按字节编址，"}
+{"id": 841, "page": 245, "check": "C6", "rule": "contamination", "from_page": 244, "dir": "prev", "shared_snippet": "统考真题】若计算机主存地址为32位，按字节编址，"}
+{"id": 844, "page": 248, "check": "C3", "rule": "image_ref", "keywords": ["下表"], "kw_in_page_ocr": false, "image_captured": false}
+{"id": 844, "page": 248, "check": "C5", "rule": "option_truncated", "k": "C", "db": "段页式采用段和页", "ocr": "段页式采用“段”和“页”"}
+{"id": 851, "page": 255, "check": "C3", "rule": "image_ref", "keywords": ["如下表"], "kw_in_page_ocr": false, "image_captured": false}
+{"id": 851, "page": 255, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 4, 4, 2, 3, 1, 2, 3, 3, 3], "stem_preview": "【2013 统考真题】某计算机主存地址空间大小为256MB，按字节编址。虚拟地址空间大小为4GB，采用页式存储管理，页面大小为4KB，TLB(快表)采用全相联映"}
+{"id": 852, "page": 256, "check": "C4", "rule": "stem_roman_seq", "seq": [3, 3], "stem_preview": "【2015统考真题】假定编译器将赋值语句x=x+3;转换为指令add xaddr, 3，其中xaddr是x对应的存储单元地址。若执行该指令的计算机采用页式虚拟存"}
+{"id": 852, "page": 256, "check": "C6", "rule": "contamination", "from_page": 257, "dir": "next", "shared_snippet": "【2015统考真题】假定主存地址为32位，按字节"}
+{"id": 853, "page": 257, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 4], "stem_preview": "【2015 统考真题】假定主存地址为32位，按字节编址，主存和Cache之间采用直接映射方式，主存块大小为4个字，每字 32位，采用回写方式，则能存放4K字数据"}
+{"id": 853, "page": 257, "check": "C6", "rule": "contamination", "from_page": 256, "dir": "prev", "shared_snippet": "【2015统考真题】假定编译器将赋值语句“x=x"}
+{"id": 854, "page": 258, "check": "C6", "rule": "contamination", "from_page": 259, "dir": "next", "shared_snippet": "的叙述中，错误的是("}
+{"id": 855, "page": 259, "check": "C6", "rule": "contamination", "from_page": 258, "dir": "prev", "shared_snippet": "的叙述中，错误的是()."}
+{"id": 856, "page": 260, "check": "C3", "rule": "image_ref", "keywords": ["如下表"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 856, "page": 260, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 4, 8], "stem_preview": "【2022 统考真题】某计算机主存地址为24位，采用分页虚拟存储管理方式，虚拟地址空间大小为4GB，页大小为4KB，按字节编址。某进程的页表部分内容如下表所示。"}
+{"id": 871, "page": 275, "check": "C6", "rule": "contamination", "from_page": 276, "dir": "next", "shared_snippet": "【2022统考真题】设计某指令系统时，假设采用1"}
+{"id": 872, "page": 276, "check": "C4", "rule": "stem_roman_seq", "seq": [6, 3], "stem_preview": "【2022 统考真题】设计某指令系统时，假设采用16位定长指令字格式，操作码使用扩展编码方式，地址码为6位，包含零地址、一地址和二地址3种格式的指令。若二地址指"}
+{"id": 872, "page": 276, "check": "C6", "rule": "contamination", "from_page": 275, "dir": "prev", "shared_snippet": "【2022统考真题】下列选项中，属于指令集体系结"}
+{"id": 888, "page": 292, "check": "C4", "rule": "stem_roman_seq", "seq": [8, 8, 8, 8, 9], "stem_preview": "假设某条指令的第一个操作数采用寄存器间接寻址方式，指令中给出的寄存器编号为8,8号寄存器的内容为1200H, 地址为1200H的单元中的内容为12FCH,地址为"}
+{"id": 889, "page": 293, "check": "C4", "rule": "stem_roman_seq", "seq": [3, 1], "stem_preview": "设相对寻址的转移指令占3B,第一字节为操作码，第二、三字节为相对位移量(补码表示),而且数据在存储器中采用以低字节为字地址的存放方式。每当 CPU从存储器.取出"}
+{"id": 893, "page": 296, "check": "C6", "rule": "contamination", "from_page": 297, "dir": "next", "shared_snippet": "【2011统考真题】某机器有一个标志寄存器，其中"}
+{"id": 894, "page": 297, "check": "C6", "rule": "contamination", "from_page": 296, "dir": "prev", "shared_snippet": "【2011统考真题】偏移寻址通过将某个寄存器的内"}
+{"id": 896, "page": 299, "check": "C6", "rule": "low_relevance", "stem_sim": 0.982, "opt_sim": {"A": 1.0, "B": 0.462, "C": 0.0, "D": 1.0}, "low_opt_keys": ["B", "C"], "db_stem": "【2014 统考真题】某计算机有 16 个通用寄存器，采用 32 位定长指令字，操作码字段(含寻址方式位)为 8 位，Store 指令的源操作数和目的操作数分别", "ocr_stem": "23.【2014统考真题】某计算机有16个通用寄存器，采用 32位定长指令字，操作码字段(含寻址方式位)为8 位，Store 指令的源操作数和目的操作数分别采用"}
+{"id": 900, "page": 303, "check": "C6", "rule": "contamination", "from_page": 304, "dir": "next", "shared_snippet": "统考真题】某计算机采用16位定长指令字格式，操作"}
+{"id": 901, "page": 304, "check": "C6", "rule": "contamination", "from_page": 303, "dir": "prev", "shared_snippet": "统考真题】某计算机采用大端方式，按字节编址。某指"}
+{"id": 902, "page": 305, "check": "C4", "rule": "stem_roman_seq", "seq": [8, 7, 6], "stem_preview": "假设 R[ax]=FFE8H,R[bx]=7FE6H,执行指令addw %bx,%ax后，寄存器的内容和各标志的变化为()。"}
+{"id": 903, "page": 306, "check": "C4", "rule": "stem_roman_seq", "seq": [7, 6, 8], "stem_preview": "假设R[ax]=7FE6H,R[bx]=FFE8H,执行指令sub bx, ax后，寄存器的内存和各标志的变化为()。"}
+{"id": 920, "page": 324, "check": "C6", "rule": "contamination", "from_page": 325, "dir": "next", "shared_snippet": "寄存器的位数取决于()。"}
+{"id": 921, "page": 325, "check": "C6", "rule": "contamination", "from_page": 324, "dir": "prev", "shared_snippet": "寄存器的位数取决于()。"}
+{"id": 926, "page": 330, "check": "C3", "rule": "image_ref", "keywords": ["译码"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 928, "page": 332, "check": "C3", "rule": "image_ref", "keywords": ["译码"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 949, "page": 354, "check": "C3", "rule": "image_ref", "keywords": ["数据通路"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 951, "page": 356, "check": "C3", "rule": "image_ref", "keywords": ["数据通路"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 953, "page": 358, "check": "C6", "rule": "contamination", "from_page": 359, "dir": "next", "shared_snippet": "的叙述中，错误的是("}
+{"id": 954, "page": 359, "check": "C3", "rule": "image_ref", "keywords": ["数据通路"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 954, "page": 359, "check": "C6", "rule": "contamination", "from_page": 358, "dir": "prev", "shared_snippet": "的叙述中，错误的是().[公众号：风中易小生]"}
+{"id": 967, "page": 372, "check": "C3", "rule": "image_ref", "keywords": ["数据通路"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 973, "page": 378, "check": "C4", "rule": "stem_roman_seq", "seq": [5, 7, 3, 5, 6], "stem_preview": "【2012 统考真题】某计算机的控制器采用微程序控制方式，微指令中的操作控制字段采用字段直接编码法，共有33个微命令，构成5个互斥类，分别包含7、3、12、5 "}
+{"id": 974, "page": 379, "check": "C4", "rule": "stem_roman_seq", "seq": [2, 4], "stem_preview": "【2014统考真题】某计算机采用微程序控制器，共有32 条指令，公共的取指令微程序包含2\n条微指令，各指令对应的微程序平均由4条微指令组成，采用断定法(下地址字"}
+{"id": 976, "page": 381, "check": "C6", "rule": "contamination", "from_page": 382, "dir": "next", "shared_snippet": "【2019统考真题】某指令功能为R[r2]←—R"}
+{"id": 977, "page": 382, "check": "C3", "rule": "image_ref", "keywords": ["译码"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 977, "page": 382, "check": "C4", "rule": "stem_roman_seq", "seq": [2, 1, 1, 2, 3, 4], "stem_preview": "【2019 统考真题】某指令功能为R[r2]←R[r1]+M[R[r0]]，其两个源操作数分别采用寄存器、寄存器间接寻址方式。对于下列给定部件，该指令在取数及执"}
+{"id": 977, "page": 382, "check": "C6", "rule": "contamination", "from_page": 381, "dir": "prev", "shared_snippet": "【2019统考真题】下列有关处理器时钟脉冲信号的"}
+{"id": 978, "page": 383, "check": "C5", "rule": "roman_option_mismatch", "k": "D", "db": "仅III、IV", "db_set": [3, 4], "ocr": "仅 II、IV", "ocr_set": [2, 4]}
+{"id": 986, "page": 389, "check": "C6", "rule": "contamination", "from_page": 390, "dir": "next", "shared_snippet": "的叙述中，错误的是("}
+{"id": 987, "page": 390, "check": "C6", "rule": "contamination", "from_page": 389, "dir": "prev", "shared_snippet": "的叙述中，错误的是()。"}
+{"id": 987, "page": 390, "check": "C6", "rule": "contamination", "from_page": 391, "dir": "next", "shared_snippet": "的叙述中，错误的是("}
+{"id": 988, "page": 391, "check": "C6", "rule": "contamination", "from_page": 390, "dir": "prev", "shared_snippet": "的叙述中，错误的是("}
+{"id": 994, "page": 397, "check": "C4", "rule": "stem_roman_seq", "seq": [3, 1], "stem_preview": "设指令由取指、分析、执行3个子部件完成，并且每个子部件的时间均为t,若采用常规标量单流水线处理机(即处理机的度为1),连续执行12条指令，共需()。"}
+{"id": 996, "page": 399, "check": "C4", "rule": "stem_roman_seq", "seq": [3, 3, 2, 2, 1], "stem_preview": "设指令流水线把一条指令分为取指、分析、执行3 部分，且3 部分的时间分别是t取值=2ns,\nt分析=2ns,t执行=1ns,则100条指令全部执行完毕需("}
+{"id": 997, "page": 400, "check": "C4", "rule": "stem_roman_seq", "seq": [3, 8], "stem_preview": "设指令由取指、分析、执行3个子部件完成，并且每个子部件的时间均为t,若采用常规标量单流水线处理机，连续执行8条指令，则该流水线的加速比为("}
+{"id": 1003, "page": 406, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 3, 4, 1], "stem_preview": "【2013统考真题】某CPU主频为1.03GHz,采用4级指令流水线，每个流水段的执行需要1个时钟周期。假定CPU执行了100条指令，在其执行过程中，没有发生任"}
+{"id": 1004, "page": 407, "check": "C3", "rule": "image_ref", "keywords": ["译码"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 1004, "page": 407, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 2, 3, 1, 2, 5, 2, 4, 1, 3, 4, 5, 3, 5, 2, 6], "stem_preview": "【2016 统考真题】在无转发机制的五段基本流水线(取指、译码/读寄存器、运算、访存、写回寄存器)中，下列指令序列存在数据冒险的指令对是()。\nI1: add "}
+{"id": 1005, "page": 408, "check": "C6", "rule": "contamination", "from_page": 409, "dir": "next", "shared_snippet": "【2017统考真题】下列关于指令流水线数据通路的"}
+{"id": 1006, "page": 409, "check": "C3", "rule": "image_ref", "keywords": ["数据通路"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 1006, "page": 409, "check": "C6", "rule": "contamination", "from_page": 408, "dir": "prev", "shared_snippet": "【2017统考真题】下列关于超标量流水线特性的叙"}
+{"id": 1008, "page": 411, "check": "C3", "rule": "image_ref", "keywords": ["译码"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 1008, "page": 411, "check": "C4", "rule": "stem_roman_seq", "seq": [5, 1, 2, 3, 2, 1, 2, 1, 1, 3, 2, 1, 3, 2, 2, 3, 2, 2], "stem_preview": "【2019 统考真题】在采用取指、译码/取数、执行、访存、写回5段流水线的处理器中，执行如下指令序列，其中s0、s1、s^{2}、s3和t2表示寄存器编号。\nI"}
+{"id": 1009, "page": 412, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 1, 2, 3, 4], "stem_preview": "【2020统考真题】下列给出的处理器类型中，理想情况下,CPI为1的是(\nI.单周期CPU\nII.多周期CPU\nIII.基本流水线CPU\nIV.超标量流水线CP"}
+{"id": 1009, "page": 412, "check": "C5", "rule": "roman_option_mismatch", "k": "C", "db": "仅II、IV", "db_set": [2, 4], "ocr": "仅 IⅡI、IV", "ocr_set": [3, 4]}
+{"id": 1017, "page": 420, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 2, 4, 6, 2, 3], "stem_preview": "下列关于多处理器的说法中，正确的是(\nI.一般采用偶数路CPU,如2路、4路、6路等\nII.NUMA构架比UMA构架的运算扩展性要強\nIII.UMA 构架需要解"}
+{"id": 1036, "page": 439, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 2, 10], "stem_preview": "【2009 统考真题】假设某系统总线在一个总线周期中并行传输4字节信息，一个总线周期占用2个时钟周期，总线时钟频率为10MHz,则总线带宽是("}
+{"id": 1039, "page": 442, "check": "C6", "rule": "contamination", "from_page": 443, "dir": "next", "shared_snippet": "【2012统考真题】下列关于USB总线特性的描述"}
+{"id": 1040, "page": 443, "check": "C6", "rule": "contamination", "from_page": 442, "dir": "prev", "shared_snippet": "【2012统考真题】某同步总线的时钟频率为100"}
+{"id": 1042, "page": 445, "check": "C6", "rule": "contamination", "from_page": 446, "dir": "next", "shared_snippet": "【2014统考真题】一次总线事务中，主设备只需给"}
+{"id": 1043, "page": 446, "check": "C6", "rule": "contamination", "from_page": 445, "dir": "prev", "shared_snippet": "【2014统考真题】某同步总线采用数据线和地址线"}
+{"id": 1044, "page": 447, "check": "C6", "rule": "contamination", "from_page": 448, "dir": "next", "shared_snippet": "的叙述中，错误的是()."}
+{"id": 1045, "page": 448, "check": "C6", "rule": "contamination", "from_page": 447, "dir": "prev", "shared_snippet": "的叙述中，错误的是(）。[公众号：风中易小生]"}
+{"id": 1045, "page": 448, "check": "C6", "rule": "contamination", "from_page": 449, "dir": "next", "shared_snippet": "的叙述中，错误的是("}
+{"id": 1046, "page": 449, "check": "C6", "rule": "contamination", "from_page": 448, "dir": "prev", "shared_snippet": "的叙述中，错误的是()."}
+{"id": 1048, "page": 451, "check": "C4", "rule": "stem_roman_seq", "seq": [3, 3], "stem_preview": "【2019统考真题】假定一台计算机采用3通道存储器总线，配套的内存条型号为DDR3-1333,即内存条所接插的存储器总线的工作频率为1333MHz,总线宽度为 "}
+{"id": 1049, "page": 452, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 2, 2, 2, 2, 2, 4], "stem_preview": "【2020 统考真题】QPI总线是一种点对点全工同步串行总线，总线上的设备可同时接收和发送信息，每个方向可同时传输20位信息(16 位数据+4 位校验位),每个"}
+{"id": 1051, "page": 454, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 1, 7, 1, 1], "stem_preview": "某机器 I/O 设备采用异步串行传送方式传送字符信息，字符信息格式为1位起始位、7位数据位、\n1 位校验位和1位停止位。若要求每秒传送480个字符，则该设备的数"}
+{"id": 1060, "page": 463, "check": "C5", "rule": "roman_option_mismatch", "k": "D", "db": "IVO端口", "db_set": [4], "ocr": "I/O 端口", "ocr_set": [1]}
+{"id": 1063, "page": 466, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 2, 5, 3, 4], "stem_preview": "下列关于I/O 设备的说法中，正确的是（\nI.键盘、鼠标、显示器、打印机属于人机交互设备\nII.在微型计算机中,VGA代表的是视频传输标准\nIII.打印机从打字"}
+{"id": 1067, "page": 470, "check": "C3", "rule": "image_ref", "keywords": ["芯片"], "kw_in_page_ocr": true, "image_captured": false}
+{"id": 1069, "page": 472, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 2, 1, 3, 1, 4], "stem_preview": "下列功能中，属于I/O接口的功能的是(\nI.数据格式的转换\nII.I/O 过程中错误与状态检测\nIII.I/O操作的控制与定时\nIV.与主机和外设通信"}
+{"id": 1069, "page": 472, "check": "C5", "rule": "roman_option_mismatch", "k": "B", "db": "I、III、IV", "db_set": [1, 3, 4], "ocr": "I、II、IV", "ocr_set": [1, 2, 4]}
+{"id": 1076, "page": 479, "check": "C4", "rule": "stem_roman_seq", "seq": [1, 1, 2, 3], "stem_preview": "【2012 统考真题】下列选项中，在I/O总线的数据线上传输的信息包括(\nI.I/O 接口中的命令字\nII.IO 接口中的状态字\nIII.中断类型号"}
+{"id": 1078, "page": 481, "check": "C5", "rule": "roman_option_mismatch", "k": "A", "db": "IO 设备和I/O端口之间", "db_set": [], "ocr": "I/O 设备和I/O端口之间", "ocr_set": [1]}
+{"id": 1078, "page": 481, "check": "C5", "rule": "roman_option_mismatch", "k": "D", "db": "通用寄存器和 I/O 端口之间.", "db_set": [1], "ocr": "通用寄存器和I/O 端口之间.", "ocr_set": []}
+{"id": 1085, "page": 488, "check": "C5", "rule": "roman_option_mismatch", "k": "D", "db": "II、III", "db_set": [2, 3], "ocr": "II、II", "ocr_set": [2]}
+{"id": 1085, "page": 488, "check": "C6", "rule": "low_relevance", "stem_sim": 0.944, "opt_sim": {"A": 1.0, "B": 0.333, "C": 1.0, "D": 0.9}, "low_opt_keys": ["B"], "db_stem": "能产生 DMA 请求的总线部件是(\nI.高速外设\nII.需要与主机批量交换数据的外设\nIII.具有 DMA接口的设备", "ocr_stem": "6.能产生 DMA 请求的总线部件是()。I.高速外设ⅡI.需要与主机批量交换数据的外设III.具有 DMA接口的设备"}
+{"id": 1086, "page": 489, "check": "C5", "rule": "roman_option_mismatch", "k": "D", "db": "程序性I/O访管", "db_set": [], "ocr": "程序性→I/O→访管", "ocr_set": [1]}
+{"id": 1091, "page": 494, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 1, 2, 3, 4], "stem_preview": "某计算机有4级中断，优先级从高到低为1234.若将优先级顺序修改，改后1级中断的屏蔽字为1101,2级中断的屏蔽字为0100,3级中断的屏蔽字为1111,4级中"}
+{"id": 1111, "page": 514, "check": "C4", "rule": "stem_roman_seq", "seq": [4, 4, 3, 1, 4, 4, 3], "stem_preview": "【2011 统考真题】某计算机有五级中断L4~Lo,中断屏蔽字为M4M3MMMo,Mi=1(0\\leqi\\leq\n4)表示对Li级中断进行屏蔽。若中断响应优先级"}
+{"id": 1111, "page": 514, "check": "C6", "rule": "contamination", "from_page": 515, "dir": "next", "shared_snippet": "【2011统考真题】某计算机处理器主频为50MH"}
+{"id": 1112, "page": 515, "check": "C6", "rule": "contamination", "from_page": 514, "dir": "prev", "shared_snippet": "【2011统考真题】某计算机有五级中断L4~Lo"}
+{"id": 1119, "page": 522, "check": "C6", "rule": "contamination", "from_page": 523, "dir": "next", "shared_snippet": "【2019统考真题】下列关于DMA方式的叙述中，"}
+{"id": 1126, "page": 523, "check": "C5", "rule": "roman_option_mismatch", "k": "C", "db": "仅II、III、IV", "db_set": [2, 3, 4], "ocr": "仅II、II、IV", "ocr_set": [2, 4]}
+{"id": 1120, "page": 524, "check": "C5", "rule": "roman_option_mismatch", "k": "C", "db": "仅II、III", "db_set": [2, 3], "ocr": "仅 IⅡI、IⅢI", "ocr_set": [3]}
+{"id": 1120, "page": 524, "check": "C6", "rule": "contamination", "from_page": 525, "dir": "next", "shared_snippet": "【2020统考真题】外部中断包括不可屏蔽中断(N"}
+{"id": 1122, "page": 525, "check": "C6", "rule": "contamination", "from_page": 524, "dir": "prev", "shared_snippet": "【2020统考真题】下列事件中，属于外部中断事件"}
+{"id": 1122, "page": 525, "check": "C6", "rule": "contamination", "from_page": 526, "dir": "next", "shared_snippet": "【2020统考真题】若设备采用周期挪用DMA方式"}
+{"id": 1123, "page": 526, "check": "C6", "rule": "contamination", "from_page": 525, "dir": "prev", "shared_snippet": "【2020统考真题】外部中断包括不可屏蔽中断(N"}

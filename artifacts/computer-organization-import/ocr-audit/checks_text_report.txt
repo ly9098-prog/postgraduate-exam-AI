@@ -1,0 +1,930 @@
+
+===== Check C1 : 84 findings =====
+  id=603 p16 [repeated_run_anywhere] III  stem: 可以在计算机中直接执行的语言和用助记符编写的语言分别是(
+I.机器语言
+II.汇编语言
+III.高级语言
+IV.操作系统
+  id=604 p17 [repeated_run_anywhere] III  stem: 只有当程序执行时才将源程序翻译成机器语言，并且一次只能翻译一行语句，边翻译边执行的是()程序，把汇编语言源程序转变为机器
+  id=605 p18 [repeated_run_anywhere] III  stem: 下列叙述中，正确的是(
+I.实际应用程序的测试结果能够全面代表计算机的性能
+II.系列机的基本特性是指令系统向后兼容
+I
+  id=612 p25 [repeated_run_anywhere] III  stem: 【2015 统考真题】计算机硬件能够直接执行的是(
+I.机器语言程序
+II.汇编语言程序
+III.硬件描述语言程序
+  id=618 p31 [repeated_run_anywhere] III  stem: 下列关于机器字长、指令字长和存储字长的说法中，正确的是(
+I.三者在数值上总是相等的
+II.三者在数值上可能不等
+III
+  id=629 p41 [repeated_run_anywhere] III  stem: 下列说法中，正确的是(
+I.在微型计算机的广泛应用中，会计电算化属于科学计算方面的应用.
+II.决定计算机计算精度的主要
+  id=630 p42 [repeated_run_anywhere] III  stem: 【2010 统考真题】下列选项中，能缩短程序执行时间的措施是(
+I.提高CPU时钟频率
+II.优化数据通路结构
+III.
+  id=636 p48 [repeated_run_anywhere] III  stem: 【2020 统考真题】下列给出的部件中，其位数(宽度)一定与机器字长相同的是(
+I.ALU
+II.指令寄存器
+III.通
+  id=663 p76 [repeated_run_anywhere] III  stem: 计算机内部的定点数大多用补码表示，以下是一些关于补码特点的叙述:
+I.零的表示是唯一的
+II.符号位可以和数值部分一起参
+  id=666 p79 [repeated_run_anywhere] III  stem: 【2018 统考真题】冯诺依曼结构计算机中的数据采用二进制编码表示，其主要原因是(
+I.二进制的运算规则简单
+II.制造
+  id=667 p80 [repeated_run_anywhere] FFF  stem: 【2021统考真题】已知带符号整数用补码表示，变量x,y,z的机器数分别为FFFDH,FFDFH,
+7FFCH,下列结论
+  id=684 p98 [repeated_run_anywhere] III  stem: 判断加减法溢出时，可采用判断进位的方式，若符号位的进位为 Co,最高位的进位为C1,则产生溢出的条件是(
+I.Co产生进
+  id=694 p108 [repeated_run_anywhere] III  stem: 下列关于各种移位的说法正确的是(
+I.假设机器数采用反码表示，当机器数为负时，左移时最高数位丢0，结果出错；右移时最低数
+  id=734 p113 [repeated_run_anywhere] FFF  stem: 32.【2009统考真题】一个C语言程序在一台32位机器上运行。程序中定义了三个变量x、y、Z,其中x和z为int型,y
+  id=734 p113 [repeated_run_anywhere] FFFF  stem: 32.【2009统考真题】一个C语言程序在一台32位机器上运行。程序中定义了三个变量x、y、Z,其中x和z为int型,y
+  id=737 p116 [repeated_run_anywhere] FFF  stem: 35.【2012统考真题】假定编译器规定 int和 short 类型长度分别为32 位和16位，执行下列C语言语句:
+`
+  id=737 p116 [repeated_run_anywhere] FFFF  stem: 35.【2012统考真题】假定编译器规定 int和 short 类型长度分别为32 位和16位，执行下列C语言语句:
+`
+  id=738 p117 [trailing_digits] 0100100  stem: 36.【2013统考真题】某字长为8位的计算机中，已知整型变量xy的机器数分别为[x]补= 11110100,[y]补=
+  id=740 p119 [trailing_digits] 32767  stem: 38.【2016统考真题】有如下C语言程序段:
+short si = -32767;
+unsigned short us
+  id=742 p121 [repeated_run_anywhere] FFFFFF  stem: 40.【2018统考真题】假定有符号整数采用补码表示，若int型变量x和y的机器数分别是FFFFFFDFH 和 0000
+  id=742 p121 [repeated_run_anywhere] FFFF  stem: 40.【2018统考真题】假定有符号整数采用补码表示，若int型变量x和y的机器数分别是FFFFFFDFH 和 0000
+  id=743 p122 [repeated_run_anywhere] FFFF  stem: 41.【2018统考真题】某32 位计算机按字节编址，采用小端方式。若语句"inti=0;对应指令的机器代码为C7 45
+  id=744 p123 [trailing_digits] 1100  stem: 42.【2018统考真题】整数x的机器数为11011000,分别对x进行逻辑右移1位和算术右移1位操作，得到的机器数各是
+  id=745 p124 [repeated_run_anywhere] FFFF  stem: 43.【2018统考真题】减法指令subR1, R^{2}, R3的功能为(R1)-(R^{2})R^{3}",该指令执
+  id=745 p124 [repeated_run_anywhere] FFF  stem: 43.【2018统考真题】减法指令subR1, R^{2}, R3的功能为(R1)-(R^{2})R^{3}",该指令执
+  id=746 p125 [trailing_digits] 65535  stem: 44.【2019 统考真题】考虑以下C语言代码:
+```text
+unsigned short usi = 65535;
+  id=752 p132 [trailing_digits] 10  stem: 6.某浮点机，采用规格化浮点数表示，阶码用移码表示(最高位代表符号位),尾数用原码表示。下列()的表示不是规格化浮点数。
+  id=754 p134 [repeated_run_anywhere] EEE  stem: 8.浮点数的 IEEE 754 标准对尾数编码采用的是(
+A.原码
+B.反码
+C.补码
+D.移码
+  id=755 p135 [trailing_digits] 1023  stem: 9.在 IEEE 754标准规定的 64 位浮点数格式中，符号位为1位，阶码为11位，尾数为 52 位，则它所能表示的最
+  id=755 p135 [repeated_run_anywhere] EEE  stem: 9.在 IEEE 754标准规定的 64 位浮点数格式中，符号位为1位，阶码为11位，尾数为 52 位，则它所能表示的最
+  id=707 p136 [repeated_run_anywhere] EEE  stem: 按照 IEEE 754标准规定的 32 位单精度浮点数 41A4C000H 对应的十进制数是(
+  id=711 p140 [repeated_run_anywhere] III  stem: 下列说法中，正确的是()。
+I.在计算机中，表示的数有时会发生溢出，根本原因是计算机的字长有限
+II.8421码就是二进
+  id=713 p142 [repeated_run_anywhere] EEE  stem: 假定采用 IEEE754标准中的单精度浮点数格式表示一个数为 45100000H,
+,则该数的值是(
+  id=718 p147 [repeated_run_anywhere] III  stem: 下列关于舍入的说法，正确的是(
+I.不仅仅只有浮点数需要舍入，定点数在运算时也可能要舍入
+II.在浮点数舍入中，只有左规
+  id=720 p149 [repeated_run_anywhere] EEE  stem: 【2010 统考真题】假定变量i、f和d 的数据类型分别为 int、float 和double(int 用补码表示,fl
+  id=720 p149 [repeated_run_anywhere] III  stem: 【2010 统考真题】假定变量i、f和d 的数据类型分别为 int、float 和double(int 用补码表示,fl
+  id=721 p150 [repeated_run_anywhere] EEE  stem: 【2011统考真题】float型数据通常用IEEE 754 单精度格式表示。若编译器将 float 型变量x分配在一个3
+  id=722 p151 [repeated_run_anywhere] EEE  stem: 【2012 统考真题】float 类型(即 IEEE754 单精度浮点数格式)能表示的最大正整数是(
+  id=723 p152 [repeated_run_anywhere] EEE  stem: 【2013统考真题】某数采用IEEE754单精度浮点数格式表示为C640000H,则该数的值是()。
+  id=724 p153 [repeated_run_anywhere] EEE  stem: 【2014统考真题】float 型数据常用IEEE754单精度浮点格式表示。假设两个float型变量x和
+y分别存放在 
+  id=725 p154 [repeated_run_anywhere] III  stem: 【2015 统考真题】下列有关浮点数加减运算的叙述中，正确的是(
+I.对阶操作不会引起阶码上溢或下溢
+II.右规和尾数舍
+  id=726 p155 [repeated_run_anywhere] EEE  stem: 【2018统考真题】IEEE 754 单精度浮点格式表示的数中，最小的规格化正数是(
+  id=727 p156 [repeated_run_anywhere] EEE  stem: 【2020统考真题】已知带符号整数用补码表示,float型数据用IEEE754标准表示，假定变量
+x的类型只可能是 in
+  id=728 p157 [repeated_run_anywhere] EEE  stem: 【2021统考真题】下列数值中，不能用IEEE754浮点格式精确表示的是(
+  id=729 p158 [repeated_run_anywhere] EEE  stem: 【2022 统考真题】-0.4375的IEEE754 单精度浮点数表示为(
+  id=767 p171 [repeated_run_anywhere] III  stem: 下列关于多级存储系统的说法中，正确的有(
+I.多级存储系统是为了降低存储成本
+II.虚拟存储器中主存和辅存之间的数据调动
+  id=803 p178 [repeated_run_anywhere] III  stem: 下面是有关DRAM和SRAM存储器芯片的叙述：I.DRAM芯片的集成度比SRAM芯片的高 II.DRAM芯片的成本比SR
+  id=781 p186 [repeated_run_anywhere] III  stem: 下列(
+)是动态半导体存储器的特点。
+I.在工作中存储器内容会产生变化
+II.每隔一定时间，需要根据原存内容重新写入一遍
+  id=785 p190 [repeated_run_anywhere] III  stem: 下列说法中，正确的是(
+I.高位多体交叉存储器能很好地满足程序的局部性原理
+II.高位四体交叉存储器可能在一个存储周期内
+  id=786 p191 [repeated_run_anywhere] FFF  stem: 假定用若干16K8 位的存储芯片组成一个64K8 位的存储器，芯片各单元采用交叉编址方式，则地址BFFFH所在的芯片的最
+  id=787 p192 [repeated_run_anywhere] III  stem: 【2010 统考真题】下列有关RAM和ROM的叙述中，正确的是(
+I.RAM是易失性存储器,ROM是非易失性存储器
+II
+  id=799 p207 [repeated_run_anywhere] FFFF  stem: 内存按字节编址，地址从90000H到CFFFFH，若用存储容量为16K×8位芯片构成该内存，至少需要的芯片数是()。
+  id=809 p213 [repeated_run_anywhere] FFF  stem: 【2016统考真题】某存储器容量为64KB，按字节编址，地址4000H～5FFFH为ROM区，其余为RAM区。若采用8K
+  id=811 p215 [repeated_run_anywhere] FFFF  stem: 【2021统考真题】某计算机的存储器总线中有24位地址线和 32 位数据线，按字编址，字长为32 位。如果00 0000
+  id=816 p220 [repeated_run_anywhere] III  stem: 【2013 统考真题】下列选项中，用于提高RAID可靠性的措施有(
+I.磁盘镜像
+II.条带化
+III.奇偶校验
+IV.
+  id=848 p252 [repeated_run_anywhere] III  stem: 关于虚拟存储器，下列说法中正确的是( )
+I.虚拟存储器利用了局部性原理
+II.页式虚拟存储器的页面若很小，主存中存放的
+  id=851 p255 [repeated_run_anywhere] FFF  stem: 【2013 统考真题】某计算机主存地址空间大小为256MB，按字节编址。虚拟地址空间大小为4GB，采用页式存储管理，页面
+  id=871 p275 [repeated_run_anywhere] III  stem: 【2022 统考真题】下列选项中，属于指令集体系结构(ISA)规定的内容是(
+I.指令字格式和指令类型
+II.CPU的时
+  id=909 p312 [repeated_run_anywhere] III  stem: 【2011统考真题】下列指令系统的特点中，有利于实现指令流水线的是(
+I.指令格式规整且长度一致,
+II.指令和数据按边
+  id=928 p332 [repeated_run_anywhere] III  stem: 以下关于计算机系统的概念中，正确的是(
+I.CPU不包括地址译码器
+II.CPU的程序计数器中存放的是操作数地址
+III
+  id=946 p351 [repeated_run_anywhere] III  stem: 下列说法中，正确的是（
+I.指令字长等于机器字长的前提下，取指周期等于机器周期
+II.指令字长等于存储字长的前提下，取指
+  id=967 p372 [repeated_run_anywhere] III  stem: 在微程序控制方式中，以下说法正确的是(
+I.采用微程序控制器的处理器称为微处理器
+II.每条机器指令由一段微程序来解释执
+  id=968 p373 [repeated_run_anywhere] III  stem: 下列说法中，正确的是(
+I.微程序控制方式和硬布线方式相比较，前者可以使指令的执行速度更快
+II.若采用微程序控制方式，
+  id=970 p375 [repeated_run_anywhere] III  stem: 下列部件中属于控制部件的是(
+I.指令寄存器
+II.操作控制器
+III.程序计数器
+IV.状态条件寄存器
+  id=971 p376 [repeated_run_anywhere] III  stem: 下列部件中属于执行部件的是()。
+I.控制器
+II.存储器
+III.运算器
+IV.外围设备
+  id=977 p382 [repeated_run_anywhere] III  stem: 【2019 统考真题】某指令功能为R[r2]←R[r1]+M[R[r0]]，其两个源操作数分别采用寄存器、寄存器间接寻址
+  id=978 p383 [repeated_run_anywhere] III  stem: 【2021统考真题】下列寄存器中，汇编语言程序员可见的是(
+I.指令寄存器
+II.微指令寄存器
+III..基址寄存器
+I
+  id=1005 p408 [repeated_run_anywhere] III  stem: 【2017统考真题】下列关于超标量流水线特性的叙述中，正确的是(
+I.能缩短流水线功能段的处理时间
+II.能在一个时钟周
+  id=1009 p412 [repeated_run_anywhere] III  stem: 【2020统考真题】下列给出的处理器类型中，理想情况下,CPI为1的是(
+I.单周期CPU
+II.多周期CPU
+III.
+  id=1017 p420 [repeated_run_anywhere] III  stem: 下列关于多处理器的说法中，正确的是(
+I.一般采用偶数路CPU,如2路、4路、6路等
+II.NUMA构架比UMA构架的运
+  id=1032 p435 [repeated_run_anywhere] III  stem: 微机中控制总线上完整传输的信号有(
+I.存储器和I/O设备的地址码
+II.所有存储器和I/O设备的时序信号与控制信号
+I
+  id=1047 p450 [repeated_run_anywhere] III  stem: 【2018统考真题】下列选项中，可提高同步总线数据传输率的是(
+I.增加总线宽度
+II.提高总线工作频率
+III.支持突
+  id=1063 p466 [repeated_run_anywhere] III  stem: 下列关于I/O 设备的说法中，正确的是（
+I.键盘、鼠标、显示器、打印机属于人机交互设备
+II.在微型计算机中,VGA代
+  id=1069 p472 [repeated_run_anywhere] III  stem: 下列功能中，属于I/O接口的功能的是(
+I.数据格式的转换
+II.I/O 过程中错误与状态检测
+III.I/O操作的控制
+  id=1076 p479 [repeated_run_anywhere] III  stem: 【2012 统考真题】下列选项中，在I/O总线的数据线上传输的信息包括(
+I.I/O 接口中的命令字
+II.IO 接口中
+  id=1082 p485 [repeated_run_anywhere] III  stem: 当有中断源发出请求时,CPU可执行相应的中断服务程序，可以提出中断的有(
+I.外部事件
+II.Cache
+III.虚拟存
+  id=1083 p486 [repeated_run_anywhere] III  stem: 关于程序中断方式和DMA方式的叙述，错误的是(
+I.DMA的优先级比程序中断的优先级要高
+II.程序中断方式需要保护现场
+  id=1084 p487 [repeated_run_anywhere] III  stem: 下列说法中，错误的是(
+I.程序中断过程是由硬件和中断服务程序共同完成的
+II.在每条指令的执行过程中，每个总线周期要检
+  id=1085 p488 [repeated_run_anywhere] III  stem: 能产生 DMA 请求的总线部件是(
+I.高速外设
+II.需要与主机批量交换数据的外设
+III.具有 DMA接口的设备
+  id=1110 p513 [repeated_run_anywhere] III  stem: 【2010统考真题】单级中断系统中，中断服务程序内的执行顺序是(
+I.保护现场
+II.开中断
+III.关中断
+IV.保存
+  id=1111 p514 [repeated_run_anywhere] MMM  stem: 【2011 统考真题】某计算机有五级中断L4~Lo,中断屏蔽字为M4M3MMMo,Mi=1(0\leqi\leq
+4)表
+  id=1111 p514 [repeated_run_anywhere] LLL  stem: 【2011 统考真题】某计算机有五级中断L4~Lo,中断屏蔽字为M4M3MMMo,Mi=1(0\leqi\leq
+4)表
+  id=1113 p516 [repeated_run_anywhere] III  stem: 【2012统考真题】响应外部中断的过程中，中断隐指令完成的操作，除保护断点外，还包括(
+I.关中断
+II.保存通用寄存器
+  id=1126 p523 [repeated_run_anywhere] III  stem: 下列关于DMA方式的叙述中，正确的是()。I.DMA传送前由设备驱动程序设置传送参数 II.数据传送前由DMA控制器请求
+
+===== Check C2 : 530 findings =====
+  id=599 p11 [halfwidth_unbalanced] None  stem: 下列关于 CPU存取速度的比较中，正确的是(
+  id=599 p11 [trailing_open_paren] (  stem: 下列关于 CPU存取速度的比较中，正确的是(
+  id=602 p15 [halfwidth_unbalanced] None  stem: 关于编译程序和解释程序，下列说法中错误的是(
+  id=602 p15 [trailing_open_paren] (  stem: 关于编译程序和解释程序，下列说法中错误的是(
+  id=603 p16 [halfwidth_unbalanced] None  stem: 可以在计算机中直接执行的语言和用助记符编写的语言分别是(
+I.机器语言
+II.汇编语言
+III.高级语言
+IV.操作系统
+  id=605 p18 [halfwidth_unbalanced] None  stem: 下列叙述中，正确的是(
+I.实际应用程序的测试结果能够全面代表计算机的性能
+II.系列机的基本特性是指令系统向后兼容
+I
+  id=606 p19 [halfwidth_unbalanced] None  stem: 在 CPU的组成中，不包括(
+  id=606 p19 [trailing_open_paren] (  stem: 在 CPU的组成中，不包括(
+  id=608 p21 [halfwidth_unbalanced] None  stem: 关于相联存储器，下列说法中正确的是(
+  id=608 p21 [trailing_open_paren] (  stem: 关于相联存储器，下列说法中正确的是(
+  id=609 p22 [halfwidth_unbalanced] None  stem: 计算机系统的层次结构可以分为6层，其层次之间的依存关系是(
+  id=609 p22 [trailing_open_paren] (  stem: 计算机系统的层次结构可以分为6层，其层次之间的依存关系是(
+  id=611 p24 [halfwidth_unbalanced] None  stem: 【2016 统考真题】将高级语言源程序转换为机器级目标代码文件的程序是(
+  id=611 p24 [trailing_open_paren] (  stem: 【2016 统考真题】将高级语言源程序转换为机器级目标代码文件的程序是(
+  id=612 p25 [halfwidth_unbalanced] None  stem: 【2015 统考真题】计算机硬件能够直接执行的是(
+I.机器语言程序
+II.汇编语言程序
+III.硬件描述语言程序
+  id=613 p26 [halfwidth_unbalanced] None  stem: 【2019 统考真题】下列关于冯诺依曼计算机基本思想的叙述中，错误的是(
+  id=613 p26 [trailing_open_paren] (  stem: 【2019 统考真题】下列关于冯诺依曼计算机基本思想的叙述中，错误的是(
+  id=614 p27 [halfwidth_unbalanced] None  stem: 【2022 统考真题】将高级语言源程序转换为可执行目标文件的主要过程是(
+  id=614 p27 [trailing_open_paren] (  stem: 【2022 统考真题】将高级语言源程序转换为可执行目标文件的主要过程是(
+  id=616 p29 [halfwidth_unbalanced] None  stem: 存储字长是指(
+  id=616 p29 [trailing_open_paren] (  stem: 存储字长是指(
+  id=617 p30 [halfwidth_unbalanced] None  stem: 以下说法中，错误的是(
+  id=617 p30 [trailing_open_paren] (  stem: 以下说法中，错误的是(
+  id=618 p31 [halfwidth_unbalanced] None  stem: 下列关于机器字长、指令字长和存储字长的说法中，正确的是(
+I.三者在数值上总是相等的
+II.三者在数值上可能不等
+III
+  id=619 p33 [halfwidth_unbalanced] None  stem: 用于科学计算的计算机中，标志系统性能的最有用的参数是(
+  id=619 p33 [trailing_open_paren] (  stem: 用于科学计算的计算机中，标志系统性能的最有用的参数是(
+  id=620 p34 [halfwidth_unbalanced] None  stem: 若一台计算机的机器字长为4 字节，则表明该机器(
+  id=620 p34 [trailing_open_paren] (  stem: 若一台计算机的机器字长为4 字节，则表明该机器(
+  id=626 p38 [halfwidth_unbalanced] None  stem: 从用户观点看，评价计算机系统性能的综合参数是(
+  id=626 p38 [trailing_open_paren] (  stem: 从用户观点看，评价计算机系统性能的综合参数是(
+  id=627 p39 [halfwidth_unbalanced] None  stem: 当前设计高性能计算机的重要技术途径是(
+  id=627 p39 [trailing_open_paren] (  stem: 当前设计高性能计算机的重要技术途径是(
+  id=628 p40 [halfwidth_unbalanced] None  stem: 下列关于兼容的叙述，正确的是(
+  id=628 p40 [trailing_open_paren] (  stem: 下列关于兼容的叙述，正确的是(
+  id=629 p41 [halfwidth_unbalanced] None  stem: 下列说法中，正确的是(
+I.在微型计算机的广泛应用中，会计电算化属于科学计算方面的应用.
+II.决定计算机计算精度的主要
+  id=630 p42 [halfwidth_unbalanced] None  stem: 【2010 统考真题】下列选项中，能缩短程序执行时间的措施是(
+I.提高CPU时钟频率
+II.优化数据通路结构
+III.
+  id=631 p43 [halfwidth_unbalanced] None  stem: 【2011统考真题】下列选项中，描述浮点数操作速度指标的是(
+  id=631 p43 [trailing_open_paren] (  stem: 【2011统考真题】下列选项中，描述浮点数操作速度指标的是(
+  id=632 p44 [halfwidth_unbalanced] None  stem: 【2012 统考真题】假定基准程序A在某计算机上的运行时间为100s,其中90s 为CPU时间，其余为I/O 时间。若C
+  id=632 p44 [trailing_open_paren] (  stem: 【2012 统考真题】假定基准程序A在某计算机上的运行时间为100s,其中90s 为CPU时间，其余为I/O 时间。若C
+  id=634 p46 [halfwidth_unbalanced] None  stem: 【2014 统考真题】程序P在机器M上的执行时间是20s,编译优化后,P执行的指令数减少到原来的70%,而CPI增加到原
+  id=634 p46 [trailing_open_paren] (  stem: 【2014 统考真题】程序P在机器M上的执行时间是20s,编译优化后,P执行的指令数减少到原来的70%,而CPI增加到原
+  id=636 p48 [halfwidth_unbalanced] None  stem: 【2020 统考真题】下列给出的部件中，其位数(宽度)一定与机器字长相同的是(
+I.ALU
+II.指令寄存器
+III.通
+  id=639 p51 [halfwidth_unbalanced] None  stem: 下列各种数制的数中，最小的数是(
+  id=639 p51 [trailing_open_paren] (  stem: 下列各种数制的数中，最小的数是(
+  id=641 p53 [halfwidth_unbalanced] None  stem: 若十进制数为137.5,则其八进制数为(
+  id=641 p53 [trailing_open_paren] (  stem: 若十进制数为137.5,则其八进制数为(
+  id=643 p55 [halfwidth_unbalanced] None  stem: 下列说法有误的是(
+  id=643 p55 [trailing_open_paren] (  stem: 下列说法有误的是(
+  id=644 p56 [halfwidth_unbalanced] None  stem: 对真值 0表示形式唯一的机器数是(
+  id=644 p56 [trailing_open_paren] (  stem: 对真值 0表示形式唯一的机器数是(
+  id=646 p58 [halfwidth_unbalanced] None  stem: 若X为负数，则由[X]补求[-X]补是将(
+  id=646 p58 [trailing_open_paren] (  stem: 若X为负数，则由[X]补求[-X]补是将(
+  id=647 p60 [halfwidth_unbalanced] None  stem: 一个n+1位整数x原码的数值范围是(
+  id=647 p60 [trailing_open_paren] (  stem: 一个n+1位整数x原码的数值范围是(
+  id=648 p61 [halfwidth_unbalanced] None  stem: n位定点整数(有符号)表示的最大值是(
+  id=648 p61 [trailing_open_paren] (  stem: n位定点整数(有符号)表示的最大值是(
+  id=649 p62 [halfwidth_unbalanced] None  stem: 对于相同位数(设为N位，不考虑符号位)的二进制补码小数和十进制小数，二进制小数能表示的数的个数/十进制小数所能表示数的个
+  id=649 p62 [trailing_open_paren] (  stem: 对于相同位数(设为N位，不考虑符号位)的二进制补码小数和十进制小数，二进制小数能表示的数的个数/十进制小数所能表示数的个
+  id=650 p63 [halfwidth_unbalanced] None  stem: 若定点整数为 64位，含1位符号位，则采用补码表示的绝对值最大的负数为(
+  id=650 p63 [trailing_open_paren] (  stem: 若定点整数为 64位，含1位符号位，则采用补码表示的绝对值最大的负数为(
+  id=652 p65 [halfwidth_unbalanced] None  stem: 若[x]补=1,x1X2X3X4X5X6,其中xi取0或1,若要x>-32,应当满足(
+  id=652 p65 [trailing_open_paren] (  stem: 若[x]补=1,x1X2X3X4X5X6,其中xi取0或1,若要x>-32,应当满足(
+  id=653 p66 [halfwidth_unbalanced] None  stem: 设x为整数,[x]补=1,x1X2X3X4X5,若要x<-16,x1~x5应满足的条件是(
+  id=653 p66 [trailing_open_paren] (  stem: 设x为整数,[x]补=1,x1X2X3X4X5,若要x<-16,x1~x5应满足的条件是(
+  id=654 p67 [halfwidth_unbalanced] None  stem: 设x为真值,x*为其绝对值，满足[-x*]补=[-x]补，当且仅当(
+  id=654 p67 [trailing_open_paren] (  stem: 设x为真值,x*为其绝对值，满足[-x*]补=[-x]补，当且仅当(
+  id=657 p70 [halfwidth_unbalanced] None  stem: 若寄存器内容为1000 0000,若它等于-0,则为(
+  id=657 p70 [trailing_open_paren] (  stem: 若寄存器内容为1000 0000,若它等于-0,则为(
+  id=658 p71 [halfwidth_unbalanced] None  stem: 若寄存器内容为11111111 若它等于+127,则为(
+  id=658 p71 [trailing_open_paren] (  stem: 若寄存器内容为11111111 若它等于+127,则为(
+  id=659 p72 [halfwidth_unbalanced] None  stem: 若寄存器内容为11111111,若它等于-1,则为(
+  id=659 p72 [trailing_open_paren] (  stem: 若寄存器内容为11111111,若它等于-1,则为(
+  id=660 p73 [halfwidth_unbalanced] None  stem: 若寄存器内容为 00000000 若它等于-128,则为(
+  id=660 p73 [trailing_open_paren] (  stem: 若寄存器内容为 00000000 若它等于-128,则为(
+  id=661 p74 [fullwidth_unbalanced] None  stem: 若二进制定点小数真值是-0.1101，机器表示为1.0010，则为（
+  id=661 p74 [trailing_open_paren] （  stem: 若二进制定点小数真值是-0.1101，机器表示为1.0010，则为（
+  id=665 p78 [halfwidth_unbalanced] None  stem: 【2015统考真题】由3个1和5个0组成的8位二进制补码，能表示的最小整数是(
+  id=665 p78 [trailing_open_paren] (  stem: 【2015统考真题】由3个1和5个0组成的8位二进制补码，能表示的最小整数是(
+  id=666 p79 [halfwidth_unbalanced] None  stem: 【2018 统考真题】冯诺依曼结构计算机中的数据采用二进制编码表示，其主要原因是(
+I.二进制的运算规则简单
+II.制造
+  id=670 p83 [halfwidth_unbalanced] None  stem: ALU作为运算器的核心部件，其属于(
+  id=670 p83 [trailing_open_paren] (  stem: ALU作为运算器的核心部件，其属于(
+  id=672 p85 [halfwidth_unbalanced] None  stem: 加法器中每位的进位生成信号g为(
+  id=672 p85 [trailing_open_paren] (  stem: 加法器中每位的进位生成信号g为(
+  id=674 p87 [halfwidth_unbalanced] None  stem: 算术逻辑单元(ALU)的功能一般包括(
+  id=674 p87 [trailing_open_paren] (  stem: 算术逻辑单元(ALU)的功能一般包括(
+  id=676 p89 [halfwidth_unbalanced] None  stem: 补码定点整数01010101左移两位后的值为(
+  id=676 p89 [trailing_open_paren] (  stem: 补码定点整数01010101左移两位后的值为(
+  id=677 p90 [halfwidth_unbalanced] None  stem: 补码定点整数10010101右移一位后的值为(
+  id=677 p90 [trailing_open_paren] (  stem: 补码定点整数10010101右移一位后的值为(
+  id=680 p93 [halfwidth_unbalanced] None  stem: 若机器数 BAH为补码，其余条件同上题，则有(
+  id=680 p93 [trailing_open_paren] (  stem: 若机器数 BAH为补码，其余条件同上题，则有(
+  id=698 p94 [halfwidth_unbalanced] None  stem: 16位补码0x8FA0扩展为32位应该是(
+  id=698 p94 [trailing_open_paren] (  stem: 16位补码0x8FA0扩展为32位应该是(
+  id=682 p96 [halfwidth_unbalanced] None  stem: 关于模4补码，下列说法正确的是(
+  id=682 p96 [trailing_open_paren] (  stem: 关于模4补码，下列说法正确的是(
+  id=684 p98 [halfwidth_unbalanced] None  stem: 判断加减法溢出时，可采用判断进位的方式，若符号位的进位为 Co,最高位的进位为C1,则产生溢出的条件是(
+I.Co产生进
+  id=685 p99 [halfwidth_unbalanced] None  stem: 在补码的加减法中，用两位符号位判断溢出，两位符号位Ss1Ss2=10时，表示(
+  id=685 p99 [trailing_open_paren] (  stem: 在补码的加减法中，用两位符号位判断溢出，两位符号位Ss1Ss2=10时，表示(
+  id=687 p101 [halfwidth_unbalanced] None  stem: 原码乘法是(
+  id=687 p101 [trailing_open_paren] (  stem: 原码乘法是(
+  id=688 p102 [halfwidth_unbalanced] None  stem: x、y为定点整数，其格式为1位符号位、n位数值位，若采用补码一位乘法实现乘法运算，则最多需要(
+()次加法运算。
+  id=690 p104 [halfwidth_unbalanced] None  stem: 原码乘法时，符号位单独处理乘积的方式是(
+  id=690 p104 [trailing_open_paren] (  stem: 原码乘法时，符号位单独处理乘积的方式是(
+  id=693 p107 [halfwidth_unbalanced] None  stem: 下列关于补码除法的说法中，正确的是(
+  id=693 p107 [trailing_open_paren] (  stem: 下列关于补码除法的说法中，正确的是(
+  id=694 p108 [halfwidth_unbalanced] None  stem: 下列关于各种移位的说法正确的是(
+I.假设机器数采用反码表示，当机器数为负时，左移时最高数位丢0，结果出错；右移时最低数
+  id=696 p110 [halfwidth_unbalanced] None  stem: 某计算机字长为8位,CPU中有一个8位加法器。已知无符号数x=69,y=38,如果在该加法器中计算x-y,则加法器的两个
+  id=696 p110 [trailing_open_paren] (  stem: 某计算机字长为8位,CPU中有一个8位加法器。已知无符号数x=69,y=38,如果在该加法器中计算x-y,则加法器的两个
+  id=733 p112 [halfwidth_unbalanced] None  stem: 31.某8位计算机中,x和y是两个带符号整数，用补码表示,[x]补=44H, [y]补=DCH,则x/2+2y 的机器数
+  id=736 p115 [halfwidth_unbalanced] None  stem: 34.【2012统考真题】某计算机存储器按字节编址，采用小端方式存放数据。假定编译器规定 int 和 short 型长度
+  id=738 p117 [halfwidth_unbalanced] None  stem: 36.【2013统考真题】某字长为8位的计算机中，已知整型变量xy的机器数分别为[x]补= 11110100,[y]补=
+  id=740 p119 [halfwidth_unbalanced] None  stem: 38.【2016统考真题】有如下C语言程序段:
+short si = -32767;
+unsigned short us
+  id=741 p120 [halfwidth_unbalanced] None  stem: 39.【2016 统考真题】某计算机字长为32 位，按字节编址，采用小端方式存放数据。假定有一个
+double 型变量，
+  id=744 p123 [halfwidth_unbalanced] None  stem: 42.【2018统考真题】整数x的机器数为11011000,分别对x进行逻辑右移1位和算术右移1位操作，得到的机器数各是
+  id=746 p125 [halfwidth_unbalanced] None  stem: 44.【2019 统考真题】考虑以下C语言代码:
+```text
+unsigned short usi = 65535;
+  id=747 p126 [halfwidth_unbalanced] None  stem: 45.【2020 统考真题】在按字节编址，采用小端方式的32位计算机中，按边界对齐方式为以下C语言结构型变量a分配存储空
+  id=747 p126 [trailing_open_paren] (  stem: 45.【2020 统考真题】在按字节编址，采用小端方式的32位计算机中，按边界对齐方式为以下C语言结构型变量a分配存储空
+  id=750 p130 [halfwidth_unbalanced] None  stem: 4.下列说法中正确的是(
+A.采用变形补码进行加减法运算可以避免溢出
+B.只有定点数运算才可能溢出，浮点数运算不会产生溢
+  id=751 p131 [halfwidth_unbalanced] None  stem: 5.在规格化浮点运算中，若某浮点数为251.10101,其中尾数为补码表示，则该数(
+B.需右移规格化
+A.不需规格化.
+  id=753 p133 [halfwidth_unbalanced] None  stem: 7.下列关于对阶操作说法正确的是(
+A.在浮点加减运算的对阶操作中，若阶码减小，则尾数左移
+B.在浮点加减运算的对阶操作
+  id=754 p134 [halfwidth_unbalanced] None  stem: 8.浮点数的 IEEE 754 标准对尾数编码采用的是(
+A.原码
+B.反码
+C.补码
+D.移码
+  id=707 p136 [halfwidth_unbalanced] None  stem: 按照 IEEE 754标准规定的 32 位单精度浮点数 41A4C000H 对应的十进制数是(
+  id=707 p136 [trailing_open_paren] (  stem: 按照 IEEE 754标准规定的 32 位单精度浮点数 41A4C000H 对应的十进制数是(
+  id=709 p138 [halfwidth_unbalanced] None  stem: 如果某单精度浮点数、某原码、某补码、某移码的 32 位机器数均为 0xF0000000。这些数从大到小的顺序是(
+  id=709 p138 [trailing_open_paren] (  stem: 如果某单精度浮点数、某原码、某补码、某移码的 32 位机器数均为 0xF0000000。这些数从大到小的顺序是(
+  id=710 p139 [halfwidth_unbalanced] None  stem: 采用规格化的浮点数最主要是为了(
+  id=710 p139 [trailing_open_paren] (  stem: 采用规格化的浮点数最主要是为了(
+  id=713 p142 [halfwidth_unbalanced] None  stem: 假定采用 IEEE754标准中的单精度浮点数格式表示一个数为 45100000H,
+,则该数的值是(
+  id=713 p142 [trailing_open_paren] (  stem: 假定采用 IEEE754标准中的单精度浮点数格式表示一个数为 45100000H,
+,则该数的值是(
+  id=714 p143 [halfwidth_unbalanced] None  stem: 设浮点数共12 位。其中阶码含1位阶符共4位，以2为底，补码表示；尾数含1位数符共8位，补码表示，规格化。则该浮点数所能
+  id=714 p143 [trailing_open_paren] (  stem: 设浮点数共12 位。其中阶码含1位阶符共4位，以2为底，补码表示；尾数含1位数符共8位，补码表示，规格化。则该浮点数所能
+  id=715 p144 [halfwidth_unbalanced] None  stem: 计算机在进行浮点数的加减运算之前先进行对阶操作，若x的阶码大于y的阶码，则应将(
+  id=715 p144 [trailing_open_paren] (  stem: 计算机在进行浮点数的加减运算之前先进行对阶操作，若x的阶码大于y的阶码，则应将(
+  id=718 p147 [halfwidth_unbalanced] None  stem: 下列关于舍入的说法，正确的是(
+I.不仅仅只有浮点数需要舍入，定点数在运算时也可能要舍入
+II.在浮点数舍入中，只有左规
+  id=721 p150 [halfwidth_unbalanced] None  stem: 【2011统考真题】float型数据通常用IEEE 754 单精度格式表示。若编译器将 float 型变量x分配在一个3
+  id=721 p150 [trailing_open_paren] (  stem: 【2011统考真题】float型数据通常用IEEE 754 单精度格式表示。若编译器将 float 型变量x分配在一个3
+  id=722 p151 [halfwidth_unbalanced] None  stem: 【2012 统考真题】float 类型(即 IEEE754 单精度浮点数格式)能表示的最大正整数是(
+  id=722 p151 [trailing_open_paren] (  stem: 【2012 统考真题】float 类型(即 IEEE754 单精度浮点数格式)能表示的最大正整数是(
+  id=725 p154 [halfwidth_unbalanced] None  stem: 【2015 统考真题】下列有关浮点数加减运算的叙述中，正确的是(
+I.对阶操作不会引起阶码上溢或下溢
+II.右规和尾数舍
+  id=726 p155 [halfwidth_unbalanced] None  stem: 【2018统考真题】IEEE 754 单精度浮点格式表示的数中，最小的规格化正数是(
+  id=726 p155 [trailing_open_paren] (  stem: 【2018统考真题】IEEE 754 单精度浮点格式表示的数中，最小的规格化正数是(
+  id=728 p157 [halfwidth_unbalanced] None  stem: 【2021统考真题】下列数值中，不能用IEEE754浮点格式精确表示的是(
+  id=728 p157 [trailing_open_paren] (  stem: 【2021统考真题】下列数值中，不能用IEEE754浮点格式精确表示的是(
+  id=729 p158 [halfwidth_unbalanced] None  stem: 【2022 统考真题】-0.4375的IEEE754 单精度浮点数表示为(
+  id=729 p158 [trailing_open_paren] (  stem: 【2022 统考真题】-0.4375的IEEE754 单精度浮点数表示为(
+  id=731 p160 [halfwidth_unbalanced] None  stem: 存储器的存取周期是指(
+  id=731 p160 [trailing_open_paren] (  stem: 存储器的存取周期是指(
+  id=759 p163 [halfwidth_unbalanced] None  stem: 在下列几种存储器中,CPU不能直接访问的是(
+  id=759 p163 [trailing_open_paren] (  stem: 在下列几种存储器中,CPU不能直接访问的是(
+  id=761 p165 [halfwidth_unbalanced] None  stem: 设机器字长为64位，存储容量为128MB,若按字编址，它可寻址的单元个数是(
+  id=761 p165 [trailing_open_paren] (  stem: 设机器字长为64位，存储容量为128MB,若按字编址，它可寻址的单元个数是(
+  id=763 p167 [halfwidth_unbalanced] None  stem: 计算机的存储系统是指(
+  id=763 p167 [trailing_open_paren] (  stem: 计算机的存储系统是指(
+  id=765 p169 [halfwidth_unbalanced] None  stem: 存储器分层体系结构中，存储器从速度最快到最慢的排列顺序是(
+  id=765 p169 [trailing_open_paren] (  stem: 存储器分层体系结构中，存储器从速度最快到最慢的排列顺序是(
+  id=767 p171 [halfwidth_unbalanced] None  stem: 下列关于多级存储系统的说法中，正确的有(
+I.多级存储系统是为了降低存储成本
+II.虚拟存储器中主存和辅存之间的数据调动
+  id=768 p172 [halfwidth_unbalanced] None  stem: 【2011统考真题】下列各类存储器中，不采用随机存取方式的是(
+  id=768 p172 [trailing_open_paren] (  stem: 【2011统考真题】下列各类存储器中，不采用随机存取方式的是(
+  id=771 p175 [halfwidth_unbalanced] None  stem: 若RAM中每个存储单元为16 位，则下面所述正确的是(
+  id=771 p175 [trailing_open_paren] (  stem: 若RAM中每个存储单元为16 位，则下面所述正确的是(
+  id=773 p177 [halfwidth_unbalanced] None  stem: 动态RAM采用下列哪种刷新方式时，不存在死时间(
+  id=773 p177 [trailing_open_paren] (  stem: 动态RAM采用下列哪种刷新方式时，不存在死时间(
+  id=774 p179 [halfwidth_unbalanced] None  stem: 下列说法中，正确的是(
+  id=774 p179 [trailing_open_paren] (  stem: 下列说法中，正确的是(
+  id=775 p180 [halfwidth_unbalanced] None  stem: 关於SRAM和 DRAM,下列叙述中正确的是(
+  id=775 p180 [trailing_open_paren] (  stem: 关於SRAM和 DRAM,下列叙述中正确的是(
+  id=780 p185 [halfwidth_unbalanced] None  stem: 下列说法正确的是(
+  id=780 p185 [trailing_open_paren] (  stem: 下列说法正确的是(
+  id=782 p187 [halfwidth_unbalanced] None  stem: 已知单个存储体的存储周期为110ns,总线传输周期为10ns,采用低位交叉编址的多模块存储器时，存储体数应(
+  id=782 p187 [trailing_open_paren] (  stem: 已知单个存储体的存储周期为110ns,总线传输周期为10ns,采用低位交叉编址的多模块存储器时，存储体数应(
+  id=785 p190 [halfwidth_unbalanced] None  stem: 下列说法中，正确的是(
+I.高位多体交叉存储器能很好地满足程序的局部性原理
+II.高位四体交叉存储器可能在一个存储周期内
+  id=786 p191 [halfwidth_unbalanced] None  stem: 假定用若干16K8 位的存储芯片组成一个64K8 位的存储器，芯片各单元采用交叉编址方式，则地址BFFFH所在的芯片的最
+  id=786 p191 [trailing_open_paren] (  stem: 假定用若干16K8 位的存储芯片组成一个64K8 位的存储器，芯片各单元采用交叉编址方式，则地址BFFFH所在的芯片的最
+  id=787 p192 [halfwidth_unbalanced] None  stem: 【2010 统考真题】下列有关RAM和ROM的叙述中，正确的是(
+I.RAM是易失性存储器,ROM是非易失性存储器
+II
+  id=788 p193 [halfwidth_unbalanced] None  stem: 【2012统考真题】下列关于闪存的叙述中，错误的是(
+  id=788 p193 [trailing_open_paren] (  stem: 【2012统考真题】下列关于闪存的叙述中，错误的是(
+  id=790 p195 [halfwidth_unbalanced] None  stem: 【2015 统考真题】下列存储器中，在工作期间需要周期性刷新的是(
+  id=790 p195 [trailing_open_paren] (  stem: 【2015 统考真题】下列存储器中，在工作期间需要周期性刷新的是(
+  id=791 p196 [halfwidth_unbalanced] None  stem: 【2015 统考真题】某计算机使用四体交叉编址存储器，假定在存储器总线上出现的主存地址(十进制)序列为 8005,800
+  id=791 p196 [trailing_open_paren] (  stem: 【2015 统考真题】某计算机使用四体交叉编址存储器，假定在存储器总线上出现的主存地址(十进制)序列为 8005,800
+  id=795 p201 [halfwidth_unbalanced] None  stem: 某计算机字长为16位，存储器容量为256KB,CPU按字寻址，其寻址范围是(
+  id=795 p201 [trailing_open_paren] (  stem: 某计算机字长为16位，存储器容量为256KB,CPU按字寻址，其寻址范围是(
+  id=798 p206 [halfwidth_unbalanced] None  stem: 若内存地址区间为4000H~43FFH,每个存储单元可存储16位二进制数，该内存区域用4片存储器芯片构成，构成该内存所用
+  id=798 p206 [trailing_open_paren] (  stem: 若内存地址区间为4000H~43FFH,每个存储单元可存储16位二进制数，该内存区域用4片存储器芯片构成，构成该内存所用
+  id=807 p211 [halfwidth_unbalanced] None  stem: 【2010统考真题】假定用若干2K4位的芯片组成一个8K8位的存储器，则地址0B1FH所在芯片的最小地址是(
+  id=807 p211 [trailing_open_paren] (  stem: 【2010统考真题】假定用若干2K4位的芯片组成一个8K8位的存储器，则地址0B1FH所在芯片的最小地址是(
+  id=811 p215 [halfwidth_unbalanced] None  stem: 【2021统考真题】某计算机的存储器总线中有24位地址线和 32 位数据线，按字编址，字长为32 位。如果00 0000
+  id=811 p215 [trailing_open_paren] (  stem: 【2021统考真题】某计算机的存储器总线中有24位地址线和 32 位数据线，按字编址，字长为32 位。如果00 0000
+  id=812 p216 [halfwidth_unbalanced] None  stem: 一个磁盘的转速为7200转/分，每个磁道有160个扇区，每个扇区有512字节，则在理想情况下，其数据传输率为(
+  id=812 p216 [trailing_open_paren] (  stem: 一个磁盘的转速为7200转/分，每个磁道有160个扇区，每个扇区有512字节，则在理想情况下，其数据传输率为(
+  id=813 p217 [halfwidth_unbalanced] None  stem: 下列关于磁盘的说法中，错误的是(
+  id=813 p217 [trailing_open_paren] (  stem: 下列关于磁盘的说法中，错误的是(
+  id=814 p218 [halfwidth_unbalanced] None  stem: 下列关于固态硬盘(SSD)的说法中，错误的是(
+  id=814 p218 [trailing_open_paren] (  stem: 下列关于固态硬盘(SSD)的说法中，错误的是(
+  id=815 p219 [halfwidth_unbalanced] None  stem: 【2013 统考真题】某磁盘的转速为10000转/分，平均寻道时间是6ms,磁盘传输速率是20MB/s,磁盘控制器延迟为
+  id=815 p219 [trailing_open_paren] (  stem: 【2013 统考真题】某磁盘的转速为10000转/分，平均寻道时间是6ms,磁盘传输速率是20MB/s,磁盘控制器延迟为
+  id=816 p220 [halfwidth_unbalanced] None  stem: 【2013 统考真题】下列选项中，用于提高RAID可靠性的措施有(
+I.磁盘镜像
+II.条带化
+III.奇偶校验
+IV.
+  id=818 p222 [halfwidth_unbalanced] None  stem: 【2019 统考真题】下列关于磁盘存储器的叙述中，错误的是(
+  id=818 p222 [trailing_open_paren] (  stem: 【2019 统考真题】下列关于磁盘存储器的叙述中，错误的是(
+  id=819 p223 [halfwidth_unbalanced] None  stem: 在高速缓存系统中，主存容量为12MB,Cache容量为 400KB,则该存储系统的容量为(
+  id=819 p223 [trailing_open_paren] (  stem: 在高速缓存系统中，主存容量为12MB,Cache容量为 400KB,则该存储系统的容量为(
+  id=821 p225 [halfwidth_unbalanced] None  stem: 关于 Cache 的更新策略，下列说法中正确的是(
+  id=821 p225 [trailing_open_paren] (  stem: 关于 Cache 的更新策略，下列说法中正确的是(
+  id=822 p226 [halfwidth_unbalanced] None  stem: 某虚拟存储器系统采用页式内存管理，使用LRU页面替换算法，考虑下面的页面访问地址流(每次访问在一个时间单位中完成):
+假
+  id=822 p226 [trailing_open_paren] (  stem: 某虚拟存储器系统采用页式内存管理，使用LRU页面替换算法，考虑下面的页面访问地址流(每次访问在一个时间单位中完成):
+假
+  id=824 p228 [halfwidth_unbalanced] None  stem: 在 Cache中，常用的替换策略有随机法(RAND)、先进先出法(FIFO)近期最少使用法(LRU),其中与局部性原理有
+  id=824 p228 [trailing_open_paren] (  stem: 在 Cache中，常用的替换策略有随机法(RAND)、先进先出法(FIFO)近期最少使用法(LRU),其中与局部性原理有
+  id=827 p232 [halfwidth_unbalanced] None  stem: 对于由高速缓存、主存、硬盘构成的三级存储体系,CPU访问该存储系统时发送的地址为(
+  id=827 p232 [trailing_open_paren] (  stem: 对于由高速缓存、主存、硬盘构成的三级存储体系,CPU访问该存储系统时发送的地址为(
+  id=833 p237 [halfwidth_unbalanced] None  stem: 假定采用多模块交叉存储器组织方式，存储器芯片和总线支持突发传送,CPU通过存储器总线读取数据的过程为:发送首地址和读命令
+  id=834 p238 [halfwidth_unbalanced] None  stem: 【2009 统考真题】假设某计算机的存储系统由Cache 和主存组成，某程序执行过程中访存1000
+次，其中访问Cach
+  id=834 p238 [trailing_open_paren] (  stem: 【2009 统考真题】假设某计算机的存储系统由Cache 和主存组成，某程序执行过程中访存1000
+次，其中访问Cach
+  id=837 p241 [halfwidth_unbalanced] None  stem: 【2014 统考真题】采用指令Cache与数据Cache 分离的主要目的是(
+  id=837 p241 [trailing_open_paren] (  stem: 【2014 统考真题】采用指令Cache与数据Cache 分离的主要目的是(
+  id=839 p243 [halfwidth_unbalanced] None  stem: 【2017统考真题】某C语言程序段如下:
+```text
+for (i=0; i<=9; i++) {
+    temp
+  id=839 p243 [trailing_open_paren] (  stem: 【2017统考真题】某C语言程序段如下:
+```text
+for (i=0; i<=9; i++) {
+    temp
+  id=842 p246 [halfwidth_unbalanced] None  stem: 为使虚拟存储系统有效地发挥其预期的作用，所运行程序应具有的特性是(
+  id=842 p246 [trailing_open_paren] (  stem: 为使虚拟存储系统有效地发挥其预期的作用，所运行程序应具有的特性是(
+  id=843 p247 [halfwidth_unbalanced] None  stem: 虚拟存储管理系统的基础是程序访问的局部性原理，此理论的基本含义是(
+  id=843 p247 [trailing_open_paren] (  stem: 虚拟存储管理系统的基础是程序访问的局部性原理，此理论的基本含义是(
+  id=845 p249 [halfwidth_unbalanced] None  stem: 下列关于虚存的叙述中，正确的是(
+  id=845 p249 [trailing_open_paren] (  stem: 下列关于虚存的叙述中，正确的是(
+  id=849 p253 [halfwidth_unbalanced] None  stem: 虚拟存储器中的页表有快表和慢表之分，下面关于页表的叙述中正确的是(
+  id=849 p253 [trailing_open_paren] (  stem: 虚拟存储器中的页表有快表和慢表之分，下面关于页表的叙述中正确的是(
+  id=850 p254 [halfwidth_unbalanced] None  stem: 【2010统考真题】下列命令组合的一次访存过程中，不可能发生的是(
+  id=850 p254 [trailing_open_paren] (  stem: 【2010统考真题】下列命令组合的一次访存过程中，不可能发生的是(
+  id=851 p255 [halfwidth_unbalanced] None  stem: 【2013 统考真题】某计算机主存地址空间大小为256MB，按字节编址。虚拟地址空间大小为4GB，采用页式存储管理，页面
+  id=851 p255 [trailing_open_paren] (  stem: 【2013 统考真题】某计算机主存地址空间大小为256MB，按字节编址。虚拟地址空间大小为4GB，采用页式存储管理，页面
+  id=854 p258 [halfwidth_unbalanced] None  stem: 【2019 统考真题】下列关于缺页处理的叙述中，错误的是(
+  id=854 p258 [trailing_open_paren] (  stem: 【2019 统考真题】下列关于缺页处理的叙述中，错误的是(
+  id=855 p259 [halfwidth_unbalanced] None  stem: 【2020 统考真题】下列关于TLB 和Cache的叙述中，错误的是(
+  id=855 p259 [trailing_open_paren] (  stem: 【2020 统考真题】下列关于TLB 和Cache的叙述中，错误的是(
+  id=857 p261 [halfwidth_unbalanced] None  stem: 以下有关指令系统的说法中，错误的是(
+  id=857 p261 [trailing_open_paren] (  stem: 以下有关指令系统的说法中，错误的是(
+  id=859 p263 [halfwidth_unbalanced] None  stem: 运算型指令的寻址与转移型指令的寻址的不同点在于(
+  id=859 p263 [trailing_open_paren] (  stem: 运算型指令的寻址与转移型指令的寻址的不同点在于(
+  id=860 p264 [halfwidth_unbalanced] None  stem: 程序控制类指令的功能是(
+  id=860 p264 [trailing_open_paren] (  stem: 程序控制类指令的功能是(
+  id=861 p265 [halfwidth_unbalanced] None  stem: 下列指令中不属于程序控制指令的是(
+  id=861 p265 [trailing_open_paren] (  stem: 下列指令中不属于程序控制指令的是(
+  id=862 p266 [halfwidth_unbalanced] None  stem: 下列指令中应用程序不准使用的指令是(
+  id=862 p266 [trailing_open_paren] (  stem: 下列指令中应用程序不准使用的指令是(
+  id=864 p268 [halfwidth_unbalanced] None  stem: 以下叙述错误的是(
+  id=864 p268 [trailing_open_paren] (  stem: 以下叙述错误的是(
+  id=866 p270 [halfwidth_unbalanced] None  stem: 设机器字长为32 位，一个容量为16MIB 的存储器,CPU按半字寻址，其寻址单元数是(
+  id=866 p270 [trailing_open_paren] (  stem: 设机器字长为32 位，一个容量为16MIB 的存储器,CPU按半字寻址，其寻址单元数是(
+  id=868 p272 [halfwidth_unbalanced] None  stem: 在指令格式中，采用扩展操作码设计方案的目的是(
+  id=868 p272 [trailing_open_paren] (  stem: 在指令格式中，采用扩展操作码设计方案的目的是(
+  id=871 p275 [halfwidth_unbalanced] None  stem: 【2022 统考真题】下列选项中，属于指令集体系结构(ISA)规定的内容是(
+I.指令字格式和指令类型
+II.CPU的时
+  id=873 p277 [halfwidth_unbalanced] None  stem: 指令系统中采用不同寻址方式的目的是(
+  id=873 p277 [trailing_open_paren] (  stem: 指令系统中采用不同寻址方式的目的是(
+  id=874 p278 [halfwidth_unbalanced] None  stem: 直接寻址的无条件转移指令的功能是将指令中的地址码送入(
+  id=874 p278 [trailing_open_paren] (  stem: 直接寻址的无条件转移指令的功能是将指令中的地址码送入(
+  id=876 p280 [halfwidth_unbalanced] None  stem: 简化地址结构的基本方法是尽量采用(
+  id=876 p280 [trailing_open_paren] (  stem: 简化地址结构的基本方法是尽量采用(
+  id=877 p281 [halfwidth_unbalanced] None  stem: 在指令寻址的各种方式中，获取操作数最快的方式是(
+  id=877 p281 [trailing_open_paren] (  stem: 在指令寻址的各种方式中，获取操作数最快的方式是(
+  id=878 p282 [halfwidth_unbalanced] None  stem: 假定指令中地址码所给出的是操作数的有效地址，则该指令采用(
+  id=878 p282 [trailing_open_paren] (  stem: 假定指令中地址码所给出的是操作数的有效地址，则该指令采用(
+  id=883 p287 [halfwidth_unbalanced] None  stem: 在多道程序设计中，最重要的寻址方式是(
+  id=883 p287 [trailing_open_paren] (  stem: 在多道程序设计中，最重要的寻址方式是(
+  id=884 p288 [halfwidth_unbalanced] None  stem: 指令寻址方式有顺序和跳跃两种，采用跳跃寻址方式可以实现(
+  id=884 p288 [trailing_open_paren] (  stem: 指令寻址方式有顺序和跳跃两种，采用跳跃寻址方式可以实现(
+  id=886 p290 [halfwidth_unbalanced] None  stem: 对按字寻址的机器，程序计数器和指令寄存器的位数各取决于(
+  id=886 p290 [trailing_open_paren] (  stem: 对按字寻址的机器，程序计数器和指令寄存器的位数各取决于(
+  id=889 p293 [halfwidth_unbalanced] None  stem: 设相对寻址的转移指令占3B,第一字节为操作码，第二、三字节为相对位移量(补码表示),而且数据在存储器中采用以低字节为字地
+  id=889 p293 [trailing_open_paren] (  stem: 设相对寻址的转移指令占3B,第一字节为操作码，第二、三字节为相对位移量(补码表示),而且数据在存储器中采用以低字节为字地
+  id=890 p294 [halfwidth_unbalanced] None  stem: 关于指令的功能及分类，下列叙述中正确的是(
+  id=890 p294 [trailing_open_paren] (  stem: 关于指令的功能及分类，下列叙述中正确的是(
+  id=895 p298 [halfwidth_unbalanced] None  stem: 【2013 统考真题】假设变址寄存器R的内容为1000H,指令中的形式地址为2000H;地址1000H
+中的内容为200
+  id=897 p300 [halfwidth_unbalanced] None  stem: 【2016统考真题】某指令格式如下所示。
+OP
+M
+I
+其中M为寻址方式，为变址寄存器编号,D为形式地址。若采用先变址后
+  id=897 p300 [trailing_open_paren] (  stem: 【2016统考真题】某指令格式如下所示。
+OP
+M
+I
+其中M为寻址方式，为变址寄存器编号,D为形式地址。若采用先变址后
+  id=898 p301 [halfwidth_unbalanced] None  stem: 【2017统考真题】下列寻址方式中，最适合按下标顺序访问一维数组元素的是(
+  id=898 p301 [trailing_open_paren] (  stem: 【2017统考真题】下列寻址方式中，最适合按下标顺序访问一维数组元素的是(
+  id=900 p303 [halfwidth_unbalanced] None  stem: 【2019统考真题】某计算机采用大端方式，按字节编址。某指令中操作数的机器数为1234FF00H,该操作数采用基址寻址方
+  id=900 p303 [trailing_open_paren] (  stem: 【2019统考真题】某计算机采用大端方式，按字节编址。某指令中操作数的机器数为1234FF00H,该操作数采用基址寻址方
+  id=904 p307 [halfwidth_unbalanced] None  stem: 假设P为调用过程，Q为被调用过程，程序在32位x86处理器上执行，以下是C语言程序中过程调用所涉及的操作:
+①过程Q保存
+  id=904 p307 [trailing_open_paren] (  stem: 假设P为调用过程，Q为被调用过程，程序在32位x86处理器上执行，以下是C语言程序中过程调用所涉及的操作:
+①过程Q保存
+  id=906 p309 [halfwidth_unbalanced] None  stem: 下列描述中，不符合RISC指令系统特点的是(
+  id=906 p309 [trailing_open_paren] (  stem: 下列描述中，不符合RISC指令系统特点的是(
+  id=907 p310 [halfwidth_unbalanced] None  stem: 以下有关RISC的描述中，正确的是(
+  id=907 p310 [trailing_open_paren] (  stem: 以下有关RISC的描述中，正确的是(
+  id=908 p311 [halfwidth_unbalanced] None  stem: 【2009统考真题】下列关于RISC的说法中，错误的是(
+  id=908 p311 [trailing_open_paren] (  stem: 【2009统考真题】下列关于RISC的说法中，错误的是(
+  id=909 p312 [halfwidth_unbalanced] None  stem: 【2011统考真题】下列指令系统的特点中，有利于实现指令流水线的是(
+I.指令格式规整且长度一致,
+II.指令和数据按边
+  id=910 p313 [halfwidth_unbalanced] None  stem: 下列部件不属于控制器的是(
+  id=910 p313 [trailing_open_paren] (  stem: 下列部件不属于控制器的是(
+  id=913 p316 [halfwidth_unbalanced] None  stem: 在CPU中，跟踪后继指令地址的寄存器是(
+  id=913 p316 [trailing_open_paren] (  stem: 在CPU中，跟踪后继指令地址的寄存器是(
+  id=914 p317 [halfwidth_unbalanced] None  stem: 条件转移指令执行时所依据的条件来自(
+  id=914 p317 [trailing_open_paren] (  stem: 条件转移指令执行时所依据的条件来自(
+  id=915 p318 [halfwidth_unbalanced] None  stem: 在所谓的n位CPU中,n是指(
+  id=915 p318 [trailing_open_paren] (  stem: 在所谓的n位CPU中,n是指(
+  id=981 p320 [halfwidth_unbalanced] None  stem: 程序计数器(PC)属于(
+  id=981 p320 [trailing_open_paren] (  stem: 程序计数器(PC)属于(
+  id=917 p321 [halfwidth_unbalanced] None  stem: 下面有关程序计数器(PC)的叙述中，错误的是(
+  id=917 p321 [trailing_open_paren] (  stem: 下面有关程序计数器(PC)的叙述中，错误的是(
+  id=919 p323 [halfwidth_unbalanced] None  stem: 程序计数器的位数取决于(
+  id=919 p323 [trailing_open_paren] (  stem: 程序计数器的位数取决于(
+  id=920 p324 [halfwidth_unbalanced] None  stem: 指令寄存器的位数取决于(
+  id=920 p324 [trailing_open_paren] (  stem: 指令寄存器的位数取决于(
+  id=921 p325 [halfwidth_unbalanced] None  stem: CPU中通用寄存器的位数取决于(
+  id=921 p325 [trailing_open_paren] (  stem: CPU中通用寄存器的位数取决于(
+  id=923 p327 [halfwidth_unbalanced] None  stem: 在计算机系统中表征程序和机器运行状态的部件是(
+  id=923 p327 [trailing_open_paren] (  stem: 在计算机系统中表征程序和机器运行状态的部件是(
+  id=924 p328 [halfwidth_unbalanced] None  stem: 状态寄存器用来存放(
+  id=924 p328 [trailing_open_paren] (  stem: 状态寄存器用来存放(
+  id=925 p329 [halfwidth_unbalanced] None  stem: 控制器的全部功能是(
+  id=925 p329 [trailing_open_paren] (  stem: 控制器的全部功能是(
+  id=927 p331 [halfwidth_unbalanced] None  stem: CPU中不包括(
+  id=927 p331 [trailing_open_paren] (  stem: CPU中不包括(
+  id=928 p332 [halfwidth_unbalanced] None  stem: 以下关于计算机系统的概念中，正确的是(
+I.CPU不包括地址译码器
+II.CPU的程序计数器中存放的是操作数地址
+III
+  id=929 p333 [halfwidth_unbalanced] None  stem: 间址周期结束时,CPU 内寄存器 MDR 中的内容为(
+  id=929 p333 [trailing_open_paren] (  stem: 间址周期结束时,CPU 内寄存器 MDR 中的内容为(
+  id=930 p334 [halfwidth_unbalanced] None  stem: 【2010统考真题】下列寄存器中，汇编语言程序员可见的是(
+  id=930 p334 [trailing_open_paren] (  stem: 【2010统考真题】下列寄存器中，汇编语言程序员可见的是(
+  id=932 p336 [halfwidth_unbalanced] None  stem: 计算机工作的最小时间周期是(
+  id=932 p336 [trailing_open_paren] (  stem: 计算机工作的最小时间周期是(
+  id=933 p337 [halfwidth_unbalanced] None  stem: 采用 DMA方式传递数据时，每传送一个数据就要占用(
+  id=933 p337 [trailing_open_paren] (  stem: 采用 DMA方式传递数据时，每传送一个数据就要占用(
+  id=934 p338 [halfwidth_unbalanced] None  stem: 指令周期是指(
+  id=934 p338 [trailing_open_paren] (  stem: 指令周期是指(
+  id=937 p341 [halfwidth_unbalanced] None  stem: 在取指操作后，程序计数器中存放的是(
+  id=937 p341 [trailing_open_paren] (  stem: 在取指操作后，程序计数器中存放的是(
+  id=938 p342 [halfwidth_unbalanced] None  stem: 以下叙述中，错误的是(
+  id=938 p342 [trailing_open_paren] (  stem: 以下叙述中，错误的是(
+  id=939 p343 [halfwidth_unbalanced] None  stem: 指令周期由一个到几个机器周期组成，第一个机器周期是(
+  id=939 p343 [trailing_open_paren] (  stem: 指令周期由一个到几个机器周期组成，第一个机器周期是(
+  id=940 p344 [halfwidth_unbalanced] None  stem: 由于 CPU内部操作的速度较快，而CPU访问一次存储器的时间较长，因此机器周期通常由(
+来确定。
+  id=941 p345 [halfwidth_unbalanced] None  stem: 以下有关机器周期的叙述中，错误的是(
+  id=941 p345 [trailing_open_paren] (  stem: 以下有关机器周期的叙述中，错误的是(
+  id=942 p346 [halfwidth_unbalanced] None  stem: 下列说法中，合理的是(
+  id=942 p346 [trailing_open_paren] (  stem: 下列说法中，合理的是(
+  id=943 p347 [halfwidth_unbalanced] None  stem: 以下关于间址周期的描述中，正确的是(
+  id=943 p347 [trailing_open_paren] (  stem: 以下关于间址周期的描述中，正确的是(
+  id=945 p349 [halfwidth_unbalanced] None  stem: 以下叙述中，错误的是(
+  id=945 p349 [trailing_open_paren] (  stem: 以下叙述中，错误的是(
+  id=946 p351 [fullwidth_unbalanced] None  stem: 下列说法中，正确的是（
+I.指令字长等于机器字长的前提下，取指周期等于机器周期
+II.指令字长等于存储字长的前提下，取指
+  id=949 p354 [halfwidth_unbalanced] None  stem: 下列不属于CPU数据通路结构的是(
+  id=949 p354 [trailing_open_paren] (  stem: 下列不属于CPU数据通路结构的是(
+  id=954 p359 [halfwidth_unbalanced] None  stem: 【2021统考真题】下列关于数据通路的叙述中，错误的是(
+  id=954 p359 [trailing_open_paren] (  stem: 【2021统考真题】下列关于数据通路的叙述中，错误的是(
+  id=955 p360 [halfwidth_unbalanced] None  stem: 取指令操作(
+  id=955 p360 [trailing_open_paren] (  stem: 取指令操作(
+  id=957 p362 [halfwidth_unbalanced] None  stem: 在微程序控制器中，形成微程序入口地址的是(
+  id=957 p362 [trailing_open_paren] (  stem: 在微程序控制器中，形成微程序入口地址的是(
+  id=958 p363 [halfwidth_unbalanced] None  stem: 下列不属于微指令结构设计所追求目标的是(
+  id=958 p363 [trailing_open_paren] (  stem: 下列不属于微指令结构设计所追求目标的是(
+  id=959 p364 [halfwidth_unbalanced] None  stem: 微程序控制器的速度比硬布线控制器慢，主要是因为(
+  id=959 p364 [trailing_open_paren] (  stem: 微程序控制器的速度比硬布线控制器慢，主要是因为(
+  id=961 p366 [halfwidth_unbalanced] None  stem: 以下说法中，正确的是(
+  id=961 p366 [trailing_open_paren] (  stem: 以下说法中，正确的是(
+  id=963 p368 [halfwidth_unbalanced] None  stem: 在微程序控制器中，控制部件向执行部件发出的某个控制信号称为(
+  id=963 p368 [trailing_open_paren] (  stem: 在微程序控制器中，控制部件向执行部件发出的某个控制信号称为(
+  id=964 p369 [halfwidth_unbalanced] None  stem: 在微程序控制器中，机器指令与微指令的关系是(
+  id=964 p369 [trailing_open_paren] (  stem: 在微程序控制器中，机器指令与微指令的关系是(
+  id=966 p371 [halfwidth_unbalanced] None  stem: 兼容性微命令指几个微命令(
+  id=966 p371 [trailing_open_paren] (  stem: 兼容性微命令指几个微命令(
+  id=967 p372 [halfwidth_unbalanced] None  stem: 在微程序控制方式中，以下说法正确的是(
+I.采用微程序控制器的处理器称为微处理器
+II.每条机器指令由一段微程序来解释执
+  id=968 p373 [halfwidth_unbalanced] None  stem: 下列说法中，正确的是(
+I.微程序控制方式和硬布线方式相比较，前者可以使指令的执行速度更快
+II.若采用微程序控制方式，
+  id=970 p375 [halfwidth_unbalanced] None  stem: 下列部件中属于控制部件的是(
+I.指令寄存器
+II.操作控制器
+III.程序计数器
+IV.状态条件寄存器
+  id=972 p377 [halfwidth_unbalanced] None  stem: 【2009 统考真题】相对于微程序控制器，硬布线控制器的特点是(
+  id=972 p377 [trailing_open_paren] (  stem: 【2009 统考真题】相对于微程序控制器，硬布线控制器的特点是(
+  id=976 p381 [halfwidth_unbalanced] None  stem: 【2019 统考真题】下列有关处理器时钟脉冲信号的叙述中，错误的是(
+  id=976 p381 [trailing_open_paren] (  stem: 【2019 统考真题】下列有关处理器时钟脉冲信号的叙述中，错误的是(
+  id=978 p383 [halfwidth_unbalanced] None  stem: 【2021统考真题】下列寄存器中，汇编语言程序员可见的是(
+I.指令寄存器
+II.微指令寄存器
+III..基址寄存器
+I
+  id=979 p384 [halfwidth_unbalanced] None  stem: 以下关于自陷(Trap)异常的叙述中，错误的是(
+  id=979 p384 [trailing_open_paren] (  stem: 以下关于自陷(Trap)异常的叙述中，错误的是(
+  id=980 p385 [halfwidth_unbalanced] None  stem: 指令执行结果出现异常而引起的中断是(
+  id=980 p385 [trailing_open_paren] (  stem: 指令执行结果出现异常而引起的中断是(
+  id=984 p387 [halfwidth_unbalanced] None  stem: 以下关于异常和中断响应的叙述中，错误的是(
+  id=984 p387 [trailing_open_paren] (  stem: 以下关于异常和中断响应的叙述中，错误的是(
+  id=985 p388 [halfwidth_unbalanced] None  stem: 以下给出的事件中，无须异常处理程序进行处理的是(
+  id=985 p388 [trailing_open_paren] (  stem: 以下给出的事件中，无须异常处理程序进行处理的是(
+  id=988 p391 [halfwidth_unbalanced] None  stem: 【2020统考真题】下列关于自陷(Trap,也称陷阱)的叙述中，错误的是(
+  id=988 p391 [trailing_open_paren] (  stem: 【2020统考真题】下列关于自陷(Trap,也称陷阱)的叙述中，错误的是(
+  id=989 p392 [halfwidth_unbalanced] None  stem: 【2021统考真题】异常事件在当前指令执行过程中进行检测，中断请求则在当前指令执行后进行检测。下列事件中，相应处理程序执
+  id=989 p392 [trailing_open_paren] (  stem: 【2021统考真题】异常事件在当前指令执行过程中进行检测，中断请求则在当前指令执行后进行检测。下列事件中，相应处理程序执
+  id=990 p393 [halfwidth_unbalanced] None  stem: 下列关于流水 CPU 基本概念的描述中，正确的是(
+  id=990 p393 [trailing_open_paren] (  stem: 下列关于流水 CPU 基本概念的描述中，正确的是(
+  id=991 p394 [halfwidth_unbalanced] None  stem: 下列关于超标量流水线的描述中，不正确的是(
+  id=991 p394 [trailing_open_paren] (  stem: 下列关于超标量流水线的描述中，不正确的是(
+  id=992 p395 [halfwidth_unbalanced] None  stem: 下列关于动态流水线的描述中，正确的是(
+  id=992 p395 [trailing_open_paren] (  stem: 下列关于动态流水线的描述中，正确的是(
+  id=995 p398 [halfwidth_unbalanced] None  stem: 若采用度为4的超标量流水线处理机，连续执行上述20条指令，只需(
+  id=995 p398 [trailing_open_paren] (  stem: 若采用度为4的超标量流水线处理机，连续执行上述20条指令，只需(
+  id=996 p399 [halfwidth_unbalanced] None  stem: 设指令流水线把一条指令分为取指、分析、执行3 部分，且3 部分的时间分别是t取值=2ns,
+t分析=2ns,t执行=1n
+  id=996 p399 [trailing_open_paren] (  stem: 设指令流水线把一条指令分为取指、分析、执行3 部分，且3 部分的时间分别是t取值=2ns,
+t分析=2ns,t执行=1n
+  id=997 p400 [halfwidth_unbalanced] None  stem: 设指令由取指、分析、执行3个子部件完成，并且每个子部件的时间均为t,若采用常规标量单流水线处理机，连续执行8条指令，则该
+  id=997 p400 [trailing_open_paren] (  stem: 设指令由取指、分析、执行3个子部件完成，并且每个子部件的时间均为t,若采用常规标量单流水线处理机，连续执行8条指令，则该
+  id=1000 p403 [halfwidth_unbalanced] None  stem: 关于流水线技术的说法中，错误的是(
+  id=1000 p403 [trailing_open_paren] (  stem: 关于流水线技术的说法中，错误的是(
+  id=1002 p405 [halfwidth_unbalanced] None  stem: 【2010统考真题】下列不会引起指令流水线阻塞的是(
+  id=1002 p405 [trailing_open_paren] (  stem: 【2010统考真题】下列不会引起指令流水线阻塞的是(
+  id=1005 p408 [halfwidth_unbalanced] None  stem: 【2017统考真题】下列关于超标量流水线特性的叙述中，正确的是(
+I.能缩短流水线功能段的处理时间
+II.能在一个时钟周
+  id=1006 p409 [halfwidth_unbalanced] None  stem: 【2017统考真题】下列关于指令流水线数据通路的叙述中，错误的是(
+  id=1006 p409 [trailing_open_paren] (  stem: 【2017统考真题】下列关于指令流水线数据通路的叙述中，错误的是(
+  id=1009 p412 [halfwidth_unbalanced] None  stem: 【2020统考真题】下列给出的处理器类型中，理想情况下,CPI为1的是(
+I.单周期CPU
+II.多周期CPU
+III.
+  id=1010 p413 [halfwidth_unbalanced] None  stem: 按照 Flynn 提出的计算机系统分类方法，多处理机属于(
+  id=1010 p413 [trailing_open_paren] (  stem: 按照 Flynn 提出的计算机系统分类方法，多处理机属于(
+  id=1013 p416 [halfwidth_unbalanced] None  stem: 双核CPU和超线程CPU的共同点是(
+  id=1013 p416 [trailing_open_paren] (  stem: 双核CPU和超线程CPU的共同点是(
+  id=1014 p417 [halfwidth_unbalanced] None  stem: 下列关于双核技术的叙述中，正确的是(
+  id=1014 p417 [trailing_open_paren] (  stem: 下列关于双核技术的叙述中，正确的是(
+  id=1015 p418 [halfwidth_unbalanced] None  stem: 下列有关多核 CPU 和单核 CPU 的描述中，错误的是(
+  id=1015 p418 [trailing_open_paren] (  stem: 下列有关多核 CPU 和单核 CPU 的描述中，错误的是(
+  id=1016 p419 [halfwidth_unbalanced] None  stem: 下列关于多核CPU的描述中，正确的是(
+  id=1016 p419 [trailing_open_paren] (  stem: 下列关于多核CPU的描述中，正确的是(
+  id=1017 p420 [halfwidth_unbalanced] None  stem: 下列关于多处理器的说法中，正确的是(
+I.一般采用偶数路CPU,如2路、4路、6路等
+II.NUMA构架比UMA构架的运
+  id=1019 p422 [halfwidth_unbalanced] None  stem: 在总线上，同一时刻(
+  id=1019 p422 [trailing_open_paren] (  stem: 在总线上，同一时刻(
+  id=1021 p424 [halfwidth_unbalanced] None  stem: 系统总线用来连接(
+  id=1021 p424 [trailing_open_paren] (  stem: 系统总线用来连接(
+  id=1022 p425 [halfwidth_unbalanced] None  stem: 计算机使用总线结构便于增减外设，同时(
+  id=1022 p425 [trailing_open_paren] (  stem: 计算机使用总线结构便于增减外设，同时(
+  id=1024 p427 [halfwidth_unbalanced] None  stem: 系统总线中地址线的功能是(
+  id=1024 p427 [trailing_open_paren] (  stem: 系统总线中地址线的功能是(
+  id=1026 p429 [halfwidth_unbalanced] None  stem: 不同信号在同一条信号线上分时传输的方式称为(
+  id=1026 p429 [trailing_open_paren] (  stem: 不同信号在同一条信号线上分时传输的方式称为(
+  id=1028 p431 [halfwidth_unbalanced] None  stem: 在32位总线系统中，若时钟频率为 500MHz,传送一个32位字需要5个时钟周期，则该总线的数据传输率是(
+  id=1028 p431 [trailing_open_paren] (  stem: 在32位总线系统中，若时钟频率为 500MHz,传送一个32位字需要5个时钟周期，则该总线的数据传输率是(
+  id=1029 p432 [halfwidth_unbalanced] None  stem: 传输一幅分辨率为 640480 像素、颜色数量为 65536 的照片(采用无压缩方式),设有效数据传输率为56kb/s,
+  id=1029 p432 [trailing_open_paren] (  stem: 传输一幅分辨率为 640480 像素、颜色数量为 65536 的照片(采用无压缩方式),设有效数据传输率为56kb/s,
+  id=1031 p434 [halfwidth_unbalanced] None  stem: 在一个16位的总线系统中，若时钟频率为100MHz,总线周期为5个时钟周期传输一个字，则总线带宽是(
+  id=1031 p434 [trailing_open_paren] (  stem: 在一个16位的总线系统中，若时钟频率为100MHz,总线周期为5个时钟周期传输一个字，则总线带宽是(
+  id=1032 p435 [halfwidth_unbalanced] None  stem: 微机中控制总线上完整传输的信号有(
+I.存储器和I/O设备的地址码
+II.所有存储器和I/O设备的时序信号与控制信号
+I
+  id=1033 p436 [halfwidth_unbalanced] None  stem: 下列总线标准中属于串行总线的是(
+  id=1033 p436 [trailing_open_paren] (  stem: 下列总线标准中属于串行总线的是(
+  id=1034 p437 [halfwidth_unbalanced] None  stem: 在现代微机主板上，采用局部总线技术的作用是(
+  id=1034 p437 [trailing_open_paren] (  stem: 在现代微机主板上，采用局部总线技术的作用是(
+  id=1035 p438 [halfwidth_unbalanced] None  stem: 下列不属于计算机局部总线的是(
+  id=1035 p438 [trailing_open_paren] (  stem: 下列不属于计算机局部总线的是(
+  id=1036 p439 [halfwidth_unbalanced] None  stem: 【2009 统考真题】假设某系统总线在一个总线周期中并行传输4字节信息，一个总线周期占用2个时钟周期，总线时钟频率为10
+  id=1036 p439 [trailing_open_paren] (  stem: 【2009 统考真题】假设某系统总线在一个总线周期中并行传输4字节信息，一个总线周期占用2个时钟周期，总线时钟频率为10
+  id=1040 p443 [halfwidth_unbalanced] None  stem: 【2012 统考真题】下列关于USB总线特性的描述中，错误的是(
+  id=1040 p443 [trailing_open_paren] (  stem: 【2012 统考真题】下列关于USB总线特性的描述中，错误的是(
+  id=1043 p446 [halfwidth_unbalanced] None  stem: 【2014统考真题】一次总线事务中，主设备只需给出一个首地址，从设备就能从首地址开始的若干连续单元读出或写入多个数据。这
+  id=1043 p446 [trailing_open_paren] (  stem: 【2014统考真题】一次总线事务中，主设备只需给出一个首地址，从设备就能从首地址开始的若干连续单元读出或写入多个数据。这
+  id=1045 p448 [halfwidth_unbalanced] None  stem: 【2016统考真题】下列关于总线设计的叙述中，错误的是(
+  id=1045 p448 [trailing_open_paren] (  stem: 【2016统考真题】下列关于总线设计的叙述中，错误的是(
+  id=1046 p449 [halfwidth_unbalanced] None  stem: 【2017统考真题】下列关于多总线结构的叙述中，错误的是(
+  id=1046 p449 [trailing_open_paren] (  stem: 【2017统考真题】下列关于多总线结构的叙述中，错误的是(
+  id=1047 p450 [halfwidth_unbalanced] None  stem: 【2018统考真题】下列选项中，可提高同步总线数据传输率的是(
+I.增加总线宽度
+II.提高总线工作频率
+III.支持突
+  id=1052 p455 [halfwidth_unbalanced] None  stem: 同步控制方式是(
+  id=1052 p455 [trailing_open_paren] (  stem: 同步控制方式是(
+  id=1053 p456 [halfwidth_unbalanced] None  stem: 同步通信之所以比异步通信具有较高的传输速率，是因为(
+  id=1053 p456 [trailing_open_paren] (  stem: 同步通信之所以比异步通信具有较高的传输速率，是因为(
+  id=1055 p458 [halfwidth_unbalanced] None  stem: 在异步总线中，传送操作(
+  id=1055 p458 [trailing_open_paren] (  stem: 在异步总线中，传送操作(
+  id=1056 p459 [halfwidth_unbalanced] None  stem: 总线的异步通信方式是(
+  id=1056 p459 [trailing_open_paren] (  stem: 总线的异步通信方式是(
+  id=1059 p462 [halfwidth_unbalanced] None  stem: 【2021统考真题】下列关于总线的叙述中，错误的是(
+  id=1059 p462 [trailing_open_paren] (  stem: 【2021统考真题】下列关于总线的叙述中，错误的是(
+  id=1061 p464 [halfwidth_unbalanced] None  stem: 下列关于I/O指令的说法中，错误的是(
+  id=1061 p464 [trailing_open_paren] (  stem: 下列关于I/O指令的说法中，错误的是(
+  id=1062 p465 [halfwidth_unbalanced] None  stem: 以下关于通道程序的叙述中，正确的是(
+  id=1062 p465 [trailing_open_paren] (  stem: 以下关于通道程序的叙述中，正确的是(
+  id=1063 p466 [fullwidth_unbalanced] None  stem: 下列关于I/O 设备的说法中，正确的是（
+I.键盘、鼠标、显示器、打印机属于人机交互设备
+II.在微型计算机中,VGA代
+  id=1064 p467 [halfwidth_unbalanced] None  stem: 下列说法中，正确的是(
+  id=1064 p467 [trailing_open_paren] (  stem: 下列说法中，正确的是(
+  id=1065 p468 [halfwidth_unbalanced] None  stem: 显示汉字采用点阵字库，若每个汉字用1616的点阵表示,7500个汉字的字库容量是(
+  id=1065 p468 [trailing_open_paren] (  stem: 显示汉字采用点阵字库，若每个汉字用1616的点阵表示,7500个汉字的字库容量是(
+  id=1068 p471 [halfwidth_unbalanced] None  stem: 在统一编址的方式下，区分存储单元和IO 设备是靠(
+  id=1068 p471 [trailing_open_paren] (  stem: 在统一编址的方式下，区分存储单元和IO 设备是靠(
+  id=1069 p472 [halfwidth_unbalanced] None  stem: 下列功能中，属于I/O接口的功能的是(
+I.数据格式的转换
+II.I/O 过程中错误与状态检测
+III.I/O操作的控制
+  id=1070 p473 [halfwidth_unbalanced] None  stem: 下列关于I/O 端口和接口的说法中，正确的是(
+  id=1070 p473 [trailing_open_paren] (  stem: 下列关于I/O 端口和接口的说法中，正确的是(
+  id=1071 p474 [halfwidth_unbalanced] None  stem: IO的编址方式采用统一编址方式时，进行输入/输出的操作的指令是(
+  id=1071 p474 [trailing_open_paren] (  stem: IO的编址方式采用统一编址方式时，进行输入/输出的操作的指令是(
+  id=1075 p478 [halfwidth_unbalanced] None  stem: 程序员进行系统调用访问设备使用的是(
+  id=1075 p478 [trailing_open_paren] (  stem: 程序员进行系统调用访问设备使用的是(
+  id=1076 p479 [halfwidth_unbalanced] None  stem: 【2012 统考真题】下列选项中，在I/O总线的数据线上传输的信息包括(
+I.I/O 接口中的命令字
+II.IO 接口中
+  id=1077 p480 [halfwidth_unbalanced] None  stem: 【2014统考真题】下列有关IO接口的叙述中，错误的是(
+  id=1077 p480 [trailing_open_paren] (  stem: 【2014统考真题】下列有关IO接口的叙述中，错误的是(
+  id=1078 p481 [halfwidth_unbalanced] None  stem: 【2017统考真题】I/O指令实现的数据传送通常发生在(
+  id=1078 p481 [trailing_open_paren] (  stem: 【2017统考真题】I/O指令实现的数据传送通常发生在(
+  id=1079 p482 [halfwidth_unbalanced] None  stem: 【2021统考真题】下列选项中，不属于I/O接口的是(
+  id=1079 p482 [trailing_open_paren] (  stem: 【2021统考真题】下列选项中，不属于I/O接口的是(
+  id=1081 p484 [halfwidth_unbalanced] None  stem: 以下说法中，错误的是(
+  id=1081 p484 [trailing_open_paren] (  stem: 以下说法中，错误的是(
+  id=1082 p485 [halfwidth_unbalanced] None  stem: 当有中断源发出请求时,CPU可执行相应的中断服务程序，可以提出中断的有(
+I.外部事件
+II.Cache
+III.虚拟存
+  id=1083 p486 [halfwidth_unbalanced] None  stem: 关于程序中断方式和DMA方式的叙述，错误的是(
+I.DMA的优先级比程序中断的优先级要高
+II.程序中断方式需要保护现场
+  id=1084 p487 [halfwidth_unbalanced] None  stem: 下列说法中，错误的是(
+I.程序中断过程是由硬件和中断服务程序共同完成的
+II.在每条指令的执行过程中，每个总线周期要检
+  id=1085 p488 [halfwidth_unbalanced] None  stem: 能产生 DMA 请求的总线部件是(
+I.高速外设
+II.需要与主机批量交换数据的外设
+III.具有 DMA接口的设备
+  id=1086 p489 [halfwidth_unbalanced] None  stem: 中断响应由高到低的优先次序宜用(
+  id=1086 p489 [trailing_open_paren] (  stem: 中断响应由高到低的优先次序宜用(
+  id=1087 p490 [halfwidth_unbalanced] None  stem: 在具有中断向量表的计算机中，中断向量地址是(
+  id=1087 p490 [trailing_open_paren] (  stem: 在具有中断向量表的计算机中，中断向量地址是(
+  id=1088 p491 [halfwidth_unbalanced] None  stem: 中断响应是在(
+  id=1088 p491 [trailing_open_paren] (  stem: 中断响应是在(
+  id=1090 p493 [halfwidth_unbalanced] None  stem: 在配有通道的计算机系统中，用户程序需要输入/输出时，引起的中断是(
+  id=1090 p493 [trailing_open_paren] (  stem: 在配有通道的计算机系统中，用户程序需要输入/输出时，引起的中断是(
+  id=1092 p495 [halfwidth_unbalanced] None  stem: 下列不属于程序控制指令的是(
+  id=1092 p495 [trailing_open_paren] (  stem: 下列不属于程序控制指令的是(
+  id=1093 p496 [halfwidth_unbalanced] None  stem: 在中断响应周期中,CPU主要完成的工作是(
+  id=1093 p496 [trailing_open_paren] (  stem: 在中断响应周期中,CPU主要完成的工作是(
+  id=1095 p498 [halfwidth_unbalanced] None  stem: CPU响应中断时最先完成的步骤是(
+  id=1095 p498 [trailing_open_paren] (  stem: CPU响应中断时最先完成的步骤是(
+  id=1096 p499 [halfwidth_unbalanced] None  stem: 设置中断屏蔽标志可以改变(
+  id=1096 p499 [trailing_open_paren] (  stem: 设置中断屏蔽标志可以改变(
+  id=1097 p500 [halfwidth_unbalanced] None  stem: 在 CPU响应中断时，保护两个关键的硬件状态是(
+  id=1097 p500 [trailing_open_paren] (  stem: 在 CPU响应中断时，保护两个关键的硬件状态是(
+  id=1098 p501 [halfwidth_unbalanced] None  stem: 在各种I/O方式中，中断方式的特点是(),DMA方式的特点是(
+  id=1098 p501 [trailing_open_paren] (  stem: 在各种I/O方式中，中断方式的特点是(),DMA方式的特点是(
+  id=1101 p504 [halfwidth_unbalanced] None  stem: 以下关于 DMA 方式进行 I/O 的描述中，正确的是(
+  id=1101 p504 [trailing_open_paren] (  stem: 以下关于 DMA 方式进行 I/O 的描述中，正确的是(
+  id=1103 p506 [halfwidth_unbalanced] None  stem: 关于外中断(故障除外)和DMA,下列说法中正确的是(
+。
+  id=1104 p507 [halfwidth_unbalanced] None  stem: 以下有关DMA方式的叙述中，错误的是(
+  id=1104 p507 [trailing_open_paren] (  stem: 以下有关DMA方式的叙述中，错误的是(
+  id=1108 p511 [halfwidth_unbalanced] None  stem: 在DMA方式下，数据从内存传送到外设经过的路径是(
+  id=1108 p511 [trailing_open_paren] (  stem: 在DMA方式下，数据从内存传送到外设经过的路径是(
+  id=1109 p512 [halfwidth_unbalanced] None  stem: 【2009 统考真题】下列选项中，能引起外部中断的事件是(
+  id=1109 p512 [trailing_open_paren] (  stem: 【2009 统考真题】下列选项中，能引起外部中断的事件是(
+  id=1110 p513 [halfwidth_unbalanced] None  stem: 【2010统考真题】单级中断系统中，中断服务程序内的执行顺序是(
+I.保护现场
+II.开中断
+III.关中断
+IV.保存
+  id=1113 p516 [halfwidth_unbalanced] None  stem: 【2012统考真题】响应外部中断的过程中，中断隐指令完成的操作，除保护断点外，还包括(
+I.关中断
+II.保存通用寄存器
+  id=1114 p517 [halfwidth_unbalanced] None  stem: 【2013 统考真题】下列关于中断I/O方式和DMA方式比较的叙述中，错误的是(
+  id=1114 p517 [trailing_open_paren] (  stem: 【2013 统考真题】下列关于中断I/O方式和DMA方式比较的叙述中，错误的是(
+  id=1116 p519 [halfwidth_unbalanced] None  stem: 【2015 统考真题】在采用中断I/O方式控制打印输出的情况下,CPU和打印控制接口中的IO
+端口之间交換的信息不可能是
+  id=1116 p519 [trailing_open_paren] (  stem: 【2015 统考真题】在采用中断I/O方式控制打印输出的情况下,CPU和打印控制接口中的IO
+端口之间交換的信息不可能是
+  id=1117 p520 [halfwidth_unbalanced] None  stem: 【2017统考真题】下列关于多重中断系统的叙述中，错误的是(
+  id=1117 p520 [trailing_open_paren] (  stem: 【2017统考真题】下列关于多重中断系统的叙述中，错误的是(
+  id=1118 p521 [halfwidth_unbalanced] None  stem: 【2018统考真题】下列关于外部I/O中断的叙述中，正确的是(
+  id=1118 p521 [trailing_open_paren] (  stem: 【2018统考真题】下列关于外部I/O中断的叙述中，正确的是(
+  id=1120 p524 [halfwidth_unbalanced] None  stem: 【2020统考真题】下列事件中，属于外部中断事件的是(
+  id=1120 p524 [trailing_open_paren] (  stem: 【2020统考真题】下列事件中，属于外部中断事件的是(
+  id=1124 p527 [halfwidth_unbalanced] None  stem: 【2021统考真题】下列是关于多重中断系统中CPU响应中断的叙述，错误的是(
+  id=1124 p527 [trailing_open_paren] (  stem: 【2021统考真题】下列是关于多重中断系统中CPU响应中断的叙述，错误的是(
+  id=1125 p528 [halfwidth_unbalanced] None  stem: 【2022 统考真题】下列关于中断I/O方式的叙述中，不正确的是(
+  id=1125 p528 [trailing_open_paren] (  stem: 【2022 统考真题】下列关于中断I/O方式的叙述中，不正确的是(
+
+===== Check C4 : 6 findings =====
+  id=752 p132 [out_of_order] [(1, '1'), (1, '1'), (0, '0'), (0, '0')]  stem: 6.某浮点机，采用规格化浮点数表示，阶码用移码表示(最高位代表符号位),尾数用原码表示。下列()的表示不是规格化浮点数。
+  id=784 p189 [out_of_order] [(1, '①'), (2, '②'), (1, '①'), (2, '②')]  stem: 某机器采用四体低位交叉存储器，现分别执行下述操作:
+①读取6个连续地址单元中存放的存储字，重复80次;
+②读取8个连续地
+  id=904 p307 [out_of_order] [(2, '②'), (3, '③'), (4, '④'), (1, '①'), (5, '⑤'), (6, '⑥')]  stem: 假设P为调用过程，Q为被调用过程，程序在32位x86处理器上执行，以下是C语言程序中过程调用所涉及的操作:
+①过程Q保存
+  id=904 p307 [out_of_order] [(2, '②'), (3, '③'), (1, '①'), (4, '④'), (6, '⑥'), (5, '⑤')]  stem: 假设P为调用过程，Q为被调用过程，程序在32位x86处理器上执行，以下是C语言程序中过程调用所涉及的操作:
+①过程Q保存
+  id=904 p307 [out_of_order] [(2, '②'), (3, '③'), (1, '①'), (6, '⑥'), (5, '⑤'), (4, '④')]  stem: 假设P为调用过程，Q为被调用过程，程序在32位x86处理器上执行，以下是C语言程序中过程调用所涉及的操作:
+①过程Q保存
+  id=904 p307 [out_of_order] [(2, '②'), (3, '③'), (1, '①'), (5, '⑤'), (6, '⑥')]  stem: 假设P为调用过程，Q为被调用过程，程序在32位x86处理器上执行，以下是C语言程序中过程调用所涉及的操作:
+①过程Q保存
+
+===== Check C5 : 21 findings =====
+  id=688 p102 [short_option] None  stem: x、y为定点整数，其格式为1位符号位、n位数值位，若采用补码一位乘法实现乘法运算，则最多需要(
+()次加法运算。
+  id=691 p105 [short_option] None  stem: 实现N位(不包括符号位)补码一位乘时，乘积为()位。
+  id=718 p147 [short_option] None  stem: 下列关于舍入的说法，正确的是(
+I.不仅仅只有浮点数需要舍入，定点数在运算时也可能要舍入
+II.在浮点数舍入中，只有左规
+  id=772 p176 [short_option] None  stem: DRAM 的刷新是以(
+)为单位的。
+  id=792 p197 [short_option] None  stem: 【2017统考真题】某计算机主存按字节编址，由4个64M×8位的DRAM芯片采用交叉编址方式构成，并与宽度为32位的存储
+  id=799 p207 [short_option] None  stem: 内存按字节编址，地址从90000H到CFFFFH，若用存储容量为16K×8位芯片构成该内存，至少需要的芯片数是()。
+  id=809 p213 [short_option] None  stem: 【2016统考真题】某存储器容量为64KB，按字节编址，地址4000H～5FFFH为ROM区，其余为RAM区。若采用8K
+  id=811 p215 [short_option] None  stem: 【2021统考真题】某计算机的存储器总线中有24位地址线和 32 位数据线，按字编址，字长为32 位。如果00 0000
+  id=830 p235 [short_option] None  stem: 假设主存按字节编址，Cache共有 64 行，采用四路组相联映射方式，主存块大小为32
+字节，所有编号都从0 开始。则第
+  id=835 p239 [short_option] None  stem: 【2009 统考真题】某计算机的 Cache 共有 16 块，采用二路组相联映射方式（即每组 2 块）。每个主存块大小为
+  id=836 p240 [short_option] None  stem: 【2012统考真题】假设某计算机按字编址，Cache有4行，Cache和主存之间交换的块大小为1个字。若Cache的内容
+  id=852 p256 [short_option] None  stem: 【2015统考真题】假定编译器将赋值语句x=x+3;转换为指令add xaddr, 3，其中xaddr是x对应的存储单元
+  id=867 p271 [short_option] None  stem: 某指令系统有200条指令，对操作码采用固定长度二进制编码，最少需要用()位。
+  id=872 p276 [short_option] None  stem: 【2022 统考真题】设计某指令系统时，假设采用16位定长指令字格式，操作码使用扩展编码方式，地址码为6位，包含零地址、
+  id=918 p322 [short_option] None  stem: 在一条无条件跳转指令的指令周期内，PC 的值被修改()次。
+  id=936 p340 [short_option] None  stem: 在一条无条件跳转指令的指令周期内，程序计数器(PC)的值被修改了(
+)次。
+  id=974 p379 [short_option] None  stem: 【2014统考真题】某计算机采用微程序控制器，共有32 条指令，公共的取指令微程序包含2
+条微指令，各指令对应的微程序平
+  id=997 p400 [short_option] None  stem: 设指令由取指、分析、执行3个子部件完成，并且每个子部件的时间均为t,若采用常规标量单流水线处理机，连续执行8条指令，则该
+  id=1017 p420 [short_option] None  stem: 下列关于多处理器的说法中，正确的是(
+I.一般采用偶数路CPU,如2路、4路、6路等
+II.NUMA构架比UMA构架的运
+  id=1037 p440 [embedded_letter_dot] B、  stem: 【2010 统考真题】下列选项中的英文缩写均为总线标准的是()。
+  id=1037 p440 [embedded_letter_dot] A、  stem: 【2010 统考真题】下列选项中的英文缩写均为总线标准的是()。
