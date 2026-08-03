@@ -120,7 +120,6 @@ async def list_admin_questions(
     db: AsyncSession,
     page: int,
     page_size: int,
-    subject: str | None = None,
     subject_id: int | None = None,
     review_status: str | None = None,
     is_active: bool | None = None,

@@ -263,12 +263,6 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
     profile = detect_deployment_profile()
     _report = _startup_failure_reporter(profile)
 
-    # Pomodoro scheduler
-    try:
-        logger.info("Pomodoro scheduler started")
-    except Exception as e:
-        _report("Pomodoro scheduler", e)
-
     # Audit log cleanup scheduler
     try:
         from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler

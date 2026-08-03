@@ -539,8 +539,6 @@ async def get_task_flow(
     mastered: list[dict] = []
 
     for item in all_items:
-        item["id"]
-
         if item["next_review_at"] and item["next_review_at"] <= today_end and not item["is_mastered"]:
             today_due.append(item)
         elif item["wrong_count"] >= 3 and not item["is_mastered"]:
