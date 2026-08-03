@@ -10,14 +10,15 @@ Run with:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+import asyncpg
 import pytest
-from sqlalchemy import inspect, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.engine import make_url
 
 pytestmark = pytest.mark.integration
 
@@ -28,41 +29,40 @@ TEST_POSTGRES_URL = os.environ.get(
 # Alembic needs sync URL
 TEST_POSTGRES_SYNC_URL = os.environ.get(
     "TEST_DATABASE_SYNC_URL",
-    "postgresql+psycopg2://test:test@localhost:5433/testdb",
+    "postgresql+asyncpg://test:test@localhost:5433/testdb",
 )
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
-# Tables expected after alembic upgrade head
+# Tables expected after alembic upgrade head.
+# Only tables created by the Alembic chain belong here. Tables built by runtime
+# init_db()/_ensure_* DDL (cloud profile skips init_db) are intentionally absent:
+# admins (actual alembic table is admin_users), admin_sessions, admin_vector_configs
+# (dropped by b7c8d9e0f1a2), ai_feedback_logs, export_task_files, import_pipeline_pages,
+# practice_sessions, practice_session_items, question_tags.
 EXPECTED_TABLES = {
     # Core
     "users",
     "questions",
     "tags",
-    "question_tags",
     "review_records",
     "wrong_questions",
-    "practice_sessions",
-    "practice_session_items",
     # Import
     "question_imports",
     "import_pipelines",
-    "import_pipeline_pages",
     "import_pipeline_chunks",
     "import_batch_jobs",
     "import_batch_job_items",
     # Admin
-    "admins",
-    "admin_sessions",
+    "admin_users",
     "audit_logs",
     "question_versions",
     "app_user_admin_bindings",
-    "admin_vector_configs",
     # Auth
     "refresh_tokens",
     # Export
     "export_tasks",
-    "export_task_files",
+    "export_snapshots",
     # Knowledge
     "knowledge_points",
     "knowledge_edges",
@@ -84,10 +84,8 @@ EXPECTED_TABLES = {
     "recommendation_experiments",
     "recommendation_experiment_assignments",
     "recommendation_logs",
-    "recommendation_metrics_dailies",
+    "recommendation_metrics_daily",
     "recommendation_strategy_configs",
-    # Feedback / AI
-    "ai_feedback_logs",
     # Pomodoro
     "pomodoro_sessions",
     # Alembic
@@ -113,13 +111,14 @@ FENCING_COLUMNS = {
     ],
 }
 
-# Critical indexes that must exist
+# Critical indexes that must exist.
+# ix_users_is_banned is created by migration g7b8c9d0e1f2. ix_import_pipelines_pipeline_id
+# is runtime _ensure_* DDL only, so it is not expected here.
 EXPECTED_INDEXES = [
     "ix_users_openid",
     "ix_questions_question_hash",
     "ix_question_imports_question_hash",
     "ix_question_imports_duplicate_status",
-    "ix_import_pipelines_pipeline_id",
     "ix_users_is_banned",
     "ix_questions_sync_uuid",
     "ix_tags_sync_uuid",
@@ -136,40 +135,65 @@ def _run_alembic(args: list[str], env: dict | None = None) -> subprocess.Complet
     )
 
 
-def _clean_db():
-    """Drop all tables in the test database to start completely fresh."""
-    result = _run_alembic(["downgrade", "base"], {"DATABASE_URL": TEST_POSTGRES_SYNC_URL})
-    # downgrade may fail if already at base — that's fine
-    return result
+def _admin_conn_kwargs() -> dict:
+    url = make_url(TEST_POSTGRES_SYNC_URL)
+    return {
+        "user": url.username,
+        "password": url.password,
+        "host": url.host,
+        "port": url.port,
+        "database": "postgres",
+    }
+
+
+async def _reset_db() -> None:
+    """Drop + recreate the target test database so every run starts pristine."""
+    target = make_url(TEST_POSTGRES_SYNC_URL).database
+    conn = await asyncpg.connect(**_admin_conn_kwargs())
+    try:
+        await conn.execute(f'DROP DATABASE IF EXISTS "{target}" WITH (FORCE)')
+        await conn.execute(f'CREATE DATABASE "{target}"')
+    finally:
+        await conn.close()
 
 
 @pytest.fixture(scope="module")
-def fresh_db_engine():
-    """Module-scoped: downgrade to base, then upgrade head, verify, yield engine."""
-    # 1. Downgrade to empty
-    result = _run_alembic(["downgrade", "base"], {"DATABASE_URL": TEST_POSTGRES_SYNC_URL})
-    # It's OK if this fails — means we're already at base or tables don't exist
-    print(f"[alembic downgrade base] rc={result.returncode} stderr={result.stderr[:200]}")
+def fresh_db():
+    """Module-scoped: recreate an empty DB, then alembic upgrade head."""
+    _run(_reset_db())
 
-    # 2. Upgrade head
     result = _run_alembic(["upgrade", "head"], {"DATABASE_URL": TEST_POSTGRES_SYNC_URL})
     assert result.returncode == 0, (
         f"alembic upgrade head failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
     )
     print("[alembic upgrade head] OK")
 
-    # Create engine for verification
-    engine = create_async_engine(TEST_POSTGRES_URL, echo=False)
-    yield engine
+    yield
 
-    # Cleanup: downgrade to base
-    _run_alembic(["downgrade", "base"], {"DATABASE_URL": TEST_POSTGRES_SYNC_URL})
+    _run(_reset_db())
 
 
-@pytest.fixture
-def pg_session(fresh_db_engine):
-    """Session factory against the fresh-migrated DB."""
-    return async_sessionmaker(fresh_db_engine, class_=AsyncSession, expire_on_commit=False)
+def _pg_conn_kwargs() -> dict:
+    url = make_url(TEST_POSTGRES_URL)
+    return {
+        "user": url.username,
+        "password": url.password,
+        "host": url.host,
+        "port": url.port,
+        "database": url.database,
+    }
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+async def _fetch(query: str, *args) -> list[asyncpg.Record]:
+    conn = await asyncpg.connect(**_pg_conn_kwargs())
+    try:
+        return await conn.fetch(query, *args)
+    finally:
+        await conn.close()
 
 
 class TestFreshAlembicMigration:
@@ -185,7 +209,7 @@ class TestFreshAlembicMigration:
         assert len(heads) == 1, f"Expected single alembic head, got: {heads}"
 
     @pytest.mark.asyncio
-    async def test_alembic_current_matches_head(self, fresh_db_engine):
+    async def test_alembic_current_matches_head(self, fresh_db):
         """alembic current must equal alembic head."""
         # Get head
         head_result = _run_alembic(["heads"], {"DATABASE_URL": TEST_POSTGRES_SYNC_URL})
@@ -198,14 +222,12 @@ class TestFreshAlembicMigration:
             f"alembic current does not match head.\n  head: {head}\n  current: {cur_result.stdout}"
         )
 
-    @pytest.mark.asyncio
-    async def test_all_expected_tables_exist(self, fresh_db_engine):
+    def test_all_expected_tables_exist(self, fresh_db):
         """Every expected table must exist after alembic upgrade head."""
-        async with fresh_db_engine.connect() as conn:
-            result = await conn.execute(
-                text("SELECT table_name FROM information_schema.tables WHERE table_schema='public'")
-            )
-            existing = {row[0] for row in await result.fetchall()}
+        rows = _run(_fetch(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+        ))
+        existing = {row["table_name"] for row in rows}
 
         missing = EXPECTED_TABLES - existing
         assert not missing, f"Missing tables after alembic upgrade: {sorted(missing)}"
@@ -215,53 +237,36 @@ class TestFreshAlembicMigration:
         if extra:
             print(f"[info] Extra tables in database: {sorted(extra)}")
 
-    @pytest.mark.asyncio
-    async def test_fencing_columns_exist(self, fresh_db_engine):
+    def test_fencing_columns_exist(self, fresh_db):
         """All fencing columns must exist on their respective tables."""
-        async with fresh_db_engine.connect() as conn:
-            for table_name, required_columns in FENCING_COLUMNS.items():
-                result = await conn.execute(
-                    text(
-                        "SELECT column_name FROM information_schema.columns "
-                        "WHERE table_schema='public' AND table_name=:tbl"
-                    ),
-                    {"tbl": table_name},
-                )
-                existing_columns = {row[0] for row in await result.fetchall()}
-                missing = set(required_columns) - existing_columns
-                assert not missing, (
-                    f"Table '{table_name}' missing fencing columns: {sorted(missing)}"
-                )
-
-    @pytest.mark.asyncio
-    async def test_critical_indexes_exist(self, fresh_db_engine):
-        """All critical indexes must exist."""
-        async with fresh_db_engine.connect() as conn:
-            result = await conn.execute(
-                text(
-                    "SELECT indexname FROM pg_indexes "
-                    "WHERE schemaname='public' AND indexname NOT LIKE 'pg%'"
-                )
+        for table_name, required_columns in FENCING_COLUMNS.items():
+            rows = _run(_fetch(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name=$1",
+                table_name,
+            ))
+            existing_columns = {row["column_name"] for row in rows}
+            missing = set(required_columns) - existing_columns
+            assert not missing, (
+                f"Table '{table_name}' missing fencing columns: {sorted(missing)}"
             )
-            existing_indexes = {row[0] for row in await result.fetchall()}
+
+    def test_critical_indexes_exist(self, fresh_db):
+        """All critical indexes must exist."""
+        rows = _run(_fetch(
+            "SELECT indexname FROM pg_indexes "
+            "WHERE schemaname='public' AND indexname NOT LIKE 'pg%'"
+        ))
+        existing_indexes = {row["indexname"] for row in rows}
 
         missing = set(EXPECTED_INDEXES) - existing_indexes
         assert not missing, f"Missing indexes: {sorted(missing)}"
 
-    @pytest.mark.asyncio
-    async def test_application_boots_against_migrated_db(self, fresh_db_engine):
-        """The application's table metadata should be compatible with the migrated DB.
-
-        We verify by checking that the ORM can reflect key tables without error.
-        """
-        def _verify(sync_conn):
-            inspector = inspect(sync_conn)
-            tables = inspector.get_table_names()
-            # Key tables that must be reflectable
-            for tbl in ["users", "questions", "wrong_questions", "review_records"]:
-                assert tbl in tables, f"Key table '{tbl}' not found in migrated DB"
-            return True
-
-        async with fresh_db_engine.connect() as conn:
-            result = await conn.run_sync(_verify)
-            assert result is True
+    def test_application_boots_against_migrated_db(self, fresh_db):
+        """The application's table metadata should be compatible with the migrated DB."""
+        rows = _run(_fetch(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
+        ))
+        tables = {row["table_name"] for row in rows}
+        for tbl in ["users", "questions", "wrong_questions", "review_records"]:
+            assert tbl in tables, f"Key table '{tbl}' not found in migrated DB"
