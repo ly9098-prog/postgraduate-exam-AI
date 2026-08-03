@@ -674,7 +674,8 @@ class TestMainChainIntegrity:
             assert result["is_correct"] is True
             assert result["question_id"] == 42
             db.add.assert_called_once()
-            db.commit.assert_called_once()
+            # 记录 commit + 后置 best-effort 收尾 commit（防 mastery/Leitner 等被回滚）
+            assert db.commit.call_count >= 1
 
     def test_submit_correct_answer(self):
         """提交正确答案。"""

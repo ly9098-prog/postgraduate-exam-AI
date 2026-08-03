@@ -315,6 +315,15 @@ async def complete_import(
     }
     qi.ai_raw_response = raw
 
+    # 单题补全的 knowledge_points/difficulty 同步到顶层 ai_metadata（与批量
+    # 路径 _apply_batch_complete_result 一致）。发布时 question_publish_service
+    # 只读 ai_metadata["knowledge_points"]/["difficulty"]，仅写在
+    # complete_suggestion 里会在发布时丢失。
+    if suggestion.get("knowledge_points"):
+        qi.ai_metadata["knowledge_points"] = suggestion["knowledge_points"]
+    if suggestion.get("difficulty") is not None:
+        qi.ai_metadata["difficulty"] = suggestion["difficulty"]
+
     from app.core.ai_trace import AIEditTrace
     complete_trace = AIEditTrace(
         stage="ai_complete",

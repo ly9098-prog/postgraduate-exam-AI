@@ -61,6 +61,7 @@ class BoundedExecutor:
         self._lock = asyncio.Lock()
         self._active = 0
         self._queued = 0
+        self._zombie = 0
         self._shutdown = False
         # Metrics — reset on construction
         self._metrics: dict[str, int | float] = {
@@ -71,6 +72,7 @@ class BoundedExecutor:
             "failed": 0,
             "timed_out": 0,
             "cancelled": 0,
+            "zombie": 0,
         }
 
     # ── Public API ──
@@ -97,8 +99,10 @@ class BoundedExecutor:
             raise RuntimeError(f"{self._name}: executor shut down")
 
         # Admission control — atomic check under lock
+        # zombie 计入容量：wait_for 超时/取消后底层线程仍在跑，若不算进占用，
+        # 新任务会被放进 ThreadPoolExecutor 的无界队列、排在僵尸线程之后。
         async with self._lock:
-            if self._active + self._queued >= self._capacity:
+            if self._active + self._queued + self._zombie >= self._capacity:
                 self._metrics["rejected"] += 1
                 raise ExecutorQueueFullError(self._name)
             self._queued += 1
@@ -108,10 +112,14 @@ class BoundedExecutor:
         loop = asyncio.get_running_loop()
 
         try:
-            future = loop.run_in_executor(
-                self._pool,
+            # 直接用 pool.submit 拿到 concurrent.futures.Future：它的 done 状态
+            # 只在线程真正结束（或排队任务被成功取消）时才为 True。wait_for
+            # 超时会把 asyncio wrapper 标成 cancelled 而线程仍跑，若用 wrapper
+            # 的 done 状态判断会误以为线程已归还。
+            executor_future = self._pool.submit(
                 functools.partial(fn, *args, **kwargs),
             )
+            future = asyncio.wrap_future(executor_future, loop=loop)
         except Exception:
             # Thread pool rejected the submission
             async with self._lock:
@@ -132,6 +140,7 @@ class BoundedExecutor:
         try:
             result = await asyncio.wait_for(future, timeout=effective_timeout)
             duration = time.monotonic() - start
+            # future 已 done，线程已归还，同步释放 active 槽位
             async with self._lock:
                 self._active -= 1
                 self._metrics["active"] = self._active
@@ -140,17 +149,29 @@ class BoundedExecutor:
                 self._metrics["queue_wait"] = start - queue_wait_start
             return result
         except TimeoutError:
+            # wait_for 只取消 await，底层线程仍在跑 → 记为 zombie（计入准入
+            # 容量），线程真正结束后经 concurrent future 回调归还。
             async with self._lock:
                 self._active -= 1
+                self._zombie += 1
                 self._metrics["active"] = self._active
+                self._metrics["zombie"] = self._zombie
                 self._metrics["timed_out"] += 1
+            executor_future.add_done_callback(
+                lambda _f: self._schedule_zombie_done(loop)
+            )
             raise
         except asyncio.CancelledError:
             async with self._lock:
                 self._active -= 1
+                self._zombie += 1
                 self._metrics["active"] = self._active
+                self._metrics["zombie"] = self._zombie
                 self._metrics["cancelled"] += 1
             future.cancel()
+            executor_future.add_done_callback(
+                lambda _f: self._schedule_zombie_done(loop)
+            )
             raise
         except Exception:
             async with self._lock:
@@ -158,6 +179,17 @@ class BoundedExecutor:
                 self._metrics["active"] = self._active
                 self._metrics["failed"] += 1
             raise
+
+    def _schedule_zombie_done(self, loop) -> None:
+        """把 zombie 归还调度回事件循环；loop 已关闭（进程退出）时跳过。"""
+        if not loop.is_closed():
+            loop.call_soon_threadsafe(self._on_zombie_done)
+
+    def _on_zombie_done(self) -> None:
+        """僵尸线程真正结束后归还其占用的准入容量（事件循环线程上执行）。"""
+        if self._zombie > 0:
+            self._zombie -= 1
+            self._metrics["zombie"] = self._zombie
 
     async def shutdown(self) -> None:
         """Shut down the thread pool without blocking the event loop.

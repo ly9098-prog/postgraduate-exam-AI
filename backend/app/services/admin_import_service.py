@@ -826,7 +826,16 @@ async def update_import_question(
 
 
 async def approve_import_question(db: AsyncSession, import_id: int, operator_id: int) -> AdminImportQuestionItem:
-    qi = await _get_import_question(db, import_id)
+    # 行级锁：并发审核同一 import_id 时，第二个请求会阻塞到第一个提交，
+    # 读到已发布的 question_id 后抛错，杜绝重复发布。
+    result = await db.execute(
+        select(QuestionImport)
+        .where(QuestionImport.id == import_id)
+        .with_for_update()
+    )
+    qi = result.scalar_one_or_none()
+    if qi is None:
+        raise ValueError("导入题目不存在")
     if qi.status == "published" or qi.question_id is not None:
         raise ValueError("已发布题目不可重复审核")
 
