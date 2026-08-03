@@ -1286,7 +1286,17 @@ async def run_dispatcher_v2(
                     )
                     # 熔断后不退出循环：退出会让 worker 进程存活但不领任务（半死）、
                     # 队列持续堆积直到人工重启。降级为周期探测 Redis，恢复后自动重入。
-                    await asyncio.sleep(min(backoff * 2, 300))
+                    # 分段 sleep 期间检查 draining，保证 graceful shutdown 及时生效。
+                    _probe_target = min(backoff * 2, 300)
+                    _probe_step = 5
+                    _probe_waited = 0
+                    while (
+                        _probe_waited < _probe_target
+                        and _v2_worker_running
+                        and not _v2_worker_draining
+                    ):
+                        await asyncio.sleep(min(_probe_step, _probe_target - _probe_waited))
+                        _probe_waited += _probe_step
                     continue
                 await asyncio.sleep(backoff)
                 continue

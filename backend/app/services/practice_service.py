@@ -1892,6 +1892,10 @@ async def submit_answer(
         await db.commit()
     except Exception:
         logger.warning("后置状态提交失败（不影响答题）uid=%d", user_id, exc_info=True)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     # ── Phase 4: 后台预生成 AI 错题分析（不阻塞答题流程）──
     if wq_id_for_prewarm is not None:
@@ -2005,6 +2009,18 @@ async def batch_submit_answers(
         await db.commit()
     except Exception:
         logger.warning("批量后置状态提交失败 uid=%d", user_id, exc_info=True)
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+
+    # 批量答题同样失效向量推荐缓存（版本号经 invalidate_vector_cache 递增，
+    # 不在批量路径递增会导致批量提交后仍命中含已答题目的旧缓存）。
+    try:
+        from app.services.vector_retrieval_service import invalidate_vector_cache
+        await invalidate_vector_cache(user_id)
+    except Exception:
+        logger.debug("批量向量缓存清理失败（不影响答题）uid=%d", user_id, exc_info=True)
 
     # 本次练习成功落库后统一预生成所有新增/更新错题的 AI 解析。
     # 调度失败不影响成绩返回，用户进入错题详情时仍可手动生成。

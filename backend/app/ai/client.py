@@ -20,20 +20,29 @@ _ai_logger = logging.getLogger("app.ai")
 # 生产单 loop 即进程级限流；测试多 loop 各自限流，避免跨 loop 绑定错误。
 _AI_MAX_CONCURRENT = 3
 _ai_sem_lock = threading.Lock()
-_ai_sems: dict[int, asyncio.Semaphore] = {}
+# 值存 (loop, semaphore)：持有 loop 强引用可防止 id(loop) 复用误取已关闭
+# loop 的信号量；已关闭 loop 的条目在下次调用时清理，避免多 loop 环境（测试）
+# 下 dict 与钉死的 loop 无界累积。
+_ai_sems: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Semaphore]] = {}
 
 
 def _ai_call_semaphore() -> asyncio.Semaphore:
     loop = asyncio.get_running_loop()
     key = id(loop)
-    sem = _ai_sems.get(key)
-    if sem is None:
-        with _ai_sem_lock:
-            sem = _ai_sems.get(key)
-            if sem is None:
-                sem = asyncio.Semaphore(_AI_MAX_CONCURRENT)
-                _ai_sems[key] = sem
-    return sem
+    with _ai_sem_lock:
+        _sweep_closed_ai_sems()
+        entry = _ai_sems.get(key)
+        if entry is None:
+            sem = asyncio.Semaphore(_AI_MAX_CONCURRENT)
+            _ai_sems[key] = (loop, sem)
+            entry = (loop, sem)
+    return entry[1]
+
+
+def _sweep_closed_ai_sems() -> None:
+    """清理已关闭事件循环的残留信号量条目（须持有 _ai_sem_lock 时调用）。"""
+    for k in [k for k, (l, _) in _ai_sems.items() if l.is_closed()]:
+        del _ai_sems[k]
 
 
 class DeepSeekClient:
