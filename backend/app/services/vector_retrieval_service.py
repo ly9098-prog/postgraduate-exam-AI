@@ -431,6 +431,7 @@ async def upsert_question_embedding(
 
     qid = question.id
     model = _vs.emb.model
+    subject_id = getattr(question, "subject_id", None)
 
     try:
         subject_code = await _resolve_question_subject_code(db, question)
@@ -475,7 +476,7 @@ async def upsert_question_embedding(
                     "UPDATE question_embeddings SET "
                     "content_hash = :hash, content_text = :text, "
                     "embedding = CAST(:emb AS vector), embedding_dim = :dim, "
-                    "subject = :subject, question_type = :qtype, "
+                    "subject_id = :subject_id, question_type = :qtype, "
                     "updated_at = NOW(), embedded_at = NOW() "
                     "WHERE question_id = :qid AND embedding_model = :model"
                 ),
@@ -484,7 +485,7 @@ async def upsert_question_embedding(
                     "text": content_text,
                     "emb": pg_literal,
                     "dim": dim,
-                    "subject": subject_code,
+                    "subject_id": subject_id,
                     "qtype": question.question_type,
                     "qid": qid,
                     "model": model,
@@ -496,13 +497,13 @@ async def upsert_question_embedding(
             await db.execute(
                 text(
                     "INSERT INTO question_embeddings "
-                    "(question_id, subject, question_type, embedding_model, embedding_dim, "
+                    "(question_id, subject_id, question_type, embedding_model, embedding_dim, "
                     "content_hash, content_text, embedding) "
-                    "VALUES (:qid, :subject, :qtype, :model, :dim, :hash, :text, CAST(:emb AS vector))"
+                    "VALUES (:qid, :subject_id, :qtype, :model, :dim, :hash, :text, CAST(:emb AS vector))"
                 ),
                 {
                     "qid": qid,
-                    "subject": subject_code,
+                    "subject_id": subject_id,
                     "qtype": question.question_type,
                     "model": model,
                     "dim": dim,
@@ -575,7 +576,7 @@ async def backfill_question_embeddings(
                     text(
                         "embedding_model = :embedding_model "
                         "AND embedding_dim = :embedding_dim "
-                        "AND subject IS NOT NULL AND subject <> ''"
+                        "AND subject_id IS NOT NULL"
                     )
                 )
             )
@@ -792,6 +793,7 @@ async def search_similar_questions(
         return base_result
 
     subject_code = source_q.subject_ref.code if source_q.subject_ref else ""
+    subject_id = getattr(source_q, "subject_id", None)
 
     # 二次决策：基于 subject 判断 allowlist
     if decision.mode == "allowlist":
@@ -855,14 +857,15 @@ async def search_similar_questions(
                 from app.core.time_utils import utcnow
                 cutoff = utcnow() - timedelta(days=no_repeat_days)
                 sql = text("""
-                    SELECT qe.question_id, qe.subject, qe.question_type, qe.content_hash,
+                    SELECT qe.question_id, s.code AS subject, qe.question_type, qe.content_hash,
                            1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
                     FROM question_embeddings qe
                     JOIN questions q ON q.id = qe.question_id
+                    JOIN subjects s ON s.id = qe.subject_id
                     WHERE qe.question_id != :qid
                       AND q.is_active = true
                       AND q.review_status = 'approved'
-                      AND qe.subject = :subject
+                      AND qe.subject_id = :subject_id
                       AND qe.embedding_model = :model
                       AND qe.question_id NOT IN (
                           SELECT pr.question_id FROM practice_records pr
@@ -876,7 +879,7 @@ async def search_similar_questions(
                     {
                         "emb": pg_literal,
                         "qid": question_id,
-                        "subject": subject_code,
+                        "subject_id": subject_id,
                         "model": model,
                         "uid": user_id,
                         "cutoff": cutoff,
@@ -885,14 +888,15 @@ async def search_similar_questions(
                 )
             else:
                 sql = text("""
-                    SELECT qe.question_id, qe.subject, qe.question_type, qe.content_hash,
+                    SELECT qe.question_id, s.code AS subject, qe.question_type, qe.content_hash,
                            1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
                     FROM question_embeddings qe
                     JOIN questions q ON q.id = qe.question_id
+                    JOIN subjects s ON s.id = qe.subject_id
                     WHERE qe.question_id != :qid
                       AND q.is_active = true
                       AND q.review_status = 'approved'
-                      AND qe.subject = :subject
+                      AND qe.subject_id = :subject_id
                       AND qe.embedding_model = :model
                       AND qe.question_id NOT IN (
                           SELECT pr.question_id FROM practice_records pr WHERE pr.user_id = :uid
@@ -905,7 +909,7 @@ async def search_similar_questions(
                     {
                         "emb": pg_literal,
                         "qid": question_id,
-                        "subject": subject_code,
+                        "subject_id": subject_id,
                         "model": model,
                         "uid": user_id,
                         "top_k": top_k,
@@ -913,14 +917,15 @@ async def search_similar_questions(
                 )
         else:
             sql = text("""
-                SELECT qe.question_id, qe.subject, qe.question_type, qe.content_hash,
+                SELECT qe.question_id, s.code AS subject, qe.question_type, qe.content_hash,
                        1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
                 FROM question_embeddings qe
                 JOIN questions q ON q.id = qe.question_id
+                JOIN subjects s ON s.id = qe.subject_id
                 WHERE qe.question_id != :qid
                   AND q.is_active = true
                   AND q.review_status = 'approved'
-                  AND qe.subject = :subject
+                  AND qe.subject_id = :subject_id
                   AND qe.embedding_model = :model
                 ORDER BY qe.embedding <=> CAST(:emb AS vector)
                 LIMIT :top_k
@@ -930,7 +935,7 @@ async def search_similar_questions(
                 {
                     "emb": pg_literal,
                     "qid": question_id,
-                    "subject": subject_code,
+                    "subject_id": subject_id,
                     "model": model,
                     "top_k": top_k,
                 },
@@ -1065,6 +1070,12 @@ async def vector_recall_by_text(
         )
         return []
 
+    # 按 subject 解析 id 集（父科目自动包含子科目）。subject 无法解析时
+    # 无候选可召回，直接返回。
+    subject_ids = await resolve_subject_ids(db, subject)
+    if not subject_ids:
+        return []
+
     query_embedding = await embedding_service.get_embedding(
         query_text,
         config=_vs.emb,
@@ -1103,13 +1114,14 @@ async def vector_recall_by_text(
                 from app.core.time_utils import utcnow
                 cutoff = utcnow() - timedelta(days=no_repeat_days)
                 sql = text("""
-                    SELECT qe.question_id, qe.subject, qe.question_type,
+                    SELECT qe.question_id, s.code AS subject, qe.question_type,
                            1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
                     FROM question_embeddings qe
                     JOIN questions q ON q.id = qe.question_id
+                    JOIN subjects s ON s.id = qe.subject_id
                     WHERE q.is_active = true
                       AND q.review_status = 'approved'
-                      AND (qe.subject = :subject OR qe.subject LIKE :subject_prefix)
+                      AND qe.subject_id = ANY(:subject_ids)
                       AND qe.embedding_model = :model
                       AND qe.question_id NOT IN (
                           SELECT pr.question_id FROM practice_records pr
@@ -1122,8 +1134,7 @@ async def vector_recall_by_text(
                     sql,
                     {
                         "emb": pg_literal,
-                        "subject": subject,
-                        "subject_prefix": f"{subject}-%",
+                        "subject_ids": subject_ids,
                         "model": model,
                         "uid": user_id,
                         "cutoff": cutoff,
@@ -1132,13 +1143,14 @@ async def vector_recall_by_text(
                 )
             else:
                 sql = text("""
-                    SELECT qe.question_id, qe.subject, qe.question_type,
+                    SELECT qe.question_id, s.code AS subject, qe.question_type,
                            1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
                     FROM question_embeddings qe
                     JOIN questions q ON q.id = qe.question_id
+                    JOIN subjects s ON s.id = qe.subject_id
                     WHERE q.is_active = true
                       AND q.review_status = 'approved'
-                      AND (qe.subject = :subject OR qe.subject LIKE :subject_prefix)
+                      AND qe.subject_id = ANY(:subject_ids)
                       AND qe.embedding_model = :model
                       AND qe.question_id NOT IN (
                           SELECT pr.question_id FROM practice_records pr WHERE pr.user_id = :uid
@@ -1150,8 +1162,7 @@ async def vector_recall_by_text(
                     sql,
                     {
                         "emb": pg_literal,
-                        "subject": subject,
-                        "subject_prefix": f"{subject}-%",
+                        "subject_ids": subject_ids,
                         "model": model,
                         "uid": user_id,
                         "top_k": top_k,
@@ -1159,13 +1170,14 @@ async def vector_recall_by_text(
                 )
         else:
             sql = text("""
-                SELECT qe.question_id, qe.subject, qe.question_type,
+                SELECT qe.question_id, s.code AS subject, qe.question_type,
                        1 - (qe.embedding <=> CAST(:emb AS vector)) AS similarity
                 FROM question_embeddings qe
                 JOIN questions q ON q.id = qe.question_id
+                JOIN subjects s ON s.id = qe.subject_id
                 WHERE q.is_active = true
                   AND q.review_status = 'approved'
-                  AND (qe.subject = :subject OR qe.subject LIKE :subject_prefix)
+                  AND qe.subject_id = ANY(:subject_ids)
                   AND qe.embedding_model = :model
                 ORDER BY qe.embedding <=> CAST(:emb AS vector)
                 LIMIT :top_k
@@ -1174,8 +1186,7 @@ async def vector_recall_by_text(
                 sql,
                 {
                     "emb": pg_literal,
-                    "subject": subject,
-                    "subject_prefix": f"{subject}-%",
+                    "subject_ids": subject_ids,
                     "model": model,
                     "top_k": top_k,
                 },

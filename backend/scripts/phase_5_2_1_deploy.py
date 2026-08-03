@@ -532,9 +532,10 @@ async def task5_offline_eval(engine, seed_count: int = 30) -> dict:
 
         # 抽样 seed 题（有 embedding 的）
         r = await session.execute(text(
-            "SELECT qe.question_id, qe.subject, qe.question_type "
+            "SELECT qe.question_id, s.code AS subject, qe.question_type "
             "FROM question_embeddings qe "
             "JOIN questions q ON q.id = qe.question_id "
+            "JOIN subjects s ON s.id = qe.subject_id "
             "WHERE q.is_active = true AND q.review_status = 'approved' "
             "ORDER BY RANDOM() "
             "LIMIT :limit"

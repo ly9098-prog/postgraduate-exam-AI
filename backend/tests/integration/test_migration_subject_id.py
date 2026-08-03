@@ -221,7 +221,7 @@ def migrated_db():
 class TestSubjectIdMigration:
     def test_head_reached(self, migrated_db):
         result = _alembic(["current"], TEST_DB)
-        assert "a7b8c9d0e1f2" in result.stdout
+        assert "b2c3d4e5f6a7" in result.stdout
 
     def test_pre_existing_fks_not_duplicated(self, migrated_db):
         for table, (fk_name, _delete) in PRE_EXISTING_FKS.items():
