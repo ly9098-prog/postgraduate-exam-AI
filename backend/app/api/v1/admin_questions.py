@@ -39,7 +39,6 @@ def _raise_question_error(exc: ValueError) -> None:
 async def list_questions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    subject: str | None = None,
     subject_id: int | None = None,
     review_status: str | None = None,
     is_active: bool | None = Query(True),
@@ -54,7 +53,6 @@ async def list_questions(
         db,
         page,
         page_size,
-        subject,
         subject_id,
         review_status,
         is_active,
