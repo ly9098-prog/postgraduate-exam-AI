@@ -812,8 +812,11 @@ def _make_cell(
 
 
 def _rows_from_matrix(headers: list, data: list) -> list[dict]:
+    # Explicit structured tables ({headers, rows}) may legitimately have a
+    # single column — the width >= 2 guard belongs to auto-detection (text/markdown),
+    # not this structured-provider path. Only reject a fully empty matrix.
     width = max([len(headers) if isinstance(headers, list) else 0, *[len(row) for row in data if isinstance(row, list)]] or [0])
-    if width < 2:
+    if width < 1:
         return []
     rows: list[dict] = []
     if headers:
