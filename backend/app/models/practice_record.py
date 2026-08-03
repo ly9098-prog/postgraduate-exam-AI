@@ -13,6 +13,11 @@ class PracticeRecord(Base):
     __tablename__ = "practice_records"
     __table_args__ = (
         Index("idx_practice_records_user_subject_id", "user_id", "subject_id"),
+        # 与 alembic v1_no_repeat_idx 对齐：覆盖 "用户最近 N 天做题" 统计窗口
+        Index(
+            "idx_practice_records_user_answered_question",
+            "user_id", "answered_at", "question_id",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

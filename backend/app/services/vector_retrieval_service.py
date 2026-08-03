@@ -705,18 +705,17 @@ async def _ensure_source_embedding(
 
 
 async def _get_user_answer_version(db: AsyncSession, user_id: int) -> int:
-    """获取用户答题数量作为缓存版本号。
+    """返回用户答题缓存版本号。
 
-    用户每答一题，版本号 +1，缓存 key 随之变化。
-    查询失败时返回 0（不影响核心功能）。
+    版本由 ``invalidate_vector_cache`` 在 Redis 上递增（每次答题 +1），
+    使该用户旧的向量推荐缓存 key 全部失效。读取 Redis 而非对
+    practice_records 做 COUNT(*)，避免每次 smart/similar 请求都做一次
+    全表聚合。查询失败时返回 0（不影响核心功能）。
     """
     try:
-        result = await db.execute(
-            select(func.count(PracticeRecord.id)).where(
-                PracticeRecord.user_id == user_id
-            )
-        )
-        return result.scalar() or 0
+        version_key = f"vector:answer_ver:{user_id}"
+        current = await cache.get(version_key)
+        return int(current) if current else 0
     except Exception:
         return 0
 
@@ -792,22 +791,7 @@ async def search_similar_questions(
     if not source_q:
         return base_result
 
-    subject_code = source_q.subject_ref.code if source_q.subject_ref else ""
     subject_id = getattr(source_q, "subject_id", None)
-
-    # 二次决策：基于 subject 判断 allowlist
-    if decision.mode == "allowlist":
-        decision = decide_vector_access(
-            user_id=user_id,
-            subject=subject_code,
-            infra_available=infra_ok,
-        )
-        if not decision.execute:
-            logger.info(
-                "[VectorDecision] search_similar allowlist miss uid=%s subject=%s",
-                user_id, subject_code,
-            )
-            return base_result
 
     # 确保源题有 embedding
     try:
@@ -1242,7 +1226,6 @@ async def get_embedding_status(db: AsyncSession) -> dict:
 
     dialect_name = _dialect_name(db)
     mode = resolve_vector_mode()
-    decide_vector_access(infra_available=False)  # 仅获取 mode 信息
 
     info: dict[str, Any] = {
         "configured": _vs.vec.enabled,
