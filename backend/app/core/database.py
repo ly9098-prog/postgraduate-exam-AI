@@ -366,7 +366,7 @@ async def _ensure_vector_schema(conn):
                 CREATE TABLE IF NOT EXISTS question_embeddings (
                     id BIGSERIAL PRIMARY KEY,
                     question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
-                    subject VARCHAR(32) NOT NULL,
+                    subject_id INTEGER NOT NULL REFERENCES subjects(id),
                     question_type VARCHAR(32) NOT NULL,
                     embedding_model VARCHAR(128) NOT NULL,
                     embedding_dim INTEGER NOT NULL,
@@ -417,7 +417,7 @@ async def _ensure_vector_schema(conn):
         # 3. B-tree 索引
         for idx_sql in [
             'CREATE INDEX IF NOT EXISTS ix_question_embeddings_question_id ON question_embeddings(question_id)',
-            'CREATE INDEX IF NOT EXISTS ix_question_embeddings_subject ON question_embeddings(subject)',
+            'CREATE INDEX IF NOT EXISTS ix_question_embeddings_subject_id ON question_embeddings(subject_id)',
             'CREATE INDEX IF NOT EXISTS ix_question_embeddings_content_hash ON question_embeddings(content_hash)',
         ]:
             try:

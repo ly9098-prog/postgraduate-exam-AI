@@ -422,21 +422,21 @@ class TestQualityVerification:
         assert "question_id != :qid" in source, "SQL 必须排除源题"
 
     def test_same_subject_filter_logic(self):
-        """验证 search_similar_questions SQL 限制同科目（qe.subject = :subject）。"""
+        """验证 search_similar_questions SQL 限制同科目（qe.subject_id = :subject_id）。"""
         import inspect
 
         from app.services.vector_retrieval_service import search_similar_questions
         source = inspect.getsource(search_similar_questions)
-        assert "qe.subject = :subject" in source, "SQL 必须限制同科目"
+        assert "qe.subject_id = :subject_id" in source, "SQL 必须限制同科目"
 
     def test_vector_recall_subject_filter(self):
-        """验证 vector_recall_by_text SQL 限制科目。"""
+        """验证 vector_recall_by_text SQL 限制科目（subject_id + subjects 关联）。"""
         import inspect
 
         from app.services.vector_retrieval_service import vector_recall_by_text
         source = inspect.getsource(vector_recall_by_text)
-        assert "qe.subject = :subject" in source, "SQL 必须限制科目"
-        assert "qe.subject LIKE :subject_prefix" in source, "SQL 必须支持科目前缀匹配"
+        assert "qe.subject_id = ANY(:subject_ids)" in source, "SQL 必须限制科目"
+        assert "JOIN subjects s ON s.id = qe.subject_id" in source, "SQL 必须关联 subjects 表"
 
 
 # ──────────────────────────────────────────────────────────────
