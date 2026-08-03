@@ -10,6 +10,18 @@ from app.core.config import settings
 
 logger = logging.getLogger("postgraduate-ai.cache")
 
+_DEFAULT_TTL = 300
+
+
+def _safe_ttl(ttl: int) -> int:
+    """Clamp non-positive TTLs to the default.
+
+    redis-py passes ``ex=0`` through as ``EX 0``, which creates a key that
+    never expires (and a lock that is never released). Callers only pass
+    positive TTLs today, so this is purely defensive.
+    """
+    return ttl if ttl and ttl > 0 else _DEFAULT_TTL
+
 _COMPARE_AND_DELETE_SCRIPT = """
 if redis.call("GET", KEYS[1]) == ARGV[1] then
     return redis.call("DEL", KEYS[1])
@@ -61,7 +73,7 @@ class CacheClient:
             # 如果仍然超出容量，放弃缓存此条目
             if len(self._local) >= self._local_max_size:
                 return
-        expiry = (__import__("time").time() + ttl) if ttl > 0 else None
+        expiry = (__import__("time").time() + _safe_ttl(ttl))
         self._local[key] = (expiry, value)
 
     def _local_delete(self, pattern: str) -> int:
@@ -133,6 +145,7 @@ class CacheClient:
             raise CacheUnavailableError("Redis unavailable") from exc
 
     async def set(self, key: str, value: Any, ttl: int = 300) -> None:
+        ttl = _safe_ttl(ttl)
         if not self._enabled:
             self._local_set(key, value, ttl)
             return
@@ -146,6 +159,7 @@ class CacheClient:
             self._local_set(key, value, ttl)
 
     async def set_strict(self, key: str, value: Any, ttl: int = 300) -> None:
+        ttl = _safe_ttl(ttl)
         if not self._enabled:
             self._local_set(key, value, ttl)
             return
@@ -165,6 +179,7 @@ class CacheClient:
         return base + random.randint(-variance, variance)
 
     async def acquire_lock(self, key: str, value: str, ttl: int = 10) -> bool:
+        ttl = _safe_ttl(ttl)
         if not self._enabled:
             # 本地模式：简单的原子化模拟
             now = __import__("time").time()
@@ -191,6 +206,7 @@ class CacheClient:
             return False
 
     async def acquire_lock_strict(self, key: str, value: str, ttl: int = 10) -> bool:
+        ttl = _safe_ttl(ttl)
         if not self._enabled:
             return await self.acquire_lock(key, value, ttl)
         client = await self._ensure_client()

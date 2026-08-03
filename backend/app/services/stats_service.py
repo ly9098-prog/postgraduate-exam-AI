@@ -345,9 +345,12 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     }
 
 
-async def get_growth_profile(db: AsyncSession, user_id: int) -> dict:
+async def get_growth_profile(
+    db: AsyncSession, user_id: int, overview: dict | None = None,
+) -> dict:
     """成长体系：经验值、等级、徽章，全部基于真实统计数据。"""
-    overview = await get_overview(db, user_id)
+    if overview is None:
+        overview = await get_overview(db, user_id)
 
     total_q = overview["total_questions"]
     accuracy = overview["accuracy"]
@@ -521,7 +524,7 @@ async def get_dashboard_v2(
     growth_data = None
     if include_growth:
         try:
-            g = await get_growth_profile(db, user_id)
+            g = await get_growth_profile(db, user_id, overview=overview)
             badges = g.get("badges", [])
             unlocked = [b for b in badges if b.get("unlocked")]
             locked_sorted = sorted([b for b in badges if not b.get("unlocked")], key=lambda b: b.get("progress", 0), reverse=True)
