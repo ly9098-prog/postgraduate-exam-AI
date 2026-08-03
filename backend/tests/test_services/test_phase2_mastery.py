@@ -9,6 +9,18 @@ from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.recommendation_log import RecommendationLog
 from app.models.user_knowledge_state import UserKnowledgeState
 
+# Ensure all ORM models are registered so Subject's string relationships
+# (practice_records, answer_behaviors, review_schedules, ...) resolve at
+# mapper configuration time (see app/models/admin.py Subject).
+from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.import_batch_job import ImportBatchJob  # noqa: F401
+from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.pomodoro import PomodoroSession  # noqa: F401
+from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.review_scheduler import ReviewSchedule  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
+
 # --- helpers ---
 
 def _make_mock_db():
@@ -45,12 +57,12 @@ def _make_execute_result(**methods):
 _KP_SENTINEL = object()
 
 
-def _make_question(id=1, subject="math2", question_type="single_choice",
+def _make_question(id=1, subject_id=1, question_type="single_choice",
                    answer="A", analysis="求导得 2x", knowledge_points=_KP_SENTINEL,
                    is_active=True):
     q = MagicMock(spec=Question)
     q.id = id
-    q.subject = subject
+    q.subject_id = subject_id
     q.question_type = question_type
     q.content = {"stem": "f(x)=x^2, f'(x)=?"}
     q.options = {"A": "2x", "B": "x", "C": "x^2", "D": "2"}
@@ -62,10 +74,10 @@ def _make_question(id=1, subject="math2", question_type="single_choice",
     return q
 
 
-def _make_kp(id=1, subject="math2", name="导数", normalized_name="导数"):
+def _make_kp(id=1, subject_id=1, name="导数", normalized_name="导数"):
     kp = MagicMock(spec=KnowledgePoint)
     kp.id = id
-    kp.subject = subject
+    kp.subject_id = subject_id
     kp.name = name
     kp.normalized_name = normalized_name
     kp.aliases = None
@@ -86,12 +98,12 @@ def _make_qkp(question_id=1, kp_id=1, role="main", weight=1.0, source="imported"
     return qkp
 
 
-def _make_uks(id=1, user_id=1, subject="math2", kp_id=1, attempt=5, correct=3,
+def _make_uks(id=1, user_id=1, subject_id=1, kp_id=1, attempt=5, correct=3,
               wrong=2, accuracy=0.6, mastery=0.5, weakness="medium"):
     uks = MagicMock(spec=UserKnowledgeState)
     uks.id = id
     uks.user_id = user_id
-    uks.subject = subject
+    uks.subject_id = subject_id
     uks.knowledge_point_id = kp_id
     uks.attempt_count = attempt
     uks.correct_count = correct
@@ -142,7 +154,7 @@ class TestSyncQuestionKnowledgePoints:
         from app.services.knowledge_point_service import sync_question_knowledge_points
 
         db = _make_mock_db()
-        q = _make_question(id=10, subject="math2", knowledge_points=["导数", "极限"])
+        q = _make_question(id=10, subject_id=1, knowledge_points=["导数", "极限"])
         kp1 = _make_kp(id=1, name="导数")
         kp2 = _make_kp(id=2, name="极限")
 
@@ -176,7 +188,7 @@ class TestSyncQuestionKnowledgePoints:
         from app.services.knowledge_point_service import sync_question_knowledge_points
 
         db = _make_mock_db()
-        q = _make_question(id=10, subject="math2", knowledge_points=[])
+        q = _make_question(id=10, subject_id=1, knowledge_points=[])
 
         result = _run(sync_question_knowledge_points(db, q))
         assert result["total"] == 0
@@ -186,7 +198,7 @@ class TestSyncQuestionKnowledgePoints:
         from app.services.knowledge_point_service import sync_question_knowledge_points
 
         db = _make_mock_db()
-        q = _make_question(id=10, subject="math2", knowledge_points=None)
+        q = _make_question(id=10, subject_id=1, knowledge_points=None)
 
         result = _run(sync_question_knowledge_points(db, q))
         assert result["total"] == 0
@@ -267,7 +279,7 @@ class TestUpdateUserKnowledgeState:
 
         # Mock sequence matching actual function flow:
         # 1st call: QKP join KP query → returns [(qkp, kp)]
-        # 2nd call: Question.subject query → returns "math2"
+        # 2nd call: Question.difficulty query → returns 2
         # 3rd call: UserKnowledgeState lookup → returns None (new state)
         call_count = [0]
 
@@ -277,8 +289,8 @@ class TestUpdateUserKnowledgeState:
                 # QKP join KP query
                 return _make_execute_result(all=[(qkp, kp)])
             elif call_count[0] == 2:
-                # Subject+Question query → one_or_none returns (subject_code, difficulty)
-                return _make_execute_result(one_or_none=("math2", 2))
+                # Question.difficulty query → scalar difficulty
+                return _make_execute_result(scalar_one_or_none=2)
             elif call_count[0] == 3:
                 # UserKnowledgeState lookup — no existing state
                 return _make_execute_result(scalar_one_or_none=None)
@@ -315,7 +327,9 @@ class TestGetUserWeakKnowledgePoints:
 
         db.execute = AsyncMock(return_value=_make_execute_result(all=[(uks, "导数")]))
 
-        result = _run(get_user_weak_knowledge_points(db, 1, "math2", limit=5))
+        with patch("app.services.mastery_service.resolve_subject_ids",
+                   new_callable=AsyncMock, return_value=[1]):
+            result = _run(get_user_weak_knowledge_points(db, 1, 1, limit=5))
         assert len(result) == 1
         assert result[0]["name"] == "导数"
         assert result[0]["weakness_level"] == "weak"
@@ -343,7 +357,9 @@ class TestGetUserWeakKnowledgePoints:
 
         db.execute = AsyncMock(side_effect=mock_execute)
 
-        result = _run(get_user_weak_knowledge_points(db, 1, "math2", limit=5))
+        with patch("app.services.mastery_service.resolve_subject_ids",
+                   new_callable=AsyncMock, return_value=[1]):
+            result = _run(get_user_weak_knowledge_points(db, 1, 1, limit=5))
         # 导数: 2 attempts, 0 correct → accuracy=0 → weak
         assert len(result) >= 1
         names = [r["name"] for r in result]
@@ -358,8 +374,8 @@ class TestRecommendationLogService:
 
         db = _make_mock_db()
         recs = [
-            {"question_id": 1, "subject": "math2", "recommend_score": 0.9, "similarity": 0.85, "reason": "薄弱知识点"},
-            {"question_id": 2, "subject": "math2", "recommend_score": 0.7, "similarity": 0.6, "reason": "向量相似"},
+            {"question_id": 1, "subject_id": 1, "recommend_score": 0.9, "similarity": 0.85, "reason": "薄弱知识点"},
+            {"question_id": 2, "subject_id": 1, "recommend_score": 0.7, "similarity": 0.6, "reason": "向量相似"},
         ]
 
         ids = _run(create_recommendation_logs(db, user_id=1, recommendations=recs, scene="practice_smart", strategy="smart_vector", request_id="test-req-123"))
@@ -446,10 +462,12 @@ class TestSmartModeIntegration:
         # Patch at the app.services package attribute level so `from app.services import X` picks up the mock
         with patch("app.services.mastery_service", mock_ms, create=True), \
              patch("app.services.recommendation_log_service", mock_rls, create=True), \
+             patch("app.services.practice_service.resolve_subject_ids",
+                   new_callable=AsyncMock, return_value=[1]), \
              patch("app.services.recommendation_experiment_service.resolve_strategy_for_user",
                    new_callable=AsyncMock, return_value={"source": "default"}):
             result = _run(get_smart_practice_questions(
-                db, user_id=1, subject="math2", count=5, request_id="test-req-1",
+                db, user_id=1, subject_code="math2", count=5, request_id="test-req-1",
             ))
 
             questions, metadata = result
@@ -472,7 +490,7 @@ class TestSmartModeIntegration:
 
         with patch("app.services.practice_service.resolve_subject_ids",
                    new_callable=AsyncMock, return_value=[1]):
-            result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="random"))
+            result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5, mode="random"))
         assert len(result) == 1
         assert result[0].id == 1
 
@@ -486,7 +504,7 @@ class TestSmartModeIntegration:
 
         with patch("app.services.practice_service.resolve_subject_ids",
                    new_callable=AsyncMock, return_value=[1]):
-            result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="sequential"))
+            result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5, mode="sequential"))
         assert len(result) == 2
 
 

@@ -112,7 +112,9 @@ def enrich_wq(wq, question, **extra):
         review_count=wq.review_count,
         created_at=wq.created_at,
         updated_at=wq.updated_at,
-        subject=question.subject_ref.code if question and question.subject_ref else None,
+        subject_id=question.subject_id if question else None,
+        subject_code=question.subject_ref.code if question and question.subject_ref else None,
+        subject_name=question.subject_ref.name if question and question.subject_ref else None,
         question_type=question.question_type if question else None,
         content=_sanitize_content(question.content) if question else None,
         options=_sanitize_options(question.options) if question else None,
@@ -187,7 +189,7 @@ async def _enrich_single_wq_extra(
 
 @router.get("", response_model=RawPaginatedResponse)
 async def list_wrong(
-    subject: str | None = Query(None),
+    subject_id: int | None = Query(None),
     error_type: str | None = Query(None),
     topic: str | None = Query(None),
     page: int = Query(1, ge=1),
@@ -196,7 +198,7 @@ async def list_wrong(
     current_user: User = Depends(get_current_user),
 ):
     items, total = await svc.list_wrong_enriched(
-        db, current_user.id, subject, error_type, topic, page, page_size
+        db, current_user.id, subject_id, error_type, topic, page, page_size
     )
 
     # Apply text sanitization
@@ -223,7 +225,7 @@ async def get_stats(
 
 @router.get("/task-flow", response_model=TaskFlowResponse)
 async def get_task_flow(
-    subject: str | None = Query(None),
+    subject_id: int | None = Query(None),
     error_type: str | None = Query(None),
     topic: str | None = Query(None),
     preview_size: int = Query(3, ge=1, le=10),
@@ -232,7 +234,7 @@ async def get_task_flow(
 ):
     """错题任务流分组：今日应复习 → 高频错题 → 最近新增 → 待巩固 → 已掌握."""
     result = await svc.get_task_flow(
-        db, current_user.id, subject, error_type, topic, preview_size
+        db, current_user.id, subject_id, error_type, topic, preview_size
     )
     return result
 

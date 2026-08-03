@@ -536,7 +536,7 @@ export default function ImportReviewPage() {
   }, [autoSaveHint]);
 
   const queryParams = useMemo(
-    () => ({ page, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id, source_type: filters.source_type, keyword: debouncedKeyword, risk_level: filters.risk_level || undefined, answer_status: filters.answer_status || undefined }),
+    () => ({ page, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id ? Number(filters.subject_id) : undefined, source_type: filters.source_type, keyword: debouncedKeyword, risk_level: filters.risk_level || undefined, answer_status: filters.answer_status || undefined }),
     [page, batchIdParam, filters.batch_id, filters.status, filters.subject_id, filters.source_type, filters.risk_level, filters.answer_status, debouncedKeyword],
   );
 

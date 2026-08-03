@@ -56,7 +56,7 @@ async def record_wrong(
 async def list_wrong(
     db: AsyncSession,
     user_id: int,
-    subject: str | None = None,
+    subject_id: int | None = None,
     error_type: str | None = None,
     topic: str | None = None,
     page: int = 1,
@@ -67,13 +67,13 @@ async def list_wrong(
         conditions.append(WrongQuestion.error_type == error_type)
 
     # Determine whether we need to join Question table
-    needs_join = bool(subject) or bool(topic)
+    needs_join = bool(subject_id) or bool(topic)
 
     if needs_join:
         base_query = select(WrongQuestion).join(Question, WrongQuestion.question_id == Question.id)
         count_query = select(func.count(WrongQuestion.id)).join(Question, WrongQuestion.question_id == Question.id)
-        if subject:
-            subject_ids = await resolve_subject_ids(db, subject)
+        if subject_id:
+            subject_ids = await resolve_subject_ids(db, subject_id)
             base_query = base_query.where(Question.subject_id.in_(subject_ids))
             count_query = count_query.where(Question.subject_id.in_(subject_ids))
         if topic:
@@ -136,14 +136,22 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
 
     # Count by subject from joined questions
     result3 = await db.execute(
-        select(Subject.code.label("subject"), func.count(WrongQuestion.id).label("cnt"))
+        select(
+            Question.subject_id.label("subject_id"),
+            Subject.code.label("subject_code"),
+            Subject.name.label("subject_name"),
+            func.count(WrongQuestion.id).label("cnt"),
+        )
         .join(Question, WrongQuestion.question_id == Question.id)
         .join(Subject, Question.subject_id == Subject.id)
         .where(and_(*conditions))
-        .group_by(Question.subject_id, Subject.code)
+        .group_by(Question.subject_id, Subject.code, Subject.name)
     )
 
-    by_subject = [{"subject": r[0], "count": r[1]} for r in result3.all()]
+    by_subject = [
+        {"subject_id": r[0], "subject_code": r[1], "subject_name": r[2], "count": r[3]}
+        for r in result3.all()
+    ]
 
     unmastered_q = select(func.count(WrongQuestion.id)).where(
         WrongQuestion.user_id == user_id,
@@ -238,7 +246,7 @@ async def update_quality(
 async def list_wrong_enriched(
     db: AsyncSession,
     user_id: int,
-    subject: str | None = None,
+    subject_id: int | None = None,
     error_type: str | None = None,
     topic: str | None = None,
     page: int = 1,
@@ -309,10 +317,12 @@ async def list_wrong_enriched(
         .where(and_(*conditions))
     )
 
-    if subject:
-        subject_ids = await resolve_subject_ids(db, subject)
-        if subject_ids:
-            base_query = base_query.where(Question.subject_id.in_(subject_ids))
+    if subject_id:
+        # An unresolvable subject_id resolves to an empty list; applying the
+        # filter unconditionally (like list_wrong) makes that an empty result
+        # instead of leaking every subject's wrong questions.
+        subject_ids = await resolve_subject_ids(db, subject_id)
+        base_query = base_query.where(Question.subject_id.in_(subject_ids))
 
     if topic:
         topic_filter = cast(Question.knowledge_points, String).contains(topic)
@@ -353,7 +363,9 @@ async def list_wrong_enriched(
             "last_wrong_at": wq.last_review_at,
             "created_at": wq.created_at,
             "updated_at": wq.updated_at,
-            "subject": question.subject_ref.code if question and question.subject_ref else None,
+            "subject_id": question.subject_id if question else None,
+            "subject_code": question.subject_ref.code if question and question.subject_ref else None,
+            "subject_name": question.subject_ref.name if question and question.subject_ref else None,
             "question_type": question.question_type if question else None,
             "content": question.content if question else None,
             "options": question.options if question else None,
@@ -505,7 +517,7 @@ async def batch_operate(
 async def get_task_flow(
     db: AsyncSession,
     user_id: int,
-    subject: str | None = None,
+    subject_id: int | None = None,
     error_type: str | None = None,
     topic: str | None = None,
     preview_size: int = 3,
@@ -516,7 +528,7 @@ async def get_task_flow(
     fourteen_days_ago = utcnow() - timedelta(days=14)
 
     all_items, total_count = await list_wrong_enriched(
-        db, user_id, subject=subject, error_type=error_type, topic=topic,
+        db, user_id, subject_id=subject_id, error_type=error_type, topic=topic,
         page=1, page_size=500,
     )
 

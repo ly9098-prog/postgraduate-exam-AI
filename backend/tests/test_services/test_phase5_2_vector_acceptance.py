@@ -601,7 +601,7 @@ class TestFaultInjection:
         with patch("app.services.vector_retrieval_service.is_vector_enabled",
                    new_callable=AsyncMock, return_value=False):
             qs, meta = _run(practice_service.get_similar_practice_questions(
-                db=db, user_id=1, subject="exam408-ds",
+                db=db, user_id=1, subject_code="exam408-ds",
                 source_question_id=1, count=5,
             ))
             assert len(qs) > 0, "fallback 必须返回题目"

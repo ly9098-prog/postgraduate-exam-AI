@@ -419,13 +419,13 @@ class TestGetStudyTrend:
 
 
 class TestOverviewSubjectFilter:
-    """subject_id 过滤走 _resolve_subject_codes + IN 路径（知识点）
+    """subject_id 过滤走 _subject_exists + subject_id 过滤路径（知识点）
     和 JOIN 路径（UserQuestionState / PracticeRecord）。"""
 
-    @patch("app.services.study_report_service._resolve_subject_codes")
+    @patch("app.services.study_report_service._subject_exists")
     def test_overview_with_subject_id(self, mock_resolve):
-        """subject_id 存在时，_resolve_subject_codes 被调用，所有统计正常返回。"""
-        mock_resolve.return_value = ["math2"]
+        """subject_id 存在时，_subject_exists 被调用，所有统计正常返回。"""
+        mock_resolve.return_value = True
 
         pr_row = MockRow(
             today_count=5, today_correct=4,
@@ -455,10 +455,10 @@ class TestOverviewSubjectFilter:
         assert result["wrong_question_count"] == 15
         assert result["repeated_wrong_question_count"] == 5
 
-    @patch("app.services.study_report_service._resolve_subject_codes")
+    @patch("app.services.study_report_service._subject_exists")
     def test_overview_empty_subject_codes_early_return(self, mock_resolve):
-        """subject_id 无对应 code 时，知识点返回 0，但错题统计仍正确（已前移）。"""
-        mock_resolve.return_value = []
+        """subject_id 不存在时，知识点返回 0，但错题统计仍正确（已前移）。"""
+        mock_resolve.return_value = False
 
         pr_row = MockRow(
             today_count=0, today_correct=0,
@@ -489,11 +489,11 @@ class TestOverviewSubjectFilter:
 
 
 class TestKnowledgeMasterySubjectFilter:
-    """get_knowledge_mastery 通过 _resolve_subject_codes + IN 过滤。"""
+    """get_knowledge_mastery 通过 _subject_exists + subject_id 过滤。"""
 
-    @patch("app.services.study_report_service._resolve_subject_codes")
+    @patch("app.services.study_report_service._subject_exists")
     def test_knowledge_mastery_with_subject_id(self, mock_resolve):
-        mock_resolve.return_value = ["math2"]
+        mock_resolve.return_value = True
 
         db = _make_db([
             _mock_result(all_vals=[
@@ -513,9 +513,9 @@ class TestKnowledgeMasterySubjectFilter:
         assert len(result["items"]) == 1
         assert result["items"][0]["status"] == "weak"
 
-    @patch("app.services.study_report_service._resolve_subject_codes")
+    @patch("app.services.study_report_service._subject_exists")
     def test_knowledge_mastery_empty_subject_codes(self, mock_resolve):
-        mock_resolve.return_value = []
+        mock_resolve.return_value = False
         db = _make_db([])
 
         result = _run(get_knowledge_mastery(db, user_id=1, subject_id=999))
@@ -529,7 +529,7 @@ class TestKnowledgeMasterySubjectFilter:
 
 class TestWrongQuestionsSubjectFilter:
     """get_wrong_questions_summary 通过 JOIN Question.subject_id 过滤，
-    不经过 _resolve_subject_codes（与 UserKnowledgeState 路径不同）。"""
+    不经过 _subject_exists（与 UserKnowledgeState 路径不同）。"""
 
     def test_wrong_questions_with_subject_id(self):
         """subject_id 存在时，JOIN 路径正常工作。"""

@@ -36,10 +36,10 @@ def _normalize_enrich(parsed: dict) -> dict:
     if isinstance(sid, int) and sid > 0:
         out["subject_id"] = sid
     else:
-        subject = parsed.get("subject")
-        if subject in SUBJECT_VALUES:
+        subject_code = parsed.get("subject")
+        if subject_code in SUBJECT_VALUES:
             # Keep legacy string for caller to resolve to subject_id
-            out["subject"] = subject
+            out["subject"] = subject_code
     qtype = parsed.get("question_type")
     from app.features.question_pipeline import normalizer
     normalized_type = normalizer.normalize_type(qtype)
@@ -118,15 +118,15 @@ async def enrich_import(
         if normalized.get("subject_id"):
             qi.subject_id = normalized["subject_id"]
         elif normalized.get("subject"):
-            from app.services.admin_subject_service import resolve_subject_id
-            resolved = await resolve_subject_id(db, normalized["subject"])
+            from app.models.subject_resolver import resolve_subject_id_from_legacy
+            resolved = await resolve_subject_id_from_legacy(db, normalized["subject"])
             if resolved is not None:
                 qi.subject_id = resolved
                 normalized["subject_id"] = resolved
                 normalized.pop("subject", None)
             else:
                 logger.warning(
-                    "enrich: resolve_subject_id failed for subject=%r, import_id=%d",
+                    "enrich: resolve_subject_id_from_legacy failed for subject=%r, import_id=%d",
                     normalized["subject"], qi.id,
                 )
     if normalized.get("question_type") and not qi.question_type:

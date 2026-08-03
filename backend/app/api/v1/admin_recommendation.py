@@ -127,7 +127,7 @@ async def aggregate_metrics(
     from app.services import recommendation_metrics_service
 
     result = await recommendation_metrics_service.aggregate_recommendation_metrics_daily(
-        db, target_date=data.date, subject=data.subject,
+        db, target_date=data.date, subject_id=data.subject_id,
     )
     await db.commit()
     return MetricsAggregateResponse(**result)
@@ -137,7 +137,7 @@ async def aggregate_metrics(
 async def get_metrics(
     date_from: date = Query(...),
     date_to: date = Query(...),
-    subject: str | None = Query(None),
+    subject_id: int | None = Query(None),
     scene: str | None = Query(None),
     strategy: str | None = Query(None),
     _=Depends(require_permissions("question:read")),
@@ -148,7 +148,7 @@ async def get_metrics(
 
     rows = await recommendation_metrics_service.get_recommendation_metrics(
         db, date_from=date_from, date_to=date_to,
-        subject=subject, scene=scene, strategy=strategy,
+        subject_id=subject_id, scene=scene, strategy=strategy,
     )
     return [MetricsDailyResponse(**r) for r in rows]
 
@@ -179,7 +179,7 @@ async def compare_experiment_variants(
 
 @router.get("/quality-report", response_model=RecommendationQualityReportResponse)
 async def get_recommendation_quality_report(
-    subject: str | None = Query(None),
+    subject_id: int | None = Query(None),
     _=Depends(require_permissions("question:read")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -187,14 +187,14 @@ async def get_recommendation_quality_report(
     from app.services import recommendation_quality_service
 
     result = await recommendation_quality_service.build_recommendation_quality_report(
-        db, subject=subject,
+        db, subject_id=subject_id,
     )
     return RecommendationQualityReportResponse(**result)
 
 
 @router.get("/knowledge-quality-report", response_model=KnowledgeQualityReportResponse)
 async def get_knowledge_quality_report(
-    subject: str | None = Query(None),
+    subject_id: int | None = Query(None),
     _=Depends(require_permissions("question:read")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -202,7 +202,7 @@ async def get_knowledge_quality_report(
     from app.services import recommendation_quality_service
 
     result = await recommendation_quality_service.build_knowledge_quality_report(
-        db, subject=subject,
+        db, subject_id=subject_id,
     )
     return KnowledgeQualityReportResponse(**result)
 
@@ -256,7 +256,7 @@ async def backfill_metrics(
     from app.services import recommendation_metrics_service
 
     result = await recommendation_metrics_service.backfill_metrics(
-        db, date_from=data.date_from, date_to=data.date_to, subject=data.subject,
+        db, date_from=data.date_from, date_to=data.date_to, subject_id=data.subject_id,
     )
     await db.commit()
     return MetricsBackfillResponse(**result)
@@ -267,7 +267,7 @@ async def backfill_metrics(
 
 @router.get("/health-report", response_model=HealthReportResponse)
 async def health_report(
-    subject: str | None = Query(None),
+    subject_id: int | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     _=Depends(require_permissions("question:read")),
@@ -277,6 +277,6 @@ async def health_report(
     from app.services import recommendation_health_service
 
     result = await recommendation_health_service.build_recommendation_health_report(
-        db, subject=subject, date_from=date_from, date_to=date_to,
+        db, subject_id=subject_id, date_from=date_from, date_to=date_to,
     )
     return HealthReportResponse(**result)

@@ -35,7 +35,7 @@ def extract_json(text: str) -> dict | None:
 
 def qi_to_dict(qi: QuestionImport) -> dict:
     return {
-        "subject": qi.subject,
+        "subject_code": qi.subject_ref.code if qi.subject_ref else str(qi.subject_id),
         "question_type": qi.question_type,
         "parsed_content": qi.parsed_content,
         "parsed_options": qi.parsed_options,
@@ -48,9 +48,9 @@ def qi_to_dict(qi: QuestionImport) -> dict:
 def normalize_enrich(parsed: dict) -> dict:
     """规整 AI enrich 输出，丢弃异常值。"""
     out: dict = {}
-    subject = parsed.get("subject")
-    if subject in SUBJECT_VALUES:
-        out["subject"] = subject
+    subject_code = parsed.get("subject")
+    if subject_code in SUBJECT_VALUES:
+        out["subject"] = subject_code
     qtype = parsed.get("question_type")
     if qtype in TYPE_VALUES:
         out["question_type"] = qtype
@@ -78,8 +78,8 @@ def normalize_enrich(parsed: dict) -> dict:
 
 
 def normalize_generated_question(item: dict) -> dict | None:
-    subject = item.get("subject")
-    if subject not in SUBJECT_VALUES:
+    subject_code = item.get("subject")
+    if subject_code not in SUBJECT_VALUES:
         return None
     qtype = item.get("question_type") or "choice"
     if qtype not in TYPE_VALUES:
@@ -100,7 +100,7 @@ def normalize_generated_question(item: dict) -> dict | None:
         diff = 3
     diff = max(1, min(5, diff))
     return {
-        "subject": subject,
+        "subject": subject_code,
         "question_type": qtype,
         "parsed_content": {"text": stem},
         "parsed_options": options,
@@ -113,8 +113,8 @@ def normalize_generated_question(item: dict) -> dict | None:
 
 def detect_missing(qi: QuestionImport) -> list[str]:
     missing = []
-    if not qi.subject:
-        missing.append("subject")
+    if not qi.subject_id:
+        missing.append("subject_id")
     if not qi.question_type:
         missing.append("question_type")
     if not (qi.parsed_content and qi.parsed_content.get("text")):

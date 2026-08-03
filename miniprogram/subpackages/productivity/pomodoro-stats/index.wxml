@@ -110,7 +110,7 @@
             </view>
           </view>
           <view class="subject-legend" aria-label="学科图例" wx:if="{{subjects.length > 0}}">
-            <view class="subject-legend-item" wx:for="{{subjects}}" wx:key="subject">
+            <view class="subject-legend-item" wx:for="{{subjects}}" wx:key="subject_id">
               <view class="subject-legend-dot" style="background: {{item._color}};"></view>
               <text class="subject-legend-name">{{item._label}}</text>
               <text class="subject-legend-percent">{{item._pctText}}</text>

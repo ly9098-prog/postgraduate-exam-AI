@@ -359,7 +359,7 @@ async def recommend_similar_questions(
     # 同 subject 候选
     candidates_result = await db.execute(
         select(Question).where(
-            Question.subject_id.in_(await resolve_subject_ids(db, q.subject_ref.code if q.subject_ref else "")),
+            Question.subject_id.in_(await resolve_subject_ids(db, q.subject_id)),
             Question.is_active,
             Question.review_status == "approved",
         )
@@ -400,7 +400,9 @@ async def recommend_similar_questions(
 
         recommendations.append({
             "question_id": c.id,
-            "subject": c.subject_ref.code if c.subject_ref else "",
+            "subject_id": c.subject_id,
+            "subject_code": c.subject_ref.code if c.subject_ref else "",
+            "subject_name": c.subject_ref.name if c.subject_ref else "",
             "question_type": c.question_type,
             "stem": stem[:200],
             "knowledge_points": kps,
@@ -423,10 +425,20 @@ async def recommend_similar_questions(
 async def generate_learning_report(
     db: AsyncSession,
     user_id: int,
-    subject: str,
+    subject_id: int,
     days: int = 7,
 ) -> dict:
     """生成 AI 学习报告。"""
+    from app.models.admin import Subject
+
+    subj = await db.get(Subject, subject_id)
+    subject_code = subj.code if subj else ""
+    subject_name = subj.name if subj else ""
+    subject_payload = {
+        "subject_id": subject_id,
+        "subject_code": subject_code,
+        "subject_name": subject_name,
+    }
 
     since = datetime.now(UTC) - timedelta(days=days)
 
@@ -434,7 +446,7 @@ async def generate_learning_report(
     records_result = await db.execute(
         select(PracticeRecord).where(
             PracticeRecord.user_id == user_id,
-            PracticeRecord.subject == subject,
+            PracticeRecord.subject_id == subject_id,
             PracticeRecord.answered_at >= since,
         ).order_by(PracticeRecord.answered_at.desc())
     )
@@ -443,7 +455,7 @@ async def generate_learning_report(
     total = len(records)
     if total == 0:
         return {
-            "subject": subject,
+            **subject_payload,
             "period_days": days,
             "total_answered": 0,
             "accuracy": 0.0,
@@ -498,7 +510,9 @@ async def generate_learning_report(
             "suggestion": "继续保持",
         } for kp in [k for k in kp_list if k["accuracy"] >= 0.85][:3]]
         return {
-            "subject": subject,
+            "subject_id": subject_id,
+            "subject_code": subject_code,
+            "subject_name": subject_name,
             "period_days": days,
             "total_answered": total,
             "accuracy": accuracy,
@@ -510,7 +524,7 @@ async def generate_learning_report(
         }
 
     # 调用 AI 生成报告
-    messages = build_report_prompt(subject, days, total, accuracy, kp_list)
+    messages = build_report_prompt(subject_code, days, total, accuracy, kp_list)
 
     if not await _check_token_limit(db, user_id, 1000):
         # 限额内用规则生成
@@ -525,7 +539,9 @@ async def generate_learning_report(
             "suggestion": "继续保持",
         } for kp in [k for k in kp_list if k["accuracy"] >= 0.85][:3]]
         return {
-            "subject": subject,
+            "subject_id": subject_id,
+            "subject_code": subject_code,
+            "subject_name": subject_name,
             "period_days": days,
             "total_answered": total,
             "accuracy": accuracy,
@@ -544,7 +560,9 @@ async def generate_learning_report(
     if result is None:
         fallback = get_fallback_report()
         return {
-            "subject": subject,
+            "subject_id": subject_id,
+            "subject_code": subject_code,
+            "subject_name": subject_name,
             "period_days": days,
             "total_answered": total,
             "accuracy": accuracy,
@@ -561,7 +579,7 @@ async def generate_learning_report(
 
     await _record_token_usage(
         db, user_id, "learning_report",
-        f"subject={subject} days={days}",
+        f"subject_id={subject_id} days={days}",
         result["content"], result,
     )
 
@@ -582,7 +600,9 @@ async def generate_learning_report(
         })
 
     return {
-        "subject": subject,
+        "subject_id": subject_id,
+        "subject_code": subject_code,
+        "subject_name": subject_name,
         "period_days": days,
         "total_answered": total,
         "accuracy": accuracy,

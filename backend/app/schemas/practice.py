@@ -71,6 +71,9 @@ class DailyStats(BaseModel):
 
 
 class SubjectStats(BaseModel):
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     answered: int
     correct: int
     accuracy: float
@@ -80,7 +83,7 @@ class PracticeStatsResponse(BaseModel):
     total_answered: int
     total_correct: int
     accuracy: float
-    by_subject: dict[str, SubjectStats] = {}
+    by_subject: list[SubjectStats] = []
     daily_stats: list[DailyStats] = []
     current_streak: int = 0
 
@@ -89,7 +92,9 @@ class PracticeStatsResponse(BaseModel):
 
 class QuestionDetailResponse(BaseModel):
     id: int
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     question_type: str
     content: dict
     options: dict | None = None
@@ -106,7 +111,9 @@ class QuestionDetailResponse(BaseModel):
 class PracticeRecordItem(BaseModel):
     id: int
     question_id: int
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     question_type: str
     user_answer: str
     is_correct: bool

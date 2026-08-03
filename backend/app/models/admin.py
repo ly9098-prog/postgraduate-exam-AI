@@ -130,6 +130,22 @@ class Subject(Base):
     children: Mapped[list["Subject"]] = relationship(back_populates="parent")
     questions = relationship("Question", back_populates="subject_ref", lazy="noload")
     question_imports = relationship("QuestionImport", back_populates="subject_ref", lazy="noload")
+    practice_records = relationship("PracticeRecord", back_populates="subject_ref", lazy="noload")
+    answer_behaviors = relationship("AnswerBehavior", back_populates="subject_ref", lazy="noload")
+    review_schedules = relationship("ReviewSchedule", back_populates="subject_ref", lazy="noload")
+    knowledge_points = relationship("KnowledgePoint", back_populates="subject_ref", lazy="noload")
+    knowledge_edges = relationship("KnowledgeEdge", back_populates="subject_ref", lazy="noload")
+    recommendation_logs = relationship("RecommendationLog", back_populates="subject_ref", lazy="noload")
+    recommendation_metrics_daily = relationship("RecommendationMetricsDaily", back_populates="subject_ref", lazy="noload")
+    tags = relationship("Tag", back_populates="subject_ref", lazy="noload")
+    user_knowledge_states = relationship("UserKnowledgeState", back_populates="subject_ref", lazy="noload")
+    pomodoro_sessions = relationship("PomodoroSession", back_populates="subject_ref", lazy="noload")
+    import_batch_jobs = relationship(
+        "ImportBatchJob",
+        back_populates="subject_ref",
+        foreign_keys="ImportBatchJob.subject_id",
+        lazy="noload",
+    )
 
 
 class AdminAISettings(Base):

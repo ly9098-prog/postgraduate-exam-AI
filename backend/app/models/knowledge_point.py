@@ -4,6 +4,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    ForeignKey,
     Integer,
     SmallInteger,
     String,
@@ -11,7 +12,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -22,7 +23,10 @@ class KnowledgePoint(Base):
     __tablename__ = "knowledge_points"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    subject: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    subject_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("subjects.id"), nullable=False, index=True
+    )
+    subject_ref = relationship("Subject", back_populates="knowledge_points", lazy="noload")
     name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     normalized_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     aliases: Mapped[list | None] = mapped_column(JSON, nullable=True)
@@ -35,5 +39,5 @@ class KnowledgePoint(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("subject", "normalized_name", name="uq_kp_subject_normalized_name"),
+        UniqueConstraint("subject_id", "normalized_name", name="uq_kp_subject_id_normalized_name"),
     )

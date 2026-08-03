@@ -86,7 +86,7 @@ Page({
     exportUnavailableText: '当前导出功能不可用',
 
     // filters
-    selectedSubject: '',
+    selectedSubjectId: null,
     selectedErrorType: '',
     selectedTopic: '',
     showFilter: false,
@@ -100,7 +100,7 @@ Page({
   },
 
   _updateFilterCount() {
-    const count = (this.data.selectedSubject ? 1 : 0) + (this.data.selectedErrorType ? 1 : 0) + (this.data.selectedTopic ? 1 : 0)
+    const count = (this.data.selectedSubjectId ? 1 : 0) + (this.data.selectedErrorType ? 1 : 0) + (this.data.selectedTopic ? 1 : 0)
     this.setData({ filterCount: count })
   },
 
@@ -121,11 +121,11 @@ Page({
 
   onLoad(options) {
     this.setData({ enableMathImage: config.enableMathImage || false })
-    // 从 dashboard 跳转携带 subject 或 topic 参数
-    const subject = safeDecodeURIComponent(options.subject, '')
-    const topic = safeDecodeURIComponent(options.topic, '')
-    if (subject) {
-      this.setData({ selectedSubject: subject })
+    // 从 dashboard 跳转携带 subject_id 或 topic 参数
+    const subjectId = options && options.subject_id != null ? Number(options.subject_id) : null
+    const topic = safeDecodeURIComponent(options && options.topic, '')
+    if (subjectId && Number.isFinite(subjectId)) {
+      this.setData({ selectedSubjectId: subjectId })
     }
     if (topic) {
       this.setData({ selectedTopic: topic })
@@ -342,7 +342,7 @@ Page({
       this.setData(patch)
 
       // Rebuild analysis with fresh stats when no filter is active
-      const hasFilter = this.data.selectedSubject || this.data.selectedErrorType || this.data.selectedTopic
+      const hasFilter = this.data.selectedSubjectId || this.data.selectedErrorType || this.data.selectedTopic
       if (!hasFilter && this.data.list.length > 0) {
         const analysis = this._buildAnalysis(stats, this.data.list)
         this.setData({
@@ -403,7 +403,7 @@ Page({
 
     try {
       const params = { page, page_size: 20 }
-      if (this.data.selectedSubject) params.subject = this.data.selectedSubject
+      if (this.data.selectedSubjectId) params.subject_id = this.data.selectedSubjectId
       if (this.data.selectedErrorType) params.error_type = this.data.selectedErrorType
       if (this.data.selectedTopic) params.topic = this.data.selectedTopic
 
@@ -416,7 +416,7 @@ Page({
       const nextList = reset ? items : [...this.data.list, ...items]
 
       // When filter is active, build analysis from current list only (not global stats)
-      const hasFilter = this.data.selectedSubject || this.data.selectedErrorType || this.data.selectedTopic
+      const hasFilter = this.data.selectedSubjectId || this.data.selectedErrorType || this.data.selectedTopic
       const statsForAnalysis = hasFilter ? {} : (this.data.stats || {})
       if (seq !== this._listRequestSeq || !this._alive) return
       const analysis = this._buildAnalysis(statsForAnalysis, nextList)
@@ -480,17 +480,17 @@ Page({
 
     const visit = (node) => {
       if (!node || node.is_active === false) return
-      const value = node.subject_code != null
-        ? node.subject_code
-        : (node.code != null ? node.code : (node.subject_id != null ? node.subject_id : node.id))
-      const label = node.display_name != null
-        ? node.display_name
-        : (node.name != null ? node.name : node.label)
+      const value = node.subject_id != null
+        ? node.subject_id
+        : (node.id != null ? node.id : null)
+      const label = node.subject_name != null
+        ? node.subject_name
+        : (node.display_name != null ? node.display_name : (node.name != null ? node.name : null))
       if (value != null && label) {
         const key = String(value)
         if (!seen.has(key)) {
           seen.add(key)
-          result.push({ value: key, label: String(label) })
+          result.push({ value: Number(value), label: String(label) })
         }
       }
       if (Array.isArray(node.children)) node.children.forEach(visit)
@@ -511,8 +511,9 @@ Page({
 
   selectSubject(e) {
     const val = e.currentTarget.dataset.value
+    const subjectId = (val === '' || val === null || val === undefined) ? null : Number(val)
     this._listRequestSeq++
-    this.setData({ selectedSubject: val, list: [], page: 1, loading: true })
+    this.setData({ selectedSubjectId: subjectId, list: [], page: 1, loading: true })
     this._updateFilterCount()
     this.loadList(true)
   },
@@ -540,7 +541,7 @@ Page({
   resetFilters() {
     this._listRequestSeq++
     this.setData({
-      selectedSubject: '',
+      selectedSubjectId: null,
       selectedErrorType: '',
       selectedTopic: '',
       filterCount: 0,
@@ -1364,7 +1365,7 @@ Page({
 
     return {
       ...item,
-      _subjectLabel: this._subjectLabel(item.subject),
+      _subjectLabel: this._subjectLabel(item.subject_code, item.subject_name),
       _errorTypeLabel: this._errorTypeLabel(item.error_type),
       _timeLabel: this._timeLabel(item.created_at),
       _lastErrorLabel: this._timeLabel(lastErrorAt) || '待记录',
@@ -1474,7 +1475,7 @@ Page({
     const errorRows = this._rowsFromStats(stats, ['by_error_type', 'error_types', 'errors'])
     const subjectRows = this._rowsFromStats(stats, ['by_subject', 'subjects'])
     const errorCounts = errorRows.length ? errorRows : this._countsFromList(list, 'error_type')
-    const subjectCounts = subjectRows.length ? subjectRows : this._countsFromList(list, 'subject')
+    const subjectCounts = subjectRows.length ? subjectRows : this._countsFromList(list, 'subject_id')
     const sourceLabel = errorRows.length || subjectRows.length ? '按错因统计' : (list.length ? '按当前列表统计' : '待积累')
 
     const weaknessTags = this._topItems(errorCounts, 5).map(row => ({
@@ -1547,13 +1548,14 @@ Page({
       const value = stats && stats[key]
       if (Array.isArray(value)) {
         return value.map(row => ({
-          key: row.key || row.type || row.error_type || row.subject || row.name || row.label || '',
+          key: row.key || row.type || row.error_type || (row.subject_id != null ? row.subject_id : (row.name || row.label || '')),
+          label: row.subject_name || row.name || row.label || '',
           count: this._positiveNumber(row.count || row.total || row.value, 0),
-        })).filter(row => row.key && row.count > 0)
+        })).filter(row => row.key !== '' && row.key != null && row.count > 0)
       }
       if (value && typeof value === 'object') {
-        return Object.keys(value).map(k => ({ key: k, count: this._positiveNumber(value[k], 0) }))
-          .filter(row => row.key && row.count > 0)
+        return Object.keys(value).map(k => ({ key: k, label: '', count: this._positiveNumber(value[k], 0) }))
+          .filter(row => row.key !== '' && row.key != null && row.count > 0)
       }
     }
     return []
@@ -1562,10 +1564,11 @@ Page({
   _countsFromList(list, field) {
     const counts = {}
     list.forEach(item => {
-      const key = item[field] || 'unknown'
-      counts[key] = (counts[key] || 0) + 1
+      const key = item[field] != null ? item[field] : 'unknown'
+      if (!counts[key]) counts[key] = { key, label: item.subject_name || '', count: 0 }
+      counts[key].count += 1
     })
-    return Object.keys(counts).map(key => ({ key, count: counts[key] }))
+    return Object.keys(counts).map(key => counts[key]).filter(row => row.key !== 'unknown')
   },
 
   _topItems(rows, limit) {
@@ -1579,7 +1582,7 @@ Page({
     const max = rows.reduce((m, row) => Math.max(m, row.count), 0) || 1
     return rows.map(row => ({
       key: row.key,
-      label: labelFn(row.key),
+      label: row.label || labelFn(row.key),
       count: row.count,
       percent: Math.max(12, Math.round((row.count / max) * 100)),
       height: Math.max(46, Math.round((row.count / max) * 100) + 34),
@@ -1628,8 +1631,9 @@ Page({
     return Math.round(n)
   },
 
-  _subjectLabel(s) {
-    return getSubjectName(s)
+  _subjectLabel(code, name) {
+    if (name) return name
+    return getSubjectName(code)
   },
 
   _errorTypeLabel(t) {

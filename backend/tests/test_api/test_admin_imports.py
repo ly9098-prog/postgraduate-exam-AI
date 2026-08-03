@@ -82,7 +82,7 @@ def _question_item():
         batch_id="batch-1",
         source_type="manual",
         source_file="file.xlsx",
-        subject="math",
+        subject_id=1,
         question_type="choice",
         raw_data={"text": "raw"},
         parsed_content={"text": "题干"},

@@ -7,19 +7,48 @@ import logging
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.admin import Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
+from app.models.subject_resolver import resolve_subject_id_from_legacy
 from app.models.user_knowledge_state import UserKnowledgeState
 
 logger = logging.getLogger(__name__)
 
 
+async def _resolve_subject_id(
+    db: AsyncSession, subject: str | int | None
+) -> int | None:
+    """Resolve a subject identifier (int id or str code/name/alias) to a subject_id."""
+    if subject is None:
+        return None
+    if isinstance(subject, int):
+        subj = await db.get(Subject, subject)
+        return subj.id if subj else None
+    return await resolve_subject_id_from_legacy(db, subject)
+
+
+async def _attach_subject_info(db: AsyncSession, nodes: list[dict]) -> list[dict]:
+    """Bulk-load Subject labels for node subject_ids (single query, avoid N+1)."""
+    ids = {n.get("subject_id") for n in nodes if n.get("subject_id")}
+    if not ids:
+        return nodes
+    result = await db.execute(select(Subject).where(Subject.id.in_(ids)))
+    subject_map = {s.id: s for s in result.scalars().all()}
+    for n in nodes:
+        subj = subject_map.get(n.get("subject_id"))
+        if subj:
+            n["subject_code"] = subj.code
+            n["subject_name"] = subj.name
+    return nodes
+
+
 async def build_user_knowledge_path(
     db: AsyncSession,
     user_id: int,
-    subject: str,
+    subject_id: int | None,
     start_knowledge_point_id: int | None = None,
     limit: int = 8,
 ) -> dict:
@@ -50,7 +79,7 @@ async def build_user_knowledge_path(
             start_kp = {
                 "knowledge_point_id": start_kp_model.id,
                 "name": start_kp_model.name,
-                "subject": start_kp_model.subject,
+                "subject_id": start_kp_model.subject_id,
                 "mastery_score": None,
                 "weakness_level": "unknown",
             }
@@ -58,7 +87,7 @@ async def build_user_knowledge_path(
     if not start_kp:
         # 取最薄弱知识点
         weak_kps = await mastery_service.get_user_weak_knowledge_points(
-            db, user_id, subject, limit=1,
+            db, user_id, subject_id, limit=1,
         )
         if weak_kps:
             start_kp = weak_kps[0]
@@ -67,7 +96,7 @@ async def build_user_knowledge_path(
             count_result = await db.execute(
                 select(func.count(KnowledgePoint.id))
                 .where(
-                    KnowledgePoint.subject == subject,
+                    KnowledgePoint.subject_id == subject_id,
                     KnowledgePoint.is_active,
                 )
             )
@@ -80,7 +109,7 @@ async def build_user_knowledge_path(
                 kp_result = await db.execute(
                     select(KnowledgePoint)
                     .where(
-                        KnowledgePoint.subject == subject,
+                        KnowledgePoint.subject_id == subject_id,
                         KnowledgePoint.is_active,
                     )
                     .offset(offset)
@@ -91,7 +120,7 @@ async def build_user_knowledge_path(
                 start_kp = {
                     "knowledge_point_id": random_kp.id,
                     "name": random_kp.name,
-                    "subject": random_kp.subject,
+                    "subject_id": random_kp.subject_id,
                     "mastery_score": None,
                     "weakness_level": "unknown",
                 }
@@ -141,6 +170,9 @@ async def build_user_knowledge_path(
     except Exception:
         logger.warning("get_related_nodes failed for kp=%d", start_kp["knowledge_point_id"], exc_info=True)
 
+    # 2b. 批量加载节点所属科目标签（单次查询）
+    await _attach_subject_info(db, nodes + [start_kp])
+
     # 3. 批量查询掌握度（替代每次循环调 N+1 次 _get_mastery_for_kp）
     all_kp_ids = list({n["knowledge_point_id"] for n in nodes if n.get("knowledge_point_id")})
     mastery_map = await _batch_get_mastery(db, user_id, all_kp_ids) if all_kp_ids else {}
@@ -176,7 +208,7 @@ async def build_user_knowledge_path(
 async def attach_recommended_questions_to_path(
     db: AsyncSession,
     user_id: int,
-    subject: str,
+    subject_code: str,
     nodes: list[dict],
     questions_per_node: int = 3,
     exclude_answered: bool = True,
@@ -272,7 +304,7 @@ async def attach_recommended_questions_to_path(
                 recalls = await vector_retrieval_service.vector_recall_by_text(
                     db=db,
                     user_id=user_id,
-                    subject=subject,
+                    subject=subject_code,
                     query_text=node.get("name", ""),
                     count=questions_per_node - len(recommended),
                     exclude_answered=exclude_answered,
@@ -295,7 +327,7 @@ async def attach_recommended_questions_to_path(
 async def get_user_path_recommendations(
     db: AsyncSession,
     user_id: int,
-    subject: str,
+    subject: str | int | None,
     start_knowledge_point_id: int | None = None,
     limit: int = 8,
     questions_per_node: int = 3,
@@ -309,8 +341,13 @@ async def get_user_path_recommendations(
 
     返回 KnowledgePathResponse-like dict。
     """
+    subject_id = await _resolve_subject_id(db, subject)
+    subject_obj = await db.get(Subject, subject_id) if subject_id is not None else None
+    subject_code = subject_obj.code if subject_obj else ""
+    subject_name = subject_obj.name if subject_obj else ""
+
     path_result = await build_user_knowledge_path(
-        db, user_id, subject,
+        db, user_id, subject_id,
         start_knowledge_point_id=start_knowledge_point_id,
         limit=limit,
     )
@@ -321,7 +358,9 @@ async def get_user_path_recommendations(
 
     if not nodes:
         return {
-            "subject": subject,
+            "subject_id": subject_id,
+            "subject_code": subject_code,
+            "subject_name": subject_name,
             "user_id": user_id,
             "start_knowledge_point_id": start_kp["knowledge_point_id"] if start_kp else None,
             "strategy": "empty",
@@ -332,7 +371,7 @@ async def get_user_path_recommendations(
 
     # 挂题
     nodes = await attach_recommended_questions_to_path(
-        db, user_id, subject, nodes,
+        db, user_id, subject_code, nodes,
         questions_per_node=questions_per_node,
     )
 
@@ -350,7 +389,7 @@ async def get_user_path_recommendations(
             for qid in n.get("recommended_question_ids", []):
                 recs.append({
                     "question_id": qid,
-                    "subject": subject,
+                    "subject": subject_code,
                     "recommend_score": n.get("priority"),
                     "similarity": None,
                     "reason": n.get("reason", ""),
@@ -367,7 +406,9 @@ async def get_user_path_recommendations(
         logger.warning("knowledge_path 推荐日志写入失败（不影响结果）", exc_info=True)
 
     return {
-        "subject": subject,
+        "subject_id": subject_id,
+        "subject_code": subject_code,
+        "subject_name": subject_name,
         "user_id": user_id,
         "start_knowledge_point_id": start_kp["knowledge_point_id"] if start_kp else None,
         "strategy": strategy,
@@ -409,7 +450,9 @@ def _build_node(kp_data: dict, path_role: str, priority: float) -> dict:
     return {
         "knowledge_point_id": kp_data["knowledge_point_id"],
         "name": kp_data.get("name", ""),
-        "subject": kp_data.get("subject", ""),
+        "subject_id": kp_data.get("subject_id"),
+        "subject_code": kp_data.get("subject_code", ""),
+        "subject_name": kp_data.get("subject_name", ""),
         "mastery_score": kp_data.get("mastery_score"),
         "weakness_level": kp_data.get("weakness_level", "unknown"),
         "path_role": path_role,

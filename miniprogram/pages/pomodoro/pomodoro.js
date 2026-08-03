@@ -132,7 +132,6 @@ Page({
     todayDurationText: '0分钟',
 
     // practice page context
-    fromSubject: '',
     fromSubjectId: null,
     fromChapterId: '',
     fromChapterName: '',
@@ -205,10 +204,7 @@ Page({
     })
     this._loadSubjects()
 
-    if (opts.subject) {
-      const mapped = this._mapPracticeSubject(opts.subject)
-      this.setData({ fromSubject: mapped })
-    } else if (opts.subject_id) {
+    if (opts.subject_id) {
       this.setData({ fromSubjectId: Number(opts.subject_id) })
     }
     if (opts.chapterId) this.setData({ fromChapterId: opts.chapterId })
@@ -404,6 +400,8 @@ Page({
         _emoji: subjectEmojiByCode(s.code),
       }))
       this.setData({ subjects: flat, subjectsLoading: false, subjectsError: '' })
+      // 旧版 pomodoro_running_state 缓存可能只带 subject_code，用已加载列表迁移到 subject_id
+      this._migrateRunningStateCache(flat)
 
       // If coming from practice page with a subject_id, auto-select
       if (this.data.fromSubjectId) {
@@ -412,8 +410,11 @@ Page({
           this.setData({ selectedSubjectId: match.id, selectedSubject: match })
           this._updateComputedFields()
         }
-      } else if (this.data.fromSubject) {
-        const match = flat.find(s => s.code === this.data.fromSubject)
+      }
+      // 恢复的旧会话可能只有 subject_code（无 subject_id），用已加载列表回填
+      const restored = this.data.selectedSubject
+      if (restored && !restored.id && restored.code) {
+        const match = flat.find(s => s.code === restored.code)
         if (match) {
           this.setData({ selectedSubjectId: match.id, selectedSubject: match })
           this._updateComputedFields()
@@ -423,6 +424,28 @@ Page({
       console.error('加载科目失败', e)
       this.setData({ subjectsLoading: false, subjectsError: '科目加载失败，请稍后重试' })
     }
+  },
+
+  _lookupSubjectIdByCode(code) {
+    if (!code) return null
+    const match = (this.data.subjects || []).find(s => s.code === code)
+    return match ? match.id : null
+  },
+
+  _migrateRunningStateCache(subjects) {
+    try {
+      const local = wx.getStorageSync('pomodoro_running_state')
+      if (!local || local.selectedSubjectId || !local.selectedSubjectCode) return
+      const match = (subjects || []).find(s => s.code === local.selectedSubjectCode)
+      if (match) {
+        local.selectedSubjectId = match.id
+        if (!local.selectedSubjectName) local.selectedSubjectName = match.name || ''
+        wx.setStorageSync('pomodoro_running_state', local)
+      } else {
+        // 无法映射的旧 code 缓存 → 安全清除，避免恢复出无科目会话
+        wx.removeStorageSync('pomodoro_running_state')
+      }
+    } catch (_) {}
   },
 
   /* ==================== UI Handlers ==================== */
@@ -1853,8 +1876,8 @@ Page({
     const remaining = Number.isFinite(totalSec) && Number.isFinite(elapsed)
       ? Math.max(0, totalSec - elapsed) : 0
 
-    // Resolve subject from session
-    const subjectId = session.subject_id || null
+    // Resolve subject from session (legacy cache may only carry subject_code)
+    const subjectId = session.subject_id || this._lookupSubjectIdByCode(session.subject_code) || null
     const subjectCode = session.subject_code || ''
     const subjectName = session.subject_name || '未分类'
 
@@ -1993,8 +2016,8 @@ Page({
 
     const fmt = formatElapsedSec(elapsed)
 
-    // Resolve subject
-    const subjectId = session.subject_id || null
+    // Resolve subject (legacy cache may only carry subject_code)
+    const subjectId = session.subject_id || this._lookupSubjectIdByCode(session.subject_code) || null
     const subjectCode = session.subject_code || ''
     const subjectName = session.subject_name || '未分类'
 
@@ -2370,21 +2393,6 @@ Page({
     }
     const diff = Math.ceil((examDate - now) / (1000 * 60 * 60 * 24))
     return Math.max(0, diff)
-  },
-
-  _mapPracticeSubject(raw) {
-    // Only map legacy codes → new codes; keep new codes as-is
-    const map = {
-      'data_structure': 'exam408-ds',
-      'operating_system': 'exam408-os',
-      'computer_organization': 'exam408-co',
-      'computer_network': 'exam408-cn',
-      'advanced_math': 'math2-calculus',
-      'linear_algebra': 'math2-linalg',
-      'politics': 'pol',
-      'math': 'math2',
-    }
-    return map[raw] || raw
   },
 
 })

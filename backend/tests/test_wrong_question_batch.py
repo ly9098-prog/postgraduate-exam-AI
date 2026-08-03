@@ -492,10 +492,11 @@ async def _add_schedule(session, user_id=1, question_id=1, *,
                         mastered=False, next_review_at=None):
     """Create a ReviewSchedule that is already due (past)."""
     from app.core.time_utils import utcnow
+    q = await session.get(Question, question_id)
     schedule = ReviewSchedule(
         user_id=user_id,
         question_id=question_id,
-        subject="math",
+        subject_id=q.subject_id if q else None,
         interval=1,
         ease_factor=2.5,
         repetitions=0,

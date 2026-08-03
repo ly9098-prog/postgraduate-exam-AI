@@ -190,7 +190,7 @@
 
       <view class="focus-card focus-card-light" wx:if="{{insights && insights.weakTopics && insights.weakTopics.items.length}}"
         data-topic="{{insights.weakTopics.items[0].name}}"
-        data-subject="{{insights.weakTopics.items[0].subject}}"
+        data-subject-id="{{insights.weakTopics.items[0].subjectId}}"
         bindtap="goTopicDetail" hover-class="surface-pressed">
         <view class="focus-card-top">
           <view class="focus-index">01</view>
@@ -210,7 +210,7 @@
       </view>
 
       <view class="focus-card focus-card-light" wx:elif="{{subjects && subjects.focusItem}}"
-        data-subject="{{subjects.focusItem.subject}}" bindtap="goSubjectWrongBook" hover-class="surface-pressed">
+        data-subject-id="{{subjects.focusItem.subjectId}}" bindtap="goSubjectWrongBook" hover-class="surface-pressed">
         <view class="focus-card-top">
           <view class="focus-index">01</view>
           <view class="focus-title-wrap">
@@ -231,7 +231,7 @@
       <view class="focus-mini-list" wx:if="{{insights && insights.weakTopics && insights.weakTopics.items.length > 1}}">
         <block wx:for="{{insights.weakTopics.items}}" wx:for-item="topic" wx:key="knowledgePointId">
           <view class="focus-mini-item" wx:if="{{index > 0 && index < 3}}"
-            data-topic="{{topic.name}}" data-subject="{{topic.subject}}" bindtap="goTopicDetail" hover-class="surface-pressed">
+            data-topic="{{topic.name}}" data-subject-id="{{topic.subjectId}}" bindtap="goTopicDetail" hover-class="surface-pressed">
             <view class="focus-mini-rank">0{{index + 1}}</view>
             <view class="focus-mini-copy">
               <text class="focus-mini-title">{{topic.name}}</text>
@@ -370,8 +370,8 @@
               <text class="analysis-panel-meta" wx:if="{{subjects}}">{{subjects.totalQuestions}} 题</text>
             </view>
             <view class="subject-bar-chart" wx:if="{{subjects && subjects.itemsByWeak.length}}">
-              <view class="subject-bar-row" wx:for="{{subjects.itemsByWeak}}" wx:for-item="subject" wx:key="subject"
-                data-subject="{{subject.subject}}" bindtap="goSubjectWrongBook" hover-class="subject-bar-row-pressed">
+              <view class="subject-bar-row" wx:for="{{subjects.itemsByWeak}}" wx:for-item="subject" wx:key="subject_id"
+                data-subject-id="{{subject.subjectId}}" bindtap="goSubjectWrongBook" hover-class="subject-bar-row-pressed">
                 <text class="subject-bar-name">{{subject.label}}</text>
                 <view class="subject-bar-plot">
                   <view class="subject-bar-mark {{index == 0 ? 'weakest' : ''}}" style="width:{{subject.barWidthPct}}%;"></view>

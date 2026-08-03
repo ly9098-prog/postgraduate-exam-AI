@@ -43,7 +43,8 @@ class TestReviewNextBatch:
                 return_value={
                     "questions": [{
                         "schedule_id": 1, "question_id": 1,
-                        "subject": "math2", "question_type": "single_choice",
+                        "subject_id": 1, "subject_code": "math2", "subject_name": "数学二",
+                        "question_type": "single_choice",
                         "stem": "Test",
                         "options": {"A": "a", "B": "b"},
                         "content": {"text": "Test", "image_url": []},
@@ -68,7 +69,7 @@ class TestReviewNextBatch:
                 return_value={
                     "questions": [{
                         "schedule_id": 1, "question_id": 1,
-                        "subject": "math2", "question_type": "single_choice",
+                        "subject_id": 1, "subject_code": "math2", "subject_name": "数学二", "question_type": "single_choice",
                         "stem": "Raw stem",
                         "options": {"A": "a", "B": "b"},
                         "content": {"text": "Raw stem"},  # Already normalized by service
@@ -93,7 +94,7 @@ class TestReviewNextBatch:
                 return_value={
                     "questions": [{
                         "schedule_id": 1, "question_id": 1,
-                        "subject": None,  # Must be accepted
+                        "subject_id": None,  # Must be accepted
                         "question_type": "single_choice",
                         "stem": "Test",
                         "options": {"A": "a", "B": "b"},
@@ -110,7 +111,7 @@ class TestReviewNextBatch:
         )
         resp = client.post("/api/v1/review/today/next-batch", json={"batch_size": 10})
         assert resp.status_code == 200
-        assert resp.json()["questions"][0]["subject"] is None
+        assert resp.json()["questions"][0]["subject_id"] is None
 
     def test_image_url_in_response(self, monkeypatch):
         """image_url is included in the response."""
@@ -119,7 +120,7 @@ class TestReviewNextBatch:
                 return_value={
                     "questions": [{
                         "schedule_id": 1, "question_id": 1,
-                        "subject": "math2", "question_type": "single_choice",
+                        "subject_id": 1, "subject_code": "math2", "subject_name": "数学二", "question_type": "single_choice",
                         "stem": "Test",
                         "options": {"A": "a", "B": "b"},
                         "content": {"text": "Test"},
@@ -144,7 +145,7 @@ class TestReviewNextBatch:
                 return_value={
                     "questions": [{
                         "schedule_id": 1, "question_id": 1,
-                        "subject": "math2", "question_type": "single_choice",
+                        "subject_id": 1, "subject_code": "math2", "subject_name": "数学二", "question_type": "single_choice",
                         "stem": "Test",
                         "options": {"A": "a", "B": "b"},
                         "content": {"text": "Test"},
@@ -173,7 +174,7 @@ class TestReviewNextBatch:
                 return_value={
                     "questions": [{
                         "schedule_id": 3, "question_id": 3,
-                        "subject": "math2", "question_type": "single_choice",
+                        "subject_id": 1, "subject_code": "math2", "subject_name": "数学二", "question_type": "single_choice",
                         "stem": "Q3",
                         "options": {"A": "a", "B": "b"},
                         "content": {"text": "Q3"},

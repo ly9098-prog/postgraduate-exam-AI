@@ -573,7 +573,7 @@ Page({
 
     try {
       const params = { page: 1, page_size: 100 }
-      if (this.data.subject) params.subject = this.data.subject
+      if (this.data.subject) params.subject_id = this.data.subject
       const data = await api.get('/wrong-questions', params)
       const items = (data && data.items) || []
       const ids = []

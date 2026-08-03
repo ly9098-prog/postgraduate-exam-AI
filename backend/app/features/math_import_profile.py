@@ -84,9 +84,9 @@ def is_math_candidate(question: dict) -> dict:
         }
 
     # 2. Subject 信号
-    subject = (question.get("subject") or "").lower().strip()
-    if subject in _MATH_SUBJECT_TRIGGERS:
-        signals.append(f"subject={subject}")
+    subject_code = (question.get("subject") or "").lower().strip()
+    if subject_code in _MATH_SUBJECT_TRIGGERS:
+        signals.append(f"subject={subject_code}")
 
     category = question.get("category") or ""
     if isinstance(category, str) and _MATH_NAME_TRIGGERS.search(category):

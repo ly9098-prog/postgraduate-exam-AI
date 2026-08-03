@@ -1,8 +1,8 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Integer, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -13,7 +13,10 @@ class Tag(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
-    subject: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    subject_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("subjects.id"), nullable=False, index=True
+    )
+    subject_ref = relationship("Subject", back_populates="tags", lazy="noload")
     parent_id: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

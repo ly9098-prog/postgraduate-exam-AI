@@ -390,7 +390,9 @@ Page({
       const enrichedMap = {}
       if (res && res.input_output && res.input_output.items) {
         res.input_output.items.forEach(item => {
-          enrichedMap[item.subject] = {
+          const sid = item.subject_id != null ? item.subject_id : item.subject
+          if (sid == null) return
+          enrichedMap[sid] = {
             weak_topics: [],
             suggestion: item.suggestion,
             repeat_wrong_count: 0,
@@ -401,12 +403,14 @@ Page({
       // Merge weak topics from weak_topic_ranking into enriched map
       if (res && res.weak_topic_ranking && res.weak_topic_ranking.items) {
         res.weak_topic_ranking.items.forEach(t => {
-          if (!enrichedMap[t.subject]) {
-            enrichedMap[t.subject] = { weak_topics: [], suggestion: '', repeat_wrong_count: 0, status_label: '' }
+          const sid = t.subject_id != null ? t.subject_id : t.subject
+          if (sid == null) return
+          if (!enrichedMap[sid]) {
+            enrichedMap[sid] = { weak_topics: [], suggestion: '', repeat_wrong_count: 0, status_label: '' }
           }
-          if (!enrichedMap[t.subject].weak_topics) enrichedMap[t.subject].weak_topics = []
-          if (enrichedMap[t.subject].weak_topics.length < 3) {
-            enrichedMap[t.subject].weak_topics.push({ name: t.name })
+          if (!enrichedMap[sid].weak_topics) enrichedMap[sid].weak_topics = []
+          if (enrichedMap[sid].weak_topics.length < 3) {
+            enrichedMap[sid].weak_topics.push({ name: t.name })
           }
         })
       }
@@ -489,7 +493,7 @@ Page({
     // Build chart hashes
     const heroHash = '' + (hero.totalAccuracy || 0)
     const trendHash = trend ? [trend.points, trend.previousPoints || []].map(list => list.map(p => p.date + p.questions + p.accuracy).join('|')).join('::') : ''
-    const subjectHash = subjects ? subjects.items.map(s => s.subject + s.accuracyPct).join('|') : ''
+    const subjectHash = subjects ? subjects.items.map(s => (s.subject_id != null ? s.subject_id : s.subject) + s.accuracyPct).join('|') : ''
     const masteryHash = '' + masteryRatePct
     const growthHash = growth ? '' + (growth.levelProgressPct || 0) : ''
     const adaptiveHash = adaptive ? '' + (adaptive.recallPct || 0) : ''
@@ -765,9 +769,9 @@ Page({
   },
 
   goSubjectWrongBook(e) {
-    const subject = e.currentTarget.dataset.subject
-    if (!subject) return
-    this.goTo('/pages/wrong-book/wrong-book?subject=' + encodeURIComponent(subject))
+    const subjectId = e.currentTarget.dataset.subjectId
+    if (subjectId == null || subjectId === '') return
+    this.goTo('/pages/wrong-book/wrong-book?subject_id=' + encodeURIComponent(subjectId))
   },
 
   goTopicWrongBook(e) {
@@ -789,11 +793,11 @@ Page({
   // ── Topic Detail ──
   goTopicDetail(e) {
     const topic = e.currentTarget.dataset.topic
-    const subject = e.currentTarget.dataset.subject
+    const subjectId = e.currentTarget.dataset.subjectId
     let url = '/pages/wrong-book/wrong-book'
     const params = []
     if (topic) params.push('topic=' + encodeURIComponent(topic))
-    if (subject) params.push('subject=' + encodeURIComponent(subject))
+    if (subjectId != null && subjectId !== '') params.push('subject_id=' + encodeURIComponent(subjectId))
     if (params.length) url += '?' + params.join('&')
     this.goTo(url)
   },

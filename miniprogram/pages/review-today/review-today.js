@@ -84,7 +84,8 @@ function normalizeReviewQuestion(raw) {
     schedule_id: raw.schedule_id,
     question_id: raw.question_id,
     id: raw.id || raw.question_id,
-    subject: raw.subject || '',
+    subject_id: raw.subject_id != null ? raw.subject_id : null,
+    subject_code: raw.subject_code || '',
     subject_name: raw.subject_name || '',
     question_type: raw.question_type || '',
     stem: raw.stem || '',
@@ -556,7 +557,11 @@ Page({
 
     // Subject stats
     const subjectStats = (result.subject_stats || []).map(function(s) {
-      return { subject: this.subjectLabel(s.subject || ''), stats: s }
+      return {
+        subject: this.subjectLabel(s.subject_name, s.subject_code),
+        subject_id: s.subject_id != null ? s.subject_id : (s.subject_code || ''),
+        stats: s,
+      }
     }, this)
 
     return {
@@ -642,7 +647,7 @@ Page({
       _optionList: [],
       _renderModel,
       _stemPreview: stemText.length > 60 ? `${stemText.slice(0, 60)}...` : stemText,
-      _subjectLabel: this.subjectLabel(q.subject),
+      _subjectLabel: this.subjectLabel(q.subject_name, q.subject_code),
     }
   },
 
@@ -1320,9 +1325,10 @@ Page({
 
     var subjectMap = {}
     allResults.forEach(function(r) {
-      if (!r.subject) return
-      if (!subjectMap[r.subject]) subjectMap[r.subject] = { reviewed: 0, correct: 0, wrong: 0, skipped: 0 }
-      var s = subjectMap[r.subject]
+      var sid = r.subject_id != null ? r.subject_id : (r.subject_code || '')
+      if (sid === '' || sid == null) return
+      if (!subjectMap[sid]) subjectMap[sid] = { reviewed: 0, correct: 0, wrong: 0, skipped: 0, subject_name: r.subject_name || '', subject_code: r.subject_code || '' }
+      var s = subjectMap[sid]
       s.reviewed++
       if (!r.wasSubmitted) { s.skipped++; return }
       if (r.isCorrect) s.correct++
@@ -1331,7 +1337,8 @@ Page({
     var subjectStatsArr = []
     for (var subj in subjectMap) {
       if (subjectMap.hasOwnProperty(subj)) {
-        subjectStatsArr.push({ subject: this.subjectLabel(subj), stats: subjectMap[subj] })
+        var entry = subjectMap[subj]
+        subjectStatsArr.push({ subject: this.subjectLabel(entry.subject_name, entry.subject_code), subject_id: subj, stats: entry })
       }
     }
 
@@ -1458,8 +1465,9 @@ Page({
 
   /* ==================== 工具 ==================== */
 
-  subjectLabel(s) {
-    return getSubjectName(s)
+  subjectLabel(name, code) {
+    if (name) return name
+    return getSubjectName(code || name)
   },
 
   /* ==================== 计时 ==================== */

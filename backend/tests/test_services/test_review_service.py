@@ -12,6 +12,21 @@ from app.features.review_service import (
     submit_to_review,
 )
 
+# Ensure all ORM models are registered so Subject's string relationships
+# (practice_records, answer_behaviors, review_schedules, ...) resolve at
+# mapper configuration time (see app/models/admin.py Subject).
+from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.import_batch_job import ImportBatchJob  # noqa: F401
+from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+from app.models.pomodoro import PomodoroSession  # noqa: F401
+from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.recommendation_log import RecommendationLog  # noqa: F401
+from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.review_scheduler import ReviewSchedule  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
+from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+
 # --- helpers ---
 
 def _make_question(overrides=None):
@@ -27,7 +42,7 @@ def _make_question(overrides=None):
         "answer": "A",
         "analysis": "求导得 2x",
         "question_type": "single_choice",
-        "subject": "math2",
+        "subject_id": 1,
         "confidence_score": 0.85,
         "is_valid": True,
         "errors": [],
@@ -48,7 +63,7 @@ def _make_mock_db():
     db.add = MagicMock()
     db.flush = AsyncMock()
     db.commit = AsyncMock()
-    db.execute = AsyncMock(return_value=_make_execute_result(scalar_one_or_none=None))
+    db.execute = AsyncMock(return_value=_make_execute_result(scalar_one_or_none=None, all=[]))
     return db
 
 
@@ -114,7 +129,7 @@ class TestSubmitToReview:
 
         result = asyncio.run(submit_to_review(
             db, [q],
-            {"source_type": "pdf", "source_file": "test.pdf", "subject": "math2"},
+            {"source_type": "pdf", "source_file": "test.pdf", "subject_id": 1},
         ))
 
         assert result["total"] == 1
@@ -475,7 +490,7 @@ class TestGetReviewQueue:
         qi.batch_id = f"BATCH_{id}"
         qi.source_type = "pdf"
         qi.source_file = "test.pdf"
-        qi.subject = "math2"
+        qi.subject_id = 1
         qi.question_type = "single_choice"
         qi.parsed_content = {"text": f"stem_{id}"}
         qi.parsed_options = {"A": "opt"}

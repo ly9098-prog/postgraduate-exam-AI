@@ -45,13 +45,15 @@ def upgrade() -> None:
     if _fk_exists("batch_job_trace_events", "batch_job_trace_events_job_id_fkey"):
         return
 
-    op.create_foreign_key(
-        "batch_job_trace_events_job_id_fkey",
-        "batch_job_trace_events",
-        "import_batch_jobs",
-        ["job_id"],
-        ["job_id"],
-    )
+    # Batch mode so the FK is also created on SQLite (fresh installs);
+    # on PostgreSQL this behaves identically to a direct create_foreign_key.
+    with op.batch_alter_table("batch_job_trace_events") as batch_op:
+        batch_op.create_foreign_key(
+            "batch_job_trace_events_job_id_fkey",
+            "import_batch_jobs",
+            ["job_id"],
+            ["job_id"],
+        )
 
 
 def downgrade() -> None:
@@ -60,8 +62,8 @@ def downgrade() -> None:
         return
     if not _fk_exists("batch_job_trace_events", "batch_job_trace_events_job_id_fkey"):
         return
-    op.drop_constraint(
-        "batch_job_trace_events_job_id_fkey",
-        "batch_job_trace_events",
-        type_="foreignkey",
-    )
+    with op.batch_alter_table("batch_job_trace_events") as batch_op:
+        batch_op.drop_constraint(
+            "batch_job_trace_events_job_id_fkey",
+            type_="foreignkey",
+        )

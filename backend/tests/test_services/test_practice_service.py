@@ -7,6 +7,21 @@ import pytest
 
 from app.models.question import Question
 
+# Ensure all ORM models are registered so Subject's string relationships
+# (practice_records, answer_behaviors, review_schedules, ...) resolve at
+# mapper configuration time (see app/models/admin.py Subject).
+from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.import_batch_job import ImportBatchJob  # noqa: F401
+from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+from app.models.pomodoro import PomodoroSession  # noqa: F401
+from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.recommendation_log import RecommendationLog  # noqa: F401
+from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.review_scheduler import ReviewSchedule  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
+from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+
 # --- helpers ---
 
 def _make_mock_db():
@@ -36,12 +51,12 @@ def _make_execute_result(**methods):
     return mock_result
 
 
-def _make_question(id=1, subject="math2", question_type="single_choice",
+def _make_question(id=1, subject_id=1, question_type="single_choice",
                    answer="A", analysis="求导得 2x", knowledge_points=None,
                    is_active=True):
     q = MagicMock(spec=Question)
     q.id = id
-    q.subject = subject
+    q.subject_id = subject_id
     q.question_type = question_type
     q.content = {"stem": "f(x)=x^2, f'(x)=?"}
     q.options = {"A": "2x", "B": "x", "C": "x^2", "D": "2"}
@@ -80,7 +95,7 @@ class TestGetPracticeQuestions:
         q1, q2 = _make_question(1), _make_question(2)
         db.execute.side_effect = self._side_effect_once([q1, q2])
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
-            result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="random"))
+            result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5, mode="random"))
         assert len(result) == 2
         assert result[0].id == 1
 
@@ -90,7 +105,7 @@ class TestGetPracticeQuestions:
         q1, q2 = _make_question(1), _make_question(2)
         db.execute.side_effect = self._side_effect_once([q1, q2])
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
-            result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="sequential"))
+            result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5, mode="sequential"))
         assert len(result) == 2
 
     def test_filter_by_knowledge_point(self):
@@ -100,7 +115,7 @@ class TestGetPracticeQuestions:
         db.execute.side_effect = self._side_effect_once([q1])
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
             result = _run(get_practice_questions(
-                db, user_id=1, subject="math2", count=5, knowledge_points=["导数"]
+                db, user_id=1, subject_code="math2", count=5, knowledge_points=["导数"]
             ))
         assert len(result) == 1
 
@@ -111,7 +126,7 @@ class TestGetPracticeQuestions:
         db.execute.side_effect = self._side_effect_once([q2])
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
             result = _run(get_practice_questions(
-                db, user_id=1, subject="math2", count=5, exclude_answered=True
+                db, user_id=1, subject_code="math2", count=5, exclude_answered=True
             ))
         assert len(result) == 1
 
@@ -120,7 +135,7 @@ class TestGetPracticeQuestions:
         db = _make_mock_db()
         db.execute.side_effect = self._side_effect_once([])
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
-            result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5))
+            result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5))
         assert result == []
 
 
@@ -455,15 +470,15 @@ class TestPracticeStats:
         db = _make_mock_db()
         db.execute.side_effect = [
             _make_execute_result(one=(5, 4)),
-            _make_execute_result(all=[("math2", 5, 4)]),
+            _make_execute_result(all=[(1, "math2", "数学二", 5, 4)]),
             _make_execute_result(all=[]),
             _make_execute_result(scalars=[]),
         ]
 
         result = _run(get_practice_stats(db, user_id=1))
-        assert "math2" in result["by_subject"]
-        assert result["by_subject"]["math2"]["answered"] == 5
-        assert result["by_subject"]["math2"]["accuracy"] == 0.8
+        by_code = {s["subject_code"]: s for s in result["by_subject"]}
+        assert by_code["math2"]["answered"] == 5
+        assert by_code["math2"]["accuracy"] == 0.8
 
 
 # --- streak calculation ---
@@ -913,7 +928,7 @@ class TestGetAggregatedSmartQuestions:
 
         # get_smart_practice_questions 对每个 code 返回对应题目
         async def _fake_smart(**kw):
-            subject = kw.get("subject", "")
+            subject = kw.get("subject_code", "")
             if subject == "ds":
                 return all_questions[10][:], {q.id: all_metadata[q.id] for q in all_questions[10]}
             elif subject == "os":
@@ -1223,7 +1238,7 @@ class TestAggregatedBalance:
             smart_output[code] = (qs, meta)
 
         async def fake_smart(**kw):
-            subj = kw.get("subject", "")
+            subj = kw.get("subject_code", "")
             return smart_output.get(subj, ([], {}))
 
         with patch(

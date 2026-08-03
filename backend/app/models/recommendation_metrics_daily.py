@@ -1,6 +1,6 @@
 """Phase 4 — 推荐指标每日聚合。"""
-from sqlalchemy import Date, DateTime, Float, Integer, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.core.time_utils import utcnow
@@ -14,7 +14,10 @@ class RecommendationMetricsDaily(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     date = mapped_column(Date, nullable=False, index=True)
-    subject: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    subject_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("subjects.id"), nullable=False, index=True
+    )
+    subject_ref = relationship("Subject", back_populates="recommendation_metrics_daily", lazy="noload")
 
     # practice_smart / similar / knowledge_path
     scene: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
@@ -48,13 +51,13 @@ class RecommendationMetricsDaily(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "date", "subject", "scene", "strategy", "variant_key",
-            name="uq_rmd_date_subject_scene_strategy_variant",
+            "date", "subject_id", "scene", "strategy", "variant_key",
+            name="uq_rmd_date_subject_id_scene_strategy_variant",
         ),
     )
 
     def __repr__(self):
         return (
             f"<RecommendationMetricsDaily date={self.date} "
-            f"subject={self.subject!r} scene={self.scene!r} strategy={self.strategy!r}>"
+            f"subject_id={self.subject_id} scene={self.scene!r} strategy={self.strategy!r}>"
         )

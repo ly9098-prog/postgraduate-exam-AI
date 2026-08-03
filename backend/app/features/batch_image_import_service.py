@@ -1381,17 +1381,17 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
     job = await db.get(ImportBatchJob, item.job_id)
     # subject_id priority: explicit param > job.subject_id
     effective_subject_id = subject_id or (job.subject_id if job else None)
-    effective_subject = subject
-    if not effective_subject and job and job.subject_ref:
-        effective_subject = job.subject_ref.code
+    effective_subject_code = subject
+    if not effective_subject_code and job and job.subject_ref:
+        effective_subject_code = job.subject_ref.code
 
     # If still no subject_id, try resolving legacy subject string
-    if not effective_subject_id and effective_subject:
+    if not effective_subject_id and effective_subject_code:
         try:
             from app.services.admin_subject_service import resolve_subject_id
-            effective_subject_id = await resolve_subject_id(db, effective_subject)
+            effective_subject_id = await resolve_subject_id(db, effective_subject_code)
         except Exception:
-            logger.warning("reparse: failed to resolve legacy subject=%s to subject_id", effective_subject)
+            logger.warning("reparse: failed to resolve legacy subject=%s to subject_id", effective_subject_code)
 
     # ── Run pipeline ──
     async with async_session() as pdb:
@@ -1400,7 +1400,7 @@ async def reparse_item_from_cache(db: AsyncSession, item_id: int, subject: str |
             file_content=cleaned.encode("utf-8"),
             source_type="txt",
             source_file=item.source_file or "reparse",
-            subject=effective_subject,
+            subject=effective_subject_code,
             subject_id=effective_subject_id,
             options={"enable_ai_repair": True, "confidence_threshold": 0.6},
             db=pdb,

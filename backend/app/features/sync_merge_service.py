@@ -27,7 +27,7 @@ _QUESTION_FIELDS = (
     "raw_content", "image_url", "year", "review_status", "is_active",
 )
 
-_TAG_FIELDS = ("name", "subject", "parent_id", "sort_order")
+_TAG_FIELDS = ("name", "subject_id", "parent_id", "sort_order")
 
 
 @dataclass

@@ -15,6 +15,20 @@ from app.services.review_scheduler import (
 )
 from app.services.sm2_service import calc_sm2
 
+# Ensure all ORM models are registered so Subject's string relationships
+# (practice_records, answer_behaviors, review_schedules, ...) resolve at
+# mapper configuration time (see app/models/admin.py Subject).
+from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.import_batch_job import ImportBatchJob  # noqa: F401
+from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+from app.models.pomodoro import PomodoroSession  # noqa: F401
+from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.recommendation_log import RecommendationLog  # noqa: F401
+from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
+from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+
 # ── Helpers ──
 
 
@@ -45,14 +59,14 @@ def _mock_execute_sequence(db, *results):
     db.execute.side_effect = [_make_execute_result(**r) for r in results]
 
 
-def _make_schedule_mock(id=1, user_id=1, question_id=10, subject="math2",
+def _make_schedule_mock(id=1, user_id=1, question_id=10, subject_id=1,
                         interval=5, ease_factor=2.5, repetitions=2,
                         next_review_at=None):
     s = MagicMock()
     s.id = id
     s.user_id = user_id
     s.question_id = question_id
-    s.subject = subject
+    s.subject_id = subject_id
     s.interval = interval
     s.ease_factor = ease_factor
     s.repetitions = repetitions
@@ -61,12 +75,13 @@ def _make_schedule_mock(id=1, user_id=1, question_id=10, subject="math2",
     return s
 
 
-def _make_question_mock(id=10, subject="math2", question_type="single_choice",
+def _make_question_mock(id=10, subject_id=1, subject_code="math2", question_type="single_choice",
                         content=None, options=None, answer="A", analysis="test"):
     q = MagicMock()
     q.id = id
-    q.subject = subject
-    q.subject_ref.code = subject
+    q.subject_id = subject_id
+    q.subject_ref.code = subject_code
+    q.subject_ref.name = subject_code
     q.question_type = question_type
     q.content = content or {"text": "Test question stem"}
     q.options = options or {"A": "option a", "B": "option b"}
@@ -202,11 +217,11 @@ class TestGetTodayReview:
         db = _make_mock_db()
         now = datetime.now(UTC)
         schedules = [
-            _make_schedule_mock(id=1, question_id=10, subject="math2", next_review_at=now - timedelta(days=1)),
-            _make_schedule_mock(id=2, question_id=11, subject="english", next_review_at=now - timedelta(days=1)),
+            _make_schedule_mock(id=1, question_id=10, subject_id=1, next_review_at=now - timedelta(days=1)),
+            _make_schedule_mock(id=2, question_id=11, subject_id=2, next_review_at=now - timedelta(days=1)),
         ]
-        math_q = _make_question_mock(id=10, subject="math2")
-        _make_question_mock(id=11, subject="english")
+        math_q = _make_question_mock(id=10, subject_id=1)
+        _make_question_mock(id=11, subject_id=2)
         _mock_execute_sequence(
             db,
             {"scalar": 1},
@@ -214,10 +229,10 @@ class TestGetTodayReview:
             {"scalars": [math_q]},
         )
 
-        result = asyncio.run(get_today_review(db, user_id=1, subject="math2"))
+        result = asyncio.run(get_today_review(db, user_id=1, subject_id=1))
 
         assert result["total_today"] == 1
-        assert result["questions"][0]["subject"] == "math2"
+        assert result["questions"][0]["subject_id"] == 1
 
     def test_limit(self):
         db = _make_mock_db()
@@ -446,8 +461,8 @@ class TestReviewStats:
             {"scalar": 10},           # remaining_today
             {"scalar": 3},            # overdue
             {"one": (20, 16)},        # accuracy: 20 total, 16 correct
-            {"scalars": []},          # by_subject scheduled
-            {"scalars": []},          # by_subject reviewed
+            {"all": []},              # by_subject scheduled
+            {"all": []},              # by_subject reviewed
         )
 
         result = asyncio.run(get_review_stats(db, user_id=1))
@@ -467,8 +482,8 @@ class TestReviewStats:
             {"scalar": 0},
             {"scalar": 0},
             {"one": (0, 0)},
-            {"scalars": []},
-            {"scalars": []},
+            {"all": []},
+            {"all": []},
         )
 
         result = asyncio.run(get_review_stats(db, user_id=1))
@@ -477,6 +492,8 @@ class TestReviewStats:
         assert result["accuracy_last_7d"] == 0.0
 
     def test_by_subject_stats(self):
+        from app.models.admin import Subject
+
         db = _make_mock_db()
         _mock_execute_sequence(
             db,
@@ -485,16 +502,22 @@ class TestReviewStats:
             {"scalar": 8},
             {"scalar": 2},
             {"one": (15, 12)},
+            {"all": [(1, 30, 8), (2, 20, 5)]},  # by_subject scheduled rows
+            {"all": [(1, 3), (2, 1)]},           # by_subject reviewed rows
             {"scalars": [
-                MagicMock(**{"__getitem__": lambda s, k: {"math2": (0, 30, 8), "english": (1, 20, 5)}[s][k]})
-            ]},
-            {"scalars": [MagicMock(**{"__getitem__": lambda s, k: {"math2": (0, 3), "english": (1, 1)}[s][k]})]},
+                Subject(id=1, code="math2", name="数学二", level=1, path="math2"),
+                Subject(id=2, code="english", name="英语", level=1, path="english"),
+            ]},                                   # subjects query
         )
 
         result = asyncio.run(get_review_stats(db, user_id=1))
 
-        # With this mock setup, subject stats will be populated
         assert "by_subject" in result
+        by_code = {s["subject_id"]: s for s in result["by_subject"]}
+        assert by_code[1]["subject_code"] == "math2"
+        assert by_code[1]["scheduled"] == 30
+        assert by_code[2]["subject_code"] == "english"
+        assert by_code[2]["reviewed"] == 1
 
 
 # ── get_review_history Tests ──

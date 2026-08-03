@@ -1,7 +1,7 @@
 """Phase 3 — 知识路径推荐 + 知识点关系查询 API。"""
 import logging
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/v1", tags=["knowledge-path"])
 
 @router.get("/knowledge-path", response_model=KnowledgePathResponse)
 async def get_knowledge_path(
-    subject: str = Query(...),
+    subject_id: int = Query(...),
     start_knowledge_point_id: int | None = Query(None),
     limit: int = Query(8, ge=1, le=20),
     questions_per_node: int = Query(3, ge=1, le=10),
@@ -33,17 +33,22 @@ async def get_knowledge_path(
     result = await knowledge_path_service.get_user_path_recommendations(
         db=db,
         user_id=current_user.id,
-        subject=subject,
+        subject=subject_id,
         start_knowledge_point_id=start_knowledge_point_id,
         limit=limit,
         questions_per_node=questions_per_node,
     )
 
+    if result.get("subject_id") is None:
+        raise HTTPException(status_code=400, detail="科目不存在或无法解析")
+
     nodes = [
         KnowledgePathNode(
             knowledge_point_id=n["knowledge_point_id"],
             name=n["name"],
-            subject=n["subject"],
+            subject_id=n["subject_id"],
+            subject_code=n.get("subject_code", ""),
+            subject_name=n.get("subject_name", ""),
             mastery_score=n.get("mastery_score"),
             weakness_level=n.get("weakness_level"),
             path_role=n["path_role"],
@@ -55,7 +60,9 @@ async def get_knowledge_path(
     ]
 
     return KnowledgePathResponse(
-        subject=result["subject"],
+        subject_id=result.get("subject_id"),
+        subject_code=result.get("subject_code", ""),
+        subject_name=result.get("subject_name", ""),
         user_id=result["user_id"],
         start_knowledge_point_id=result.get("start_knowledge_point_id"),
         strategy=result.get("strategy", "knowledge_path"),
@@ -67,7 +74,7 @@ async def get_knowledge_path(
 
 @router.get("/knowledge-edges", response_model=list[KnowledgeEdgeResponse])
 async def get_knowledge_edges(
-    subject: str = Query(...),
+    subject_id: int = Query(...),
     relation_type: str | None = Query(None),
     knowledge_point_id: int | None = Query(None),
     limit: int = Query(200, ge=1, le=1000),
@@ -79,7 +86,7 @@ async def get_knowledge_edges(
 
     edges = await knowledge_graph_service.list_knowledge_edges(
         db=db,
-        subject=subject,
+        subject_id=subject_id,
         relation_type=relation_type,
         knowledge_point_id=knowledge_point_id,
         limit=limit,

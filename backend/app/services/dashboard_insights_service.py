@@ -11,12 +11,12 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
+from app.models.admin import Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.review_scheduler import ReviewSchedule
-from app.models.subject_resolver import get_subject_label
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.models.wrong_question import WrongQuestion
 
@@ -188,7 +188,9 @@ async def compute_weak_topic_ranking(
         select(
             UserKnowledgeState.knowledge_point_id,
             KnowledgePoint.name,
-            UserKnowledgeState.subject,
+            UserKnowledgeState.subject_id,
+            Subject.code,
+            Subject.name,
             UserKnowledgeState.mastery_score,
             UserKnowledgeState.attempt_count,
             UserKnowledgeState.wrong_count,
@@ -196,6 +198,7 @@ async def compute_weak_topic_ranking(
             UserKnowledgeState.last_practiced_at,
         )
         .join(KnowledgePoint, UserKnowledgeState.knowledge_point_id == KnowledgePoint.id)
+        .outerjoin(Subject, UserKnowledgeState.subject_id == Subject.id)
         .where(
             UserKnowledgeState.user_id == user_id,
             UserKnowledgeState.mastery_score < 45,
@@ -216,15 +219,16 @@ async def compute_weak_topic_ranking(
             items.append({
                 "knowledge_point_id": kp_id,
                 "name": row[1],
-                "subject": row[2],
-                "subject_label": get_subject_label(row[2]),
-                "mastery_score": round(row[3], 1),
-                "attempt_count": row[4] or 0,
-                "wrong_count": row[5] or 0,
-                "recent_wrong_count": row[6] or 0,
+                "subject_id": row[2],
+                "subject_code": row[3] or "",
+                "subject_name": row[4] or "",
+                "mastery_score": round(row[5], 1),
+                "attempt_count": row[6] or 0,
+                "wrong_count": row[7] or 0,
+                "recent_wrong_count": row[8] or 0,
                 "due_review_count": due_counts.get(kp_id, 0),
                 "last_practiced_at": (
-                    row[7].isoformat() if row[7] else None
+                    row[9].isoformat() if row[9] else None
                 ),
             })
         return {"data_available": True, "items": items}
@@ -257,8 +261,9 @@ async def compute_weak_topic_ranking(
         {
             "knowledge_point_id": 0,
             "name": name,
-            "subject": "",
-            "subject_label": "",
+            "subject_id": None,
+            "subject_code": "",
+            "subject_name": "",
             "mastery_score": max(0, 100 - count * 15),
             "attempt_count": count,
             "wrong_count": count,
@@ -423,7 +428,9 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
     # Per-subject breakdown
     subj_rows = await db.execute(
         select(
-            PracticeRecord.subject,
+            PracticeRecord.subject_id,
+            Subject.code,
+            Subject.name,
             func.coalesce(
                 func.avg(case((PracticeRecord.is_correct == True, PracticeRecord.used_time))), 0  # noqa: E712
             ),
@@ -431,14 +438,16 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
                 func.avg(case((PracticeRecord.is_correct == False, PracticeRecord.used_time))), 0  # noqa: E712
             ),
             func.count(PracticeRecord.id),
-        ).where(
+        )
+        .outerjoin(Subject, PracticeRecord.subject_id == Subject.id)
+        .where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.used_time.isnot(None),
             PracticeRecord.used_time > 0,
-        ).group_by(PracticeRecord.subject)
+        ).group_by(PracticeRecord.subject_id, Subject.code, Subject.name)
     )
     by_subject = []
-    for subj, ac, aw, cnt in subj_rows.all():
+    for subj_id, subj_code, subj_name, ac, aw, cnt in subj_rows.all():
         ac = float(ac or 0)
         aw = float(aw or 0)
         cnt = cnt or 0
@@ -449,8 +458,9 @@ async def compute_speed_accuracy(db: AsyncSession, user_id: int) -> dict | None:
         else:
             sl = "速度正常"
         by_subject.append({
-            "subject": subj,
-            "subject_label": get_subject_label(subj),
+            "subject_id": subj_id,
+            "subject_code": subj_code or "",
+            "subject_name": subj_name or "",
             "avg_time_correct_sec": round(ac, 1),
             "avg_time_wrong_sec": round(aw, 1),
             "questions": cnt,
@@ -584,29 +594,34 @@ async def compute_input_output(
 
     rows = await db.execute(
         select(
-            PracticeRecord.subject,
+            PracticeRecord.subject_id,
+            Subject.code,
+            Subject.name,
             func.count(PracticeRecord.id),
             func.coalesce(
                 func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
             ),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         )
+        .outerjoin(Subject, PracticeRecord.subject_id == Subject.id)
         .where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.answered_at >= since,
             PracticeRecord.used_time.isnot(None),
             PracticeRecord.used_time > 0,
         )
-        .group_by(PracticeRecord.subject)
+        .group_by(PracticeRecord.subject_id, Subject.code, Subject.name)
     )
     subject_data = {}
     total_q = 0
     total_time = 0
-    for subj, cnt, corr, tm in rows.all():
+    for subj_id, subj_code, subj_name, cnt, corr, tm in rows.all():
         cnt = cnt or 0
         if cnt < 3:
             continue
-        subject_data[subj] = {
+        subject_data[subj_id] = {
+            "subject_code": subj_code or "",
+            "subject_name": subj_name or "",
             "questions": cnt,
             "correct": corr or 0,
             "time": tm or 0,
@@ -620,7 +635,7 @@ async def compute_input_output(
     global_avg = total_time / max(total_q, 1)
 
     items = []
-    for subj, sd in subject_data.items():
+    for subj_id, sd in subject_data.items():
         accuracy = sd["correct"] / max(sd["questions"], 1)
         time_per_q = sd["time"] / max(sd["questions"], 1)
         efficiency = accuracy / max(time_per_q / max(global_avg, 1), 0.1)
@@ -644,8 +659,9 @@ async def compute_input_output(
             suggestion = "耗时较长但正确率尚可，建议优化做题速度"
 
         items.append({
-            "subject": subj,
-            "subject_label": get_subject_label(subj),
+            "subject_id": subj_id,
+            "subject_code": sd["subject_code"],
+            "subject_name": sd["subject_name"],
             "total_questions": sd["questions"],
             "total_duration_sec": sd["time"],
             "accuracy": round(accuracy, 4),

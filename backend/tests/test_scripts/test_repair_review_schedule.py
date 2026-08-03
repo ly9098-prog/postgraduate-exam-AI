@@ -5,6 +5,21 @@ from unittest.mock import AsyncMock, MagicMock
 
 from scripts.repair_review_schedule_for_wrong_questions import repair_review_schedule
 
+# Ensure all ORM models are registered so Subject's string relationships
+# (practice_records, answer_behaviors, review_schedules, ...) resolve at
+# mapper configuration time (see app/models/admin.py Subject).
+from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.import_batch_job import ImportBatchJob  # noqa: F401
+from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+from app.models.pomodoro import PomodoroSession  # noqa: F401
+from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.recommendation_log import RecommendationLog  # noqa: F401
+from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.review_scheduler import ReviewSchedule  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
+from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -89,7 +104,7 @@ class TestRepairReviewSchedule:
 
         # 返回 Question
         mock_question = MagicMock()
-        mock_question.subject = "math"
+        mock_question.subject_id = 1
         mock_question_result = MagicMock()
         mock_question_result.scalar_one_or_none.return_value = mock_question
 
@@ -132,7 +147,7 @@ class TestRepairReviewSchedule:
 
         # 返回 Question
         mock_question = MagicMock()
-        mock_question.subject = "math"
+        mock_question.subject_id = 1
         mock_question_result = MagicMock()
         mock_question_result.scalar_one_or_none.return_value = mock_question
 
@@ -180,7 +195,7 @@ class TestRepairReviewSchedule:
 
         # 返回 Question
         mock_question = MagicMock()
-        mock_question.subject = "math"
+        mock_question.subject_id = 1
         mock_question_result = MagicMock()
         mock_question_result.scalar_one_or_none.return_value = mock_question
 
@@ -233,7 +248,7 @@ class TestRepairReviewSchedule:
 
         # 返回 Question with subject
         mock_question = MagicMock()
-        mock_question.subject = "english"
+        mock_question.subject_id = 9
         mock_question_result = MagicMock()
         mock_question_result.scalar_one_or_none.return_value = mock_question
 
@@ -250,7 +265,7 @@ class TestRepairReviewSchedule:
         assert result["created"] == 1
         # 验证 add 的 ReviewSchedule 的 subject
         added_schedule = mock_db.add.call_args[0][0]
-        assert added_schedule.subject == "english"
+        assert added_schedule.subject_id == 9
 
     def test_mastered_inherited(self, monkeypatch):
         """mastered 从 WrongQuestion 正确继承。"""
@@ -276,7 +291,7 @@ class TestRepairReviewSchedule:
 
         # 返回 Question
         mock_question = MagicMock()
-        mock_question.subject = "math"
+        mock_question.subject_id = 1
         mock_question_result = MagicMock()
         mock_question_result.scalar_one_or_none.return_value = mock_question
 

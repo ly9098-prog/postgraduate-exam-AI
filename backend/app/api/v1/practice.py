@@ -244,7 +244,7 @@ async def get_practice_questions(
             logger.warning("similar 模式缺少 source_question_id，回退到 random")
             mode = "random"
             questions = await svc.get_practice_questions(
-                db=db, user_id=current_user.id, subject=subject_for_query,
+                db=db, user_id=current_user.id, subject_code=subject_for_query,
                 count=count, mode="random", knowledge_points=kps,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
@@ -254,7 +254,7 @@ async def get_practice_questions(
             import uuid
             request_id = str(uuid.uuid4())
             questions, question_metadata = await svc.get_similar_practice_questions(
-                db=db, user_id=current_user.id, subject=subject_for_query,
+                db=db, user_id=current_user.id, subject_code=subject_for_query,
                 source_question_id=source_question_id, count=count,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
@@ -297,7 +297,7 @@ async def get_practice_questions(
             )
         else:
             questions, question_metadata = await svc.get_smart_practice_questions(
-                db=db, user_id=current_user.id, subject=subject_for_query,
+                db=db, user_id=current_user.id, subject_code=subject_for_query,
                 subject_ids=scope_subject_ids,
                 count=count, exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
@@ -321,7 +321,7 @@ async def get_practice_questions(
             # 具体科目（叶子或 include_children=false）—— 精确查询
             # 传入 subject_ids 阻止 resolve_subject_ids 的内部递归扩展
             questions = await svc.get_practice_questions(
-                db=db, user_id=current_user.id, subject=subject_for_query,
+                db=db, user_id=current_user.id, subject_code=subject_for_query,
                 subject_ids=scope_subject_ids,
                 count=count, mode=mode, knowledge_points=kps,
                 exclude_answered=exclude_answered,
@@ -493,19 +493,20 @@ async def get_practice_stats(
 
 @router.get("/records")
 async def list_records(
-    subject: str | None = Query(None),
+    subject_id: int | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     from sqlalchemy import and_, func, select
+    from sqlalchemy.orm import selectinload
 
     from app.models.practice_record import PracticeRecord as PR
 
     conds = [PR.user_id == current_user.id]
-    if subject:
-        conds.append(PR.subject == subject)
+    if subject_id:
+        conds.append(PR.subject_id == subject_id)
 
     total = (
         await db.execute(select(func.count(PR.id)).where(and_(*conds)))
@@ -513,6 +514,7 @@ async def list_records(
 
     rows = await db.execute(
         select(PR)
+        .options(selectinload(PR.subject_ref))
         .where(and_(*conds))
         .order_by(PR.answered_at.desc())
         .offset((page - 1) * page_size)
@@ -521,15 +523,25 @@ async def list_records(
     items = rows.scalars().all()
 
     return paginated_response(
-        items=[PracticeRecordItem.model_validate(r) for r in items],
+        items=[
+            PracticeRecordItem(
+                id=r.id,
+                question_id=r.question_id,
+                subject_id=r.subject_id,
+                subject_code=r.subject_ref.code if r.subject_ref else "",
+                subject_name=r.subject_ref.name if r.subject_ref else "",
+                question_type=r.question_type,
+                user_answer=r.user_answer,
+                is_correct=r.is_correct,
+                used_time=r.used_time,
+                answered_at=r.answered_at,
+            )
+            for r in items
+        ],
         total=total,
         page=page,
         page_size=page_size,
     )
-
-    conds = [PR.user_id == current_user.id]
-    if subject:
-        conds.append(PR.subject == subject)
 
 # ── V3: 知识点掌握度查询接口 ──
 
@@ -553,16 +565,16 @@ async def get_knowledge_states(
     from app.services import mastery_service
 
     subjects_result = await db.execute(
-        sa_select(UserKnowledgeState.subject)
+        sa_select(UserKnowledgeState.subject_id)
         .where(UserKnowledgeState.user_id == current_user.id)
         .distinct()
     )
     subjects = [row[0] for row in subjects_result.all()]
 
     all_items = []
-    for subject in subjects:
+    for subject_id in subjects:
         states = await mastery_service.get_user_knowledge_states(
-            db, current_user.id, subject,
+            db, current_user.id, subject_id,
         )
         all_items.extend(states)
 
@@ -614,16 +626,16 @@ async def get_weak_knowledge_points(
 
     # 获取用户有记录的科目
     subjects_result = await db.execute(
-        sa_select(UserKnowledgeState.subject)
+        sa_select(UserKnowledgeState.subject_id)
         .where(UserKnowledgeState.user_id == current_user.id)
         .distinct()
     )
     subjects = [row[0] for row in subjects_result.all()]
 
     all_weak = []
-    for subject in subjects:
+    for subject_id in subjects:
         weak = await mastery_service.get_user_weak_knowledge_points(
-            db, current_user.id, subject, limit=limit,
+            db, current_user.id, subject_id, limit=limit,
         )
         all_weak.extend(weak)
 

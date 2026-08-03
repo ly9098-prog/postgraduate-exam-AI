@@ -16,6 +16,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+# Ensure all ORM models are registered so Subject's string relationships
+# (practice_records, answer_behaviors, review_schedules, ...) resolve at
+# mapper configuration time (see app/models/admin.py Subject).
+from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.import_batch_job import ImportBatchJob  # noqa: F401
+from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+from app.models.pomodoro import PomodoroSession  # noqa: F401
+from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.recommendation_log import RecommendationLog  # noqa: F401
+from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.review_scheduler import ReviewSchedule  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
+from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.features.question_pipeline import (  # noqa: E402
@@ -104,13 +119,13 @@ class TestParsePdfPerQuestionSubject:
 _MISSING = object()
 
 
-def _make_qi(qi_id, status="pending", subject="math2", parsed_content=None,
+def _make_qi(qi_id, status="pending", subject_id=1, parsed_content=None,
              parsed_options=_MISSING, parsed_answer="A", parsed_analysis="解析"):
     qi = MagicMock()
     qi.id = qi_id
     qi.batch_id = "B1"
     qi.status = status
-    qi.subject = subject
+    qi.subject_id = subject_id
     qi.question_type = "single_choice"
     qi.parsed_content = parsed_content or {"text": "求 f(x)=x^2 的导数"}
     qi.parsed_options = (
@@ -193,7 +208,7 @@ class TestPracticeSubjectPrefixMatch:
         # 模拟 db.execute 返回 questions
         q1 = MagicMock(spec=Question)
         q1.id = 1
-        q1.subject = "math2-calculus"
+        q1.subject_id = 2
         q1.is_active = True
 
         result = MagicMock()
@@ -211,6 +226,6 @@ class TestPracticeSubjectPrefixMatch:
 
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
             questions = asyncio.run(
-                get_practice_questions(db, user_id=1, subject="math2", count=5, mode="random")
+                get_practice_questions(db, user_id=1, subject_code="math2", count=5, mode="random")
             )
         assert len(questions) == 1

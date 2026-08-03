@@ -18,7 +18,9 @@ class OverviewStats(BaseModel):
 
 
 class SubjectStats(BaseModel):
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     total_questions: int = 0
     correct_count: int = 0
     wrong_count: int = 0

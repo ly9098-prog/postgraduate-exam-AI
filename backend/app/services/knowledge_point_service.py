@@ -6,9 +6,11 @@ import unicodedata
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.admin import Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
+from app.models.tag import Tag
 from app.services.admin_subject_service import resolve_subject_ids
 
 logger = logging.getLogger(__name__)
@@ -45,17 +47,17 @@ def normalize_knowledge_name(name: str) -> str:
 
 async def get_or_create_knowledge_point(
     db: AsyncSession,
-    subject: str,
+    subject_id: int,
     name: str,
 ) -> KnowledgePoint:
-    """按 subject + normalized_name 查找或创建知识点。"""
+    """按 subject_id + normalized_name 查找或创建知识点。"""
     normalized = normalize_knowledge_name(name)
     if not normalized:
         raise ValueError("知识点名称不能为空")
 
     result = await db.execute(
         select(KnowledgePoint).where(
-            KnowledgePoint.subject == subject,
+            KnowledgePoint.subject_id == subject_id,
             KnowledgePoint.normalized_name == normalized,
         )
     )
@@ -64,7 +66,7 @@ async def get_or_create_knowledge_point(
         return kp
 
     kp = KnowledgePoint(
-        subject=subject,
+        subject_id=subject_id,
         name=name.strip(),
         normalized_name=normalized,
     )
@@ -91,9 +93,9 @@ async def sync_question_knowledge_points(
     if not kp_names:
         return {"created": 0, "skipped": 0, "total": 0}
 
-    # subject_ref 是 lazy="noload" 需要显式加载；若无有效 subject 则跳过
-    subject = question.subject_ref.code if question.subject_ref else None
-    if not subject:
+    # subject_id 是 NOT NULL；若无有效 subject 则跳过
+    subject_id = question.subject_id
+    if not subject_id:
         logger.warning(
             "sync_question_knowledge_points: qid=%d has no valid subject, skipping %d kps",
             question.id, len(kp_names),
@@ -105,7 +107,7 @@ async def sync_question_knowledge_points(
 
     for kp_name in kp_names:
         try:
-            kp = await get_or_create_knowledge_point(db, subject, kp_name)
+            kp = await get_or_create_knowledge_point(db, subject_id, kp_name)
         except ValueError:
             skipped += 1
             continue
@@ -137,16 +139,16 @@ async def sync_question_knowledge_points(
 
 async def backfill_question_knowledge_points(
     db: AsyncSession,
-    subject: str | None = None,
+    subject_id: int | None = None,
     limit: int = 500,
 ) -> dict:
     """批量同步题目知识点到映射表。
 
-    subject 支持精确匹配或前缀匹配（如 exam408 → exam408、exam408-ds）。
+    subject_id 支持精确匹配或带子科目扩展（见 resolve_subject_ids）。
     """
     conditions = [Question.is_active]
-    if subject:
-        ids = await resolve_subject_ids(db, subject)
+    if subject_id:
+        ids = await resolve_subject_ids(db, subject_id)
         conditions.append(Question.subject_id.in_(ids))
 
     result = await db.execute(
@@ -207,4 +209,77 @@ async def get_knowledge_status(db: AsyncSession) -> dict:
         "total_question_mappings": total_mappings,
         "mapped_questions": mapped_qids,
         "unmapped_questions": max(0, total_questions - mapped_qids),
+    }
+
+
+# ── 标签（知识点）CRUD ──────────────────────────────────────────────
+
+
+async def list_tags(db: AsyncSession, subject_id: int | None = None) -> list[Tag]:
+    q = select(Tag).order_by(Tag.subject_id, Tag.sort_order, Tag.id)
+    if subject_id is not None:
+        q = q.where(Tag.subject_id == subject_id)
+    result = await db.execute(q)
+    return list(result.scalars().all())
+
+
+async def create_tag(
+    db: AsyncSession,
+    name: str,
+    subject_id: int,
+    parent_id: int | None = None,
+) -> Tag:
+    tag = Tag(name=name, subject_id=subject_id, parent_id=parent_id)
+    db.add(tag)
+    await db.commit()
+    await db.refresh(tag)
+    return tag
+
+
+async def delete_tag(db: AsyncSession, tag_id: int) -> bool:
+    result = await db.execute(select(Tag).where(Tag.id == tag_id))
+    tag = result.scalar_one_or_none()
+    if not tag:
+        return False
+    await db.delete(tag)
+    await db.commit()
+    return True
+
+
+async def get_subject_map(
+    db: AsyncSession, subject_ids: set[int]
+) -> dict[int, Subject]:
+    """Bulk-load Subject objects by ids (avoid N+1 subject lookups)."""
+    if not subject_ids:
+        return {}
+    result = await db.execute(select(Subject).where(Subject.id.in_(subject_ids)))
+    return {s.id: s for s in result.scalars().all()}
+
+
+def build_tree(tags: list[Tag]) -> dict[int, list[dict]]:
+    """将 tag 列表按 subject_id 分组并构建树形"""
+    groups: dict[int, list[Tag]] = {}
+    for t in tags:
+        groups.setdefault(t.subject_id, []).append(t)
+
+    result = {}
+    for subject_id, subject_tags in groups.items():
+        children = []
+        root_nodes = [t for t in subject_tags if t.parent_id is None]
+        for root in root_nodes:
+            node = _node_to_dict(root, subject_tags)
+            children.append(node)
+        result[subject_id] = children
+    return result
+
+
+def _node_to_dict(tag: Tag, all_tags: list[Tag]) -> dict:
+    children = [t for t in all_tags if t.parent_id == tag.id]
+    return {
+        "id": tag.id,
+        "name": tag.name,
+        "children": [
+            _node_to_dict(c, all_tags)
+            for c in sorted(children, key=lambda x: x.sort_order)
+        ],
     }

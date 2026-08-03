@@ -3,6 +3,21 @@ import asyncio
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
+# Ensure all ORM models are registered so Subject's string relationships
+# (practice_records, answer_behaviors, review_schedules, ...) resolve at
+# mapper configuration time (see app/models/admin.py Subject).
+from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.import_batch_job import ImportBatchJob  # noqa: F401
+from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+from app.models.pomodoro import PomodoroSession  # noqa: F401
+from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.recommendation_log import RecommendationLog  # noqa: F401
+from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.review_scheduler import ReviewSchedule  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
+from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+
 # ── helpers ──
 
 
@@ -373,7 +388,7 @@ class TestMetricsBackfill:
 
         call_count = 0
 
-        async def mock_aggregate(db, target_date, subject=None):
+        async def mock_aggregate(db, target_date, subject_id=None):
             nonlocal call_count
             call_count += 1
             return {"aggregated_rows": 1, "target_date": str(target_date)}
@@ -398,7 +413,7 @@ class TestMetricsBackfill:
 
         db = _make_mock_db()
 
-        async def mock_aggregate(db, target_date, subject=None):
+        async def mock_aggregate(db, target_date, subject_id=None):
             if target_date == date(2026, 6, 27):
                 raise RuntimeError("模拟失败")
             return {"aggregated_rows": 1, "target_date": str(target_date)}
@@ -458,7 +473,7 @@ class TestHealthReport:
         ]
 
         result = _run(build_recommendation_health_report(
-            db, subject="exam408-ds",
+            db, subject_id=5,
         ))
 
         assert "total_recommendation_logs" in result
@@ -512,7 +527,7 @@ class TestCacheInvalidation:
 
         with patch("app.services.recommendation_cache_service.cache") as mock_cache:
             mock_cache.delete = AsyncMock(return_value=1)
-            result = _run(invalidate_knowledge_path_cache(subject="exam408-ds"))
+            result = _run(invalidate_knowledge_path_cache(subject_id=5))
 
         assert result == 3  # 3 个 pattern 各返回 1
         assert mock_cache.delete.call_count == 3
@@ -539,7 +554,7 @@ class TestPhase45Regression:
         db.execute.return_value = mock_result
 
         questions = _run(get_practice_questions(
-            db, user_id=1, subject="exam408-ds", count=5, mode="random",
+            db, user_id=1, subject_code="exam408-ds", count=5, mode="random",
         ))
         assert isinstance(questions, list)
 

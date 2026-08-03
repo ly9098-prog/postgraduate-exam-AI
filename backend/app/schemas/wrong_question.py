@@ -43,7 +43,9 @@ class WrongQuestionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     # 关联的题目信息
-    subject: str | None = None
+    subject_id: int | None = None
+    subject_code: str | None = None
+    subject_name: str | None = None
     question_type: str | None = None
     content: dict | None = None
     options: dict | None = None

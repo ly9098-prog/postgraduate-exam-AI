@@ -56,7 +56,7 @@ async def _add_records(session: AsyncSession, records: list[PracticeRecord]):
 def _make_record(user_id: int, answered_at: datetime, is_correct: bool, **kw):
     return PracticeRecord(
         user_id=user_id, question_id=kw.pop("question_id", 1),
-        subject="math", question_type="choice", user_answer="A",
+        subject_id=1, question_type="choice", user_answer="A",
         is_correct=is_correct, used_time=30, answered_at=answered_at, **kw,
     )
 

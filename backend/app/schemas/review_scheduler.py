@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field
 class ReviewQuestion(BaseModel):
     schedule_id: int
     question_id: int
-    subject: str | None = None
+    subject_id: int | None = None
+    subject_code: str = ""
+    subject_name: str = ""
     question_type: str
     stem: str
     options: dict = {}
@@ -61,6 +63,9 @@ class BatchReviewResponse(BaseModel):
 
 
 class SubjectReviewStats(BaseModel):
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     scheduled: int
     reviewed: int
     remaining: int
@@ -72,7 +77,7 @@ class ReviewStatsResponse(BaseModel):
     remaining_today: int
     overdue: int
     accuracy_last_7d: float
-    by_subject: dict[str, SubjectReviewStats] = {}
+    by_subject: list[SubjectReviewStats] = []
 
 
 class ReviewHistoryItem(BaseModel):

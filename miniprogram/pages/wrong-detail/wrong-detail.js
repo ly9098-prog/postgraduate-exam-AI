@@ -57,7 +57,7 @@ function _processWqData(wq, safeMode) {
     _blankOptionGroups: blankOptionGroups,
     _hasBlankOptionGroups: blankOptionGroups.length > 0,
     _renderModel,
-    subjectLabelText: _subjectLabel(wq.subject),
+    subjectLabelText: wq.subject_name || _subjectLabel(wq.subject_code),
     errorTypeLabelText: _errorTypeLabel(wq.error_type),
   }
 }

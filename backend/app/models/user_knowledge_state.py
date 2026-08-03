@@ -11,7 +11,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -29,7 +29,10 @@ class UserKnowledgeState(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=False, index=True
     )
-    subject: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    subject_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("subjects.id"), nullable=False, index=True
+    )
+    subject_ref = relationship("Subject", back_populates="user_knowledge_states", lazy="noload")
     knowledge_point_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("knowledge_points.id"), nullable=False, index=True
     )
@@ -59,5 +62,5 @@ class UserKnowledgeState(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "knowledge_point_id", name="uq_uks_user_kp"),
-        Index("ix_uks_user_subject", "user_id", "subject"),
+        Index("ix_uks_user_subject_id", "user_id", "subject_id"),
     )

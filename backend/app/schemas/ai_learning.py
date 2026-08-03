@@ -20,7 +20,7 @@ class AIRecommendRequest(BaseModel):
 
 
 class AIReportRequest(BaseModel):
-    subject: str
+    subject_id: int
     days: int = Field(default=7, ge=1, le=90)
 
 
@@ -47,7 +47,9 @@ class AIExplainResponse(BaseModel):
 
 class Recommendation(BaseModel):
     question_id: int
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     question_type: str
     stem: str
     knowledge_points: list[str] = []
@@ -79,7 +81,9 @@ class StrongPoint(BaseModel):
 
 
 class AIReportResponse(BaseModel):
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     period_days: int
     total_answered: int
     accuracy: float

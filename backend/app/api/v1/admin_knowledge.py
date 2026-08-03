@@ -35,12 +35,12 @@ async def backfill_knowledge_points(
     from app.services import knowledge_point_service
 
     result = await knowledge_point_service.backfill_question_knowledge_points(
-        db, subject=data.subject, limit=data.limit,
+        db, subject_id=data.subject_id, limit=data.limit,
     )
     await write_admin_audit(
         db, current_admin, "knowledge.backfill", "knowledge",
         None, severity="normal",
-        detail={"subject": data.subject, "limit": data.limit, **result},
+        detail={"subject_id": data.subject_id, "limit": data.limit, **result},
         request=request,
     )
     await db.commit()
@@ -72,7 +72,7 @@ async def create_knowledge_edge(
     """人工创建知识点关系。"""
     from sqlalchemy import select
 
-    # 需要先查 subject（从 source_kp 获取）
+    # 需要先查 subject_id（从 source_kp 获取）
     from app.models.knowledge_point import KnowledgePoint
     from app.services import knowledge_graph_service
     kp_result = await db.execute(
@@ -84,7 +84,7 @@ async def create_knowledge_edge(
 
     await knowledge_graph_service.create_knowledge_edge(
         db=db,
-        subject=source_kp.subject,
+        subject_id=source_kp.subject_id,
         source_id=data.source_knowledge_point_id,
         target_id=data.target_knowledge_point_id,
         relation_type=data.relation_type,
@@ -103,7 +103,7 @@ async def create_knowledge_edge(
     # 返回完整边信息
     edges = await knowledge_graph_service.list_knowledge_edges(
         db=db,
-        subject=source_kp.subject,
+        subject_id=source_kp.subject_id,
         knowledge_point_id=data.source_knowledge_point_id,
         limit=1,
     )
@@ -129,14 +129,14 @@ async def infer_knowledge_edges(
 
     result = await knowledge_graph_service.infer_simple_edges_from_names(
         db=db,
-        subject=data.subject,
+        subject_id=data.subject_id,
         limit=data.limit,
         force_rebuild=data.force_rebuild,
     )
     await write_admin_audit(
         db, current_admin, "knowledge.infer_edges", "knowledge_edge",
         None, severity="normal",
-        detail={"subject": data.subject, "limit": data.limit, "force_rebuild": data.force_rebuild, **result},
+        detail={"subject_id": data.subject_id, "limit": data.limit, "force_rebuild": data.force_rebuild, **result},
         request=request,
     )
     await db.commit()
@@ -145,12 +145,12 @@ async def infer_knowledge_edges(
 
 @router.get("/edges/status", response_model=KnowledgeEdgeStatusResponse)
 async def get_edge_status(
-    subject: str = Query(...),
+    subject_id: int = Query(...),
     _=Depends(require_permissions("question:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """返回指定科目知识图谱边统计。"""
     from app.services import knowledge_graph_service
 
-    result = await knowledge_graph_service.get_edge_status(db, subject)
+    result = await knowledge_graph_service.get_edge_status(db, subject_id)
     return KnowledgeEdgeStatusResponse(**result)

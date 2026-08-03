@@ -5,14 +5,15 @@ from pydantic import BaseModel
 
 class TagCreate(BaseModel):
     name: str
-    subject: str
+    subject_id: int
     parent_id: int | None = None
 
 
 class TagResponse(BaseModel):
     id: int
     name: str
-    subject: str
+    subject_id: int
+    subject_name: str = ""
     parent_id: int | None = None
     sort_order: int = 0
     created_at: datetime | None = None
@@ -25,5 +26,7 @@ class TagTreeNode(BaseModel):
 
 
 class TagSubjectGroup(BaseModel):
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     tags: list[TagResponse]

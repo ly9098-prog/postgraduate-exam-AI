@@ -264,7 +264,7 @@ export default function ReviewPage() {
                   {textFromContent(question.content) || `题目 #${question.id}`}
                 </h4>
                 <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-                  {question.subject_name || "未分类"} · 难度 {question.difficulty} · {question.question_type || "未标注题型"}
+                  {question.subject_name || question.subject_code || "未分类"} · 难度 {question.difficulty} · {question.question_type || "未标注题型"}
                 </p>
                 {unresolvedTableCount(question.content) > 0 ? (
                   <div className="mt-2"><StatusBadge tone="warning">表格待核验</StatusBadge></div>

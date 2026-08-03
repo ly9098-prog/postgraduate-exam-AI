@@ -7,6 +7,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.database import init_db, async_session
+from app.models.subject_resolver import resolve_subject_id_from_legacy
 from app.services import question_service
 
 
@@ -73,8 +74,14 @@ async def main():
     await init_db()
     async with async_session() as db:
         for item in SAMPLE_QUESTIONS:
-            q = await question_service.create(db, **item)
-            print(f"  ✅ [{q.id}] {item['subject']}: {item['content']['text'][:30]}...")
+            data = dict(item)
+            legacy = data.pop("subject")
+            subject_id = await resolve_subject_id_from_legacy(db, legacy)
+            if subject_id is None:
+                print(f"  ⚠️  无法解析科目 {legacy!r}，跳过")
+                continue
+            q = await question_service.create(db, subject_id=subject_id, **data)
+            print(f"  ✅ [{q.id}] {legacy}: {q.content['text'][:30]}...")
     print(f"\n✅ 共导入 {len(SAMPLE_QUESTIONS)} 道题目")
 
 

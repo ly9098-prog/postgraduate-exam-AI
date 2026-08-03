@@ -193,7 +193,7 @@ export default function BatchImagePage() {
               const formData = new FormData();
               formData.append("files", filesToProcess[fileIdx]);
               const qs = toQuery({
-                subject_id: subjectId || undefined,
+                subject_id: subjectId ? Number(subjectId) : undefined,
                 concurrency: 1,
                 enable_ai_repair: true,
                 confidence_threshold: "0.6",

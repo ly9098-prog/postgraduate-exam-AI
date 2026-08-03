@@ -14,7 +14,7 @@ class PomodoroSession(Base):
     subject_id: Mapped[int | None] = mapped_column(ForeignKey("subjects.id"), nullable=True, index=True)
     chapter_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    subject_ref = relationship("Subject")
+    subject_ref = relationship("Subject", back_populates="pomodoro_sessions")
     preset: Mapped[str] = mapped_column(String(16), nullable=False, default="standard")
     work_duration: Mapped[int] = mapped_column(Integer, nullable=False, default=25)
     break_duration: Mapped[int] = mapped_column(Integer, nullable=False, default=5)

@@ -4,7 +4,7 @@ from app.features.question_type import QT_SINGLE_CHOICE, validate_question_type
 
 
 class QuestionCreate(BaseModel):
-    subject: str
+    subject_id: int
     question_type: str = QT_SINGLE_CHOICE
     content: dict
     options: dict | None = None
@@ -22,7 +22,7 @@ class QuestionCreate(BaseModel):
 
 
 class QuestionRandomParams(BaseModel):
-    subject: str | None = None
+    subject_id: int | None = None
     question_type: str | None = None
     knowledge_points: list[str] | None = None
     difficulty: int | None = None
@@ -31,7 +31,9 @@ class QuestionRandomParams(BaseModel):
 
 class QuestionResponse(BaseModel):
     id: int
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     question_type: str
     content: dict
     options: dict | None = None
@@ -50,7 +52,9 @@ class QuestionPublicResponse(BaseModel):
     """Student-facing question payload; deliberately excludes answer/analysis."""
 
     id: int
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     question_type: str
     content: dict
     options: dict | None = None

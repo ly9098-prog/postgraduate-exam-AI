@@ -7,7 +7,7 @@ class ErrorAnalysisRequest(BaseModel):
 
 
 class StudyAdviceRequest(BaseModel):
-    subject: str | None = None
+    subject_id: int | None = None
 
 
 class AiResponse(BaseModel):

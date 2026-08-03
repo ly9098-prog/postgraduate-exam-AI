@@ -31,8 +31,9 @@ class WeeklyConsistency(DataAvailableMixin):
 class WeakTopicItem(BaseModel):
     knowledge_point_id: int
     name: str
-    subject: str
-    subject_label: str = ""
+    subject_id: int | None = None
+    subject_code: str = ""
+    subject_name: str = ""
     mastery_score: float = 0.0
     attempt_count: int = 0
     wrong_count: int = 0
@@ -60,8 +61,9 @@ class RepeatWrongAnalysis(DataAvailableMixin):
 
 
 class SpeedAccuracySubject(BaseModel):
-    subject: str = ""
-    subject_label: str = ""
+    subject_id: int | None = None
+    subject_code: str = ""
+    subject_name: str = ""
     avg_time_correct_sec: float = 0.0
     avg_time_wrong_sec: float = 0.0
     questions: int = 0
@@ -88,8 +90,9 @@ class NewVsReview(DataAvailableMixin):
 
 
 class InputOutputItem(BaseModel):
-    subject: str = ""
-    subject_label: str = ""
+    subject_id: int | None = None
+    subject_code: str = ""
+    subject_name: str = ""
     total_questions: int = 0
     total_duration_sec: int = 0
     accuracy: float = 0.0

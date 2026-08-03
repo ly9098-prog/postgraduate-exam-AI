@@ -109,18 +109,14 @@ async def _calc_consecutive_days(db: AsyncSession, user_id: int) -> int:
 
 
 async def get_subject_stats(db: AsyncSession, user_id: int) -> list[dict]:
-    """学科维度统计。
-
-    优先通过 PracticeRecord.question_id -> Question.subject_id -> Subject.code
-    解析真实科目，兼容历史上因 Question.subject_ref 未预加载而写入空 subject
-    的练习记录；仅在题目关系缺失时回退到 PracticeRecord.subject。
-    """
+    """学科维度统计 — 按 PracticeRecord.subject_id 分组。"""
     from app.models.admin import Subject
 
-    subject_expr = func.coalesce(Subject.code, func.nullif(PracticeRecord.subject, ""))
     result = await db.execute(
         select(
-            subject_expr.label("subject"),
+            PracticeRecord.subject_id.label("subject_id"),
+            Subject.code.label("subject_code"),
+            Subject.name.label("subject_name"),
             func.count(PracticeRecord.id),
             func.coalesce(
                 func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
@@ -130,28 +126,25 @@ async def get_subject_stats(db: AsyncSession, user_id: int) -> list[dict]:
             ),
             func.coalesce(func.sum(PracticeRecord.used_time), 0),
         )
-        .outerjoin(Question, PracticeRecord.question_id == Question.id)
-        .outerjoin(Subject, Question.subject_id == Subject.id)
-        .where(
-            PracticeRecord.user_id == user_id,
-            subject_expr.is_not(None),
-        )
-        .group_by(subject_expr)
+        .outerjoin(Subject, PracticeRecord.subject_id == Subject.id)
+        .where(PracticeRecord.user_id == user_id)
+        .group_by(PracticeRecord.subject_id, Subject.code, Subject.name)
     )
     rows = []
     for r in result.all():
-        total_q = r[1]
-        correct = r[2]
-        wrong = r[3]
+        total_q = r[3]
+        correct = r[4]
         rows.append(
             {
-                "subject": r[0],
+                "subject_id": r[0],
+                "subject_code": r[1] or "",
+                "subject_name": r[2] or "",
                 "total_questions": total_q,
                 "correct_count": correct,
-                "wrong_count": wrong,
+                "wrong_count": r[5],
                 "accuracy": round(correct / total_q, 4) if total_q > 0 else 0.0,
-                "total_duration_sec": r[4] or 0,
-                "avg_duration_sec": round((r[4] or 0) / total_q, 1) if total_q > 0 else 0.0,
+                "total_duration_sec": r[6] or 0,
+                "avg_duration_sec": round((r[6] or 0) / total_q, 1) if total_q > 0 else 0.0,
             }
         )
     return rows
@@ -608,13 +601,15 @@ async def get_dashboard_v2(
 
 
 def _subject_items_with_label(subjects_raw: list[dict]) -> list[dict]:
-    """从 subject code 映射到可读 label。"""
-    from app.models.subject_resolver import get_subject_label
+    """带科目展示信息的学科统计项（subject_id + code/name）。"""
     items = []
     for s in subjects_raw:
+        subject_name = s.get("subject_name", "")
         items.append({
-            "subject": s.get("subject", ""),
-            "label": get_subject_label(s.get("subject", "")),
+            "subject_id": s.get("subject_id"),
+            "subject_code": s.get("subject_code", ""),
+            "subject_name": subject_name,
+            "label": subject_name,
             "total_questions": s.get("total_questions", 0),
             "correct_count": s.get("correct_count", 0),
             "wrong_count": s.get("wrong_count", 0),

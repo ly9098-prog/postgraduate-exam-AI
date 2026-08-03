@@ -7,7 +7,8 @@ from pydantic import BaseModel, Field
 class KnowledgeStateItem(BaseModel):
     knowledge_point_id: int
     name: str
-    subject: str
+    subject_id: int
+    subject_name: str = ""
     attempt_count: int
     correct_count: int
     wrong_count: int
@@ -44,7 +45,7 @@ class RecommendationFeedbackResponse(BaseModel):
 # ── 管理端知识点 backfill ──
 
 class KnowledgeBackfillRequest(BaseModel):
-    subject: str | None = None
+    subject_id: int | None = None
     limit: int = Field(500, ge=1, le=5000)
 
 

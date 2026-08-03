@@ -22,7 +22,7 @@ async def generate_drafts(
     db: AsyncSession,
     user_id: int,
     *,
-    subject: str = "",
+    subject_code: str = "",
     knowledge_points: list[str],
     difficulty: int = 3,
     count: int = 3,
@@ -48,10 +48,10 @@ async def generate_drafts(
         subj = await db.get(Subject, subject_id)
         if not subj:
             raise ValueError(f"subject_id={subject_id} 不存在")
-        subject = subj.code
-    elif subject:
-        if subject not in SUBJECT_VALUES:
-            raise ValueError("subject 仅支持 math2 / exam408 / english")
+        subject_code = subj.code
+    elif subject_code:
+        if subject_code not in SUBJECT_VALUES:
+            raise ValueError("subject_code 仅支持 math2 / exam408 / english")
     else:
         raise ValueError("必须提供 subject 或 subject_id")
     question_type = normalizer.normalize_type(question_type)
@@ -64,7 +64,7 @@ async def generate_drafts(
 
     batch_id = f"AIGEN_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     messages = build_generate_questions(
-        subject, knowledge_points, difficulty, count, question_type, extra_hint
+        subject_code, knowledge_points, difficulty, count, question_type, extra_hint
     )
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
@@ -112,7 +112,7 @@ async def generate_drafts(
                     "knowledge_points": norm["knowledge_points"],
                     "difficulty": norm["difficulty"],
                     "request": {
-                        "subject": subject,
+                        "subject": subject_code,
                         "knowledge_points": knowledge_points,
                         "difficulty": difficulty,
                         "question_type": question_type,

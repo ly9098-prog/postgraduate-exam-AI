@@ -1,8 +1,9 @@
 /**
  * 科目编码与中文名称统一映射
  *
- * 所有页面从此模块读取科目信息，确保编码显示一致。
- * 新增科目编码只需在此添加映射。
+ * 仅作「离线展示兜底」使用：当接口未返回 subject_name 时，用编码映射出显示名称。
+ * 禁止用于业务 ID、请求参数或数据关联 —— 业务标识统一使用 API 返回的 subject_id。
+ * 各页面应从 /practice/subjects 或 practice-subjects 接口加载科目数据。
  */
 
 const SUBJECT_META = {

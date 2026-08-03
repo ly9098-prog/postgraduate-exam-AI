@@ -38,18 +38,18 @@ router = APIRouter(prefix="/api/v1/review")
 
 @router.get("/today", response_model=TodayReviewResponse)
 async def get_today_review(
-    subject: str | None = Query(None),
+    subject_id: int | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """获取今日待复习题目（不含答案）。"""
-    cache_key = f"review:today:{current_user.id}:{subject or 'all'}:{limit}"
+    cache_key = f"review:today:{current_user.id}:{subject_id or 'all'}:{limit}"
     cached_data = await cache.get(cache_key)
     if cached_data is not None:
         return cached_data
     result = await review_scheduler.get_today_review(
-        db, current_user.id, subject=subject, limit=limit
+        db, current_user.id, subject_id=subject_id, limit=limit
     )
     await cache.set(cache_key, result, ttl=60)
     return result

@@ -69,7 +69,7 @@ async def repair_review_schedule(*, apply: bool) -> dict[str, int]:
             # 不存在，需要创建
             need_repair += 1
 
-            # 获取 Question 信息以回填 subject
+            # 获取 Question 信息以回填 subject_id
             question_query = select(Question).where(Question.id == wq.question_id)
             question_result = await db.execute(question_query)
             question = question_result.scalar_one_or_none()
@@ -84,7 +84,7 @@ async def repair_review_schedule(*, apply: bool) -> dict[str, int]:
                     new_schedule = ReviewSchedule(
                         user_id=wq.user_id,
                         question_id=wq.question_id,
-                        subject=question.subject,
+                        subject_id=question.subject_id,
                         interval=1,
                         ease_factor=2.5,
                         repetitions=0,
@@ -95,7 +95,7 @@ async def repair_review_schedule(*, apply: bool) -> dict[str, int]:
                     db.add(new_schedule)
                     await db.commit()
                     created += 1
-                    print(f"  [创建] user_id={wq.user_id}, question_id={wq.question_id}, subject={question.subject}")
+                    print(f"  [创建] user_id={wq.user_id}, question_id={wq.question_id}, subject_id={question.subject_id}")
                 except IntegrityError:
                     await db.rollback()
                     print(f"  [跳过] user_id={wq.user_id}, question_id={wq.question_id} 已存在（并发冲突）")
@@ -105,7 +105,7 @@ async def repair_review_schedule(*, apply: bool) -> dict[str, int]:
                     print(f"  [错误] user_id={wq.user_id}, question_id={wq.question_id}: {e}")
                     errors += 1
             else:
-                print(f"  [dry-run] 将创建 user_id={wq.user_id}, question_id={wq.question_id}, subject={question.subject}")
+                print(f"  [dry-run] 将创建 user_id={wq.user_id}, question_id={wq.question_id}, subject_id={question.subject_id}")
 
         print(f"\n统计:")
         print(f"  已存在 ReviewSchedule: {exists}")

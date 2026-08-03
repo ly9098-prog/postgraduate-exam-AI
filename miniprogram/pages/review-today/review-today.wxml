@@ -349,7 +349,7 @@
       <text class="final-focus-desc">{{reviewResultVm.nextStepDesc}}</text>
 
       <view class="weak-subjects" wx:if="{{reviewResultVm.hasWrong && reviewResultVm.subjectStats && reviewResultVm.subjectStats.length > 0}}">
-        <text class="weak-subject" wx:for="{{reviewResultVm.subjectStats}}" wx:for-item="stat" wx:key="subject">{{stat.subject}} · 错 {{stat.stats.wrong}} / {{stat.stats.reviewed}}</text>
+        <text class="weak-subject" wx:for="{{reviewResultVm.subjectStats}}" wx:for-item="stat" wx:key="subject_id">{{stat.subject}} · 错 {{stat.stats.wrong}} / {{stat.stats.reviewed}}</text>
       </view>
     </view>
 

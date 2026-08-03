@@ -23,6 +23,7 @@ def _make_mock_db():
     db.execute = AsyncMock()
     db.rollback = AsyncMock()
     db.flush = AsyncMock()
+    db.get = AsyncMock(return_value=None)
     return db
 
 
@@ -424,7 +425,7 @@ class TestLearningReport:
         db = _make_mock_db()
         db.execute.return_value = _make_execute_result(scalars=[])
 
-        result = _run(generate_learning_report(db, user_id=1, subject="math2", days=7))
+        result = _run(generate_learning_report(db, user_id=1, subject_id=1, days=7))
         assert result["total_answered"] == 0
         assert result["accuracy"] == 0.0
         assert result["from_fallback"] is True
@@ -452,7 +453,7 @@ class TestLearningReport:
             _make_execute_result(all=[(1, ["导数"]), (2, ["导数"])]),
         ]
 
-        result = _run(generate_learning_report(db, user_id=1, subject="math2", days=7))
+        result = _run(generate_learning_report(db, user_id=1, subject_id=1, days=7))
         assert result["total_answered"] == 2
         assert result["from_fallback"] is False  # No AI call needed, but not a degradation
         assert len(result["learning_suggestions"]) > 0
@@ -489,7 +490,7 @@ class TestLearningReport:
                 "model": "deepseek-chat",
                 "duration_ms": 600,
             })
-            result = _run(generate_learning_report(db, user_id=1, subject="math2", days=7))
+            result = _run(generate_learning_report(db, user_id=1, subject_id=1, days=7))
 
         assert result["total_answered"] == 10
         assert result["from_fallback"] is False
@@ -521,7 +522,7 @@ class TestLearningReport:
 
         with patch("app.services.ai_learning_service.deepseek") as mock_ds:
             mock_ds.is_available.return_value = False
-            result = _run(generate_learning_report(db, user_id=1, subject="math2", days=7))
+            result = _run(generate_learning_report(db, user_id=1, subject_id=1, days=7))
 
         assert result["total_answered"] == 10
         assert result["from_fallback"] is True

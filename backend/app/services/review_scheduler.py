@@ -107,11 +107,11 @@ async def set_mastered_state(
                 .where(Question.id == question_id)
             )
             question = q_result.scalar_one_or_none()
-            subject = question.subject_ref.code if question and question.subject_ref else None
+            subject_id = question.subject_id if question else None
             schedule = ReviewSchedule(
                 user_id=user_id,
                 question_id=question_id,
-                subject=subject,
+                subject_id=subject_id,
                 interval=1,
                 ease_factor=2.5,
                 repetitions=0,
@@ -127,7 +127,7 @@ async def set_mastered_state(
 async def get_today_review(
     db: AsyncSession,
     user_id: int,
-    subject: str | None = None,
+    subject_id: int | None = None,
     limit: int = 20,
 ) -> dict:
     now = utcnow()
@@ -136,8 +136,8 @@ async def get_today_review(
         ReviewSchedule.next_review_at <= now,
         ~ReviewSchedule.mastered,
     ]
-    if subject:
-        conditions.append(ReviewSchedule.subject == subject)
+    if subject_id:
+        conditions.append(ReviewSchedule.subject_id == subject_id)
 
     count_q = select(func.count(ReviewSchedule.id)).where(and_(*conditions))
     total = (await db.execute(count_q)).scalar()
@@ -170,11 +170,12 @@ async def get_today_review(
             content = {"text": content}
         elif not isinstance(content, dict):
             content = {}
-        subject = q.subject_ref.code if q.subject_ref else s.subject
         questions.append({
             "schedule_id": s.id,
             "question_id": s.question_id,
-            "subject": subject,
+            "subject_id": s.subject_id,
+            "subject_code": q.subject_ref.code if q.subject_ref else "",
+            "subject_name": q.subject_ref.name if q.subject_ref else "",
             "question_type": q.question_type,
             "stem": content.get("text", "") if isinstance(content, dict) else "",
             "options": q.options or {},
@@ -362,9 +363,10 @@ async def get_review_stats(
     accuracy = round(correct_reviews / total_reviews, 4) if total_reviews > 0 else 0.0
 
     # By subject
+    from app.models.admin import Subject
     subject_result = await db.execute(
         select(
-            ReviewSchedule.subject,
+            ReviewSchedule.subject_id,
             func.count(ReviewSchedule.id).label("scheduled"),
             func.sum(
                 case(
@@ -373,13 +375,13 @@ async def get_review_stats(
             ).label("remaining"),
         )
         .where(ReviewSchedule.user_id == user_id)
-        .group_by(ReviewSchedule.subject)
+        .group_by(ReviewSchedule.subject_id)
     )
 
     # Reviewed by subject today
     subject_reviewed_result = await db.execute(
         select(
-            ReviewSchedule.subject,
+            ReviewSchedule.subject_id,
             func.count(func.distinct(ReviewRecord.question_id)).label("reviewed"),
         )
         .join(ReviewRecord, ReviewRecord.schedule_id == ReviewSchedule.id)
@@ -387,23 +389,36 @@ async def get_review_stats(
             ReviewRecord.user_id == user_id,
             ReviewRecord.reviewed_at >= today_start,
         )
-        .group_by(ReviewSchedule.subject)
+        .group_by(ReviewSchedule.subject_id)
     )
     reviewed_by_subject = {
-        r[0]: r[1] for r in subject_reviewed_result.all() if r[0]
+        (r[0] if r[0] is not None else 0): r[1]
+        for r in subject_reviewed_result.all()
     }
 
-    by_subject = {}
-    for row in subject_result.all():
-        subj = row[0] or "unknown"
+    subject_rows = subject_result.all()
+    subject_ids = [row[0] for row in subject_rows if row[0] is not None]
+    code_name = {}
+    if subject_ids:
+        subs = (await db.execute(
+            select(Subject).where(Subject.id.in_(subject_ids))
+        )).scalars().all()
+        code_name = {s.id: (s.code, s.name) for s in subs}
+
+    by_subject = []
+    for row in subject_rows:
+        sid = row[0] or 0
         sched = row[1] or 0
         rem = row[2] or 0
-        rev = reviewed_by_subject.get(subj, 0)
-        by_subject[subj] = {
+        rev = reviewed_by_subject.get(sid, 0)
+        by_subject.append({
+            "subject_id": sid,
+            "subject_code": code_name.get(sid, ("", ""))[0],
+            "subject_name": code_name.get(sid, ("", ""))[1],
             "scheduled": sched,
             "reviewed": rev,
             "remaining": rem,
-        }
+        })
 
     return {
         "total_scheduled": total_scheduled,
@@ -482,12 +497,12 @@ async def auto_schedule_wrong_question(
             .where(Question.id == question_id)
         )
         question = q_result.scalar_one_or_none()
-        subject = question.subject_ref.code if question and question.subject_ref else None
+        subject_id = question.subject_id if question else None
 
         schedule = ReviewSchedule(
             user_id=user_id,
             question_id=question_id,
-            subject=subject,
+            subject_id=subject_id,
             interval=1,
             ease_factor=2.5,
             repetitions=0,
@@ -709,11 +724,12 @@ async def get_next_today_review_batch(
             content = {"text": content}
         elif not isinstance(content, dict):
             content = {}
-        subject = q.subject_ref.code if q.subject_ref else s.subject
         questions.append({
             "schedule_id": s.id,
             "question_id": s.question_id,
-            "subject": subject,
+            "subject_id": s.subject_id,
+            "subject_code": q.subject_ref.code if q.subject_ref else "",
+            "subject_name": q.subject_ref.name if q.subject_ref else "",
             "question_type": q.question_type,
             "stem": content.get("text", "") if isinstance(content, dict) else "",
             "options": q.options or {},
@@ -795,26 +811,41 @@ async def get_today_review_result(
     mastered_count = mastered_q.scalar() or 0
 
     # Subject stats
-    subject_map = {}
-    for r in unique:
-        sched_q = await db.execute(
-            select(ReviewSchedule.subject).where(
-                ReviewSchedule.id == r.schedule_id,
+    from app.models.admin import Subject
+    schedule_ids = [r.schedule_id for r in unique]
+    subject_map: dict[int, dict] = {}
+    if schedule_ids:
+        sched_result = await db.execute(
+            select(ReviewSchedule.id, ReviewSchedule.subject_id).where(
+                ReviewSchedule.id.in_(schedule_ids),
                 ReviewSchedule.user_id == user_id,
             )
         )
-        subj = sched_q.scalar_one_or_none()
-        if not subj:
-            subj = "unknown"
-        if subj not in subject_map:
-            subject_map[subj] = {"reviewed": 0, "correct": 0, "wrong": 0, "skipped": 0}
-        subject_map[subj]["reviewed"] += 1
-        if r.rating >= 3:
-            subject_map[subj]["correct"] += 1
-        else:
-            subject_map[subj]["wrong"] += 1
+        schedule_subject = {sid: subj_id for sid, subj_id in sched_result.all()}
+        subject_ids = [v for v in schedule_subject.values() if v is not None]
+        code_name = {}
+        if subject_ids:
+            subs = (await db.execute(
+                select(Subject).where(Subject.id.in_(subject_ids))
+            )).scalars().all()
+            code_name = {s.id: (s.code, s.name) for s in subs}
+        for r in unique:
+            subj_id = schedule_subject.get(r.schedule_id)
+            if subj_id is None:
+                subj_id = 0
+            entry = subject_map.setdefault(
+                subj_id, {"subject_id": subj_id,
+                          "subject_code": code_name.get(subj_id, ("", ""))[0],
+                          "subject_name": code_name.get(subj_id, ("", ""))[1],
+                          "reviewed": 0, "correct": 0, "wrong": 0, "skipped": 0}
+            )
+            entry["reviewed"] += 1
+            if r.rating >= 3:
+                entry["correct"] += 1
+            else:
+                entry["wrong"] += 1
 
-    subject_stats = [{"subject": s, **v} for s, v in subject_map.items()]
+    subject_stats = [v for v in subject_map.values()]
 
     # Tomorrow's due count
     tomorrow_end = tomorrow_start + timedelta(days=1) - timedelta(seconds=1)

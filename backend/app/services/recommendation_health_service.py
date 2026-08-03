@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 async def build_recommendation_health_report(
     db: AsyncSession,
-    subject: str | None = None,
+    subject_id: int | None = None,
     date_from=None,
     date_to=None,
 ) -> dict:
@@ -33,8 +33,8 @@ async def build_recommendation_health_report(
         RecommendationLog.shown_at >= day_start,
         RecommendationLog.shown_at <= day_end,
     ]
-    if subject:
-        conditions.append(RecommendationLog.subject == subject)
+    if subject_id:
+        conditions.append(RecommendationLog.subject_id == subject_id)
 
     # 1. 总推荐日志数
     total_result = await db.execute(
