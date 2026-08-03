@@ -19,8 +19,6 @@ from app.utils.answer_normalizer import is_answer_correct
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
 def _random_sample_query(query, total_count: int, need: int, id_col=None):
     """Replace ``ORDER BY random()`` with a random offset for efficiency.
 
@@ -1887,6 +1885,14 @@ async def submit_answer(
             question_id, user_id, exc_info=True,
         )
 
+    # 提交全部 best-effort 后置写入。mastery / 推荐日志 / Leitner / 自适应
+    # 均不内部 commit，若不在此提交，session 在 get_db 收尾 close() 时会被
+    # 回滚，这些状态每次答题都会静默丢失。
+    try:
+        await db.commit()
+    except Exception:
+        logger.warning("后置状态提交失败（不影响答题）uid=%d", user_id, exc_info=True)
+
     # ── Phase 4: 后台预生成 AI 错题分析（不阻塞答题流程）──
     if wq_id_for_prewarm is not None:
         try:
@@ -1993,6 +1999,12 @@ async def batch_submit_answers(
             )
         except Exception:
             logger.warning("批量掌握度更新失败 qid=%d uid=%d", q.id, user_id, exc_info=True)
+
+    # 批量路径 mastery 不内部 commit，统一收尾提交，否则 session 关闭时回滚丢失。
+    try:
+        await db.commit()
+    except Exception:
+        logger.warning("批量后置状态提交失败 uid=%d", user_id, exc_info=True)
 
     # 本次练习成功落库后统一预生成所有新增/更新错题的 AI 解析。
     # 调度失败不影响成绩返回，用户进入错题详情时仍可手动生成。
@@ -2125,64 +2137,3 @@ async def _calc_streak(db: AsyncSession, user_id: int) -> int:
         else:
             break
     return streak
-
-
-async def get_wrong_questions(
-    db: AsyncSession,
-    user_id: int,
-    subject_code: str | None = None,
-    page: int = 1,
-    page_size: int = 20,
-) -> dict:
-    from app.services.wrong_question_service import list_wrong
-
-    subject_id = None
-    if subject_code:
-        from app.models.subject_resolver import resolve_subject_id_from_legacy
-        subject_id = await resolve_subject_id_from_legacy(db, subject_code)
-
-    if subject_code and subject_id is None:
-        return {"items": [], "total": 0, "page": page, "page_size": page_size}
-
-    items, total = await list_wrong(
-        db, user_id, subject_id=subject_id, page=page, page_size=page_size
-    )
-
-    question_ids = [wq.question_id for wq in items]
-    if question_ids:
-        q_result = await db.execute(
-            select(Question)
-            .where(Question.id.in_(question_ids))
-            .options(selectinload(Question.subject_ref))
-        )
-        q_map = {q.id: q for q in q_result.scalars().all()}
-    else:
-        q_map = {}
-
-    wrong_list = []
-    for wq in items:
-        q = q_map.get(wq.question_id)
-        wrong_list.append({
-            "id": wq.id,
-            "question_id": wq.question_id,
-            "wrong_answer": wq.wrong_answer,
-            "review_count": wq.review_count,
-            "mastered": wq.mastered,
-            "last_review_at": str(wq.last_review_at) if wq.last_review_at else None,
-            "question": {
-                "id": q.id,
-                "subject": q.subject_ref.code if q.subject_ref else "",
-                "question_type": q.question_type,
-                "content": q.content,
-                "options": q.options,
-                "answer": q.answer,
-                "analysis": q.analysis,
-            } if q else None,
-        })
-
-    return {
-        "items": wrong_list,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    }

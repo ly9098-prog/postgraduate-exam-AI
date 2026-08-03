@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import threading
 import time
 from urllib.parse import urlparse
 
@@ -12,6 +13,27 @@ from app.services.safe_remote_fetch import request_remote_bytes
 from app.utils.sentry_utils import capture_exception, set_tag, start_span
 
 _ai_logger = logging.getLogger("app.ai")
+
+# DeepSeek 调用并发上限：裸 asyncio.to_thread 走默认线程池（2 核 ≈6 线程），
+# 多并发 AI 调用（批量导入修复/错题分析）可占满该池并拖垮同一池上其它
+# to_thread 工作（staging 文件复制、OCR base64 编码等）。按事件循环键控：
+# 生产单 loop 即进程级限流；测试多 loop 各自限流，避免跨 loop 绑定错误。
+_AI_MAX_CONCURRENT = 3
+_ai_sem_lock = threading.Lock()
+_ai_sems: dict[int, asyncio.Semaphore] = {}
+
+
+def _ai_call_semaphore() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    key = id(loop)
+    sem = _ai_sems.get(key)
+    if sem is None:
+        with _ai_sem_lock:
+            sem = _ai_sems.get(key)
+            if sem is None:
+                sem = asyncio.Semaphore(_AI_MAX_CONCURRENT)
+                _ai_sems[key] = sem
+    return sem
 
 
 class DeepSeekClient:
@@ -98,21 +120,23 @@ class DeepSeekClient:
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ).encode("utf-8")
-                remote = await asyncio.to_thread(
-                    request_remote_bytes,
-                    f"{_url}/v1/chat/completions",
-                    method="POST",
-                    body=request_body,
-                    max_bytes=10 * 1024 * 1024,
-                    timeout=request_timeout,
-                    allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
-                    follow_redirects=False,
-                    headers={
-                        "Authorization": f"Bearer {_api_key}",
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                    },
-                )
+                sem = _ai_call_semaphore()
+                async with sem:
+                    remote = await asyncio.to_thread(
+                        request_remote_bytes,
+                        f"{_url}/v1/chat/completions",
+                        method="POST",
+                        body=request_body,
+                        max_bytes=10 * 1024 * 1024,
+                        timeout=request_timeout,
+                        allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
+                        follow_redirects=False,
+                        headers={
+                            "Authorization": f"Bearer {_api_key}",
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                        },
+                    )
                 response_text = remote.data.decode("utf-8", errors="replace")
                 elapsed = int((time.time() - start) * 1000)
 

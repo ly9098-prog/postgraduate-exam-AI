@@ -1424,12 +1424,17 @@ def _extract_json(text: str) -> dict | None:
             return json.loads(fenced.group(1))
         except json.JSONDecodeError:
             pass
-    brace = re.search(r"(\{.*\})", text, re.DOTALL)
-    if brace:
+    # 兜底：定位文本中第一个完整的 JSON 对象。贪婪正则 (\{.*\}) 会把
+    # JSON 后的解释文字一起吞掉导致解析失败，raw_decode 则只吃第一个
+    # 完整对象、忽略尾部内容。
+    decoder = json.JSONDecoder()
+    start = text.find("{")
+    while start != -1:
         try:
-            return json.loads(brace.group(1))
+            obj, _ = decoder.raw_decode(text, start)
+            return obj
         except json.JSONDecodeError:
-            pass
+            start = text.find("{", start + 1)
     return None
 
 
@@ -1506,7 +1511,7 @@ async def _call_or_fallback(
     try:
         resp = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
         return (resp, resp["content"], resp)
-    except RuntimeError as e:
+    except Exception as e:
         return (
             {
                 "content": "", "tokens_used": 0, "model": "fallback",

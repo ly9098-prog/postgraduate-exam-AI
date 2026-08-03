@@ -382,7 +382,12 @@ queue_metrics: dict[str, int] = {
     "duplicate_enqueue_prevented": 0,
     "reaper_reclaimed": 0,
     "queue_redis_failure": 0,
+    "hard_deadline_exceeded": 0,
 }
+
+# 单任务处理墙钟硬上限：防止某个 await 无界挂起时 worker 卡死（心跳无限续租、
+# reaper 永不回收）。取值需大于最慢合法任务（本地 600 页 PDF 约 ≤2h）。
+_PROCESS_HARD_DEADLINE_SEC = 4 * 3600
 
 
 # ── worker runner ──
@@ -1125,12 +1130,25 @@ async def _process_claimed_task_v2(task: Task, lease_sec: int, sem: asyncio.Sema
 
     try:
         try:
-            await process_task
+            await asyncio.wait_for(process_task, timeout=_PROCESS_HARD_DEADLINE_SEC)
         except asyncio.CancelledError:
             logger.warning(
                 "v2 Processing cancelled (owner lost): task_id=%s", task.task_id,
             )
             queue_metrics["owner_fencing_rejected"] += 1
+        except asyncio.TimeoutError:
+            logger.critical(
+                "v2 Processing exceeded hard deadline (%ds): task_id=%s type=%s — marking failed",
+                _PROCESS_HARD_DEADLINE_SEC, task.task_id, task.task_type,
+            )
+            queue_metrics["hard_deadline_exceeded"] += 1
+            try:
+                await _fail_with_retry_v2(task, "hard wall-clock deadline exceeded")
+            except Exception as fe:
+                logger.warning(
+                    "v2 Fail after hard deadline error: task_id=%s error=%s",
+                    task.task_id, fe,
+                )
 
         was_cancelled = process_task.cancelled()
 
@@ -1262,10 +1280,14 @@ async def run_dispatcher_v2(
                 )
                 if _redis_failure_count >= _max_redis_failures:
                     logger.critical(
-                        "v2 Dispatcher circuit breaker OPEN after %d Redis failures — stopping claim loop",
+                        "v2 Dispatcher circuit breaker OPEN after %d Redis failures — "
+                        "entering degraded probe mode (worker stays alive, retries periodically)",
                         _redis_failure_count,
                     )
-                    break
+                    # 熔断后不退出循环：退出会让 worker 进程存活但不领任务（半死）、
+                    # 队列持续堆积直到人工重启。降级为周期探测 Redis，恢复后自动重入。
+                    await asyncio.sleep(min(backoff * 2, 300))
+                    continue
                 await asyncio.sleep(backoff)
                 continue
 
