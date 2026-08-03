@@ -342,7 +342,6 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.debug("Schema divergence check skipped (not PostgreSQL or transient)")
     try:
-        from app.core.database import async_session
         async with async_session() as db:
             created_admin = await ensure_dev_super_admin(db, settings.APP_ENV)
             await db.commit()
@@ -353,7 +352,6 @@ async def lifespan(app: FastAPI):
 
     # AI model config self-check (common)
     try:
-        from app.core.database import async_session
         from app.services.health_check_service import check_ai_model_config
 
         async with async_session() as db:
