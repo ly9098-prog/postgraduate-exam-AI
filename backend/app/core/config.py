@@ -74,7 +74,6 @@ class Settings(BaseSettings):
     OCR_DROP_SCORE: float = 0.3
     OCR_MIN_IMAGE_WIDTH: int = 1500
     MAX_OCR_PAGES: int = 0  # 0 = no limit
-    OCR_USE_PROCESS_POOL: bool = False  # true = process-isolated OCR (crash-safe)
     OCR_TIMEOUT_SECONDS: int = 600
     UNIFIED_SAFETY_MODE: str = "shadow"  # "off" | "shadow" | "enforce"
     IMAGE_IMPORT_MAX_BYTES: int = 5 * 1024 * 1024  # 5MB — production default
@@ -125,16 +124,8 @@ class Settings(BaseSettings):
     EXERCISE_DETECTION_MIN_CONFIDENCE: float = 0.5
 
     # OCR Canary (pre-release verification)
-    OCR_CANARY_ENABLED: bool = False
-    IR_FREEZE_CANARY_PERCENT: float = 0.0
-    CANARY_SUBJECTS: str = ""
-    CANARY_SOURCE_TYPES: str = ""
-    CANARY_TENANT_ALLOWLIST: str = ""
-    CANARY_TENANT_DENYLIST: str = ""
-    CANARY_MAX_PAGES: int = 0
-    CANARY_FAIL_OPEN: bool = False
-    CANARY_REQUIRE_REVIEW: bool = True
-    CANARY_CONFIG_VERSION: str = "s3f-v1"
+    # 注：canary 配置经 OCRCanaryConfig.from_env() 直接读 os.environ，
+    # 不经过 settings，因此不在此声明 Settings 字段（避免双配置源）。
 
     # Domain Quality Gate
     DOMAIN_QUALITY_GATE_MODE: str = "off"  # "off" | "shadow" | "enforce"
