@@ -128,11 +128,25 @@ class BoundedExecutor:
                 self._metrics["failed"] += 1
             raise
 
-        async with self._lock:
-            self._queued -= 1
-            self._active += 1
-            self._metrics["queued"] = self._queued
-            self._metrics["active"] = self._active
+        try:
+            async with self._lock:
+                self._queued -= 1
+                self._active += 1
+                self._metrics["queued"] = self._queued
+                self._metrics["active"] = self._active
+        except asyncio.CancelledError:
+            # 在 queued→active 过渡点被取消：future 已提交、线程可能已在跑。
+            # 归还 queued 槽位并记为 zombie，线程结束经回调归还容量，避免泄漏。
+            async with self._lock:
+                self._queued -= 1
+                self._zombie += 1
+                self._metrics["queued"] = self._queued
+                self._metrics["zombie"] = self._zombie
+            future.cancel()
+            executor_future.add_done_callback(
+                lambda _f: self._schedule_zombie_done(loop)
+            )
+            raise
 
         effective_timeout = timeout if timeout is not None else self._default_timeout
         start = time.monotonic()

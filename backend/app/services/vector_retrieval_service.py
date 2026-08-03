@@ -708,14 +708,27 @@ async def _get_user_answer_version(db: AsyncSession, user_id: int) -> int:
     """返回用户答题缓存版本号。
 
     版本由 ``invalidate_vector_cache`` 在 Redis 上递增（每次答题 +1），
-    使该用户旧的向量推荐缓存 key 全部失效。读取 Redis 而非对
-    practice_records 做 COUNT(*)，避免每次 smart/similar 请求都做一次
-    全表聚合。查询失败时返回 0（不影响核心功能）。
+    使该用户旧的向量推荐缓存 key 全部失效。正常走 Redis（避免每次
+    smart/similar 请求做 COUNT(*))；Redis 故障时用 get_strict 抛出后回退到
+    practice_records COUNT——DB 全局一致，防止多 worker 各自本地版本发散、
+    答题后仍命中本进程陈旧缓存。读取失败时返回 0（不影响核心功能）。
     """
+    from app.core.cache import CacheUnavailableError
+
     try:
         version_key = f"vector:answer_ver:{user_id}"
-        current = await cache.get(version_key)
+        current = await cache.get_strict(version_key)
         return int(current) if current else 0
+    except CacheUnavailableError:
+        try:
+            result = await db.execute(
+                select(func.count(PracticeRecord.id)).where(
+                    PracticeRecord.user_id == user_id
+                )
+            )
+            return result.scalar() or 0
+        except Exception:
+            return 0
     except Exception:
         return 0
 
@@ -731,8 +744,13 @@ async def invalidate_vector_cache(user_id: int) -> None:
     try:
         version_key = f"vector:answer_ver:{user_id}"
         current = await cache.get(version_key)
-        new_ver = (int(current) + 1) if current else 1
-        await cache.set(version_key, new_ver, ttl=86400)
+        try:
+            new_ver = (int(current) + 1) if current else 1
+        except (TypeError, ValueError):
+            new_ver = 1
+        # 版本 key TTL 需长于推荐缓存 TTL：否则版本过期归零后新纪元计数会与
+        # 旧纪元缓存 key 碰撞（vector_cache_ttl_sec 可配置 > 86400）。
+        await cache.set(version_key, new_ver, ttl=30 * 86400)
     except Exception:
         logger.debug("invalidate_vector_cache failed uid=%d", user_id, exc_info=True)
 

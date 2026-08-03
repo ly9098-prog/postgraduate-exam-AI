@@ -17,6 +17,33 @@ from typing import Any
 
 _RESUME_KEY_PREFIX = "pipeline_resume:"
 
+# 这些 env 直接经 OCRCanaryConfig.from_env() / os.environ 读取，不在 Settings
+# 中声明（config.py 已删对应死字段）。它们影响管线行为，必须纳入 config_hash，
+# 否则切换 canary / process-pool 配置不会失效 OCR/IR 阶段缓存复用。
+_CANARY_ENV_KEYS = (
+    "OCR_CANARY_ENABLED",
+    "IR_FREEZE_CANARY_PERCENT",
+    "CANARY_SUBJECTS",
+    "CANARY_SOURCE_TYPES",
+    "CANARY_TENANT_ALLOWLIST",
+    "CANARY_TENANT_DENYLIST",
+    "CANARY_MAX_PAGES",
+    "CANARY_FAIL_OPEN",
+    "CANARY_REQUIRE_REVIEW",
+    "CANARY_CONFIG_VERSION",
+    "OCR_USE_PROCESS_POOL",
+)
+
+
+def _config_hash_input() -> dict[str, str]:
+    """settings.model_dump() + 影响管线行为的 canary/process-pool 环境变量。"""
+    from app.core.config import settings
+
+    d = {k: str(v) for k, v in sorted(settings.model_dump().items())}
+    for key in _CANARY_ENV_KEYS:
+        d[f"env:{key}"] = os.environ.get(key, "")
+    return d
+
 
 # ---------------------------------------------------------------------------
 # PipelineRunFingerprint
@@ -278,12 +305,8 @@ def build_pipeline_fingerprint(
 
     config_hash = ""
     try:
-        from app.core.config import settings
-        settings_dict = {
-            k: str(v) for k, v in sorted(settings.model_dump().items())
-        }
         config_hash = hashlib.sha256(
-            json.dumps(settings_dict, sort_keys=True, ensure_ascii=False).encode()
+            json.dumps(_config_hash_input(), sort_keys=True, ensure_ascii=False).encode()
         ).hexdigest()[:16]
     except Exception:
         pass
@@ -354,12 +377,8 @@ def component_fingerprint(
     """
     if not config_hash:
         try:
-            from app.core.config import settings
-            settings_dict = {
-                k: str(v) for k, v in sorted(settings.model_dump().items())
-            }
             config_hash = hashlib.sha256(
-                json.dumps(settings_dict, sort_keys=True, ensure_ascii=False).encode()
+                json.dumps(_config_hash_input(), sort_keys=True, ensure_ascii=False).encode()
             ).hexdigest()[:16]
         except Exception:
             config_hash = "unknown"

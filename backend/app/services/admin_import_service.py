@@ -928,7 +928,7 @@ async def reject_import_question(db: AsyncSession, import_id: int, operator_id: 
 
 
 async def approve_import_batch(db: AsyncSession, batch_id: str, operator_id: int) -> int:
-    records = await _get_batch_records(db, batch_id, statuses={"pending", "rejected"})
+    records = await _get_batch_records(db, batch_id, statuses={"pending", "rejected"}, for_update=True)
     now = utcnow()
     from app.features.question_publish_service import publish_single_question
 
@@ -985,7 +985,7 @@ async def approve_low_risk_questions(db: AsyncSession, batch_id: str, operator_i
     """
     from app.features.question_publish_service import publish_single_question
 
-    records = await _get_batch_records(db, batch_id, statuses={"pending"})
+    records = await _get_batch_records(db, batch_id, statuses={"pending"}, for_update=True)
     now = utcnow()
 
     affected = 0
@@ -1280,11 +1280,16 @@ async def _get_batch_records(
     db: AsyncSession,
     batch_id: str,
     statuses: set[str] | None = None,
+    for_update: bool = False,
 ) -> list[QuestionImport]:
     conditions = [QuestionImport.batch_id == batch_id]
     if statuses:
         conditions.append(QuestionImport.status.in_(statuses))
-    result = await db.execute(select(QuestionImport).where(*conditions).order_by(QuestionImport.id.asc()))
+    query = select(QuestionImport).where(*conditions).order_by(QuestionImport.id.asc())
+    if for_update:
+        # 审核路径行锁：防止与单条 approve / 另一批量 approve 并发重复发布
+        query = query.with_for_update()
+    result = await db.execute(query)
     records = list(result.scalars().all())
     if not records:
         raise ValueError("导入批次不存在")
