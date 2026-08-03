@@ -558,16 +558,13 @@ class TestFaultInjection:
         # embedding 查询返回空
         mock_emb_row = MagicMock()
         mock_emb_row.first.return_value = ("[0.1,0.2,0.3]",)
-        # _get_user_answer_version → count = 0
-        mock_answer_count = MagicMock()
-        mock_answer_count.scalar.return_value = 0
         # 向量查询返回空候选
         mock_query = MagicMock()
         mock_query.fetchall.return_value = []
 
         db.execute = AsyncMock(side_effect=[
             mock_ext, mock_table, mock_dim, mock_source, mock_emb_row,
-            mock_answer_count, mock_query,
+            mock_query,
         ])
 
         with _vector_enabled_config(dim=3):

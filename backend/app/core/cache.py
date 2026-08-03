@@ -245,6 +245,7 @@ class CacheClient:
         Does NOT verify ownership — the caller must ensure it is safe
         to extend (e.g. the lock was acquired by this process).
         """
+        ttl = _safe_ttl(ttl)
         if not self._enabled:
             return False
         try:
@@ -257,6 +258,7 @@ class CacheClient:
 
     async def increment(self, key: str, *, ttl: int) -> int:
         """Atomically increment a short-lived counter and return its value."""
+        ttl = _safe_ttl(ttl)
         if not self._enabled:
             current = self._local_get(key) or 0
             value = int(current) + 1
@@ -280,6 +282,7 @@ class CacheClient:
             return value
 
     async def increment_strict(self, key: str, *, ttl: int) -> int:
+        ttl = _safe_ttl(ttl)
         if not self._enabled:
             return await self.increment(key, ttl=ttl)
         client = await self._ensure_client()

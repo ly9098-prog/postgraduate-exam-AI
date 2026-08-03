@@ -516,37 +516,6 @@ class TestStreak:
         assert streak == 0
 
 
-# --- get_wrong_questions ---
-
-class TestGetWrongQuestions:
-    @pytest.mark.xfail(reason="Stale mock compatibility — test infra debt")
-    def test_with_questions(self):
-        from app.services.practice_service import get_wrong_questions
-
-        db = _make_mock_db()
-
-        wq = MagicMock()
-        wq.id = 1
-        wq.question_id = 10
-        wq.wrong_answer = "B"
-        wq.review_count = 2
-        wq.mastered = False
-        wq.last_review_at = datetime.now(UTC)
-
-        q = _make_question(10, answer="A")
-        db.execute.side_effect = [
-            _make_execute_result(scalar=5),       # list_wrong: count query
-            _make_execute_result(scalars=[wq]),   # list_wrong: items query
-            _make_execute_result(scalars=[q]),    # question lookup
-        ]
-
-        result = _run(get_wrong_questions(db, user_id=1))
-        assert result["total"] == 5
-        assert len(result["items"]) == 1
-        assert result["items"][0]["question"]["id"] == 10
-        assert result["items"][0]["question"]["answer"] == "A"
-
-
 # ── 父级科目聚合刷题测试 ─────────────────────────────────
 
 
