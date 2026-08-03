@@ -53,51 +53,6 @@ async def record_wrong(
     return wq
 
 
-async def list_wrong(
-    db: AsyncSession,
-    user_id: int,
-    subject_id: int | None = None,
-    error_type: str | None = None,
-    topic: str | None = None,
-    page: int = 1,
-    page_size: int = 20,
-) -> tuple[list[WrongQuestion], int]:
-    conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
-    if error_type:
-        conditions.append(WrongQuestion.error_type == error_type)
-
-    # Determine whether we need to join Question table
-    needs_join = bool(subject_id) or bool(topic)
-
-    if needs_join:
-        base_query = select(WrongQuestion).join(Question, WrongQuestion.question_id == Question.id)
-        count_query = select(func.count(WrongQuestion.id)).join(Question, WrongQuestion.question_id == Question.id)
-        if subject_id:
-            subject_ids = await resolve_subject_ids(db, subject_id)
-            base_query = base_query.where(Question.subject_id.in_(subject_ids))
-            count_query = count_query.where(Question.subject_id.in_(subject_ids))
-        if topic:
-            topic_filter = cast(Question.knowledge_points, String).contains(topic)
-            base_query = base_query.where(topic_filter)
-            count_query = count_query.where(topic_filter)
-        base_query = base_query.where(and_(*conditions))
-        count_query = count_query.where(and_(*conditions))
-        total = (await db.execute(count_query)).scalar()
-        q = base_query.order_by(WrongQuestion.updated_at.desc()).offset((page - 1) * page_size).limit(page_size)
-    else:
-        count_q = select(func.count(WrongQuestion.id)).where(and_(*conditions))
-        total = (await db.execute(count_q)).scalar()
-        q = (
-            select(WrongQuestion)
-            .where(and_(*conditions))
-            .order_by(WrongQuestion.updated_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-        )
-    result = await db.execute(q)
-    return list(result.scalars().all()), total
-
-
 async def get_by_id(db: AsyncSession, user_id: int, wq_id: int) -> WrongQuestion | None:
     result = await db.execute(
         select(WrongQuestion).where(

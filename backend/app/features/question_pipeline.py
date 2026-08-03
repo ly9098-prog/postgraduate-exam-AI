@@ -1431,10 +1431,21 @@ def _extract_json(text: str) -> dict | None:
     start = text.find("{")
     while start != -1:
         try:
-            obj, _ = decoder.raw_decode(text, start)
-            return obj
+            obj, end_idx = decoder.raw_decode(text, start)
         except json.JSONDecodeError:
             start = text.find("{", start + 1)
+            continue
+        # 若首个对象之后又出现一个可解析的 JSON 对象（如模型先给草稿再给
+        # 最终答案），无法确定取哪个——返回 None 让调用方走兜底/重试，避免
+        # 静默采用可能错误的首个对象污染题目数据。
+        nxt = text.find("{", end_idx)
+        if nxt != -1:
+            try:
+                decoder.raw_decode(text, nxt)
+                return None
+            except json.JSONDecodeError:
+                pass
+        return obj
     return None
 
 
@@ -1511,7 +1522,10 @@ async def _call_or_fallback(
     try:
         resp = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
         return (resp, resp["content"], resp)
-    except Exception as e:
+    except (OSError, ValueError, RuntimeError, TimeoutError) as e:
+        # 网络/超时/URL 校验类故障 → 降级（UnsafeRemoteURLError 是 ValueError）。
+        # 只捕这几类：KeyError/TypeError 等编程错误让调用方暴露，避免被伪装成
+        # AI 降级静默吞掉。
         return (
             {
                 "content": "", "tokens_used": 0, "model": "fallback",
