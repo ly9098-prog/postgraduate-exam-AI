@@ -759,9 +759,14 @@ def _add_real_fk_questions(inspector):
         raise Exception(
             f"[a7b8c9d0e1f2] questions.subject_id invalid: nulls={null_count} orphans={orphan_count}"
         )
+    # The FK may already exist on databases where the runtime/earlier
+    # migrations created it (production Postgres already has fk_questions_subject_id).
+    # Postgres rejects ADD CONSTRAINT with a duplicate name, so only create when absent.
+    fk_exists = _fk_name(inspector, "questions") is not None
     with op.batch_alter_table("questions", recreate="auto") as batch_op:
         batch_op.alter_column("subject_id", existing_type=sa.Integer(), nullable=False)
-        batch_op.create_foreign_key("fk_questions_subject_id", "subjects", ["subject_id"], ["id"], ondelete="NO ACTION")
+        if not fk_exists:
+            batch_op.create_foreign_key("fk_questions_subject_id", "subjects", ["subject_id"], ["id"], ondelete="NO ACTION")
 
 
 def _add_real_fk_question_imports(inspector):
@@ -769,6 +774,8 @@ def _add_real_fk_question_imports(inspector):
         return
     if not _has_column(inspector, "question_imports", "subject_id"):
         return
+    if _fk_name(inspector, "question_imports") is not None:
+        return  # already present (production Postgres)
     with op.batch_alter_table("question_imports", recreate="auto") as batch_op:
         batch_op.create_foreign_key("fk_question_imports_subject_id", "subjects", ["subject_id"], ["id"], ondelete="SET NULL")
 
@@ -778,6 +785,8 @@ def _add_real_fk_pomodoro(inspector):
         return
     if not _has_column(inspector, "pomodoro_sessions", "subject_id"):
         return
+    if _fk_name(inspector, "pomodoro_sessions") is not None:
+        return  # already present (production Postgres)
     with op.batch_alter_table("pomodoro_sessions", recreate="auto") as batch_op:
         batch_op.create_foreign_key("fk_pomodoro_sessions_subject_id", "subjects", ["subject_id"], ["id"], ondelete="SET NULL")
 
