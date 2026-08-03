@@ -41,6 +41,20 @@ engine = create_async_engine(
     **_engine_kwargs,
 )
 
+# ── SQLite foreign key enforcement ─────────────────────────
+# SQLite defaults PRAGMA foreign_keys to OFF per connection.  Enable it on every
+# new connection so DB-level FK constraints (subject_id -> subjects.id, etc.)
+# are actually enforced, not just declared.
+if "sqlite" in settings.DATABASE_URL:
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_foreign_keys(dbapi_conn, connection_record):
+        cursor = dbapi_conn.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
+
 # ── Slow query logging ─────────────────────────────────────
 
 _slow_query_logger = logging.getLogger("app.db.slow_query")
@@ -274,13 +288,19 @@ async def _ensure_pomodoro_table(conn):
 
         existing = {c["name"] for c in inspector.get_columns("pomodoro_sessions")}
         migrations = {
-            "subject_id": "ALTER TABLE pomodoro_sessions ADD COLUMN subject_id INTEGER",
             "paused_at": "ALTER TABLE pomodoro_sessions ADD COLUMN paused_at DATETIME",
             "total_paused_sec": "ALTER TABLE pomodoro_sessions ADD COLUMN total_paused_sec INTEGER DEFAULT 0",
         }
         for col, ddl in migrations.items():
             if col not in existing:
                 sync_conn.exec_driver_sql(ddl)
+        # subject_id is owned by Alembic (a7b8c9d0e1f2).  Never repair it at
+        # startup — a missing column means migrations have not been applied.
+        if "subject_id" not in existing:
+            logger.error(
+                "pomodoro_sessions.subject_id is missing — run `alembic upgrade head` "
+                "(runtime schema repair for subject_id is disabled)"
+            )
 
     await conn.run_sync(repair)
 
@@ -442,6 +462,7 @@ async def init_db():
         return
 
     from app.models.ai_feedback_log import AiFeedbackLog  # noqa: F401
+    from app.models.answer_behavior import AnswerBehavior  # noqa: F401 — Subject relationship target
     from app.models.formula import (  # noqa: F401
         FormulaCard,
         FormulaCardTag,
@@ -455,8 +476,13 @@ async def init_db():
         FormulaTag,
         UserFormulaFavorite,
     )
+    from app.models.import_batch_job import ImportBatchJob, ImportBatchJobItem  # noqa: F401 — Subject relationship target
     from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401 — Phase 3
     from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+    from app.models.pomodoro import PomodoroSession  # noqa: F401 — Subject relationship target
+    from app.models.practice_record import PracticeRecord  # noqa: F401 — Subject relationship target
+    from app.models.question import Question  # noqa: F401 — Subject relationship target
+    from app.models.question_import import QuestionImport  # noqa: F401 — Subject relationship target
     from app.models.question_knowledge_point import QuestionKnowledgePoint  # noqa: F401
     from app.models.recommendation_experiment import (
         RecommendationExperiment,  # noqa: F401 — Phase 4
@@ -474,7 +500,10 @@ async def init_db():
     from app.models.refresh_token import (
         RefreshToken,  # noqa: F401 — register model for create_all
     )
+    from app.models.review_scheduler import ReviewRecord, ReviewSchedule  # noqa: F401 — Subject relationship target
+    from app.models.tag import Tag  # noqa: F401 — Subject relationship target
     from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+    from app.models.wrong_question import WrongQuestion  # noqa: F401 — Subject relationship target
 
     async with engine.begin() as conn:
         await _repair_sqlite_admin_bigint_pk(conn)

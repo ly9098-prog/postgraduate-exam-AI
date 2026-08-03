@@ -20,7 +20,8 @@ class KnowledgeEdge(Base):
     __tablename__ = "knowledge_edges"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    subject = Column(String(32), nullable=False, index=True)
+    subject_id = Column(Integer, ForeignKey("subjects.id", ondelete="RESTRICT"), nullable=False, index=True)
+    subject_ref = relationship("Subject", back_populates="knowledge_edges", lazy="noload")
 
     source_knowledge_point_id = Column(
         Integer,
@@ -68,12 +69,12 @@ class KnowledgeEdge(Base):
             "relation_type",
             name="uq_ke_source_target_relation",
         ),
-        Index("ix_ke_subject_relation", "subject", "relation_type"),
+        Index("ix_ke_subject_id_relation", "subject_id", "relation_type"),
     )
 
     def __repr__(self):
         return (
-            f"<KnowledgeEdge id={self.id} subject={self.subject!r} "
+            f"<KnowledgeEdge id={self.id} subject_id={self.subject_id} "
             f"{self.source_knowledge_point_id} --[{self.relation_type}]--> "
             f"{self.target_knowledge_point_id}>"
         )

@@ -122,7 +122,7 @@
           </view>
 
           <!-- Context hint from practice page -->
-          <view class="context-hint" wx:if="{{fromSubject && selectedSubject}}">
+          <view class="context-hint" wx:if="{{fromSubjectId && selectedSubject}}">
             <text>从刷题进入 · {{selectedSubjectLabel}}</text>
           </view>
 

@@ -4,6 +4,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+# Ensure all ORM models are registered so Subject's string relationships
+# (practice_records, answer_behaviors, review_schedules, ...) resolve at
+# mapper configuration time (see app/models/admin.py Subject).
+from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.import_batch_job import ImportBatchJob  # noqa: F401
+from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+from app.models.pomodoro import PomodoroSession  # noqa: F401
+from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.recommendation_log import RecommendationLog  # noqa: F401
+from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.review_scheduler import ReviewSchedule  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
+from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+
 # ── helpers ──
 
 
@@ -37,22 +52,22 @@ def _make_execute_result(**methods):
     return mock_result
 
 
-def _make_kp(id=1, name="链表", subject="exam408-ds", normalized_name=None, is_active=True):
+def _make_kp(id=1, name="链表", subject_id=5, normalized_name=None, is_active=True):
     kp = MagicMock()
     kp.id = id
     kp.name = name
-    kp.subject = subject
+    kp.subject_id = subject_id
     kp.normalized_name = normalized_name or name
     kp.is_active = is_active
     return kp
 
 
-def _make_edge(id=1, subject="exam408-ds", source_id=1, target_id=2,
+def _make_edge(id=1, subject_id=5, source_id=1, target_id=2,
                relation_type="prerequisite", weight=1.0, confidence=1.0,
                source="manual", is_active=True, source_kp=None, target_kp=None):
     edge = MagicMock()
     edge.id = id
-    edge.subject = subject
+    edge.subject_id = subject_id
     edge.source_knowledge_point_id = source_id
     edge.target_knowledge_point_id = target_id
     edge.relation_type = relation_type
@@ -65,10 +80,10 @@ def _make_edge(id=1, subject="exam408-ds", source_id=1, target_id=2,
     return edge
 
 
-def _make_question(id=1, subject="exam408-ds", difficulty=3, is_active=True):
+def _make_question(id=1, subject_id=5, difficulty=3, is_active=True):
     q = MagicMock()
     q.id = id
-    q.subject = subject
+    q.subject_id = subject_id
     q.difficulty = difficulty
     q.is_active = is_active
     return q
@@ -99,7 +114,7 @@ class TestCreateKnowledgeEdge:
         _make_edge(id=10, source_id=1, target_id=2, relation_type="prerequisite")
         db.refresh.side_effect = lambda e: None  # refresh 不报错
 
-        result = _run(create_knowledge_edge(db, "exam408-ds", 1, 2, "prerequisite"))
+        result = _run(create_knowledge_edge(db, 5, 1, 2, "prerequisite"))
         assert result["created"] is True
         assert result["updated"] is False
         db.add.assert_called_once()
@@ -117,7 +132,7 @@ class TestCreateKnowledgeEdge:
             _make_execute_result(scalar_one_or_none=None),
         ]
 
-        result = _run(create_knowledge_edge(db, "exam408-ds", 1, 2, "parent",
+        result = _run(create_knowledge_edge(db, 5, 1, 2, "parent",
                                             weight=0.5, confidence=0.3, source="inferred"))
         assert result["created"] is True
 
@@ -134,7 +149,7 @@ class TestCreateKnowledgeEdge:
             _make_execute_result(scalar_one_or_none=None),
         ]
 
-        result = _run(create_knowledge_edge(db, "exam408-ds", 1, 2, "related"))
+        result = _run(create_knowledge_edge(db, 5, 1, 2, "related"))
         assert result["created"] is True
 
     def test_create_next_edge(self):
@@ -150,7 +165,7 @@ class TestCreateKnowledgeEdge:
             _make_execute_result(scalar_one_or_none=None),
         ]
 
-        result = _run(create_knowledge_edge(db, "exam408-ds", 1, 2, "next"))
+        result = _run(create_knowledge_edge(db, 5, 1, 2, "next"))
         assert result["created"] is True
 
     def test_prevent_self_loop(self):
@@ -160,22 +175,22 @@ class TestCreateKnowledgeEdge:
         db = _make_mock_db()
 
         with pytest.raises(ValueError, match="不能等于"):
-            _run(create_knowledge_edge(db, "exam408-ds", 1, 1, "related"))
+            _run(create_knowledge_edge(db, 5, 1, 1, "related"))
 
     def test_prevent_cross_subject(self):
         """create_knowledge_edge 能防止跨 subject 连接。"""
         from app.services.knowledge_graph_service import create_knowledge_edge
 
         db = _make_mock_db()
-        kp1 = _make_kp(id=1, name="链表", subject="exam408-ds")
-        kp2 = _make_kp(id=2, name="导数", subject="math2")
+        kp1 = _make_kp(id=1, name="链表", subject_id=5)
+        kp2 = _make_kp(id=2, name="导数", subject_id=1)
 
         db.execute.side_effect = [
             _make_execute_result(scalars=[kp1, kp2]),
         ]
 
-        with pytest.raises(ValueError, match="subject 不一致"):
-            _run(create_knowledge_edge(db, "exam408-ds", 1, 2, "related"))
+        with pytest.raises(ValueError, match="subject_id 不一致"):
+            _run(create_knowledge_edge(db, 5, 1, 2, "related"))
 
     def test_upsert_existing_edge(self):
         """已存在的边更新而非重复创建。"""
@@ -191,7 +206,7 @@ class TestCreateKnowledgeEdge:
             _make_execute_result(scalar_one_or_none=existing_edge),
         ]
 
-        result = _run(create_knowledge_edge(db, "exam408-ds", 1, 2, "prerequisite",
+        result = _run(create_knowledge_edge(db, 5, 1, 2, "prerequisite",
                                             weight=0.8, confidence=0.9))
         assert result["created"] is False
         assert result["updated"] is True
@@ -220,7 +235,7 @@ class TestInferSimpleEdges:
 
         db.execute.side_effect = [kp_result, edge_result]
 
-        result = _run(infer_simple_edges_from_names(db, subject="exam408-ds"))
+        result = _run(infer_simple_edges_from_names(db, subject_id=5))
 
         assert result["created"] == 2  # 链表→单链表, 链表→双链表
         assert result["skipped"] == 0
@@ -249,7 +264,7 @@ class TestInferSimpleEdges:
 
         db.execute.side_effect = [kp_result, edge_result]
 
-        result = _run(infer_simple_edges_from_names(db, subject="exam408-ds"))
+        result = _run(infer_simple_edges_from_names(db, subject_id=5))
 
         assert result["created"] == 0
         assert result["skipped"] == 1
@@ -270,7 +285,7 @@ class TestInferSimpleEdges:
 
         db.execute.side_effect = [kp_result, edge_result]
 
-        result = _run(infer_simple_edges_from_names(db, subject="exam408-ds"))
+        result = _run(infer_simple_edges_from_names(db, subject_id=5))
 
         # 树→二叉树(parent), 树→平衡二叉树(parent), 二叉树→平衡二叉树(parent)
         assert result["created"] == 3
@@ -290,7 +305,7 @@ class TestInferSimpleEdges:
 
         db.execute.side_effect = [kp_result, edge_result]
 
-        result = _run(infer_simple_edges_from_names(db, subject="exam408-ds"))
+        result = _run(infer_simple_edges_from_names(db, subject_id=5))
 
         assert result["created"] == 0
         assert result["skipped"] == 0
@@ -317,7 +332,7 @@ class TestInferSimpleEdges:
         db.execute.side_effect = [del_result, kp_result, edge_result]
 
         result = _run(infer_simple_edges_from_names(
-            db, subject="exam408-ds", force_rebuild=True,
+            db, subject_id=5, force_rebuild=True,
         ))
 
         assert result["deleted"] == 3
@@ -342,7 +357,7 @@ class TestInferSimpleEdges:
         db.execute.side_effect = [kp_result, edge_result]
 
         result = _run(infer_simple_edges_from_names(
-            db, subject="exam408-ds", force_rebuild=False,
+            db, subject_id=5, force_rebuild=False,
         ))
 
         assert result["deleted"] == 0
@@ -369,7 +384,7 @@ class TestInferSimpleEdges:
         db.execute.side_effect = [del_result, kp_result, edge_result]
 
         _run(infer_simple_edges_from_names(
-            db, subject="exam408-ds", force_rebuild=True,
+            db, subject_id=5, force_rebuild=True,
         ))
 
         # 验证第 1 次 execute 调用包含 DELETE 语句
@@ -461,6 +476,8 @@ class TestBuildUserKnowledgePath:
         """build_user_knowledge_path 在有薄弱点时能生成路径。"""
         import sys
 
+        import app.services
+
         from app.services.knowledge_path_service import build_user_knowledge_path
 
         db = _make_mock_db()
@@ -488,8 +505,9 @@ class TestBuildUserKnowledgePath:
         with patch.dict(sys.modules, {
             "app.services.mastery_service": mock_mastery,
             "app.services.knowledge_graph_service": mock_graph,
-        }):
-            result = _run(build_user_knowledge_path(db, user_id=1, subject="exam408-ds"))
+        }), patch.object(app.services, "mastery_service", mock_mastery, create=True), \
+             patch.object(app.services, "knowledge_graph_service", mock_graph, create=True):
+            result = _run(build_user_knowledge_path(db, user_id=1, subject_id=5))
 
             assert result["strategy"] == "knowledge_path"
             assert result["start_kp"] is not None
@@ -586,7 +604,7 @@ class TestAttachRecommendedQuestions:
         ])
 
         result = _run(attach_recommended_questions_to_path(
-            db, user_id=1, subject="exam408-ds", nodes=nodes, questions_per_node=2,
+            db, user_id=1, subject_code="exam408-ds", nodes=nodes, questions_per_node=2,
         ))
 
         assert len(result) == 1
@@ -632,7 +650,7 @@ class TestSmartStrategyPath:
 
         with patch.object(app.services, "knowledge_path_service", mock_path):
             questions, metadata = _run(get_smart_practice_questions(
-                db, user_id=1, subject="exam408-ds", count=5,
+                db, user_id=1, subject_code="exam408-ds", count=5,
                 smart_strategy="path",
             ))
 
@@ -661,7 +679,7 @@ class TestSmartStrategyPath:
              patch.object(app.services, "mastery_service", mock_mastery):
 
             questions, metadata = _run(get_smart_practice_questions(
-                db, user_id=1, subject="exam408-ds", count=5,
+                db, user_id=1, subject_code="exam408-ds", count=5,
                 smart_strategy="path",
             ))
 
@@ -695,7 +713,7 @@ class TestExistingModesUnaffected:
         db.execute.side_effect = self._side_effect_once([q1, q2])
 
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
-            result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="random"))
+            result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5, mode="random"))
         assert len(result) == 2
         assert result[0].id == 1
 
@@ -708,7 +726,7 @@ class TestExistingModesUnaffected:
         db.execute.side_effect = self._side_effect_once([q1])
 
         with patch("app.services.practice_service.resolve_subject_ids", new_callable=AsyncMock, return_value=[1]):
-            result = _run(get_practice_questions(db, user_id=1, subject="math2", count=5, mode="sequential"))
+            result = _run(get_practice_questions(db, user_id=1, subject_code="math2", count=5, mode="sequential"))
         assert len(result) == 1
 
 

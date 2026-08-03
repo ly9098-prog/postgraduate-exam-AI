@@ -233,7 +233,36 @@ async def batch_detail(
         batch_id=batch_id,
         source_type=first.source_type,
         source_file=first.source_file,
-        questions=[QuestionImportResponse.model_validate(q) for q in questions],
+        questions=[
+            QuestionImportResponse(
+                id=q.id,
+                batch_id=q.batch_id,
+                source_type=q.source_type,
+                source_file=q.source_file,
+                subject_id=q.subject_id,
+                subject_code=q.subject_ref.code if q.subject_ref else "",
+                subject_name=q.subject_ref.name if q.subject_ref else "",
+                question_type=q.question_type,
+                parsed_content=q.parsed_content,
+                parsed_options=q.parsed_options,
+                parsed_answer=q.parsed_answer,
+                parsed_analysis=q.parsed_analysis,
+                question_hash=q.question_hash,
+                duplicate_status=q.duplicate_status,
+                duplicate_of_question_id=q.duplicate_of_question_id,
+                duplicate_of_import_id=q.duplicate_of_import_id,
+                status=q.status,
+                review_note=q.review_note,
+                question_id=q.question_id,
+                ai_generated=q.ai_generated,
+                ai_source=q.ai_source,
+                ai_confidence=q.ai_confidence,
+                ai_metadata=q.ai_metadata,
+                ai_answer_flag=q.ai_answer_flag,
+                created_at=q.created_at,
+            )
+            for q in questions
+        ],
     )
 
 

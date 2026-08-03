@@ -17,7 +17,7 @@ async def record_answer_behavior(
     is_abandoned: bool = False,
     user_answer: str | None = None,
     correct_answer: str | None = None,
-    subject: str | None = None,
+    subject_id: int | None = None,
     session_type: str = "random",
 ) -> AnswerBehavior:
     """记录一条答题行为数据"""
@@ -40,6 +40,8 @@ async def record_answer_behavior(
             existing.switch_count = switch_count
             existing.user_answer = user_answer or existing.user_answer
             existing.correct_answer = correct_answer or existing.correct_answer
+            if subject_id is not None:
+                existing.subject_id = subject_id
             await db.commit()
             await db.refresh(existing)
             return existing
@@ -56,7 +58,7 @@ async def record_answer_behavior(
         is_abandoned=is_abandoned,
         user_answer=user_answer,
         correct_answer=correct_answer,
-        subject=subject,
+        subject_id=subject_id,
         session_type=session_type,
     )
     db.add(behavior)
@@ -91,24 +93,36 @@ async def get_behavior_stats(
     )
     correct = (await db.execute(correct_q)).scalar() or 0
 
-    # 按科目统计
+    # 按科目统计（subject_id 分组，科目信息从 subjects 表解析）
     from sqlalchemy import select as sa_select
+    from app.models.admin import Subject
+
     subject_q = sa_select(
-        AnswerBehavior.subject,
+        AnswerBehavior.subject_id,
         func.count(AnswerBehavior.id).label("count"),
         func.avg(AnswerBehavior.time_spent_sec).label("avg_time"),
     ).where(
         AnswerBehavior.user_id == user_id,
-        AnswerBehavior.subject.isnot(None),
-    ).group_by(AnswerBehavior.subject)
+        AnswerBehavior.subject_id.isnot(None),
+    ).group_by(AnswerBehavior.subject_id)
     subject_result = await db.execute(subject_q)
+    rows = subject_result.all()
+    subject_ids = [r.subject_id for r in rows]
+    code_name = {}
+    if subject_ids:
+        subs = (await db.execute(
+            sa_select(Subject).where(Subject.id.in_(subject_ids))
+        )).scalars().all()
+        code_name = {s.id: (s.code, s.name) for s in subs}
     by_subject = [
         {
-            "subject": r.subject,
+            "subject_id": r.subject_id,
+            "subject_code": code_name.get(r.subject_id, ("", ""))[0],
+            "subject_name": code_name.get(r.subject_id, ("", ""))[1],
             "count": r.count,
             "avg_time_sec": round(float(r.avg_time), 1) if r.avg_time else 0,
         }
-        for r in subject_result.all()
+        for r in rows
     ]
 
     return {

@@ -66,9 +66,9 @@ async def run_review_stage(
         iid = item.get("id")
         if not qhash or not iid:
             continue
-        qsubject = subject or (question_subjects[idx] if idx < len(question_subjects) else None) or ""
-        if qsubject:
-            new_hashes.append((qsubject, qhash, iid))
+        qsubject_code = subject or (question_subjects[idx] if idx < len(question_subjects) else None) or ""
+        if qsubject_code:
+            new_hashes.append((qsubject_code, qhash, iid))
 
     logger.info(
         "【OCR-8】数据库入库结果 | batch=%s source=%s total=%d written=%d skipped=%d dup=%d",

@@ -12,6 +12,7 @@ from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
+from app.models.admin import Subject
 from app.models.knowledge_edge import KnowledgeEdge
 from app.models.knowledge_point import KnowledgePoint
 
@@ -22,7 +23,7 @@ _VALID_RELATION_TYPES = {"prerequisite", "parent", "related", "next"}
 
 async def create_knowledge_edge(
     db: AsyncSession,
-    subject: str,
+    subject_id: int,
     source_id: int,
     target_id: int,
     relation_type: str,
@@ -34,7 +35,7 @@ async def create_knowledge_edge(
 
     校验:
     - source_id != target_id（防自环）
-    - source_id 和 target_id 必须存在且属于同一 subject
+    - source_id 和 target_id 必须存在且属于同一 subject_id
     - relation_type 必须在合法范围内
     - 已存在则更新 weight/confidence/source/is_active
 
@@ -46,7 +47,7 @@ async def create_knowledge_edge(
     if relation_type not in _VALID_RELATION_TYPES:
         raise ValueError(f"relation_type 必须为 {_VALID_RELATION_TYPES} 之一，收到 {relation_type!r}")
 
-    # 校验两个知识点存在且 subject 一致
+    # 校验两个知识点存在且 subject_id 一致
     kp_result = await db.execute(
         select(KnowledgePoint).where(
             KnowledgePoint.id.in_([source_id, target_id]),
@@ -63,10 +64,10 @@ async def create_knowledge_edge(
     src_kp = kps[source_id]
     tgt_kp = kps[target_id]
 
-    if src_kp.subject != subject or tgt_kp.subject != subject:
+    if src_kp.subject_id != subject_id or tgt_kp.subject_id != subject_id:
         raise ValueError(
-            f"两个知识点 subject 不一致: 请求={subject}, "
-            f"source.subject={src_kp.subject}, target.subject={tgt_kp.subject}"
+            f"两个知识点 subject_id 不一致: 请求={subject_id}, "
+            f"source.subject_id={src_kp.subject_id}, target.subject_id={tgt_kp.subject_id}"
         )
 
     # 查找是否已存在
@@ -89,7 +90,7 @@ async def create_knowledge_edge(
         return {"id": existing.id, "created": False, "updated": True}
 
     edge = KnowledgeEdge(
-        subject=subject,
+        subject_id=subject_id,
         source_knowledge_point_id=source_id,
         target_knowledge_point_id=target_id,
         relation_type=relation_type,
@@ -105,18 +106,18 @@ async def create_knowledge_edge(
 
 async def list_knowledge_edges(
     db: AsyncSession,
-    subject: str,
+    subject_id: int,
     relation_type: str | None = None,
     knowledge_point_id: int | None = None,
     limit: int = 200,
 ) -> list[dict]:
     """查询知识点关系列表。
 
-    - 按 subject 过滤
+    - 按 subject_id 过滤
     - relation_type 可选
     - knowledge_point_id 可选：查 source 或 target 任一端相关边
     """
-    conditions = [KnowledgeEdge.subject == subject]
+    conditions = [KnowledgeEdge.subject_id == subject_id]
 
     if relation_type:
         conditions.append(KnowledgeEdge.relation_type == relation_type)
@@ -137,10 +138,20 @@ async def list_knowledge_edges(
     )
     edges = result.scalars().all()
 
+    subject_map: dict[int, Subject] = {}
+    edge_subject_ids = {e.subject_id for e in edges}
+    if edge_subject_ids:
+        subj_result = await db.execute(
+            select(Subject).where(Subject.id.in_(edge_subject_ids))
+        )
+        subject_map = {s.id: s for s in subj_result.scalars().all()}
+
     return [
         {
             "id": e.id,
-            "subject": e.subject,
+            "subject_id": e.subject_id,
+            "subject_code": subject_map[e.subject_id].code if e.subject_id in subject_map else "",
+            "subject_name": subject_map[e.subject_id].name if e.subject_id in subject_map else "",
             "source_knowledge_point_id": e.source_knowledge_point_id,
             "source_name": e.source_kp.name if e.source_kp else None,
             "target_knowledge_point_id": e.target_knowledge_point_id,
@@ -222,7 +233,7 @@ async def _get_prerequisite_sources(
             items.append({
                 "knowledge_point_id": kp.id,
                 "name": kp.name,
-                "subject": kp.subject,
+                "subject_id": kp.subject_id,
                 "weight": e.weight,
                 "confidence": e.confidence,
                 "edge_id": e.id,
@@ -261,7 +272,7 @@ async def get_next_nodes(
             items.append({
                 "knowledge_point_id": kp.id,
                 "name": kp.name,
-                "subject": kp.subject,
+                "subject_id": kp.subject_id,
                 "weight": e.weight,
                 "confidence": e.confidence,
                 "relation_type": "next",
@@ -307,7 +318,7 @@ async def get_related_nodes(
             items.append({
                 "knowledge_point_id": kp.id,
                 "name": kp.name,
-                "subject": kp.subject,
+                "subject_id": kp.subject_id,
                 "weight": e.weight,
                 "confidence": e.confidence,
                 "relation_type": "related",
@@ -318,7 +329,7 @@ async def get_related_nodes(
 
 async def infer_simple_edges_from_names(
     db: AsyncSession,
-    subject: str,
+    subject_id: int,
     limit: int = 500,
     force_rebuild: bool = False,
 ) -> dict:
@@ -346,22 +357,22 @@ async def infer_simple_edges_from_names(
     if force_rebuild:
         del_result = await db.execute(
             delete(KnowledgeEdge).where(
-                KnowledgeEdge.subject == subject,
+                KnowledgeEdge.subject_id == subject_id,
                 KnowledgeEdge.source == "inferred",
             )
         )
         deleted = del_result.rowcount or 0
         await db.flush()
         logger.info(
-            "force_rebuild: deleted %d inferred edges for subject=%s",
-            deleted, subject,
+            "force_rebuild: deleted %d inferred edges for subject_id=%s",
+            deleted, subject_id,
         )
 
     # 1. 获取该科目所有活跃知识点 (1 次查询)
     result = await db.execute(
         select(KnowledgePoint)
         .where(
-            KnowledgePoint.subject == subject,
+            KnowledgePoint.subject_id == subject_id,
             KnowledgePoint.is_active,
         )
         .order_by(KnowledgePoint.id)
@@ -380,7 +391,7 @@ async def infer_simple_edges_from_names(
             KnowledgeEdge.target_knowledge_point_id,
             KnowledgeEdge.relation_type,
         ).where(
-            KnowledgeEdge.subject == subject,
+            KnowledgeEdge.subject_id == subject_id,
             KnowledgeEdge.source == "inferred",
         )
     )
@@ -410,7 +421,7 @@ async def infer_simple_edges_from_names(
                     skipped += 1
                     continue
                 new_edges.append(KnowledgeEdge(
-                    subject=subject,
+                    subject_id=subject_id,
                     source_knowledge_point_id=kp_a.id,
                     target_knowledge_point_id=kp_b.id,
                     relation_type="parent",
@@ -431,7 +442,7 @@ async def infer_simple_edges_from_names(
 
 async def get_edge_status(
     db: AsyncSession,
-    subject: str,
+    subject_id: int,
 ) -> dict:
     """返回指定科目的边统计。"""
     from sqlalchemy import func
@@ -441,28 +452,28 @@ async def get_edge_status(
             KnowledgeEdge.relation_type,
             func.count(KnowledgeEdge.id),
         )
-        .where(KnowledgeEdge.subject == subject)
+        .where(KnowledgeEdge.subject_id == subject_id)
         .group_by(KnowledgeEdge.relation_type)
     )
     type_counts = {row[0]: row[1] for row in result.all()}
 
     total_result = await db.execute(
         select(func.count(KnowledgeEdge.id)).where(
-            KnowledgeEdge.subject == subject,
+            KnowledgeEdge.subject_id == subject_id,
         )
     )
     total = total_result.scalar() or 0
 
     active_result = await db.execute(
         select(func.count(KnowledgeEdge.id)).where(
-            KnowledgeEdge.subject == subject,
+            KnowledgeEdge.subject_id == subject_id,
             KnowledgeEdge.is_active,
         )
     )
     active = active_result.scalar() or 0
 
     return {
-        "subject": subject,
+        "subject_id": subject_id,
         "total_edges": total,
         "prerequisite_edges": type_counts.get("prerequisite", 0),
         "parent_edges": type_counts.get("parent", 0),

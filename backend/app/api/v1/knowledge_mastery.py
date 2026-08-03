@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/v1/knowledge", tags=["knowledge-mastery"])
 
 @router.get("/states", response_model=list[KnowledgeStateItem])
 async def get_knowledge_states(
-    subject: str = Query(...),
+    subject_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -29,14 +29,14 @@ async def get_knowledge_states(
     from app.services import mastery_service
 
     states = await mastery_service.get_user_knowledge_states(
-        db, current_user.id, subject,
+        db, current_user.id, subject_id,
     )
     return [KnowledgeStateItem(**s) for s in states]
 
 
 @router.get("/weak-points", response_model=list[WeakKnowledgePointItem])
 async def get_weak_knowledge_points(
-    subject: str = Query(...),
+    subject_id: int = Query(...),
     limit: int = Query(5, ge=1, le=20),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -45,7 +45,7 @@ async def get_weak_knowledge_points(
     from app.services import mastery_service
 
     weak = await mastery_service.get_user_weak_knowledge_points(
-        db, current_user.id, subject, limit=limit,
+        db, current_user.id, subject_id, limit=limit,
     )
     return [WeakKnowledgePointItem(**w) for w in weak]
 

@@ -29,10 +29,10 @@ async def invalidate_experiment_cache(experiment_id: int | None = None) -> int:
         return 0
 
 
-async def invalidate_knowledge_path_cache(subject: str | None = None) -> int:
+async def invalidate_knowledge_path_cache(subject_id: int | None = None) -> int:
     """知识边 force_rebuild 后清理相关缓存。"""
     try:
-        subj = subject or "*"
+        subj = subject_id if subject_id is not None else "*"
         total = 0
         total += await cache.delete(f"knowledge:path:{subj}:*")
         total += await cache.delete(f"practice:smart:{subj}:*")

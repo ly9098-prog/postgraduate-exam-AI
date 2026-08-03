@@ -175,7 +175,10 @@ function buildSubjects(sa, enrichedMap) {
   if (!sa || !sa.items || !sa.items.length) return null
   const items = sa.items.map((s, i) => {
     const acc = s.accuracy || 0
-    const enriched = (enrichedMap && enrichedMap[s.subject]) || {}
+    const subjectId = s.subject_id != null ? s.subject_id : (s.id != null ? s.id : null)
+    const subjectCode = s.subject_code || ''
+    const subjectName = s.subject_name || s.label || ''
+    const enriched = (enrichedMap && (subjectId != null ? enrichedMap[subjectId] : enrichedMap[subjectCode])) || {}
     const totalQuestions = s.total_questions != null ? s.total_questions : (s.totalQuestions || 0)
     const correctCount = s.correct_count != null ? s.correct_count : (s.correctCount || 0)
     const wrongCount = s.wrong_count != null ? s.wrong_count : (s.wrongCount || 0)
@@ -185,8 +188,12 @@ function buildSubjects(sa, enrichedMap) {
       : (s.avgTimeSec || 0)
     const baseWeakTopics = enriched.weak_topics || s.weakTopics || []
     return {
-      subject: s.subject,
-      label: s.label || subjectLabel(s.subject),
+      subject_id: subjectId,
+      subjectId,
+      subject: subjectCode,
+      subjectCode,
+      subjectName,
+      label: s.label || subjectName || subjectLabel(subjectCode),
       totalQuestions,
       correctCount,
       wrongCount,
@@ -213,10 +220,14 @@ function buildSubjects(sa, enrichedMap) {
   })
   const strongestLabel = typeof sa.strongest === 'string'
     ? sa.strongest
-    : (sa.strongest && sa.strongest.subject ? subjectLabel(sa.strongest.subject) : null)
+    : (sa.strongest && (sa.strongest.subject_name || sa.strongest.subject)
+        ? (sa.strongest.subject_name || subjectLabel(sa.strongest.subject))
+        : null)
   const weakestLabel = typeof sa.weakest === 'string'
     ? sa.weakest
-    : (sa.weakest && sa.weakest.subject ? subjectLabel(sa.weakest.subject) : null)
+    : (sa.weakest && (sa.weakest.subject_name || sa.weakest.subject)
+        ? (sa.weakest.subject_name || subjectLabel(sa.weakest.subject))
+        : null)
   return {
     items,
     itemsByWeak,
@@ -389,8 +400,9 @@ function buildWeakTopics(wt) {
   const items = wt.items.map((t, i) => ({
     knowledgePointId: t.knowledge_point_id,
     name: t.name,
-    subject: t.subject,
-    subjectLabel: t.subject_label || t.subject || '',
+    subject: t.subject || '',
+    subjectId: t.subject_id != null ? t.subject_id : (t.subject || null),
+    subjectLabel: t.subject_label || t.subject_name || t.subject || '',
     masteryScore: Math.round(t.mastery_score || 0),
     attemptCount: t.attempt_count || 0,
     wrongCount: t.wrong_count || 0,
@@ -444,8 +456,8 @@ function buildSpeedAccuracy(sa) {
     fastWrongCount: sa.fast_wrong_count || 0,
     slowWrongCount: sa.slow_wrong_count || 0,
     bySubject: (sa.by_subject || []).map(s => ({
-      subject: s.subject,
-      subjectLabel: s.subject_label || s.subject || '',
+      subject: s.subject_code || s.subject || '',
+      subjectLabel: s.subject_name || s.subject_code || s.subject_label || s.subject || '',
       avgTimeCorrectSec: s.avg_time_correct_sec || 0,
       avgTimeWrongSec: s.avg_time_wrong_sec || 0,
       questions: s.questions || 0,
@@ -473,8 +485,8 @@ function buildInputOutput(io) {
     dataAvailable: true,
     globalAvgTimeSec: io.global_avg_time_sec || 0,
     items: (io.items || []).map(i => ({
-      subject: i.subject,
-      subjectLabel: i.subject_label || i.subject || '',
+      subject: i.subject_code || i.subject || '',
+      subjectLabel: i.subject_name || i.subject_code || i.subject_label || i.subject || '',
       totalQuestions: i.total_questions || 0,
       totalDurationSec: i.total_duration_sec || 0,
       accuracyPct: Math.round((i.accuracy || 0) * 100),

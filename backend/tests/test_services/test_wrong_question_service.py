@@ -6,6 +6,20 @@ from unittest.mock import AsyncMock, MagicMock
 from app.services.sm2_service import calc_sm2
 from app.services.wrong_question_service import record_wrong, update_quality
 
+# Ensure all ORM models are registered so Subject's string relationships
+# (practice_records, answer_behaviors, review_schedules, ...) resolve at
+# mapper configuration time (see app/models/admin.py Subject).
+from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.import_batch_job import ImportBatchJob  # noqa: F401
+from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+from app.models.pomodoro import PomodoroSession  # noqa: F401
+from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.recommendation_log import RecommendationLog  # noqa: F401
+from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
+from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+
 # ── Helpers ──
 
 
@@ -56,7 +70,7 @@ class TestRecordWrong:
         # auto_schedule: question query for subject
         from app.models.question import Question
         q_mock = MagicMock(spec=Question)
-        q_mock.subject = "math2"
+        q_mock.subject_id = 1
         question_result = _make_execute_result(scalar_one_or_none=q_mock)
         # auto_schedule: WQ sync → no existing
         sync_result = _make_execute_result(scalar_one_or_none=None)
@@ -183,7 +197,7 @@ class TestUpdateQuality:
         # auto_schedule: question query
         from app.models.question import Question
         q_mock = MagicMock(spec=Question)
-        q_mock.subject = "math2"
+        q_mock.subject_id = 1
         question_result = _make_execute_result(scalar_one_or_none=q_mock)
         # auto_schedule: WQ sync
         sync_result = _make_execute_result(scalar_one_or_none=wq_mock)

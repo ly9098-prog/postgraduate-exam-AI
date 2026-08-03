@@ -537,7 +537,7 @@ async def prewarm_wrong_question_analysis(
         )
 
 
-async def generate_advice(db: AsyncSession, user_id: int, subject: str | None = None) -> dict:
+async def generate_advice(db: AsyncSession, user_id: int, subject_id: int | None = None) -> dict:
     from app.services.model_config_resolver import ensure_db_model_configured
     creds = await ensure_db_model_configured(db, feature="analysis")
 
@@ -582,7 +582,7 @@ async def generate_advice(db: AsyncSession, user_id: int, subject: str | None = 
             subj_label = str(q.subject_id)
             subject_stats[subj_label] = subject_stats.get(subj_label, 0) + 1
             recent_wrong.append({
-                "subject": subj_label,
+                "subject_id": q.subject_id,
                 "error_type": w.error_type,
                 "wrong_answer": w.wrong_answer,
                 "correct_answer": q.answer,

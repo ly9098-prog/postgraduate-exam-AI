@@ -21,7 +21,6 @@ import { getQuestionTypeLabel, QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, 
 type ParsedOption = { key: string; text: string };
 
 type ParsedQuestion = {
-  subject: string | null;
   subject_id?: number | null;
   question_type: string | null;
   stem: string;
@@ -358,9 +357,9 @@ C
                               <span className="text-[10px] text-[var(--color-text-hint)]">
                                 {typeLabel(q.question_type)}
                               </span>
-                              {q.subject ? (
+                              {q.subject_id ? (
                                 <span className="rounded-full bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-primary-dark)]">
-                                  {q.subject_id ? (subjectOptions.find((s) => s.id === q.subject_id)?.name || q.subject) : q.subject}
+                                  {subjectOptions.find((s) => s.id === q.subject_id)?.name || `#${q.subject_id}`}
                                 </span>
                               ) : null}
                             </div>

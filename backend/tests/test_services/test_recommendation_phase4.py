@@ -4,6 +4,21 @@ import hashlib
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
+# Ensure all ORM models are registered so Subject's string relationships
+# (practice_records, answer_behaviors, review_schedules, ...) resolve at
+# mapper configuration time (see app/models/admin.py Subject).
+from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.import_batch_job import ImportBatchJob  # noqa: F401
+from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+from app.models.pomodoro import PomodoroSession  # noqa: F401
+from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.recommendation_log import RecommendationLog  # noqa: F401
+from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.review_scheduler import ReviewSchedule  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
+from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+
 # ── helpers ──
 
 
@@ -343,8 +358,8 @@ class TestRecommendationLogsWithExperiment:
         db = _make_mock_db()
 
         recommendations = [
-            {"question_id": 100, "subject": "exam408-ds"},
-            {"question_id": 101, "subject": "exam408-ds"},
+            {"question_id": 100, "subject_id": 5},
+            {"question_id": 101, "subject_id": 5},
         ]
 
         _run(create_recommendation_logs(
@@ -402,7 +417,7 @@ class TestAggregateMetricsDaily:
         # 模拟聚合查询结果
         mock_row = MagicMock()
         mock_row.date = date(2026, 6, 28)
-        mock_row.subject = "exam408-ds"
+        mock_row.subject_id = 5
         mock_row.scene = "practice_smart"
         mock_row.strategy = "knowledge_path"
         mock_row.variant_key = None
@@ -424,9 +439,13 @@ class TestAggregateMetricsDaily:
             _make_execute_result(scalar_one_or_none=None),
         ]
 
-        result = _run(aggregate_recommendation_metrics_daily(
-            db, target_date=date(2026, 6, 28), subject="exam408-ds",
-        ))
+        with patch(
+            "app.services.recommendation_metrics_service.resolve_subject_ids",
+            new_callable=AsyncMock, return_value=[5],
+        ):
+            result = _run(aggregate_recommendation_metrics_daily(
+                db, target_date=date(2026, 6, 28), subject_id=5,
+            ))
 
         assert result["aggregated_rows"] == 1
         db.add.assert_called_once()
@@ -445,7 +464,7 @@ class TestGetRecommendationMetrics:
         db = _make_mock_db()
         mock_daily = MagicMock()
         mock_daily.date = date(2026, 6, 28)
-        mock_daily.subject = "exam408-ds"
+        mock_daily.subject_id = 5
         mock_daily.scene = "practice_smart"
         mock_daily.strategy = "knowledge_path"
         mock_daily.variant_key = None
@@ -551,7 +570,7 @@ class TestRecommendationQualityReport:
             _make_execute_result(scalar=30),         # total_count
         ]
 
-        result = _run(build_recommendation_quality_report(db, subject="exam408-ds"))
+        result = _run(build_recommendation_quality_report(db, subject_id=5))
 
         assert "summary" in result
         assert "warnings" in result
@@ -578,12 +597,12 @@ class TestKnowledgeQualityReport:
         mock_kp1 = MagicMock()
         mock_kp1.id = 1
         mock_kp1.name = "链表"
-        mock_kp1.subject = "exam408-ds"
+        mock_kp1.subject_id = 5
 
         mock_kp2 = MagicMock()
         mock_kp2.id = 2
         mock_kp2.name = "孤立知识点"
-        mock_kp2.subject = "exam408-ds"
+        mock_kp2.subject_id = 5
 
         mock_scalars = MagicMock()
         mock_scalars.all.return_value = [mock_kp1, mock_kp2]
@@ -592,6 +611,7 @@ class TestKnowledgeQualityReport:
 
         db.execute.side_effect = [
             mock_result,  # 所有知识点
+            _make_execute_result(scalars=[]),  # 科目标签 (subject labels)
             _make_execute_result(all=[(1, 5)]),  # kp1 有 5 题，kp2 无题
             _make_execute_result(all=[(1, 1)]),  # 边：只有 kp1 连接
             _make_execute_result(scalar=0),  # low_conf_count
@@ -599,7 +619,7 @@ class TestKnowledgeQualityReport:
             _make_execute_result(all=[]),  # prerequisite edges (no cycles)
         ]
 
-        result = _run(build_knowledge_quality_report(db, subject="exam408-ds"))
+        result = _run(build_knowledge_quality_report(db, subject_id=5))
 
         assert result["summary"]["total_knowledge_points"] == 2
         # kp2 无题
@@ -622,7 +642,7 @@ class TestSmartFallbackOnExperimentFailure:
 
         mock_q = MagicMock()
         mock_q.id = 1
-        mock_q.subject = "exam408-ds"
+        mock_q.subject_id = 5
 
         mock_scalars = MagicMock()
         mock_scalars.all.return_value = [mock_q]
@@ -641,7 +661,7 @@ class TestSmartFallbackOnExperimentFailure:
             ):
                 # 即使实验服务失败，也不应抛异常
                 questions, meta = _run(get_smart_practice_questions(
-                    db, user_id=1, subject="exam408-ds", count=5,
+                    db, user_id=1, subject_code="exam408-ds", count=5,
                     smart_strategy="weakness_vector",
                 ))
 
@@ -669,7 +689,7 @@ class TestOriginalModesUnaffected:
         db.execute.return_value = mock_result
 
         questions = _run(get_practice_questions(
-            db, user_id=1, subject="exam408-ds", count=5, mode="random",
+            db, user_id=1, subject_code="exam408-ds", count=5, mode="random",
         ))
 
         assert isinstance(questions, list)
@@ -689,7 +709,7 @@ class TestOriginalModesUnaffected:
         db.execute.return_value = mock_result
 
         questions = _run(get_practice_questions(
-            db, user_id=1, subject="exam408-ds", count=5, mode="sequential",
+            db, user_id=1, subject_code="exam408-ds", count=5, mode="sequential",
         ))
 
         assert isinstance(questions, list)

@@ -147,7 +147,7 @@ class QuestionNormalizer:
         )
 
         plain_math = bool(raw.get("preserve_plain_math"))
-        subject = self.normalize_subject(raw.get("subject") or raw.get("科目"))
+        subject_code = self.normalize_subject(raw.get("subject") or raw.get("科目"))
         previous_plain_math = getattr(self, "_plain_math_options", False)
         self._plain_math_options = plain_math
         try:
@@ -215,7 +215,7 @@ class QuestionNormalizer:
         )
         difficulty = self.normalize_difficulty(raw.get("difficulty") or raw.get("难度"))
         normalized = {
-            "subject": subject,
+            "subject": subject_code,
             "question_type": question_type,
             "stem": stem,
             "options": options,
@@ -282,9 +282,9 @@ class QuestionNormalizer:
         return normalized
 
     def normalize_subject(self, value: Any) -> str:
-        subject = str(value or "").strip()
+        subject_code = str(value or "").strip()
         return self.SUBJECT_ALIASES.get(
-            subject, subject if subject in self.VALID_SUBJECTS else ""
+            subject_code, subject_code if subject_code in self.VALID_SUBJECTS else ""
         )
 
     def normalize_type(self, value: Any, options: Any = None) -> str:
@@ -991,7 +991,7 @@ def process_question_pipeline(
 
 async def _find_duplicate_by_hash(
     db: AsyncSession,
-    subject: str | None,
+    subject_code: str | None,
     question_hash: str | None,
     subject_id: int | None = None,
 ) -> Question | None:
@@ -1000,9 +1000,9 @@ async def _find_duplicate_by_hash(
     conditions = [Question.question_hash == question_hash, Question.is_active]
     if subject_id is not None:
         conditions.append(Question.subject_id == subject_id)
-    elif subject:
+    elif subject_code:
         from app.services.admin_subject_service import resolve_subject_id
-        resolved = await resolve_subject_id(db, subject)
+        resolved = await resolve_subject_id(db, subject_code)
         if resolved is not None:
             conditions.append(Question.subject_id == resolved)
         else:
@@ -1015,7 +1015,7 @@ async def _find_duplicate_by_hash(
 
 async def _find_import_duplicate_by_hash(
     db: AsyncSession,
-    subject: str | None,
+    subject_code: str | None,
     question_hash: str | None,
     subject_id: int | None = None,
 ) -> QuestionImport | None:
@@ -1027,9 +1027,9 @@ async def _find_import_duplicate_by_hash(
     ]
     if subject_id is not None:
         conditions.append(QuestionImport.subject_id == subject_id)
-    elif subject:
+    elif subject_code:
         from app.services.admin_subject_service import resolve_subject_id
-        resolved = await resolve_subject_id(db, subject)
+        resolved = await resolve_subject_id(db, subject_code)
         if resolved is not None:
             conditions.append(QuestionImport.subject_id == resolved)
         else:
@@ -1051,13 +1051,13 @@ async def _find_import_duplicate_by_hash(
 
 
 async def find_duplicate_question(
-    db: AsyncSession, subject: str | None, stem: str
+    db: AsyncSession, subject_code: str | None, stem: str
 ) -> Question | None:
-    """兼容旧调用：同 subject 下用 stem hash + 相似度查疑似重复题。"""
-    if not subject or not stem:
+    """兼容旧调用：同 subject_code 下用 stem hash + 相似度查疑似重复题。"""
+    if not subject_code or not stem:
         return None
     from app.services.admin_subject_service import resolve_subject_id
-    resolved_id = await resolve_subject_id(db, subject)
+    resolved_id = await resolve_subject_id(db, subject_code)
     if resolved_id is None:
         return None
     result = await db.execute(
@@ -1341,11 +1341,11 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
             else ""
         )
         blank_option_groups = grouped_options_by_number.get(question_number) or []
-        per_question_subject = (
+        per_question_subject_code = (
             _guess_subject(stem + " " + analysis, min_score=1) or default_subject
         )
         results.append({
-            "subject": per_question_subject,
+            "subject": per_question_subject_code,
             "stem": stem,
             "options": "" if blank_option_groups else options_str,
             "blank_option_groups": blank_option_groups,
@@ -1394,7 +1394,7 @@ async def _get_qi(db: AsyncSession, import_id: int) -> QuestionImport:
 def _qi_to_dict(qi: QuestionImport) -> dict:
     content_text = (qi.parsed_content or {}).get("text", "")
     return {
-        "subject": qi.subject_ref.code if qi.subject_ref else qi.subject_id,
+        "subject_code": qi.subject_ref.code if qi.subject_ref else qi.subject_id,
         "subject_id": qi.subject_id,
         "question_type": qi.question_type,
         "parsed_content": qi.parsed_content,

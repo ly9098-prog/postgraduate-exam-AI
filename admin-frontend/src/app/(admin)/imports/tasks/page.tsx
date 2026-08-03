@@ -189,7 +189,7 @@ export default function ImportTasksPage() {
     mutationFn: async () => {
       if (!file) throw new Error("请选择要导入的文件");
       const query = toQuery({
-        subject_id: subjectId || undefined,
+        subject_id: subjectId ? Number(subjectId) : undefined,
         import_mode: importMode,
         enable_ai_repair: enableAiRepair,
         confidence_threshold: confidenceThreshold || undefined,

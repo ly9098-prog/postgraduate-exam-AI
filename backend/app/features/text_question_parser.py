@@ -741,15 +741,15 @@ def _merge_llm_into_raw(raw: dict[str, Any], llm_out: dict[str, Any]) -> dict[st
 
 def _finalize_questions(
     raw_questions: list[dict[str, Any]],
-    subject: str,
+    subject_code: str,
 ) -> tuple[list[dict[str, Any]], int]:
     """走 pipeline 标准化 + 校验，返回 (questions, valid_count)。"""
     out: list[dict] = []
     for raw in raw_questions:
-        q_subject = subject or _guess_subject(raw["stem"] + " " + (raw.get("analysis") or "")) or ""
+        q_subject_code = subject_code or _guess_subject(raw["stem"] + " " + (raw.get("analysis") or "")) or ""
 
         pipeline_input = {
-            "subject": q_subject,
+            "subject": q_subject_code,
             "stem": raw["stem"],
             "options": raw["options"],
             "answer": raw["answer"],

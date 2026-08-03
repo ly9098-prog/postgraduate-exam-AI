@@ -123,8 +123,11 @@ async def enrich_import(
         return {"from_fallback": True, "ai_metadata": parsed}
 
     normalized = normalize_enrich(extract_json(raw) or {})
-    if normalized.get("subject") and not qi.subject:
-        qi.subject = normalized["subject"]
+    if normalized.get("subject") and not qi.subject_id:
+        from app.services.admin_subject_service import resolve_subject_id
+        resolved = await resolve_subject_id(db, normalized["subject"])
+        if resolved is not None:
+            qi.subject_id = resolved
     if normalized.get("question_type") and not qi.question_type:
         qi.question_type = normalized["question_type"]
 
@@ -189,7 +192,7 @@ async def generate_drafts(
     db: AsyncSession,
     user_id: int,
     *,
-    subject: str,
+    subject_code: str,
     knowledge_points: list[str],
     difficulty: int = 3,
     count: int = 3,
@@ -197,15 +200,20 @@ async def generate_drafts(
     extra_hint: str | None = None,
 ) -> dict:
     """AI 批量生成题目草稿，统一进入 question_imports 暂存区。"""
-    if subject not in SUBJECT_VALUES:
-        raise ValueError("subject 仅支持 math2 / exam408 / english")
+    if subject_code not in SUBJECT_VALUES:
+        raise ValueError("subject_code 仅支持 math2 / exam408 / english")
     if question_type not in TYPE_VALUES:
         raise ValueError("question_type 仅支持 choice / fill / subjective")
     count = max(1, min(10, count))
 
+    from app.services.admin_subject_service import resolve_subject_id
+    resolved_subject_id = await resolve_subject_id(db, subject_code)
+    if resolved_subject_id is None:
+        raise ValueError(f"无法解析科目 code {subject_code!r} 到 subject_id")
+
     batch_id = f"AIGEN_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
     messages = build_generate_questions(
-        subject, knowledge_points, difficulty, count, question_type, extra_hint
+        subject_code, knowledge_points, difficulty, count, question_type, extra_hint
     )
     prompt_text = json.dumps(messages, ensure_ascii=False)
 
@@ -238,7 +246,7 @@ async def generate_drafts(
             batch_id=batch_id,
             source_type="ai_generated",
             source_file=None,
-            subject=norm["subject"],
+            subject_id=resolved_subject_id,
             question_type=norm["question_type"],
             raw_data=q,
             parsed_content=norm["parsed_content"],
@@ -252,7 +260,7 @@ async def generate_drafts(
                 "knowledge_points": norm["knowledge_points"],
                 "difficulty": norm["difficulty"],
                 "request": {
-                    "subject": subject,
+                    "subject": subject_code,
                     "knowledge_points": knowledge_points,
                     "difficulty": difficulty,
                     "question_type": question_type,
@@ -319,7 +327,7 @@ async def complete_import(
         return {"missing": missing, "from_fallback": True, "ai_metadata": parsed}
 
     parsed_raw = extract_json(raw) or {}
-    suggestion = _apply_complete_suggestion(qi, parsed_raw, missing)
+    suggestion = await _apply_complete_suggestion(qi, parsed_raw, missing, db=db)
     answer_uncertain = bool(parsed_raw.get("answer_uncertain"))
     confidence = _coerce_confidence(parsed_raw.get("confidence"))
 
@@ -359,14 +367,23 @@ def _coerce_confidence(value: Any) -> float | None:
     return None
 
 
-def _apply_complete_suggestion(
-    qi: QuestionImport, parsed: dict, missing: list[str]
+async def _apply_complete_suggestion(
+    qi: QuestionImport, parsed: dict, missing: list[str],
+    db: AsyncSession | None = None,
 ) -> dict:
     """将 AI 补全结果有选择地写回 qi。answer 永远不直接写入 parsed_answer。"""
     suggestion: dict = {}
-    if "subject" in missing and parsed.get("subject") in SUBJECT_VALUES:
-        qi.subject = parsed["subject"]
-        suggestion["subject"] = parsed["subject"]
+    if "subject_id" in missing and parsed.get("subject") in SUBJECT_VALUES:
+        if db is not None:
+            from app.services.admin_subject_service import resolve_subject_id
+            resolved = await resolve_subject_id(db, parsed["subject"])
+        else:
+            resolved = None
+        if resolved is not None:
+            qi.subject_id = resolved
+            suggestion["subject_id"] = resolved
+        else:
+            suggestion["subject"] = parsed["subject"]
     if "question_type" in missing and parsed.get("question_type") in TYPE_VALUES:
         qi.question_type = parsed["question_type"]
         suggestion["question_type"] = parsed["question_type"]

@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.features.question_type import QT_SINGLE_CHOICE
@@ -11,6 +11,9 @@ class PracticeRecord(Base):
     """用户做题记录 — 每道题一条记录"""
 
     __tablename__ = "practice_records"
+    __table_args__ = (
+        Index("idx_practice_records_user_subject_id", "user_id", "subject_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
@@ -19,7 +22,10 @@ class PracticeRecord(Base):
     question_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("questions.id"), nullable=False, index=True
     )
-    subject: Mapped[str] = mapped_column(String(32), nullable=False)
+    subject_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("subjects.id"), nullable=False
+    )
+    subject_ref = relationship("Subject", back_populates="practice_records", lazy="noload")
     question_type: Mapped[str] = mapped_column(
         String(32), nullable=False, default=QT_SINGLE_CHOICE
     )

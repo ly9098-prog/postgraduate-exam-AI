@@ -104,7 +104,7 @@ async def study_advice(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await svc.generate_advice(db, current_user.id, data.subject)
+    result = await svc.generate_advice(db, current_user.id, data.subject_id)
 
     return AiResponse(
         session_type="study_advice",
@@ -174,12 +174,14 @@ async def ai_report(
     result = await ai_learning_service.generate_learning_report(
         db=db,
         user_id=current_user.id,
-        subject=data.subject,
+        subject_id=data.subject_id,
         days=data.days,
     )
 
     return AIReportResponse(
-        subject=result["subject"],
+        subject_id=result["subject_id"],
+        subject_code=result["subject_code"],
+        subject_name=result["subject_name"],
         period_days=result["period_days"],
         total_answered=result["total_answered"],
         accuracy=result["accuracy"],

@@ -106,18 +106,20 @@ class ExperimentResponse(BaseModel):
 
 class MetricsAggregateRequest(BaseModel):
     date: date_cls | None = None
-    subject: str | None = None
+    subject_id: int | None = None
 
 
 class MetricsAggregateResponse(BaseModel):
     aggregated_rows: int
     target_date: str
-    subject: str | None = None
+    subject_id: int | None = None
 
 
 class MetricsDailyResponse(BaseModel):
     date: date_cls
-    subject: str
+    subject_id: int
+    subject_code: str | None = None
+    subject_name: str | None = None
     scene: str
     strategy: str
     variant_key: str | None = None
@@ -186,7 +188,7 @@ class SafetyCheckResponse(BaseModel):
 class MetricsBackfillRequest(BaseModel):
     date_from: date_cls
     date_to: date_cls
-    subject: str | None = None
+    subject_id: int | None = None
 
 
 class MetricsBackfillResponse(BaseModel):

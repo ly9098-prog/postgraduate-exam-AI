@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 async def build_recommendation_quality_report(
     db: AsyncSession,
-    subject: str | None = None,
+    subject_id: int | None = None,
 ) -> dict:
     """生成推荐质量报告。
 
@@ -32,14 +32,14 @@ async def build_recommendation_quality_report(
 
     # 基础条件
     conditions = [RecommendationLog.shown_at >= cutoff_30d]
-    if subject:
-        conditions.append(RecommendationLog.subject == subject)
+    if subject_id:
+        conditions.append(RecommendationLog.subject_id == subject_id)
 
     # 1. 最近 7 天有无推荐日志
     recent_count_result = await db.execute(
         select(func.count(RecommendationLog.id)).where(
             RecommendationLog.shown_at >= cutoff_7d,
-            *([] if not subject else [RecommendationLog.subject == subject]),
+            *([] if not subject_id else [RecommendationLog.subject_id == subject_id]),
         )
     )
     recent_count = recent_count_result.scalar() or 0
@@ -148,7 +148,7 @@ async def build_recommendation_quality_report(
 
 async def build_knowledge_quality_report(
     db: AsyncSession,
-    subject: str | None = None,
+    subject_id: int | None = None,
 ) -> dict:
     """生成知识图谱质量报告。
 
@@ -163,8 +163,8 @@ async def build_knowledge_quality_report(
 
     # 基础条件
     kp_conditions = [KnowledgePoint.is_active == True]  # noqa: E712
-    if subject:
-        kp_conditions.append(KnowledgePoint.subject == subject)
+    if subject_id:
+        kp_conditions.append(KnowledgePoint.subject_id == subject_id)
 
     # 1. 获取所有知识点
     kp_result = await db.execute(
@@ -172,6 +172,15 @@ async def build_knowledge_quality_report(
     )
     all_kps = kp_result.scalars().all()
     kp_ids = {kp.id for kp in all_kps}
+
+    # 批量加载知识点科目标签（单次查询，避免 N+1）
+    from app.models.admin import Subject
+
+    subj_ids = {kp.subject_id for kp in all_kps}
+    subj_result = await db.execute(select(Subject).where(Subject.id.in_(subj_ids)))
+    subj_labels: dict[int, tuple[str, str]] = {
+        s.id: (s.code, s.name) for s in subj_result.scalars().all()
+    }
 
     if not kp_ids:
         return {
@@ -198,17 +207,22 @@ async def build_knowledge_quality_report(
     low_question_kps = []
     for kp in all_kps:
         q_count = kp_question_count.get(kp.id, 0)
+        code, name = subj_labels.get(kp.subject_id, (None, None))
         if q_count == 0:
             no_question_kps.append({
                 "knowledge_point_id": kp.id,
                 "name": kp.name,
-                "subject": kp.subject,
+                "subject_id": kp.subject_id,
+                "subject_code": code,
+                "subject_name": name,
             })
         elif q_count < 3:
             low_question_kps.append({
                 "knowledge_point_id": kp.id,
                 "name": kp.name,
-                "subject": kp.subject,
+                "subject_id": kp.subject_id,
+                "subject_code": code,
+                "subject_name": name,
                 "question_count": q_count,
             })
 
@@ -221,7 +235,7 @@ async def build_knowledge_quality_report(
             KnowledgeEdge.source_knowledge_point_id,
             KnowledgeEdge.target_knowledge_point_id,
         ).where(
-            KnowledgeEdge.subject == subject if subject else True,
+            KnowledgeEdge.subject_id == subject_id if subject_id else True,
             KnowledgeEdge.is_active == True,  # noqa: E712
         )
     )
@@ -233,10 +247,13 @@ async def build_knowledge_quality_report(
     isolated_kps = []
     for kp in all_kps:
         if kp.id not in connected_kp_ids:
+            code, name = subj_labels.get(kp.subject_id, (None, None))
             isolated_kps.append({
                 "knowledge_point_id": kp.id,
                 "name": kp.name,
-                "subject": kp.subject,
+                "subject_id": kp.subject_id,
+                "subject_code": code,
+                "subject_name": name,
             })
 
     if isolated_kps:
@@ -245,7 +262,7 @@ async def build_knowledge_quality_report(
     # 4. 低 confidence 边
     low_conf_result = await db.execute(
         select(func.count(KnowledgeEdge.id)).where(
-            KnowledgeEdge.subject == subject if subject else True,
+            KnowledgeEdge.subject_id == subject_id if subject_id else True,
             KnowledgeEdge.is_active == True,  # noqa: E712
             KnowledgeEdge.confidence < 0.3,
         )
@@ -255,7 +272,7 @@ async def build_knowledge_quality_report(
     # 5. 总边数
     total_edge_result = await db.execute(
         select(func.count(KnowledgeEdge.id)).where(
-            KnowledgeEdge.subject == subject if subject else True,
+            KnowledgeEdge.subject_id == subject_id if subject_id else True,
             KnowledgeEdge.is_active == True,  # noqa: E712
         )
     )
@@ -269,7 +286,7 @@ async def build_knowledge_quality_report(
                 KnowledgeEdge.source_knowledge_point_id,
                 KnowledgeEdge.target_knowledge_point_id,
             ).where(
-                KnowledgeEdge.subject == subject if subject else True,
+                KnowledgeEdge.subject_id == subject_id if subject_id else True,
                 KnowledgeEdge.relation_type == "prerequisite",
                 KnowledgeEdge.is_active == True,  # noqa: E712
             )

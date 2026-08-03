@@ -88,19 +88,14 @@ def _calc_priority(overdue_days: int, wrong_count: int, box_level: int) -> str:
     return "normal"
 
 
-async def _resolve_subject_codes(db: AsyncSession, subject_id: int) -> list[str]:
-    """将 subject_id 解析为 Subject code 列表，用于 UserKnowledgeState.subject 过滤。
-
-    UserKnowledgeState 存储的是 subject code（字符串），不是 subject_id（整数）。
-    需要先查出对应的 code 列表，再用 IN 过滤。
-    """
+async def _subject_exists(db: AsyncSession, subject_id: int) -> bool:
+    """Check whether a subject id exists in the subjects table."""
     from app.models.admin import Subject
 
     result = await db.execute(
-        select(Subject.code).where(Subject.id == subject_id)
+        select(Subject.id).where(Subject.id == subject_id).limit(1)
     )
-    row = result.one_or_none()
-    return [row[0]] if row else []
+    return result.scalar_one_or_none() is not None
 
 
 # ── 1. Overview ─────────────────────────────────────────────────────
@@ -222,9 +217,8 @@ async def get_overview(db: AsyncSession, user_id: int, subject_id: int | None = 
     # -- 知识点分类 --
     ks_subject_filter = []
     if subject_id is not None:
-        subject_codes = await _resolve_subject_codes(db, subject_id)
-        if not subject_codes:
-            # 该 subject_id 无对应 code，知识点统计返回 0，但错题统计仍有效
+        if not await _subject_exists(db, subject_id):
+            # 该 subject_id 不存在，知识点统计返回 0，但错题统计仍有效
             return {
                 "today_answer_count": today_count,
                 "today_correct_count": today_correct,
@@ -243,7 +237,7 @@ async def get_overview(db: AsyncSession, user_id: int, subject_id: int | None = 
                 "wrong_question_count": int(wrong_total),
                 "repeated_wrong_question_count": int(repeated_wrong),
             }
-        ks_subject_filter.append(UserKnowledgeState.subject.in_(subject_codes))
+        ks_subject_filter.append(UserKnowledgeState.subject_id == subject_id)
 
     def _ks_count_q(where_extra):
         q = select(func.count(UserKnowledgeState.id)).where(
@@ -476,13 +470,12 @@ async def get_knowledge_mastery(
 
     q = q.where(UserKnowledgeState.user_id == user_id)
     if subject_id is not None:
-        subject_codes = await _resolve_subject_codes(db, subject_id)
-        if not subject_codes:
+        if not await _subject_exists(db, subject_id):
             return {
                 "summary": {"weak_count": 0, "normal_count": 0, "good_count": 0, "mastered_count": 0, "unknown_count": 0},
                 "items": [],
             }
-        q = q.where(UserKnowledgeState.subject.in_(subject_codes))
+        q = q.where(UserKnowledgeState.subject_id == subject_id)
 
     # 排序
     if sort == "mastered_first":

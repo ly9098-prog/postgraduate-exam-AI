@@ -13,7 +13,7 @@ class BehaviorRecord(BaseModel):
 
 
 class BehaviorSubmit(BaseModel):
-    subject: str
+    subject_id: int | None = None
     session_type: str = "random"
     records: list[BehaviorRecord]
 

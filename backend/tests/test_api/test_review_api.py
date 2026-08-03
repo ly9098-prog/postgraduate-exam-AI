@@ -35,7 +35,7 @@ def _make_schedule(schedule_id=1, user_id=1, question_id=1, interval=1, ease_fac
     schedule.next_review_at = datetime.now(UTC)
     schedule.last_reviewed_at = None
     schedule.mastered = False
-    schedule.subject = "math"
+    schedule.subject_id = 1
     return schedule
 
 

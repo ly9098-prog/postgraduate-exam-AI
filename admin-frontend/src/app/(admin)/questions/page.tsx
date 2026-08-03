@@ -181,7 +181,7 @@ function renderSecondaryQuestionInfo(question: QuestionWithImport) {
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {[
-          ["科目", question.subject_name || "—"],
+          ["科目", question.subject_name || question.subject_code || "—"],
           ["年份", question.year || "—"],
           ["启用状态", question.is_active ? "启用" : "停用"],
           ["题目 ID", `#${question.id}`],
@@ -345,7 +345,7 @@ export default function QuestionsPage() {
     () => ({
       page,
       page_size: 20,
-      subject_id: filters.subject_id,
+      subject_id: filters.subject_id ? Number(filters.subject_id) : undefined,
       is_active: filters.is_active,
       question_type: filters.question_type,
       keyword: filters.keyword,
@@ -714,12 +714,12 @@ export default function QuestionsPage() {
                           <span className="inline-flex items-center gap-1 font-mono">
                             <Clock className="h-3 w-3" />#{question.id}
                           </span>
-                          {question.subject_name && (
+                          {question.subject_name || question.subject_code ? (
                             <span className="inline-flex items-center gap-1">
                               <BookOpen className="h-3 w-3" />
-                              {question.subject_name}
+                              {question.subject_name || question.subject_code}
                             </span>
-                          )}
+                          ) : null}
                           {question.year && (
                             <span className="inline-flex items-center gap-1">
                               <Tag className="h-3 w-3" />

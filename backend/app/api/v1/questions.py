@@ -29,7 +29,12 @@ def _sanitize_content(content: dict | None) -> dict | None:
 
 def _public_question(question) -> QuestionPublicResponse:
     payload = QuestionPublicResponse.model_validate(question)
-    return payload.model_copy(update={"content": _sanitize_content(payload.content)})
+    subject = question.subject_ref
+    return payload.model_copy(update={
+        "subject_code": subject.code if subject else "",
+        "subject_name": subject.name if subject else "",
+        "content": _sanitize_content(payload.content),
+    })
 
 
 @router.post("", response_model=QuestionResponse)
@@ -40,7 +45,7 @@ async def create_question(
 ):
     q = await svc.create(
         db=db,
-        subject=data.subject,
+        subject_id=data.subject_id,
         question_type=data.question_type,
         content=data.content,
         options=data.options,
@@ -56,14 +61,14 @@ async def create_question(
 
 @router.get("")
 async def list_questions(
-    subject: str | None = Query(None),
+    subject_id: int | None = Query(None),
     question_type: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    items, total = await svc.list_questions(db, subject, question_type, page, page_size)
+    items, total = await svc.list_questions(db, subject_id, question_type, page, page_size)
     return paginated_response(
         items=[_public_question(q) for q in items],
         total=total,
@@ -74,7 +79,7 @@ async def list_questions(
 
 @router.get("/random", response_model=QuestionPublicResponse | None)
 async def random_question(
-    subject: str | None = Query(None),
+    subject_id: int | None = Query(None),
     question_type: str | None = Query(None),
     exclude_ids: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -83,7 +88,7 @@ async def random_question(
     exclude = []
     if exclude_ids:
         exclude = [int(x.strip()) for x in exclude_ids.split(",") if x.strip()]
-    q = await svc.get_random(db, subject, question_type, exclude)
+    q = await svc.get_random(db, subject_id, question_type, exclude)
     if not q:
         raise HTTPException(status_code=404, detail="没有符合条件的题目")
     return _public_question(q)
@@ -137,8 +142,9 @@ async def get_question_detail(
 
     return {
         "id": q.id,
-        "subject": q.subject_ref.code if q.subject_ref else None,
         "subject_id": q.subject_id,
+        "subject_code": q.subject_ref.code if q.subject_ref else None,
+        "subject_name": q.subject_ref.name if q.subject_ref else None,
         "question_type": q.question_type,
         "content": _sanitize_content(q.content),
         "options": q.options,

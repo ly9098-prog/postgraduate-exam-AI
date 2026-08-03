@@ -48,7 +48,9 @@ class TrendsV2(BaseModel):
 
 
 class SubjectItemV2(BaseModel):
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     label: str = ""
     total_questions: int = 0
     correct_count: int = 0

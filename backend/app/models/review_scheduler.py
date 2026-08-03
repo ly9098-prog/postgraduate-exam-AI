@@ -1,13 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
 
 class ReviewSchedule(Base):
     __tablename__ = "review_schedules"
+    __table_args__ = (
+        Index("ix_review_schedules_user_subject_id", "user_id", "subject_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
@@ -16,7 +19,10 @@ class ReviewSchedule(Base):
     question_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("questions.id"), nullable=False, index=True
     )
-    subject: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    subject_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True
+    )
+    subject_ref = relationship("Subject", back_populates="review_schedules", lazy="noload")
     interval: Mapped[int] = mapped_column(Integer, default=0)
     ease_factor: Mapped[float] = mapped_column(Float, default=2.5)
     repetitions: Mapped[int] = mapped_column(Integer, default=0)

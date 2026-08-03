@@ -160,11 +160,11 @@ var pageConfig = {
     if (themeMode === this.data.themeMode) return false
     const subjects = (this.data.subjects || []).map(item => ({
       ...item,
-      _color: getPieSubjectColor(item.subject_code || item.subject || item._label, themeMode),
+      _color: getPieSubjectColor(item.subject_id != null ? String(item.subject_id) : (item.subject_code || item._label), themeMode),
     }))
     const history = (this.data.history || []).map(item => ({
       ...item,
-      _color: getSubjectColor(item.subject_code || item._subjectLabel, themeMode),
+      _color: getSubjectColor(item.subject_id != null ? String(item.subject_id) : (item.subject_code || item._subjectLabel), themeMode),
     }))
     this.setData({ themeMode, subjects, history }, () => {
       this._resetPieCache()
@@ -252,14 +252,15 @@ var pageConfig = {
       const dur = item.duration_sec || 0
       const pct = dur / totalDur
       const code = item.subject_code || ''
+      const subjectId = item.subject_id != null ? item.subject_id : null
       return {
-        subject: code || `uncategorized-${item.subject_id || 'none'}`,
-        subject_id: item.subject_id,
+        subject: subjectId != null ? subjectId : (code || 'uncategorized'),
+        subject_id: subjectId,
         subject_code: code,
         duration_sec: dur,
         sessions: item.sessions || 0,
         _label: item.subject_name || '未分类',
-        _color: getPieSubjectColor(code || '未分类', this.data.themeMode),
+        _color: getPieSubjectColor(subjectId != null ? String(subjectId) : (code || '未分类'), this.data.themeMode),
         _durationText: this._fmtMin(dur),
         _pct: pct,
         _pctText: (pct * 100).toFixed(1) + '%',
@@ -598,7 +599,7 @@ var pageConfig = {
       _date: `${start.getMonth() + 1}/${start.getDate()}`,
       _duration: durationText,
       _subjectLabel: isFree ? '自由计时 · ' + subjectName : subjectName,
-      _color: getSubjectColor(subjectKey || subjectName, this.data.themeMode),
+      _color: getSubjectColor(s.subject_id != null ? String(s.subject_id) : (subjectKey || subjectName), this.data.themeMode),
       _statusLabel: s.status === 'completed' ? '完成' : '中断',
       _statusClass: s.status === 'completed' ? 'status-done' : 'status-interrupt',
     }

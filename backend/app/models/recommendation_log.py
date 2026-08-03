@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -18,7 +18,10 @@ class RecommendationLog(Base):
     question_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("questions.id"), nullable=False, index=True
     )
-    subject: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    subject_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("subjects.id"), nullable=False, index=True
+    )
+    subject_ref = relationship("Subject", back_populates="recommendation_logs", lazy="noload")
     scene: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     strategy: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     source_question_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

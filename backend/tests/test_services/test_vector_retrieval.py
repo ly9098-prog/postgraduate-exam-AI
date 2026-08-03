@@ -293,7 +293,7 @@ class TestSmartModeFallback:
         mock_result = MagicMock()
         mock_result.all.return_value = []
         db.execute = AsyncMock(return_value=mock_result)
-        result = await _compute_weak_knowledge_points(db, user_id=1, subject="exam408")
+        result = await _compute_weak_knowledge_points(db, user_id=1, subject_ids=[])
         assert result == []
 
 
@@ -308,7 +308,7 @@ class TestSchemaCompatibility:
         from app.schemas.ai_learning import Recommendation
         rec = Recommendation(
             question_id=1,
-            subject="exam408-ds",
+            subject_id=7,
             question_type="choice",
             stem="测试题干",
             knowledge_points=["链表"],
@@ -326,7 +326,7 @@ class TestSchemaCompatibility:
         from app.schemas.ai_learning import Recommendation
         rec = Recommendation(
             question_id=1,
-            subject="exam408-ds",
+            subject_id=7,
             question_type="choice",
             stem="测试题干",
         )

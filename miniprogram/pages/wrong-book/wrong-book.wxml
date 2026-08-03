@@ -61,7 +61,7 @@
           <view
             wx:for="{{subjects}}"
             wx:key="value"
-            class="filter-chip {{selectedSubject === item.value ? 'active' : ''}}"
+            class="filter-chip {{(selectedSubjectId || '') === item.value ? 'active' : ''}}"
             bindtap="selectSubject"
             data-value="{{item.value}}"
           >{{item.label}}</view>

@@ -63,7 +63,7 @@ async def _add_schedule(session, user_id=1, question_id=1, *,
     schedule = ReviewSchedule(
         user_id=user_id,
         question_id=question_id,
-        subject="math",
+        subject_id=None,
         interval=1,
         ease_factor=2.5,
         repetitions=0,

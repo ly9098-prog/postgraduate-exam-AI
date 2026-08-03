@@ -11,6 +11,7 @@ from app.models.recommendation_experiment_assignment import (
 )
 from app.models.recommendation_log import RecommendationLog
 from app.models.recommendation_metrics_daily import RecommendationMetricsDaily
+from app.services.admin_subject_service import resolve_subject_ids
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 async def aggregate_recommendation_metrics_daily(
     db: AsyncSession,
     target_date: date | None = None,
-    subject: str | None = None,
+    subject_id: int | None = None,
 ) -> dict:
     """从 recommendation_logs 聚合指定日期的指标，UPSERT 到 daily 表。
 
@@ -37,13 +38,13 @@ async def aggregate_recommendation_metrics_daily(
         RecommendationLog.shown_at >= day_start,
         RecommendationLog.shown_at < day_end,
     ]
-    if subject:
-        conditions.append(RecommendationLog.subject == subject)
+    if subject_id:
+        conditions.append(RecommendationLog.subject_id.in_(await resolve_subject_ids(db, subject_id)))
 
     agg_query = (
         select(
             func.date(RecommendationLog.shown_at).label("date"),
-            RecommendationLog.subject,
+            RecommendationLog.subject_id,
             RecommendationLog.scene,
             RecommendationLog.strategy,
             RecommendationLog.variant_key,
@@ -65,7 +66,7 @@ async def aggregate_recommendation_metrics_daily(
         .where(*conditions)
         .group_by(
             func.date(RecommendationLog.shown_at),
-            RecommendationLog.subject,
+            RecommendationLog.subject_id,
             RecommendationLog.scene,
             RecommendationLog.strategy,
             RecommendationLog.variant_key,
@@ -91,7 +92,7 @@ async def aggregate_recommendation_metrics_daily(
         existing_result = await db.execute(
             select(RecommendationMetricsDaily).where(
                 RecommendationMetricsDaily.date == target_date,
-                RecommendationMetricsDaily.subject == row.subject,
+                RecommendationMetricsDaily.subject_id == row.subject_id,
                 RecommendationMetricsDaily.scene == row.scene,
                 RecommendationMetricsDaily.strategy == row.strategy,
                 RecommendationMetricsDaily.variant_key == row.variant_key,
@@ -116,7 +117,7 @@ async def aggregate_recommendation_metrics_daily(
         else:
             daily = RecommendationMetricsDaily(
                 date=target_date,
-                subject=row.subject,
+                subject_id=row.subject_id,
                 scene=row.scene,
                 strategy=row.strategy,
                 variant_key=row.variant_key,
@@ -139,14 +140,14 @@ async def aggregate_recommendation_metrics_daily(
         count += 1
 
     await db.flush()
-    return {"aggregated_rows": count, "target_date": str(target_date), "subject": subject}
+    return {"aggregated_rows": count, "target_date": str(target_date), "subject_id": subject_id}
 
 
 async def get_recommendation_metrics(
     db: AsyncSession,
     date_from: date,
     date_to: date,
-    subject: str | None = None,
+    subject_id: int | None = None,
     scene: str | None = None,
     strategy: str | None = None,
 ) -> list[dict]:
@@ -155,8 +156,8 @@ async def get_recommendation_metrics(
         RecommendationMetricsDaily.date >= date_from,
         RecommendationMetricsDaily.date <= date_to,
     ]
-    if subject:
-        conditions.append(RecommendationMetricsDaily.subject == subject)
+    if subject_id:
+        conditions.append(RecommendationMetricsDaily.subject_id.in_(await resolve_subject_ids(db, subject_id)))
     if scene:
         conditions.append(RecommendationMetricsDaily.scene == scene)
     if strategy:
@@ -169,7 +170,8 @@ async def get_recommendation_metrics(
     )
     rows = result.scalars().all()
 
-    return [_daily_to_dict(r) for r in rows]
+    daily_rows = [_daily_to_dict(r) for r in rows]
+    return await _attach_subject_labels(db, daily_rows)
 
 
 async def compare_experiment_variants(
@@ -255,7 +257,7 @@ async def compare_experiment_variants(
 def _daily_to_dict(m: RecommendationMetricsDaily) -> dict:
     return {
         "date": m.date,
-        "subject": m.subject,
+        "subject_id": m.subject_id,
         "scene": m.scene,
         "strategy": m.strategy,
         "variant_key": m.variant_key,
@@ -274,11 +276,28 @@ def _daily_to_dict(m: RecommendationMetricsDaily) -> dict:
         "ctr": m.ctr,
     }
 
+
+async def _attach_subject_labels(db: AsyncSession, rows: list[dict]) -> list[dict]:
+    """批量加载 subject_id 对应的 code/name 并挂到每行（单次查询，避免 N+1）。"""
+    from app.models.admin import Subject
+
+    ids = {r.get("subject_id") for r in rows if r.get("subject_id") is not None}
+    labels: dict[int, tuple[str, str]] = {}
+    if ids:
+        result = await db.execute(select(Subject).where(Subject.id.in_(ids)))
+        for s in result.scalars().all():
+            labels[s.id] = (s.code, s.name)
+    for r in rows:
+        sid = r.get("subject_id")
+        if sid in labels:
+            r["subject_code"], r["subject_name"] = labels[sid]
+    return rows
+
 async def backfill_metrics(
     db: AsyncSession,
     date_from: date,
     date_to: date,
-    subject: str | None = None,
+    subject_id: int | None = None,
 ) -> dict:
     """补跑日期范围内的指标聚合。
 
@@ -293,7 +312,7 @@ async def backfill_metrics(
     while current <= date_to:
         try:
             await aggregate_recommendation_metrics_daily(
-                db, target_date=current, subject=subject,
+                db, target_date=current, subject_id=subject_id,
             )
             success_dates.append(str(current))
         except Exception as e:

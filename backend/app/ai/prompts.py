@@ -395,7 +395,7 @@ def build_enrich_question(qi: dict) -> list:
 
 
 def build_generate_questions(
-    subject: str,
+    subject_code: str,
     knowledge_points: list[str],
     difficulty: int,
     count: int,
@@ -407,7 +407,7 @@ def build_generate_questions(
         {
             "role": "user",
             "content": (
-                f"【学科】{subject}\n"
+                f"【学科】{subject_code}\n"
                 f"【知识点】{knowledge_points}\n"
                 f"【难度】{difficulty}（1-5）\n"
                 f"【题型】{question_type}\n"
@@ -495,7 +495,7 @@ def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: 
     options = qi.get("parsed_options") or {}
     answer = qi.get("parsed_answer") or ""
     analysis = qi.get("parsed_analysis") or ""
-    subject = qi.get("subject") or ""
+    subject_code = qi.get("subject_code") or ""
     question_type = qi.get("question_type") or ""
 
     field_descriptions = {
@@ -529,7 +529,7 @@ def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: 
                 f"【已有选项】{options}\n"
                 f"【已有答案】{answer}\n"
                 f"【已有解析】{analysis}\n"
-                f"【已有学科】{subject}\n"
+                f"【已有学科】{subject_code}\n"
                 f"【已有题型】{question_type}\n"
                 f"【需补全字段】{field_names}\n"
                 f"【策略】{instruction}\n"
@@ -545,7 +545,7 @@ def build_complete_question(qi: dict, missing_fields: list[str], system_prompt: 
     options = qi.get("parsed_options") or {}
     answer = qi.get("parsed_answer") or ""
     analysis = qi.get("parsed_analysis") or ""
-    subject = qi.get("subject") or ""
+    subject_code = qi.get("subject_code") or ""
     subject_list_text = ""
     if subject_list:
         subject_list_text = "\n【可用科目列表】" + json.dumps(subject_list, ensure_ascii=False) + "\n"
@@ -559,7 +559,7 @@ def build_complete_question(qi: dict, missing_fields: list[str], system_prompt: 
                 f"【已有选项】{options}\n"
                 f"【已有答案】{answer}\n"
                 f"【已有解析】{analysis}\n"
-                f"【已有学科】{subject}\n"
+                f"【已有学科】{subject_code}\n"
                 f"【缺失字段】{missing_fields}\n"
                 "请仅补全缺失字段，已有字段保持不变。若答案不确定，"
                 "请将 answer_uncertain 设为 true。"

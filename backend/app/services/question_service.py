@@ -3,6 +3,7 @@ import random
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.question import Question
 from app.services.admin_subject_service import resolve_subject_ids
@@ -13,21 +14,14 @@ async def create(
     question_type: str,
     content: dict,
     answer: str,
-    subject: str | None = None,
+    subject_id: int,
     options: dict | None = None,
     analysis: str | None = None,
     knowledge_points: list[str] | None = None,
     difficulty: int = 3,
     source: str | None = None,
     year: int | None = None,
-    subject_id: int | None = None,
 ) -> Question:
-    # Resolve subject_id: prefer explicit subject_id, fall back to legacy subject string
-    if subject_id is None and subject:
-        from app.services.admin_subject_service import (
-            resolve_subject_id as _resolve_sid,
-        )
-        subject_id = await _resolve_sid(db, subject)
     q = Question(
         subject_id=subject_id,
         question_type=question_type,
@@ -48,7 +42,9 @@ async def create(
 
 async def get_by_id(db: AsyncSession, question_id: int) -> Question | None:
     result = await db.execute(
-        select(Question).where(Question.id == question_id, Question.is_active)
+        select(Question)
+        .where(Question.id == question_id, Question.is_active)
+        .options(selectinload(Question.subject_ref))
     )
     return result.scalar_one_or_none()
 
@@ -65,14 +61,14 @@ def _type_conditions(question_type: str) -> list:
 
 async def list_questions(
     db: AsyncSession,
-    subject: str | None = None,
+    subject_id: int | None = None,
     question_type: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[Question], int]:
     conditions = [Question.is_active]
-    if subject:
-        conditions.append(Question.subject_id.in_(await resolve_subject_ids(db, subject)))
+    if subject_id:
+        conditions.append(Question.subject_id.in_(await resolve_subject_ids(db, subject_id)))
     if question_type:
         conditions.extend(_type_conditions(question_type))
 
@@ -86,24 +82,25 @@ async def list_questions(
         .order_by(Question.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
+        .options(selectinload(Question.subject_ref))
     )
     return list(res.scalars().all()), total
 
 
 async def get_random(
     db: AsyncSession,
-    subject: str | None = None,
+    subject_id: int | None = None,
     question_type: str | None = None,
     exclude_ids: list[int] | None = None,
 ) -> Question | None:
     conditions = [Question.is_active]
-    if subject:
-        conditions.append(Question.subject_id.in_(await resolve_subject_ids(db, subject)))
+    if subject_id:
+        conditions.append(Question.subject_id.in_(await resolve_subject_ids(db, subject_id)))
     if question_type:
         conditions.extend(_type_conditions(question_type))
     if exclude_ids:
         conditions.append(Question.id.notin_(exclude_ids))
-    base = select(Question).where(and_(*conditions))
+    base = select(Question).where(and_(*conditions)).options(selectinload(Question.subject_ref))
     count_q = select(func.count()).select_from(base.subquery())
     total = (await db.execute(count_q)).scalar() or 0
     if total == 0:

@@ -274,11 +274,11 @@ def _parse_pdf(content: bytes, filename: str) -> list[dict]:
             else ""
         )
         blank_option_groups = grouped_options_by_number.get(question_number) or []
-        per_question_subject = (
+        per_question_subject_code = (
             _guess_subject(stem + " " + analysis, min_score=1) or default_subject
         )
         results.append({
-            "subject": per_question_subject,
+            "subject": per_question_subject_code,
             "stem": stem,
             "options": "" if blank_option_groups else options_str,
             "blank_option_groups": blank_option_groups,
@@ -303,7 +303,7 @@ async def _build_import_duplicate_fields(
     db: AsyncSession,
     *,
     import_id: int | None,
-    subject: str | None = None,
+    subject_code: str | None = None,
     question_hash: str | None,
     subject_id: int | None = None,
 ) -> dict:
@@ -316,7 +316,7 @@ async def _build_import_duplicate_fields(
     result_label = "normal"
     matched_id = None
 
-    duplicate_question = await _find_duplicate_by_hash(db, subject, question_hash, subject_id=subject_id)
+    duplicate_question = await _find_duplicate_by_hash(db, subject_code, question_hash, subject_id=subject_id)
     if duplicate_question and not hasattr(duplicate_question, "id"):
         duplicate_question = None
     if duplicate_question:
@@ -325,7 +325,7 @@ async def _build_import_duplicate_fields(
         result_label = "matched_question"
         matched_id = duplicate_question.id
     else:
-        duplicate_import = await _find_import_duplicate_by_hash(db, subject, question_hash, subject_id=subject_id)
+        duplicate_import = await _find_import_duplicate_by_hash(db, subject_code, question_hash, subject_id=subject_id)
         if duplicate_import and not hasattr(duplicate_import, "id"):
             duplicate_import = None
         if duplicate_import and duplicate_import.id != import_id:

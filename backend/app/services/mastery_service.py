@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from math import log1p
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +19,7 @@ from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
+from app.services.admin_subject_service import resolve_subject_ids
 
 logger = logging.getLogger(__name__)
 
@@ -220,17 +221,13 @@ async def update_user_knowledge_state_after_answer(
     if not mappings:
         return {"updated": 0, "created": 0}
 
-    # 获取题目 subject 和 difficulty
-    subject_result = await db.execute(
-        select(Subject.code, Question.difficulty).select_from(Question)
-        .join(Subject, Question.subject_id == Subject.id)
-        .where(Question.id == question_id)
+    # 获取题目 difficulty
+    difficulty_result = await db.execute(
+        select(Question.difficulty).where(Question.id == question_id)
     )
-    row = subject_result.one_or_none()
-    if not row:
+    difficulty = difficulty_result.scalar_one_or_none()
+    if difficulty is None:
         return {"updated": 0, "created": 0}
-    subject = row[0]
-    difficulty = row[1]
 
     # 批量查询现有 UserKnowledgeState（替代每 KP 一次 SELECT）
     kp_ids = [kp.id for _, kp in mappings]
@@ -253,7 +250,7 @@ async def update_user_knowledge_state_after_answer(
         if not state:
             state = UserKnowledgeState(
                 user_id=user_id,
-                subject=subject,
+                subject_id=kp.subject_id,
                 knowledge_point_id=kp.id,
                 attempt_count=0,
                 correct_count=0,
@@ -324,7 +321,7 @@ async def update_user_knowledge_state_after_answer(
 async def get_user_weak_knowledge_points(
     db: AsyncSession,
     user_id: int,
-    subject: str,
+    subject: str | int | None,
     limit: int = 5,
 ) -> list[dict]:
     """获取用户薄弱知识点。
@@ -332,16 +329,15 @@ async def get_user_weak_knowledge_points(
     优先从 user_knowledge_states 读取，数据不足时 fallback 到近 30 天 PracticeRecord。
     """
     # 1. 从 UserKnowledgeState 查找
-    subject_cond = or_(
-        UserKnowledgeState.subject == subject,
-        UserKnowledgeState.subject.like(f"{subject}-%"),
-    )
+    subject_ids = await resolve_subject_ids(db, subject)
+    if not subject_ids:
+        return []
     result = await db.execute(
         select(UserKnowledgeState, KnowledgePoint.name)
         .join(KnowledgePoint, UserKnowledgeState.knowledge_point_id == KnowledgePoint.id)
         .where(
             UserKnowledgeState.user_id == user_id,
-            subject_cond,
+            UserKnowledgeState.subject_id.in_(subject_ids),
             UserKnowledgeState.attempt_count > 0,
         )
         .order_by(
@@ -359,6 +355,7 @@ async def get_user_weak_knowledge_points(
             weak_points.append({
                 "knowledge_point_id": state.knowledge_point_id,
                 "name": kp_name,
+                "subject_id": state.subject_id,
                 "mastery_score": state.mastery_score,
                 "confidence": state.confidence,
                 "accuracy": state.accuracy,
@@ -379,15 +376,14 @@ async def get_user_weak_knowledge_points(
 async def _fallback_weak_kps(
     db: AsyncSession,
     user_id: int,
-    subject: str,
+    subject: str | int | None,
     limit: int = 5,
 ) -> list[dict]:
     """Fallback: 从近 30 天做题记录统计薄弱知识点。"""
+    subject_ids = await resolve_subject_ids(db, subject)
+    if not subject_ids:
+        return []
     cutoff = utcnow() - timedelta(days=30)
-    subject_cond = or_(
-        PracticeRecord.subject == subject,
-        PracticeRecord.subject.like(f"{subject}-%"),
-    )
 
     result = await db.execute(
         select(PracticeRecord, Question.knowledge_points)
@@ -395,7 +391,7 @@ async def _fallback_weak_kps(
         .where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.answered_at >= cutoff,
-            subject_cond,
+            PracticeRecord.subject_id.in_(subject_ids),
         )
     )
     rows = result.all()
@@ -437,29 +433,40 @@ async def _fallback_weak_kps(
 async def get_user_knowledge_states(
     db: AsyncSession,
     user_id: int,
-    subject: str,
+    subject: str | int | None,
 ) -> list[dict]:
     """获取用户某科目下所有知识点掌握状态。"""
-    subject_cond = or_(
-        UserKnowledgeState.subject == subject,
-        UserKnowledgeState.subject.like(f"{subject}-%"),
-    )
+    subject_ids = await resolve_subject_ids(db, subject)
+    if not subject_ids:
+        return []
     result = await db.execute(
         select(UserKnowledgeState, KnowledgePoint.name)
         .join(KnowledgePoint, UserKnowledgeState.knowledge_point_id == KnowledgePoint.id)
         .where(
             UserKnowledgeState.user_id == user_id,
-            subject_cond,
+            UserKnowledgeState.subject_id.in_(subject_ids),
         )
         .order_by(KnowledgePoint.name)
     )
     rows = result.all()
 
-    return [
-        {
+    # Bulk-load subject labels (single query, avoid N+1)
+    subject_ids_used = {state.subject_id for state, _ in rows}
+    subject_map: dict[int, Subject] = {}
+    if subject_ids_used:
+        subj_result = await db.execute(
+            select(Subject).where(Subject.id.in_(subject_ids_used))
+        )
+        subject_map = {s.id: s for s in subj_result.scalars().all()}
+
+    items = []
+    for state, kp_name in rows:
+        subj = subject_map.get(state.subject_id)
+        items.append({
             "knowledge_point_id": state.knowledge_point_id,
             "name": kp_name,
-            "subject": state.subject,
+            "subject_id": state.subject_id,
+            "subject_name": subj.name if subj else "",
             "attempt_count": state.attempt_count,
             "correct_count": state.correct_count,
             "wrong_count": state.wrong_count,
@@ -470,6 +477,5 @@ async def get_user_knowledge_states(
             "recent_wrong_count": state.recent_wrong_count,
             "last_practiced_at": state.last_practiced_at.isoformat() if state.last_practiced_at else None,
             "last_wrong_at": state.last_wrong_at.isoformat() if state.last_wrong_at else None,
-        }
-        for state, kp_name in rows
-    ]
+        })
+    return items

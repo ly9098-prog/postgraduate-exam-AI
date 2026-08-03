@@ -115,6 +115,7 @@ def test_storage_upload_key_blocks_traversal() -> None:
 def test_student_question_schema_never_serializes_answer() -> None:
     source = SimpleNamespace(
         id=1,
+        subject_id=1,
         subject="math",
         question_type="single_choice",
         content={"text": "1+1=?"},

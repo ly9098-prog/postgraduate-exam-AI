@@ -390,7 +390,7 @@ class TestQuestionResponseSchema:
         # Create with minimum required fields
         q = QuestionResponse(
             id=1,
-            subject="exam408-ds",
+            subject_id=7,
             question_type="single_choice",
             content={"text": "test"},
             answer="A",
@@ -402,7 +402,7 @@ class TestQuestionResponseSchema:
         from app.schemas.question import QuestionResponse
         q = QuestionResponse(
             id=1,
-            subject="exam408-ds",
+            subject_id=7,
             question_type="single_choice",
             content={"text": "test"},
             answer="A",

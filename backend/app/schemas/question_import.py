@@ -8,7 +8,9 @@ class QuestionImportResponse(BaseModel):
     batch_id: str
     source_type: str
     source_file: str | None = None
-    subject: str | None = None
+    subject_id: int | None = None
+    subject_code: str = ""
+    subject_name: str = ""
     question_type: str | None = None
     parsed_content: dict | None = None
     parsed_options: dict | None = None
@@ -51,7 +53,7 @@ class ImportBatchDetailResponse(BaseModel):
 
 
 class ImportQuestionUpdate(BaseModel):
-    subject: str | None = None
+    subject_id: int | None = None
     question_type: str | None = None
     parsed_content: dict | None = None
     parsed_options: dict | None = None

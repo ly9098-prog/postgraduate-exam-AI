@@ -14,7 +14,9 @@ class KnowledgeEdgeCreate(BaseModel):
 
 class KnowledgeEdgeResponse(BaseModel):
     id: int
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     source_knowledge_point_id: int
     source_name: str | None = None
     target_knowledge_point_id: int
@@ -28,7 +30,7 @@ class KnowledgeEdgeResponse(BaseModel):
 
 
 class KnowledgeEdgeBackfillRequest(BaseModel):
-    subject: str
+    subject_id: int
     mode: str = Field("simple", pattern="^(simple)$")
     limit: int = Field(500, ge=1, le=5000)
     force_rebuild: bool = Field(
@@ -38,7 +40,7 @@ class KnowledgeEdgeBackfillRequest(BaseModel):
 
 
 class KnowledgeEdgeStatusResponse(BaseModel):
-    subject: str
+    subject_id: int
     total_edges: int
     prerequisite_edges: int
     parent_edges: int
@@ -52,7 +54,9 @@ class KnowledgeEdgeStatusResponse(BaseModel):
 class KnowledgePathNode(BaseModel):
     knowledge_point_id: int
     name: str
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     mastery_score: float | None = None
     weakness_level: str | None = None
     # weak_point / prerequisite / current / next / related
@@ -63,7 +67,9 @@ class KnowledgePathNode(BaseModel):
 
 
 class KnowledgePathResponse(BaseModel):
-    subject: str
+    subject_id: int
+    subject_code: str = ""
+    subject_name: str = ""
     user_id: int
     start_knowledge_point_id: int | None = None
     strategy: str

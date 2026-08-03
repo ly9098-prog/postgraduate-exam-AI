@@ -30,7 +30,7 @@ async def record_behavior(
             is_abandoned=r.is_abandoned,
             user_answer=r.user_answer,
             correct_answer=r.correct_answer,
-            subject=data.subject,
+            subject_id=data.subject_id,
             session_type=data.session_type,
         )
     return {"status": "ok"}

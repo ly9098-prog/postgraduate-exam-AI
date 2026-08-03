@@ -252,7 +252,7 @@ export default function ImportQuestionsPage() {
   const [previewId, setPreviewId] = useState<number | null>(null);
 
   const queryParams = useMemo(
-    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id, source_type: filters.source_type, keyword: filters.keyword }),
+    () => ({ page: 1, page_size: 50, batch_id: filters.batch_id || batchIdParam, status: filters.status, subject_id: filters.subject_id ? Number(filters.subject_id) : undefined, source_type: filters.source_type, keyword: filters.keyword }),
     [batchIdParam, filters],
   );
 
@@ -349,9 +349,9 @@ export default function ImportQuestionsPage() {
                         <span className="hidden h-3 w-px bg-[var(--color-border)] sm:block" />
 
                         {/* Subject + type pills */}
-                        {item.subject_name ? (
+                        {item.subject_name || item.subject_code ? (
                           <span className="rounded-md bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--color-primary-dark)]">
-                            {item.subject_name}
+                            {item.subject_name || item.subject_code}
                           </span>
                         ) : null}
                         <span className="text-[11px] text-[var(--color-text-hint)]">

@@ -13,6 +13,21 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
+# Ensure all ORM models are registered so Subject's string relationships
+# (practice_records, answer_behaviors, review_schedules, ...) resolve at
+# mapper configuration time (see app/models/admin.py Subject).
+from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.import_batch_job import ImportBatchJob  # noqa: F401
+from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.knowledge_point import KnowledgePoint  # noqa: F401
+from app.models.pomodoro import PomodoroSession  # noqa: F401
+from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.recommendation_log import RecommendationLog  # noqa: F401
+from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.review_scheduler import ReviewSchedule  # noqa: F401
+from app.models.tag import Tag  # noqa: F401
+from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -56,12 +71,12 @@ def _make_execute_result(**methods):
     return result
 
 
-def _make_question_mock(qid=1, answer="A", subject="数学", question_type="single_choice",
+def _make_question_mock(qid=1, answer="A", subject_id=1, question_type="single_choice",
                         content=None, options=None, knowledge_points=None):
     q = MagicMock()
     q.id = qid
     q.answer = answer
-    q.subject = subject
+    q.subject_id = subject_id
     q.question_type = question_type
     q.content = content or {"stem": f"题目{qid}"}
     q.options = options or [{"key": "A", "text": "选项A"}, {"key": "B", "text": "选项B"}]
@@ -87,12 +102,12 @@ def _make_wrong_question_mock(wq_id=1, user_id=1, question_id=1):
     return wq
 
 
-def _make_schedule_mock(schedule_id=1, user_id=1, question_id=1, subject="数学"):
+def _make_schedule_mock(schedule_id=1, user_id=1, question_id=1, subject_id=1):
     s = MagicMock()
     s.id = schedule_id
     s.user_id = user_id
     s.question_id = question_id
-    s.subject = subject
+    s.subject_id = subject_id
     s.interval = 0
     s.ease_factor = 2.5
     s.repetitions = 0
