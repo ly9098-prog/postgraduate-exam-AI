@@ -298,8 +298,12 @@ async def lifespan(app: FastAPI):
                     ))
                     await _s.commit()
                     logger.info("Fixed residual UNIQUE constraint on export_tasks.idempotency_key (PostgreSQL)")
-    except Exception:
-        logger.warning("Failed to fix idempotency_key UNIQUE constraint (non-fatal, application-level fallback active)")
+    except Exception as _exc:
+        logger.warning(
+            "Failed to fix idempotency_key UNIQUE constraint (%s: %s) "
+            "(non-fatal, application-level fallback active)",
+            type(_exc).__name__, _exc,
+        )
 
     # Schema divergence diagnostic: detect missing runtime-DDL columns on PostgreSQL.
     # Lightweight startup check — warns if known columns are absent.
