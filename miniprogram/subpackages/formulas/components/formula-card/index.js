@@ -12,6 +12,24 @@ const LatexPlugin = require('../../utils/katex/index')
  *  - text content matching "KaTeX parse error"
  *  - data-error or data-error-type attribute (katex-mini extended output)
  */
+function isKatexDiagnosticText(value) {
+  return /KaTeX\s+parse\s+error|Expected\s+['"]?EOF|Undefined\s+control\s+sequence|ParseError/i.test(String(value || ''))
+}
+
+function readableFormulaSource(value) {
+  var source = String(value || '')
+    .replace(/^\s*\\displaystyle\s*/, '')
+    .replace(/\\(?:text|textrm|textbf|textit|mathrm|operatorname)\s*\{([^{}]*)\}/g, '$1')
+    .replace(/\\to\b/g, '→')
+    .replace(/\\ne\b/g, '≠')
+    .replace(/\\le\b/g, '≤')
+    .replace(/\\ge\b/g, '≥')
+    .replace(/\\infty\b/g, '∞')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return isKatexDiagnosticText(source) ? '' : source
+}
+
 function containsRenderError(nodes) {
   var found = false
   function walk(items) {
@@ -33,7 +51,7 @@ function containsRenderError(nodes) {
         found = true
         return
       }
-      if (node.type === 'text' && /KaTeX\s+parse\s+error/i.test(node.text)) {
+      if (node.type === 'text' && isKatexDiagnosticText(node.text)) {
         found = true
         return
       }
@@ -57,13 +75,14 @@ function cleanFormulaErrorNodes(nodes) {
   for (var i = 0; i < nodes.length; i++) {
     var node = nodes[i] || {}
     // Text node that IS the error message → drop it
-    if (node.type === 'text' && /KaTeX\s+parse\s+error/i.test(node.text)) {
+    if (node.type === 'text' && isKatexDiagnosticText(node.text)) {
       continue
     }
     // A formula-span (l === 'T' from LatexPlugin) that contains
     // an error → replace the whole span with readable text.
     if (node.l === 'T' && node.children && containsRenderError(node.children)) {
-      var cleaned = extractReadableText(node)
+      var cleaned = readableFormulaSource(node.latexSource)
+      if (!cleaned) cleaned = extractReadableText(node)
       if (cleaned) result.push({ type: 'text', text: cleaned })
       continue
     }
@@ -101,6 +120,7 @@ function extractReadableText(node) {
     if (!item) return
     if (item.type === 'text') {
       var text = String(item.text || '')
+      if (isKatexDiagnosticText(text)) return
       // Phase 1: preserve content inside known container commands
       text = text
         .replace(/\\text\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g, function (_, inner) {

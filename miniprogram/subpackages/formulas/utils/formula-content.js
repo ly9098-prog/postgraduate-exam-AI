@@ -247,7 +247,7 @@ function splitFormulaGroup(value) {
   // so keep them together unless the editor explicitly creates separate blocks.
   if (parts.length < 3 || parts.length > 6) return []
   for (var i = 0; i < parts.length; i++) {
-    if (formulaComplexity(parts[i]) > 108) return []
+    if (formulaComplexity(parts[i]) > 200) return []
     if (!/(?:=|<|>|\\(?:approx|sim|le|ge|ne|to)\b)/.test(parts[i])) return []
   }
   return parts
@@ -741,6 +741,89 @@ function extractStandaloneStructuredMath(source) {
   }
 }
 
+/**
+ * Return true when braces and supported \begin/\end environments are balanced.
+ * Escaped literal braces (\{ and \}) are ignored.
+ */
+function hasBalancedLatexStructure(value) {
+  var source = String(value == null ? '' : value)
+  var braceDepth = 0
+  var environments = []
+  var environmentPattern = /^\\(begin|end)\{([^{}]+)\}/
+
+  for (var i = 0; i < source.length; i++) {
+    var ch = source.charAt(i)
+    if (ch === '\\') {
+      var environment = source.slice(i).match(environmentPattern)
+      if (environment) {
+        if (environment[1] === 'begin') {
+          environments.push(environment[2])
+        } else {
+          if (!environments.length || environments[environments.length - 1] !== environment[2]) return false
+          environments.pop()
+        }
+        i += environment[0].length - 1
+        continue
+      }
+      var escaped = source.charAt(i + 1)
+      if (escaped === '{' || escaped === '}') {
+        i += 1
+        continue
+      }
+    }
+    if (ch === '{') braceDepth += 1
+    else if (ch === '}') {
+      braceDepth -= 1
+      if (braceDepth < 0) return false
+    }
+  }
+
+  return braceDepth === 0 && environments.length === 0
+}
+
+/**
+ * Structured expression fields are semantically different from prose. A value
+ * such as `f\\text{ 在 }[a,b]\\text{ 上可积}` is one complete LaTeX formula;
+ * sending it through the prose tokenizer would split it at the Chinese text and
+ * leave orphaned braces for KaTeX.
+ */
+function extractStandaloneLatexExpression(value) {
+  var source = normalizeEnvironmentCommands(
+    replaceUnicodeGreek(collapseProseWhitespace(decodeBasicEntities(value))),
+  ).trim()
+  if (!source || /<\/?[A-Za-z][^>]*>/.test(source)) return null
+
+  var punctuation = ''
+  var punctuationMatch = source.match(/([,.;:，。；：！？!?、]+)$/)
+  if (punctuationMatch) {
+    punctuation = punctuationMatch[1]
+    source = source.slice(0, source.length - punctuation.length).trim()
+  }
+
+  source = stripOuterMathDelimiters(source)
+  if (!source) return null
+
+  // Requiring an explicit container command prevents ordinary Chinese prose
+  // with an incidental variable from being promoted to one large formula.
+  if (!/\\(?:text|textrm|textbf|textit|mathrm|operatorname|frac|sqrt|begin)\s*\{/.test(source)) return null
+  if (!hasBalancedLatexStructure(source) || !isMathRun(source)) return null
+
+  var normalized = normalizeMathRun(source)
+  if (!normalized) return null
+  return {
+    html: '$' + ensureDisplayStyle(normalized) + '$',
+    suffix: punctuation,
+  }
+}
+
+function normalizeStructuredPrimary(value, kind) {
+  if (kind === 'conditions' || kind === 'symbols') {
+    var expression = extractStandaloneLatexExpression(value)
+    if (expression) return expression.html + escapeHtml(expression.suffix)
+  }
+  return normalizeMixedContent(value)
+}
+
 function processPlainTextNode(value) {
   // Convert Greek glyphs before tokenisation. Otherwise a label such as
   // "(1+x)^α展开" is split into the invalid fragment "(1+x)^" and the
@@ -881,7 +964,7 @@ function normalizeStructuredContent(value, kind) {
 
   var isBulleted = kind === 'secondary' || kind === 'errors'
   var rows = normalizedItems.map(function (item, index) {
-    var primaryHtml = normalizeMixedContent(item.primary)
+    var primaryHtml = normalizeStructuredPrimary(item.primary, kind)
     var noteHtml = normalizeMixedContent(item.note)
     var rowClass = 'fc-structured-row' + (index === 0 ? ' is-first' : '')
     var marker = isBulleted ? '<span class="fc-structured-marker">•</span>' : ''
@@ -924,7 +1007,8 @@ function prepareFormulaBlocks(card) {
           _key: String(index) + '-' + String(partIndex) + '-' + String(part.length),
         }
       }),
-      isScrollable: !isGrouped && complexity > 108,
+      // 阈值 200：长但能放进手机宽度的公式（如基本积分公式的根式/有理分式）不再强制横向滚动
+      isScrollable: !isGrouped && complexity > 200,
       sizeClass: !isGrouped && complexity > 185 ? 'is-dense' : (!isGrouped && complexity > 120 ? 'is-compact' : ''),
       isMultiline: !isGrouped && isMultiline,
       lineCount: visualRows.length || 1,

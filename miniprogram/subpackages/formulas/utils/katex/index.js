@@ -8,6 +8,63 @@ function Latex () {
 
 }
 
+function isKatexDiagnosticText(value) {
+  return /KaTeX\s+parse\s+error|Expected\s+['"]?EOF|Undefined\s+control\s+sequence|ParseError/i.test(String(value || ''))
+}
+
+function containsKatexError(nodes) {
+  var found = false
+  function walk(items) {
+    if (found || !Array.isArray(items)) return
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i] || {}
+      var attrs = item.attrs || {}
+      if (typeof attrs.style === 'string' && /(?:^|;)\s*color\s*:\s*red\b/i.test(attrs.style)) {
+        found = true
+        return
+      }
+      if (/katex-error|katex-parse-error/i.test(String(attrs.class || ''))) {
+        found = true
+        return
+      }
+      if (attrs['data-error'] !== undefined || attrs['data-error-type'] !== undefined) {
+        found = true
+        return
+      }
+      if (item.type === 'text' && isKatexDiagnosticText(item.text)) {
+        found = true
+        return
+      }
+      if (item.children) walk(item.children)
+    }
+  }
+  walk(nodes)
+  return found
+}
+
+function readableLatexFallback(value) {
+  var source = String(value || '')
+    .replace(/^\s*\\displaystyle\s*/, '')
+    .replace(/\\(?:text|textrm|textbf|textit|mathrm|operatorname)\s*\{([^{}]*)\}/g, '$1')
+    .replace(/\\to\b/g, '→')
+    .replace(/\\ne\b/g, '≠')
+    .replace(/\\le\b/g, '≤')
+    .replace(/\\ge\b/g, '≥')
+    .replace(/\\infty\b/g, '∞')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return isKatexDiagnosticText(source) ? '' : source
+}
+
+function renderLatex(source, displayMode) {
+  var nodes = parse.default(source, {
+    displayMode: Boolean(displayMode),
+    throwOnError: true,
+  })
+  return Array.isArray(nodes) && nodes.length && !containsKatexError(nodes) ? nodes : null
+}
+
+
 Latex.prototype.onParse = function (node, vm) {
   // $...$包裹的内容为latex公式
   if (!vm.options.editable && node.type === 'text' && node.text.includes('$')) {
@@ -24,28 +81,43 @@ Latex.prototype.onParse = function (node, vm) {
               text: part[i]
             })
           } else {
-            // 安全解析：捕获 KaTeX 异常，失败时回退为纯文本
+            // katex-mini may return a red error tree instead of throwing. Treat
+            // either behaviour as a parse failure and fall back to the source,
+            // never to KaTeX's internal diagnostic message.
             let nodes
             try {
-              if (status === 1) {
-                nodes = parse.default(part[i])
-              } else {
-                nodes = parse.default(part[i], { displayMode: true })
-              }
+              nodes = renderLatex(part[i], status === 2)
             } catch (_e) {
-              children.push({ type: 'text', text: part[i] })
+              nodes = null
+            }
+            if (!nodes) {
+              const fallback = readableLatexFallback(part[i])
+              if (fallback) children.push({ type: 'text', text: fallback })
               status = 0
               continue
             }
             if (status === 1) {
               // 行内公式
-              children.push({
+              const wrapper = {
                 name: 'span',
                 attrs: {},
                 l: 'T',
                 f: 'display:inline-block',
                 children: nodes
-              })
+              }
+              // Preserve the original source for defensive fallback without
+              // leaking raw LaTeX into rich-text serialisation or rendering.
+              try {
+                Object.defineProperty(wrapper, 'latexSource', {
+                  value: part[i],
+                  enumerable: false,
+                  configurable: true
+                })
+              } catch (_e) {
+                // Old JS runtimes may reject defineProperty on plain objects;
+                // the plugin already handled the parse error before this point.
+              }
+              children.push(wrapper)
             } else {
               // 块公式
               const naturalWidth = vm && vm.properties && vm.properties.mathLayout === 'natural'
