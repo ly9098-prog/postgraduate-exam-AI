@@ -1,7 +1,6 @@
 """向量召回服务：向量检索、相似题推荐、智能刷题召回。"""
 
 import hashlib
-import json as _json
 import logging
 import math
 import re

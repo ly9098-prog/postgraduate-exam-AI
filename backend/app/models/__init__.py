@@ -23,7 +23,9 @@ from app.models.practice_record import PracticeRecord  # noqa: F401
 from app.models.question import Question  # noqa: F401
 from app.models.question_import import QuestionImport  # noqa: F401
 from app.models.recommendation_log import RecommendationLog  # noqa: F401
-from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.recommendation_metrics_daily import (
+    RecommendationMetricsDaily,  # noqa: F401
+)
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule  # noqa: F401
 from app.models.tag import Tag  # noqa: F401
 from app.models.task_outbox import TaskOutbox  # noqa: F401

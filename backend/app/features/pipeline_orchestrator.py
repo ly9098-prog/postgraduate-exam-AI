@@ -3071,7 +3071,9 @@ class ImportPipeline:
                     # Final Phase 8 merge: select the best value for each A-D
                     # key across VL, PP-OCR and original raw text.  This also
                     # repairs the narrow mirrored ``xau<-s`` signature.
-                    from app.features.option_recovery import recover_options_from_sources
+                    from app.features.option_recovery import (
+                        recover_options_from_sources,
+                    )
 
                     recovered = recover_options_from_sources(
                         best_text, pp_text, original_raw_text,
@@ -3609,7 +3611,6 @@ class ImportPipeline:
                 logger.warning("OCR router: admin_ai_configs read failed", exc_info=True)
 
         # DeepSeek env var fallback for backward compat only
-        import os
         if "deepseek_api_key" not in config:
             config["deepseek_api_key"] = ""  # managed via admin_ai_model_configs
 

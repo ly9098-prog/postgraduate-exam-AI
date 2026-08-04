@@ -572,8 +572,11 @@ async def start_import_pipeline(
         if not settings.OCR_ENABLED:
             raise ValueError("图片 OCR 功能未启用")
         # 云端使用外部 OCR API，无需本地 PaddleOCR
+        from app.core.deployment_profile import (
+            DeploymentProfile,
+            detect_deployment_profile,
+        )
         from app.core.ocr_isolation import local_paddleocr_available
-        from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 
         if (
             detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT

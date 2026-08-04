@@ -566,7 +566,6 @@ async def test_model_connection(
 
     # Key priority 2: from DB via model_id (only if no explicit key provided)
     if effective_api_key is None and model_id is not None and db is not None:
-        from app.core.config import settings as app_settings
 
         model = await db.get(AdminAiModelConfig, model_id)
         if model is not None:

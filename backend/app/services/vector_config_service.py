@@ -45,7 +45,11 @@ async def _read_cfg(db: AsyncSession) -> dict[str, str]:
 async def resolve_embedding_config(db: AsyncSession) -> EmbeddingConfig:
     """从 DB (admin_ai_configs) 读取 Embedding 配置，解密 API key。"""
     cfg = await _read_cfg(db)
-    from app.core.secret_crypto import SecretDecryptionError, SecretEncryptionError, decrypt_secret
+    from app.core.secret_crypto import (
+        SecretDecryptionError,
+        SecretEncryptionError,
+        decrypt_secret,
+    )
 
     api_key = ""
     encrypted = cfg.get("embedding_api_key_encrypted", "")
@@ -84,7 +88,7 @@ async def test_embedding_connection(
     model: str,
     dim: int = 1024,
     timeout: int = 30,
-) -> "EmbeddingTestResponse":
+) -> "EmbeddingTestResponse":  # noqa: F821  # string 注解，类型在本函数内局部 import
     """对给定 Embedding 配置发起一次最小连通性测试。"""
     from app.schemas.admin_vector_config import EmbeddingTestResponse
     if not api_key:
@@ -94,10 +98,14 @@ async def test_embedding_connection(
             latency_ms=0,
         )
 
-    import asyncio, json, time as _time
+    import asyncio
+    import json
+    import time as _time
 
     try:
-        from app.services.safe_remote_fetch import validate_remote_url as _validated_embedding_base_url
+        from app.services.safe_remote_fetch import (
+            validate_remote_url as _validated_embedding_base_url,
+        )
         _validated_embedding_base_url(api_base_url)  # validates scheme & host — returns tuple, discard it
     except ValueError as exc:
         return EmbeddingTestResponse(

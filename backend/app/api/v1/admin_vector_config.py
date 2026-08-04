@@ -4,8 +4,8 @@ GET / PATCH /api/admin/v1/vector-config
 POST        /api/admin/v1/vector-config/test-embedding
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_roles

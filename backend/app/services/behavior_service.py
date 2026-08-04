@@ -95,6 +95,7 @@ async def get_behavior_stats(
 
     # 按科目统计（subject_id 分组，科目信息从 subjects 表解析）
     from sqlalchemy import select as sa_select
+
     from app.models.admin import Subject
 
     subject_q = sa_select(

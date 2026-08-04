@@ -31,13 +31,13 @@ from typing import Any
 
 import httpx
 
+from app.core.config import settings
 from app.core.ocr_runtime_config import (
     OcrRuntimeConfig,
     sanitize_url,
     sanitize_url_strip_credentials,
 )
 from app.core.ocr_types import STABLE_ERROR_CODES, WorkerResult
-from app.core.config import settings
 from app.services.ocr_distributed_concurrency import (
     DistributedConcurrencyError,
     get_global_concurrency,

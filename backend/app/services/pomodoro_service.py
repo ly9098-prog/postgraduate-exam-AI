@@ -9,7 +9,6 @@ from app.models.admin import Subject
 from app.models.pomodoro import PomodoroSession
 from app.models.user import User
 
-
 # Product dates are selected and displayed in China Standard Time, while all
 # PomodoroSession timestamps are stored as naive UTC datetimes.  Query with a
 # half-open UTC range instead of func.date(end_time): the latter interprets the
