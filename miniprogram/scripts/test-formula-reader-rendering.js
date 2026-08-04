@@ -251,6 +251,54 @@ assert(typeof nestedClean === 'string', 'normalizeMathRun must handle repaired n
 
 console.log('✓ Issue 2 (KaTeX error handling) tests passed')
 
+// Complete structured LaTeX containing Chinese \text{...} must remain one
+// formula. It must never be split into `f\text{}` + prose + `}T...\text{`.
+var completeStructuredExpressions = [
+  {
+    expression: 'f\\text{ 在 }[a,b]\\text{ 上Riemann可积}',
+    expectedText: ['f', '[a,b]', '在', '上Riemann可积'],
+  },
+  {
+    expression: 'f\\text{ 周期为 }T>0\\text{ 且在局部可积}',
+    expectedText: ['f', 'T', '0', '周期为', '且在局部可积'],
+  },
+  {
+    expression: 'u(x)\\ne u_0\\text{ 最终成立，或 }f\\text{ 在 }u_0\\text{ 连续}',
+    expectedText: ['u', 'x', 'f', '最终成立，或', '在', '连续'],
+  },
+]
+
+completeStructuredExpressions.forEach(function (fixture) {
+  var html = formulaContent.normalizeStructuredContent(
+    JSON.stringify([{ expression: fixture.expression, note: '条件说明' }]),
+    'conditions',
+  )
+  var delimiterCount = (html.match(/\$\\displaystyle/g) || []).length
+  assert.strictEqual(delimiterCount, 1, 'complete structured expression must produce exactly one formula wrapper: ' + fixture.expression)
+  assert(!/\$\\displaystyle\s*\}/.test(html), 'complete structured expression must not create an orphaned closing brace formula')
+
+  var nodes = parse(html)
+  var serialized = JSON.stringify(nodes)
+  assert(!serialized.includes('KaTeX parse error'), 'complete structured expression must not expose KaTeX diagnostics')
+  assert(!serialized.includes("Expected 'EOF'"), 'complete structured expression must not contain EOF parse errors')
+  assert(!serialized.includes('color:red'), 'complete structured expression must not contain red error nodes')
+  assert(!serialized.includes('katex-error'), 'complete structured expression must not contain katex-error nodes')
+  assert(collectClasses(nodes).some(function (name) { return /katex/.test(name) }), 'complete structured expression must render through KaTeX')
+
+  var text = collectText(nodes).join('')
+  fixture.expectedText.forEach(function (fragment) {
+    assert(text.indexOf(fragment) >= 0, 'rendered expression must preserve fragment "' + fragment + '"')
+  })
+  assert(text.indexOf('条件说明') >= 0, 'structured note must remain outside the formula')
+})
+
+// Plain mixed prose must keep using the conservative tokenizer.
+var conservativeMixedHtml = formulaContent.normalizeMixedContent('换元后 x → 0，且 g(x) ≠ 0')
+assert(conservativeMixedHtml.indexOf('换元后') >= 0 && conservativeMixedHtml.indexOf('且') >= 0, 'ordinary Chinese prose must remain outside KaTeX')
+assert((conservativeMixedHtml.match(/\$\\displaystyle/g) || []).length >= 2, 'ordinary mixed prose must keep separate math fragments')
+
+console.log('✓ Complete structured LaTeX with Chinese text tests passed')
+
 // =============================
 // Surgical per-fragment fallback: one broken formula must not
 // degrade an entire paragraph to plain text.
