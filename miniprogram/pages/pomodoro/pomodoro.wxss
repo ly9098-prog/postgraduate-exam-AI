@@ -1089,11 +1089,12 @@ page {
 
 .confirm-cover-actions {
   display: flex;
-  gap: 20rpx;
+  align-items: center;
 }
 
 .confirm-cover-btn {
   flex: 1;
+  min-width: 0;
   height: 88rpx;
   line-height: 88rpx;
   text-align: center;
@@ -1108,6 +1109,7 @@ page {
 }
 
 .confirm-cover-ok {
+  margin-left: 32rpx;
   /* cover-view 真机不支持 linear-gradient，以 background-color 为回退 */
   background-color: #10B981;
   background-image: linear-gradient(135deg, #10B981, #047857);
