@@ -7,14 +7,14 @@ with rows, cells, spans, confidence, source coordinates and audit metadata.
 
 from __future__ import annotations
 
+import json
+import math
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from hashlib import sha1
 from html import unescape
 from html.parser import HTMLParser
-import json
-import math
-import re
 from typing import Any, Iterable
 
 TABLE_SEGMENT_TYPE = "table"

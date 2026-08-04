@@ -8,8 +8,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy import text
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.router import api_router
 from app.core.config import settings
@@ -259,8 +259,9 @@ async def lifespan(app: FastAPI):
             )
             if _has_unique_ix:
                 # Recreate table without the UNIQUE constraint using Alembic batch mode
-                from alembic import op
                 from alembic.runtime.migration import MigrationContext
+
+                from alembic import op
                 _conn = _sync_engine.connect()
                 _ctx = MigrationContext.configure(_conn)
                 _op = op.Operations(_ctx)
@@ -1565,6 +1566,7 @@ os.makedirs("static/formulas", exist_ok=True)
 os.makedirs("static/question-assets", exist_ok=True)
 # Python 3.11 的 mimetypes 未注册 .webp，需显式注册以保证正确的 image/webp Content-Type
 import mimetypes
+
 mimetypes.add_type("image/webp", ".webp")
 app.mount("/static/formulas", StaticFiles(directory="static/formulas", html=False), name="static_formulas")
 app.mount("/static/question-assets", StaticFiles(directory="static/question-assets", html=False), name="static_question_assets")

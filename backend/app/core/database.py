@@ -462,7 +462,9 @@ async def init_db():
         return
 
     from app.models.ai_feedback_log import AiFeedbackLog  # noqa: F401
-    from app.models.answer_behavior import AnswerBehavior  # noqa: F401 — Subject relationship target
+    from app.models.answer_behavior import (
+        AnswerBehavior,  # noqa: F401 — Subject relationship target
+    )
     from app.models.formula import (  # noqa: F401
         FormulaCard,
         FormulaCardTag,
@@ -476,13 +478,22 @@ async def init_db():
         FormulaTag,
         UserFormulaFavorite,
     )
-    from app.models.import_batch_job import ImportBatchJob, ImportBatchJobItem  # noqa: F401 — Subject relationship target
+    from app.models.import_batch_job import (  # noqa: F401 — Subject relationship target
+        ImportBatchJob,
+        ImportBatchJobItem,
+    )
     from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401 — Phase 3
     from app.models.knowledge_point import KnowledgePoint  # noqa: F401
-    from app.models.pomodoro import PomodoroSession  # noqa: F401 — Subject relationship target
-    from app.models.practice_record import PracticeRecord  # noqa: F401 — Subject relationship target
+    from app.models.pomodoro import (
+        PomodoroSession,  # noqa: F401 — Subject relationship target
+    )
+    from app.models.practice_record import (
+        PracticeRecord,  # noqa: F401 — Subject relationship target
+    )
     from app.models.question import Question  # noqa: F401 — Subject relationship target
-    from app.models.question_import import QuestionImport  # noqa: F401 — Subject relationship target
+    from app.models.question_import import (
+        QuestionImport,  # noqa: F401 — Subject relationship target
+    )
     from app.models.question_knowledge_point import QuestionKnowledgePoint  # noqa: F401
     from app.models.recommendation_experiment import (
         RecommendationExperiment,  # noqa: F401 — Phase 4
@@ -500,10 +511,15 @@ async def init_db():
     from app.models.refresh_token import (
         RefreshToken,  # noqa: F401 — register model for create_all
     )
-    from app.models.review_scheduler import ReviewRecord, ReviewSchedule  # noqa: F401 — Subject relationship target
+    from app.models.review_scheduler import (  # noqa: F401 — Subject relationship target
+        ReviewRecord,
+        ReviewSchedule,
+    )
     from app.models.tag import Tag  # noqa: F401 — Subject relationship target
     from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
-    from app.models.wrong_question import WrongQuestion  # noqa: F401 — Subject relationship target
+    from app.models.wrong_question import (
+        WrongQuestion,  # noqa: F401 — Subject relationship target
+    )
 
     async with engine.begin() as conn:
         await _repair_sqlite_admin_bigint_pk(conn)

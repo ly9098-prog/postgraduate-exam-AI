@@ -17,8 +17,8 @@ import logging
 import warnings
 
 from app.core.config import settings
-from app.core.ocr_types import OcrPageResult
 from app.core.ocr_isolation import is_restricted_ocr_environment
+from app.core.ocr_types import OcrPageResult
 
 logger = logging.getLogger(__name__)
 

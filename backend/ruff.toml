@@ -4,5 +4,6 @@
 # - E501: long lines (pervasive in prompt strings and docstrings)
 # - E741: ambiguous variable names (grandfathered)
 # - N806: variable naming in functions (grandfathered)
-ignore = ["E402", "E501", "E741", "N806"]
+# - N814/N817: CamelCase imported as acronym/constant (QI/PR/_QI aliases, grandfathered)
+ignore = ["E402", "E501", "E741", "N806", "N814", "N817"]
 select = ["E", "F", "I", "N", "W"]
