@@ -74,4 +74,7 @@ async def post_recommendation_feedback(
         # shown 事件在推荐日志创建时已记录，此处仅做确认
         matched = True
 
+    # mark_clicked / mark_answered 只 flush，需在此提交（get_db 会话关闭不回滚未提交事务）。
+    await db.commit()
+
     return RecommendationFeedbackResponse(status="ok", matched=matched)
