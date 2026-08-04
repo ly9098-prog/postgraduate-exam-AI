@@ -26,8 +26,8 @@ jobs:
           python -m pip install --upgrade pip
           # Install lint/audit tools
           pip install ruff mypy pip-audit bandit
-          # Install project for import smoke test
-          pip install -e .
+          # Install project with test extras (pytest 等)
+          pip install -e ".[test]"
           # Generate requirements-lock
           pip freeze > requirements-lock.txt
 
