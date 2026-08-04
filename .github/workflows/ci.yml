@@ -26,6 +26,8 @@ jobs:
           python -m pip install --upgrade pip
           # Install lint/audit tools
           pip install ruff mypy pip-audit bandit
+          # Install runtime deps（项目依赖在 requirements.txt，pyproject 未声明 dependencies）
+          pip install -r requirements.txt
           # Install project with test extras (pytest 等)
           pip install -e ".[test]"
           # Generate requirements-lock
