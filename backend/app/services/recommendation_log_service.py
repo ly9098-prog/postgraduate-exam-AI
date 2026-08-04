@@ -34,6 +34,8 @@ async def create_recommendation_logs(
     ``subject`` 字符串（旧协议兼容边界），本函数通过 subject 表解析成 subject_id。
     返回新创建的日志 ID 列表。
     """
+    # 必须 commit：get_db 依赖（database.py）的会话在请求结束关闭时不会自动提交，
+    # 只 flush 会导致推荐日志随事务回滚而丢失（历史 bug：recommendation_logs 恒为空）。
     now = utcnow()
     logs = []
 
@@ -93,7 +95,7 @@ async def create_recommendation_logs(
         db.add(log)
         logs.append(log)
 
-    await db.flush()
+    await db.commit()
     return [log.id for log in logs]
 
 

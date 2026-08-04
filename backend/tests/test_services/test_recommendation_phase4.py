@@ -401,6 +401,21 @@ class TestRecommendationLogsWithExperiment:
         assert mock_log.mastery_after == 0.6
         assert mock_log.mastery_delta == 0.3
 
+    def test_create_logs_commits(self):
+        """create_recommendation_logs 必须 commit，否则日志随 get_db 会话关闭回滚而丢失。"""
+        from app.services.recommendation_log_service import create_recommendation_logs
+
+        db = _make_mock_db()
+        _run(create_recommendation_logs(
+            db=db,
+            user_id=1,
+            recommendations=[{"question_id": 100, "subject_id": 5}],
+            scene="practice_smart",
+            strategy="weakness_vector",
+        ))
+
+        db.commit.assert_called_once()
+
 
 # ── Test 7: aggregate_recommendation_metrics_daily 能正确聚合 ──
 
