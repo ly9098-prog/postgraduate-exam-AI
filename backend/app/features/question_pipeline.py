@@ -898,7 +898,9 @@ class QuestionNormalizer:
             return True
         # 短行内容判定需把圈号数字（①-⑳）计入内容字符，否则“①、”等题号/序号行会被
         # 当噪声丢弃（如“①、②所花费的时间之比”中的“①、”）。
-        if len(line) <= 2 and not re.search(r"[一-鿿A-Za-z0-9{}\[\]()①-⑳]", line):
+        # 比较/关系运算符（<>≥≤≠）也须计入：单字符数学符号可作为多空选项
+        # （如 1266 ② 组选项 < > ≥ ≤），否则整组被误判为噪声而丢弃。
+        if len(line) <= 2 and not re.search(r"[一-鿿A-Za-z0-9{}\[\]()①-⑳<>≥≤≠≈±×÷·]", line):
             return True
         return False
 
