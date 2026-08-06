@@ -21,6 +21,18 @@
           <text class="runner-collapsed-subject">{{subjectName || title || '练习'}}</text>
           <text class="runner-collapsed-meta">{{currentIndex + 1}} / {{totalCount || 0}} · {{elapsedText}}</text>
         </view>
+        <view
+          class="runner-expand-btn"
+          wx:if="{{heroCollapsed && heroCollapseEnabled}}"
+          hover-class="runner-control-pressed"
+          hover-start-time="20"
+          hover-stay-time="80"
+          catchtap="expandHero"
+          aria-role="button"
+          aria-label="展开顶部信息"
+        >
+          <text class="runner-expand-icon line-icon icon-chevron-down"></text>
+        </view>
       </view>
 
       <view

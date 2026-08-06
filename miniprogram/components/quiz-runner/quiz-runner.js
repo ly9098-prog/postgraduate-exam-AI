@@ -396,23 +396,6 @@ Component({
       var absDx = Math.abs(dx)
       var absDy = Math.abs(dy)
 
-      // Collapsing the hero changes the available viewport and may emit a
-      // synthetic scrollTop=0 event. Expanding only after an intentional
-      // downward finger gesture at the real top prevents collapse/expand
-      // feedback loops while preserving the expected pull-down behavior.
-      if (
-        absDy > absDx &&
-        dy > 24 &&
-        this.data.heroCollapsed &&
-        this._lastQuestionScrollTop <= 8 &&
-        Date.now() >= this._heroCollapseLockUntil
-      ) {
-        this.data._touchX = undefined
-        this.data._touchY = undefined
-        this.setData({ heroCollapsed: false })
-        return
-      }
-
       if (absDx < 44 || absDx <= absDy * 1.10) {
         this.data._touchX = undefined
         this.data._touchY = undefined
@@ -441,12 +424,37 @@ Component({
         if (this.data.heroCollapsed) this.setData({ heroCollapsed: false })
         return
       }
-      // Once collapsed, keep the state latched while the viewport settles.
-      // An actual pull-down gesture at the top expands it in onTouchEnd.
-      if (!this.data.heroCollapsed && top > 34) {
-        this._heroCollapseLockUntil = Date.now() + 260
+
+      var now = Date.now()
+      // Once collapsed, keep the header latched. Scrolling back to the top or
+      // pulling down must not expand it; only the explicit expand button does.
+      if (this.data.heroCollapsed) return
+
+      if (top > 34 && now >= this._heroCollapseLockUntil) {
+        this._heroCollapseLockUntil = now + 260
         this.setData({ heroCollapsed: true })
       }
+    },
+
+    _expandHero: function () {
+      if (!this.data.heroCollapsed) return
+      var self = this
+      // Expanding changes the viewport height and can briefly emit stale
+      // scroll events. Ignore those so the header does not collapse again.
+      this._heroCollapseLockUntil = Date.now() + 420
+      this._lastQuestionScrollTop = 0
+      this.setData({
+        heroCollapsed: false,
+        questionScrollIntoView: 'runner-scroll-top-anchor',
+      }, function () {
+        setTimeout(function () {
+          self.setData({ questionScrollIntoView: '' })
+        }, 0)
+      })
+    },
+
+    expandHero: function () {
+      this._expandHero()
     },
 
     /* ==================== Answer sheet ==================== */
