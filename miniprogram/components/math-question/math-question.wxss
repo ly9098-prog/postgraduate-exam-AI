@@ -142,16 +142,6 @@
   font-size: 24rpx;
   line-height: 1.65;
 }
-.seg-table-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14rpx;
-  padding: 10rpx 16rpx;
-  border-top: 2rpx solid #e7edf2;
-  background: #fafbfc;
-  color: #8493a0;
-  font-size: 20rpx;
-}
 .seg-table-warning {
   padding: 10rpx 16rpx;
   border-top: 2rpx solid #f1d4a8;
