@@ -71,11 +71,6 @@
           </view>
         </view>
       </scroll-view>
-      <view class="seg-table-meta">
-        <text>{{item.row_count}}行 × {{item.column_count}}列</text>
-        <text>置信度 {{item._confidenceText}}</text>
-        <text wx:if="{{item._pageLabel}}">{{item._pageLabel}}</text>
-      </view>
       <view wx:if="{{item._invalid && item._issueText}}" class="seg-table-warning">{{item._issueText}}</view>
       <view wx:if="{{item.requires_review && item._sourceImageUrl && !item._sourceImageError}}" class="seg-table-source">
         <text class="seg-table-source-label">原始表格截图</text>
