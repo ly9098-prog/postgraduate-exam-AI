@@ -1000,6 +1000,25 @@
   font-variant-numeric: tabular-nums;
 }
 
+.runner-expand-btn {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 50%;
+  border: 1rpx solid rgba(215,255,104,0.24);
+  background: rgba(255,255,255,0.065);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.runner-expand-icon {
+  width: 26rpx;
+  height: 26rpx;
+  color: #AEEF00;
+  transform: translateY(-2rpx);
+}
+
 /* 页面向下阅读后，顶部自动收为单行摘要 + 进度线。 */
 .runner-hero.runner-hero-collapsed {
   padding-top: 10rpx;
