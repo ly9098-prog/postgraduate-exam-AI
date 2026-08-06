@@ -78,9 +78,11 @@ def _serialize_tag(t: Tag) -> dict:
     }
 
 
-async def export_package(since: datetime | None = None) -> dict:
+async def export_package(since: datetime | None = None, subject_id: int | None = None) -> dict:
     async with async_session() as db:
         q_query = select(Question).options(joinedload(Question.subject_ref)).where(Question.sync_uuid.isnot(None))
+        if subject_id is not None:
+            q_query = q_query.where(Question.subject_id == subject_id)
         if since:
             q_query = q_query.where(Question.updated_at > since)
         questions = (await db.execute(q_query)).scalars().all()
@@ -144,12 +146,13 @@ async def run(args: argparse.Namespace):
     elif not args.full:
         since = _read_last_sync()
 
+    scope = f"subject_id={args.subject_id}" if args.subject_id is not None else "全部科目"
     if since:
-        print(f"增量导出：仅导出 {since.isoformat()} 之后更新的数据")
+        print(f"增量导出：仅导出 {since.isoformat()} 之后更新的数据（{scope}）")
     else:
-        print("全量导出：导出所有带 sync_uuid 的数据")
+        print(f"全量导出：导出所有带 sync_uuid 的数据（{scope}）")
 
-    package = await export_package(since=since)
+    package = await export_package(since=since, subject_id=args.subject_id)
     q_count = package["manifest"]["question_count"]
     t_count = package["manifest"]["tag_count"]
     print(f"导出完成：{q_count} 道题目, {t_count} 个标签")
@@ -196,6 +199,7 @@ def main():
     parser.add_argument("--api-url", help="云端 API 地址 (如 https://server.example.com)")
     parser.add_argument("--token", help="Admin JWT token")
     parser.add_argument("--since", help="仅导出此时间之后的数据 (ISO 格式)")
+    parser.add_argument("--subject-id", type=int, help="仅导出指定 subject_id 的题目")
     parser.add_argument("--full", action="store_true", help="全量导出，忽略 .last_sync")
     parser.add_argument("--dry-run", action="store_true", help="仅导出 JSON 文件，不上传")
     args = parser.parse_args()
