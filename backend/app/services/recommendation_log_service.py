@@ -1,6 +1,8 @@
 """推荐日志服务 — 记录推荐→作答反馈闭环。"""
 import logging
+from datetime import timedelta
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -170,3 +172,35 @@ async def mark_recommendation_answered(
         log.mastery_delta = mastery_delta
     await db.flush()
     return True
+
+
+async def cleanup_expired_recommendation_logs(
+    db: AsyncSession,
+    retention_days: int,
+    batch_size: int = 1000,
+) -> int:
+    """删除超期推荐日志（按 shown_at），批量处理。
+
+    返回删除的总行数。
+    """
+    cutoff = utcnow() - timedelta(days=retention_days)
+    total_deleted = 0
+
+    while True:
+        batch_ids = (
+            await db.execute(
+                select(RecommendationLog.id)
+                .where(RecommendationLog.shown_at < cutoff)
+                .order_by(RecommendationLog.id)
+                .limit(batch_size)
+            )
+        ).scalars().all()
+
+        if not batch_ids:
+            break
+
+        await db.execute(sa_delete(RecommendationLog).where(RecommendationLog.id.in_(batch_ids)))
+        await db.commit()
+        total_deleted += len(batch_ids)
+
+    return total_deleted

@@ -963,3 +963,129 @@ export type GraphConfirmResponse = {
 };
 
 export type FormulaCardType = "auto" | "pure_formula" | "function_graph";
+
+// ── 推荐系统 (recommendation) ──
+
+export type RecommendationScene = "practice_smart" | "similar" | "knowledge_path" | "wrong_variant";
+
+export type RecommendationStrategy = {
+  id: number;
+  name: string;
+  display_name: string;
+  description: string | null;
+  scene: RecommendationScene;
+  is_active: boolean;
+  is_default: boolean;
+  weight_vector_similarity: number;
+  weight_knowledge_overlap: number;
+  weight_difficulty_match: number;
+  weight_mastery_gap: number;
+  weight_path_priority: number;
+  exploration_ratio: number;
+  config_json: Record<string, unknown> | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type RecommendationStrategyUpsert = {
+  name: string;
+  display_name?: string;
+  description?: string | null;
+  scene: RecommendationScene;
+  is_active?: boolean;
+  is_default?: boolean;
+  weight_vector_similarity?: number;
+  weight_knowledge_overlap?: number;
+  weight_difficulty_match?: number;
+  weight_mastery_gap?: number;
+  weight_path_priority?: number;
+  exploration_ratio?: number;
+  config_json?: Record<string, unknown> | null;
+};
+
+export type ExperimentVariant = { key: string; strategy: string; ratio: number };
+
+export type RecommendationExperiment = {
+  id: number;
+  name: string;
+  scene: string;
+  description: string | null;
+  status: "draft" | "running" | "paused" | "finished";
+  start_at: string | null;
+  end_at: string | null;
+  traffic_ratio: number;
+  variants: ExperimentVariant[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type ExperimentCreate = {
+  name: string;
+  scene: string;
+  description?: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
+  traffic_ratio?: number;
+  variants: ExperimentVariant[];
+  max_traffic_percent?: number;
+  fallback_strategy_name?: string | null;
+  auto_pause_on_error_rate?: number | null;
+  min_sample_size?: number;
+};
+
+export type RecommendationMetricsDaily = {
+  date: string;
+  subject_id: number;
+  subject_code?: string | null;
+  subject_name?: string | null;
+  scene: string;
+  strategy: string;
+  variant_key: string | null;
+  exposure_count: number;
+  click_count: number;
+  answer_count: number;
+  correct_count: number;
+  wrong_count: number;
+  avg_recommend_score: number;
+  avg_similarity: number;
+  avg_mastery_before: number | null;
+  avg_mastery_after: number | null;
+  avg_mastery_delta: number | null;
+  completion_rate: number;
+  accuracy: number;
+  ctr: number;
+};
+
+export type SeedStrategiesResponse = { created: number; updated: number; skipped: number };
+export type MetricsAggregateResponse = { aggregated_rows: number; target_date: string; subject_id: number | null };
+export type MetricsBackfillResponse = { success_dates: string[]; failed_dates: string[]; errors: string[] };
+export type SafetyCheckResponse = { paused: boolean; reason: string | null; metrics: Record<string, unknown> };
+export type VariantComparisonResponse = { experiment_id: number; experiment_name: string; variants: Record<string, unknown>[] };
+export type HealthReportResponse = {
+  total_recommendation_logs: number;
+  fallback_rate: number;
+  empty_recommendation_count: number;
+  low_similarity_rate: number;
+  strategy_resolve_failed_count: number;
+  experiment_assignment_count: number;
+  experiment_variant_distribution: Record<string, unknown>;
+  vector_recall_failure_count: number;
+  knowledge_path_empty_count: number;
+  top_fallback_scenes: Record<string, unknown>[];
+  top_error_strategies: Record<string, unknown>[];
+  warnings: string[];
+};
+export type RecommendationQualityReport = {
+  summary: Record<string, unknown>;
+  warnings: string[];
+  hot_questions: Record<string, unknown>[];
+  high_fallback_scenes: Record<string, unknown>[];
+  low_similarity_samples: Record<string, unknown>[];
+};
+export type KnowledgeQualityReport = {
+  summary: Record<string, unknown>;
+  warnings: string[];
+  isolated_knowledge_points: Record<string, unknown>[];
+  low_question_count_points: Record<string, unknown>[];
+  cycles: number[][];
+};

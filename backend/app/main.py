@@ -351,6 +351,24 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Development super admin init failed (non-fatal): %s", e)
 
+    # Seed default recommendation strategies (idempotent, fills only empty fields)
+    try:
+        from app.services.recommendation_seed_service import (
+            seed_default_recommendation_strategies,
+        )
+
+        async with async_session() as db:
+            seed_result = await seed_default_recommendation_strategies(db, force=False)
+            await db.commit()
+            if any(v for v in seed_result.values()):
+                logger.info(
+                    "Recommendation strategies seeded: created=%s updated=%s skipped=%s",
+                    seed_result.get("created"), seed_result.get("updated"),
+                    seed_result.get("skipped"),
+                )
+    except Exception as e:
+        logger.warning("Recommendation strategy seed failed (non-fatal): %s", e)
+
     # AI model config self-check (common)
     try:
         from app.services.health_check_service import check_ai_model_config
@@ -495,6 +513,15 @@ async def lifespan(app: FastAPI):
             logger.info("Audit log cleanup scheduler started")
         except Exception as e:
             logger.warning("Audit log cleanup scheduler start failed (non-fatal): %s", e)
+
+        try:
+            from app.services.recommendation_metrics_scheduler import (
+                recommendation_metrics_scheduler,
+            )
+            await recommendation_metrics_scheduler.start()
+            logger.info("Recommendation metrics scheduler started")
+        except Exception as e:
+            logger.warning("Recommendation metrics scheduler start failed (non-fatal): %s", e)
 
         # Periodic cleanup tasks belong in the scheduler role only
         cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
@@ -649,6 +676,15 @@ async def lifespan(app: FastAPI):
                 logger.info("Audit log cleanup scheduler stopped")
             except Exception as e:
                 logger.warning("Audit log cleanup scheduler stop error: %s", e)
+
+            try:
+                from app.services.recommendation_metrics_scheduler import (
+                    recommendation_metrics_scheduler,
+                )
+                await recommendation_metrics_scheduler.stop()
+                logger.info("Recommendation metrics scheduler stopped")
+            except Exception as e:
+                logger.warning("Recommendation metrics scheduler stop error: %s", e)
 
         # 4b. Stop AI prewarm worker (runs in worker role, not scheduler)
         if role in ("worker", "all"):

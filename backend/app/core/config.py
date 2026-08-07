@@ -248,6 +248,11 @@ class Settings(BaseSettings):
     AUDIT_LOG_CLEANUP_HOUR_UTC: int = 3
     AUDIT_LOG_CLEANUP_BATCH_SIZE: int = 1000
 
+    # ── Recommendation Metrics ──
+    RECOMMENDATION_METRICS_AGG_ENABLED: bool = True
+    RECOMMENDATION_METRICS_AGG_HOUR_UTC: int = 4
+    RECOMMENDATION_LOG_RETENTION_DAYS: int = 90
+
     # ── Export / PDF ──
     EXPORT_POLL_INTERVAL_SEC: int = 5
     EXPORT_PROCESSING_TIMEOUT_SEC: int = 900  # zombie recovery threshold

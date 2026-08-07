@@ -9,6 +9,10 @@ import {
   UserCog,
   Sigma,
   ListTree,
+  FlaskConical,
+  GitCompareArrows,
+  BarChart3,
+  FileSearch,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PermissionKey } from "@/lib/permissions/permissions";
@@ -52,4 +56,8 @@ export const adminRoutes: AdminRoute[] = [
   { href: "/audit-logs", label: "审计日志", description: "操作追踪", permission: "audit:read", icon: History },
   { href: "/formulas", label: "公式库", description: "公式管理与审核", permission: "formula:read", icon: Sigma },
   { href: "/formulas/categories", label: "公式分类", description: "分类树管理", permission: "formula-category:read", icon: ListTree },
+  { href: "/recommendation/strategies", label: "推荐策略", description: "策略权重配置", permission: "question:read", icon: FlaskConical },
+  { href: "/recommendation/experiments", label: "推荐实验", description: "A/B 实验管理", permission: "question:read", icon: GitCompareArrows },
+  { href: "/recommendation/metrics", label: "推荐指标", description: "每日聚合指标", permission: "question:read", icon: BarChart3 },
+  { href: "/recommendation/reports", label: "推荐报表", description: "质量与健康报告", permission: "question:read", icon: FileSearch },
 ];

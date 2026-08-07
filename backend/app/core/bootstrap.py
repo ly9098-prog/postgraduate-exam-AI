@@ -272,6 +272,15 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
     except Exception as e:
         _report("Audit log cleanup scheduler", e)
 
+    # Recommendation metrics daily aggregation scheduler
+    try:
+        from app.services.recommendation_metrics_scheduler import recommendation_metrics_scheduler
+
+        await recommendation_metrics_scheduler.start()
+        logger.info("Recommendation metrics scheduler started")
+    except Exception as e:
+        _report("Recommendation metrics scheduler", e)
+
     # Periodic token cleanup (with distributed lock)
     registry.create(_periodic_token_cleanup(), "token-cleanup")
 
@@ -464,6 +473,13 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
             await audit_log_cleanup_scheduler.stop()
         except Exception as e:
             logger.warning("Audit cleanup scheduler stop error: %s", e)
+
+        try:
+            from app.services.recommendation_metrics_scheduler import recommendation_metrics_scheduler
+
+            await recommendation_metrics_scheduler.stop()
+        except Exception as e:
+            logger.warning("Recommendation metrics scheduler stop error: %s", e)
 
         try:
             from app.services.export.processor import stop_processor
