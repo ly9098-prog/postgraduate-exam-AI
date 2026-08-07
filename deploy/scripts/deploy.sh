@@ -70,6 +70,15 @@ do_up() {
   info "服务已启动"
 }
 
+do_nginx_reload() {
+  info "重载 nginx（重新解析 app/scheduler upstream，避免容器重建后 /api 502）..."
+  if docker exec deploy-nginx-1 nginx -s reload >/dev/null 2>&1; then
+    info "nginx reload 完成"
+  else
+    warn "nginx reload 失败；若 /api 返回 502 请手动执行: docker exec deploy-nginx-1 nginx -s reload"
+  fi
+}
+
 do_update_app() {
   info "替换 app 服务（不重启 postgres/redis/nginx）..."
   compose up -d --no-deps app
@@ -78,6 +87,8 @@ do_update_app() {
   info "替换 scheduler 服务..."
   compose up -d --no-deps scheduler 2>/dev/null || warn "scheduler 服务不存在或启动失败（export 功能不可用）"
   info "scheduler 服务已替换"
+  # App/scheduler 容器重建后容器 IP 会变化，nginx 缓存的旧 upstream IP 会导致 /api 502
+  do_nginx_reload
 }
 
 do_update_admin() {
@@ -130,6 +141,7 @@ do_update_scheduler() {
   do_build
   info "替换 scheduler 服务..."
   compose up -d --no-deps scheduler
+  do_nginx_reload
   do_scheduler_health_check || warn "scheduler 健康检查未通过"
   info "=== scheduler 更新完成 ==="
 }

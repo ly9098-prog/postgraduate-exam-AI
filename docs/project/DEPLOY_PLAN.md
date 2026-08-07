@@ -131,6 +131,18 @@ bash deploy/scripts/deploy.sh update-admin
 2. `docker compose up -d --no-deps <service>`（只替换目标服务）
 3. 健康检查：app 容器内 `/health` + nginx HTTPS `/health`
 
+> **⚠️ app/scheduler 容器重建后必须 reload nginx（2026-08-07 实测踩坑）。**
+> `upstream backend { server app:8000; }` 在 nginx 启动时把 `app` 解析成当时的容器 IP；`up -d --no-deps app` 重建容器后 IP 变化，nginx 仍连旧 IP → `www.xzshub.top/api/*` 全部 502（`/` 走 admin 不受影响，因 admin 容器常未重建、IP 未变）。
+>
+> 诊断：`docker exec deploy-nginx-1 wget -qO- http://app:8000/health` 能通（新 IP）但 nginx 反代 502。
+>
+> **修复：**
+> ```bash
+> docker exec deploy-nginx-1 nginx -s reload   # graceful，重新解析 upstream，无连接中断
+> ```
+>
+> 每次 `deploy.sh update`（或任何重建 app/scheduler 容器的操作）后都建议执行一次 reload；若更新后 `curl https://www.xzshub.top/api/v1/health` 非 200，先 reload nginx 再排查其它。
+
 ### 2.3 查看状态
 
 ```bash
