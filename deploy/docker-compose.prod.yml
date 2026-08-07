@@ -52,6 +52,8 @@ services:
         condition: service_healthy
     environment:
       APP_ENV: production
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENV: ${SENTRY_ENV:-production}
       PROCESS_ROLE: ${PROCESS_ROLE:-web}
       APP_SECRET: ${APP_SECRET:?必须设置 APP_SECRET}
       DATABASE_URL: ${DATABASE_URL:?必须设置 DATABASE_URL}
@@ -134,6 +136,8 @@ services:
         condition: service_healthy
     environment:
       APP_ENV: production
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENV: ${SENTRY_ENV:-production}
       PROCESS_ROLE: scheduler
       APP_SECRET: ${APP_SECRET:?必须设置 APP_SECRET}
       DATABASE_URL: ${DATABASE_URL:?必须设置 DATABASE_URL}
