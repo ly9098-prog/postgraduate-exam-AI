@@ -42,6 +42,8 @@ ENV MPLCONFIGDIR=/tmp/matplotlib
 RUN mkdir -p /opt/2240ai-v2/staging && chown app:app /opt/2240ai-v2/staging && chmod 700 /opt/2240ai-v2/staging
 # Pre-create export dir for local export file persistence
 RUN mkdir -p /opt/2240ai-v2/exports && chown app:app /opt/2240ai-v2/exports && chmod 700 /opt/2240ai-v2/exports
+# fontconfig 缓存目录（app 无写权限 → "No writable cache directories"，字体仍可用但无缓存）
+RUN mkdir -p /home/app/.cache && chown app:app /home/app/.cache
 
 USER app
 
