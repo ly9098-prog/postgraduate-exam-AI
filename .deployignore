@@ -76,3 +76,25 @@ miniprogram/__mocks__/
 README.md
 docs/
 prompts/
+
+# Dev/OCR artifacts not needed on the production server
+artifacts/
+ocr_test/
+fix/
+reports/
+tools/
+utils/
+/miniprogram/
+/static/
+logs_1.txt
+run.sh
+run.bat
+run-admin-linux.sh
+sync-to-windows.sh
+RELEASE_FREEZE.md
+RELEASE_NOTES.md
+CLAUDE.md
+/.github/
+/.backend_cache/
+/.staging/
+/docker-compose.yml

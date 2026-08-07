@@ -38,11 +38,11 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 cd admin-frontend && npm run dev
 
 # 生产部署
-rsync -az --exclude-from=".deployignore" -e "ssh -i loginkey.pem" ./ root@8.163.56.109:/opt/2240ai-v2/
-ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh update"
+rsync -az --exclude-from=".deployignore" -e "ssh -i Linux_connect.pem" ./ root@101.33.231.186:/opt/22408-ai/
+ssh root@101.33.231.186 "cd /opt/22408-ai && bash deploy/scripts/deploy.sh update"
 
 # 数据库迁移（生产）
-ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh migrate"
+ssh root@101.33.231.186 "cd /opt/22408-ai && bash deploy/scripts/deploy.sh migrate"
 ```
 
 ## 代码查询

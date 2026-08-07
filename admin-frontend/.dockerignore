@@ -13,3 +13,27 @@ CLAUDE.md
 *.crt
 tsconfig.tsbuildinfo
 next-env.d.ts
+
+# Guard: 仓库根目录误 rsync 进 admin-frontend 时排除这些 backend/repo 根级目录，
+# 避免根级 app/ 被 Turbopack 误判为 App Router 目录导致路由缺失。
+# 锚定到根级(/)，不匹配 src/app 等合法子目录（2026-08-07 实测）
+/app/
+/alembic/
+/backend/
+/docs/
+/miniprogram/
+/prompts/
+/deploy/
+/tools/
+/utils/
+/reports/
+/fix/
+/ocr_test/
+/artifacts/
+/rag/
+/var/
+*.db
+docker-compose*.yml
+*.sh
+logs_1.txt
+RELEASE_*.md

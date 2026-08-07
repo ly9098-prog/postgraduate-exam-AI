@@ -1,7 +1,31 @@
 # 部署方案
 
-> 更新时间：2026-07-25
+> 更新时间：2026-08-06
 > 生产入口：`deploy/docker-compose.prod.yml` + `deploy/scripts/deploy.sh`
+
+---
+
+## 0. 服务器迁移（2026-08-06 切流，2026-08-07 旧机停用）
+
+生产已从旧服务器迁移至新服务器。**2026-08-06 完成 DNS 切流**，新服务器 `101.33.231.186` 为当前唯一生产入口。**2026-08-07 旧机服务已停用**（`docker compose stop`，数据卷保留），旧机作**冷备**——需要回滚时 `docker compose start` 即可恢复。
+
+| 项目 | 旧服务器（迁移源 / 当前运行） | 新服务器（迁移目标） |
+|------|-------------------------------|----------------------|
+| 公网 IP | `8.163.56.109` | `101.33.231.186` |
+| 内网 IP | `172.18.50.44` | `10.1.0.13` |
+| 部署目录 | `/opt/2240ai-v2` | `/opt/22408-ai` |
+| 本地连接密钥 | `loginkey.pem` | `Linux_connect.pem` |
+| 域名 | `xzshub.top`（DNS 当前指向旧服务器） | `xzshub.top`（迁移完成后 DNS 改指） |
+| 服务器规格 | 2 核 / 1.8 GB | 4 核 / 3.6 GiB / 40G 磁盘 |
+
+迁移内容清单（按顺序）：
+1. 应用代码 + Docker 镜像构建（app / scheduler / admin）
+2. PostgreSQL 数据（`pg_dump` custom format 备份 → `pg_restore` 恢复）
+3. Redis 数据（`redis-cli SAVE` 的 RDB）
+4. nginx 配置 + SSL 证书（`www.xzshub.top.pem` / `.key`）
+5. 服务器侧 `backend/.env`（生产密钥，从旧服务器复制）
+6. 验证生产启动自检（见 §7.4）与核心链路（SSE / 导入 / OCR / 刷题）
+7. DNS 切换到新服务器，旧服务器保持可用数日作回滚
 
 ---
 
@@ -40,24 +64,28 @@ scheduler（无 HTTP）→ postgres + redis（后台任务 + export processor）
 
 ### 服务器信息
 
-| 项目 | 值 |
-|------|-----|
-| 公网 IP | `8.163.56.109` |
-| 内网 IP | `172.18.50.44` |
-| 域名 | `xzshub.top` |
-| 部署目录 | `/opt/2240ai-v2` |
-| 服务器密钥 | 服务器侧 `/loginkey.pem` |
-| 证书目录 | `/opt/2240ai-v2/cert` → 容器内 `/etc/nginx/ssl` |
-| 证书文件 | `/opt/2240ai-v2/cert/www.xzshub.top.pem` + `.key` |
+> 2026-08-06 起，新服务器为迁移目标（迁移后生产入口）；旧服务器当前仍运行，保留作回滚参考（迁移见 §0）。
+
+| 项目 | 新服务器（迁移目标） | 旧服务器（当前运行） |
+|------|---------------------|----------------------|
+| 公网 IP | `101.33.231.186` | `8.163.56.109` |
+| 内网 IP | `10.1.0.13` | `172.18.50.44` |
+| 域名 | `xzshub.top`（DNS 迁移后改指） | `xzshub.top`（曾指向） |
+| 部署目录 | `/opt/22408-ai` | `/opt/2240ai-v2` |
+| 本地连接密钥 | `Linux_connect.pem` | `loginkey.pem` |
+| 证书目录 | `/opt/22408-ai/cert` → 容器内 `/etc/nginx/ssl` | `/opt/2240ai-v2/cert` → 容器内 `/etc/nginx/ssl` |
+| 证书文件 | `/opt/22408-ai/cert/www.xzshub.top.pem` + `.key` | `/opt/2240ai-v2/cert/www.xzshub.top.pem` + `.key` |
 
 ### 服务器规格
 
-| 资源 | 值 |
-|------|----|
-| CPU | 2 核 |
-| 内存 | 1.8 GB |
-| 磁盘 | — |
-| OS | Linux (Debian) |
+| 资源 | 新服务器 | 旧服务器 |
+|------|----------|----------|
+| CPU | 4 核（AMD EPYC 7K62） | 2 核 |
+| 内存 | 3.6 GiB | 1.8 GB |
+| 磁盘 | 40 GB（3.6G 已用 / 37G 可用） | — |
+| OS | OpenCloudOS 9.6（RPM 系） | Linux (Debian) |
+
+> 新服务器 40G 磁盘与旧服务器相当，Docker 镜像/缓存易占满，构建前先 `df -h` 检查（沿用旧服务器经验）。主机 OS 为 RPM 系 OpenCloudOS，与旧 Debian 不同；部署为 Docker 隔离，应用侧无影响，但主机级操作（包管理、firewalld、certbot）命令需按 RPM 系调整。
 
 ---
 
@@ -69,8 +97,8 @@ scheduler（无 HTTP）→ postgres + redis（后台任务 + export processor）
 
 ```bash
 rsync -az --exclude-from=".deployignore" \
-  -e "ssh -i loginkey.pem -o BatchMode=yes" \
-  ./ root@8.163.56.109:/opt/2240ai-v2/
+  -e "ssh -i Linux_connect.pem -o BatchMode=yes" \
+  ./ root@101.33.231.186:/opt/22408-ai/
 ```
 
 排除范围：`.git/`、`.claude/`、`.venv/`、`node_modules/`、`__pycache__/`、`*.db`、`.env`、`*.pem`、`*.key`、`docs/`、`prompts/`、测试文件、日志、上传目录等。
@@ -78,8 +106,8 @@ rsync -az --exclude-from=".deployignore" \
 > 当本地删除了前端页面文件时，需加 `--delete` 参数同步删除服务器上的对应文件，否则 Next.js build 会因死代码引用报错。示例：
 > ```bash
 > rsync -az --delete --exclude-from=".deployignore" \
->   -e "ssh -i loginkey.pem -o BatchMode=yes" \
->   ./ root@8.163.56.109:/opt/2240ai-v2/
+>   -e "ssh -i Linux_connect.pem -o BatchMode=yes" \
+>   ./ root@101.33.231.186:/opt/22408-ai/
 > ```
 
 ### 2.2 日常更新（app + admin）
@@ -88,13 +116,13 @@ rsync -az --exclude-from=".deployignore" \
 
 **更新 app 后端：**
 ```bash
-cd /opt/2240ai-v2
+cd /opt/22408-ai
 bash deploy/scripts/deploy.sh update
 ```
 
 **更新 admin 前端：**
 ```bash
-cd /opt/2240ai-v2
+cd /opt/22408-ai
 bash deploy/scripts/deploy.sh update-admin
 ```
 
@@ -106,7 +134,7 @@ bash deploy/scripts/deploy.sh update-admin
 ### 2.3 查看状态
 
 ```bash
-cd /opt/2240ai-v2
+cd /opt/22408-ai
 bash deploy/scripts/deploy.sh status
 ```
 
@@ -117,7 +145,7 @@ bash deploy/scripts/deploy.sh status
 仅在 schema 变更确认后执行：
 
 ```bash
-cd /opt/2240ai-v2
+cd /opt/22408-ai
 bash deploy/scripts/deploy.sh migrate
 ```
 
@@ -130,13 +158,13 @@ bash deploy/scripts/deploy.sh migrate
 2. 不执行 `down` 或删除 volume
 3. 回滚代码到上一版本 → 重新 `bash deploy/scripts/deploy.sh update`
 
-### 2.6 低内存服务器构建注意事项
+### 2.6 Admin 前端构建注意事项（内存）
 
-服务器规格为 2 核 / 1.8 GB 内存。Admin 前端 Next.js 构建是内存敏感操作：
+新服务器规格为 4 核 / 3.6 GB 内存（旧机为 2 核 / 1.8 GB）。Admin 前端 Next.js 构建是内存敏感操作：
 
 | 措施 | 说明 |
 |------|------|
-| `NODE_OPTIONS=--max-old-space-size=1536` | Dockerfile 中限制 Node.js 堆上限，防止 OOM |
+| `NODE_OPTIONS=--max-old-space-size=2048` | Dockerfile 中限制 Node.js 堆上限，防止 OOM（新机 3.6G 用 2048；旧机 1.8G 时用 1536） |
 | `output: "standalone"` | 产物仅包含必要文件，减少磁盘占用 |
 | 构建超时 | 首次构建约 1-3 分钟，峰值 RSS 约 800–1200 MB |
 | 构建产物 | `.next/standalone` + `.next/static`，总计约 50–80 MB |
@@ -163,6 +191,42 @@ bash deploy/scripts/deploy.sh update-admin
 # 全量（app + admin）
 bash deploy/scripts/deploy.sh update-all
 ```
+
+### 2.7 admin-frontend 构建上下文污染防护（2026-08-07）
+
+> 迁移到新服务器后实测：该问题曾 **4 次** 导致 admin 构建出损坏产物、全部业务路由丢失（只生成 /404）。
+
+**问题现象：** `admin/` 前端构建异常，任一路由返回 500/404，`docker run --rm deploy-admin sh -c "wc -c < /app/.next/server/app-paths-manifest.json"` 只有 ~104B（正常 ~1546B）。
+
+**根因：** 仓库根目录（含 FastAPI 后端包 `app/`、`backend/`、`alembic/`、`node_modules/`、几十个 `*.db` 等）被误 rsync 进 `/opt/22408-ai/admin-frontend/`。Next.js 16 Turbopack 将根级 `app/`（Python 后端包，无有效页面）误判为 App Router 目录并**优先于 `src/app/`** → 只生成默认 /404，全部业务路由缺失。污染文件还会占满 40G 磁盘。
+
+**防护（已生效）：** `admin-frontend/.dockerignore` 增加根级锚定排除：
+
+```dockerignore
+/app/
+/alembic/
+/backend/
+/docs/
+/miniprogram/
+/prompts/
+/deploy/
+/tools/
+/utils/
+/reports/
+/fix/
+/ocr_test/
+/artifacts/
+/rag/
+/var/
+```
+
+> ⚠️ **必须带前导 `/`（锚定根级）**。若写成 `app/`（未锚定）会同时排除 `src/app/`，报 `Couldn't find any pages or app directory`，构建同样失败。
+
+**预防与排查：**
+- 部署 rsync 目标**必须**是 `/opt/22408-ai/`（仓库根）。**禁止**把仓库根目录 rsync 进 `admin-frontend/`（正确命令见 §2.1，目标路径不带子目录）。
+- admin 构建异常（"no app directory" / 只生成 /404 / ChunkLoadError）→ **先检查** `/opt/22408-ai/admin-frontend/` 是否被仓库根目录污染，再考虑其他原因。
+- 服务器 40G 磁盘易被 Docker 镜像/构建缓存占满。构建前 `df -h /` 检查；缓存过大时 `docker builder prune -af` 清理（曾一次释放 12.6G，安全，不影响运行中容器/镜像）。
+- 新机 admin `NODE_OPTIONS` 已按 3.6G 内存由 1536 调整为 2048（`admin-frontend/Dockerfile`），在干净上下文下构建正常。
 
 ---
 
@@ -320,6 +384,8 @@ RUN pip install --no-cache-dir --user \
 
 ## 7. 本次生产强化部署说明（2026-07-25）
 
+> 本节为 2026-07 在**旧服务器**（`8.163.56.109` / `/opt/2240ai-v2`）上的历史部署记录，仅供迁移参考。
+
 ### 7.1 新增环境变量
 
 | 变量名 | 类型 | 必填 | 默认值 | 生产推荐值 | 敏感 | 非法启动行为 |
@@ -393,6 +459,8 @@ RUN pip install --no-cache-dir --user \
 ---
 
 ## 8. 生产强化 Batch 8–11 更新事项（2026-07-26）
+
+> 本节为 2026-07 在**旧服务器**（`8.163.56.109` / `/opt/2240ai-v2`）上的历史部署记录，仅供迁移参考。
 
 ### 8.1 新增环境变量
 
