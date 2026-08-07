@@ -82,8 +82,25 @@ deploy/logs/
 # Generated export artifacts
 exports/
 backend/exports/
-artifacts/**/*.pdf
-artifacts/**/*.docx
+
+# Dev/import artifacts & one-off scripts（本地 dev 产物，不提交；已跟踪文件不受 gitignore 影响）
+# 根级锚定(/)：避免匹配 deploy/scripts 等被跟踪的子目录
+/artifacts/
+/scripts/
+/reports/
+/tools/
+/utils/
+/fix/
+backend/scripts/
+backend/reports/
+backend/tools/
+backend/artifacts/
+backend/backups/
+backend/var/
+backend/.work/
+backend/requirements/
+backend/wheelhouse/
+backend/backend/
 
 # Sync tool generated files
 backend/sync_package.json
@@ -120,5 +137,3 @@ logs/
 backend/.venv-ocr-gpu/
 backend/.venv-ocr-gpu-*/
 backend/backend/.venv-ocr-gpu/
-ocr_test/
-artifacts/**/*.pdf
