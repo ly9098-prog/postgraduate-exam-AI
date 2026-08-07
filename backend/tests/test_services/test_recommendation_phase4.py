@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 from datetime import date
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # Ensure all ORM models are registered so Subject's string relationships
@@ -580,6 +581,7 @@ class TestRecommendationQualityReport:
         db.execute.side_effect = [
             _make_execute_result(scalar=10),        # recent_count
             _make_execute_result(all=[mock_hot_row]),  # hot questions
+            _make_execute_result(scalars=[SimpleNamespace(id=100, content={"stem": "求极限"})]),  # hot question texts
             _make_execute_result(all=[mock_scene_row]),  # scene/strategy breakdown
             _make_execute_result(scalar=0.65),       # avg_similarity
             _make_execute_result(scalar=30),         # total_count
@@ -595,6 +597,7 @@ class TestRecommendationQualityReport:
         assert result["summary"]["total_logs_30d"] == 30
         assert len(result["hot_questions"]) == 1
         assert result["hot_questions"][0]["question_id"] == 100
+        assert result["hot_questions"][0]["question_title"] == "求极限"
 
 
 # ── Test 11: build_knowledge_quality_report 能识别孤立知识点和无题知识点 ──

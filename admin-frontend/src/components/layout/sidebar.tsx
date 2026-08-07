@@ -14,7 +14,7 @@ export function Sidebar() {
   const visibleRoutes = role?.name === "super_admin" ? adminRoutes : adminRoutes.filter((route) => hasPermission(permissions, route.permission));
 
   return (
-    <aside className="hidden sticky top-0 h-full w-72 shrink-0 overflow-y-auto border-r border-[var(--color-border)] bg-[rgba(255,253,248,0.82)] px-5 py-6 backdrop-blur-xl lg:block">
+    <aside className="hidden sticky top-0 h-full w-72 shrink-0 overflow-y-auto border-r border-[var(--color-border)] bg-[rgba(255,253,248,0.82)] px-5 py-6 backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:block">
       <Link href="/dashboard" className="mb-8 flex items-center gap-3">
         <div className="grid h-12 w-12 place-items-center rounded-2xl border border-[var(--color-primary)] bg-[var(--color-primary)] font-display text-xl font-black text-white shadow-[var(--shadow-crisp)]">
           MG

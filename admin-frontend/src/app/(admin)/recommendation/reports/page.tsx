@@ -2,14 +2,45 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { FileSearch, RefreshCw } from "lucide-react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DataTable } from "@/components/data-table/data-table";
+import { Drawer } from "@/components/ui/drawer";
 import { apiRequest } from "@/lib/api/client";
 import type {
   HealthReportResponse,
   KnowledgeQualityReport,
   RecommendationQualityReport,
 } from "@/lib/api/types";
+
+const QUALITY_SUMMARY_LABELS: Record<string, string> = {
+  total_logs_30d: "30天推荐日志",
+  recent_logs_7d: "近7天日志",
+  hot_question_count: "热门题目数",
+  fallback_ratio: "兜底比例",
+  avg_similarity: "平均相似度",
+};
+
+const KNOWLEDGE_SUMMARY_LABELS: Record<string, string> = {
+  total_knowledge_points: "知识点总数",
+  total_edges: "知识边总数",
+  isolated_count: "孤立知识点",
+  no_question_count: "无题知识点",
+  low_confidence_edge_count: "低置信度边",
+  cycle_count: "前驱循环",
+};
+
+const RATIO_KEYS = new Set(["fallback_ratio", "avg_similarity"]);
+
+function summaryItems(summary: Record<string, unknown> | undefined, labels: Record<string, string>): [string, string][] {
+  return Object.entries(summary ?? {}).map(([k, v]) => {
+    let text = v == null ? "—" : String(v);
+    if (RATIO_KEYS.has(k) && typeof v === "number" && !Number.isNaN(v)) {
+      text = `${(v * 100).toFixed(1)}%`;
+    }
+    return [labels[k] ?? k, text];
+  });
+}
 
 function percent(v: number | undefined | null): string {
   if (v == null || Number.isNaN(Number(v))) return "—";
@@ -71,6 +102,8 @@ export default function RecommendationReportsPage() {
     queryFn: () => apiRequest<KnowledgeQualityReport>("/recommendation/knowledge-quality-report"),
   });
 
+  const [viewQuestion, setViewQuestion] = useState<Record<string, unknown> | null>(null);
+
   const h = health.data;
 
   return (
@@ -110,9 +143,40 @@ export default function RecommendationReportsPage() {
 
       {quality.data && (
         <>
-          <KVCard title="推荐质量" items={Object.entries(quality.data.summary ?? {}).map(([k, v]) => [k, String(v)])} />
+          <KVCard title="推荐质量" items={summaryItems(quality.data.summary, QUALITY_SUMMARY_LABELS)} />
           <Warnings warnings={quality.data.warnings} />
-          <DictRows rows={quality.data.hot_questions} label="热门题目" />
+          {quality.data.hot_questions && quality.data.hot_questions.length > 0 && (
+            <div className="mt-4">
+              <div className="mb-2 text-xs font-bold text-[var(--color-text-secondary)]">热门题目</div>
+              <DataTable<Record<string, unknown>>
+                data={quality.data.hot_questions}
+                emptyText="无数据"
+                columns={[
+                  { id: "question_id", header: "题目ID", accessorKey: "question_id" },
+                  {
+                    id: "question_title",
+                    header: "题目名称",
+                    accessorKey: "question_title",
+                    cell: ({ row }) => {
+                      const title = String(row.original.question_title ?? "");
+                      const fallback = `#${row.original.question_id ?? ""}`;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setViewQuestion(row.original)}
+                          className="block max-w-[320px] truncate text-left text-sm text-[var(--color-primary-dark)] underline-offset-2 hover:underline"
+                          title={title || fallback}
+                        >
+                          {title || fallback}
+                        </button>
+                      );
+                    },
+                  },
+                  { id: "recommend_count", header: "推荐次数", accessorKey: "recommend_count" },
+                ]}
+              />
+            </div>
+          )}
           <DictRows rows={quality.data.high_fallback_scenes} label="高兜底场景" />
           <DictRows rows={quality.data.low_similarity_samples} label="低相似样本" />
         </>
@@ -122,7 +186,7 @@ export default function RecommendationReportsPage() {
         <>
           <KVCard
             title="知识图谱质量"
-            items={Object.entries(knowledge.data.summary ?? {}).map(([k, v]) => [k, String(v)])}
+            items={summaryItems(knowledge.data.summary, KNOWLEDGE_SUMMARY_LABELS)}
           />
           <Warnings warnings={knowledge.data.warnings} />
           <DictRows rows={knowledge.data.isolated_knowledge_points} label="孤立知识点" />
@@ -138,6 +202,20 @@ export default function RecommendationReportsPage() {
           </CardContent>
         </Card>
       )}
+
+      <Drawer
+        open={viewQuestion != null}
+        onClose={() => setViewQuestion(null)}
+        title="题目详情"
+        ariaLabel="题目详情"
+      >
+        <div className="text-xs text-[var(--color-text-hint)]">
+          题目ID：{String(viewQuestion?.question_id ?? "")}
+        </div>
+        <div className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-[var(--color-text-primary)]">
+          {String(viewQuestion?.question_title ?? "暂无题干")}
+        </div>
+      </Drawer>
     </div>
   );
 }

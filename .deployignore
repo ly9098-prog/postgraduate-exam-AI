@@ -78,12 +78,38 @@ docs/
 prompts/
 
 # Dev/OCR artifacts not needed on the production server
-artifacts/
-ocr_test/
-fix/
-reports/
-tools/
-utils/
+# 锚定到根级(/)：bare pattern 会匹配任意层级，曾把 admin-frontend/src/app/(admin)/recommendation/reports 排除导致 404
+# backend/reports 是 dev 分析产物，仍需排除；admin 的 reports 路由必须保留
+/artifacts/
+/ocr_test/
+/fix/
+/reports/
+/tools/
+/utils/
+
+# backend 开发/本地产物（缓存/脚本/报表/DB备份/GPU wheels/空目录），不上生产
+backend/.backend_cache/
+backend/.staging/
+backend/.work/
+backend/scripts/
+backend/tools/
+backend/var/
+backend/backups/
+backend/reports/
+backend/artifacts/
+backend/backend/
+backend/requirements/
+backend/wheelhouse/
+backend/*.db.*
+backend/code-review-findings.json
+backend/consistency_report.json
+backend/false_positive_report.json
+backend/stress_test_results.json
+backend/run_pipeline_ci.py
+backend/regenerate_images.py
+backend/prod_superscripts_backup_20260803.csv
+backend/routing_recommendation.md
+backend/Sprint3F*.md
 /miniprogram/
 /static/
 logs_1.txt

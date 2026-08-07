@@ -26,6 +26,22 @@ const STATUS_COLORS: Record<string, string> = {
   finished: "bg-[#eceff3] text-[#8a8f98]",
 };
 
+// 分组 JSON 快捷填入模板（strategy 需为智能刷题引擎识别的值）
+const VARIANT_PRESETS: { label: string; json: string }[] = [
+  {
+    label: "A/B：弱点 vs 路径",
+    json: `[{"key":"A","strategy":"weakness_vector","ratio":0.5},{"key":"B","strategy":"path","ratio":0.5}]`,
+  },
+  {
+    label: "A/B：弱点 vs 综合打分",
+    json: `[{"key":"A","strategy":"weakness_vector","ratio":0.5},{"key":"B","strategy":"scored","ratio":0.5}]`,
+  },
+  {
+    label: "A/B/C：三组均分",
+    json: `[{"key":"A","strategy":"weakness_vector","ratio":0.34},{"key":"B","strategy":"path","ratio":0.33},{"key":"C","strategy":"scored","ratio":0.33}]`,
+  },
+];
+
 function showToast(msg: string, error = false) {
   const el = document.createElement("div");
   el.className = `fixed left-1/2 top-4 z-[200] -translate-x-1/2 rounded-xl border px-5 py-3 text-sm font-semibold shadow-[var(--shadow-card)] animate-rise-in bg-white ${
@@ -185,6 +201,19 @@ export default function RecommendationExperimentsPage() {
             </div>
             <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
               分组 (JSON，示例 [{"{\"key\":\"A\",\"strategy\":\"weakness_vector\",\"ratio\":0.5},{\"key\":\"B\",\"strategy\":\"path\",\"ratio\":0.5}"}])
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-[var(--color-text-hint)]">快捷填入：</span>
+                {VARIANT_PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => setVariantsText(p.json)}
+                    className="rounded-full border border-[var(--color-border)] bg-white/70 px-2.5 py-1 text-xs text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary-dark)]"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
               <textarea
                 rows={3}
                 className="mt-1 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 font-mono text-xs"
@@ -253,6 +282,11 @@ export default function RecommendationExperimentsPage() {
                         <ShieldCheck className="h-3.5 w-3.5" /> 安全检查
                       </Button>
                     </>
+                  )}
+                  {canWrite && st === "paused" && (
+                    <Button variant="secondary" size="sm" onClick={() => statusMutation.mutate({ id: row.original.id, status: "running" })}>
+                      <Play className="h-3.5 w-3.5" /> 继续
+                    </Button>
                   )}
                   {canWrite && st !== "finished" && (
                     <Button variant="secondary" size="sm" onClick={() => statusMutation.mutate({ id: row.original.id, status: "finished" })}>
