@@ -627,14 +627,19 @@ GET  /api/admin/v1/health/ready
 
 ### 8.2 服务器信息
 
-| 项目 | 值 |
-|------|-----|
-| 域名 | `xzshub.top` |
-| 公网 IP | `8.163.56.109` |
-| 部署目录 | `/opt/2240ai-v2` |
-| CPU | 2 核 |
-| 内存 | 1.8 GB |
-| OS | Linux (Debian) |
+> 2026-08-06 生产已迁移至新服务器并完成 DNS 切流；2026-08-07 旧机服务已停用（数据卷保留，可回滚）。新服务器为当前唯一生产。
+
+| 项目 | 新服务器（当前生产） | 旧服务器（冷备） |
+|------|---------------------|------------------|
+| 域名 | `xzshub.top` | `xzshub.top`（DNS 已改指新服务器） |
+| 公网 IP | `101.33.231.186` | `8.163.56.109` |
+| 内网 IP | `10.1.0.13` | `172.18.50.44` |
+| 部署目录 | `/opt/22408-ai` | `/opt/2240ai-v2` |
+| 连接密钥 | `Linux_connect.pem` | `loginkey.pem` |
+| CPU | 4 核（AMD EPYC 7K62） | 2 核 |
+| 内存 | 3.6 GiB | 1.8 GB |
+| 磁盘 | 40 GB（3.6G 已用 / 37G 可用） | — |
+| OS | OpenCloudOS 9.6（RPM 系） | Linux (Debian) |
 
 ### 8.3 部署流程
 
@@ -645,20 +650,20 @@ GET  /api/admin/v1/health/ready
 ```bash
 # 同步代码
 rsync -az --exclude-from=".deployignore" \
-  -e "ssh -i loginkey.pem -o BatchMode=yes" \
-  ./ root@8.163.56.109:/opt/2240ai-v2/
+  -e "ssh -i Linux_connect.pem -o BatchMode=yes" \
+  ./ root@101.33.231.186:/opt/22408-ai/
 
 # 构建镜像并替换 app（含健康检查）
-ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh update"
+ssh root@101.33.231.186 "cd /opt/22408-ai && bash deploy/scripts/deploy.sh update"
 
 # 如包含新 migration，app 启动会因"迁移落后"检查失败，
 # 需先停 app → 迁移 → 重启：
-ssh root@8.163.56.109 "cd /opt/2240ai-v2 && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml stop app"
-ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh migrate"
-ssh root@8.163.56.109 "cd /opt/2240ai-v2 && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml start app"
+ssh root@101.33.231.186 "cd /opt/22408-ai && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml stop app"
+ssh root@101.33.231.186 "cd /opt/22408-ai && bash deploy/scripts/deploy.sh migrate"
+ssh root@101.33.231.186 "cd /opt/22408-ai && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml start app"
 
 # 或仅执行显式迁移（无新 migration 时）
-ssh root@8.163.56.109 "cd /opt/2240ai-v2 && bash deploy/scripts/deploy.sh migrate"
+ssh root@101.33.231.186 "cd /opt/22408-ai && bash deploy/scripts/deploy.sh migrate"
 ```
 
 **禁止的日常操作：**
