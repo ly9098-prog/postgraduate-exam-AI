@@ -53,3 +53,16 @@ alembic/versions/__pycache__/
 tests/
 scripts/
 docker/
+
+# 开发/本地产物，避免打进镜像（2026-08-07 已从生产 backend 目录清理，防止重新带入）
+.backend_cache/
+.staging/
+.work/
+reports/
+tools/
+var/
+backups/
+artifacts/
+requirements/
+wheelhouse/
+*.db.*

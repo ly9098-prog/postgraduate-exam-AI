@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge_edge import KnowledgeEdge
 from app.models.knowledge_point import KnowledgePoint
+from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.recommendation_log import RecommendationLog
+from app.services.export.question_content import extract_question_text
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,15 @@ async def build_recommendation_quality_report(
         hot_questions.append({"question_id": qid, "recommend_count": cnt})
         if cnt > 100:
             warnings.append(f"题目 {qid} 被推荐 {cnt} 次，可能过度集中")
+
+    # 热门题目附题干文本（管理端「题目名称」列 + 点击查看完整题干）
+    hot_q_ids = [h["question_id"] for h in hot_questions]
+    if hot_q_ids:
+        hot_q_rows = await db.execute(select(Question).where(Question.id.in_(hot_q_ids)))
+        hot_q_map = {q.id: q for q in hot_q_rows.scalars().all()}
+        for h in hot_questions:
+            q = hot_q_map.get(h["question_id"])
+            h["question_title"] = extract_question_text(q) if q else ""
 
     # 3. fallback 比例
     scene_strategy_result = await db.execute(

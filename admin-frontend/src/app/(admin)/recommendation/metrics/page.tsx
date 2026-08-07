@@ -87,11 +87,11 @@ export default function RecommendationMetricsPage() {
         </div>
         {canWrite && (
           <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => aggregateMutation.mutate()} disabled={aggregateMutation.isPending}>
+            <Button variant="secondary" className="min-w-28" onClick={() => aggregateMutation.mutate()} disabled={aggregateMutation.isPending}>
               <Play className="h-4 w-4" />
               {aggregateMutation.isPending ? "聚合中…" : "聚合今天"}
             </Button>
-            <Button variant="secondary" onClick={() => backfillMutation.mutate()} disabled={backfillMutation.isPending}>
+            <Button variant="secondary" className="min-w-28" onClick={() => backfillMutation.mutate()} disabled={backfillMutation.isPending}>
               <RotateCcw className="h-4 w-4" />
               {backfillMutation.isPending ? "补跑中…" : `补跑区间`}
             </Button>
@@ -144,11 +144,13 @@ export default function RecommendationMetricsPage() {
         </CardContent>
       </Card>
 
-      {metrics.isFetching && (
-        <div className="flex items-center gap-2 text-xs text-[var(--color-text-hint)]">
-          <BarChart3 className="h-3.5 w-3.5 animate-pulse" /> 加载中…
-        </div>
-      )}
+      <div className="flex h-5 items-center gap-2 text-xs text-[var(--color-text-hint)]">
+        {metrics.isFetching && (
+          <>
+            <BarChart3 className="h-3.5 w-3.5 animate-pulse" /> 加载中…
+          </>
+        )}
+      </div>
     </div>
   );
 }
