@@ -1,638 +1,1131 @@
-const api = require('../../../utils/api')
-const { safeDecodeURIComponent } = require('../../../utils/route-params')
-const { formatInlineMathText } = require('../utils/math-format')
-const {
-  toPlainInlineMathText,
-  needsRichRender,
-  textToHtml,
-  cleanStemText,
-} = require('../utils/stem-render')
+const ERROR_COLORS = ['#B8FF13', '#78D74D', '#43B968', '#238E58', '#86A83E', '#C9DC73'];
 
-function canonicalForResultStem(text) {
-  return String(text || '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/[，。、；：！？,.!?;:]/g, ' ')
-    .trim()
+const DEFAULT_GROWTH = {
+  total_exp: 0,
+  level: 1,
+  level_title: '起步',
+  levelTitle: '起步',
+  level_progress_pct: 0,
+  exp_current: 0,
+  exp_to_next: 200,
+  streak_days: 0,
+  streak_title: '',
+  daily_boost: '',
+  badges: []
+};
+
+function clamp(value, min, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
 }
 
-function dedupeRepeatedResultStem(text) {
-  const raw = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
-  if (!raw) return ''
+function normalizePercent(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  if (n >= 0 && n <= 1) return Math.round(n * 100);
+  return Math.round(clamp(n, 0, 100));
+}
 
-  // Handle completely duplicated paragraphs: A\nA
-  const lines = raw.split('\n').map(function(s) { return s.trim() }).filter(Boolean)
-  if (lines.length >= 2) {
-    const half = Math.floor(lines.length / 2)
-    const left = lines.slice(0, half).join('\n')
-    const right = lines.slice(half).join('\n')
-    if (half > 0 && canonicalForResultStem(left) === canonicalForResultStem(right)) {
-      return left
+function pad2(n) {
+  return String(Math.max(0, Number(n) || 0)).padStart(2, '0');
+}
+
+function formatDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+  return `${pad2(m)}分${pad2(s)}秒`;
+}
+
+function safeDecodeJson(value) {
+  if (!value || typeof value !== 'string') return null;
+  const candidates = [value];
+  try { candidates.push(decodeURIComponent(value)); } catch (e) {}
+  for (const text of candidates) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch (e) {}
+  }
+  return null;
+}
+
+function getQuestionTitle(question) {
+  if (!question) return '';
+  const content = question.content || {};
+  return (
+    content.stem ||
+    content.text ||
+    question.stem ||
+    question.text ||
+    question.title ||
+    ''
+  ).replace(/\s+/g, ' ').trim();
+}
+
+function normalizeKpList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map(item => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object') {
+          return item.name || item.title || item.knowledge_point_name || item.label || '';
+        }
+        return '';
+      })
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value.split(/[,，、]/).map(v => v.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function unwrapApiBody(body) {
+  let current = body;
+  for (let i = 0; i < 3; i += 1) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) break;
+
+    if (
+      Object.prototype.hasOwnProperty.call(current, 'data') &&
+      current.data !== null &&
+      typeof current.data === 'object'
+    ) {
+      const keys = Object.keys(current);
+      const wrapperKeys = ['data', 'code', 'message', 'msg', 'success', 'status'];
+      const looksWrapped = keys.every(key => wrapperKeys.indexOf(key) !== -1);
+      if (looksWrapped) {
+        current = current.data;
+        continue;
+      }
     }
-  }
 
-  // Deduplicate adjacent repeated lines
-  const result = []
-  for (let i = 0; i < lines.length; i++) {
-    const cur = lines[i]
-    const prev = result[result.length - 1]
-    if (prev && canonicalForResultStem(prev) === canonicalForResultStem(cur)) {
-      continue
+    if (
+      Object.prototype.hasOwnProperty.call(current, 'result') &&
+      current.result !== null &&
+      typeof current.result === 'object' &&
+      Object.keys(current).length <= 4
+    ) {
+      current = current.result;
+      continue;
     }
-    result.push(cur)
+    break;
   }
-
-  // Handle repeated full text: A + A
-  const joined = result.join('\n').trim()
-  const canon = canonicalForResultStem(joined)
-  const len = joined.length
-
-  for (let cut = Math.floor(len / 2) - 5; cut <= Math.floor(len / 2) + 5; cut++) {
-    if (cut <= 0 || cut >= len) continue
-    const left = joined.slice(0, cut).trim()
-    const right = joined.slice(cut).trim()
-    if (left && right && canonicalForResultStem(left) === canonicalForResultStem(right)) {
-      return left
-    }
-  }
-
-  return joined
+  return current;
 }
 
-function normalizeResultHtml(html) {
-  return String(html || '')
-    .replace(/white-space\s*:\s*nowrap;?/gi, 'white-space:normal;')
-    .replace(/overflow-x\s*:\s*auto;?/gi, 'overflow-x:hidden;')
+function extractToken(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value !== 'object') return '';
+
+  const keys = [
+    'access_token',
+    'accessToken',
+    'token',
+    'authToken',
+    'auth_token',
+    'userToken',
+    'jwt'
+  ];
+  for (const key of keys) {
+    if (typeof value[key] === 'string' && value[key].trim()) return value[key].trim();
+  }
+
+  const nestedKeys = ['auth', 'tokenInfo', 'loginInfo', 'session', 'user'];
+  for (const key of nestedKeys) {
+    const nested = extractToken(value[key]);
+    if (nested) return nested;
+  }
+  return '';
 }
 
-function buildDetailRichText(value) {
-  const raw0 = String(value || '').trim()
-  const raw = dedupeRepeatedResultStem(raw0)
-
-  if (!raw) {
-    return { raw: '', renderType: 'empty', text: '', html: '' }
-  }
-
-  const plain = toPlainInlineMathText(raw)
-
-  if (plain) {
-    return { raw, renderType: 'text', text: plain, html: '' }
-  }
-
-  if (needsRichRender(raw)) {
-    return { raw, renderType: 'html', text: '', html: normalizeResultHtml(textToHtml(raw)) }
-  }
-
-  return { raw, renderType: 'text', text: formatInlineMathText(raw), html: '' }
+function stripLevelPrefix(title, level) {
+  const text = String(title || '').trim();
+  if (!text) return level === 1 ? '起步' : '';
+  return text.replace(/^Lv\s*\d+\s*/i, '').trim() || text;
 }
 
-/**
- * Build per-blank result view model for multi_blank_choice questions.
- *
- * @param {string} userAnswer - User's answer string (canonical "①:B;②:D" or other format)
- * @param {string} correctAnswer - Correct answer string
- * @param {Array} blankOptionGroups - blank_option_groups from question content
- * @returns {Object|null} view model with blankResults, correctBlankCount, totalBlankCount, or null
- */
-function buildBlankResultsViewModel(userAnswer, correctAnswer, blankOptionGroups) {
-  if (!blankOptionGroups || !Array.isArray(blankOptionGroups) || blankOptionGroups.length < 2) {
-    return null
-  }
+function growthFromTotalExp(totalExp, streakDays = 0, badges = []) {
+  const total = Math.max(0, Math.round(Number(totalExp) || 0));
+  const levels = [
+    { lo: 0, hi: 200, level: 1, title: 'Lv1 起步' },
+    { lo: 200, hi: 600, level: 2, title: 'Lv2 坚持者' },
+    { lo: 600, hi: 1500, level: 3, title: 'Lv3 刷题达人' },
+    { lo: 1500, hi: 3500, level: 4, title: 'Lv4 高效进阶' },
+    { lo: 3500, hi: null, level: 5, title: 'Lv5 上岸冲刺' }
+  ];
 
-  // Parse user and correct answers into slot→value maps
-  var userMap = normalizeBlankAnswer(userAnswer)
-  var correctMap = normalizeBlankAnswer(correctAnswer)
+  let current = levels[0];
+  levels.forEach(item => {
+    if (total >= item.lo) current = item;
+  });
 
-  if (Object.keys(correctMap).length === 0) return null
-
-  var blankResults = []
-  var correctBlankCount = 0
-
-  blankOptionGroups.forEach(function (group) {
-    var groupId = String((group && group.id) || '').trim()
-    var options = (group && group.options) || []
-
-    var userKey = userMap[groupId] || ''
-    var correctKey = correctMap[groupId] || ''
-    var isAnswered = !!userKey
-    var isCorrect = isAnswered && userKey.toUpperCase() === correctKey.toUpperCase()
-
-    // Find option text for user and correct keys
-    var userText = ''
-    var correctText = ''
-    options.forEach(function (opt) {
-      var key = String((opt && opt.key) || '').trim().toUpperCase()
-      var text = String((opt && opt.text) || '').trim()
-      if (key === userKey.toUpperCase()) userText = text
-      if (key === correctKey.toUpperCase()) correctText = text
-    })
-
-    if (isCorrect) correctBlankCount++
-
-    blankResults.push({
-      id: groupId,
-      userKey: userKey,
-      userText: userText,
-      correctKey: correctKey,
-      correctText: correctText,
-      isCorrect: isCorrect,
-      isAnswered: isAnswered,
-    })
-  })
+  const expCurrent = Math.max(0, total - current.lo);
+  const expToNext = current.hi === null ? 0 : current.hi - current.lo;
+  const progress = current.hi === null
+    ? 100
+    : Math.min(100, Math.round(expCurrent / expToNext * 100));
 
   return {
-    blankResults: blankResults,
-    correctBlankCount: correctBlankCount,
-    totalBlankCount: blankOptionGroups.length,
-  }
+    ...DEFAULT_GROWTH,
+    total_exp: total,
+    level: current.level,
+    level_title: current.title,
+    levelTitle: stripLevelPrefix(current.title, current.level),
+    level_progress_pct: progress,
+    exp_current: expCurrent,
+    exp_to_next: expToNext,
+    streak_days: Math.max(0, Number(streakDays) || 0),
+    badges: Array.isArray(badges) ? badges : []
+  };
 }
 
-function normalizeBlankAnswer(answer) {
-  if (!answer) return {}
-  if (typeof answer === 'object') return answer
-  var result = {}
-  String(answer).split(/[;；,，、\n]+/).forEach(function(part) {
-    var m = part.trim().match(/^(.+?)\s*[:：=]\s*([A-Za-z])$/)
-    if (m) result[m[1].trim()] = m[2].trim().toUpperCase()
-  })
-  if (Object.keys(result).length > 0) return result
-  // Fallback: circled digits with letters
-  var circledPairs = String(answer).match(/[①-⑳]\s*[A-Za-z]/g)
-  if (circledPairs) {
-    circledPairs.forEach(function(pair) {
-      var m = pair.match(/^([①-⑳])\s*([A-Za-z])$/)
-      if (m) result[m[1]] = m[2].toUpperCase()
-    })
+function normalizeGrowthProfile(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const source = raw.growth && typeof raw.growth === 'object'
+    ? raw.growth
+    : raw;
+
+  const level = Math.max(1, Number(source.level) || 1);
+  const levelTitleFull =
+    source.level_title ||
+    source.levelTitle ||
+    `Lv${level} ${level === 1 ? '起步' : ''}`.trim();
+
+  const totalExpValue = Number(source.total_exp ?? source.totalExp);
+  const expCurrentValue = Number(source.exp_current ?? source.expCurrent);
+  const expToNextValue = Number(source.exp_to_next ?? source.expToNext);
+  const progressValue = Number(source.level_progress_pct ?? source.levelProgressPct);
+
+  const totalExp = Number.isFinite(totalExpValue) ? Math.max(0, totalExpValue) : 0;
+  const expCurrent = Number.isFinite(expCurrentValue) ? Math.max(0, expCurrentValue) : 0;
+  const expToNext = Number.isFinite(expToNextValue)
+    ? Math.max(0, expToNextValue)
+    : (level >= 5 ? 0 : 200);
+
+  let progress = Number.isFinite(progressValue)
+    ? clamp(progressValue, 0, 100)
+    : (expToNext > 0 ? Math.round(expCurrent / expToNext * 100) : (level >= 5 ? 100 : 0));
+
+  if (progress === 0 && expCurrent > 0 && expToNext > 0) {
+    progress = Math.min(100, Math.round(expCurrent / expToNext * 100));
   }
-  return result
+
+  return {
+    ...DEFAULT_GROWTH,
+    ...source,
+    total_exp: totalExp,
+    level,
+    level_title: levelTitleFull,
+    levelTitle: stripLevelPrefix(levelTitleFull, level),
+    level_progress_pct: progress,
+    exp_current: expCurrent,
+    exp_to_next: expToNext,
+    streak_days: Math.max(0, Number(source.streak_days ?? source.streakDays) || 0),
+    badges: Array.isArray(source.badges) ? source.badges : []
+  };
+}
+
+function growthFromOverview(overview) {
+  if (!overview || typeof overview !== 'object') return null;
+
+  const totalQuestions = Math.max(0, Number(overview.total_questions ?? overview.totalQuestions) || 0);
+  const accuracyRaw = Number(overview.accuracy);
+  const accuracy = Number.isFinite(accuracyRaw)
+    ? (accuracyRaw > 1 ? accuracyRaw / 100 : accuracyRaw)
+    : 0;
+  const streak = Math.max(0, Number(overview.consecutive_days ?? overview.consecutiveDays) || 0);
+  const mastered = Math.max(0, Number(overview.mastered_count ?? overview.masteredCount) || 0);
+
+  let totalExp = totalQuestions * 10 + mastered * 20 + streak * 5;
+  if (accuracy >= 0.7 && totalQuestions >= 10) {
+    totalExp += Math.floor(totalQuestions * accuracy * 5);
+  }
+
+  return growthFromTotalExp(totalExp, streak);
+}
+
+function resolveApiUrl(baseUrl, path) {
+  const rawBase = String(baseUrl || '').trim().replace(/\/+$/, '');
+  const rawPath = String(path || '').trim();
+  if (!rawBase) return '';
+  if (/^https?:\/\//i.test(rawPath)) return rawPath;
+
+  const normalizedPath = rawPath.charAt(0) === '/' ? rawPath : `/${rawPath}`;
+
+  if (/\/api\/v1$/i.test(rawBase) && normalizedPath.indexOf('/api/v1/') === 0) {
+    return `${rawBase}${normalizedPath.slice('/api/v1'.length)}`;
+  }
+  if (/\/api$/i.test(rawBase) && normalizedPath.indexOf('/api/') === 0) {
+    return `${rawBase}${normalizedPath.slice('/api'.length)}`;
+  }
+  if (/\/v1$/i.test(rawBase) && normalizedPath.indexOf('/api/v1/') === 0) {
+    return `${rawBase}${normalizedPath.slice('/api/v1'.length)}`;
+  }
+  return `${rawBase}${normalizedPath}`;
 }
 
 Page({
   data: {
-    detailHtmlContainerStyle: 'max-width:100%;overflow-x:hidden;word-break:break-word;overflow-wrap:anywhere;white-space:normal;line-height:1.65;color:#18231C;',
-    detailHtmlTagStyle: {
-      p: 'color:#18231C;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;line-height:1.65;margin:0;',
-      div: 'color:#18231C;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;line-height:1.65;',
-      span: 'color:#18231C;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;',
-      table: 'max-width:100%;width:100%;table-layout:fixed;word-break:break-word;',
-      td: 'word-break:break-word;overflow-wrap:anywhere;white-space:normal;',
-      th: 'word-break:break-word;overflow-wrap:anywhere;white-space:normal;',
-      pre: 'max-width:100%;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;',
-      code: 'white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;',
-      img: 'max-width:100%;height:auto;',
-    },
+    tabs: [
+      { key: 'overview', label: '结果概览' },
+      { key: 'wrong', label: '错题分析' },
+      { key: 'growth', label: '成长记录' }
+    ],
+    activeTab: 'overview',
 
-    statusBarHeight: 20,
-    navBarHeight: 44,
+    questionFilters: [
+      { key: 'all', label: '全部' },
+      { key: 'correct', label: '答对' },
+      { key: 'wrong', label: '答错' }
+    ],
+    questionFilter: 'all',
 
-    correct: 0,
-    wrong: 0,
-    skipped: 0,
-    total: 0,
-    answeredCount: 0,
-    passRate: 0,
-    subject: '',
-    subjectDisplay: '练习',
-    duration: 0,
-    durationText: '',
-    accuracyRingStyle: '',
+    subjectName: '',
+    correctCount: 0,
+    wrongCount: 0,
+    totalCount: 0,
+    accuracyPct: 0,
+    accuracyDotDeg: -90,
+    durationText: '00分00秒',
+    resultTip: '完成练习后及时复盘，效果会更好。',
 
-    results: [],
-    compactResults: [],
-    reviewResults: [],
-    correctResults: [],
-    displayResults: [],
-    showAllResults: false,
+    reviewItems: [],
+    filteredReviewItems: [],
+    wrongReviewItems: [],
+    errorDistribution: [],
 
-    resultLevelClass: '',
-    resultTitle: '',
-    resultDesc: '',
-    statusText: '',
-    statusDesc: '',
-    nextStepType: '',
-    nextStepTitle: '',
-    nextStepDesc: '',
-    nextStepTag: '',
+    trendData: [],
+    trendSummary: '近 7 天',
+    trendLoading: true,
 
-    growthTitle: '',
-    growthDesc: '',
-    growthLevel: '',
-    growthExpText: '',
-    growthLevelPct: 0,
-
-    showCelebration: false,
-    shouldShowCelebration: false,
-    celebrationTitle: '',
-    celebrationDetail: '',
-    celebrationMotto: '',
-    celebrationRewardText: '',
-    celebrationType: 'practice',
-
-    resolvingWrong: false,
+    growthGain: 0,
+    growth: DEFAULT_GROWTH,
+    unlockedBadgeCount: 0
   },
 
-  async onLoad(options) {
-    this._initCustomNavigation()
+  onLoad(options) {
+    this._pageReady = false;
+    this._sessionPayload = null;
 
-    const correct = parseInt(options.correct, 10) || 0
-    const wrong = parseInt(options.wrong, 10) || 0
-    const total = parseInt(options.total, 10) || 0
-    const duration = parseInt(options.duration, 10) || 0
-    const cacheKey = options._ck || ''
-    const passRate = total > 0 ? Math.round(correct / total * 100) : 0
-    const answeredCount = correct + wrong
+    this.bindEventChannel();
+    const optionPayload = this.readPayloadFromOptions(options || {});
+    const cachePayload = optionPayload ? null : this.readPayloadFromCache();
+    this.applyPracticePayload(optionPayload || cachePayload || {});
 
-    let results = []
-    let stored = null
-    try {
-      stored = wx.getStorageSync('lastPracticeResult')
-      if (stored) {
-        var storedUserId = stored._userId || ''
-        var currentUserId = ''
-        try {
-          var userInfo = wx.getStorageSync('user')
-          if (userInfo && userInfo.id) currentUserId = String(userInfo.id)
-        } catch (_) {}
-        var cacheMatch = cacheKey && stored._cacheKey === cacheKey
-        var userMatch = storedUserId && currentUserId && storedUserId === currentUserId
-        if (!cacheMatch || !userMatch) stored = null
-      }
-
-      if (stored && stored.results) {
-        const questions = stored.questions || []
-        const questionById = {}
-        questions.forEach(function (q) {
-          if (q && q.id) questionById[String(q.id)] = q
-        })
-
-        results = stored.results.map(function (r, index) {
-          const q = questionById[String(r.question_id)] || {}
-          const stemSource = cleanStemText(
-            (q.content && (q.content.stem || q.content.text || q.content.title || q.content.question)) ||
-            q.stem || q.title || q.question || q.text || ''
-          )
-          const stemRaw = dedupeRepeatedResultStem(stemSource)
-          const isCorrect = r.is_correct === true
-          const isSkipped = !isCorrect && (!r.user_answer || r.user_answer === '')
-          const stemRich = buildDetailRichText(stemRaw)
-          const userAnswerRich = buildDetailRichText(r.user_answer || '')
-          const correctAnswerRich = buildDetailRichText(r.correct_answer || '')
-          const wrongRecordId = r.wrong_question_id || r.wrong_id || r.wrong_question_record_id || r.error_record_id || ''
-
-          // Detect multi_blank_choice and build per-blank view model
-          var blankOptionGroups = null
-          if (q.content && Array.isArray(q.content.blank_option_groups)) {
-            blankOptionGroups = q.content.blank_option_groups
-          } else if (q.question_type === 'multi_blank_choice' && Array.isArray(q.blank_option_groups)) {
-            blankOptionGroups = q.blank_option_groups
-          }
-          var blankViewModel = blankOptionGroups
-            ? buildBlankResultsViewModel(r.user_answer || '', r.correct_answer || '', blankOptionGroups)
-            : null
-
-          return {
-            ...r,
-            _displayIndex: index + 1,
-            _cls: isSkipped ? 'skipped' : (isCorrect ? 'correct' : 'wrong'),
-            _statusText: isSkipped ? '跳过' : (isCorrect ? '正确' : '错误'),
-            _stemRaw: stemRaw,
-            _stemRich: stemRich,
-            _userAnswerRaw: r.user_answer || '',
-            _userAnswerText: userAnswerRich.text || '未作答',
-            _userAnswerRich: userAnswerRich,
-            _correctAnswerRaw: r.correct_answer || '',
-            _correctAnswerText: correctAnswerRich.text,
-            _correctAnswerRich: correctAnswerRich,
-            _isWrong: !isCorrect,
-            _isSkipped: isSkipped,
-            _isCorrect: isCorrect,
-            _wrongRecordId: wrongRecordId,
-            _isMultiBlank: !!blankViewModel,
-            _blankViewModel: blankViewModel,
-          }
-        })
-      }
-    } catch (_) {}
-
-    const skipped = (stored && stored.skipped) || 0
-    const wrongItems = []
-    const skippedItems = []
-    const correctItems = []
-    results.forEach(function (item) {
-      if (item._isSkipped) skippedItems.push(item)
-      else if (item._isWrong) wrongItems.push(item)
-      else correctItems.push(item)
-    })
-    const reviewResults = wrongItems.concat(skippedItems)
-    const compactResults = reviewResults.concat(correctItems)
-
-    const vm = this._buildResultViewModel(passRate, correct, wrong, total, skipped)
-    const endDeg = Math.max(0, Math.min(360, Math.round(passRate * 3.6)))
-    const accuracyRingStyle = `background: conic-gradient(from -90deg, #AEEF00 0deg ${endDeg}deg, rgba(255,255,255,0.13) ${endDeg}deg 360deg);`
-
-    this.setData({
-      correct,
-      wrong,
-      skipped,
-      total,
-      answeredCount,
-      duration,
-      durationText: this._fmt(duration),
-      passRate,
-      accuracyRingStyle,
-      subject: options.subject_id || '',
-      subjectDisplay: safeDecodeURIComponent(options.subject_name, '') || '练习',
-      results,
-      compactResults,
-      reviewResults,
-      correctResults: correctItems,
-      displayResults: reviewResults,
-      showAllResults: false,
-      ...vm,
-    })
-
-    this._loadGrowth()
+    this.loadDashboardData();
   },
 
-  _initCustomNavigation() {
+  onReady() {
+    this._pageReady = true;
+    this.drawVisibleCharts();
+  },
+
+  onShow() {
+    if (this._pageReady) this.drawVisibleCharts();
+  },
+
+  bindEventChannel() {
     try {
-      const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
-      const statusBarHeight = Number(info.statusBarHeight || 20)
-      let navBarHeight = 44
+      const channel = this.getOpenerEventChannel && this.getOpenerEventChannel();
+      if (!channel || !channel.on) return;
+
+      const eventNames = [
+        'practiceResult',
+        'practice-result',
+        'result',
+        'submitResult',
+        'sessionResult'
+      ];
+
+      eventNames.forEach(name => {
+        channel.on(name, payload => {
+          if (payload && typeof payload === 'object') {
+            this.applyPracticePayload(payload);
+          }
+        });
+      });
+    } catch (e) {}
+  },
+
+  readPayloadFromOptions(options) {
+    const keys = ['payload', 'result', 'data', 'session', 'practiceResult'];
+    for (const key of keys) {
+      if (!options[key]) continue;
+      if (typeof options[key] === 'object') return options[key];
+      const parsed = safeDecodeJson(options[key]);
+      if (parsed) return parsed;
+    }
+    return null;
+  },
+
+  readPayloadFromCache() {
+    const keys = [
+      'practiceResult',
+      'practice_result',
+      'lastPracticeResult',
+      'practiceSessionResult'
+    ];
+    for (const key of keys) {
       try {
-        const capsule = wx.getMenuButtonBoundingClientRect()
-        if (capsule && capsule.height && capsule.top) {
-          navBarHeight = (capsule.top - statusBarHeight) * 2 + capsule.height
-        }
-      } catch (_) {}
-      this.setData({
-        statusBarHeight: Math.max(20, statusBarHeight),
-        navBarHeight: Math.max(40, navBarHeight),
-      })
-    } catch (_) {
-      this.setData({ statusBarHeight: 20, navBarHeight: 44 })
+        const value = wx.getStorageSync(key);
+        if (value && typeof value === 'object') return value;
+        const parsed = safeDecodeJson(value);
+        if (parsed) return parsed;
+      } catch (e) {}
     }
+    return null;
   },
 
-  _buildResultViewModel(passRate, correct, wrong, total, skipped) {
-    const vm = {
-      resultLevelClass: '',
-      resultTitle: '',
-      resultDesc: '',
-      statusText: '',
-      statusDesc: '',
-      nextStepType: '',
-      nextStepTitle: '',
-      nextStepDesc: '',
-      nextStepTag: '',
-    }
+  applyPracticePayload(payload) {
+    const source = payload && payload.data && !payload.results && typeof payload.data === 'object'
+      ? payload.data
+      : (payload || {});
+    this._sessionPayload = source;
 
-    if (total <= 0) {
-      vm.resultLevelClass = 'empty'
-      vm.resultTitle = '暂无练习结果'
-      vm.resultDesc = '本次没有可统计的答题数据'
-      vm.statusText = '未完成'
-      vm.statusDesc = '返回练习后再试一次'
-      vm.nextStepType = 'start'
-      vm.nextStepTitle = '重新开始练习'
-      vm.nextStepDesc = '完成一组练习后，这里会生成成绩报告与复盘建议'
-      vm.nextStepTag = '未开始'
-      return vm
-    }
+    const results = Array.isArray(source.results)
+      ? source.results
+      : Array.isArray(source.submitResults)
+        ? source.submitResults
+        : Array.isArray(source.resultList)
+          ? source.resultList
+          : [];
 
-    if (passRate >= 90) {
-      vm.resultLevelClass = 'excellent'
-      vm.resultTitle = '本组练习完成'
-      vm.resultDesc = '整体掌握稳定，可以继续保持当前节奏'
-      vm.statusText = '表现很稳'
-      vm.statusDesc = wrong > 0 ? '少量错题值得及时处理' : '本组没有明显薄弱点'
-      vm.nextStepType = wrong > 0 ? 'review' : 'continue'
-      vm.nextStepTitle = wrong > 0 ? '先处理少量错题' : '继续巩固当前优势'
-      vm.nextStepDesc = wrong > 0
-        ? '复盘本组错题后再进入下一组，知识连接会更牢固。'
-        : '可以直接再来一组，保持稳定的答题节奏。'
-      vm.nextStepTag = wrong > 0 ? '复盘优先' : '继续'
-    } else if (passRate >= 70) {
-      vm.resultLevelClass = 'good'
-      vm.resultTitle = '本组练习完成'
-      vm.resultDesc = '整体掌握较好，部分细节仍有提升空间'
-      vm.statusText = '完成不错'
-      vm.statusDesc = '错题是下一步重点'
-      vm.nextStepType = wrong > 0 ? 'review' : 'continue'
-      vm.nextStepTitle = wrong > 0 ? '建议先复盘错题' : '可以继续练习'
-      vm.nextStepDesc = wrong > 0
-        ? '把本组错误原因处理清楚，再继续下一组练习。'
-        : '本组完成情况不错，可以继续保持。'
-      vm.nextStepTag = wrong > 0 ? '建议' : '继续'
-    } else if (passRate >= 50) {
-      vm.resultLevelClass = 'normal'
-      vm.resultTitle = '本组练习完成'
-      vm.resultDesc = '本组暴露出一些需要补强的知识点'
-      vm.statusText = '需要复盘'
-      vm.statusDesc = '先看错题更有效'
-      vm.nextStepType = 'review'
-      vm.nextStepTitle = '优先处理薄弱点'
-      vm.nextStepDesc = '建议逐题确认错误原因，避免同类问题重复出现。'
-      vm.nextStepTag = '重点'
-    } else {
-      vm.resultLevelClass = 'weak'
-      vm.resultTitle = '本组练习完成'
-      vm.resultDesc = '本组错题较多，不建议立刻继续刷题'
-      vm.statusText = '错题较多'
-      vm.statusDesc = '复盘比追加题量更重要'
-      vm.nextStepType = 'review'
-      vm.nextStepTitle = '建议立即复盘'
-      vm.nextStepDesc = '先把错误原因弄清楚，再通过同类题验证掌握情况。'
-      vm.nextStepTag = '优先'
+    const questions = Array.isArray(source.questions)
+      ? source.questions
+      : Array.isArray(source.questionList)
+        ? source.questionList
+        : [];
+
+    const answers = Array.isArray(source.answers)
+      ? source.answers
+      : Array.isArray(source.answerList)
+        ? source.answerList
+        : [];
+
+    const resultMap = {};
+    results.forEach(item => {
+      const qid = item.question_id ?? item.questionId ?? item.id;
+      if (qid !== undefined && qid !== null) resultMap[String(qid)] = item;
+    });
+
+    const answerMap = {};
+    answers.forEach(item => {
+      const qid = item.question_id ?? item.questionId ?? item.id;
+      if (qid !== undefined && qid !== null) answerMap[String(qid)] = item;
+    });
+
+    let reviewItems = [];
+    if (questions.length) {
+      reviewItems = questions.map((question, index) => {
+        const qid = question.id ?? question.question_id ?? question.questionId ?? index + 1;
+        return this.buildReviewItem(
+          question,
+          resultMap[String(qid)] || {},
+          answerMap[String(qid)] || {},
+          index
+        );
+      });
+    } else if (Array.isArray(source.reviewItems)) {
+      reviewItems = source.reviewItems.map((item, index) => this.normalizeReviewItem(item, index));
+    } else if (results.length) {
+      reviewItems = results.map((item, index) => this.normalizeReviewItem(item, index));
     }
 
-    if (skipped > 0) vm.resultDesc += ` · ${skipped} 道未作答`
-    return vm
-  },
+    const explicitCorrect = source.total_correct ?? source.totalCorrect ?? source.correctCount ?? source.correct_count;
+    const explicitWrong = source.total_wrong ?? source.totalWrong ?? source.wrongCount ?? source.wrong_count;
 
-  async _loadGrowth() {
-    try {
-      const growth = await api.get('/stats/growth')
-      if (!growth) return
+    let correctCount = Number.isFinite(Number(explicitCorrect))
+      ? Number(explicitCorrect)
+      : reviewItems.filter(item => item.isCorrect).length;
 
-      const newBadges = growth.new_badges || growth.newly_unlocked_badges || growth.badges_unlocked_now || []
-      const hasNewBadge = Array.isArray(newBadges) ? newBadges.length > 0 : !!newBadges
-      const levelUp = growth.level_up === true || growth.just_level_up === true || growth.just_leveled_up === true || growth.level_changed === true
+    let wrongCount = Number.isFinite(Number(explicitWrong))
+      ? Number(explicitWrong)
+      : reviewItems.filter(item => !item.isCorrect).length;
 
-      this.setData({
-        growthLevel: growth.level_title || 'Lv1 起步',
-        growthExpText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
-        growthLevelPct: Math.max(0, Math.min(100, Number(growth.level_progress_pct) || 0)),
-        growthTitle: `成长值 +${Math.max(1, this.data.total)}`,
-        growthDesc: growth.level_title ? `当前 ${growth.level_title}` : '持续练习，稳步积累',
-      })
+    let totalCount =
+      Number(source.totalCount ?? source.total_count ?? source.total) ||
+      (correctCount + wrongCount) ||
+      reviewItems.length;
 
-      // 仅在后端明确返回“升级/新徽章”事件时展示全屏庆祝。
-      if (levelUp || hasNewBadge) {
-        const badgeCount = Array.isArray(newBadges) ? newBadges.length : 1
-        this.setData({
-          shouldShowCelebration: true,
-          celebrationTitle: levelUp ? '等级提升' : '解锁新徽章',
-          celebrationDetail: levelUp
-            ? `已升级至 ${growth.level_title || '新等级'}`
-            : `本次解锁 ${badgeCount} 个新徽章`,
-          celebrationMotto: '真正的进步，来自每一次认真复盘',
-          celebrationRewardText: levelUp ? '成长等级 +1' : `新徽章 +${badgeCount}`,
-          celebrationType: 'practice',
-        }, () => this._showCelebration())
-      }
-    } catch (_) {}
-  },
-
-  _fmt(sec) {
-    const s = Math.max(0, sec || 0)
-    const m = Math.floor(s / 60)
-    const ss = s % 60
-    return `${m}分${ss < 10 ? '0' : ''}${ss}秒`
-  },
-
-  _showCelebration() {
-    this._clearCelebrationTimer()
-    this.setData({ showCelebration: true })
-    this._celebrationTimer = setTimeout(() => {
-      this.setData({ showCelebration: false })
-      this._celebrationTimer = null
-    }, 2600)
-  },
-
-  dismissCelebration() {
-    this._clearCelebrationTimer()
-    this.setData({ showCelebration: false })
-  },
-
-  onHide() {
-    this._clearCelebrationTimer()
-    if (this.data.showCelebration) this.setData({ showCelebration: false })
-  },
-
-  onUnload() {
-    this._clearCelebrationTimer()
-  },
-
-  _clearCelebrationTimer() {
-    if (this._celebrationTimer) {
-      clearTimeout(this._celebrationTimer)
-      this._celebrationTimer = null
+    if (!correctCount && !wrongCount && reviewItems.length) {
+      correctCount = reviewItems.filter(item => item.isCorrect).length;
+      wrongCount = reviewItems.length - correctCount;
+      totalCount = reviewItems.length;
     }
-  },
 
-  toggleAllResults() {
-    const next = !this.data.showAllResults
+    const explicitAccuracy = source.accuracy ?? source.accuracyPct ?? source.correctRate ?? source.correct_rate;
+    const accuracyPct = explicitAccuracy !== undefined && explicitAccuracy !== null
+      ? normalizePercent(explicitAccuracy)
+      : (totalCount ? Math.round(correctCount / totalCount * 100) : 0);
+
+    const usedTime = (
+      source.used_time ??
+      source.usedTime ??
+      source.duration ??
+      source.durationSec ??
+      source.elapsed ??
+      answers.reduce((sum, item) => sum + (Number(item.used_time ?? item.usedTime) || 0), 0)
+    );
+
+    const subjectName =
+      source.subjectName ||
+      source.subject_name ||
+      source.subject ||
+      (questions[0] && (questions[0].subject_name || questions[0].subjectName)) ||
+      '';
+
+    const growthGain = Number(source.growthGain ?? source.expGain ?? source.exp_gain ?? source.expAdded ?? 0) || 0;
+
+    const embeddedGrowth = normalizeGrowthProfile(
+      source.growth ||
+      source.growth_profile ||
+      source.growthProfile ||
+      (source.stats && source.stats.growth) ||
+      null
+    );
+
+    const wrongReviewItems = reviewItems.filter(item => !item.isCorrect);
+    const localErrorDistribution = this.buildLocalErrorDistribution(wrongReviewItems);
+
+    const resultTip = this.getResultTip(accuracyPct, wrongCount);
+
     this.setData({
-      showAllResults: next,
-      displayResults: next ? this.data.compactResults : this.data.reviewResults,
-    })
+      subjectName,
+      correctCount,
+      wrongCount,
+      totalCount,
+      accuracyPct,
+      accuracyDotDeg: Math.round(accuracyPct * 3.6 - 90),
+      durationText: formatDuration(usedTime),
+      resultTip,
+      growthGain,
+      ...(embeddedGrowth ? {
+        growth: embeddedGrowth,
+        unlockedBadgeCount: embeddedGrowth.badges.filter(item => item && item.unlocked).length
+      } : {}),
+      reviewItems,
+      filteredReviewItems: reviewItems,
+      wrongReviewItems,
+      errorDistribution: localErrorDistribution,
+    }, () => {
+      if (this._pageReady) this.drawVisibleCharts();
+    });
   },
 
-  goBack() {
-    const pages = getCurrentPages()
-    if (pages && pages.length > 1) {
-      wx.navigateBack()
+  buildReviewItem(question, result, answer, index) {
+    const questionId =
+      question.id ??
+      question.question_id ??
+      question.questionId ??
+      result.question_id ??
+      result.questionId ??
+      index + 1;
+
+    const isCorrectRaw =
+      result.is_correct ??
+      result.isCorrect ??
+      answer.is_correct ??
+      answer.isCorrect ??
+      false;
+
+    const kpList = normalizeKpList(
+      result.knowledge_points ??
+      result.knowledgePoints ??
+      question.knowledge_points ??
+      question.knowledgePoints
+    );
+
+    return {
+      questionId,
+      displayIndex: pad2(index + 1),
+      title: getQuestionTitle(question) || `第 ${index + 1} 题`,
+      isCorrect: !!isCorrectRaw,
+      userAnswer: answer.user_answer ?? answer.userAnswer ?? result.user_answer ?? result.userAnswer ?? '',
+      correctAnswer: result.correct_answer ?? result.correctAnswer ?? question.answer ?? '',
+      analysis: result.analysis ?? question.analysis ?? '',
+      knowledgePoints: kpList,
+      knowledgePoint: kpList[0] || '未标注知识点'
+    };
+  },
+
+  normalizeReviewItem(item, index) {
+    const isCorrectRaw = item.is_correct ?? item.isCorrect ?? item.correct ?? false;
+    const kpList = normalizeKpList(item.knowledge_points ?? item.knowledgePoints ?? item.knowledgePoint);
+    return {
+      questionId: item.questionId ?? item.question_id ?? item.id ?? index + 1,
+      displayIndex: item.displayIndex || pad2(index + 1),
+      title: item.title || getQuestionTitle(item) || `第 ${index + 1} 题`,
+      isCorrect: !!isCorrectRaw,
+      userAnswer: item.userAnswer ?? item.user_answer ?? item.wrong_answer ?? '',
+      correctAnswer: item.correctAnswer ?? item.correct_answer ?? item.answer ?? '',
+      analysis: item.analysis ?? '',
+      knowledgePoints: kpList,
+      knowledgePoint: item.knowledgePoint || kpList[0] || '未标注知识点'
+    };
+  },
+
+  buildLocalErrorDistribution(wrongItems) {
+    if (!wrongItems.length) return [];
+    const map = {};
+    wrongItems.forEach(item => {
+      const label = item.knowledgePoint || '其他';
+      map[label] = (map[label] || 0) + 1;
+    });
+
+    const sorted = Object.keys(map)
+      .map(label => ({ label, count: map[label] }))
+      .sort((a, b) => b.count - a.count);
+
+    let display = sorted.slice(0, 4);
+    if (sorted.length > 4) {
+      const rest = sorted.slice(4).reduce((sum, item) => sum + item.count, 0);
+      display.push({ label: '其他', count: rest });
+    }
+
+    const total = display.reduce((sum, item) => sum + item.count, 0);
+    return display.map((item, index) => ({
+      ...item,
+      percent: total ? Math.round(item.count / total * 100) : 0,
+      color: ERROR_COLORS[index % ERROR_COLORS.length]
+    }));
+  },
+
+  getResultTip(accuracy, wrongCount) {
+    if (wrongCount === 0 && this.data.totalCount > 0) return '本组表现稳定，可以继续挑战更高难度。';
+    if (accuracy >= 80) return '整体掌握较好，建议快速复盘错题后继续练习。';
+    if (accuracy >= 60) return '基础已掌握，优先复盘错题对应知识点。';
+    return '本组错题较多，建议先定位错误原因，再进行同类题巩固。';
+  },
+
+  async loadDashboardData() {
+    await Promise.allSettled([
+      this.loadTrends(),
+      this.loadGrowth(),
+      this.loadBehavior()
+    ]);
+
+    if (this._pageReady) this.drawVisibleCharts();
+  },
+
+  async loadTrends() {
+    this.setData({ trendLoading: true });
+    try {
+      const raw = await this.requestApi('/api/v1/stats/trends', { days: 7 });
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw && raw.items)
+          ? raw.items
+          : Array.isArray(raw && raw.data)
+            ? raw.data
+            : [];
+
+      if (list.length) {
+        const trendData = list.slice(-7).map(item => ({
+          date: item.date || '',
+          accuracy: normalizePercent(item.accuracy),
+          questions: Number(item.questions ?? item.answer_count ?? item.answered ?? 0) || 0
+        }));
+
+        const nonEmpty = trendData.filter(item => item.questions > 0);
+        let trendSummary = '近 7 天';
+        if (nonEmpty.length >= 2) {
+          const first = nonEmpty[0].accuracy;
+          const last = nonEmpty[nonEmpty.length - 1].accuracy;
+          const diff = last - first;
+          trendSummary = diff > 0 ? `提升 ${diff}%` : diff < 0 ? `下降 ${Math.abs(diff)}%` : '表现稳定';
+        } else if (nonEmpty.length === 1) {
+          trendSummary = `当前 ${nonEmpty[0].accuracy}%`;
+        }
+
+        this.setData({ trendData, trendSummary });
+      } else {
+        this.setData({ trendData: this.buildFallbackTrend() });
+      }
+    } catch (e) {
+      this.setData({ trendData: this.buildFallbackTrend() });
+    } finally {
+      this.setData({ trendLoading: false }, () => {
+        if (this._pageReady && this.data.activeTab === 'overview') this.drawTrendChart();
+      });
+    }
+  },
+
+  buildFallbackTrend() {
+    const today = new Date();
+    const list = [];
+    for (let i = 6; i >= 0; i -= 1) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const mm = pad2(d.getMonth() + 1);
+      const dd = pad2(d.getDate());
+      list.push({
+        date: `${d.getFullYear()}-${mm}-${dd}`,
+        accuracy: i === 0 ? this.data.accuracyPct : 0,
+        questions: i === 0 ? this.data.totalCount : 0
+      });
+    }
+    return list;
+  },
+
+  async loadGrowth() {
+    let resolved = null;
+
+    // 1. 优先使用练习提交结果里已经携带的成长数据，避免页面首屏闪 0。
+    const embedded = normalizeGrowthProfile(
+      this._sessionPayload && (
+        this._sessionPayload.growth ||
+        this._sessionPayload.growth_profile ||
+        this._sessionPayload.growthProfile ||
+        (this._sessionPayload.stats && this._sessionPayload.stats.growth)
+      )
+    );
+    if (embedded) resolved = embedded;
+
+    // 2. 后端独立成长接口是最完整的数据源。
+    try {
+      const raw = await this.requestApi('/api/v1/stats/growth');
+      const growth = normalizeGrowthProfile(raw);
+      if (growth) resolved = growth;
+    } catch (e) {}
+
+    // 3. 若独立接口不可用，兼容后端聚合看板接口。
+    if (!resolved || (resolved.total_exp === 0 && this.data.totalCount > 0)) {
+      try {
+        const dashboard = await this.requestApi('/api/v1/stats/dashboard-v2', {
+          trend_days: 7,
+          include_yearly_summary: false,
+          include_growth: true,
+          include_adaptive: false
+        });
+        const growth = normalizeGrowthProfile(dashboard && dashboard.growth);
+        if (growth && (growth.total_exp > 0 || !resolved)) resolved = growth;
+      } catch (e) {}
+    }
+
+    // 4. 成长接口仍为 0 时，用 overview 按后端 stats_service.py 的同一公式计算。
+    if (!resolved || (resolved.total_exp === 0 && this.data.totalCount > 0)) {
+      try {
+        const overview = await this.requestApi('/api/v1/stats/overview');
+        const growth = growthFromOverview(overview);
+        if (growth && (growth.total_exp > 0 || !resolved)) resolved = growth;
+      } catch (e) {}
+    }
+
+    // 5. 最后才做本地兜底：当前页已有练习结果时不再展示 0 / 200。
+    if (!resolved || (resolved.total_exp === 0 && this.data.totalCount > 0)) {
+      const localQuestionCount = Math.max(
+        Number(this.data.totalCount) || 0,
+        Array.isArray(this.data.reviewItems) ? this.data.reviewItems.length : 0
+      );
+      const localExp = Math.max(
+        Number(this.data.growthGain) || 0,
+        localQuestionCount * 10
+      );
+      resolved = growthFromTotalExp(localExp, localQuestionCount > 0 ? 1 : 0);
+    }
+
+    if (!resolved) return;
+
+    const unlockedBadgeCount = (resolved.badges || []).filter(item => item && item.unlocked).length;
+    this.setData({
+      growth: resolved,
+      unlockedBadgeCount
+    });
+  },
+
+  async loadBehavior() {
+    try {
+      const raw = await this.requestApi('/api/v1/stats/behavior');
+      const dist = raw && Array.isArray(raw.error_type_distribution)
+        ? raw.error_type_distribution
+        : [];
+      if (!dist.length) return;
+
+      const normalized = dist
+        .filter(item => item && Number(item.count) > 0)
+        .sort((a, b) => Number(b.count) - Number(a.count))
+        .slice(0, 5);
+
+      const total = normalized.reduce((sum, item) => sum + Number(item.count || 0), 0);
+      const errorDistribution = normalized.map((item, index) => ({
+        label: this.formatErrorType(item.type),
+        count: Number(item.count) || 0,
+        percent: total ? Math.round(Number(item.count || 0) / total * 100) : 0,
+        color: ERROR_COLORS[index % ERROR_COLORS.length]
+      }));
+
+      if (errorDistribution.length) {
+        this.setData({ errorDistribution }, () => {
+          if (this._pageReady && this.data.activeTab === 'overview') this.drawErrorChart();
+        });
+      }
+    } catch (e) {}
+  },
+
+  formatErrorType(type) {
+    const map = {
+      concept: '知识概念',
+      calculation: '计算失误',
+      careless: '粗心审题',
+      memory: '记忆偏差',
+      logic: '逻辑推理',
+      unknown: '其他',
+      null: '其他',
+      '': '其他'
+    };
+    return map[String(type)] || String(type || '其他');
+  },
+
+  requestApi(path, data = {}) {
+    return new Promise((resolve, reject) => {
+      let app = null;
+      try {
+        app = typeof getApp === 'function' ? getApp() : null;
+      } catch (e) {}
+
+      const globalData = (app && app.globalData) || {};
+      const config = globalData.config || globalData.env || globalData.apiConfig || {};
+
+      const baseCandidates = [
+        globalData.apiBaseUrl,
+        globalData.apiBaseURL,
+        globalData.apiBase,
+        globalData.baseUrl,
+        globalData.baseURL,
+        globalData.baseApi,
+        globalData.apiHost,
+        globalData.host,
+        globalData.serverUrl,
+        globalData.serverURL,
+        globalData.apiUrl,
+        globalData.apiURL,
+        config.apiBaseUrl,
+        config.apiBaseURL,
+        config.baseUrl,
+        config.baseURL,
+        config.apiHost,
+        config.host
+      ];
+
+      const storageBaseKeys = [
+        'apiBaseUrl',
+        'apiBaseURL',
+        'baseUrl',
+        'baseURL',
+        'apiHost',
+        'serverUrl',
+        'serverURL'
+      ];
+      storageBaseKeys.forEach(key => {
+        try {
+          const value = wx.getStorageSync(key);
+          if (value) baseCandidates.push(value);
+        } catch (e) {}
+      });
+
+      const baseUrl = baseCandidates
+        .map(value => typeof value === 'string' ? value.trim() : '')
+        .find(Boolean) || '';
+
+      const url = resolveApiUrl(baseUrl, path);
+      if (!url) {
+        reject(new Error('API base URL not found'));
+        return;
+      }
+
+      const tokenSources = [
+        globalData.access_token,
+        globalData.accessToken,
+        globalData.token,
+        globalData.authToken,
+        globalData.auth,
+        globalData.tokenInfo,
+        globalData.loginInfo,
+        globalData.user
+      ];
+
+      const tokenKeys = [
+        'access_token',
+        'accessToken',
+        'token',
+        'authToken',
+        'auth_token',
+        'userToken',
+        'jwt',
+        'tokenInfo',
+        'loginInfo',
+        'auth',
+        'userInfo',
+        'user'
+      ];
+      tokenKeys.forEach(key => {
+        try {
+          const value = wx.getStorageSync(key);
+          if (value) tokenSources.push(value);
+        } catch (e) {}
+      });
+
+      let token = '';
+      for (const source of tokenSources) {
+        token = extractToken(source);
+        if (token) break;
+      }
+
+      const header = {
+        'content-type': 'application/json',
+        Accept: 'application/json'
+      };
+      if (token) {
+        header.Authorization = /^Bearer\s/i.test(token) ? token : `Bearer ${token}`;
+      }
+
+      wx.request({
+        url,
+        method: 'GET',
+        data,
+        header,
+        success: res => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(unwrapApiBody(res.data));
+            return;
+          }
+
+          const detail = res && res.data && (res.data.detail || res.data.message || res.data.msg);
+          reject(new Error(detail || `HTTP ${res.statusCode}`));
+        },
+        fail: reject
+      });
+    });
+  },
+
+  switchTab(e) {
+    const key = e.currentTarget.dataset.key;
+    if (!key || key === this.data.activeTab) return;
+    this.setData({ activeTab: key }, () => {
+      if (key === 'overview') {
+        wx.nextTick(() => this.drawVisibleCharts());
+      }
+    });
+  },
+
+  switchQuestionFilter(e) {
+    const key = e.currentTarget.dataset.key || 'all';
+    let filteredReviewItems = this.data.reviewItems;
+    if (key === 'correct') filteredReviewItems = filteredReviewItems.filter(item => item.isCorrect);
+    if (key === 'wrong') filteredReviewItems = filteredReviewItems.filter(item => !item.isCorrect);
+    this.setData({ questionFilter: key, filteredReviewItems });
+  },
+
+  openQuestionDetail(e) {
+    const id = e.currentTarget.dataset.id;
+    const target = this.data.reviewItems.find(item => String(item.questionId) === String(id));
+    if (!target) return;
+
+    if (!target.isCorrect) {
+      this.setData({ activeTab: 'wrong' });
     } else {
-      wx.reLaunch({ url: '/pages/home/home' })
+      wx.showToast({
+        title: `本题答对：${target.correctAnswer || '正确'}`,
+        icon: 'none'
+      });
     }
   },
 
-  _resultWrongQuestionIds(targetQuestionId) {
-    const target = targetQuestionId == null ? '' : String(targetQuestionId)
-    return (this.data.reviewResults || [])
-      .filter(function (item) {
-        if (!item || item._isSkipped || !item._isWrong) return false
-        return !target || String(item.question_id) === target
-      })
-      .map(function (item) { return String(item.question_id) })
-      .filter(Boolean)
-  },
 
-  _cachedWrongRecordIds(targetQuestionId) {
-    const target = targetQuestionId == null ? '' : String(targetQuestionId)
-    return (this.data.reviewResults || [])
-      .filter(function (item) {
-        if (!item || item._isSkipped || !item._isWrong || !item._wrongRecordId) return false
-        return !target || String(item.question_id) === target
-      })
-      .map(function (item) { return Number(item._wrongRecordId) })
-      .filter(Number.isFinite)
-  },
-
-  async _resolveWrongRecordIds(targetQuestionId) {
-    const cached = this._cachedWrongRecordIds(targetQuestionId)
-    if (cached.length > 0) return Array.from(new Set(cached))
-
-    const desiredIds = this._resultWrongQuestionIds(targetQuestionId)
-    if (!desiredIds.length) return []
-
-    const desiredMap = {}
-    desiredIds.forEach(function (id) { desiredMap[String(id)] = true })
-
-    try {
-      const params = { page: 1, page_size: 100 }
-      if (this.data.subject) params.subject_id = this.data.subject
-      const data = await api.get('/wrong-questions', params)
-      const items = (data && data.items) || []
-      const ids = []
-      items.forEach(function (item) {
-        if (!item) return
-        const sourceQuestionId = item.question_id || item.original_question_id || item.source_question_id || (item.question && item.question.id)
-        if (!sourceQuestionId || !desiredMap[String(sourceQuestionId)]) return
-        const recordId = Number(item.id || item.wrong_question_id)
-        if (Number.isFinite(recordId)) ids.push(recordId)
-      })
-      return Array.from(new Set(ids))
-    } catch (_) {
-      return []
+  handleBack() {
+    const pages = getCurrentPages ? getCurrentPages() : [];
+    if (pages.length > 1) {
+      wx.navigateBack({ delta: 1 });
+    } else {
+      wx.reLaunch({ url: '/pages/index/index' });
     }
   },
 
-  _openWrongDetail(ids) {
-    if (!ids || !ids.length) return false
-    try {
-      wx.setStorageSync('wrong_detail_nav', { ids, ts: Date.now() })
-    } catch (_) {}
-    wx.redirectTo({
-      url: `/subpackages/study/wrong-detail/wrong-detail?id=${ids[0]}&idx=0&source=wrong-book`,
-    })
-    return true
+  drawVisibleCharts() {
+    if (!this._pageReady || this.data.activeTab !== 'overview') return;
+    wx.nextTick(() => {
+      this.drawTrendChart();
+      this.drawErrorChart();
+    });
   },
 
-  async goWrongBook() {
-    if (this.data.resolvingWrong) return
-    this.setData({ resolvingWrong: true })
-    wx.showLoading({ title: '准备错题复盘', mask: true })
-    const ids = await this._resolveWrongRecordIds()
-    wx.hideLoading()
-    this.setData({ resolvingWrong: false })
-    if (this._openWrongDetail(ids)) return
-    wx.showToast({ title: '错题记录正在同步，已打开错题本', icon: 'none' })
-    setTimeout(function () {
-      wx.redirectTo({ url: '/subpackages/study/wrong-book/wrong-book' })
-    }, 500)
+  drawTrendChart() {
+    const query = wx.createSelectorQuery().in(this);
+    query.select('#trendCanvas').fields({ node: true, size: true }).exec(res => {
+      const target = res && res[0];
+      if (!target || !target.node || !target.width || !target.height) return;
+
+      const canvas = target.node;
+      const ctx = canvas.getContext('2d');
+      const dpr = wx.getWindowInfo ? (wx.getWindowInfo().pixelRatio || 1) : (wx.getSystemInfoSync().pixelRatio || 1);
+
+      canvas.width = target.width * dpr;
+      canvas.height = target.height * dpr;
+      ctx.scale(dpr, dpr);
+
+      const width = target.width;
+      const height = target.height;
+      ctx.clearRect(0, 0, width, height);
+
+      const data = (this.data.trendData || []).slice(-7);
+      if (!data.length) return;
+
+      const left = 34;
+      const right = 18;
+      const top = 18;
+      const bottom = 42;
+      const chartW = width - left - right;
+      const chartH = height - top - bottom;
+
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#E9EEEA';
+      ctx.fillStyle = '#99A19C';
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+
+      [0, 50, 100].forEach(value => {
+        const y = top + chartH * (1 - value / 100);
+        ctx.beginPath();
+        ctx.moveTo(left, y);
+        ctx.lineTo(left + chartW, y);
+        ctx.stroke();
+        ctx.fillText(`${value}%`, left - 8, y);
+      });
+
+      const step = data.length > 1 ? chartW / (data.length - 1) : chartW;
+      const points = data.map((item, index) => {
+        const x = left + step * index;
+        const y = top + chartH * (1 - clamp(item.accuracy, 0, 100) / 100);
+        return { x, y, item };
+      });
+
+      const gradient = ctx.createLinearGradient(0, top, 0, top + chartH);
+      gradient.addColorStop(0, 'rgba(53, 166, 87, .20)');
+      gradient.addColorStop(1, 'rgba(53, 166, 87, 0)');
+
+      if (points.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, top + chartH);
+        points.forEach(point => ctx.lineTo(point.x, point.y));
+        ctx.lineTo(points[points.length - 1].x, top + chartH);
+        ctx.closePath();
+        ctx.fillStyle = gradient;
+        ctx.fill();
+
+        ctx.beginPath();
+        points.forEach((point, index) => {
+          if (index === 0) ctx.moveTo(point.x, point.y);
+          else ctx.lineTo(point.x, point.y);
+        });
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#319D54';
+        ctx.stroke();
+      }
+
+      points.forEach((point, index) => {
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, index === points.length - 1 ? 4 : 3, 0, Math.PI * 2);
+        ctx.fillStyle = index === points.length - 1 ? '#2F9E54' : '#FFFFFF';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#2F9E54';
+        ctx.stroke();
+
+        const dateText = String(point.item.date || '').slice(5).replace('-', '/');
+        ctx.fillStyle = '#9AA29D';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(dateText || `${index + 1}`, point.x, top + chartH + 13);
+      });
+
+      const last = points[points.length - 1];
+      if (last) {
+        const label = `${last.item.accuracy}%`;
+        ctx.font = 'bold 10px sans-serif';
+        const labelWidth = ctx.measureText(label).width + 12;
+        const bx = Math.min(width - labelWidth - 4, Math.max(4, last.x - labelWidth / 2));
+        const by = Math.max(2, last.y - 28);
+
+        ctx.fillStyle = '#2E9250';
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(bx, by, labelWidth, 20, 6);
+        } else {
+          ctx.rect(bx, by, labelWidth, 20);
+        }
+        ctx.fill();
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, bx + labelWidth / 2, by + 10);
+      }
+    });
   },
 
-  async openWrongAnalysis(e) {
-    if (this.data.resolvingWrong) return
-    const questionId = e.currentTarget.dataset.questionId
-    if (!questionId) return
-    this.setData({ resolvingWrong: true })
-    wx.showLoading({ title: '加载解析', mask: true })
-    const ids = await this._resolveWrongRecordIds(questionId)
-    wx.hideLoading()
-    this.setData({ resolvingWrong: false })
-    if (this._openWrongDetail(ids)) return
-    wx.showToast({ title: '该错题解析正在同步', icon: 'none' })
-  },
+  drawErrorChart() {
+    const query = wx.createSelectorQuery().in(this);
+    query.select('#errorCanvas').fields({ node: true, size: true }).exec(res => {
+      const target = res && res[0];
+      if (!target || !target.node || !target.width || !target.height) return;
 
-  practiceAgain() {
-    wx.redirectTo({ url: '/subpackages/study/practice/practice' })
-  },
+      const canvas = target.node;
+      const ctx = canvas.getContext('2d');
+      const dpr = wx.getWindowInfo ? (wx.getWindowInfo().pixelRatio || 1) : (wx.getSystemInfoSync().pixelRatio || 1);
 
-  goHome() {
-    wx.reLaunch({ url: '/pages/home/home' })
-  },
-})
+      canvas.width = target.width * dpr;
+      canvas.height = target.height * dpr;
+      ctx.scale(dpr, dpr);
+
+      const width = target.width;
+      const height = target.height;
+      ctx.clearRect(0, 0, width, height);
+
+      const cx = width / 2;
+      const cy = height / 2;
+      const radius = Math.min(width, height) / 2 - 8;
+      const lineWidth = Math.max(13, radius * .25);
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius - lineWidth / 2, 0, Math.PI * 2);
+      ctx.strokeStyle = '#EEF2EF';
+      ctx.lineWidth = lineWidth;
+      ctx.stroke();
+
+      const data = this.data.errorDistribution || [];
+      const total = data.reduce((sum, item) => sum + Number(item.count || 0), 0);
+      if (!total) return;
+
+      let start = -Math.PI / 2;
+      data.forEach(item => {
+        const ratio = Number(item.count || 0) / total;
+        const gap = Math.min(.035, ratio * .12);
+        const end = start + Math.PI * 2 * ratio;
+
+        ctx.beginPath();
+        ctx.arc(
+          cx,
+          cy,
+          radius - lineWidth / 2,
+          start + gap,
+          end - gap
+        );
+        ctx.strokeStyle = item.color || '#37A7D8';
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        start = end;
+      });
+    });
+  }
+});
