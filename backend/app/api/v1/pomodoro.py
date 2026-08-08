@@ -8,9 +8,12 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.pomodoro import (
     PomodoroCompleteRequest,
+    PomodoroDailySummaryResponse,
     PomodoroHistoryResponse,
     PomodoroResumeRequest,
     PomodoroSessionResponse,
+    PomodoroSettingsResponse,
+    PomodoroSettingsUpdate,
     PomodoroStartRequest,
     PomodoroStatsResponse,
     PomodoroSubjectBreakdown,
@@ -50,12 +53,12 @@ async def start_session(
 @router.post("/{session_id}/complete", response_model=PomodoroSessionResponse)
 async def complete_session(
     session_id: int,
-    req: PomodoroCompleteRequest,
+    req: PomodoroCompleteRequest = PomodoroCompleteRequest(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     try:
-        session = await svc.complete_session(db, session_id, current_user.id, req.total_paused_ms, req.actual_duration_sec)
+        session = await svc.complete_session(db, session_id, current_user.id)
     except ValueError as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(e))
@@ -74,7 +77,7 @@ async def interrupt_session(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        session = await svc.interrupt_session(db, session_id, current_user.id, req.total_paused_ms, req.actual_duration_sec)
+        session = await svc.interrupt_session(db, session_id, current_user.id)
     except ValueError as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(e))
@@ -93,11 +96,7 @@ async def resume_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.resume_session(
-        db, session_id, current_user.id,
-        client_total_paused_ms=req.total_paused_ms,
-        client_total_paused_sec=req.total_paused_sec,
-    )
+    session = await svc.resume_session(db, session_id, current_user.id)
     if not session:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
@@ -131,6 +130,25 @@ async def get_active(
     return PomodoroSessionResponse.from_orm_with_subject(session)
 
 
+@router.get("/settings", response_model=PomodoroSettingsResponse)
+async def get_pomodoro_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await svc.get_pomodoro_settings(db, current_user.id)
+
+
+@router.put("/settings", response_model=PomodoroSettingsResponse)
+async def update_pomodoro_settings(
+    req: PomodoroSettingsUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    data = await svc.update_pomodoro_settings(db, current_user.id, req.day_start_minute)
+    await db.commit()
+    return data
+
+
 @router.get("/stats", response_model=PomodoroStatsResponse)
 async def get_stats(
     db: AsyncSession = Depends(get_db),
@@ -138,6 +156,21 @@ async def get_stats(
 ):
     data = await svc.get_stats(db, current_user.id)
     return data
+
+
+@router.get("/daily-summary", response_model=PomodoroDailySummaryResponse)
+async def get_daily_summary(
+    date: str | None = Query(None, description="Study day (YYYY-MM-DD), defaults to the current study day"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    filter_date = None
+    if date:
+        try:
+            filter_date = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="date must use YYYY-MM-DD format") from exc
+    return await svc.get_daily_summary(db, current_user.id, filter_date)
 
 
 @router.get("/trends", response_model=list[PomodoroTrendPoint])

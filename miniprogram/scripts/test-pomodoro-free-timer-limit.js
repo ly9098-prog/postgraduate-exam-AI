@@ -237,10 +237,10 @@ t('_confirmEndFreeTimer calls _completeFreeTimerSession', function () {
   assert.ok(methodBody.indexOf('_completeFreeTimerSession') >= 0)
 })
 
-t('_completeFreeTimerSession posts to /pomodoro/{id}/complete', function () {
+t('_completeFreeTimerSession posts to /pomodoro/{id}/complete (server-authoritative)', function () {
   var methodBody = extractMethod(js, '_completeFreeTimerSession')
   assert.ok(methodBody.indexOf('/complete') >= 0)
-  assert.ok(methodBody.indexOf('actual_duration_sec') >= 0)
+  assert.ok(methodBody.indexOf('actual_duration_sec') < 0, 'no client actual_duration_sec (server computes it)')
   assert.ok(methodBody.indexOf('_resetToIdle') >= 0)
   assert.ok(methodBody.indexOf('loadTodayStats') >= 0)
 })

@@ -98,9 +98,10 @@ async def reset_tables(isolated_db):
     async with isolated_db.async_session() as db:
         from sqlalchemy import delete
 
-        from app.models.pomodoro import PomodoroSession
+        from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession
         from app.models.user import User
 
+        await db.execute(delete(PomodoroPauseInterval))
         await db.execute(delete(PomodoroSession))
         await db.execute(delete(User))
         await db.commit()
@@ -143,7 +144,7 @@ class TestServiceLayer:
             await db.commit()
 
         async with isolated_db.async_session() as db:
-            await svc.complete_session(db, sid, uid, total_paused_ms=0)
+            await svc.complete_session(db, sid, uid)
             await db.commit()
 
         async with isolated_db.async_session() as db:
@@ -170,7 +171,7 @@ class TestServiceLayer:
             await db.commit()
 
         async with isolated_db.async_session() as db:
-            await svc.interrupt_session(db, sid, uid, total_paused_ms=0)
+            await svc.interrupt_session(db, sid, uid)
             await db.commit()
 
         async with isolated_db.async_session() as db:
@@ -209,7 +210,7 @@ class TestServiceLayer:
     async def test_pause_then_resume_extends_expected_end_time(self, isolated_db):
         from sqlalchemy import select, update
 
-        from app.models.pomodoro import PomodoroSession
+        from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession
         from app.services import pomodoro_service as svc
 
         async with isolated_db.async_session() as db:
@@ -231,12 +232,22 @@ class TestServiceLayer:
             paused_eet = row.expected_end_time
             assert row.paused_at is not None, "暂停后 paused_at 必须有值"
 
-        # 把 paused_at 倒推 90 秒模拟"暂停了 90 秒"
+        # 把 paused_at 与 open interval 一起倒推 90 秒模拟"暂停了 90 秒"
+        # （canonical 语义下 interval 是暂停时长的权威来源）
         async with isolated_db.async_session() as db:
+            rewound = datetime.now(UTC) - timedelta(seconds=90)
             await db.execute(
                 update(PomodoroSession)
                 .where(PomodoroSession.id == sid)
-                .values(paused_at=datetime.now(UTC) - timedelta(seconds=90))
+                .values(paused_at=rewound)
+            )
+            await db.execute(
+                update(PomodoroPauseInterval)
+                .where(
+                    PomodoroPauseInterval.session_id == sid,
+                    PomodoroPauseInterval.ended_at.is_(None),
+                )
+                .values(started_at=rewound)
             )
             await db.commit()
 

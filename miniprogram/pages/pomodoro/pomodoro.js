@@ -1106,9 +1106,7 @@ Page({
       this._confirmTimerSnapshot = null
 
       // 5. Fire-and-forget backend resume — must not block UI
-      api.post('/pomodoro/' + snapshot.sessionId + '/resume', {
-        total_paused_ms: localTotalPausedMs,
-      }).then(server => {
+      api.post('/pomodoro/' + snapshot.sessionId + '/resume').then(server => {
         const serverPausedMs = (server.total_paused_sec || 0) * 1000
         const finalPausedMs = Math.max(serverPausedMs, localTotalPausedMs)
         this._timerState.totalPausedMs = finalPausedMs
@@ -1200,9 +1198,7 @@ Page({
       this._restartFreeTimerInterval()
 
       // Backend resume async — must not block local recovery
-      api.post('/pomodoro/' + snapshot.sessionId + '/resume', {
-        total_paused_ms: localTotalPausedMs,
-      }).then(server => {
+      api.post('/pomodoro/' + snapshot.sessionId + '/resume').then(server => {
         const serverPausedMs = (server.total_paused_sec || 0) * 1000
         const finalPausedMs = Math.max(serverPausedMs, localTotalPausedMs)
 
@@ -1261,8 +1257,7 @@ Page({
     this.setData({ showEndConfirm: false, actionLoading: true })
     if (!this._timerState.sessionId) return
     this._clearFreeTimerInterval()
-    const elapsedSec = Math.max(1, this._timerState.elapsedSec || 0)
-    await this._completeFreeTimerSession(elapsedSec)
+    await this._completeFreeTimerSession()
     this.setData({ actionLoading: false })
   },
 
@@ -1280,9 +1275,7 @@ Page({
     this.setData({ actionLoading: true })
 
     try {
-      await api.post(`/pomodoro/${this._timerState.sessionId}/interrupt`, {
-        total_paused_ms: totalPausedMs,
-      })
+      await api.post(`/pomodoro/${this._timerState.sessionId}/interrupt`)
       wx.showToast({ title: '已结束本次专注', icon: 'none' })
       wx.removeStorageSync('pomodoro_pause_adjustment')
       this._confirmTimerSnapshot = null
@@ -1304,13 +1297,9 @@ Page({
     if (!this._timerState.sessionId) return
     this._clearTimer()
     try {
-      await api.post(`/pomodoro/${this._timerState.sessionId}/complete`, {
-        total_paused_ms: this._timerState.totalPausedMs || 0,
-      })
+      await api.post(`/pomodoro/${this._timerState.sessionId}/complete`)
     } catch (e) {
-      try { await api.post(`/pomodoro/${this._timerState.sessionId}/interrupt`, {
-        total_paused_ms: this._timerState.totalPausedMs || 0,
-      }) } catch (_) {}
+      try { await api.post(`/pomodoro/${this._timerState.sessionId}/interrupt`) } catch (_) {}
     }
     this._resetToIdle()
     this.loadTodayStats()
@@ -1504,21 +1493,16 @@ Page({
 
     wx.showToast({ title: '自由计时已达5小时上限，已自动结束', icon: 'none', duration: 2000 })
 
-    await this._completeFreeTimerSession(elapsedSec)
+    await this._completeFreeTimerSession()
 
     this._freeTimerFinalizing = false
   },
 
-  async _completeFreeTimerSession(elapsedSec) {
+  async _completeFreeTimerSession() {
     if (!this._timerState.sessionId) return
     this._clearFreeTimerInterval()
-    const totalPausedMs = this._timerState.totalPausedMs || 0
-    const totalPausedSec = Math.floor(totalPausedMs / 1000)
     try {
-      await api.post(`/pomodoro/${this._timerState.sessionId}/complete`, {
-        actual_duration_sec: Math.max(1, elapsedSec),
-        total_paused_sec: totalPausedSec,
-      })
+      await api.post(`/pomodoro/${this._timerState.sessionId}/complete`)
       wx.showToast({ title: '已记录本次专注', icon: 'none', duration: 2000 })
     } catch (e) {
       wx.showToast({ title: '结束计时失败，请重试', icon: 'none' })
@@ -1632,9 +1616,7 @@ Page({
     }
     wx.vibrateLong()
     try {
-      await api.post(`/pomodoro/${this._timerState.sessionId}/complete`, {
-        total_paused_ms: this._timerState.totalPausedMs || 0,
-      })
+      await api.post(`/pomodoro/${this._timerState.sessionId}/complete`)
       wx.removeStorageSync('pomodoro_pause_adjustment')
     } catch (e) {
       console.error('同步失败', e)
@@ -1884,14 +1866,8 @@ Page({
     if (remaining <= 0) {
       wx.removeStorageSync('pomodoro_pause')
       wx.removeStorageSync('pomodoro_running_state')
-      api.post(`/pomodoro/${session.id}/complete`, {
-        total_paused_ms: totalPausedMs || 0,
-        actual_duration_sec: session.work_duration * 60,
-      }).catch(() => {
-        api.post(`/pomodoro/${session.id}/interrupt`, {
-          total_paused_ms: totalPausedMs || 0,
-          actual_duration_sec: session.work_duration * 60,
-        }).catch(() => {})
+      api.post(`/pomodoro/${session.id}/complete`).catch(() => {
+        api.post(`/pomodoro/${session.id}/interrupt`).catch(() => {})
       })
       this._timerState.totalPausedMs = 0
       this._timerState.pauseStartTime = null

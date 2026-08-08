@@ -14,14 +14,18 @@ class PomodoroStartRequest(BaseModel):
 
 
 class PomodoroCompleteRequest(BaseModel):
-    actual_duration_sec: int | None = Field(default=None, ge=0, description="If provided, used directly instead of computing from timestamps")
-    total_paused_sec: int | None = Field(default=None, ge=0, description="Total paused seconds (informational, server uses DB value)")
-    total_paused_ms: int | None = Field(default=None, ge=0, description="legacy only, prefer total_paused_sec")
+    """Empty body — actual_duration is server-authoritative (§14).
+
+    Extra fields from older clients are ignored (Pydantic default), so shipping the
+    backend before every client is updated is safe.
+    """
+    pass
 
 
 class PomodoroResumeRequest(BaseModel):
-    total_paused_ms: int | None = Field(default=None, ge=0)
-    total_paused_sec: int | None = Field(default=None, ge=0)
+    """Empty body — pause totals are recomputed server-side from intervals."""
+
+    pass
 
 
 class PomodoroSessionResponse(BaseModel):
@@ -84,6 +88,38 @@ class PomodoroStatsResponse(BaseModel):
     today_duration_sec: int = 0
     week_sessions: int = 0
     week_duration_sec: int = 0
+    today_date: str = ""
+    week_start_date: str = ""
+    day_start_minute: int = 0
+    day_start_time: str = "00:00"
+
+
+class PomodoroSettingsUpdate(BaseModel):
+    day_start_minute: int = Field(ge=0, le=1439)
+
+
+class PomodoroSettingsResponse(BaseModel):
+    day_start_minute: int
+    day_start_time: str
+    timezone: str
+
+
+class PomodoroDailySummarySubject(BaseModel):
+    subject_id: int | None = None
+    subject_code: str = ""
+    subject_name: str = ""
+    sessions: int = 0
+    duration_sec: int = 0
+
+
+class PomodoroDailySummaryResponse(BaseModel):
+    date: str
+    timezone: str
+    day_start_minute: int
+    day_start_time: str
+    sessions: int = 0
+    duration_sec: int = 0
+    subjects: list[PomodoroDailySummarySubject] = []
 
 
 class PomodoroTrendPoint(BaseModel):

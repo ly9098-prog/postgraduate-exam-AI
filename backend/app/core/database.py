@@ -485,7 +485,9 @@ async def init_db():
     from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401 — Phase 3
     from app.models.knowledge_point import KnowledgePoint  # noqa: F401
     from app.models.pomodoro import (
+        PomodoroPauseInterval,  # noqa: F401 — registered for create_all
         PomodoroSession,  # noqa: F401 — Subject relationship target
+        UserPomodoroSettings,  # noqa: F401 — registered for create_all
     )
     from app.models.practice_record import (
         PracticeRecord,  # noqa: F401 — Subject relationship target

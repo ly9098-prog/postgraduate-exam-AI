@@ -1,34 +1,70 @@
-from datetime import date, datetime, time, timedelta, timezone
+import logging
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
-from app.core.time_utils import utcnow
+from app.core.time_utils import (
+    current_study_day,
+    minute_to_time_text,
+    study_day_for_utc,
+    study_day_utc_range,
+    study_week_utc_range,
+    utcnow,
+)
 from app.models.admin import Subject
-from app.models.pomodoro import PomodoroSession
+from app.models.pomodoro import (
+    PomodoroPauseInterval,
+    PomodoroSession,
+    UserPomodoroSettings,
+)
 from app.models.user import User
+from app.services.pomodoro_attribution import split_session_duration_by_study_day
 
-# Product dates are selected and displayed in China Standard Time, while all
-# PomodoroSession timestamps are stored as naive UTC datetimes.  Query with a
-# half-open UTC range instead of func.date(end_time): the latter interprets the
-# stored value as a UTC calendar date and can also be cached/optimised poorly by
-# the database when switching between dates.
-_SHANGHAI_TZ = timezone(timedelta(hours=8))
-
-
-def _shanghai_date_utc_range(target_date: date) -> tuple[datetime, datetime]:
-    start_local = datetime.combine(target_date, time.min, tzinfo=_SHANGHAI_TZ)
-    start_utc = start_local.astimezone(timezone.utc).replace(tzinfo=None)
-    return start_utc, start_utc + timedelta(days=1)
+logger = logging.getLogger(__name__)
 
 
 def _effective_paused_sec(session, now) -> int:
-    """Total paused seconds including any in-progress pause segment."""
-    paused = session.total_paused_sec or 0
-    if session.paused_at is not None:
-        paused += max(0, int((now - session.paused_at).total_seconds()))
-    return paused
+    """Paused seconds derived from the canonical pause intervals (single source of truth).
+
+    ``total_paused_sec`` is a derived cache kept for the active-timer UI; this
+    recomputes the truth from the intervals so the cache can never diverge.
+    """
+    total = 0
+    for i in session.pause_intervals:
+        if i.started_at is None:
+            continue
+        end = i.ended_at if i.ended_at is not None else now
+        if end > i.started_at:
+            total += int((end - i.started_at).total_seconds())
+    return total
+
+
+def _close_open_pause_interval(session, now) -> PomodoroPauseInterval | None:
+    """Close the session's open pause interval at ``now``.
+
+    Invariant (§13): a paused session has exactly one open pause interval.  A paused
+    session with ``paused_at`` set but no open interval is a data anomaly — logged
+    loudly and never silently repaired at runtime.
+    """
+    open_interval = next((i for i in session.pause_intervals if i.ended_at is None), None)
+    if open_interval is None:
+        if session.paused_at is not None:
+            logger.warning(
+                "pomodoro data anomaly: session %s has paused_at but no open pause interval; "
+                "pause segment not recorded as an interval",
+                session.id,
+            )
+        return None
+    open_interval.ended_at = now
+    return open_interval
+
+
+def _server_actual_duration(session, now) -> int:
+    """Server-authoritative active seconds: wall clock minus canonical pause time."""
+    raw = int((now - session.start_time).total_seconds())
+    return max(0, raw - _effective_paused_sec(session, now))
 
 
 async def start_session(
@@ -98,10 +134,13 @@ async def start_session(
     return session
 
 
-async def complete_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int | None = None, actual_duration_sec: int | None = None) -> PomodoroSession | None:
+async def complete_session(db: AsyncSession, session_id: int, user_id: int) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)
-        .options(joinedload(PomodoroSession.subject_ref))
+        .options(
+            joinedload(PomodoroSession.subject_ref),
+            selectinload(PomodoroSession.pause_intervals),
+        )
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
@@ -113,35 +152,17 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int, tota
         return None
     now = utcnow()
 
-    # Capture any current paused segment before finalizing
+    # Close any open pause interval so the whole pause is captured by intervals.
     if session.paused_at is not None:
-        paused_segment = max(0, int((now - session.paused_at).total_seconds()))
-        session.total_paused_sec = (session.total_paused_sec or 0) + paused_segment
+        _close_open_pause_interval(session, now)
         session.paused_at = None
 
     session.end_time = now
-
-    # Merge client-provided paused time into effective paused
-    effective_paused = _effective_paused_sec(session, now)
-    client_paused_sec = None
-    if total_paused_ms is not None:
-        client_paused_sec = max(0, int((total_paused_ms + 999) / 1000))
-    if client_paused_sec is not None:
-        effective_paused = max(effective_paused, client_paused_sec)
-
-    raw_seconds = int((now - session.start_time).total_seconds())
-    server_actual = max(0, raw_seconds - effective_paused)
-    if actual_duration_sec is not None:
-        if actual_duration_sec < 0:
-            raise ValueError("actual_duration_sec must be >= 0")
-        # Cap at server-computed value + 5s tolerance
-        if actual_duration_sec > server_actual + 5:
-            actual_duration_sec = server_actual
-        session.actual_duration = actual_duration_sec
-    else:
-        session.actual_duration = server_actual
+    # actual_duration is computed entirely server-side from timestamps + intervals
+    # (§14); the client never overrides it.
+    session.actual_duration = _server_actual_duration(session, now)
+    session.total_paused_sec = _effective_paused_sec(session, now)  # derived cache
     session.status = "completed"
-    session.total_paused_sec = effective_paused
     if not session.notification_sent:
         session.notification_sent = True
         session.notification_sent_at = now
@@ -152,10 +173,13 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int, tota
     return session
 
 
-async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, total_paused_ms: int | None = None, actual_duration_sec: int | None = None) -> PomodoroSession | None:
+async def interrupt_session(db: AsyncSession, session_id: int, user_id: int) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)
-        .options(joinedload(PomodoroSession.subject_ref))
+        .options(
+            joinedload(PomodoroSession.subject_ref),
+            selectinload(PomodoroSession.pause_intervals),
+        )
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
@@ -167,34 +191,14 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, tot
         return None
     now = utcnow()
 
-    # Capture any current paused segment before finalizing
     if session.paused_at is not None:
-        paused_segment = max(0, int((now - session.paused_at).total_seconds()))
-        session.total_paused_sec = (session.total_paused_sec or 0) + paused_segment
+        _close_open_pause_interval(session, now)
         session.paused_at = None
 
     session.end_time = now
-
-    # Merge client-provided paused time into effective paused
-    effective_paused = _effective_paused_sec(session, now)
-    client_paused_sec = None
-    if total_paused_ms is not None:
-        client_paused_sec = max(0, int((total_paused_ms + 999) / 1000))
-    if client_paused_sec is not None:
-        effective_paused = max(effective_paused, client_paused_sec)
-
-    raw_seconds = int((now - session.start_time).total_seconds())
-    server_actual = max(0, raw_seconds - effective_paused)
-    if actual_duration_sec is not None:
-        if actual_duration_sec < 0:
-            raise ValueError("actual_duration_sec must be >= 0")
-        if actual_duration_sec > server_actual + 5:
-            actual_duration_sec = server_actual
-        session.actual_duration = actual_duration_sec
-    else:
-        session.actual_duration = server_actual
+    session.actual_duration = _server_actual_duration(session, now)
+    session.total_paused_sec = _effective_paused_sec(session, now)  # derived cache
     session.status = "interrupted"
-    session.total_paused_sec = effective_paused
     if not session.notification_sent:
         session.notification_sent = True
         session.notification_sent_at = now
@@ -208,12 +212,18 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int, tot
 async def pause_session(db: AsyncSession, session_id: int, user_id: int) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)
-        .options(joinedload(PomodoroSession.subject_ref))
+        .options(
+            joinedload(PomodoroSession.subject_ref),
+            selectinload(PomodoroSession.pause_intervals),
+        )
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
             PomodoroSession.status.in_(["running", "paused"]),
         )
+        # Row lock so two concurrent pause requests cannot both see status="running"
+        # and each append an open pause interval (PostgreSQL; no-op on SQLite).
+        .with_for_update()
     )
     session = result.scalar_one_or_none()
     if not session:
@@ -222,10 +232,17 @@ async def pause_session(db: AsyncSession, session_id: int, user_id: int) -> Pomo
     if session.status == "paused":
         await db.refresh(session)
         return session
-    if session.paused_at is None:
-        session.paused_at = utcnow()
-        session.status = "paused"
-        await db.flush()
+    now = utcnow()
+    # Record the pause interval so attribution can subtract exactly where the
+    # pause fell.  Defensive: never create a second open interval (covers engines
+    # without SELECT FOR UPDATE, e.g. SQLite, and double-tap races).
+    if not any(i.ended_at is None for i in session.pause_intervals):
+        session.pause_intervals.append(
+            PomodoroPauseInterval(session_id=session.id, started_at=now, ended_at=None)
+        )
+    session.paused_at = now
+    session.status = "paused"
+    await db.flush()
     await db.refresh(session)
     return session
 
@@ -234,12 +251,13 @@ async def resume_session(
     db: AsyncSession,
     session_id: int,
     user_id: int,
-    client_total_paused_ms: int | None = None,
-    client_total_paused_sec: int | None = None,
 ) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)
-        .options(joinedload(PomodoroSession.subject_ref))
+        .options(
+            joinedload(PomodoroSession.subject_ref),
+            selectinload(PomodoroSession.pause_intervals),
+        )
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
@@ -253,27 +271,22 @@ async def resume_session(
     now = utcnow()
 
     if session.status == "paused" and session.paused_at is not None:
-        paused_sec = max(0, int((now - session.paused_at).total_seconds()))
-        session.total_paused_sec = (session.total_paused_sec or 0) + paused_sec
-        if session.expected_end_time is not None and paused_sec > 0:
-            session.expected_end_time = session.expected_end_time + timedelta(seconds=paused_sec)
+        _close_open_pause_interval(session, now)
         session.paused_at = None
         session.status = "running"
-
-    if session.status == "running":
-        client_sec = None
-        if client_total_paused_ms is not None:
-            client_sec = max(0, int((client_total_paused_ms + 999) / 1000))
-        elif client_total_paused_sec is not None:
-            client_sec = max(0, int(client_total_paused_sec))
-
-        if client_sec is not None:
-            session.total_paused_sec = max(session.total_paused_sec or 0, client_sec)
+        # Recompute the derived cache and the countdown end from canonical data —
+        # idempotent, repeated resumes never double-extend the countdown.
+        session.total_paused_sec = _effective_paused_sec(session, now)
+        if session.expected_end_time is not None:
+            session.expected_end_time = (
+                session.start_time
+                + timedelta(minutes=session.work_duration)
+                + timedelta(seconds=session.total_paused_sec)
+            )
 
     await db.flush()
     await db.refresh(session)
     return session
-
 
 
 async def get_active_session(db: AsyncSession, user_id: int) -> PomodoroSession | None:
@@ -290,99 +303,142 @@ async def get_active_session(db: AsyncSession, user_id: int) -> PomodoroSession 
     return result.scalar_one_or_none()
 
 
-async def _cancel_running(db: AsyncSession, user_id: int) -> None:
-    result = await db.execute(
-        select(PomodoroSession)
-        .where(
-            PomodoroSession.user_id == user_id,
-            PomodoroSession.status.in_(["running", "paused"]),
-        )
-        .with_for_update()
-    )
-    for session in result.scalars().all():
-        now = utcnow()
-        if session.paused_at is not None:
-            paused_segment = max(0, int((now - session.paused_at).total_seconds()))
-            session.total_paused_sec = (session.total_paused_sec or 0) + paused_segment
-            session.paused_at = None
-        session.end_time = now
-        raw_seconds = int((now - session.start_time).total_seconds())
-        paused = _effective_paused_sec(session, now)
-        session.actual_duration = max(0, raw_seconds - paused)
-        session.status = "interrupted"
-        if not session.notification_sent:
-            session.notification_sent = True
-            session.notification_sent_at = now
-            if not session.notification_error:
-                session.notification_error = "skipped: superseded by new session"
+# ── Settings ─────────────────────────────────────────────────────────────
 
-
-async def get_stats(db: AsyncSession, user_id: int) -> dict:
-    today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    week_start = today_start - timedelta(days=today_start.weekday())
-
-    _status_cond = PomodoroSession.status == "completed"
-    today_result = await db.execute(
-        select(
-            func.count(PomodoroSession.id),
-            func.coalesce(func.sum(PomodoroSession.actual_duration), 0),
-        ).where(
-            PomodoroSession.user_id == user_id,
-            _status_cond,
-            PomodoroSession.end_time >= today_start,
-        )
-    )
-    today_sessions, today_duration = today_result.one()
-
-    week_result = await db.execute(
-        select(
-            func.count(PomodoroSession.id),
-            func.coalesce(func.sum(PomodoroSession.actual_duration), 0),
-        ).where(
-            PomodoroSession.user_id == user_id,
-            _status_cond,
-            PomodoroSession.end_time >= week_start,
-        )
-    )
-    week_sessions, week_duration = week_result.one()
-
+async def get_pomodoro_settings(db: AsyncSession, user_id: int) -> dict:
+    row = await db.get(UserPomodoroSettings, user_id)
+    day_start_minute = row.day_start_minute if row is not None else 0
     return {
-        "today_sessions": today_sessions or 0,
-        "today_duration_sec": today_duration or 0,
-        "week_sessions": week_sessions or 0,
-        "week_duration_sec": week_duration or 0,
+        "day_start_minute": day_start_minute,
+        "day_start_time": minute_to_time_text(day_start_minute),
+        "timezone": "Asia/Shanghai",
     }
 
 
-async def get_trends(db: AsyncSession, user_id: int, days: int = 7) -> list[dict]:
-    since = utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+async def update_pomodoro_settings(db: AsyncSession, user_id: int, day_start_minute: int) -> dict:
+    if day_start_minute < 0 or day_start_minute > 1439:
+        raise ValueError("day_start_minute must be in range 0..1439")
+    row = await db.get(UserPomodoroSettings, user_id)
+    if row is None:
+        db.add(UserPomodoroSettings(user_id=user_id, day_start_minute=day_start_minute))
+    else:
+        row.day_start_minute = day_start_minute
+    await db.flush()
+    return await get_pomodoro_settings(db, user_id)
 
+
+# ── Statistics ───────────────────────────────────────────────────────────
+
+async def _load_overlapping_sessions(
+    db: AsyncSession,
+    user_id: int,
+    period_start: datetime,
+    period_end: datetime,
+) -> list[PomodoroSession]:
+    """Load completed sessions overlapping the half-open range [period_start, period_end).
+
+    Eager-loads subject_ref and pause_intervals so attribution needs no extra queries.
+    """
     result = await db.execute(
-        select(
-            func.date(PomodoroSession.end_time),
-            func.count(PomodoroSession.id),
-            func.coalesce(func.sum(PomodoroSession.actual_duration), 0),
+        select(PomodoroSession)
+        .options(
+            joinedload(PomodoroSession.subject_ref),
+            selectinload(PomodoroSession.pause_intervals),
         )
         .where(
             PomodoroSession.user_id == user_id,
             PomodoroSession.status == "completed",
-            PomodoroSession.end_time >= since,
+            PomodoroSession.start_time < period_end,
+            PomodoroSession.end_time > period_start,
         )
-        .group_by(func.date(PomodoroSession.end_time))
-        .order_by(func.date(PomodoroSession.end_time))
     )
-    data = {str(r[0]): {"sessions": r[1], "duration": r[2]} for r in result.all()}
+    return list(result.scalars().all())
 
-    points = []
-    for i in range(days):
-        d = (date.today() - timedelta(days=days - 1 - i)).isoformat()
-        entry = data.get(d, {"sessions": 0, "duration": 0})
-        points.append({
-            "date": d,
-            "sessions": entry["sessions"],
-            "duration_sec": entry["duration"],
-        })
-    return points
+
+def _resolve_subject(session) -> tuple[int | None, str, str]:
+    """Return (group_key, code, name) for a session's subject.
+
+    Only active subjects render under their real id/name; inactive or orphaned
+    (deleted) subjects merge into a single 未分类 group so no duration is lost and
+    no duplicate 未分类 slices are produced.
+    """
+    ref = session.subject_ref
+    if session.subject_id is not None and ref is not None and ref.is_active:
+        return session.subject_id, ref.code or "", ref.name or ""
+    return None, "", "未分类"
+
+
+async def get_stats(db: AsyncSession, user_id: int) -> dict:
+    settings = await get_pomodoro_settings(db, user_id)
+    dsm = settings["day_start_minute"]
+    today_date = current_study_day(dsm)
+    today_start, today_end = study_day_utc_range(today_date, dsm)
+    week_start, week_end = study_week_utc_range(dsm)
+    week_start_date = study_day_for_utc(week_start, dsm)
+    week_end_date = week_start_date + timedelta(days=7)
+
+    period_start = min(today_start, week_start)
+    period_end = max(today_end, week_end)
+    sessions = await _load_overlapping_sessions(db, user_id, period_start, period_end)
+
+    today_sessions = 0
+    today_duration = 0
+    week_sessions = 0
+    week_duration = 0
+    for s in sessions:
+        start_day = study_day_for_utc(s.start_time, dsm)
+        if start_day == today_date:
+            today_sessions += 1
+        if week_start_date <= start_day < week_end_date:
+            week_sessions += 1
+        for day, sec in split_session_duration_by_study_day(s, s.pause_intervals, dsm).items():
+            if day == today_date:
+                today_duration += sec
+            if week_start_date <= day < week_end_date:
+                week_duration += sec
+
+    return {
+        "today_sessions": today_sessions,
+        "today_duration_sec": today_duration,
+        "week_sessions": week_sessions,
+        "week_duration_sec": week_duration,
+        "today_date": today_date.isoformat(),
+        "week_start_date": week_start_date.isoformat(),
+        "day_start_minute": dsm,
+        "day_start_time": settings["day_start_time"],
+    }
+
+
+async def get_trends(db: AsyncSession, user_id: int, days: int = 7) -> list[dict]:
+    settings = await get_pomodoro_settings(db, user_id)
+    dsm = settings["day_start_minute"]
+    today = current_study_day(dsm)
+    start_day = today - timedelta(days=days - 1)
+    period_start = study_day_utc_range(start_day, dsm)[0]
+    period_end = study_day_utc_range(today, dsm)[1]
+
+    sessions = await _load_overlapping_sessions(db, user_id, period_start, period_end)
+
+    agg = {
+        today - timedelta(days=days - 1 - i): {"sessions": 0, "duration_sec": 0}
+        for i in range(days)
+    }
+    for s in sessions:
+        start_day = study_day_for_utc(s.start_time, dsm)
+        if start_day in agg:
+            agg[start_day]["sessions"] += 1
+        for day, sec in split_session_duration_by_study_day(s, s.pause_intervals, dsm).items():
+            if day in agg:
+                agg[day]["duration_sec"] += sec
+
+    return [
+        {
+            "date": d.isoformat(),
+            "sessions": agg[d]["sessions"],
+            "duration_sec": agg[d]["duration_sec"],
+        }
+        for d in sorted(agg)
+    ]
 
 
 async def get_subject_breakdown(
@@ -390,50 +446,99 @@ async def get_subject_breakdown(
     user_id: int,
     filter_date: date | None = None,
 ) -> list[dict]:
-    target_date = filter_date or datetime.now(_SHANGHAI_TZ).date()
-    start_utc, end_utc = _shanghai_date_utc_range(target_date)
+    settings = await get_pomodoro_settings(db, user_id)
+    dsm = settings["day_start_minute"]
+    target_date = filter_date or current_study_day(dsm)
+    period_start, period_end = study_day_utc_range(target_date, dsm)
+    sessions = await _load_overlapping_sessions(db, user_id, period_start, period_end)
 
-    result = await db.execute(
-        select(
-            PomodoroSession.subject_id,
-            func.count(PomodoroSession.id),
-            func.coalesce(func.sum(PomodoroSession.actual_duration), 0),
-        )
-        .where(
-            PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "completed",
-            PomodoroSession.end_time >= start_utc,
-            PomodoroSession.end_time < end_utc,
-        )
-        .group_by(PomodoroSession.subject_id)
-    )
+    groups: dict[int | None, dict] = {}
+    for s in sessions:
+        start_day = study_day_for_utc(s.start_time, dsm)
+        day_contrib = split_session_duration_by_study_day(s, s.pause_intervals, dsm).get(target_date, 0)
+        if day_contrib <= 0 and start_day != target_date:
+            continue
+        if day_contrib <= 0:
+            # 本日无时长贡献：不出现在科目分布，避免 0% 扇形 / "N次 0分钟"
+            continue
+        key, code, name = _resolve_subject(s)
+        g = groups.setdefault(key, {
+            "subject_id": key, "subject_code": code, "subject_name": name,
+            "duration_sec": 0, "sessions": 0,
+        })
+        g["duration_sec"] += day_contrib
+        if start_day == target_date:
+            g["sessions"] += 1
 
-    # Build a lookup for subject names from the subjects table
-    subj_rows = await db.execute(select(Subject.id, Subject.code, Subject.name).where(Subject.is_active.is_(True)))
-    subj_map = {r[0]: {"code": r[1], "name": r[2]} for r in subj_rows.all()}
+    result = [
+        {
+            "subject_id": key,
+            "subject_code": g["subject_code"],
+            "subject_name": g["subject_name"],
+            "sessions": g["sessions"],
+            "duration_sec": g["duration_sec"],
+        }
+        for key, g in groups.items()
+    ]
+    result.sort(key=lambda r: r["duration_sec"], reverse=True)
+    return result
 
-    result_rows = []
-    for r in result.all():
-        sid = r[0]
-        sessions = r[1]
-        duration = r[2]
-        if sid and sid in subj_map:
-            result_rows.append({
-                "subject_id": sid,
-                "subject_code": subj_map[sid]["code"],
-                "subject_name": subj_map[sid]["name"],
-                "sessions": sessions,
-                "duration_sec": duration,
-            })
-        else:
-            result_rows.append({
-                "subject_id": None,
-                "subject_code": "",
-                "subject_name": "未分类",
-                "sessions": sessions,
-                "duration_sec": duration,
-            })
-    return result_rows
+
+async def get_daily_summary(
+    db: AsyncSession,
+    user_id: int,
+    filter_date: date | None = None,
+) -> dict:
+    settings = await get_pomodoro_settings(db, user_id)
+    dsm = settings["day_start_minute"]
+    target_date = filter_date or current_study_day(dsm)
+    period_start, period_end = study_day_utc_range(target_date, dsm)
+    sessions = await _load_overlapping_sessions(db, user_id, period_start, period_end)
+
+    groups: dict[int | None, dict] = {}
+    session_count = 0
+    total_duration = 0
+    for s in sessions:
+        start_day = study_day_for_utc(s.start_time, dsm)
+        day_contrib = split_session_duration_by_study_day(s, s.pause_intervals, dsm).get(target_date, 0)
+        if day_contrib <= 0 and start_day != target_date:
+            continue
+        if start_day == target_date:
+            session_count += 1
+        total_duration += day_contrib
+        if day_contrib <= 0:
+            # 本日无时长贡献：仍计入总次数/总时长，但不生成 0% 科目切片
+            continue
+        key, code, name = _resolve_subject(s)
+        g = groups.setdefault(key, {
+            "subject_id": key, "subject_code": code, "subject_name": name,
+            "duration_sec": 0, "sessions": 0,
+        })
+        g["duration_sec"] += day_contrib
+        if start_day == target_date:
+            g["sessions"] += 1
+
+    subjects = [
+        {
+            "subject_id": key,
+            "subject_code": g["subject_code"],
+            "subject_name": g["subject_name"],
+            "sessions": g["sessions"],
+            "duration_sec": g["duration_sec"],
+        }
+        for key, g in groups.items()
+    ]
+    subjects.sort(key=lambda r: r["duration_sec"], reverse=True)
+
+    return {
+        "date": target_date.isoformat(),
+        "timezone": "Asia/Shanghai",
+        "day_start_minute": dsm,
+        "day_start_time": settings["day_start_time"],
+        "sessions": session_count,
+        "duration_sec": total_duration,
+        "subjects": subjects,
+    }
 
 
 async def get_history(
@@ -445,10 +550,11 @@ async def get_history(
         ~PomodoroSession.status.in_(["running", "paused"]),
     ]
     if filter_date is not None:
-        start_utc, end_utc = _shanghai_date_utc_range(filter_date)
+        dsm = (await get_pomodoro_settings(db, user_id))["day_start_minute"]
+        start_utc, end_utc = study_day_utc_range(filter_date, dsm)
         where.extend([
-            PomodoroSession.end_time >= start_utc,
-            PomodoroSession.end_time < end_utc,
+            PomodoroSession.start_time >= start_utc,
+            PomodoroSession.start_time < end_utc,
         ])
 
     count_result = await db.execute(
@@ -460,8 +566,8 @@ async def get_history(
         select(PomodoroSession)
         .options(joinedload(PomodoroSession.subject_ref))
         .where(*where)
-        .order_by(PomodoroSession.created_at.desc())
+        .order_by(PomodoroSession.start_time.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    return result.scalars().all(), total
+    return list(result.scalars().all()), total

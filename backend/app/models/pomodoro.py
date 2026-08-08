@@ -1,6 +1,17 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -8,6 +19,16 @@ from app.core.database import Base
 
 class PomodoroSession(Base):
     __tablename__ = "pomodoro_sessions"
+    __table_args__ = (
+        Index("ix_pomodoro_sessions_user_status_start", "user_id", "status", "start_time"),
+        Index("ix_pomodoro_sessions_user_status_end", "user_id", "status", "end_time"),
+        # Post-migration invariant: a completed session always has a non-negative
+        # actual_duration within its wall clock.
+        CheckConstraint(
+            "status != 'completed' OR (end_time >= start_time AND actual_duration >= 0)",
+            name="ck_pomodoro_sessions_completed_duration",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
@@ -15,6 +36,13 @@ class PomodoroSession(Base):
     chapter_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     subject_ref = relationship("Subject", back_populates="pomodoro_sessions")
+    # Default lazy load: every code path that needs intervals eager-loads them via
+    # selectinload, so hot queries (history/active) do not pay an extra SELECT IN.
+    pause_intervals = relationship(
+        "PomodoroPauseInterval",
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
     preset: Mapped[str] = mapped_column(String(16), nullable=False, default="standard")
     work_duration: Mapped[int] = mapped_column(Integer, nullable=False, default=25)
     break_duration: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
@@ -29,5 +57,50 @@ class PomodoroSession(Base):
     notification_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     openid_snapshot: Mapped[str | None] = mapped_column(String(64), nullable=True)
     paused_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Derived cache for the active-timer UI, not authoritative: pause totals are
+    # computed from pomodoro_pause_intervals (the single source of truth).
     total_paused_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PomodoroPauseInterval(Base):
+    __tablename__ = "pomodoro_pause_intervals"
+    __table_args__ = (
+        Index("ix_pomodoro_pause_intervals_session_started", "session_id", "started_at"),
+        # At most one open pause interval per session.
+        Index(
+            "ux_pomodoro_pause_intervals_one_open",
+            "session_id",
+            unique=True,
+            sqlite_where=text("ended_at IS NULL"),
+            postgresql_where=text("ended_at IS NULL"),
+        ),
+        CheckConstraint(
+            "ended_at IS NULL OR ended_at > started_at",
+            name="ck_pomodoro_pause_intervals_ended_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("pomodoro_sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    session = relationship("PomodoroSession", back_populates="pause_intervals")
+
+
+class UserPomodoroSettings(Base):
+    __tablename__ = "user_pomodoro_settings"
+
+    # user_id is the primary key: one settings row per user.
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    day_start_minute: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )

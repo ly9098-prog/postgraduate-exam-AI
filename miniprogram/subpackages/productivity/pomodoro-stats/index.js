@@ -1,14 +1,6 @@
 const api = require('../../../utils/api')
 const pomodoroTheme = require('../../../utils/pomodoro-theme')
-
-function parseServerTime(value) {
-  if (!value) return NaN
-  if (typeof value === 'number') return value
-  const s = String(value).trim()
-  if (!s) return NaN
-  const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(s)
-  return new Date(hasTimezone ? s : s + '+00:00').getTime()
-}
+const chinaTime = require('../../../utils/china-time')
 
 const DARK_SUBJECT_COLORS = ['#3B82F6', '#F59E0B', '#10B981', '#06B6D4', '#F97316', '#2DD4BF', '#EA580C', '#8B5CF6', '#6366F1', '#EC4899']
 const LIGHT_SUBJECT_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C4773B', '#D96B5F', '#6685A3', '#718C45', '#B45E46', '#876F8F']
@@ -72,6 +64,14 @@ var pageConfig = {
     history: [],
     historyTotal: 0,
 
+    // 统计日设置（后端为权威，此处为本地展示/计算缓存）
+    dayStartMinute: 0,
+    dayStartTime: '00:00',
+    studyDayRangeText: '统计日从 00:00 开始',
+    dayStartNoteText: '专注时长按统计日边界拆分，专注次数按开始时间归属',
+    // 当日无"开始"记录但有时长（跨统计日 session 归属到本日）时用于空态文案
+    _crossDayBleedIn: false,
+
     // The only date picker lives in the pie card; the selected date also filters history.
     selectedDate: '',
     _todayDate: '',
@@ -97,6 +97,7 @@ var pageConfig = {
     this._requestId = 0
     this._viewReady = false
     this._hasData = false
+    this._settingsLoaded = false
     this._finalDrawn = false
     this._displayTodayDurationSec = 0
     this._durationAnimationToken = 0
@@ -107,17 +108,114 @@ var pageConfig = {
     this._canvasInitCallbacks = []
     const themeMode = pomodoroTheme.getTheme()
     pomodoroTheme.applyNativeTheme(themeMode)
-    const now = new Date()
-    const y = now.getFullYear()
-    const m = String(now.getMonth() + 1).padStart(2, '0')
-    const d = String(now.getDate()).padStart(2, '0')
-    const today = `${y}-${m}-${d}`
+    // 先用默认 day_start=0 计算当前中国统计日，settings 加载后若 day_start 不同会校正。
+    const today = chinaTime.getChinaStudyDate(0)
     this.setData({
       selectedDate: today,
       _todayDate: today,
       pieDateLabel: '今日',
       themeMode,
     })
+    this._init()
+  },
+
+  async _init() {
+    await this._ensureSettings()
+    // 首次加载由 onReady 的 loadData 完成（其内部 await _ensureSettings），
+    // 此处不再重复触发，避免首屏并发两次 4 请求批次。
+  },
+
+  /**
+   * 获取统计日设置（后端权威），据此校正当前中国统计日 / selectedDate。
+   * 幂等：请求进行中缓存同一 Promise，避免并发重复请求；成功后不再请求。
+   * loadData 先 await 本方法再读取 selectedDate，保证首次加载就使用正确统计日。
+   */
+  _ensureSettings() {
+    if (this._settingsLoaded) return Promise.resolve()
+    if (this._settingsPromise) return this._settingsPromise
+    this._settingsPromise = this._loadSettings()
+    return this._settingsPromise
+  },
+
+  async _loadSettings() {
+    try {
+      const settings = await api.get('/pomodoro/settings')
+      const raw = Number(settings && settings.day_start_minute)
+      const dsm = Number.isFinite(raw) ? Math.max(0, Math.min(1439, raw)) : 0
+      const prevToday = this.data._todayDate
+      const today = chinaTime.getChinaStudyDate(dsm)
+      const patch = {
+        dayStartMinute: dsm,
+        dayStartTime: chinaTime.minuteToTimeText(dsm),
+        studyDayRangeText: this._studyDayRangeText(dsm),
+      }
+      if (today !== prevToday) patch._todayDate = today
+      // 用户停留在旧"今天"或原选中日期超过新最大日期时，跟随新的 today
+      if (!this.data.selectedDate || this.data.selectedDate === prevToday || this.data.selectedDate > today) {
+        patch.selectedDate = today
+        patch.pieDateLabel = '今日'
+        patch.selectedDurationLabel = '今日专注'
+      }
+      this._settingsLoaded = true
+      this.setData(patch)
+    } catch (e) {
+      // settings 请求失败不阻塞、不永久锁定：下一次 loadData 会重试，
+      // 同时 loadData 的后端统计校正（_reconcileFromServer）会兜底。
+      console.error('加载统计日设置失败', e)
+    } finally {
+      this._settingsPromise = null
+    }
+  },
+
+  /**
+   * 以后端返回的统计日（/pomodoro/stats.today_date 或今日 daily-summary.date）为唯一权威，
+   * 校正客户端基于设备时钟/本地缓存计算的"今日"与 day_start，覆盖 settings 请求失败、
+   * 设备时钟偏差导致的"今日"不一致。
+   */
+  _reconcileFromServer(stats, summary) {
+    const patch = {}
+    if (stats) {
+      const rawDsm = stats.day_start_minute
+      if (rawDsm != null) {
+        const dsm = Number.isFinite(Number(rawDsm)) ? Math.max(0, Math.min(1439, Number(rawDsm))) : this.data.dayStartMinute
+        if (dsm !== this.data.dayStartMinute) {
+          patch.dayStartMinute = dsm
+          patch.dayStartTime = chinaTime.minuteToTimeText(dsm)
+          patch.studyDayRangeText = this._studyDayRangeText(dsm)
+        }
+        this._settingsLoaded = true
+      }
+    }
+    // stats.today_date 恒为权威"今日"；仅当查看"今日"时，summary.date 亦可代表今日
+    const today = (stats && stats.today_date) || (summary && summary.date) || ''
+    const prevToday = this.data._todayDate
+    const prevSelected = this.data.selectedDate
+    let changedToday = false
+    if (today && today !== prevToday) {
+      patch._todayDate = today
+      changedToday = true
+    }
+    if (today && (!prevSelected || prevSelected === prevToday || prevSelected > today)) {
+      patch.selectedDate = today
+      patch.pieDateLabel = '今日'
+      patch.selectedDurationLabel = '今日专注'
+      changedToday = true
+    }
+    if (Object.keys(patch).length) this.setData(patch)
+    return {
+      changedToday,
+      today: today || this.data._todayDate,
+      selectedDate: today && (!prevSelected || prevSelected === prevToday || prevSelected > today)
+        ? today
+        : prevSelected,
+    }
+  },
+
+  _studyDayRangeText(dsm) {
+    const minute = Math.max(0, Math.min(1439, Number(dsm) || 0))
+    if (!minute) return '统计日从 00:00 开始'
+    const t = chinaTime.minuteToTimeText(minute)
+    return '统计周期 ' + t + ' - 次日 ' + t
   },
 
   onShow() {
@@ -227,15 +325,24 @@ var pageConfig = {
       : 1 - Math.pow(-2 * t + 2, 3) / 2
   },
 
+  _parseDateStr(s) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s || ''))
+    if (!m) return null
+    return [Number(m[1]), Number(m[2]), Number(m[3])]
+  },
+
   _formatPieDateLabel(value) {
     if (!value) return '今日'
     if (value === this.data._todayDate) return '今日'
-    const today = new Date(this.data._todayDate + 'T00:00:00')
-    const target = new Date(value + 'T00:00:00')
-    if (Number.isFinite(today.getTime()) && Number.isFinite(target.getTime())) {
-      const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000)
+    const today = this._parseDateStr(this.data._todayDate)
+    const target = this._parseDateStr(value)
+    if (today && target) {
+      // 用 Date.UTC 计算日历日差，避免设备时区偏差
+      const diffDays = Math.round(
+        (Date.UTC(today[0], today[1] - 1, today[2]) - Date.UTC(target[0], target[1] - 1, target[2])) / 86400000
+      )
       if (diffDays === 1) return '昨日'
-      return `${target.getMonth() + 1}月${target.getDate()}日`
+      return `${target[1]}月${target[2]}日`
     }
     return value
   },
@@ -268,64 +375,6 @@ var pageConfig = {
     })
   },
 
-
-  _buildSubjectBreakdownFromSessions(sessions) {
-    const grouped = Object.create(null)
-    ;(Array.isArray(sessions) ? sessions : []).forEach(session => {
-      // Keep the original chart semantics: only completed focus sessions count.
-      if (!session || session.status !== 'completed') return
-      const duration = Number(session.actual_duration ?? session.actual_duration_sec ?? session.duration_sec ?? 0)
-      if (!Number.isFinite(duration) || duration <= 0) return
-      const subjectId = session.subject_id ?? null
-      const subjectCode = session.subject_code || ''
-      const key = subjectId != null ? `id:${subjectId}` : `code:${subjectCode || 'uncategorized'}`
-      if (!grouped[key]) {
-        grouped[key] = {
-          subject_id: subjectId,
-          subject_code: subjectCode,
-          subject_name: session.subject_name || '未分类',
-          sessions: 0,
-          duration_sec: 0,
-        }
-      }
-      grouped[key].sessions += 1
-      grouped[key].duration_sec += duration
-    })
-    return Object.values(grouped).sort((a, b) => b.duration_sec - a.duration_sec)
-  },
-
-  async _fetchAllDateHistory(date) {
-    const requestDate = String(date || '').trim()
-    if (!requestDate) return { items: [], total: 0 }
-    const stamp = Date.now()
-    const pageSize = 100
-    const first = await api.get('/pomodoro/history', {
-      page: 1,
-      page_size: pageSize,
-      date: requestDate,
-      _ts: stamp,
-    })
-    const firstItems = Array.isArray(first.items) ? first.items : []
-    const total = Number(first.total) || firstItems.length
-    const pageCount = Math.ceil(total / pageSize)
-    if (pageCount <= 1) return { items: firstItems, total }
-
-    const remaining = []
-    for (let page = 2; page <= pageCount; page++) {
-      remaining.push(api.get('/pomodoro/history', {
-        page,
-        page_size: pageSize,
-        date: requestDate,
-        _ts: `${stamp}-${page}`,
-      }))
-    }
-    const responses = await Promise.all(remaining)
-    const items = firstItems.slice()
-    responses.forEach(response => {
-      if (response && Array.isArray(response.items)) items.push(...response.items)
-    })
-    return { items, total }
-  },
 
   _resetPieCache() {
     this._pieSectors = null
@@ -473,35 +522,52 @@ var pageConfig = {
   /* ==================== Data Loading ==================== */
 
   async loadData() {
+    await this._ensureSettings()
+    if (!this._alive) return
     const reqId = this._requestId
-    const selectedDate = this.data.selectedDate
+    const requestedDate = this.data.selectedDate
     this._dateRequestSeq = (this._dateRequestSeq || 0) + 1
     const dateSeq = this._dateRequestSeq
     if (this._hasData) this._cancelDeferredHistory(true)
     this.setData({ loading: true, errorText: '' })
+    const viewingToday = !requestedDate || requestedDate === this.data._todayDate
     try {
-      const [stats, trends, dayData] = await Promise.all([
+      const [stats, trends, summary, historyRes] = await Promise.all([
         api.get('/pomodoro/stats'),
         api.get('/pomodoro/trends', { days: 7 }),
-        this._fetchAllDateHistory(selectedDate),
+        // 查看"今日"时不传 date，由后端返回权威当前学习日；查看历史日期才显式传
+        api.get('/pomodoro/daily-summary', viewingToday ? {} : { date: requestedDate }),
+        api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestedDate }),
       ])
       if (
         !this._alive ||
         reqId !== this._requestId ||
         dateSeq !== this._dateRequestSeq ||
-        selectedDate !== this.data.selectedDate
+        requestedDate !== this.data.selectedDate
       ) return
 
-      const daySessions = dayData.items || []
-      const subjectBreakdown = this._buildSubjectBreakdownFromSessions(daySessions)
-      const selectedDurationSec = subjectBreakdown.reduce(
-        (sum, item) => sum + (Number(item.duration_sec) || 0),
-        0
-      )
-      const selectedSessionCount = subjectBreakdown.reduce(
-        (sum, item) => sum + (Number(item.sessions) || 0),
-        0
-      )
+      // 以后端为准校正"今日"（settings 失败 / 设备时钟偏差兜底）
+      const reconciled = this._reconcileFromServer(stats, viewingToday ? summary : null)
+      if (!this._alive || reqId !== this._requestId || dateSeq !== this._dateRequestSeq) return
+
+      const effectiveDate = this.data.selectedDate
+      let effectiveHistory = historyRes
+      // 校正后"今日"变化且原先请求的是旧"今日" → 用权威日期重取 history
+      if (reconciled.changedToday && viewingToday && effectiveDate !== requestedDate) {
+        try {
+          effectiveHistory = await api.get('/pomodoro/history', { page: 1, page_size: 20, date: effectiveDate })
+        } catch (err) {
+          console.error('重取今日 history 失败', err)
+          effectiveHistory = { items: [], total: 0 }
+        }
+        if (!this._alive || reqId !== this._requestId || dateSeq !== this._dateRequestSeq) return
+      }
+
+      const daySessions = (effectiveHistory && effectiveHistory.items) || []
+      // 统计口径由后端 daily-summary 提供，前端不再拉全量 history 自算。
+      const subjectBreakdown = (summary && summary.subjects) || []
+      const selectedDurationSec = Number(summary && summary.duration_sec) || 0
+      const selectedSessionCount = Number(summary && summary.sessions) || 0
       // Both values in the main overview card follow the same selected-date
       // records used by the pie chart and recent-history list.
       this._rawTodayDur = selectedDurationSec
@@ -509,7 +575,7 @@ var pageConfig = {
       this._resetPieCache()
 
       const willAnimate = !this._hasData
-      const recentSessions = daySessions.slice(0, 20)
+      const recentSessions = daySessions
       this._hasData = true
       this._cancelDurationAnimation(false)
       this._displayTodayDurationSec = willAnimate ? 0 : selectedDurationSec
@@ -517,19 +583,19 @@ var pageConfig = {
       const historyPatch = willAnimate
         ? {
             history: [],
-            historyTotal: dayData.total || 0,
+            historyTotal: effectiveHistory.total || 0,
             historyReady: false,
           }
         : {
             history: recentSessions.map(item => this._formatSession(item)),
-            historyTotal: dayData.total || 0,
+            historyTotal: effectiveHistory.total || 0,
             historyReady: true,
           }
 
       this.setData({
         todaySessions: selectedSessionCount,
         todayDurationText: this._fmtMin(selectedDurationSec),
-        selectedDurationLabel: this._formatSelectedDurationLabel(selectedDate),
+        selectedDurationLabel: this._formatSelectedDurationLabel(effectiveDate),
         weekSessions: stats.week_sessions || 0,
         weekDurationText: this._fmtMin(stats.week_duration_sec || 0),
         trends: (trends || []).map(t => ({
@@ -538,7 +604,8 @@ var pageConfig = {
           _shortDate: (t.date || '').slice(5),
         })),
         subjects: this._buildSubjectItems(subjectBreakdown),
-        pieDateLabel: this._formatPieDateLabel(selectedDate),
+        pieDateLabel: this._formatPieDateLabel(effectiveDate),
+        _crossDayBleedIn: selectedSessionCount === 0 && selectedDurationSec > 0,
         pieLoading: false,
         loading: false,
         contentReady: true,
@@ -555,9 +622,9 @@ var pageConfig = {
           this._queueDeferredHistory(
             reqId,
             dateSeq,
-            selectedDate,
+            effectiveDate,
             recentSessions,
-            dayData.total || 0
+            effectiveHistory.total || 0
           )
         }
         this._initCanvases(() => {
@@ -578,16 +645,21 @@ var pageConfig = {
         })
       })
     } catch (e) {
-      if (!this._alive || reqId !== this._requestId) return
+      if (
+        !this._alive ||
+        reqId !== this._requestId ||
+        dateSeq !== this._dateRequestSeq ||
+        requestedDate !== this.data.selectedDate
+      ) return
       console.error('加载统计失败', e)
       this.setData({ loading: false, pieLoading: false, errorText: '加载失败，请检查网络后重试' })
     }
   },
 
   _formatSession(s) {
-    const startTime = parseServerTime(s.start_time)
-    const start = new Date(Number.isFinite(startTime) ? startTime : Date.now())
-    const timeStr = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`
+    // 统一按中国时间（UTC+8）格式化，不依赖设备时区
+    const timeStr = chinaTime.formatChinaTimeHM(s.start_time)
+    const dateStr = chinaTime.formatChinaMonthDay(s.start_time)
     const durSec = s.actual_duration ?? s.actual_duration_sec ?? s.duration_sec ?? 0
     const subjectName = s.subject_name || '未分类'
     const subjectKey = s.subject_code || ''
@@ -596,7 +668,7 @@ var pageConfig = {
     return {
       ...s,
       _time: timeStr,
-      _date: `${start.getMonth() + 1}/${start.getDate()}`,
+      _date: dateStr,
       _duration: durationText,
       _subjectLabel: isFree ? '自由计时 · ' + subjectName : subjectName,
       _color: getSubjectColor(s.subject_id != null ? String(s.subject_id) : (subjectKey || subjectName), this.data.themeMode),
@@ -618,6 +690,48 @@ var pageConfig = {
     }, () => this.loadDateData(date))
   },
 
+  /* ==================== 统计日设置 ==================== */
+
+  onDayStartChange(e) {
+    const timeText = e && e.detail && e.detail.value
+    if (typeof timeText !== 'string') return
+    const minute = chinaTime.timeTextToMinute(timeText)
+    if (minute === this.data.dayStartMinute) return
+    this._saveDayStart(minute)
+  },
+
+  async _saveDayStart(minute) {
+    if (wx.showLoading) wx.showLoading({ title: '保存中', mask: true })
+    try {
+      await api.put('/pomodoro/settings', { day_start_minute: minute })
+      const today = chinaTime.getChinaStudyDate(minute)
+      let selectedDate = this.data.selectedDate
+      // 原 selectedDate 超过新的最大日期（今日）时自动收拢到今日
+      if (!selectedDate || selectedDate > today) selectedDate = today
+      this._settingsLoaded = true
+      this.setData({
+        dayStartMinute: minute,
+        dayStartTime: chinaTime.minuteToTimeText(minute),
+        studyDayRangeText: this._studyDayRangeText(minute),
+        _todayDate: today,
+        selectedDate,
+        pieDateLabel: this._formatPieDateLabel(selectedDate),
+        selectedDurationLabel: this._formatSelectedDurationLabel(selectedDate),
+        selectedSubjectDetail: null,
+        _selectedSubject: null,
+      }, () => {
+        if (!this._alive || !this._viewReady) return
+        // 重新加载全部统计（stats / trends / daily-summary / history）并重绘图表
+        this.loadData()
+      })
+    } catch (e) {
+      console.error('保存统计日设置失败', e)
+      if (wx.showToast) wx.showToast({ title: '保存失败，请重试', icon: 'none' })
+    } finally {
+      if (wx.hideLoading) wx.hideLoading()
+    }
+  },
+
   goToToday() {
     const today = this.data._todayDate
     if (!today || today === this.data.selectedDate) return
@@ -637,8 +751,13 @@ var pageConfig = {
     this._dateRequestSeq = (this._dateRequestSeq || 0) + 1
     const seq = this._dateRequestSeq
     this.setData({ pieLoading: true })
+    const viewingToday = requestDate === this.data._todayDate
     try {
-      const dayData = await this._fetchAllDateHistory(requestDate)
+      const [summary, historyRes] = await Promise.all([
+        // 查看"今日"时不传 date，由后端返回权威当前学习日
+        api.get('/pomodoro/daily-summary', viewingToday ? {} : { date: requestDate }),
+        api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestDate }),
+      ])
       if (
         !this._alive ||
         !this._isVisible ||
@@ -646,16 +765,26 @@ var pageConfig = {
         requestDate !== this.data.selectedDate
       ) return
 
-      const daySessions = dayData.items || []
-      const subjectBreakdown = this._buildSubjectBreakdownFromSessions(daySessions)
-      const selectedDurationSec = subjectBreakdown.reduce(
-        (sum, item) => sum + (Number(item.duration_sec) || 0),
-        0
-      )
-      const selectedSessionCount = subjectBreakdown.reduce(
-        (sum, item) => sum + (Number(item.sessions) || 0),
-        0
-      )
+      // 查看"今日"时以后端返回的 date 校正"今日"（settings 失败 / 时钟偏差兜底）
+      const reconciled = this._reconcileFromServer(null, viewingToday ? summary : null)
+      if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
+
+      const effectiveDate = this.data.selectedDate
+      let effectiveHistory = historyRes
+      if (viewingToday && reconciled.changedToday && effectiveDate !== requestDate) {
+        try {
+          effectiveHistory = await api.get('/pomodoro/history', { page: 1, page_size: 20, date: effectiveDate })
+        } catch (err) {
+          console.error('重取今日 history 失败', err)
+          effectiveHistory = { items: [], total: 0 }
+        }
+        if (!this._alive || !this._isVisible || seq !== this._dateRequestSeq) return
+      }
+
+      const daySessions = (effectiveHistory && effectiveHistory.items) || []
+      const subjectBreakdown = (summary && summary.subjects) || []
+      const selectedDurationSec = Number(summary && summary.duration_sec) || 0
+      const selectedSessionCount = Number(summary && summary.sessions) || 0
       const previousDurationSec = Number.isFinite(this._displayTodayDurationSec)
         ? this._displayTodayDurationSec
         : (Number(this._rawTodayDur) || 0)
@@ -666,11 +795,12 @@ var pageConfig = {
         todaySessions: selectedSessionCount,
         subjects: this._buildSubjectItems(subjectBreakdown),
         todayDurationText: this._fmtMin(selectedDurationSec),
-        selectedDurationLabel: this._formatSelectedDurationLabel(requestDate),
+        selectedDurationLabel: this._formatSelectedDurationLabel(effectiveDate),
         history: daySessions.slice(0, 20).map(item => this._formatSession(item)),
-        historyTotal: dayData.total || 0,
+        historyTotal: (effectiveHistory && effectiveHistory.total) || 0,
         historyReady: true,
-        pieDateLabel: this._formatPieDateLabel(requestDate),
+        pieDateLabel: this._formatPieDateLabel(effectiveDate),
+        _crossDayBleedIn: selectedSessionCount === 0 && selectedDurationSec > 0,
         pieLoading: false,
         selectedSubjectDetail: null,
         _selectedSubject: null,
