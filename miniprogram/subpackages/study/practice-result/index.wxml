@@ -1,336 +1,297 @@
-<view class="page result-page">
-  <animated-view
-    wx:if="{{showCelebration && shouldShowCelebration}}"
-    show="{{showCelebration}}"
-    type="{{celebrationType}}"
-    title="{{celebrationTitle}}"
-    detail="{{celebrationDetail}}"
-    motto="{{celebrationMotto}}"
-    reward-text="{{celebrationRewardText}}"
-    duration="{{2600}}"
-    gif-src="/assets/animation/celebration.gif"
-    png-src="/assets/animation/celebration-static.png"
-    bind:done="dismissCelebration"
-  />
+<view class="page">
+  <!-- 顶部成绩区 -->
+  <view class="hero">
+    <view class="hero-grid"></view>
 
-  <!-- ==================== 深色成绩主视觉 ==================== -->
-  <view class="result-hero {{resultLevelClass}}">
-    <view class="result-hero-grid"></view>
-    <premium-nav
-      title="练习结果"
-      variant="dark"
-      fixed="{{false}}"
-      bind:back="goBack"
-    />
+    <view class="nav">
+      <view class="nav-back" bindtap="handleBack" aria-label="返回">
+        <text class="nav-back-icon">‹</text>
+      </view>
+      <text class="nav-title">练习结果</text>
+      <view class="nav-placeholder"></view>
+    </view>
 
-    <view class="result-hero-content">
-      <view class="result-hero-copy">
-        <text class="result-eyebrow">PRACTICE REPORT</text>
-        <text class="result-title">{{resultTitle}}</text>
-        <text class="result-subject">{{subjectDisplay}}</text>
-        <text class="result-desc">{{resultDesc}}</text>
+    <view class="hero-content">
+      <view class="hero-copy">
+        <text class="eyebrow">PRACTICE REPORT</text>
+        <text class="hero-title">本组练习完成</text>
+        <text class="hero-subject">{{subjectName || '本次练习'}}</text>
+        <text class="hero-tip">{{resultTip}}</text>
       </view>
 
-      <view class="accuracy-ring" style="{{accuracyRingStyle}}">
-        <view class="accuracy-ring-inner">
-          <view class="accuracy-number">
-            <text class="accuracy-value">{{passRate || 0}}</text>
-            <text class="accuracy-unit">%</text>
+      <view
+        class="accuracy-ring"
+        style="background: conic-gradient(#B8FF13 0% {{accuracyPct}}%, rgba(255,255,255,.16) {{accuracyPct}}% 100%);"
+      >
+        <view class="ring-halo"></view>
+        <view class="ring-inner">
+          <view class="ring-value-row">
+            <text class="ring-value">{{accuracyPct}}</text>
+            <text class="ring-unit">%</text>
           </view>
-          <text class="accuracy-label">正确率</text>
+          <text class="ring-label">正确率</text>
         </view>
+        <view
+          wx:if="{{accuracyPct > 1 && accuracyPct < 99}}"
+          class="ring-end-dot"
+          style="transform: rotate({{accuracyDotDeg}}deg) translateY(-91rpx);"
+        ></view>
       </view>
     </view>
   </view>
 
-  <view class="result-content">
-    <!-- ==================== 数据仪表盘 ==================== -->
-    <view class="summary-panel anim-card-1">
-      <view class="summary-grid">
-        <view class="summary-item">
-          <text class="summary-value correct-value">{{correct || 0}}</text>
-          <text class="summary-label">答对</text>
-        </view>
-        <view class="summary-divider"></view>
-        <view class="summary-item">
-          <text class="summary-value wrong-value">{{wrong || 0}}</text>
-          <text class="summary-label">答错</text>
-        </view>
-        <view class="summary-divider"></view>
-        <view class="summary-item">
-          <text class="summary-value">{{total || 0}}</text>
-          <text class="summary-label">总题</text>
-        </view>
-        <view class="summary-divider"></view>
-        <view class="summary-item summary-time-item">
-          <text class="summary-value summary-time">{{durationText}}</text>
-          <text class="summary-label">用时</text>
-        </view>
-      </view>
-
-      <view class="growth-line" wx:if="{{growthLevel}}">
-        <view class="growth-line-head">
-          <view class="growth-copy">
-            <text class="growth-title">{{growthTitle || '成长进度'}}</text>
-            <text class="growth-desc">{{growthDesc}}</text>
-          </view>
-          <text class="growth-level">{{growthLevel}}</text>
-        </view>
-        <view class="growth-track">
-          <view class="growth-fill" style="width:{{growthLevelPct}}%"></view>
-        </view>
-        <view class="growth-foot" wx:if="{{growthExpText}}">
-          <text>{{growthExpText}}</text>
-          <text wx:if="{{skipped > 0}}">跳过 {{skipped}} 题</text>
-        </view>
-      </view>
-    </view>
-
-    <!-- ==================== 下一步诊断 ==================== -->
-    <view class="advice-panel {{nextStepType}} anim-card-2" wx:if="{{nextStepTitle}}">
-      <view class="advice-accent"></view>
-      <view class="advice-body">
-        <view class="advice-head">
-          <view>
-            <text class="advice-eyebrow">NEXT STEP</text>
-            <text class="advice-title">{{nextStepTitle}}</text>
-          </view>
-          <text class="advice-tag" wx:if="{{nextStepTag}}">{{nextStepTag}}</text>
-        </view>
-        <text class="advice-desc">{{nextStepDesc}}</text>
-      </view>
-    </view>
-
-    <!-- ==================== 错题优先复盘 ==================== -->
-    <view class="detail-panel anim-card-3" wx:if="{{results.length > 0}}">
-      <view class="detail-head">
-        <view>
-          <text class="detail-eyebrow">ANSWER REVIEW</text>
-          <text class="detail-title">{{showAllResults ? '全部答题详情' : '错题复盘'}}</text>
-          <text class="detail-subtitle" wx:if="{{!showAllResults && reviewResults.length > 0}}">优先展示本组错题与未作答题</text>
-          <text class="detail-subtitle" wx:elif="{{showAllResults}}">按错题、跳过、正确的顺序展示</text>
-          <text class="detail-subtitle" wx:else>本组全部正确，无需错题复盘</text>
-        </view>
-        <view class="detail-count" wx:if="{{reviewResults.length > 0}}">
-          <text class="detail-count-value">{{reviewResults.length}}</text>
-          <text class="detail-count-label">需复盘</text>
-        </view>
-      </view>
-
-      <view class="all-correct-state" wx:if="{{!showAllResults && reviewResults.length === 0}}">
-        <view class="all-correct-mark">✓</view>
-        <view>
-          <text class="all-correct-title">本组全部正确</text>
-          <text class="all-correct-desc">可以查看全部答题记录，或直接进入下一组练习。</text>
-        </view>
-      </view>
-
-      <view class="detail-list" wx:if="{{displayResults.length > 0}}">
+  <!-- 主体 -->
+  <view class="body">
+    <view class="dashboard-card">
+      <view class="tabs">
         <view
-          class="detail-row {{item._cls}}"
-          wx:for="{{displayResults}}"
-          wx:key="question_id"
+          wx:for="{{tabs}}"
+          wx:key="key"
+          class="tab {{activeTab === item.key ? 'tab-active' : ''}}"
+          data-key="{{item.key}}"
+          bindtap="switchTab"
         >
-          <view class="detail-row-head">
-            <view class="detail-row-index-wrap">
-              <text class="detail-index">{{item._displayIndex < 10 ? '0' : ''}}{{item._displayIndex}}</text>
-              <text class="detail-status {{item._cls}}">{{item._statusText}}</text>
-            </view>
-            <view
-              class="detail-analysis-btn"
-              wx:if="{{item._isWrong && !item._isSkipped}}"
-              hover-class="detail-analysis-btn-pressed"
-              data-question-id="{{item.question_id}}"
-              bindtap="openWrongAnalysis"
-            >
-              <text>查看解析</text><text class="detail-analysis-arrow">›</text>
-            </view>
-          </view>
-
-          <view class="detail-stem-wrap" wx:if="{{item._stemRich && item._stemRich.raw}}">
-            <mp-html
-              wx:if="{{item._stemRich.renderType === 'html'}}"
-              content="{{item._stemRich.html}}"
-              class="detail-rich-text detail-stem-rich"
-              container-style="{{detailHtmlContainerStyle}}"
-              tag-style="{{detailHtmlTagStyle}}"
-              scroll-table="{{false}}"
-              lazy-load
-              set-title="{{false}}"
-              copy-link="{{false}}"
-            />
-            <text wx:elif="{{item._stemRich.renderType === 'text'}}" class="detail-stem">{{item._stemRich.text}}</text>
-          </view>
-
-          <view wx:if="{{item._isSkipped}}" class="detail-skipped-line">本题未作答</view>
-
-          <!-- Multi-blank choice per-blank display -->
-          <view wx:elif="{{item._isMultiBlank && item._blankViewModel}}" class="detail-multi-blank-wrap">
-            <view class="detail-multi-blank-head">
-              <text class="detail-multi-blank-count">
-                答对 {{item._blankViewModel.correctBlankCount}} / {{item._blankViewModel.totalBlankCount}} 空
-              </text>
-            </view>
-            <view
-              class="detail-multi-blank-row {{b.isCorrect ? 'blank-correct' : 'blank-wrong'}}"
-              wx:for="{{item._blankViewModel.blankResults}}"
-              wx:key="id"
-            >
-              <view class="blank-id-wrap"><text class="blank-id">{{item.id}}</text></view>
-              <view class="blank-detail">
-                <view class="blank-user-answer" wx:if="{{item.isAnswered}}">
-                  <text class="blank-label">我的答案</text>
-                  <text class="blank-value {{item.isCorrect ? 'correct' : 'wrong'}}">{{item.userKey}}</text>
-                  <text class="blank-text" wx:if="{{item.userText}}">({{item.userText}})</text>
-                </view>
-                <view class="blank-user-answer" wx:else>
-                  <text class="blank-label">未作答</text>
-                </view>
-                <view class="blank-correct-answer" wx:if="{{!item.isCorrect}}">
-                  <text class="blank-label correct">正确答案</text>
-                  <text class="blank-value correct">{{item.correctKey}}</text>
-                  <text class="blank-text" wx:if="{{item.correctText}}">({{item.correctText}})</text>
-                </view>
-              </view>
-              <view class="blank-status">
-                <text wx:if="{{item.isCorrect}}" class="blank-check">✓</text>
-                <text wx:else class="blank-cross">✗</text>
-              </view>
-            </view>
-          </view>
-
-          <view wx:elif="{{item._isWrong}}" class="detail-answer-grid">
-            <view class="detail-answer-section user-answer-section">
-              <text class="detail-answer-label">我的答案</text>
-              <view class="detail-answer-box user">
-                <mp-html
-                  wx:if="{{item._userAnswerRich.renderType === 'html'}}"
-                  content="{{item._userAnswerRich.html}}"
-                  class="detail-rich-text"
-                  container-style="{{detailHtmlContainerStyle}}"
-                  tag-style="{{detailHtmlTagStyle}}"
-                  scroll-table="{{false}}"
-                  lazy-load
-                  set-title="{{false}}"
-                  copy-link="{{false}}"
-                />
-                <text wx:else class="detail-answer-value user">{{item._userAnswerText}}</text>
-              </view>
-            </view>
-
-            <view class="detail-answer-section correct-answer-section">
-              <text class="detail-answer-label correct">正确答案</text>
-              <view class="detail-answer-box right">
-                <mp-html
-                  wx:if="{{item._correctAnswerRich.renderType === 'html'}}"
-                  content="{{item._correctAnswerRich.html}}"
-                  class="detail-rich-text"
-                  container-style="{{detailHtmlContainerStyle}}"
-                  tag-style="{{detailHtmlTagStyle}}"
-                  scroll-table="{{false}}"
-                  lazy-load
-                  set-title="{{false}}"
-                  copy-link="{{false}}"
-                />
-                <text wx:else class="detail-answer-value right">{{item._correctAnswerText}}</text>
-              </view>
-            </view>
-          </view>
-
-          <view wx:elif="{{item._isMultiBlank}}" class="detail-multi-blank-wrap">
-            <view class="detail-multi-blank-head">
-              <text class="detail-multi-blank-count">
-                答对 {{item._blankViewModel.correctBlankCount}} / {{item._blankViewModel.totalBlankCount}} 空
-              </text>
-            </view>
-            <view
-              class="detail-multi-blank-row blank-correct"
-              wx:for="{{item._blankViewModel.blankResults}}"
-              wx:key="id"
-            >
-              <view class="blank-id-wrap"><text class="blank-id">{{item.id}}</text></view>
-              <view class="blank-detail">
-                <view class="blank-user-answer">
-                  <text class="blank-label">答案</text>
-                  <text class="blank-value correct">{{item.correctKey}}</text>
-                  <text class="blank-text" wx:if="{{item.correctText}}">({{item.correctText}})</text>
-                </view>
-              </view>
-              <view class="blank-status">
-                <text class="blank-check">✓</text>
-              </view>
-            </view>
-          </view>
-
-          <view wx:else class="detail-correct-answer-line">
-            <text class="detail-answer-label correct">答案</text>
-            <view class="detail-answer-box right">
-              <mp-html
-                wx:if="{{item._correctAnswerRich.renderType === 'html'}}"
-                content="{{item._correctAnswerRich.html}}"
-                class="detail-rich-text"
-                container-style="{{detailHtmlContainerStyle}}"
-                tag-style="{{detailHtmlTagStyle}}"
-                scroll-table="{{false}}"
-                lazy-load
-                set-title="{{false}}"
-                copy-link="{{false}}"
-              />
-              <text wx:else class="detail-answer-value right">{{item._correctAnswerText}}</text>
-            </view>
-          </view>
+          <text>{{item.label}}</text>
+          <view wx:if="{{activeTab === item.key}}" class="tab-line"></view>
         </view>
       </view>
 
-      <view
-        class="detail-toggle-all"
-        wx:if="{{correctResults.length > 0}}"
-        hover-class="detail-toggle-all-pressed"
-        bindtap="toggleAllResults"
-      >
-        <text>{{showAllResults ? '仅看错题' : '查看全部答题'}}</text>
-        <text class="detail-toggle-arrow {{showAllResults ? 'up' : ''}}">⌄</text>
+      <view class="stats-row">
+        <view class="stat-item">
+          <text class="stat-value success">{{correctCount}}</text>
+          <text class="stat-label">答对</text>
+        </view>
+        <view class="stat-divider"></view>
+        <view class="stat-item">
+          <text class="stat-value danger">{{wrongCount}}</text>
+          <text class="stat-label">答错</text>
+        </view>
+        <view class="stat-divider"></view>
+        <view class="stat-item">
+          <text class="stat-value">{{totalCount}}</text>
+          <text class="stat-label">总题</text>
+        </view>
+        <view class="stat-divider"></view>
+        <view class="stat-item stat-time">
+          <text class="stat-value time-value">{{durationText}}</text>
+          <text class="stat-label">用时</text>
+        </view>
       </view>
     </view>
 
-    <!-- ==================== 单主按钮 + 文字次操作 ==================== -->
-    <view class="bottom-actions">
-      <button
-        class="action-primary action-primary-review"
-        hover-class="action-primary-pressed"
-        wx:if="{{wrong > 0}}"
-        disabled="{{resolvingWrong}}"
-        bindtap="goWrongBook"
-      >
-        <view class="action-primary-copy">
-          <text class="action-primary-title">{{resolvingWrong ? '正在准备错题复盘' : '复盘 ' + wrong + ' 道错题'}}</text>
-          <text class="action-primary-desc">优先处理本组薄弱点</text>
+    <!-- 结果概览 -->
+    <block wx:if="{{activeTab === 'overview'}}">
+      <view class="section-card">
+        <view class="section-head">
+          <view>
+            <text class="section-title">正确率趋势</text>
+            <text class="section-desc">近 7 天练习表现</text>
+          </view>
+          <view class="section-badge">
+            <text>{{trendSummary}}</text>
+          </view>
         </view>
-        <view class="action-primary-arrow"><text>›</text></view>
-      </button>
 
-      <button class="action-primary" hover-class="action-primary-pressed" wx:elif="{{total > 0}}" bindtap="practiceAgain">
-        <view class="action-primary-copy">
-          <text class="action-primary-title">再练一组</text>
-          <text class="action-primary-desc">延续当前练习节奏</text>
+        <view class="chart-wrap">
+          <canvas type="2d" id="trendCanvas" class="trend-canvas"></canvas>
+          <view wx:if="{{trendLoading}}" class="chart-loading">正在加载趋势…</view>
         </view>
-        <view class="action-primary-arrow"><text>›</text></view>
-      </button>
-
-      <button class="action-primary" hover-class="action-primary-pressed" wx:else bindtap="practiceAgain">
-        <view class="action-primary-copy">
-          <text class="action-primary-title">返回练习</text>
-          <text class="action-primary-desc">重新选择科目与题量</text>
-        </view>
-        <view class="action-primary-arrow"><text>›</text></view>
-      </button>
-
-      <view class="action-secondary" hover-class="action-secondary-pressed" wx:if="{{wrong > 0}}" bindtap="practiceAgain">
-        <text>再练一组</text><text class="action-secondary-arrow">›</text>
       </view>
-      <view class="action-secondary" hover-class="action-secondary-pressed" wx:else bindtap="goHome">
-        <text>返回首页</text><text class="action-secondary-arrow">›</text>
+
+      <view class="growth-card">
+        <view class="growth-head">
+          <view>
+            <text class="section-title">{{growthGain > 0 ? '成长值 +' + growthGain : '成长进度'}}</text>
+            <text class="section-desc">{{growth.level_title || ('Lv' + growth.level + ' ' + growth.levelTitle)}}</text>
+          </view>
+          <text class="growth-level">Lv{{growth.level}} {{growth.levelTitle}}</text>
+        </view>
+        <view class="growth-meta">
+          <text>{{growth.exp_current}} / {{growth.exp_to_next}} EXP</text>
+          <text>{{growth.level_progress_pct}}%</text>
+        </view>
+        <view class="progress-track">
+          <view class="progress-fill" style="width: {{growth.level_progress_pct}}%;"></view>
+        </view>
       </view>
-    </view>
+
+      <view class="section-card">
+        <view class="section-head">
+          <view>
+            <text class="section-title">错题分布</text>
+            <text class="section-desc">优先复盘高频错误类型</text>
+          </view>
+          <text class="wrong-total">{{wrongCount}} 错题</text>
+        </view>
+
+        <view class="distribution">
+          <view class="donut-wrap">
+            <canvas type="2d" id="errorCanvas" class="error-canvas"></canvas>
+            <view class="donut-center">
+              <text class="donut-num">{{wrongCount}}</text>
+              <text class="donut-label">错题</text>
+            </view>
+          </view>
+
+          <view class="legend">
+            <view wx:for="{{errorDistribution}}" wx:key="label" class="legend-item">
+              <view class="legend-dot" style="background: {{item.color}};"></view>
+              <text class="legend-name">{{item.label}}</text>
+              <text class="legend-value">{{item.percent}}%</text>
+              <text class="legend-count">({{item.count}}题)</text>
+            </view>
+            <view wx:if="{{!errorDistribution.length}}" class="legend-empty">
+              暂无错题分布
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="section-card question-preview-card">
+        <view class="section-head">
+          <view>
+            <text class="section-title">题目详情</text>
+            <text class="section-desc">快速检查本组作答结果</text>
+          </view>
+          <view class="filter-pills">
+            <view
+              wx:for="{{questionFilters}}"
+              wx:key="key"
+              class="filter-pill {{questionFilter === item.key ? 'filter-pill-active' : ''}}"
+              data-key="{{item.key}}"
+              bindtap="switchQuestionFilter"
+            >
+              {{item.label}}
+            </view>
+          </view>
+        </view>
+
+        <view class="compact-list">
+          <view
+            wx:for="{{filteredReviewItems}}"
+            wx:key="questionId"
+            class="compact-row"
+            data-id="{{item.questionId}}"
+            bindtap="openQuestionDetail"
+          >
+            <text class="compact-index">{{item.displayIndex}}</text>
+            <text class="compact-title">{{item.title}}</text>
+            <view class="compact-status {{item.isCorrect ? 'status-correct' : 'status-wrong'}}">
+              {{item.isCorrect ? '答对' : '答错'}}
+            </view>
+          </view>
+          <view wx:if="{{!filteredReviewItems.length}}" class="empty-state">
+            当前筛选下暂无题目
+          </view>
+        </view>
+      </view>
+    </block>
+
+    <!-- 错题分析 -->
+    <block wx:elif="{{activeTab === 'wrong'}}">
+      <view class="section-card wrong-list-card">
+        <view class="section-head">
+          <view>
+            <text class="section-title">错题复盘</text>
+            <text class="section-desc">共 {{wrongCount}} 道需要重点关注</text>
+          </view>
+        </view>
+
+        <view wx:if="{{wrongReviewItems.length}}" class="wrong-list">
+          <view
+            wx:for="{{wrongReviewItems}}"
+            wx:key="questionId"
+            class="wrong-row"
+          >
+            <view class="wrong-row-top">
+              <view class="wrong-index-wrap">
+                <text class="wrong-index">{{item.displayIndex}}</text>
+                <text class="wrong-tag">错误</text>
+              </view>
+              <text class="wrong-kp">{{item.knowledgePoint}}</text>
+            </view>
+
+            <text class="wrong-title">{{item.title}}</text>
+
+            <view class="answer-summary">
+              <view class="answer-inline">
+                <text class="answer-inline-label">我的答案：</text>
+                <text class="answer-inline-value danger-text">{{item.userAnswer || '未作答'}}</text>
+              </view>
+              <view class="answer-summary-divider"></view>
+              <view class="answer-inline">
+                <text class="answer-inline-label">正确答案：</text>
+                <text class="answer-inline-value success-text">{{item.correctAnswer || '-'}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view wx:else class="success-empty">
+          <view class="success-empty-icon">✓</view>
+          <text class="success-empty-title">本组全部答对</text>
+          <text class="success-empty-desc">继续保持当前节奏</text>
+        </view>
+      </view>
+    </block>
+
+    <!-- 成长记录 -->
+    <block wx:else>
+      <view class="section-card growth-detail-card">
+        <view class="growth-level-hero">
+          <view class="level-orb">
+            <text>Lv{{growth.level}}</text>
+          </view>
+          <view class="growth-level-copy">
+            <text class="growth-level-title">{{growth.level_title || growth.levelTitle}}</text>
+            <text class="growth-level-desc">累计 {{growth.total_exp}} EXP</text>
+          </view>
+        </view>
+
+        <view class="growth-meta">
+          <text>升级进度</text>
+          <text>{{growth.exp_current}} / {{growth.exp_to_next}} EXP</text>
+        </view>
+        <view class="progress-track large">
+          <view class="progress-fill" style="width: {{growth.level_progress_pct}}%;"></view>
+        </view>
+
+        <view class="growth-grid">
+          <view class="growth-grid-item">
+            <text class="growth-grid-value">{{growth.streak_days || 0}}</text>
+            <text class="growth-grid-label">连续学习天数</text>
+          </view>
+          <view class="growth-grid-item">
+            <text class="growth-grid-value">{{unlockedBadgeCount}}</text>
+            <text class="growth-grid-label">已解锁徽章</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="section-card">
+        <view class="section-head">
+          <view>
+            <text class="section-title">成长徽章</text>
+            <text class="section-desc">{{growth.streak_title || '持续练习，逐步解锁'}}</text>
+          </view>
+        </view>
+
+        <view wx:if="{{growth.badges && growth.badges.length}}" class="badge-list">
+          <view wx:for="{{growth.badges}}" wx:key="key" class="badge-row {{item.unlocked ? '' : 'badge-locked'}}">
+            <view class="badge-icon">{{item.unlocked ? '◆' : '◇'}}</view>
+            <view class="badge-copy">
+              <text class="badge-title">{{item.title}}</text>
+              <text class="badge-desc">{{item.desc}}</text>
+            </view>
+            <text class="badge-progress">{{item.progress_text}}</text>
+          </view>
+        </view>
+        <view wx:else class="empty-state roomy">
+          暂无徽章数据
+        </view>
+      </view>
+    </block>
+
+    <view class="bottom-space"></view>
   </view>
 </view>
