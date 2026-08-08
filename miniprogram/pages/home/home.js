@@ -465,9 +465,9 @@ Page({
     }).exec()
   },
 
-  startRandom() { wx.navigateTo({ url: '/pages/practice/practice' }) },
-  goWrongBook() { wx.navigateTo({ url: '/pages/wrong-book/wrong-book' }) },
-  goReview() { wx.navigateTo({ url: '/pages/review-today/review-today' }) },
+  startRandom() { wx.navigateTo({ url: '/subpackages/study/practice/practice' }) },
+  goWrongBook() { wx.navigateTo({ url: '/subpackages/study/wrong-book/wrong-book' }) },
+  goReview() { wx.navigateTo({ url: '/subpackages/study/review-today/review-today' }) },
   goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
   goFormulas() { wx.navigateTo({ url: '/subpackages/formulas/library/index' }) },

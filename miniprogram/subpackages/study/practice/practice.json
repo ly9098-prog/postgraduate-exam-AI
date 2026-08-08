@@ -1,0 +1,14 @@
+{
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "刷题",
+  "backgroundColor": "#F3F4F1",
+  "backgroundColorTop": "#F3F4F1",
+  "backgroundColorBottom": "#F3F4F1",
+  "usingComponents": {
+    "loading-lottie": "/subpackages/study/components/loading-lottie/loading-lottie",
+    "quiz-runner": "/subpackages/study/components/quiz-runner/quiz-runner",
+    "animated-view": "/components/AnimatedView/AnimatedView",
+    "submit-confirm": "/subpackages/study/components/submit-confirm/submit-confirm",
+    "premium-nav": "/components/premium-nav/premium-nav"
+  }
+}

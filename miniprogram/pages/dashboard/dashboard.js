@@ -756,27 +756,27 @@ Page({
 
   goReview() {
     this._forceRefreshOnNextShow = true
-    this.goTo('/pages/review-today/review-today', { refreshOnReturn: true })
+    this.goTo('/subpackages/study/review-today/review-today', { refreshOnReturn: true })
   },
 
   goPractice() {
     this._forceRefreshOnNextShow = true
-    this.goTo('/pages/practice/practice', { refreshOnReturn: true })
+    this.goTo('/subpackages/study/practice/practice', { refreshOnReturn: true })
   },
 
   goWrongBook() {
-    this.goTo('/pages/wrong-book/wrong-book')
+    this.goTo('/subpackages/study/wrong-book/wrong-book')
   },
 
   goSubjectWrongBook(e) {
     const subjectId = e.currentTarget.dataset.subjectId
     if (subjectId == null || subjectId === '') return
-    this.goTo('/pages/wrong-book/wrong-book?subject_id=' + encodeURIComponent(subjectId))
+    this.goTo('/subpackages/study/wrong-book/wrong-book?subject_id=' + encodeURIComponent(subjectId))
   },
 
   goTopicWrongBook(e) {
     const topic = e.currentTarget.dataset.topic
-    let url = '/pages/wrong-book/wrong-book'
+    let url = '/subpackages/study/wrong-book/wrong-book'
     if (topic) url += '?topic=' + encodeURIComponent(topic)
     this.goTo(url)
   },
@@ -794,7 +794,7 @@ Page({
   goTopicDetail(e) {
     const topic = e.currentTarget.dataset.topic
     const subjectId = e.currentTarget.dataset.subjectId
-    let url = '/pages/wrong-book/wrong-book'
+    let url = '/subpackages/study/wrong-book/wrong-book'
     const params = []
     if (topic) params.push('topic=' + encodeURIComponent(topic))
     if (subjectId != null && subjectId !== '') params.push('subject_id=' + encodeURIComponent(subjectId))
@@ -808,7 +808,7 @@ Page({
     const topic = e.currentTarget.dataset.topic
     if (type === 'review') this.goReview()
     else if (type === 'wrong') {
-      let url = '/pages/wrong-book/wrong-book'
+      let url = '/subpackages/study/wrong-book/wrong-book'
       if (topic) url += '?topic=' + encodeURIComponent(topic)
       this.goTo(url)
     }

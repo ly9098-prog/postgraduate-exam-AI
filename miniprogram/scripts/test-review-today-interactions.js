@@ -105,7 +105,7 @@ global.Page = function (config) {
 }
 
 // ── Load the page module ───────────────────────────────────────
-var pagePath = path.join(__dirname, '../pages/review-today/review-today.js')
+var pagePath = path.join(__dirname, '../subpackages/study/review-today/review-today.js')
 var pageModule
 try {
   pageModule = require(pagePath)
@@ -513,7 +513,7 @@ if (!capturedPageConfig) {
 console.log('\n--- 5. WXML / component contract checks ---')
 
 var fs = require('fs')
-var wxml = fs.readFileSync(path.join(__dirname, '../pages/review-today/review-today.wxml'), 'utf8')
+var wxml = fs.readFileSync(path.join(__dirname, '../subpackages/study/review-today/review-today.wxml'), 'utf8')
 
 t('review-today.wxml passes elapsedText to quiz-runner', function () {
   assert.ok(wxml.indexOf('elapsedText="{{elapsedText}}"') >= 0)
@@ -523,7 +523,7 @@ t('review-today.wxml mission-batch has bindtap', function () {
   assert.ok(wxml.indexOf('bindtap="showBatchSizeSelector"') >= 0)
 })
 
-var runnerWxml = fs.readFileSync(path.join(__dirname, '../components/quiz-runner/quiz-runner.wxml'), 'utf8')
+var runnerWxml = fs.readFileSync(path.join(__dirname, '../subpackages/study/components/quiz-runner/quiz-runner.wxml'), 'utf8')
 
 t('quiz-runner.wxml references elapsedText in timer display', function () {
   assert.ok(runnerWxml.indexOf('{{elapsedText}}') >= 0)
@@ -534,7 +534,7 @@ t('quiz-runner.wxml references elapsedText in timer display', function () {
 // ══════════════════════════════════════════════════════════════════
 console.log('\n--- 6. quiz-runner timer safety ---')
 
-var runnerJs = fs.readFileSync(path.join(__dirname, '../components/quiz-runner/quiz-runner.js'), 'utf8')
+var runnerJs = fs.readFileSync(path.join(__dirname, '../subpackages/study/components/quiz-runner/quiz-runner.js'), 'utf8')
 
 t('quiz-runner.js has 0 setInterval calls', function () {
   var count = (runnerJs.match(/setInterval/g) || []).length
@@ -551,13 +551,13 @@ t('quiz-runner.js no timer-related setTimeout logic', function () {
 // ══════════════════════════════════════════════════════════════════
 console.log('\n--- 7. Cross-page regression checks ---')
 
-var practiceWxml = fs.readFileSync(path.join(__dirname, '../pages/practice/practice.wxml'), 'utf8')
+var practiceWxml = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice/practice.wxml'), 'utf8')
 
 t('practice.wxml still passes elapsedText', function () {
   assert.ok(practiceWxml.indexOf('elapsedText="{{elapsedText}}"') >= 0)
 })
 
-var wrongWxml = fs.readFileSync(path.join(__dirname, '../pages/wrong-detail/wrong-detail.wxml'), 'utf8')
+var wrongWxml = fs.readFileSync(path.join(__dirname, '../subpackages/study/wrong-detail/wrong-detail.wxml'), 'utf8')
 
 t('wrong-detail.wxml has no elapsedText', function () {
   assert.strictEqual(wrongWxml.indexOf('elapsedText'), -1)
