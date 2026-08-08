@@ -6,7 +6,6 @@
   "usingComponents": {
     "mp-html": "/subpackages/study/components/mp-html/index",
     "math-question": "/subpackages/study/components/math-question/math-question",
-    "animated-view": "/components/AnimatedView/AnimatedView",
     "quiz-runner": "/subpackages/study/components/quiz-runner/quiz-runner",
     "submit-confirm": "/subpackages/study/components/submit-confirm/submit-confirm",
     "premium-nav": "/components/premium-nav/premium-nav"

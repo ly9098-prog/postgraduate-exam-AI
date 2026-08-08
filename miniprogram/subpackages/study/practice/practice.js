@@ -5,6 +5,7 @@ const { buildRenderModel, setRenderGuardPage, resetRenderGuard } = require('../u
 const adapter = require('../utils/question-runner-adapter')
 
 const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
+const SUBJECT_DOUBLE_TAP_INTERVAL = 320
 
 function _deduplicateLines(text) {
   if (!text) return text
@@ -203,6 +204,7 @@ function _optionTextToHtml(key, value) {
 Page({
   _pageAlive: false,
   _practiceSession: {},
+  _lastSubjectOptionTap: null,
 
   data: {
     // 设置
@@ -260,6 +262,7 @@ Page({
 
   onLoad() {
     this._pageAlive = true
+    this._lastSubjectOptionTap = null
     this._resetSession()
     this._pendingResultUrl = ''
     setRenderGuardPage('practice')
@@ -270,6 +273,7 @@ Page({
 
   onUnload() {
     this._pageAlive = false
+    this._lastSubjectOptionTap = null
     resetRenderGuard()
     this._clearTimer()
     if (this._feedbackTimer) {
@@ -618,6 +622,25 @@ Page({
     this._hideSubjectSheet(() => this._flushPendingRecentSubject())
   },
 
+  _handleSubjectOptionTap(subjectId, source) {
+    const id = Number(subjectId)
+    if (!id || !this.data.subjectSheetVisible || this.data.subjectSheetClosing) return
+
+    const now = Date.now()
+    const key = `${source || 'subject'}:${id}`
+    const lastTap = this._lastSubjectOptionTap
+    const isDoubleTap = Boolean(
+      lastTap &&
+      lastTap.key === key &&
+      now - lastTap.time <= SUBJECT_DOUBLE_TAP_INTERVAL
+    )
+
+    this._lastSubjectOptionTap = isDoubleTap ? null : { key, time: now }
+    if (isDoubleTap) {
+      this.closeSubjectSheet()
+    }
+  },
+
   _selectSubject(subjectId, subjectName, expandedSubjectId, hasChildren) {
     const id = Number(subjectId)
     if (!id || !subjectName) return
@@ -652,6 +675,7 @@ Page({
 
     const parentId = this._findParentSubjectId(subjectId)
     this._selectSubject(subjectId, subjectName, parentId || subjectId, hasChildren)
+    this._handleSubjectOptionTap(subjectId, 'recent')
   },
 
   goBack() {
@@ -676,6 +700,7 @@ Page({
 
     const selectedName = hasChildren ? `${subjectName}（全部）` : subjectName
     this._selectSubject(subjectId, selectedName, undefined, hasChildren)
+    this._handleSubjectOptionTap(subjectId, 'parent')
   },
 
   toggleParentExpansion(e) {
@@ -694,6 +719,7 @@ Page({
     const subjectName = ds.subjectName
     if (!subjectId || !subjectName) return
     this._selectSubject(subjectId, subjectName, this._findParentSubjectId(subjectId), false)
+    this._handleSubjectOptionTap(subjectId, 'child')
   },
 
   chooseMode(e) {

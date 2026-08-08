@@ -406,7 +406,18 @@ button::after { border: none; }
 .final-bottom-space { height: 200rpx; }
 .final-actions { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom)); background: #FBFBF7; border-top: 1rpx solid #E0E3DC; display: grid; grid-template-columns: 1.15fr .85fr; gap: 12rpx; }
 .final-primary,
-.final-secondary { min-height: 82rpx; border-radius: 21rpx; font-size: 26rpx; font-weight: 900; }
+.final-secondary {
+  min-height: 82rpx;
+  padding: 0 20rpx;
+  border-radius: 21rpx;
+  font-size: 26rpx;
+  font-weight: 900;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
 .final-primary { background: #B7E82A; color: #10251A; }
 .final-secondary { background: #ECEFE8; color: #415047; }
 
