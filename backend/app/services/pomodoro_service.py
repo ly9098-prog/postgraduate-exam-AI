@@ -1,5 +1,6 @@
 import logging
 from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -376,30 +377,126 @@ async def update_pomodoro_settings(db: AsyncSession, user_id: int, day_start_min
 
 # ── Statistics ───────────────────────────────────────────────────────────
 
+class _LiteSession:
+    """Duck-typed session row for attribution; keeps ``pomodoro_attribution`` untouched.
+
+    Exposes only the fields the stats aggregators touch — ``start_time`` /
+    ``end_time`` / ``actual_duration`` / ``pause_intervals`` (list of
+    ``SimpleNamespace(started_at, ended_at)``) — plus ``subject_id`` /
+    ``subject_ref`` when the caller needs subject grouping.  No full ORM entity
+    is materialised, so stats/trends never drag in the whole session row.
+    """
+
+    __slots__ = ("start_time", "end_time", "actual_duration", "subject_id", "subject_ref", "pause_intervals")
+
+    def __init__(
+        self,
+        start_time: datetime,
+        end_time: datetime | None,
+        actual_duration: int | None,
+        subject_id: int | None = None,
+        subject_ref=None,
+        pause_intervals: list | None = None,
+    ):
+        self.start_time = start_time
+        self.end_time = end_time
+        self.actual_duration = actual_duration
+        self.subject_id = subject_id
+        self.subject_ref = subject_ref
+        self.pause_intervals = pause_intervals or []
+
+
+def _chunks(seq, size: int):
+    for i in range(0, len(seq), size):
+        yield seq[i : i + size]
+
+
 async def _load_overlapping_sessions(
     db: AsyncSession,
     user_id: int,
     period_start: datetime,
     period_end: datetime,
-) -> list[PomodoroSession]:
+    *,
+    with_subject: bool = False,
+) -> list[_LiteSession]:
     """Load completed sessions overlapping the half-open range [period_start, period_end).
 
-    Eager-loads subject_ref and pause_intervals so attribution needs no extra queries.
+    Scenario-aware payload: ``with_subject=False`` (stats/trends) fetches only the
+    attribution columns via one query plus one batched pause query (chunked IN, never
+    an N+1); ``with_subject=True`` (daily-summary) additionally joins the subject.
+    The window is always bounded (single user, overlapping a requested range) — never
+    the user's full history.
     """
-    result = await db.execute(
-        select(PomodoroSession)
-        .options(
-            joinedload(PomodoroSession.subject_ref),
-            selectinload(PomodoroSession.pause_intervals),
-        )
-        .where(
-            PomodoroSession.user_id == user_id,
-            PomodoroSession.status == "completed",
-            PomodoroSession.start_time < period_end,
-            PomodoroSession.end_time > period_start,
-        )
+    overlap = (
+        PomodoroSession.user_id == user_id,
+        PomodoroSession.status == "completed",
+        PomodoroSession.start_time < period_end,
+        PomodoroSession.end_time > period_start,
     )
-    return list(result.scalars().all())
+    if with_subject:
+        result = await db.execute(
+            select(PomodoroSession)
+            .options(
+                joinedload(PomodoroSession.subject_ref),
+                selectinload(PomodoroSession.pause_intervals),
+            )
+            .where(*overlap)
+        )
+        out: list[_LiteSession] = []
+        for s in result.scalars().all():
+            ref = s.subject_ref
+            out.append(
+                _LiteSession(
+                    start_time=s.start_time,
+                    end_time=s.end_time,
+                    actual_duration=s.actual_duration,
+                    subject_id=s.subject_id,
+                    subject_ref=(
+                        SimpleNamespace(code=ref.code or "", name=ref.name or "", is_active=ref.is_active)
+                        if ref is not None
+                        else None
+                    ),
+                    pause_intervals=[
+                        SimpleNamespace(started_at=i.started_at, ended_at=i.ended_at)
+                        for i in s.pause_intervals
+                    ],
+                )
+            )
+        return out
+
+    result = await db.execute(
+        select(
+            PomodoroSession.id,
+            PomodoroSession.start_time,
+            PomodoroSession.end_time,
+            PomodoroSession.actual_duration,
+        ).where(*overlap)
+    )
+    rows = result.all()
+    if not rows:
+        return []
+    pauses: dict[int, list] = {}
+    for chunk in _chunks([r.id for r in rows], 500):
+        presult = await db.execute(
+            select(
+                PomodoroPauseInterval.session_id,
+                PomodoroPauseInterval.started_at,
+                PomodoroPauseInterval.ended_at,
+            ).where(PomodoroPauseInterval.session_id.in_(chunk))
+        )
+        for sid, started_at, ended_at in presult.all():
+            pauses.setdefault(sid, []).append(
+                SimpleNamespace(started_at=started_at, ended_at=ended_at)
+            )
+    return [
+        _LiteSession(
+            start_time=r.start_time,
+            end_time=r.end_time,
+            actual_duration=r.actual_duration,
+            pause_intervals=pauses.get(r.id, []),
+        )
+        for r in rows
+    ]
 
 
 def _resolve_subject(session) -> tuple[int | None, str, str]:
@@ -415,77 +512,161 @@ def _resolve_subject(session) -> tuple[int | None, str, str]:
     return None, "", "未分类"
 
 
-async def get_stats(db: AsyncSession, user_id: int) -> dict:
-    settings = await get_pomodoro_settings(db, user_id)
-    dsm = settings["day_start_minute"]
-    today_date = current_study_day(dsm)
-    today_start, today_end = study_day_utc_range(today_date, dsm)
-    week_start, week_end = study_week_utc_range(dsm)
-    week_start_date = study_day_for_utc(week_start, dsm)
-    week_end_date = week_start_date + timedelta(days=7)
+async def build_pomodoro_statistics_snapshot(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    target_date: date | None = None,
+    trends_days: int = 7,
+    need_stats: bool = False,
+    need_trends: bool = False,
+    need_daily_summary: bool = False,
+) -> dict:
+    """One bounded window load + one attribution pass → the requested stats dims.
 
-    period_start = min(today_start, week_start)
-    period_end = max(today_end, week_end)
-    sessions = await _load_overlapping_sessions(db, user_id, period_start, period_end)
-
-    today_sessions = 0
-    today_duration = 0
-    week_sessions = 0
-    week_duration = 0
-    for s in sessions:
-        start_day = study_day_for_utc(s.start_time, dsm)
-        if start_day == today_date:
-            today_sessions += 1
-        if week_start_date <= start_day < week_end_date:
-            week_sessions += 1
-        for day, sec in split_session_duration_by_study_day(s, s.pause_intervals, dsm).items():
-            if day == today_date:
-                today_duration += sec
-            if week_start_date <= day < week_end_date:
-                week_duration += sec
-
-    return {
-        "today_sessions": today_sessions,
-        "today_duration_sec": today_duration,
-        "week_sessions": week_sessions,
-        "week_duration_sec": week_duration,
-        "today_date": today_date.isoformat(),
-        "week_start_date": week_start_date.isoformat(),
-        "day_start_minute": dsm,
-        "day_start_time": settings["day_start_time"],
-    }
-
-
-async def get_trends(db: AsyncSession, user_id: int, days: int = 7) -> list[dict]:
+    All pomodoro statistics endpoints share this single computation.  Sessions in
+    the union of the requested windows are loaded once, attributed once per session,
+    and each session's per-study-day split feeds stats / trends / daily-summary
+    together — the statistics page never pays N overlapping window loads + N
+    attribution runs.  ``pomodoro_attribution`` stays the single source of truth;
+    SQL only fetches the bounded window.
+    """
     settings = await get_pomodoro_settings(db, user_id)
     dsm = settings["day_start_minute"]
     today = current_study_day(dsm)
-    start_day = today - timedelta(days=days - 1)
-    period_start = study_day_utc_range(start_day, dsm)[0]
-    period_end = study_day_utc_range(today, dsm)[1]
+    target = target_date or today
 
-    sessions = await _load_overlapping_sessions(db, user_id, period_start, period_end)
+    ranges: list[tuple[datetime, datetime]] = []
+    if need_stats:
+        today_start, today_end = study_day_utc_range(today, dsm)
+        week_start, week_end = study_week_utc_range(dsm)
+        ranges.append((min(today_start, week_start), max(today_end, week_end)))
+    if need_trends:
+        trend_start, _ = study_day_utc_range(today - timedelta(days=trends_days - 1), dsm)
+        _, trend_end = study_day_utc_range(today, dsm)
+        ranges.append((trend_start, trend_end))
+    if need_daily_summary:
+        ranges.append(study_day_utc_range(target, dsm))
 
-    agg = {
-        today - timedelta(days=days - 1 - i): {"sessions": 0, "duration_sec": 0}
-        for i in range(days)
-    }
+    if not ranges:
+        return {}
+    period_start = min(r[0] for r in ranges)
+    period_end = max(r[1] for r in ranges)
+    sessions = await _load_overlapping_sessions(
+        db, user_id, period_start, period_end, with_subject=need_daily_summary
+    )
+
+    week_start_date = study_day_for_utc(study_week_utc_range(dsm)[0], dsm)
+    week_end_date = week_start_date + timedelta(days=7)
+
+    if need_stats:
+        today_sessions = 0
+        today_duration = 0
+        week_sessions = 0
+        week_duration = 0
+    if need_trends:
+        trend_agg = {
+            today - timedelta(days=trends_days - 1 - i): {"sessions": 0, "duration_sec": 0}
+            for i in range(trends_days)
+        }
+    if need_daily_summary:
+        target_groups: dict[int | None, dict] = {}
+        target_sessions = 0
+        target_duration = 0
+
     for s in sessions:
         start_day = study_day_for_utc(s.start_time, dsm)
-        if start_day in agg:
-            agg[start_day]["sessions"] += 1
-        for day, sec in split_session_duration_by_study_day(s, s.pause_intervals, dsm).items():
-            if day in agg:
-                agg[day]["duration_sec"] += sec
+        split = split_session_duration_by_study_day(s, s.pause_intervals, dsm)
+        if need_stats:
+            if start_day == today:
+                today_sessions += 1
+            if week_start_date <= start_day < week_end_date:
+                week_sessions += 1
+            for day, sec in split.items():
+                if day == today:
+                    today_duration += sec
+                if week_start_date <= day < week_end_date:
+                    week_duration += sec
+        if need_trends:
+            if start_day in trend_agg:
+                trend_agg[start_day]["sessions"] += 1
+            for day, sec in split.items():
+                if day in trend_agg:
+                    trend_agg[day]["duration_sec"] += sec
+        if need_daily_summary:
+            day_contrib = split.get(target, 0)
+            if day_contrib <= 0 and start_day != target:
+                continue
+            if start_day == target:
+                target_sessions += 1
+            target_duration += day_contrib
+            if day_contrib <= 0:
+                # 本日无时长贡献：仍计入总次数/总时长，但不生成 0% 科目切片
+                continue
+            key, code, name = _resolve_subject(s)
+            g = target_groups.setdefault(key, {
+                "subject_id": key, "subject_code": code, "subject_name": name,
+                "duration_sec": 0, "sessions": 0,
+            })
+            g["duration_sec"] += day_contrib
+            if start_day == target:
+                g["sessions"] += 1
 
-    return [
-        {
-            "date": d.isoformat(),
-            "sessions": agg[d]["sessions"],
-            "duration_sec": agg[d]["duration_sec"],
+    result: dict = {}
+    if need_stats:
+        result["stats"] = {
+            "today_sessions": today_sessions,
+            "today_duration_sec": today_duration,
+            "week_sessions": week_sessions,
+            "week_duration_sec": week_duration,
+            "today_date": today.isoformat(),
+            "week_start_date": week_start_date.isoformat(),
+            "day_start_minute": dsm,
+            "day_start_time": settings["day_start_time"],
         }
-        for d in sorted(agg)
-    ]
+    if need_trends:
+        result["trends"] = [
+            {
+                "date": d.isoformat(),
+                "sessions": trend_agg[d]["sessions"],
+                "duration_sec": trend_agg[d]["duration_sec"],
+            }
+            for d in sorted(trend_agg)
+        ]
+    if need_daily_summary:
+        subjects = [
+            {
+                "subject_id": key,
+                "subject_code": g["subject_code"],
+                "subject_name": g["subject_name"],
+                "sessions": g["sessions"],
+                "duration_sec": g["duration_sec"],
+            }
+            for key, g in target_groups.items()
+        ]
+        subjects.sort(key=lambda r: r["duration_sec"], reverse=True)
+        result["daily_summary"] = {
+            "date": target.isoformat(),
+            "timezone": "Asia/Shanghai",
+            "day_start_minute": dsm,
+            "day_start_time": settings["day_start_time"],
+            "sessions": target_sessions,
+            "duration_sec": target_duration,
+            "subjects": subjects,
+        }
+    return result
+
+
+async def get_stats(db: AsyncSession, user_id: int) -> dict:
+    snapshot = await build_pomodoro_statistics_snapshot(db, user_id, need_stats=True)
+    return snapshot["stats"]
+
+
+async def get_trends(db: AsyncSession, user_id: int, days: int = 7) -> list[dict]:
+    snapshot = await build_pomodoro_statistics_snapshot(
+        db, user_id, trends_days=days, need_trends=True
+    )
+    return snapshot["trends"]
 
 
 async def get_subject_breakdown(
@@ -493,42 +674,10 @@ async def get_subject_breakdown(
     user_id: int,
     filter_date: date | None = None,
 ) -> list[dict]:
-    settings = await get_pomodoro_settings(db, user_id)
-    dsm = settings["day_start_minute"]
-    target_date = filter_date or current_study_day(dsm)
-    period_start, period_end = study_day_utc_range(target_date, dsm)
-    sessions = await _load_overlapping_sessions(db, user_id, period_start, period_end)
-
-    groups: dict[int | None, dict] = {}
-    for s in sessions:
-        start_day = study_day_for_utc(s.start_time, dsm)
-        day_contrib = split_session_duration_by_study_day(s, s.pause_intervals, dsm).get(target_date, 0)
-        if day_contrib <= 0 and start_day != target_date:
-            continue
-        if day_contrib <= 0:
-            # 本日无时长贡献：不出现在科目分布，避免 0% 扇形 / "N次 0分钟"
-            continue
-        key, code, name = _resolve_subject(s)
-        g = groups.setdefault(key, {
-            "subject_id": key, "subject_code": code, "subject_name": name,
-            "duration_sec": 0, "sessions": 0,
-        })
-        g["duration_sec"] += day_contrib
-        if start_day == target_date:
-            g["sessions"] += 1
-
-    result = [
-        {
-            "subject_id": key,
-            "subject_code": g["subject_code"],
-            "subject_name": g["subject_name"],
-            "sessions": g["sessions"],
-            "duration_sec": g["duration_sec"],
-        }
-        for key, g in groups.items()
-    ]
-    result.sort(key=lambda r: r["duration_sec"], reverse=True)
-    return result
+    snapshot = await build_pomodoro_statistics_snapshot(
+        db, user_id, target_date=filter_date, need_daily_summary=True
+    )
+    return snapshot["daily_summary"]["subjects"]
 
 
 async def get_daily_summary(
@@ -536,56 +685,10 @@ async def get_daily_summary(
     user_id: int,
     filter_date: date | None = None,
 ) -> dict:
-    settings = await get_pomodoro_settings(db, user_id)
-    dsm = settings["day_start_minute"]
-    target_date = filter_date or current_study_day(dsm)
-    period_start, period_end = study_day_utc_range(target_date, dsm)
-    sessions = await _load_overlapping_sessions(db, user_id, period_start, period_end)
-
-    groups: dict[int | None, dict] = {}
-    session_count = 0
-    total_duration = 0
-    for s in sessions:
-        start_day = study_day_for_utc(s.start_time, dsm)
-        day_contrib = split_session_duration_by_study_day(s, s.pause_intervals, dsm).get(target_date, 0)
-        if day_contrib <= 0 and start_day != target_date:
-            continue
-        if start_day == target_date:
-            session_count += 1
-        total_duration += day_contrib
-        if day_contrib <= 0:
-            # 本日无时长贡献：仍计入总次数/总时长，但不生成 0% 科目切片
-            continue
-        key, code, name = _resolve_subject(s)
-        g = groups.setdefault(key, {
-            "subject_id": key, "subject_code": code, "subject_name": name,
-            "duration_sec": 0, "sessions": 0,
-        })
-        g["duration_sec"] += day_contrib
-        if start_day == target_date:
-            g["sessions"] += 1
-
-    subjects = [
-        {
-            "subject_id": key,
-            "subject_code": g["subject_code"],
-            "subject_name": g["subject_name"],
-            "sessions": g["sessions"],
-            "duration_sec": g["duration_sec"],
-        }
-        for key, g in groups.items()
-    ]
-    subjects.sort(key=lambda r: r["duration_sec"], reverse=True)
-
-    return {
-        "date": target_date.isoformat(),
-        "timezone": "Asia/Shanghai",
-        "day_start_minute": dsm,
-        "day_start_time": settings["day_start_time"],
-        "sessions": session_count,
-        "duration_sec": total_duration,
-        "subjects": subjects,
-    }
+    snapshot = await build_pomodoro_statistics_snapshot(
+        db, user_id, target_date=filter_date, need_daily_summary=True
+    )
+    return snapshot["daily_summary"]
 
 
 async def get_history(

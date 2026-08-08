@@ -537,13 +537,15 @@ var pageConfig = {
     this.setData({ loading: true, errorText: '' })
     const viewingToday = !requestedDate || requestedDate === this.data._todayDate
     try {
-      const [stats, trends, summary, historyRes] = await Promise.all([
-        api.get('/pomodoro/stats'),
-        api.get('/pomodoro/trends', { days: 7 }),
-        // 查看"今日"时不传 date，由后端返回权威当前学习日；查看历史日期才显式传
-        api.get('/pomodoro/daily-summary', viewingToday ? {} : { date: requestedDate }),
+      const [overview, historyRes] = await Promise.all([
+        // 统计页首屏组合接口：一次返回 stats + trends + daily-summary，
+        // 后端单次窗口加载 + 单次归因，避免逐接口重复加载
+        api.get('/pomodoro/statistics-overview', viewingToday ? {} : { date: requestedDate }),
         api.get('/pomodoro/history', { page: 1, page_size: 20, date: requestedDate }),
       ])
+      const stats = (overview && overview.stats) || {}
+      const trends = (overview && overview.trends) || []
+      const summary = (overview && overview.daily_summary) || {}
       if (
         !this._alive ||
         reqId !== this._requestId ||

@@ -681,3 +681,145 @@ class TestPauseIntervals:
 
         assert d7["duration_sec"] == 300
         assert d8["duration_sec"] == 900
+
+
+# ── Performance / query-count regression ───────────────────────────────
+#
+# 统计页组合计算必须保持：一次 session 查询 + 一次批量 pause 查询（无 N+1）、
+# subject 按需加载、query 数量有界（7/30/90 天不变成 N 天 N queries）。
+
+class TestSnapshotQueryCounts:
+    @staticmethod
+    def _capture(engine):
+        import sqlalchemy as sa
+
+        statements: list[str] = []
+
+        def _hook(conn, cursor, statement, parameters, context, executemany):
+            statements.append(str(statement))
+
+        sa.event.listen(engine.sync_engine, "before_cursor_execute", _hook)
+        return statements, lambda: sa.event.remove(
+            engine.sync_engine, "before_cursor_execute", _hook
+        )
+
+    @staticmethod
+    async def _seed(db, *, start_date, days, per_day, pauses_each=0) -> int:
+        from datetime import timedelta
+
+        from app.models.pomodoro import PomodoroPauseInterval
+
+        # 每日 08:00 UTC（= 16:00 中国，dsm=0 下归属当日学习日）
+        uid = await _make_user(db, "u_perf")
+        subj = await _make_subject(db)
+        for d in range(days):
+            day = start_date + timedelta(days=d)
+            for i in range(per_day):
+                start = datetime(day.year, day.month, day.day, 8, 0, 0) + timedelta(minutes=i * 5)
+                end = start + timedelta(minutes=25)
+                session = _make_session(uid, subj, start, end, 1500)
+                db.add(session)
+                await db.flush()
+                for p in range(pauses_each):
+                    db.add(PomodoroPauseInterval(
+                        session_id=session.id,
+                        started_at=start + timedelta(minutes=1 + p),
+                        ended_at=start + timedelta(minutes=2 + p),
+                    ))
+        await db.commit()
+        return uid
+
+    @pytest.mark.asyncio
+    async def test_combined_snapshot_is_one_load_one_pause_batch(self, isolated_db, monkeypatch):
+        from app.core import time_utils
+        from app.services import pomodoro_service as svc
+
+        monkeypatch.setattr(time_utils, "utcnow", lambda: _utc(2026, 8, 8, 10, 0, 0))
+
+        async with isolated_db.async_session() as db:
+            uid = await self._seed(db, start_date=date(2026, 8, 1), days=3, per_day=3, pauses_each=1)
+            statements, stop = self._capture(isolated_db.engine)
+            try:
+                snap = await svc.build_pomodoro_statistics_snapshot(
+                    db, uid, target_date=date(2026, 8, 2),
+                    need_stats=True, need_trends=True, need_daily_summary=True,
+                )
+            finally:
+                stop()
+
+        # 3 statements：settings + sessions(+subject JOIN) + pause batch IN
+        assert len(statements) == 3, statements
+        session_stmt = next(s for s in statements if "pomodoro_sessions" in s)
+        assert "subjects" in session_stmt.lower()  # daily_summary 需要 subject -> JOIN 一次
+        pause_stmts = [s for s in statements if "pomodoro_pause_intervals" in s]
+        assert len(pause_stmts) == 1  # 批量 IN，无 N+1
+        assert snap["stats"]["today_duration_sec"] >= 0
+        assert snap["trends"]
+        assert snap["daily_summary"]["duration_sec"] == 4500
+        assert snap["daily_summary"]["subjects"]
+
+    @pytest.mark.asyncio
+    async def test_stats_does_not_load_subject(self, isolated_db, monkeypatch):
+        from app.core import time_utils
+        from app.services import pomodoro_service as svc
+
+        monkeypatch.setattr(time_utils, "utcnow", lambda: _utc(2026, 8, 8, 10, 0, 0))
+
+        async with isolated_db.async_session() as db:
+            # 本周（周一起 08-03）内 seeding，保证 stats 窗口有重叠 session
+            uid = await self._seed(db, start_date=date(2026, 8, 3), days=5, per_day=2, pauses_each=1)
+            statements, stop = self._capture(isolated_db.engine)
+            try:
+                stats = await svc.get_stats(db, uid)
+            finally:
+                stop()
+
+        assert not any("subjects" in s.lower() for s in statements), statements
+        assert len(statements) == 3, statements  # settings + sessions cols + pauses batch
+        assert stats["week_sessions"] > 0
+
+    @pytest.mark.asyncio
+    async def test_90_day_trends_query_count_bounded(self, isolated_db, monkeypatch):
+        from app.core import time_utils
+        from app.services import pomodoro_service as svc
+
+        monkeypatch.setattr(time_utils, "utcnow", lambda: _utc(2026, 8, 8, 10, 0, 0))
+
+        async with isolated_db.async_session() as db:
+            # 30 天 × 5 = 150 sessions，跨 90 天趋势窗口；pause 各 1 条
+            uid = await self._seed(db, start_date=date(2026, 7, 9), days=30, per_day=5, pauses_each=1)
+            statements, stop = self._capture(isolated_db.engine)
+            try:
+                trends = await svc.build_pomodoro_statistics_snapshot(
+                    db, uid, trends_days=90, need_trends=True
+                )
+            finally:
+                stop()
+
+        # 有界（settings + sessions + pauses；仅当 >500 条才分片）——绝不 N 天 N queries
+        assert len(statements) <= 4, statements
+        assert len(trends["trends"]) == 90
+        assert sum(t["duration_sec"] for t in trends["trends"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_pause_loading_no_n_plus_one(self, isolated_db, monkeypatch):
+        from app.core import time_utils
+        from app.services import pomodoro_service as svc
+
+        monkeypatch.setattr(time_utils, "utcnow", lambda: _utc(2026, 8, 8, 10, 0, 0))
+
+        async with isolated_db.async_session() as db:
+            # 50 sessions × 2 pauses：pause 仍只有一条批量查询
+            uid = await self._seed(db, start_date=date(2026, 7, 26), days=10, per_day=5, pauses_each=2)
+            statements, stop = self._capture(isolated_db.engine)
+            try:
+                snap = await svc.build_pomodoro_statistics_snapshot(
+                    db, uid, target_date=date(2026, 7, 27), trends_days=30,
+                    need_trends=True, need_daily_summary=True,
+                )
+            finally:
+                stop()
+
+        pause_stmts = [s for s in statements if "pomodoro_pause_intervals" in s]
+        assert len(pause_stmts) == 1, statements
+        assert snap["daily_summary"]["duration_sec"] > 0

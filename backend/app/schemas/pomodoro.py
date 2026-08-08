@@ -128,12 +128,16 @@ class PomodoroTrendPoint(BaseModel):
     duration_sec: int = 0
 
 
-class PomodoroSubjectBreakdown(BaseModel):
-    subject_id: int | None = None
-    subject_code: str = ""
-    subject_name: str = ""
-    sessions: int = 0
-    duration_sec: int = 0
+class PomodoroStatisticsOverviewResponse(BaseModel):
+    """One-page payload for the mini-program statistics page.
+
+    stats / trends / daily_summary are computed from a single bounded window load
+    + a single attribution pass (see ``pomodoro_service.build_pomodoro_statistics_snapshot``).
+    """
+
+    stats: PomodoroStatsResponse
+    trends: list[PomodoroTrendPoint]
+    daily_summary: PomodoroDailySummaryResponse
 
 
 class PomodoroHistoryResponse(BaseModel):

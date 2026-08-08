@@ -4,6 +4,28 @@
 
 ---
 
+## 2026-08-08
+
+- **番茄钟统计页统计计算收敛（一次加载 + 一次归因）**
+  - 统计页原先在一次页面加载里并行请求 4 个接口（`/stats` + `/trends` + `/daily-summary` + `/history`），三个统计接口各自独立重新加载重叠窗口并各自跑一次 Python 归因。本次收敛为一次窗口加载 + 一次归因。
+  - 后端 `pomodoro_service.py` 新增内部服务 `build_pomodoro_statistics_snapshot(db, user_id, *, target_date, trends_days, need_stats, need_trends, need_daily_summary)`：按请求维度计算各自窗口，取 union 一次加载 sessions + pause intervals、每 session 归因一次，聚合出 stats/trends/daily_summary。归因引擎 `pomodoro_attribution.py` 未改动（仍是唯一真相源）。
+  - `_load_overlapping_sessions(..., with_subject=False)` 按场景降载：stats/trends 只 select attribution 所需列且不加载 Subject、pause 走一次批量 IN 查询（分片 500）；daily-summary 才 JOIN subject。
+  - `get_stats / get_trends / get_daily_summary / get_subject_breakdown` 全部改为 `build_pomodoro_statistics_snapshot` 的薄包装。
+  - API 层新增 `GET /api/v1/pomodoro/statistics-overview?date=YYYY-MM-DD`（date 可选，默认当前学习日），一次返回 `{ stats, trends, daily_summary }`，`daily_summary` 内含 subjects。
+  - 移除 `GET /api/v1/pomodoro/trends` 与 `GET /api/v1/pomodoro/subjects`（仓库全量确认零调用者）。保留 `/stats`（timer 页今日卡片仍用）、`/daily-summary`（历史日期导航仍用）、`/history` 等。
+  - Schema：新增 `PomodoroStatisticsOverviewResponse`；删除 `PomodoroSubjectBreakdown`（被移除的 /subjects 路由专用）。
+  - 小程序 `pomodoro-stats/index.js`：统计页 `loadData()` 从 4 个并行请求收敛为 `/pomodoro/statistics-overview` + `/pomodoro/history` 两个请求；历史日期导航仍调 `/pomodoro/daily-summary` + `/pomodoro/history`。
+  - 性能：统计页首屏 DB queries 从 11 → 5，attribution runs 从 3 → 1。
+  - 测试：新增 `backend/tests/benchmarks/bench_pomodoro_snapshot.py`（90 天 synthetic benchmark）；`test_pomodoro_study_day_stats.py` 新增 4 个 query-count 回归测试（组合计算恰 3 条语句、pause 批量无 N+1、get_stats 不加载 Subject、90 天不随天数线性）。
+  - 受影响文件：
+    - `backend/app/services/pomodoro_service.py`
+    - `backend/app/api/v1/pomodoro.py`
+    - `backend/app/schemas/pomodoro.py`
+    - `miniprogram/subpackages/productivity/pomodoro-stats/index.js`
+    - `backend/tests/benchmarks/bench_pomodoro_snapshot.py`（新增）
+    - `backend/tests/test_services/test_pomodoro_study_day_stats.py`
+  - 受影响文档：`docs/project/CHANGELOG.md`
+
 ## 2026-07-25
 
 - **后端生产强化修复（P0/P1 安全审计）**
