@@ -14,7 +14,9 @@ from app.core.database import async_session
 from app.core.distributed_lock import DistributedLock
 from app.core.time_utils import utcnow
 from app.services.recommendation_log_service import cleanup_expired_recommendation_logs
-from app.services.recommendation_metrics_service import aggregate_recommendation_metrics_daily
+from app.services.recommendation_metrics_service import (
+    aggregate_recommendation_metrics_daily,
+)
 
 logger = logging.getLogger("2240ai.recommendation_metrics")
 
