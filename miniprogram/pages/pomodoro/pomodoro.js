@@ -564,8 +564,17 @@ Page({
       })
       this._beginCountdown(session)
     } catch (e) {
-      wx.showToast({ title: '启动失败', icon: 'none' })
-      this.setData({ phase: PHASE.IDLE })
+      const detail = (e && (e.detail || e.message || '')) || ''
+      const isActiveConflict = (e && e.statusCode === 409) || /active|running|进行中/.test(detail)
+      if (isActiveConflict) {
+        wx.showToast({ title: '已有进行中的专注，请先结束', icon: 'none' })
+        // Try to restore the existing running session instead of a dead-end toast
+        const active = await this._fetchActiveSession()
+        if (active) this._restoreSession(active)
+      } else {
+        wx.showToast({ title: '启动失败', icon: 'none' })
+        this.setData({ phase: PHASE.IDLE })
+      }
     }
   },
 
@@ -583,7 +592,8 @@ Page({
       this._beginFreeTimer(session)
     } catch (e) {
       const detail = (e && (e.detail || e.message || '')) || ''
-      if (detail.includes('active') || detail.includes('running')) {
+      const isActiveConflict = (e && e.statusCode === 409) || /active|running|进行中/.test(detail)
+      if (isActiveConflict) {
         wx.showToast({ title: '已有进行中的专注，请先结束', icon: 'none' })
         // Try to restore
         const active = await this._fetchActiveSession()
@@ -901,7 +911,7 @@ Page({
 
     // Backend pause async — don't block UI
     if (!wasPaused) {
-      api.post('/pomodoro/' + this._timerState.sessionId + '/pause', {})
+      this._postPauseWithRetry(this._timerState.sessionId)
         .then(server => {
           const serverPausedMs = (server.total_paused_sec || 0) * 1000
           snapshot.totalPausedMs = Math.max(snapshot.totalPausedMs || 0, serverPausedMs)
@@ -924,6 +934,24 @@ Page({
     return this.data.selectedPreset === 'debug'
       ? 10
       : Math.max(1, this.data.workDuration * 60)
+  },
+
+  // Best-effort retry for the end-confirm pause sync. A lost /pause is the one
+  // way a client-frozen window can diverge from the server's interval record
+  // (server is authoritative on pause intervals), so retry transient failures
+  // without blocking the UI.
+  async _postPauseWithRetry(sessionId, attempts) {
+    const maxAttempts = attempts || 3
+    let lastErr
+    for (let i = 0; i < maxAttempts; i += 1) {
+      try {
+        return await api.post('/pomodoro/' + sessionId + '/pause', {})
+      } catch (e) {
+        lastErr = e
+        if (i < maxAttempts - 1) await new Promise(r => setTimeout(r, 400 * (i + 1)))
+      }
+    }
+    throw lastErr
   },
 
   async _pauseCountdownForEndConfirm() {
@@ -986,7 +1014,7 @@ Page({
     // Sync backend pause (async, don't block UI)
     if (!wasPaused) {
       try {
-        const server = await api.post('/pomodoro/' + this._timerState.sessionId + '/pause', {})
+        const server = await this._postPauseWithRetry(this._timerState.sessionId)
         const serverPausedMs = (server.total_paused_sec || 0) * 1000
         snapshot.totalPausedMs = serverPausedMs
         snapshot.backendPauseDone = true

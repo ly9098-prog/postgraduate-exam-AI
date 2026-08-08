@@ -103,7 +103,7 @@ async def _process_completed(
     while True:
         rows = (await db.execute(text(
             f"""
-            SELECT id, user_id, start_time, end_time, actual_duration
+            SELECT id, user_id, start_time, end_time, actual_duration, total_paused_sec
             FROM pomodoro_sessions
             WHERE {where_sql} AND id > :last_id
             ORDER BY id
@@ -118,42 +118,57 @@ async def _process_completed(
             if limit and counts["completed_processed"] >= limit:
                 return counts
             counts["completed_processed"] += 1
-            sid, _uid, start, end, actual = r
+            sid, _uid, start, end, actual, cached_paused = r
             start_dt = _as_dt(start)
             assert start_dt is not None  # start_time is NOT NULL
+            end_dt = _as_dt(end)
             norm = normalize_completed(
-                start_dt, _as_dt(end), actual, repair_invalid=repair_invalid
+                start_dt, end_dt, actual, repair_invalid=repair_invalid
             )
 
-            if norm.action == ACTION_CREATE_PAUSE and norm.interval is not None:
-                counts["created_pause"] += 1
-                if apply:
-                    await db.execute(text(
-                        "INSERT INTO pomodoro_pause_intervals (session_id, started_at, ended_at) "
-                        "VALUES (:sid, :st, :en)"
-                    ), {"sid": sid, "st": norm.interval[0], "en": norm.interval[1]})
-            elif norm.action == ACTION_CLAMP_ROUNDING:
-                counts["clamped_rounding"] += 1
-                if apply:
-                    await db.execute(text(
-                        "UPDATE pomodoro_sessions SET actual_duration = :actual WHERE id = :sid"
-                    ), {"actual": norm.corrected_actual, "sid": sid})
-            elif norm.action == ACTION_REPAIR:
-                counts["repaired"] += 1
-                if apply:
-                    if norm.corrected_actual is not None:
-                        await db.execute(text(
-                            "UPDATE pomodoro_sessions SET actual_duration = :actual WHERE id = :sid"
-                        ), {"actual": norm.corrected_actual, "sid": sid})
-                    if norm.interval is not None:
-                        await db.execute(text(
-                            "INSERT INTO pomodoro_pause_intervals (session_id, started_at, ended_at) "
-                            "VALUES (:sid, :st, :en)"
-                        ), {"sid": sid, "st": norm.interval[0], "en": norm.interval[1]})
-            elif norm.action == ACTION_INVALID:
+            if norm.action == ACTION_INVALID:
                 counts["invalid_skipped"] += 1
                 if counts["invalid_skipped"] <= 5:
                     logger.info("  skip invalid completed session id=%s", sid)
+                continue
+
+            if norm.action == ACTION_CREATE_PAUSE:
+                counts["created_pause"] += 1
+            elif norm.action == ACTION_CLAMP_ROUNDING:
+                counts["clamped_rounding"] += 1
+            elif norm.action == ACTION_REPAIR:
+                counts["repaired"] += 1
+
+            if not apply:
+                continue
+
+            # Keep the derived cache consistent with the repaired record: for a
+            # completed session total_paused_sec = wall - actual_duration.  The
+            # legacy cache can silently diverge when intervals are reconstructed.
+            new_actual = actual
+            if norm.corrected_actual is not None:
+                new_actual = norm.corrected_actual
+            wall_sec = max(0, int((end_dt - start_dt).total_seconds()))
+            derived_paused = max(0, wall_sec - new_actual)
+
+            if norm.interval is not None:
+                await db.execute(text(
+                    "INSERT INTO pomodoro_pause_intervals (session_id, started_at, ended_at) "
+                    "VALUES (:sid, :st, :en)"
+                ), {"sid": sid, "st": norm.interval[0], "en": norm.interval[1]})
+
+            updates = []
+            upd_params: dict = {"sid": sid}
+            if new_actual != actual:
+                updates.append("actual_duration = :actual")
+                upd_params["actual"] = new_actual
+            if derived_paused != (cached_paused or 0):
+                updates.append("total_paused_sec = :paused")
+                upd_params["paused"] = derived_paused
+            if updates:
+                await db.execute(text(
+                    f"UPDATE pomodoro_sessions SET {', '.join(updates)} WHERE id = :sid"
+                ), upd_params)
 
         if apply:
             await db.commit()

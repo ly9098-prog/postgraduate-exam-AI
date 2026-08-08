@@ -1,4 +1,4 @@
-@import '../../../styles/tokens.wxss';
+@import '../../../../styles/tokens.wxss';
 
 /* ==================== Design tokens ==================== */
 

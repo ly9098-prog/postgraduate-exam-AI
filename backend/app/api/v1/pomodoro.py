@@ -115,7 +115,7 @@ async def pause_session(
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
-    return session
+    return PomodoroSessionResponse.from_orm_with_subject(session)
 
 
 
@@ -208,7 +208,10 @@ async def get_history(
 ):
     filter_date = None
     if date:
-        filter_date = datetime.strptime(date, "%Y-%m-%d").date()
+        try:
+            filter_date = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="date must use YYYY-MM-DD format") from exc
     sessions, total = await svc.get_history(db, current_user.id, page, page_size, filter_date)
     return {
         "items": [PomodoroSessionResponse.from_orm_with_subject(s) for s in sessions],
