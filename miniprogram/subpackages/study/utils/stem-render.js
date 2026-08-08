@@ -31,7 +31,7 @@
  * =============================================================================
  */
 
-var appConfig = require('../config')
+var appConfig = require('../../../config')
 var { formatInlineMathText, replaceSimpleLatexCommands } = require('./math-format')
 var { containsCode, shouldReconstructCode, reconstructCode, sanitizeImportedCodeArtifacts } = require('./code-reconstructor')
 var tableStructure = require('./table-structure')

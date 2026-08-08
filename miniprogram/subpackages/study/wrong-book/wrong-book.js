@@ -1,11 +1,11 @@
 const api = require('../../../utils/api')
 const config = require('../../../config')
 const { safeDecodeURIComponent } = require('../../../utils/route-params')
-const { toPlainInlineMathText } = require('../../../utils/stem-render')
+const { toPlainInlineMathText } = require('../utils/stem-render')
 const storage = require('../../../utils/storage')
-const aiCache = require('../../../utils/ai-diagnosis-cache')
+const aiCache = require('../utils/ai-diagnosis-cache')
 const { getSubjectName, getSubjectShortName } = require('../../../utils/subject-meta')
-const exportApi = require('../../../services/export')
+const exportApi = require('../utils/export-capability')
 
 const AI_AUTO_SETTING_PREFIX = 'ai_wrong_book_auto_v1_'
 const BATCH_CAPSULE_IDLE_MS = 5000

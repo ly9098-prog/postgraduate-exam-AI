@@ -1,8 +1,8 @@
 const api = require('../../../utils/api')
 const config = require('../../../config')
 const { createTraceId, debugLog, saveDebugSnapshot, shouldDebugQuestion } = require('../../../utils/debug')
-const { buildRenderModel, setRenderGuardPage, resetRenderGuard } = require('../../../utils/stem-render')
-const adapter = require('../../../utils/question-runner-adapter')
+const { buildRenderModel, setRenderGuardPage, resetRenderGuard } = require('../utils/stem-render')
+const adapter = require('../utils/question-runner-adapter')
 
 const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
 

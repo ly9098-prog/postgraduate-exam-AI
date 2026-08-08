@@ -9,7 +9,7 @@ var {
   serializeBlankAnswer,
   isAnswerCorrect,
   isMultiBlankType,
-} = require('../utils/answer')
+} = require('../subpackages/study/utils/answer')
 
 var passed = 0
 var failed = 0

@@ -14,7 +14,7 @@
 
 var questionAdapter = null
 try {
-  questionAdapter = require('../../../../utils/question-runner-adapter')
+  questionAdapter = require('../../utils/question-runner-adapter')
 } catch (e) {
   // Keep the component usable in isolated previews where utils are mocked.
 }
@@ -139,7 +139,7 @@ Component({
         // Extract image URLs
         var images = []
         var adapter
-        try { adapter = require('../../../../utils/question-runner-adapter') } catch (e) {}
+        try { adapter = require('../../utils/question-runner-adapter') } catch (e) {}
         if (adapter && typeof adapter.computeExtraImages === 'function') {
           images = adapter.computeExtraImages(q)
         } else if (adapter && typeof adapter.getQuestionImages === 'function') {

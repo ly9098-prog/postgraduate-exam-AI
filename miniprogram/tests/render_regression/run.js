@@ -6,7 +6,7 @@
  */
 var fs = require('fs')
 var path = require('path')
-var { RENDER_MODE, buildRenderModel, resetRenderGuard, setRenderGuardPage, buildRichTextNodes } = require('../../utils/stem-render')
+var { RENDER_MODE, buildRenderModel, resetRenderGuard, setRenderGuardPage, buildRichTextNodes } = require('../../subpackages/study/utils/stem-render')
 
 var mockConfig = { enableMathImage: false, DEV: true }
 

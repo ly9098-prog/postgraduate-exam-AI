@@ -4,12 +4,12 @@ const {
   buildRenderModel, resetRenderGuard, setRenderGuardPage,
   stripLeadingOptionLabel, toPlainInlineMathText, needsRichRender,
   textToHtml
-} = require('../../../utils/stem-render')
+} = require('../utils/stem-render')
 const {
   isMultipleChoiceType, isTrueFalseType,
   normalizeChoiceAnswer, serializeChoiceAnswer, serializeBlankAnswer,
-} = require('../../../utils/answer')
-const adapter = require('../../../utils/question-runner-adapter')
+} = require('../utils/answer')
+const adapter = require('../utils/question-runner-adapter')
 const { getSubjectName } = require('../../../utils/subject-meta')
 
 var KF = 'schedule_id'

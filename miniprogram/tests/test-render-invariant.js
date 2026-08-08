@@ -2,7 +2,7 @@
  * Render Invariant regression tests for stem-render.js
  * Run: cd miniprogram && node tests/test-render-invariant.js
  */
-var { RENDER_MODE, buildRenderModel, resetRenderGuard, setRenderGuardPage, buildRichTextNodes } = require('../utils/stem-render')
+var { RENDER_MODE, buildRenderModel, resetRenderGuard, setRenderGuardPage, buildRichTextNodes } = require('../subpackages/study/utils/stem-render')
 
 var passed = 0
 var failed = 0

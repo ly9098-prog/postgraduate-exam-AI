@@ -1,7 +1,11 @@
 /**
  * Export API service — wraps export-related API calls and polling.
+ *
+ * 因微信小程序禁止独立分包间互相引用，能力检测逻辑（getCapabilities /
+ * getExportCapabilityErrorMessage）在 study 子包（subpackages/study/utils/export-capability.js）
+ * 中有一份有意重复的实现。请勿抽回主包；两处行为一致，见 tests/test-export-capability-error.js。
  */
-const api = require('../utils/api')
+const api = require('../../../utils/api')
 
 /**
  * Get user export capabilities (feature flags + whitelist check).
@@ -49,7 +53,7 @@ function getDownloadInfo(taskId) {
  * Get the file stream URL for local-storage exports.
  */
 function getFileUrl(taskId, version) {
-  const config = require('../config')
+  const config = require('../../../config')
   const suffix = version ? '?v=' + encodeURIComponent(String(version)) : ''
   return config.BASE_URL + '/exports/' + taskId + '/file' + suffix
 }
