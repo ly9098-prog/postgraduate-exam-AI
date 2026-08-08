@@ -1,6 +1,6 @@
 const api = require('../../../utils/api')
 const pomodoroTheme = require('../../../utils/pomodoro-theme')
-const chinaTime = require('../../../utils/china-time')
+const chinaTime = require('../utils/china-time')
 
 const DARK_SUBJECT_COLORS = ['#3B82F6', '#F59E0B', '#10B981', '#06B6D4', '#F97316', '#2DD4BF', '#EA580C', '#8B5CF6', '#6366F1', '#EC4899']
 const LIGHT_SUBJECT_COLORS = ['#2F6B4F', '#7A9B76', '#2B8C83', '#B59A38', '#C4773B', '#D96B5F', '#6685A3', '#718C45', '#B45E46', '#876F8F']

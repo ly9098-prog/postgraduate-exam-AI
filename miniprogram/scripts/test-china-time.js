@@ -3,7 +3,7 @@
  * test-china-time.js
  *
  * Regression tests for:
- * - utils/china-time.js（中国固定时区 + 统计日工具）
+ * - subpackages/productivity/utils/china-time.js（中国固定时区 + 统计日工具）
  * - pomodoro-stats 页面：统计日设置驱动 today、selectedDate 修正、
  *   daily-summary 驱动 overview、history 时间按 UTC+8 格式化
  *
@@ -13,7 +13,7 @@
 /* eslint-disable no-console */
 const path = require('path')
 
-const chinaTime = require('../utils/china-time.js')
+const chinaTime = require('../subpackages/productivity/utils/china-time.js')
 
 let failed = 0
 let passed = 0
@@ -49,7 +49,7 @@ function restoreNow() {
 }
 
 // ── china-time 纯函数 ─────────────────────────────────────────────
-console.log('\n=== utils/china-time.js ===')
+console.log('\n=== subpackages/productivity/utils/china-time.js ===')
 
 useFixedNow()
 assertEqual(chinaTime.getChinaStudyDate(360), '2026-08-07', 'day_start=06:00 时凌晨 02:00 属于前一个统计日')
