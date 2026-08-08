@@ -55,6 +55,7 @@ rsync "${ARGS[@]}" \
     \
     --exclude='.git' \
     --exclude='.venv*' \
+    --exclude='*:Zone.Identifier' \
     --exclude=prompts \
     --exclude=tests \
     --exclude=artifacts \
