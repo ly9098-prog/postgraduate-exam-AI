@@ -12,7 +12,8 @@
       { "type": "glob", "value": "**/*.spec.js" },
       { "type": "glob", "value": "**/__snapshots__/**" },
       { "type": "folder", "value": "scripts" },
-      { "type": "glob", "value": "scripts/test-*.js" }
+      { "type": "glob", "value": "scripts/test-*.js" },
+      { "type": "folder", "value": "node_modules" }
     ],
     "include": []
   },

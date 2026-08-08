@@ -119,22 +119,22 @@
     },
     "page_practice": {
       "keywords": ["刷题", "practice", "练习", "答题", "quiz", "随机", "random", "作答", "选择"],
-      "files": ["pages/practice/practice.js", "pages/practice/practice.wxml", "pages/practice/practice.wxss"],
+      "files": ["subpackages/study/practice/practice.js", "subpackages/study/practice/practice.wxml", "subpackages/study/practice/practice.wxss"],
       "description": "刷题页：选题设置、逐题作答、提交判对错"
     },
     "page_practice_result": {
       "keywords": ["结果", "result", "成绩", "正确率", "score", "统计", "完成"],
-      "files": ["pages/practice-result/practice-result.js", "pages/practice-result/practice-result.wxml", "pages/practice-result/practice-result.wxss"],
+      "files": ["subpackages/study/practice-result/index.js", "subpackages/study/practice-result/index.wxml", "subpackages/study/practice-result/index.wxss"],
       "description": "练习结果页：正确率、统计、操作引导"
     },
     "page_wrong_book": {
       "keywords": ["错题", "wrong", "mistake", "错题本", "错误", "error", "筛选", "filter", "统计"],
-      "files": ["pages/wrong-book/wrong-book.js", "pages/wrong-book/wrong-book.wxml", "pages/wrong-book/wrong-book.wxss"],
+      "files": ["subpackages/study/wrong-book/wrong-book.js", "subpackages/study/wrong-book/wrong-book.wxml", "subpackages/study/wrong-book/wrong-book.wxss"],
       "description": "错题本：列表展示、筛选、统计、标记掌握"
     },
     "page_wrong_detail": {
       "keywords": ["错题详情", "wrong detail", "分析", "analysis", "ai", "解析", "掌握", "mastered"],
-      "files": ["pages/wrong-detail/wrong-detail.js", "pages/wrong-detail/wrong-detail.wxml", "pages/wrong-detail/wrong-detail.wxss"],
+      "files": ["subpackages/study/wrong-detail/wrong-detail.js", "subpackages/study/wrong-detail/wrong-detail.wxml", "subpackages/study/wrong-detail/wrong-detail.wxss"],
       "description": "错题详情：题目信息、AI 分析展示、标记掌握"
     },
     "page_plan": {

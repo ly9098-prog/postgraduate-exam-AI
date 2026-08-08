@@ -10,15 +10,15 @@
     },
     {
       "action": "disallow",
-      "page": "pages/wrong-detail/*"
+      "page": "subpackages/study/wrong-detail/*"
     },
     {
       "action": "disallow",
-      "page": "pages/practice-result/*"
+      "page": "subpackages/study/practice-result/*"
     },
     {
       "action": "disallow",
-      "page": "pages/review-today/*"
+      "page": "subpackages/study/review-today/*"
     },
     {
       "action": "disallow",
@@ -30,7 +30,7 @@
     },
     {
       "action": "disallow",
-      "page": "pages/practice/*"
+      "page": "subpackages/study/practice/*"
     },
     {
       "action": "allow",

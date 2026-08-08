@@ -8,7 +8,7 @@ global.wx = global.wx || {
   getDeviceInfo() { return { system: 'Node.js regression test' } },
 }
 
-const Parser = require('../components/mp-html/parser')
+const Parser = require('../subpackages/study/components/mp-html/parser')
 const LatexPlugin = require('../subpackages/formulas/utils/katex/index')
 
 const conditions = '两个重要极限适用的前提是极限过程分别符合x → 0和x → ∞（或x → 0时(1 + x)^(1/x)）。'

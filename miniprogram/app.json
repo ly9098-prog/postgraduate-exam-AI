@@ -5,14 +5,8 @@
     "pages/agreement/privacy",
     "pages/agreement/ai",
     "pages/home/home",
-    "pages/practice/practice",
-    "pages/wrong-book/wrong-book",
-    "pages/wrong-detail/wrong-detail",
-    "pages/review-today/review-today",
     "pages/dashboard/dashboard",
-    "pages/pomodoro/pomodoro",
-    "pages/export-config/export-config",
-    "pages/export-records/export-records"
+    "pages/pomodoro/pomodoro"
   ],
   "window": {
     "navigationBarBackgroundColor": "#4F7FFF",
@@ -41,8 +35,28 @@
       "name": "productivity",
       "independent": false,
       "pages": [
-        "pomodoro-stats/index",
+        "pomodoro-stats/index"
+      ]
+    },
+    {
+      "root": "subpackages/study",
+      "name": "study",
+      "independent": false,
+      "pages": [
+        "practice/practice",
+        "wrong-book/wrong-book",
+        "wrong-detail/wrong-detail",
+        "review-today/review-today",
         "practice-result/index"
+      ]
+    },
+    {
+      "root": "subpackages/export",
+      "name": "export",
+      "independent": false,
+      "pages": [
+        "export-config/export-config",
+        "export-records/export-records"
       ]
     }
   ],

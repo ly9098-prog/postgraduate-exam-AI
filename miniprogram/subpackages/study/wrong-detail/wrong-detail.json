@@ -1,0 +1,11 @@
+{
+  "navigationStyle": "custom",
+  "backgroundColor": "#F4F4EE",
+  "backgroundColorTop": "#F4F4EE",
+  "backgroundColorBottom": "#F4F4EE",
+  "usingComponents": {
+    "mp-html": "/subpackages/study/components/mp-html/index",
+    "quiz-runner": "/subpackages/study/components/quiz-runner/quiz-runner",
+    "premium-nav": "/components/premium-nav/premium-nav"
+  }
+}

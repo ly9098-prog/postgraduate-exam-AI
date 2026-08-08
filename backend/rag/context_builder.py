@@ -139,7 +139,7 @@ def build_context_minimal(query: str) -> str:
     输出格式：
 
     [FRONTEND CONTEXT]
-    - pages/practice/practice.js
+    - subpackages/study/practice/practice.js
     - components/question-card
 
     [BACKEND CONTEXT]
