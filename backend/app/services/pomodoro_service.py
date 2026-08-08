@@ -249,8 +249,10 @@ async def pause_session(db: AsyncSession, session_id: int, user_id: int) -> Pomo
             PomodoroSession.status.in_(["running", "paused"]),
         )
         # Row lock so two concurrent pause requests cannot both see status="running"
-        # and each append an open pause interval (PostgreSQL; no-op on SQLite).
-        .with_for_update()
+        # and each append an open pause interval.  ``of=PomodoroSession`` locks only
+        # the sessions row — a bare FOR UPDATE would also lock the outer-joined
+        # subjects side, which PostgreSQL rejects (FeatureNotSupportedError).
+        .with_for_update(of=PomodoroSession)
     )
     session = result.scalar_one_or_none()
     if not session:

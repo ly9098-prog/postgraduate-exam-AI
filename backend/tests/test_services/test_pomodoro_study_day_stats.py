@@ -823,3 +823,32 @@ class TestSnapshotQueryCounts:
         pause_stmts = [s for s in statements if "pomodoro_pause_intervals" in s]
         assert len(pause_stmts) == 1, statements
         assert snap["daily_summary"]["duration_sec"] > 0
+
+
+class TestPauseRowLockPostgresCompat:
+    """pause_session 的行锁在 PostgreSQL 下不能锁 outer join 可空侧。
+
+    SQLite 忽略 FOR UPDATE，运行时测试覆盖不到（线上曾 500：
+    ``FOR UPDATE cannot be applied to the nullable side of an outer join``）。
+    本测试对 postgresql dialect 编译该查询，断言锁只作用于 pomodoro_sessions，
+    防止将来把 ``of=PomodoroSession`` 去掉回归到裸 ``FOR UPDATE``。
+    """
+
+    def test_pause_row_lock_targets_only_pomodoro_sessions(self):
+        from sqlalchemy import select
+        from sqlalchemy.dialects import postgresql
+        from sqlalchemy.orm import joinedload, selectinload
+
+        from app.models.pomodoro import PomodoroSession
+
+        stmt = (
+            select(PomodoroSession)
+            .options(
+                joinedload(PomodoroSession.subject_ref),
+                selectinload(PomodoroSession.pause_intervals),
+            )
+            .where(PomodoroSession.id == 1)
+            .with_for_update(of=PomodoroSession)
+        )
+        sql = str(stmt.compile(dialect=postgresql.dialect()))
+        assert sql.rstrip().endswith("FOR UPDATE OF pomodoro_sessions")
