@@ -23,7 +23,7 @@ from app.models.watermark_rule import WatermarkRule
 from app.models.admin_ai_config import AdminAiModelConfig, AdminAiConfig
 from app.models.import_batch_job import ImportBatchJob, ImportBatchJobItem
 from app.models.import_pipeline import ImportPipeline, ImportPipelineChunk
-from app.models.pomodoro import PomodoroSession
+from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession, UserPomodoroSettings  # noqa: F401
 from app.models.refresh_token import RefreshToken
 from app.models.ocr_job import OCRJob
 from app.models.export_task import ExportTask, ExportSnapshot  # noqa: F401

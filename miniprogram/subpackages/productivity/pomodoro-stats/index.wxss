@@ -311,6 +311,60 @@ page {
   gap: 12rpx;
 }
 
+/* ── 统计日设置 ── */
+.day-start-section {
+  padding: 24rpx 28rpx;
+}
+
+.day-start-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.day-start-left {
+  flex: 1;
+  min-width: 0;
+  margin-right: 20rpx;
+}
+
+.day-start-title {
+  display: block;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 6rpx;
+}
+
+.day-start-note {
+  display: block;
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.42);
+  line-height: 1.5;
+}
+
+.day-start-edit {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  padding: 10rpx 18rpx;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1rpx solid rgba(59, 130, 246, 0.2);
+  border-radius: 999rpx;
+  flex-shrink: 0;
+}
+
+.day-start-edit-text {
+  font-size: 22rpx;
+  color: #60A5FA;
+}
+
+.day-start-arrow {
+  font-size: 24rpx;
+  color: #60A5FA;
+  line-height: 1;
+}
+
 /* ── Today Quick Button ── */
 .today-btn {
   padding: 8rpx 18rpx;
@@ -1066,6 +1120,24 @@ page {
 .theme-light .section-title {
   color: #455249;
   font-weight: 750;
+}
+
+.theme-light .day-start-title {
+  color: #173426;
+}
+
+.theme-light .day-start-note {
+  color: rgba(21, 51, 35, 0.5);
+}
+
+.theme-light .day-start-edit {
+  background: rgba(21, 51, 35, 0.075);
+  border-color: rgba(21, 51, 35, 0.13);
+}
+
+.theme-light .day-start-edit-text,
+.theme-light .day-start-arrow {
+  color: #2F6B4F;
 }
 
 .theme-light .today-btn {

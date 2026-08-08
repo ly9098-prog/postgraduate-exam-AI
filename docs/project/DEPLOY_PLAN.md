@@ -3,6 +3,10 @@
 > 更新时间：2026-08-06
 > 生产入口：`deploy/docker-compose.prod.yml` + `deploy/scripts/deploy.sh`
 
+> ✅ **Pomodoro V2 迁移已完成（2026-08-08）**：历史 Pomodoro 数据已规范化到 V2 canonical 模型，
+> legacy compatibility 已删除，生产运行新 runtime（alembic `f6e7a8b9c0d1`）。执行记录见
+> **[POMODORO_V2_MIGRATION.md](./POMODORO_V2_MIGRATION.md)** §8。
+
 ---
 
 ## 0. 服务器迁移（2026-08-06 切流，2026-08-07 旧机停用）

@@ -63,6 +63,22 @@
           </view>
         </view>
 
+        <!-- ===== 统计日设置 ===== -->
+        <view class="card-section day-start-section">
+          <picker mode="time" value="{{dayStartTime}}" bindchange="onDayStartChange">
+            <view class="day-start-row">
+              <view class="day-start-left">
+                <text class="day-start-title">{{studyDayRangeText}}</text>
+                <text class="day-start-note">{{dayStartNoteText}}</text>
+              </view>
+              <view class="day-start-edit">
+                <text class="day-start-edit-text">调整</text>
+                <text class="day-start-arrow">›</text>
+              </view>
+            </view>
+          </picker>
+        </view>
+
         <!-- ===== TREND CHART ===== -->
         <view class="card-section">
           <text class="section-title">最近 7 天趋势</text>
@@ -130,7 +146,8 @@
           </view>
           <view wx:elif="{{history.length === 0}}" class="empty-hint">
             <view class="empty-icon"></view>
-            <text class="empty-text" wx:if="{{selectedDate === _todayDate}}">今天还没有学习记录<br/>开始一个番茄钟吧</text>
+            <text class="empty-text" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">今日暂无当日开始的专注记录<br/>但存在跨统计日的专注时长</text>
+            <text class="empty-text" wx:elif="{{selectedDate === _todayDate}}">今天还没有学习记录<br/>开始一个番茄钟吧</text>
             <text class="empty-text" wx:else>{{selectedDate}} 暂无学习记录</text>
           </view>
           <view class="history-list" wx:elif="{{history.length > 0}}">
@@ -138,7 +155,7 @@
               <view class="hist-accent" style="background: {{item._color}};"></view>
               <view class="hist-left">
                 <text class="hist-subject">{{item._subjectLabel}}</text>
-                <text class="hist-meta">{{item._date}} {{item._time}} · {{item._duration}}</text>
+                <text class="hist-meta">{{item._time}} · {{item._duration}}</text>
               </view>
               <view class="hist-right">
                 <view class="hist-status-dot {{item._statusClass}}"></view>
@@ -172,7 +189,7 @@
           <text class="detail-value">{{selectedSubjectDetail._pctText}}</text>
         </view>
         <view class="detail-item">
-          <text class="detail-label">完成次数</text>
+          <text class="detail-label">当日开始次数</text>
           <text class="detail-value">{{selectedSubjectDetail.sessions || 0}} 次</text>
         </view>
       </view>
