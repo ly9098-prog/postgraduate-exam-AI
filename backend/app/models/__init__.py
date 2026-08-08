@@ -18,7 +18,11 @@ from app.models.import_batch_job import ImportBatchJob, ImportBatchJobItem  # no
 from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
 from app.models.knowledge_point import KnowledgePoint  # noqa: F401
 from app.models.ocr_job import OCRJob  # noqa: F401
-from app.models.pomodoro import PomodoroPauseInterval, PomodoroSession, UserPomodoroSettings  # noqa: F401
+from app.models.pomodoro import (  # noqa: F401
+    PomodoroPauseInterval,
+    PomodoroSession,
+    UserPomodoroSettings,
+)
 from app.models.practice_record import PracticeRecord  # noqa: F401
 from app.models.question import Question  # noqa: F401
 from app.models.question_import import QuestionImport  # noqa: F401

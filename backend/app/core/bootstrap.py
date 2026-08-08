@@ -274,7 +274,9 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
 
     # Recommendation metrics daily aggregation scheduler
     try:
-        from app.services.recommendation_metrics_scheduler import recommendation_metrics_scheduler
+        from app.services.recommendation_metrics_scheduler import (
+            recommendation_metrics_scheduler,
+        )
 
         await recommendation_metrics_scheduler.start()
         logger.info("Recommendation metrics scheduler started")
@@ -475,7 +477,9 @@ async def shutdown_role(role: str, registry: TaskRegistry) -> None:
             logger.warning("Audit cleanup scheduler stop error: %s", e)
 
         try:
-            from app.services.recommendation_metrics_scheduler import recommendation_metrics_scheduler
+            from app.services.recommendation_metrics_scheduler import (
+                recommendation_metrics_scheduler,
+            )
 
             await recommendation_metrics_scheduler.stop()
         except Exception as e:
