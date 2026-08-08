@@ -1,4 +1,4 @@
-var animationLoader = require('../../../utils/animation-loader')
+var animationLoader = require('../../../../utils/animation-loader')
 
 function getSystemInfo() {
   try {

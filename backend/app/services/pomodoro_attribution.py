@@ -103,7 +103,18 @@ def _normalize(
     remainder, deterministic tie-break by earlier date).  Zero or degenerate raw
     overlap falls back to the session's start study day so no seconds are lost.
     """
-    if not raw_overlap or actual_duration <= 0:
+    if not raw_overlap:
+        # No active overlap (e.g. pauses cover the whole wall clock).  Fall back
+        # to the start study day so no seconds are lost, but surface the anomaly
+        # instead of silently attributing focus time that never happened.
+        if actual_duration > 0:
+            logger.warning(
+                "pomodoro attribution: no active overlap for start=%s; attributing %ds to start study day",
+                start,
+                actual_duration,
+            )
+        return {study_day_for_utc(start, day_start_minute): actual_duration}
+    if actual_duration <= 0:
         return {study_day_for_utc(start, day_start_minute): actual_duration}
     total_raw = sum(raw_overlap.values())
     if total_raw <= 0:

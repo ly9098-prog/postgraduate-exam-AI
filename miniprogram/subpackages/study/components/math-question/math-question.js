@@ -1,5 +1,5 @@
-var stemRender = require('../../../utils/stem-render')
-var tableStructure = require('../../../utils/table-structure')
+var stemRender = require('../../../../utils/stem-render')
+var tableStructure = require('../../../../utils/table-structure')
 
 Component({
   properties: {

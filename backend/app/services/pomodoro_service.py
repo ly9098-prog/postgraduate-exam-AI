@@ -2,6 +2,7 @@ import logging
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -30,15 +31,40 @@ def _effective_paused_sec(session, now) -> int:
 
     ``total_paused_sec`` is a derived cache kept for the active-timer UI; this
     recomputes the truth from the intervals so the cache can never diverge.
+
+    Overlapping intervals are merged before summing, and the float seconds are
+    accumulated once then truncated, so multi-pause sessions agree with
+    attribution's merged semantics instead of overcounting by up to N-1 seconds.
     """
-    total = 0
+    spans = []
     for i in session.pause_intervals:
         if i.started_at is None:
             continue
         end = i.ended_at if i.ended_at is not None else now
         if end > i.started_at:
-            total += int((end - i.started_at).total_seconds())
-    return total
+            spans.append((i.started_at, end))
+    if not spans:
+        # Pre-V2 sessions carry only the derived cache (intervals are created by
+        # migrate_pomodoro_sessions_v2 --apply). Preserve it instead of silently
+        # zeroing the pause, which would inflate actual_duration until backfill.
+        legacy = getattr(session, "total_paused_sec", 0) or 0
+        if legacy > 0:
+            logger.warning(
+                "pomodoro legacy session %s: total_paused_sec=%s but no pause intervals; "
+                "run migrate_pomodoro_sessions_v2 --apply to backfill",
+                getattr(session, "id", None),
+                legacy,
+            )
+        return int(legacy)
+    spans.sort()
+    merged = []
+    for s, e in spans:
+        if merged and s < merged[-1][1]:
+            if e > merged[-1][1]:
+                merged[-1] = (merged[-1][0], e)
+        else:
+            merged.append((s, e))
+    return int(sum((e - s).total_seconds() for s, e in merged))
 
 
 def _close_open_pause_interval(session, now) -> PomodoroPauseInterval | None:
@@ -242,8 +268,23 @@ async def pause_session(db: AsyncSession, session_id: int, user_id: int) -> Pomo
         )
     session.paused_at = now
     session.status = "paused"
-    await db.flush()
-    await db.refresh(session)
+    # The partial unique index is the final guard: on SQLite the row lock above
+    # is a no-op, so two concurrent pause requests can both pass the defensive
+    # check and race it.  Treat the loser as an idempotent re-pause — roll back
+    # to a savepoint and return the session as-is (the winner already recorded
+    # the open interval).
+    try:
+        async with db.begin_nested():
+            await db.flush()
+    except IntegrityError:
+        logger.warning(
+            "pomodoro pause_session: concurrent open pause interval for session %s; treating as idempotent",
+            session.id,
+        )
+        session.pause_intervals[:] = [i for i in session.pause_intervals if i.id is not None]
+        session.paused_at = None
+        session.status = "running"
+        await db.refresh(session)
     return session
 
 
@@ -270,19 +311,25 @@ async def resume_session(
 
     now = utcnow()
 
-    if session.status == "paused" and session.paused_at is not None:
+    # Close any stray open pause interval regardless of status, so a running
+    # session carrying a leftover open interval (migration artifact / pause race)
+    # is repaired on resume too instead of being left on the completed session.
+    if any(i.ended_at is None for i in session.pause_intervals):
         _close_open_pause_interval(session, now)
+
+    if session.status == "paused" and session.paused_at is not None:
         session.paused_at = None
         session.status = "running"
-        # Recompute the derived cache and the countdown end from canonical data —
-        # idempotent, repeated resumes never double-extend the countdown.
-        session.total_paused_sec = _effective_paused_sec(session, now)
-        if session.expected_end_time is not None:
-            session.expected_end_time = (
-                session.start_time
-                + timedelta(minutes=session.work_duration)
-                + timedelta(seconds=session.total_paused_sec)
-            )
+
+    # Recompute the derived cache and the countdown end from canonical data —
+    # idempotent: repeated resumes never double-extend the countdown.
+    session.total_paused_sec = _effective_paused_sec(session, now)
+    if session.status == "running" and session.expected_end_time is not None:
+        session.expected_end_time = (
+            session.start_time
+            + timedelta(minutes=session.work_duration)
+            + timedelta(seconds=session.total_paused_sec)
+        )
 
     await db.flush()
     await db.refresh(session)

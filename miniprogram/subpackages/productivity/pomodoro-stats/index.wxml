@@ -151,6 +151,7 @@
             <text class="empty-text" wx:else>{{selectedDate}} 暂无学习记录</text>
           </view>
           <view class="history-list" wx:elif="{{history.length > 0}}">
+            <view class="bleed-hint" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">部分时长来自跨统计日的专注（前一统计日开始）</view>
             <view class="history-item" wx:for="{{history}}" wx:key="id">
               <view class="hist-accent" style="background: {{item._color}};"></view>
               <view class="hist-left">

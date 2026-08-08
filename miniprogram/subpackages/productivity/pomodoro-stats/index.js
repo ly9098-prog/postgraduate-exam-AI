@@ -140,6 +140,11 @@ var pageConfig = {
   async _loadSettings() {
     try {
       const settings = await api.get('/pomodoro/settings')
+      // A concurrent _saveDayStart may have landed a newer day_start_minute while
+      // this GET was in flight; applying the stale response here would revert the
+      // just-saved setting (TOCTOU).  _saveDayStart sets _settingsLoaded before it
+      // resolves, so bail out without clobbering the UI.
+      if (this._settingsLoaded) return
       const raw = Number(settings && settings.day_start_minute)
       const dsm = Number.isFinite(raw) ? Math.max(0, Math.min(1439, raw)) : 0
       const prevToday = this.data._todayDate
@@ -568,6 +573,12 @@ var pageConfig = {
       const subjectBreakdown = (summary && summary.subjects) || []
       const selectedDurationSec = Number(summary && summary.duration_sec) || 0
       const selectedSessionCount = Number(summary && summary.sessions) || 0
+      // 跨统计日渗透：daily-summary 中 duration>0 但 sessions==0 的科目切片即来自
+      // 前一日开始、本日结束的 session —— 时长计入本日但 history（按开始日）无对应行。
+      // 用它作为提示信号，比"本日无 session"更准（本日有其他 session 时同样成立）。
+      const hasBleedInSubjects = (subjectBreakdown || []).some(
+        s => Number(s.duration_sec) > 0 && Number(s.sessions) === 0
+      )
       // Both values in the main overview card follow the same selected-date
       // records used by the pie chart and recent-history list.
       this._rawTodayDur = selectedDurationSec
@@ -605,7 +616,7 @@ var pageConfig = {
         })),
         subjects: this._buildSubjectItems(subjectBreakdown),
         pieDateLabel: this._formatPieDateLabel(effectiveDate),
-        _crossDayBleedIn: selectedSessionCount === 0 && selectedDurationSec > 0,
+        _crossDayBleedIn: hasBleedInSubjects,
         pieLoading: false,
         loading: false,
         contentReady: true,
@@ -785,6 +796,9 @@ var pageConfig = {
       const subjectBreakdown = (summary && summary.subjects) || []
       const selectedDurationSec = Number(summary && summary.duration_sec) || 0
       const selectedSessionCount = Number(summary && summary.sessions) || 0
+      const hasBleedInSubjects = (subjectBreakdown || []).some(
+        s => Number(s.duration_sec) > 0 && Number(s.sessions) === 0
+      )
       const previousDurationSec = Number.isFinite(this._displayTodayDurationSec)
         ? this._displayTodayDurationSec
         : (Number(this._rawTodayDur) || 0)
@@ -800,7 +814,7 @@ var pageConfig = {
         historyTotal: (effectiveHistory && effectiveHistory.total) || 0,
         historyReady: true,
         pieDateLabel: this._formatPieDateLabel(effectiveDate),
-        _crossDayBleedIn: selectedSessionCount === 0 && selectedDurationSec > 0,
+        _crossDayBleedIn: hasBleedInSubjects,
         pieLoading: false,
         selectedSubjectDetail: null,
         _selectedSubject: null,
