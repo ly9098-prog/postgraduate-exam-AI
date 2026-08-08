@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,13 +15,22 @@ from app.schemas.pomodoro import (
     PomodoroSettingsResponse,
     PomodoroSettingsUpdate,
     PomodoroStartRequest,
+    PomodoroStatisticsOverviewResponse,
     PomodoroStatsResponse,
-    PomodoroSubjectBreakdown,
-    PomodoroTrendPoint,
 )
 from app.services import pomodoro_service as svc
 
 router = APIRouter(prefix="/api/v1/pomodoro")
+
+
+def _parse_study_date(value: str | None) -> date | None:
+    """Parse an optional YYYY-MM-DD study day; 400 on malformed input."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="date must use YYYY-MM-DD format") from exc
 
 
 @router.post("/start", response_model=PomodoroSessionResponse)
@@ -158,44 +167,31 @@ async def get_stats(
     return data
 
 
+@router.get("/statistics-overview", response_model=PomodoroStatisticsOverviewResponse)
+async def get_statistics_overview(
+    date: str | None = Query(None, description="Study day (YYYY-MM-DD) for the daily summary, defaults to the current study day"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """统计页首屏：stats + trends + daily_summary 一次返回（单次窗口加载 + 单次归因）。"""
+    data = await svc.build_pomodoro_statistics_snapshot(
+        db,
+        current_user.id,
+        target_date=_parse_study_date(date),
+        need_stats=True,
+        need_trends=True,
+        need_daily_summary=True,
+    )
+    return data
+
+
 @router.get("/daily-summary", response_model=PomodoroDailySummaryResponse)
 async def get_daily_summary(
     date: str | None = Query(None, description="Study day (YYYY-MM-DD), defaults to the current study day"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    filter_date = None
-    if date:
-        try:
-            filter_date = datetime.strptime(date, "%Y-%m-%d").date()
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="date must use YYYY-MM-DD format") from exc
-    return await svc.get_daily_summary(db, current_user.id, filter_date)
-
-
-@router.get("/trends", response_model=list[PomodoroTrendPoint])
-async def get_trends(
-    days: int = Query(7, ge=1, le=90),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    data = await svc.get_trends(db, current_user.id, days)
-    return [PomodoroTrendPoint(**d) for d in data]
-
-
-@router.get("/subjects", response_model=list[PomodoroSubjectBreakdown])
-async def get_subject_breakdown(
-    date: str | None = Query(None, description="Breakdown date (YYYY-MM-DD), defaults to today"),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    filter_date = None
-    if date:
-        try:
-            filter_date = datetime.strptime(date, "%Y-%m-%d").date()
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="date must use YYYY-MM-DD format") from exc
-    return await svc.get_subject_breakdown(db, current_user.id, filter_date)
+    return await svc.get_daily_summary(db, current_user.id, _parse_study_date(date))
 
 
 @router.get("/history", response_model=PomodoroHistoryResponse)
@@ -206,13 +202,9 @@ async def get_history(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    filter_date = None
-    if date:
-        try:
-            filter_date = datetime.strptime(date, "%Y-%m-%d").date()
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="date must use YYYY-MM-DD format") from exc
-    sessions, total = await svc.get_history(db, current_user.id, page, page_size, filter_date)
+    sessions, total = await svc.get_history(
+        db, current_user.id, page, page_size, _parse_study_date(date)
+    )
     return {
         "items": [PomodoroSessionResponse.from_orm_with_subject(s) for s in sessions],
         "total": total,
