@@ -43,6 +43,12 @@ function isInScope(filePath) {
   return SCAN_SUBDIRS.some(dir => rel.startsWith(dir + path.sep))
 }
 
+// Strip block / JSDoc comments so require() calls inside examples or
+// commented-out code are not treated as real module dependencies.
+function stripComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
 function resolveRequire(requiringFile, target) {
   // Handle relative paths only
   if (target[0] !== '.') return null // not a relative path, skip
@@ -74,7 +80,7 @@ console.log(`Scanning ${allFiles.length} JS files for relative require() paths..
 for (const file of allFiles) {
   if (!isInScope(file)) continue
   const relPath = path.relative(MINIPROGRAM_DIR, file)
-  const content = fs.readFileSync(file, 'utf8')
+  const content = stripComments(fs.readFileSync(file, 'utf8'))
   let match
 
   while ((match = requireRegex.exec(content)) !== null) {

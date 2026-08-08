@@ -7,7 +7,6 @@
   "usingComponents": {
     "loading-lottie": "/subpackages/study/components/loading-lottie/loading-lottie",
     "quiz-runner": "/subpackages/study/components/quiz-runner/quiz-runner",
-    "animated-view": "/components/AnimatedView/AnimatedView",
     "submit-confirm": "/subpackages/study/components/submit-confirm/submit-confirm",
     "premium-nav": "/components/premium-nav/premium-nav"
   }

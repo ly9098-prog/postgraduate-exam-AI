@@ -160,18 +160,6 @@ Page({
     reviewResultVm: null,
     _groupProgressStyle: '',
 
-    /* ====== 庆祝 ====== */
-    showCelebration: false,
-    celebrationTitle: '',
-    celebrationDetail: '',
-    celebrationMotto: '',
-    celebrationType: 'group',
-    celebrationProgressText: '',
-    celebrationRewardText: '',
-    celebrationDuration: 2600,
-    growthLevel: '',
-    growthLevelPct: 0,
-    growthDesc: '',
     batchSizeOptions: [5, 10, 20, 30],
 
     /* ====== Batch size sheet ====== */
@@ -197,6 +185,10 @@ Page({
       totalCorrect: 0,
       totalWrong: 0,
       totalCompleted: 0,
+      // 复习过程中固定今日任务总数。已完成题会被调度到未来日期，
+      // 接口返回的实时待复习数会随提交逐步缩小，不能直接作为完成度分母。
+      todayTaskTotalCount: 0,
+      completedBeforeSession: 0,
       safeModeActive: false,
       renderTraces: [],
       optionKeys: [],
@@ -212,7 +204,6 @@ Page({
   onLoad() {
     this._reviewSession = this._createReviewSession()
     this._timerInterval = null
-    this._finalCelebrationShown = false
     this._userSelectedReviewBatchSize = false
     setRenderGuardPage('review-today')
     this._setDateStr()
@@ -232,15 +223,12 @@ Page({
   },
 
   onHide() {
-    this._clearCelebrationTimer()
-    if (this.data.showCelebration) this.setData({ showCelebration: false })
     // 离开页面时暂停复习计时（保留累计时长）
     this._pauseReviewTimer()
   },
 
   onUnload() {
     resetRenderGuard()
-    this._clearCelebrationTimer()
     this._clearMasterUndo()
     this._clearReviewTimer()
   },
@@ -269,6 +257,27 @@ Page({
       let targetPhase = 'overview'
       if (vm.todayRemainingCount <= 0) {
         targetPhase = vm.todayDueCount > 0 ? 'final-result' : 'empty'
+      }
+
+      // 已完成的题会被调度到未来日期，导致 overview 的实时 due_count 变成 0。
+      // 此时再看一次今日结果，避免用户完成全部任务后重新进入却被当成空状态。
+      if (targetPhase === 'empty') {
+        try {
+          const todayResult = await api.get('/review/today/result')
+          const hasTodayResult = Number(todayResult.today_completed_count || 0) > 0 || Number(todayResult.mastered_count || 0) > 0
+          if (hasTodayResult) {
+            const resultVm = this.buildTodayReviewResultVM(todayResult)
+            this._reviewSession.overviewLoading = false
+            this.setData({
+              ...vm,
+              phase: 'final-result',
+              reviewResultVm: resultVm,
+            })
+            return
+          }
+        } catch (resultError) {
+          console.warn('加载今日复习结果兜底失败', resultError)
+        }
       }
 
       this._reviewSession.overviewLoading = false
@@ -300,6 +309,19 @@ Page({
       this._reviewSession.allTodayQuestionIds = overview.all_question_ids || []
       this._reviewSession.completedQuestionIds = overview.completed_question_ids || []
       this._reviewSession.remainingQuestionIds = overview.remaining_question_ids || []
+
+      if (this._reviewSession.todayTaskTotalCount > 0 && (this.data.phase === 'reviewing' || this.data.phase === 'group-result')) {
+        const taskTotalCount = Math.max(
+          Number(this._reviewSession.todayTaskTotalCount || 0),
+          Number(this.data.todayDueCount || 0)
+        )
+        const remainingCount = Math.min(taskTotalCount, Math.max(0, Number(vm.todayRemainingCount || 0)))
+        vm.todayDueCount = taskTotalCount
+        vm.todayRemainingCount = remainingCount
+        vm.todayCompletedCount = Math.max(0, taskTotalCount - remainingCount)
+        vm.todayProgressPercent = taskTotalCount > 0 ? Math.round(vm.todayCompletedCount / taskTotalCount * 100) : 0
+      }
+
       this.setData({
         ...vm,
       })
@@ -353,14 +375,11 @@ Page({
     if (this.data.todayRemainingCount <= 0) return
     if (this.data.isStarting || this.data.isContinuing) return
 
-    this._clearCelebrationTimer()
-    this._finalCelebrationShown = false
     // Stay in loading phase while fetching (shows skeleton)
     this.setData({
       isStarting: true,
       batchLoading: true,
       phase: 'loading',
-      showCelebration: false,
     })
     try {
       const batch = await api.post('/review/today/next-batch', {
@@ -401,6 +420,23 @@ Page({
       // Calculate DEV payload estimate
       this._checkSetDataSize({ phase: 'reviewing', currentQuestion: firstQuestion })
 
+      // 固定本次复习的任务总数，避免后端实时 due_count 在提交后缩小。
+      const batchDueCount = Number(batch.today_due_count || 0)
+      const batchCompletedCount = Number(batch.today_completed_count || 0)
+      const taskTotalCount = Math.max(
+        Number(this._reviewSession.todayTaskTotalCount || 0),
+        Number(this.data.todayDueCount || 0),
+        batchDueCount,
+        allQuestions.length
+      )
+      const completedBeforeSession = Math.max(
+        Number(this._reviewSession.completedBeforeSession || 0),
+        Number(this.data.todayCompletedCount || 0),
+        batchCompletedCount
+      )
+      this._reviewSession.todayTaskTotalCount = taskTotalCount
+      this._reviewSession.completedBeforeSession = completedBeforeSession
+
       // Atomic state transition: all critical fields set in one setData
       this.setData({
         phase: 'reviewing',
@@ -413,9 +449,9 @@ Page({
 
         currentBatchNo: batch.batch_no || 1,
         totalBatchCount: batch.total_batch_count || this.data.totalBatchCount,
-        todayDueCount: batch.today_due_count || this.data.todayDueCount,
-        todayCompletedCount: batch.today_completed_count || this.data.todayCompletedCount,
-        todayRemainingCount: batch.today_remaining_count || 0,
+        todayDueCount: taskTotalCount,
+        todayCompletedCount: completedBeforeSession,
+        todayRemainingCount: Math.max(0, taskTotalCount - completedBeforeSession),
 
         groupResults: [],
         groupWrongResults: [],
@@ -463,15 +499,11 @@ Page({
 
   /* ==================== 今日最终结果 ==================== */
 
-  async _loadTodayResult(options) {
-    const shouldCelebrate = !!(options && options.celebrate)
+  async _loadTodayResult() {
     try {
       const result = await api.get('/review/today/result')
       const vm = this.buildTodayReviewResultVM(result)
       this.setData({ phase: 'final-result', reviewResultVm: vm })
-      // 只允许“本次停留内提交最后一组并进入最终结果”触发庆祝。
-      // 初次进入、重新进入、下拉刷新、后台恢复、标记最后一题为掌握均不播放。
-      if (shouldCelebrate) this._showFinalCelebrationOnce()
     } catch (e) {
       console.error('加载今日复习结果失败', e)
       // 兜底：使用本地累积结果
@@ -481,16 +513,23 @@ Page({
   },
 
   buildTodayReviewResultVM(result) {
-    const dueCount = Number(result.today_due_count || 0)
-    const completedCount = Number(result.today_completed_count || 0)
+    const completedCount = Math.max(
+      Number(result.today_completed_count || 0),
+      Number(this.data.todayCompletedCount || 0)
+    )
+    const dueCount = Math.max(
+      Number(result.today_due_count || 0),
+      Number(this._reviewSession && this._reviewSession.todayTaskTotalCount || 0),
+      Number(this.data.todayDueCount || 0),
+      completedCount
+    )
     const correct = Number(result.correct_count || 0)
     const wrong = Number(result.wrong_count || 0)
     const skipped = Number(result.skipped_count || 0)
     const masteredCount = Number(result.mastered_count || 0)
     const accuracy = result.accuracy || 0
     const accuracyPct = Math.round(accuracy * 100)
-    const completionRate = result.completion_rate || 0
-    const completionPct = Math.round(completionRate * 100)
+    const completionPct = dueCount > 0 ? Math.round(completedCount / dueCount * 100) : 0
     const completionCapped = Math.max(0, Math.min(100, completionPct))
     const completionOver = Math.max(0, completionPct - 100)
     const remainingCount = Math.max(0, dueCount - completedCount)
@@ -937,7 +976,7 @@ Page({
         this.setData({ masterUndoVisible: false })
       }, 5000)
 
-      this.refreshOverviewStatsSilently()
+      await this.refreshOverviewStatsSilently()
 
       if (groupQuestions.length === 0) {
         this._loadTodayResult()
@@ -984,7 +1023,7 @@ Page({
       if (groupQuestions.length > 0) {
         this._showQuestion(Math.min(insertAt, groupQuestions.length - 1))
       }
-      this.refreshOverviewStatsSilently()
+      await this.refreshOverviewStatsSilently()
       wx.showToast({ title: '已撤销掌握', icon: 'none' })
     } catch (e) {
       console.error('撤销掌握失败', e)
@@ -1116,8 +1155,20 @@ Page({
       const hasMore = skippedQuestions.length > 0 || this.data.currentGroupIdx + 1 < newGroups.length
       // 或者用 today_remaining_count 判断
 
-      // 静默刷新概览数据（不修改 phase，避免覆盖 group-result）
-      this.refreshOverviewStatsSilently()
+      // 本地更新今日任务进度，避免接口中“实时待复习数”因已完成题被改期而缩小，
+      // 导致最终页出现 1 / 0、完成度 0% 等不合理展示。
+      const todayTaskTotalCount = Math.max(
+        Number(this._reviewSession.todayTaskTotalCount || 0),
+        Number(this.data.todayDueCount || 0),
+        totalCompleted
+      )
+      const completedBeforeSession = Number(this._reviewSession.completedBeforeSession || 0)
+      const todayCompletedCount = Math.min(
+        todayTaskTotalCount,
+        Math.max(Number(this.data.todayCompletedCount || 0), completedBeforeSession + totalCompleted)
+      )
+      const todayRemainingCount = Math.max(0, todayTaskTotalCount - todayCompletedCount)
+      this._reviewSession.todayTaskTotalCount = todayTaskTotalCount
 
       this._reviewSession.allGroupResults = allGroupResults
       this._reviewSession.totalCorrect = totalCorrect
@@ -1135,14 +1186,14 @@ Page({
         groupWrong,
         _groupSkipped: groupSkipped,
         groupAccuracyPercent: Math.round(groupQuestions.length > 0 ? groupCorrect / groupQuestions.length * 100 : 0),
+        todayDueCount: todayTaskTotalCount,
+        todayCompletedCount: todayCompletedCount,
+        todayRemainingCount: todayRemainingCount,
+        todayProgressPercent: todayTaskTotalCount > 0 ? Math.round(todayCompletedCount / todayTaskTotalCount * 100) : 0,
         showGroupDetails: false,
         submittingGroup: false,
         _groupProgressStyle: 'width: ' + Math.round((this.data.currentGroupIdx + 1) / Math.max(1, newGroups.length) * 100) + '%',
       })
-
-      if (!hasMore && skippedQuestions.length === 0) {
-        // 最终完成动画只在最终结果页展示，组结果保持轻量动效。
-      }
     } catch (e) {
       console.error('提交失败', e)
       wx.showToast({ title: '提交失败，请重试', icon: 'none' })
@@ -1203,9 +1254,9 @@ Page({
             currentIndex: 0,
             currentBatchNo: batch.batch_no || this.data.currentBatchNo + 1,
             totalBatchCount: batch.total_batch_count || this.data.totalBatchCount,
-            todayDueCount: batch.today_due_count || this.data.todayDueCount,
-            todayCompletedCount: batch.today_completed_count || this.data.todayCompletedCount,
-            todayRemainingCount: batch.today_remaining_count || 0,
+            todayDueCount: this._reviewSession.todayTaskTotalCount || this.data.todayDueCount,
+            todayCompletedCount: this.data.todayCompletedCount,
+            todayRemainingCount: this.data.todayRemainingCount,
             groupResults: [],
             groupWrongResults: [],
             groupCorrect: 0,
@@ -1229,72 +1280,7 @@ Page({
     }
 
     // 没有更多组了 → 最终结果。
-    // 这是本次停留内提交最后一组后唯一允许播放最终庆祝动画的入口。
-    this._loadTodayResult({ celebrate: true })
-  },
-
-  /* ==================== 完成反馈 ==================== */
-
-  _showGroupCelebration(correct, total) {
-    const groupIndex = this.data.currentGroupIdx + 1
-    this._showCelebration({
-      celebrationType: 'group',
-      celebrationTitle: `第 ${groupIndex} 组完成`,
-      celebrationDetail: `答对 ${correct}/${total} 题`,
-      celebrationMotto: correct >= total ? '这组很稳' : '复盘后会更牢固',
-    }, 2400)
-  },
-
-  _showFinalCelebrationOnce() {
-    if (this._finalCelebrationShown) return
-    this._finalCelebrationShown = true
-    return this._showFinalCelebration()
-  },
-
-  _showFinalCelebration() {
-    this._showCelebration({
-      celebrationType: 'final',
-      celebrationTitle: '今日复习完成',
-      celebrationDetail: '今天的记忆计划已经更新',
-      celebrationMotto: '清晰一点，再稳一点',
-    }, 3400)
-  },
-
-  _showCelebration(copy, duration) {
-    const displayDuration = duration || 3000
-    this._clearCelebrationTimer()
-    this.setData({
-      celebrationTitle: copy.celebrationTitle || '',
-      celebrationDetail: copy.celebrationDetail || '',
-      celebrationMotto: copy.celebrationMotto || '',
-      celebrationType: copy.celebrationType || 'final',
-
-      // 清空复杂内容，AnimatedView 只展示精简信息
-      celebrationProgressText: '',
-      celebrationRewardText: '',
-      growthLevel: '',
-      growthLevelPct: 0,
-      growthDesc: '',
-
-      celebrationDuration: displayDuration,
-      showCelebration: true,
-    })
-    this._celebrationTimer = setTimeout(() => {
-      this.setData({ showCelebration: false })
-      this._celebrationTimer = null
-    }, displayDuration)
-  },
-
-  dismissCelebration() {
-    this._clearCelebrationTimer()
-    this.setData({ showCelebration: false })
-  },
-
-  _clearCelebrationTimer() {
-    if (this._celebrationTimer) {
-      clearTimeout(this._celebrationTimer)
-      this._celebrationTimer = null
-    }
+    this._loadTodayResult()
   },
 
   /* ==================== 最终结果视图模型（兜底） ==================== */
@@ -1308,9 +1294,14 @@ Page({
     var skipped = Math.max(0, sessionTotal - submittedTotal)
     var accuracy = submittedTotal > 0 ? Math.round(correct / submittedTotal * 100) : 0
     var wrongRate = submittedTotal > 0 ? Math.round(wrong / submittedTotal * 100) : 0
-    var dueCount = this.data.todayDueCount || sessionTotal
-    var completedCount = this.data.todayCompletedCount || submittedTotal
-    var completionRate = dueCount > 0 ? Math.round(completedCount / dueCount * 100) : (completedCount > 0 ? 100 : 0)
+    var completedCount = Math.max(Number(this.data.todayCompletedCount || 0), submittedTotal)
+    var dueCount = Math.max(
+      Number(this._reviewSession.todayTaskTotalCount || 0),
+      Number(this.data.todayDueCount || 0),
+      completedCount,
+      sessionTotal
+    )
+    var completionRate = dueCount > 0 ? Math.round(completedCount / dueCount * 100) : 0
     var completionCapped = Math.max(0, Math.min(100, completionRate))
     var completionOver = Math.max(0, completionRate - 100)
     var remainingCount = Math.max(0, dueCount - completedCount)

@@ -1,16 +1,3 @@
-<animated-view
-  show="{{showCelebration}}"
-  type="{{celebrationType}}"
-  theme="green"
-  title="{{celebrationTitle}}"
-  detail="{{celebrationDetail}}"
-  motto="{{celebrationMotto}}"
-  duration="{{celebrationDuration}}"
-  gif-src="/assets/animation/celebration.gif"
-  png-src="/assets/animation/celebration-static.png"
-  bind:done="dismissCelebration"
-/>
-
 <premium-nav
   title="今日复习"
   variant="{{phase === 'reviewing' ? 'dark' : 'light'}}"
