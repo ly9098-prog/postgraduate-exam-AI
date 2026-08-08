@@ -13,8 +13,8 @@
  *   7. Render Regression Diff
  *   8. MIXED mode (text + code blocks)
  */
-var { RENDER_MODE, buildRenderModel, buildRichTextNodes, renderDiff, splitInlineTextAndCode } = require('../utils/stem-render')
-var { sanitizeImportedCodeArtifacts, detectCodeLanguageHint, detectDollarArtifactPattern } = require('../utils/code-reconstructor')
+var { RENDER_MODE, buildRenderModel, buildRichTextNodes, renderDiff, splitInlineTextAndCode } = require('../subpackages/study/utils/stem-render')
+var { sanitizeImportedCodeArtifacts, detectCodeLanguageHint, detectDollarArtifactPattern } = require('../subpackages/study/utils/code-reconstructor')
 
 var passed = 0
 var failed = 0

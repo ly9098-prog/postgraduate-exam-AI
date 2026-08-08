@@ -9,7 +9,7 @@ const fs = require('fs')
 const path = require('path')
 
 const TS_FILE = path.resolve(__dirname, '../admin-frontend/src/lib/latex-symbols.ts')
-const JS_FILE = path.resolve(__dirname, '../miniprogram/utils/latex-symbols.js')
+const JS_FILE = path.resolve(__dirname, '../miniprogram/subpackages/study/utils/latex-symbols.js')
 
 // Extract keys from TS source via regex
 function parseKeysFromSource(source, objName) {

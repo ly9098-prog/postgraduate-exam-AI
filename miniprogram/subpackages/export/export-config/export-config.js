@@ -1,7 +1,7 @@
 /**
  * Export configuration page — range, format, title, date, answer/analysis, sort, group, space.
  */
-const exportApi = require('../../../services/export')
+const exportApi = require('../services/export')
 
 const SORT_OPTIONS = [
   { value: 'newest', label: '加入时间最新优先' },

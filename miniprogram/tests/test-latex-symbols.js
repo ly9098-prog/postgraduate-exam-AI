@@ -1,9 +1,9 @@
 /**
- * Unit tests for miniprogram/utils/latex-symbols.js
+ * Unit tests for miniprogram/subpackages/study/utils/latex-symbols.js
  * Run: node test-latex-symbols.js
  */
-const ls = require('../utils/latex-symbols')
-const mf = require('../utils/math-format')
+const ls = require('../subpackages/study/utils/latex-symbols')
+const mf = require('../subpackages/study/utils/math-format')
 
 var passed = 0
 var failed = 0

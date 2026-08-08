@@ -1,6 +1,6 @@
 const assert = require('assert')
-const table = require('../utils/table-structure')
-const stemRender = require('../utils/stem-render')
+const table = require('../subpackages/study/utils/table-structure')
+const stemRender = require('../subpackages/study/utils/stem-render')
 
 const structured = table.normalizeTableSegment({
   type: 'table',

@@ -25,9 +25,9 @@
  *   // ... done:
  *   sync.stop()
  */
-const api = require('../utils/api')
-const config = require('../config')
-const storage = require('../utils/storage')
+const api = require('../../../utils/api')
+const config = require('../../../config')
+const storage = require('../../../utils/storage')
 
 const TERMINAL_STATES = ['completed', 'failed', 'expired']
 const WS_HEARTBEAT_INTERVAL = 25000

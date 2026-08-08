@@ -3,10 +3,10 @@ const config = require('../../../config')
 const {
   buildRenderModel, resetRenderGuard, setRenderGuardPage,
   toPlainInlineMathText, needsRichRender, textToHtml
-} = require('../../../utils/stem-render')
-const { isTrueFalseType } = require('../../../utils/answer')
-const adapter = require('../../../utils/question-runner-adapter')
-const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../../../utils/ai-analysis-normalizer')
+} = require('../utils/stem-render')
+const { isTrueFalseType } = require('../utils/answer')
+const adapter = require('../utils/question-runner-adapter')
+const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../utils/ai-analysis-normalizer')
 
 const AI_REQUEST_TIMEOUT_MS = 58000
 const AI_CACHE_POLL_INTERVAL_MS = 1500

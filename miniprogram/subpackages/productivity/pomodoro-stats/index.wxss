@@ -302,7 +302,7 @@ page {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 22rpx;
+  margin-bottom: 12rpx;
 }
 
 .header-actions {
@@ -506,7 +506,7 @@ page {
   font-size: 22rpx;
   color: rgba(255, 255, 255, 0.25);
   line-height: 1.6;
-  padding: 4rpx 0 6rpx;
+  padding: 2rpx 0 4rpx;
 }
 
 /* ── History List ── */
@@ -1127,6 +1127,10 @@ page {
 .theme-light .section-title {
   color: #455249;
   font-weight: 750;
+}
+
+.theme-light .bleed-hint {
+  color: rgba(21, 51, 35, 0.5);
 }
 
 .theme-light .day-start-title {

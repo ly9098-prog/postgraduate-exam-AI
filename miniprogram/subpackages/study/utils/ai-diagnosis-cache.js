@@ -4,7 +4,7 @@
  * 纯函数 + storage 封装，无页面依赖。
  */
 
-var storage = require('./storage')
+var storage = require('../../../utils/storage')
 
 var CACHE_VERSION = 1
 var CACHE_PREFIX = 'wrong_book_ai_diagnosis'

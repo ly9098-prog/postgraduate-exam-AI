@@ -7,9 +7,9 @@
  * - Task enrichment recomputed after every update.
  * - Completion toast shown only once per task via ``_completedNotified`` set.
  */
-const exportApi = require('../../../services/export')
+const exportApi = require('../services/export')
 const requestApi = require('../../../utils/api')
-const { ExportStatusSyncManager } = require('../../../services/export_status_sync')
+const { ExportStatusSyncManager } = require('../services/export_status_sync')
 const previewTempFiles = require('../../../utils/preview-temp-files')
 const config = require('../../../config')
 
