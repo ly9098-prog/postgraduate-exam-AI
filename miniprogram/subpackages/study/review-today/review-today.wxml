@@ -30,8 +30,23 @@
 
 <!-- ==================== 概览 ==================== -->
 <view wx:elif="{{phase === 'overview'}}" class="page overview-page">
-  <view class="page-ambient ambient-one"></view>
-  <view class="page-ambient ambient-two"></view>
+  <view class="overview-ambient" aria-hidden="true">
+    <view class="overview-memory-trail">
+      <view class="trail-segment ts-1"></view>
+      <view class="trail-segment ts-2"></view>
+      <view class="trail-segment ts-3"></view>
+      <view class="trail-segment ts-4"></view>
+      <view class="trail-segment ts-5"></view>
+      <view class="trail-node tn-1"></view>
+      <view class="trail-node tn-2"></view>
+      <view class="trail-node tn-3"></view>
+      <view class="trail-node tn-4 active"></view>
+      <view class="trail-node tn-5"></view>
+      <view class="trail-node tn-6"></view>
+    </view>
+    <view class="overview-ripple ripple-one"></view>
+    <view class="overview-ripple ripple-two"></view>
+  </view>
 
   <view class="overview-shell motion-page-enter">
     <view class="overview-heading">
@@ -41,15 +56,14 @@
     </view>
 
     <view class="mission-panel">
-      <view class="mission-grid"></view>
-      <view class="mission-glow"></view>
-
       <view class="mission-top">
         <view>
           <text class="mission-eyebrow">MEMORY CURVE</text>
           <text class="mission-label">今日还需复习</text>
         </view>
-        <view class="mission-batch" bindtap="showBatchSizeSelector" hover-class="mission-batch-pressed">每组 {{reviewBatchSize}} 道⌄</view>
+        <view class="mission-batch-link" bindtap="showBatchSizeSelector" hover-class="mission-batch-link-pressed">
+          每组 {{reviewBatchSize}} 道 ›
+        </view>
       </view>
 
       <view class="mission-main">
@@ -58,7 +72,7 @@
           <text class="mission-unit">道</text>
         </view>
 
-        <view class="curve-stage">
+        <view class="curve-stage" aria-hidden="true">
           <view class="curve-axis"></view>
           <view class="curve-segment cs-1"></view>
           <view class="curve-segment cs-2"></view>
@@ -71,53 +85,20 @@
         </view>
       </view>
 
-      <view class="mission-progress-card">
-        <view class="mission-progress-head">
-          <view class="mission-progress-copy">
-            <text class="mission-progress-kicker">TODAY PROGRESS</text>
-            <text class="mission-progress-title">今日完成度</text>
-          </view>
-          <view class="mission-progress-percent">
-            <text class="mission-progress-percent-num">{{todayProgressPercent}}</text>
-            <text class="mission-progress-percent-unit">%</text>
-          </view>
-        </view>
-        <view class="mission-progress-rail">
-          <view class="mission-progress-fill" style="width: {{todayProgressPercent}}%;">
-            <view wx:if="{{todayProgressPercent > 0}}" class="mission-progress-tip"></view>
-          </view>
-        </view>
-        <view class="mission-progress-meta">
-          <text>已完成 {{todayCompletedCount}} 道</text>
-          <text>今日目标 {{todayDueCount}} 道</text>
-        </view>
+      <view class="mission-meta-line">
+        <text>预计 {{estimatedMinutes}} 分钟</text>
+        <view class="mission-meta-dot"></view>
+        <text class="{{todayOverdueCount > 0 ? 'mission-meta-alert' : ''}}">逾期 {{todayOverdueCount}} 道</text>
       </view>
     </view>
 
-    <view class="overview-stats">
-      <view class="stat-card stat-overdue">
-        <text class="stat-caption">逾期题目</text>
-        <view class="stat-value-row"><text class="stat-value">{{todayOverdueCount}}</text><text class="stat-unit">道</text></view>
-        <text class="stat-foot">优先处理，不让记忆继续衰减</text>
-      </view>
-      <view class="stat-card">
-        <text class="stat-caption">预计用时</text>
-        <view class="stat-value-row"><text class="stat-value">{{estimatedMinutes}}</text><text class="stat-unit">分钟</text></view>
-        <text class="stat-foot">完成一组，再决定是否继续</text>
-      </view>
-    </view>
-
-    <view class="advice-card">
-      <view class="advice-icon"><view class="advice-pulse"></view></view>
-      <view class="advice-copy">
-        <text class="advice-label">TODAY'S NOTE</text>
-        <text class="advice-title">{{todayAdviceText}}</text>
-        <text class="advice-desc">系统建议来自今日逾期量和剩余任务，不需要等待 AI。</text>
-      </view>
+    <view class="overview-note">
+      <text class="overview-note-label">记忆提示</text>
+      <text class="overview-note-text">{{todayAdviceText}}</text>
     </view>
 
     <button
-      class="primary-action"
+      class="primary-action overview-primary-action"
       hover-class="{{todayRemainingCount <= 0 || isStarting || isContinuing ? 'none' : 'primary-action-pressed'}}"
       hover-start-time="20"
       hover-stay-time="80"
@@ -182,7 +163,12 @@
 </view>
 
 <!-- ==================== 组结果 ==================== -->
-<view wx:elif="{{phase === 'group-result'}}" class="page result-page">
+<view
+  wx:elif="{{phase === 'group-result'}}"
+  class="page result-page"
+  bindtouchstart="onResultPageInteraction"
+  bindtouchmove="onResultPageInteraction"
+>
   <view class="result-shell motion-page-enter">
     <view class="result-celebrate-card">
       <view class="result-orbit"></view>
@@ -276,79 +262,24 @@
       </view>
     </view>
 
-    <button class="primary-action result-next" bindtap="nextGroup" disabled="{{resultTransitioning}}" loading="{{resultTransitioning}}" hover-class="primary-action-pressed">
-      <text>{{todayRemainingCount > 0 ? '继续下一组' : '查看今日结果'}}</text>
+    <button
+      wx:if="{{todayRemainingCount > 0}}"
+      class="primary-action result-next"
+      bindtap="nextGroup"
+      disabled="{{resultTransitioning}}"
+      loading="{{resultTransitioning}}"
+      hover-class="primary-action-pressed"
+    >
+      <text>继续下一组</text>
       <text class="primary-action-arrow">↗</text>
     </button>
-  </view>
-</view>
 
-<!-- ==================== 最终结果 ==================== -->
-<view wx:elif="{{phase === 'final-result' && reviewResultVm}}" class="page final-page">
-  <view class="final-shell motion-page-enter">
-    <view class="final-hero {{reviewResultVm.resultLevelClass}}">
-      <view class="final-grid"></view>
-      <text class="final-kicker">TODAY COMPLETE</text>
-      <text class="final-title">{{reviewResultVm.remainingCount > 0 ? '今天先复习到这里。' : '今天的记忆任务，完成了。'}}</text>
-      <text class="final-desc">{{reviewResultVm.statusDesc}}</text>
-
-      <view class="final-score-row">
-        <view class="final-score"><text>{{reviewResultVm.completionRate}}</text><text class="final-score-unit">%</text></view>
-        <view class="final-score-label">
-          <text>今日任务完成度</text>
-          <text wx:if="{{reviewResultVm.completionOver > 0}}">超额完成 {{reviewResultVm.completionOver}}%</text>
-          <text wx:else>{{reviewResultVm.completionHint}}</text>
-        </view>
-      </view>
-
-      <view class="final-progress-module">
-        <view class="final-progress-head">
-          <view>
-            <text class="final-progress-kicker">TASK PROGRESS</text>
-            <text class="final-progress-title">已完成 {{reviewResultVm.completedCount}} / {{reviewResultVm.dueCount}} 道</text>
-          </view>
-          <text class="final-progress-state">{{reviewResultVm.completionOver > 0 ? '超额完成' : reviewResultVm.statusText}}</text>
-        </view>
-        <view class="final-progress-segments">
-          <view
-            wx:for="{{progressSteps}}"
-            wx:key="*this"
-            class="final-progress-segment {{reviewResultVm.completionCapped > item ? 'active' : ''}}"
-          ></view>
-        </view>
-        <view class="final-progress-foot">
-          <text>{{reviewResultVm.completionOver > 0 ? '进度条按 100% 封顶显示' : reviewResultVm.completionHint}}</text>
-          <text>按今日应复习题量计算</text>
-        </view>
-      </view>
-    </view>
-
-    <view class="final-stats-grid">
-      <view class="final-stat"><text class="final-stat-num accuracy">{{reviewResultVm.accuracy}}%</text><text>正确率</text></view>
-      <view class="final-stat"><text class="final-stat-num success">{{reviewResultVm.correct}}</text><text>答对</text></view>
-      <view class="final-stat"><text class="final-stat-num danger">{{reviewResultVm.wrong}}</text><text>错题</text></view>
-      <view class="final-stat"><text class="final-stat-num">{{reviewResultVm.masteredCount}}</text><text>已掌握</text></view>
-    </view>
-
-    <view class="final-focus-card {{reviewResultVm.nextStepType}}">
-      <view class="final-focus-head"><text class="final-focus-kicker">NEXT STEP</text><text class="final-focus-tag">{{reviewResultVm.nextStepTag}}</text></view>
-      <text class="final-focus-title">{{reviewResultVm.nextStepTitle}}</text>
-      <text class="final-focus-desc">{{reviewResultVm.nextStepDesc}}</text>
-
-      <view class="weak-subjects" wx:if="{{reviewResultVm.hasWrong && reviewResultVm.subjectStats && reviewResultVm.subjectStats.length > 0}}">
-        <text class="weak-subject" wx:for="{{reviewResultVm.subjectStats}}" wx:for-item="stat" wx:key="subject_id">{{stat.subject}} · 错 {{stat.stats.wrong}} / {{stat.stats.reviewed}}</text>
-      </view>
-    </view>
-
-    <view class="final-bottom-space"></view>
+    <view wx:else class="result-complete-bottom-space"></view>
   </view>
 
-  <view class="final-actions">
-    <button class="final-primary" wx:if="{{reviewResultVm.total === 0}}" bindtap="startTodayReview">开始复习</button>
-    <button class="final-primary" wx:elif="{{reviewResultVm.hasWrong}}" bindtap="goWrongBook">复盘今日错题</button>
-    <button class="final-primary" wx:else bindtap="finishReview">完成并返回首页</button>
-    <button class="final-secondary" wx:if="{{reviewResultVm.total === 0}}" bindtap="goHome">返回首页</button>
-    <button class="final-secondary" wx:else bindtap="goPractice">继续自由练习</button>
+  <view wx:if="{{todayRemainingCount <= 0}}" class="result-complete-actions {{resultDockVisible ? 'is-visible' : 'is-hidden'}}">
+    <button class="result-complete-primary" bindtap="goWrongBook" hover-class="result-complete-pressed">复盘错题</button>
+    <button class="result-complete-secondary" bindtap="goPractice" hover-class="result-complete-pressed">继续练习</button>
   </view>
 </view>
 

@@ -101,7 +101,7 @@ function normalizeReviewQuestion(raw) {
 Page({
   data: {
     /* ====== Phase ====== */
-    // loading | overview | reviewing | group-result | final-result | empty | error
+    // loading | overview | reviewing | group-result | empty | error
     phase: 'loading',
 
     /* ====== Timer ====== */
@@ -147,17 +147,15 @@ Page({
     _groupSkipped: 0,
     groupAccuracyPercent: 0,
     showGroupDetails: false,
+    resultDockVisible: true,
 
     /* ====== Dialog / undo ====== */
     exitConfirmVisible: false,
     masterUndoVisible: false,
     masterUndoText: '',
 
-    /* ====== 最终结果 ====== */
-
     /* ====== UI 增强 ====== */
     _dateStr: '',
-    reviewResultVm: null,
     _groupProgressStyle: '',
 
     batchSizeOptions: [5, 10, 20, 30],
@@ -204,6 +202,7 @@ Page({
   onLoad() {
     this._reviewSession = this._createReviewSession()
     this._timerInterval = null
+    this._resultDockFadeTimer = null
     this._userSelectedReviewBatchSize = false
     setRenderGuardPage('review-today')
     this._setDateStr()
@@ -211,26 +210,37 @@ Page({
   },
 
   onShow() {
-    // 仅 overview / empty / final-result 阶段刷新，reviewing/group-result 不打断答题
+    // 仅 overview / empty 阶段刷新，reviewing/group-result 不打断答题
     const phase = this.data.phase
-    if (phase === 'overview' || phase === 'empty' || phase === 'final-result') {
+    if (phase === 'overview' || phase === 'empty') {
       this.loadTodayReviewOverview()
     }
     // 从后台回到 reviewing 页面时恢复计时
     if (phase === 'reviewing' && this._reviewSession && this._reviewSession.timerStartedAt > 0 && !this._reviewSession.timerRunning) {
       this._resumeReviewTimer()
     }
+    if (phase === 'group-result' && this.data.todayRemainingCount <= 0) {
+      this._showResultDockAndRefreshTimer()
+    }
   },
 
   onHide() {
     // 离开页面时暂停复习计时（保留累计时长）
     this._pauseReviewTimer()
+    if (this._resultDockFadeTimer) {
+      clearTimeout(this._resultDockFadeTimer)
+      this._resultDockFadeTimer = null
+    }
   },
 
   onUnload() {
     resetRenderGuard()
     this._clearMasterUndo()
     this._clearReviewTimer()
+    if (this._resultDockFadeTimer) {
+      clearTimeout(this._resultDockFadeTimer)
+      this._resultDockFadeTimer = null
+    }
   },
 
   _setDateStr() {
@@ -254,42 +264,15 @@ Page({
       this._reviewSession.completedQuestionIds = overview.completed_question_ids || []
       this._reviewSession.remainingQuestionIds = overview.remaining_question_ids || []
 
-      let targetPhase = 'overview'
-      if (vm.todayRemainingCount <= 0) {
-        targetPhase = vm.todayDueCount > 0 ? 'final-result' : 'empty'
-      }
-
-      // 已完成的题会被调度到未来日期，导致 overview 的实时 due_count 变成 0。
-      // 此时再看一次今日结果，避免用户完成全部任务后重新进入却被当成空状态。
-      if (targetPhase === 'empty') {
-        try {
-          const todayResult = await api.get('/review/today/result')
-          const hasTodayResult = Number(todayResult.today_completed_count || 0) > 0 || Number(todayResult.mastered_count || 0) > 0
-          if (hasTodayResult) {
-            const resultVm = this.buildTodayReviewResultVM(todayResult)
-            this._reviewSession.overviewLoading = false
-            this.setData({
-              ...vm,
-              phase: 'final-result',
-              reviewResultVm: resultVm,
-            })
-            return
-          }
-        } catch (resultError) {
-          console.warn('加载今日复习结果兜底失败', resultError)
-        }
-      }
+      // 完成态不再进入第二套“今日最终结果”页面。
+      // 当前会话的复习结果统一停留在 group-result；重新进入且已无待复习题时展示空状态。
+      const targetPhase = vm.todayRemainingCount > 0 ? 'overview' : 'empty'
 
       this._reviewSession.overviewLoading = false
       this.setData({
         ...vm,
         phase: targetPhase,
       })
-
-      // 如果已完成，拉取 today/result
-      if (targetPhase === 'final-result') {
-        this._loadTodayResult()
-      }
     } catch (e) {
       console.error('加载复习概览失败', e)
       this._reviewSession.overviewLoading = false
@@ -495,149 +478,6 @@ Page({
       groups.push(questions.slice(i, i + size))
     }
     return groups
-  },
-
-  /* ==================== 今日最终结果 ==================== */
-
-  async _loadTodayResult() {
-    try {
-      const result = await api.get('/review/today/result')
-      const vm = this.buildTodayReviewResultVM(result)
-      this.setData({ phase: 'final-result', reviewResultVm: vm })
-    } catch (e) {
-      console.error('加载今日复习结果失败', e)
-      // 兜底：使用本地累积结果
-      const vm = this._buildReviewResultViewModel()
-      this.setData({ phase: 'final-result', reviewResultVm: vm })
-    }
-  },
-
-  buildTodayReviewResultVM(result) {
-    const completedCount = Math.max(
-      Number(result.today_completed_count || 0),
-      Number(this.data.todayCompletedCount || 0)
-    )
-    const dueCount = Math.max(
-      Number(result.today_due_count || 0),
-      Number(this._reviewSession && this._reviewSession.todayTaskTotalCount || 0),
-      Number(this.data.todayDueCount || 0),
-      completedCount
-    )
-    const correct = Number(result.correct_count || 0)
-    const wrong = Number(result.wrong_count || 0)
-    const skipped = Number(result.skipped_count || 0)
-    const masteredCount = Number(result.mastered_count || 0)
-    const accuracy = result.accuracy || 0
-    const accuracyPct = Math.round(accuracy * 100)
-    const completionPct = dueCount > 0 ? Math.round(completedCount / dueCount * 100) : 0
-    const completionCapped = Math.max(0, Math.min(100, completionPct))
-    const completionOver = Math.max(0, completionPct - 100)
-    const remainingCount = Math.max(0, dueCount - completedCount)
-    const completionHint = remainingCount > 0 ? `还剩 ${remainingCount} 道` : '今日任务已清零'
-    const hasWrong = wrong > 0
-    const hasSkipped = skipped > 0
-    const isPerfect = wrong === 0 && completedCount > 0
-
-    // Level classification (same as before)
-    var resultLevelClass, resultTitle, resultDesc, statusText, statusDesc
-    var nextStepType, nextStepTitle, nextStepDesc, nextStepTag
-
-    if (completedCount === 0) {
-      resultLevelClass = 'empty'
-      resultTitle = '暂无复习结果'
-      resultDesc = '今天还没有完成可统计的复习题'
-      statusText = '未开始'
-      statusDesc = '完成一组复习后，这里会生成结果'
-      nextStepType = 'start'
-      nextStepTitle = '先开始一组复习'
-      nextStepDesc = '完成今日复习后，系统会帮你整理正确率和错题情况'
-      nextStepTag = '未开始'
-    } else if (isPerfect) {
-      resultLevelClass = 'excellent'
-      resultTitle = '今日复习完成'
-      resultDesc = '整体掌握很好，可以保持当前节奏'
-      statusText = '状态很好'
-      statusDesc = '今天没有明显薄弱点'
-      nextStepType = 'continue'
-      nextStepTitle = '可以结束今日复习'
-      nextStepDesc = '如果还有精力，也可以继续练习新题巩固手感'
-      nextStepTag = '完成'
-    } else if (accuracyPct >= 80) {
-      resultLevelClass = 'good'
-      resultTitle = '今日复习完成'
-      resultDesc = '整体表现不错，但仍有少量错题'
-      statusText = '少量错题'
-      statusDesc = '建议趁热复盘'
-      nextStepType = 'review'
-      nextStepTitle = '建议先复盘错题'
-      nextStepDesc = '先处理今天的错题，再继续下一组练习'
-      nextStepTag = '推荐'
-    } else if (accuracyPct >= 60) {
-      resultLevelClass = 'normal'
-      resultTitle = '今日复习完成'
-      resultDesc = '本次复习暴露了一些薄弱点'
-      statusText = '需要复盘'
-      statusDesc = '错题有较高复盘价值'
-      nextStepType = 'review'
-      nextStepTitle = '优先处理薄弱点'
-      nextStepDesc = '建议立即查看错题，找出今天容易失误的知识点'
-      nextStepTag = '复盘优先'
-    } else {
-      resultLevelClass = 'weak'
-      resultTitle = '今日复习完成'
-      resultDesc = '今天错题较多，不建议直接继续刷题'
-      statusText = '错题较多'
-      statusDesc = '先复盘比继续刷题更重要'
-      nextStepType = 'review'
-      nextStepTitle = '建议立即复盘'
-      nextStepDesc = '先把错误原因搞清楚，再继续练习，复习效果会更好'
-      nextStepTag = '重点'
-    }
-
-    // Subject stats
-    const subjectStats = (result.subject_stats || []).map(function(s) {
-      return {
-        subject: this.subjectLabel(s.subject_name, s.subject_code),
-        subject_id: s.subject_id != null ? s.subject_id : (s.subject_code || ''),
-        stats: s,
-      }
-    }, this)
-
-    return {
-      dueCount: dueCount,
-      completedCount: completedCount,
-      remainingCount: remainingCount,
-      completionHint: completionHint,
-      sessionTotal: completedCount,
-      submittedTotal: completedCount,
-      total: completedCount,
-      correct: correct,
-      wrong: wrong,
-      skipped: skipped,
-      answered: completedCount,
-      accuracy: accuracyPct,
-      completionRate: completionPct,
-      completionCapped: completionCapped,
-      completionOver: completionOver,
-      wrongRate: completedCount > 0 ? Math.round(wrong / completedCount * 100) : 0,
-      groupCount: this.data.totalBatchCount || 1,
-      completedGroupCount: this.data.currentBatchNo || 0,
-      masteredCount: masteredCount,
-      subjectStats: subjectStats,
-      resultLevelClass: resultLevelClass,
-      resultTitle: resultTitle,
-      resultDesc: resultDesc,
-      statusText: statusText,
-      statusDesc: statusDesc,
-      nextStepType: nextStepType,
-      nextStepTitle: nextStepTitle,
-      nextStepDesc: nextStepDesc,
-      nextStepTag: nextStepTag,
-      hasWrong: hasWrong,
-      hasSkipped: hasSkipped,
-      isPerfect: isPerfect,
-      _frCompletionBarStyle: completionPct + '%',
-    }
   },
 
   /* ==================== 题目渲染 ==================== */
@@ -979,7 +819,8 @@ Page({
       await this.refreshOverviewStatsSilently()
 
       if (groupQuestions.length === 0) {
-        this._loadTodayResult()
+        this._clearMasterUndo()
+        this.setData({ phase: 'empty' })
         return
       }
 
@@ -1152,11 +993,8 @@ Page({
         ? [...this.data.groups, skippedQuestions]
         : this.data.groups
 
-      const hasMore = skippedQuestions.length > 0 || this.data.currentGroupIdx + 1 < newGroups.length
-      // 或者用 today_remaining_count 判断
-
       // 本地更新今日任务进度，避免接口中“实时待复习数”因已完成题被改期而缩小，
-      // 导致最终页出现 1 / 0、完成度 0% 等不合理展示。
+      // 避免完成态出现 1 / 0、完成度 0% 等不合理展示。
       const todayTaskTotalCount = Math.max(
         Number(this._reviewSession.todayTaskTotalCount || 0),
         Number(this.data.todayDueCount || 0),
@@ -1193,6 +1031,9 @@ Page({
         showGroupDetails: false,
         submittingGroup: false,
         _groupProgressStyle: 'width: ' + Math.round((this.data.currentGroupIdx + 1) / Math.max(1, newGroups.length) * 100) + '%',
+        resultDockVisible: true,
+      }, () => {
+        if (todayRemainingCount <= 0) this._showResultDockAndRefreshTimer()
       })
     } catch (e) {
       console.error('提交失败', e)
@@ -1201,10 +1042,11 @@ Page({
     }
   },
 
-  /* ==================== 下一组 / 最终结果 ==================== */
+  /* ==================== 下一组 / 完成态 ==================== */
 
   async nextGroup() {
     this._clearMasterUndo()
+    this._clearResultDockFadeTimer()
     if (this.data.resultTransitioning) return
     this.setData({ resultTransitioning: true })
 
@@ -1279,135 +1121,49 @@ Page({
       }
     }
 
-    // 没有更多组了 → 最终结果。
-    this._loadTodayResult()
+    // 接口已没有下一组时，直接把当前组结果作为本次复习的最终结果保留在页面。
+    // 由 WXML 切换为底部的“复盘错题 / 继续练习”双操作胶囊。
+    this.setData({
+      todayRemainingCount: 0,
+      resultTransitioning: false,
+      resultDockVisible: true,
+    }, () => this._showResultDockAndRefreshTimer())
   },
 
-  /* ==================== 最终结果视图模型（兜底） ==================== */
+  /* ==================== 结果页悬浮 Dock ==================== */
 
-  _buildReviewResultViewModel() {
-    var allResults = this._reviewSession.allGroupResults || []
-    var sessionTotal = allResults.length
-    var submittedTotal = allResults.filter(function(r) { return r.wasSubmitted }).length
-    var correct = allResults.filter(function(r) { return r.isCorrect && r.wasSubmitted }).length
-    var wrong = allResults.filter(function(r) { return r.wasSubmitted && !r.isCorrect }).length
-    var skipped = Math.max(0, sessionTotal - submittedTotal)
-    var accuracy = submittedTotal > 0 ? Math.round(correct / submittedTotal * 100) : 0
-    var wrongRate = submittedTotal > 0 ? Math.round(wrong / submittedTotal * 100) : 0
-    var completedCount = Math.max(Number(this.data.todayCompletedCount || 0), submittedTotal)
-    var dueCount = Math.max(
-      Number(this._reviewSession.todayTaskTotalCount || 0),
-      Number(this.data.todayDueCount || 0),
-      completedCount,
-      sessionTotal
-    )
-    var completionRate = dueCount > 0 ? Math.round(completedCount / dueCount * 100) : 0
-    var completionCapped = Math.max(0, Math.min(100, completionRate))
-    var completionOver = Math.max(0, completionRate - 100)
-    var remainingCount = Math.max(0, dueCount - completedCount)
-    var completionHint = remainingCount > 0 ? `还剩 ${remainingCount} 道` : '今日任务已清零'
+  _clearResultDockFadeTimer() {
+    if (this._resultDockFadeTimer) {
+      clearTimeout(this._resultDockFadeTimer)
+      this._resultDockFadeTimer = null
+    }
+  },
 
-    var groupCount = this.data.groups.length
-    var completedGroupCount = Math.min(this.data.currentGroupIdx + 1, groupCount)
-    var masteredCount = this._masteredCount || 0
-    var isPerfect = wrong === 0 && submittedTotal > 0
-    var hasWrong = wrong > 0
-    var hasSkipped = skipped > 0
+  _showResultDockAndRefreshTimer() {
+    if (this.data.phase !== 'group-result' || this.data.todayRemainingCount > 0) return
 
-    var subjectMap = {}
-    allResults.forEach(function(r) {
-      var sid = r.subject_id != null ? r.subject_id : (r.subject_code || '')
-      if (sid === '' || sid == null) return
-      if (!subjectMap[sid]) subjectMap[sid] = { reviewed: 0, correct: 0, wrong: 0, skipped: 0, subject_name: r.subject_name || '', subject_code: r.subject_code || '' }
-      var s = subjectMap[sid]
-      s.reviewed++
-      if (!r.wasSubmitted) { s.skipped++; return }
-      if (r.isCorrect) s.correct++
-      else s.wrong++
-    })
-    var subjectStatsArr = []
-    for (var subj in subjectMap) {
-      if (subjectMap.hasOwnProperty(subj)) {
-        var entry = subjectMap[subj]
-        subjectStatsArr.push({ subject: this.subjectLabel(entry.subject_name, entry.subject_code), subject_id: subj, stats: entry })
+    this._clearResultDockFadeTimer()
+    if (!this.data.resultDockVisible) {
+      this.setData({ resultDockVisible: true })
+    }
+
+    this._resultDockFadeTimer = setTimeout(() => {
+      this._resultDockFadeTimer = null
+      if (this.data.phase === 'group-result' && this.data.todayRemainingCount <= 0) {
+        this.setData({ resultDockVisible: false })
       }
-    }
+    }, 5000)
+  },
 
-    var resultLevelClass, resultTitle, resultDesc, statusText, statusDesc
-    var nextStepType, nextStepTitle, nextStepDesc, nextStepTag
+  onResultPageInteraction() {
+    this._showResultDockAndRefreshTimer()
+  },
 
-    if (sessionTotal === 0) {
-      resultLevelClass = 'empty'
-      resultTitle = '暂无复习结果'
-      resultDesc = '今天还没有完成可统计的复习题'
-      statusText = '未开始'
-      statusDesc = '完成一组复习后，这里会生成结果'
-      nextStepType = 'start'
-      nextStepTitle = '先开始一组复习'
-      nextStepDesc = '完成今日复习后，系统会帮你整理正确率和错题情况'
-      nextStepTag = '未开始'
-    } else if (isPerfect) {
-      resultLevelClass = 'excellent'
-      resultTitle = '今日复习完成'
-      resultDesc = '整体掌握很好，可以保持当前节奏'
-      statusText = '状态很好'
-      statusDesc = '今天没有明显薄弱点'
-      nextStepType = 'continue'
-      nextStepTitle = '可以结束今日复习'
-      nextStepDesc = '如果还有精力，也可以继续练习新题巩固手感'
-      nextStepTag = '完成'
-    } else if (accuracy >= 80) {
-      resultLevelClass = 'good'
-      resultTitle = '今日复习完成'
-      resultDesc = '整体表现不错，但仍有少量错题'
-      statusText = '少量错题'
-      statusDesc = '建议趁热复盘'
-      nextStepType = 'review'
-      nextStepTitle = '建议先复盘错题'
-      nextStepDesc = '先处理今天的错题，再继续下一组练习'
-      nextStepTag = '推荐'
-    } else if (accuracy >= 60) {
-      resultLevelClass = 'normal'
-      resultTitle = '今日复习完成'
-      resultDesc = '本次复习暴露了一些薄弱点'
-      statusText = '需要复盘'
-      statusDesc = '错题有较高复盘价值'
-      nextStepType = 'review'
-      nextStepTitle = '优先处理薄弱点'
-      nextStepDesc = '建议立即查看错题，找出今天容易失误的知识点'
-      nextStepTag = '复盘优先'
-    } else {
-      resultLevelClass = 'weak'
-      resultTitle = '今日复习完成'
-      resultDesc = '今天错题较多，不建议直接继续刷题'
-      statusText = '错题较多'
-      statusDesc = '先复盘比继续刷题更重要'
-      nextStepType = 'review'
-      nextStepTitle = '建议立即复盘'
-      nextStepDesc = '先把错误原因搞清楚，再继续练习，复习效果会更好'
-      nextStepTag = '重点'
-    }
-
-    return {
-      dueCount, completedCount, remainingCount, completionHint,
-      sessionTotal, submittedTotal, total: sessionTotal,
-      correct, wrong, skipped, answered: submittedTotal,
-      accuracy, completionRate, completionCapped, completionOver, wrongRate,
-      groupCount, completedGroupCount, masteredCount,
-      subjectStats: subjectStatsArr,
-      resultLevelClass, resultTitle, resultDesc,
-      statusText, statusDesc,
-      nextStepType, nextStepTitle, nextStepDesc, nextStepTag,
-      hasWrong, hasSkipped, isPerfect,
-      _frCompletionBarStyle: completionRate + '%',
-    }
+  onPageScroll() {
+    this._showResultDockAndRefreshTimer()
   },
 
   /* ==================== 导航按钮 ==================== */
-
-  finishReview() {
-    wx.reLaunch({ url: '/pages/home/home' })
-  },
 
   goWrongBook() {
     wx.navigateTo({ url: '/subpackages/study/wrong-book/wrong-book' })
@@ -1415,10 +1171,6 @@ Page({
 
   goPractice() {
     wx.navigateTo({ url: '/subpackages/study/practice/practice' })
-  },
-
-  goHome() {
-    wx.reLaunch({ url: '/pages/home/home' })
   },
 
   onNavBack() {
@@ -1445,6 +1197,7 @@ Page({
   },
 
   toggleGroupDetails() {
+    this._showResultDockAndRefreshTimer()
     this.setData({ showGroupDetails: !this.data.showGroupDetails })
   },
 

@@ -916,10 +916,24 @@
 
 .runner-flow .runner-q-wrap { min-height: 200rpx; }
 
+.runner-flow.runner-bottom-compact .runner-question-area {
+  /* 底部切题栏固定后为内容预留空间，避免长题被按钮遮挡。 */
+  padding-bottom: calc(142rpx + env(safe-area-inset-bottom));
+}
+
 .runner-flow.runner-bottom-compact .runner-bottom-bar {
-  position: static;
+  /* review-today 使用 flow 布局时也与刷题页一致，始终贴住视口底部。 */
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
   margin-top: 0;
-  padding-bottom: calc(14rpx + env(safe-area-inset-bottom));
+  padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: #FBFBF7;
+  border-top: 1rpx solid #DDE2DA;
+  box-shadow: 0 -8rpx 24rpx rgba(16,37,26,.045);
 }
 
 /* ==================== Reduced motion ==================== */
