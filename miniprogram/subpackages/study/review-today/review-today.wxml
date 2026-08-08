@@ -1,3 +1,5 @@
+<page-meta page-style="{{phase === 'overview' ? 'height: 100vh; overflow: hidden;' : ''}}" />
+
 <premium-nav
   title="今日复习"
   variant="{{phase === 'reviewing' ? 'dark' : 'light'}}"
@@ -32,20 +34,18 @@
 <view wx:elif="{{phase === 'overview'}}" class="page overview-page">
   <view class="overview-ambient" aria-hidden="true">
     <view class="overview-memory-trail">
-      <view class="trail-segment ts-1"></view>
-      <view class="trail-segment ts-2"></view>
-      <view class="trail-segment ts-3"></view>
-      <view class="trail-segment ts-4"></view>
-      <view class="trail-segment ts-5"></view>
+      <view class="trail-arc ta-1"></view>
+      <view class="trail-arc ta-2"></view>
+      <view class="trail-arc ta-3"></view>
       <view class="trail-node tn-1"></view>
       <view class="trail-node tn-2"></view>
       <view class="trail-node tn-3"></view>
+      <view class="trail-focus-ring ring-outer"></view>
+      <view class="trail-focus-ring ring-inner"></view>
       <view class="trail-node tn-4 active"></view>
       <view class="trail-node tn-5"></view>
       <view class="trail-node tn-6"></view>
     </view>
-    <view class="overview-ripple ripple-one"></view>
-    <view class="overview-ripple ripple-two"></view>
   </view>
 
   <view class="overview-shell motion-page-enter">
@@ -97,6 +97,11 @@
       <text class="overview-note-text">{{todayAdviceText}}</text>
     </view>
 
+  </view>
+
+  <!-- 主操作按钮独立于带 transform 动画的 overview-shell。
+       否则 iOS / 微信 WebView 会把 position: fixed 按动画容器定位，导致按钮上浮覆盖任务卡。 -->
+  <view class="overview-action-dock">
     <button
       class="primary-action overview-primary-action"
       hover-class="{{todayRemainingCount <= 0 || isStarting || isContinuing ? 'none' : 'primary-action-pressed'}}"

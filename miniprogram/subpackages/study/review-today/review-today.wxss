@@ -110,95 +110,122 @@ button::after { border: none; }
 /* overview */
 .overview-page {
   padding: 28rpx 28rpx calc(50rpx + env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at 92% 66%, rgba(183, 232, 42, .035), rgba(183, 232, 42, 0) 30%),
+    #F7F7F2;
 }
 
-/* 概览页氛围层：让 MEMORY CURVE 从任务卡自然延伸到下半屏 */
+/*
+ * 方案 A：记忆轨迹背景。
+ * 轨迹从主按钮右侧自然进入下半屏，再向左侧的“记忆节点”收束，
+ * 最后继续向右下方延展。装饰层只存在于内容之后，不参与交互。
+ */
 .overview-ambient {
   position: absolute;
   left: 0;
   right: 0;
+  top: 615rpx;
   bottom: 0;
-  height: 700rpx;
+  min-height: 640rpx;
   overflow: hidden;
   pointer-events: none;
   z-index: 0;
 }
 
-/* 低对比度记忆轨迹：从左下向右上延伸，承接卡片内的曲线语言 */
 .overview-memory-trail {
   position: absolute;
   inset: 0;
-  opacity: .86;
+  opacity: .92;
 }
 
-.trail-segment {
+/* 用低对比度椭圆弧拼出连续的 S 型记忆轨迹，避免折线感过强 */
+.trail-arc {
   position: absolute;
-  height: 2rpx;
-  border-radius: 999rpx;
-  transform-origin: left center;
-  background: linear-gradient(90deg, rgba(90, 116, 95, .10), rgba(129, 173, 28, .23));
+  box-sizing: border-box;
+  border: 2rpx solid rgba(142, 184, 41, .18);
+  border-radius: 50%;
 }
 
-.ts-1 { left: 10%; bottom: 126rpx; width: 140rpx; transform: rotate(-24deg); opacity: .45; }
-.ts-2 { left: 27%; bottom: 182rpx; width: 138rpx; transform: rotate(-12deg); opacity: .54; }
-.ts-3 { left: 45%; bottom: 211rpx; width: 140rpx; transform: rotate(-36deg); background: linear-gradient(90deg, rgba(123, 159, 35, .16), rgba(183, 232, 42, .40)); opacity: .76; }
-.ts-4 { left: 60%; bottom: 294rpx; width: 116rpx; transform: rotate(-25deg); opacity: .60; }
-.ts-5 { left: 74%; bottom: 344rpx; width: 134rpx; transform: rotate(-38deg); opacity: .48; }
+.ta-1 {
+  width: 470rpx;
+  height: 320rpx;
+  right: -206rpx;
+  top: -130rpx;
+  border-left-color: transparent;
+  border-top-color: transparent;
+  transform: rotate(18deg);
+}
+
+.ta-2 {
+  width: 560rpx;
+  height: 330rpx;
+  left: -158rpx;
+  top: 112rpx;
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  transform: rotate(-16deg);
+}
+
+.ta-3 {
+  width: 520rpx;
+  height: 300rpx;
+  left: 78rpx;
+  top: 356rpx;
+  border-right-color: transparent;
+  border-top-color: transparent;
+  transform: rotate(11deg);
+}
 
 .trail-node {
   position: absolute;
-  width: 11rpx;
-  height: 11rpx;
-  margin-left: -5rpx;
-  margin-bottom: -5rpx;
+  width: 12rpx;
+  height: 12rpx;
+  margin: -6rpx 0 0 -6rpx;
   border-radius: 50%;
   box-sizing: border-box;
-  border: 2rpx solid rgba(83, 112, 89, .28);
-  background: rgba(248, 249, 244, .90);
-  box-shadow: 0 0 0 5rpx rgba(129, 173, 28, .025);
+  background: #98C817;
+  border: 2rpx solid rgba(247, 247, 242, .94);
+  box-shadow: 0 0 0 2rpx rgba(133, 177, 33, .08);
 }
 
-.tn-1 { left: 10%; bottom: 126rpx; opacity: .34; }
-.tn-2 { left: 27%; bottom: 182rpx; opacity: .45; }
-.tn-3 { left: 45%; bottom: 211rpx; opacity: .58; }
-.tn-4 { left: 60%; bottom: 294rpx; }
-.tn-5 { left: 74%; bottom: 344rpx; opacity: .54; }
-.tn-6 { left: 88%; bottom: 427rpx; opacity: .38; }
+.tn-1 { right: 48rpx; top: 62rpx; opacity: .78; }
+.tn-2 { right: 174rpx; top: 158rpx; opacity: .68; }
+.tn-3 { left: 322rpx; top: 236rpx; opacity: .76; }
+.tn-4 { left: 154rpx; top: 344rpx; }
+.tn-5 { left: 316rpx; top: 432rpx; opacity: .84; }
+.tn-6 { left: 470rpx; top: 510rpx; opacity: .64; }
 
 .trail-node.active {
-  width: 18rpx;
-  height: 18rpx;
-  margin-left: -9rpx;
-  margin-bottom: -9rpx;
-  border: 3rpx solid rgba(183, 232, 42, .98);
-  background: #9BCB0B;
-  box-shadow: 0 0 0 10rpx rgba(183, 232, 42, .09), 0 0 28rpx rgba(151, 204, 0, .16);
-  animation: overviewTrailPulse 3.2s ease-in-out infinite;
+  width: 30rpx;
+  height: 30rpx;
+  margin: -15rpx 0 0 -15rpx;
+  border: 4rpx solid rgba(247, 247, 242, .98);
+  background: #9FD20D;
+  box-shadow: 0 0 0 8rpx rgba(183, 232, 42, .11), 0 0 34rpx rgba(151, 204, 0, .22);
+  animation: overviewTrailPulse 3.1s ease-in-out infinite;
 }
 
-/* 大圆弧只露局部，像记忆被再次唤醒后的扩散波纹 */
-.overview-ripple {
+.trail-focus-ring {
   position: absolute;
+  left: 154rpx;
+  top: 344rpx;
   border-radius: 50%;
-  border: 2rpx solid rgba(129, 173, 28, .08);
   box-sizing: border-box;
+  border: 2rpx solid rgba(151, 204, 0, .15);
+  transform: translate(-50%, -50%);
 }
 
-.overview-ripple.ripple-one {
-  width: 430rpx;
-  height: 430rpx;
-  left: -220rpx;
-  bottom: -170rpx;
-  border-color: rgba(129, 173, 28, .10);
+.trail-focus-ring.ring-inner {
+  width: 72rpx;
+  height: 72rpx;
+  animation: overviewMemoryRing 4.6s ease-in-out infinite;
 }
 
-.overview-ripple.ripple-two {
-  width: 620rpx;
-  height: 620rpx;
-  right: -390rpx;
-  bottom: 90rpx;
-  border-color: rgba(129, 173, 28, .065);
-  animation: overviewRippleBreathe 7.5s ease-in-out infinite;
+.trail-focus-ring.ring-outer {
+  width: 126rpx;
+  height: 126rpx;
+  border-color: rgba(151, 204, 0, .10);
+  animation: overviewMemoryRing 4.6s .3s ease-in-out infinite reverse;
 }
 
 .overview-shell {
@@ -252,8 +279,10 @@ button::after { border: none; }
   position: relative;
   overflow: hidden;
   padding: 30rpx 30rpx 24rpx;
-  border-radius: 34rpx;
-  background: linear-gradient(145deg, #183528 0%, #10251A 66%, #0D2016 100%);
+  border-radius: 32rpx;
+  background:
+    radial-gradient(circle at 84% 42%, rgba(183, 232, 42, .055), rgba(183, 232, 42, 0) 28%),
+    linear-gradient(145deg, #183528 0%, #10251A 66%, #0D2016 100%);
   color: #FFFFFF;
   box-shadow: 0 20rpx 46rpx rgba(16, 37, 26, .17);
 }
@@ -323,7 +352,7 @@ button::after { border: none; }
   color: #B7E82A;
 }
 
-/* 曲线仅作为辅助视觉，缩小并降低存在感 */
+/* 卡片内曲线沿用同一套“记忆轨迹”语言，但保持克制，不抢主数字 */
 .curve-stage {
   position: relative;
   width: 238rpx;
@@ -400,7 +429,7 @@ button::after { border: none; }
 }
 
 .overview-note {
-  margin: 18rpx 8rpx 0;
+  margin: 20rpx 8rpx 0;
   display: flex;
   align-items: baseline;
   gap: 12rpx;
@@ -428,7 +457,7 @@ button::after { border: none; }
   padding: 0 24rpx 0 32rpx;
   border-radius: 24rpx;
   border: none;
-  background: #B7E82A;
+  background: linear-gradient(100deg, #A9E90C 0%, #BDF22A 100%);
   color: #10251A;
   box-shadow: 0 16rpx 32rpx rgba(103,139,0,.18);
   display: flex;
@@ -440,13 +469,50 @@ button::after { border: none; }
   transition: transform .15s ease, opacity .15s ease;
 }
 
+/*
+ * 主按钮放在 overview-shell 外层的独立 dock 中。
+ * overview-shell 有入场 transform 动画；若 fixed 按钮放在该容器内部，
+ * iOS / 微信 WebView 会将它以动画容器为定位参照，出现真机上浮并覆盖任务卡。
+ */
+.overview-action-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(48rpx + env(safe-area-inset-bottom));
+  z-index: 8;
+  padding: 0 28rpx;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
 .overview-primary-action {
-  margin-top: 22rpx;
+  position: relative;
+  width: 72%;
+  max-width: 520rpx;
+  min-width: 0;
+  margin: 0;
+  pointer-events: auto;
+}
+
+.overview-primary-action.primary-action-pressed {
+  transform: scale(.985);
 }
 
 .primary-action[disabled] { opacity: .46; }
 .primary-action-pressed { transform: scale(.985); opacity: .88; }
-.primary-action-arrow { width: 54rpx; height: 54rpx; border-radius: 50%; background: #10251A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 28rpx; }
+.primary-action-arrow {
+  width: 54rpx;
+  height: 54rpx;
+  border-radius: 50%;
+  background: #10251A;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+}
 .secondary-action { width: 100%; min-height: 86rpx; margin-top: 12rpx; border-radius: 22rpx; background: transparent; border: 1rpx solid #CDD2C9; color: #173426; font-size: 27rpx; font-weight: 850; }
 .secondary-action-pressed { background: #E9ECE5; }
 
@@ -643,18 +709,18 @@ button::after { border: none; }
 
 @keyframes overviewTrailPulse {
   0%, 100% {
-    transform: scale(.92);
-    box-shadow: 0 0 0 8rpx rgba(183, 232, 42, .07), 0 0 20rpx rgba(151, 204, 0, .10);
+    transform: scale(.94);
+    box-shadow: 0 0 0 7rpx rgba(183, 232, 42, .09), 0 0 24rpx rgba(151, 204, 0, .14);
   }
   50% {
     transform: scale(1.08);
-    box-shadow: 0 0 0 17rpx rgba(183, 232, 42, 0), 0 0 34rpx rgba(151, 204, 0, .20);
+    box-shadow: 0 0 0 18rpx rgba(183, 232, 42, 0), 0 0 38rpx rgba(151, 204, 0, .24);
   }
 }
 
-@keyframes overviewRippleBreathe {
-  0%, 100% { transform: scale(.985); opacity: .72; }
-  50% { transform: scale(1.025); opacity: 1; }
+@keyframes overviewMemoryRing {
+  0%, 100% { opacity: .56; transform: translate(-50%, -50%) scale(.96); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
 }
 
 @keyframes premiumEnter { from { opacity: 0; transform: translateY(22rpx); } to { opacity: 1; transform: translateY(0); } }
@@ -665,6 +731,8 @@ button::after { border: none; }
   .page-title { font-size: 45rpx; }
   .mission-number { font-size: 102rpx; }
   .curve-stage { width: 214rpx; transform: scale(.92); transform-origin: right center; }
+  .overview-primary-action { width: 76%; min-width: 0; }
+  .overview-ambient { top: 600rpx; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -675,7 +743,7 @@ button::after { border: none; }
   .batch-loading-option,
   .decision-sheet,
   .trail-node.active,
-  .overview-ripple { animation: none !important; }
+  .trail-focus-ring { animation: none !important; }
   .detail-fold-arrow,
   .undo-toast,
   .primary-action { transition: none !important; }
