@@ -202,11 +202,11 @@ async def get_history(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    sessions, total = await svc.get_history(
+    items, total = await svc.get_history(
         db, current_user.id, page, page_size, _parse_study_date(date)
     )
     return {
-        "items": [PomodoroSessionResponse.from_orm_with_subject(s) for s in sessions],
+        "items": items,
         "total": total,
         "page": page,
         "page_size": page_size,

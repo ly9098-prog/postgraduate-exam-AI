@@ -24,6 +24,7 @@ from app.models.pomodoro import (  # noqa: F401
     UserPomodoroSettings,
 )
 from app.models.practice_record import PracticeRecord  # noqa: F401
+from app.models.practice_session import PracticeSession  # noqa: F401
 from app.models.question import Question  # noqa: F401
 from app.models.question_import import QuestionImport  # noqa: F401
 from app.models.recommendation_log import RecommendationLog  # noqa: F401

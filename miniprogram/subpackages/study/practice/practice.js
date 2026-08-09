@@ -299,12 +299,30 @@ Page({
       questionTimeMap: {},
       currentQuestionStartedAt: 0,
       requestId: '',
+      backgroundMs: 0,
+      _bgStartAt: null,
       optionKeys: [],
       questionRenderCache: Object.create(null),
     }
   },
 
   onShow() {
+    // 切后台 / 跳转他页回来后，把离开期间从刷题时长中扣除。
+    // 页面级 onHide 在微信切后台与本页被覆盖时都会触发，因此不需要额外的
+    // app 级监听；first onShow（onLoad 之后）时 startTime 仍为 0，不会误扣。
+    const s = this._practiceSession
+    if (s && s.startTime && s._bgStartAt !== null) {
+      s.backgroundMs = (s.backgroundMs || 0) + (Date.now() - s._bgStartAt)
+      s._bgStartAt = null
+    }
+  },
+
+  onHide() {
+    // 记录离开时间点；onShow 回来时结算 backgroundMs。
+    const s = this._practiceSession
+    if (s && s.startTime && s._bgStartAt === null) {
+      s._bgStartAt = Date.now()
+    }
   },
 
   onReady() {
@@ -1457,12 +1475,20 @@ Page({
     this._settleQuestionTime()
     this.setData({ submitting: true })
 
+    // ── 交卷时间点锁定：finishedAt / duration 在发请求之前冻结 ──
+    // 不把提交接口的网络等待时间计入刷题时长（学习统计使用 session.duration_sec），
+    // 也扣除切后台/跳转他页的离开时长，避免把"没在刷题"的墙钟时间算成学习时间。
+    const finishedAt = Date.now()
+    const duration = Math.max(0, Math.floor(
+      (finishedAt - startTime - (this._practiceSession.backgroundMs || 0)) / 1000,
+    ))
+
     const questionTimeMap = this._practiceSession.questionTimeMap
 
     // ═══════════════════════════════════════════════════
     // 阶段一：服务器提交 — 只有此步骤失败才提示"提交失败"
     // ═══════════════════════════════════════════════════
-    var submitResult, storedResults, duration
+    var submitResult, storedResults
     const requestId = this._practiceSession.requestId || ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
     // 持久化 requestId 供重试时复用
     if (!this._practiceSession.requestId) {
@@ -1475,9 +1501,24 @@ Page({
       request_id: requestId,
     }))
 
+    // 刷题会话元数据：后端据此落库 PracticeSession（一次完整刷题会话），
+    // 进入番茄钟学习统计。request_id 保证网络重试不会重复记学习时长。
+    const session = {
+      request_id: requestId,
+      subject_id: selectedSubjectId,
+      mode: this.data.selectedMode || 'random',
+      started_at: new Date(startTime).toISOString(),
+      finished_at: new Date(finishedAt).toISOString(),
+      duration_sec: duration,
+      question_count: total,
+      answered_count: answeredCount,
+      status: 'completed',
+    }
+
     try {
       submitResult = await api.post('/practice/batch-submit', {
         answers,
+        session,
         _traceId: this._practiceSession.traceId,
       })
     } catch (e) {
@@ -1492,7 +1533,6 @@ Page({
     // ═══════════════════════════════════════════════════
     // 阶段二：本地结果缓存 — 失败不阻断流程
     // ═══════════════════════════════════════════════════
-    duration = Math.floor((Date.now() - startTime) / 1000)
     storedResults = (submitResult.results || []).map(function(rr) {
       return Object.assign({}, rr, {
         user_answer: answerMap[String(rr.question_id)] || '',

@@ -463,9 +463,9 @@ class TestHistory:
             day8, total8 = await svc.get_history(db, uid, filter_date=date(2026, 8, 8))
 
         assert total7 == 1
-        assert day7[0].start_time == _utc(2026, 8, 7, 15, 50)
+        assert day7[0]["start_time"] == _utc(2026, 8, 7, 15, 50)
         assert total8 == 1
-        assert day8[0].start_time == _utc(2026, 8, 8, 3, 0)
+        assert day8[0]["start_time"] == _utc(2026, 8, 8, 3, 0)
 
 
 # ── Settings (case 10) ─────────────────────────────────────────────────
@@ -747,8 +747,8 @@ class TestSnapshotQueryCounts:
             finally:
                 stop()
 
-        # 3 statements：settings + sessions(+subject JOIN) + pause batch IN
-        assert len(statements) == 3, statements
+        # 4 statements：settings + sessions(+subject JOIN) + pause batch IN + practice sessions
+        assert len(statements) == 4, statements
         session_stmt = next(s for s in statements if "pomodoro_sessions" in s)
         assert "subjects" in session_stmt.lower()  # daily_summary 需要 subject -> JOIN 一次
         pause_stmts = [s for s in statements if "pomodoro_pause_intervals" in s]
@@ -775,7 +775,7 @@ class TestSnapshotQueryCounts:
                 stop()
 
         assert not any("subjects" in s.lower() for s in statements), statements
-        assert len(statements) == 3, statements  # settings + sessions cols + pauses batch
+        assert len(statements) == 4, statements  # settings + sessions cols + pauses batch + practice cols
         assert stats["week_sessions"] > 0
 
     @pytest.mark.asyncio

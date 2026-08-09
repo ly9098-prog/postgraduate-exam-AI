@@ -449,6 +449,7 @@ async def batch_submit(
             db=db,
             user_id=current_user.id,
             answers=[a.model_dump() for a in data.answers],
+            session_meta=data.session.model_dump() if data.session is not None else None,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
