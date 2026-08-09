@@ -1,13 +1,16 @@
+import hashlib
 import logging
 import random
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.time_utils import utcnow
+from app.core.time_utils import normalize_to_naive_utc, utcnow
 from app.models.practice_record import PracticeRecord
+from app.models.practice_session import PracticeSession
 from app.models.question import Question
 from app.models.question_import import (
     QuestionImport,  # noqa: F401 — ensures Subject mapper resolves
@@ -18,6 +21,129 @@ from app.services.wrong_question_service import record_wrong
 from app.utils.answer_normalizer import is_answer_correct
 
 logger = logging.getLogger(__name__)
+
+# 单次刷题会话时长上限（秒）。自由计时番茄钟上限 5h，刷题会话留余量到 6h；
+# 用于防御异常客户端上报 duration_sec=999999999。
+PRACTICE_SESSION_MAX_DURATION_SEC = 6 * 60 * 60
+_PRACTICE_DURATION_ROUNDING_TOLERANCE = 2  # 允许 finished-start 与 duration 的少量取整误差
+
+
+def _parse_session_datetime(value) -> "datetime | None":
+    """Parse an ISO-8601 datetime (may carry ``Z`` / ``+00:00``) into naive UTC."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            logger.warning("practice session datetime 缺少时区信息，按 UTC 处理: %s", value)
+        return normalize_to_naive_utc(value)
+    text_val = str(value).strip()
+    if not text_val:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text_val.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        # 客户端未带时区：无法区分是中国本地时间还是 UTC，按 UTC 处理并告警，
+        # 避免把中国本地时间静默当成 UTC 导致统计日偏移 8h。
+        logger.warning(
+            "practice session datetime 缺少时区信息，按 UTC 处理（若为北京时间将偏移 8h）: %s",
+            text_val,
+        )
+    return normalize_to_naive_utc(parsed)
+
+
+def _normalize_practice_session(
+    session_meta: dict | None,
+    *,
+    user_id: int,
+    answered_count: int,
+    total_correct: int,
+    total_wrong: int,
+) -> dict | None:
+    """Validate & normalize a client-supplied practice session before insert.
+
+    Returns column values for a ``PracticeSession`` row, or ``None`` when
+    ``session_meta`` is absent (old clients never send a session — they must
+    still be able to answer).  Raises ``ValueError`` when ``session_meta`` is
+    present but structurally invalid (malformed timestamps / non-int duration).
+    """
+    if not session_meta:
+        return None
+
+    started_at = _parse_session_datetime(session_meta.get("started_at"))
+    finished_at = _parse_session_datetime(session_meta.get("finished_at"))
+    if started_at is None or finished_at is None:
+        raise ValueError("session.start_at / session.finished_at 必须为合法 ISO 时间")
+    if finished_at < started_at:
+        raise ValueError("session.finished_at 不得早于 session.started_at")
+
+    duration_sec = session_meta.get("duration_sec")
+    try:
+        duration_sec = int(duration_sec) if duration_sec is not None else None
+    except (TypeError, ValueError):
+        raise ValueError("session.duration_sec 必须为整数")
+
+    wall_sec = max(0, int((finished_at - started_at).total_seconds()))
+    if duration_sec is None or duration_sec < 0:
+        # 缺省/非法：退化为墙钟时长
+        duration_sec = wall_sec
+    # 不允许明显超过墙钟（保留少量取整误差），并设置全局上限
+    if duration_sec > wall_sec + _PRACTICE_DURATION_ROUNDING_TOLERANCE:
+        duration_sec = max(0, wall_sec)
+    duration_sec = min(duration_sec, PRACTICE_SESSION_MAX_DURATION_SEC)
+
+    request_id = str(session_meta.get("request_id") or "").strip() or None
+    if request_id is not None and len(request_id) > 255:
+        # 数据库列 String(256)：超长直接入库会触发 Postgres DataError（非
+        # IntegrityError），导致整个批量提交 500。不能简单截断 —— 两个不同的
+        # 超长 request_id 若前缀相同会被截成同一个幂等 key，后一次会话被静默
+        # 当作重复而丢弃。改为稳定 hash，不同 id 几乎必然映射到不同 key，
+        # 且同一超长 id 重试仍得到同一 hash，幂等去重不受影响。
+        request_id = "h:" + hashlib.sha256(request_id.encode("utf-8")).hexdigest()
+    subject_id = session_meta.get("subject_id")
+    try:
+        subject_id = int(subject_id) if subject_id is not None else None
+    except (TypeError, ValueError):
+        raise ValueError("session.subject_id 必须为整数")
+
+    mode = str(session_meta.get("mode") or "random")[:16]
+    question_count = session_meta.get("question_count")
+    try:
+        question_count = int(question_count) if question_count is not None else answered_count
+    except (TypeError, ValueError):
+        question_count = answered_count
+    question_count = max(0, question_count)
+
+    return {
+        "user_id": user_id,
+        "subject_id": subject_id,
+        "request_id": request_id,
+        "mode": mode,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_sec": duration_sec,
+        "question_count": question_count,
+        "answered_count": max(0, answered_count),
+        "correct_count": max(0, total_correct),
+        "wrong_count": max(0, total_wrong),
+        "status": "completed",
+    }
+
+
+def _is_unique_violation(err: IntegrityError) -> bool:
+    """True only for a unique-constraint IntegrityError (the intended idempotency
+    collision).  Any other integrity error (FK / CHECK / NOT NULL) is a real data
+    problem and must not be mislabeled as a duplicate request_id."""
+    orig = getattr(err, "orig", None)
+    if orig is None:
+        return False
+    code = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+    if code == "23505":  # PostgreSQL unique_violation (asyncpg/psycopg)
+        return True
+    msg = str(orig)
+    return "UNIQUE constraint failed" in msg or "duplicate key" in msg
+
 
 def _random_sample_query(query, total_count: int, need: int, id_col=None):
     """Replace ``ORDER BY random()`` with a random offset for efficiency.
@@ -2046,8 +2172,14 @@ async def batch_submit_answers(
     db: AsyncSession,
     user_id: int,
     answers: list[dict],
+    session_meta: dict | None = None,
 ) -> dict:
-    """批量提交答案，使用单个事务减少 commit 次数。"""
+    """批量提交答案，使用单个事务减少 commit 次数。
+
+    ``session_meta`` 可选：携带时在同一事务内落库一条 PracticeSession（一次
+    完整刷题会话），并依赖 (user_id, request_id) 幂等去重 —— 客户端网络重试
+    不会把同一组刷题重复记为两条学习记录。旧客户端不携带 session，仅正常答题。
+    """
     question_ids = [a["question_id"] for a in answers]
     result = await db.execute(
         select(Question)
@@ -2068,6 +2200,7 @@ async def batch_submit_answers(
     for a in answers:
         q = questions[a["question_id"]]
         user_answer = a.get("user_answer", a.get("answer", "")).strip()
+        used_time = a.get("used_time")
         is_correct = is_answer_correct(
             user_answer, q.answer or "", q.question_type or "",
         )
@@ -2079,22 +2212,82 @@ async def batch_submit_answers(
             question_type=q.question_type,
             user_answer=user_answer,
             is_correct=is_correct,
-            used_time=a.get("used_time"),
+            used_time=used_time,
             answered_at=now,
         )
         db.add(record)
-        records.append((record, q, is_correct, user_answer))
+        # 保存当前 record 对应 answer 的 used_time，避免后置逻辑引用外层循环
+        # 遗留变量 ``a`` 而串题。
+        records.append((record, q, is_correct, user_answer, used_time))
         if is_correct:
             total_correct += 1
         else:
             total_wrong += 1
+
+    # ── PracticeSession 与 PracticeRecord 同事务落库 ──
+    if session_meta is not None and records:
+        fallback_subject_id = next(iter(questions.values())).subject_id
+        try:
+            session_values = _normalize_practice_session(
+                session_meta,
+                user_id=user_id,
+                answered_count=len(records),
+                total_correct=total_correct,
+                total_wrong=total_wrong,
+            )
+        except ValueError as e:
+            # 会话元数据结构非法时不阻断答题：记警告并跳过会话落库，
+            # 保证用户的作答记录照常入库（session 是 optional 的增强项）。
+            logger.warning("practice session 结构非法，跳过会话落库: %s", e)
+            session_values = None
+        if session_values is not None:
+            subject_id = session_values["subject_id"]
+            if subject_id is None:
+                session_values["subject_id"] = fallback_subject_id
+            else:
+                # 客户端 subject_id 指向不存在的科目（如已被删除）时回退到
+                # 本组题目的科目，避免 FK 违约导致会话被误判为重复而静默丢弃。
+                from app.models.admin import Subject
+
+                subj_exists = await db.scalar(
+                    select(Subject.id).where(Subject.id == subject_id)
+                )
+                if subj_exists is None:
+                    session_values["subject_id"] = fallback_subject_id
+            if session_values["subject_id"] is not None:
+                request_id = session_values["request_id"]
+                dup = None
+                if request_id:
+                    dup = await db.scalar(
+                        select(PracticeSession.id).where(
+                            PracticeSession.user_id == user_id,
+                            PracticeSession.request_id == request_id,
+                        )
+                    )
+                if dup is None:
+                    session_obj = PracticeSession(**session_values)
+                    try:
+                        # 并发重试兜底：仅唯一索引冲突回滚到 savepoint，
+                        # 不破坏主提交事务（PracticeRecord 仍然正常入库）。
+                        # 其它 IntegrityError 上抛，避免把真实数据错误误标成
+                        # "duplicate request_id" 而静默丢弃会话。
+                        async with db.begin_nested():
+                            db.add(session_obj)
+                            await db.flush()
+                    except IntegrityError as e:
+                        if not _is_unique_violation(e):
+                            raise
+                        logger.warning(
+                            "practice session duplicate request_id=%s uid=%d; skipping",
+                            request_id, user_id,
+                        )
 
     await db.commit()
 
     # 全部 commit 后，逐个执行 best-effort 后置操作
     # （错题、行为、掌握度等 — 不影响主流程结果）
     wrong_question_ids_for_prewarm: list[int] = []
-    for record, q, is_correct, user_answer in records:
+    for record, q, is_correct, user_answer, used_time in records:
         if not is_correct:
             try:
                 from app.services.wrong_question_service import record_wrong
@@ -2109,7 +2302,7 @@ async def batch_submit_answers(
             await record_answer_behavior(
                 db=db, user_id=user_id, question_id=q.id,
                 practice_record_id=record.id,
-                time_spent_sec=a.get("used_time", 0),
+                time_spent_sec=used_time or 0,
                 is_first_correct=is_correct,
                 is_final_correct=is_correct,
                 user_answer=user_answer,
@@ -2123,7 +2316,7 @@ async def batch_submit_answers(
         try:
             from app.services import mastery_service
             await mastery_service.update_user_knowledge_state_after_answer(
-                db, user_id, q.id, is_correct, used_time=a.get("used_time"),
+                db, user_id, q.id, is_correct, used_time=used_time,
             )
         except Exception:
             logger.warning("批量掌握度更新失败 qid=%d uid=%d", q.id, user_id, exc_info=True)
@@ -2169,7 +2362,7 @@ async def batch_submit_answers(
                 "analysis": q.analysis,
                 "knowledge_points": q.knowledge_points or [],
             }
-            for r, q, c, _ in records
+            for r, q, c, _, _ in records
         ],
         "total_correct": total_correct,
         "total_wrong": total_wrong,

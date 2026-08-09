@@ -160,3 +160,72 @@ def split_session_duration_by_study_day(
     ]
     raw = _raw_overlap_by_study_day(start, end, intervals, day_start_minute)
     return _normalize(raw, actual_duration, start, day_start_minute)
+
+
+def active_intervals_for_session(session) -> list[tuple[datetime, datetime]]:
+    """Merged active (non-paused) wall-clock intervals for a session.
+
+    Reuses the same pause-subtraction logic as attribution, so the "already
+    counted" pomodoro active time used to exclude overlapping practice time is
+    exactly what pomodoro itself counts.
+    """
+    start = session.start_time
+    end = session.end_time or start
+    intervals = [
+        (i.started_at, i.ended_at)
+        for i in (session.pause_intervals or [])
+        if getattr(i, "started_at", None) is not None
+    ]
+    return _active_intervals(start, end, intervals)
+
+
+def split_duration_excluding_intervals(
+    start: datetime,
+    end: datetime,
+    target_duration: int,
+    excluded_intervals: list[tuple[datetime, datetime | None]],
+    day_start_minute: int,
+) -> dict[date, int]:
+    """Attribute a session's ``target_duration`` across study days, excluding the
+    wall-clock time already counted by ``excluded_intervals`` (merged — e.g.
+    pomodoro active intervals, so overlapping practice time is not double
+    counted).
+
+    ``target_duration`` is distributed over the session's wall span and each
+    day's non-excluded wall overlap keeps its proportional share, so no day
+    boundary is lost and ``sum(contributions) <= target_duration`` always holds.
+
+    Exclusion is proportional, not a flat wall-clock subtraction: when a session
+    reports less study time than its wall span (``target_duration < wall_sec`` —
+    e.g. a foreground-only duration), subtracting the raw wall overlap would
+    over-exclude already-counted pomodoro time and undercount real practice.
+    Scaling by ``non_excluded / wall`` instead never excludes more than the
+    session's share of the overlapped window.  When ``target_duration ==
+    wall_sec`` this reduces exactly to the flat subtraction.
+
+    Returns ``{}`` when the whole window is excluded or ``target_duration <= 0``
+    (fully overlapped practice contributes nothing — it does NOT fall back to
+    the start study day like :func:`split_session_duration_by_study_day`).
+    """
+    raw = _raw_overlap_by_study_day(start, end, excluded_intervals, day_start_minute)
+    if not raw or (target_duration or 0) <= 0:
+        return {}
+    wall_sec = max(0, int((end - start).total_seconds()))
+    if wall_sec <= 0:
+        return {}
+    non_excluded_raw = sum(raw.values())
+    if non_excluded_raw <= 0:
+        return {}
+    # Effective total = the session's share of the non-excluded window.  Floor it
+    # once, then a largest-remainder pass distributes only the rounding fraction
+    # (never the proportional loss), so ``sum(contributions) <= target_duration``.
+    effective = target_duration * non_excluded_raw / wall_sec
+    eff_int = int(effective)
+    days = sorted(raw)
+    exact = {d: eff_int * raw[d] / non_excluded_raw for d in days}
+    floors = {d: int(exact[d]) for d in days}
+    remainder = eff_int - sum(floors.values())
+    order = sorted(days, key=lambda d: (-(exact[d] - floors[d]), d))
+    for i in range(remainder):
+        floors[order[i]] += 1
+    return {d: floors[d] for d in days if floors[d] > 0}

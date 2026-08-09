@@ -492,6 +492,9 @@ async def init_db():
     from app.models.practice_record import (
         PracticeRecord,  # noqa: F401 — Subject relationship target
     )
+    from app.models.practice_session import (
+        PracticeSession,  # noqa: F401 — Subject relationship target
+    )
     from app.models.question import Question  # noqa: F401 — Subject relationship target
     from app.models.question_import import (
         QuestionImport,  # noqa: F401 — Subject relationship target

@@ -140,8 +140,29 @@ class PomodoroStatisticsOverviewResponse(BaseModel):
     daily_summary: PomodoroDailySummaryResponse
 
 
+class LearningHistoryItem(BaseModel):
+    """统计页统一学习记录 — 番茄钟与刷题会话混排。
+
+    ``record_key`` 跨来源唯一（``pomodoro:<id>`` / ``practice:<id>``），供前端
+    WXML ``wx:key`` 使用，避免两张表 id 相同产生 key 冲突。
+    """
+
+    record_key: str
+    record_type: Literal["pomodoro", "practice"]
+    id: int
+    user_id: int
+    subject_id: int | None = None
+    subject_code: str = ""
+    subject_name: str = ""
+    start_time: datetime
+    end_time: datetime | None = None
+    actual_duration: int | None = None
+    status: str
+    preset: str | None = None
+
+
 class PomodoroHistoryResponse(BaseModel):
-    items: list[PomodoroSessionResponse]
+    items: list[LearningHistoryItem]
     total: int
     page: int
     page_size: int

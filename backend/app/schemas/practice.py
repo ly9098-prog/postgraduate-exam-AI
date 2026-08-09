@@ -51,8 +51,28 @@ class AnswerResult(BaseModel):
 
 # --- POST /practice/batch-submit ---
 
+class PracticeSessionMeta(BaseModel):
+    """一次完整刷题会话的元数据（可选）。
+
+    session 保持 optional：旧客户端只发送 answers 时后端仍正常答题，不创建
+    PracticeSession。request_id 用于 (user_id, request_id) 幂等去重，防止网络
+    重试把同一组刷题重复记成两条学习记录 —— 因此一旦携带 session，request_id
+    必须提供，否则无法去重。
+    """
+    request_id: str
+    subject_id: int | None = None
+    mode: str = "random"
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_sec: int | None = None
+    question_count: int | None = None
+    answered_count: int | None = None
+    status: str = "completed"
+
+
 class BatchSubmitRequest(BaseModel):
     answers: list[AnswerSubmit]
+    session: PracticeSessionMeta | None = None
 
 
 class BatchSubmitResponse(BaseModel):

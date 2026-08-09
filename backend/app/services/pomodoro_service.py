@@ -2,7 +2,7 @@ import logging
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, null, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -21,8 +21,13 @@ from app.models.pomodoro import (
     PomodoroSession,
     UserPomodoroSettings,
 )
+from app.models.practice_session import PracticeSession
 from app.models.user import User
-from app.services.pomodoro_attribution import split_session_duration_by_study_day
+from app.services.pomodoro_attribution import (
+    active_intervals_for_session,
+    split_duration_excluding_intervals,
+    split_session_duration_by_study_day,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -501,6 +506,76 @@ async def _load_overlapping_sessions(
     ]
 
 
+async def _load_overlapping_practice_sessions(
+    db: AsyncSession,
+    user_id: int,
+    period_start: datetime,
+    period_end: datetime,
+    *,
+    with_subject: bool = False,
+) -> list[_LiteSession]:
+    """Load completed practice sessions overlapping the half-open range.
+
+    Practice sessions never pause, so ``pause_intervals`` is empty; the row's
+    wall clock ``[started_at, finished_at)`` is the raw learning window and
+    ``duration_sec`` is the authoritative learning time.  ``duration_sec`` may
+    be less than the wall span (foreground-only client timing subtracts
+    background time), so attribution must scale exclusion proportionally
+    (:func:`split_duration_excluding_intervals`), never by flat wall overlap.
+    """
+    overlap = (
+        PracticeSession.user_id == user_id,
+        PracticeSession.status == "completed",
+        PracticeSession.started_at < period_end,
+        PracticeSession.finished_at > period_start,
+    )
+    if with_subject:
+        result = await db.execute(
+            select(PracticeSession)
+            .options(joinedload(PracticeSession.subject_ref))
+            .where(*overlap)
+        )
+        out: list[_LiteSession] = []
+        for s in result.scalars().all():
+            ref = s.subject_ref
+            out.append(
+                _LiteSession(
+                    start_time=s.started_at,
+                    end_time=s.finished_at,
+                    actual_duration=s.duration_sec,
+                    subject_id=s.subject_id,
+                    subject_ref=(
+                        SimpleNamespace(
+                            code=ref.code or "",
+                            name=ref.name or "",
+                            is_active=ref.is_active,
+                        )
+                        if ref is not None
+                        else None
+                    ),
+                    pause_intervals=[],
+                )
+            )
+        return out
+
+    result = await db.execute(
+        select(
+            PracticeSession.started_at,
+            PracticeSession.finished_at,
+            PracticeSession.duration_sec,
+        ).where(*overlap)
+    )
+    return [
+        _LiteSession(
+            start_time=r.started_at,
+            end_time=r.finished_at,
+            actual_duration=r.duration_sec,
+            pause_intervals=[],
+        )
+        for r in result.all()
+    ]
+
+
 def _resolve_subject(session) -> tuple[int | None, str, str]:
     """Return (group_key, code, name) for a session's subject.
 
@@ -554,7 +629,10 @@ async def build_pomodoro_statistics_snapshot(
         return {}
     period_start = min(r[0] for r in ranges)
     period_end = max(r[1] for r in ranges)
-    sessions = await _load_overlapping_sessions(
+    pomodoro_sessions = await _load_overlapping_sessions(
+        db, user_id, period_start, period_end, with_subject=need_daily_summary
+    )
+    practice_sessions = await _load_overlapping_practice_sessions(
         db, user_id, period_start, period_end, with_subject=need_daily_summary
     )
 
@@ -576,7 +654,17 @@ async def build_pomodoro_statistics_snapshot(
         target_sessions = 0
         target_duration = 0
 
-    for s in sessions:
+    # 已被计时的"占用"墙钟区间（用于刷题去重）：
+    #  - 所有 Pomodoro 的 active（非暂停）区间
+    # Practice 仅补充没有被这些区间覆盖的部分，避免学习总时长 double count。
+    # 刷题会话业务上互斥（同一时间只能进行一组刷题），因此不把已处理的刷题
+    # 窗口回填进 counted_spans —— 若两刷题会话异常重叠，各自按原时长计入即可，
+    # 不做顺序依赖的去重（顺序依赖会产生与遍历次序相关的欠计）。
+    counted_spans: list[tuple[datetime, datetime]] = []
+
+    # ── PomodoroSession：时长 + 次数（sessions 系番茄专注次数，不并入刷题）──
+    for s in pomodoro_sessions:
+        counted_spans.extend(active_intervals_for_session(s))
         start_day = study_day_for_utc(s.start_time, dsm)
         split = split_session_duration_by_study_day(s, s.pause_intervals, dsm)
         if need_stats:
@@ -605,6 +693,40 @@ async def build_pomodoro_statistics_snapshot(
             if day_contrib <= 0:
                 # 本日无时长贡献：仍计入总次数/总时长，但不生成 0% 科目切片
                 continue
+            key, code, name = _resolve_subject(s)
+            g = target_groups.setdefault(key, {
+                "subject_id": key, "subject_code": code, "subject_name": name,
+                "duration_sec": 0, "sessions": 0,
+            })
+            g["duration_sec"] += day_contrib
+            if start_day == target:
+                g["sessions"] += 1
+
+    # ── PracticeSession：仅补充时长（与 Pomodoro 重叠部分被排除）──
+    # 顶层 sessions（stats/trends/daily_summary.sessions）保持番茄次数；
+    # 科目级 subjects[].sessions 定义成"当天开始的该科目学习记录数"，含刷题，
+    # 供前端跨统计日渗透判断使用（普通当天刷题不会被误判为渗透）。
+    for s in practice_sessions:
+        start_day = study_day_for_utc(s.start_time, dsm)
+        split = split_duration_excluding_intervals(
+            s.start_time, s.end_time, s.actual_duration, counted_spans, dsm,
+        )
+        if need_stats:
+            for day, sec in split.items():
+                if day == today:
+                    today_duration += sec
+                if week_start_date <= day < week_end_date:
+                    week_duration += sec
+        if need_trends:
+            for day, sec in split.items():
+                if day in trend_agg:
+                    trend_agg[day]["duration_sec"] += sec
+        if need_daily_summary:
+            day_contrib = split.get(target, 0)
+            if day_contrib <= 0:
+                # 刷题 session 不生成 0% 科目切片，也不计入顶层 sessions
+                continue
+            target_duration += day_contrib
             key, code, name = _resolve_subject(s)
             g = target_groups.setdefault(key, {
                 "subject_id": key, "subject_code": code, "subject_name": name,
@@ -696,30 +818,100 @@ async def get_daily_summary(
 async def get_history(
     db: AsyncSession, user_id: int, page: int = 1, page_size: int = 20,
     filter_date: date | None = None,
-) -> tuple[list[PomodoroSession], int]:
-    where = [
+) -> tuple[list[dict], int]:
+    """统计页统一学习记录 history — PomodoroSession + PracticeSession 混排。
+
+    - 两种来源统一按 start_time DESC 排序后做全局 offset/limit（UNION 子查询），
+      保证分页与 total 严格正确，不存在"两来源各自取 N 条再拼接"丢页问题。
+    - 按 start_time / started_at 对应的统计日过滤（遵守用户 day_start_minute）。
+    - 每条记录带唯一 record_key（``pomodoro:<id>`` / ``practice:<id>``）。
+    """
+    pomo_where = [
         PomodoroSession.user_id == user_id,
         ~PomodoroSession.status.in_(["running", "paused"]),
+    ]
+    practice_where = [
+        PracticeSession.user_id == user_id,
+        PracticeSession.status == "completed",
     ]
     if filter_date is not None:
         dsm = (await get_pomodoro_settings(db, user_id))["day_start_minute"]
         start_utc, end_utc = study_day_utc_range(filter_date, dsm)
-        where.extend([
+        pomo_where.extend([
             PomodoroSession.start_time >= start_utc,
             PomodoroSession.start_time < end_utc,
         ])
+        practice_where.extend([
+            PracticeSession.started_at >= start_utc,
+            PracticeSession.started_at < end_utc,
+        ])
 
-    count_result = await db.execute(
-        select(func.count(PomodoroSession.id)).where(*where)
-    )
-    total = count_result.scalar() or 0
+    pomo_cols = select(
+        literal("pomodoro").label("record_type"),
+        PomodoroSession.id.label("id"),
+        PomodoroSession.user_id.label("user_id"),
+        PomodoroSession.subject_id.label("subject_id"),
+        PomodoroSession.start_time.label("start_time"),
+        PomodoroSession.end_time.label("end_time"),
+        PomodoroSession.actual_duration.label("actual_duration"),
+        PomodoroSession.status.label("status"),
+        PomodoroSession.preset.label("preset"),
+    ).where(*pomo_where)
 
-    result = await db.execute(
-        select(PomodoroSession)
-        .options(joinedload(PomodoroSession.subject_ref))
-        .where(*where)
-        .order_by(PomodoroSession.start_time.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    )
-    return list(result.scalars().all()), total
+    practice_cols = select(
+        literal("practice").label("record_type"),
+        PracticeSession.id.label("id"),
+        PracticeSession.user_id.label("user_id"),
+        PracticeSession.subject_id.label("subject_id"),
+        PracticeSession.started_at.label("start_time"),
+        PracticeSession.finished_at.label("end_time"),
+        PracticeSession.duration_sec.label("actual_duration"),
+        PracticeSession.status.label("status"),
+        null().label("preset"),
+    ).where(*practice_where)
+
+    merged = pomo_cols.union_all(practice_cols).subquery()
+
+    total = (await db.execute(
+        select(func.count()).select_from(merged)
+    )).scalar() or 0
+
+    rows = (
+        await db.execute(
+            select(merged)
+            .order_by(
+                merged.c.start_time.desc(),
+                merged.c.record_type.desc(),
+                merged.c.id.desc(),
+            )
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+
+    subject_ids = {r.subject_id for r in rows if r.subject_id is not None}
+    subject_map: dict[int, "Subject"] = {}
+    if subject_ids:
+        subj_result = await db.execute(
+            select(Subject).where(Subject.id.in_(subject_ids))
+        )
+        subject_map = {s.id: s for s in subj_result.scalars().all()}
+
+    items: list[dict] = []
+    for r in rows:
+        subj = subject_map.get(r.subject_id) if r.subject_id is not None else None
+        items.append({
+            "record_key": f"{r.record_type}:{r.id}",
+            "record_type": r.record_type,
+            "id": r.id,
+            "user_id": r.user_id,
+            "subject_id": r.subject_id,
+            "subject_code": subj.code if subj else "",
+            "subject_name": subj.name if subj else "未分类",
+            "start_time": r.start_time,
+            "end_time": r.end_time,
+            "actual_duration": r.actual_duration,
+            "status": r.status,
+            "preset": r.preset,
+        })
+    return items, total

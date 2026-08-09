@@ -27,7 +27,7 @@
           <view class="overview-main-card">
             <view class="overview-main-head">
               <view class="overview-main-copy">
-                <text class="overview-kicker">DAILY FOCUS</text>
+                <text class="overview-kicker">DAILY LEARNING</text>
                 <text class="overview-main-label">{{selectedDurationLabel}}</text>
               </view>
               <view class="overview-session-chip">
@@ -38,7 +38,7 @@
             </view>
             <view class="overview-duration-row">
               <text class="overview-duration duration-value {{durationValueAnimating ? 'duration-value-updating' : ''}}">{{_dispTodayDurationText}}</text>
-              <text class="overview-duration-note">专注时长</text>
+              <text class="overview-duration-note">学习时长</text>
             </view>
             <view class="overview-accent-line"><view class="overview-accent-glow"></view></view>
           </view>
@@ -58,7 +58,7 @@
                 <text class="overview-secondary-kicker">WEEKLY DURATION</text>
               </view>
               <text class="overview-secondary-value overview-secondary-value-green">{{_dispWeekDurationText}}</text>
-              <text class="overview-secondary-label">本周专注时长</text>
+              <text class="overview-secondary-label">本周学习时长</text>
             </view>
           </view>
         </view>
@@ -96,7 +96,7 @@
           <view class="section-header pie-section-header">
             <view class="pie-title-wrap">
               <text class="section-title">{{pieDateLabel}}科目分布</text>
-              <text class="pie-section-subtitle">各科目专注时长占比</text>
+              <text class="pie-section-subtitle">各科目学习时长占比</text>
             </view>
             <view class="header-actions">
               <view
@@ -146,13 +146,13 @@
           </view>
           <view wx:elif="{{history.length === 0}}" class="empty-hint">
             <view class="empty-icon"></view>
-            <text class="empty-text" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">今日暂无当日开始的专注记录<br/>但存在跨统计日的专注时长</text>
-            <text class="empty-text" wx:elif="{{selectedDate === _todayDate}}">今天还没有学习记录<br/>开始一个番茄钟吧</text>
+            <text class="empty-text" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">今日暂无当日开始的学习记录<br/>但存在跨统计日的学习时长</text>
+            <text class="empty-text" wx:elif="{{selectedDate === _todayDate}}">今天还没有学习记录<br/>开始专注或刷一组题吧</text>
             <text class="empty-text" wx:else>{{selectedDate}} 暂无学习记录</text>
           </view>
           <view class="history-list" wx:elif="{{history.length > 0}}">
-            <view class="bleed-hint" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">部分时长来自跨统计日的专注（前一统计日开始）</view>
-            <view class="history-item" wx:for="{{history}}" wx:key="id">
+            <view class="bleed-hint" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">部分时长来自跨统计日（前一统计日开始）</view>
+            <view class="history-item" wx:for="{{history}}" wx:key="record_key">
               <view class="hist-accent" style="background: {{item._color}};"></view>
               <view class="hist-left">
                 <text class="hist-subject">{{item._subjectLabel}}</text>

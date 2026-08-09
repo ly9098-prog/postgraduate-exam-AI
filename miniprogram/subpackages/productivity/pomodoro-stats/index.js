@@ -56,7 +56,7 @@ var pageConfig = {
     errorText: '',
     todaySessions: 0,
     todayDurationText: '0分钟',
-    selectedDurationLabel: '今日专注',
+    selectedDurationLabel: '今日学习',
     weekSessions: 0,
     weekDurationText: '0分钟',
     trends: [],
@@ -68,7 +68,7 @@ var pageConfig = {
     dayStartMinute: 0,
     dayStartTime: '00:00',
     studyDayRangeText: '统计日从 00:00 开始',
-    dayStartNoteText: '专注时长按统计日边界拆分，专注次数按开始时间归属',
+    dayStartNoteText: '学习时长按统计日边界拆分，专注次数按开始时间归属',
     // 当日无"开始"记录但有时长（跨统计日 session 归属到本日）时用于空态文案
     _crossDayBleedIn: false,
 
@@ -159,7 +159,7 @@ var pageConfig = {
       if (!this.data.selectedDate || this.data.selectedDate === prevToday || this.data.selectedDate > today) {
         patch.selectedDate = today
         patch.pieDateLabel = '今日'
-        patch.selectedDurationLabel = '今日专注'
+        patch.selectedDurationLabel = '今日学习'
       }
       this._settingsLoaded = true
       this.setData(patch)
@@ -203,7 +203,7 @@ var pageConfig = {
     if (today && (!prevSelected || prevSelected === prevToday || prevSelected > today)) {
       patch.selectedDate = today
       patch.pieDateLabel = '今日'
-      patch.selectedDurationLabel = '今日专注'
+      patch.selectedDurationLabel = '今日学习'
       changedToday = true
     }
     if (Object.keys(patch).length) this.setData(patch)
@@ -354,7 +354,7 @@ var pageConfig = {
 
   _formatSelectedDurationLabel(value) {
     const dateLabel = this._formatPieDateLabel(value)
-    return dateLabel === '今日' ? '今日专注' : `${dateLabel}专注`
+    return dateLabel === '今日' ? '今日学习' : `${dateLabel}学习`
   },
 
   _buildSubjectItems(subjects) {
@@ -676,17 +676,29 @@ var pageConfig = {
     const durSec = s.actual_duration ?? s.actual_duration_sec ?? s.duration_sec ?? 0
     const subjectName = s.subject_name || '未分类'
     const subjectKey = s.subject_code || ''
+    const isPractice = s.record_type === 'practice'
     const isFree = s.preset === 'free'
     const durationText = formatDuration(durSec)
+    // 刷题会话：左侧明确标出「刷题」，状态为「刷题」而非「完成」，与番茄钟区分。
+    let _subjectLabel, _statusLabel, _statusClass
+    if (isPractice) {
+      _subjectLabel = '刷题 · ' + subjectName
+      _statusLabel = '刷题'
+      _statusClass = 'status-done'
+    } else {
+      _subjectLabel = isFree ? '自由计时 · ' + subjectName : subjectName
+      _statusLabel = s.status === 'completed' ? '完成' : '中断'
+      _statusClass = s.status === 'completed' ? 'status-done' : 'status-interrupt'
+    }
     return {
       ...s,
       _time: timeStr,
       _date: dateStr,
       _duration: durationText,
-      _subjectLabel: isFree ? '自由计时 · ' + subjectName : subjectName,
+      _subjectLabel,
       _color: getSubjectColor(s.subject_id != null ? String(s.subject_id) : (subjectKey || subjectName), this.data.themeMode),
-      _statusLabel: s.status === 'completed' ? '完成' : '中断',
-      _statusClass: s.status === 'completed' ? 'status-done' : 'status-interrupt',
+      _statusLabel,
+      _statusClass,
     }
   },
 
@@ -752,7 +764,7 @@ var pageConfig = {
     this.setData({
       selectedDate: today,
       pieDateLabel: '今日',
-      selectedDurationLabel: '今日专注',
+      selectedDurationLabel: '今日学习',
       selectedSubjectDetail: null,
       _selectedSubject: null,
     }, () => this.loadDateData(today))

@@ -140,6 +140,7 @@ class Subject(Base):
     tags = relationship("Tag", back_populates="subject_ref", lazy="noload")
     user_knowledge_states = relationship("UserKnowledgeState", back_populates="subject_ref", lazy="noload")
     pomodoro_sessions = relationship("PomodoroSession", back_populates="subject_ref", lazy="noload")
+    practice_sessions = relationship("PracticeSession", back_populates="subject_ref", lazy="noload")
     import_batch_jobs = relationship(
         "ImportBatchJob",
         back_populates="subject_ref",

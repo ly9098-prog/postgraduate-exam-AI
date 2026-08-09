@@ -200,21 +200,26 @@ async function run() {
   assertEqual(inst4.data.studyDayRangeText, '统计周期 03:00 - 次日 03:00', '设置后范围文案更新')
   restoreNow()
 
-  // daily-summary 驱动 overview：loadData 不再拉全量 history 自算
+  // statistics-overview 驱动 overview / pie：loadData 不再逐个拉 stats/trends/daily-summary
   apiMock.get = (url, params) => {
     if (url === '/pomodoro/settings') return Promise.resolve({ day_start_minute: 0 })
-    if (url === '/pomodoro/stats') return Promise.resolve({ week_sessions: 2, week_duration_sec: 7200, today_date: '2026-08-08', day_start_minute: 0 })
-    if (url === '/pomodoro/trends') return Promise.resolve([{ date: '2026-08-08', sessions: 1, duration_sec: 600 }])
-    if (url === '/pomodoro/daily-summary') {
+    if (url === '/pomodoro/statistics-overview') {
       return Promise.resolve({
-        date: '2026-08-08',
-        duration_sec: 600,
-        sessions: 1,
-        subjects: [{ subject_id: 1, subject_code: 'math2', subject_name: '数学二', sessions: 1, duration_sec: 600 }],
+        stats: { week_sessions: 2, week_duration_sec: 7200, today_date: '2026-08-08', day_start_minute: 0 },
+        trends: [{ date: '2026-08-08', sessions: 1, duration_sec: 600 }],
+        daily_summary: {
+          date: '2026-08-08',
+          duration_sec: 600,
+          sessions: 1,
+          subjects: [{ subject_id: 1, subject_code: 'math2', subject_name: '数学二', sessions: 1, duration_sec: 600 }],
+        },
       })
     }
     if (url === '/pomodoro/history') {
-      return Promise.resolve({ total: 1, items: [{ id: 9, start_time: '2026-08-07T15:50:00', actual_duration: 600, subject_name: '数学二', subject_code: 'math2', subject_id: 1, preset: 'standard', status: 'completed' }] })
+      return Promise.resolve({
+        total: 1,
+        items: [{ id: 9, record_key: 'pomodoro:9', record_type: 'pomodoro', start_time: '2026-08-07T15:50:00', actual_duration: 600, subject_name: '数学二', subject_code: 'math2', subject_id: 1, preset: 'standard', status: 'completed' }],
+      })
     }
     return Promise.resolve({})
   }
@@ -232,23 +237,23 @@ async function run() {
   inst5._queueDeferredHistory = () => {}
   inst5._cancelDurationAnimation = () => {}
   inst5._resetPieCache = () => {}
-  let dailySummaryParams = null
+  let overviewParams = null
   let historyCalls = []
   const origGet = apiMock.get
   apiMock.get = (url, params) => {
-    if (url === '/pomodoro/daily-summary') dailySummaryParams = params || {}
+    if (url === '/pomodoro/statistics-overview') overviewParams = params || {}
     if (url === '/pomodoro/history') historyCalls.push((params && params.date) || null)
     return origGet(url, params)
   }
   await inst5.loadData()
-  assertEqual(inst5.data.todaySessions, 1, 'overview sessions 来自 daily-summary')
+  assertEqual(inst5.data.todaySessions, 1, 'overview sessions 来自 statistics-overview.daily_summary')
   assertEqual(inst5.data.todayDurationText, '10分钟', 'overview 时长来自 daily-summary (600s)')
   assertEqual(inst5.data.weekSessions, 2, 'week sessions 来自 stats')
   assertEqual(inst5.data.subjects.length, 1, 'pie 数据来自 daily-summary.subjects')
   assertEqual(inst5.data.history[0]._time, '23:50', 'history 最近记录按中国时间显示')
   assertEqual(inst5.data.historyTotal, 1, 'history total 来自第一页响应')
   assertEqual(inst5.data._todayDate, '2026-08-08', '今日与后端一致，不校正')
-  assertEqual(dailySummaryParams.date == null, true, '查看"今日"时 daily-summary 不传 date（后端权威）')
+  assertEqual(overviewParams.date == null, true, '查看"今日"时 statistics-overview 不传 date（后端权威）')
 
   // settings 请求失败 + 设备时钟偏差 -> 以后端 stats.today_date 校正"今日"
   const inst6 = createInstance()
@@ -267,9 +272,13 @@ async function run() {
   let reFetchedHistoryDate = null
   apiMock.get = (url, params) => {
     if (url === '/pomodoro/settings') return Promise.reject(new Error('network'))
-    if (url === '/pomodoro/stats') return Promise.resolve({ week_sessions: 0, week_duration_sec: 0, today_date: '2026-08-07', day_start_minute: 360 })
-    if (url === '/pomodoro/trends') return Promise.resolve([])
-    if (url === '/pomodoro/daily-summary') return Promise.resolve({ date: '2026-08-07', duration_sec: 1800, sessions: 1, subjects: [] })
+    if (url === '/pomodoro/statistics-overview') {
+      return Promise.resolve({
+        stats: { week_sessions: 0, week_duration_sec: 0, today_date: '2026-08-07', day_start_minute: 360 },
+        trends: [],
+        daily_summary: { date: '2026-08-07', duration_sec: 1800, sessions: 1, subjects: [] },
+      })
+    }
     if (url === '/pomodoro/history') {
       if (params && params.date === '2026-08-07') reFetchedHistoryDate = params.date
       return Promise.resolve({ total: 0, items: [] })
