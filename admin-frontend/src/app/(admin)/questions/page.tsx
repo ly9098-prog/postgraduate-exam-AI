@@ -54,6 +54,8 @@ const activeOptions = [
   { label: "停用", value: "false" },
 ];
 
+const KEYWORD_DEBOUNCE_MS = 300;
+
 type ConfirmState =
   | { action: "batch-delete" }
   | { action: "delete"; id: number }
@@ -310,6 +312,7 @@ export default function QuestionsPage() {
     keyword: "",
     year: "",
   });
+  const [keywordInput, setKeywordInput] = useState(filters.keyword);
   const [subjectOptions, setSubjectOptions] = useState<
     Array<{ id: number; code: string; name: string }>
   >([]);
@@ -494,6 +497,27 @@ export default function QuestionsPage() {
     setPage(1);
   };
 
+  // 搜索框防抖：停止输入 KEYWORD_DEBOUNCE_MS 后才提交 filters.keyword 并请求
+  const keywordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (keywordTimer.current) clearTimeout(keywordTimer.current);
+    };
+  }, []);
+
+  const handleKeywordChange = (value: string) => {
+    setKeywordInput(value);
+    if (keywordTimer.current) clearTimeout(keywordTimer.current);
+    if (value === "") {
+      updateFilter("keyword", "");
+      return;
+    }
+    keywordTimer.current = setTimeout(() => {
+      updateFilter("keyword", value);
+    }, KEYWORD_DEBOUNCE_MS);
+  };
+
   const toggleAll = () => {
     setSelectedIds(() => {
       if (allChecked) return new Set();
@@ -597,10 +621,8 @@ export default function QuestionsPage() {
                 <Input
                   className="pl-9"
                   placeholder="搜索题干 / 科目"
-                  value={filters.keyword}
-                  onChange={(event) =>
-                    updateFilter("keyword", event.target.value)
-                  }
+                  value={keywordInput}
+                  onChange={(event) => handleKeywordChange(event.target.value)}
                 />
               </label>
               <CustomSelect
