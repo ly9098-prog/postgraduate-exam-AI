@@ -526,6 +526,7 @@ page {
 
 .question-preview-card {
   padding-bottom: 18rpx;
+  overflow: hidden;
 }
 
 .filter-pills {
@@ -535,25 +536,66 @@ page {
 }
 
 .filter-pill {
-  padding: 7rpx 12rpx;
+  min-width: 62rpx;
+  box-sizing: border-box;
+  padding: 9rpx 15rpx;
   border-radius: 999rpx;
   color: #8F9792;
-  font-size: 17rpx;
+  font-size: 19rpx;
+  line-height: 1.25;
+  text-align: center;
   background: #F4F6F4;
+  transition: color 180ms ease, background-color 180ms ease;
 }
 
 .filter-pill-active {
   color: #278C49;
+  font-weight: 600;
   background: #EAF7EC;
 }
 
 .compact-list {
   margin-top: 18rpx;
+  overflow: hidden;
   border-top: 1rpx solid #EEF1EE;
+  transition: height 220ms cubic-bezier(.22, .61, .36, 1);
+}
+
+.compact-list-content {
+  transform-origin: top center;
+}
+
+.compact-list-content-all {
+  animation: question-list-reveal-all 220ms cubic-bezier(.22, .61, .36, 1) both;
+}
+
+.compact-list-content-correct {
+  animation: question-list-reveal-correct 220ms cubic-bezier(.22, .61, .36, 1) both;
+}
+
+.compact-list-content-wrong {
+  animation: question-list-reveal-wrong 220ms cubic-bezier(.22, .61, .36, 1) both;
+}
+
+@keyframes question-list-reveal-all {
+  from { opacity: 0; transform: translateY(10rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes question-list-reveal-correct {
+  from { opacity: 0; transform: translateY(10rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes question-list-reveal-wrong {
+  from { opacity: 0; transform: translateY(10rpx); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .compact-row {
+  height: 86rpx;
   min-height: 86rpx;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 16rpx;
@@ -710,6 +752,15 @@ page {
 .empty-state {
   padding: 36rpx 0;
   font-size: 20rpx;
+}
+
+.compact-list .empty-state {
+  height: 96rpx;
+  box-sizing: border-box;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .empty-state.roomy {

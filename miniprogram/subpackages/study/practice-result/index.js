@@ -31,6 +31,11 @@ function pad2(n) {
   return String(Math.max(0, Number(n) || 0)).padStart(2, '0');
 }
 
+function getQuestionListHeightRpx(count) {
+  const total = Math.max(0, Number(count) || 0);
+  return total > 0 ? total * 86 : 96;
+}
+
 function formatDuration(seconds) {
   const total = Math.max(0, Math.round(Number(seconds) || 0));
   const h = Math.floor(total / 3600);
@@ -286,6 +291,7 @@ Page({
       { key: 'wrong', label: '答错' }
     ],
     questionFilter: 'all',
+    questionListHeightRpx: 96,
 
     subjectName: '',
     correctCount: 0,
@@ -512,6 +518,7 @@ Page({
       } : {}),
       reviewItems,
       filteredReviewItems: reviewItems,
+      questionListHeightRpx: getQuestionListHeightRpx(reviewItems.length),
       wrongReviewItems,
       errorDistribution: localErrorDistribution,
     }, () => {
@@ -917,10 +924,17 @@ Page({
 
   switchQuestionFilter(e) {
     const key = e.currentTarget.dataset.key || 'all';
+    if (key === this.data.questionFilter) return;
+
     let filteredReviewItems = this.data.reviewItems;
     if (key === 'correct') filteredReviewItems = filteredReviewItems.filter(item => item.isCorrect);
     if (key === 'wrong') filteredReviewItems = filteredReviewItems.filter(item => !item.isCorrect);
-    this.setData({ questionFilter: key, filteredReviewItems });
+
+    this.setData({
+      questionFilter: key,
+      filteredReviewItems,
+      questionListHeightRpx: getQuestionListHeightRpx(filteredReviewItems.length)
+    });
   },
 
   openQuestionDetail(e) {
