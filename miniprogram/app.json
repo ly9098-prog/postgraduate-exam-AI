@@ -61,6 +61,14 @@
     }
   ],
   "preloadRule": {
+    "pages/home/home": {
+      "network": "all",
+      "packages": ["study"]
+    },
+    "pages/dashboard/dashboard": {
+      "network": "all",
+      "packages": ["study"]
+    },
     "pages/pomodoro/pomodoro": {
       "network": "all",
       "packages": ["productivity"]
