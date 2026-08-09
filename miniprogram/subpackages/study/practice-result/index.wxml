@@ -166,22 +166,27 @@
           </view>
         </view>
 
-        <view class="compact-list">
-          <view
-            wx:for="{{filteredReviewItems}}"
-            wx:key="questionId"
-            class="compact-row"
-            data-id="{{item.questionId}}"
-            bindtap="openQuestionDetail"
-          >
-            <text class="compact-index">{{item.displayIndex}}</text>
-            <text class="compact-title">{{item.title}}</text>
-            <view class="compact-status {{item.isCorrect ? 'status-correct' : 'status-wrong'}}">
-              {{item.isCorrect ? '答对' : '答错'}}
+        <view
+          class="compact-list"
+          style="height: {{questionListHeightRpx}}rpx;"
+        >
+          <view class="compact-list-content compact-list-content-{{questionFilter}}">
+            <view
+              wx:for="{{filteredReviewItems}}"
+              wx:key="questionId"
+              class="compact-row"
+              data-id="{{item.questionId}}"
+              bindtap="openQuestionDetail"
+            >
+              <text class="compact-index">{{item.displayIndex}}</text>
+              <text class="compact-title">{{item.title}}</text>
+              <view class="compact-status {{item.isCorrect ? 'status-correct' : 'status-wrong'}}">
+                {{item.isCorrect ? '答对' : '答错'}}
+              </view>
             </view>
-          </view>
-          <view wx:if="{{!filteredReviewItems.length}}" class="empty-state">
-            当前筛选下暂无题目
+            <view wx:if="{{!filteredReviewItems.length}}" class="empty-state">
+              当前筛选下暂无题目
+            </view>
           </view>
         </view>
       </view>
