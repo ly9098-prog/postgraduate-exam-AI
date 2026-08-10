@@ -40,6 +40,7 @@ MemoGrad 是一个面向考研场景的智能刷题与题库管理系统。项�
 │
 ├── miniprogram/                # 微信小程序端
 │   ├── pages/                  # 登录、首页、刷题、错题本、复习、导入、报表、番茄钟
+│   ├── subpackages/            # 分包：study（刷题/复习/错题）、productivity（番茄钟）、formulas（公式卡）、export、animation
 │   ├── components/             # 题目卡片、数学公式渲染、动画、mp-html
 │   ├── utils/                  # API、鉴权、缓存、题干渲染、数学格式化
 │   ├── app.js / app.json
@@ -116,11 +117,13 @@ MemoGrad 是一个面向考研场景的智能刷题与题库管理系统。项�
 - 首页学习入口
 - 刷题练习与答题提交
 - 错题本、错题详情、错题质量反馈
-- 今日复习、复习计划、掌握/未掌握标记
+- 今日复习、复习计划、掌握/未掌握标记、复习调度统计
+- 自适应学习：知识状态、弱点知识点、推荐路径
 - 学习报告、趋势、知识掌握分析
 - AI 题目讲解、错因分析、学习建议
-- 题目导入入口
-- 番茄钟、专注统计、完成提醒
+- 题目导入入口（Excel / PDF / 图片，OCR/AI 辅助）
+- 番茄钟、专注统计、完成提醒、Pomodoro V2 分段/暂停区间
+- 公式卡：浏览、收藏、标签筛选
 - 数学公式与复杂题干渲染
 
 ### 后台管理端
@@ -130,16 +133,18 @@ MemoGrad 是一个面向考研场景的智能刷题与题库管理系统。项�
 - 小程序用户管理、封禁/解封、绑定管理员
 - 管理员账号管理、强制下线、重置密码
 - 角色与权限矩阵
-- 题库列表、题目详情、编辑、上下架、版本查看、批量删除
-- 题目导入管理：文件上传、文本导入、批量图片导入、审核、发布、失败样本导出
+- 题库列表、题目详情、编辑、上下架、版本查看、批量删除、题目图片与选项管理、embedding 回填
+- 题目导入管理：文件上传、文本导入、批量图片导入、单题/批次审核、AI 补全、发布、失败样本导出
+- 公式卡管理：增删改、状态机审核（approve/reject/publish/offline/restore）、版本快照、图生成
+- 知识点 / 知识图谱管理：节点、边、知识质量报告
+- 推荐策略管理：策略、实验、指标聚合
 - AI 解析设置：OCR、补全、模型配置、调用统计、向量配置
-- 审计日志查看
-- 系统健康检查
+- 水印规则、系统任务队列、审计日志、系统健康检查
 
 ### 后端能力
 
-- Public API：登录、刷题、错题、复习、统计、知识点、AI、导入、缓存、番茄钟、同步
-- Admin API：管理端认证、用户、角色权限、题库、导入、AI 配置、审计日志、推荐策略、知识图谱、系统健康
+- Public API：登录、刷题、错题、复习、统计、知识点、AI、导入、缓存、番茄钟、同步、RAG、自适应学习、学习报告、公式卡、导出
+- Admin API：管理端认证、用户、角色权限、题库、导入、公式卡、知识图谱、推荐、AI 配置、审计日志、系统健康
 - OCR 导题流水线：页面分类、区域检测、文本纠错、题目拆分、AI 补全、质量门禁、发布
   - **双 OCR 模型**：本地 PP-OCRv4 作为基础识别引擎，外部 PaddleOCR-VL 1.6 作为高精度纠错与视觉回退
   - OCR 纠错链路：`PaddleOCR-VL → DeepSeek AI → rule fallback`（自动降级）
@@ -242,6 +247,10 @@ rsync -av --delete \
   /home/lmh/projects/postgraduate-ai/ /mnt/d/workspace/postgraduate-ai/
 ```
 
+---
+
+### 4.3 启动后台管理端
+
 ```bash
 cd admin-frontend
 npm install
@@ -340,9 +349,12 @@ knowledge_points              知识点
 question_knowledge_points     题目-知识点关联
 wrong_questions               错题记录
 practice_records              练习记录
+practice_sessions             练习会话（(user_id, request_id) 幂等去重）
 review_schedules              复习计划
 review_records                复习记录
 pomodoro_sessions             番茄钟记录
+pomodoro_pause_intervals      番茄钟暂停区间（Pomodoro V2）
+user_pomodoro_settings        用户番茄钟设置
 admin_users                   后台管理员
 roles                         角色
 permissions                   权限
@@ -351,6 +363,7 @@ audit_logs                    审计日志
 admin_ai_settings             AI 设置
 admin_ai_model_configs        AI 模型配置
 admin_ai_configs              AI 功能配置
+admin_ai_usage_monthly        AI 月度额度统计
 admin_vector_configs          向量检索配置
 import_pipelines              导入流水线
 import_pipeline_chunks        导入流水线分块
@@ -360,8 +373,42 @@ knowledge_edges               知识图谱边
 recommendation_logs           推荐日志
 recommendation_strategy_configs 推荐策略配置
 recommendation_experiments    推荐实验
+recommendation_experiment_assignments 推荐实验用户分配
 recommendation_metrics_daily  推荐每日指标
 watermark_rules               水印规则
+```
+
+公式卡与图生成：
+
+```text
+formula_cards                 公式卡
+formula_card_versions         公式卡版本快照
+formula_card_tags             公式卡-标签关联
+formula_categories            公式卡分类
+formula_tags                  公式标签
+formula_graph_assets          公式图资源
+formula_graph_previews        公式图预览
+formula_graph_specs           公式图规格
+formula_import_items / formula_import_jobs  公式批量导入
+user_formula_favorites        用户公式收藏
+```
+
+自适应学习与 AI：
+
+```text
+user_knowledge_states         用户知识点掌握状态
+user_question_state           用户单题状态
+user_question_difficulty_state 用户题目难度状态
+user_adaptive_profile         用户自适应画像
+user_knowledge_adaptive_state 用户知识自适应状态
+user_recommend_preference     用户推荐偏好
+answer_behaviors              答题行为记录
+ai_chats                      用户 AI 对话
+ai_generation_logs / ai_feedback_logs  AI 生成与反馈日志
+ocr_jobs                      OCR 任务
+export_tasks / export_snapshots  导出任务与快照
+task_outbox                   异步任务 Outbox
+app_user_admin_bindings       用户-管理员绑定
 ```
 
 ---
@@ -370,7 +417,7 @@ watermark_rules               水印规则
 
 ### 6.1 公共端 API
 
-公共端接口主要面向微信小程序：
+公共端接口主要面向微信小程序（`/api/v1`）：
 
 ```text
 GET  /health
@@ -391,22 +438,35 @@ GET  /api/v1/questions/{question_id}/similar
 
 GET  /api/v1/practice/subjects
 GET  /api/v1/practice/questions
+GET  /api/v1/practice/knowledge-states
+GET  /api/v1/practice/weak-knowledge-points
 POST /api/v1/practice/submit
 POST /api/v1/practice/batch-submit
 GET  /api/v1/practice/stats
 GET  /api/v1/practice/records
+GET  /api/v1/practice/random/next
 
 GET  /api/v1/wrong-questions
 GET  /api/v1/wrong-questions/stats
+GET  /api/v1/wrong-questions/task-flow
 GET  /api/v1/wrong-questions/{wq_id}
 PUT  /api/v1/wrong-questions/{wq_id}
 PUT  /api/v1/wrong-questions/{wq_id}/quality
 
 GET  /api/v1/review/today
+GET  /api/v1/review/today/overview
+GET  /api/v1/review/today/result
 POST /api/v1/review/schedule-submit
 POST /api/v1/review/batch-submit
 POST /api/v1/review/grade-submit
+POST /api/v1/review/grade-batch
+GET  /api/v1/review/schedule-stats
 GET  /api/v1/review/history
+POST /api/v1/review/{schedule_id}/master
+POST /api/v1/review/{schedule_id}/unmaster
+
+POST /api/v1/behavior/record
+GET  /api/v1/behavior/stats
 
 GET  /api/v1/stats/overview
 GET  /api/v1/stats/subjects
@@ -414,6 +474,7 @@ GET  /api/v1/stats/trends
 GET  /api/v1/stats/dashboard
 GET  /api/v1/stats/dashboard-v2
 GET  /api/v1/stats/ai-diagnosis
+GET  /api/v1/stats/forgetting
 
 POST /api/v1/ai/error-analysis
 POST /api/v1/ai/study-advice
@@ -422,31 +483,62 @@ POST /api/v1/ai/recommend
 POST /api/v1/ai/report
 POST /api/v1/ai/analyze-mistake
 
+POST /api/v1/rag/search
+POST /api/v1/rag/context
+
 GET  /api/v1/knowledge-points
 GET  /api/v1/knowledge-points/tree
 GET  /api/v1/knowledge/states
 GET  /api/v1/knowledge/weak-points
 GET  /api/v1/knowledge-path
+GET  /api/v1/knowledge-edges
+
+GET  /api/v1/adaptive-learning/overview
+GET  /api/v1/adaptive-learning/hard-questions
+GET  /api/v1/study-report/overview
+GET  /api/v1/study-report/review-plan
+GET  /api/v1/study-report/knowledge-mastery
+
+GET  /api/v1/formulas
+GET  /api/v1/formulas/catalog
+GET  /api/v1/formulas/tags
+GET  /api/v1/formulas/{formula_id}
+GET  /api/v1/formulas/favorites/list
+PUT  /api/v1/formulas/{formula_id}/favorite
+DELETE /api/v1/formulas/{formula_id}/favorite
 
 POST /api/v1/pomodoro/start
 POST /api/v1/pomodoro/{session_id}/complete
+POST /api/v1/pomodoro/{session_id}/interrupt
 POST /api/v1/pomodoro/{session_id}/pause
 POST /api/v1/pomodoro/{session_id}/resume
 GET  /api/v1/pomodoro/active
+GET  /api/v1/pomodoro/settings     · PUT /api/v1/pomodoro/settings
 GET  /api/v1/pomodoro/stats
 GET  /api/v1/pomodoro/trends
 GET  /api/v1/pomodoro/history
+GET  /api/v1/pomodoro/daily-summary
 
 GET  /api/v1/import/template
 GET  /api/v1/import/batches
+GET  /api/v1/import/batches/{batch_id}
 POST /api/v1/import/pipeline/upload
 GET  /api/v1/import/pipelines/{pipeline_id}
+
+GET  /api/v1/exports/capabilities
+POST /api/v1/exports
+GET  /api/v1/exports/{task_id}
+GET  /api/v1/exports/{task_id}/download
+
+GET  /api/v1/cache/stats
 POST /api/v1/sync/import
 ```
 
+> 说明：导入题目的人工审核（通过/拒绝/批量/发布）是管理端接口（`/api/admin/v1/imports/...`），不在此列；完整接口见 `docs/backend/API_SPEC.md`。
+
 ### 6.2 管理端 API
 
-管理端接口主要面向 `admin-frontend/`：
+管理端接口主要面向 `admin-frontend/`（`/api/admin/v1`）：
 
 ```text
 POST /api/admin/v1/auth/login
@@ -467,6 +559,7 @@ POST /api/admin/v1/app-users/{user_id}/unban
 
 GET  /api/admin/v1/admin-users
 POST /api/admin/v1/admin-users
+GET  /api/admin/v1/admin-users/{admin_user_id}
 PATCH /api/admin/v1/admin-users/{admin_user_id}
 DELETE /api/admin/v1/admin-users/{admin_user_id}
 POST /api/admin/v1/admin-users/{admin_user_id}/force-logout
@@ -476,29 +569,71 @@ GET  /api/admin/v1/roles
 GET  /api/admin/v1/permissions
 PUT  /api/admin/v1/roles/{role_id}/permissions
 
+GET  /api/admin/v1/subjects
+POST /api/admin/v1/subjects
+PATCH /api/admin/v1/subjects/{subject_id}
+DELETE /api/admin/v1/subjects/{subject_id}
+
 GET  /api/admin/v1/questions
 GET  /api/admin/v1/questions/{question_id}
 PATCH /api/admin/v1/questions/{question_id}
 DELETE /api/admin/v1/questions/{question_id}
 PATCH /api/admin/v1/questions/{question_id}/toggle-active
+POST /api/admin/v1/questions/batch-delete
+POST /api/admin/v1/questions/{question_id}/options
+POST /api/admin/v1/questions/{question_id}/images
+DELETE /api/admin/v1/questions/{question_id}/images
 GET  /api/admin/v1/questions/{question_id}/versions
+POST /api/admin/v1/questions/embeddings/backfill
+GET  /api/admin/v1/questions/embeddings/status
 
 POST /api/admin/v1/imports/upload
 GET  /api/admin/v1/imports
 GET  /api/admin/v1/imports/{batch_id}
+GET  /api/admin/v1/imports/review-queue
+GET  /api/admin/v1/imports/questions/{import_id}
+PUT  /api/admin/v1/imports/questions/{import_id}
+POST /api/admin/v1/imports/questions/{import_id}/approve
+POST /api/admin/v1/imports/questions/{import_id}/reject
+POST /api/admin/v1/imports/questions/{import_id}/complete
+POST /api/admin/v1/imports/questions/batch-complete
 POST /api/admin/v1/imports/{batch_id}/approve
+POST /api/admin/v1/imports/{batch_id}/approve-low-risk
 POST /api/admin/v1/imports/{batch_id}/reject
 POST /api/admin/v1/imports/{batch_id}/publish
+POST /api/admin/v1/imports/{batch_id}/answers/preview
+POST /api/admin/v1/imports/{batch_id}/answers/apply
 POST /api/admin/v1/imports/text-parse
 POST /api/admin/v1/imports/text-import
 POST /api/admin/v1/imports/batch-image/upload
 GET  /api/admin/v1/imports/batch-image/{job_id}
 GET  /api/admin/v1/imports/batch-image/{job_id}/stream
 
+GET  /api/admin/v1/formulas
+POST /api/admin/v1/formulas
+GET  /api/admin/v1/formulas/categories
+PUT  /api/admin/v1/formulas/{card_id}
+DELETE /api/admin/v1/formulas/{card_id}
+POST /api/admin/v1/formulas/{card_id}/review
+GET  /api/admin/v1/formulas/{card_id}/versions
+POST /api/admin/v1/formulas/batch-review
+GET  /api/admin/v1/formulas/import-jobs
+
+GET  /api/admin/v1/knowledge/edges/status
+POST /api/admin/v1/knowledge/edges
+POST /api/admin/v1/knowledge/edges/infer
+GET  /api/admin/v1/knowledge/quality-report
+
+GET  /api/admin/v1/recommendation/strategies
+GET  /api/admin/v1/recommendation/experiments
+GET  /api/admin/v1/recommendation/metrics
+
 GET  /api/admin/v1/ai-settings
 PATCH /api/admin/v1/ai-settings
 GET  /api/admin/v1/ai-settings/usage
 GET  /api/admin/v1/ai-settings/stats
+GET  /api/admin/v1/ai-configs
+PATCH /api/admin/v1/ai-configs
 GET  /api/admin/v1/ai-models
 POST /api/admin/v1/ai-models
 PATCH /api/admin/v1/ai-models/{model_id}
@@ -508,12 +643,19 @@ GET  /api/admin/v1/vector-config
 PATCH /api/admin/v1/vector-config
 POST /api/admin/v1/vector-config/test-embedding
 
+GET  /api/admin/v1/watermark-rules
+PUT  /api/admin/v1/watermark-rules/{rule_id}
+DELETE /api/admin/v1/watermark-rules/{rule_id}
+
 GET  /api/admin/v1/audit-logs
 GET  /api/admin/v1/audit-logs/{audit_log_id}
+GET  /api/admin/v1/tasks/queue-status
 GET  /api/admin/v1/system/health
 GET  /api/admin/v1/health/live
 GET  /api/admin/v1/health/ready
 ```
+
+> 说明：题目审核（通过/拒绝/发布）全部走导入管理 `/imports` 接口；`/questions/{id}/approve`、`/batch-approve` 等**未实现**，勿按历史文档调用。完整接口见 `docs/admin/ADMIN_API_SPEC.md`。
 
 ---
 
@@ -638,7 +780,7 @@ GET  /api/admin/v1/health/ready
 | 连接密钥 | `Linux_connect.pem` | `loginkey.pem` |
 | CPU | 4 核（AMD EPYC 7K62） | 2 核 |
 | 内存 | 3.6 GiB | 1.8 GB |
-| 磁盘 | 40 GB（3.6G 已用 / 37G 可用） | — |
+| 磁盘 | 40 GB（注意 Docker 镜像/缓存占用，构建前先 `df -h` 检查） | — |
 | OS | OpenCloudOS 9.6（RPM 系） | Linux (Debian) |
 
 ### 8.3 部署流程

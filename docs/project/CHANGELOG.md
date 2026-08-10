@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-08-10
+
+- **题库知识点改为关联表单一事实源**
+  - `e791c979` `question_knowledge_points` 关联表为唯一事实源，移除 `questions.knowledge_points` JSON 列（DB 结构性变更）。
+  - `Question` 模型现通过 `knowledge_point_links`（`QuestionKnowledgePoint`，保留 role/weight/source/position 元数据）关联；`kp_links` 为 viewonly secondary 关系。`questions.knowledge_points` 列已不存在。
+- **知识图谱相关服务同步调整**
+  - `1e8e9022` `sync_to_cloud` 知识点改走关联表 `load_question_kps`。
+  - `2421794e` 题库搜索匹配知识点名与别名 —— keyword 命中 `knowledge_points.name/aliases`。
+- **管理端题目图片与选项管理**
+  - `faa36879` 管理端题目图片/选项管理 —— 快捷加选项、题干与选项插图/替换/删除。
+  - `4fbefd9e` 根相对资源 URL 解析失败致题图空白修复 + nginx CSP 放行资源源。
+  - `d25cdd3f` 题干大图替换插入区 + 选项单行并列布局。
+  - `bb5130e3` 题图上传先校验题目存在/权限；选项合并大小写不敏感并保留富键。
+  - `b0190943` 公式卡 PUT 版本号与审计链去同步冲突 —— 行锁 + max 版本推导。
+  - `29394c26` backfill 实写路径事务冲突修复。
+- **受影响文档**：`docs/project/CHANGELOG.md`、`docs/project/POMODORO_V2_MIGRATION.md`（本批不涉）。
+
+## 2026-08-09
+
+- **刷题时长纳入番茄学习统计（大功能）**
+  - `7b79ca2a` 新增 `PracticeSession` 模型（`backend/app/models/practice_session.py`）：一次完整刷题会话一条记录，与 `PracticeRecord`（单题）语义分离；`duration_sec` 纳入学习统计。
+  - `(user_id, request_id)` 部分唯一索引幂等去重，网络重试不重复插 session；`started_at/finished_at/duration_sec` + subject/mode/question 计数。
+  - 统计页 `build_pomodoro_statistics_snapshot` 混入 `_load_overlapping_practice_sessions`：刷题时长通过 `split_duration_excluding_intervals` 排除已计时的番茄 active 区间按比例归因，避免与番茄时长 double count。
+  - `/pomodoro/history` 改为 `PomodoroSession + PracticeSession` 按 `start_time` UNION DESC 全局翻页混排，带唯一 `record_key`（`pomodoro:<id>` / `practice:<id>`）。
+  - 受影响文件：`backend/app/models/practice_session.py`（新增）、`backend/app/services/pomodoro_service.py`、`backend/app/services/pomodoro_attribution.py`。
+- `edd623ab` practice-result 错题列表定高滚动，切换筛选保持高度稳定
+- `04cce17d` 管理端题目搜索框 300ms 防抖
+- `d4ec0a7e` 小程序首页/Dashboard 进入后预下载 study 分包，降低核心学习首跳等待
+
 ## 2026-08-08
 
 - **番茄钟统计页统计计算收敛（一次加载 + 一次归因）**

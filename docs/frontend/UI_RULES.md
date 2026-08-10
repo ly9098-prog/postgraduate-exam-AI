@@ -10,6 +10,7 @@
 - **稳定**：统一的 token 体系，避免风格漂移
 - **高效**：减少重复样式定义，优先使用全局 token
 - **学习感**：蓝色主调传递专注与信任，绿色/橙色/红色对应状态
+- **主题化**：学习流程页（今日复习 / 错题详情 / 练习结果）采用 premium 深墨绿 + 荧光绿主题，与基础蓝调并存（色值见 DESIGN_SYSTEM.md「主题变体」）
 
 ---
 
@@ -169,31 +170,40 @@
 
 ## 9. 页面结构
 
+> 页面已迁入分包。主包仅保留登录/协议/首页/看板/番茄钟；学习类页面在 `subpackages/study` 下。
+
 | 页面 | 路由 | 说明 |
 |------|------|------|
-| 登录 | pages/login/ | 微信授权登录 |
-| 首页 | pages/home/ | 学习概览 + 快捷入口 |
-| 练习 | pages/practice/ | 刷题页（选择题/填空题） |
-| 练习结果 | pages/practice-result/ | 提交后对错详情 |
-| 错题本 | pages/wrong-book/ | 错题列表 |
-| 错题详情 | pages/wrong-detail/ | 单题详情 + AI 分析 |
-| 复习计划 | pages/plan/ | SM-2 每日复习计划 |
-| 导入 | pages/import/ | 上传 Excel/PDF 文件 |
-| 导入批次 | pages/import-batch/ | 待审核题目列表 |
-| 数据看板 | pages/dashboard/ | 学习统计与分析 |
+| 登录 | pages/login/login | 微信授权登录 |
+| 协议 | pages/agreement/{user,privacy,ai} | 用户/隐私/AI 协议 |
+| 首页 | pages/home/home | 学习概览 + 快捷入口 |
+| 数据看板 | pages/dashboard/dashboard | 学习统计与分析 |
+| 番茄钟 | pages/pomodoro/pomodoro | 专注计时 |
+| 练习 | subpackages/study/practice/practice | 刷题页（选择题/填空题） |
+| 练习结果 | subpackages/study/practice-result/index | 三 Tab：结果概览 / 错题分析 / 成长记录 |
+| 错题本 | subpackages/study/wrong-book/wrong-book | 错题列表 |
+| 错题详情 | subpackages/study/wrong-detail/wrong-detail | 单题详情 + AI 学习建议 |
+| 今日复习 | subpackages/study/review-today/review-today | 分组复习 + 组结果 |
+| 公式库 / 阅读器 | subpackages/formulas/{library,reader}/index | 公式卡库与阅读 |
+| 专注统计 | subpackages/productivity/pomodoro-stats/index | 番茄钟统计 |
+| 导出配置 / 记录 | subpackages/export/{export-config,export-records}/ | 数据导出 |
+
+**分包预下载**（`app.json` `preloadRule`）：首页→study、数据看板→study、番茄钟→productivity；formulas / animation / export 按需加载。
 
 ---
 
 ## 10. 交互规则
 
-- **练习模式**：随机抽题 → 用户选择 → 提交判分 → 显示结果 → 自动记入错题本（答错时）
-- **复习模式**：展示今日待复习题 → 用户作答 → 质量评分（0-5 或二值）→ 更新 SM-2 参数
+- **练习模式**：随机抽题 → 用户选择 → 提交判分 → 练习结果页（结果概览 / 错题分析 / 成长记录）→ 答错自动记入错题本
+- **复习模式（review-today）**：今日概览 → 分组作答（每组 5/10/20/30 道，可自定义）→ 组结果（正确率 / 错题）→「复盘错题 / 继续练习」；跳过题重新入队
 - **导入流程**：上传 → 解析 → 暂存区 → 人工逐题审核 / 批量审批 → 正式入库
-- **AI 分析**：用户主动触发，结果缓存到错题记录，不自动调用
+- **错题详情 AI 学习建议**：加载时自动展示已存在解析——`wrong_questions.ai_analysis` 非空优先，否则回退 `questions.analysis`，两个来源走同一套标准化/富文本渲染（错因诊断 / 补漏重点 / 复练任务三段）；AI 生成与「重新生成解析」需用户点击按钮手动触发，生成进行中/超时通过短轮询恢复持久化结果
+- **错题详情切题**：题目区 + AI 学习建议作为同一父容器统一淡出/淡入过渡，支持横向滑动与答题卡跳题；切题预取相邻题（页面实例缓存，TTL 300s）
+- **成长体系**：练习结果页展示等级（Lv1~Lv5）/ 经验值 / 连续学习天数 / 徽章；数据源优先级：练习结果内嵌成长 → `/api/v1/stats/growth` → 看板聚合 → overview 公式兜底
 - **加载态**：所有列表页支持下拉刷新 + 上拉加载更多（分页）
 - **空态**：无数据时显示友好提示，如"还没有错题，继续加油！"
 - **错误态**：网络错误显示重试按钮，API 错误显示错误信息
-- **所有 API 调用**走 `utils/api.js` 封装，自动携带 token、统一错误处理
+- **所有 API 调用**走 `utils/api.js` 封装，自动携带 token、统一错误处理（例外：practice-result 内嵌独立 `requestApi`，为兼容多环境 API 基址 / token 来源）
 
 ---
 

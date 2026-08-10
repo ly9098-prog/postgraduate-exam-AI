@@ -20,23 +20,28 @@
 | admin_ai_usage_monthly | AI 调用月度用量统计 | year_month (PK), call_count |
 | admin_ai_model_configs | AI 模型配置（多 provider） | name, provider, features(JSON) |
 | admin_ai_configs | AI key-value 配置 | config_key (PK), config_value |
-| questions | 正式题目库 | subject, content(JSON), options(JSON), question_hash |
+| questions | 正式题目库 | subject_id, content(JSON), options(JSON), question_hash, sync_uuid |
+| question_knowledge_points | 题目-知识点关联（唯一事实源） | question_id, knowledge_point_id, role, weight, position |
+| knowledge_points | 知识点主表（科目级规范化） | name, normalized_name, aliases, subject_id |
 | question_versions | 题目编辑历史版本 | question_id + version 唯一约束 |
 | question_imports | 导入暂存区 | batch_id, status(pending/approved/rejected), question_hash, duplicate_status, AI 辅助导题字段 |
 | wrong_questions | 错题记录（不含 SM-2 字段，P2-2 已移除） | review_count, mastered |
 | review_schedules | 复习调度（SM-2 独立表） | ease_factor, interval, next_review_at |
 | review_records | 复习历史记录 | rating, interval_before/after |
-| practice_records | 练习记录（每题一条） | user_answer, is_correct, used_time |
+| practice_records | 练习记录（每题一条） | subject_id, user_answer, is_correct, used_time |
+| practice_sessions | 刷题会话（一组一次，幂等） | user_id + request_id 唯一, started_at/finished_at, duration_sec |
 | answer_behaviors | 答题行为明细 | time_spent, switch_count, is_correct |
 | ai_chats | AI 对话记录 | session_type, tokens_used, duration_ms |
 | ai_generation_logs | AI 生成日志（OCR/标准化等） | action, model, tokens_used, parsed_result(JSON) |
-| tags | 知识点标签 | name, subject, parent_id |
+| tags | 轻量标签（知识点体系已迁移至 knowledge_points） | name, subject_id, parent_id, sync_uuid |
 | import_pipelines | PDF/图片导入 Pipeline | status, chunk_size, watermark_snapshot |
 | import_pipeline_chunks | Pipeline 分片执行结果 | chunk_index, page_start/end, status |
 | import_batch_jobs | 批量图片导入任务 | job_id, request_id(唯一索引), status |
 | import_batch_job_items | 批量导入单图执行结果 | seq, ocr_raw_text, review_batch_id |
 | batch_job_trace_events | 批量导入追踪事件日志 | seq (per-job monotonic), step, status |
-| pomodoro_sessions | 番茄钟会话 | preset, work_duration, status, notification 字段 |
+| pomodoro_sessions | 番茄钟会话 | subject_id, preset, work_duration, status, total_paused_sec |
+| pomodoro_pause_intervals | 番茄钟暂停区间 | session_id, started_at, ended_at |
+| user_pomodoro_settings | 用户番茄钟设置 | user_id (PK), day_start_minute |
 | watermark_rules | PDF 水印过滤规则 | pattern, rule_type, is_active |
 | app_user_admin_bindings | 小程序用户-管理员绑定 | user_id (唯一), admin_user_id (唯一) |
 
@@ -385,14 +390,13 @@ class Question(Base):
     __tablename__ = "questions"
 
     id: int                    # PK
-    subject: str               # math2 / exam408 / english（索引）
-    question_type: str         # choice / fill / subjective / multi_blank_choice
+    subject_id: int            # FK → subjects.id（NOT NULL、索引）
+    question_type: str         # choice / fill / subjective / multi_blank_choice / true_false
     content: dict              # JSON: {"text":"...", "images":["url"], "latex":"..."}
-    options: dict?             # JSON: {"A":"...", "B":"..."}
+    options: dict?             # JSON: {"A":"...", "B":"..."}（支持富格式 {key: {"text":..., "segments":[...]}}）
     answer: str                # 标准答案（Text 类型，支持长答案）
     question_hash: str?        # Level 1 完全重复检测 hash（MD5，32 位）
     analysis: str?             # 解析
-    knowledge_points: list?    # JSON 数组: ["导数", "求导公式"]
     difficulty: int            # 1-5，默认 3
     source: str?               # 来源
     source_type: str?          # excel / pdf / manual
@@ -407,19 +411,22 @@ class Question(Base):
     sync_version: int          # 增量同步版本号
     created_at: datetime
     updated_at: datetime
+
+    # 知识点关联（关联表 question_knowledge_points 为唯一事实源，questions.knowledge_points JSON 列已移除）：
+    #   knowledge_point_links → QuestionKnowledgePoint 关联行，保留 role/weight/source/position 元数据
+    #   kp_links             → viewonly secondary 关系，按 (position, id) 排序
 ```
 
 | 字段 | 类型 | 约束 |
 |------|------|------|
 | id | Integer | PK, autoincrement |
-| subject | String(32) | NOT NULL, INDEX |
+| subject_id | Integer | FK(subjects.id), NOT NULL, INDEX |
 | question_type | String(32) | NOT NULL, default="choice" |
 | content | JSON | NOT NULL |
 | options | JSON | NULLABLE |
 | answer | Text | NOT NULL |
-| question_hash | String(32) | NULLABLE, INDEX；subject + question_hash 用于发布/审核通过阶段完全重复拦截 |
+| question_hash | String(32) | NULLABLE, INDEX；subject_id + question_hash 用于发布/审核通过阶段完全重复拦截 |
 | analysis | Text | NULLABLE |
-| knowledge_points | JSON | NULLABLE |
 | difficulty | SmallInteger | default=3 |
 | source | String(64) | NULLABLE |
 | source_type | String(16) | NULLABLE |
@@ -449,7 +456,7 @@ class QuestionVersion(Base):
     answer: str
     analysis: str?
     difficulty: int
-    knowledge_points: dict? # JSON
+    knowledge_points: list? # JSON 快照（历史版本保留）
     edited_by: int         # FK → admin_users.id（索引）
     edit_reason: str?
     created_at: datetime
@@ -474,6 +481,78 @@ class QuestionVersion(Base):
 
 ---
 
+## question_knowledge_points
+
+题目-知识点映射关联表（**知识点关联的唯一事实源**）。`questions.knowledge_points` JSON 列已移除（e791c979），所有题目知识点关系均存于此表。
+
+```python
+class QuestionKnowledgePoint(Base):
+    __tablename__ = "question_knowledge_points"
+
+    id: int                # PK
+    question_id: int       # FK → questions.id（ON DELETE CASCADE，索引）
+    knowledge_point_id: int# FK → knowledge_points.id（索引）
+    role: str              # main 等，默认 "main"
+    weight: float          # 权重，默认 1.0
+    source: str            # imported / sync 等，默认 "imported"
+    position: int          # 原 JSON 数组内下标（0 基），保留展示顺序，默认 0
+    created_at: datetime
+    updated_at: datetime
+```
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| id | Integer | PK, autoincrement |
+| question_id | Integer | FK(questions.id, ondelete=CASCADE), NOT NULL, INDEX |
+| knowledge_point_id | Integer | FK(knowledge_points.id), NOT NULL, INDEX |
+| role | String(16) | NOT NULL, default="main" |
+| weight | Float | NOT NULL, default=1.0 |
+| source | String(16) | NOT NULL, default="imported" |
+| position | Integer | NOT NULL, default=0 |
+| created_at | DateTime | server_default=now() |
+| updated_at | DateTime | server_default=now(), onupdate |
+
+**唯一约束**: `(question_id, knowledge_point_id)` — `uq_qkp_question_kp`
+
+---
+
+## knowledge_points
+
+知识点主表 —— 科目级别的规范化知识点定义。
+
+```python
+class KnowledgePoint(Base):
+    __tablename__ = "knowledge_points"
+
+    id: int                # PK
+    subject_id: int        # FK → subjects.id（NOT NULL、索引）
+    name: str              # 展示名（索引）
+    normalized_name: str   # 规范化名（英文小写、全角→半角、去空格）（索引）
+    aliases: list?         # JSON: 别名数组
+    description: str?      # 描述
+    difficulty_level: int  # 难度，默认 3
+    is_active: bool        # 默认 True
+    created_at: datetime
+    updated_at: datetime
+```
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| id | Integer | PK, autoincrement |
+| subject_id | Integer | FK(subjects.id), NOT NULL, INDEX |
+| name | String(128) | NOT NULL, INDEX |
+| normalized_name | String(128) | NOT NULL, INDEX |
+| aliases | JSON | NULLABLE |
+| description | Text | NULLABLE |
+| difficulty_level | SmallInteger | NOT NULL, default=3 |
+| is_active | Boolean | NOT NULL, default=True |
+| created_at | DateTime | server_default=now() |
+| updated_at | DateTime | server_default=now(), onupdate |
+
+**唯一约束**: `(subject_id, normalized_name)` — `uq_kp_subject_id_normalized_name`
+
+---
+
 ## question_imports
 
 ```python
@@ -484,7 +563,7 @@ class QuestionImport(Base):
     batch_id: str        # 批次 ID（索引）
     source_type: str     # excel / pdf / image / ai 等来源
     source_file: str?    # 源文件名
-    subject: str?        # 解析结果
+    subject_id: int?     # FK → subjects.id（索引）
     question_type: str?
     raw_data: dict       # JSON: 原始行数据
     parsed_content: dict?    # JSON: 结构化内容
@@ -521,7 +600,7 @@ class QuestionImport(Base):
 | batch_id | String(64) | NOT NULL, INDEX |
 | source_type | String(16) | NOT NULL；excel / pdf / image / ai 等来源 |
 | source_file | String(256) | NULLABLE |
-| subject | String(32) | NULLABLE |
+| subject_id | Integer | FK(subjects.id), NULLABLE, INDEX |
 | question_type | String(32) | NULLABLE |
 | raw_data | JSON | NOT NULL |
 | parsed_content | JSON | NULLABLE |
@@ -566,6 +645,9 @@ class WrongQuestion(Base):
     review_count: int       # 总复习次数
     last_review_at: datetime?
     mastered: bool          # 是否已掌握
+    mastered_at: datetime?  # 掌握时间
+    is_active: bool         # 逻辑删除，默认 True
+    removed_at: datetime?   # 移除时间
     created_at: datetime
     updated_at: datetime
 ```
@@ -581,6 +663,9 @@ class WrongQuestion(Base):
 | review_count | SmallInteger | default=0 |
 | last_review_at | DateTime | NULLABLE |
 | mastered | Boolean | default=False |
+| mastered_at | DateTime | NULLABLE |
+| is_active | Boolean | default=True |
+| removed_at | DateTime | NULLABLE |
 | created_at | DateTime | server_default=now() |
 | updated_at | DateTime | server_default=now(), onupdate |
 
@@ -604,7 +689,7 @@ class ReviewSchedule(Base):
     id: int                # PK
     user_id: int           # FK → users.id（索引）
     question_id: int       # FK → questions.id
-    subject: str?
+    subject_id: int?       # FK → subjects.id (ondelete=SET NULL)
     interval: int          # 当前间隔（天），默认 0
     ease_factor: float     # 难度因子，默认 2.5
     repetitions: int       # 连续正确次数，默认 0
@@ -620,7 +705,7 @@ class ReviewSchedule(Base):
 | id | Integer | PK, autoincrement |
 | user_id | Integer | FK(users.id), NOT NULL, INDEX |
 | question_id | Integer | FK(questions.id), NOT NULL |
-| subject | String(16) | NULLABLE |
+| subject_id | Integer | FK(subjects.id, ondelete=SET NULL), NULLABLE |
 | interval | Integer | default=0 |
 | ease_factor | Float | default=2.5 |
 | repetitions | Integer | default=0 |
@@ -629,6 +714,11 @@ class ReviewSchedule(Base):
 | mastered | Boolean | default=False |
 | created_at | DateTime | server_default=now() |
 | updated_at | DateTime | server_default=now(), onupdate |
+
+### 索引
+
+- `ix_review_schedules_user_subject_id` — `(user_id, subject_id)`
+- `user_id` 单独索引
 
 ### review_records
 
@@ -672,13 +762,16 @@ class PracticeRecord(Base):
     id: int                 # PK
     user_id: int            # FK → users.id（索引）
     question_id: int        # FK → questions.id（索引）
-    subject: str            # math2 / exam408 / english
+    subject_id: int         # FK → subjects.id
     question_type: str      # choice / fill / subjective / multi_blank_choice
     user_answer: str        # 用户提交的答案（Text）
     is_correct: bool        # 是否正确
     used_time: int?         # 耗时（秒），可为空
     answered_at: datetime   # 答题时间
     created_at: datetime
+
+    # Legacy session 列（为阻止 Alembic autogenerate DROP COLUMN 而保留在 ORM）：
+    # mode / question_ids / answers / correct_count / wrong_count / duration_sec / started_at / finished_at
 ```
 
 | 字段 | 类型 | 约束 |
@@ -686,7 +779,7 @@ class PracticeRecord(Base):
 | id | Integer | PK, autoincrement |
 | user_id | Integer | FK(users.id), NOT NULL, INDEX |
 | question_id | Integer | FK(questions.id), NOT NULL, INDEX |
-| subject | String(32) | NOT NULL |
+| subject_id | Integer | FK(subjects.id), NOT NULL |
 | question_type | String(32) | NOT NULL, default="choice" |
 | user_answer | Text | NOT NULL |
 | is_correct | Boolean | NOT NULL |
@@ -696,14 +789,70 @@ class PracticeRecord(Base):
 
 ### 索引
 
-- `(user_id, answered_at)` — 用户刷题历史查询（`user_id` 单独索引 + `answered_at` 排序）
-- `(user_id, is_correct)` — 正确率统计（`is_correct` 参与 `CASE WHEN` 聚合）
-- `(question_id, user_id)` — 查询用户是否做过某题
+- `idx_practice_records_user_subject_id` — `(user_id, subject_id)`
+- `idx_practice_records_user_answered_question` — `(user_id, answered_at, question_id)`（覆盖"最近 N 天做题"统计窗口）
+- `question_id` 单独索引
 
 ### 设计说明
 
 每条记录对应一道题的**一次作答**。用户对同一道题多次作答会产生多条记录（如错题重做），
 通过 `question_id + user_id` 可查询用户对该题的全部作答历史。
+
+---
+
+## practice_sessions
+
+一次完整刷题会话 —— 用户从开始一组练习到成功交卷的一条记录（commit 7b79ca2a）。与 `PracticeRecord`（每道题一条）语义分离：
+
+- `PracticeRecord.used_time` → 单题行为分析（平均答题时间 / mastery 等）
+- `PracticeSession.duration_sec` → 学习统计（番茄钟统计页的 duration 指标）
+
+一次刷题会话只对应一条记录；由 `(user_id, request_id)` 幂等去重，网络重试不会重复插入 session 导致学习时长翻倍。session 元数据在 batch-submit 时可选上报（旧客户端不携带，不影响答题）。
+
+```python
+class PracticeSession(Base):
+    __tablename__ = "practice_sessions"
+
+    id: int                # PK
+    user_id: int           # FK → users.id（索引）
+    subject_id: int        # FK → subjects.id（NOT NULL、索引）
+    request_id: str?       # 幂等 key（string 上限内原样；超长由 service 稳定 hash）
+    mode: str              # random 等，默认 "random"
+    started_at: datetime
+    finished_at: datetime
+    duration_sec: int
+    question_count: int    # 默认 0
+    answered_count: int    # 默认 0
+    correct_count: int     # 默认 0
+    wrong_count: int       # 默认 0
+    status: str            # 恒为 "completed"（只在成功交卷时创建）
+    created_at: datetime
+```
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| id | Integer | PK, autoincrement |
+| user_id | Integer | FK(users.id), NOT NULL, INDEX |
+| subject_id | Integer | FK(subjects.id), NOT NULL, INDEX |
+| request_id | String(256) | NULLABLE |
+| mode | String(16) | NOT NULL, default="random" |
+| started_at | DateTime | NOT NULL |
+| finished_at | DateTime | NOT NULL |
+| duration_sec | Integer | NOT NULL |
+| question_count | Integer | NOT NULL, default=0 |
+| answered_count | Integer | NOT NULL, default=0 |
+| correct_count | Integer | NOT NULL, default=0 |
+| wrong_count | Integer | NOT NULL, default=0 |
+| status | String(16) | NOT NULL, default="completed" |
+| created_at | DateTime | server_default=now() |
+
+### 索引 / 约束
+
+- `ix_practice_sessions_user_started` — `(user_id, started_at)`
+- `ix_practice_sessions_user_finished` — `(user_id, finished_at)`
+- `ux_practice_sessions_user_request` — `(user_id, request_id)` **部分唯一索引**（request_id IS NOT NULL；兼容不携带 session 的旧客户端）
+- `ck_practice_sessions_duration_sec` — `duration_sec >= 0`
+- `ck_practice_sessions_finished_at` — `finished_at >= started_at`
 
 ---
 
@@ -731,7 +880,7 @@ class AnswerBehavior(Base):
     correct_answer: str?       # 正确答案
 
     # 元信息
-    subject: str?              # 科目
+    subject_id: int?           # FK → subjects.id (ondelete=SET NULL)
     session_type: str          # random / review / exam
     created_at: datetime
 ```
@@ -750,7 +899,7 @@ class AnswerBehavior(Base):
 | is_abandoned | Boolean | default=False |
 | user_answer | Text | NULLABLE |
 | correct_answer | Text | NULLABLE |
-| subject | String(16) | NULLABLE |
+| subject_id | Integer | FK(subjects.id, ondelete=SET NULL), NULLABLE, INDEX |
 | session_type | String(32) | default="random" |
 | created_at | DateTime | server_default=now() |
 
@@ -834,7 +983,9 @@ class AiGenerationLog(Base):
 
 ---
 
-## tags (knowledge_points)
+## tags（轻量标签，知识点体系已迁移至 knowledge_points）
+
+> 保留的轻量标签表（含 sync_uuid 增量同步）。知识点主数据源为 `knowledge_points`，题目映射走 `question_knowledge_points`。
 
 ```python
 class Tag(Base):
@@ -842,7 +993,7 @@ class Tag(Base):
 
     id: int              # PK
     name: str            # 标签名
-    subject: str         # 科目（索引）
+    subject_id: int      # FK → subjects.id（索引）
     parent_id: int?      # 父标签 ID（预留层级扩展，MVP 暂不使用）
     sort_order: int      # 排序，默认 0
     sync_uuid: str?      # 增量同步 UUID（唯一、索引）
@@ -853,7 +1004,7 @@ class Tag(Base):
 |------|------|------|
 | id | Integer | PK, autoincrement |
 | name | String(64) | NOT NULL |
-| subject | String(16) | NOT NULL, INDEX |
+| subject_id | Integer | FK(subjects.id), NOT NULL, INDEX |
 | parent_id | Integer | NULLABLE, default=None |
 | sort_order | Integer | default=0 |
 | sync_uuid | String(36) | NULLABLE, UNIQUE, INDEX |
@@ -1079,7 +1230,9 @@ class BatchJobTraceEvent(Base):
 
 ---
 
-## pomodoro_sessions
+## pomodoro_sessions / pomodoro_pause_intervals / user_pomodoro_settings
+
+### pomodoro_sessions
 
 ```python
 class PomodoroSession(Base):
@@ -1087,15 +1240,15 @@ class PomodoroSession(Base):
 
     id: int                 # PK
     user_id: int            # FK → users.id（索引）
-    subject: str
+    subject_id: int?        # FK → subjects.id（索引）
     chapter_id: str?
-    preset: str             # standard / custom
+    preset: str             # standard / custom / long / debug / free
     work_duration: int      # 工作时长（分钟），默认 25
     break_duration: int     # 休息时长（分钟），默认 5
     start_time: datetime
     end_time: datetime?
     expected_end_time: datetime? # 索引
-    actual_duration: int?   # 实际工作时长（秒）
+    actual_duration: int?   # 实际工作时长（秒），服务端权威计算
     status: str             # running / paused / completed / interrupted
     notification_enabled: bool  # 是否启用订阅通知
     notification_sent: bool
@@ -1103,6 +1256,7 @@ class PomodoroSession(Base):
     notification_error: str?
     openid_snapshot: str?   # 通知发送时用的 openid
     paused_at: datetime?    # 暂停时间
+    total_paused_sec: int   # 暂停总秒数（派生缓存，真相源为 pause_intervals）
     created_at: datetime
 ```
 
@@ -1110,7 +1264,7 @@ class PomodoroSession(Base):
 |------|------|------|
 | id | Integer | PK, autoincrement |
 | user_id | Integer | FK(users.id), NOT NULL, INDEX |
-| subject | String(32) | NOT NULL, default="" |
+| subject_id | Integer | FK(subjects.id), NULLABLE, INDEX |
 | chapter_id | String(64) | NULLABLE |
 | preset | String(16) | NOT NULL, default="standard" |
 | work_duration | Integer | NOT NULL, default=25 |
@@ -1126,7 +1280,61 @@ class PomodoroSession(Base):
 | notification_error | Text | NULLABLE |
 | openid_snapshot | String(64) | NULLABLE |
 | paused_at | DateTime | NULLABLE |
+| total_paused_sec | Integer | NOT NULL, default=0 |
 | created_at | DateTime | server_default=now() |
+
+### 索引
+
+- `ix_pomodoro_sessions_user_status_start` — `(user_id, status, start_time)`
+- `ix_pomodoro_sessions_user_status_end` — `(user_id, status, end_time)`
+
+### pomodoro_pause_intervals
+
+暂停区间（暂停时长唯一真相源）。
+
+```python
+class PomodoroPauseInterval(Base):
+    __tablename__ = "pomodoro_pause_intervals"
+
+    id: int               # PK
+    session_id: int       # FK → pomodoro_sessions.id (ondelete=CASCADE)
+    started_at: datetime
+    ended_at: datetime?   # None = 进行中暂停
+    created_at: datetime
+```
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| id | Integer | PK, autoincrement |
+| session_id | Integer | FK(pomodoro_sessions.id, ondelete=CASCADE), NOT NULL |
+| started_at | DateTime | NOT NULL |
+| ended_at | DateTime | NULLABLE |
+| created_at | DateTime | server_default=now() |
+
+### 索引 / 约束
+
+- `ix_pomodoro_pause_intervals_session_started` — `(session_id, started_at)`
+- `ux_pomodoro_pause_intervals_one_open` — `(session_id)` 部分唯一（ended_at IS NULL；同一会话至多一个进行中暂停）
+- `ck_pomodoro_pause_intervals_ended_at` — `ended_at IS NULL OR ended_at > started_at`
+
+### user_pomodoro_settings
+
+```python
+class UserPomodoroSettings(Base):
+    __tablename__ = "user_pomodoro_settings"
+
+    user_id: int          # PK, FK → users.id (ondelete=CASCADE)
+    day_start_minute: int # 学习日起点分钟（0-1439），默认 0
+    created_at: datetime
+    updated_at: datetime
+```
+
+| 字段 | 类型 | 约束 |
+|------|------|------|
+| user_id | Integer | PK, FK(users.id, ondelete=CASCADE) |
+| day_start_minute | Integer | NOT NULL, default=0 |
+| created_at | DateTime | server_default=now() |
+| updated_at | DateTime | server_default=now(), onupdate |
 
 ---
 
@@ -1210,7 +1418,7 @@ class AppUserAdminBinding(Base):
 - **用户唯一标识**：微信 openid（不使用 email/username/password）
 - **系统不保存密码**，不存在密码字段（管理员表除外，存 password_hash）
 - `content` 为 JSON：`{"text":"...", "images":["url"], "latex":"..."}`
-- `knowledge_points` 用 JSON 数组（PG 中可建 GIN 索引）
+- 题目知识点关系以 `question_knowledge_points` 关联表为唯一事实源（`questions.knowledge_points` JSON 列已移除）；`KnowledgePoint` 主表 + `normalized_name` 唯一约束保证知识点规范化、杜绝重复
 - 不拆选择题/填空题子表，用 `question_type` 区分
 - `source_type` + `source_file` + `import_batch_id` 三位一体追溯来源
 - Level 1 题库去重使用 `question_hash`：导入阶段只标记 `question_imports.duplicate_status`，发布/审核通过阶段按 `subject + question_hash` 完全匹配拦截，不自动删除历史题目
@@ -1226,7 +1434,7 @@ class AppUserAdminBinding(Base):
 - `session_type` 区分 AI 对话场景
 - **RBAC 权限系统**：`admin_users` → `roles` ↔ `permissions`（多对多），所有管理操作记入 `audit_logs`
 - **批量导入**：`import_batch_jobs` 管理多图片任务，`import_pipeline` 管理 PDF 分片任务，各自独立
-- **番茄钟**：`pomodoro_sessions` 单表记录完整生命周期，支持微信订阅通知
+- **番茄钟**：`pomodoro_sessions` 单表记录完整生命周期，`pomodoro_pause_intervals` 为暂停时长唯一真相源，支持微信订阅通知；学习时长统计混入 `practice_sessions.duration_sec`
 - **增量同步**：`questions.sync_uuid/sync_version`、`tags.sync_uuid` 支持本地-云端增量同步
 
-> 上次更新：2026-07-16 — 补充 multi_blank_choice 数据契约（blank_option_groups、canonical answer 格式）
+> 上次更新：2026-08-10 — 知识点重构为关联表唯一事实源（移除 questions.knowledge_points JSON）；新增 knowledge_points/question_knowledge_points/practice_sessions/pomodoro_pause_intervals/user_pomodoro_settings 表；module 重构全部改为 subject_id

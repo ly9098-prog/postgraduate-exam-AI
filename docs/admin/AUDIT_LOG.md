@@ -1,6 +1,6 @@
 # 审计日志规范（Audit Log）
 
-> 版本：v2.2（AI 配置接口审计同步版） | 状态：已同步 | 更新：2026-06-10
+> 版本：v2.3（题目图片/选项、公式卡审计动作同步版） | 状态：已同步 | 更新：2026-08-10
 > 修订自审计报告 C5（分级写入策略）、I7（分区与归档）
 > **取代旧文档 OPERATION_LOG.md**
 
@@ -161,14 +161,13 @@ role.update_permissions   # critical
 role.delete               # critical
 
 # 题目操作
-question.approve          # important
-question.reject           # important
-question.edit             # important
-question.delete           # critical
-question.toggle_active    # important
-question.batch_approve    # critical
-question.batch_reject     # critical
-question.rollback         # critical（保留）
+question.update           # important（编辑；含图片上传/替换/删除、快捷加选项）
+question.delete           # critical（软删除）
+question.toggle_active    # important（上下架；非已审核题目不可激活）
+question.batch_delete     # critical（批量软删除）
+question.backfill_embeddings # normal（批量回填 embedding 向量）
+
+> 2026-08-10 同步：题目审核（通过/拒绝）走导入管理接口（import 级，见 REVIEW_FLOW.md §3），审核动作记录在 `question_imports.status / reviewed_by / reviewed_at`，不写 `question.*` 审计动作。代码中不存在 `question.approve` / `question.reject` / `question.batch_approve` / `question.batch_reject` / `question.rollback`；编辑统一写 `question.update`（含图片/选项操作，复用 update_admin_question 写入），旧文档示例 `question.edit` 已废弃。
 
 # 科目
 subject.create            # important
@@ -177,6 +176,35 @@ subject.delete            # critical
 
 # 导入
 import.enrich             # normal（触发 AI 解析任务）
+import.complete           # important（单题 AI 补全）
+import.batch_complete     # important（批量 AI 补全）
+import.batch_answer_fill  # important（批量补充答案）
+
+# 公式卡（2026-08-10 同步）
+formula.create            # normal
+formula.update            # normal（含 PUT 版本号推导后写快照）
+formula.delete            # normal
+formula.approve           # normal（pending_review→published 等状态机动作）
+formula.reject            # normal
+formula.publish           # normal
+formula.offline           # normal
+formula.restore           # normal
+formula.batch-approve     # normal（批量状态机）
+formula.batch-reject      # normal
+formula.graph_asset.upload    # normal
+formula.graph_asset.replace   # normal
+formula.graph_asset.delete    # normal
+formula.graph_asset.metadata  # normal
+formula.graph.generate        # normal
+formula.graph.confirm         # normal
+formula.graph.confirm.warn_accepted # normal
+formula.graph.replace         # normal
+formula.graph.delete          # normal
+formula.graph.batch_generate  # normal
+formula.import-item.approved  # normal
+formula.import-item.rejected  # normal
+formula-category.create       # normal
+formula-category.update       # normal
 
 # AI 设置
 ai_setting.update         # important（更新全局开关或月度调用额度）
@@ -206,7 +234,7 @@ type AuditDetail = {
 }
 ```
 
-### 示例：题目审核拒绝
+### 示例：导入题审核拒绝
 
 ```json
 {
@@ -221,7 +249,7 @@ type AuditDetail = {
 
 `requestId` 是 Admin 对外唯一追踪标识，也作为内部全链路 traceId 使用。Phase 0/1 不新增 `audit_logs.trace_id` 列；审计查询通过 `detail.extra.requestId` 关联应用日志、响应头 `X-Request-Id` 与前端反馈。
 
-### 示例：批量审核
+### 示例：批量审核（导入批次）
 
 ```json
 {

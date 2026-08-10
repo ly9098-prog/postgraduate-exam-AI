@@ -1,6 +1,8 @@
 # API Specification
 
 > 2240AI 全量 API 接口规范。Base URL: `/api/v1`
+>
+> 2026-08-10 更新原因：题目/科目关系已从 `subject`（string code，如 "math2"）迁移为 `subject_id`（int，FK `subjects.id`），响应中展开 `subject_code` / `subject_name`；本规范相关参数表与 JSON 示例已同步更新。
 
 ---
 
@@ -102,7 +104,7 @@ Authorization: Bearer <jwt_token>
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| subject | string? | 筛选科目 |
+| subject_id | int? | 筛选科目 |
 | question_type | string? | 筛选题型 |
 | page | int | 默认 1 |
 | page_size | int | 默认 20，最大 100 |
@@ -113,7 +115,7 @@ Authorization: Bearer <jwt_token>
 
 ```json
 {
-  "subject": "math2",
+  "subject_id": 2,
   "question_type": "choice",
   "content": {"text": "题干..."},
   "options": {"A": "选项A", "B": "选项B", "C": "选项C", "D": "选项D"},
@@ -130,7 +132,7 @@ Authorization: Bearer <jwt_token>
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| subject | string? | 科目筛选 |
+| subject_id | int? | 科目筛选 |
 | question_type | string? | 题型筛选 |
 | exclude_ids | string? | 排除的题目 ID，逗号分隔 |
 
@@ -141,7 +143,9 @@ Authorization: Bearer <jwt_token>
 ```json
 {
   "id": 1,
-  "subject": "math2",
+  "subject_id": 2,
+  "subject_code": "math2",
+  "subject_name": "数学二",
   "question_type": "choice",
   "content": {"text": "题干"},
   "options": {"A": "...", "B": "...", "C": "...", "D": "..."},
@@ -157,15 +161,20 @@ Authorization: Bearer <jwt_token>
 
 ### GET `/practice/questions`
 
-获取刷题列表（不含答案）。
+获取刷题列表（不含答案）。知识点由 `question_knowledge_points` 关联表按 `position` 排序加载。
 
 | 参数 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| subject | string | **必填** | 科目筛选 |
+| subject_id | int | **必填** | 科目 ID（支持父级科目聚合） |
+| include_children | bool | true | 是否包含子科目（父级科目 + sequential 报 400） |
 | count | int | 20 | 题目数量，1-50 |
-| mode | string | random | random / sequential |
-| knowledge_point | string? | - | 知识点筛选，逗号分隔 |
+| mode | string | random | random / sequential / smart / similar |
+| knowledge_point | string? | - | 知识点筛选（normalized_name 精确匹配，逗号分隔 = AND），传 `knowledge_point` |
 | exclude_answered | bool | false | 是否排除已做题 |
+| no_repeat_days | int? | - | 最近 N 天不重复，1-365 |
+| use_leitner | bool | true | 是否启用 Leitner 过滤 |
+| source_question_id | int? | - | similar 模式的相似源题 ID |
+| smart_strategy | string | weakness_vector | smart 模式策略 |
 
 ```json
 // Response
@@ -173,18 +182,70 @@ Authorization: Bearer <jwt_token>
   "questions": [
     {
       "id": 1,
-      "subject": "math2",
+      "subject_id": 2,
+      "subject_code": "math2",
+      "subject_name": "数学二",
       "question_type": "choice",
       "content": {"text": "题干"},
       "options": {"A": "...", "B": "...", "C": "...", "D": "..."},
       "knowledge_points": ["导数"],
-      "difficulty": 3
+      "difficulty": 3,
+      "image_url": null,
+      "trace_id": "trace-xxx",
+      "recommend_reason": null,
+      "recommend_score": null,
+      "strategy": null,
+      "similarity": null
     }
   ],
   "total": 10,
-  "mode": "random"
+  "mode": "random",
+  "trace_id": "trace-xxx",
+  "request_id": null
 }
 ```
+
+### GET `/practice/subjects`
+
+刷题页可用科目树（动态，不硬编码）。
+
+### GET `/practice/knowledge-states`
+
+查询当前用户所有知识点掌握状态（跨科目汇总）。
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| status | string? | - | 过滤：weak / normal / good / mastered / observing / possible_weak / possible_mastered |
+| limit | int | 50 | 返回条数，1-200 |
+
+```json
+// Response
+{
+  "items": [
+    {
+      "knowledge_point_id": 1,
+      "knowledge_point": "导数",
+      "mastery_score": 60.0,
+      "confidence": 0.8,
+      "label": "good",
+      "answer_count": 10,
+      "correct_count": 8,
+      "wrong_count": 2,
+      "recent_wrong_count": 1,
+      "last_practiced_at": "2026-05-24T12:00:00"
+    }
+  ],
+  "total": 1
+}
+```
+
+### GET `/practice/weak-knowledge-points`
+
+查询用户明确薄弱的知识点（mastery_score < 40 且 confidence >= 0.3），供 V4 智能推荐使用。
+
+| 参数 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| limit | int | 20 | 返回条数，1-100 |
 
 ### POST `/practice/submit`
 
@@ -195,7 +256,8 @@ Authorization: Bearer <jwt_token>
 {
   "question_id": 1,
   "user_answer": "A",
-  "used_time": 30
+  "used_time": 30,
+  "request_id": "optional-idempotency-key"   // 可选
 }
 
 // Response
@@ -211,7 +273,7 @@ Authorization: Bearer <jwt_token>
 
 ### POST `/practice/batch-submit`
 
-批量提交答案。
+批量提交答案。`session`（刷题会话元数据）可选：旧客户端不带 `session` 时仍正常答题且不创建 PracticeSession；携带 `session` 时 `request_id` 必填，用于 `(user_id, request_id)` 幂等去重，防止网络重试重复记录学习时长。
 
 ```json
 // Request
@@ -219,17 +281,29 @@ Authorization: Bearer <jwt_token>
   "answers": [
     {"question_id": 1, "user_answer": "A", "used_time": 30},
     {"question_id": 2, "user_answer": "C", "used_time": 45}
-  ]
+  ],
+  "session": {
+    "request_id": "uuid-v4",
+    "subject_id": 2,
+    "mode": "random",
+    "started_at": "2026-08-09T10:00:00Z",
+    "finished_at": "2026-08-09T10:15:00Z",
+    "duration_sec": 900,
+    "question_count": 10,
+    "answered_count": 10,
+    "status": "completed"
+  }
 }
 
 // Response
 {
   "results": [
-    {"question_id": 1, "is_correct": true, "correct_answer": "A", "analysis": "..."},
-    {"question_id": 2, "is_correct": false, "correct_answer": "C", "analysis": "..."}
+    {"question_id": 1, "is_correct": true, "correct_answer": "A", "analysis": "...", "knowledge_points": [], "is_wrong_added": false},
+    {"question_id": 2, "is_correct": false, "correct_answer": "C", "analysis": "...", "knowledge_points": [], "is_wrong_added": false}
   ],
   "total_correct": 1,
-  "total_wrong": 1
+  "total_wrong": 1,
+  "trace_id": "trace-xxx"
 }
 ```
 
@@ -246,9 +320,9 @@ Authorization: Bearer <jwt_token>
   "total_answered": 150,
   "total_correct": 120,
   "accuracy": 0.8,
-  "by_subject": {
-    "math2": {"answered": 100, "correct": 85, "accuracy": 0.85}
-  },
+  "by_subject": [
+    {"subject_id": 2, "subject_code": "math2", "subject_name": "数学二", "answered": 100, "correct": 85, "accuracy": 0.85}
+  ],
   "daily_stats": [
     {"date": "2026-05-24", "answered": 20, "correct": 16}
   ],
@@ -262,9 +336,9 @@ Authorization: Bearer <jwt_token>
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| subject | string? | 筛选科目 |
+| subject_id | int? | 筛选科目 |
 | page | int | 默认 1 |
-| page_size | int | 默认 20 |
+| page_size | int | 默认 20，最大 100 |
 
 ```json
 // Response
@@ -273,7 +347,9 @@ Authorization: Bearer <jwt_token>
     {
       "id": 1,
       "question_id": 5,
-      "subject": "math2",
+      "subject_id": 2,
+      "subject_code": "math2",
+      "subject_name": "数学二",
       "question_type": "choice",
       "user_answer": "A",
       "is_correct": true,
@@ -297,11 +373,11 @@ Authorization: Bearer <jwt_token>
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| subject | string? | 筛选科目 |
-| mastered | bool? | 筛选掌握状态 |
+| subject_id | int? | 筛选科目 |
 | error_type | string? | 筛选错误类型 |
+| topic | string? | 筛选知识点主题 |
 | page | int | 默认 1 |
-| page_size | int | 默认 20 |
+| page_size | int | 默认 20（1-100） |
 
 ### GET `/wrong-questions/stats`
 
@@ -312,9 +388,9 @@ Authorization: Bearer <jwt_token>
   "total": 50,
   "unmastered": 30,
   "by_subject": [
-    {"subject": "math2", "count": 20, "unmastered": 12},
-    {"subject": "exam408", "count": 18, "unmastered": 10},
-    {"subject": "english", "count": 12, "unmastered": 8}
+    {"subject_id": 2, "subject_code": "math2", "subject_name": "数学二", "count": 20},
+    {"subject_id": 3, "subject_code": "exam408", "subject_name": "计算机 408", "count": 18},
+    {"subject_id": 4, "subject_code": "english", "subject_name": "英语", "count": 12}
   ],
   "by_error_type": {
     "concept": 15,
@@ -354,62 +430,130 @@ Authorization: Bearer <jwt_token>
 
 ## 复习
 
-### GET `/review/due`
+### GET `/review/today`
 
 今日待复习列表（分页）。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| subject | string? | 筛选科目 |
-| page | int | 默认 1 |
-| page_size | int | 默认 20 |
+| subject_id | int? | 筛选科目 |
+| limit | int | 默认 20 |
 
-### POST `/review/submit`
+```json
+// Response
+{
+  "total_today": 10,
+  "questions": [
+    {
+      "schedule_id": 1,
+      "question_id": 100,
+      "subject_id": 2,
+      "subject_code": "math2",
+      "subject_name": "数学二",
+      "question_type": "choice",
+      "stem": "题干...",
+      "interval": 6,
+      "repetitions": 1,
+      "ease_factor": 2.6
+    }
+  ]
+}
+```
 
-批量提交复习质量评分。
+### GET `/review/today/overview`
+
+今日复习任务流概览（批次 / 完成情况 / 预计时长）。
+
+```json
+// Response
+{
+  "date": "2026-08-10",
+  "today_due_count": 12,
+  "today_completed_count": 3,
+  "today_remaining_count": 9,
+  "today_overdue_count": 2,
+  "today_new_due_count": 1,
+  "estimated_minutes": 18,
+  "batch_size": 10,
+  "current_batch_no": 1,
+  "total_batch_count": 2,
+  "remaining_batch_count": 1,
+  "has_due_review": true,
+  "is_completed": false
+}
+```
+
+### GET `/review/today/result`
+
+今日复习完成结果汇总（正确/错误/掌握/明日待复习数）。
+
+### POST `/review/schedule-submit`
+
+提交单条复习评分（SM-2 更新）。
 
 ```json
 // Request
 {
-  "items": [
-    {"wrong_question_id": 1, "quality": 4},
-    {"wrong_question_id": 2, "quality": 2}
+  "schedule_id": 1,
+  "question_id": 100,
+  "rating": 4
+}
+
+// Response
+{
+  "schedule_id": 1,
+  "question_id": 100,
+  "rating": 4,
+  "interval_after": 6,
+  "ease_factor_after": 2.6,
+  "next_review_at": "2026-08-16T10:00:00+08:00",
+  "is_correct": true
+}
+```
+
+### POST `/review/batch-submit`
+
+批量提交复习评分。
+
+```json
+// Request
+{
+  "reviews": [
+    {"schedule_id": 1, "question_id": 100, "rating": 4},
+    {"schedule_id": 2, "question_id": 101, "rating": 2}
   ]
 }
 
 // Response
 {
   "results": [
-    {
-      "wrong_question_id": 1,
-      "quality": 4,
-      "efactor": 2.6,
-      "interval": 6,
-      "repetitions": 1,
-      "next_review_date": "2026-05-28",
-      "mastered": false
-    }
+    {"schedule_id": 1, "question_id": 100, "next_review_at": "2026-08-16T10:00:00+08:00", "is_correct": true},
+    {"schedule_id": 2, "question_id": 101, "next_review_at": "2026-08-11T10:00:00+08:00", "is_correct": false}
   ],
-  "processed": 2
+  "total": 2
 }
 ```
 
-### GET `/review/stats`
+### GET `/review/schedule-stats`
 
 复习统计。
 
 ```json
 {
-  "total": 50,
-  "due_count": 10,
-  "reviewed_today": 3,
-  "mastered_count": 20,
-  "avg_efactor": 2.3,
+  "total_scheduled": 50,
+  "total_reviewed_today": 3,
+  "remaining_today": 9,
+  "overdue": 2,
+  "accuracy_last_7d": 0.78,
   "by_subject": [
-    {"subject": "math2", "total": 20, "due": 5, "mastered": 8}
+    {"subject_id": 2, "subject_code": "math2", "subject_name": "数学二", "scheduled": 20, "reviewed": 5, "remaining": 8}
   ]
 }
 ```
+
+### POST `/review/grade-submit` / `POST /review/grade-batch`
+
+提交对错判定（`grade-submit` 单题，`grade-batch` 批量），返回是否正确/标准答案/更新后的 SM-2 参数。
 
 ---
 
@@ -421,7 +565,7 @@ Authorization: Bearer <jwt_token>
 
 ```json
 {
-  "subject": "math2",
+  "subject_id": 2,
   "session_type": "random",
   "records": [
     {
@@ -449,7 +593,7 @@ Authorization: Bearer <jwt_token>
   "accuracy": 0.7,
   "avg_time_sec": 45,
   "by_subject": [
-    {"subject": "math2", "total": 40, "correct": 30, "accuracy": 0.75, "avg_time_sec": 50}
+    {"subject_id": 2, "subject_code": "math2", "subject_name": "数学二", "count": 40, "avg_time_sec": 50}
   ]
 }
 ```
@@ -491,7 +635,7 @@ AI 学习建议。
 ```json
 // Request
 {
-  "subject": "math2"
+  "subject_id": 2
 }
 
 // Response
@@ -552,7 +696,9 @@ AI 题目讲解。
   "recommendations": [
     {
       "question_id": 2,
-      "subject": "math2",
+      "subject_id": 2,
+      "subject_code": "math2",
+      "subject_name": "数学二",
       "question_type": "single_choice",
       "stem": "题干...",
       "knowledge_points": ["导数"],
@@ -571,13 +717,15 @@ AI 学习报告。
 ```json
 // Request
 {
-  "subject": "math2",
+  "subject_id": 2,
   "days": 7
 }
 
 // Response
 {
-  "subject": "math2",
+  "subject_id": 2,
+  "subject_code": "math2",
+  "subject_name": "数学二",
   "period_days": 7,
   "total_answered": 30,
   "accuracy": 0.73,
@@ -680,7 +828,7 @@ AI 错因分析。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| subject | string? | 筛选科目 |
+| subject_id | int? | 筛选科目 |
 
 ### GET `/knowledge-points/tree`
 
@@ -688,7 +836,7 @@ AI 错因分析。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| subject | string? | 筛选科目 |
+| subject_id | int? | 筛选科目 |
 
 ### POST `/knowledge-points`
 
@@ -697,7 +845,7 @@ AI 错因分析。
 ```json
 {
   "name": "导数",
-  "subject": "math2",
+  "subject_id": 2,
   "parent_id": null
 }
 ```
@@ -714,21 +862,27 @@ AI 错因分析。
 
 下载 Excel 导入模板（返回 .xlsx 文件）。
 
-### POST `/import/upload`
+### POST `/import/pipeline/upload`
 
-上传文件（Excel / PDF）。
+统一导入入口（Excel / PDF / TXT / 图片），异步返回 `pipeline_id`，通过 `GET /import/pipelines/{pipeline_id}` 查询进度。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| file | multipart | .xlsx / .xls / .pdf |
+| file | multipart | .xlsx / .xls / .pdf / .txt / 图片 |
+| subject_id | int? | 科目 ID（与 `subject` 二选一） |
+| subject | string? | 科目 code（如 `math2`，已废弃为别名，优先用 `subject_id`） |
+| import_mode | string | `auto` / `book` / `exam`，默认 `auto` |
+| enable_ai_repair | bool | 默认 true |
+| confidence_threshold | float | 默认 0.6 |
+| page_start / page_end | int? | PDF 页范围（可选） |
 
 ```json
 // Response
 {
-  "batch_id": "BATCH_20260522_120000_abc123",
-  "total": 15,
-  "source_type": "excel",
-  "source_file": "math_questions.xlsx"
+  "pipeline_id": "pipeline_20260522_120000_abc123",
+  "status": "queued",
+  "source_type": "pdf",
+  "page_range": {"start": 1, "end": 40}
 }
 ```
 
@@ -765,33 +919,11 @@ AI 错因分析。
 | duplicate_of_question_id | int? | 命中的正式题目 ID |
 | duplicate_of_import_id | int? | 命中的暂存导入题 ID |
 
-### PUT `/import/questions/{id}`
+### 导入审核（管理端，不在此处）
 
-审核单题。
-
-```json
-{
-  "status": "approved",
-  "review_note": "可选备注",
-  "subject": "math2",           // 可覆盖现有值
-  "question_type": "choice",
-  "parsed_content": {},
-  "parsed_options": {},
-  "parsed_answer": "A",
-  "parsed_analysis": "解析"
-}
-```
-
-### POST `/import/batches/{batch_id}/approve`
-
-批量通过一个批次的所有待审核记录。缺少必填字段的题目自动跳过；发布写入 `questions` 前会按 `subject + question_hash` 做完全重复拦截，命中正式题库重复题时该题不会发布。
-
-```json
-// Response
-{
-  "approved_count": 12
-}
-```
+> 2026-08-10 同步：导入题目的人工审核（通过/拒绝/批量审核/发布）是**管理端接口**（`/api/admin/v1/imports/...`，权限 `import:write`），不在小程序端 `/api/v1` 暴露。历史文档化的 `PUT /import/questions/{id}` 与 `POST /import/batches/{batch_id}/approve` 已迁出，权威说明见 `docs/admin/ADMIN_API_SPEC.md` §3.8。
+>
+> 小程序端仅保留：`GET /import/template`、`POST /import/pipeline/upload`、`GET /import/pipelines/{pipeline_id}`、`GET /import/batches`、`GET /import/batches/{batch_id}`。
 
 ---
 
@@ -813,6 +945,162 @@ AI 错因分析。
 | 参数 | 类型 | 说明 |
 |------|------|------|
 | query | string | 检索关键词 |
+
+---
+
+## 番茄钟
+
+### POST `/pomodoro/start`
+
+开始番茄会话。已有进行中的会话时返回 409。
+
+```json
+// Request
+{
+  "subject_id": 2,
+  "chapter_id": null,
+  "preset": "standard",        // standard / long / custom / debug / free
+  "work_duration": 25,
+  "break_duration": 5,
+  "notification_enabled": false
+}
+```
+
+### POST `/pomodoro/{session_id}/complete`
+
+完成会话。`actual_duration` 由服务端权威计算（请求体可为空）。
+
+### POST `/pomodoro/{session_id}/interrupt`
+
+中断会话（status → interrupted）。
+
+### POST `/pomodoro/{session_id}/pause`
+
+暂停会话（幂等；记录 pause interval）。
+
+### POST `/pomodoro/{session_id}/resume`
+
+恢复会话（幂等；重算暂停总时长与倒计时终点）。
+
+### GET `/pomodoro/active`
+
+当前进行中的会话（running / paused），无则返回 null。
+
+### GET `/pomodoro/settings` · PUT `/pomodoro/settings`
+
+获取/更新番茄钟设置。
+
+```json
+// PUT Request
+{ "day_start_minute": 0 }
+```
+
+### GET `/pomodoro/stats`
+
+今日/本周番茄统计卡片（timer 页）。
+
+```json
+{
+  "today_sessions": 2,
+  "today_duration_sec": 1800,
+  "week_sessions": 10,
+  "week_duration_sec": 9000,
+  "today_date": "2026-08-09",
+  "week_start_date": "2026-08-04",
+  "day_start_minute": 0,
+  "day_start_time": "00:00"
+}
+```
+
+### GET `/pomodoro/daily-summary`
+
+指定学习日的每日小结（含科目分组）。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| date | string? | YYYY-MM-DD，默认当前学习日 |
+
+```json
+{
+  "date": "2026-08-09",
+  "timezone": "Asia/Shanghai",
+  "day_start_minute": 0,
+  "day_start_time": "00:00",
+  "sessions": 5,
+  "duration_sec": 3600,
+  "subjects": [
+    {"subject_id": 2, "subject_code": "math2", "subject_name": "数学二", "sessions": 3, "duration_sec": 2400}
+  ]
+}
+```
+
+### GET `/pomodoro/statistics-overview`
+
+统计页首屏聚合：`stats` + `trends` + `daily_summary` 一次返回（单次窗口加载 + 单次归因）。统计时长混入刷题会话（PracticeSession.duration_sec，排除番茄已计时区间避免 double count）。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| date | string? | YYYY-MM-DD，默认当前学习日 |
+
+```json
+{
+  "stats": { "today_sessions": 2, "today_duration_sec": 1800, ... },
+  "trends": [
+    {"date": "2026-08-03", "sessions": 1, "duration_sec": 1500}
+  ],
+  "daily_summary": { "date": "2026-08-09", "sessions": 5, "duration_sec": 3600, "subjects": [...] }
+}
+```
+
+### GET `/pomodoro/history`
+
+统计页统一学习记录（分页），番茄会话与刷题会话混排：PomodoroSession + PracticeSession 按 start_time UNION DESC 全局翻页。每条记录带跨来源唯一 `record_key`（`pomodoro:<id>` / `practice:<id>`）。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| page | int | 默认 1 |
+| page_size | int | 默认 20，最大 100 |
+| date | string? | YYYY-MM-DD 按学习日过滤 |
+
+```json
+{
+  "items": [
+    {
+      "record_key": "pomodoro:12",
+      "record_type": "pomodoro",      // pomodoro / practice
+      "id": 12,
+      "user_id": 1,
+      "subject_id": 2,
+      "subject_code": "math2",
+      "subject_name": "数学二",
+      "start_time": "2026-08-09T10:00:00",
+      "end_time": "2026-08-09T10:25:00",
+      "actual_duration": 1500,
+      "status": "completed",
+      "preset": "standard"
+    },
+    {
+      "record_key": "practice:7",
+      "record_type": "practice",
+      "id": 7,
+      "user_id": 1,
+      "subject_id": 2,
+      "subject_code": "math2",
+      "subject_name": "数学二",
+      "start_time": "2026-08-09T09:30:00",
+      "end_time": "2026-08-09T09:45:00",
+      "actual_duration": 900,
+      "status": "completed",
+      "preset": null
+    }
+  ],
+  "total": 30,
+  "page": 1,
+  "page_size": 20
+}
+```
+
+> 2026-08-10 更新原因：同步 practice/pomodoro 接口（subject_id 化、session 可选、stats by_subject 结构、history 混排、statistics-overview、knowledge-states/weak-knowledge-points/subjects 新接口）
 
 ---
 

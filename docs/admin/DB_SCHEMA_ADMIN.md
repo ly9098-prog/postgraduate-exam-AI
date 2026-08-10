@@ -1,12 +1,13 @@
 # 数据库设计规划
 
-> 版本：v2.4（AI 模型配置与 AI 配置键值表同步版） | 状态：Phase 7+ 扩展已实施 | 更新：2026-06-10
+> 版本：v2.5（题目图片/选项、知识点关联表同步版） | 状态：Phase 7+ 扩展已实施 | 更新：2026-08-10
 > ORM：SQLAlchemy | DB：PostgreSQL（生产共享实例）/ SQLite（开发兼容）
 > 修订自审计报告 I1（新增 subjects）、C6（新增 question_versions）、C5（operation_logs → audit_log + severity）、O1（IP 字段）、C1（双身份系统说明）
 >
 > - **变更原因**：2026-05-30 同步 Phase 7 新增 `admin_ai_settings`、`admin_ai_usage_monthly` 与 Alembic migration `i0e1f2a3b4c5_add_admin_ai_settings.py`。
 > - **变更原因**：2026-05-30 同步题库 Level 1 去重在既有 `questions` / `question_imports` 上新增的 hash 与重复标记字段。
 > - **变更原因**：2026-06-10 同步 AI 解析设置配置接口新增 `admin_ai_model_configs`（模型配置表）和 `admin_ai_configs`（AI 配置键值表）。
+> - **变更原因**：2026-08-10 同步 `question_knowledge_points` 关联表成为题目知识点唯一事实源（移除 `questions.knowledge_points` JSON 列），以及题目图片存储约定（question-assets，`{question_id}/{uuid}.{ext}`）。
 
 ---
 
@@ -353,6 +354,27 @@ OCR 管线相关：   ocr_correction_prompt, ocr_strategy_math_formula,
                 completion_auto_knowledge_tags
 ```
 
+---
+### 2.12 question_knowledge_points（题目-知识点关联表，2026-08-10 同步）
+
+> 题目知识点唯一事实源。`questions.knowledge_points` JSON 列已移除，映射统一落到本关联表。
+
+核心字段：
+- `id`：主键自增。
+- `question_id`：FK `questions.id`，`ondelete=CASCADE`，带索引。
+- `knowledge_point_id`：FK `knowledge_points.id`，带索引。
+- `role`：默认 `main`。
+- `weight`：默认 `1.0`。
+- `source`：来源标记（`imported` / `admin` 等）。
+- `position`：保留原 `questions.knowledge_points` JSON 数组下标（0 基），用于展示顺序。
+- `created_at` / `updated_at`。
+
+约束与语义：
+- 唯一约束 `(question_id, knowledge_point_id)`（`uq_qkp_question_kp`）。
+- 知识点按 `subject_id + normalized_name` 归一化去重（`knowledge_points` 唯一约束 `uq_kp_subject_id_normalized_name`）。
+- 硬删题目由 DB `ON DELETE CASCADE` 清理关联行。
+- 读：`load_question_kps` 一次查询按 `position,id` 批量加载展示名；写：`sync_question_knowledge_points`（additive / replace 语义），`replace=True` 时先删后 flush 再两阶段更新 position 避免唯一约束瞬时冲突。
+
 ## 三、复用已有表（需变更字段）
 
 ### 3.1 users（小程序用户）— 新增封禁字段
@@ -426,9 +448,20 @@ review_status 枚举扩展：
 
 由于 `review_status` 预期为 String 字段，字段已存在时无需 migration，仅需在文档与代码层约定取值；若字段不存在或类型不兼容，必须补 migration 方案并先确认 FastAPI 兼容。
 
+**知识点关联（2026-08-10 同步，关联表为唯一事实源）**：
+- `questions.knowledge_points` JSON 列已移除，题目知识点改由 `question_knowledge_points` 关联表承载（见 3.12）。
+- `Question` ORM 保留 `knowledge_point_links`（association metadata：role/weight/source/position）与 `kp_links`（viewonly 便捷关系）。
+- Admin 侧读题目知识点统一走 `load_question_kps`（按 position,id 排序）；保存统一走 `sync_question_knowledge_points` / `replace_question_knowledge_points`（replace 语义，关联表写完删）。
+- subject 变更时按新 `question.subject_id` 重建知识点映射；`kp_names=None` 表示不改动、`=[]` 且 replace 表示显式清空。
+
 **编辑流程**（C6）：
 - 持有 `question:write` + `question:review` 的 admin 编辑：保持 `approved` 状态，但写 question_versions
 - 仅持有 `question:write` 的 admin 编辑：`approved → re_pending`，写 question_versions，等待 reviewer 重审
+
+**题目图片存储约定（2026-08-10 同步）**：
+- 题干 / 选项图片上传后压缩并存入 **question-assets** 存储后端（`get_question_assets_storage`），`storage_key` 形如 `{question_id}/{uuid}.{png|webp|jpg}`（按文件魔数判定后缀），通过 `/static/question-assets/...` 挂载对外访问。
+- 题干图存储在 `content.segments` 的 image segment（`semantic_role: "content_image"`）；选项图存储在 `options[key]` 的 image segment（`semantic_role: "option_image"`），`questions.image_url` 作为冗余展示字段由 `extract_image_urls_from_content` 同步维护。
+- 删除/替换后走 `AssetReferenceService` 引用检查，`reference_count == 0` 才物理删文件；`question_versions` 故意不参与引用计数（历史快照保留旧 URL）。
 
 ---
 
@@ -482,6 +515,7 @@ model QuestionImport {
 | audit_logs | `operator_id`, `action`, `(resource_type, resource_id)`, `severity`, `created_at` | 多维查询 + 分区裁剪 |
 | subjects | `parent_id`, `code` (unique), `path` | 树形查询、物化路径 |
 | question_versions | `(question_id, version)` (unique), `question_id`, `edited_by` | 版本查询、按编辑者过滤 |
+| question_knowledge_points | `question_id`, `knowledge_point_id`, 唯一 `(question_id, knowledge_point_id)` | 题目知识点关联查询 |
 | questions | 既有索引 + `question_hash` + `(subject, review_status, is_active, created_at)` 复合索引 | 去重查询、审核列表高频查询 |
 | users | 既有 `openid` + `is_banned`（部分索引）| 过滤封禁用户 |
 | question_imports | 既有 + `question_hash` + `duplicate_status` + `reviewed_by` | 导入去重标记、反查审核人 |

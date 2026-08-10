@@ -1,11 +1,12 @@
 # Admin API 规范
 
-> 版本：v2.5（AI 解析设置配置接口同步版） | 状态：Phase 7+ 扩展已实施 | 更新：2026-06-10
+> 版本：v2.6（题目图片/选项、公式卡、知识点别名搜索同步版） | 状态：Phase 7+ 扩展已实施 | 更新：2026-08-10
 > 修订自审计报告 I8（统一 Stripe 风格）、I10（liveness/readiness）、C1（拆分 app-users 与 admin-users）
 >
 > - **变更原因**：2026-05-30 同步 Phase 7 新增 AI 解析设置与月度用量接口、权限要求和导入 enrich 前置拦截语义。
 > - **变更原因**：2026-05-30 同步题库 Level 1 完全重复检测在导入批次详情 / 审核队列返回的重复字段，以及发布阶段拦截语义。
 > - **变更原因**：2026-06-10 同步 AI 解析设置页面配置接口（`/ai-models`、`/ai-configs`）。
+> - **变更原因**：2026-08-10 同步题目图片上传/替换/删除、快捷添加选项、keyword 匹配知识点名与别名，以及公式卡 API 与 PUT 版本号推导（行锁 + max 版本）。
 
 ---
 
@@ -29,7 +30,7 @@ Authorization: Bearer <access_token>
 URL 携带 `/v1/`，后期升级为 `/v2/` 时保持向后兼容；不在 Header 中传版本号。
 
 ### Idempotency（O4，关键写操作支持）
-关键写操作（如 batch-approve）支持：
+关键写操作（如 `/imports/{batchId}/publish`、`/questions/batch-delete`）支持：
 ```
 Idempotency-Key: <UUID>
 ```
@@ -62,9 +63,8 @@ PATCH  /v1/{resource}/{id}      # 部分更新
 DELETE /v1/{resource}/{id}      # 删除
 
 # 特殊操作用动词后缀
-POST   /v1/questions/{id}/approve
-POST   /v1/questions/{id}/reject
-POST   /v1/questions/batch-approve
+POST   /v1/imports/{batchId}/publish
+POST   /v1/imports/questions/{importId}/approve
 POST   /v1/app-users/{id}/ban
 POST   /v1/app-users/{id}/unban
 POST   /v1/auth/logout
@@ -152,18 +152,49 @@ POST   /v1/auth/refresh
 
 | 方法 | 路径 | 描述 | 权限 |
 |------|------|------|------|
-| GET | `/questions` | 列表（多维过滤） | question:read |
+| GET | `/questions` | 列表（多维过滤；keyword 命中题干/解析/知识点名及别名） | question:read |
 | GET | `/questions/{id}` | 详情 | question:read |
 | GET | `/questions/{id}/versions` | 历史版本列表 | question:read |
 | GET | `/questions/{id}/versions/{version}` | 某版本详情 | question:read |
-| PATCH | `/questions/{id}` | 编辑（编辑后视权限进入 re_pending） | question:write |
-| DELETE | `/questions/{id}` | 删除 | question:delete |
-| POST | `/questions/{id}/approve` | 审核通过 | question:review |
-| POST | `/questions/{id}/reject` | 审核拒绝（Body: `{ reason }`） | question:review |
-| POST | `/questions/batch-approve` | 批量通过（ids 上限 50） | question:batch_review |
-| POST | `/questions/batch-reject` | 批量拒绝 | question:batch_review |
-| PATCH | `/questions/{id}/toggle-active` | 上下架 | question:write |
-| POST | `/questions/{id}/rollback` | 回滚到指定版本（预留 Phase 3.5+） | question:write + question:review |
+| PATCH | `/questions/{id}` | 编辑（无实际字段变更不写版本/审计；知识点评关联表） | question:write |
+| DELETE | `/questions/{id}` | 软删除（is_active=false） | question:delete |
+| POST | `/questions/batch-delete` | 批量软删除（ids 上限 50） | question:delete |
+| POST | `/questions/{id}/options` | 快捷添加选项（single_choice/multiple_choice） | question:write |
+| POST | `/questions/{id}/images` | 上传/替换题干或选项图片（multipart） | question:write |
+| DELETE | `/questions/{id}/images` | 删除题干或选项图片 | question:write |
+| PATCH | `/questions/{id}/toggle-active` | 上下架（非已审核题目不可激活） | question:write |
+| POST | `/questions/embeddings/backfill` | 批量回填题目 embedding 向量 | question:write |
+| GET | `/questions/embeddings/status` | 查看向量功能状态与 embedding 统计 | question:read |
+
+> **审核通过/拒绝不走 `/questions`**：题目审核（含批量）全部在导入管理 `/imports`（§3.8，权限 `import:write`）。历史上文档化的 `POST /questions/{id}/approve`、`/reject`、`/batch-approve`、`/batch-reject`、`/rollback` **均未实现**，勿按此调用。
+
+**`GET /questions` keyword 搜索（2026-08-09 同步）**：
+- `keyword` 命中范围：`answer`、`analysis`、`raw_content` 模糊匹配，以及 `Question.id` 命中知识点的子查询。
+- 知识点子查询：按 `question_knowledge_points` 关联 `knowledge_points`，命中 `knowledge_points.name ILIKE` 或 **`knowledge_points.aliases` JSON 数组逐元素匹配**（适配 `knowledge_points.aliases` 新增别名字段）。
+- SQLite 用 `json_each`，PostgreSQL 用 `json_array_elements_text` 逐元素匹配，两端行为一致。
+
+**`POST /questions/{id}/options`（2026-08-09 同步）**：
+- Body：`{ "options": [{ "text": string, "key"?: string }, ...], "edit_reason"?: string }`，`options` 数量 1-26。
+- 仅 `single_choice` / `multiple_choice` 题型支持。
+- `key` 缺省时自动分配下一个空闲字母（A-Z）；显式 `key` 必为 `A-Z` 单字母。
+- 选项合并大小写不敏感判重（历史小写 `key` 与自动大写字母视为同槽位），显式 key 冲突返回 422。
+- 原有选项的富键（`semantic_role`、`is_question_image` 等）在合并时保留。
+
+**`POST /questions/{id}/images`（上传/替换，2026-08-09 同步）**：
+- multipart：`file`（图片，PNG/JPEG/WebP，最大 10MB，超出返回 413）、`target`、`replace_url`（可选，替换指定 URL）。
+- `target` 取值：`stem` 或 `option:A`-`option:Z`（非法返回 400）。
+- 图片流式写入临时文件 → 压缩（同 `compress_image`）→ 存入 question-assets 存储后端，`storage_key` 形如 `{question_id}/{uuid}.{png|webp|jpg}`，返回题目列表项。
+- **先校验题目存在与权限，再上传**——非法请求不浪费对象存储往返。
+- 题干图：在 `content.segments` 追加 `{type: "image", url, semantic_role: "content_image"}`（旧版 `{text,stem}` 内容自动升级为 segments）；`replace_url` 指定时替换匹配 segment。
+- 选项图：将 `options[key]` 升级/追加 image segment（`semantic_role: "option_image"`），保留选项文本与既有富键。
+- 写入 `question.update` 审计（severity=important）；替换后旧 URL 若不再被任何题目引用则由孤儿清理删除。
+
+**`DELETE /questions/{id}/images`（删除，2026-08-09 同步）**：
+- Body：`{ "target": string, "url": string, "edit_reason"?: string }`。
+- 删除题干图：移除 `content.segments` 中匹配 URL 的 image segment。
+- 删除选项图：移除 `options[key]` 中匹配的 URL 的 image segment；无剩余 image segment 且无其他富键时降级为平文本。
+
+**图片孤儿清理**：删除/替换后调用 `AssetReferenceService` 扫描引用（含 `questions.content/image_url/options` 与 `question_imports`），`reference_count == 0` 才删文件。
 
 ### 3.8 导入管理 `/imports`
 
@@ -171,8 +202,23 @@ POST   /v1/auth/refresh
 |------|------|------|------|
 | GET | `/imports` | 导入批次列表 | import:read |
 | GET | `/imports/{batchId}` | 批次详情（含题目分页） | import:read |
+| POST | `/imports/upload` | 上传文件创建导入管线（Excel/PDF/TXT/图片） | import:write |
+| GET | `/imports/review-queue` | 审核队列 | import:read |
+| GET | `/imports/subject-options` | 科目选项 | import:read |
+| GET | `/imports/questions/{importId}` | 导入题详情 | import:read |
+| PUT | `/imports/questions/{importId}` | 修改导入题字段（含 status / review_note / parsed_*） | import:write |
+| POST | `/imports/questions/{importId}/complete` | 单题 AI 补全（辅助，不绕过人工确认） | import:write |
+| POST | `/imports/questions/batch-complete` | 批量 AI 补全（ids 上限 50） | import:write |
+| POST | `/imports/questions/{importId}/approve` | 单题审核通过（审核即发布） | import:write |
+| POST | `/imports/questions/{importId}/reject` | 单题审核拒绝 | import:write |
+| POST | `/imports/{batchId}/approve` | 批次审核通过（逐题 Level 1 重复检测后发布） | import:write |
+| POST | `/imports/{batchId}/approve-low-risk` | 仅通过 low risk 题目 | import:write |
+| POST | `/imports/{batchId}/reject` | 批次审核拒绝 | import:write |
+| POST | `/imports/{batchId}/publish` | 批次发布（写入正式 questions） | import:write |
 | POST | `/imports/{batchId}/enrich` | 创建 AI 辅助处理任务（创建前检查全局 AI 开关与月度额度） | import:write |
 | GET | `/imports/{batchId}/status` | 读取该批次最新 AI 任务进度（Redis/cache） | import:read |
+| DELETE | `/imports/questions/{importId}` | 删除导入题 | import:write |
+| DELETE | `/imports/{batchId}` | 删除整个批次 | import:write |
 
 **查询参数（Phase 4 实现，2026-05-29）**：
 - `GET /imports`：`page`（默认 1，≥1）、`page_size`（默认 20，1-100）、`status`、`source_type`、`keyword`。
@@ -188,7 +234,7 @@ POST   /v1/auth/refresh
 - `404`：批次不存在，或该批次没有可查询的 AI 任务状态。
 - `422`：请求参数或业务规则不满足。
 - `POST /imports/{batchId}/enrich` 写入 `admin:ai:task:{taskId}` 与 `admin:ai:batch:{batchId}:task`，TTL 当前为 86400 秒，并写入 `import.enrich` 审计日志；创建前受 AI 设置服务的全局开关与月度额度拦截。
-- `POST /imports/{batchId}/approve` / 批次内导入题审核通过时会先走 Level 1 完全重复检测；若 `subject + question_hash` 命中正式题库重复题，则返回重复信息并阻止发布。
+- `POST /imports/{batchId}/approve` / `POST /imports/questions/{importId}/approve`（审核即发布）时逐题走 Level 1 完全重复检测；若 `subject_id + question_hash` 命中正式题库重复题，则将该导入题置为 `published` 并挂到已发布题目 `question_id`，不重复创建；发布失败回滚为 `pending` 留在审核队列。
 
 **`/imports/{batchId}/enrich` 约束**：
 - 当前实现仍通过后台任务状态承载 AI 辅助处理；不得直接调用小程序端 API。
@@ -380,6 +426,50 @@ completion_prompt, completion_auto_stem, completion_auto_options,
 completion_auto_answer_reasoning, completion_auto_knowledge_tags
 ```
 
+### 3.15 公式卡 `/formulas`（2026-08-10 同步）
+
+> 权限前缀使用连字符：`formula:read` / `formula:create` / `formula:update` / `formula:delete` / `formula:review` / `formula:import` / `formula-category:read` / `formula-category:write`。
+
+| 方法 | 路径 | 描述 | 权限 |
+|------|------|------|------|
+| GET | `/formulas` | 公式卡列表（status / category_id / q / library_type 过滤，分页） | formula:read |
+| GET | `/formulas/tags` | 公式标签列表（只读） | formula:read |
+| GET | `/formulas/{card_id}` | 公式卡详情 | formula:read |
+| POST | `/formulas` | 创建公式卡（status=draft，version=1，写 v1 快照） | formula:create |
+| PUT | `/formulas/{card_id}` | 更新公式卡（内容变更重置 draft，写新版本快照） | formula:update |
+| DELETE | `/formulas/{card_id}` | 软删除（published 需先下架；写删除快照） | formula:delete |
+| POST | `/formulas/{card_id}/review` | 状态机操作（approve/reject/publish/offline/restore） | formula:review |
+| POST | `/formulas/batch-review` | 批量状态机操作 | formula:review |
+| GET | `/formulas/{card_id}/versions` | 版本历史列表 | formula:read |
+| POST | `/formulas/{card_id}/check-duplicate` | 重复检测（同 category + 同 content_hash） | formula:read |
+| POST | `/formulas/validate-latex` | 服务端 LaTeX 校验（危险命令 / 括号配平） | formula:read |
+| GET | `/formulas/import-jobs` | 导入任务列表 | formula:import |
+| GET | `/formulas/import-jobs/{job_id}` | 导入任务详情 | formula:import |
+| GET | `/formulas/import-jobs/{job_id}/items` | 导入项分页（review_status 过滤） | formula:import |
+| PUT | `/formulas/import-items/{item_id}/review` | 审核导入项 | formula:import |
+| GET | `/formulas/{card_id}/graph-assets` | 图资产列表 + effective | formula:read |
+| PUT | `/formulas/{card_id}/graph-assets/{asset_id}/metadata` | 更新图资产 alt_text / description | formula:update |
+| POST | `/formulas/{card_id}/graph-assets/upload` | 上传/替换图资产（pure_formula 拒绝） | formula:update |
+| DELETE | `/formulas/{card_id}/graph-assets/{source_type}` | 删除图资产（uploaded/template） | formula:update |
+| POST | `/formulas/{card_id}/graph/preview` | 生成预览图（graph_status=draft） | formula:update |
+| POST | `/formulas/{card_id}/graph/confirm` | 确认预览为正式资产（preview_token + card_version 乐观锁） | formula:update |
+| POST | `/formulas/{card_id}/graph/regenerate` | 重新生成并替换正式资产 | formula:update |
+| DELETE | `/formulas/{card_id}/graph/generated` | 仅删生成资产（保留手动上传） | formula:update |
+| POST | `/formulas/graphs/generate-missing` | 批量补生成缺失图（返回 job_id 轮询） | formula:update |
+| GET | `/formulas/graphs/generate-missing/{job_id}` | 批量补生成任务状态 | formula:read |
+| GET | `/formulas/categories` | 分类树 | formula-category:read |
+| POST | `/formulas/categories` | 创建分类 | formula-category:write |
+| PUT | `/formulas/categories/{category_id}` | 更新分类 | formula-category:write |
+
+**`PUT /formulas/{card_id}` 版本号与审计链（2026-08-09 同步，b0190943）**：
+- 问题：`card.version` 可能滞后于审计链——publish 动作会在 `card.version + 1` 处写快照但**不递增列值**，导致按 `card.version + 1` 直接取号可能与 `uq_formula_card_versions_card_version` 唯一约束冲突。
+- 修复：
+  1. `SELECT ... FOR UPDATE` 行锁该卡片，串行化同一卡片的并发编辑，消除 select max→+1 的 TOCTOU 竞态。
+  2. 从 `formula_card_versions` 取 `MAX(version)` 推导新版本号：`next_version = max(card.version, max_ver) + 1`。
+  3. 写 `FormulaCardVersion`（action=update）与审计 `formula.update` 在同一事务内。
+- 内容字段（formula_blocks）变更时重算 `content_hash`（SHA-256）。
+- 状态为 `approved` / `rejected` 的卡片内容更新后重置为 `draft`。
+
 ---
 
 ## 四、统一响应结构（I8 修订：Stripe 风格）
@@ -426,7 +516,7 @@ completion_auto_answer_reasoning, completion_auto_knowledge_tags
 {
   "error": {
     "type": "permission_denied",
-    "message": "没有权限执行此操作（缺少 question:review）",
+    "message": "没有权限执行此操作（缺少 import:write）",
     "hint": "请联系超级管理员授权",
     "field": "permission"
   },
@@ -495,6 +585,11 @@ subject=408_ds&status=pending&questionType=choice
 &keyword=操作系统&year=2023&importBatchId=batch_001
 ```
 
+**题目列表实际查询参数（2026-08-10 同步，与代码一致）**：
+- `GET /questions`：`page`、`page_size`、`subject_id`、`review_status`、`is_active`、`question_type`、`keyword`、`year`、`import_batch_id`。
+- `keyword` 命中题干（raw_content/answer/analysis）与知识点名及别名（见 3.7）。
+- 排序固定为 `updated_at DESC, id DESC`。
+
 小程序用户列表过滤：
 ```
 keyword=张三&isBanned=false
@@ -515,21 +610,20 @@ operatorId=1&action=question.*&severity=critical
 
 ## 七、批量操作规范（I3 修订）
 
+> 2026-08-10 同步：题目批量接口为 `POST /questions/batch-delete`（question:delete）。`POST /questions/batch-approve` / `batch-reject` **未实现**——题目审核（含批量）走导入管理 `/imports/questions/batch-complete`（AI 补全）与 `/imports/{batchId}/approve|reject|publish`（§3.8）。
+
 ```
-POST /v1/questions/batch-approve
-权限：question:batch_review
+POST /v1/questions/batch-delete
+权限：question:delete
 Body: { "ids": [1, 2, 3, ...] }  // 上限 50
 
 响应：
 {
   "data": {
-    "totalRequested": 50,
-    "successCount": 47,
-    "failedCount": 3,
     "successIds": [1, 2, 3, ...],
     "failedItems": [
-      { "id": 12, "reason": "题目不存在" },
-      { "id": 23, "reason": "状态不允许" }
+      { "id": 12, "error": "题目不存在" },
+      { "id": 23, "error": "状态不允许" }
     ]
   }
 }

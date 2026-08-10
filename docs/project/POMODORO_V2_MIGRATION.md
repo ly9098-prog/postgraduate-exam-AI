@@ -67,11 +67,12 @@ Session + PauseIntervals → active timeline → attribution engine → daily/we
 
 ### 1.3 当前部署状态（重要）
 
-- 生产当前运行的是 **旧 Pomodoro 代码**（尚无 pause intervals / 学习日统计）。
+- ✅ **已完成（2026-08-08）**：生产 PostgreSQL（`101.33.231.186`）已完整执行 §3 全流程，Pomodoro
+  runtime 已为 canonical（无 legacy fallback）。执行记录见 §8.1。
 - 本仓库的 Study Day / Pause Interval / Attribution Engine 改造（Alembic `48e17ed2a3f3`）与
-  本迁移（`f6e7a8b9c0d1` + 三个 scripts + legacy 删除）尚未上线。
+  本迁移（`f6e7a8b9c0d1` + 三个 scripts + legacy 删除）已上线生产。
 - 生产 app 启动自检（`production_config_validator`）校验 **alembic 必须在 head**，否则拒绝启动。
-  因此 schema 迁移必须先于新 app 上线。
+  schema 迁移必须先于新 app 上线（新增迁移同理，先 build 新镜像再 `run --rm app alembic upgrade head`）。
 
 ---
 
@@ -379,3 +380,45 @@ python -m scripts.verify_pomodoro_v2_migration [--sample-size N]
 > `_sql_dt()` 把 datetime 序列化为字符串绑定，SQLite 接受但 PostgreSQL/asyncpg 拒绝（timestamp 列期望 datetime
 > 对象）。修复：`_process_completed` 改为直接绑定 datetime 对象（SQLite/PG 通用），本地 25 个迁移测试复验通过后
 > 重跑 apply 成功。历史 schema 迁移（alembic）与回滚不受影响。
+
+---
+
+## 9. 扩展：刷题时长并入番茄学习统计（2026-08-09 已完成）
+
+V2 迁移落地后，attribution engine 扩展纳入刷题时长（commit `7b79ca2a`）。实现事实如下。
+
+### 9.1 PracticeSession 模型（新增）
+
+`backend/app/models/practice_session.py` — 一次完整刷题会话（开始一组练习到成功交卷）一条记录，
+与 `PracticeRecord`（每道题一条，`used_time` 做单题行为分析）语义分离：
+
+| 字段 | 说明 |
+|------|------|
+| `user_id` / `subject_id` | 用户 / 科目 FK |
+| `request_id` | 幂等 key；`(user_id, request_id)` 部分唯一索引（request_id IS NOT NULL），网络重试不重复插入 |
+| `mode` | `random` / `sequence` |
+| `started_at` / `finished_at` | 会话墙钟起止（`finished_at >= started_at` CHECK） |
+| `duration_sec` | 权威学习时长（`>= 0` CHECK） |
+| `question_count` / `answered_count` / `correct_count` / `wrong_count` | 题量统计 |
+| `status` | 只在成功交卷时创建，恒为 `completed` |
+
+### 9.2 学习统计中的刷题去重（重叠排除）
+
+- 统计聚合（`build_pomodoro_statistics_snapshot`）同时加载 Pomodoro 与 Practice 两类 session。
+- `counted_spans` 累积所有 Pomodoro 的 **active（非暂停）区间**；Practice 只补充未被这些区间覆盖的部分，
+  避免学习总时长 double count。
+- 刷题会话业务上互斥，不把已处理的刷题窗口回填进 `counted_spans`，故不做顺序依赖的去重。
+
+### 9.3 跨日归因（比例排除）
+
+- Practice 的 `duration_sec` 可能小于墙钟跨度（前台计时扣掉后台时间），因此用
+  `split_duration_excluding_intervals` 按 `non_excluded / wall` 比例缩放排除，而不是平铺墙钟相减，
+  保证 `sum(contributions) <= target_duration` 且不跨日丢秒。
+- 顶层 `sessions`（stats/trends/daily_summary.sessions）保持番茄次数，不含刷题；科目级
+  `subjects[].sessions` 定义为「当天开始的该科目学习记录数」，含刷题，供前端跨统计日渗透判断。
+
+### 9.4 history 混排
+
+- `/pomodoro/history` 由 `PomodoroSession + PracticeSession` UNION 后按 `start_time DESC` 全局 offset/limit
+  分页，带唯一 `record_key`（`pomodoro:<id>` / `practice:<id>`），避免两来源各自取 N 条再拼接丢页。
+

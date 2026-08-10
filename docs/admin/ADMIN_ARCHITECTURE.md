@@ -117,6 +117,7 @@ backend/app/
 │       ├── dashboard.py       # 统计概览
 │       ├── admin_ai_settings.py  # AI 解析设置全局开关 / 月度额度
 │       ├── admin_ai_config.py    # AI 模型配置 / AI 配置键值对
+│       ├── admin_formulas.py     # 公式卡 CRUD / 状态机 / 图资产 / 公式导入（2026-08-10 同步）
 │       └── health.py          # liveness / readiness
 ├── core/                      # 配置 / 数据库 / 安全 / JWT
 ├── models/                    # SQLAlchemy 模型（admin_users / roles / permissions ...）

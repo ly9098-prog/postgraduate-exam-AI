@@ -75,3 +75,21 @@
 |-------|-------|------|
 | `--shadow-card` | `0 2rpx 12rpx rgba(0,0,0,0.06)` | 卡片阴影 |
 | `--shadow-card-hover` | `0 4rpx 16rpx rgba(0,0,0,0.08)` | 卡片按压态 |
+
+---
+
+## 主题变体（premium-review）
+
+学习流程页（review-today、wrong-detail、practice-result、`quiz-runner theme="premium-review"`）使用深墨绿 + 荧光绿主题，独立于上方基础 token：
+
+| 语义 | 色值 | 用途 |
+|------|------|------|
+| 深墨绿 | `#0C2A1F` / `#123A2B` / `#0F2D22` | 顶部深色区、导航、主操作按钮 |
+| 荧光绿 | `#B8FF13` / `#A9D800` / `#B7E82A` | 强调色、进度点、箭头、正确标记 |
+| 暖米背景 | `#F4F4EE` / `#F7F7F2` / `#F4F2EC` | 页面背景 |
+
+关键布局事实：
+
+- review-today 概览：记忆轨迹弧线装饰（`trail-arc`）+ 独立操作 dock（主按钮不放入带 transform 动画的容器，避免 iOS/微信 WebView 对 `position: fixed` 按动画容器定位）+ `page-meta` 锁定 overview 阶段 100vh
+- practice-result：深绿 hero（conic-gradient 正确率环 + 荧光绿进度条）、成长卡 `level-orb`
+- wrong-detail：深色导航 + 荧光绿当前题进度点、底部主操作胶囊
