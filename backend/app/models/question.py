@@ -35,7 +35,6 @@ class Question(Base):
     answer: Mapped[str] = mapped_column(Text, nullable=False)
     question_hash: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
-    knowledge_points: Mapped[list | None] = mapped_column(JSON, nullable=True)
     difficulty: Mapped[int] = mapped_column(SmallInteger, default=3)
     source: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -56,3 +55,22 @@ class Question(Base):
         String(36), nullable=True, unique=True, index=True, default=lambda: str(uuid4())
     )
     sync_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+    # 知识点关联（关联表为唯一事实源）。
+    # knowledge_point_links 保留 association metadata（role/weight/source/position）。
+    # lazy=noload + passive_deletes：硬删题目时交由 DB ON DELETE CASCADE 清理关联行，
+    # 而非加载集合触发 delete-orphan（否则该 cascade 在 noload 下永不生效）。
+    knowledge_point_links = relationship(
+        "QuestionKnowledgePoint",
+        back_populates="question",
+        lazy="noload",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    kp_links = relationship(
+        "KnowledgePoint",
+        secondary="question_knowledge_points",
+        viewonly=True,
+        lazy="noload",
+        order_by="(QuestionKnowledgePoint.position, QuestionKnowledgePoint.id)",
+    )

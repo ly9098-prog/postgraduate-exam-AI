@@ -100,7 +100,6 @@ def _question(review_status="approved", is_active=True):
         options={"A": "1"},
         answer="A",
         analysis="解析",
-        knowledge_points=["函数"],
         difficulty=3,
         import_batch_id="batch-1",
         review_status=review_status,
@@ -110,8 +109,23 @@ def _question(review_status="approved", is_active=True):
     )
 
 
+def _patch_kps(monkeypatch, kps=None):
+    """patch load_question_kps / replace_question_knowledge_points（关联表为数据源）。"""
+    import app.services.knowledge_point_service as kpsvc
+
+    kps = kps if kps is not None else ["函数"]
+    monkeypatch.setattr(
+        admin_question_service, "load_question_kps",
+        AsyncMock(return_value={1: list(kps)}),
+    )
+    monkeypatch.setattr(
+        kpsvc, "replace_question_knowledge_points", AsyncMock(return_value={}),
+    )
+
+
 @pytest.mark.asyncio
 async def test_update_admin_question_snapshots_changes(monkeypatch):
+    _patch_kps(monkeypatch)
     question = _question()
     db = _Db(question=question, max_version=2)
     audit = AsyncMock()
@@ -126,11 +140,13 @@ async def test_update_admin_question_snapshots_changes(monkeypatch):
     assert isinstance(version, QuestionVersion)
     assert version.version == 3
     assert version.answer == "A"
+    assert version.knowledge_points == ["函数"]
     assert audit.await_args.kwargs["severity"] == "important"
 
 
 @pytest.mark.asyncio
 async def test_update_admin_question_keeps_approved_with_review_permission(monkeypatch):
+    _patch_kps(monkeypatch)
     question = _question()
     db = _Db(question=question, permission_names=["question:review"])
     audit = AsyncMock()
@@ -145,6 +161,7 @@ async def test_update_admin_question_keeps_approved_with_review_permission(monke
 
 @pytest.mark.asyncio
 async def test_soft_delete_and_toggle_active(monkeypatch):
+    _patch_kps(monkeypatch)
     question = _question()
     db = _Db(question=question)
     audit = AsyncMock()

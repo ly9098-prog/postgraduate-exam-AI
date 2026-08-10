@@ -29,12 +29,16 @@ async def create(
         options=options,
         answer=answer,
         analysis=analysis,
-        knowledge_points=knowledge_points,
         difficulty=difficulty,
         source=source,
         year=year,
     )
     db.add(q)
+    await db.flush()
+    if knowledge_points is not None:
+        from app.services.knowledge_point_service import sync_question_knowledge_points
+
+        await sync_question_knowledge_points(db, q, knowledge_points, source="manual")
     await db.commit()
     await db.refresh(q)
     return q

@@ -10,7 +10,6 @@ from math import log1p
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.time_utils import utcnow
 from app.models.admin import Subject
@@ -20,6 +19,7 @@ from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.services.admin_subject_service import resolve_subject_ids
+from app.services.knowledge_point_service import load_question_kps
 
 logger = logging.getLogger(__name__)
 
@@ -178,11 +178,10 @@ async def update_user_knowledge_state_after_answer(
     """答题后更新相关知识点掌握度（V3 增量模型）。
 
     流程：
-    1. 查找题目的知识点映射（QuestionKnowledgePoint → KnowledgePoint）。
-    2. 如果没有映射，尝试从 question.knowledge_points JSON 自动同步。
-    3. 遍历每个知识点，创建或更新 UserKnowledgeState。
-    4. 使用 compute_mastery_delta 计算增量，更新 mastery_score。
-    5. 更新 confidence、recent_* 系列统计。
+    1. 查找题目的知识点映射（QuestionKnowledgePoint → KnowledgePoint，唯一事实源）。
+    2. 遍历每个知识点，创建或更新 UserKnowledgeState。
+    3. 使用 compute_mastery_delta 计算增量，更新 mastery_score。
+    4. 更新 confidence、recent_* 系列统计。
 
     返回: {"updated": int, "created": int}
     """
@@ -195,28 +194,6 @@ async def update_user_knowledge_state_after_answer(
         .where(QuestionKnowledgePoint.question_id == question_id)
     )
     mappings = result.all()
-
-    # 2. 如果没有映射，尝试从 question.knowledge_points JSON 自动同步
-    if not mappings:
-        q_result = await db.execute(
-            select(Question).options(selectinload(Question.subject_ref)).where(Question.id == question_id)
-        )
-        question = q_result.scalar_one_or_none()
-        if question and question.knowledge_points:
-            try:
-                from app.services.knowledge_point_service import (
-                    sync_question_knowledge_points,
-                )
-                await sync_question_knowledge_points(db, question, source="auto")
-                # 重新查映射
-                result = await db.execute(
-                    select(QuestionKnowledgePoint, KnowledgePoint)
-                    .join(KnowledgePoint, QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
-                    .where(QuestionKnowledgePoint.question_id == question_id)
-                )
-                mappings = result.all()
-            except Exception:
-                logger.warning("auto-sync KP for qid=%d failed", question_id, exc_info=True)
 
     if not mappings:
         return {"updated": 0, "created": 0}
@@ -386,7 +363,7 @@ async def _fallback_weak_kps(
     cutoff = utcnow() - timedelta(days=30)
 
     result = await db.execute(
-        select(PracticeRecord, Question.knowledge_points)
+        select(PracticeRecord, Question.id)
         .join(Question, PracticeRecord.question_id == Question.id)
         .where(
             PracticeRecord.user_id == user_id,
@@ -399,9 +376,11 @@ async def _fallback_weak_kps(
     if not rows:
         return []
 
+    kp_map = await load_question_kps(db, [qid for _record, qid in rows])
+
     kp_stats: dict[str, dict] = {}
-    for record, kps_json in rows:
-        kps = kps_json or []
+    for record, qid in rows:
+        kps = kp_map.get(qid, [])
         for kp in kps:
             if kp not in kp_stats:
                 kp_stats[kp] = {"total": 0, "correct": 0}

@@ -11,6 +11,7 @@ from app.schemas.question import (
     QuestionResponse,
 )
 from app.services import question_service as svc
+from app.services.knowledge_point_service import load_question_kps
 
 router = APIRouter(prefix="/api/v1/questions")
 
@@ -27,8 +28,10 @@ def _sanitize_content(content: dict | None) -> dict | None:
     return sanitized
 
 
-def _public_question(question) -> QuestionPublicResponse:
+def _public_question(question, kps=None) -> QuestionPublicResponse:
     payload = QuestionPublicResponse.model_validate(question)
+    if kps is not None:
+        payload = payload.model_copy(update={"knowledge_points": kps})
     subject = question.subject_ref
     return payload.model_copy(update={
         "subject_code": subject.code if subject else "",
@@ -56,7 +59,9 @@ async def create_question(
         source=data.source,
         year=data.year,
     )
-    return q
+    kp_map = await load_question_kps(db, [q.id])
+    payload = QuestionResponse.model_validate(q)
+    return payload.model_copy(update={"knowledge_points": kp_map.get(q.id, [])})
 
 
 @router.get("")
@@ -69,8 +74,9 @@ async def list_questions(
     _: User = Depends(get_current_user),
 ):
     items, total = await svc.list_questions(db, subject_id, question_type, page, page_size)
+    kp_map = await load_question_kps(db, [q.id for q in items])
     return paginated_response(
-        items=[_public_question(q) for q in items],
+        items=[_public_question(q, kp_map.get(q.id, [])) for q in items],
         total=total,
         page=page,
         page_size=page_size,
@@ -91,7 +97,8 @@ async def random_question(
     q = await svc.get_random(db, subject_id, question_type, exclude)
     if not q:
         raise HTTPException(status_code=404, detail="没有符合条件的题目")
-    return _public_question(q)
+    kp_map = await load_question_kps(db, [q.id])
+    return _public_question(q, kp_map.get(q.id, []))
 
 
 @router.get("/{question_id}/similar")
@@ -140,6 +147,7 @@ async def get_question_detail(
     if not q:
         raise HTTPException(status_code=404, detail="题目不存在")
 
+    kp_map = await load_question_kps(db, [q.id])
     return {
         "id": q.id,
         "subject_id": q.subject_id,
@@ -150,7 +158,7 @@ async def get_question_detail(
         "options": q.options,
         "answer": q.answer,
         "analysis": q.analysis,
-        "knowledge_points": q.knowledge_points,
+        "knowledge_points": kp_map.get(q.id, []),
     }
 
 
@@ -163,4 +171,5 @@ async def get_question(
     q = await svc.get_by_id(db, question_id)
     if not q:
         raise HTTPException(status_code=404, detail="题目不存在")
-    return _public_question(q)
+    kp_map = await load_question_kps(db, [q.id])
+    return _public_question(q, kp_map.get(q.id, []))

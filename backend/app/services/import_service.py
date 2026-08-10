@@ -548,13 +548,17 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
     )
     if image_urls:
         q.image_url = image_urls
-    if knowledge_points:
-        q.knowledge_points = knowledge_points
     if difficulty:
         q.difficulty = difficulty
 
     db.add(q)
     await db.flush()
+    if knowledge_points:
+        from app.services.knowledge_point_service import (
+            sync_question_knowledge_points,
+        )
+
+        await sync_question_knowledge_points(db, q, knowledge_points, source="imported")
     await db.refresh(q)
 
     qi.status = "approved"
@@ -627,15 +631,22 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
         if image_urls:
             q.image_url = image_urls
         ai_meta = qi.ai_metadata or {}
+        kp_names = None
         if isinstance(ai_meta, dict):
             kps = ai_meta.get("knowledge_points")
             if isinstance(kps, list) and kps:
-                q.knowledge_points = kps
+                kp_names = kps
             diff = ai_meta.get("difficulty")
             if isinstance(diff, int) and 1 <= diff <= 5:
                 q.difficulty = diff
         db.add(q)
         await db.flush()
+        if kp_names:
+            from app.services.knowledge_point_service import (
+                sync_question_knowledge_points,
+            )
+
+            await sync_question_knowledge_points(db, q, kp_names, source="imported")
         await db.refresh(q)
 
         qi.status = "approved"

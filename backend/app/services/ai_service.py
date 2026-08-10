@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.models.ai_chat import AiChat
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
+from app.services.knowledge_point_service import load_question_kps
 
 logger = logging.getLogger(__name__)
 
@@ -363,7 +364,8 @@ async def analyze_error(
 
         api_key, base_url, model_name = creds
 
-        context = build_error_context(wq, q)
+        kp_map = await load_question_kps(db, [q.id])
+        context = build_error_context(wq, q, kp_map.get(q.id, []))
         messages = build_error_analysis(
             context["question"], wq.wrong_answer, q.answer
         )
@@ -569,6 +571,7 @@ async def generate_advice(db: AsyncSession, user_id: int, subject_id: int | None
             select(Question).where(Question.id.in_(qids))
         )
         questions = {q.id: q for q in qr.scalars().all()}
+    kp_map = await load_question_kps(db, qids)
 
     weak_points = set()
     subject_stats = {}
@@ -576,8 +579,7 @@ async def generate_advice(db: AsyncSession, user_id: int, subject_id: int | None
     for w in wrong_list:
         q = questions.get(w.question_id)
         if q:
-            if q.knowledge_points:
-                weak_points.update(q.knowledge_points)
+            weak_points.update(kp_map.get(q.id, []))
             # Use subject_id as label (subject_ref is noload, always None without selectinload)
             subj_label = str(q.subject_id)
             subject_stats[subj_label] = subject_stats.get(subj_label, 0) + 1

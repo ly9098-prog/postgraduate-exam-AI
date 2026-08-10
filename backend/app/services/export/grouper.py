@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 from app.schemas.export_task import ExportGroupBy
+from app.services.knowledge_point_service import load_question_kps
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +52,13 @@ async def group_questions(
     )
     rows = result.fetchall()
 
+    kp_map = await load_question_kps(db, [q.id for _wq, q in rows])
+
     groups_map: dict[str, list[int]] = {}
     _wq_order = {wq_id: idx for idx, wq_id in enumerate(wq_ids)}
 
     for wq, q in rows:
-        group_key, group_title = _group_key_title(group_by, wq, q)
+        group_key, group_title = _group_key_title(group_by, wq, q, kp_map.get(q.id, []))
         if group_key not in groups_map:
             groups_map[group_key] = []
         groups_map[group_key].append(wq.id)
@@ -72,7 +75,7 @@ async def group_questions(
     ]
 
 
-def _group_key_title(group_by: ExportGroupBy, wq: WrongQuestion, q: Question) -> tuple[str, str]:
+def _group_key_title(group_by: ExportGroupBy, wq: WrongQuestion, q: Question, kps: list[str] | None = None) -> tuple[str, str]:
     """Return (sort_key, display_title) for the question."""
     if group_by == ExportGroupBy.SUBJECT:
         subject = _get_subject_label(q)
@@ -83,7 +86,7 @@ def _group_key_title(group_by: ExportGroupBy, wq: WrongQuestion, q: Question) ->
         return (chapter or "其他", chapter or "其他")
 
     if group_by == ExportGroupBy.KNOWLEDGE_POINT:
-        kp = _get_primary_knowledge_point(q)
+        kp = _get_primary_knowledge_point(kps)
         return (kp or "其他知识点", kp or "其他知识点")
 
     if group_by == ExportGroupBy.QUESTION_TYPE:
@@ -113,10 +116,10 @@ def _get_chapter(q: Question) -> str | None:
     return None
 
 
-def _get_primary_knowledge_point(q: Question) -> str | None:
-    """Return the first knowledge point as the primary one."""
-    if q.knowledge_points and len(q.knowledge_points) > 0:
-        return str(q.knowledge_points[0])
+def _get_primary_knowledge_point(kps: list[str] | None) -> str | None:
+    """Return the first knowledge point as the primary one (order by position)."""
+    if kps and len(kps) > 0:
+        return str(kps[0])
     return None
 
 

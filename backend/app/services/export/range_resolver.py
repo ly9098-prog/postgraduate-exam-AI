@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.wrong_question import WrongQuestion
 from app.schemas.export_task import ExportRangeType
+from app.services.knowledge_point_service import kp_fuzzy_condition
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +64,9 @@ async def _apply_filters(db: AsyncSession, query: select, filters: dict | None) 
             for f in query.froms  # type: ignore[union-attr]
         ):
             query = query.join(Question, WrongQuestion.question_id == Question.id)
-        query = query.where(
-            Question.knowledge_points.any(topic) if hasattr(Question.knowledge_points, "any")
-            else Question.knowledge_points.contains(topic)
-        )
+        topic_filter = kp_fuzzy_condition(topic)
+        if topic_filter is not None:
+            query = query.where(topic_filter)
 
     return query
 

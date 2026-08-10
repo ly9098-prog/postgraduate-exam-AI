@@ -575,6 +575,7 @@ async def approve_question(
         image_urls = extract_image_urls_from_content(qi_content)
         if image_urls:
             q_fields["image_url"] = image_urls
+        kp_names = q_fields.pop("knowledge_points", None)
         q = Question(
             **q_fields,
             source=qi.source_file,
@@ -587,6 +588,12 @@ async def approve_question(
         )
         db.add(q)
         await db.flush()
+        if kp_names:
+            from app.services.knowledge_point_service import (
+                sync_question_knowledge_points,
+            )
+
+            await sync_question_knowledge_points(db, q, kp_names, source="imported")
         await db.refresh(q)
         qi.status = "published"
         qi.question_id = q.id
@@ -679,6 +686,7 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
             image_urls = extract_image_urls_from_content(qi_content)
             if image_urls:
                 q_fields["image_url"] = image_urls
+            kp_names = q_fields.pop("knowledge_points", None)
             q = Question(
                 **q_fields,
                 source=qi.source_file,
@@ -691,6 +699,12 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, dict[int,
             )
             db.add(q)
             await db.flush()
+            if kp_names:
+                from app.services.knowledge_point_service import (
+                    sync_question_knowledge_points,
+                )
+
+                await sync_question_knowledge_points(db, q, kp_names, source="imported")
             await db.refresh(q)
             qi.status = "published"
             qi.question_id = q.id

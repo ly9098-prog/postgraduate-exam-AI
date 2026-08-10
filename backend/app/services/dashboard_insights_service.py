@@ -19,6 +19,7 @@ from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.review_scheduler import ReviewSchedule
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.models.wrong_question import WrongQuestion
+from app.services.knowledge_point_service import load_question_kps
 
 # ──────────────────────────────────────────────
 # 1. Today Quality Score
@@ -233,11 +234,10 @@ async def compute_weak_topic_ranking(
             })
         return {"data_available": True, "items": items}
 
-    # Fallback: derive from WrongQuestion -> Question.knowledge_points (JSON)
+    # Fallback: derive from WrongQuestion -> Question relation
     rows = await db.execute(
         select(
             Question.id,
-            Question.knowledge_points,
             Question.subject_id,
         )
         .join(WrongQuestion, WrongQuestion.question_id == Question.id)
@@ -246,12 +246,14 @@ async def compute_weak_topic_ranking(
             ~WrongQuestion.mastered,
         )
     )
+    qk = rows.all()
+    kp_map = await load_question_kps(db, [q_id for q_id, _subj in qk])
     kp_counter: dict[str, int] = {}
-    for q_id, kps, subj_id in rows.all():
-        if kps and isinstance(kps, list):
-            for kp in kps:
-                if isinstance(kp, str):
-                    kp_counter[kp] = kp_counter.get(kp, 0) + 1
+    for q_id, subj_id in qk:
+        kps = kp_map.get(q_id, [])
+        for kp in kps:
+            if isinstance(kp, str):
+                kp_counter[kp] = kp_counter.get(kp, 0) + 1
 
     if not kp_counter:
         return None
@@ -326,7 +328,7 @@ async def compute_repeat_wrong_analysis(
 
     # Top repeat topics
     rows = await db.execute(
-        select(Question.knowledge_points)
+        select(Question.id)
         .join(WrongQuestion, WrongQuestion.question_id == Question.id)
         .where(
             WrongQuestion.user_id == user_id,
@@ -334,12 +336,13 @@ async def compute_repeat_wrong_analysis(
             WrongQuestion.review_count >= 1,
         )
     )
+    repeat_qids = [row[0] for row in rows.all()]
+    kp_map = await load_question_kps(db, repeat_qids)
     kp_counter: dict[str, int] = {}
-    for (kps,) in rows.all():
-        if kps and isinstance(kps, list):
-            for kp in kps:
-                if isinstance(kp, str):
-                    kp_counter[kp] = kp_counter.get(kp, 0) + 1
+    for qid in repeat_qids:
+        for kp in kp_map.get(qid, []):
+            if isinstance(kp, str):
+                kp_counter[kp] = kp_counter.get(kp, 0) + 1
     top_topics = [
         {"name": k, "count": v}
         for k, v in sorted(kp_counter.items(), key=lambda x: x[1], reverse=True)[:5]

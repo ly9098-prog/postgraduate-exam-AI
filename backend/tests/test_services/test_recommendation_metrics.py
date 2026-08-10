@@ -7,7 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 # (see app/models/admin.py Subject).
 from app.models.knowledge_point import KnowledgePoint  # noqa: F401
 from app.models.recommendation_log import RecommendationLog  # noqa: F401
-from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.recommendation_metrics_daily import (
+    RecommendationMetricsDaily,  # noqa: F401
+)
 from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
 
 # ── helpers ──
@@ -45,7 +47,6 @@ def _make_question(qid: int, difficulty: int = 3, kps: list[str] | None = None):
     q = MagicMock()
     q.id = qid
     q.difficulty = difficulty
-    q.knowledge_points = kps or []
     return q
 
 
@@ -215,8 +216,9 @@ class TestApplyStrategyWeightRerank:
         from app.services.practice_service import _apply_strategy_weight_rerank
 
         db = _make_mock_db()
-        # KP 查询 → [(10, "KP_A")], 掌握度查询 → 空
+        # 1) load_question_kps → [(qid, name)]，2) KP id 查询，3) 掌握度查询 → 空
         db.execute.side_effect = [
+            _make_execute_result(all=[(1, "KP_A"), (2, "KP_A")]),
             _make_execute_result(all=[(10, "KP_A")]),
             _make_execute_result(all=[]),
         ]
@@ -236,4 +238,4 @@ class TestApplyStrategyWeightRerank:
         assert result_qs[1].id == 2
         assert result_meta[1]["recommend_score"] == 0.9
         assert result_meta[2]["recommend_score"] == 0.3
-        assert db.execute.await_count == 2  # 固定 2 次查询，无 N+1
+        assert db.execute.await_count == 3  # load_question_kps + KP id + mastery，固定次数无 N+1

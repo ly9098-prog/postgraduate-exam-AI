@@ -10,6 +10,7 @@ from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.review_scheduler import ReviewSchedule
 from app.models.wrong_question import WrongQuestion
+from app.services.knowledge_point_service import load_question_kps
 
 
 def _today_utc() -> datetime:
@@ -321,19 +322,20 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
 
     # Aggregate forgotten topics from unmastered wrong questions
     kp_result = await db.execute(
-        select(Question.knowledge_points)
+        select(Question.id)
         .join(WrongQuestion, WrongQuestion.question_id == Question.id)
         .where(
             WrongQuestion.user_id == user_id,
             ~WrongQuestion.mastered,
         )
     )
+    forgotten_qids = [row[0] for row in kp_result.all()]
+    kp_map = await load_question_kps(db, forgotten_qids)
     kp_counter: dict[str, int] = {}
-    for (kps,) in kp_result.all():
-        if kps and isinstance(kps, list):
-            for kp in kps:
-                if isinstance(kp, str):
-                    kp_counter[kp] = kp_counter.get(kp, 0) + 1
+    for qid in forgotten_qids:
+        for kp in kp_map.get(qid, []):
+            if isinstance(kp, str):
+                kp_counter[kp] = kp_counter.get(kp, 0) + 1
     top_forgotten = sorted(kp_counter.items(), key=lambda x: x[1], reverse=True)[:8]
     top_forgotten_topics = [{"topic": k, "count": v} for k, v in top_forgotten]
 

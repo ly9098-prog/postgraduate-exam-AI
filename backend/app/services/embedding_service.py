@@ -45,6 +45,7 @@ def build_question_embedding_text(
     question: Any,
     *,
     subject_code: str | None = None,
+    knowledge_points: list[str] | None = None,
 ) -> str:
     """将题目信息组装为 embedding 文本。
 
@@ -53,6 +54,7 @@ def build_question_embedding_text(
 
     ``subject_code`` 用于调用方已经解析出科目代码、但 ORM relationship
     没有预加载的场景。未提供时保持原有的自动推断行为。
+    ``knowledge_points`` 由调用方从 question_knowledge_points 关联表批量加载后传入。
     """
     parts: list[str] = []
 
@@ -73,7 +75,7 @@ def build_question_embedding_text(
     if difficulty is not None:
         parts.append(f"难度：{difficulty}")
 
-    kps = getattr(question, "knowledge_points", None) or []
+    kps = knowledge_points if knowledge_points is not None else []
     if kps:
         parts.append(f"知识点：{'、'.join(str(k) for k in kps)}")
 

@@ -157,12 +157,13 @@ async def _make_question(db, subj, *, id_override=None, answer="A", question_typ
         options={"A": "a", "B": "b", "C": "c", "D": "d"},
         answer=answer,
         analysis="解析",
-        knowledge_points=["导数"],
         difficulty=3,
         is_active=True,
     )
     db.add(q)
     await db.flush()
+    from app.services.knowledge_point_service import sync_question_knowledge_points
+    await sync_question_knowledge_points(db, q, ["导数"], source="test")
     return q.id
 
 

@@ -24,6 +24,7 @@ from app.schemas.practice import (
     PracticeStatsResponse,
 )
 from app.services import practice_service as svc
+from app.services.knowledge_point_service import load_question_kps
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 
 # Regex: lines ending with a trailing operator (OCR-split code expressions)
@@ -345,6 +346,7 @@ async def get_practice_questions(
         mode, count, len(questions), subject_distribution,
     )
     # ── Layer 1 诊断：API 响应 stem 数据 ──
+    kp_map = await load_question_kps(db, [q.id for q in questions])
     for q in questions:
         content = _sanitize_question_content(q.content)
         stem = (content or {}).get("text") or (content or {}).get("stem") or ""
@@ -367,7 +369,7 @@ async def get_practice_questions(
                 options=_sanitize_question_options(
                     _ensure_true_false_options(q.question_type, q.options)
                 ),
-                knowledge_points=q.knowledge_points,
+                knowledge_points=kp_map.get(q.id, []),
                 difficulty=q.difficulty,
                 image_url=q.image_url,
                 trace_id=trace_id,

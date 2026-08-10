@@ -16,6 +16,7 @@ from app.services.export.question_content import (
     has_visual_question_content,
     iter_question_image_urls,
 )
+from app.services.knowledge_point_service import load_question_kps
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ async def build_snapshot_data(
     for wq, q in rows:
         wq_map[wq.id] = q
 
+    kp_map = await load_question_kps(db, [q.id for q in wq_map.values()])
+
     questions_data = []
     skip_count = 0
     skip_reasons: dict[str, int] = {}
@@ -62,6 +65,8 @@ async def build_snapshot_data(
             skip_reasons.setdefault("题目数据不存在", 0)
             skip_reasons["题目数据不存在"] += 1
             continue
+
+        kps = kp_map.get(q.id, [])
 
         # Validate and normalize core content. Older imported questions can
         # store their visible stem in text segments or raw_content rather than
@@ -98,8 +103,8 @@ async def build_snapshot_data(
             "answer": q.answer or "",
             "analysis": q.analysis or "",
             "subject": {"id": q.subject_id, "label": subject_label} if subject_label else {"id": q.subject_id},
-            "knowledge_points": q.knowledge_points or [],
-            "primary_knowledge_point": _get_primary_kp(q),
+            "knowledge_points": kps,
+            "primary_knowledge_point": _get_primary_kp(kps),
             "image_urls": iter_question_image_urls(q),
             "source": q.source,
         }
@@ -149,10 +154,10 @@ def _get_subject_label(q):
     return None
 
 
-def _get_primary_kp(q):
-    """Return the first knowledge point."""
-    if q.knowledge_points and len(q.knowledge_points) > 0:
-        first = q.knowledge_points[0]
+def _get_primary_kp(kps):
+    """Return the first knowledge point (order preserved by position)."""
+    if kps:
+        first = kps[0]
         if isinstance(first, dict):
             for key in ("name", "label", "title", "id"):
                 value = first.get(key)

@@ -27,6 +27,7 @@ from app.features.question_type import (
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 from app.schemas.export_task import ExportSortBy
+from app.services.knowledge_point_service import load_question_kps
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +59,12 @@ async def sort_questions(
     rows = result.fetchall()
 
     # Build sort key map: wq_id -> (primary_sort_key, tiebreaker)
+    kp_map = await load_question_kps(db, [q.id for _wq, q in rows])
     sort_keys: dict[int, tuple] = {}
 
     for wq, q in rows:
         tiebreaker = wq.id  # stable tiebreaker
-        key = _sort_key(sort_by, wq, q)
+        key = _sort_key(sort_by, wq, q, kp_map.get(q.id, []))
         sort_keys[wq.id] = (key, tiebreaker)
 
     # Items not in sort_keys (shouldn't happen) sort last
@@ -75,7 +77,7 @@ async def sort_questions(
     return [i for i, _ in known] + missing
 
 
-def _sort_key(sort_by: ExportSortBy, wq: WrongQuestion, q: Question):
+def _sort_key(sort_by: ExportSortBy, wq: WrongQuestion, q: Question, kps: list[str] | None = None):
     """Return a comparable sort key."""
     if sort_by == ExportSortBy.NEWEST:
         timestamp = _datetime_timestamp(wq.created_at)
@@ -92,7 +94,7 @@ def _sort_key(sort_by: ExportSortBy, wq: WrongQuestion, q: Question):
         return (q.id or 0,)
 
     if sort_by == ExportSortBy.KNOWLEDGE_POINT:
-        kp = q.knowledge_points
+        kp = kps or []
         primary = str((kp[0] if kp else "") or "").strip()
         return (0, primary) if primary else (1, "")
 

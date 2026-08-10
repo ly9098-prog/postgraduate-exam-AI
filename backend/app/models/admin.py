@@ -181,7 +181,7 @@ class QuestionVersion(Base):
     answer: Mapped[str] = mapped_column(Text, nullable=False)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    knowledge_points: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    knowledge_points: Mapped[list | None] = mapped_column(JSON, nullable=True)
     edited_by: Mapped[int] = mapped_column(ForeignKey("admin_users.id"), nullable=False, index=True)
     edit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
