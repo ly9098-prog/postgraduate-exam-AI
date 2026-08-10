@@ -290,3 +290,41 @@ async def test_list_admin_questions_keyword_keeps_content_or_semantics(db):
         questions, total = await list_admin_questions(s, page=1, page_size=20, keyword="A")
         assert total == 1
         assert questions[0].id == q1
+
+
+@pytest.mark.asyncio
+async def test_list_admin_questions_keyword_escapes_like_wildcards(db):
+    """用户输入中的 %/_ 必须按字面匹配，不能当 LIKE 通配符用（转义回归）。"""
+    from app.services.admin_question_service import list_admin_questions
+
+    now = datetime(2026, 8, 1)
+    async with db.session_factory() as s:
+        q1 = Question(subject_id=1, question_type="single_choice",
+                      content={"text": "q1"}, raw_content="含 50% 折扣", answer="A",
+                      difficulty=2, created_at=now)
+        q2 = Question(subject_id=1, question_type="single_choice",
+                      content={"text": "q2"}, raw_content="含 50 折扣", answer="B",
+                      difficulty=3, created_at=now)
+        q3 = Question(subject_id=1, question_type="single_choice",
+                      content={"text": "q3"}, raw_content="a_b 下划线", answer="C",
+                      difficulty=2, created_at=now)
+        s.add_all([q1, q2, q3])
+        await s.commit()
+
+        # "%" 不能当通配符：只命中字面含 "50%" 的题，而非所有含 "50" 的题
+        _qs, total = await list_admin_questions(s, page=1, page_size=20, keyword="50%")
+        assert total == 1
+        assert _qs[0].id == q1.id
+        # "_" 不能匹配任意单字符：只命中字面含下划线的题
+        _qs, total = await list_admin_questions(s, page=1, page_size=20, keyword="_")
+        assert total == 1
+        assert _qs[0].id == q3.id
+        # 反斜杠关键字按字面匹配（LaTeX 关键词不被损坏）
+        q4 = Question(subject_id=1, question_type="single_choice",
+                      content={"text": "q4"}, raw_content="\\frac{a}{b}", answer="D",
+                      difficulty=2, created_at=now)
+        s.add(q4)
+        await s.commit()
+        _qs, total = await list_admin_questions(s, page=1, page_size=20, keyword="\\frac")
+        assert total == 1
+        assert _qs[0].id == q4.id
