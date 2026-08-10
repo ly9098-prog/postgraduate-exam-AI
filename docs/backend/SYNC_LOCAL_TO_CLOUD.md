@@ -2,12 +2,13 @@
 
 ## 概述
 
-本地开发环境（i7 + RTX3060）执行大规模 OCR 导入后，通过增量同步将 `questions` 和 `tags` 数据推送到云端生产服务器（2C2G PostgreSQL）。
+本地开发环境（i7 + RTX3060）执行大规模 OCR 导入后，通过增量同步将 `questions`、`tags` 以及题目知识点关联（`question_knowledge_points`）推送到云端生产服务器（2C2G PostgreSQL）。
 
 设计原则：
 - **单向同步**：仅本地→云端，不反向拉取
 - **永不删除**：云端有但本地没有的记录不会被删除
 - **冲突安全**：云端已有更新修改时跳过，记录冲突明细
+- **知识点走关联表**：题目知识点以 `question_knowledge_points` 关联表为唯一事实源，`questions.knowledge_points` JSON 列已移除；同步时导出侧用 `load_question_kps()` 批量加载展示名列表，云端合并侧用 `sync_question_knowledge_points(source="sync", replace=True)` 重建映射
 
 ---
 
@@ -33,11 +34,17 @@
 | sync_uuid | VARCHAR(36), UNIQUE, INDEX | 跨库唯一标识，新记录自动生成 |
 | sync_version | INTEGER, DEFAULT 0 | 版本号（预留冲突检测） |
 
+> `questions.knowledge_points` JSON 列已移除，题目知识点改经 `question_knowledge_points` 关联表同步：
+> - 导出：`scripts/sync_to_cloud.py` 通过 `load_question_kps()` 一次查询批量加载展示名列表写入 package
+> - 云端合并：`sync_merge_service.merge_sync_package()` 在 flush 后对每道题调用 `sync_question_knowledge_points(source="sync", replace=True)`
+
 ### tags 表新增
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | sync_uuid | VARCHAR(36), UNIQUE, INDEX | 跨库唯一标识，新记录自动生成 |
+
+> tags.subject 已改为 `subject_id`（FK → subjects.id）。
 
 Python-level `default=lambda: str(uuid4())` 确保通过 ORM 创建的新记录自动获取 UUID。
 
@@ -48,8 +55,9 @@ Python-level `default=lambda: str(uuid4())` 确保通过 ORM 创建的新记录�
 | 文件 | 用途 |
 |------|------|
 | `app/models/question.py` | sync_uuid + sync_version 字段 |
-| `app/models/tag.py` | sync_uuid 字段 |
-| `app/features/sync_merge_service.py` | 核心合并逻辑（批量预加载、时间戳比较、冲突记录） |
+| `app/models/tag.py` | sync_uuid 字段（subject_id 外键） |
+| `app/features/sync_merge_service.py` | 核心合并逻辑（批量预加载、时间戳比较、冲突记录、知识点 replace 重建） |
+| `app/services/knowledge_point_service.py` | 知识点关联：`load_question_kps`（导出）/ `sync_question_knowledge_points`（云端重建） |
 | `app/api/v1/sync.py` | POST /api/v1/sync/import 端点 |
 | `app/schemas/sync.py` | Pydantic 请求/响应 schema |
 | `app/core/database.py` | `_ensure_sync_columns()` 本地 SQLite 自动补列 |
@@ -73,7 +81,14 @@ Python-level `default=lambda: str(uuid4())` 确保通过 ORM 创建的新记录�
   "version": 1,
   "exported_at": "2026-06-04T12:00:00+00:00",
   "source_env": "local",
-  "questions": [...],
+  "questions": [{
+    "sync_uuid": "...",
+    "sync_version": 0,
+    "subject_id": 2,
+    "question_hash": "md5...",
+    "knowledge_points": ["导数", "求导公式"],
+    ...
+  }],
   "tags": [...],
   "manifest": {
     "question_count": 150,
@@ -97,6 +112,7 @@ Python-level `default=lambda: str(uuid4())` 确保通过 ORM 创建的新记录�
   "questions_updated": 25,
   "questions_skipped": 5,
   "questions_conflict": 2,
+  "questions_deduped": 3,
   "tags_new": 15,
   "tags_skipped": 5,
   "conflicts": [
@@ -105,6 +121,8 @@ Python-level `default=lambda: str(uuid4())` 确保通过 ORM 创建的新记录�
   "errors": []
 }
 ```
+
+> `questions_deduped`：本地重新导入的重复题（相同 `(subject_id, question_hash)` 但不同 sync_uuid）被跳过计数。
 
 ---
 
@@ -186,4 +204,5 @@ python3 -m scripts.sync_to_cloud --dry-run
 - [x] 重复提交同包 → 全部 skipped，无重复插入
 - [x] 修改本地题目后重新同步 → 对应题目被 UPDATE
 - [x] 云端更新时间更新的记录 → SKIP + 冲突报告
+- [x] 题目知识点经关联表同步：导出 `load_question_kps`、云端 `sync_question_knowledge_points(source="sync", replace=True)` 重建映射（`sync_to_cloud.py` + `knowledge_point_service.py`）
 - [x] 现有测试全部通过（554 passed）

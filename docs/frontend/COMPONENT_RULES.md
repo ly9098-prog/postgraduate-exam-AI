@@ -82,3 +82,29 @@
 ```
 
 全局组件样式在 `styles/components.wxss` 中定义。
+
+---
+
+## 组件契约：quiz-runner（统一答题 UI）
+
+`miniprogram/subpackages/study/components/quiz-runner/` 是 practice、review-today、wrong-detail 共用的统一答题组件。
+
+- **属性**：`theme`（`default` / `premium-review`）、`mode`（`practice` / `review` / `wrong-detail`）、`flowLayout`（页面内嵌不用自身滚动）、`compactReviewMode`（隐藏深色 hero）、`externalSwitchAnimation`（外层统一动画切题时组件只上报事件不自己加动画类）、`readonly`（只读复盘高亮正确/错误）、`heroCollapseEnabled`（滚动折叠 header 开关）
+- **状态分离**：可变答题状态通过 `answerState` 属性传入，与不可变的 `currentQuestion`/渲染负载分离；兼容旧调用方在 `currentQuestion._optionList/_blankOptionGroups` 上提供作用域字段
+- **渲染**：复用题干渲染不变性——`SEGMENTS / RICH_TEXT / CODE / LATEX / MIXED` 分支见 `render-invariant.md`；`CODE` 走 `scroll-view` + `<text>`（零 HTML），`MIXED` 内部按块独立渲染
+- **事件**：`selectoption` / `selectblankoption` / `prev` / `next` / `jump` / `submit` / `master` / `exit` / `toggleanswercard`
+- **滑动切题**：`onTouchStart/End` 识别横向滑动（`absDx >= 44 && absDx > absDy*1.1`），`data-swipe-block` 标记的图片/选项可单独拦截滑动，防止阅读代码/公式时误切题
+
+### 页面动画约定（externalSwitchAnimation）
+
+wrong-detail 使用此模式：题目区 + AI 学习建议放在同一个父容器，由页面统一控制一次淡出/淡入（`QUESTION_SWITCH_OUT_MS=150` / `QUESTION_SWITCH_IN_MS=170`），quiz-runner 内部不再计时，避免两个区域各自动画不同步。
+
+---
+
+## 组件契约：formula-card（公式卡）
+
+`subpackages/formulas/components/formula-card/` 渲染公式卡内容（title / 公式块 / 条件 / 符号表 / 错误提示 / 示例）。
+
+- 所有混合文字 + LaTeX 内容经 `formula-content.normalizeMixedContent` → HTML → `mp-html-parser` + KaTeX 插件渲染，链路见 `render-invariant.md`
+- **行内公式横向滚动**：`shouldScrollInlineFormula`——仅当行内公式真正超长（估算可视宽度 > 34 字符）或为 array/matrix 等块环境时才加 `overflow-x:auto` 滚动容器；短公式保持 `overflow:visible`，避免 Android/微信下原生滚动条像灰色下划线出现在短公式下方
+- 公式块复杂度阈值（`prepareFormulaBlocks`）：`complexity > 200` 才 `isScrollable`；`> 185` `is-dense`、`> 120` `is-compact`

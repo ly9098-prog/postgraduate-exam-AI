@@ -1,9 +1,11 @@
 # OCR Pipeline 架构文档
 
-> 维护时间：2026-07-19
+> 维护时间：2026-07-19（2026-08-11 同步核对）
 > 审计参考：`docs/audit/OCR_PIPELINE_AUDIT_RECORDS.md`、`prompts/tasks/fix_task.md`
 >
 > **修复进展：Sprint 0 ✅ | Sprint 1 ✅ | Sprint 2 ✅ | Sprint 3 ✅**
+>
+> **2026-08-11 同步**：本地模型为 **PP-OCRv4**（非 PP-OCRv6）；纠错链路默认 `PaddleOCR-VL → DeepSeek → rule fallback`；排版路由三档（0.75/0.5）已生产固化，代码位于 `features/layout_router.py`。OCR 相关模块已迁移至 `backend/app/features/ocr_fix/`、`features/ocr_vl/`。
 
 ---
 
@@ -129,18 +131,19 @@
                                v
 ┌─────────────────────────────────────────────────────────────────────┐
 │              AI OCR 纠错层 (Multi-Model Correction)                  │
-│  唯一路径 — OCRFixRouter (ocr_fix/router.py):                       │
-│    ├─ PP-OCRv6 (local) → 结构主源                                   │
-│    ├─ PaddleOCRVLAdapter → 外部高精 OCR API                         │
+│  唯一路径 — OCRFixRouter (features/ocr_fix/router.py):              │
+│    ├─ PaddleOCRVLAdapter → 外部高精 OCR API（第一优先级）            │
 │    ├─ DeepSeekFixer → 纯文本纠错                                    │
-│    └─ RuleFixer → no-op fallback                                    │
+│    └─ RuleFixer → no-op fallback（自动降级，不可绕过质量门禁）       │
+│  默认链：auto = PaddleOCR-VL → DeepSeek → rule fallback              │
+│  本地 PP-OCRv4 作为结构主源，在 OCR 识别层/版面阶段完成，            │
+│  不参与纠错链路由（layout_router.py 三档路由已生产固化）              │
 │                                                                     │
-│  ⚠️ S1-4.6: Router 配置与降级语义缺陷                                 │
-│     ├─ manual 空配置行为与注释不一致                                 │
-│     └─ 任意异常文本进 model_used（S0-10 部分修复）                   │
+│  ✅ S1-4.6: Router 配置与降级语义已修正（manual 行为 + fingerprint）  │
+│  ✅ S0-10: 日志脱敏已修复                                            │
 │                                                                     │
 │  ✅ AI Safety Gate: evaluate_and_trace() + safe_accept_ai_result()  │
-│  ⚠️ S1-4.7: 多入口安全门可能不一致                                   │
+│  ✅ S1-4.7: candidate_evaluator.py 唯一候选评估器（单例）            │
 └──────────────────────────────┬──────────────────────────────────────┘
                                │
                                v
@@ -298,7 +301,7 @@ Input → Type/Safety → Native Text Probe → Page Renderer/Stream
 
 | 层面 | 现状成熟度 | 目标成熟度 | 关键差距 |
 |------|-----------|-----------|---------|
-| 执行正确性 | 🟢 S0 7/8 已修复 | 🟢 全修复 | S0-09 (SSRF), S0-10 (日志) 未修复 |
+| 执行正确性 | 🟢 S0 全部修复（含 S0-09 SSRF、S0-10 日志脱敏） | 🟢 | ✅ |
 | 执行隔离 | 🟡 进程池存在但非默认 | 🟢 默认进程隔离 | 线程池默认路径风险 |
 | OCR 入口统一 | 🟡 Coordinator 已创建但旧路径仍存在 | 🟢 唯一 Gateway | `pipeline_orchestrator` 等多处直接调用 |
 | 配置统一 | 🟢 AIModelConfigResolver | 🟢 | ✅ |
@@ -359,7 +362,7 @@ Input → Type/Safety → Native Text Probe → Page Renderer/Stream
 
 | 工作项 | fix_task 编号 | 状态 |
 |--------|-------------|------|
-| 建立"题库 OCR Bench" | S3 | ✅ tests/ocr_regression/ (17 cases) + tests/ocr_acceptance/ (10 类) |
+| 建立"题库 OCR Bench" | S3 | ✅ backend/tests/ocr_regression/ (31 cases) + backend/tests/ocr_acceptance/ (10 类) |
 | 持久任务队列 + page group + 幂等 | S3 | ✅ DurableTaskQueue (Redis Lua + 本地回退)、owner fencing、生产验证 |
 | 多 GPU/多模型 router | S3 | ✅ OCRGateway (local/remote VL), OCRFixRouter (多模型降级链) |
 | 版本灰度与自动回滚 | S3 | ✅ ocr_canary + rollout_policy + pipeline_fingerprint |
@@ -373,42 +376,46 @@ Input → Type/Safety → Native Text Probe → Page Renderer/Stream
 
 | 文件 | 行数 | 用途 | 状态 |
 |------|------|------|------|
-| `features/pipeline_orchestrator.py` | ~4871 | 主编排器（19 阶段）| ✅ 生产 |
-| `features/pipeline_coordinator_entry.py` | 210 | 统一 Pipeline 入口 | ✅ 2026-07-18 |
-| `features/coordinator_orchestrator.py` | 280 | Coordinator Pipeline | ✅ 新增 |
-| `features/coordinators.py` | ~180 | 9 个 Stage Coordinator | ✅ 新增 |
-| `services/model_config_resolver.py` | ~600 | AIModelConfigResolver | ✅ 2026-07-18 |
-| `services/ocr_executor_service.py` | ~400 | OCR 执行器（进程隔离默认）| ✅ 2026-07-18 进程默认 |
-| `services/ocr_service.py` | ~773 | PaddleOCR 封装 | ✅ 2026-07-18 S1-4.8/4.9 修复 |
-| `services/ocr_local_worker_client.py` | 99 | 本地进程 OCR worker（进程隔离）| ✅ 2026-07-18 |
-| `services/ocr_paddlex_http_client.py` | 639 | PaddleX HTTP 远程 OCR 客户端 | ✅ 2026-07-19 新增 |
-| `services/ocr_worker_client.py` | 95 | OcrWorkerClient Protocol + 工厂 | ✅ 2026-07-19 新增 |
-| `services/ocr_cache_service.py` | ~130 | OCR 缓存 | ✅ 原子写入 + 全维度 fingerprint |
-| `features/pipeline_artifacts.py` | 559 | Pipeline artifact 持久化 | ✅ content-addressed fingerprint |
-| `features/pipeline_stages/` | 9 文件 | 独立 stage 实现 | ✅ |
-| `features/question_pipeline.py` | 2921 | 标准化管道 | ✅ |
-| `features/batch_image_import_service.py` | ~1391 | 批量图片导入 | ✅ |
-| `services/import_pipeline_service.py` | ~400 | Import pipeline 入口 | ✅ |
-| `features/text_normalizer.py` | 1400 | OCR 文本规范化（13 步）| ✅ 唯一入口 |
-| `features/question_splitter.py` | 1437 | 题号+选项提取 | ✅ |
-| `features/ai_repair.py` | 1164 | AI 修复 | ✅ AIModelConfigResolver |
+| `features/pipeline_orchestrator.py` | 6535 | 主编排器（19 阶段）| ✅ 生产 |
+| `features/pipeline_coordinator_entry.py` | 226 | 统一 Pipeline 入口 | ✅ 2026-07-18 |
+| `features/coordinator_orchestrator.py` | 303 | Coordinator Pipeline | ✅ 新增 |
+| `features/coordinators.py` | 505 | Stage Coordinator | ✅ 新增 |
+| `services/model_config_resolver.py` | 605 | AIModelConfigResolver | ✅ 2026-07-18 |
+| `services/ocr_executor_service.py` | 191 | OCR 执行器（进程隔离默认）| ✅ 2026-07-18 进程默认 |
+| `services/ocr_service.py` | 415 | PaddleOCR 封装 | ✅ 2026-07-18 S1-4.8/4.9 修复 |
+| `services/ocr_local_worker_client.py` | 132 | 本地进程 OCR worker（进程隔离）| ✅ 2026-07-18 |
+| `services/ocr_paddlex_http_client.py` | 1362 | PaddleX HTTP 远程 OCR 客户端 | ✅ 2026-07-19 新增 |
+| `services/ocr_worker_client.py` | 109 | OcrWorkerClient Protocol + 工厂 | ✅ 2026-07-19 新增 |
+| `services/ocr_cache_service.py` | 335 | OCR 缓存 | ✅ 原子写入 + 全维度 fingerprint |
+| `features/pipeline_artifacts.py` | 701 | Pipeline artifact 持久化 | ✅ content-addressed fingerprint |
+| `features/pipeline_stages/` | 18 文件 | 独立 stage 实现 | ✅ |
+| `features/question_pipeline.py` | 1613 | 标准化管道（阶段逻辑拆分至 pipeline_stages/）| ✅ |
+| `features/batch_image_import_service.py` | 1465 | 批量图片导入 | ✅ |
+| `services/import_pipeline_service.py` | 817 | Import pipeline 入口 | ✅ |
+| `features/text_normalizer.py` | 1404 | OCR 文本规范化（13 步）| ✅ 唯一入口 |
+| `features/question_splitter.py` | 1887 | 题号+选项提取 | ✅ |
+| `features/ai_repair.py` | 1341 | AI 修复 | ✅ AIModelConfigResolver |
 | `features/code_integrity.py` | 938 | 代码块完整性检测 | ✅ |
-| `features/question_type_classifier.py` | 454 | Layer 1 题型分类 | ✅ |
-| `services/storage_backend.py` | 235 | Storage 后端抽象 | ✅ 2026-07-16 |
+| `features/question_type_classifier.py` | 465 | Layer 1 题型分类 | ✅ |
+| `services/storage_backend.py` | 465 | Storage 后端抽象 | ✅ 2026-07-16 |
+
+> 行数为 2026-08-11 快照，供参考定位，后续增删以代码为准。
 
 ### OCR 纠错
 
 | 文件 | 行数 | 用途 | 状态 |
 |------|------|------|------|
-| `ocr_vl/paddleocr_vl_client.py` | ~567 | PaddleOCR-VL HTTP 客户端 | ✅ SSRF + 连接复用 + 日志脱敏 |
-| `ocr_vl/paddleocr_vl_adapter.py` | 112 | OCRFixerProtocol 适配器 | ✅ |
-| `ocr_fix/router.py` | 428 | 降级链路由 | ✅ manual 行为 + fingerprint 修正 |
-| `ocr_fix/interfaces.py` | 68 | OCRFixResult + CandidateDecision | ✅ |
-| `ocr_fix/deepseek_adapter.py` | 177 | DeepSeek 纯文本纠错 | ✅ |
-| `ocr_fix/rule_adapter.py` | 41 | 规则 fallback | ✅ |
-| `ai_safety.py` | 284 | AI 编辑安全门禁 | ⚠️ 渐被 CandidateEvaluator 替代 |
-| `features/candidate_evaluator.py` | ~340 | 统一候选评估器 | ✅ 单例 |
-| `ocr_correction_common.py` | 254 | 纠错通用逻辑 | ✅ |
+| `features/ocr_vl/paddleocr_vl_client.py` | 1210 | PaddleOCR-VL HTTP 客户端 | ✅ SSRF + 连接复用 + 日志脱敏 |
+| `features/ocr_vl/paddleocr_vl_adapter.py` | 128 | OCRFixerProtocol 适配器 | ✅ |
+| `features/ocr_fix/router.py` | 470 | 降级链路由 | ✅ manual 行为 + fingerprint 修正 |
+| `features/ocr_fix/interfaces.py` | 68 | OCRFixResult + CandidateDecision | ✅ |
+| `features/ocr_fix/deepseek_adapter.py` | 177 | DeepSeek 纯文本纠错 | ✅ |
+| `features/ocr_fix/rule_adapter.py` | 41 | 规则 fallback | ✅ |
+| `features/ocr_correction.py` | 171 | OCR 纠错编排 | ✅ |
+| `features/ocr_correction_common.py` | 307 | 纠错通用逻辑 | ✅ |
+| `features/vision_fallback.py` | 272 | 视觉回退（VL_REBUILD 兜底） | ✅ |
+| `features/ai_safety.py` | 117 | AI 编辑安全门禁 | ⚠️ 渐被 CandidateEvaluator 替代 |
+| `features/candidate_evaluator.py` | 523 | 统一候选评估器 | ✅ 单例 |
 
 ### Evaluation
 
@@ -423,9 +430,11 @@ Input → Type/Safety → Native Text Probe → Page Renderer/Stream
 
 | 文件 | 用途 | 数量 |
 |------|------|------|
-| `tests/ocr_regression/` | 回归用例 | 17 case |
-| `tests/ocr_acceptance/` | 验收测试 | 10 类样本 |
-| Sprint 4D 测试集 | 全量回归 | 91 tests |
+| `backend/tests/ocr_regression/` | 回归用例（cases/ 编号目录 001-029+） | 31 case |
+| `backend/tests/ocr_acceptance/` | 验收测试（run_acceptance.py） | 10 类样本 |
+| 后端全量回归（pytest testpaths） | 全项目回归 | ~5800+ `def test_` 函数 |
+| `tests/test_canary_*.py`（Sprint 3F） | 发布门禁 canary 行为/故障注入/回滚 | 135+ 用例 |
+| `tests/test_module_*.py`（Sprint 3E/3F-A） | ModuleResult / 适配器契约 / Bench | 38+ 用例 |
 | `tests/test_services/test_ocr_paddlex_http_client.py` | PaddleX HTTP 客户端 mock 测试 | 55 cases |
 | `tests/test_services/test_ocr_worker_client_factory.py` | 工厂 + Protocol 测试 | 6 cases |
 | `tests/test_services/test_ocr_remote_config.py` | 远程配置 + URL 脱敏 + 验证 | 20 cases |
