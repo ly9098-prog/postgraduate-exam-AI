@@ -65,7 +65,6 @@ def _make_question(id=1, subject="math2", question_type="single_choice",
     q.options = {"A": "2x", "B": "x", "C": "x^2", "D": "2"}
     q.answer = answer
     q.analysis = analysis
-    q.knowledge_points = knowledge_points or ["导数"]
     q.difficulty = difficulty
     q.is_active = is_active
     q.review_status = review_status
@@ -153,6 +152,7 @@ class TestAIExplain:
         # Fourth execute: AdminAiModelConfig → no enabled model
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
+            _make_execute_result(all=[(1, "导数")]),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
             _make_no_model_result(),
@@ -174,6 +174,7 @@ class TestAIExplain:
         q = _make_question(1)
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
+            _make_execute_result(all=[(1, "导数")]),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
             _make_no_model_result(),
@@ -195,6 +196,7 @@ class TestAIExplain:
         q = _make_question(1)
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
+            _make_execute_result(all=[(1, "导数")]),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
             _make_no_model_result(),
@@ -218,6 +220,7 @@ class TestAIExplain:
         q = _make_question(1)
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
+            _make_execute_result(all=[(1, "导数")]),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
             _make_no_model_result(),
@@ -241,6 +244,7 @@ class TestAIExplain:
         q = _make_question(1)
         db.execute.side_effect = [
             _make_execute_result(scalar_one_or_none=q),
+            _make_execute_result(all=[(1, "导数")]),
             _make_execute_result(scalar=0),
             _make_execute_result(scalar=0),
             _make_no_model_result(),
@@ -355,6 +359,7 @@ class TestRecommend:
             _make_execute_result(scalar_one_or_none=q_self),
             _make_execute_result(all=[]),  # no answered questions
             _make_execute_result(scalars=[q_similar, q_diff]),
+            _make_execute_result(all=[(1, "导数"), (10, "导数"), (20, "积分")]),
         ]
 
         with patch("app.services.vector_retrieval_service.search_similar_questions",
@@ -380,6 +385,7 @@ class TestRecommend:
             _make_execute_result(scalar_one_or_none=q),
             _make_execute_result(all=[]),
             _make_execute_result(scalars=[]),
+            _make_execute_result(all=[]),
         ]
 
         with patch("app.services.vector_retrieval_service.search_similar_questions",
@@ -402,6 +408,7 @@ class TestRecommend:
             _make_execute_result(scalar_one_or_none=q_self),
             _make_execute_result(all=[(10,)]),  # answered qid=10
             _make_execute_result(scalars=[q_answered]),  # candidate
+            _make_execute_result(all=[(1, "导数"), (10, "导数")]),
         ]
 
         with patch("app.services.vector_retrieval_service.search_similar_questions",
@@ -447,10 +454,10 @@ class TestLearningReport:
         r2.subject = "math2"
 
         # First execute: records
-        # Second execute: questions with knowledge_points
+        # Second execute: load_question_kps → (question_id, kp.name) rows
         db.execute.side_effect = [
             _make_execute_result(scalars=[r1, r2]),
-            _make_execute_result(all=[(1, ["导数"]), (2, ["导数"])]),
+            _make_execute_result(all=[(1, "导数"), (2, "导数")]),
         ]
 
         result = _run(generate_learning_report(db, user_id=1, subject_id=1, days=7))

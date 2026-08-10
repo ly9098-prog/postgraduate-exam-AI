@@ -338,9 +338,12 @@ async def case_approve_merges_ai_metadata(
             select(Question).where(Question.id == new_qid)
         )).scalar_one()
         if ai_kps:
-            check("ai_metadata.knowledge_points 合并到 questions.knowledge_points",
-                  q.knowledge_points == ai_kps,
-                  f"q.kps={q.knowledge_points} ai_kps={ai_kps}")
+            from app.services.knowledge_point_service import load_question_kps
+
+            kp_map = await load_question_kps(db, [q.id])
+            check("ai_metadata.knowledge_points 写入 question_knowledge_points 关联表",
+                  sorted(kp_map.get(q.id, [])) == sorted(ai_kps),
+                  f"q.kps={kp_map.get(q.id, [])} ai_kps={ai_kps}")
         if isinstance(ai_diff, int) and 1 <= ai_diff <= 5:
             check("ai_metadata.difficulty 合并到 questions.difficulty",
                   q.difficulty == ai_diff,

@@ -259,6 +259,7 @@ async def _retain_latest_duplicate(
     qi: QuestionImport,
     duplicates: list[Question],
     q_fields: dict,
+    kp_names,
 ) -> tuple[Question, bool]:
     """合并重复题。返回（保留的 Question，当前导入是否为最新）。"""
     ranks = await _duplicate_import_ranks(db, [question.id for question in duplicates])
@@ -290,6 +291,7 @@ async def _retain_latest_duplicate(
         )
 
     if current_is_latest:
+        # knowledge_points 已由调用方 pop 出 q_fields；这里同步关联表（subject 取更新后值）
         for field, value in q_fields.items():
             setattr(retained, field, value)
         retained.source = qi.source_file
@@ -300,6 +302,17 @@ async def _retain_latest_duplicate(
         retained.review_status = "approved"
         retained.is_active = True
         retained.sync_version = (retained.sync_version or 0) + 1
+        # 只同步非空提取结果：pipeline 恒输出 knowledge_points 键，空数组表示
+        # 「本次提取无知识点」而非「用户显式清空」——此时保留既有映射，避免
+        # 用空数据覆盖保留题已有的优质知识点。
+        if kp_names:
+            from app.services.knowledge_point_service import (
+                sync_question_knowledge_points,
+            )
+
+            await sync_question_knowledge_points(
+                db, retained, kp_names, source="imported", replace=True
+            )
 
     qi.status = "published"
     qi.question_id = retained.id
@@ -390,6 +403,9 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
     # 图片字段也以本次（后导入）记录为准；无图片时清空旧值。
     q_fields["image_url"] = image_urls or None
 
+    # knowledge_points 不再进入 Question ORM 列，转写关联表。
+    kp_names = q_fields.pop("knowledge_points", None)
+
     stem = (result.get("normalized") or {}).get("stem", "")
     duplicates = await _find_duplicate_questions(
         db,
@@ -399,7 +415,7 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
     )
     if duplicates:
         retained, current_is_latest = await _retain_latest_duplicate(
-            db, qi, duplicates, q_fields
+            db, qi, duplicates, q_fields, kp_names
         )
         if current_is_latest:
             logger.info(
@@ -435,6 +451,12 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
     )
     db.add(q)
     await db.flush()
+    if kp_names is not None:
+        from app.services.knowledge_point_service import (
+            sync_question_knowledge_points,
+        )
+
+        await sync_question_knowledge_points(db, q, kp_names, source="imported")
     await db.refresh(q)
 
     qi.status = "published"

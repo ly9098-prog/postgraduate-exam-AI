@@ -19,6 +19,7 @@ from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.services import embedding_service
 from app.services.admin_subject_service import resolve_subject_ids
+from app.services.knowledge_point_service import load_question_kps
 from app.services.vector_config_service import EmbeddingConfig, VectorSearchConfig
 
 logger = logging.getLogger("postgraduate-ai.vector_retrieval")
@@ -434,9 +435,11 @@ async def upsert_question_embedding(
 
     try:
         subject_code = await _resolve_question_subject_code(db, question)
+        kp_map = await load_question_kps(db, [question.id])
         content_text = embedding_service.build_question_embedding_text(
             question,
             subject_code=subject_code,
+            knowledge_points=kp_map.get(question.id, []),
         )
         content_hash = embedding_service.compute_content_hash(content_text)
 
@@ -971,7 +974,8 @@ async def search_similar_questions(
     )
     questions_map = {q.id: q for q in questions_result.scalars().all()}
 
-    source_kps = set(source_q.knowledge_points or [])
+    kp_map = await load_question_kps(db, [question_id] + candidate_ids)
+    source_kps = set(kp_map.get(question_id, []))
 
     # 二次排序
     scored = []
@@ -984,7 +988,7 @@ async def search_similar_questions(
         if similarity < _vs.vec.similarity_threshold:
             continue
 
-        c_kps = set(q.knowledge_points or [])
+        c_kps = set(kp_map.get(cid, []))
         kp_overlap = 1.0 if (source_kps & c_kps) else 0.0
         diff_match = 1.0 if q.difficulty == source_q.difficulty else (0.5 if abs(q.difficulty - source_q.difficulty) == 1 else 0.0)
         type_match = 1.0 if q.question_type == source_q.question_type else 0.0
@@ -1017,7 +1021,7 @@ async def search_similar_questions(
             "subject": c_subject,
             "question_type": c_type,
             "stem": stem[:200],
-            "knowledge_points": q.knowledge_points or [],
+            "knowledge_points": kp_map.get(cid, []),
             "difficulty": q.difficulty,
             "similarity": round(float(similarity), 4),
             "recommend_score": round(float(recommend_score), 4),

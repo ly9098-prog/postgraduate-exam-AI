@@ -146,9 +146,13 @@ class AssetReferenceService:
       - question_imports.parsed_options
       - review records
       - pipeline artifacts
-      - question version snapshots
       - image_url fields
       - source_image_name fields
+
+    Note: question_versions is intentionally NOT scanned. Version snapshots are
+    historical records that retain old content URLs by design; counting them as
+    references would make replaced/deleted image cleanup a permanent no-op.
+    Current questions.content/options is the authoritative live-reference source.
     """
 
     # Tables and columns to scan for asset URLs
@@ -157,9 +161,6 @@ class AssetReferenceService:
         {"type": "question", "table": "questions",
          "columns": ["content", "image_url", "options"],
          "id_col": "id"},
-        {"type": "question_version", "table": "question_versions",
-         "columns": ["content", "options"],
-         "id_col": "question_id"},
         {"type": "question_import", "table": "question_imports",
          "columns": ["parsed_content", "raw_data", "parsed_options",
                      "source_image_name"],

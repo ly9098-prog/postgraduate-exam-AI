@@ -42,22 +42,14 @@ class RecommendationFeedbackResponse(BaseModel):
     matched: bool = False
 
 
-# ── 管理端知识点 backfill ──
-
-class KnowledgeBackfillRequest(BaseModel):
-    subject_id: int | None = None
-    limit: int = Field(500, ge=1, le=5000)
-
-
-class KnowledgeBackfillResponse(BaseModel):
-    total_questions: int
-    created: int
-    skipped: int
-    errors: list[dict] = []
-
+# ── 管理端知识点状态 ──
 
 class KnowledgeStatusResponse(BaseModel):
     total_knowledge_points: int
     total_question_mappings: int
-    mapped_questions: int
-    unmapped_questions: int
+    mapped_questions_all: int
+    mapped_questions_active: int
+    total_questions_all: int
+    total_questions_active: int
+    unmapped_questions_all: int
+    unmapped_questions_active: int

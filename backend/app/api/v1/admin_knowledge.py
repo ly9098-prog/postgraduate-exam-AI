@@ -7,8 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
 from app.schemas.knowledge_mastery import (
-    KnowledgeBackfillRequest,
-    KnowledgeBackfillResponse,
     KnowledgeStatusResponse,
 )
 from app.schemas.knowledge_path import (
@@ -22,29 +20,6 @@ from app.services.admin_audit_service import write_admin_audit
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/v1/knowledge", tags=["admin-knowledge"])
-
-
-@router.post("/backfill", response_model=KnowledgeBackfillResponse)
-async def backfill_knowledge_points(
-    data: KnowledgeBackfillRequest,
-    request: Request,
-    current_admin=Depends(require_permissions("question:write")),
-    db: AsyncSession = Depends(get_db),
-):
-    """扫描题目 knowledge_points JSON，写入 knowledge_points 和 question_knowledge_points。"""
-    from app.services import knowledge_point_service
-
-    result = await knowledge_point_service.backfill_question_knowledge_points(
-        db, subject_id=data.subject_id, limit=data.limit,
-    )
-    await write_admin_audit(
-        db, current_admin, "knowledge.backfill", "knowledge",
-        None, severity="normal",
-        detail={"subject_id": data.subject_id, "limit": data.limit, **result},
-        request=request,
-    )
-    await db.commit()
-    return KnowledgeBackfillResponse(**result)
 
 
 @router.get("/status", response_model=KnowledgeStatusResponse)

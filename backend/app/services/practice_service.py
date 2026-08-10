@@ -17,6 +17,11 @@ from app.models.question_import import (
 )
 from app.services.admin_subject_service import resolve_subject_ids
 from app.services.behavior_service import record_answer_behavior
+from app.services.knowledge_point_service import (
+    kp_any_condition,
+    kp_exact_conditions,
+    load_question_kps,
+)
 from app.services.wrong_question_service import record_wrong
 from app.utils.answer_normalizer import is_answer_correct
 
@@ -434,8 +439,7 @@ async def get_aggregated_random_questions(
         # 为每个精确 subject_id 构建独立查询条件
         conds = [Question.is_active, Question.subject_id == sid]
         if knowledge_points:
-            for kp in knowledge_points:
-                conds.append(Question.knowledge_points.like(f'%"{kp}"%'))
+            conds.extend(kp_exact_conditions(knowledge_points))
 
         if use_leitner:
             candidates = await _get_questions_with_leitner(
@@ -592,8 +596,7 @@ async def get_practice_questions(
     base_conditions = [Question.is_active, subject_cond]
 
     if knowledge_points:
-        for kp in knowledge_points:
-            base_conditions.append(Question.knowledge_points.like(f'%"{kp}"%'))
+        base_conditions.extend(kp_exact_conditions(knowledge_points))
 
     # ── V2 Leitner 模式 ──
     if use_leitner:
@@ -951,9 +954,11 @@ async def _apply_strategy_weight_rerank(
         from app.models.knowledge_point import KnowledgePoint
         from app.models.user_knowledge_state import UserKnowledgeState
 
+        kp_map = await load_question_kps(db, [q.id for q in questions])
+
         candidate_names: set[str] = set()
         for q in questions:
-            candidate_names.update(q.knowledge_points or [])
+            candidate_names.update(kp_map.get(q.id, []))
 
         kp_name_to_id: dict[str, int] = {}
         if candidate_names:
@@ -995,7 +1000,7 @@ async def _apply_strategy_weight_rerank(
         scored: list[tuple[Question, float, float]] = []
         weak_set = set(weak_kp_names)
         for q in questions:
-            q_kps = q.knowledge_points or []
+            q_kps = kp_map.get(q.id, [])
             q_kp_set = set(q_kps)
             overlap = len(q_kp_set & weak_set) / max(1, len(q_kps))
 
@@ -1293,12 +1298,9 @@ async def get_smart_practice_questions(
     if excluded_sub is not None:
         conditions.append(Question.id.notin_(excluded_sub))
 
-    # 优先按薄弱知识点过滤
-    if kp_names:
-        kp_conditions = []
-        for kp in kp_names:
-            kp_conditions.append(Question.knowledge_points.like(f'%"{kp}"%'))
-        kp_cond = or_(*kp_conditions)
+    # 优先按薄弱知识点过滤（OR 语义，normalized_name 精确匹配）
+    kp_cond = kp_any_condition(kp_names) if kp_names else None
+    if kp_cond is not None:
         # Count first, then use random offset to avoid ORDER BY random() on large tables
         kp_count_q = select(func.count()).select_from(
             select(Question).where(and_(*conditions, kp_cond)).subquery()
@@ -1975,9 +1977,9 @@ async def _compute_weak_knowledge_points(
         return []
     subject_cond = PracticeRecord.subject_id.in_(subject_ids)
 
-    # 获取最近 30 天的做题记录，带题目的 knowledge_points
+    # 获取最近 30 天的做题记录，带题目的知识点
     result = await db.execute(
-        select(PracticeRecord, Question.knowledge_points)
+        select(PracticeRecord, Question.id)
         .join(Question, PracticeRecord.question_id == Question.id)
         .where(
             PracticeRecord.user_id == user_id,
@@ -1990,10 +1992,12 @@ async def _compute_weak_knowledge_points(
     if not rows:
         return []
 
+    kp_map = await load_question_kps(db, [qid for _record, qid in rows])
+
     # 按知识点聚合
     kp_stats: dict[str, dict] = {}
-    for record, kps_json in rows:
-        kps = kps_json or []
+    for record, qid in rows:
+        kps = kp_map.get(qid, [])
         for kp in kps:
             if kp not in kp_stats:
                 kp_stats[kp] = {"total": 0, "correct": 0}
@@ -2037,6 +2041,8 @@ async def submit_answer(
     question = result.scalar_one_or_none()
     if not question:
         raise ValueError(f"题目不存在: {question_id}")
+
+    kp_map = await load_question_kps(db, [question_id])
 
     is_correct = is_answer_correct(user_answer, question.answer or "", question.question_type or "")
 
@@ -2163,7 +2169,7 @@ async def submit_answer(
         "is_correct": is_correct,
         "correct_answer": question.answer,
         "analysis": question.analysis,
-        "knowledge_points": question.knowledge_points or [],
+        "knowledge_points": kp_map.get(question_id, []),
         "is_wrong_added": is_wrong_added,
     }
 
@@ -2352,6 +2358,7 @@ async def batch_submit_answers(
                 user_id, len(wrong_question_ids_for_prewarm), exc_info=True,
             )
 
+    kp_map = await load_question_kps(db, [q.id for _r, q, _c, _x, _y in records])
     return {
         "results": [
             {
@@ -2360,7 +2367,7 @@ async def batch_submit_answers(
                 "is_correct": c,
                 "correct_answer": q.answer,
                 "analysis": q.analysis,
-                "knowledge_points": q.knowledge_points or [],
+                "knowledge_points": kp_map.get(q.id, []),
             }
             for r, q, c, _, _ in records
         ],

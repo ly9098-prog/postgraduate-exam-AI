@@ -35,7 +35,6 @@ def _make_question(id=1, subject="exam408-ds", question_type="choice",
     q.options = {"A": "选项A", "B": "选项B", "C": "选项C", "D": "选项D"}
     q.answer = answer
     q.analysis = analysis
-    q.knowledge_points = ["数据结构", "链表"] if knowledge_points is _SENTINEL else knowledge_points
     q.difficulty = difficulty
     q.is_active = is_active
     return q
@@ -50,7 +49,7 @@ class TestBuildQuestionEmbeddingText:
         """测试基本文本组装结构。"""
         from app.services.embedding_service import build_question_embedding_text
         q = _make_question()
-        text = build_question_embedding_text(q)
+        text = build_question_embedding_text(q, knowledge_points=["数据结构", "链表"])
         assert "科目：exam408-ds" in text
         assert "题型：choice" in text
         assert "难度：3" in text

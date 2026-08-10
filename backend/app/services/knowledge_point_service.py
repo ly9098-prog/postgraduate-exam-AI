@@ -1,9 +1,10 @@
-"""知识点服务 — 规范化管理知识点 + 题目映射。"""
+"""知识点服务 — 规范化管理知识点 + 题目映射（关联表为唯一事实源）。"""
 import logging
 import re
 import unicodedata
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin import Subject
@@ -11,7 +12,6 @@ from app.models.knowledge_point import KnowledgePoint
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.tag import Tag
-from app.services.admin_subject_service import resolve_subject_ids
 
 logger = logging.getLogger(__name__)
 
@@ -45,170 +45,328 @@ def normalize_knowledge_name(name: str) -> str:
     return s
 
 
+def normalize_kp_input(kp_names) -> list[tuple[str, str]]:
+    """trim → normalize → 按 normalized 去重（保留首次 display 与顺序）。
+
+    返回 [(display, normalized), ...] 保持输入顺序。空/纯空白输入跳过。
+    """
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for raw in kp_names or []:
+        if raw is None:
+            continue
+        display = str(raw).strip()
+        if not display:
+            continue
+        norm = normalize_knowledge_name(display)
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        out.append((display, norm))
+    return out
+
+
 async def get_or_create_knowledge_point(
     db: AsyncSession,
     subject_id: int,
     name: str,
 ) -> KnowledgePoint:
-    """按 subject_id + normalized_name 查找或创建知识点。"""
+    """按 subject_id + normalized_name 查找或创建知识点（并发安全）。
+
+    用 savepoint 捕获唯一键竞争：并发创建相同 (subject_id, normalized_name) 时，
+    落败方回滚 savepoint 后 re-select，不会污染外层事务。
+    """
     normalized = normalize_knowledge_name(name)
     if not normalized:
         raise ValueError("知识点名称不能为空")
 
-    result = await db.execute(
-        select(KnowledgePoint).where(
-            KnowledgePoint.subject_id == subject_id,
-            KnowledgePoint.normalized_name == normalized,
+    async def _find() -> KnowledgePoint | None:
+        result = await db.execute(
+            select(KnowledgePoint).where(
+                KnowledgePoint.subject_id == subject_id,
+                KnowledgePoint.normalized_name == normalized,
+            )
         )
-    )
-    kp = result.scalar_one_or_none()
+        return result.scalar_one_or_none()
+
+    kp = await _find()
     if kp:
         return kp
 
-    kp = KnowledgePoint(
-        subject_id=subject_id,
-        name=name.strip(),
-        normalized_name=normalized,
+    # 并发插入落败：savepoint 已回滚，重查已提交的那条；若 winner 尚未可见则
+    # 重试（极罕见）。多次失败给出可诊断错误而非裸 IntegrityError。
+    for _attempt in range(3):
+        new_kp = KnowledgePoint(
+            subject_id=subject_id,
+            name=name.strip(),
+            normalized_name=normalized,
+        )
+        try:
+            async with db.begin_nested():
+                db.add(new_kp)
+                await db.flush()
+            return new_kp
+        except IntegrityError:
+            kp = await _find()
+            if kp is not None:
+                return kp
+    raise RuntimeError(
+        f"并发创建知识点失败：subject_id={subject_id}, normalized={normalized}"
     )
-    db.add(kp)
-    await db.flush()
-    return kp
+
+
+async def _load_mappings(db: AsyncSession, question_id: int) -> list[QuestionKnowledgePoint]:
+    result = await db.execute(
+        select(QuestionKnowledgePoint).where(QuestionKnowledgePoint.question_id == question_id)
+    )
+    return list(result.scalars().all())
 
 
 async def sync_question_knowledge_points(
     db: AsyncSession,
     question: Question,
+    kp_names,
+    *,
     source: str = "imported",
+    replace: bool = False,
 ) -> dict:
-    """从 question.knowledge_points JSON 同步到 question_knowledge_points 表。
+    """把题目的知识点同步进 question_knowledge_points 关联表（唯一事实源）。
 
-    返回: {"created": int, "skipped": int, "total": int}
+    语义（固定）：
+    - ``kp_names is None``：字段未提供，不改动旧映射（no-op）。
+    - ``kp_names == []`` 且 ``replace=True``：用户明确清空，删除全部映射。
+    - 非空数组 + ``replace=True``：最终映射与新数组完全一致（顺序按 position）。
+    - 非空数组 + ``replace=False``：additive/idempotent（用于回填等）。
+
+    subject 不变量：get/create 一律使用 ``question.subject_id``；调用方在修改
+    subject 后调用本函数，旧科目映射会在 replace 时被删除。
+
+    返回: {"changed", "created", "updated", "deleted", "total"}
     """
-    kps_raw = question.knowledge_points
-    if not kps_raw or not isinstance(kps_raw, list):
-        return {"created": 0, "skipped": 0, "total": 0}
+    if kp_names is None:
+        return {"changed": False, "created": 0, "updated": 0, "deleted": 0, "total": 0}
 
-    # 过滤空值
-    kp_names = [str(kp).strip() for kp in kps_raw if kp]
-    if not kp_names:
-        return {"created": 0, "skipped": 0, "total": 0}
-
-    # subject_id 是 NOT NULL；若无有效 subject 则跳过
+    entries = normalize_kp_input(kp_names)
     subject_id = question.subject_id
+    existing = await _load_mappings(db, question.id)
+    existing_by_kp = {m.knowledge_point_id: m for m in existing}
+
     if not subject_id:
-        logger.warning(
-            "sync_question_knowledge_points: qid=%d has no valid subject, skipping %d kps",
-            question.id, len(kp_names),
-        )
-        return {"created": 0, "skipped": len(kp_names), "total": len(kp_names)}
+        # 无有效科目：无法 get/create；仅 replace 且要求清空时删除全部。
+        if replace and existing:
+            for m in existing:
+                await db.delete(m)
+            await db.flush()
+            return {
+                "changed": True, "created": 0, "updated": 0,
+                "deleted": len(existing), "total": 0,
+            }
+        logger.warning("sync_question_knowledge_points: qid=%d has no subject, skip", question.id)
+        return {"changed": False, "created": 0, "updated": 0, "deleted": 0, "total": 0}
 
-    created = 0
-    skipped = 0
+    kp_entries: list[tuple[int, int]] = []
+    for position, (display, _norm) in enumerate(entries):
+        kp = await get_or_create_knowledge_point(db, subject_id, display)
+        kp_entries.append((kp.id, position))
 
-    for kp_name in kp_names:
-        try:
-            kp = await get_or_create_knowledge_point(db, subject_id, kp_name)
-        except ValueError:
-            skipped += 1
-            continue
+    target_kp_ids = {kp_id for kp_id, _position in kp_entries}
+    created = updated = deleted = 0
 
-        # 检查是否已有映射
-        existing = await db.execute(
-            select(QuestionKnowledgePoint).where(
-                QuestionKnowledgePoint.question_id == question.id,
-                QuestionKnowledgePoint.knowledge_point_id == kp.id,
+    if replace:
+        # 先删后 flush：释放旧 position，避免后续 INSERT/UPDATE 与未删除行冲突。
+        removed = [m for m in existing if m.knowledge_point_id not in target_kp_ids]
+        for m in removed:
+            await db.delete(m)
+            deleted += 1
+        if removed:
+            await db.flush()
+            existing = [m for m in existing if m.knowledge_point_id in target_kp_ids]
+            existing_by_kp = {m.knowledge_point_id: m for m in existing}
+
+        # 两阶段 position 更新：先把要改的行挪到唯一临时位，再落最终位。
+        # SQLAlchemy 同表 flush 按 UPDATE→INSERT→DELETE 排序，逐条 UPDATE 会造成
+        # 瞬时重复 (question_id, position)，违反 uq_qkp_question_position（swap 场景）。
+        changed = [
+            (kp_id, position)
+            for kp_id, position in kp_entries
+            if kp_id in existing_by_kp and existing_by_kp[kp_id].position != position
+        ]
+        if changed:
+            offset = 1_000_000
+            for i, (kp_id, _pos) in enumerate(changed):
+                existing_by_kp[kp_id].position = offset + i
+            await db.flush()
+            for kp_id, position in changed:
+                existing_by_kp[kp_id].position = position
+                updated += 1
+            await db.flush()
+
+        for kp_id, position in kp_entries:
+            if kp_id in existing_by_kp:
+                continue
+            db.add(
+                QuestionKnowledgePoint(
+                    question_id=question.id,
+                    knowledge_point_id=kp_id,
+                    role="main",
+                    weight=1.0,
+                    source=source,
+                    position=position,
+                )
             )
-        )
-        if existing.scalar_one_or_none():
-            skipped += 1
-            continue
-
-        mapping = QuestionKnowledgePoint(
-            question_id=question.id,
-            knowledge_point_id=kp.id,
-            role="main",
-            weight=1.0,
-            source=source,
-        )
-        db.add(mapping)
-        created += 1
-
-    await db.flush()
-    return {"created": created, "skipped": skipped, "total": len(kp_names)}
-
-
-async def backfill_question_knowledge_points(
-    db: AsyncSession,
-    subject_id: int | None = None,
-    limit: int = 500,
-) -> dict:
-    """批量同步题目知识点到映射表。
-
-    subject_id 支持精确匹配或带子科目扩展（见 resolve_subject_ids）。
-    """
-    conditions = [Question.is_active]
-    if subject_id:
-        ids = await resolve_subject_ids(db, subject_id)
-        conditions.append(Question.subject_id.in_(ids))
-
-    result = await db.execute(
-        select(Question)
-        .where(and_(*conditions))
-        .limit(limit)
-    )
-    questions = list(result.scalars().all())
-
-    total_created = 0
-    total_skipped = 0
-    total_questions = 0
-    errors = []
-
-    for q in questions:
-        total_questions += 1
-        try:
-            stats = await sync_question_knowledge_points(db, q, source="backfill")
-            total_created += stats["created"]
-            total_skipped += stats["skipped"]
-        except Exception as exc:
-            errors.append({"question_id": q.id, "error": str(exc)})
-            logger.warning("backfill KP failed for qid=%d: %s", q.id, exc)
+            created += 1
+    else:
+        # additive：仅补充缺失映射，追加到现有 position 之后，保持幂等（不动旧行）。
+        base = max((m.position for m in existing), default=-1) + 1
+        for position, (kp_id, _pos) in enumerate(kp_entries):
+            if kp_id in existing_by_kp:
+                continue
+            db.add(
+                QuestionKnowledgePoint(
+                    question_id=question.id,
+                    knowledge_point_id=kp_id,
+                    role="main",
+                    weight=1.0,
+                    source=source,
+                    position=base + position,
+                )
+            )
+            created += 1
 
     await db.flush()
-
     return {
-        "total_questions": total_questions,
-        "created": total_created,
-        "skipped": total_skipped,
-        "errors": errors[:20],
+        "changed": bool(created or updated or deleted),
+        "created": created,
+        "updated": updated,
+        "deleted": deleted,
+        "total": len(entries),
     }
 
 
+async def replace_question_knowledge_points(
+    db: AsyncSession,
+    question: Question,
+    kp_names,
+    source: str,
+) -> dict:
+    """replace 语义封装（编辑/duplicate 覆盖用）。"""
+    return await sync_question_knowledge_points(
+        db, question, kp_names, source=source, replace=True
+    )
+
+
+async def load_question_kps(
+    db: AsyncSession, question_ids: list[int]
+) -> dict[int, list[str]]:
+    """批量加载题目的知识点展示名列表（按 position,id 排序）。
+
+    - 一次查询，无 N+1；去重 ids；空集返回 {}；无知识点的题返回 []。
+    """
+    if not question_ids:
+        return {}
+    ids = list(dict.fromkeys(question_ids))
+    result = await db.execute(
+        select(QuestionKnowledgePoint.question_id, KnowledgePoint.name)
+        .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+        .where(QuestionKnowledgePoint.question_id.in_(ids))
+        .order_by(QuestionKnowledgePoint.question_id, QuestionKnowledgePoint.position, QuestionKnowledgePoint.id)
+    )
+    out: dict[int, list[str]] = {qid: [] for qid in ids}
+    for qid, name in result.all():
+        out[qid].append(name)
+    return out
+
+
+# ── 过滤 helper（基于 normalized_name 精确匹配 / contains 模糊，subject 约束）──
+
+
+def kp_exact_conditions(names) -> list:
+    """每个归一化名生成一个条件（调用方 AND 叠加）。用于练习的 AND 语义。"""
+    out = []
+    for _display, norm in normalize_kp_input(names):
+        out.append(
+            Question.id.in_(
+                select(QuestionKnowledgePoint.question_id)
+                .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+                .join(Question, Question.id == QuestionKnowledgePoint.question_id)
+                .where(
+                    KnowledgePoint.subject_id == Question.subject_id,
+                    KnowledgePoint.normalized_name == norm,
+                )
+            )
+        )
+    return out
+
+
+def kp_any_condition(names):
+    """单个 OR 条件（归一化名 in 列表）。用于薄弱点补齐等 OR 语义。"""
+    norms = [norm for _display, norm in normalize_kp_input(names)]
+    if not norms:
+        return None
+    return Question.id.in_(
+        select(QuestionKnowledgePoint.question_id)
+        .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+        .join(Question, Question.id == QuestionKnowledgePoint.question_id)
+        .where(
+            KnowledgePoint.subject_id == Question.subject_id,
+            KnowledgePoint.normalized_name.in_(norms),
+        )
+    )
+
+
+def kp_fuzzy_condition(topic: str):
+    """contains 模糊条件（name 原样 + normalized_name 归一化双查）。"""
+    t = str(topic).strip()
+    if not t:
+        return None
+    return Question.id.in_(
+        select(QuestionKnowledgePoint.question_id)
+        .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+        .join(Question, Question.id == QuestionKnowledgePoint.question_id)
+        .where(
+            KnowledgePoint.subject_id == Question.subject_id,
+            or_(
+                KnowledgePoint.name.contains(t),
+                KnowledgePoint.normalized_name.contains(normalize_knowledge_name(t)),
+            ),
+        )
+    )
+
+
 async def get_knowledge_status(db: AsyncSession) -> dict:
-    """返回知识点映射状态统计。"""
+    """返回知识点映射状态统计（区分 all / active 口径）。"""
     total_kp = (await db.execute(select(func.count(KnowledgePoint.id)))).scalar() or 0
     total_mappings = (
         await db.execute(select(func.count(QuestionKnowledgePoint.id)))
     ).scalar() or 0
 
-    # 有映射的不同题目数
-    mapped_qids = (
-        await db.execute(
-            select(func.count(func.distinct(QuestionKnowledgePoint.question_id)))
-        )
+    total_q_all = (
+        await db.execute(select(func.count(Question.id)))
+    ).scalar() or 0
+    total_q_active = (
+        await db.execute(select(func.count(Question.id)).where(Question.is_active))
     ).scalar() or 0
 
-    # 总活跃题目数
-    total_questions = (
+    mapped_q_all = (
+        await db.execute(select(func.count(func.distinct(QuestionKnowledgePoint.question_id))))
+    ).scalar() or 0
+    mapped_q_active = (
         await db.execute(
-            select(func.count(Question.id)).where(Question.is_active)
+            select(func.count(func.distinct(QuestionKnowledgePoint.question_id)))
+            .join(Question, Question.id == QuestionKnowledgePoint.question_id)
+            .where(Question.is_active)
         )
     ).scalar() or 0
 
     return {
         "total_knowledge_points": total_kp,
         "total_question_mappings": total_mappings,
-        "mapped_questions": mapped_qids,
-        "unmapped_questions": max(0, total_questions - mapped_qids),
+        "mapped_questions_all": mapped_q_all,
+        "mapped_questions_active": mapped_q_active,
+        "total_questions_all": total_q_all,
+        "total_questions_active": total_q_active,
+        "unmapped_questions_all": max(0, total_q_all - mapped_q_all),
+        "unmapped_questions_active": max(0, total_q_active - mapped_q_active),
     }
 
 

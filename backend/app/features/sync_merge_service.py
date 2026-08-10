@@ -22,7 +22,7 @@ MAX_TAGS_PER_SYNC = 1000
 
 _QUESTION_FIELDS = (
     "subject_id", "question_type", "content", "options", "answer",
-    "question_hash", "analysis", "knowledge_points", "difficulty",
+    "question_hash", "analysis", "difficulty",
     "source", "source_type", "source_file", "import_batch_id",
     "raw_content", "image_url", "year", "review_status", "is_active",
 )
@@ -65,10 +65,11 @@ def _build_tag(data: dict) -> Tag:
     return tag
 
 
-def _build_question(data: dict) -> Question:
+def _build_question(data: dict) -> tuple[Question, list | None]:
     q = Question()
     q.sync_uuid = data["sync_uuid"]
     q.sync_version = data.get("sync_version", 0)
+    kp_names = data.get("knowledge_points")
     for f in _QUESTION_FIELDS:
         if f in data:
             setattr(q, f, data[f])
@@ -76,16 +77,18 @@ def _build_question(data: dict) -> Question:
         q.updated_at = _parse_datetime(data["updated_at"])
     if data.get("created_at"):
         q.created_at = _parse_datetime(data["created_at"])
-    return q
+    return q, kp_names
 
 
-def _update_question(existing: Question, data: dict) -> None:
+def _update_question(existing: Question, data: dict) -> list | None:
+    kp_names = data.get("knowledge_points")
     for f in _QUESTION_FIELDS:
         if f in data:
             setattr(existing, f, data[f])
     existing.sync_version = data.get("sync_version", existing.sync_version)
     if data.get("updated_at"):
         existing.updated_at = _parse_datetime(data["updated_at"])
+    return kp_names
 
 
 async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
@@ -147,6 +150,7 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
             report.tags_skipped += 1
 
     # --- Questions ---
+    pending_syncs: list[tuple[Question, list]] = []
     for q_data in questions_data:
         sync_uuid = q_data.get("sync_uuid")
         if not sync_uuid:
@@ -163,8 +167,11 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
                 if existing_suuid != sync_uuid:
                     report.questions_deduped += 1
                     continue
-            db.add(_build_question(q_data))
+            q, kp_names = _build_question(q_data)
+            db.add(q)
             report.questions_new += 1
+            if kp_names is not None:
+                pending_syncs.append((q, kp_names))
         else:
             local_updated = _parse_datetime(q_data.get("updated_at"))
             cloud_updated = existing.updated_at
@@ -172,7 +179,19 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
                 cloud_updated = cloud_updated.replace(tzinfo=None)
 
             if local_updated and cloud_updated and local_updated > cloud_updated:
-                _update_question(existing, q_data)
+                prev_subject_id = existing.subject_id
+                kp_names = _update_question(existing, q_data)
+                if kp_names is not None:
+                    pending_syncs.append((existing, kp_names))
+                elif "subject_id" in q_data and q_data["subject_id"] != prev_subject_id:
+                    # 仅改科目、未携带知识点：用当前展示名在新科目下重建映射，
+                    # 否则关联表会残留指向旧科目 KP 的行（违反 subject 不变量）。
+                    from app.services.knowledge_point_service import load_question_kps
+
+                    old_kp_map = await load_question_kps(db, [existing.id])
+                    old_kps = old_kp_map.get(existing.id, [])
+                    if old_kps:
+                        pending_syncs.append((existing, old_kps))
                 report.questions_updated += 1
             elif local_updated and cloud_updated and local_updated < cloud_updated:
                 report.questions_conflict += 1
@@ -187,8 +206,23 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
 
     try:
         await db.flush()
+
+        # flush 成功后同步知识点关联（replace 语义，subject 取更新后值）。
+        # 与上面的 flush 共用守卫：KP 同步异常同样回滚整个 package 并记入 report，
+        # 避免静默丢失半同步状态。
+        if pending_syncs:
+            from app.services.knowledge_point_service import (
+                sync_question_knowledge_points,
+            )
+
+            for q, kp_names in pending_syncs:
+                await sync_question_knowledge_points(
+                    db, q, kp_names, source="sync", replace=True
+                )
+            await db.flush()
     except IntegrityError as e:
         await db.rollback()
         report.errors.append(f"数据库约束冲突（可能重复 sync_uuid）: {e}")
+        return report
 
     return report

@@ -3,29 +3,31 @@ import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.models.knowledge_point import KnowledgePoint
-from app.models.question import Question
-from app.models.question_knowledge_point import QuestionKnowledgePoint
-from app.models.recommendation_log import RecommendationLog
-from app.models.user_knowledge_state import UserKnowledgeState
-
 # Ensure all ORM models are registered so Subject's string relationships
 # (practice_records, answer_behaviors, review_schedules, ...) resolve at
 # mapper configuration time (see app/models/admin.py Subject).
 from app.models.answer_behavior import AnswerBehavior  # noqa: F401
 from app.models.import_batch_job import ImportBatchJob  # noqa: F401
 from app.models.knowledge_edge import KnowledgeEdge  # noqa: F401
+from app.models.knowledge_point import KnowledgePoint
 from app.models.pomodoro import PomodoroSession  # noqa: F401
 from app.models.practice_record import PracticeRecord  # noqa: F401
-from app.models.recommendation_metrics_daily import RecommendationMetricsDaily  # noqa: F401
+from app.models.question import Question
+from app.models.question_knowledge_point import QuestionKnowledgePoint
+from app.models.recommendation_log import RecommendationLog
+from app.models.recommendation_metrics_daily import (
+    RecommendationMetricsDaily,  # noqa: F401
+)
 from app.models.review_scheduler import ReviewSchedule  # noqa: F401
 from app.models.tag import Tag  # noqa: F401
+from app.models.user_knowledge_state import UserKnowledgeState
 
 # --- helpers ---
 
 def _make_mock_db():
     db = MagicMock()
     db.add = MagicMock()
+    db.delete = AsyncMock()
     db.commit = AsyncMock()
     db.flush = AsyncMock()
     db.refresh = AsyncMock()
@@ -58,7 +60,7 @@ _KP_SENTINEL = object()
 
 
 def _make_question(id=1, subject_id=1, question_type="single_choice",
-                   answer="A", analysis="求导得 2x", knowledge_points=_KP_SENTINEL,
+                   answer="A", analysis="求导得 2x", knowledge_points=None,
                    is_active=True):
     q = MagicMock(spec=Question)
     q.id = id
@@ -68,7 +70,6 @@ def _make_question(id=1, subject_id=1, question_type="single_choice",
     q.options = {"A": "2x", "B": "x", "C": "x^2", "D": "2"}
     q.answer = answer
     q.analysis = analysis
-    q.knowledge_points = ["导数"] if knowledge_points is _KP_SENTINEL else knowledge_points
     q.difficulty = 2
     q.is_active = is_active
     return q
@@ -154,54 +155,112 @@ class TestSyncQuestionKnowledgePoints:
         from app.services.knowledge_point_service import sync_question_knowledge_points
 
         db = _make_mock_db()
-        q = _make_question(id=10, subject_id=1, knowledge_points=["导数", "极限"])
-        kp1 = _make_kp(id=1, name="导数")
-        kp2 = _make_kp(id=2, name="极限")
-
-        # get_or_create: first call returns kp1, second returns kp2
-        # existing check: both return None (no existing mapping)
-        call_count = [0]
-        kps = [kp1, kp2]
+        q = _make_question(id=10, subject_id=1)
 
         async def mock_execute(query):
-            call_count[0] += 1
-            # Odd calls: get_or_create lookup (scalar_one_or_none)
-            # Even calls: existing check (scalar_one_or_none)
-            if call_count[0] % 2 == 1:
-                # get_or_create lookup
-                idx = (call_count[0] - 1) // 2
-                if idx < len(kps):
-                    return _make_execute_result(scalar_one_or_none=None)
-                return _make_execute_result(scalar_one_or_none=kps[-1])
-            else:
-                # existing mapping check
-                return _make_execute_result(scalar_one_or_none=None)
+            text = str(query)
+            if "FROM question_knowledge_points" in text:
+                r = MagicMock()
+                r.all.return_value = []
+                return r
+            # get_or_create lookup → 未存在 → 新建
+            r = MagicMock()
+            r.scalar_one_or_none.return_value = None
+            return r
 
         db.execute = AsyncMock(side_effect=mock_execute)
 
-        result = _run(sync_question_knowledge_points(db, q, source="imported"))
+        result = _run(sync_question_knowledge_points(db, q, ["导数", "极限"], source="imported"))
         assert result["total"] == 2
         assert result["created"] == 2
-        assert result["skipped"] == 0
+        assert result["deleted"] == 0
 
-    def test_sync_skips_empty_knowledge_points(self):
+    def test_sync_replace_clears_and_exact(self):
         from app.services.knowledge_point_service import sync_question_knowledge_points
 
         db = _make_mock_db()
-        q = _make_question(id=10, subject_id=1, knowledge_points=[])
+        q = _make_question(id=10, subject_id=1)
 
-        result = _run(sync_question_knowledge_points(db, q))
+        def _mapping(kp_id, position):
+            m = MagicMock(spec=QuestionKnowledgePoint)
+            m.knowledge_point_id = kp_id
+            m.position = position
+            return m
+
+        async def mock_execute(query):
+            text = str(query)
+            if "FROM question_knowledge_points" in text:
+                return _make_execute_result(scalars=[_mapping(1, 0), _mapping(2, 1)])
+            # get_or_create("极限") → 已存在 kp id=2
+            r = MagicMock()
+            kp2 = _make_kp(id=2, name="极限")
+            r.scalar_one_or_none.return_value = kp2
+            return r
+
+        db.execute = AsyncMock(side_effect=mock_execute)
+
+        # replace=[极限] → 删除 kp1（id=1 不在目标 {2}），保留/更新 kp2
+        result = _run(sync_question_knowledge_points(db, q, ["极限"], source="admin", replace=True))
+        assert result["deleted"] == 1
+        assert result["total"] == 1
+
+        # replace=[] → 清空全部
+        result = _run(sync_question_knowledge_points(db, q, [], source="admin", replace=True))
+        assert result["deleted"] == 2
+        assert result["created"] == 0
+
+    def test_sync_none_is_noop(self):
+        from app.services.knowledge_point_service import sync_question_knowledge_points
+
+        db = _make_mock_db()
+        q = _make_question(id=10, subject_id=1)
+        result = _run(sync_question_knowledge_points(db, q, None, source="imported"))
+        assert result["total"] == 0
+        assert result["changed"] is False
+
+    def test_sync_empty_additive_noop(self):
+        from app.services.knowledge_point_service import sync_question_knowledge_points
+
+        db = _make_mock_db()
+        q = _make_question(id=10, subject_id=1)
+
+        async def mock_execute(query):
+            text = str(query)
+            if "FROM question_knowledge_points" in text:
+                r = MagicMock()
+                r.all.return_value = []
+                return r
+            r = MagicMock()
+            r.scalar_one_or_none.return_value = None
+            return r
+
+        db.execute = AsyncMock(side_effect=mock_execute)
+        result = _run(sync_question_knowledge_points(db, q, [], source="imported", replace=False))
         assert result["total"] == 0
         assert result["created"] == 0
 
-    def test_sync_skips_none_knowledge_points(self):
+    def test_sync_dedups_by_normalized(self):
         from app.services.knowledge_point_service import sync_question_knowledge_points
 
         db = _make_mock_db()
-        q = _make_question(id=10, subject_id=1, knowledge_points=None)
+        q = _make_question(id=10, subject_id=1)
 
-        result = _run(sync_question_knowledge_points(db, q))
-        assert result["total"] == 0
+        async def mock_execute(query):
+            text = str(query)
+            if "FROM question_knowledge_points" in text:
+                r = MagicMock()
+                r.all.return_value = []
+                return r
+            r = MagicMock()
+            r.scalar_one_or_none.return_value = None
+            return r
+
+        db.execute = AsyncMock(side_effect=mock_execute)
+        # 同一知识点以不同空白形式出现 → 去重为 1
+        result = _run(sync_question_knowledge_points(
+            db, q, ["  导数  ", "导数", "极限"], source="imported"))
+        assert result["total"] == 2
+        assert result["created"] == 2
 
 
 # ── 3. calculate_mastery_score ──
@@ -351,9 +410,14 @@ class TestGetUserWeakKnowledgePoints:
             if call_count[0] == 1:
                 # UKS query — empty
                 return _make_execute_result(all=[])
+            elif call_count[0] == 2:
+                # PracticeRecord fallback → (record, question_id)
+                return _make_execute_result(all=[(pr, 1), (pr, 1)])
             else:
-                # PracticeRecord fallback
-                return _make_execute_result(all=[(pr, ["导数", "极限"]), (pr, ["导数"])])
+                # load_question_kps → (question_id, kp.name) rows
+                r = MagicMock()
+                r.all.return_value = [(1, "导数"), (1, "极限")]
+                return r
 
         db.execute = AsyncMock(side_effect=mock_execute)
 
@@ -440,7 +504,6 @@ class TestSmartModeIntegration:
     @patch("app.services.practice_service.vector_retrieval_service", create=True)
     def test_smart_mode_uses_mastery_service(self, mock_vrs):
         """smart mode should try mastery_service first, fallback to _compute_weak_knowledge_points."""
-        import app.services
         from app.services.practice_service import get_smart_practice_questions
 
         db = _make_mock_db()

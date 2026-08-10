@@ -25,6 +25,7 @@ from app.schemas.wrong_question import (
     WrongQuestionUpdate,
 )
 from app.services import wrong_question_service as svc
+from app.services.knowledge_point_service import load_question_kps
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 
 # Regex: lines ending with a trailing operator (OCR-split code expressions)
@@ -102,8 +103,14 @@ def _sanitize_options(options: dict | None) -> dict | None:
     return sanitized
 
 
-def enrich_wq(wq, question, **extra):
+def enrich_wq(wq, question, knowledge_points=None, **extra):
     ai_status = "ready" if isinstance(wq.ai_analysis, dict) and wq.ai_analysis else "empty"
+    # 硬删除的题（question 为 None）→ knowledge_points 应为 None 而非 []；
+    # 存活但无知识点的题 → []。不依赖调用方是否传默认值。
+    if question is None:
+        kps = None
+    else:
+        kps = knowledge_points if knowledge_points is not None else []
     return WrongQuestionResponse(
         id=wq.id,
         question_id=wq.question_id,
@@ -120,7 +127,7 @@ def enrich_wq(wq, question, **extra):
         options=_sanitize_options(question.options) if question else None,
         answer=question.answer if question else None,
         analysis=question.analysis if question else None,
-        knowledge_points=question.knowledge_points if question else None,
+        knowledge_points=kps,
         image_url=question.image_url if question else None,
         ai_analysis=wq.ai_analysis,
         ai_analysis_status=ai_status,
@@ -254,8 +261,9 @@ async def get_wrong(
         select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
     )
     question = result.scalar_one_or_none()
+    kp_map = await load_question_kps(db, [wq.question_id])
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
-    return enrich_wq(wq, question, **extra)
+    return enrich_wq(wq, question, knowledge_points=kp_map.get(wq.question_id, []), **extra)
 
 
 @router.put("/{wq_id}", response_model=WrongQuestionResponse)
@@ -275,8 +283,9 @@ async def update_wrong(
         select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
     )
     question = result.scalar_one_or_none()
+    kp_map = await load_question_kps(db, [wq.question_id])
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
-    return enrich_wq(wq, question, **extra)
+    return enrich_wq(wq, question, knowledge_points=kp_map.get(wq.question_id, []), **extra)
 
 
 @router.put("/{wq_id}/quality", response_model=WrongQuestionResponse)
@@ -294,8 +303,9 @@ async def rate_quality(
         select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
     )
     question = result.scalar_one_or_none()
+    kp_map = await load_question_kps(db, [wq.question_id])
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
-    return enrich_wq(wq, question, **extra)
+    return enrich_wq(wq, question, knowledge_points=kp_map.get(wq.question_id, []), **extra)
 
 
 @router.post("/batch", response_model=WrongQuestionBatchResponse)

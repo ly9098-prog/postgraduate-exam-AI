@@ -26,6 +26,7 @@ from app.models.ai_chat import AiChat
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.services.admin_subject_service import resolve_subject_ids
+from app.services.knowledge_point_service import load_question_kps
 
 # ============================================================
 # Token 用量控制
@@ -157,6 +158,9 @@ async def ai_explain(
     if not q:
         raise ValueError("题目不存在")
 
+    kp_map = await load_question_kps(db, [q.id])
+    q_kps = kp_map.get(q.id, [])
+
     # 构造 context
     stem = q.content.get("text", "") if isinstance(q.content, dict) else str(q.content or "")
 
@@ -165,7 +169,7 @@ async def ai_explain(
         options=q.options,
         answer=q.answer,
         analysis=q.analysis,
-        knowledge_points=q.knowledge_points,
+        knowledge_points=q_kps,
         user_answer=user_answer,
         is_correct=is_correct,
         focus=focus,
@@ -177,7 +181,7 @@ async def ai_explain(
             "question_id": question_id,
             "explanation": "今日 AI 调用额度已用尽，请明天再试。",
             "solution_steps": [],
-            "key_knowledge_points": q.knowledge_points or [],
+            "key_knowledge_points": q_kps,
             "common_mistakes": [],
             "tokens_used": 0,
             "from_fallback": True,
@@ -191,7 +195,7 @@ async def ai_explain(
             "question_id": question_id,
             "explanation": fallback["explanation"],
             "solution_steps": [],
-            "key_knowledge_points": q.knowledge_points or [],
+            "key_knowledge_points": q_kps,
             "common_mistakes": [],
             "tokens_used": 0,
             "from_fallback": True,
@@ -354,8 +358,6 @@ async def recommend_similar_questions(
     answered_ids = {row[0] for row in answered_result.all()}
     answered_ids.add(question_id)  # 排除自身
 
-    source_kps = set(q.knowledge_points or [])
-
     # 同 subject 候选
     candidates_result = await db.execute(
         select(Question).where(
@@ -366,12 +368,15 @@ async def recommend_similar_questions(
     )
     candidates = candidates_result.scalars().all()
 
+    kp_map = await load_question_kps(db, [q.id] + [c.id for c in candidates])
+    source_kps = set(kp_map.get(q.id, []))
+
     # 按知识点重叠度 + 难度匹配打分排序
     scored = []
     for c in candidates:
         if c.id in answered_ids:
             continue
-        c_kps = set(c.knowledge_points or [])
+        c_kps = set(kp_map.get(c.id, []))
         kp_overlap = len(source_kps & c_kps)
         difficulty_match = 1 if c.difficulty == q.difficulty else 0
         score = kp_overlap * 2 + difficulty_match
@@ -387,7 +392,7 @@ async def recommend_similar_questions(
 
     recommendations = []
     for _, c in top:
-        kps = c.knowledge_points or []
+        kps = kp_map.get(c.id, [])
         match_reasons = []
         if set(kps) & source_kps:
             match_reasons.append("同知识点")
@@ -471,10 +476,7 @@ async def generate_learning_report(
 
     # 获取涉及题目的知识点
     qids = list({r.question_id for r in records})
-    questions_result = await db.execute(
-        select(Question.id, Question.knowledge_points).where(Question.id.in_(qids))
-    )
-    q_map = {row[0]: row[1] for row in questions_result.all()}
+    q_map = await load_question_kps(db, qids)
 
     # 按知识点聚合正确率
     kp_stats: dict[str, dict] = {}

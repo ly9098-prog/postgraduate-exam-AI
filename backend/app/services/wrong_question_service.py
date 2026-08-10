@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from sqlalchemy import Float, String, and_, case, cast, delete, func, select
+from sqlalchemy import Float, and_, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,6 +11,7 @@ from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.user_question_state import UserQuestionState
 from app.models.wrong_question import WrongQuestion
 from app.services.admin_subject_service import resolve_subject_ids
+from app.services.knowledge_point_service import kp_fuzzy_condition, load_question_kps
 
 
 async def record_wrong(
@@ -280,8 +281,9 @@ async def list_wrong_enriched(
         base_query = base_query.where(Question.subject_id.in_(subject_ids))
 
     if topic:
-        topic_filter = cast(Question.knowledge_points, String).contains(topic)
-        base_query = base_query.where(topic_filter)
+        topic_filter = kp_fuzzy_condition(topic)
+        if topic_filter is not None:
+            base_query = base_query.where(topic_filter)
 
     base_query = base_query.order_by(WrongQuestion.updated_at.desc())
 
@@ -295,6 +297,7 @@ async def list_wrong_enriched(
     rows = result.all()
 
     items = []
+    kp_map = await load_question_kps(db, [row[1].id for row in rows if row[1]])
     for row in rows:
         wq = row[0]
         question = row[1]
@@ -326,7 +329,7 @@ async def list_wrong_enriched(
             "options": question.options if question else None,
             "answer": question.answer if question else None,
             "analysis": question.analysis if question else None,
-            "knowledge_points": question.knowledge_points if question else None,
+            "knowledge_points": kp_map.get(question.id, []) if question else None,
             "ai_analysis": wq.ai_analysis,
             "ai_analysis_status": "ready" if isinstance(wq.ai_analysis, dict) and wq.ai_analysis else "empty",
         })

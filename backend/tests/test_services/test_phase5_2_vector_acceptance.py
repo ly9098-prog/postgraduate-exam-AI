@@ -52,9 +52,6 @@ def _make_question(id=1, subject="exam408-ds", question_type="choice",
     q.options = {"A": "选项A", "B": "选项B", "C": "选项C", "D": "选项D"}
     q.answer = answer
     q.analysis = analysis
-    q.knowledge_points = (
-        ["数据结构", "链表"] if knowledge_points is _SENTINEL else knowledge_points
-    )
     q.difficulty = difficulty
     q.is_active = is_active
     q.review_status = review_status
@@ -871,7 +868,10 @@ class TestSeedQuestionSampling:
             for i in range(60)
         ]
 
-        texts = [build_question_embedding_text(q) for q in questions]
+        texts = [
+            build_question_embedding_text(q, knowledge_points=[f"kp_{i}", f"kp_{i+1}"])
+            for i, q in enumerate(questions)
+        ]
         # 验证所有文本非空
         assert all(len(t) > 0 for t in texts)
         # 验证所有文本包含科目信息

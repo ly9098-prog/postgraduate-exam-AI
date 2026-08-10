@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.admin import Subject
 from app.models.question import Question
 from app.schemas.admin_audit import QuestionAuditDetail
+from app.services.knowledge_point_service import load_question_kps
 
 # ── Content text extraction ──
 
@@ -188,6 +189,7 @@ async def resolve_question_audit_detail(
             content_text = extract_question_content_text(content)
             content_preview = _content_preview(content)
 
+            kp_map = await load_question_kps(db, [qid])
             return QuestionAuditDetail(
                 id=question.id,
                 subject_id=question.subject_id,
@@ -200,7 +202,7 @@ async def resolve_question_audit_detail(
                 options=question.options,
                 answer=question.answer,
                 analysis=question.analysis,
-                knowledge_points=question.knowledge_points,
+                knowledge_points=kp_map.get(qid, []),
                 difficulty=question.difficulty,
                 source=question.source,
                 source_type=question.source_type,

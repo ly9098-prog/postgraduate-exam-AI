@@ -4,6 +4,7 @@
 """
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1 import practice as practice_router
@@ -11,6 +12,12 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.main import app
 from app.models.question import Question
+
+
+@pytest.fixture(autouse=True)
+def _kp_patch(monkeypatch):
+    """端点统一从关联表读知识点；测试内 patch 为固定空映射。"""
+    monkeypatch.setattr(practice_router, "load_question_kps", AsyncMock(return_value={}))
 
 client = TestClient(app)
 
@@ -49,7 +56,6 @@ def _make_question(id_val, subject_id, subject_code="ds", subject_name="数据�
     q.question_type = "single_choice"
     q.content = {"stem": "测试题干"}
     q.options = {"A": "选项A", "B": "选项B", "C": "选项C", "D": "选项D"}
-    q.knowledge_points = ["测试知识点"]
     q.difficulty = 2
     q.subject_ref = MagicMock()
     q.subject_ref.code = subject_code
