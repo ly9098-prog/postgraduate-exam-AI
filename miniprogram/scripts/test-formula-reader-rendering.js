@@ -596,6 +596,77 @@ assert(/walkNestedText/.test(cardJs) || /\\text.*\\text/.test(cardJs),
 console.log('✓ Improved error detection pattern checks passed')
 
 // =============================
+// Inline KaTeX scrollbar artifact
+// =============================
+// Android/WeChat can paint an `overflow-x:auto` inline span's native scrollbar
+// as a thick gray underline even when the formula fits. Reproduce the exact
+// periodic-function condition from the reported screenshot and verify that
+// compact inline formulae no longer become scroll containers, while genuinely
+// long formulae still retain horizontal-overflow containment.
+var capturedFormulaCardComponent = null
+var previousComponentGlobal = global.Component
+global.Component = function (definition) {
+  capturedFormulaCardComponent = definition
+}
+var formulaCardModulePath = path.join(__dirname, '../subpackages/formulas/components/formula-card/index.js')
+delete require.cache[require.resolve(formulaCardModulePath)]
+require(formulaCardModulePath)
+global.Component = previousComponentGlobal
+
+function renderConditionNodesThroughFormulaCard(expression, id) {
+  assert(capturedFormulaCardComponent, 'formula-card component definition must be capturable')
+  var observer = capturedFormulaCardComponent.properties.card.observer
+  var ctx = {
+    data: { cardRenderKey: '', card: null },
+    setData: function (patch) {
+      this.data = Object.assign({}, this.data, patch)
+    },
+  }
+  observer.call(ctx, {
+    id: id,
+    title: '回归测试',
+    conditions: JSON.stringify([{ expression: expression, note: '条件说明' }]),
+  }, null)
+  return ctx.data.content.conditionsNodes
+}
+
+function findInlineFormulaWrapper(nodes) {
+  var found = null
+  function walk(items) {
+    if (found || !Array.isArray(items)) return
+    for (var i = 0; i < items.length; i++) {
+      var node = items[i] || {}
+      if (node.l === 'T') {
+        found = node
+        return
+      }
+      if (node.children) walk(node.children)
+      if (found) return
+    }
+  }
+  walk(nodes)
+  return found
+}
+
+var periodicConditionNodes = renderConditionNodesThroughFormulaCard('\\forall x\\in D_f,\\ x\\pm T\\in D_f', 95001)
+var periodicFormulaWrapper = findInlineFormulaWrapper(periodicConditionNodes)
+assert(periodicFormulaWrapper, 'periodic condition must contain an inline KaTeX wrapper')
+var periodicWrapperStyle = String((periodicFormulaWrapper.attrs && periodicFormulaWrapper.attrs.style) || '')
+assert(!/overflow-x\s*:\s*auto/.test(periodicWrapperStyle), 'compact inline KaTeX must not use overflow-x:auto (prevents gray thick underline scrollbar)')
+assert(/overflow\s*:\s*visible/.test(periodicWrapperStyle), 'compact inline KaTeX should remain overflow:visible')
+assert(!/padding\s*:\s*5rpx\s+0\s+7rpx/.test(periodicWrapperStyle), 'compact inline KaTeX must not reserve scrollbar padding')
+
+var longInlineConditionNodes = renderConditionNodesThroughFormulaCard('a_1+a_2+a_3+a_4+a_5+a_6+a_7+a_8+a_9+a_{10}+a_{11}+a_{12}+a_{13}+a_{14}+a_{15}=S', 95002)
+var longInlineFormulaWrapper = findInlineFormulaWrapper(longInlineConditionNodes)
+assert(longInlineFormulaWrapper, 'long condition must contain an inline KaTeX wrapper')
+var longWrapperStyle = String((longInlineFormulaWrapper.attrs && longInlineFormulaWrapper.attrs.style) || '')
+assert(/overflow-x\s*:\s*auto/.test(longWrapperStyle), 'genuinely long inline KaTeX should retain horizontal overflow containment')
+
+assert(/function\s+shouldScrollInlineFormula\s*\(/.test(cardJs), 'formula-card must classify inline formulae before enabling native horizontal overflow')
+
+console.log('✓ Inline KaTeX gray-underline scrollbar regression tests passed')
+
+// =============================
 // Summary
 // =============================
 

@@ -523,6 +523,21 @@ t('review-today.wxml mission-batch has bindtap', function () {
   assert.ok(wxml.indexOf('bindtap="showBatchSizeSelector"') >= 0)
 })
 
+var reviewTodayJs = fs.readFileSync(path.join(__dirname, '../subpackages/study/review-today/review-today.js'), 'utf8')
+
+t('initial first question keeps enriched render data in groupQuestions', function () {
+  assert.ok(reviewTodayJs.indexOf('preparedQuestions[0] = firstEnriched') >= 0)
+  assert.ok(reviewTodayJs.indexOf('groupQuestions: preparedQuestions') >= 0)
+})
+
+t('group result hydrates lazy questions before rendering details', function () {
+  assert.ok(reviewTodayJs.indexOf('const resultQuestion = this._enrichForResult(q)') >= 0)
+  assert.ok(reviewTodayJs.indexOf('...resultQuestion') >= 0)
+  // 单题渲染数据异常不能使已成功的批改误报为提交失败：必须有安全降级分支
+  assert.ok(reviewTodayJs.indexOf('_enrichForResult(q)') >= 0)
+  assert.ok(reviewTodayJs.indexOf("_renderModel: null") >= 0)
+})
+
 var runnerWxml = fs.readFileSync(path.join(__dirname, '../subpackages/study/components/quiz-runner/quiz-runner.wxml'), 'utf8')
 
 t('quiz-runner.wxml references elapsedText in timer display', function () {

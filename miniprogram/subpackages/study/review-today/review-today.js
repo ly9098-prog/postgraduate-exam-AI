@@ -392,8 +392,13 @@ Page({
       this._reviewSession.safeModeActive = false
       this._reviewSession.renderTraces = []
 
-      // Build render model for first question only
+      // Build render model for first question only, and keep the enriched copy
+      // in groupQuestions as well. currentQuestion and groupQuestions must share
+      // the same render data, otherwise the first result row can lose its stem.
       var firstEnriched = this._enrichQuestion(allQuestions[0])
+      var preparedQuestions = allQuestions.slice()
+      preparedQuestions[0] = firstEnriched
+      this._reviewSession.allQuestions = preparedQuestions
       var firstOptionList = adapter.buildOptionList(firstEnriched, {}, KF)
       var firstQuestion = Object.assign({}, firstEnriched, {
         _optionList: firstOptionList,
@@ -423,9 +428,9 @@ Page({
       // Atomic state transition: all critical fields set in one setData
       this.setData({
         phase: 'reviewing',
-        groups: [allQuestions],
+        groups: [preparedQuestions],
         currentGroupIdx: 0,
-        groupQuestions: allQuestions,
+        groupQuestions: preparedQuestions,
         currentIndex: 0,
         currentQuestion: firstQuestion,
         _answeredCount: 0,
@@ -527,6 +532,22 @@ Page({
       _renderModel,
       _stemPreview: stemText.length > 60 ? `${stemText.slice(0, 60)}...` : stemText,
       _subjectLabel: this.subjectLabel(q.subject_name, q.subject_code),
+    }
+  },
+
+  _enrichForResult(q) {
+    if (q._renderModel) return q
+    try {
+      return this._enrichQuestion(q)
+    } catch (e) {
+      // 单题渲染数据异常不应使整个提交结果处理失败：服务端已批改完成，
+      // 退化为纯文本预览继续进入结果页，而不是把"批改已成功"误报成提交失败。
+      console.error('题目渲染数据生成失败，退化为纯文本预览', e)
+      const stemText = (q.content && (q.content.text || q.content.stem)) || q.stem || ''
+      return Object.assign({}, q, {
+        _renderModel: null,
+        _stemPreview: stemText.length > 60 ? `${stemText.slice(0, 60)}...` : stemText,
+      })
     }
   },
 
@@ -960,6 +981,10 @@ Page({
       }
 
       const groupResults = groupQuestions.map(q => {
+        // Quiz questions are enriched lazily while answering. Before rendering
+        // the result page, guarantee every row has a render model/stem preview
+        // (including the initial question and unvisited/skipped questions).
+        const resultQuestion = this._enrichForResult(q)
         const r = results.find(rr => {
           if (rr.schedule_id !== undefined && rr.schedule_id !== null) {
             return String(rr.schedule_id) === String(q.schedule_id)
@@ -969,7 +994,7 @@ Page({
         const isAnswered = adapter.isQuestionAnswered(q, answers, KF)
         const wasSubmitted = !!r
         return {
-          ...q,
+          ...resultQuestion,
           isCorrect: r ? !!r.is_correct : false,
           correctAnswer: r ? (r.correct_answer || '') : '',
           userAnswer: answers[q.schedule_id] || '',

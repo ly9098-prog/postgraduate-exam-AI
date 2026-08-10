@@ -639,6 +639,30 @@ function ensureDisplayStyle(value) {
   return '\\displaystyle ' + source
 }
 
+/**
+ * Serialize a LaTeX fragment into the HTML string consumed by mp-html.
+ *
+ * The formula reader runs generated mixed-content HTML through an HTML lexer
+ * before the LaTeX plugin sees text nodes. A raw relation such as `a<b`
+ * therefore looks like the beginning of a `<b>` tag and the lexer cuts the
+ * formula at `<`, leaving visible source such as "$\\displaystyle a".
+ *
+ * Escape only HTML-significant angle brackets here. Do not escape `&`: it is
+ * meaningful inside LaTeX alignment environments (for example `aligned`).
+ * mp-html decodes `&lt;` / `&gt;` back to `<` / `>` when creating the text
+ * node, so KaTeX still receives the original mathematical expression.
+ */
+function serializeMathHtml(value, display) {
+  var source = String(value == null ? '' : value).trim()
+  if (!source) return ''
+  if (!display) source = ensureDisplayStyle(source)
+  source = source
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  var delimiter = display ? '$$' : '$'
+  return delimiter + source + delimiter
+}
+
 function isMathRun(value) {
   var source = String(value || '').trim()
   if (!source || /^\d+(?:\.\d+)?$/.test(source)) return false
@@ -691,7 +715,7 @@ function protectExplicitMath(source, store) {
     var display = false
     if (match.indexOf('\\[') === 0 || match.indexOf('$$') === 0) display = true
     inner = normalizeMathRun(stripOuterMathDelimiters(match))
-    var normalized = display ? '$$' + inner + '$$' : '$' + ensureDisplayStyle(inner) + '$'
+    var normalized = serializeMathHtml(inner, display)
     var key = '\u0007MATH' + store.length + '\u0007'
     store.push(normalized)
     return key
@@ -736,7 +760,7 @@ function extractStandaloneStructuredMath(source) {
   var normalized = normalizeLatexSource(formula)
   if (!normalized) return null
   return {
-    html: '$' + ensureDisplayStyle(normalized) + '$',
+    html: serializeMathHtml(normalized, false),
     suffix: punctuation,
   }
 }
@@ -811,7 +835,7 @@ function extractStandaloneLatexExpression(value) {
   var normalized = normalizeMathRun(source)
   if (!normalized) return null
   return {
-    html: '$' + ensureDisplayStyle(normalized) + '$',
+    html: serializeMathHtml(normalized, false),
     suffix: punctuation,
   }
 }
@@ -854,7 +878,7 @@ function processPlainTextNode(value) {
     var trailing = (run.match(/\s*$/) || [''])[0]
     var core = run.slice(leading.length, run.length - trailing.length)
     result += escapeHtml(leading)
-    if (isMathRun(core)) result += '$' + ensureDisplayStyle(normalizeMathRun(core)) + '$'
+    if (isMathRun(core)) result += serializeMathHtml(normalizeMathRun(core), false)
     else result += escapeHtml(core)
     result += escapeHtml(trailing)
     cursor = match.index + run.length
