@@ -25,10 +25,12 @@ function isBlockedHost(host: string): boolean {
  * - `null` / `undefined` / `""` → `""` (no asset)
  * - Full `http:` / `https:` URL → validate scheme+host; reject `javascript:`, `file:`, unapproved `data:`
  * - Protocol-relative `//...` → prepend `https:`
- * - Root-relative `/...` → prepend API base (from `NEXT_PUBLIC_API_BASE`)
+ * - Root-relative `/...` → prepend API base if configured; otherwise return as-is
+ *   (same-origin assets resolve against the page origin, e.g. `/static/...`)
  * - Other relative → resolve against API base
  *
- * In production (`NEXT_PUBLIC_API_BASE` missing) → fail closed (return `""`).
+ * Fails closed (returns `""`) only when a URL cannot be resolved safely:
+ * no API base configured AND the path is not root-relative.
  */
 export function resolveAssetUrl(url: string | null | undefined): string {
   if (!url) return "";
@@ -66,8 +68,10 @@ export function resolveAssetUrl(url: string | null | undefined): string {
     // Not a valid absolute URL — treat as relative/root-relative
     const base = getApiBase();
     if (!base) {
-      // Production fail-closed: no API base configured, cannot resolve
-      return "";
+      // Root-relative paths are same-origin and resolve against the page
+      // origin (e.g. /static/question-assets/...); return them as-is.
+      // Anything else is ambiguous with no base — fail closed.
+      return url.startsWith("/") ? url : "";
     }
 
     // Normalize slashes
