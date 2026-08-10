@@ -331,6 +331,22 @@ export type QuestionEditRequest = {
   source_type?: string;
 };
 
+export type QuestionAddOptionItem = {
+  text: string;
+  key?: string | null;
+};
+
+export type QuestionAddOptionsRequest = {
+  options: QuestionAddOptionItem[];
+  edit_reason?: string | null;
+};
+
+export type QuestionDeleteImageRequest = {
+  target: string; // "stem" | "option:A"
+  url: string;
+  edit_reason?: string | null;
+};
+
 export type AdminQuestion = {
   id: number;
   subject_id?: number | null;

@@ -1,4 +1,5 @@
 import type { AdminQuestion, QuestionOptionsValue } from "@/lib/api/types";
+import { isImageSegmentType } from "@/lib/segment-utils";
 
 /**
  * Normalized option representation for display.
@@ -237,6 +238,28 @@ function extractImageUrl(
   for (const k of OPTION_IMAGE_KEYS) {
     const v = obj[k];
     if (v != null && typeof v === "string" && v.trim()) return v.trim();
+  }
+  // Rich options store images as segments: { text, segments: [{type:"image", url}] }
+  // (canonical form the miniprogram renders). Fall back to reading them here.
+  const segments = obj["segments"];
+  if (Array.isArray(segments)) {
+    const segs = segments as Array<Record<string, unknown>>;
+    for (const seg of segs) {
+      if (
+        seg &&
+        typeof seg === "object" &&
+        isImageSegmentType(String(seg.type ?? "")) &&
+        typeof seg.url === "string" &&
+        seg.url.trim()
+      ) {
+        return seg.url.trim();
+      }
+    }
+    for (const seg of segs) {
+      if (seg && typeof seg === "object" && typeof seg.url === "string" && seg.url.trim()) {
+        return seg.url.trim();
+      }
+    }
   }
   return undefined;
 }

@@ -155,10 +155,10 @@ class AssetReferenceService:
     _SCAN_TARGETS: list[dict] = [
         # entity_type, table, columns, id_column
         {"type": "question", "table": "questions",
-         "columns": ["content", "image_url"],
+         "columns": ["content", "image_url", "options"],
          "id_col": "id"},
         {"type": "question_version", "table": "question_versions",
-         "columns": ["content"],
+         "columns": ["content", "options"],
          "id_col": "question_id"},
         {"type": "question_import", "table": "question_imports",
          "columns": ["parsed_content", "raw_data", "parsed_options",

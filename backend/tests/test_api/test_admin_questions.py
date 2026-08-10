@@ -1,6 +1,7 @@
 from datetime import datetime
 from unittest.mock import AsyncMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1 import admin_questions
@@ -12,6 +13,15 @@ from app.models.question import Question
 from app.models.question_import import QuestionImport
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _kp_patch(monkeypatch):
+    """端点统一从关联表读取知识点；测试内 patch 为固定返回值。"""
+    monkeypatch.setattr(
+        admin_questions, "load_question_kps",
+        AsyncMock(return_value={1: ["函数"]}),
+    )
 
 
 class _Db:
@@ -55,7 +65,6 @@ def _question(question_id=1, review_status="approved", is_active=True):
         options={"A": "1"},
         answer="A",
         analysis="解析",
-        knowledge_points=["函数"],
         difficulty=3,
         source="source",
         source_type="manual",
@@ -185,5 +194,272 @@ def test_question_versions(monkeypatch):
 
 def test_list_admin_questions_requires_permission():
     resp = client.get("/api/admin/v1/questions")
+
+    assert resp.status_code in {401, 403}
+
+
+def _choice_question():
+    q = _question()
+    q.question_type = "single_choice"
+    return q
+
+
+# ── POST /{id}/options ──────────────────────────────────────────────
+
+def test_add_question_options(monkeypatch):
+    q = _choice_question()
+    updated = _choice_question()
+    updated.options = {"A": "1", "B": "2"}
+    monkeypatch.setattr(admin_questions, "get_admin_question", AsyncMock(return_value=q))
+    monkeypatch.setattr(admin_questions, "merge_options", lambda existing, items: {**existing, "B": items[0].text})
+    monkeypatch.setattr(admin_questions, "update_admin_question", AsyncMock(return_value=updated))
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        resp = client.post("/api/admin/v1/questions/1/options", json={"options": [{"text": "2"}], "edit_reason": "加选项"})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert resp.json()["options"] == {"A": "1", "B": "2"}
+
+
+def test_add_question_options_duplicate_key(monkeypatch):
+    q = _choice_question()
+    monkeypatch.setattr(admin_questions, "get_admin_question", AsyncMock(return_value=q))
+
+    def _dup(_existing, _items):
+        raise ValueError("选项 A 已存在")
+
+    monkeypatch.setattr(admin_questions, "merge_options", _dup)
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        resp = client.post("/api/admin/v1/questions/1/options", json={"options": [{"text": "2"}]})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 422
+
+
+def test_add_question_options_non_choice_type(monkeypatch):
+    # fixture question_type is "choice" → gate rejects
+    monkeypatch.setattr(admin_questions, "get_admin_question", AsyncMock(return_value=_question()))
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        resp = client.post("/api/admin/v1/questions/1/options", json={"options": [{"text": "2"}]})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 422
+
+
+def test_add_question_options_rejects_non_letter_key(monkeypatch):
+    # Option keys must be A-Z; a digit key is rejected up front by the schema,
+    # so the endpoint never merges an option that the image target validator
+    # (option:[A-Z]) would later refuse.
+    monkeypatch.setattr(admin_questions, "get_admin_question", AsyncMock(return_value=_choice_question()))
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        resp = client.post(
+            "/api/admin/v1/questions/1/options",
+            json={"options": [{"key": "1", "text": "2"}]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 422
+
+
+# ── POST /{id}/images ───────────────────────────────────────────────
+
+def test_upload_question_image_stem(monkeypatch):
+    q = _choice_question()
+    captured: dict = {}
+
+    async def _fake_upload(_file, _qid):
+        return "http://x/static/question-assets/1/abc.png"
+
+    def _fake_upsert_stem(content, url, replace_url=None):
+        out = dict(content)
+        out["render_mode"] = "segments"
+        out["segments"] = [
+            {"type": "text", "text": "题干"},
+            {"type": "image", "url": url, "semantic_role": "content_image"},
+        ]
+        return out
+
+    async def _fake_update(_db, _qid, data, _operator, _request):
+        captured["data"] = data
+        return q
+
+    monkeypatch.setattr(admin_questions, "_upload_question_asset", _fake_upload)
+    monkeypatch.setattr(admin_questions, "get_admin_question", AsyncMock(return_value=q))
+    monkeypatch.setattr(admin_questions, "upsert_stem_image", _fake_upsert_stem)
+    monkeypatch.setattr(admin_questions, "update_admin_question", _fake_update)
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        resp = client.post(
+            "/api/admin/v1/questions/1/images",
+            files={"file": ("q.png", b"\x89PNG\r\n\x1a\nfake", "image/png")},
+            data={"target": "stem"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    # image_url recomputed from the new content segment and patched together with content
+    assert captured["data"].content["render_mode"] == "segments"
+    assert captured["data"].image_url == ["http://x/static/question-assets/1/abc.png"]
+
+
+def test_upload_question_image_option(monkeypatch):
+    q = _choice_question()
+
+    async def _fake_upload(_file, _qid):
+        return "http://x/static/question-assets/1/opt.png"
+
+    def _fake_upsert_option(options, key, url, replace_url=None):
+        return {**options, key: {"text": "1", "segments": [{"type": "image", "url": url}]}}
+
+    monkeypatch.setattr(admin_questions, "_upload_question_asset", _fake_upload)
+    monkeypatch.setattr(admin_questions, "get_admin_question", AsyncMock(return_value=q))
+    monkeypatch.setattr(admin_questions, "upsert_option_image", _fake_upsert_option)
+    monkeypatch.setattr(admin_questions, "update_admin_question", AsyncMock(return_value=q))
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        resp = client.post(
+            "/api/admin/v1/questions/1/images",
+            files={"file": ("o.png", b"\x89PNG\r\n\x1a\nfake", "image/png")},
+            data={"target": "option:A"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+
+
+def test_upload_question_image_rejects_non_image():
+    app.dependency_overrides[get_current_admin] = _allow
+    try:
+        resp = client.post(
+            "/api/admin/v1/questions/1/images",
+            files={"file": ("a.txt", b"not an image", "text/plain")},
+            data={"target": "stem"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 400
+
+
+def test_upload_question_image_rejects_bad_target(monkeypatch):
+    monkeypatch.setattr(admin_questions, "_upload_question_asset", AsyncMock())
+    app.dependency_overrides[get_current_admin] = _allow
+    try:
+        resp = client.post(
+            "/api/admin/v1/questions/1/images",
+            files={"file": ("q.png", b"x", "image/png")},
+            data={"target": "option:1"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 400
+
+
+def test_upload_question_image_cleans_up_on_generic_db_error(monkeypatch):
+    # A non-ValueError/PermissionError failure during the DB write must still
+    # orphan-clean the just-uploaded file before re-raising.
+    q = _choice_question()
+    monkeypatch.setattr(
+        admin_questions, "_upload_question_asset",
+        AsyncMock(return_value="http://x/static/question-assets/1/abc.png"),
+    )
+    monkeypatch.setattr(admin_questions, "get_admin_question", AsyncMock(return_value=q))
+
+    async def _boom(_db, _qid, _data, _operator, _request):
+        raise RuntimeError("db boom")
+
+    monkeypatch.setattr(admin_questions, "update_admin_question", _boom)
+    cleanup = AsyncMock()
+    monkeypatch.setattr(admin_questions, "delete_question_asset_if_orphan", cleanup)
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        with pytest.raises(RuntimeError):
+            client.post(
+                "/api/admin/v1/questions/1/images",
+                files={"file": ("q.png", b"\x89PNG\r\n\x1a\nfake", "image/png")},
+                data={"target": "stem"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    cleanup.assert_awaited_once()
+
+
+# ── DELETE /{id}/images ─────────────────────────────────────────────
+
+def test_delete_question_image_stem(monkeypatch):
+    q = _choice_question()
+    q.content = {
+        "text": "题干",
+        "render_mode": "segments",
+        "segments": [{"type": "text", "text": "题干"}, {"type": "image", "url": "http://x/static/question-assets/1/abc.png"}],
+    }
+    captured: dict = {}
+
+    async def _fake_update(_db, _qid, data, _operator, _request):
+        captured["data"] = data
+        return q
+
+    monkeypatch.setattr(admin_questions, "get_admin_question", AsyncMock(return_value=q))
+    monkeypatch.setattr(admin_questions, "remove_stem_image", lambda content, url: {**content, "segments": [{"type": "text", "text": "题干"}]})
+    monkeypatch.setattr(admin_questions, "update_admin_question", _fake_update)
+    monkeypatch.setattr(admin_questions, "delete_question_asset_if_orphan", AsyncMock())
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        resp = client.request(
+            "DELETE",
+            "/api/admin/v1/questions/1/images",
+            json={"target": "stem", "url": "http://x/static/question-assets/1/abc.png"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    # image_url recomputed to None (no image segments remain)
+    assert captured["data"].image_url is None
+
+
+def test_delete_question_image_option(monkeypatch):
+    q = _choice_question()
+    q.options = {"A": {"text": "1", "segments": [{"type": "image", "url": "http://x/static/question-assets/1/opt.png"}]}}
+    monkeypatch.setattr(admin_questions, "get_admin_question", AsyncMock(return_value=q))
+    monkeypatch.setattr(admin_questions, "remove_option_image", lambda options, key, url: {"A": "1"})
+    monkeypatch.setattr(admin_questions, "update_admin_question", AsyncMock(return_value=q))
+    monkeypatch.setattr(admin_questions, "delete_question_asset_if_orphan", AsyncMock())
+    app.dependency_overrides[get_current_admin] = _allow
+    app.dependency_overrides[get_db] = _override_db
+    try:
+        resp = client.request(
+            "DELETE",
+            "/api/admin/v1/questions/1/images",
+            json={"target": "option:A", "url": "http://x/static/question-assets/1/opt.png"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+
+
+def test_delete_question_image_requires_permission():
+    resp = client.request("DELETE", "/api/admin/v1/questions/1/images", json={"target": "stem", "url": "http://x/a.png"})
 
     assert resp.status_code in {401, 403}
