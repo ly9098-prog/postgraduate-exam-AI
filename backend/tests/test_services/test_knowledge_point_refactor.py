@@ -242,3 +242,51 @@ async def test_sync_replace_swap_and_shrink_respect_position_constraint(db):
         await s.commit()
         kp_map = await load_question_kps(s, [q1])
         assert kp_map[q1] == ["线性表", "栈"]
+
+
+# ── 题库 keyword 搜索增强：命中知识点名 / aliases ──
+
+@pytest.mark.asyncio
+async def test_list_admin_questions_keyword_matches_kp_name(db):
+    from app.services.admin_question_service import list_admin_questions
+
+    async with db.session_factory() as s:
+        q1, _q2 = await _seed(s)
+        questions, total = await list_admin_questions(s, page=1, page_size=20, keyword="线性表")
+        assert total == 1
+        assert questions[0].id == q1
+
+
+@pytest.mark.asyncio
+async def test_list_admin_questions_keyword_matches_kp_aliases(db):
+    from app.services.admin_question_service import list_admin_questions
+
+    async with db.session_factory() as s:
+        q1, _q2 = await _seed(s)
+        kp = (await s.execute(select(KnowledgePoint).where(KnowledgePoint.name == "线性表"))).scalar_one()
+        kp.aliases = ["顺序存储结构的实现", "SeqList"]
+        await s.commit()
+
+        # 别名英文子串命中
+        questions, total = await list_admin_questions(s, page=1, page_size=20, keyword="SeqList")
+        assert total == 1
+        assert questions[0].id == q1
+        # 别名中文子串命中（JSON 文本 contains）
+        questions, total = await list_admin_questions(s, page=1, page_size=20, keyword="存储结构")
+        assert total == 1
+        assert questions[0].id == q1
+        # 无关词不命中
+        _questions, total = await list_admin_questions(s, page=1, page_size=20, keyword="完全无关")
+        assert total == 0
+
+
+@pytest.mark.asyncio
+async def test_list_admin_questions_keyword_keeps_content_or_semantics(db):
+    """keyword 仍同时匹配 answer/analysis/raw_content（OR 语义不回归）。"""
+    from app.services.admin_question_service import list_admin_questions
+
+    async with db.session_factory() as s:
+        q1, _q2 = await _seed(s)
+        questions, total = await list_admin_questions(s, page=1, page_size=20, keyword="A")
+        assert total == 1
+        assert questions[0].id == q1

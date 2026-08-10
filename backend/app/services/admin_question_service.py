@@ -2,13 +2,15 @@ import logging
 from typing import Any
 
 from fastapi import Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
 from app.models.admin import QuestionVersion, Subject
+from app.models.knowledge_point import KnowledgePoint
 from app.models.question import Question
 from app.models.question_import import QuestionImport
+from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.schemas.admin_questions import (
     AdminQuestionAddOptionItem,
     AdminQuestionBatchFailure,
@@ -152,7 +154,38 @@ async def list_admin_questions(
         conditions.append(Question.question_type == question_type)
     if keyword:
         pattern = f"%{keyword}%"
-        conditions.append(or_(Question.answer.ilike(pattern), Question.analysis.ilike(pattern), Question.raw_content.ilike(pattern)))
+        # aliases 是 JSON 数组：按元素 contains 匹配（跨 dialect）。
+        # SQLite 的 JSON 存储会对中文做 \\uXXXX 转义，CAST(... AS TEXT) 子串匹配会漏；
+        # json_each / json_array_elements_text 都会解码后逐元素匹配，两种 dialect 行为一致。
+        dialect_name = db.get_bind().dialect.name
+        if dialect_name == "sqlite":
+            alias_match = text(
+                "EXISTS (SELECT 1 FROM json_each(knowledge_points.aliases) "
+                "WHERE json_each.value LIKE :pattern)"
+            ).bindparams(pattern=pattern)
+        else:
+            alias_match = text(
+                "EXISTS (SELECT 1 FROM json_array_elements_text(knowledge_points.aliases) "
+                "AS _alias WHERE _alias ILIKE :pattern)"
+            ).bindparams(pattern=pattern)
+        kp_qids = (
+            select(QuestionKnowledgePoint.question_id)
+            .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+            .where(
+                or_(
+                    KnowledgePoint.name.ilike(pattern),
+                    alias_match,
+                )
+            )
+        )
+        conditions.append(
+            or_(
+                Question.answer.ilike(pattern),
+                Question.analysis.ilike(pattern),
+                Question.raw_content.ilike(pattern),
+                Question.id.in_(kp_qids),
+            )
+        )
     if year is not None:
         conditions.append(Question.year == year)
     if import_batch_id:
