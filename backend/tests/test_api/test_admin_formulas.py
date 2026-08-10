@@ -605,6 +605,31 @@ class TestCardUpdate:
             app.dependency_overrides.clear()
         assert resp.status_code == 422
 
+    def test_update_with_version_desync(self):
+        """PUT must not collide when card.version lags the versions audit trail.
+
+        Regression: the publish action writes a snapshot at card.version + 1
+        without bumping the column; a later PUT then tried to insert
+        (id, card.version + 1) and hit uq_formula_card_versions_card_version.
+        The next version must be derived from the versions table.
+        """
+        card = _card()  # version=1
+        # Queue: permissions, then max(version)=2 (existing publish snapshot),
+        # then the three _card_to_dict response queries.
+        db = _Db(_permissions(), [2], [], [], [], reload_card=card)
+        app.dependency_overrides[get_current_admin] = _override_current_admin
+        app.dependency_overrides[get_db] = _db_lambda(db)
+        try:
+            resp = client.put(
+                "/api/admin/v1/formulas/1",
+                json={"title": "新标题"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+        assert resp.status_code == 200
+        assert card.version == 3
+        assert resp.json()["version"] == 3
+
 
 class TestCardDelete:
     def test_soft_delete_draft(self):

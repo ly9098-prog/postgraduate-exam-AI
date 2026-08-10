@@ -604,7 +604,21 @@ async def update_formula_card(
             update_data["graph_status"] = "not_applicable"
 
     update_data["updated_by"] = admin.id
-    update_data["version"] = card.version + 1
+    # card.version can lag the audit trail (publish writes a snapshot at
+    # card.version + 1 without bumping the column), so derive the next version
+    # from the versions table to avoid a unique-constraint collision on
+    # uq_formula_card_versions_card_version.
+    # 先加行锁串行化同一卡片的并发编辑，消除 select max→+1 的 TOCTOU 竞态。
+    await db.execute(
+        select(FormulaCard.id).where(FormulaCard.id == card.id).with_for_update()
+    )
+    max_ver_result = await db.execute(
+        select(func.max(FormulaCardVersion.version)).where(
+            FormulaCardVersion.formula_card_id == card.id
+        )
+    )
+    max_ver = max_ver_result.scalar() or 0
+    update_data["version"] = max(card.version, max_ver) + 1
 
     for key, value in update_data.items():
         setattr(card, key, value)
