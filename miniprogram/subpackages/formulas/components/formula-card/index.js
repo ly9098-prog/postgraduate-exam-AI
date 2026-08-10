@@ -171,6 +171,64 @@ function appendNodeStyle(node, declaration) {
   node.attrs.style = style + declaration
 }
 
+function _xRepeat(count) {
+  var out = ''
+  for (var i = 0; i < count; i++) out += 'x'
+  return out
+}
+
+/**
+ * Estimate the rendered visual width of an inline formula (in glyph units).
+ *
+ * The naive approach of collapsing every `\command` to a single glyph
+ * underestimates wide constructs: `\frac{很长的分子}{更长的分母}` would collapse
+ * to a couple of chars and be misclassified as "short", letting a genuinely
+ * wide fraction spill outside the viewport. This estimator expands the
+ * dominant wide constructs (`\frac`, `\sqrt`, limits-bearing `\sum/\int/\prod`)
+ * using their braced content widths, then falls back to one glyph per command.
+ */
+function _estimateInlineWidth(source) {
+  var s = String(source || '')
+  // 文本类命令直接取花括号内容，按实际文本宽度估算
+  s = s.replace(/\\(?:operatorname|mathrm|mathbf|mathit|text|textrm|textbf|textit)\s*\{([^{}]*)\}/g, '$1')
+  // 分数：宽度 ≈ 分子/分母较宽者 + 分数条与间距开销（迭代展开嵌套分数）
+  for (var i = 0; i < 4; i++) {
+    s = s.replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, function (_, n, d) {
+      return _xRepeat(Math.min(Math.max(n.length, d.length) + 2, 80))
+    })
+  }
+  // 根号：宽度 ≈ 被开方内容 + 根号符
+  s = s.replace(/\\sqrt\s*\{([^{}]*)\}/g, 'x$1')
+  // 求和/积分/连乘带上下限：主符号 + 上下限较宽者
+  s = s.replace(/\\(?:sum|int|prod|coprod|bigcup|bigcap)\b(?:\s*[\^_]\s*\{([^{}]*)\}){1,2}/g, function (_, lim) {
+    return 'xx' + (lim || '')
+  })
+  // 其余命令按单字形计
+  s = s.replace(/\\[A-Za-z]+\*?/g, 'x')
+  s = s.replace(/[{}\s]/g, '')
+  return s.length
+}
+
+/**
+ * Only turn genuinely long inline formulae into horizontal scroll containers.
+ *
+ * On Android/WeChat, `overflow-x:auto` on every inline KaTeX wrapper can draw
+ * the native scrollbar even when the formula does not overflow. Visually that
+ * appears as a thick gray underline (for example under
+ * `\forall x\in D_f,\ x\pm T\in D_f`). Short formulae therefore stay
+ * `overflow:visible`; long/matrix-like formulae retain the containment fallback.
+ */
+function shouldScrollInlineFormula(node) {
+  var source = String((node && node.latexSource) || '')
+  if (!source) return false
+
+  if (/\\begin\{(?:array|matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|cases|aligned|alignedat|gathered)\}/.test(source)) {
+    return true
+  }
+
+  return _estimateInlineWidth(source) > 34
+}
+
 function stabilizeFormulaTree(nodes) {
   function walk(items) {
     if (!Array.isArray(items)) return
@@ -218,7 +276,11 @@ function stabilizeRichMathTree(nodes) {
       // whole Chinese paragraph into one no-wrap inline block and pushes it
       // outside the viewport.
       if (node.l === 'T') {
-        appendNodeStyle(node, 'display:inline-block;vertical-align:middle;white-space:nowrap;max-width:100%;overflow-x:auto;overflow-y:hidden;box-sizing:border-box;margin:0 3rpx;padding:5rpx 0 7rpx;')
+        if (shouldScrollInlineFormula(node)) {
+          appendNodeStyle(node, 'display:inline-block;vertical-align:middle;white-space:nowrap;max-width:100%;overflow-x:auto;overflow-y:hidden;box-sizing:border-box;margin:0 3rpx;padding:5rpx 0 7rpx;')
+        } else {
+          appendNodeStyle(node, 'display:inline-block;vertical-align:middle;white-space:nowrap;max-width:100%;overflow:visible;box-sizing:border-box;margin:0 3rpx;padding:0;')
+        }
       } else if (hasDirectKatexChild(node)) {
         // Explicit $$...$$ / \[...\] content is a block formula. Keep its
         // full KaTeX tree, but constrain scrolling to this formula only.

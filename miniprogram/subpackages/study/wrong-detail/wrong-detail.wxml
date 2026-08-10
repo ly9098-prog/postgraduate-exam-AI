@@ -62,6 +62,7 @@
     </view>
   </view>
 
+  <view class="detail-switch-content {{contentTransitionClass}}">
   <quiz-runner
     theme="premium-review"
     mode="wrong-detail"
@@ -84,13 +85,14 @@
     swipeThroughOptions="{{true}}"
     allowSwipeInReadonly="{{true}}"
     compactReviewMode="{{true}}"
+    externalSwitchAnimation="{{true}}"
     bind:prev="goPrevWrong"
     bind:next="goNextWrong"
     bind:jump="goWrongQuestion"
   />
 
   <!-- AI 分析 -->
-  <view class="ai-card {{!aiRequested && !aiCards && !aiFallback ? 'is-idle' : ''}}" id="ai-card">
+  <view class="ai-card {{!aiRequested && !aiCards && !aiFallback ? 'is-idle' : ''}}" id="ai-card" bindtouchstart="onAiSwipeStart" bindtouchend="onAiSwipeEnd" bindtouchcancel="onAiSwipeCancel">
     <view class="ai-card-head" wx:if="{{aiRequested || aiCards || aiFallback}}">
       <view class="ai-head-copy">
         <text class="ai-title">AI 学习建议</text>
@@ -153,7 +155,7 @@
       </view>
 
       <text wx:if="{{aiInlineNotice}}" class="ai-inline-notice">{{aiInlineNotice}}</text>
-      <text wx:else class="ai-hint">{{aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考'}}</text>
+      <text wx:else class="ai-hint">{{aiFromQuestionAnalysis ? '当前展示题库解析；重新生成后将切换为 AI 解析' : (aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考')}}</text>
       <button class="ai-secondary-btn" disabled="{{aiRegenerating}}" bindtap="regenerateAiAnalysis">
         <text class="ai-secondary-btn-label">{{aiRegenerating ? '重新生成中…' : '重新生成解析'}}</text>
       </button>
@@ -181,6 +183,7 @@
         <text class="ai-action-arrow">→</text>
       </button>
     </view>
+  </view>
   </view>
 
   <view class="page-bottom-space"></view>

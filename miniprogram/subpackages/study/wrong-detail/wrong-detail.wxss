@@ -242,6 +242,30 @@ button::after { border: none; }
   animation: switchPulse .8s ease-in-out infinite;
 }
 
+/* 题目 + AI 学习建议统一切题动画。
+ * 两个区域放在同一父容器中，只由这里控制一次 opacity/transform，
+ * 避免 quiz-runner 与 AI 卡片分别计时导致淡入淡出不同步。 */
+.detail-switch-content {
+  transform: translateX(0);
+  opacity: 1;
+  transition: transform .15s ease, opacity .15s ease;
+  will-change: transform, opacity;
+}
+.detail-switch-content.content-slide-out-left {
+  transform: translateX(-52rpx);
+  opacity: 0;
+}
+.detail-switch-content.content-slide-out-right {
+  transform: translateX(52rpx);
+  opacity: 0;
+}
+.detail-switch-content.content-slide-in-right {
+  animation: detailContentSlideInRight .17s ease both;
+}
+.detail-switch-content.content-slide-in-left {
+  animation: detailContentSlideInLeft .17s ease both;
+}
+
 /* AI review */
 .ai-card {
   margin: 30rpx 24rpx 0;
@@ -779,6 +803,8 @@ button::after { border: none; }
 @keyframes skeletonPulse { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
 @keyframes switchPulse { 0%,100% { opacity: .35; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
 @keyframes sheetRise { from { transform: translateY(42rpx); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes detailContentSlideInRight { from { opacity: 0; transform: translateX(52rpx); } to { opacity: 1; transform: translateX(0); } }
+@keyframes detailContentSlideInLeft { from { opacity: 0; transform: translateX(-52rpx); } to { opacity: 1; transform: translateX(0); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 360px) {
@@ -803,6 +829,9 @@ button::after { border: none; }
   .switch-dot,
   .loading-spinner,
   .decision-sheet,
-  .more-sheet { animation: none !important; }
-  .undo-toast-layer { transition: none !important; }
+  .more-sheet,
+  .detail-switch-content.content-slide-in-right,
+  .detail-switch-content.content-slide-in-left { animation: none !important; }
+  .detail-switch-content,
+  .undo-toast-layer { transition: none !important; transform: none !important; opacity: 1 !important; }
 }

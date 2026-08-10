@@ -60,6 +60,8 @@ Component({
     swipeThroughOptions: { type: Boolean, value: false },
     allowSwipeInReadonly: { type: Boolean, value: false },
     compactReviewMode: { type: Boolean, value: false },
+    // 详情页可由外层同时动画题目与解析，避免组件自身动画与外层不同步。
+    externalSwitchAnimation: { type: Boolean, value: false },
 
     flowLayout: { type: Boolean, value: false },
     compactBottom: { type: Boolean, value: false },
@@ -346,6 +348,13 @@ Component({
 
     _slideTo: function (nextIdx, dir) {
       var self = this
+      // wrong-detail 等组合页面可把题目区和解析区作为一个整体动画。
+      // 此时这里只上报切题事件，不再给 runner-q-wrap 单独加动画类。
+      if (this.data.externalSwitchAnimation) {
+        this.triggerEvent(dir === 'left' ? 'next' : 'prev', { index: nextIdx })
+        return
+      }
+
       this.data._animating = true
       this.setData({ animClass: dir === 'left' ? 'slide-out-left' : 'slide-out-right' })
       setTimeout(function () {

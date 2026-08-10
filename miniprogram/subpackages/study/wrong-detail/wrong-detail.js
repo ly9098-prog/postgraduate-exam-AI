@@ -11,6 +11,10 @@ const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../utils/a
 const AI_REQUEST_TIMEOUT_MS = 58000
 const AI_CACHE_POLL_INTERVAL_MS = 1500
 const AI_CACHE_POLL_ATTEMPTS = 6
+const QUESTION_SWITCH_OUT_MS = 150
+const QUESTION_SWITCH_IN_MS = 170
+const QUESTION_SWITCH_WATCHDOG_MS = 35000
+const QUESTION_SWITCH_ANIM_WATCHDOG_MS = 5000
 
 function _sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -68,11 +72,13 @@ function _buildAiRichText(value) {
     return { raw: '', text: '', html: '', needsRich: false }
   }
   const plain = toPlainInlineMathText(raw)
+  // 已是 HTML（含标签）时直接透传，避免 textToHtml 二次转义把 <p>/<br> 显示成 &lt;p&gt;
+  const alreadyHtml = /<\/?[a-z][\s\S]*>/i.test(raw)
   const needsRich = !plain && needsRichRender(raw)
   return {
     raw,
     text: plain || raw,
-    html: needsRich ? textToHtml(raw) : '',
+    html: needsRich ? (alreadyHtml ? raw : textToHtml(raw)) : '',
     needsRich,
   }
 }
@@ -98,17 +104,46 @@ function _hasAiContent(content) {
   return hasAiAnalysisContent(content)
 }
 
-function _detectAiCache(wq) {
-  if (!wq || !wq.ai_analysis) return false
-  var raw = wq.ai_analysis
-  if (typeof raw === 'object' && !Array.isArray(raw) && Object.keys(raw).length > 0) return true
-  if (Array.isArray(raw) && raw.length > 0) return true
+function _hasStoredAnalysisValue(raw) {
+  if (raw === null || raw === undefined) return false
   if (typeof raw === 'string') {
-    var t = raw.trim()
+    const t = raw.trim()
     if (!t) return false
-    if (t.charAt(0) === '{' || t.charAt(0) === '[') return true
+    // 拒绝 JSON 字面量/空结构残留，避免 "null"/"false"/"0"/"[]"/"{}" 被当作已存储分析
+    if (/^(null|true|false|undefined|\[\]|\{\}|-?\d+(?:\.\d+)?)$/i.test(t)) return false
+    return true
   }
-  return false
+  if (Array.isArray(raw)) return raw.length > 0
+  if (typeof raw === 'object') {
+    if (Object.keys(raw).length === 0) return false
+    // 对象必须有可消费的 AI 分析内容，避免 {error:...} 等包装被误判为已存储
+    return hasAiAnalysisContent(normalizeAiAnalysisPayload(raw))
+  }
+  return true
+}
+
+function _detectAiCache(wq) {
+  return !!(wq && _hasStoredAnalysisValue(wq.ai_analysis))
+}
+
+function _resolvePreferredAnalysis(wq) {
+  if (!wq) return null
+
+  // 同一区域只选择一个来源：wrong_questions.ai_analysis 非空时优先，
+  // 否则回退到 questions.analysis。两个来源都走同一套标准化/富文本渲染。
+  if (_hasStoredAnalysisValue(wq.ai_analysis)) {
+    return {
+      normalized: _normalizeAiPayload(wq.ai_analysis),
+      source: 'ai',
+    }
+  }
+  if (_hasStoredAnalysisValue(wq.analysis)) {
+    return {
+      normalized: _normalizeAiPayload(wq.analysis),
+      source: 'question',
+    }
+  }
+  return null
 }
 
 function _isWqMastered(wq) {
@@ -135,9 +170,11 @@ Page({
     totalQuestions: 0,
     safeModeActive: false,
     aiCards: null,
+    aiFromQuestionAnalysis: false,
     aiRegenerating: false,
     aiSkeletonVisible: false,
     aiInlineNotice: '',
+    contentTransitionClass: '',
     showSwitchMask: false,
     renderTraces: [],
 
@@ -163,6 +200,9 @@ Page({
   _switching: false,
   _aiResult: null,
   _errorTypeLabelText: '',
+  _aiSwipeStart: null,
+  _contentTransitionStartedAt: 0,
+  _contentTransitionDirection: '',
 
   onLoad(options) {
     setRenderGuardPage('wrong-detail')
@@ -170,9 +210,14 @@ Page({
     this._aiRequestId = 0
     this._currentWqId = null
     this._switching = false
+    this._aiSwipeStart = null
+    this._contentTransitionStartedAt = 0
+    this._contentTransitionDirection = ''
     // 页面实例级别的缓存（含 TTL），避免模块全局变量跨用户串用
     this._wqCache = {}
     this._switchMaskTimer = null
+    this._contentTransitionTimer = null
+    this._switchWatchdogTimer = null
     this._masterUndoTimer = null
     this._masterAdvanceTimer = null
     this._pendingMasterUndo = null
@@ -208,6 +253,14 @@ Page({
       clearTimeout(this._switchMaskTimer)
       this._switchMaskTimer = null
     }
+    if (this._contentTransitionTimer) {
+      clearTimeout(this._contentTransitionTimer)
+      this._contentTransitionTimer = null
+    }
+    if (this._switchWatchdogTimer) {
+      clearTimeout(this._switchWatchdogTimer)
+      this._switchWatchdogTimer = null
+    }
     this._clearMasterUndo()
     // 清空页面实例缓存，防止跨页面串用
     this._wqCache = null
@@ -225,6 +278,7 @@ Page({
       aiErrorText: '',
       aiRequested: false,
       aiFromCache: false,
+      aiFromQuestionAnalysis: false,
       masterConfirmVisible: false,
       moreMenuVisible: false,
       removeConfirmVisible: false,
@@ -268,6 +322,7 @@ Page({
         aiCards: null,
         aiRequested: false,
         aiFromCache: false,
+        aiFromQuestionAnalysis: false,
         aiFallback: false,
         aiErrorText: '',
         isCurrentMastered: _isWqMastered(wq),
@@ -275,13 +330,14 @@ Page({
         removeSubmitting: false,
       }
 
-      // 如果后端已返回持久化的 AI 分析，直接展示
-      var cachedAi = _detectAiCache(wq)
-      if (cachedAi) {
-        this._aiResult = normalizeAiAnalysisPayload(wq.ai_analysis)
+      // 仅使用一个“AI 学习建议”区域：AI 分析优先，否则回退题库解析。
+      var preferredAnalysis = _resolvePreferredAnalysis(wq)
+      if (preferredAnalysis) {
+        this._aiResult = preferredAnalysis.normalized
         data.aiCards = _normalizeAiResult(this._aiResult)
         data.aiRequested = true
-        data.aiFromCache = true
+        data.aiFromCache = preferredAnalysis.source === 'ai'
+        data.aiFromQuestionAnalysis = preferredAnalysis.source === 'question'
         data.aiFallback = false
         data.aiErrorText = ''
       }
@@ -307,6 +363,7 @@ Page({
         aiErrorText: '',
         aiRequested: false,
         aiFromCache: false,
+        aiFromQuestionAnalysis: false,
       })
     }
   },
@@ -319,6 +376,14 @@ Page({
       aiSkeletonVisible: false,
       aiInlineNotice: '',
     })
+  },
+
+  /** 将最新 AI 结果回写页面实例缓存，避免切题回来后旧缓存丢弃刚生成的分析 */
+  _syncWqCacheAi(wqId, normalized) {
+    if (!this._wqCache || !wqId || !normalized) return
+    const entry = this._wqCache[wqId]
+    if (!entry) return
+    entry.data = Object.assign({}, entry.data, { ai_analysis: normalized })
   },
 
   onTapAiAnalysis() {
@@ -363,11 +428,13 @@ Page({
     if (!recovered) return false
     this._resetAiLoadingState()
     this._aiResult = recovered.normalized
+    if (recovered.latestWq) this._syncWqCacheAi(recovered.latestWq.id, recovered.normalized)
     this.setData({
       wq: recovered.latestWq || this.data.wq,
       aiCards: _normalizeAiResult(recovered.normalized),
       aiFallback: false,
       aiFromCache: true,
+      aiFromQuestionAnalysis: false,
       aiErrorText: '',
       aiInlineNotice: '',
     })
@@ -418,10 +485,12 @@ Page({
       }
       this._resetAiLoadingState()
       this._aiResult = normalized
+      this._syncWqCacheAi(wqId, normalized)
       this.setData({
         aiCards: _normalizeAiResult(normalized),
         aiFallback: false,
         aiFromCache: !!(result && result.from_cache),
+        aiFromQuestionAnalysis: false,
         aiErrorText: '',
       })
     } catch (e) {
@@ -482,10 +551,12 @@ Page({
       if (cachePreserved && hasContent) {
         this._resetAiLoadingState()
         this._aiResult = normalized
+        this._syncWqCacheAi(wqId, normalized)
         this.setData({
           aiCards: _normalizeAiResult(normalized),
           aiFallback: false,
           aiFromCache: true,
+          aiFromQuestionAnalysis: false,
           aiInlineNotice: '重新生成失败，已保留历史解析',
         })
         wx.showToast({ title: '重新生成失败，已保留历史解析', icon: 'none' })
@@ -526,10 +597,12 @@ Page({
       // 成功 — 更新为新内容
       this._resetAiLoadingState()
       this._aiResult = normalized
+      this._syncWqCacheAi(wqId, normalized)
       this.setData({
         aiCards: _normalizeAiResult(normalized),
         aiFallback: false,
         aiFromCache: !!(result && result.from_cache),
+        aiFromQuestionAnalysis: false,
         aiErrorText: '',
       })
       wx.showToast({ title: '已重新生成', icon: 'success' })
@@ -788,13 +861,138 @@ Page({
     }
   },
 
+  // ---- AI 学习建议区域左右滑动切题（切题动画由题目+AI整体容器统一承担） ----
+  onAiSwipeStart(e) {
+    if (this._switching) return
+    const touch = e && e.touches && e.touches[0]
+    if (!touch) return
+    this._aiSwipeStart = {
+      x: Number(touch.clientX),
+      y: Number(touch.clientY),
+      ts: Date.now(),
+    }
+  },
+
+  onAiSwipeEnd(e) {
+    const start = this._aiSwipeStart
+    this._aiSwipeStart = null
+    if (!start || this._switching) return
+
+    const touch = e && e.changedTouches && e.changedTouches[0]
+    if (!touch) return
+    const dx = Number(touch.clientX) - start.x
+    const dy = Number(touch.clientY) - start.y
+    const absX = Math.abs(dx)
+    const absY = Math.abs(dy)
+
+    // 仅识别明确的横向滑动，避免阅读 AI 长文本时的纵向滚动误切题。
+    if (absX < 56 || absX <= absY * 1.2) return
+
+    const targetIdx = dx < 0 ? this.data.currentIdx + 1 : this.data.currentIdx - 1
+    if (targetIdx < 0 || targetIdx >= this.data.questionIds.length) return
+    this._navigateTo(targetIdx, 150, dx < 0 ? 'left' : 'right')
+  },
+
+  onAiSwipeCancel() {
+    this._aiSwipeStart = null
+  },
+
+  _beginContentSwitchTransition(direction) {
+    const dir = direction === 'right' ? 'right' : 'left'
+    if (this._contentTransitionTimer) {
+      clearTimeout(this._contentTransitionTimer)
+      this._contentTransitionTimer = null
+    }
+    this._contentTransitionStartedAt = Date.now()
+    this._contentTransitionDirection = dir
+    this.setData({
+      contentTransitionClass: dir === 'left' ? 'content-slide-out-left' : 'content-slide-out-right',
+    })
+  },
+
+  async _waitForContentSwitchOut(direction, animMs) {
+    const dir = direction === 'right' ? 'right' : 'left'
+    if (!this._contentTransitionStartedAt || this._contentTransitionDirection !== dir) {
+      this._beginContentSwitchTransition(dir)
+    }
+    const requested = Number(animMs)
+    const waitTarget = Number.isFinite(requested) && requested > 0
+      ? Math.min(QUESTION_SWITCH_OUT_MS, requested)
+      : QUESTION_SWITCH_OUT_MS
+    const elapsed = Date.now() - this._contentTransitionStartedAt
+    if (elapsed < waitTarget) await _sleep(waitTarget - elapsed)
+  },
+
+  _finishContentSwitchTransition(direction) {
+    const dir = direction === 'right' ? 'right' : 'left'
+    const inClass = dir === 'left' ? 'content-slide-in-right' : 'content-slide-in-left'
+    if (this._contentTransitionTimer) clearTimeout(this._contentTransitionTimer)
+    this._contentTransitionStartedAt = 0
+    this._contentTransitionDirection = ''
+    this.setData({ contentTransitionClass: inClass })
+    this._contentTransitionTimer = setTimeout(() => {
+      this._contentTransitionTimer = null
+      this._switching = false
+      this._clearSwitchWatchdog()
+      if (this._alive) this.setData({ contentTransitionClass: '' })
+    }, QUESTION_SWITCH_IN_MS)
+  },
+
+  _cancelContentSwitchTransition() {
+    if (this._contentTransitionTimer) {
+      clearTimeout(this._contentTransitionTimer)
+      this._contentTransitionTimer = null
+    }
+    this._contentTransitionStartedAt = 0
+    this._contentTransitionDirection = ''
+    this.setData({ contentTransitionClass: '' })
+  },
+
+  // ---- 切题锁看门狗：fetch 阶段用长看门狗，动画阶段重武装为短看门狗，
+  // 正常路径及时释放锁，异常/回调丢失时强制复位，防止永久卡死 ----
+  _armSwitchWatchdog(ms) {
+    this._clearSwitchWatchdog()
+    var duration = Number(ms) > 0 ? Number(ms) : QUESTION_SWITCH_WATCHDOG_MS
+    var self = this
+    this._switchWatchdogTimer = setTimeout(function() {
+      self._switchWatchdogTimer = null
+      console.warn('[wrong-detail] 切题锁看门狗触发，强制复位')
+      self._forceResetSwitchLock()
+    }, duration)
+  },
+
+  _clearSwitchWatchdog() {
+    if (this._switchWatchdogTimer) {
+      clearTimeout(this._switchWatchdogTimer)
+      this._switchWatchdogTimer = null
+    }
+  },
+
+  _forceResetSwitchLock() {
+    this._switching = false
+    if (this._contentTransitionTimer) {
+      clearTimeout(this._contentTransitionTimer)
+      this._contentTransitionTimer = null
+    }
+    if (this._switchMaskTimer) {
+      clearTimeout(this._switchMaskTimer)
+      this._switchMaskTimer = null
+    }
+    this._contentTransitionStartedAt = 0
+    this._contentTransitionDirection = ''
+    this._clearSwitchWatchdog()
+    if (this._alive) {
+      this.setData({ contentTransitionClass: '', showSwitchMask: false, aiRegenerating: false })
+    }
+  },
+
   // ---- Quiz-runner navigation events ----
   goPrevWrong(e) {
-    this._navigateTo(e.detail.index, 150)
+    this._navigateTo(e.detail.index, 150, 'right')
   },
 
   goNextWrong(e) {
-    this._navigateTo(e.detail.index, 150)
+    this._navigateTo(e.detail.index, 150, 'left')
   },
 
   goWrongQuestion(e) {
@@ -817,7 +1015,7 @@ Page({
     else wx.redirectTo({ url: '/subpackages/study/wrong-book/wrong-book' })
   },
 
-  async _navigateTo(idx, animMs) {
+  async _navigateTo(idx, animMs, direction) {
     const wqId = this.data.questionIds[idx]
     if (!wqId) return
     // 并发保护
@@ -825,10 +1023,17 @@ Page({
     if (idx < 0 || idx >= this.data.questionIds.length) return
     if (idx === this.data.currentIdx) return
 
+    const switchDirection = direction === 'left' || direction === 'right'
+      ? direction
+      : (idx > this.data.currentIdx ? 'left' : 'right')
+
     this._aiRequestId++
     this._resetAiLoadingState()
     this._switching = true
-    // 延迟显示轻量切换提示（>250ms 才展示）
+    this._armSwitchWatchdog()
+    // 延迟显示轻量切换提示（>250ms 才展示）。
+    // 注意：slide-out 不在此时触发——保持当前内容可见直到数据就绪，
+    // 由下方 _waitForContentSwitchOut 在 fetch 完成后统一退出/进入，避免整段网络等待期空白。
     var self = this
     this._switchMaskTimer = setTimeout(function() {
       self.setData({ showSwitchMask: true })
@@ -882,6 +1087,7 @@ Page({
         aiCards: null,
         aiRequested: false,
         aiFromCache: false,
+        aiFromQuestionAnalysis: false,
         aiFallback: false,
         aiErrorText: '',
         isCurrentMastered: _isWqMastered(wq),
@@ -889,20 +1095,26 @@ Page({
         removeSubmitting: false,
       }
 
-      // 检查切换后题目是否有已缓存 AI 分析
-      var cachedAi = _detectAiCache(wq)
-      if (cachedAi) {
-        this._aiResult = normalizeAiAnalysisPayload(wq.ai_analysis)
+      // 切题时沿用相同优先级：AI 分析优先，否则回退题库解析。
+      var preferredAnalysis = _resolvePreferredAnalysis(wq)
+      if (preferredAnalysis) {
+        this._aiResult = preferredAnalysis.normalized
         nextData.aiCards = _normalizeAiResult(this._aiResult)
         nextData.aiRequested = true
-        nextData.aiFromCache = true
+        nextData.aiFromCache = preferredAnalysis.source === 'ai'
+        nextData.aiFromQuestionAnalysis = preferredAnalysis.source === 'question'
         nextData.aiFallback = false
         nextData.aiErrorText = ''
       }
+      // 题目区域与 AI 学习建议由同一个父容器统一退出/进入，
+      // quiz-runner 内部动画已关闭，避免两个区域各自计时造成不同步。
+      await this._waitForContentSwitchOut(switchDirection, animMs)
       clearTimeout(this._switchMaskTimer)
-      this._switching = false
-      this.setData({ showSwitchMask: false })
-      this.setData(nextData)
+      // fetch 已就绪，动画阶段改挂短看门狗：setData 回调丢失时 5s 内强制复位
+      this._armSwitchWatchdog(QUESTION_SWITCH_ANIM_WATCHDOG_MS)
+      this.setData(Object.assign({ showSwitchMask: false }, nextData), () => {
+        this._finishContentSwitchTransition(switchDirection)
+      })
       this._checkRenderInvariant(raw._renderModel)
     } catch (e) {
       console.error('切换题目失败', e)
@@ -910,7 +1122,9 @@ Page({
       clearTimeout(this._switchMaskTimer)
       // 切换失败时保持当前题不变，同时复位 AI 状态防止永久卡住
       this._switching = false
+      this._clearSwitchWatchdog()
       this.setData({ showSwitchMask: false, aiRegenerating: false })
+      this._cancelContentSwitchTransition()
     }
   },
 
