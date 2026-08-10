@@ -336,9 +336,15 @@ async def upload_question_image(
         target = validate_image_target(target)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    url = await _upload_question_asset(file, question_id)
+    # 先校验题目存在与权限，再上传：非法请求不浪费对象存储往返。
     try:
         question = await get_admin_question(db, question_id)
+    except ValueError as exc:
+        _raise_question_error(exc)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    url = await _upload_question_asset(file, question_id)
+    try:
         if target == "stem":
             new_content = upsert_stem_image(question.content, url, replace_url)
             new_image_url = extract_image_urls_from_content(new_content)
