@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Any
 
@@ -9,6 +10,15 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+_IMAGE_TARGET_RE = re.compile(r"option:[A-Z]")
+
+
+def validate_image_target(v: str) -> str:
+    """Validate an image target: "stem" or "option:A"-"option:Z"."""
+    if v != "stem" and not _IMAGE_TARGET_RE.fullmatch(v):
+        raise ValueError("target 必须是 'stem' 或 'option:A'-'option:Z'")
+    return v
 
 from app.features.question_type import validate_question_type
 
@@ -170,3 +180,34 @@ class AdminQuestionVersionDetail(AdminQuestionVersionListItem):
     analysis: str | None = None
     difficulty: int
     knowledge_points: Any | None = None
+
+
+class AdminQuestionAddOptionItem(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    key: str | None = Field(default=None, max_length=1)
+
+    @field_validator("key")
+    @classmethod
+    def _validate_key(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.upper()
+        if not re.fullmatch(r"[A-Z]", v):
+            raise ValueError("key 必须是 A-Z 的单个字母")
+        return v
+
+
+class AdminQuestionAddOptionsRequest(BaseModel):
+    options: list[AdminQuestionAddOptionItem] = Field(min_length=1, max_length=26)
+    edit_reason: str | None = Field(default=None, max_length=256)
+
+
+class AdminQuestionDeleteImageRequest(BaseModel):
+    target: str
+    url: str
+    edit_reason: str | None = Field(default=None, max_length=256)
+
+    @field_validator("target")
+    @classmethod
+    def _validate_target(cls, v: str) -> str:
+        return validate_image_target(v)

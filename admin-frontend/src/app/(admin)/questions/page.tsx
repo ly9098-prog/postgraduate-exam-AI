@@ -27,6 +27,8 @@ import { MathFormula } from "@/components/ui/math-formula";
 import { QuestionContentRenderer } from "@/components/question-content-renderer";
 import { StructuredTableEditor } from "@/components/structured-table-editor";
 import { QuestionOptions } from "@/components/question-options";
+import { QuestionImageField } from "@/components/questions/question-image-field";
+import { QuickAddOptions } from "@/components/questions/quick-add-options";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import {
   resolveQuestionOptions,
@@ -81,6 +83,53 @@ function contentSegments(content: unknown): Array<Record<string, unknown>> {
     (segment): segment is Record<string, unknown> =>
       Boolean(segment) && typeof segment === "object" && !Array.isArray(segment),
   );
+}
+
+/** Only literal "image" segments are editable here; formula/table/code image
+ * segments (math_image/table_image/code_image) are generated content the
+ * backend upsert/remove helpers do not touch. */
+function isPlainImageSegment(segment: Record<string, unknown>): boolean {
+  return segment.type === "image";
+}
+
+/** text/newline segments carry the stem text. The edit form edits the stem as a
+ * single textarea (content.stem/text); the text segments must be rebuilt to
+ * match, or segments-based renderers (admin detail, miniprogram SEGMENTS mode)
+ * keep showing the pre-edit snapshot. */
+function isStemTextSegment(
+  segment: Record<string, unknown> | null | undefined,
+): boolean {
+  return (
+    !!segment &&
+    typeof segment === "object" &&
+    !Array.isArray(segment) &&
+    (segment.type === "text" || segment.type === "newline")
+  );
+}
+
+function stemTextToSegments(text: string): Array<Record<string, unknown>> {
+  const lines = String(text ?? "").split("\n");
+  const segments: Array<Record<string, unknown>> = [];
+  lines.forEach((line, index) => {
+    if (line) segments.push({ type: "text", text: line });
+    if (index < lines.length - 1) segments.push({ type: "newline" });
+  });
+  return segments;
+}
+
+function updateStemInContent(
+  content: unknown,
+  newStem: string,
+): Record<string, unknown> {
+  const record = contentRecord(content);
+  const next: Record<string, unknown> = { ...record, stem: newStem, text: newStem };
+  if (record.render_mode === "segments" && Array.isArray(record.segments)) {
+    const nonText = (record.segments as Array<Record<string, unknown>>).filter(
+      (segment) => !isStemTextSegment(segment),
+    );
+    next.segments = [...stemTextToSegments(newStem), ...nonText];
+  }
+  return next;
 }
 
 function textFromContent(
@@ -158,8 +207,27 @@ function optionsToKeyValueList(
   }
   return Object.entries(options).map(([key, value]) => ({
     key,
-    text: typeof value === "string" ? value : JSON.stringify(value),
+    text: typeof value === "string" ? value : richOptionText(value),
   }));
+}
+
+function richOptionText(value: unknown): string {
+  if (value && typeof value === "object") {
+    const text = (value as { text?: unknown }).text;
+    if (typeof text === "string") return text;
+  }
+  return JSON.stringify(value);
+}
+
+function optionImageUrl(
+  options: QuestionOptionsValue | undefined,
+  key: string,
+): string | null {
+  if (!options || typeof options !== "object" || Array.isArray(options)) return null;
+  const value = (options as Record<string, unknown>)[key];
+  if (!value || typeof value !== "object") return null;
+  const norm = normalizeQuestionOptions({ [key]: value });
+  return norm[0]?.imageUrl ?? null;
 }
 
 type QuestionWithImport = AdminQuestion & {
@@ -490,6 +558,41 @@ export default function QuestionsPage() {
       });
     },
     [],
+  );
+
+  const dirty = useMemo(() => {
+    if (!selectedQuestion) return false;
+    const q = selectedQuestion;
+    if ((editForm.answer ?? "") !== (q.answer ?? "")) return true;
+    if ((editForm.analysis ?? "") !== (q.analysis ?? "")) return true;
+    if ((editForm.difficulty ?? null) !== (q.difficulty ?? null)) return true;
+    if ((editForm.question_type ?? "") !== (q.question_type ?? "")) return true;
+    if ((editForm.subject_id ?? null) !== (q.subject_id ?? null)) return true;
+    if (textFromContent(editForm.content) !== textFromContent(q.content)) return true;
+    if (JSON.stringify(editForm.options ?? null) !== JSON.stringify(q.options ?? null)) return true;
+    if (JSON.stringify(editForm.knowledge_points ?? null) !== JSON.stringify(q.knowledge_points ?? null)) return true;
+    return false;
+  }, [editForm, selectedQuestion]);
+
+  // Called after an immediate-write image/option mutation: adopt the fresh
+  // content/options so the next "保存" does not overwrite the just-written change.
+  const handleQuestionMutated = useCallback(
+    (question: AdminQuestion) => {
+      setEditForm((current) => ({
+        ...current,
+        content: contentRecord(question.content),
+        options: question.options ?? undefined,
+      }));
+      // Seed the detail cache immediately so `dirty` compares against the
+      // fresh state instead of false-positiving during the refetch window.
+      queryClient.setQueryData(
+        ["questions", selectedQuestionId, "detail"],
+        question,
+      );
+      queryClient.invalidateQueries({ queryKey: ["questions", selectedQuestionId] });
+      queryClient.invalidateQueries({ queryKey: ["questions"] });
+    },
+    [queryClient, selectedQuestionId],
   );
 
   const updateFilter = (key: keyof typeof filters, value: string) => {
@@ -1171,16 +1274,45 @@ export default function QuestionsPage() {
                       className="min-h-32 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm"
                       value={textFromContent(editForm.content) ?? ""}
                       onChange={(e) => {
-                        const currentContent = contentRecord(editForm.content);
                         setEditForm({
                           ...editForm,
-                          content: {
-                            ...currentContent,
-                            stem: e.target.value,
-                            text: e.target.value,
-                          },
+                          content: updateStemInContent(
+                            editForm.content,
+                            e.target.value,
+                          ),
                         });
                       }}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                      题干图片
+                    </p>
+                    {editingSegments.some(isPlainImageSegment) ? (
+                      <div className="flex flex-wrap gap-3">
+                        {editingSegments.map((seg, index) =>
+                          isPlainImageSegment(seg) ? (
+                            <div key={index} className="w-40">
+                              <QuestionImageField
+                                questionId={selectedQuestionId!}
+                                target="stem"
+                                valueUrl={typeof seg.url === "string" ? seg.url : null}
+                                dirty={dirty}
+                                addLabel="更换图片"
+                                onMutated={handleQuestionMutated}
+                              />
+                            </div>
+                          ) : null,
+                        )}
+                      </div>
+                    ) : null}
+                    <QuestionImageField
+                      questionId={selectedQuestionId!}
+                      target="stem"
+                      dirty={dirty}
+                      addLabel="插入题干图片"
+                      onMutated={handleQuestionMutated}
                     />
                   </div>
 
@@ -1212,40 +1344,68 @@ export default function QuestionsPage() {
                   {/* Options inline editor */}
                   {(() => {
                     const optList = optionsToKeyValueList(editForm.options);
+                    const qtype = canonicalizeQuestionType(editForm.question_type ?? "");
+                    const isChoiceType = qtype === "single_choice" || qtype === "multiple_choice";
                     return (
                       <section className="rounded-xl border border-[var(--color-border)]/60 bg-white/80 p-4 shadow-sm">
                         <p className="mb-3 text-xs font-semibold text-[var(--color-text-secondary)]">
                           选项
                         </p>
                         {optList.length === 0 ? (
-                          <p className="text-sm text-[var(--color-text-hint)]">
+                          <p className="mb-3 text-sm text-[var(--color-text-hint)]">
                             暂无可编辑选项
                           </p>
                         ) : (
-                          <div className="space-y-2">
-                            {optList.map((opt, index) => (
-                              <div
-                                key={index}
-                                className="flex items-center gap-2"
-                              >
-                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">
-                                  {opt.key}
-                                </span>
-                                <input
-                                  className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
-                                  value={opt.text}
-                                  onChange={(e) => {
-                                    const next = {
-                                      ...(editForm.options as Record<string, unknown>),
-                                    } as Record<string, string>;
-                                    next[opt.key] = e.target.value;
-                                    setEditForm({ ...editForm, options: next });
-                                  }}
-                                />
-                              </div>
-                            ))}
+                          <div className="mb-3 space-y-1.5">
+                            {optList.map((opt, index) => {
+                              const imgUrl = optionImageUrl(editForm.options, opt.key);
+                              return (
+                                <div key={index} className="space-y-1.5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">
+                                      {opt.key}
+                                    </span>
+                                    <input
+                                      className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
+                                      value={opt.text}
+                                      onChange={(e) => {
+                                        const currentOptions = (editForm.options ?? {}) as Record<string, unknown>;
+                                        const prevValue = currentOptions[opt.key];
+                                        const nextValue =
+                                          prevValue && typeof prevValue === "object" && !Array.isArray(prevValue)
+                                            ? { ...(prevValue as Record<string, unknown>), text: e.target.value }
+                                            : e.target.value;
+                                        setEditForm({
+                                          ...editForm,
+                                          options: { ...currentOptions, [opt.key]: nextValue },
+                                        });
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="ml-9 w-24">
+                                    <QuestionImageField
+                                      questionId={selectedQuestionId!}
+                                      target={`option:${opt.key}`}
+                                      valueUrl={imgUrl}
+                                      canDelete={!!imgUrl}
+                                      addLabel="插图"
+                                      dirty={dirty}
+                                      compact
+                                      onMutated={handleQuestionMutated}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
+                        <QuickAddOptions
+                          questionId={selectedQuestionId!}
+                          existingKeys={optList.map((o) => o.key)}
+                          disabled={!isChoiceType}
+                          dirty={dirty}
+                          onMutated={handleQuestionMutated}
+                        />
                       </section>
                     );
                   })()}

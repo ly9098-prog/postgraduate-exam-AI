@@ -10,12 +10,14 @@ from app.models.admin import QuestionVersion, Subject
 from app.models.question import Question
 from app.models.question_import import QuestionImport
 from app.schemas.admin_questions import (
+    AdminQuestionAddOptionItem,
     AdminQuestionBatchFailure,
     AdminQuestionBatchResult,
     AdminQuestionPatchRequest,
     AdminQuestionToggleActiveRequest,
 )
 from app.services.admin_audit_service import write_admin_audit
+from app.services.knowledge_point_service import load_question_kps
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +43,19 @@ _EDIT_FIELDS = (
 _CONTENT_PREVIEW_MAX_LENGTH = 200
 
 
-def build_question_audit_snapshot(question: Question) -> dict[str, Any]:
-    """Build a complete snapshot of a question for audit logging."""
+def _edit_field_value(question: Question, field: str, kps: list[str]) -> Any:
+    """读取编辑字段值；knowledge_points 已从 ORM 列移除，改为显式 kps 列表。"""
+    if field == "knowledge_points":
+        return kps
+    return getattr(question, field)
+
+
+def build_question_audit_snapshot(question: Question, kps: list[str]) -> dict[str, Any]:
+    """Build a complete snapshot of a question for audit logging.
+
+    ``kps`` 是操作发生时的知识点名列表（由调用方从关联表读取），审计必须保存
+    操作时值而非未来动态解析。
+    """
     # Attempt to resolve subject info
     subject_name = None
     subject_code = None
@@ -60,7 +73,7 @@ def build_question_audit_snapshot(question: Question) -> dict[str, Any]:
         "options": question.options,
         "answer": question.answer,
         "analysis": question.analysis,
-        "knowledge_points": question.knowledge_points,
+        "knowledge_points": kps,
         "difficulty": question.difficulty,
         "source": question.source,
         "source_type": question.source_type,
@@ -181,6 +194,8 @@ async def get_admin_question_detail(db: AsyncSession, question_id: int) -> dict[
         if not import_record.get("duplicate_status"):
             import_record["duplicate_status"] = "normal"
     data = {field: getattr(question, field) for field in question.__mapper__.columns.keys()}
+    kp_map = await load_question_kps(db, [question.id])
+    data["knowledge_points"] = kp_map.get(question.id, [])
     data["import_record"] = import_record
     return data
 
@@ -190,21 +205,15 @@ async def _next_question_version(db: AsyncSession, question_id: int) -> int:
     return int(version or 0) + 1
 
 
-def _question_snapshot(question: Question) -> dict[str, Any]:
+def _question_snapshot(question: Question, kps: list[str]) -> dict[str, Any]:
+    """版本历史快照（操作发生前的值）。knowledge_points 用显式 before 列表。"""
     return {
         "content": question.content,
         "options": question.options,
         "answer": question.answer,
         "analysis": question.analysis,
         "difficulty": question.difficulty,
-        "knowledge_points": question.knowledge_points,
-    }
-
-
-def _question_edit_state(question: Question) -> dict[str, Any]:
-    return {field: getattr(question, field) for field in _EDIT_FIELDS} | {
-        "review_status": question.review_status,
-        "is_active": question.is_active,
+        "knowledge_points": kps,
     }
 
 
@@ -221,12 +230,15 @@ async def update_admin_question(
     update_data = data.model_dump(exclude_unset=True)
     edit_reason = update_data.pop("edit_reason", None)
 
+    # 操作发生时的当前知识点（版本快照与审计必须保存操作时值）
+    kp_map = await load_question_kps(db, [question.id])
+    before_kps = kp_map.get(question.id, [])
+
     # Compute which fields actually changed (compare old vs new values)
-    before_full = _question_edit_state(question)
     changed_fields = []
     for f in _EDIT_FIELDS:
         if f in update_data:
-            old_val = getattr(question, f)
+            old_val = _edit_field_value(question, f, before_kps)
             new_val = update_data[f]
             if old_val != new_val:
                 changed_fields.append(f)
@@ -235,9 +247,9 @@ async def update_admin_question(
     if not changed_fields:
         return question
 
-    # Create version snapshot (only when real changes exist)
-    before_changed = {f: before_full[f] for f in changed_fields}
-    snapshot = _question_snapshot(question)
+    # Create version snapshot (only when real changes exist) — 用操作前值
+    before_changed = {f: _edit_field_value(question, f, before_kps) for f in changed_fields}
+    snapshot = _question_snapshot(question, before_kps)
     db.add(
         QuestionVersion(
             question_id=question.id,
@@ -248,14 +260,41 @@ async def update_admin_question(
         )
     )
 
-    # Apply changes
+    # subject_id 优先应用，使后续 KP sync 使用新科目（subject 不变量）
+    if "subject_id" in changed_fields:
+        question.subject_id = update_data["subject_id"]
+
+    # 应用普通字段（knowledge_points 单独走关联表，不在 setattr）
     for field in changed_fields:
+        if field in ("knowledge_points", "subject_id"):
+            continue
         setattr(question, field, update_data[field])
 
     await db.flush()
+
+    # 知识点三况：
+    # A 只改 KP → 按当前 subject replace；B 只改 subject → 旧名在新科目重建；C 同改 → 新 subject + 新 KP
+    if "knowledge_points" in changed_fields:
+        from app.services.knowledge_point_service import (
+            replace_question_knowledge_points,
+        )
+
+        kp_new = update_data["knowledge_points"]
+        if kp_new is None:  # 显式 null = 清空（与旧 column=NULL 行为一致）
+            kp_new = []
+        await replace_question_knowledge_points(db, question, kp_new, source="admin")
+    elif "subject_id" in changed_fields:
+        from app.services.knowledge_point_service import (
+            replace_question_knowledge_points,
+        )
+
+        await replace_question_knowledge_points(db, question, before_kps, source="admin")
+
     await _resolve_question_subject(db, question)
 
-    after_changed = {f: getattr(question, f) for f in changed_fields}
+    after_kp_map = await load_question_kps(db, [question.id])
+    after_kps = after_kp_map.get(question.id, [])
+    after_changed = {f: _edit_field_value(question, f, after_kps) for f in changed_fields}
 
     await write_admin_audit(
         db,
@@ -276,6 +315,151 @@ async def update_admin_question(
     return question
 
 
+# ── question option / image mutation helpers (admin) ────────────────────
+
+_OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def merge_options(
+    existing: dict[str, Any] | None,
+    items: list[AdminQuestionAddOptionItem],
+) -> dict[str, Any]:
+    """Append new options, auto-assigning the next free letter key when an item
+    has no explicit key. Rich option values of existing options are preserved."""
+    result = dict(existing or {})
+    used = set(result)
+    for item in items:
+        key = (item.key or _next_option_letter(used)).upper()
+        if key in used:
+            raise ValueError(f"选项 {key} 已存在")
+        result[key] = item.text
+        used.add(key)
+    return result
+
+
+def _next_option_letter(used: set[str]) -> str:
+    for letter in _OPTION_LETTERS:
+        if letter not in used:
+            return letter
+    raise ValueError("选项数量不能超过 26 个")
+
+
+def ensure_content_segments(content: dict[str, Any], stem_text: str | None = None) -> dict[str, Any]:
+    """Upgrade a legacy ``{text, stem}`` content to the segments form when no
+    segments exist yet, so an image segment can be appended."""
+    segments = content.get("segments")
+    if isinstance(segments, list) and segments:
+        return content
+    stem = stem_text or content.get("stem") or content.get("text") or ""
+    out = dict(content)
+    out["render_mode"] = "segments"
+    out["segments"] = [{"type": "text", "text": stem}]
+    return out
+
+
+def upsert_stem_image(content: dict[str, Any], url: str, replace_url: str | None = None) -> dict[str, Any]:
+    """Add a stem image segment, or replace the segment whose url == replace_url."""
+    content = ensure_content_segments(content)
+    segments = content["segments"]
+    if replace_url:
+        for i, seg in enumerate(segments):
+            if isinstance(seg, dict) and seg.get("type") == "image" and seg.get("url") == replace_url:
+                updated = [*segments]
+                updated[i] = {**seg, "url": url}
+                out = dict(content)
+                out["segments"] = updated
+                return out
+        raise ValueError("待替换图片不存在")
+    out = dict(content)
+    out["segments"] = [*segments, {"type": "image", "url": url, "semantic_role": "content_image"}]
+    return out
+
+
+def remove_stem_image(content: dict[str, Any], url: str) -> dict[str, Any]:
+    """Remove the stem image segment whose url matches."""
+    segments = content.get("segments")
+    if not isinstance(segments, list):
+        raise ValueError("待删除图片不存在")
+    kept = [s for s in segments if not (isinstance(s, dict) and s.get("type") == "image" and s.get("url") == url)]
+    if len(kept) == len(segments):
+        raise ValueError("待删除图片不存在")
+    out = dict(content)
+    out["segments"] = kept
+    return out
+
+
+def upsert_option_image(
+    options: dict[str, Any] | None,
+    key: str,
+    url: str,
+    replace_url: str | None = None,
+) -> dict[str, Any]:
+    """Set an option image: append an image segment to ``options[key]``, or
+    replace the segment whose url == replace_url. Preserves the option text."""
+    key = key.upper()
+    result = dict(options or {})
+    if key not in result:
+        raise ValueError(f"选项 {key} 不存在")
+    cur = result.get(key)
+    if isinstance(cur, str):
+        text, segments = cur, []
+    elif isinstance(cur, dict):
+        text = str(cur.get("text") or "")
+        segments = [s for s in (cur.get("segments") or []) if isinstance(s, dict)]
+    else:
+        text, segments = "", []
+    if replace_url:
+        for i, seg in enumerate(segments):
+            if isinstance(seg, dict) and seg.get("url") == replace_url:
+                updated = [*segments]
+                updated[i] = {**seg, "url": url}
+                result[key] = {"text": text, "segments": updated}
+                return result
+        raise ValueError("待替换图片不存在")
+    result[key] = {
+        "text": text,
+        "segments": [*segments, {"type": "image", "url": url, "semantic_role": "option_image"}],
+    }
+    return result
+
+
+def remove_option_image(options: dict[str, Any] | None, key: str, url: str) -> dict[str, Any]:
+    """Remove the image segment matching url from ``options[key]``; degrade the
+    rich value back to flat text when no image segments remain."""
+    key = key.upper()
+    result = dict(options or {})
+    if key not in result:
+        raise ValueError(f"选项 {key} 不存在")
+    cur = result[key]
+    if not isinstance(cur, dict) or not isinstance(cur.get("segments"), list):
+        raise ValueError("待删除图片不存在")
+    kept = [s for s in cur["segments"] if not (isinstance(s, dict) and s.get("url") == url)]
+    if len(kept) == len(cur["segments"]):
+        raise ValueError("待删除图片不存在")
+    text = str(cur.get("text") or "")
+    result[key] = {"text": text, "segments": kept} if kept else text
+    return result
+
+
+async def delete_question_asset_if_orphan(db: AsyncSession, url: str) -> None:
+    """Best-effort delete of a question asset file once nothing references it."""
+    from app.services.asset_reference_service import (
+        AssetReferenceService,
+        url_to_storage_key,
+    )
+    from app.services.storage_backend import get_question_assets_storage
+
+    try:
+        key = url_to_storage_key(url)
+        report = await AssetReferenceService(db).resolve(key)
+        if report.reference_count > 0:
+            return
+        storage = get_question_assets_storage()
+        await storage.delete(url)
+    except Exception:
+        logger.warning("question asset orphan-cleanup skipped for %s", url, exc_info=True)
+
+
 async def soft_delete_admin_question(
     db: AsyncSession,
     question_id: int,
@@ -286,7 +470,8 @@ async def soft_delete_admin_question(
     await _resolve_question_subject(db, question)
 
     # Take full snapshot before deletion
-    full_snapshot = build_question_audit_snapshot(question)
+    kp_map = await load_question_kps(db, [question.id])
+    full_snapshot = build_question_audit_snapshot(question, kp_map.get(question.id, []))
 
     before = {"is_active": question.is_active}
     question.is_active = False
