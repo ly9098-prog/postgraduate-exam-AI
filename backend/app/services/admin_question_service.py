@@ -45,6 +45,16 @@ _EDIT_FIELDS = (
 _CONTENT_PREVIEW_MAX_LENGTH = 200
 
 
+def _escape_like_keyword(keyword: str) -> str:
+    """Escape LIKE wildcards so user input is matched literally, not as pattern.
+
+    Escapes ``\\`` first (it is the escape char once ``ESCAPE '\\'`` is used),
+    then ``%`` and ``_``. Without this, a search for ``100%`` would also match
+    ``1000``/``100x``, and a LaTeX keyword like ``\\frac`` would be mangled.
+    """
+    return keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _edit_field_value(question: Question, field: str, kps: list[str]) -> Any:
     """读取编辑字段值；knowledge_points 已从 ORM 列移除，改为显式 kps 列表。"""
     if field == "knowledge_points":
@@ -153,36 +163,43 @@ async def list_admin_questions(
     if question_type:
         conditions.append(Question.question_type == question_type)
     if keyword:
-        pattern = f"%{keyword}%"
+        escaped = _escape_like_keyword(keyword)
+        pattern = f"%{escaped}%"
         # aliases 是 JSON 数组：按元素 contains 匹配（跨 dialect）。
         # SQLite 的 JSON 存储会对中文做 \\uXXXX 转义，CAST(... AS TEXT) 子串匹配会漏；
         # json_each / json_array_elements_text 都会解码后逐元素匹配，两种 dialect 行为一致。
+        # 用户输入中的 %/_ 已转义并配合 ESCAPE，避免被当作 LIKE 通配符。
         dialect_name = db.get_bind().dialect.name
         if dialect_name == "sqlite":
             alias_match = text(
                 "EXISTS (SELECT 1 FROM json_each(knowledge_points.aliases) "
-                "WHERE json_each.value LIKE :pattern)"
+                "WHERE json_each.value LIKE :pattern ESCAPE '\\')"
             ).bindparams(pattern=pattern)
         else:
+            # json_typeof 守卫：aliases 非数组（标量/对象/NULL）时退化为空数组，
+            # 避免 json_array_elements_text 对非数组输入抛
+            # "cannot extract elements from a scalar / object" 使整个搜索 500。
             alias_match = text(
-                "EXISTS (SELECT 1 FROM json_array_elements_text(knowledge_points.aliases) "
-                "AS _alias WHERE _alias ILIKE :pattern)"
+                "EXISTS (SELECT 1 FROM json_array_elements_text("
+                "CASE WHEN json_typeof(knowledge_points.aliases) = 'array' "
+                "THEN knowledge_points.aliases ELSE '[]'::json END) "
+                "AS _alias WHERE _alias ILIKE :pattern ESCAPE '\\')"
             ).bindparams(pattern=pattern)
         kp_qids = (
             select(QuestionKnowledgePoint.question_id)
             .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
             .where(
                 or_(
-                    KnowledgePoint.name.ilike(pattern),
+                    KnowledgePoint.name.ilike(pattern, escape="\\"),
                     alias_match,
                 )
             )
         )
         conditions.append(
             or_(
-                Question.answer.ilike(pattern),
-                Question.analysis.ilike(pattern),
-                Question.raw_content.ilike(pattern),
+                Question.answer.ilike(pattern, escape="\\"),
+                Question.analysis.ilike(pattern, escape="\\"),
+                Question.raw_content.ilike(pattern, escape="\\"),
                 Question.id.in_(kp_qids),
             )
         )
