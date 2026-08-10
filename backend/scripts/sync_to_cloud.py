@@ -30,11 +30,12 @@ from app.core.database import async_session  # noqa: E402
 from app.models.admin import Subject  # noqa: E402
 from app.models.question import Question  # noqa: E402
 from app.models.tag import Tag  # noqa: E402
+from app.services.knowledge_point_service import load_question_kps  # noqa: E402
 
 LAST_SYNC_FILE = ROOT / ".last_sync"
 
 
-def _serialize_question(q: Question) -> dict:
+def _serialize_question(q: Question, kps: list[str]) -> dict:
     subject_code = None
     if q.subject_ref:
         subject_code = q.subject_ref.code
@@ -51,7 +52,7 @@ def _serialize_question(q: Question) -> dict:
         "answer": q.answer,
         "question_hash": q.question_hash,
         "analysis": q.analysis,
-        "knowledge_points": q.knowledge_points,
+        "knowledge_points": kps,
         "difficulty": q.difficulty,
         "source": q.source,
         "source_type": q.source_type,
@@ -86,13 +87,14 @@ async def export_package(since: datetime | None = None, subject_id: int | None =
         if since:
             q_query = q_query.where(Question.updated_at > since)
         questions = (await db.execute(q_query)).scalars().all()
+        kp_map = await load_question_kps(db, [q.id for q in questions])
 
         t_query = select(Tag).where(Tag.sync_uuid.isnot(None))
         if since:
             t_query = t_query.where(Tag.created_at > since)
         tags = (await db.execute(t_query)).scalars().all()
 
-    q_list = [_serialize_question(q) for q in questions]
+    q_list = [_serialize_question(q, kp_map.get(q.id, [])) for q in questions]
     t_list = [_serialize_tag(t) for t in tags]
 
     payload_for_hash = json.dumps({"questions": q_list, "tags": t_list}, sort_keys=True, ensure_ascii=False)
