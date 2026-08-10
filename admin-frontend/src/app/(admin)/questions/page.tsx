@@ -1290,14 +1290,16 @@ export default function QuestionsPage() {
                       题干图片
                     </p>
                     {editingSegments.some(isPlainImageSegment) ? (
-                      <div className="flex flex-wrap gap-3">
+                      /* 已有图：大图直接占据插入区，hover 替换/删除；无插入按钮 */
+                      <div className="space-y-3">
                         {editingSegments.map((seg, index) =>
                           isPlainImageSegment(seg) ? (
-                            <div key={index} className="w-40">
+                            <div key={index} className="w-full max-w-xl">
                               <QuestionImageField
                                 questionId={selectedQuestionId!}
                                 target="stem"
                                 valueUrl={typeof seg.url === "string" ? seg.url : null}
+                                canDelete
                                 dirty={dirty}
                                 addLabel="更换图片"
                                 onMutated={handleQuestionMutated}
@@ -1306,14 +1308,15 @@ export default function QuestionsPage() {
                           ) : null,
                         )}
                       </div>
-                    ) : null}
-                    <QuestionImageField
-                      questionId={selectedQuestionId!}
-                      target="stem"
-                      dirty={dirty}
-                      addLabel="插入题干图片"
-                      onMutated={handleQuestionMutated}
-                    />
+                    ) : (
+                      <QuestionImageField
+                        questionId={selectedQuestionId!}
+                        target="stem"
+                        dirty={dirty}
+                        addLabel="插入题干图片"
+                        onMutated={handleQuestionMutated}
+                      />
+                    )}
                   </div>
 
                   {editingSegments.some((segment) => isTableSegment(segment)) ? (
@@ -1356,44 +1359,40 @@ export default function QuestionsPage() {
                             暂无可编辑选项
                           </p>
                         ) : (
-                          <div className="mb-3 space-y-1.5">
+                          <div className="mb-3 space-y-2">
                             {optList.map((opt, index) => {
                               const imgUrl = optionImageUrl(editForm.options, opt.key);
                               return (
-                                <div key={index} className="space-y-1.5">
-                                  <div className="flex items-center gap-2">
-                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">
-                                      {opt.key}
-                                    </span>
-                                    <input
-                                      className="h-9 flex-1 rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
-                                      value={opt.text}
-                                      onChange={(e) => {
-                                        const currentOptions = (editForm.options ?? {}) as Record<string, unknown>;
-                                        const prevValue = currentOptions[opt.key];
-                                        const nextValue =
-                                          prevValue && typeof prevValue === "object" && !Array.isArray(prevValue)
-                                            ? { ...(prevValue as Record<string, unknown>), text: e.target.value }
-                                            : e.target.value;
-                                        setEditForm({
-                                          ...editForm,
-                                          options: { ...currentOptions, [opt.key]: nextValue },
-                                        });
-                                      }}
-                                    />
-                                  </div>
-                                  <div className="ml-9 w-24">
-                                    <QuestionImageField
-                                      questionId={selectedQuestionId!}
-                                      target={`option:${opt.key}`}
-                                      valueUrl={imgUrl}
-                                      canDelete={!!imgUrl}
-                                      addLabel="插图"
-                                      dirty={dirty}
-                                      compact
-                                      onMutated={handleQuestionMutated}
-                                    />
-                                  </div>
+                                <div key={index} className="flex items-center gap-2">
+                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">
+                                    {opt.key}
+                                  </span>
+                                  <input
+                                    className="h-9 min-w-0 flex-1 rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
+                                    value={opt.text}
+                                    onChange={(e) => {
+                                      const currentOptions = (editForm.options ?? {}) as Record<string, unknown>;
+                                      const prevValue = currentOptions[opt.key];
+                                      const nextValue =
+                                        prevValue && typeof prevValue === "object" && !Array.isArray(prevValue)
+                                          ? { ...(prevValue as Record<string, unknown>), text: e.target.value }
+                                          : e.target.value;
+                                      setEditForm({
+                                        ...editForm,
+                                        options: { ...currentOptions, [opt.key]: nextValue },
+                                      });
+                                    }}
+                                  />
+                                  <QuestionImageField
+                                    questionId={selectedQuestionId!}
+                                    target={`option:${opt.key}`}
+                                    valueUrl={imgUrl}
+                                    canDelete={!!imgUrl}
+                                    addLabel="上传图片"
+                                    dirty={dirty}
+                                    variant="row"
+                                    onMutated={handleQuestionMutated}
+                                  />
                                 </div>
                               );
                             })}

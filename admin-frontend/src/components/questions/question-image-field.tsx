@@ -24,8 +24,8 @@ type QuestionImageFieldProps = {
   addLabel?: string;
   /** Set when the parent edit form has unsaved changes → confirm before writing. */
   dirty?: boolean;
-  /** Compact row-friendly variant for option rows. */
-  compact?: boolean;
+  /** "hero" (default): large stem image that fills the insert area; "row": compact square for option rows. */
+  variant?: "hero" | "row";
   onMutated: (question: AdminQuestion) => void;
 };
 
@@ -33,6 +33,8 @@ type QuestionImageFieldProps = {
  * Custom (non-native) image control for a question stem or an option:
  * hidden file input triggered by a styled button, inline preview with a
  * hover replace/delete overlay, and a confirm dialog before writing.
+ * When an image exists, it is shown large and *replaces* the add/upload
+ * affordance (hero) or as a compact square in the option row.
  * Writes immediately via POST/DELETE /questions/{id}/images.
  */
 export function QuestionImageField({
@@ -42,7 +44,7 @@ export function QuestionImageField({
   canDelete = true,
   addLabel = "添加图片",
   dirty = false,
-  compact = false,
+  variant = "hero",
   onMutated,
 }: QuestionImageFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -53,8 +55,10 @@ export function QuestionImageField({
   const [pendingConfirm, setPendingConfirm] = useState<null | "upload" | "delete">(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
+  const isRow = variant === "row";
   const resolved = valueUrl ? resolveAssetUrl(valueUrl) : null;
   const showImage = previewUrl ?? resolved;
+  const alt = target === "stem" ? "题干图片" : `选项 ${target.slice("option:".length)} 图片`;
 
   const triggerPicker = () => inputRef.current?.click();
 
@@ -135,8 +139,39 @@ export function QuestionImageField({
         ? DIRTY_WARNING
         : null;
 
+  const overlayButtons = (
+    <>
+      <button
+        type="button"
+        onClick={triggerPicker}
+        title="替换图片"
+        aria-label="替换图片"
+        className={cn(
+          "flex items-center justify-center rounded-full bg-white/90 text-[var(--color-primary-dark)] shadow-sm transition hover:bg-white",
+          isRow ? "h-5 w-5" : "h-8 w-8",
+        )}
+      >
+        <RefreshCw className={isRow ? "h-3 w-3" : "h-4 w-4"} />
+      </button>
+      {canDelete ? (
+        <button
+          type="button"
+          onClick={() => setPendingConfirm("delete")}
+          title="删除图片"
+          aria-label="删除图片"
+          className={cn(
+            "flex items-center justify-center rounded-full bg-white/90 text-red-500 shadow-sm transition hover:bg-white",
+            isRow ? "h-5 w-5" : "h-8 w-8",
+          )}
+        >
+          <Trash2 className={isRow ? "h-3 w-3" : "h-4 w-4"} />
+        </button>
+      ) : null}
+    </>
+  );
+
   return (
-    <div className="w-full">
+    <div className={isRow ? "shrink-0" : "w-full"}>
       <input
         ref={inputRef}
         type="file"
@@ -146,60 +181,53 @@ export function QuestionImageField({
       />
 
       {showImage ? (
-        <div className={cn("group/img relative overflow-hidden rounded-xl border border-[var(--color-border)]/60 bg-white", compact ? "h-11 w-16" : "")}>
-          <img
-            src={showImage}
-            alt="题干/选项图片"
-            className={cn("object-cover", compact ? "h-11 w-16" : "max-w-full object-contain")}
-            style={compact ? undefined : { maxHeight: "140px" }}
-          />
-          <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/45 opacity-0 transition-opacity group-hover/img:opacity-100">
-            {busy ? (
-              <Loader2 className="h-4 w-4 animate-spin text-white" />
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={triggerPicker}
-                  title="替换图片"
-                  aria-label="替换图片"
-                  className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-[var(--color-primary-dark)] shadow-sm transition hover:bg-white"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </button>
-                {canDelete ? (
-                  <button
-                    type="button"
-                    onClick={() => setPendingConfirm("delete")}
-                    title="删除图片"
-                    aria-label="删除图片"
-                    className="flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-red-500 shadow-sm transition hover:bg-white"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
-              </>
-            )}
+        isRow ? (
+          /* ── Row: compact square thumbnail with hover replace/delete ── */
+          <div className="group/img relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-[var(--color-border)]/60 bg-white">
+            <img src={showImage} alt={alt} className="h-full w-full object-cover" />
+            <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-black/45 opacity-0 transition-opacity duration-150 group-hover/img:opacity-100">
+              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-white" /> : overlayButtons}
+            </div>
           </div>
-        </div>
-      ) : (
+        ) : (
+          /* ── Hero: large stem image fills the insert area ── */
+          <div className="group/img relative overflow-hidden rounded-xl border border-[var(--color-border)]/60 bg-white shadow-[var(--shadow-card)]">
+            <img
+              src={showImage}
+              alt={alt}
+              className="mx-auto max-h-72 w-auto max-w-full object-contain"
+            />
+            <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/40 opacity-0 transition-opacity duration-150 group-hover/img:opacity-100">
+              {busy ? <Loader2 className="h-5 w-5 animate-spin text-white" /> : overlayButtons}
+            </div>
+          </div>
+        )
+      ) : isRow ? (
+        /* ── Row: compact square add button ── */
         <button
           type="button"
           onClick={triggerPicker}
           disabled={busy}
-          className={cn(
-            "flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--porcelain)]/60 text-[var(--color-text-hint)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary-dark)] disabled:cursor-wait disabled:opacity-60",
-            compact
-              ? "h-11 w-16 flex-col gap-0.5"
-              : "h-24 w-full flex-col gap-1.5",
-          )}
+          title={addLabel}
+          aria-label={addLabel}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--porcelain)]/60 text-[var(--color-text-hint)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:cursor-wait disabled:opacity-60"
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+        </button>
+      ) : (
+        /* ── Hero: dashed upload area when no image ── */
+        <button
+          type="button"
+          onClick={triggerPicker}
+          disabled={busy}
+          className="flex h-28 w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--porcelain)]/60 text-[var(--color-text-hint)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:cursor-wait disabled:opacity-60"
         >
           {busy ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
-            <ImagePlus className="h-4 w-4" />
+            <ImagePlus className="h-5 w-5" />
           )}
-          <span className="text-[10px] font-medium leading-none">{busy ? "上传中..." : addLabel}</span>
+          <span className="text-xs font-medium leading-none">{busy ? "上传中..." : addLabel}</span>
         </button>
       )}
 
