@@ -348,6 +348,9 @@ async def run(args) -> int:
 
         # ── 实写（单事务；门禁失败 → rollback + exit 1）──
         try:
+            # _load_state 的 SELECT 已隐式开启只读事务；先回滚结束它，
+            # 否则 async with db.begin() 报 "transaction is already begun"。
+            await db.rollback()
             async with db.begin():
                 # 1. 建主表（按 subject_id+normalized_name 幂等）
                 for subject_id, display, norm, key in new_kps:
