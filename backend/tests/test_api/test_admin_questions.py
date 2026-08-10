@@ -343,7 +343,11 @@ def test_upload_question_image_option(monkeypatch):
     assert resp.status_code == 200
 
 
-def test_upload_question_image_rejects_non_image():
+def test_upload_question_image_rejects_non_image(monkeypatch):
+    # F7: 先校验题目存在/权限，再校验文件类型 —— 因此需 mock 一个合法题目，
+    # 才能走到 _upload_question_asset 的非图片拒绝路径。
+    q = _choice_question()
+    monkeypatch.setattr(admin_questions, "get_admin_question", AsyncMock(return_value=q))
     app.dependency_overrides[get_current_admin] = _allow
     try:
         resp = client.post(

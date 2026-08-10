@@ -327,13 +327,20 @@ def merge_options(
     """Append new options, auto-assigning the next free letter key when an item
     has no explicit key. Rich option values of existing options are preserved."""
     result = dict(existing or {})
-    used = set(result)
+    # 大小写不敏感判重：历史小写键 'a' 与自动字母 'A' 视为同一槽位，避免产生重复选项。
+    used = {k.upper() for k in result}
     for item in items:
-        key = (item.key or _next_option_letter(used)).upper()
-        if key in used:
-            raise ValueError(f"选项 {key} 已存在")
-        result[key] = item.text
-        used.add(key)
+        explicit = item.key
+        if explicit:
+            key = explicit.upper()
+            if key in used:
+                raise ValueError(f"选项 {explicit} 已存在")
+            result[key] = item.text
+            used.add(key)
+        else:
+            letter = _next_option_letter(used)
+            result[letter] = item.text
+            used.add(letter)
     return result
 
 
@@ -401,11 +408,14 @@ def upsert_option_image(
     if key not in result:
         raise ValueError(f"选项 {key} 不存在")
     cur = result.get(key)
+    extra: dict[str, Any] = {}
     if isinstance(cur, str):
         text, segments = cur, []
     elif isinstance(cur, dict):
         text = str(cur.get("text") or "")
         segments = [s for s in (cur.get("segments") or []) if isinstance(s, dict)]
+        # 保留其他富键（如 semantic_role、is_question_image），避免重写时丢失。
+        extra = {k: v for k, v in cur.items() if k not in ("text", "segments")}
     else:
         text, segments = "", []
     if replace_url:
@@ -413,12 +423,13 @@ def upsert_option_image(
             if isinstance(seg, dict) and seg.get("url") == replace_url:
                 updated = [*segments]
                 updated[i] = {**seg, "url": url}
-                result[key] = {"text": text, "segments": updated}
+                result[key] = {"text": text, "segments": updated, **extra}
                 return result
         raise ValueError("待替换图片不存在")
     result[key] = {
         "text": text,
         "segments": [*segments, {"type": "image", "url": url, "semantic_role": "option_image"}],
+        **extra,
     }
     return result
 
@@ -437,7 +448,14 @@ def remove_option_image(options: dict[str, Any] | None, key: str, url: str) -> d
     if len(kept) == len(cur["segments"]):
         raise ValueError("待删除图片不存在")
     text = str(cur.get("text") or "")
-    result[key] = {"text": text, "segments": kept} if kept else text
+    extra = {k: v for k, v in cur.items() if k not in ("text", "segments")}
+    if kept:
+        result[key] = {"text": text, "segments": kept, **extra}
+    elif extra:
+        # 仍有富键（如 semantic_role）时保持 dict 形态，避免丢元数据
+        result[key] = {"text": text, "segments": [], **extra}
+    else:
+        result[key] = text
     return result
 
 
