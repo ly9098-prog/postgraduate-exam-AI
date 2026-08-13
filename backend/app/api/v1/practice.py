@@ -202,7 +202,9 @@ async def get_practice_questions(
     no_repeat_days: int | None = Query(None, ge=1, le=365),
     use_leitner: bool = Query(True),
     source_question_id: int | None = Query(None),
-    smart_strategy: str = Query("weakness_vector"),
+    # smart 默认走综合 scored；客户端仍只需要传 mode=smart。
+    # weakness_vector 保留为显式 fallback / A/B control。
+    smart_strategy: str = Query("scored"),
     x_trace_id: str | None = Header(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

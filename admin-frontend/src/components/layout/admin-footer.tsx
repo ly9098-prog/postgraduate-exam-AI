@@ -5,7 +5,7 @@ export function AdminFooter() {
         <span>© {new Date().getFullYear()} MemoGrad</span>
         <span className="hidden h-3 w-px bg-[var(--color-border)] sm:block" />
         <a className="font-medium transition hover:text-[var(--color-primary-dark)]" href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">
-          桂ICP备2026003057号
+          桂ICP备2026003057号-1
         </a>
       </div>
     </footer>

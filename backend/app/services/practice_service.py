@@ -487,7 +487,7 @@ async def get_aggregated_smart_questions(
     no_repeat_days: int | None = None,
     use_leitner: bool = True,
     request_id: str | None = None,
-    smart_strategy: str = "weakness_vector",
+    smart_strategy: str = "scored",
 ) -> tuple[list[Question], dict[int, dict]]:
     """smart 模式聚合刷题：为每个精确 subject_code 独立生成 smart 候选后轮询合并。
 
@@ -1047,7 +1047,7 @@ async def get_smart_practice_questions(
     no_repeat_days: int | None = None,
     use_leitner: bool = True,
     request_id: str | None = None,
-    smart_strategy: str = "weakness_vector",
+    smart_strategy: str = "scored",
     skip_finalize: bool = False,
     subject_ids: list[int] | None = None,
 ) -> tuple[list[Question], dict[int, dict]]:
@@ -1083,6 +1083,17 @@ async def get_smart_practice_questions(
             experiment_info["variant_key"] = resolved.get("variant_key")
     except Exception:
         logger.warning("实验策略解析失败，使用默认策略", exc_info=True)
+
+    # Historical/admin naming compatibility.  The experiment/config layer uses
+    # ``knowledge_path`` while this service originally used ``path``; treat
+    # them as the same strategy.  ``hybrid_graph`` / ``smart_scored`` are safe
+    # aliases for the upgraded scored implementation rather than parallel
+    # recommendation engines.
+    smart_strategy = {
+        "knowledge_path": "path",
+        "hybrid_graph": "scored",
+        "smart_scored": "scored",
+    }.get(smart_strategy, smart_strategy)
 
     # V4: 综合打分策略
     if smart_strategy == "scored":
@@ -1543,6 +1554,91 @@ async def _smart_weakness_vector(
 # ── V4: 智能推荐综合打分 ─────────────────────────────────────────
 
 
+def _pick_graph_target_kps(
+    kp_mastery: dict[int, tuple],
+    *,
+    limit: int = 5,
+) -> list[int]:
+    """Pick high-value weak KPs whose prerequisites are worth expanding.
+
+    Low-confidence states are not treated as confirmed weakness.  This keeps
+    the graph from turning an unobserved prerequisite into a hard learning
+    detour while still allowing the graph helper to add a small diagnostic
+    candidate for unknown *prerequisites* of a genuinely weak target.
+    """
+    ranked: list[tuple[int, float]] = []
+    for kp_id, (mastery, confidence) in kp_mastery.items():
+        mastery_value = 50.0 if mastery is None else mastery
+        confidence_value = 0.0 if confidence is None else confidence
+        mastery = max(0.0, min(float(mastery_value), 100.0))
+        confidence = max(0.0, min(float(confidence_value), 1.0))
+        if confidence < 0.3 or mastery >= 70.0:
+            continue
+        weakness = ((100.0 - mastery) / 100.0) * confidence
+        ranked.append((kp_id, weakness))
+    ranked.sort(key=lambda item: item[1], reverse=True)
+    return [kp_id for kp_id, _score in ranked[:limit]]
+
+
+def _build_smart_recommendation_reason(
+    reason_codes: list[str],
+    kp_ids: list[int],
+    kp_names: dict[int, str],
+    graph_candidates: dict[int, dict] | None = None,
+    blocked_kps: dict[int, list[dict]] | None = None,
+) -> str:
+    """Convert internal score reason codes into one user-facing Chinese reason."""
+    graph_candidates = graph_candidates or {}
+    blocked_kps = blocked_kps or {}
+
+    # Highest-value explanation: this question is a prerequisite selected to
+    # repair a known weakness in another target KP.
+    for kp_id in kp_ids:
+        graph = graph_candidates.get(kp_id)
+        if not graph:
+            continue
+        kp_name = graph.get("name") or kp_names.get(kp_id) or "这个知识点"
+        origin_name = graph.get("origin_name") or "目标知识点"
+        if graph.get("confirmed_gap"):
+            return f"你在「{origin_name}」上的掌握较弱，而「{kp_name}」是它的重要前置知识，建议先巩固「{kp_name}」。"
+        return f"「{kp_name}」是「{origin_name}」的前置知识，目前掌握数据较少，这道题可用于快速确认基础是否扎实。"
+
+    if "due_review" in reason_codes:
+        return "这道题已进入复习窗口，现在练习有助于巩固记忆。"
+
+    if "weak_kp" in reason_codes:
+        name = next((kp_names.get(k) for k in kp_ids if kp_names.get(k)), None)
+        if name:
+            return f"你最近在「{name}」上的掌握度较低，这道题适合继续巩固。"
+        return "你最近在这类知识点上的掌握度较低，建议继续巩固。"
+
+    if "wrong_history" in reason_codes:
+        return "你之前在这类题目上出现过错误，建议再次练习确认是否已经掌握。"
+
+    # A blocked target can still surface because it is overdue or has strong
+    # historical signals.  Explain it honestly instead of exposing internal
+    # tokens such as weak_prerequisite.
+    for kp_id in kp_ids:
+        blockers = blocked_kps.get(kp_id) or []
+        if blockers:
+            target_name = kp_names.get(kp_id) or "当前知识点"
+            prereq_name = blockers[0].get("name") or "前置知识"
+            return f"「{target_name}」仍需巩固，同时「{prereq_name}」这一前置知识也较薄弱，建议结合练习。"
+
+    if "path_ready" in reason_codes:
+        name = next((kp_names.get(k) for k in kp_ids if kp_names.get(k)), None)
+        if name:
+            return f"相关前置知识已经基本具备，可以继续巩固「{name}」。"
+
+    if "new_question" in reason_codes:
+        return "这是一道尚未练过的新题，用来检验当前掌握情况。"
+    if "long_unpracticed" in reason_codes:
+        return "这个知识点已有一段时间没有练习，适合现在做一次巩固。"
+    if "diversity" in reason_codes:
+        return "为避免重复刷同类题，这道题用于补充近期练习的知识覆盖。"
+    return "根据你的近期答题表现和知识掌握情况推荐。"
+
+
 def calculate_smart_score(
     question: Question,
     q_state,          # UserQuestionState | None
@@ -1551,9 +1647,11 @@ def calculate_smart_score(
     recent_kp_ids: set[int],
     now: datetime,
     blocked_kps: dict[int, list[dict]] | None = None,  # V6.3: kp_id -> [weak prereqs]
+    graph_candidates: dict[int, dict] | None = None,  # V6.5: prereq kp -> graph context
+    prerequisites_by_target: dict[int, list[dict]] | None = None,
     weights: dict[str, float] | None = None,  # V6.4: 个性化权重
 ) -> tuple[float, list[str]]:
-    """V4 综合打分 + V6.3 路径感知 + V6.4 权重个性化。
+    """V4 综合打分 + V6.5 图谱候选扩展 + V6.4 权重个性化。
 
     维度:
       1. due_score        — 复习到期 (+40)         × due_weight
@@ -1563,8 +1661,9 @@ def calculate_smart_score(
       5. new_question     — 新题 (+20)              × new_question_weight
       6. long_unpracticed — 长期未练                × diversity_weight
       7. diversity        — 知识点多样性 (+10)       × diversity_weight
-      8. path_blocked     — 前置知识点薄弱 (-25)     × path_weight
-      9. path_unlock      — 前置已掌握可推进 (+15)   × path_weight
+      8. path_blocked     — 前置知识点薄弱 (最多 -25) × path_weight
+      9. prerequisite_need— 推荐薄弱前置 (最多 +45)   × path_weight
+     10. path_ready       — 前置已满足可推进 (+8)      × path_weight
     """
     reasons: list[str] = []
 
@@ -1625,23 +1724,72 @@ def calculate_smart_score(
         diversity_total += 10
         reasons.append("diversity")
 
-    # ── 8 & 9: 知识点路径感知 (V6.3) ──
+    # ── 8~10: 知识点路径感知 (V6.5) ──
     if blocked_kps is not None and kp_ids:
         has_blocked = False
-        has_unlock = False
+        blocked_quality = 0.0
         for kid in kp_ids:
-            if kid in blocked_kps:
+            blockers = blocked_kps.get(kid) or []
+            if blockers:
                 has_blocked = True
-            else:
-                ms, conf = kp_mastery.get(kid, (50.0, 0.0))
-                if conf >= 0.3 and ms < 60:
-                    has_unlock = True
+                blocked_quality = max(
+                    blocked_quality,
+                    max(float(b.get("path_quality") or 0.0) for b in blockers),
+                )
         if has_blocked:
-            path_total -= 25
+            # Low-confidence / low-weight edges should only have a small
+            # influence; graph data is weighted evidence, not an absolute rule.
+            path_total -= 25 * blocked_quality
             reasons.append("weak_prerequisite")
-        if has_unlock and not has_blocked:
-            path_total += 15
-            reasons.append("path_unlock")
+
+    if graph_candidates and kp_ids:
+        best_bonus = 0.0
+        for kid in kp_ids:
+            graph = graph_candidates.get(kid)
+            if not graph:
+                continue
+            path_quality = max(0.0, min(float(graph.get("path_quality") or 0.0), 1.0))
+            raw_origin_mastery = graph.get("origin_mastery_score")
+            raw_origin_conf = graph.get("origin_mastery_confidence")
+            raw_prereq_mastery = graph.get("mastery_score")
+            raw_prereq_conf = graph.get("mastery_confidence")
+            origin_mastery = max(0.0, min(float(50.0 if raw_origin_mastery is None else raw_origin_mastery), 100.0))
+            origin_conf = max(0.0, min(float(0.0 if raw_origin_conf is None else raw_origin_conf), 1.0))
+            prereq_mastery = max(0.0, min(float(50.0 if raw_prereq_mastery is None else raw_prereq_mastery), 100.0))
+            prereq_conf = max(0.0, min(float(0.0 if raw_prereq_conf is None else raw_prereq_conf), 1.0))
+
+            origin_need = ((100.0 - origin_mastery) / 100.0) * origin_conf
+            if graph.get("confirmed_gap"):
+                prereq_gap = max(0.0, (60.0 - prereq_mastery) / 60.0) * prereq_conf
+                bonus = 45.0 * (0.55 + 0.45 * origin_need) * (0.65 + 0.35 * prereq_gap) * path_quality
+            else:
+                # Unknown prerequisite: diagnostic exploration only.  Never let
+                # it dominate a confirmed weakness.
+                bonus = 10.0 * (0.5 + 0.5 * origin_need) * path_quality
+            best_bonus = max(best_bonus, bonus)
+
+        if best_bonus > 0:
+            path_total += best_bonus
+            reasons.append("prerequisite_need")
+
+    if prerequisites_by_target and kp_ids and not any(k in (blocked_kps or {}) for k in kp_ids):
+        # Only award "ready to progress" when the KP has direct prerequisites
+        # and every one is sufficiently observed + mastered.  Unknown prereqs
+        # are diagnostic candidates, not proof that the path is unlocked.
+        for kid in kp_ids:
+            direct_prereqs = [
+                p for p in (prerequisites_by_target.get(kid) or [])
+                if int(p.get("depth") or 0) == 1
+            ]
+            if direct_prereqs and all(
+                not p.get("unknown_gap")
+                and float(p.get("mastery_score") or 0.0) >= 60.0
+                and float(p.get("mastery_confidence") or 0.0) >= 0.3
+                for p in direct_prereqs
+            ):
+                path_total += 8
+                reasons.append("path_ready")
+                break
 
     # ── V6.4: 应用个性化权重 ──
     if weights:
@@ -1721,11 +1869,13 @@ async def get_smart_scored_questions(
     )
     cand_result = await db.execute(cand_query)
     candidates: list[Question] = list(cand_result.scalars().all())
+    active_candidate_conditions = conditions
 
     # 24h 过滤后不足 → 放宽（降级 1）
     if len(candidates) < count:
         fallback_level = 1
         relaxed = [c for c in conditions if c is not conditions[-1]]
+        active_candidate_conditions = relaxed
         relaxed_query = (
             select(Question)
             .where(and_(*relaxed))
@@ -1739,6 +1889,82 @@ async def get_smart_scored_questions(
         logger.warning("[smart_scored] 候选题池为空 uid=%s subject=%s", user_id, subject_code)
         return [], metadata
 
+    # ── 1.5 用户知识状态 + 图谱候选扩展 (V6.5) ──
+    # Knowledge state is loaded before question state because graph expansion
+    # starts from the user's weak KPs, not from whichever questions happened to
+    # be in the first DB page.
+    ks_result = await db.execute(
+        select(UserKnowledgeState).where(
+            UserKnowledgeState.user_id == user_id,
+            UserKnowledgeState.subject_id.in_(scope_ids),
+        )
+    )
+    kp_mastery: dict[int, tuple] = {
+        s.knowledge_point_id: (s.mastery_score, s.confidence)
+        for s in ks_result.scalars().all()
+    }
+
+    graph_context: dict = {
+        "blocked_targets": {},
+        "prerequisite_candidates": {},
+        "prerequisites_by_target": {},
+    }
+    try:
+        from app.core.config import settings as _settings
+        if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_PATH_ENABLED:
+            weak_target_ids = _pick_graph_target_kps(kp_mastery, limit=5)
+            if weak_target_ids:
+                from app.services import adaptive_learning_service
+                graph_context = await adaptive_learning_service.get_recommendation_graph_context(
+                    db=db,
+                    user_id=user_id,
+                    target_kp_ids=weak_target_ids,
+                    subject_ids=scope_ids,
+                    max_depth=2,
+                    max_nodes=24,
+                )
+
+                graph_candidate_ids = list(graph_context.get("prerequisite_candidates", {}).keys())
+                if graph_candidate_ids:
+                    existing_ids = {q.id for q in candidates}
+                    graph_limit = max(count * 3, 30)
+                    graph_query = (
+                        select(Question)
+                        .join(
+                            QuestionKnowledgePoint,
+                            QuestionKnowledgePoint.question_id == Question.id,
+                        )
+                        .where(
+                            and_(
+                                *active_candidate_conditions,
+                                QuestionKnowledgePoint.knowledge_point_id.in_(graph_candidate_ids),
+                                Question.id.notin_(existing_ids),
+                            )
+                        )
+                        .options(selectinload(Question.subject_ref))
+                        .distinct()
+                        .limit(graph_limit)
+                    )
+                    graph_result = await db.execute(graph_query)
+                    graph_questions = list(graph_result.scalars().all())
+                    candidates.extend(graph_questions)
+                    if graph_questions:
+                        logger.info(
+                            "[smart_scored_graph] uid=%s targets=%s prereq_kps=%s expanded_questions=%d",
+                            user_id,
+                            weak_target_ids,
+                            graph_candidate_ids,
+                            len(graph_questions),
+                        )
+    except Exception:
+        # Graph is an enhancement, never a single point of failure.
+        logger.warning("V6.5 图谱候选扩展失败（继续使用基础 scored）uid=%s", user_id, exc_info=True)
+        graph_context = {
+            "blocked_targets": {},
+            "prerequisite_candidates": {},
+            "prerequisites_by_target": {},
+        }
+
     cand_ids = {q.id for q in candidates}
 
     # ── 2. 批量加载状态 ──
@@ -1750,17 +1976,6 @@ async def get_smart_scored_questions(
     )
     q_state_map: dict[int, object] = {
         s.question_id: s for s in qs_result.scalars().all()
-    }
-
-    ks_result = await db.execute(
-        select(UserKnowledgeState).where(
-            UserKnowledgeState.user_id == user_id,
-            UserKnowledgeState.subject_id.in_(scope_ids),
-        )
-    )
-    kp_mastery: dict[int, tuple] = {
-        s.knowledge_point_id: (s.mastery_score, s.confidence)
-        for s in ks_result.scalars().all()
     }
 
     # ── 3. 最近练习知识点 (diversity) ──
@@ -1787,19 +2002,25 @@ async def get_smart_scored_questions(
     for qid, kid in qkp_result.all():
         q_kp_map.setdefault(qid, []).append(kid)
 
-    # ── 4.5 批量加载前置知识点阻塞信息 (V6.3) ──
-    blocked_kps: dict[int, list[dict]] = {}
-    try:
-        from app.core.config import settings as _settings
-        if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_PATH_ENABLED:
-            all_kp_ids = list({kid for kids in q_kp_map.values() for kid in kids})
-            if all_kp_ids:
-                from app.services import adaptive_learning_service
-                blocked_kps = await adaptive_learning_service.get_blocked_knowledge_points(
-                    db, user_id, all_kp_ids, subject_code,
-                )
-    except Exception:
-        logger.debug("V6.3 前置知识点加载失败（不影响推荐）uid=%s", user_id, exc_info=True)
+    # ── 4.5 图谱上下文 (V6.5) ──
+    blocked_kps: dict[int, list[dict]] = graph_context.get("blocked_targets", {})
+    graph_candidates: dict[int, dict] = graph_context.get("prerequisite_candidates", {})
+    prerequisites_by_target: dict[int, list[dict]] = graph_context.get("prerequisites_by_target", {})
+
+    # Names are needed only for the user-facing explanation; load them once for
+    # all candidate KPs instead of querying while building each reason.
+    all_candidate_kp_ids = list({kid for kids in q_kp_map.values() for kid in kids})
+    kp_names: dict[int, str] = {}
+    if all_candidate_kp_ids:
+        from app.models.knowledge_point import KnowledgePoint
+        kp_name_result = await db.execute(
+            select(KnowledgePoint.id, KnowledgePoint.name).where(
+                KnowledgePoint.id.in_(all_candidate_kp_ids),
+                KnowledgePoint.subject_id.in_(scope_ids),
+                KnowledgePoint.is_active == True,  # noqa: E712
+            )
+        )
+        kp_names = {row.id: row.name for row in kp_name_result.all()}
 
     # ── 4.6 加载用户推荐权重 (V6.4) ──
     rec_weights: dict[str, float] | None = None
@@ -1818,7 +2039,10 @@ async def get_smart_scored_questions(
         qs = q_state_map.get(q.id)
         sc, reasons = calculate_smart_score(
             q, qs, kp_ids, kp_mastery, recent_kp_ids, now,
-            blocked_kps=blocked_kps, weights=rec_weights,
+            blocked_kps=blocked_kps,
+            graph_candidates=graph_candidates,
+            prerequisites_by_target=prerequisites_by_target,
+            weights=rec_weights,
         )
         scored.append((q, sc, reasons))
 
@@ -1852,7 +2076,13 @@ async def get_smart_scored_questions(
             kp_counter[k] = kp_counter.get(k, 0) + 1
         metadata[q.id] = {
             "recommend_score": round(sc, 2),
-            "recommend_reason": ",".join(reasons),
+            "recommend_reason": _build_smart_recommendation_reason(
+                reasons,
+                kp_ids,
+                kp_names,
+                graph_candidates=graph_candidates,
+                blocked_kps=blocked_kps,
+            ),
             "strategy": "smart_scored",
             "similarity": None,
         }
@@ -1869,7 +2099,13 @@ async def get_smart_scored_questions(
             selected_ids.add(q.id)
             metadata[q.id] = {
                 "recommend_score": round(sc, 2),
-                "recommend_reason": ",".join(reasons),
+                "recommend_reason": _build_smart_recommendation_reason(
+                    reasons,
+                    q_kp_map.get(q.id, []),
+                    kp_names,
+                    graph_candidates=graph_candidates,
+                    blocked_kps=blocked_kps,
+                ),
                 "strategy": "smart_scored",
                 "similarity": None,
             }
