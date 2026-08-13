@@ -170,6 +170,11 @@ async def mark_recommendation_answered(
         log.mastery_after = mastery_after
     if mastery_delta is not None:
         log.mastery_delta = mastery_delta
+        # 推荐曝光时未必能低成本获得“题目所有知识点的平均掌握度”。
+        # 答题后已拿到 before/after 的差值时，可无损反推出 mastery_before，
+        # 让 recommendation_metrics_daily 的掌握度提升指标真正有数据。
+        if log.mastery_before is None and mastery_after is not None:
+            log.mastery_before = mastery_after - mastery_delta
     await db.flush()
     return True
 

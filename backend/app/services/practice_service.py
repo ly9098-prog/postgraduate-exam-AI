@@ -1274,8 +1274,10 @@ async def get_smart_practice_questions(
     try:
         from app.services import recommendation_strategy_service
 
+        # weakness_vector 的 rerank 必须显式读取自己的配置；practice_smart
+        # 的 scene 默认现在是 default_scored，不能误拿 scored 的 legacy 0 权重。
         strategy_config = await recommendation_strategy_service.get_strategy_config(
-            db, "practice_smart",
+            db, "practice_smart", strategy_name="default_weakness_vector",
         )
     except Exception:
         logger.debug("获取推荐策略配置失败，跳过权重重排", exc_info=True)
@@ -1400,6 +1402,12 @@ async def _finalize_smart(
                 meta.get("strategy", "fallback") for meta in metadata.values()
             )
             dominant_strategy = strategy_counts.most_common(1)[0][0]
+            strategy_config_ids = [
+                meta.get("strategy_config_id")
+                for meta in metadata.values()
+                if meta.get("strategy") == dominant_strategy and meta.get("strategy_config_id") is not None
+            ]
+            dominant_strategy_config_id = strategy_config_ids[0] if strategy_config_ids else None
 
             await recommendation_log_service.create_recommendation_logs(
                 db=db,
@@ -1410,6 +1418,7 @@ async def _finalize_smart(
                 request_id=request_id,
                 experiment_id=experiment_id,
                 variant_key=variant_key,
+                strategy_config_id=dominant_strategy_config_id,
             )
     except Exception:
         logger.warning("smart 推荐日志写入失败（不影响结果）", exc_info=True)
@@ -1649,7 +1658,8 @@ def calculate_smart_score(
     blocked_kps: dict[int, list[dict]] | None = None,  # V6.3: kp_id -> [weak prereqs]
     graph_candidates: dict[int, dict] | None = None,  # V6.5: prereq kp -> graph context
     prerequisites_by_target: dict[int, list[dict]] | None = None,
-    weights: dict[str, float] | None = None,  # V6.4: 个性化权重
+    weights: dict[str, float] | None = None,  # 系统级 × 用户级综合权重
+    graph_config: dict | None = None,
 ) -> tuple[float, list[str]]:
     """V4 综合打分 + V6.5 图谱候选扩展 + V6.4 权重个性化。
 
@@ -1674,6 +1684,14 @@ def calculate_smart_score(
     new_total = 0.0
     diversity_total = 0.0
     path_total = 0.0
+
+    graph_config = graph_config or {}
+    prerequisite_mastery_threshold = max(
+        1.0, min(float(graph_config.get("prerequisite_mastery_threshold", 60.0)), 100.0)
+    )
+    prerequisite_confidence_threshold = max(
+        0.0, min(float(graph_config.get("prerequisite_confidence_threshold", 0.3)), 1.0)
+    )
 
     # ── 1 & 2: 到期复习 + 逾期 ──
     if q_state and q_state.next_review_at and q_state.next_review_at <= now:
@@ -1760,7 +1778,11 @@ def calculate_smart_score(
 
             origin_need = ((100.0 - origin_mastery) / 100.0) * origin_conf
             if graph.get("confirmed_gap"):
-                prereq_gap = max(0.0, (60.0 - prereq_mastery) / 60.0) * prereq_conf
+                prereq_gap = max(
+                    0.0,
+                    (prerequisite_mastery_threshold - prereq_mastery)
+                    / prerequisite_mastery_threshold,
+                ) * prereq_conf
                 bonus = 45.0 * (0.55 + 0.45 * origin_need) * (0.65 + 0.35 * prereq_gap) * path_quality
             else:
                 # Unknown prerequisite: diagnostic exploration only.  Never let
@@ -1783,8 +1805,8 @@ def calculate_smart_score(
             ]
             if direct_prereqs and all(
                 not p.get("unknown_gap")
-                and float(p.get("mastery_score") or 0.0) >= 60.0
-                and float(p.get("mastery_confidence") or 0.0) >= 0.3
+                and float(p.get("mastery_score") or 0.0) >= prerequisite_mastery_threshold
+                and float(p.get("mastery_confidence") or 0.0) >= prerequisite_confidence_threshold
                 for p in direct_prereqs
             ):
                 path_total += 8
@@ -1838,6 +1860,35 @@ async def get_smart_scored_questions(
     now = utcnow()
     metadata: dict[int, dict] = {}
     fallback_level = 0
+
+    # Admin 全局配置：default_scored 控制系统级权重和图谱门槛。
+    # 配置读取失败时必须退化到内置默认值，不能影响刷题。
+    scored_runtime = {
+        "strategy_config_id": None,
+        "weights": {
+            "due_weight": 1.0,
+            "weakness_weight": 1.0,
+            "wrong_weight": 1.0,
+            "new_question_weight": 1.0,
+            "diversity_weight": 1.0,
+            "path_weight": 1.0,
+        },
+        "graph": {
+            "weak_target_limit": 5,
+            "max_depth": 2,
+            "max_nodes": 24,
+            "prerequisite_mastery_threshold": 60.0,
+            "prerequisite_confidence_threshold": 0.3,
+        },
+    }
+    try:
+        from app.services import recommendation_strategy_service
+        scored_runtime = await recommendation_strategy_service.get_scored_runtime_config(db)
+    except Exception:
+        logger.warning("scored 全局策略配置读取失败，使用内置默认值", exc_info=True)
+
+    system_weights = scored_runtime.get("weights") or {}
+    graph_runtime = scored_runtime.get("graph") or {}
 
     # ── 1. 候选题池 ──
     candidate_limit = max(count * 5, 50)
@@ -1912,7 +1963,10 @@ async def get_smart_scored_questions(
     try:
         from app.core.config import settings as _settings
         if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_PATH_ENABLED:
-            weak_target_ids = _pick_graph_target_kps(kp_mastery, limit=5)
+            weak_target_ids = _pick_graph_target_kps(
+                kp_mastery,
+                limit=int(graph_runtime.get("weak_target_limit", 5)),
+            )
             if weak_target_ids:
                 from app.services import adaptive_learning_service
                 graph_context = await adaptive_learning_service.get_recommendation_graph_context(
@@ -1920,8 +1974,10 @@ async def get_smart_scored_questions(
                     user_id=user_id,
                     target_kp_ids=weak_target_ids,
                     subject_ids=scope_ids,
-                    max_depth=2,
-                    max_nodes=24,
+                    max_depth=int(graph_runtime.get("max_depth", 2)),
+                    max_nodes=int(graph_runtime.get("max_nodes", 24)),
+                    min_mastery=float(graph_runtime.get("prerequisite_mastery_threshold", 60.0)),
+                    min_confidence=float(graph_runtime.get("prerequisite_confidence_threshold", 0.3)),
                 )
 
                 graph_candidate_ids = list(graph_context.get("prerequisite_candidates", {}).keys())
@@ -2022,15 +2078,26 @@ async def get_smart_scored_questions(
         )
         kp_names = {row.id: row.name for row in kp_name_result.all()}
 
-    # ── 4.6 加载用户推荐权重 (V6.4) ──
-    rec_weights: dict[str, float] | None = None
+    # ── 4.6 加载用户推荐权重 (V6.4) + Admin 系统权重 ──
+    # final_weight = system_weight × user_weight。系统层用于运营调参，用户层
+    # 用于自适应个性化；任意一层读取失败都回退到 1.0。
+    user_weights: dict[str, float] = {key: 1.0 for key in system_weights}
     try:
         from app.core.config import settings as _settings
         if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_WEIGHT_ENABLED:
             from app.services import adaptive_learning_service
-            rec_weights = await adaptive_learning_service.get_recommend_weights(db, user_id)
+            user_weights = await adaptive_learning_service.get_recommend_weights(db, user_id)
     except Exception:
-        logger.debug("V6.4 权重加载失败（不影响推荐）uid=%s", user_id, exc_info=True)
+        logger.debug("V6.4 用户权重加载失败（不影响推荐）uid=%s", user_id, exc_info=True)
+
+    weight_keys = {
+        "due_weight", "weakness_weight", "wrong_weight",
+        "new_question_weight", "diversity_weight", "path_weight",
+    }
+    rec_weights = {
+        key: float(system_weights.get(key, 1.0)) * float(user_weights.get(key, 1.0))
+        for key in weight_keys
+    }
 
     # ── 5. 逐题打分 ──
     scored: list[tuple[Question, float, list[str]]] = []
@@ -2043,6 +2110,7 @@ async def get_smart_scored_questions(
             graph_candidates=graph_candidates,
             prerequisites_by_target=prerequisites_by_target,
             weights=rec_weights,
+            graph_config=graph_runtime,
         )
         scored.append((q, sc, reasons))
 
@@ -2084,6 +2152,7 @@ async def get_smart_scored_questions(
                 blocked_kps=blocked_kps,
             ),
             "strategy": "smart_scored",
+            "strategy_config_id": scored_runtime.get("strategy_config_id"),
             "similarity": None,
         }
         if len(selected) >= count:
@@ -2107,6 +2176,7 @@ async def get_smart_scored_questions(
                     blocked_kps=blocked_kps,
                 ),
                 "strategy": "smart_scored",
+                "strategy_config_id": scored_runtime.get("strategy_config_id"),
                 "similarity": None,
             }
             if len(selected) >= count:
@@ -2335,9 +2405,10 @@ async def submit_answer(
         logger.warning("答题行为记录失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
 
     # ── Phase 3: 掌握度更新 + 推荐反馈（best-effort）──
+    mastery_update: dict | None = None
     try:
         from app.services import mastery_service
-        await mastery_service.update_user_knowledge_state_after_answer(
+        mastery_update = await mastery_service.update_user_knowledge_state_after_answer(
             db, user_id, question_id, is_correct, used_time=used_time,
         )
     except Exception:
@@ -2347,6 +2418,8 @@ async def submit_answer(
         from app.services import recommendation_log_service
         await recommendation_log_service.mark_recommendation_answered(
             db, user_id, question_id, is_correct, request_id=request_id,
+            mastery_after=(mastery_update or {}).get("mastery_after"),
+            mastery_delta=(mastery_update or {}).get("mastery_delta"),
         )
     except Exception:
         logger.warning("推荐日志标记失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
@@ -2436,6 +2509,7 @@ async def batch_submit_answers(
 
     now = utcnow()
     records = []
+    answer_request_ids: dict[int, str | None] = {}
     total_correct = 0
     total_wrong = 0
 
@@ -2443,6 +2517,7 @@ async def batch_submit_answers(
         q = questions[a["question_id"]]
         user_answer = a.get("user_answer", a.get("answer", "")).strip()
         used_time = a.get("used_time")
+        answer_request_ids[q.id] = a.get("request_id")
         is_correct = is_answer_correct(
             user_answer, q.answer or "", q.question_type or "",
         )
@@ -2555,15 +2630,28 @@ async def batch_submit_answers(
         except Exception:
             logger.warning("批量行为记录失败 qid=%d uid=%d", q.id, user_id, exc_info=True)
 
+        mastery_update: dict | None = None
         try:
             from app.services import mastery_service
-            await mastery_service.update_user_knowledge_state_after_answer(
+            mastery_update = await mastery_service.update_user_knowledge_state_after_answer(
                 db, user_id, q.id, is_correct, used_time=used_time,
             )
         except Exception:
             logger.warning("批量掌握度更新失败 qid=%d uid=%d", q.id, user_id, exc_info=True)
 
-    # 批量路径 mastery 不内部 commit，统一收尾提交，否则 session 关闭时回滚丢失。
+        # 与单题提交保持一致：批量刷题也闭合推荐日志的 answered / mastery 指标。
+        try:
+            from app.services import recommendation_log_service
+            await recommendation_log_service.mark_recommendation_answered(
+                db, user_id, q.id, is_correct,
+                request_id=answer_request_ids.get(q.id),
+                mastery_after=(mastery_update or {}).get("mastery_after"),
+                mastery_delta=(mastery_update or {}).get("mastery_delta"),
+            )
+        except Exception:
+            logger.warning("批量推荐日志标记失败 qid=%d uid=%d", q.id, user_id, exc_info=True)
+
+    # 批量路径 mastery / 推荐日志不内部 commit，统一收尾提交，否则 session 关闭时回滚丢失。
     try:
         await db.commit()
     except Exception:
