@@ -186,16 +186,39 @@ async def get_knowledge_graph(
         adjacency[source_id].append(target_id)
         adjacency[target_id].append(source_id)
 
-    normalized_search = (search or "").strip().lower()
-    search_matches = []
+    normalized_search = (search or "").strip().casefold()
+    search_matches: list[int] = []
     if normalized_search:
-        search_matches = [
-            kp.id for kp in knowledge_points
-            if normalized_search in kp.name.lower()
-            or normalized_search in (kp.normalized_name or "").lower()
-            or normalized_search == str(kp.id)
-        ]
-        search_matches.sort(key=lambda kp_id: (-all_degree[kp_id], kp_id))
+        ranked_matches: list[tuple[int, int, int]] = []
+        for kp in knowledge_points:
+            aliases = kp.aliases if isinstance(kp.aliases, list) else []
+            alias_values = [str(alias).strip().casefold() for alias in aliases if str(alias).strip()]
+            name = (kp.name or "").casefold()
+            normalized_name = (kp.normalized_name or "").casefold()
+
+            rank: int | None = None
+            if normalized_search == str(kp.id):
+                rank = 0
+            elif normalized_search == name or normalized_search == normalized_name:
+                rank = 1
+            elif any(normalized_search == alias for alias in alias_values):
+                rank = 2
+            elif name.startswith(normalized_search) or normalized_name.startswith(normalized_search):
+                rank = 3
+            elif any(alias.startswith(normalized_search) for alias in alias_values):
+                rank = 4
+            elif normalized_search in name or normalized_search in normalized_name:
+                rank = 5
+            elif any(normalized_search in alias for alias in alias_values):
+                rank = 6
+
+            if rank is not None:
+                # Text relevance wins first; graph degree only breaks ties so an
+                # alias hit never loses to an unrelated high-degree node.
+                ranked_matches.append((rank, -all_degree[kp.id], kp.id))
+
+        ranked_matches.sort()
+        search_matches = [kp_id for _, _, kp_id in ranked_matches]
 
     # 显式传入中心知识点时应 fail-fast。旧行为在 ID 不属于当前科目时静默
     # 回退到总览，会让管理员误以为定位成功。
@@ -265,6 +288,7 @@ async def get_knowledge_graph(
             "id": kp.id,
             "name": kp.name,
             "normalized_name": kp.normalized_name,
+            "aliases": [str(alias) for alias in (kp.aliases or []) if str(alias).strip()] if isinstance(kp.aliases, list) else [],
             "description": kp.description,
             "difficulty_level": kp.difficulty_level,
             "subject_id": kp.subject_id,

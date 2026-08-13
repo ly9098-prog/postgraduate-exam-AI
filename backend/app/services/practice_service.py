@@ -1634,9 +1634,28 @@ def _build_smart_recommendation_reason(
     graph_candidates: dict[int, dict] | None = None,
     blocked_kps: dict[int, list[dict]] | None = None,
 ) -> str:
-    """Convert internal score reason codes into one user-facing Chinese reason."""
+    """Convert internal score reason codes into a concise combined Chinese reason.
+
+    The explanation keeps the strongest recommendation signal as the main
+    reason, then appends at most one useful secondary signal.  In particular,
+    ``new_question`` is treated as supporting context instead of masking a more
+    meaningful reason such as weak knowledge, review due, or wrong history.
+    """
     graph_candidates = graph_candidates or {}
     blocked_kps = blocked_kps or {}
+    reason_set = set(reason_codes)
+    is_new = "new_question" in reason_set
+    is_diverse = "diversity" in reason_set
+    is_long_unpracticed = "long_unpracticed" in reason_set
+    has_wrong_history = "wrong_history" in reason_set
+
+    def _first_kp_name() -> str | None:
+        return next((kp_names.get(k) for k in kp_ids if kp_names.get(k)), None)
+
+    def _append_new_context(text: str) -> str:
+        if not is_new:
+            return text
+        return f"{text} 同时推荐一道尚未练过的新题，用来检验当前掌握情况。"
 
     # Highest-value explanation: this question is a prerequisite selected to
     # repair a known weakness in another target KP.
@@ -1647,19 +1666,36 @@ def _build_smart_recommendation_reason(
         kp_name = graph.get("name") or kp_names.get(kp_id) or "这个知识点"
         origin_name = graph.get("origin_name") or "目标知识点"
         if graph.get("confirmed_gap"):
-            return f"你在「{origin_name}」上的掌握较弱，而「{kp_name}」是它的重要前置知识，建议先巩固「{kp_name}」。"
-        return f"「{kp_name}」是「{origin_name}」的前置知识，目前掌握数据较少，这道题可用于快速确认基础是否扎实。"
+            return _append_new_context(
+                f"你在「{origin_name}」上的掌握较弱，而「{kp_name}」是它的重要前置知识，建议先巩固「{kp_name}」。"
+            )
+        base = f"「{kp_name}」是「{origin_name}」的前置知识，目前掌握数据较少，这道题可用于快速确认基础是否扎实。"
+        if is_new:
+            return f"{base[:-1]}，并通过一道尚未练过的新题减少熟题记忆带来的干扰。"
+        return base
 
-    if "due_review" in reason_codes:
+    if "due_review" in reason_set:
+        if has_wrong_history:
+            return "这道题已进入复习窗口，而且你之前在这类题目上出现过错误，现在重做有助于巩固记忆并确认是否已经掌握。"
         return "这道题已进入复习窗口，现在练习有助于巩固记忆。"
 
-    if "weak_kp" in reason_codes:
-        name = next((kp_names.get(k) for k in kp_ids if kp_names.get(k)), None)
+    if "weak_kp" in reason_set:
+        name = _first_kp_name()
         if name:
+            if is_new:
+                return f"你最近在「{name}」上的掌握度较低，推荐一道尚未练过的新题继续巩固并检验掌握情况。"
+            if has_wrong_history:
+                return f"你最近在「{name}」上的掌握度较低，而且之前在相关题目上出现过错误，建议继续巩固。"
             return f"你最近在「{name}」上的掌握度较低，这道题适合继续巩固。"
+        if is_new:
+            return "你最近在这类知识点上的掌握度较低，推荐一道尚未练过的新题继续巩固并检验掌握情况。"
+        if has_wrong_history:
+            return "你最近在这类知识点上的掌握度较低，而且之前在相关题目上出现过错误，建议继续巩固。"
         return "你最近在这类知识点上的掌握度较低，建议继续巩固。"
 
-    if "wrong_history" in reason_codes:
+    if has_wrong_history:
+        if is_long_unpracticed:
+            return "你之前在这类题目上出现过错误，而且已有一段时间没有练习，建议现在重做确认是否已经掌握。"
         return "你之前在这类题目上出现过错误，建议再次练习确认是否已经掌握。"
 
     # A blocked target can still surface because it is overdue or has strong
@@ -1670,19 +1706,30 @@ def _build_smart_recommendation_reason(
         if blockers:
             target_name = kp_names.get(kp_id) or "当前知识点"
             prereq_name = blockers[0].get("name") or "前置知识"
-            return f"「{target_name}」仍需巩固，同时「{prereq_name}」这一前置知识也较薄弱，建议结合练习。"
+            return _append_new_context(
+                f"「{target_name}」仍需巩固，同时「{prereq_name}」这一前置知识也较薄弱，建议结合练习。"
+            )
 
-    if "path_ready" in reason_codes:
-        name = next((kp_names.get(k) for k in kp_ids if kp_names.get(k)), None)
+    if "path_ready" in reason_set:
+        name = _first_kp_name()
         if name:
+            if is_new:
+                return f"相关前置知识已经基本具备，可以继续巩固「{name}」；这道新题可用于检验能否顺利推进。"
             return f"相关前置知识已经基本具备，可以继续巩固「{name}」。"
 
-    if "new_question" in reason_codes:
+    if is_new:
+        if is_diverse:
+            return "这是一道尚未练过的新题，同时用于补充近期练习的知识覆盖，检验当前掌握情况。"
         return "这是一道尚未练过的新题，用来检验当前掌握情况。"
-    if "long_unpracticed" in reason_codes:
+
+    if is_long_unpracticed:
+        if is_diverse:
+            return "这个知识点已有一段时间没有练习，同时近期覆盖较少，适合现在做一次巩固。"
         return "这个知识点已有一段时间没有练习，适合现在做一次巩固。"
-    if "diversity" in reason_codes:
+
+    if is_diverse:
         return "为避免重复刷同类题，这道题用于补充近期练习的知识覆盖。"
+
     return "根据你的近期答题表现和知识掌握情况推荐。"
 
 

@@ -1128,6 +1128,7 @@ export type KnowledgeGraphNode = {
   id: number;
   name: string;
   normalized_name: string;
+  aliases: string[];
   description: string | null;
   difficulty_level: number;
   subject_id: number;

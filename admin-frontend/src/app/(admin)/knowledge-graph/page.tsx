@@ -16,9 +16,10 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -49,86 +50,312 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+function edgeStrength(edge: KnowledgeGraphEdge) {
+  const normalizedWeight = clamp(edge.weight / 10, 0, 1);
+  return edge.confidence * 0.76 + normalizedWeight * 0.24;
+}
+
+function collapseEdgesByPair(edges: KnowledgeGraphEdge[]) {
+  const byPair = new Map<string, KnowledgeGraphEdge>();
+  for (const edge of edges) {
+    const key = edge.source < edge.target ? `${edge.source}:${edge.target}` : `${edge.target}:${edge.source}`;
+    const current = byPair.get(key);
+    if (!current || edgeStrength(edge) > edgeStrength(current)) byPair.set(key, edge);
+  }
+  return [...byPair.values()];
+}
+
+function nodeRadius(node: KnowledgeGraphNode) {
+  return clamp(16 + Math.sqrt(Math.max(0, node.degree)) * 2.05, 18, 28);
+}
+
+function estimatedLabelWidth(node: KnowledgeGraphNode) {
+  const text = shortName(node.name, 11);
+  // 中文字符在当前字号下接近等宽，按略宽于 1em 的值估算，给碰撞检测留出余量。
+  return clamp(text.length * 10.8 + 18, 54, 154);
+}
+
+function cubicPoint(
+  start: { x: number; y: number },
+  control1: { x: number; y: number },
+  control2: { x: number; y: number },
+  end: { x: number; y: number },
+  t: number,
+) {
+  const mt = 1 - t;
+  return {
+    x: mt * mt * mt * start.x + 3 * mt * mt * t * control1.x + 3 * mt * t * t * control2.x + t * t * t * end.x,
+    y: mt * mt * mt * start.y + 3 * mt * mt * t * control1.y + 3 * mt * t * t * control2.y + t * t * t * end.y,
+  };
+}
+
+function segmentsProperlyIntersect(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  c: { x: number; y: number },
+  d: { x: number; y: number },
+) {
+  const cross = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) =>
+    (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const abC = cross(a, b, c);
+  const abD = cross(a, b, d);
+  const cdA = cross(c, d, a);
+  const cdB = cross(c, d, b);
+  const epsilon = 0.01;
+
+  // 只统计真正穿过的交叉，不把端点接触或近似共线当成交叉，
+  // 否则多条关系共同连接同一个知识点时会被误判。
+  return ((abC > epsilon && abD < -epsilon) || (abC < -epsilon && abD > epsilon))
+    && ((cdA > epsilon && cdB < -epsilon) || (cdA < -epsilon && cdB > epsilon));
+}
+
+function polylineIntersectionCount(
+  route: Array<{ x: number; y: number }>,
+  other: Array<{ x: number; y: number }>,
+) {
+  let count = 0;
+  for (let i = 0; i < route.length - 1; i += 1) {
+    for (let j = 0; j < other.length - 1; j += 1) {
+      if (segmentsProperlyIntersect(route[i], route[i + 1], other[j], other[j + 1])) count += 1;
+    }
+  }
+  return count;
+}
+
 function buildLayout(
   nodes: KnowledgeGraphNode[],
   edges: KnowledgeGraphEdge[],
   focusId: number | null,
+  activeId: number | null,
   variant: number,
 ): PositionedNode[] {
   if (nodes.length === 0) return [];
 
-  const nodeIds = new Set(nodes.map((node) => node.id));
-  const adjacency = new Map<number, number[]>();
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+  const adjacency = new Map<number, Array<{ id: number; strength: number }>>();
   for (const node of nodes) adjacency.set(node.id, []);
   for (const edge of edges) {
-    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue;
-    adjacency.get(edge.source)?.push(edge.target);
-    adjacency.get(edge.target)?.push(edge.source);
+    if (!nodeMap.has(edge.source) || !nodeMap.has(edge.target)) continue;
+    const strength = edgeStrength(edge);
+    adjacency.get(edge.source)?.push({ id: edge.target, strength });
+    adjacency.get(edge.target)?.push({ id: edge.source, strength });
+  }
+  for (const entries of adjacency.values()) {
+    entries.sort((a, b) => b.strength - a.strength || (nodeMap.get(b.id)?.degree ?? 0) - (nodeMap.get(a.id)?.degree ?? 0));
   }
 
-  const rootId = focusId && nodeIds.has(focusId)
+  const rootId = focusId && nodeMap.has(focusId)
     ? focusId
-    : [...nodes].sort((a, b) => b.degree - a.degree)[0].id;
+    : [...nodes].sort((a, b) => b.degree - a.degree || b.question_count - a.question_count)[0].id;
+  const collisionFocusId = activeId != null && nodeMap.has(activeId) ? activeId : rootId;
+  const collisionFocusNeighbors = new Set((adjacency.get(collisionFocusId) ?? []).slice(0, 16).map((item) => item.id));
 
   const levels = new Map<number, number>([[rootId, 0]]);
+  const parents = new Map<number, number>();
   const queue = [rootId];
   while (queue.length) {
     const current = queue.shift()!;
     const level = levels.get(current) ?? 0;
     for (const neighbor of adjacency.get(current) ?? []) {
-      if (levels.has(neighbor)) continue;
-      levels.set(neighbor, level + 1);
-      queue.push(neighbor);
+      if (levels.has(neighbor.id)) continue;
+      levels.set(neighbor.id, level + 1);
+      parents.set(neighbor.id, current);
+      queue.push(neighbor.id);
     }
   }
 
-  const fallbackLevel = Math.max(1, ...levels.values()) + 1;
-  for (const node of nodes) {
-    if (!levels.has(node.id)) levels.set(node.id, fallbackLevel);
-  }
-
-  const grouped = new Map<number, KnowledgeGraphNode[]>();
-  for (const node of nodes) {
-    const level = levels.get(node.id) ?? fallbackLevel;
-    const bucket = grouped.get(level) ?? [];
-    bucket.push(node);
-    grouped.set(level, bucket);
-  }
+  const reachableLevels = [...levels.values()];
+  const fallbackLevel = (reachableLevels.length ? Math.max(...reachableLevels) : 0) + 1;
+  const disconnected = nodes.filter((node) => !levels.has(node.id));
+  for (const node of disconnected) levels.set(node.id, fallbackLevel);
 
   const centerX = 500;
   const centerY = 355;
-  const positions: PositionedNode[] = [];
-  const maxLevel = Math.max(...grouped.keys());
+  const targetPositions = new Map<number, { x: number; y: number; level: number }>();
+  targetPositions.set(rootId, { x: centerX, y: centerY, level: 0 });
 
-  for (const [level, bucket] of [...grouped.entries()].sort((a, b) => a[0] - b[0])) {
-    bucket.sort((a, b) => b.degree - a.degree || a.id - b.id);
-    if (level === 0) {
-      positions.push({ ...bucket[0], x: centerX, y: centerY, level });
-      continue;
-    }
-
-    const radiusX = Math.min(420, 125 + level * 105);
-    const radiusY = Math.min(290, 92 + level * 76);
-    const start = -Math.PI / 2 + (variant % 8) * 0.17 + (level % 2) * 0.24;
-    bucket.forEach((node, index) => {
-      const angle = start + (Math.PI * 2 * index) / Math.max(bucket.length, 1);
-      const jitter = ((node.id * 37 + variant * 19) % 13) - 6;
-      positions.push({
-        ...node,
-        x: centerX + Math.cos(angle) * (radiusX + jitter),
-        y: centerY + Math.sin(angle) * (radiusY + jitter * 0.55),
-        level,
-      });
+  const levelOne = nodes
+    .filter((node) => levels.get(node.id) === 1)
+    .sort((a, b) => b.degree - a.degree || b.question_count - a.question_count || a.id - b.id);
+  const levelOneAngles = new Map<number, number>();
+  const levelOneCount = Math.max(levelOne.length, 1);
+  const startAngle = -Math.PI / 2 + (variant % 12) * 0.055;
+  // 第一层是视觉上最重要的邻居圈。根据节点数量主动扩大椭圆半径，
+  // 避免高连接知识点周围形成“葡萄串”式拥挤。
+  const levelOneRx = Math.min(372, 252 + levelOneCount * 5.2);
+  const levelOneRy = Math.min(272, 190 + levelOneCount * 3.8);
+  levelOne.forEach((node, index) => {
+    const angle = startAngle + (Math.PI * 2 * index) / levelOneCount;
+    levelOneAngles.set(node.id, angle);
+    targetPositions.set(node.id, {
+      x: centerX + Math.cos(angle) * levelOneRx,
+      y: centerY + Math.sin(angle) * levelOneRy,
+      level: 1,
     });
+  });
+
+  function firstBranch(nodeId: number) {
+    let current = nodeId;
+    let safety = 0;
+    while ((levels.get(current) ?? fallbackLevel) > 1 && safety < 12) {
+      current = parents.get(current) ?? current;
+      safety += 1;
+    }
+    return current;
   }
 
-  // If many disconnected nodes were placed on a huge outer ring, keep them inside the viewport.
-  return positions.map((node) => ({
-    ...node,
-    x: clamp(node.x, 58, 942),
-    y: clamp(node.y, 55, 660),
-    level: Math.min(node.level, maxLevel),
-  }));
+  const maxReachableLevel = Math.max(1, ...reachableLevels);
+  for (let level = 2; level <= maxReachableLevel; level += 1) {
+    const bucket = nodes.filter((node) => levels.get(node.id) === level);
+    const byBranch = new Map<number, KnowledgeGraphNode[]>();
+    for (const node of bucket) {
+      const branch = firstBranch(node.id);
+      const group = byBranch.get(branch) ?? [];
+      group.push(node);
+      byBranch.set(branch, group);
+    }
+
+    const radiusX = Math.min(442, levelOneRx + (level - 1) * 118);
+    const radiusY = Math.min(306, levelOneRy + (level - 1) * 86);
+    for (const [branch, group] of byBranch.entries()) {
+      const branchAngle = levelOneAngles.get(branch) ?? startAngle;
+      group.sort((a, b) => b.degree - a.degree || a.id - b.id);
+      const spread = Math.min(0.82, Math.max(0.18, (group.length - 1) * 0.13));
+      group.forEach((node, index) => {
+        const offset = group.length <= 1 ? 0 : -spread / 2 + (spread * index) / (group.length - 1);
+        const angle = branchAngle + offset;
+        targetPositions.set(node.id, {
+          x: centerX + Math.cos(angle) * radiusX,
+          y: centerY + Math.sin(angle) * radiusY,
+          level,
+        });
+      });
+    }
+  }
+
+  if (disconnected.length) {
+    const radiusX = 440;
+    const radiusY = 305;
+    disconnected
+      .sort((a, b) => b.degree - a.degree || a.id - b.id)
+      .forEach((node, index) => {
+        const angle = startAngle + (Math.PI * 2 * index) / Math.max(1, disconnected.length);
+        targetPositions.set(node.id, {
+          x: centerX + Math.cos(angle) * radiusX,
+          y: centerY + Math.sin(angle) * radiusY,
+          level: fallbackLevel,
+        });
+      });
+  }
+
+  const positioned = nodes.map((node) => {
+    const target = targetPositions.get(node.id) ?? { x: centerX, y: centerY, level: fallbackLevel };
+    return { ...node, ...target };
+  });
+  const targetMap = new Map(positioned.map((node) => [node.id, { x: node.x, y: node.y }]));
+
+  function collisionBox(node: PositionedNode) {
+    const radius = nodeRadius(node);
+    // 根节点、第一层节点以及高连接节点会显示名称，因此碰撞时必须把文字也算进去。
+    const hasVisibleLabel = node.id === rootId
+      || node.level <= 1
+      || node.degree >= 7
+      || node.id === collisionFocusId
+      || collisionFocusNeighbors.has(node.id);
+    const labelWidth = hasVisibleLabel ? estimatedLabelWidth(node) : 0;
+    const labelHeight = hasVisibleLabel ? (node.id === rootId ? 34 : 20) : 0;
+    return {
+      halfWidth: Math.max(radius + 12, labelWidth / 2 + 10),
+      halfHeight: radius + 12 + labelHeight * 0.58,
+    };
+  }
+
+  // 先以径向树确定稳定的“分支方向”，再做矩形碰撞松弛。
+  // 与旧版只按圆形半径碰撞相比，这里把节点名称也作为实体的一部分，
+  // 可以真正解决“圆没有重叠但文字挤在一起”的问题。
+  for (let pass = 0; pass < 92; pass += 1) {
+    for (let i = 0; i < positioned.length; i += 1) {
+      for (let j = i + 1; j < positioned.length; j += 1) {
+        const a = positioned[i];
+        const b = positioned[j];
+        const aBox = collisionBox(a);
+        const bBox = collisionBox(b);
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) {
+          dx = ((a.id * 17 + b.id * 29 + variant) % 9) - 4;
+          dy = ((a.id * 31 + b.id * 11 + variant) % 9) - 4;
+        }
+
+        const directRingPair = a.level <= 1 && b.level <= 1;
+        const activeNeighborhoodPair = (a.id === collisionFocusId || collisionFocusNeighbors.has(a.id))
+          && (b.id === collisionFocusId || collisionFocusNeighbors.has(b.id));
+        const touchesActive = a.id === collisionFocusId || b.id === collisionFocusId;
+        const extraGap = touchesActive ? 58 : activeNeighborhoodPair ? 44 : directRingPair ? 26 : a.level === b.level ? 16 : 10;
+        const overlapX = aBox.halfWidth + bBox.halfWidth + extraGap - Math.abs(dx);
+        const overlapY = aBox.halfHeight + bBox.halfHeight + extraGap - Math.abs(dy);
+        if (overlapX <= 0 || overlapY <= 0) continue;
+
+        // 沿需要移动更少的轴推开，避免对径向树方向造成大幅扰动。
+        if (overlapX < overlapY) {
+          const direction = dx >= 0 ? 1 : -1;
+          const push = overlapX * 0.53;
+          if (a.id !== rootId) a.x -= direction * push;
+          if (b.id !== rootId) b.x += direction * push;
+        } else {
+          const direction = dy >= 0 ? 1 : -1;
+          const push = overlapY * 0.53;
+          if (a.id !== rootId) a.y -= direction * push;
+          if (b.id !== rootId) b.y += direction * push;
+        }
+      }
+    }
+
+    // 保持分支结构，但吸附强度明显降低，避免节点刚被推开又被强行拉回重叠位置。
+    for (const node of positioned) {
+      if (node.id === rootId) {
+        node.x = centerX;
+        node.y = centerY;
+        continue;
+      }
+      const target = targetMap.get(node.id)!;
+      node.x += (target.x - node.x) * 0.026;
+      node.y += (target.y - node.y) * 0.026;
+      node.x = clamp(node.x, 66, 934);
+      node.y = clamp(node.y, 58, 646);
+    }
+  }
+
+  // 给当前选中/中心知识点保留独立“呼吸区”。常规矩形碰撞只能保证元素不相交，
+  // 但高连接节点附近即使不相交也会显得拥挤；这里额外把直接邻居推到更远的安全半径。
+  const activeNode = positioned.find((node) => node.id === collisionFocusId);
+  if (activeNode) {
+    const directIds = new Set((adjacency.get(collisionFocusId) ?? []).slice(0, 14).map((item) => item.id));
+    const activeRadius = nodeRadius(activeNode);
+    for (let pass = 0; pass < 26; pass += 1) {
+      for (const node of positioned) {
+        if (!directIds.has(node.id) || node.id === rootId) continue;
+        let dx = node.x - activeNode.x;
+        let dy = node.y - activeNode.y;
+        let distance = Math.hypot(dx, dy);
+        if (distance < 0.001) {
+          dx = ((node.id * 19 + variant) % 7) - 3;
+          dy = ((node.id * 23 + variant) % 7) - 3;
+          distance = Math.max(1, Math.hypot(dx, dy));
+        }
+        const labelAllowance = Math.min(44, estimatedLabelWidth(node) * 0.16);
+        const desiredDistance = activeRadius + nodeRadius(node) + 62 + labelAllowance;
+        if (distance >= desiredDistance) continue;
+        const push = (desiredDistance - distance) * 0.44;
+        node.x += (dx / distance) * push;
+        node.y += (dy / distance) * push;
+        node.x = clamp(node.x, 74, 926);
+        node.y = clamp(node.y, 66, 638);
+      }
+    }
+  }
+
+  return positioned;
 }
 
 function relationLabel(type: string) {
@@ -147,6 +374,71 @@ function difficultyText(level: number) {
   return "进阶";
 }
 
+type NodeLabelPlacement = {
+  x: number;
+  y: number;
+  metaY: number;
+  textAnchor: "start" | "middle" | "end";
+  box: { x: number; y: number; width: number; height: number };
+};
+
+function getNodeLabelPlacement(
+  node: PositionedNode,
+  anchor: PositionedNode | null,
+  radius: number,
+  withMeta: boolean,
+): NodeLabelPlacement {
+  const width = estimatedLabelWidth(node);
+  const height = withMeta ? 32 : 19;
+  if (!anchor || anchor.id === node.id) {
+    return {
+      x: 0,
+      y: radius + 17,
+      metaY: radius + 30,
+      textAnchor: "middle",
+      box: { x: node.x - width / 2, y: node.y + radius + 5, width, height },
+    };
+  }
+
+  const dx = node.x - anchor.x;
+  const dy = node.y - anchor.y;
+  // 标签始终尽量放在“远离当前中心”的外侧，避免第一层节点的文字回压到中心节点。
+  if (Math.abs(dx) > Math.abs(dy) * 1.12) {
+    const right = dx > 0;
+    const x = (right ? 1 : -1) * (radius + 10);
+    return {
+      x,
+      y: withMeta ? -3 : 3,
+      metaY: withMeta ? 10 : 15,
+      textAnchor: right ? "start" : "end",
+      box: {
+        x: right ? node.x + radius + 5 : node.x - radius - 5 - width,
+        y: node.y - height / 2 - 2,
+        width,
+        height,
+      },
+    };
+  }
+
+  if (dy < 0) {
+    return {
+      x: 0,
+      y: -radius - (withMeta ? 18 : 10),
+      metaY: -radius - 5,
+      textAnchor: "middle",
+      box: { x: node.x - width / 2, y: node.y - radius - height - 8, width, height },
+    };
+  }
+
+  return {
+    x: 0,
+    y: radius + 17,
+    metaY: radius + 30,
+    textAnchor: "middle",
+    box: { x: node.x - width / 2, y: node.y + radius + 5, width, height },
+  };
+}
+
 function GraphCanvas({
   data,
   selectedId,
@@ -154,6 +446,10 @@ function GraphCanvas({
   onFocus,
   layoutVariant,
   zoom,
+  pan,
+  onZoomChange,
+  onPanChange,
+  animationKey,
 }: {
   data: KnowledgeGraphResponse;
   selectedId: number | null;
@@ -161,103 +457,521 @@ function GraphCanvas({
   onFocus: (id: number) => void;
   layoutVariant: number;
   zoom: number;
+  pan: { x: number; y: number };
+  onZoomChange: (value: number) => void;
+  onPanChange: (value: { x: number; y: number }) => void;
+  animationKey: number;
 }) {
+  const dragRef = useRef<{ pointerId: number; x: number; y: number; panX: number; panY: number } | null>(null);
   const nodes = useMemo(
-    () => buildLayout(data.nodes, data.edges, data.focus_id, layoutVariant),
-    [data.nodes, data.edges, data.focus_id, layoutVariant],
+    () => buildLayout(data.nodes, data.edges, data.focus_id, selectedId, layoutVariant),
+    [data.nodes, data.edges, data.focus_id, selectedId, layoutVariant],
   );
   const nodeMap = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
-  const showEdgeLabels = data.edges.length <= 24;
+
+  const primaryEdges = useMemo(() => {
+    const activeId = selectedId ?? data.focus_id;
+    const candidates = activeId == null
+      ? data.edges
+      : data.edges.filter((edge) => edge.source === activeId || edge.target === activeId);
+    return collapseEdgesByPair(candidates)
+      .sort((a, b) => edgeStrength(b) - edgeStrength(a))
+      .slice(0, activeId == null ? 22 : 14);
+  }, [data.edges, data.focus_id, selectedId]);
+
+  const displayEdges = useMemo(() => {
+    const activeId = selectedId ?? data.focus_id;
+    // 选中节点后主画布只展示一跳关系。邻居之间的二级关系仍保留在详情数据中，
+    // 但不同时绘制到画布，避免局部探索时出现“线网叠线”。
+    if (activeId != null) return primaryEdges;
+
+    return collapseEdgesByPair(data.edges)
+      .sort((a, b) => edgeStrength(b) - edgeStrength(a))
+      .slice(0, 18);
+  }, [data.edges, data.focus_id, primaryEdges, selectedId]);
+
+  const primaryEdgeIds = useMemo(() => new Set(primaryEdges.map((edge) => edge.id)), [primaryEdges]);
+  const directNeighborIds = useMemo(() => {
+    const activeId = selectedId ?? data.focus_id;
+    const ids = new Set<number>();
+    if (activeId == null) return ids;
+    for (const edge of primaryEdges) ids.add(edge.source === activeId ? edge.target : edge.source);
+    return ids;
+  }, [data.focus_id, primaryEdges, selectedId]);
+  const directRelationByNodeId = useMemo(() => {
+    const activeId = selectedId ?? data.focus_id;
+    const relations = new Map<number, KnowledgeGraphEdge>();
+    if (activeId == null) return relations;
+    for (const edge of primaryEdges) {
+      const otherId = edge.source === activeId ? edge.target : edge.source;
+      const current = relations.get(otherId);
+      if (!current || edgeStrength(edge) > edgeStrength(current)) relations.set(otherId, edge);
+    }
+    return relations;
+  }, [data.focus_id, primaryEdges, selectedId]);
+  const showEdgeLabels = primaryEdges.length > 0 && primaryEdges.length <= 6;
+  const activeNode = nodeMap.get(selectedId ?? data.focus_id ?? -1) ?? nodeMap.get(data.focus_id ?? -1) ?? null;
+  const activeId = selectedId ?? data.focus_id;
+  const activePortAngles = useMemo(() => {
+    const angles = new Map<number, number>();
+    if (activeId == null) return angles;
+    const active = nodeMap.get(activeId);
+    if (!active) return angles;
+
+    type Side = "right" | "left" | "top" | "bottom";
+    const groups: Record<Side, Array<{ edge: KnowledgeGraphEdge; other: PositionedNode }>> = {
+      right: [], left: [], top: [], bottom: [],
+    };
+
+    for (const edge of primaryEdges) {
+      const other = nodeMap.get(edge.source === activeId ? edge.target : edge.source);
+      if (!other) continue;
+      const dx = other.x - active.x;
+      const dy = other.y - active.y;
+      const side: Side = Math.abs(dx) >= Math.abs(dy)
+        ? (dx >= 0 ? "right" : "left")
+        : (dy >= 0 ? "bottom" : "top");
+      groups[side].push({ edge, other });
+    }
+
+    const centers: Record<Side, number> = {
+      right: 0,
+      bottom: Math.PI / 2,
+      left: Math.PI,
+      top: -Math.PI / 2,
+    };
+
+    (Object.keys(groups) as Side[]).forEach((side) => {
+      const entries = groups[side];
+      entries.sort((a, b) => {
+        if (side === "left" || side === "right") return a.other.y - b.other.y || a.other.id - b.other.id;
+        return a.other.x - b.other.x || a.other.id - b.other.id;
+      });
+      const span = Math.min(0.82, Math.max(0, (entries.length - 1) * 0.17));
+      entries.forEach((entry, index) => {
+        const offset = entries.length <= 1 ? 0 : -span / 2 + (span * index) / (entries.length - 1);
+        // SVG 圆周参数在 left / bottom 两侧的屏幕坐标顺序与 offset 方向相反：
+        // - left: angle 增大时 y 反而减小
+        // - bottom: angle 增大时 x 反而减小
+        // 如果仍直接使用 +offset，同一侧邻居会被分配到“镜像端口”，两条曲线会在节点附近必然交叉。
+        // 对这两侧翻转 offset，确保端口顺序与邻居在屏幕上的顺序一致。
+        const orderedOffset = side === "left" || side === "bottom" ? -offset : offset;
+        angles.set(entry.edge.id, centers[side] + orderedOffset);
+      });
+    });
+    return angles;
+  }, [activeId, nodeMap, primaryEdges]);
+
+  const nodeVisuals = useMemo(() => new Map(nodes.map((node) => {
+    const selected = node.id === selectedId;
+    const focused = node.id === data.focus_id;
+    const direct = directNeighborIds.has(node.id);
+    const radius = nodeRadius(node) + (selected ? 4 : focused ? 2 : 0);
+    const showLabel = selected || focused || direct || (selectedId == null && node.degree >= 7);
+    const withMeta = selected || focused;
+    return [node.id, {
+      selected,
+      focused,
+      direct,
+      radius,
+      showLabel,
+      withMeta,
+      placement: getNodeLabelPlacement(node, activeNode, radius, withMeta),
+    }];
+  })), [activeNode, data.focus_id, directNeighborIds, nodes, selectedId]);
+
+  const edgeGeometries = useMemo(() => {
+    const occupiedLabels: Array<{ x: number; y: number; width: number; height: number }> = [];
+    const labeledRelationTypes = new Set<string>();
+    const routedPrimarySamples: Array<Array<{ x: number; y: number }>> = [];
+    const routedPrimaryPolylines: Array<Array<{ x: number; y: number }>> = [];
+    let visibleRelationLabelCount = 0;
+    const geometries: Array<{
+      edge: KnowledgeGraphEdge;
+      source: PositionedNode;
+      target: PositionedNode;
+      primary: boolean;
+      start: { x: number; y: number };
+      end: { x: number; y: number };
+      control1: { x: number; y: number };
+      control2: { x: number; y: number };
+      labelPoint: { x: number; y: number } | null;
+    }> = [];
+
+    for (const edge of displayEdges) {
+      const source = nodeMap.get(edge.source);
+      const target = nodeMap.get(edge.target);
+      if (!source || !target) continue;
+      const primary = primaryEdgeIds.has(edge.id);
+      const sourceRadius = nodeVisuals.get(source.id)?.radius ?? nodeRadius(source);
+      const targetRadius = nodeVisuals.get(target.id)?.radius ?? nodeRadius(target);
+      const activeDirect = primary && activeId != null && (source.id === activeId || target.id === activeId);
+
+      const baseDx = target.x - source.x;
+      const baseDy = target.y - source.y;
+      const baseLen = Math.max(1, Math.hypot(baseDx, baseDy));
+      let sx = source.x + (baseDx / baseLen) * (sourceRadius + 5);
+      let sy = source.y + (baseDy / baseLen) * (sourceRadius + 5);
+      let tx = target.x - (baseDx / baseLen) * (targetRadius + 11);
+      let ty = target.y - (baseDy / baseLen) * (targetRadius + 11);
+
+      // 直接关系采用“扇区端口”：同侧的多条边会沿圆周错开，避免中心节点旁形成线束。
+      const activePortAngle = activeDirect ? activePortAngles.get(edge.id) : undefined;
+      if (activePortAngle != null && activeId != null) {
+        if (source.id === activeId) {
+          sx = source.x + Math.cos(activePortAngle) * (sourceRadius + 7);
+          sy = source.y + Math.sin(activePortAngle) * (sourceRadius + 7);
+        }
+        if (target.id === activeId) {
+          tx = target.x + Math.cos(activePortAngle) * (targetRadius + 12);
+          ty = target.y + Math.sin(activePortAngle) * (targetRadius + 12);
+        }
+      }
+
+      const start = { x: sx, y: sy };
+      const end = { x: tx, y: ty };
+      const chordDx = end.x - start.x;
+      const chordDy = end.y - start.y;
+      const chordLen = Math.max(1, Math.hypot(chordDx, chordDy));
+      const normal = { x: -chordDy / chordLen, y: chordDx / chordLen };
+      const tangent = { x: chordDx / chordLen, y: chordDy / chordLen };
+
+      let baseControl1: { x: number; y: number };
+      let baseControl2: { x: number; y: number };
+
+      if (activeDirect && activePortAngle != null && activeId != null) {
+        const stub = clamp(chordLen * 0.23, 42, 78);
+        if (source.id === activeId) {
+          // 从中心节点先沿分配好的端口方向离开，再平滑接近目标节点。
+          baseControl1 = {
+            x: start.x + Math.cos(activePortAngle) * stub,
+            y: start.y + Math.sin(activePortAngle) * stub,
+          };
+          baseControl2 = {
+            x: end.x - tangent.x * stub * 0.9,
+            y: end.y - tangent.y * stub * 0.9,
+          };
+        } else {
+          // 指向中心节点时，末端沿中心端口方向进入，避免多条箭头挤在同一点。
+          baseControl1 = {
+            x: start.x + tangent.x * stub * 0.9,
+            y: start.y + tangent.y * stub * 0.9,
+          };
+          baseControl2 = {
+            x: end.x + Math.cos(activePortAngle) * stub,
+            y: end.y + Math.sin(activePortAngle) * stub,
+          };
+        }
+      } else {
+        // 非核心边保持近似直线，仅保留很轻的弧度。
+        const bend = (((edge.id * 17) % 7) - 3) * 8;
+        baseControl1 = {
+          x: start.x + chordDx * 0.34 + normal.x * bend,
+          y: start.y + chordDy * 0.34 + normal.y * bend,
+        };
+        baseControl2 = {
+          x: start.x + chordDx * 0.66 + normal.x * bend,
+          y: start.y + chordDy * 0.66 + normal.y * bend,
+        };
+      }
+
+      // 在基础路由附近只做小范围“车道偏移”。成本函数同时考虑节点/文字遮挡
+      // 和已绘制主边，优先选择不与其他主边贴在一起或交叉的路线。
+      const laneCandidates = activeDirect
+        ? [0, 18, -18, 36, -36, 56, -56]
+        : [0, 24, -24, 48, -48];
+      let control1 = baseControl1;
+      let control2 = baseControl2;
+      let bestSamples: Array<{ x: number; y: number }> = [];
+      let bestCost = Number.POSITIVE_INFINITY;
+
+      for (const laneOffset of laneCandidates) {
+        const c1 = {
+          x: baseControl1.x + normal.x * laneOffset,
+          y: baseControl1.y + normal.y * laneOffset,
+        };
+        const c2 = {
+          x: baseControl2.x + normal.x * laneOffset,
+          y: baseControl2.y + normal.y * laneOffset,
+        };
+        const samples: Array<{ x: number; y: number }> = [];
+        let obstacleHits = 0;
+        let nearNodeHits = 0;
+        let edgeOverlapHits = 0;
+
+        for (let step = 1; step < 36; step += 1) {
+          const point = cubicPoint(start, c1, c2, end, step / 36);
+          samples.push(point);
+          for (const node of nodes) {
+            if (node.id === source.id || node.id === target.id) continue;
+            const visual = nodeVisuals.get(node.id);
+            const radius = visual?.radius ?? nodeRadius(node);
+            const distance = Math.hypot(point.x - node.x, point.y - node.y);
+            if (distance < radius + 12) obstacleHits += 1;
+            else if (distance < radius + 25) nearNodeHits += 1;
+            if (visual?.showLabel) {
+              const box = visual.placement.box;
+              const padding = 7;
+              if (
+                point.x >= box.x - padding && point.x <= box.x + box.width + padding
+                && point.y >= box.y - padding && point.y <= box.y + box.height + padding
+              ) obstacleHits += 1;
+            }
+          }
+
+          if (primary) {
+            for (const otherSamples of routedPrimarySamples) {
+              for (let idx = 0; idx < otherSamples.length; idx += 3) {
+                const other = otherSamples[idx];
+                const distance = Math.hypot(point.x - other.x, point.y - other.y);
+                if (distance < 7) edgeOverlapHits += 4;
+                else if (distance < 15) edgeOverlapHits += 1;
+              }
+            }
+          }
+        }
+
+        const candidatePolyline = [start, ...samples, end];
+        const crossingHits = primary
+          ? routedPrimaryPolylines.reduce((sum, other) => sum + polylineIntersectionCount(candidatePolyline, other), 0)
+          : 0;
+
+        const cost = obstacleHits * 1200
+          + crossingHits * 6000
+          + nearNodeHits * 16
+          + edgeOverlapHits * 34
+          + Math.abs(laneOffset) * 0.08;
+        if (cost < bestCost) {
+          bestCost = cost;
+          control1 = c1;
+          control2 = c2;
+          bestSamples = samples;
+          if (obstacleHits === 0 && crossingHits === 0 && nearNodeHits === 0 && edgeOverlapHits === 0) break;
+        }
+      }
+
+      if (primary && bestSamples.length) {
+        routedPrimarySamples.push(bestSamples);
+        routedPrimaryPolylines.push([start, ...bestSamples, end]);
+      }
+
+      let labelPoint: { x: number; y: number } | null = null;
+      const relationAlreadyLabeled = primaryEdges.length > 4 && labeledRelationTypes.has(edge.relation_type);
+      const canShowRelationLabel = showEdgeLabels && primary && !relationAlreadyLabeled && visibleRelationLabelCount < 3;
+      if (canShowRelationLabel) {
+        const labelCandidates = activeId != null && edge.target === activeId
+          ? [0.28, 0.36, 0.44, 0.2]
+          : activeId != null && edge.source === activeId
+            ? [0.72, 0.64, 0.56, 0.8]
+            : [0.5, 0.38, 0.62];
+        for (const t of labelCandidates) {
+          const point = cubicPoint(start, control1, control2, end, t);
+          const clearOfNodes = nodes.every((node) => {
+            const visual = nodeVisuals.get(node.id);
+            const radius = visual?.radius ?? nodeRadius(node);
+            const isActive = node.id === activeId;
+            if (Math.hypot(point.x - node.x, point.y - node.y) < radius + (isActive ? 48 : 22)) return false;
+            if (!visual?.showLabel) return true;
+            const box = visual.placement.box;
+            const padding = isActive ? 24 : 9;
+            return !(
+              point.x >= box.x - padding && point.x <= box.x + box.width + padding
+              && point.y >= box.y - padding && point.y <= box.y + box.height + padding
+            );
+          });
+          if (!clearOfNodes) continue;
+
+          const candidateBox = { x: point.x - 23, y: point.y - 11, width: 46, height: 22 };
+          const clearOfLabels = occupiedLabels.every((box) => (
+            candidateBox.x + candidateBox.width + 6 < box.x
+            || box.x + box.width + 6 < candidateBox.x
+            || candidateBox.y + candidateBox.height + 6 < box.y
+            || box.y + box.height + 6 < candidateBox.y
+          ));
+          if (!clearOfLabels) continue;
+
+          labelPoint = point;
+          occupiedLabels.push(candidateBox);
+          labeledRelationTypes.add(edge.relation_type);
+          visibleRelationLabelCount += 1;
+          break;
+        }
+      }
+
+      geometries.push({ edge, source, target, primary, start, end, control1, control2, labelPoint });
+    }
+    return geometries;
+  }, [activeId, activePortAngles, displayEdges, nodeMap, nodeVisuals, nodes, primaryEdgeIds, primaryEdges.length, showEdgeLabels]);
+
+  function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>) {
+    if (event.button !== 0) return;
+    const target = event.target as Element;
+    if (target.closest("[data-kg-node]")) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>) {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const viewScale = rect.width > 0 ? 1000 / rect.width : 1;
+    onPanChange({
+      x: drag.panX + (event.clientX - drag.x) * viewScale,
+      y: drag.panY + (event.clientY - drag.y) * viewScale,
+    });
+  }
+
+  function handlePointerUp(event: ReactPointerEvent<SVGSVGElement>) {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    dragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
 
   return (
-    <svg id="knowledge-graph-svg" viewBox="0 0 1000 710" className="h-full min-h-[620px] w-full select-none" role="img" aria-label="知识图谱可视化">
+    <svg
+      id="knowledge-graph-svg"
+      viewBox="0 0 1000 710"
+      className="h-full min-h-[620px] w-full select-none cursor-grab active:cursor-grabbing"
+      role="img"
+      aria-label="知识图谱可视化"
+      style={{ touchAction: "none" }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onLostPointerCapture={() => { dragRef.current = null; }}
+      onWheel={(event) => {
+        // 普通滚轮只滚动页面；Ctrl/⌘ + 滚轮才缩放图谱，避免页面滚动与画布缩放同时发生。
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        const delta = event.deltaY > 0 ? -0.08 : 0.08;
+        onZoomChange(clamp(zoom + delta, 0.68, 1.55));
+      }}
+    >
       <defs>
         {(Object.keys(RELATIONS) as RelationKey[]).map((type) => (
           <marker key={type} id={`kg-arrow-${type}`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
             <path d="M0,0 L8,4 L0,8 z" fill={RELATIONS[type].color} />
           </marker>
         ))}
-        <filter id="kg-node-shadow" x="-40%" y="-40%" width="180%" height="180%">
-          <feDropShadow dx="0" dy="5" stdDeviation="5" floodColor="#1b2733" floodOpacity="0.12" />
+        <filter id="kg-node-shadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feDropShadow dx="0" dy="2" stdDeviation="2.4" floodColor="#27485d" floodOpacity="0.12" />
         </filter>
       </defs>
 
-      <g transform={`translate(500 355) scale(${zoom}) translate(-500 -355)`}>
-        {data.edges.map((edge) => {
-          const source = nodeMap.get(edge.source);
-          const target = nodeMap.get(edge.target);
-          if (!source || !target) return null;
-          const dx = target.x - source.x;
-          const dy = target.y - source.y;
-          const len = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-          const sourceRadius = clamp(29 + source.degree * 0.7, 31, 45);
-          const targetRadius = clamp(29 + target.degree * 0.7, 31, 45);
-          const sx = source.x + (dx / len) * sourceRadius;
-          const sy = source.y + (dy / len) * sourceRadius;
-          const tx = target.x - (dx / len) * (targetRadius + 7);
-          const ty = target.y - (dy / len) * (targetRadius + 7);
-          const color = relationColor(edge.relation_type);
-          const isConnected = selectedId != null && (edge.source === selectedId || edge.target === selectedId);
-          return (
-            <g key={edge.id}>
-              <line
-                x1={sx}
-                y1={sy}
-                x2={tx}
-                y2={ty}
-                stroke={color}
-                strokeWidth={isConnected ? 2.7 : 1.4 + edge.confidence * 0.7}
-                strokeOpacity={selectedId == null || isConnected ? 0.74 : 0.19}
-                strokeDasharray={edge.source_type === "inferred" ? "7 5" : undefined}
-                markerEnd={`url(#kg-arrow-${edge.relation_type})`}
-              />
-              {showEdgeLabels && (selectedId == null || isConnected) && (
-                <g transform={`translate(${(sx + tx) / 2} ${(sy + ty) / 2})`}>
-                  <rect x="-20" y="-10" width="40" height="18" rx="8" fill="#fefcf9" fillOpacity="0.94" stroke={color} strokeOpacity="0.18" />
-                  <text textAnchor="middle" dominantBaseline="middle" y="-1" fontSize="9" fontWeight="600" fill={color}>
-                    {relationLabel(edge.relation_type)}
-                  </text>
-                </g>
-              )}
-            </g>
-          );
-        })}
+      <rect x="0" y="0" width="1000" height="710" fill="transparent" pointerEvents="all" aria-hidden="true" />
 
-        {nodes.map((node) => {
-          const selected = node.id === selectedId;
-          const focused = node.id === data.focus_id;
-          const radius = clamp(29 + node.degree * 0.7, 31, 45);
-          const dimmed = selectedId != null && !selected && !data.edges.some((edge) =>
-            (edge.source === selectedId && edge.target === node.id) || (edge.target === selectedId && edge.source === node.id),
-          );
-          return (
-            <g
-              key={node.id}
-              transform={`translate(${node.x} ${node.y})`}
-              className="cursor-pointer"
-              opacity={dimmed ? 0.42 : 1}
-              onClick={() => onSelect(node.id)}
-              onDoubleClick={() => onFocus(node.id)}
-            >
-              {focused && <circle r={radius + 12} fill="none" stroke="#4a6f8a" strokeOpacity="0.16" strokeWidth="8" />}
-              <circle
-                r={radius}
-                fill={selected ? "#e8f0f5" : "#fefcf9"}
-                stroke={selected || focused ? "#4a6f8a" : "#90a8b8"}
-                strokeWidth={selected ? 2.8 : 1.6}
-                filter="url(#kg-node-shadow)"
+      <g transform={`translate(${500 + pan.x} ${355 + pan.y}) scale(${zoom}) translate(-500 -355)`}>
+        <g key={animationKey}>
+          <animate attributeName="opacity" from="0.88" to="1" dur="0.34s" fill="freeze" />
+        {/* 1. 关系线路层：连续几何路径，永远位于主要节点与文字下方，不再通过 mask 截断。 */}
+        <g pointerEvents="none">
+          {edgeGeometries.map(({ edge, primary, start, end, control1, control2 }) => {
+            const color = relationColor(edge.relation_type);
+            return (
+              <path
+                key={`edge-${edge.id}`}
+                d={`M ${start.x} ${start.y} C ${control1.x} ${control1.y} ${control2.x} ${control2.y} ${end.x} ${end.y}`}
+                fill="none"
+                stroke={primary ? color : "#b7c4cc"}
+                strokeWidth={primary ? 1.15 + edge.confidence * 0.5 : 0.7}
+                strokeOpacity={primary ? 0.58 : 0.06}
+                strokeDasharray={edge.source_type === "inferred" ? "7 6" : undefined}
+                markerEnd={primary ? `url(#kg-arrow-${edge.relation_type})` : undefined}
               />
-              <circle r={10} cy={-4} fill={selected ? "#4a6f8a" : "#dce8ef"} stroke="#4a6f8a" strokeWidth="1.6" />
-              <circle r={4.1} cy={-4} fill={selected ? "#fefcf9" : "#4a6f8a"} />
-              <text textAnchor="middle" y={18} fontSize="11" fontWeight="700" fill="#1e2b38">
-                {shortName(node.name)}
-              </text>
-              <text textAnchor="middle" y={radius + 17} fontSize="9" fill="#8a9ba9">
-                {node.degree} 关系 · {node.question_count} 题
-              </text>
-            </g>
-          );
-        })}
+            );
+          })}
+        </g>
+
+        {/* 2. 关系标签层：仅在能找到不与节点/节点标签冲突的位置时显示。 */}
+        <g pointerEvents="none">
+          {edgeGeometries.map(({ edge, primary, labelPoint }) => {
+            if (!primary || !labelPoint) return null;
+            const color = relationColor(edge.relation_type);
+            return (
+              <g key={`edge-label-${edge.id}`} transform={`translate(${labelPoint.x} ${labelPoint.y})`}>
+                <rect x="-20" y="-8.5" width="40" height="17" rx="7.5" fill="#ffffff" fillOpacity="0.98" stroke="#eef2f4" strokeWidth="0.7" />
+                <text textAnchor="middle" dominantBaseline="middle" y="-0.5" fontSize="8" fontWeight="650" fill={color}>
+                  {relationLabel(edge.relation_type)}
+                </text>
+              </g>
+            );
+          })}
+        </g>
+
+        {[...nodes]
+          .sort((a, b) => {
+            const aPriority = Number(directNeighborIds.has(a.id)) + Number(a.id === data.focus_id) * 2 + Number(a.id === selectedId) * 3;
+            const bPriority = Number(directNeighborIds.has(b.id)) + Number(b.id === data.focus_id) * 2 + Number(b.id === selectedId) * 3;
+            return aPriority - bPriority;
+          })
+          .map((node) => {
+            const visual = nodeVisuals.get(node.id);
+            if (!visual) return null;
+            const { selected, focused, direct, radius, showLabel, withMeta, placement } = visual;
+            const dimmed = selectedId != null && !selected && !direct && !focused;
+            const relationEdge = directRelationByNodeId.get(node.id);
+            const semanticColor = relationEdge ? relationColor(relationEdge.relation_type) : "#5b83a0";
+            return (
+              <g
+                key={node.id}
+                data-kg-node="true"
+                transform={`translate(${node.x} ${node.y})`}
+                className="cursor-pointer"
+                style={{ opacity: dimmed ? 0.14 : 1, transition: "opacity 180ms ease" }}
+                onClick={(event) => { event.stopPropagation(); onSelect(node.id); }}
+                onDoubleClick={(event) => { event.stopPropagation(); onFocus(node.id); }}
+              >
+                <title>{`${node.name}\n${node.degree} 条关系 · ${node.question_count} 题${node.aliases?.length ? `\n别名：${node.aliases.join("、")}` : ""}`}</title>
+                {selected && <circle r={radius + 8} fill="#4a6f8a" fillOpacity="0.08" stroke="#4a6f8a" strokeOpacity="0.16" strokeWidth="2" />}
+                <circle
+                  r={radius}
+                  fill={selected ? "#4a6f8a" : focused ? "#e7f1f7" : direct ? `${semanticColor}18` : "#ffffff"}
+                  stroke={selected ? "#365f79" : focused ? "#5b83a0" : direct ? semanticColor : "#b5c3cc"}
+                  strokeWidth={selected ? 2.2 : focused ? 1.8 : direct ? 1.55 : 1.05}
+                  filter={selected || focused ? "url(#kg-node-shadow)" : undefined}
+                />
+                <circle r={selected ? 6 : 5} fill={selected ? "#ffffff" : semanticColor} fillOpacity={selected ? 0.96 : direct ? 0.88 : 0.58} />
+                {showLabel && (
+                  <>
+                    <text
+                      textAnchor={placement.textAnchor}
+                      x={placement.x}
+                      y={placement.y}
+                      fontSize={selected || focused ? "11" : "9.5"}
+                      fontWeight={selected || focused ? "700" : "600"}
+                      fill="#1e2b38"
+                      stroke="#ffffff"
+                      strokeWidth="4.5"
+                      paintOrder="stroke fill"
+                      strokeLinejoin="round"
+                    >
+                      {shortName(node.name, 11)}
+                    </text>
+                    {withMeta && (
+                      <text
+                        textAnchor={placement.textAnchor}
+                        x={placement.x}
+                        y={placement.metaY}
+                        fontSize="7.8"
+                        fill="#8295a2"
+                        stroke="#ffffff"
+                        strokeWidth="3.2"
+                        paintOrder="stroke fill"
+                      >
+                        {node.degree} 关系 · {node.question_count} 题
+                      </text>
+                    )}
+                  </>
+                )}
+              </g>
+            );
+          })}
+        </g>
       </g>
     </svg>
   );
@@ -314,11 +1028,17 @@ export default function KnowledgeGraphPage() {
   const [depth, setDepth] = useState("2");
   const [searchDraft, setSearchDraft] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchDebouncing, setSearchDebouncing] = useState(false);
   const [centerId, setCenterId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [layoutVariant, setLayoutVariant] = useState(0);
   const [zoom, setZoom] = useState(1);
-  const [fullscreen, setFullscreen] = useState(false);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [fullscreenMode, setFullscreenMode] = useState<"none" | "native" | "overlay">("none");
+  const graphPanelRef = useRef<HTMLElement | null>(null);
+  const preservedScrollRef = useRef<{ x: number; y: number } | null>(null);
+  const pendingResetRef = useRef(false);
+  const viewportAnimationRef = useRef<number | null>(null);
 
   const subjects = useQuery({
     queryKey: ["knowledge-graph", "subjects"],
@@ -331,60 +1051,172 @@ export default function KnowledgeGraphPage() {
     setSubjectId(String(best.id));
   }, [subjectId, subjects.data]);
 
+  useEffect(() => {
+    const next = searchDraft.trim();
+    if (next === searchTerm) {
+      setSearchDebouncing(false);
+      return;
+    }
+    setSearchDebouncing(true);
+    const timer = window.setTimeout(() => {
+      preservedScrollRef.current = { x: window.scrollX, y: window.scrollY };
+      setCenterId(null);
+      setSearchTerm(next);
+      setSearchDebouncing(false);
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+    }, next ? 320 : 160);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft, searchTerm]);
+
   const graph = useQuery({
     queryKey: ["knowledge-graph", subjectId, relationType, depth, searchTerm, centerId],
     enabled: Boolean(subjectId),
+    placeholderData: (previousData) => previousData,
     queryFn: () => apiRequest<KnowledgeGraphResponse>(`/knowledge/graph${toQuery({
       subject_id: Number(subjectId),
       relation_type: relationType || undefined,
       knowledge_point_id: centerId ?? undefined,
       search: searchTerm || undefined,
       depth: Number(depth),
-      max_nodes: 70,
+      // Overview stays intentionally compact; focused/search views may reveal more local context.
+      max_nodes: centerId != null || searchTerm ? 36 : 24,
     })}`),
   });
 
   useEffect(() => {
     const data = graph.data;
-    if (!data) return;
+    if (!data || graph.isFetching) return;
+    if (pendingResetRef.current) {
+      pendingResetRef.current = false;
+      setSelectedId(data.focus_id ?? data.nodes[0]?.id ?? null);
+      return;
+    }
     if (selectedId != null && data.nodes.some((node) => node.id === selectedId)) return;
     setSelectedId(data.focus_id ?? data.nodes[0]?.id ?? null);
-  }, [graph.data, selectedId]);
+  }, [graph.data, graph.isFetching, selectedId]);
 
   const selectedNode = useMemo(
     () => graph.data?.nodes.find((node) => node.id === selectedId) ?? null,
     [graph.data, selectedId],
   );
 
-  const selectedConnections = useMemo(() => {
+  const selectedNeighbors = useMemo(() => {
     if (!graph.data || selectedId == null) return [];
     const nodeMap = new Map(graph.data.nodes.map((node) => [node.id, node]));
-    return graph.data.edges
-      .filter((edge) => edge.source === selectedId || edge.target === selectedId)
-      .map((edge) => {
-        const outgoing = edge.source === selectedId;
-        const otherId = outgoing ? edge.target : edge.source;
-        return { edge, node: nodeMap.get(otherId), outgoing };
-      })
-      .filter((item) => item.node)
-      .sort((a, b) => b.edge.confidence - a.edge.confidence || b.edge.weight - a.edge.weight);
+    const grouped = new Map<number, {
+      node: KnowledgeGraphNode;
+      relations: Array<{ edge: KnowledgeGraphEdge; outgoing: boolean }>;
+      maxConfidence: number;
+    }>();
+    for (const edge of graph.data.edges) {
+      if (edge.source !== selectedId && edge.target !== selectedId) continue;
+      const outgoing = edge.source === selectedId;
+      const otherId = outgoing ? edge.target : edge.source;
+      const node = nodeMap.get(otherId);
+      if (!node) continue;
+      const current = grouped.get(otherId) ?? { node, relations: [], maxConfidence: 0 };
+      current.relations.push({ edge, outgoing });
+      current.maxConfidence = Math.max(current.maxConfidence, edge.confidence);
+      grouped.set(otherId, current);
+    }
+    return [...grouped.values()]
+      .map((item) => ({ ...item, relations: item.relations.sort((a, b) => edgeStrength(b.edge) - edgeStrength(a.edge)) }))
+      .sort((a, b) => b.maxConfidence - a.maxConfidence || b.node.degree - a.node.degree);
   }, [graph.data, selectedId]);
 
-  const visibleSelectedConnections = selectedConnections.slice(0, 9);
+  const visibleSelectedNeighbors = selectedNeighbors.slice(0, 8);
 
-  function submitSearch(event: FormEvent) {
-    event.preventDefault();
-    setCenterId(null);
-    setSelectedId(null);
-    setSearchTerm(searchDraft.trim());
+  function preserveScroll(action: () => void) {
+    preservedScrollRef.current = { x: window.scrollX, y: window.scrollY };
+    action();
+    window.requestAnimationFrame(() => {
+      const position = preservedScrollRef.current;
+      if (position) window.scrollTo(position.x, position.y);
+    });
   }
 
+  useEffect(() => {
+    if (graph.isFetching || !preservedScrollRef.current) return;
+    const position = preservedScrollRef.current;
+    window.requestAnimationFrame(() => {
+      window.scrollTo(position.x, position.y);
+      preservedScrollRef.current = null;
+    });
+  }, [graph.dataUpdatedAt, graph.isFetching]);
+
+  function animateViewportReset(duration = 320) {
+    if (viewportAnimationRef.current != null) window.cancelAnimationFrame(viewportAnimationRef.current);
+    const startZoom = zoom;
+    const startPan = { ...pan };
+    const startedAt = performance.now();
+    const tick = (now: number) => {
+      const progress = clamp((now - startedAt) / duration, 0, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setZoom(startZoom + (1 - startZoom) * eased);
+      setPan({ x: startPan.x * (1 - eased), y: startPan.y * (1 - eased) });
+      if (progress < 1) viewportAnimationRef.current = window.requestAnimationFrame(tick);
+      else viewportAnimationRef.current = null;
+    };
+    viewportAnimationRef.current = window.requestAnimationFrame(tick);
+  }
+
+  useEffect(() => () => {
+    if (viewportAnimationRef.current != null) window.cancelAnimationFrame(viewportAnimationRef.current);
+  }, []);
+
   function resetView() {
-    setSearchDraft("");
-    setSearchTerm("");
-    setCenterId(null);
-    setSelectedId(null);
-    setZoom(1);
+    const needsDataReset = Boolean(searchDraft || searchTerm || relationType || depth !== "2" || centerId != null);
+    pendingResetRef.current = needsDataReset;
+    preserveScroll(() => {
+      setSearchDraft("");
+      setSearchTerm("");
+      setRelationType("");
+      setDepth("2");
+      setCenterId(null);
+      if (!needsDataReset) setSelectedId(graph.data?.focus_id ?? graph.data?.nodes[0]?.id ?? null);
+    });
+    animateViewportReset();
+  }
+
+  useEffect(() => {
+    function syncFullscreenState() {
+      if (document.fullscreenElement === graphPanelRef.current) setFullscreenMode("native");
+      else if (fullscreenMode === "native") setFullscreenMode("none");
+    }
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
+  }, [fullscreenMode]);
+
+  useEffect(() => {
+    if (fullscreenMode !== "overlay") return;
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setFullscreenMode("none");
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [fullscreenMode]);
+
+  async function toggleFullscreen() {
+    const panel = graphPanelRef.current;
+    if (!panel) return;
+    if (fullscreenMode === "overlay") {
+      setFullscreenMode("none");
+      return;
+    }
+    if (document.fullscreenElement === panel) {
+      await document.exitFullscreen().catch(() => undefined);
+      setFullscreenMode("none");
+      return;
+    }
+    try {
+      if (!panel.requestFullscreen) throw new Error("Fullscreen API unavailable");
+      await panel.requestFullscreen();
+      setFullscreenMode("native");
+    } catch {
+      // Safari/WebView or permission-restricted environments still get a usable overlay fallback.
+      setFullscreenMode("overlay");
+    }
   }
 
   function exportGraph() {
@@ -415,14 +1247,14 @@ export default function KnowledgeGraphPage() {
     link.click();
     link.remove();
     // 某些浏览器在 click() 返回后仍异步读取 Blob，立即 revoke 可能导致空文件。
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   const summary = graph.data?.summary;
   const relationCounts = summary?.relation_counts ?? {};
 
   return (
-    <div className="mx-auto flex max-w-[1540px] flex-col gap-4">
+    <div className="mx-auto flex max-w-[1540px] flex-col gap-4 [overflow-anchor:none]">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -448,28 +1280,40 @@ export default function KnowledgeGraphPage() {
 
       <section className="surface-card rounded-2xl p-4">
         <div className="flex flex-wrap items-center gap-2.5">
-          <form onSubmit={submitSearch} className="relative min-w-[280px] flex-1 lg:max-w-[540px]">
+          <div className="relative min-w-[300px] flex-1 lg:max-w-[560px]">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
             <Input
               value={searchDraft}
               onChange={(event) => setSearchDraft(event.target.value)}
               className="h-10 bg-white/80 pl-10 pr-20"
-              placeholder="搜索知识点名称或 ID"
+              placeholder="搜索名称、别名或 ID，输入后自动定位"
+              aria-label="搜索知识点名称、别名或 ID"
             />
-            <button type="submit" className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2.5 py-1 text-xs font-semibold text-[var(--color-primary-dark)] hover:bg-[var(--color-primary-light)]">
-              定位
-            </button>
-          </form>
+            <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+              {(searchDebouncing || (graph.isFetching && !!searchTerm)) && <RefreshCw className="h-3.5 w-3.5 animate-spin text-[var(--color-text-hint)]" />}
+              {searchDraft && (
+                <button
+                  type="button"
+                  onClick={() => setSearchDraft("")}
+                  className="grid h-7 w-7 place-items-center rounded-lg text-[var(--color-text-hint)] transition hover:bg-[var(--color-primary-light)] hover:text-[var(--ink)]"
+                  title="清空搜索"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
 
           <Select
             value={subjectId}
-            onChange={(value) => {
+            onChange={(value) => preserveScroll(() => {
               setSubjectId(value);
-              setSelectedId(null);
               setCenterId(null);
               setSearchDraft("");
               setSearchTerm("");
-            }}
+              setZoom(1);
+              setPan({ x: 0, y: 0 });
+            })}
             className="h-10 min-w-[150px] border-[var(--color-border)]"
             options={(subjects.data ?? []).map((subject) => ({
               value: String(subject.id),
@@ -480,7 +1324,7 @@ export default function KnowledgeGraphPage() {
           />
           <Select
             value={relationType}
-            onChange={(value) => { setRelationType(value); setSelectedId(null); }}
+            onChange={(value) => preserveScroll(() => setRelationType(value))}
             className="h-10 min-w-[128px] border-[var(--color-border)]"
             options={[
               { value: "", label: "全部关系" },
@@ -489,7 +1333,7 @@ export default function KnowledgeGraphPage() {
           />
           <Select
             value={depth}
-            onChange={setDepth}
+            onChange={(value) => preserveScroll(() => setDepth(value))}
             className="h-10 min-w-[92px] border-[var(--color-border)]"
             options={[1, 2, 3].map((value) => ({ value: String(value), label: `深度 ${value}` }))}
           />
@@ -498,8 +1342,8 @@ export default function KnowledgeGraphPage() {
             <Button variant="secondary" onClick={() => setLayoutVariant((value) => value + 1)}>
               <LayoutGrid className="h-4 w-4" />布局
             </Button>
-            <Button variant="secondary" onClick={resetView} title="返回科目总览">
-              <RefreshCw className="h-4 w-4" />总览
+            <Button variant="secondary" onClick={resetView} title="重置搜索、关系、深度与当前中心节点">
+              <RefreshCw className="h-4 w-4" />重置筛选
             </Button>
             <Button variant="primary" onClick={exportGraph} disabled={!graph.data?.nodes.length}>
               <Download className="h-4 w-4" />导出图谱
@@ -507,46 +1351,28 @@ export default function KnowledgeGraphPage() {
           </div>
         </div>
 
-        {!!graph.data?.hot_nodes.length && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--color-border-light)] pt-3">
-            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">热门知识点：</span>
-            {graph.data.hot_nodes.map((node) => (
-              <button
-                key={node.id}
-                type="button"
-                onClick={() => {
-                  setSearchDraft(node.name);
-                  setSearchTerm(node.name);
-                  setCenterId(null);
-                  setSelectedId(null);
-                }}
-                className="rounded-full border border-[var(--color-border-light)] bg-white/70 px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:text-[var(--color-primary-dark)]"
-              >
-                {node.name}<span className="ml-1 text-[9px] text-[var(--color-text-hint)]">{node.degree}</span>
-              </button>
-            ))}
-          </div>
-        )}
       </section>
 
-      <div className="grid min-h-[680px] grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_350px]">
+      <div className="grid min-h-[680px] grid-cols-1 items-start gap-4 [overflow-anchor:none] xl:grid-cols-[minmax(0,1fr)_350px]">
         <section
+          ref={graphPanelRef}
           className={cn(
-            "surface-card relative min-h-[680px] overflow-hidden rounded-3xl",
-            fullscreen && "fixed inset-4 z-[100] min-h-0 bg-[var(--porcelain)] shadow-2xl",
+            "surface-card relative min-h-0 overflow-hidden rounded-3xl [overflow-anchor:none]",
+            fullscreenMode === "none" && "h-[680px]",
+            fullscreenMode === "overlay" && "fixed inset-3 z-[100] h-[calc(100vh-1.5rem)] bg-[var(--porcelain)] shadow-2xl",
+            fullscreenMode === "native" && "h-screen w-screen rounded-none bg-[var(--porcelain)]",
           )}
         >
           <div
             className="absolute inset-0"
             style={{
-              backgroundColor: "rgba(254,252,249,0.94)",
-              backgroundImage: "radial-gradient(circle, rgba(74,111,138,0.16) 1px, transparent 1px)",
-              backgroundSize: "18px 18px",
+              backgroundColor: "#fbfdff",
+              backgroundImage: "radial-gradient(circle at 50% 44%, rgba(74,111,138,0.055), transparent 46%)",
             }}
           />
 
-          <div className="absolute left-4 top-4 z-10 w-[150px] rounded-2xl border border-[var(--color-border-light)] bg-[rgba(254,252,249,0.9)] p-3 shadow-[var(--shadow-card)] backdrop-blur-md">
-            <div className="mb-2 text-[11px] font-bold text-[var(--ink)]">图例</div>
+          <div className="absolute left-4 top-4 z-10 w-[142px] rounded-xl border border-[var(--color-border-light)] bg-white/92 p-3 shadow-sm backdrop-blur-md">
+            <div className="mb-2 text-[11px] font-semibold text-[var(--ink)]">关系类型</div>
             <div className="mb-2 flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
               <span className="grid h-5 w-5 place-items-center rounded-full border border-[var(--color-primary)] bg-[var(--color-primary-light)]"><Network className="h-3 w-3" /></span>
               知识点节点
@@ -571,21 +1397,21 @@ export default function KnowledgeGraphPage() {
             )}
             <button
               type="button"
-              onClick={() => setFullscreen((value) => !value)}
+              onClick={toggleFullscreen}
               className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--color-border)] bg-white/90 text-[var(--color-text-secondary)] shadow-sm hover:text-[var(--color-primary-dark)]"
-              title={fullscreen ? "退出全屏" : "放大画布"}
+              title={fullscreenMode !== "none" ? "退出全屏" : "全屏查看"}
             >
-              {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              {fullscreenMode !== "none" ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </button>
           </div>
 
-          <div className="absolute bottom-5 right-5 z-10 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white/90 shadow-md">
+          <div className="absolute bottom-5 right-5 z-10 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white/95 shadow-sm">
             <button type="button" onClick={() => setZoom((value) => clamp(value + 0.12, 0.68, 1.5))} className="grid h-10 w-10 place-items-center text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-light)]"><Plus className="h-4 w-4" /></button>
-            <button type="button" onClick={() => setZoom(1)} className="grid h-10 w-10 place-items-center border-y border-[var(--color-border-light)] text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-light)]"><Focus className="h-4 w-4" /></button>
+            <button type="button" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="grid h-10 w-10 place-items-center border-y border-[var(--color-border-light)] text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-light)]"><Focus className="h-4 w-4" /></button>
             <button type="button" onClick={() => setZoom((value) => clamp(value - 0.12, 0.68, 1.5))} className="grid h-10 w-10 place-items-center text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-light)]"><Minus className="h-4 w-4" /></button>
           </div>
 
-          <div className={cn("relative h-full", fullscreen ? "min-h-0" : "min-h-[680px]")}>
+          <div className={cn("relative h-full min-h-0 transition-opacity duration-300 ease-out", graph.isFetching ? "opacity-[0.86]" : "opacity-100")}>
             {graph.isLoading ? (
               <div className="absolute inset-0 grid place-items-center">
                 <div className="text-center text-sm text-[var(--color-text-hint)]">
@@ -605,26 +1431,38 @@ export default function KnowledgeGraphPage() {
                 data={graph.data}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
-                onFocus={(id) => { setCenterId(id); setSearchTerm(""); setSearchDraft(""); setSelectedId(id); }}
+                onFocus={(id) => preserveScroll(() => {
+                  setCenterId(id);
+                  setSearchTerm("");
+                  setSearchDraft("");
+                  setSelectedId(id);
+                  setZoom(1);
+                  setPan({ x: 0, y: 0 });
+                })}
                 layoutVariant={layoutVariant}
                 zoom={zoom}
+                pan={pan}
+                onZoomChange={setZoom}
+                onPanChange={setPan}
+                animationKey={graph.dataUpdatedAt}
               />
             ) : (
               <div className="absolute inset-0 grid place-items-center px-8 text-center text-sm text-[var(--color-text-hint)]">
-                {searchTerm ? `未找到与「${searchTerm}」匹配的知识点` : "当前筛选条件下没有可展示的知识点关系"}
+                {searchTerm ? `未找到与「${searchTerm}」匹配的知识点（已检索名称、aliases 别名与 ID）` : "当前筛选条件下没有可展示的知识点关系"}
               </div>
             )}
           </div>
 
           {summary && (
             <div className="absolute bottom-5 left-5 z-10 flex flex-wrap gap-2 text-[10px] text-[var(--color-text-hint)]">
-              <span className="rounded-lg border border-[var(--color-border-light)] bg-white/85 px-2.5 py-1.5">当前视图 {summary.visible_nodes} 节点 / {summary.visible_edges} 边</span>
+              <span className="rounded-lg border border-[var(--color-border-light)] bg-white/90 px-2.5 py-1.5">{summary.visible_nodes} 节点 · {summary.visible_edges} 边</span>
+              <span className="rounded-lg border border-[var(--color-border-light)] bg-white/90 px-2.5 py-1.5">拖拽平移 · Ctrl/⌘ + 滚轮缩放</span>
               {summary.isolated_nodes > 0 && <span className="rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning-light)] px-2.5 py-1.5 text-[#8a6846]">孤立节点 {summary.isolated_nodes}</span>}
             </div>
           )}
         </section>
 
-        <aside className="surface-card min-h-[680px] rounded-3xl p-5">
+        <aside className="surface-card min-h-[680px] rounded-3xl p-5 [overflow-anchor:none] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden xl:h-[680px] xl:overflow-y-auto">
           {selectedNode ? (
             <div className="space-y-5">
               <section>
@@ -637,6 +1475,16 @@ export default function KnowledgeGraphPage() {
                     <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">
                       {selectedNode.description || "暂无知识点描述，可通过关系结构与关联题量判断其在学习路径中的位置。"}
                     </p>
+                    {!!selectedNode.aliases?.length && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {selectedNode.aliases.slice(0, 6).map((alias) => (
+                          <span key={alias} className="rounded-full border border-[var(--color-border-light)] bg-white/70 px-2 py-0.5 text-[9px] text-[var(--color-text-secondary)]">
+                            {alias}
+                          </span>
+                        ))}
+                        {selectedNode.aliases.length > 6 && <span className="px-1 py-0.5 text-[9px] text-[var(--color-text-hint)]">+{selectedNode.aliases.length - 6}</span>}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -654,7 +1502,13 @@ export default function KnowledgeGraphPage() {
                     variant="secondary"
                     size="sm"
                     className="mt-3 w-full"
-                    onClick={() => { setCenterId(selectedNode.id); setSearchTerm(""); setSearchDraft(""); }}
+                    onClick={() => preserveScroll(() => {
+                      setCenterId(selectedNode.id);
+                      setSearchTerm("");
+                      setSearchDraft("");
+                      setZoom(1);
+                      setPan({ x: 0, y: 0 });
+                    })}
                   >
                     <Focus className="h-3.5 w-3.5" />以此知识点为中心展开
                   </Button>
@@ -663,30 +1517,43 @@ export default function KnowledgeGraphPage() {
 
               <section className="border-t border-[var(--color-border-light)] pt-4">
                 <div className="mb-2.5 flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-[var(--ink)]">相邻知识点 <span className="font-normal text-[var(--color-text-hint)]">({selectedConnections.length})</span></h3>
-                  {selectedConnections.length > 0 && <span className="text-[9px] text-[var(--color-text-hint)]">按置信度排序</span>}
+                  <h3 className="text-xs font-bold text-[var(--ink)]">相邻知识点 <span className="font-normal text-[var(--color-text-hint)]">({selectedNeighbors.length})</span></h3>
+                  {selectedNeighbors.length > 0 && <span className="text-[9px] text-[var(--color-text-hint)]">按最高置信度排序</span>}
                 </div>
                 <div className="space-y-1.5">
-                  {selectedConnections.length ? visibleSelectedConnections.map(({ edge, node, outgoing }) => node && (
-                    <button
-                      type="button"
-                      key={edge.id}
-                      onClick={() => setSelectedId(node.id)}
-                      className="flex w-full items-center gap-2 rounded-xl border border-transparent px-2.5 py-2 text-left transition hover:border-[var(--color-border-light)] hover:bg-white/70"
-                    >
-                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: relationColor(edge.relation_type) }} />
-                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--ink)]">{node.name}</span>
-                      <span className="shrink-0 rounded-md px-1.5 py-0.5 text-[9px]" style={{ color: relationColor(edge.relation_type), background: `${relationColor(edge.relation_type)}12` }}>
-                        {outgoing ? "→" : "←"} {relationLabel(edge.relation_type)}
-                      </span>
-                      <span className="w-8 shrink-0 text-right font-mono text-[9px] text-[var(--color-text-hint)]">{Math.round(edge.confidence * 100)}%</span>
-                    </button>
-                  )) : (
+                  {selectedNeighbors.length ? visibleSelectedNeighbors.map(({ node, relations, maxConfidence }) => {
+                    const leadRelation = relations[0];
+                    return (
+                      <button
+                        type="button"
+                        key={node.id}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => preserveScroll(() => setSelectedId(node.id))}
+                        className="flex w-full items-center gap-2 rounded-xl border border-transparent px-2.5 py-2 text-left transition hover:border-[var(--color-border-light)] hover:bg-white/70"
+                      >
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: relationColor(leadRelation.edge.relation_type) }} />
+                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-[var(--ink)]">{node.name}</span>
+                        <span className="flex shrink-0 items-center gap-1">
+                          {relations.slice(0, 2).map(({ edge, outgoing }) => (
+                            <span
+                              key={edge.id}
+                              className="rounded-md px-1.5 py-0.5 text-[9px]"
+                              style={{ color: relationColor(edge.relation_type), background: `${relationColor(edge.relation_type)}12` }}
+                            >
+                              {outgoing ? "→" : "←"}{relationLabel(edge.relation_type)}
+                            </span>
+                          ))}
+                          {relations.length > 2 && <span className="text-[9px] text-[var(--color-text-hint)]">+{relations.length - 2}</span>}
+                        </span>
+                        <span className="w-8 shrink-0 text-right font-mono text-[9px] text-[var(--color-text-hint)]">{Math.round(maxConfidence * 100)}%</span>
+                      </button>
+                    );
+                  }) : (
                     <div className="rounded-xl border border-dashed border-[var(--color-border)] p-4 text-center text-[11px] text-[var(--color-text-hint)]">当前视图中没有相邻关系</div>
                   )}
-                  {selectedConnections.length > visibleSelectedConnections.length && (
+                  {selectedNeighbors.length > visibleSelectedNeighbors.length && (
                     <div className="px-2 pt-1 text-[10px] text-[var(--color-text-hint)]">
-                      仅展示置信度最高的 {visibleSelectedConnections.length} 条，当前视图共 {selectedConnections.length} 条相邻关系
+                      仅展示置信度最高的 {visibleSelectedNeighbors.length} 个，当前视图共 {selectedNeighbors.length} 个相邻知识点
                     </div>
                   )}
                 </div>
