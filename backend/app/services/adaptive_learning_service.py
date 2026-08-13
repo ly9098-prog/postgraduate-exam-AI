@@ -31,6 +31,38 @@ from app.models.user_recommend_preference import UserRecommendPreference
 logger = logging.getLogger(__name__)
 
 
+# V6.5 knowledge-graph recommendation defaults.  Keep these in one place so
+# prerequisite gating is consistent between the graph service and smart
+# recommendation.  mastery_score is always 0..100; confidence is 0..1.
+GRAPH_PREREQUISITE_MASTERY_THRESHOLD = 60.0
+GRAPH_PREREQUISITE_CONFIDENCE_THRESHOLD = 0.3
+GRAPH_MAX_DEPTH = 2
+GRAPH_MAX_EXPANSION_NODES = 24
+
+
+def normalize_edge_weight(weight: float | None) -> float:
+    """Normalize a knowledge-edge weight to 0..1.
+
+    Existing imported graph data uses 0..1, while the model intentionally
+    permits larger values (up to 10 in admin/import workflows).  Preserve the
+    common 0..1 scale and gracefully normalize larger values.
+    """
+    try:
+        value = max(0.0, float(weight or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+    if value <= 1.0:
+        return value
+    return min(value / 10.0, 1.0)
+
+
+def _clamp01(value: float | None) -> float:
+    try:
+        return max(0.0, min(float(value or 0.0), 1.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 # ── 纯函数 ───────────────────────────────────────────────────────────
 
 
@@ -695,13 +727,238 @@ async def get_knowledge_path_adaptive(
 # ── V6.3: 知识点路径推荐 ─────────────────────────────────────────────
 
 
+async def get_recommendation_graph_context(
+    db: AsyncSession,
+    user_id: int,
+    target_kp_ids: list[int],
+    subject_ids: list[int] | None = None,
+    max_depth: int = GRAPH_MAX_DEPTH,
+    max_nodes: int = GRAPH_MAX_EXPANSION_NODES,
+    min_mastery: float = GRAPH_PREREQUISITE_MASTERY_THRESHOLD,
+    min_confidence: float = GRAPH_PREREQUISITE_CONFIDENCE_THRESHOLD,
+) -> dict:
+    """Batch-load prerequisite context for smart recommendation.
+
+    ``A --prerequisite--> B`` means A should be learned before B.  This helper
+    does two jobs in one bounded traversal:
+
+    * ``blocked_targets``: direct prerequisites that are *confirmed* weak and
+      should suppress the advanced target a little.
+    * ``prerequisite_candidates``: prerequisite KPs that should themselves be
+      eligible for question recall.  Unknown prerequisites are kept as soft
+      diagnostic candidates, never as a hard block.
+
+    Traversal is bounded by depth/node count and carries a visited (node,
+    origin) set, so future bad data containing cycles cannot loop forever.
+    Cross-subject edges are filtered at query time when ``subject_ids`` is
+    supplied.
+    """
+    origin_ids = list(dict.fromkeys(int(k) for k in target_kp_ids if k))
+    if not origin_ids:
+        return {
+            "blocked_targets": {},
+            "prerequisite_candidates": {},
+            "prerequisites_by_target": {},
+        }
+
+    max_depth = max(1, min(int(max_depth or 1), GRAPH_MAX_DEPTH))
+    max_nodes = max(1, int(max_nodes or GRAPH_MAX_EXPANSION_NODES))
+
+    # state[(current_node, origin_target)] = cumulative path quality before the
+    # next edge.  Start each origin at quality 1.0.
+    frontier: dict[tuple[int, int], dict[str, float]] = {
+        (origin, origin): {"weight": 1.0, "confidence": 1.0}
+        for origin in origin_ids
+    }
+    visited: set[tuple[int, int]] = set(frontier)
+    relations: list[dict] = []
+
+    for depth in range(1, max_depth + 1):
+        if not frontier or len(relations) >= max_nodes:
+            break
+
+        current_targets = list({node_id for node_id, _origin in frontier})
+        edge_conditions = [
+            KnowledgeEdge.target_knowledge_point_id.in_(current_targets),
+            KnowledgeEdge.relation_type == "prerequisite",
+            KnowledgeEdge.is_active == True,  # noqa: E712
+        ]
+        if subject_ids:
+            scope_ids = list({int(sid) for sid in subject_ids})
+            scoped_kps = select(KnowledgePoint.id).where(
+                KnowledgePoint.is_active == True,  # noqa: E712
+                KnowledgePoint.subject_id.in_(scope_ids),
+            )
+            edge_conditions.extend([
+                KnowledgeEdge.subject_id.in_(scope_ids),
+                KnowledgeEdge.source_knowledge_point_id.in_(scoped_kps),
+                KnowledgeEdge.target_knowledge_point_id.in_(scoped_kps),
+            ])
+
+        edge_result = await db.execute(
+            select(
+                KnowledgeEdge.id,
+                KnowledgeEdge.target_knowledge_point_id,
+                KnowledgeEdge.source_knowledge_point_id,
+                KnowledgeEdge.weight,
+                KnowledgeEdge.confidence,
+                KnowledgeEdge.source,
+            ).where(*edge_conditions)
+        )
+        edges_by_target: dict[int, list] = {}
+        for edge in edge_result.all():
+            edges_by_target.setdefault(edge.target_knowledge_point_id, []).append(edge)
+
+        next_frontier: dict[tuple[int, int], dict[str, float]] = {}
+        for (current_id, origin_id), parent_quality in frontier.items():
+            for edge in edges_by_target.get(current_id, []):
+                prereq_id = edge.source_knowledge_point_id
+                pair = (prereq_id, origin_id)
+                if pair in visited:
+                    continue
+
+                edge_weight = normalize_edge_weight(edge.weight)
+                edge_confidence = _clamp01(edge.confidence)
+                cumulative_weight = parent_quality["weight"] * edge_weight
+                cumulative_confidence = parent_quality["confidence"] * edge_confidence
+                depth_decay = 1.0 if depth == 1 else 0.65
+                path_quality = cumulative_weight * cumulative_confidence * depth_decay
+
+                relations.append({
+                    "knowledge_point_id": prereq_id,
+                    "origin_knowledge_point_id": origin_id,
+                    "depth": depth,
+                    "edge_id": edge.id,
+                    "edge_weight": edge_weight,
+                    "edge_confidence": edge_confidence,
+                    "edge_source": edge.source,
+                    "path_quality": max(0.0, min(path_quality, 1.0)),
+                })
+                visited.add(pair)
+                if len(relations) >= max_nodes:
+                    break
+                if depth < max_depth:
+                    next_frontier[pair] = {
+                        "weight": cumulative_weight,
+                        "confidence": cumulative_confidence,
+                    }
+            if len(relations) >= max_nodes:
+                break
+        frontier = next_frontier
+
+    if not relations:
+        return {
+            "blocked_targets": {},
+            "prerequisite_candidates": {},
+            "prerequisites_by_target": {},
+        }
+
+    all_kp_ids = list({
+        *origin_ids,
+        *(r["knowledge_point_id"] for r in relations),
+    })
+
+    name_result = await db.execute(
+        select(KnowledgePoint.id, KnowledgePoint.name, KnowledgePoint.subject_id).where(
+            KnowledgePoint.id.in_(all_kp_ids),
+            KnowledgePoint.is_active == True,  # noqa: E712
+        )
+    )
+    kp_info = {
+        row.id: {"name": row.name, "subject_id": row.subject_id}
+        for row in name_result.all()
+    }
+
+    mastery_result = await db.execute(
+        select(
+            UserKnowledgeState.knowledge_point_id,
+            UserKnowledgeState.mastery_score,
+            UserKnowledgeState.confidence,
+        ).where(
+            UserKnowledgeState.user_id == user_id,
+            UserKnowledgeState.knowledge_point_id.in_(all_kp_ids),
+        )
+    )
+    mastery = {
+        row.knowledge_point_id: (float(row.mastery_score), float(row.confidence))
+        for row in mastery_result.all()
+    }
+
+    blocked_targets: dict[int, list[dict]] = {}
+    prerequisites_by_target: dict[int, list[dict]] = {}
+    prerequisite_candidates: dict[int, dict] = {}
+
+    for rel in relations:
+        prereq_id = rel["knowledge_point_id"]
+        origin_id = rel["origin_knowledge_point_id"]
+        if prereq_id not in kp_info or origin_id not in kp_info:
+            continue
+        if subject_ids and (
+            kp_info[prereq_id]["subject_id"] not in subject_ids
+            or kp_info[origin_id]["subject_id"] not in subject_ids
+        ):
+            continue
+
+        prereq_mastery, prereq_conf = mastery.get(prereq_id, (50.0, 0.0))
+        origin_mastery, origin_conf = mastery.get(origin_id, (50.0, 0.0))
+        confirmed_gap = prereq_conf >= min_confidence and prereq_mastery < min_mastery
+        unknown_gap = prereq_conf < min_confidence
+
+        item = {
+            **rel,
+            "name": kp_info[prereq_id]["name"],
+            "subject_id": kp_info[prereq_id]["subject_id"],
+            "mastery_score": round(prereq_mastery, 1),
+            "mastery_confidence": round(prereq_conf, 3),
+            "origin_name": kp_info[origin_id]["name"],
+            "origin_mastery_score": round(origin_mastery, 1),
+            "origin_mastery_confidence": round(origin_conf, 3),
+            "confirmed_gap": confirmed_gap,
+            "unknown_gap": unknown_gap,
+        }
+        prerequisites_by_target.setdefault(origin_id, []).append(item)
+
+        # Hard blocking only uses a direct, sufficiently observed weak prereq.
+        if rel["depth"] == 1 and confirmed_gap:
+            blocked_targets.setdefault(origin_id, []).append(item)
+
+        # Candidate expansion: confirmed gaps are strong; unknown direct
+        # prerequisites can be softly diagnosed; mastered prerequisites are
+        # deliberately excluded so they cannot keep dominating recommendations.
+        eligible_candidate = confirmed_gap or (rel["depth"] == 1 and unknown_gap)
+        if not eligible_candidate:
+            continue
+
+        # Prefer the strongest origin/path when the same prerequisite supports
+        # multiple weak targets.
+        current = prerequisite_candidates.get(prereq_id)
+        rank = (
+            1 if confirmed_gap else 0,
+            rel["path_quality"],
+            -rel["depth"],
+        )
+        current_rank = (
+            1 if current and current.get("confirmed_gap") else 0,
+            current.get("path_quality", 0.0) if current else -1.0,
+            -current.get("depth", 99) if current else -99,
+        )
+        if current is None or rank > current_rank:
+            prerequisite_candidates[prereq_id] = item
+
+    return {
+        "blocked_targets": blocked_targets,
+        "prerequisite_candidates": prerequisite_candidates,
+        "prerequisites_by_target": prerequisites_by_target,
+    }
+
+
 async def get_blocked_knowledge_points(
     db: AsyncSession,
     user_id: int,
     kp_ids: list[int],
     subject: str,
-    min_mastery: float = 60.0,
-    min_confidence: float = 0.3,
+    min_mastery: float = GRAPH_PREREQUISITE_MASTERY_THRESHOLD,
+    min_confidence: float = GRAPH_PREREQUISITE_CONFIDENCE_THRESHOLD,
 ) -> dict[int, list[dict]]:
     """批量检查 kp_ids 中哪些知识点的前置知识点薄弱。
 
@@ -712,70 +969,21 @@ async def get_blocked_knowledge_points(
     """
     if not kp_ids:
         return {}
-
-    # 1. 查询这些 KP 的前置边（source 是前置，target 是当前 KP）
-    edges_result = await db.execute(
-        select(
-            KnowledgeEdge.target_knowledge_point_id,
-            KnowledgeEdge.source_knowledge_point_id,
-        ).where(
-            KnowledgeEdge.target_knowledge_point_id.in_(kp_ids),
-            KnowledgeEdge.relation_type == "prerequisite",
-            KnowledgeEdge.is_active == True,  # noqa: E712
-        )
+    context = await get_recommendation_graph_context(
+        db=db,
+        user_id=user_id,
+        target_kp_ids=kp_ids,
+        max_depth=1,
+        min_mastery=min_mastery,
+        min_confidence=min_confidence,
     )
-    edges = edges_result.all()
-    if not edges:
-        return {}
-
-    # 2. 收集所有前置 KP ID
-    prereq_ids = list({e.source_knowledge_point_id for e in edges})
-
-    # 3. 批量加载前置 KP 的掌握度
-    mastery_result = await db.execute(
-        select(
-            UserKnowledgeState.knowledge_point_id,
-            UserKnowledgeState.mastery_score,
-            UserKnowledgeState.confidence,
-        ).where(
-            UserKnowledgeState.user_id == user_id,
-            UserKnowledgeState.knowledge_point_id.in_(prereq_ids),
-        )
-    )
-    prereq_mastery: dict[int, tuple[float, float]] = {
-        r.knowledge_point_id: (r.mastery_score, r.confidence)
-        for r in mastery_result.all()
-    }
-
-    # 4. 批量加载前置 KP 名称
-    name_result = await db.execute(
-        select(KnowledgePoint.id, KnowledgePoint.name).where(
-            KnowledgePoint.id.in_(prereq_ids),
-        )
-    )
-    kp_names: dict[int, str] = {r.id: r.name for r in name_result.all()}
-
-    # 5. 构建 blocked 映射
-    blocked: dict[int, list[dict]] = {}
-    for e in edges:
-        target_kp = e.target_knowledge_point_id
-        prereq_id = e.source_knowledge_point_id
-        ms, conf = prereq_mastery.get(prereq_id, (50.0, 0.0))
-        # 前置薄弱：mastery < min_mastery 且有足够数据（confidence >= min_confidence）
-        if conf >= min_confidence and ms < min_mastery:
-            blocked.setdefault(target_kp, []).append({
-                "knowledge_point_id": prereq_id,
-                "name": kp_names.get(prereq_id, ""),
-                "mastery_score": round(ms, 1),
-            })
-
-    return blocked
+    return context["blocked_targets"]
 
 
 def can_recommend_advanced_knowledge(
     prerequisite_states: list[dict],
-    min_mastery_score: float = 60.0,
-    min_confidence: float = 0.3,
+    min_mastery_score: float = GRAPH_PREREQUISITE_MASTERY_THRESHOLD,
+    min_confidence: float = GRAPH_PREREQUISITE_CONFIDENCE_THRESHOLD,
 ) -> bool:
     """判断前置知识点是否满足推荐高阶知识点的条件。
 

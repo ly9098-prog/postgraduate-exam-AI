@@ -18,6 +18,31 @@ from app.models.user_knowledge_state import UserKnowledgeState
 logger = logging.getLogger(__name__)
 
 
+def _normalize_mastery_score(score: float | int | None) -> float:
+    """Convert persisted mastery_score (0..100) to a safe 0..1 value."""
+    try:
+        value = float(50.0 if score is None else score)
+    except (TypeError, ValueError):
+        value = 50.0
+    return max(0.0, min(value, 100.0)) / 100.0
+
+
+def _mastery_to_target_difficulty(score: float | int | None) -> float:
+    """Map mastery_score 0..100 to the Question.difficulty 1..5 scale."""
+    return 1.0 + 4.0 * _normalize_mastery_score(score)
+
+
+def _normalize_edge_weight(weight: float | int | None) -> float:
+    """Normalize graph edge weights while preserving the common 0..1 scale."""
+    try:
+        value = max(0.0, float(weight or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+    if value <= 1.0:
+        return value
+    return min(value / 10.0, 1.0)
+
+
 async def _resolve_subject_id(
     db: AsyncSession, subject: str | int | None
 ) -> int | None:
@@ -152,8 +177,12 @@ async def build_user_knowledge_path(
             db, start_kp["knowledge_point_id"], max_depth=1,
         )
         for n in nexts[:3]:
+            # get_next_nodes() may fallback to related when no explicit next
+            # edge exists.  Preserve that semantic so the API/reason never
+            # presents a merely-related node as the user's "next step".
+            relation_role = "next" if n.get("relation_type") == "next" else "related"
             nodes.append(_build_node(
-                n, path_role="next", priority=0.0,
+                n, path_role=relation_role, priority=0.0,
             ))
     except Exception:
         logger.warning("get_next_nodes failed for kp=%d", start_kp["knowledge_point_id"], exc_info=True)
@@ -281,9 +310,10 @@ async def attach_recommended_questions_to_path(
         # Get pre-fetched candidates for this KP (copy so mutation is per-node)
         kp_candidates = list(candidates_by_kp.get(kp_id, []))
 
-        # Sort by difficulty closeness to user mastery (docstring: "优先 difficulty 接近用户水平")
-        mastery = node.get("mastery_score") or 0.5
-        kp_candidates.sort(key=lambda x: abs((x[1] or 0.5) - mastery))
+        # Question.difficulty is 1..5 while mastery_score is 0..100.  Compare
+        # them only after an explicit scale conversion.
+        target_difficulty = _mastery_to_target_difficulty(node.get("mastery_score"))
+        kp_candidates.sort(key=lambda x: abs(float(x[1] or 3) - target_difficulty))
 
         for q_id, _q_diff in kp_candidates:
             if q_id in global_seen_ids:
@@ -455,6 +485,11 @@ def _build_node(kp_data: dict, path_role: str, priority: float) -> dict:
         "subject_name": kp_data.get("subject_name", ""),
         "mastery_score": kp_data.get("mastery_score"),
         "weakness_level": kp_data.get("weakness_level", "unknown"),
+        "relation_type": kp_data.get("relation_type", path_role),
+        "edge_id": kp_data.get("edge_id"),
+        "edge_weight": kp_data.get("weight"),
+        "edge_confidence": kp_data.get("confidence"),
+        "depth": kp_data.get("depth", 0 if path_role == "current" else 1),
         "path_role": path_role,
         "priority": priority,
         "reason": "",
@@ -473,14 +508,15 @@ def _compute_priorities(nodes: list[dict], start_kp: dict):
 
     规则:
     - 起点 weak_point priority 最高
-    - 如果前置知识 mastery_score < 0.6，前置排在起点之前
+    - mastery_score 持久化范围为 0..100，计算前统一归一化到 0..1
+    - 如果前置知识 normalized mastery < 0.6，前置排在起点之前
     - next 排在起点之后
     - related 只作补充
     """
 
     for node in nodes:
         kp_id = node["knowledge_point_id"]
-        mastery = node.get("mastery_score") or 0.0
+        mastery = _normalize_mastery_score(node.get("mastery_score"))
         role = node["path_role"]
 
         # weak_point_priority: 越薄弱越高
@@ -506,14 +542,18 @@ def _compute_priorities(nodes: list[dict], start_kp: dict):
         mastery_gap = 1.0 - mastery  # [0, 1]
 
         # edge_weight: 默认 0.5（无直接边信息时）
-        edge_weight = node.get("weight", 0.5) if "weight" in node else 0.5
+        edge_weight = _normalize_edge_weight(node.get("edge_weight"))
+        if node.get("edge_weight") is None:
+            edge_weight = 0.5
+        edge_confidence = max(0.0, min(float(node.get("edge_confidence") or 1.0), 1.0))
+        edge_signal = edge_weight * edge_confidence
 
         # 综合计算
         priority = (
             weak_priority * 0.40
             + prereq_priority * 0.25
             + mastery_gap * 0.25
-            + edge_weight * 0.10
+            + edge_signal * 0.10
         )
 
         # 角色调整
@@ -528,7 +568,7 @@ def _compute_priorities(nodes: list[dict], start_kp: dict):
         if role == "current":
             has_weak_prereq = any(
                 n["path_role"] == "prerequisite"
-                and (n.get("mastery_score") or 0.0) < 0.6
+                and _normalize_mastery_score(n.get("mastery_score")) < 0.6
                 for n in nodes
                 if n["knowledge_point_id"] != kp_id
             )

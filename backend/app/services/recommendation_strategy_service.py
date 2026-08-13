@@ -20,7 +20,7 @@ _DEFAULT_WEIGHTS = {
 
 # Phase 4.5: 允许的策略类型
 ALLOWED_STRATEGY_TYPES = {
-    "weakness_vector", "knowledge_path", "similar_vector",
+    "weakness_vector", "knowledge_path", "scored", "hybrid_graph", "similar_vector",
     "rule_based", "fallback_random", "fallback",
 }
 

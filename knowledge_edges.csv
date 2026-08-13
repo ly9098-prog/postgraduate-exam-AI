@@ -1,0 +1,1 @@
+id,source_knowledge_point_id,target_knowledge_point_id,relation_type,weight,confidence,source,is_active,created_at,updated_at,subject_id
