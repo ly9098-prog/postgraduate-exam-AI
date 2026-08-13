@@ -1,14 +1,11 @@
 """Phase 4 — 推荐指标聚合与查询服务。"""
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.recommendation_experiment import RecommendationExperiment
-from app.models.recommendation_experiment_assignment import (
-    RecommendationExperimentAssignment,
-)
 from app.models.recommendation_log import RecommendationLog
 from app.models.recommendation_metrics_daily import RecommendationMetricsDaily
 from app.services.admin_subject_service import resolve_subject_ids
@@ -29,7 +26,6 @@ async def aggregate_recommendation_metrics_daily(
         target_date = date.today()
 
     # 构建日期范围（当天 00:00 ~ 次日 00:00）
-    from datetime import datetime, timedelta
     day_start = datetime.combine(target_date, datetime.min.time())
     day_end = day_start + timedelta(days=1)
 
@@ -180,72 +176,79 @@ async def compare_experiment_variants(
     date_from: date,
     date_to: date,
 ) -> dict:
-    """对比实验各分组指标。"""
-    # 获取实验信息
+    """精确对比指定实验各分组指标。
+
+    ``recommendation_metrics_daily`` 没有 experiment_id，variant_key 又通常复用
+    A/B/C；如果按 daily 表的 variant_key 聚合，会把其他实验的数据混进来。
+    因此实验对比直接从 recommendation_logs 按 experiment_id 聚合。
+    """
     exp_result = await db.execute(
-        select(RecommendationExperiment).where(
-            RecommendationExperiment.id == experiment_id,
-        )
+        select(RecommendationExperiment).where(RecommendationExperiment.id == experiment_id)
     )
     experiment = exp_result.scalar_one_or_none()
     if not experiment:
         return {"experiment_id": experiment_id, "experiment_name": "", "variants": []}
 
-    # 获取该实验的所有分配
-    assign_result = await db.execute(
-        select(
-            RecommendationExperimentAssignment.variant_key,
-            RecommendationExperimentAssignment.strategy,
-        ).where(
-            RecommendationExperimentAssignment.experiment_id == experiment_id,
-        ).distinct()
-    )
-    variant_keys = [row.variant_key for row in assign_result.all()]
+    # 分组来自实验定义本身，而不是 assignment 表。这样尚未分到用户的分组也会
+    # 以 0 指标展示，不会在管理端凭空消失。
+    variant_keys: list[str] = []
+    for variant in experiment.variants or []:
+        key = str(variant.get("key", "")).strip() if isinstance(variant, dict) else ""
+        if key and key not in variant_keys:
+            variant_keys.append(key)
 
-    # 一次 GROUP BY 查询所有 variant 的聚合指标（避免 N+1）
+    if not variant_keys:
+        return {
+            "experiment_id": experiment_id,
+            "experiment_name": experiment.name,
+            "variants": [],
+        }
+
+    day_start = datetime.combine(date_from, datetime.min.time())
+    day_end = datetime.combine(date_to + timedelta(days=1), datetime.min.time())
+
     metrics_result = await db.execute(
         select(
-            RecommendationMetricsDaily.variant_key,
-            func.sum(RecommendationMetricsDaily.exposure_count),
-            func.sum(RecommendationMetricsDaily.answer_count),
-            func.sum(RecommendationMetricsDaily.correct_count),
-            func.avg(RecommendationMetricsDaily.accuracy),
-            func.avg(RecommendationMetricsDaily.completion_rate),
-            func.avg(RecommendationMetricsDaily.avg_mastery_delta),
-            func.avg(RecommendationMetricsDaily.ctr),
-        ).where(
-            RecommendationMetricsDaily.date >= date_from,
-            RecommendationMetricsDaily.date <= date_to,
-            RecommendationMetricsDaily.variant_key.in_(variant_keys),
-        ).group_by(RecommendationMetricsDaily.variant_key)
+            RecommendationLog.variant_key,
+            func.count(RecommendationLog.id).label("exposure_count"),
+            func.count(RecommendationLog.clicked_at).label("click_count"),
+            func.count(RecommendationLog.answered_at).label("answer_count"),
+            func.coalesce(
+                func.sum(case((RecommendationLog.is_correct.is_(True), 1), else_=0)), 0
+            ).label("correct_count"),
+            func.avg(RecommendationLog.mastery_delta).label("avg_mastery_delta"),
+        )
+        .where(
+            RecommendationLog.experiment_id == experiment_id,
+            RecommendationLog.shown_at >= day_start,
+            RecommendationLog.shown_at < day_end,
+            RecommendationLog.variant_key.in_(variant_keys),
+        )
+        .group_by(RecommendationLog.variant_key)
     )
-    metrics_by_variant = {row[0]: row for row in metrics_result.all()}
+    metrics_by_variant = {row.variant_key: row for row in metrics_result.all()}
 
     variants_data = []
-    for vk in variant_keys:
-        row = metrics_by_variant.get(vk)
-        if row:
-            variants_data.append({
-                "variant_key": vk,
-                "exposure_count": row[1] or 0,
-                "answer_count": row[2] or 0,
-                "correct_count": row[3] or 0,
-                "accuracy": round(row[4] or 0.0, 4),
-                "completion_rate": round(row[5] or 0.0, 4),
-                "avg_mastery_delta": round(row[6] or 0.0, 4) if row[6] is not None else None,
-                "ctr": round(row[7] or 0.0, 4),
-            })
-        else:
-            variants_data.append({
-                "variant_key": vk,
-                "exposure_count": 0,
-                "answer_count": 0,
-                "correct_count": 0,
-                "accuracy": 0.0,
-                "completion_rate": 0.0,
-                "avg_mastery_delta": None,
-                "ctr": 0.0,
-            })
+    for variant_key in variant_keys:
+        row = metrics_by_variant.get(variant_key)
+        exposure = int(row.exposure_count or 0) if row else 0
+        clicks = int(row.click_count or 0) if row else 0
+        answers = int(row.answer_count or 0) if row else 0
+        correct = int(row.correct_count or 0) if row else 0
+        avg_mastery_delta = row.avg_mastery_delta if row else None
+
+        variants_data.append({
+            "variant_key": variant_key,
+            "exposure_count": exposure,
+            "answer_count": answers,
+            "correct_count": correct,
+            "accuracy": round(correct / answers, 4) if answers else 0.0,
+            "completion_rate": round(answers / exposure, 4) if exposure else 0.0,
+            "avg_mastery_delta": (
+                round(float(avg_mastery_delta), 4) if avg_mastery_delta is not None else None
+            ),
+            "ctr": round(clicks / exposure, 4) if exposure else 0.0,
+        })
 
     return {
         "experiment_id": experiment_id,

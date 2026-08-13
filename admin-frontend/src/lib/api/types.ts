@@ -1031,6 +1031,12 @@ export type RecommendationExperiment = {
   end_at: string | null;
   traffic_ratio: number;
   variants: ExperimentVariant[] | null;
+  max_traffic_percent: number;
+  fallback_strategy_name: string | null;
+  auto_pause_on_error_rate: number | null;
+  min_sample_size: number;
+  started_at: string | null;
+  ended_at: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -1104,4 +1110,61 @@ export type KnowledgeQualityReport = {
   isolated_knowledge_points: Record<string, unknown>[];
   low_question_count_points: Record<string, unknown>[];
   cycles: number[][];
+};
+
+// ── 管理端知识图谱 ──
+
+export type KnowledgeGraphSubject = {
+  id: number;
+  code: string;
+  name: string;
+  level: number;
+  path: string;
+  knowledge_point_count: number;
+  edge_count: number;
+};
+
+export type KnowledgeGraphNode = {
+  id: number;
+  name: string;
+  normalized_name: string;
+  description: string | null;
+  difficulty_level: number;
+  subject_id: number;
+  question_count: number;
+  in_degree: number;
+  out_degree: number;
+  degree: number;
+  relation_counts: Record<string, number>;
+};
+
+export type KnowledgeGraphEdge = {
+  id: number;
+  source: number;
+  target: number;
+  relation_type: "prerequisite" | "parent" | "related" | "next";
+  weight: number;
+  confidence: number;
+  source_type: "manual" | "imported" | "ai" | "inferred" | string;
+};
+
+export type KnowledgeGraphSummary = {
+  total_nodes: number;
+  total_edges: number;
+  visible_nodes: number;
+  visible_edges: number;
+  isolated_nodes: number;
+  avg_confidence: number;
+  relation_counts: Record<string, number>;
+  source_counts: Record<string, number>;
+  relation_confidence: Record<string, number>;
+};
+
+export type KnowledgeGraphResponse = {
+  subject: { id: number; code: string; name: string };
+  summary: KnowledgeGraphSummary;
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+  hot_nodes: Array<{ id: number; name: string; degree: number }>;
+  focus_id: number | null;
 };

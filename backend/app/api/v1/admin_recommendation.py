@@ -9,7 +9,7 @@ from app.core.admin_security import require_permissions
 from app.core.database import get_db
 from app.schemas.recommendation import (
     ExperimentCreate,
-    ExperimentResponse,
+    ExperimentResponseExtended,
     ExperimentStatusUpdate,
     HealthReportResponse,
     KnowledgeQualityReportResponse,
@@ -66,7 +66,7 @@ async def create_or_update_strategy(
 # ── A/B 实验 ──
 
 
-@router.get("/experiments", response_model=list[ExperimentResponse])
+@router.get("/experiments", response_model=list[ExperimentResponseExtended])
 async def list_experiments(
     scene: str | None = Query(None),
     _=Depends(require_permissions("question:read")),
@@ -76,10 +76,10 @@ async def list_experiments(
     from app.services import recommendation_experiment_service
 
     experiments = await recommendation_experiment_service.list_experiments(db, scene=scene)
-    return [ExperimentResponse(**e) for e in experiments]
+    return [ExperimentResponseExtended(**e) for e in experiments]
 
 
-@router.post("/experiments", response_model=ExperimentResponse)
+@router.post("/experiments", response_model=ExperimentResponseExtended)
 async def create_experiment(
     data: ExperimentCreate,
     _=Depends(require_permissions("question:write")),
@@ -92,10 +92,10 @@ async def create_experiment(
         db, data.model_dump(),
     )
     await db.commit()
-    return ExperimentResponse(**result)
+    return ExperimentResponseExtended(**result)
 
 
-@router.patch("/experiments/{experiment_id}/status", response_model=ExperimentResponse)
+@router.patch("/experiments/{experiment_id}/status", response_model=ExperimentResponseExtended)
 async def update_experiment_status(
     experiment_id: int,
     data: ExperimentStatusUpdate,
@@ -111,7 +111,7 @@ async def update_experiment_status(
     if not result:
         raise HTTPException(status_code=404, detail="实验不存在")
     await db.commit()
-    return ExperimentResponse(**result)
+    return ExperimentResponseExtended(**result)
 
 
 # ── 指标聚合 ──

@@ -1,8 +1,9 @@
 """Phase 4 — 推荐 A/B 实验服务。"""
 import hashlib
 import logging
+from datetime import date, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
@@ -10,9 +11,15 @@ from app.models.recommendation_experiment import RecommendationExperiment
 from app.models.recommendation_experiment_assignment import (
     RecommendationExperimentAssignment,
 )
-from app.models.recommendation_metrics_daily import RecommendationMetricsDaily
+from app.models.recommendation_log import RecommendationLog
 
 logger = logging.getLogger(__name__)
+
+
+def _stable_bucket(experiment_id: int, user_id: int, salt: str) -> float:
+    """返回 [0, 1) 的稳定桶值；不同 salt 彼此独立。"""
+    raw = f"{salt}:{experiment_id}:{user_id}"
+    return int(hashlib.md5(raw.encode()).hexdigest(), 16) % 10000 / 10000.0
 
 
 async def get_active_experiment(
@@ -59,15 +66,9 @@ async def assign_user_to_variant(
         )
     )
     existing = result.scalar_one_or_none()
-    if existing:
-        return {
-            "experiment_id": existing.experiment_id,
-            "user_id": existing.user_id,
-            "variant_key": existing.variant_key,
-            "strategy": existing.strategy,
-        }
 
-    # 获取实验信息
+    # 获取实验信息。即使已经分过组，也要重新应用当前 traffic cap；管理员
+    # 下调流量时才能立即把超出 cap 的历史用户移出实验。
     exp_result = await db.execute(
         select(RecommendationExperiment).where(
             RecommendationExperiment.id == experiment_id,
@@ -83,16 +84,25 @@ async def assign_user_to_variant(
         }
 
     variants = experiment.variants
-    # 稳定 hash: hash(f"{experiment_id}:{user_id}") % 10000 / 10000
-    hash_input = f"{experiment_id}:{user_id}"
-    hash_value = int(hashlib.md5(hash_input.encode()).hexdigest(), 16) % 10000 / 10000.0
 
-    # Phase 4.5: 流量上限检查
+    # “是否进入实验”和“进入后分到哪个 variant”必须使用不同的稳定桶。
+    # 旧实现复用同一个 hash：当 max_traffic_percent=50 且 A/B=50/50 时，
+    # 只有 hash<0.5 的用户能进入实验，而这些用户又全部落入 A，B 永远无流量。
+    enrollment_bucket = _stable_bucket(experiment_id, user_id, "traffic")
+    variant_bucket = _stable_bucket(experiment_id, user_id, "variant")
+
+    raw_traffic_ratio = getattr(experiment, "traffic_ratio", 1.0)
+    traffic_ratio = float(raw_traffic_ratio) if isinstance(raw_traffic_ratio, (int, float)) else 1.0
+    traffic_ratio = max(0.0, min(traffic_ratio, 1.0))
+
     raw_max_traffic = getattr(experiment, "max_traffic_percent", 100.0)
-    max_traffic = raw_max_traffic if isinstance(raw_max_traffic, (int, float)) else 100.0
-    if max_traffic is None:
-        max_traffic = 100.0
-    if hash_value * 100 > max_traffic:
+    max_traffic_percent = (
+        float(raw_max_traffic) if isinstance(raw_max_traffic, (int, float)) else 100.0
+    )
+    max_traffic_ratio = max(0.0, min(max_traffic_percent / 100.0, 1.0))
+    effective_traffic_ratio = min(traffic_ratio, max_traffic_ratio)
+
+    if enrollment_bucket >= effective_traffic_ratio:
         return {
             "experiment_id": experiment_id,
             "user_id": user_id,
@@ -101,12 +111,21 @@ async def assign_user_to_variant(
             "excluded_by_traffic_limit": True,
         }
 
-    # 按 ratio 累计分配
+    if existing:
+        return {
+            "experiment_id": existing.experiment_id,
+            "user_id": existing.user_id,
+            "variant_key": existing.variant_key,
+            "strategy": existing.strategy,
+        }
+
+    # 按 ratio 累计分配。ExperimentCreate 已校验 ratio 总和为 1；这里仍保留
+    # 最后一组兜底，以兼容历史脏数据。
     cumulative = 0.0
-    assigned_variant = variants[-1]  # 默认最后一个
+    assigned_variant = variants[-1]
     for v in variants:
-        cumulative += v.get("ratio", 0.0)
-        if hash_value < cumulative:
+        cumulative += float(v.get("ratio", 0.0) or 0.0)
+        if variant_bucket < cumulative:
             assigned_variant = v
             break
 
@@ -140,7 +159,7 @@ async def resolve_strategy_for_user(
         "experiment_id": int | None,
         "variant_key": str | None,
         "strategy": str,
-        "source": "experiment" | "default",
+        "source": "experiment" | "default" | "traffic_excluded",
     }
     """
     try:
@@ -154,8 +173,17 @@ async def resolve_strategy_for_user(
             }
 
         assignment = await assign_user_to_variant(db, user_id, experiment.id)
-        strategy = assignment.get("strategy") or default_strategy
+        if assignment.get("excluded_by_traffic_limit"):
+            # 未进入实验流量的用户应完整走默认路径，日志也不能打上
+            # experiment_id，否则安全检查/实验样本量会把非实验用户算进去。
+            return {
+                "experiment_id": None,
+                "variant_key": None,
+                "strategy": default_strategy,
+                "source": "traffic_excluded",
+            }
 
+        strategy = assignment.get("strategy") or default_strategy
         return {
             "experiment_id": experiment.id,
             "variant_key": assignment.get("variant_key"),
@@ -175,12 +203,13 @@ async def resolve_strategy_for_user(
 async def evaluate_experiment_safety(
     db: AsyncSession,
     experiment_id: int,
-    date_from,
-    date_to,
+    date_from: date,
+    date_to: date,
 ) -> dict:
-    """评估实验安全性，错误率过高时自动暂停。
+    """评估指定实验本身的安全性，错误率过高时自动暂停。
 
-    返回: {"paused": bool, "reason": str | None, "metrics": dict}
+    daily 聚合表没有 experiment_id，不能仅按 variant_key(A/B/...) 过滤，
+    否则会把其他实验的 A/B 数据混入当前实验。这里直接聚合原始推荐日志。
     """
     exp_result = await db.execute(
         select(RecommendationExperiment).where(RecommendationExperiment.id == experiment_id)
@@ -189,24 +218,38 @@ async def evaluate_experiment_safety(
     if not experiment:
         return {"paused": False, "reason": "实验不存在", "metrics": {}}
 
-    # 查询该实验日期范围内的指标
+    day_start = datetime.combine(date_from, datetime.min.time())
+    day_end = datetime.combine(date_to + timedelta(days=1), datetime.min.time())
+    variant_keys = [
+        str(variant.get("key", "")).strip()
+        for variant in (experiment.variants or [])
+        if isinstance(variant, dict) and str(variant.get("key", "")).strip()
+    ]
+
     result = await db.execute(
         select(
-            RecommendationMetricsDaily.variant_key,
-            func.sum(RecommendationMetricsDaily.answer_count),
-            func.sum(RecommendationMetricsDaily.wrong_count),
-            func.sum(RecommendationMetricsDaily.exposure_count),
+            func.count(RecommendationLog.id).label("exposure_count"),
+            func.count(RecommendationLog.answered_at).label("answer_count"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (RecommendationLog.is_correct.is_(False), 1),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("wrong_count"),
         ).where(
-            RecommendationMetricsDaily.date >= date_from,
-            RecommendationMetricsDaily.date <= date_to,
-            RecommendationMetricsDaily.variant_key.isnot(None),
-        ).group_by(RecommendationMetricsDaily.variant_key)
+            RecommendationLog.experiment_id == experiment_id,
+            RecommendationLog.shown_at >= day_start,
+            RecommendationLog.shown_at < day_end,
+            RecommendationLog.variant_key.in_(variant_keys) if variant_keys else False,
+        )
     )
-    rows = result.all()
-
-    total_answers = sum(r[1] or 0 for r in rows)
-    total_errors = sum(r[2] or 0 for r in rows)
-    total_exposure = sum(r[3] or 0 for r in rows)
+    row = result.one()
+    total_exposure = int(row.exposure_count or 0)
+    total_answers = int(row.answer_count or 0)
+    total_errors = int(row.wrong_count or 0)
 
     metrics = {
         "total_answers": total_answers,
@@ -217,7 +260,6 @@ async def evaluate_experiment_safety(
         "auto_pause_threshold": experiment.auto_pause_on_error_rate,
     }
 
-    # 判断是否需要暂停
     auto_pause_rate = experiment.auto_pause_on_error_rate
     min_sample = experiment.min_sample_size or 100
 
@@ -272,7 +314,35 @@ async def update_experiment_status(
     if not experiment:
         return None
 
-    experiment.status = status
+    now = utcnow()
+    if status == "running":
+        # 当前解析器每个 scene 只会消费一个 active experiment。若允许多个实验
+        # 同时标记 running，较旧实验会“看似运行、实际零流量”。启动新实验时
+        # 自动暂停同 scene 的其它 running 实验，使控制台状态与真实流量一致。
+        other_result = await db.execute(
+            select(RecommendationExperiment).where(
+                RecommendationExperiment.scene == experiment.scene,
+                RecommendationExperiment.id != experiment.id,
+                RecommendationExperiment.status == "running",
+            )
+        )
+        for other in other_result.scalars().all():
+            other.status = "paused"
+            other.ended_at = now
+
+        experiment.status = "running"
+        if experiment.started_at is None:
+            experiment.started_at = now
+        experiment.ended_at = None
+    elif status == "paused":
+        experiment.status = "paused"
+        experiment.ended_at = now
+    elif status == "finished":
+        experiment.status = "finished"
+        experiment.ended_at = now
+    else:
+        experiment.status = status
+
     await db.flush()
     await db.refresh(experiment)
     return _experiment_to_dict(experiment)
