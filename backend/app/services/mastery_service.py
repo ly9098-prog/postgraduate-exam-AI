@@ -183,7 +183,9 @@ async def update_user_knowledge_state_after_answer(
     3. 使用 compute_mastery_delta 计算增量，更新 mastery_score。
     4. 更新 confidence、recent_* 系列统计。
 
-    返回: {"updated": int, "created": int}
+    返回: {"updated": int, "created": int, "mastery_before": float | None,
+           "mastery_after": float | None, "mastery_delta": float | None}
+    mastery_* 为本题关联知识点掌握度的平均值，用于推荐效果闭环指标。
     """
     now = utcnow()
 
@@ -196,7 +198,10 @@ async def update_user_knowledge_state_after_answer(
     mappings = result.all()
 
     if not mappings:
-        return {"updated": 0, "created": 0}
+        return {
+            "updated": 0, "created": 0,
+            "mastery_before": None, "mastery_after": None, "mastery_delta": None,
+        }
 
     # 获取题目 difficulty
     difficulty_result = await db.execute(
@@ -204,7 +209,10 @@ async def update_user_knowledge_state_after_answer(
     )
     difficulty = difficulty_result.scalar_one_or_none()
     if difficulty is None:
-        return {"updated": 0, "created": 0}
+        return {
+            "updated": 0, "created": 0,
+            "mastery_before": None, "mastery_after": None, "mastery_delta": None,
+        }
 
     # 批量查询现有 UserKnowledgeState（替代每 KP 一次 SELECT）
     kp_ids = [kp.id for _, kp in mappings]
@@ -220,6 +228,8 @@ async def update_user_knowledge_state_after_answer(
 
     updated = 0
     created = 0
+    mastery_before_values: list[float] = []
+    mastery_after_values: list[float] = []
 
     for _qkp, kp in mappings:
         state = existing_states.get(kp.id)
@@ -242,6 +252,11 @@ async def update_user_knowledge_state_after_answer(
             )
             db.add(state)
             created += 1
+
+        mastery_before = float(
+            state.mastery_score if state.mastery_score is not None else MASTERY_INITIAL_SCORE
+        )
+        mastery_before_values.append(mastery_before)
 
         # V3: 计算掌握度增量
         old_recent_wrong = state.recent_wrong_count or 0
@@ -272,9 +287,8 @@ async def update_user_knowledge_state_after_answer(
         )
 
         # V3: 增量更新 mastery_score (0-100)
-        state.mastery_score = clamp_mastery_score(
-            (state.mastery_score or MASTERY_INITIAL_SCORE) + delta
-        )
+        state.mastery_score = clamp_mastery_score(mastery_before + delta)
+        mastery_after_values.append(float(state.mastery_score))
 
         # V3: 更新 confidence
         state.confidence = compute_confidence(state.attempt_count)
@@ -289,7 +303,27 @@ async def update_user_knowledge_state_after_answer(
         updated += 1
 
     await db.flush()
-    return {"updated": updated, "created": created}
+
+    mastery_before_avg = (
+        sum(mastery_before_values) / len(mastery_before_values)
+        if mastery_before_values else None
+    )
+    mastery_after_avg = (
+        sum(mastery_after_values) / len(mastery_after_values)
+        if mastery_after_values else None
+    )
+    mastery_delta_avg = (
+        mastery_after_avg - mastery_before_avg
+        if mastery_before_avg is not None and mastery_after_avg is not None
+        else None
+    )
+    return {
+        "updated": updated,
+        "created": created,
+        "mastery_before": round(mastery_before_avg, 4) if mastery_before_avg is not None else None,
+        "mastery_after": round(mastery_after_avg, 4) if mastery_after_avg is not None else None,
+        "mastery_delta": round(mastery_delta_avg, 4) if mastery_delta_avg is not None else None,
+    }
 
 
 # ── 查询接口 ──

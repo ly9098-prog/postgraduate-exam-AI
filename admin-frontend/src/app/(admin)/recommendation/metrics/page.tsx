@@ -82,7 +82,7 @@ export default function RecommendationMetricsPage() {
         <div>
           <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">推荐每日指标</h1>
           <p className="text-sm text-[var(--color-text-secondary)]">
-            按 (日期, 科目, 场景, 策略) 聚合自 recommendation_logs；调度器每日自动聚合昨日数据
+            按 (日期, 科目, 场景, 策略) 聚合自 recommendation_logs；重点比较正确率、完成率与掌握度提升
           </p>
         </div>
         {canWrite && (
@@ -128,6 +128,26 @@ export default function RecommendationMetricsPage() {
               { id: "correct", header: "正确", accessorKey: "correct_count" },
               { id: "wrong", header: "错误", accessorKey: "wrong_count" },
               {
+                id: "score",
+                header: "平均推荐分",
+                accessorKey: "avg_recommend_score",
+                cell: ({ row }) => row.original.avg_recommend_score.toFixed(1),
+              },
+              {
+                id: "masteryDelta",
+                header: "掌握度提升",
+                accessorKey: "avg_mastery_delta",
+                cell: ({ row }) => row.original.avg_mastery_delta == null
+                  ? "—"
+                  : `${row.original.avg_mastery_delta >= 0 ? "+" : ""}${row.original.avg_mastery_delta.toFixed(2)}`,
+              },
+              {
+                id: "completion",
+                header: "完成率",
+                accessorKey: "completion_rate",
+                cell: ({ row }) => `${(row.original.completion_rate * 100).toFixed(1)}%`,
+              },
+              {
                 id: "accuracy",
                 header: "正确率",
                 accessorKey: "accuracy",
@@ -143,6 +163,10 @@ export default function RecommendationMetricsPage() {
           />
         </CardContent>
       </Card>
+
+      <div className="text-xs leading-5 text-[var(--color-text-hint)]">
+        注：平均推荐分的量纲可能因策略不同而不同，适合观察同一策略调参前后的变化；跨策略效果优先比较正确率、完成率和掌握度提升。
+      </div>
 
       <div className="flex h-5 items-center gap-2 text-xs text-[var(--color-text-hint)]">
         {metrics.isFetching && (

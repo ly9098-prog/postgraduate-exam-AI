@@ -29,15 +29,15 @@ const STATUS_COLORS: Record<string, string> = {
 // 分组 JSON 快捷填入模板（strategy 需为智能刷题引擎识别的值）
 const VARIANT_PRESETS: { label: string; json: string }[] = [
   {
-    label: "A/B：弱点 vs 路径",
-    json: `[{"key":"A","strategy":"weakness_vector","ratio":0.5},{"key":"B","strategy":"path","ratio":0.5}]`,
-  },
-  {
-    label: "A/B：弱点 vs 综合打分",
+    label: "推荐：原薄弱 vs 图谱综合",
     json: `[{"key":"A","strategy":"weakness_vector","ratio":0.5},{"key":"B","strategy":"scored","ratio":0.5}]`,
   },
   {
-    label: "A/B/C：三组均分",
+    label: "对照：原薄弱 vs 纯路径",
+    json: `[{"key":"A","strategy":"weakness_vector","ratio":0.5},{"key":"B","strategy":"path","ratio":0.5}]`,
+  },
+  {
+    label: "A/B/C：薄弱/路径/图谱综合",
     json: `[{"key":"A","strategy":"weakness_vector","ratio":0.34},{"key":"B","strategy":"path","ratio":0.33},{"key":"C","strategy":"scored","ratio":0.33}]`,
   },
 ];
@@ -152,6 +152,8 @@ export default function RecommendationExperimentsPage() {
       exposure: Number(v.exposure_count ?? 0),
       answer: Number(v.answer_count ?? 0),
       accuracy: Number(v.accuracy ?? 0),
+      completionRate: Number(v.completion_rate ?? 0),
+      masteryDelta: v.avg_mastery_delta == null ? null : Number(v.avg_mastery_delta),
       ctr: Number(v.ctr ?? 0),
     }));
   }, [compareRow]);
@@ -162,7 +164,7 @@ export default function RecommendationExperimentsPage() {
         <div>
           <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">推荐 A/B 实验</h1>
           <p className="text-sm text-[var(--color-text-secondary)]">
-            创建实验并为用户稳定分组，各分组使用不同推荐策略
+            创建实验并为用户稳定分组；建议以 weakness_vector 为 Control、scored（图谱综合推荐）为 Treatment
           </p>
         </div>
         {canWrite && (
@@ -219,7 +221,7 @@ export default function RecommendationExperimentsPage() {
                 className="mt-1 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 font-mono text-xs"
                 value={variantsText}
                 onChange={(e) => setVariantsText(e.target.value)}
-                placeholder='[{"key":"A","strategy":"weakness_vector","ratio":0.5},{"key":"B","strategy":"path","ratio":0.5}]'
+                placeholder='[{"key":"A","strategy":"weakness_vector","ratio":0.5},{"key":"B","strategy":"scored","ratio":0.5}]'
               />
             </label>
             <div className="flex justify-end gap-2">
@@ -312,7 +314,7 @@ export default function RecommendationExperimentsPage() {
             </Button>
           </CardHeader>
           <CardContent>
-            <DataTable<{ key: string; exposure: number; answer: number; accuracy: number; ctr: number }>
+            <DataTable<{ key: string; exposure: number; answer: number; accuracy: number; completionRate: number; masteryDelta: number | null; ctr: number }>
               data={compareVariants}
               emptyText="暂无指标数据，请先在「推荐指标」页聚合"
               columns={[
@@ -324,6 +326,18 @@ export default function RecommendationExperimentsPage() {
                   header: "正确率",
                   accessorKey: "accuracy",
                   cell: ({ row }) => `${(row.original.accuracy * 100).toFixed(1)}%`,
+                },
+                {
+                  id: "completionRate",
+                  header: "完成率",
+                  accessorKey: "completionRate",
+                  cell: ({ row }) => `${(row.original.completionRate * 100).toFixed(1)}%`,
+                },
+                {
+                  id: "masteryDelta",
+                  header: "掌握度提升",
+                  accessorKey: "masteryDelta",
+                  cell: ({ row }) => row.original.masteryDelta == null ? "—" : `${row.original.masteryDelta >= 0 ? "+" : ""}${row.original.masteryDelta.toFixed(2)}`,
                 },
                 {
                   id: "ctr",

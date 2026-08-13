@@ -24,6 +24,29 @@ ALLOWED_STRATEGY_TYPES = {
     "rule_based", "fallback_random", "fallback",
 }
 
+
+# scored / 图谱综合推荐的系统级运行权重。
+# UserRecommendPreference 仍负责用户级 0.7~1.3 微调；这里提供管理员可控的
+# 全局乘数，最终两者相乘后进入 calculate_smart_score。
+DEFAULT_SCORED_RUNTIME_WEIGHTS = {
+    "due_weight": 1.0,
+    "weakness_weight": 1.0,
+    "wrong_weight": 1.0,
+    "new_question_weight": 1.0,
+    "diversity_weight": 1.0,
+    "path_weight": 1.0,
+}
+
+DEFAULT_SCORED_GRAPH_CONFIG = {
+    "weak_target_limit": 5,
+    "max_depth": 2,
+    "max_nodes": 24,
+    "prerequisite_mastery_threshold": 60.0,
+    "prerequisite_confidence_threshold": 0.3,
+}
+
+SCORED_WEIGHT_FIELDS = tuple(DEFAULT_SCORED_RUNTIME_WEIGHTS)
+
 # 属于权重值的字段
 WEIGHT_FIELDS = [
     "weight_vector_similarity", "weight_knowledge_overlap",
@@ -36,7 +59,9 @@ def validate_strategy_config(payload: dict) -> list[str]:
     """校验策略配置。返回错误列表，空列表 = 合法。"""
     errors: list[str] = []
 
-    strategy_type = payload.get("strategy_type")
+    config_json = payload.get("config_json")
+    nested_strategy_type = config_json.get("strategy_type") if isinstance(config_json, dict) else None
+    strategy_type = payload.get("strategy_type") or nested_strategy_type
     if strategy_type is not None and strategy_type not in ALLOWED_STRATEGY_TYPES:
         errors.append(
             f"strategy_type '{strategy_type}' 不在允许列表中: "
@@ -54,6 +79,40 @@ def validate_strategy_config(payload: dict) -> list[str]:
             errors.append(f"{field} 不能为负数")
         if value > 1:
             logger.warning("%s = %s 超过 1，建议归一化", field, value)
+
+    if isinstance(config_json, dict):
+        scored_weights = config_json.get("scored_weights")
+        if scored_weights is not None and not isinstance(scored_weights, dict):
+            errors.append("config_json.scored_weights 必须是对象")
+        elif isinstance(scored_weights, dict):
+            for field in SCORED_WEIGHT_FIELDS:
+                value = scored_weights.get(field)
+                if value is None:
+                    continue
+                if not isinstance(value, (int, float)):
+                    errors.append(f"config_json.scored_weights.{field} 必须是数字")
+                elif not 0.0 <= float(value) <= 2.0:
+                    errors.append(f"config_json.scored_weights.{field} 必须在 0~2 之间")
+
+        graph = config_json.get("graph")
+        if graph is not None and not isinstance(graph, dict):
+            errors.append("config_json.graph 必须是对象")
+        elif isinstance(graph, dict):
+            numeric_ranges = {
+                "weak_target_limit": (1, 20),
+                "max_depth": (1, 2),
+                "max_nodes": (1, 100),
+                "prerequisite_mastery_threshold": (0.0, 100.0),
+                "prerequisite_confidence_threshold": (0.0, 1.0),
+            }
+            for field, (low, high) in numeric_ranges.items():
+                value = graph.get(field)
+                if value is None:
+                    continue
+                if not isinstance(value, (int, float)):
+                    errors.append(f"config_json.graph.{field} 必须是数字")
+                elif not low <= float(value) <= high:
+                    errors.append(f"config_json.graph.{field} 必须在 {low}~{high} 之间")
 
     return errors
 
@@ -168,6 +227,72 @@ async def list_strategy_configs(
     result = await db.execute(q)
     configs = result.scalars().all()
     return [_config_to_dict(c) for c in configs]
+
+
+def _clamp_number(value, default: float, low: float, high: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(number, high))
+
+
+async def get_scored_runtime_config(
+    db: AsyncSession,
+    strategy_name: str = "default_scored",
+) -> dict:
+    """读取 scored 的系统级运行配置。
+
+    该配置保存在 RecommendationStrategyConfig.config_json 中，避免为推荐权重
+    单独增加数据库列。管理员权重是全局乘数，随后还会与用户级
+    UserRecommendPreference 相乘。找不到配置时返回安全的内置默认值。
+    """
+    result = await db.execute(
+        select(RecommendationStrategyConfig).where(
+            RecommendationStrategyConfig.name == strategy_name,
+            RecommendationStrategyConfig.is_active == True,  # noqa: E712
+        )
+    )
+    config = result.scalar_one_or_none()
+    raw = config.config_json if config and isinstance(config.config_json, dict) else {}
+
+    raw_weights = raw.get("scored_weights") if isinstance(raw.get("scored_weights"), dict) else {}
+    weights = {
+        field: _clamp_number(raw_weights.get(field), default, 0.0, 2.0)
+        for field, default in DEFAULT_SCORED_RUNTIME_WEIGHTS.items()
+    }
+
+    raw_graph = raw.get("graph") if isinstance(raw.get("graph"), dict) else {}
+    graph = {
+        "weak_target_limit": int(_clamp_number(
+            raw_graph.get("weak_target_limit"), DEFAULT_SCORED_GRAPH_CONFIG["weak_target_limit"], 1, 20
+        )),
+        "max_depth": int(_clamp_number(
+            raw_graph.get("max_depth"), DEFAULT_SCORED_GRAPH_CONFIG["max_depth"], 1, 2
+        )),
+        "max_nodes": int(_clamp_number(
+            raw_graph.get("max_nodes"), DEFAULT_SCORED_GRAPH_CONFIG["max_nodes"], 1, 100
+        )),
+        "prerequisite_mastery_threshold": _clamp_number(
+            raw_graph.get("prerequisite_mastery_threshold"),
+            DEFAULT_SCORED_GRAPH_CONFIG["prerequisite_mastery_threshold"],
+            0.0,
+            100.0,
+        ),
+        "prerequisite_confidence_threshold": _clamp_number(
+            raw_graph.get("prerequisite_confidence_threshold"),
+            DEFAULT_SCORED_GRAPH_CONFIG["prerequisite_confidence_threshold"],
+            0.0,
+            1.0,
+        ),
+    }
+
+    return {
+        "strategy_config_id": config.id if config else None,
+        "strategy_name": config.name if config else strategy_name,
+        "weights": weights,
+        "graph": graph,
+    }
 
 
 def apply_strategy_weights(base_scores: dict, config: dict) -> float:
