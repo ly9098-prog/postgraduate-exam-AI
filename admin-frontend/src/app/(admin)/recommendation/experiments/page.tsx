@@ -128,18 +128,50 @@ export default function RecommendationExperimentsPage() {
   });
 
   const submitCreate = () => {
-    let parsed: ExperimentCreate["variants"];
+    if (!name.trim()) {
+      showToast("请输入实验名称", true);
+      return;
+    }
+
+    let raw: unknown;
     try {
-      parsed = JSON.parse(variantsText || "[]");
+      raw = JSON.parse(variantsText || "[]");
     } catch {
       showToast("分组 JSON 格式错误", true);
       return;
     }
-    if (parsed.length < 2) {
-      showToast("至少需要 2 个分组", true);
+    if (!Array.isArray(raw) || raw.length < 2) {
+      showToast("分组必须是 JSON 数组，且至少需要 2 个分组", true);
       return;
     }
-    createMutation.mutate({ name, scene, variants: parsed, traffic_ratio: 1.0 });
+
+    const parsed = raw as ExperimentCreate["variants"];
+    const validShape = parsed.every((variant) =>
+      variant
+      && typeof variant.key === "string"
+      && variant.key.trim().length > 0
+      && typeof variant.strategy === "string"
+      && variant.strategy.trim().length > 0
+      && typeof variant.ratio === "number"
+      && Number.isFinite(variant.ratio)
+      && variant.ratio >= 0
+      && variant.ratio <= 1,
+    );
+    if (!validShape) {
+      showToast("每个分组都需要有效的 key、strategy 和 0~1 ratio", true);
+      return;
+    }
+    if (new Set(parsed.map((variant) => variant.key.trim())).size !== parsed.length) {
+      showToast("分组 key 不能重复", true);
+      return;
+    }
+    const ratioSum = parsed.reduce((sum, variant) => sum + variant.ratio, 0);
+    if (Math.abs(ratioSum - 1) > 1e-6) {
+      showToast(`分组 ratio 总和必须为 1，当前为 ${ratioSum.toFixed(4)}`, true);
+      return;
+    }
+
+    createMutation.mutate({ name: name.trim(), scene, variants: parsed, traffic_ratio: 1.0 });
   };
 
   const rows = experiments.data ?? [];
@@ -196,9 +228,10 @@ export default function RecommendationExperimentsPage() {
                   onChange={(e) => setScene(e.target.value)}
                 >
                   <option value="practice_smart">智能刷题</option>
-                  <option value="similar">相似题</option>
-                  <option value="knowledge_path">知识路径</option>
+                  <option value="similar" disabled>相似题（暂未接入实验分流）</option>
+                  <option value="knowledge_path" disabled>知识路径（暂未接入实验分流）</option>
                 </select>
+                <span className="mt-1 block text-[10px] font-normal text-[var(--color-text-hint)]">当前运行时仅智能刷题会解析 A/B 实验。</span>
               </label>
             </div>
             <label className="text-xs font-semibold text-[var(--color-text-secondary)]">
@@ -316,7 +349,7 @@ export default function RecommendationExperimentsPage() {
           <CardContent>
             <DataTable<{ key: string; exposure: number; answer: number; accuracy: number; completionRate: number; masteryDelta: number | null; ctr: number }>
               data={compareVariants}
-              emptyText="暂无指标数据，请先在「推荐指标」页聚合"
+              emptyText="暂无该实验的推荐日志数据"
               columns={[
                 { id: "key", header: "分组", accessorKey: "key" },
                 { id: "exposure", header: "曝光", accessorKey: "exposure" },

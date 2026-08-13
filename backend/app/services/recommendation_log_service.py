@@ -77,21 +77,29 @@ async def create_recommendation_logs(
             )
             continue
 
+        # 一批推荐中可能同时包含 scored、weakness fallback、随机补齐等来源。
+        # 允许逐条覆盖策略/实验元数据，批次参数仅作为旧调用方的默认值。
+        rec_strategy = rec.get("strategy") or strategy
+        rec_experiment_id = rec.get("experiment_id", experiment_id)
+        rec_variant_key = rec.get("variant_key", variant_key)
+        rec_strategy_config_id = rec.get("strategy_config_id", strategy_config_id)
+        rec_mastery_before = rec.get("mastery_before", mastery_before)
+
         log = RecommendationLog(
             user_id=user_id,
             question_id=rec["question_id"],
             subject_id=sid,
             scene=scene,
-            strategy=strategy,
+            strategy=rec_strategy,
             source_question_id=source_question_id,
             recommend_score=rec.get("recommend_score"),
             similarity=rec.get("similarity"),
             reason=rec.get("reason"),
             request_id=request_id,
-            experiment_id=experiment_id,
-            variant_key=variant_key,
-            strategy_config_id=strategy_config_id,
-            mastery_before=mastery_before,
+            experiment_id=rec_experiment_id,
+            variant_key=rec_variant_key,
+            strategy_config_id=rec_strategy_config_id,
+            mastery_before=rec_mastery_before,
             shown_at=now,
         )
         db.add(log)

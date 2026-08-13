@@ -1,7 +1,7 @@
 """Phase 4 — 推荐策略配置服务。"""
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.recommendation_strategy_config import RecommendationStrategyConfig
@@ -58,6 +58,9 @@ WEIGHT_FIELDS = [
 def validate_strategy_config(payload: dict) -> list[str]:
     """校验策略配置。返回错误列表，空列表 = 合法。"""
     errors: list[str] = []
+
+    if payload.get("is_default") is True and payload.get("is_active") is False:
+        errors.append("默认策略必须处于启用状态")
 
     config_json = payload.get("config_json")
     nested_strategy_type = config_json.get("strategy_type") if isinstance(config_json, dict) else None
@@ -159,11 +162,16 @@ async def get_strategy_config(
 
     # 找 scene 下 is_default=True
     result = await db.execute(
-        select(RecommendationStrategyConfig).where(
+        select(RecommendationStrategyConfig)
+        .where(
             RecommendationStrategyConfig.scene == scene,
             RecommendationStrategyConfig.is_active == True,  # noqa: E712
             RecommendationStrategyConfig.is_default == True,  # noqa: E712
         )
+        # 兼容历史上可能已经存在的多默认脏数据，避免 scalar_one_or_none
+        # 直接抛 MultipleResultsFound。新的写入路径会主动清理同 scene 其他默认。
+        .order_by(RecommendationStrategyConfig.updated_at.desc(), RecommendationStrategyConfig.id.desc())
+        .limit(1)
     )
     config = result.scalar_one_or_none()
     if config:
@@ -208,6 +216,19 @@ async def create_or_update_strategy_config(
     else:
         config = RecommendationStrategyConfig(**payload)
         db.add(config)
+
+    # 每个 scene 最多保留一个默认策略。数据库当前没有 partial unique
+    # constraint，因此在服务层维护该不变量，并兼容 SQLite/PostgreSQL。
+    if bool(getattr(config, "is_default", False)):
+        await db.execute(
+            update(RecommendationStrategyConfig)
+            .where(
+                RecommendationStrategyConfig.scene == config.scene,
+                RecommendationStrategyConfig.name != config.name,
+                RecommendationStrategyConfig.is_default == True,  # noqa: E712
+            )
+            .values(is_default=False)
+        )
 
     await db.flush()
     await db.refresh(config)

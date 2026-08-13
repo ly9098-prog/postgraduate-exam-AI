@@ -169,8 +169,37 @@ export default function RecommendationStrategiesPage() {
   const submitEdit = () => {
     if (!editing) return;
 
+    const parseNumber = (key: string, min: number, max: number) => {
+      const raw = form[key]?.trim();
+      if (!raw) return null;
+      const value = Number(raw);
+      return Number.isFinite(value) && value >= min && value <= max ? value : null;
+    };
+
+    const legacyKeys = [
+      "weight_vector_similarity",
+      "weight_knowledge_overlap",
+      "weight_difficulty_match",
+      "weight_mastery_gap",
+      "weight_path_priority",
+      "exploration_ratio",
+    ];
+    const legacyValues = Object.fromEntries(legacyKeys.map((key) => [key, parseNumber(key, 0, 1)]));
+    if (Object.values(legacyValues).some((value) => value == null)) {
+      showToast("请完整填写 0~1 范围内的策略权重", true);
+      return;
+    }
+
     let configJson = editing.config_json;
     if (isScoredStrategy(editing)) {
+      const scoredValues = Object.fromEntries(
+        SCORED_WEIGHT_FIELDS.map(([key]) => [key, parseNumber(`scored_${key}`, 0, 2)]),
+      );
+      if (Object.values(scoredValues).some((value) => value == null)) {
+        showToast("综合推荐权重必须完整填写，范围为 0~2", true);
+        return;
+      }
+
       const baseConfig = asRecord(editing.config_json);
       const existingScored = asRecord(baseConfig.scored_weights);
       configJson = {
@@ -178,25 +207,18 @@ export default function RecommendationStrategiesPage() {
         strategy_type: "scored",
         scored_weights: {
           ...existingScored,
-          ...Object.fromEntries(
-            SCORED_WEIGHT_FIELDS.map(([key]) => [key, Number(form[`scored_${key}`])]),
-          ),
+          ...scoredValues,
         },
       };
     }
 
     saveMutation.mutate({
       name: editing.name,
-      display_name: form.display_name || editing.display_name,
+      display_name: form.display_name?.trim() || editing.display_name,
       scene: editing.scene as RecommendationScene,
       is_active: editing.is_active,
       is_default: editing.is_default,
-      weight_vector_similarity: Number(form.weight_vector_similarity),
-      weight_knowledge_overlap: Number(form.weight_knowledge_overlap),
-      weight_difficulty_match: Number(form.weight_difficulty_match),
-      weight_mastery_gap: Number(form.weight_mastery_gap),
-      weight_path_priority: Number(form.weight_path_priority),
-      exploration_ratio: Number(form.exploration_ratio),
+      ...legacyValues,
       config_json: configJson,
     });
   };
@@ -225,8 +247,8 @@ export default function RecommendationStrategiesPage() {
       </div>
 
       <div className="rounded-xl border border-[var(--color-border)] bg-white/60 px-4 py-3 text-xs leading-5 text-[var(--color-text-secondary)]">
-        <strong className="text-[var(--color-text-primary)]">当前生产主策略：</strong> default_scored（图谱综合推荐）。
-        系统权重 1.0 表示中性，调高会增强该信号，调低会减弱；用户级个性化微调仍由后端自动维护。
+        <strong className="text-[var(--color-text-primary)]">智能刷题默认主策略：</strong> default_scored（图谱综合推荐）。
+        A/B 实验运行时可按用户分组覆盖默认策略；系统权重 1.0 表示中性，用户级个性化微调仍由后端自动维护。
       </div>
 
       <DataTable<RecommendationStrategy>

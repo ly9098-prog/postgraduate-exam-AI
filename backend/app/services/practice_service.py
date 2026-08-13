@@ -917,8 +917,20 @@ async def _maybe_finalize_smart(
     experiment_id: int | None = None,
     variant_key: str | None = None,
 ) -> tuple[list[Question], dict[int, dict]]:
-    """条件化收尾：skip=True 时跳过推荐日志，由调用方统一写入。"""
+    """条件化收尾：skip=True 时跳过推荐日志，由调用方统一写入。
+
+    聚合科目模式会先对各子科目执行 ``skip_finalize=True``，随后统一写日志。
+    因此实验上下文必须随每道题的 metadata 一起向上传递，否则最终日志会丢失
+    experiment_id / variant_key，导致 A/B 指标漏数。
+    """
     if skip:
+        returned_ids = {q.id for q in questions}
+        for qid in returned_ids:
+            meta = metadata.setdefault(qid, {})
+            if experiment_id is not None:
+                meta["experiment_id"] = experiment_id
+            if variant_key is not None:
+                meta["variant_key"] = variant_key
         return questions, metadata
     return await _finalize_smart(
         questions, metadata, db, user_id, subject_code,
@@ -1031,7 +1043,9 @@ async def _apply_strategy_weight_rerank(
 
         scored.sort(key=lambda t: t[1], reverse=True)
         for q, _final, weighted in scored:
-            metadata.setdefault(q.id, {})["recommend_score"] = round(weighted, 4)
+            meta = metadata.setdefault(q.id, {})
+            meta["recommend_score"] = round(weighted, 4)
+            meta["strategy_config_id"] = config.get("id")
         return [t[0] for t in scored], metadata
     except Exception:
         logger.warning("策略权重重排失败，保持原顺序", exc_info=True)
@@ -1112,11 +1126,36 @@ async def get_smart_practice_questions(
                     experiment_id=experiment_info.get("experiment_id"),
                     variant_key=experiment_info.get("variant_key"),
                 )
-            # 不足时 fallback 到 path / weakness_vector
-            logger.info("scored 策略题量不足 (%d/%d)，fallback",
-                        len(scored_qs), count)
+
+            # scored 已经选出的题目包含复习/薄弱/图谱信号，不能因为题量不足就
+            # 整批丢弃再从 weakness_vector 重做。保留已有结果，仅补齐缺口。
+            logger.info(
+                "scored 策略题量不足 (%d/%d)，保留 scored 结果并 fallback 到 weakness_vector 补齐",
+                len(scored_qs), count,
+            )
+            remaining = count - len(scored_qs)
+            fallback_qs, fallback_meta = await _smart_weakness_vector(
+                db=db,
+                user_id=user_id,
+                subject_code=subject_code,
+                count=remaining,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+                use_leitner=use_leitner,
+                exclude_ids={q.id for q in scored_qs},
+                subject_ids=subject_ids,
+            )
+            merged_qs = scored_qs + fallback_qs
+            merged_meta = dict(scored_meta)
+            merged_meta.update(fallback_meta)
+            return await _maybe_finalize_smart(
+                merged_qs[:count], merged_meta, skip_finalize, db, user_id, subject_code,
+                request_id=request_id,
+                experiment_id=experiment_info.get("experiment_id"),
+                variant_key=experiment_info.get("variant_key"),
+            )
         except Exception:
-            logger.warning("scored 策略失败，fallback", exc_info=True)
+            logger.warning("scored 策略失败，fallback 到 weakness_vector", exc_info=True)
 
     # Phase 3: 知识路径策略
     if smart_strategy == "path":
@@ -1380,45 +1419,44 @@ async def _finalize_smart(
     experiment_id: int | None = None,
     variant_key: str | None = None,
 ) -> tuple[list[Question], dict[int, dict]]:
-    """smart 模式统一收尾：写推荐日志（best-effort），返回结果。"""
-    try:
-        from collections import Counter
+    """smart 模式统一收尾：仅为最终实际返回的题目写推荐日志。
 
+    每道题可以来自不同的 fallback/strategy，甚至在聚合科目模式下携带不同的
+    subject_id。日志因此按题保留 strategy / strategy_config_id / 实验上下文，
+    而不是用一个“主导策略”覆盖整批结果。
+    """
+    try:
         from app.services import recommendation_log_service
 
-        recs = [
-            {
-                "question_id": qid,
-                "subject": subject_code,
+        recs: list[dict] = []
+        for question in questions:
+            meta = metadata.get(question.id, {})
+            recs.append({
+                "question_id": question.id,
+                # 聚合刷题时 subject_code 可能是父科目；题目自身 subject_id 才是
+                # 真实归属，指标必须按这个值记录。
+                "subject_id": question.subject_id,
                 "recommend_score": meta.get("recommend_score"),
                 "similarity": meta.get("similarity"),
                 "reason": meta.get("recommend_reason"),
-            }
-            for qid, meta in metadata.items()
-        ]
-        if recs:
-            # 取出现最多的 strategy 而非仅第一条
-            strategy_counts = Counter(
-                meta.get("strategy", "fallback") for meta in metadata.values()
-            )
-            dominant_strategy = strategy_counts.most_common(1)[0][0]
-            strategy_config_ids = [
-                meta.get("strategy_config_id")
-                for meta in metadata.values()
-                if meta.get("strategy") == dominant_strategy and meta.get("strategy_config_id") is not None
-            ]
-            dominant_strategy_config_id = strategy_config_ids[0] if strategy_config_ids else None
+                "strategy": meta.get("strategy", "fallback"),
+                "strategy_config_id": meta.get("strategy_config_id"),
+                "experiment_id": meta.get("experiment_id", experiment_id),
+                "variant_key": meta.get("variant_key", variant_key),
+            })
 
+        if recs:
             await recommendation_log_service.create_recommendation_logs(
                 db=db,
                 user_id=user_id,
                 recommendations=recs,
                 scene="practice_smart",
-                strategy=dominant_strategy,
+                # 兼容旧调用：逐题字段缺失时由日志服务使用这些批次默认值。
+                strategy="fallback",
                 request_id=request_id,
                 experiment_id=experiment_id,
                 variant_key=variant_key,
-                strategy_config_id=dominant_strategy_config_id,
+                strategy_config_id=None,
             )
     except Exception:
         logger.warning("smart 推荐日志写入失败（不影响结果）", exc_info=True)
@@ -2182,7 +2220,7 @@ async def get_smart_scored_questions(
             if len(selected) >= count:
                 break
 
-    # ── 降级 3: 随机补齐 (排除候选题) ──
+    # ── 降级 3: 随机补齐（可放宽 24h，但仍尊重 exclude_answered/no_repeat_days） ──
     if len(selected) < count:
         fallback_level = max(fallback_level, 3)
         remaining = count - len(selected)
@@ -2191,6 +2229,9 @@ async def get_smart_scored_questions(
             subject_cond,
             Question.id.notin_(cand_ids | selected_ids),
         ]
+        if excluded_sub is not None:
+            fill_cond.append(Question.id.notin_(excluded_sub))
+
         # Use random offset to avoid ORDER BY random() on potentially large table
         fill_count_q = select(func.count(Question.id)).where(and_(*fill_cond))
         fill_total = (await db.execute(fill_count_q)).scalar() or 0
@@ -2230,7 +2271,7 @@ async def get_smart_scored_questions(
                 "similarity": None,
             }
 
-    # ── 降级 4: 放弃 24h 限制重查 ──
+    # ── 降级 4: 最终兜底，才放宽 exclude_answered/no_repeat_days ──
     if len(selected) < count:
         fallback_level = max(fallback_level, 4)
         remaining = count - len(selected)
@@ -2239,8 +2280,6 @@ async def get_smart_scored_questions(
             subject_cond,
             Question.id.notin_(selected_ids),
         ]
-        if excluded_sub is not None:
-            fill_cond2.append(Question.id.notin_(excluded_sub))
         fill_q2_base = select(Question).where(and_(*fill_cond2)).options(selectinload(Question.subject_ref))
         fill_count2 = (
             await db.execute(select(func.count(Question.id)).where(and_(*fill_cond2)))
@@ -2248,12 +2287,14 @@ async def get_smart_scored_questions(
         fill_q2 = _random_sample_query(fill_q2_base, total_count=fill_count2, need=remaining, id_col=Question.id)
         fill_result2 = await db.execute(fill_q2)
         for fq in fill_result2.scalars().all():
+            if fq.id in selected_ids:
+                continue
             selected.append(fq)
             selected_ids.add(fq.id)
             metadata[fq.id] = {
                 "recommend_score": None,
-                "recommend_reason": "放弃24h限制补齐",
-                "strategy": "no_24h_fallback",
+                "recommend_reason": "题量不足，放宽重复限制补齐",
+                "strategy": "repeat_window_fallback",
                 "similarity": None,
             }
 

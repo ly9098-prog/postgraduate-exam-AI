@@ -2,7 +2,7 @@
 from datetime import date as date_cls
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # ── 策略配置 ──
 
@@ -62,14 +62,14 @@ class StrategyConfigResponse(BaseModel):
 
 
 class ExperimentVariant(BaseModel):
-    key: str
-    strategy: str
+    key: str = Field(..., min_length=1, max_length=16)
+    strategy: str = Field(..., min_length=1, max_length=32)
     ratio: float = Field(ge=0.0, le=1.0)
 
 
 class ExperimentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
-    scene: str = Field(..., pattern="^(practice_smart|similar|knowledge_path)$")
+    scene: str = Field(..., pattern="^practice_smart$")
     description: str | None = Field(None, max_length=512)
     start_at: datetime | None = None
     end_at: datetime | None = None
@@ -79,6 +79,35 @@ class ExperimentCreate(BaseModel):
     fallback_strategy_name: str | None = Field(None, max_length=64)
     auto_pause_on_error_rate: float | None = Field(None, ge=0.0, le=1.0)
     min_sample_size: int = Field(100, ge=0)
+
+    @model_validator(mode="after")
+    def validate_experiment_definition(self):
+        keys = [variant.key.strip() for variant in self.variants]
+        if any(not key for key in keys):
+            raise ValueError("实验分组 key 不能为空")
+        if len(set(keys)) != len(keys):
+            raise ValueError("实验分组 key 不能重复")
+
+        strategies = [variant.strategy.strip() for variant in self.variants]
+        if any(not strategy for strategy in strategies):
+            raise ValueError("实验分组 strategy 不能为空")
+        allowed_strategies = {
+            "weakness_vector", "scored", "hybrid_graph", "smart_scored",
+            "path", "knowledge_path",
+        }
+        invalid_strategies = sorted(set(strategies) - allowed_strategies)
+        if invalid_strategies:
+            raise ValueError(
+                "practice_smart 实验存在未接入的 strategy: " + ", ".join(invalid_strategies)
+            )
+
+        ratio_sum = sum(float(variant.ratio) for variant in self.variants)
+        if abs(ratio_sum - 1.0) > 1e-6:
+            raise ValueError(f"实验分组 ratio 总和必须为 1，当前为 {ratio_sum:.6f}")
+
+        if self.start_at is not None and self.end_at is not None and self.start_at >= self.end_at:
+            raise ValueError("end_at 必须晚于 start_at")
+        return self
 
 
 class ExperimentStatusUpdate(BaseModel):
