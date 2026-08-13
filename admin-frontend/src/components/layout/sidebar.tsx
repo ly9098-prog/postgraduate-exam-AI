@@ -123,7 +123,7 @@ export function Sidebar() {
                   "group flex items-center gap-3 rounded-2xl border px-4 py-3 transition-[background-color,border-color,color,box-shadow,transform] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/35 focus-visible:ring-offset-2 motion-reduce:transition-none",
                   active
                     ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] shadow-[var(--shadow-crisp)]"
-                    : "border-transparent text-[var(--color-text-secondary)] hover:-translate-y-px hover:border-[var(--color-border)] hover:bg-white/70 hover:text-[var(--ink)] active:translate-y-0",
+                    : "border-transparent text-[var(--ink)] hover:-translate-y-px hover:border-[var(--color-border)] hover:bg-white/70 active:translate-y-0",
                 )}
               >
                 <Icon className="h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-105 motion-reduce:transition-none" />
@@ -158,7 +158,7 @@ export function Sidebar() {
                     ? "border-[var(--color-primary)]/45 bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] shadow-sm"
                     : expanded
                       ? "border-[var(--color-border)] bg-white/75 text-[var(--ink)] shadow-sm"
-                      : "border-transparent text-[var(--color-text-secondary)] hover:border-[var(--color-border)] hover:bg-white/70 hover:text-[var(--ink)]",
+                      : "border-transparent text-[var(--ink)] hover:border-[var(--color-border)] hover:bg-white/70",
                 )}
               >
                 <span
@@ -183,19 +183,7 @@ export function Sidebar() {
                     <GroupIcon className="h-5 w-5" />
                   </span>
                   <span className="min-w-0">
-                    <span className="flex items-center gap-2">
-                      <span className="block truncate text-sm font-semibold">{item.label}</span>
-                      <span
-                        className={cn(
-                          "rounded-full border px-1.5 py-0.5 font-mono text-[10px] leading-none transition-colors duration-200 motion-reduce:transition-none",
-                          expanded || groupActive
-                            ? "border-[var(--color-primary)]/20 bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]"
-                            : "border-[var(--color-border)] bg-white/50 text-[var(--color-text-hint)]",
-                        )}
-                      >
-                        {item.children.length}
-                      </span>
-                    </span>
+                    <span className="block truncate text-sm font-semibold">{item.label}</span>
                     <span className="block truncate text-xs text-[var(--color-text-hint)]">{item.description}</span>
                   </span>
                 </span>
