@@ -124,3 +124,7 @@ CLAUDE.md
 /.backend_cache/
 /.staging/
 /docker-compose.yml
+
+# 开发期一次性脚本（audit/fix/backfill/import/visual_qa），与部署运行无关；
+# 部署所需的 deploy/scripts/ 不受影响。
+/scripts/
