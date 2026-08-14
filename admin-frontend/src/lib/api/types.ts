@@ -678,16 +678,10 @@ export type SystemHealthResponse = {
 
 export type VectorConfig = {
   vector_enabled: boolean;
-  vector_mode: string;
-  vector_allowlist: string;
   vector_cache_ttl_sec: number;
   vector_top_k: number;
   vector_similarity_threshold: number;
-  embedding_provider: string;
-  embedding_api_key_configured: boolean;
-  embedding_api_key_masked: string;
-  embedding_base_url: string;
-  embedding_model: string;
+  embedding_model_config_id: number | null;
   embedding_dim: number;
   embedding_timeout: number;
   embedding_batch_size: number;
@@ -696,24 +690,17 @@ export type VectorConfig = {
 
 export type VectorConfigPatchRequest = {
   vector_enabled?: boolean;
-  vector_mode?: string;
-  vector_allowlist?: string;
   vector_cache_ttl_sec?: number;
   vector_top_k?: number;
   vector_similarity_threshold?: number;
-  embedding_provider?: string;
-  embedding_api_key?: string;
-  embedding_base_url?: string;
-  embedding_model?: string;
+  embedding_model_config_id?: number | null;
   embedding_dim?: number;
   embedding_timeout?: number;
   embedding_batch_size?: number;
 };
 
 export type EmbeddingTestRequest = {
-  api_base_url: string;
-  api_key: string;
-  model: string;
+  model_config_id?: number;
   dim?: number;
   timeout?: number;
 };

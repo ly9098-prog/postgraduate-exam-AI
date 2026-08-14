@@ -678,17 +678,13 @@ async def _check_stored_outbound_urls(errors: list[str]) -> None:
             ai_urls = list(
                 (await session.execute(select(AdminAiModelConfig.api_base_url))).scalars().all()
             )
-            from app.models.admin_ai_config import AdminAiConfig
-            vector_rows = (await session.execute(
-                select(AdminAiConfig.config_value).where(AdminAiConfig.config_key == "embedding_base_url")
-            )).scalars().all()
-            vector_urls = [v for v in vector_rows if v]
     except Exception as exc:
         errors.append(f"无法检查数据库中的外部服务 URL: {exc}")
         return
 
+    # Embedding 也统一注册在 AdminAiModelConfig 中，因此无需再检查一套
+    # legacy embedding_base_url。所有模型端点共享同一 URL 安全校验。
     candidates = [("AI 模型", value) for value in ai_urls]
-    candidates.extend(("向量模型", value) for value in vector_urls)
     for kind, raw_url in candidates:
         value = (raw_url or "").strip()
         if not value:

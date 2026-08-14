@@ -5,6 +5,7 @@ API Router 层只负责：鉴权、参数解析、调用 service、返回 respon
 """
 
 import hashlib
+import io
 import logging
 import os
 import uuid
@@ -39,6 +40,15 @@ from app.utils.sentry_utils import capture_exception, set_tag
 logger = logging.getLogger(__name__)
 
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def _queue_rejection_message(reason: str) -> str:
+    """Turn queue reason codes into an operator-friendly import error."""
+    if reason == "redis_unavailable":
+        return "任务队列不可用：Redis 未连接或不可达"
+    if reason == "queue_full":
+        return "任务队列已满，请稍后重试"
+    return f"任务提交失败: {reason or 'unknown'}"
 
 
 # ── Reservation management (Batch 3: ZSET-based admission ordering) ──
@@ -201,28 +211,184 @@ def _build_ocr_text_diagnostics(raw_ocr_text: str, cleaned_text: str) -> dict:
 
 def _build_ocr_runtime_diagnostics() -> dict:
     from app.core.ocr_isolation import local_paddleocr_available
+    from app.core.ocr_runtime_config import get_runtime_config, sanitize_url
+
+    cfg = get_runtime_config()
 
     return {
         "ocr_enabled": settings.OCR_ENABLED,
+        "execution_backend": cfg.execution_backend,
+        "remote_url": sanitize_url(cfg.remote_url) if cfg.remote_url else "",
+        "use_gpu": cfg.use_gpu,
         "paddleocr_available": local_paddleocr_available(),
     }
 
 
-async def _run_ocr_in_thread(image_bytes: bytes) -> str:
-    """Run ocr_image in the shared bounded executor.
+async def _run_ocr_via_configured_backend(image_bytes: bytes) -> dict:
+    """Run image OCR through the configured OCR worker backend.
 
-    Uses a process-wide executor with semaphore, queue limit, and timeout.
-    Raises TimeoutError if OCR exceeds OCR_TIMEOUT_SECONDS.
+    The image-import path used to call ``ocr_executor`` directly, which is a
+    deprecated local-process compatibility service.  That silently bypassed
+    ``OCR_EXECUTION_BACKEND=paddlex_http`` and therefore used local PaddleOCR
+    even when the remote httpx/GPU service was configured.
+
+    This helper uses the application OCR Gateway when available.  For tooling
+    or tests where the lifespan Gateway has not been created yet, it creates a
+    short-lived worker client from the same runtime config.  Importantly, a
+    configured ``paddlex_http`` backend never falls back to local CPU OCR.
+
+    Returns the standard ``WorkerResult.result`` mapping so callers can retain
+    OCR boxes/geometry instead of reducing the first OCR pass to plain text.
     """
-    from app.services.ocr_executor_service import ocr_executor
+    from app.core.ocr_runtime_config import get_runtime_config, sanitize_url
+    from app.services.ocr_service import get_gateway
+    from app.services.ocr_worker_client import create_ocr_worker_client
+
+    cfg = get_runtime_config()
+    if not cfg.enabled:
+        raise RuntimeError("OCR 功能未启用（OCR_ENABLED=false）")
+    if cfg.execution_backend == "disabled":
+        raise RuntimeError("OCR 执行后端已禁用（OCR_EXECUTION_BACKEND=disabled）")
+
+    logger.info(
+        "image OCR backend selected: backend=%s remote_url=%s use_gpu=%s",
+        cfg.execution_backend,
+        sanitize_url(cfg.remote_url) if cfg.remote_url else "-",
+        cfg.use_gpu,
+    )
+
+    gateway = get_gateway()
+    worker_client = None
+    owns_worker_client = False
     try:
-        text = await ocr_executor.run_ocr(image_bytes, timeout=settings.OCR_TIMEOUT_SECONDS)
-        return text
-    except TimeoutError:
-        raise
+        if gateway is not None and gateway.is_gateway:
+            results = await gateway.recognize_pages([(1, image_bytes)])
+        else:
+            worker_client = create_ocr_worker_client(cfg)
+            if worker_client is None:
+                raise RuntimeError(
+                    f"OCR worker unavailable: execution_backend={cfg.execution_backend}"
+                )
+            owns_worker_client = True
+            results = await worker_client.recognize_batch([(1, image_bytes)])
+
+        if not results:
+            raise RuntimeError("OCR 后端未返回识别结果")
+
+        worker_result = results[0]
+        result = worker_result.result if isinstance(worker_result.result, dict) else {}
+        if worker_result.status != "success" or result.get("failed"):
+            stable_code = worker_result.stable_error_code or "ocr.backend_failed"
+            detail = result.get("error") or worker_result.error_type or "unknown"
+            raise RuntimeError(f"OCR 后端调用失败: {stable_code}: {detail}")
+
+        text = str(result.get("text") or "")
+        if not text.strip():
+            raise RuntimeError("OCR 后端返回成功，但未识别到文本")
+        return result
     except Exception as e:
         logger.error("OCR failed: %s", e)
         raise
+    finally:
+        if owns_worker_client and worker_client is not None:
+            try:
+                await worker_client.shutdown()
+            except Exception as exc:
+                logger.warning("Temporary OCR worker client shutdown failed: %s", exc)
+
+
+def _build_pre_extracted_ocr_blocks(
+    *,
+    image_bytes: bytes,
+    cleaned_text: str,
+    ocr_result: dict,
+) -> list[dict]:
+    """Build layout-capable raw blocks from the first OCR pass.
+
+    Prefer the worker's line-level geometry when it is available.  The older
+    implementation collapsed every OCR line into one giant block and attached
+    a list of boxes to that block.  Layout reconstruction then had very little
+    spatial structure to work with and frequently routed image imports into a
+    second ``VL_REBUILD`` OCR pass.
+
+    Returning one block per OCR line preserves reading order and bbox geometry,
+    while the single-block fallback keeps non-geometric OCR providers working.
+    """
+    width = 0
+    height = 0
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            width, height = image.size
+    except Exception as exc:
+        logger.debug("Unable to read image dimensions for OCR block: %s", exc)
+
+    engine_fingerprint = str(ocr_result.get("engine_fingerprint") or "")
+    raw_lines = ocr_result.get("lines")
+    blocks: list[dict] = []
+    if isinstance(raw_lines, list):
+        for index, line in enumerate(raw_lines):
+            if not isinstance(line, dict):
+                continue
+            text = str(line.get("text") or "").strip()
+            if not text:
+                continue
+            bbox = line.get("bbox")
+            valid_bbox = (
+                isinstance(bbox, (list, tuple))
+                and len(bbox) == 4
+                and all(isinstance(v, (int, float)) for v in bbox)
+            )
+            conf = line.get("confidence", line.get("conf", 0.0))
+            box_entries = [{
+                "bbox": list(bbox),
+                "conf": float(conf or 0.0),
+                "text": text,
+            }] if valid_bbox else []
+            blocks.append({
+                "page": 1,
+                "block_index": index,
+                "text": text,
+                "boxes": box_entries,
+                "page_width": width,
+                "page_height": height,
+                "source": "ocr",
+                "has_boxes": bool(box_entries),
+                "engine_fingerprint": engine_fingerprint,
+            })
+
+    if blocks:
+        return blocks
+
+    boxes = ocr_result.get("boxes")
+    if not isinstance(boxes, list):
+        boxes = []
+    return [{
+        "page": 1,
+        "block_index": 0,
+        "text": cleaned_text,
+        "boxes": boxes,
+        "page_width": width,
+        "page_height": height,
+        "source": "ocr",
+        "has_boxes": bool(boxes),
+        "engine_fingerprint": engine_fingerprint,
+    }]
+
+
+def _build_pre_extracted_ocr_block(
+    *,
+    image_bytes: bytes,
+    cleaned_text: str,
+    ocr_result: dict,
+) -> dict:
+    """Backward-compatible single-block helper for older callers/tests."""
+    return _build_pre_extracted_ocr_blocks(
+        image_bytes=image_bytes,
+        cleaned_text=cleaned_text,
+        ocr_result=ocr_result,
+    )[0]
 
 
 def _classify_image_pipeline_result(result: dict, cleaned_text: str) -> str | None:
@@ -308,9 +474,20 @@ async def _run_image_pipeline_with_db(
             diagnostics={"ocr_runtime": runtime_diagnostics},
             stages={"upload": {"status": "completed"}, "ocr": {"status": "running"}},
         )
-        raw_ocr_text = await _run_ocr_in_thread(image_content)
+        ocr_result = await _run_ocr_via_configured_backend(image_content)
+        raw_ocr_text = str(ocr_result.get("text") or "")
         raw_text = clean_ocr_text(raw_ocr_text)
+        pre_extracted_blocks = _build_pre_extracted_ocr_blocks(
+            image_bytes=image_content,
+            cleaned_text=raw_text,
+            ocr_result=ocr_result,
+        )
         ocr_diagnostics = _build_ocr_text_diagnostics(raw_ocr_text, raw_text)
+        ocr_diagnostics.update({
+            "execution_backend": runtime_diagnostics.get("execution_backend"),
+            "box_count": len(pre_extracted_blocks[0].get("boxes") or []),
+            "engine_fingerprint": ocr_result.get("engine_fingerprint", ""),
+        })
         if not raw_text:
             await _set_image_pipeline_status(
                 pipeline_id,
@@ -360,6 +537,7 @@ async def _run_image_pipeline_with_db(
                 options=options,
                 db=db,
                 page_images={1: image_content},
+                pre_extracted_blocks=pre_extracted_blocks,
             )
         del image_content
 
@@ -632,7 +810,7 @@ async def start_import_pipeline(
             )
             if not result:
                 await _set_image_pipeline_status(pipeline_id, status="failed", errors=[f"Queue rejected: {result.reason}"])
-                raise ValueError(f"任务队列已满: {result.reason}")
+                raise ValueError(_queue_rejection_message(result.reason))
 
             log_event(
                 logger, "import.upload.accepted",
@@ -671,7 +849,7 @@ async def start_import_pipeline(
             )
             if not result:
                 await _set_pipeline_store(pipeline_id, {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]})
-                raise ValueError(f"任务队列已满: {result.reason}")
+                raise ValueError(_queue_rejection_message(result.reason))
 
             return PipelineUploadResponse(pipeline_id=pipeline_id, status="parsing", source_type="excel")
         except Exception:
@@ -756,7 +934,7 @@ async def start_import_pipeline(
         )
         if not result:
             await _set_pipeline_store(pipeline_id, {"status": "failed", "errors": [f"Queue rejected: {result.reason}"]})
-            raise ValueError(f"任务队列已满: {result.reason}")
+            raise ValueError(_queue_rejection_message(result.reason))
 
         log_event(
             logger, "import.upload.accepted",

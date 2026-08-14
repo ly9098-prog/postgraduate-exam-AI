@@ -33,6 +33,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import shutil
+import tempfile
 import time
 import uuid
 from collections.abc import Callable
@@ -197,12 +200,20 @@ class ResourceGuardError(ValueError):
 
 @dataclass
 class SystemThresholds:
-    """System resource thresholds that trigger protective actions."""
+    """System resource thresholds that trigger protective actions.
+
+    ``max_temp_disk_mb`` applies only to application-managed temporary
+    workspaces (worker scratch + known pipeline temp directories).  It must
+    never be compared with the *whole filesystem* used space, otherwise a
+    healthy host whose root disk already contains unrelated data would reject
+    every import job.
+    """
     max_rss_mb: float = 1024
     min_available_memory_mb: float = 256
     max_event_loop_lag_ms: float = 500
     max_active_pipelines: int = 1
     max_temp_disk_mb: float = 512
+    min_temp_disk_free_mb: float = 512
 
 
 @dataclass
@@ -212,7 +223,11 @@ class SystemMetrics:
     available_memory_mb: float = 0.0
     event_loop_lag_ms: float = 0.0
     active_pipelines: int = 0
+    # Bytes owned by this application's temporary workspaces, not total
+    # filesystem usage.
     temp_disk_usage_mb: float = 0.0
+    # Free space on the filesystem that hosts the worker scratch/temp area.
+    temp_disk_free_mb: float = 0.0
 
 
 @dataclass
@@ -624,8 +639,24 @@ class ResourceGuard:
         if metrics.event_loop_lag_ms > self._thresholds.max_event_loop_lag_ms:
             return False, f"Event loop lag {metrics.event_loop_lag_ms:.0f}ms exceeds limit {self._thresholds.max_event_loop_lag_ms}ms"
 
-        if metrics.temp_disk_usage_mb > self._thresholds.max_temp_disk_mb:
-            return False, f"Temp disk {metrics.temp_disk_usage_mb:.0f}MB exceeds limit {self._thresholds.max_temp_disk_mb}MB"
+        if (
+            self._thresholds.max_temp_disk_mb > 0
+            and metrics.temp_disk_usage_mb > self._thresholds.max_temp_disk_mb
+        ):
+            return False, (
+                f"Temporary workspace {metrics.temp_disk_usage_mb:.0f}MB exceeds "
+                f"application limit {self._thresholds.max_temp_disk_mb:.0f}MB"
+            )
+
+        if (
+            self._thresholds.min_temp_disk_free_mb > 0
+            and metrics.temp_disk_free_mb > 0
+            and metrics.temp_disk_free_mb < self._thresholds.min_temp_disk_free_mb
+        ):
+            return False, (
+                f"Temporary workspace disk has only {metrics.temp_disk_free_mb:.0f}MB free; "
+                f"minimum is {self._thresholds.min_temp_disk_free_mb:.0f}MB"
+            )
 
         return True, None
 
@@ -683,24 +714,120 @@ class ResourceGuard:
         except Exception:
             pass
 
-        # Temp disk availability (separate metric — do NOT overwrite available_memory_mb)
+        # Temporary workspace pressure.
+        #
+        # IMPORTANT: do not use ``disk_usage(...).used`` here.  /tmp commonly
+        # lives on the root filesystem, so that value includes the OS, Docker
+        # layers, databases and every other application on the host.  Comparing
+        # that number with a 512MB scratch quota caused false positives such as
+        # "Temp disk 84245MB exceeds limit 512MB" for a 0.2MB image upload.
         try:
-            import os as _os
-            import shutil as _shutil
+            temp_paths, disk_probe = ResourceGuard._managed_temp_paths()
+            managed_bytes = sum(ResourceGuard._path_size_bytes(path) for path in temp_paths)
+            m.temp_disk_usage_mb = managed_bytes / (1024**2)
 
-            _usage = _shutil.disk_usage(_os.path.realpath("/tmp"))
-            _total_gb = _usage.total / (1024**3)
-            _free_gb = _usage.free / (1024**3)
-            if _total_gb > 0:
-                _used_mb = (_usage.total - _usage.free) / (1024**2)
-                m.temp_disk_usage_mb = _used_mb
-            # Do NOT overwrite available_memory_mb with disk space
-        except Exception:
-            pass
+            usage = shutil.disk_usage(disk_probe)
+            m.temp_disk_free_mb = usage.free / (1024**2)
+        except Exception as exc:
+            # Resource metrics are protective best-effort checks.  A metrics
+            # collection failure must not make imports unavailable by itself.
+            logger.debug("Unable to collect temporary workspace metrics: %s", exc)
 
         m.active_pipelines = ResourceGuard._active_pipeline_count
 
         return m
+
+    @staticmethod
+    def _path_size_bytes(path: str) -> int:
+        """Return disk bytes used by one application-managed temp path.
+
+        Symlinks are ignored to prevent walking outside the managed workspace.
+        Broken/disappearing files are tolerated because pipeline cleanup may run
+        concurrently with this admission check.
+        """
+        real_path = os.path.realpath(path)
+        if not os.path.exists(real_path) or os.path.islink(path):
+            return 0
+        try:
+            if os.path.isfile(real_path):
+                return os.path.getsize(real_path)
+        except OSError:
+            return 0
+
+        total = 0
+        for root, dirs, files in os.walk(real_path, followlinks=False):
+            dirs[:] = [
+                name for name in dirs
+                if not os.path.islink(os.path.join(root, name))
+            ]
+            for name in files:
+                file_path = os.path.join(root, name)
+                try:
+                    if not os.path.islink(file_path):
+                        total += os.path.getsize(file_path)
+                except OSError:
+                    continue
+        return total
+
+    @staticmethod
+    def _managed_temp_paths() -> tuple[list[str], str]:
+        """Resolve application-owned temp paths and a filesystem probe path.
+
+        Production workers are expected to use ``WORKER_SCRATCH_DIR``.  Some
+        legacy pipeline helpers still create named directories via Python's
+        system temp directory, so known application prefixes are also counted.
+        Unrelated files in /tmp are deliberately ignored.
+        """
+        temp_root = os.path.realpath(tempfile.gettempdir())
+        paths: list[str] = []
+        seen: set[str] = set()
+
+        def add_path(candidate: str) -> None:
+            real = os.path.realpath(candidate)
+            if real in seen or not os.path.exists(real):
+                return
+            seen.add(real)
+            paths.append(real)
+
+        scratch = (getattr(settings, "WORKER_SCRATCH_DIR", "") or "").strip()
+        if scratch:
+            add_path(scratch)
+            disk_probe = os.path.realpath(scratch)
+        else:
+            # Development uses the same sibling fallback as bootstrap.py.
+            staging = (getattr(settings, "STAGING_STORAGE_DIR", "") or "").strip()
+            fallback_scratch = os.path.join(
+                os.path.dirname(staging or "/opt/2240ai-v2/staging"),
+                "scratch",
+            )
+            add_path(fallback_scratch)
+            disk_probe = fallback_scratch if os.path.exists(fallback_scratch) else temp_root
+
+        # Known temp locations created by pipeline helpers that have not yet
+        # migrated to WORKER_SCRATCH_DIR.  Only our own names are counted.
+        for fixed_name in ("pipeline_inputs", "pipeline_artifacts", "worker-scratch"):
+            add_path(os.path.join(temp_root, fixed_name))
+
+        try:
+            with os.scandir(temp_root) as entries:
+                for entry in entries:
+                    if entry.name.startswith(("pdf_render_", "page_stream_")):
+                        add_path(entry.path)
+        except OSError:
+            pass
+
+        # ``shutil.disk_usage`` needs an existing path.  Walk up to the nearest
+        # existing parent when a configured scratch directory has not yet been
+        # created by the worker bootstrap.
+        probe = os.path.realpath(disk_probe)
+        while not os.path.exists(probe):
+            parent = os.path.dirname(probe)
+            if parent == probe:
+                probe = temp_root
+                break
+            probe = parent
+
+        return paths, probe
 
     def get_system_metrics(self) -> SystemMetrics:
         m = self._metrics_provider()
@@ -720,8 +847,11 @@ class ResourceGuard:
             guard.max_page_seconds = 120
             guard.max_concurrent_documents = 1
             guard.max_concurrent_pages = 1
+            scratch_limit_mb = max(1.0, settings.SCRATCH_QUOTA_BYTES / (1024**2))
             guard._thresholds = SystemThresholds(
                 max_active_pipelines=1,
+                max_temp_disk_mb=scratch_limit_mb,
+                min_temp_disk_free_mb=min(512.0, scratch_limit_mb),
             )
         else:
             guard.max_input_bytes = 200 * 1024 * 1024
@@ -732,9 +862,12 @@ class ResourceGuard:
             guard.max_artifact_bytes = 500 * 1024 * 1024
             guard.max_pipeline_seconds = 7200
             guard.max_page_seconds = 600
+            scratch_limit_mb = max(1.0, settings.SCRATCH_QUOTA_BYTES / (1024**2))
             guard._thresholds = SystemThresholds(
                 max_active_pipelines=3,
                 max_rss_mb=3072,
+                max_temp_disk_mb=scratch_limit_mb,
+                min_temp_disk_free_mb=min(512.0, scratch_limit_mb),
             )
         return guard
 

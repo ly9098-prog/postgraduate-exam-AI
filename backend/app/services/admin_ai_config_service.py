@@ -158,6 +158,38 @@ def _parse_features(features_val: list[str] | None) -> list[str]:
     return features_val if features_val else []
 
 
+def _validate_model_feature_shape(features: list[str] | None) -> None:
+    """Enforce model-type boundaries encoded through capabilities.
+
+    Embedding models are a distinct endpoint type and must not simultaneously
+    participate in chat/OCR feature routing. This keeps the model registry
+    unambiguous without adding a schema migration for ``model_type``.
+    """
+    values = set(features or [])
+    if "embedding" in values and len(values) > 1:
+        raise ValueError("Embedding 模型不能同时绑定 Chat/OCR 功能；请将模型类型设为 Embedding")
+
+
+def _single_assignment_overlap(features: list[str], other_features: list[str]) -> set[str]:
+    """Return capabilities that still require a single active model.
+
+    ``embedding`` is intentionally excluded because vector config explicitly
+    selects one registered Embedding model, so multiple candidates may stay
+    enabled at the same time.
+    """
+    return (set(features) & set(other_features)) - {"embedding"}
+
+
+def _reset_vector_runtime_cache() -> None:
+    """Invalidate vector runtime cache after model-registry changes."""
+    try:
+        from app.services.vector_retrieval_service import _reset_vector_enabled_cache
+        _reset_vector_enabled_cache()
+    except Exception:
+        # Avoid creating a hard dependency/cycle during startup or migrations.
+        pass
+
+
 def _validated_api_base_url(value: str | None) -> str | None:
     if value is None:
         return None
@@ -333,8 +365,9 @@ async def patch_model(
 
     if "features" in data.model_fields_set:
         new_features = data.features
+        _validate_model_feature_shape(new_features)
         if new_features:
-            # 跨 feature 复用校验：同一 feature 下最多一个 active=true 的模型
+            # Chat/OCR 功能仍保持单模型映射；Embedding 由向量配置显式选择，允许多个候选。
             is_becoming_enabled = (
                 data.is_enabled if data.is_enabled is not None else model.is_enabled
             )
@@ -348,7 +381,7 @@ async def patch_model(
                 )
                 for other in all_enabled.scalars().all():
                     other_features = _parse_features(other.features)
-                    overlap = set(new_features) & set(other_features)
+                    overlap = _single_assignment_overlap(new_features, other_features)
                     if overlap:
                         raise ValueError(
                             f"功能层「{list(overlap)[0]}」已有启用模型"
@@ -371,8 +404,20 @@ async def patch_model(
             model.features = None
         changes["features"] = model.features
 
+    # 当前向量配置如果正引用此模型，而模型被禁用或不再是 Embedding，
+    # 自动清除选择，避免保留一个永远不可用的 model id。
+    selected_embedding = await db.get(AdminAiConfig, "embedding_model_config_id")
+    if (
+        selected_embedding is not None
+        and selected_embedding.config_value == str(model_id)
+        and (not model.is_enabled or "embedding" not in _parse_features(model.features))
+    ):
+        selected_embedding.config_value = ""
+        changes["embedding_selection_cleared"] = True
+
     model.updated_at = utcnow()
     await db.flush()
+    _reset_vector_runtime_cache()
 
     await write_admin_audit(
         db, operator, "ai_model_config.update", "ai_model_config",
@@ -394,8 +439,9 @@ async def create_model(
     next_order = (max_order or 0) + 1
 
     new_features = data.features if data.features else None
+    _validate_model_feature_shape(new_features)
     if new_features:
-        # 查出所有已启用模型，检查 features 交集
+        # Chat/OCR 功能检查冲突；Embedding 候选允许并存。
         all_enabled = await db.execute(
             select(AdminAiModelConfig).where(
                 AdminAiModelConfig.is_enabled == True,  # noqa: E712
@@ -403,7 +449,7 @@ async def create_model(
         )
         for other in all_enabled.scalars().all():
             other_features = _parse_features(other.features)
-            overlap = set(new_features) & set(other_features)
+            overlap = _single_assignment_overlap(new_features, other_features)
             if overlap:
                 raise ValueError(
                     f"功能层「{list(overlap)[0]}」已有启用模型"
@@ -414,6 +460,7 @@ async def create_model(
     # 向后兼容：入参只传 feature 时同步到 features
     if "features" not in data.model_fields_set and data.feature:
         new_features = [data.feature]
+    _validate_model_feature_shape(new_features)
 
     api_base_url = _validated_api_base_url(data.api_base_url)
     if not api_base_url:
@@ -434,6 +481,7 @@ async def create_model(
         model.api_key_encrypted = encrypt_secret(new_key)
     db.add(model)
     await db.flush()
+    _reset_vector_runtime_cache()
 
     await write_admin_audit(
         db, operator, "ai_model_config.create", "ai_model_config",
@@ -464,12 +512,19 @@ async def delete_model(
         if enabled_count == 0:
             raise ValueError("不能删除最后一个启用的模型")
 
+    selected_embedding = await db.get(AdminAiConfig, "embedding_model_config_id")
+    selection_cleared = False
+    if selected_embedding is not None and selected_embedding.config_value == str(model_id):
+        selected_embedding.config_value = ""
+        selection_cleared = True
+
     await write_admin_audit(
         db, operator, "ai_model_config.delete", "ai_model_config",
-        model.id, detail={"model_name": model.name},
+        model.id, detail={"model_name": model.name, "embedding_selection_cleared": selection_cleared},
     )
     await db.delete(model)
     await db.flush()
+    _reset_vector_runtime_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -643,10 +698,28 @@ async def test_model_connection(
             "latency_ms": 0,
         }
 
+    # Embedding 模型测试：走 /embeddings，而不是 chat/completions。
+    if "embedding" in effective_features:
+        from app.services.vector_config_service import test_embedding_connection
+
+        result = await test_embedding_connection(
+            api_base_url=api_base_url,
+            api_key=effective_api_key,
+            model=model_name,
+            dim=None,
+            timeout=15,
+        )
+        return {
+            "success": result.success,
+            "status": result.status,
+            "message": result.message,
+            "latency_ms": result.latency_ms,
+            "model_returned": model_name if result.success else None,
+        }
+
     # PaddleOCR-VL 特殊处理：不调用 chat/completions
-    _is_paddleocr = bool(
-        effective_provider and "paddleocr" in effective_provider.lower()
-    )
+    _provider_norm = (effective_provider or "").strip().lower().replace("_", "-")
+    _is_paddleocr = "vision" in effective_features or _provider_norm == "paddle" or _provider_norm.startswith("paddleocr")
     if _is_paddleocr:
         return await _test_paddleocr_vl_connection(api_base_url, effective_api_key)
 

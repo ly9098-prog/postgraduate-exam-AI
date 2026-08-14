@@ -57,18 +57,35 @@ def validate_ocr_mode_dependencies(mode: str) -> None:
                      is missing. Does NOT return a value — raises on first failure.
     """
     if mode == "local":
-        # Cloud API mode must never use local OCR
-        if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
-            raise RuntimeError("cloud_api 环境不允许使用本地 OCR")
-        if not settings.OCR_ENABLED:
+        # ``local`` is retained as the public/API compatibility value for the
+        # standard OCR pipeline, but execution is selected by
+        # OCR_EXECUTION_BACKEND.  In particular, paddlex_http is a remote
+        # httpx/GPU backend and must not require local PaddleOCR packages.
+        from app.core.ocr_runtime_config import get_runtime_config
+
+        cfg = get_runtime_config()
+        if not settings.OCR_ENABLED or not cfg.enabled:
             raise RuntimeError(
-                "图片本地 OCR 功能未启用：请设置环境变量 OCR_ENABLED=true 或使用 ocr_mode=api"
+                "标准 OCR 功能未启用：请设置 OCR_ENABLED=true，或使用 ocr_mode=api"
             )
-        if importlib.util.find_spec("paddleocr") is None:
-            raise RuntimeError(
-                "本地 OCR 依赖未安装：paddleocr。"
-                "请安装 PaddleOCR 或使用 ocr_mode=api（远程 PaddleOCR-VL）"
-            )
+        if cfg.execution_backend == "disabled":
+            raise RuntimeError("标准 OCR 执行后端已禁用（OCR_EXECUTION_BACKEND=disabled）")
+        if cfg.execution_backend == "paddlex_http":
+            if not cfg.remote_url:
+                raise RuntimeError(
+                    "OCR_EXECUTION_BACKEND=paddlex_http 但未配置 OCR_REMOTE_URL"
+                )
+            return
+        if cfg.execution_backend == "local_process":
+            if detect_deployment_profile() == DeploymentProfile.CLOUD_API:
+                raise RuntimeError("cloud_api 环境不允许使用本地 OCR process")
+            if importlib.util.find_spec("paddleocr") is None:
+                raise RuntimeError(
+                    "本地 OCR 依赖未安装：paddleocr。"
+                    "请安装 PaddleOCR，或将 OCR_EXECUTION_BACKEND 配置为 paddlex_http"
+                )
+            return
+        raise RuntimeError(f"不支持的 OCR_EXECUTION_BACKEND: {cfg.execution_backend}")
     elif mode == "api":
         # API mode: requires a configured remote OCR model (PaddleOCR-VL).
         # Does NOT check for local PaddleOCR installation.

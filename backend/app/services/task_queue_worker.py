@@ -18,10 +18,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 
 import redis.exceptions as redis_exc
 
 from app.core.config import settings
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 from app.services.db_fencing import FencingRejectedError
 from app.services.staging_storage import (
     async_cleanup_work_copy,
@@ -197,6 +199,115 @@ async def _check_worker_version_compatibility(task: Task) -> None:
 
 _LEASE_SEC = 600  # 10 minutes default lease
 
+# Local development intentionally permits imports without Redis.  Production
+# and cloud deployments remain fail-closed and continue to require the durable
+# Redis queue.  Keep strong references to fallback tasks until completion;
+# asyncio only keeps weak references to detached tasks.
+_local_fallback_tasks: dict[str, asyncio.Task[None]] = {}
+_LOCAL_FALLBACK_REASONS = frozenset({"redis_unavailable", "no_backend"})
+
+
+def _can_use_local_execution_fallback() -> bool:
+    """Return True only for the single-process/local import deployment profile."""
+    if (settings.APP_ENV or "").strip().lower() == "production":
+        return False
+    try:
+        return detect_deployment_profile() == DeploymentProfile.LOCAL_IMPORT
+    except Exception:
+        # Invalid/ambiguous deployment config must never become permissive.
+        return False
+
+
+async def _run_local_fallback_task(task: Task) -> None:
+    """Execute a v2 task in-process when local development has no Redis.
+
+    This is deliberately not a production durability substitute: there is no
+    cross-process retry/lease persistence.  It exists so the documented local
+    development profile can run imports without provisioning Redis.
+    """
+    logger.warning(
+        "Running task via local in-process fallback: task_id=%s type=%s",
+        task.task_id, task.task_type,
+    )
+    try:
+        # Use the non-fenced single-process dispatcher. v2 fencing is for
+        # cross-process Redis ownership and would be meaningless here.
+        await _process_task(task)
+    except asyncio.CancelledError:
+        logger.info("Local fallback task cancelled: task_id=%s", task.task_id)
+        raise
+    except Exception:
+        logger.exception(
+            "Local fallback task failed: task_id=%s type=%s",
+            task.task_id, task.task_type,
+        )
+
+
+def _schedule_local_fallback(
+    *,
+    task_type: str,
+    payload: dict,
+    task_id: str | None,
+    max_retries: int,
+) -> EnqueueResult:
+    tid = task_id or f"task_{uuid.uuid4().hex}"
+
+    existing = _local_fallback_tasks.get(tid)
+    if existing is not None and not existing.done():
+        return EnqueueResult(accepted=True, task_id=tid, reason="duplicate_local")
+
+    task = Task(
+        task_id=tid,
+        task_type=task_type,
+        payload=payload,
+        max_retries=max_retries,
+        owner_token=f"local-{uuid.uuid4().hex}",
+        generation=max(1, int(time.time() * 1000)),
+        lease_expires_at=time.time() + _LEASE_SEC,
+    )
+    background = asyncio.create_task(
+        _run_local_fallback_task(task),
+        name=f"local-v2:{task_type}:{tid}",
+    )
+    _local_fallback_tasks[tid] = background
+
+    def _discard(_task: asyncio.Task[None]) -> None:
+        _local_fallback_tasks.pop(tid, None)
+
+    background.add_done_callback(_discard)
+    return EnqueueResult(accepted=True, task_id=tid, reason="local_fallback")
+
+
+async def _enqueue_v2_with_local_fallback(
+    task_type: str,
+    payload: dict,
+    *,
+    task_id: str | None = None,
+    max_retries: int = 2,
+) -> EnqueueResult:
+    """Use Redis v2 normally; fall back to detached local execution only in dev."""
+    result = await task_queue.enqueue_v2(
+        task_type,
+        payload,
+        task_id=task_id,
+        max_retries=max_retries,
+    )
+    if result or result.reason not in _LOCAL_FALLBACK_REASONS:
+        return result
+    if not _can_use_local_execution_fallback():
+        return result
+
+    logger.warning(
+        "Redis task queue unavailable; using local fallback: task_id=%s type=%s reason=%s",
+        task_id or "<generated>", task_type, result.reason,
+    )
+    return _schedule_local_fallback(
+        task_type=task_type,
+        payload=payload,
+        task_id=task_id,
+        max_retries=max_retries,
+    )
+
 
 async def enqueue_import_pipeline(
     pipeline_id: str,
@@ -219,7 +330,7 @@ async def enqueue_import_pipeline(
         "created_by": created_by,
         "staging_object_id": staging_object_id,
     }
-    return await task_queue.enqueue_v2(
+    return await _enqueue_v2_with_local_fallback(
         TASK_TYPE_IMPORT_PIPELINE,
         payload,
         task_id=f"import:{pipeline_id}",
@@ -242,7 +353,7 @@ async def enqueue_resume_pipeline(
         "subject_id": subject_id,
         "options": options,
     }
-    return await task_queue.enqueue_v2(
+    return await _enqueue_v2_with_local_fallback(
         TASK_TYPE_RESUME_PIPELINE,
         payload,
         task_id=f"resume:{pipeline_id}",
@@ -267,7 +378,7 @@ async def enqueue_image_pipeline(
         "options": options,
         "staging_object_id": staging_object_id,
     }
-    return await task_queue.enqueue_v2(
+    return await _enqueue_v2_with_local_fallback(
         TASK_TYPE_IMAGE_PIPELINE,
         payload,
         task_id=f"image:{pipeline_id}",
@@ -286,7 +397,7 @@ async def enqueue_excel_pipeline(
         "source_file": source_file,
         "staging_object_id": staging_object_id,
     }
-    return await task_queue.enqueue_v2(
+    return await _enqueue_v2_with_local_fallback(
         TASK_TYPE_EXCEL_PIPELINE,
         payload,
         task_id=f"excel:{pipeline_id}",
@@ -305,7 +416,7 @@ async def enqueue_formula_batch(
         "card_ids": card_ids,
         "admin_id": admin_id,
     }
-    return await task_queue.enqueue_v2(
+    return await _enqueue_v2_with_local_fallback(
         TASK_TYPE_FORMULA_BATCH,
         payload,
         task_id=f"formula_batch:{job_id}",
@@ -336,7 +447,7 @@ async def enqueue_admin_resume(
         "subject_id": subject_id,
         "options": options,
     }
-    return await task_queue.enqueue_v2(
+    return await _enqueue_v2_with_local_fallback(
         TASK_TYPE_ADMIN_RESUME,
         payload,
         task_id=f"admin_resume:{pipeline_id}",
@@ -366,7 +477,7 @@ async def enqueue_batch_image_job(
         "options": options,
         "concurrency": concurrency,
     }
-    return await task_queue.enqueue_v2(
+    return await _enqueue_v2_with_local_fallback(
         TASK_TYPE_BATCH_IMAGE,
         payload,
         task_id=f"batch_image:{job_id}",

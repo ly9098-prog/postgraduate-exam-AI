@@ -58,6 +58,65 @@ def _coerce_confidence(value: Any) -> float | None:
     return None
 
 
+def _meaningful_string(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text or text.lower() in {"null", "none", "unknown", "n/a"} or text in {"未知", "无", "暂无"}:
+        return ""
+    return text
+
+
+def _normalize_completion_payload(parsed: Any) -> dict:
+    """Normalize common OpenAI-compatible completion payload variations.
+
+    Different OpenAI-compatible providers/models sometimes wrap the JSON object
+    in ``result``/``data``/``question`` or use ``explanation``/``solution`` for
+    the question analysis.  The review database has one canonical field:
+    ``parsed_analysis``.  Normalize those provider variations before applying
+    the result so AI-generated analyses are not silently discarded.
+    """
+    if not isinstance(parsed, dict):
+        return {}
+
+    normalized = dict(parsed)
+    # Unwrap a single nested result object while keeping top-level metadata such
+    # as confidence when present.
+    for wrapper_key in ("result", "data", "question", "output"):
+        nested = normalized.get(wrapper_key)
+        if isinstance(nested, dict):
+            merged = dict(nested)
+            for meta_key in ("confidence", "answer_uncertain", "reason"):
+                if meta_key not in merged and meta_key in normalized:
+                    merged[meta_key] = normalized[meta_key]
+            normalized = merged
+            break
+
+    if not _meaningful_string(normalized.get("analysis")):
+        for alias in (
+            "parsed_analysis",
+            "explanation",
+            "solution",
+            "solution_explanation",
+            "answer_analysis",
+            "reasoning",
+            "analysis_text",
+            "解析",
+        ):
+            candidate = _meaningful_string(normalized.get(alias))
+            if candidate:
+                normalized["analysis"] = candidate
+                logger.info("AI completion normalized analysis alias: %s -> analysis", alias)
+                break
+
+    if not _meaningful_string(normalized.get("answer")):
+        candidate = _meaningful_string(normalized.get("parsed_answer"))
+        if candidate:
+            normalized["answer"] = candidate
+
+    return normalized
+
+
 def _snapshot_options(opts: Any) -> str:
     if not opts:
         return ""
@@ -205,7 +264,7 @@ async def _complete_import_repair(
         ))
         return {"missing": [], "from_fallback": True, "ai_metadata": {}, "repair_mode": True}
 
-    parsed_raw = _extract_json(raw) or {}
+    parsed_raw = _normalize_completion_payload(_extract_json(raw) or {})
     repair_fields = [f for f in ("stem", "options", "answer", "analysis", "subject_id", "question_type")
                      if f in parsed_raw or f in existing or
                      (f == "subject_id" and ("subject" in parsed_raw or "subject_id" in parsed_raw))]
@@ -288,7 +347,7 @@ async def complete_import(
         ))
         return {"missing": missing, "from_fallback": True, "ai_metadata": parsed}
 
-    parsed_raw = _extract_json(raw) or {}
+    parsed_raw = _normalize_completion_payload(_extract_json(raw) or {})
 
     before_snapshot = _capture_qi_snapshot(qi)
     suggestion = _apply_complete_suggestion(qi, parsed_raw, missing)
@@ -408,7 +467,9 @@ async def _apply_batch_complete_result(
     completed: list[str] = []
 
     def _should_apply(field: str) -> bool:
-        return strategy == "force_overwrite" or field in fields
+        # ``fields`` is already the resolved target set for both fill_empty and
+        # force_overwrite.  Never apply a field the admin did not select.
+        return field in fields
 
     if "subject_id" in fields or "subject" in fields:
         sid = parsed.get("subject_id")
@@ -494,6 +555,31 @@ async def _apply_batch_complete_result(
             ai_meta["tags"] = [str(t).strip() for t in tags if str(t).strip()]
             completed.append("tags")
 
+    # Keep a canonical suggestion snapshot for the review drawer.  Batch
+    # completion applies fields directly to QuestionImport, but historically the
+    # drawer only knew how to render ``complete_suggestion`` (single-item
+    # completion), so analysis/answer changes could be committed to DB yet remain
+    # invisible in the AI suggestion panel until a full reload.
+    suggestion = dict(ai_meta.get("complete_suggestion") or {})
+    if "answer" in completed and qi.parsed_answer:
+        suggestion["answer"] = qi.parsed_answer
+    if "analysis" in completed and qi.parsed_analysis:
+        suggestion["analysis"] = qi.parsed_analysis
+    if "subject_id" in completed and qi.subject_id:
+        suggestion["subject_id"] = qi.subject_id
+    if "question_type" in completed and qi.question_type:
+        suggestion["question_type"] = qi.question_type
+    if "stem" in completed:
+        suggestion["stem"] = str((qi.parsed_content or {}).get("text") or "")
+    if "options" in completed and qi.parsed_options:
+        suggestion["options"] = qi.parsed_options
+    for meta_field in ("knowledge_points", "difficulty", "tips", "tags"):
+        if meta_field in completed and meta_field in ai_meta:
+            suggestion[meta_field] = ai_meta[meta_field]
+    if suggestion:
+        ai_meta["complete_suggestion"] = suggestion
+    ai_meta["complete_applied_fields"] = list(dict.fromkeys(completed))
+
     qi.ai_metadata = ai_meta
     return completed
 
@@ -534,7 +620,7 @@ async def complete_import_with_strategy(
         ))
         return {"completed": [], "from_fallback": True, "ai_metadata": parsed, "error": resp.get("error")}
 
-    parsed_raw = _extract_json(raw) or {}
+    parsed_raw = _normalize_completion_payload(_extract_json(raw) or {})
 
     before_snapshot = _capture_qi_snapshot(qi)
     completed = await _apply_batch_complete_result(qi, parsed_raw, to_complete, strategy, db=db)
@@ -588,15 +674,20 @@ async def batch_complete_questions(
 ) -> dict:
     """批量 AI 补全。外部需自行 commit。"""
     _start_time = datetime.now()
-    disabled_fields: set[str] = set()
     system_prompt: str | None = None
     from app.services.admin_ai_config_service import get_all_configs
     try:
         cfg = await get_all_configs(db)
-        disabled_fields = _get_disabled_completion_fields(cfg)
         system_prompt = str(cfg.get("completion_prompt")) if cfg.get("completion_prompt") else None
     except Exception:
         pass
+
+    # ``target_fields`` comes from an explicit admin action in the batch-complete
+    # drawer.  Do NOT apply the completion_auto_* switches here: those switches
+    # control automatic enrichment, while silently removing an explicitly checked
+    # field (notably analysis, whose historical default is false) makes the UI say
+    # 10/10 fields selected but the backend never asks the model for analysis.
+    explicit_disabled_fields: set[str] | None = None
 
     runtime = await resolve_llm_runtime_config(db, feature="completion")
 
@@ -613,7 +704,7 @@ async def batch_complete_questions(
                 ))
                 continue
 
-            to_complete = _detect_fields_to_complete(qi, target_fields, strategy, disabled_fields)
+            to_complete = _detect_fields_to_complete(qi, target_fields, strategy, explicit_disabled_fields)
             if not to_complete:
                 prepared.append(dict(
                     import_id=import_id, status="skipped",
@@ -670,7 +761,7 @@ async def batch_complete_questions(
                     provider=runtime.provider,
                 )
                 item["resp_raw"] = resp["content"]
-                item["parsed_raw"] = _extract_json(resp["content"]) or {}
+                item["parsed_raw"] = _normalize_completion_payload(_extract_json(resp["content"]) or {})
                 item["tokens_used"] = resp["tokens_used"]
                 item["duration_ms"] = resp["duration_ms"]
                 item["model"] = resp["model"]

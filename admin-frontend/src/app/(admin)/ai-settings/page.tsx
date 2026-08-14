@@ -74,11 +74,15 @@ export default function AISettingsPage() {
 
   const resolvedModels = useMemo(() => {
     const list = models.data ?? [];
-    const isPaddleOcr = (provider: string) => provider.toLowerCase().replace(/_/g, "-").startsWith("paddleocr");
+    const isPaddleOcr = (provider: string) => { const p = provider.toLowerCase().replace(/_/g, "-"); return p === "paddle" || p.startsWith("paddleocr"); };
     const resolve = (featurePriority: string[], mode: "chat" | "paddle" = "chat"): string | null => {
-      const candidates = list.filter((m) =>
-        m.is_enabled && (mode === "paddle" ? isPaddleOcr(m.provider) : !isPaddleOcr(m.provider)),
-      );
+      const candidates = list.filter((m) => {
+        const features = m.features ?? (m.feature ? [m.feature] : []);
+        const isEmbedding = features.includes("embedding");
+        return m.is_enabled
+          && !isEmbedding
+          && (mode === "paddle" ? isPaddleOcr(m.provider) : !isPaddleOcr(m.provider));
+      });
       for (const feature of featurePriority) {
         const featured = candidates.find((m) => (m.features ?? []).includes(feature));
         if (featured) return featured.display_name;

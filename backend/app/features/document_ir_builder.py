@@ -74,19 +74,28 @@ def blocks_to_document_ir(
         for bi, b in enumerate(page_b):
             text = b.get("normalized_text") or b.get("text", "")
             boxes = b.get("boxes", []) or []
+            text_lines = text.split("\n") if text else []
             lines: list[LineIR] = []
-            for li, box_entry in enumerate(boxes):
+            # Preserve every text line even when OCR geometry is absent or
+            # partially degraded.  The previous implementation iterated only
+            # over ``boxes``; a plain TXT/image OCR block with zero boxes was
+            # therefore converted into a RegionIR with zero lines.  Converting
+            # that IR back to blocks produced empty text and silently erased an
+            # otherwise successful OCR result before question splitting.
+            line_count = max(len(text_lines), len(boxes))
+            for li in range(line_count):
+                box_entry = boxes[li] if li < len(boxes) and isinstance(boxes[li], dict) else {}
                 bbox_coords = box_entry.get("bbox")
                 bbox = BBox(*bbox_coords) if bbox_coords and len(bbox_coords) == 4 else None
-                conf = box_entry.get("conf", 1.0)
+                conf = box_entry.get("conf", box_entry.get("confidence", 1.0 if bbox is not None else 0.0))
                 low_conf = box_entry.get("low_conf", False)
                 flags: set[str] = set()
                 if low_conf:
                     flags.add("low_conf")
+                if bbox is None:
+                    flags.add("geometry_missing")
 
-                line_text = ""
-                if li < len(text.split("\n")):
-                    line_text = text.split("\n")[li]
+                line_text = text_lines[li] if li < len(text_lines) else str(box_entry.get("text") or "")
 
                 if bi < len(regions):
                     region_id_for_line = regions[bi].region_id

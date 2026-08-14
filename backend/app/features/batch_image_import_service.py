@@ -2,8 +2,8 @@
 
 设计约束（来自任务说明）：
 - 不重构 OCR 核心逻辑、不改 PaddleOCR 配置、不换模型；
-- 最大化复用现有 OCR(`ocr_image`/`clean_ocr_text`) 与导入流水线
-  (`run_import_pipeline`，source_type="txt") 与待审核入库；
+- 最大化复用统一 OCR Gateway（`OCR_EXECUTION_BACKEND`）与导入流水线
+  (`run_pipeline`) 及待审核入库；
 - 队列模式：并发 clamp 到 1~4（默认取 settings.BATCH_IMAGE_DEFAULT_CONCURRENCY，
   与本地 OCR profile max_workers 对齐），其余排队，避免 N 张图片同时 OCR
   撑爆内存/CPU/AI 限流；
@@ -12,9 +12,9 @@
 - 架构 source-agnostic：未来 PDF 拆页成图片数组后，直接复用
   `create_batch_job` + `run_batch_job`，不写第二套逻辑。
 
-并发说明：PaddleOCR 推理被 `ocr_service._ocr_inference_lock` 串行化（GPU 一次只跑一
-张），因此真正并行的是各 worker 的 AI 解析（httpx 异步）。OCR 用
-`asyncio.to_thread` 包裹，避免阻塞事件循环。
+并发说明：标准模式服从 OCR runtime backend；`paddlex_http` 由远程客户端自身
+的并发阈值保护 GPU，批量 worker 的 semaphore 主要控制整条 OCR + AI pipeline 的
+并发，避免同时放大 GPU、LLM 与数据库压力。
 
 一致性（v2 新增）：
 - State machine guard：阻止非法 status 迁移（如 completed→running）
@@ -153,9 +153,13 @@ async def _append_trace_event(
         from app.core.background_tasks import create_background_task
         from app.services.sse_pubsub import publish_event
         create_background_task(publish_event(
-            int(job_id) if str(job_id).isdigit() else 0,
-            "done" if status in ("completed", "failed") else "trace",
-            {"seq": seq, "step": step, "status": status, "message": message[:200]},
+            job_id,
+            "trace",
+            {
+                "seq": seq, "item_seq": item_seq or 0,
+                "step": step, "status": status, "message": message[:200],
+                "duration_ms": duration_ms,
+            },
         ), name=f"sse-pub:{job_id}")
     except Exception:
         logger.debug("SSE Pub/Sub create_task failed for job %s (best-effort)", job_id)
@@ -331,6 +335,24 @@ async def _set_job_status_with_trace(
         )
 
         await db.commit()
+
+        # Successful job completion uses trace.status="success" by design,
+        # so a trace event alone cannot be used as the SSE terminal signal.
+        # Publish a dedicated done event with the same payload shape expected
+        # by the Admin frontend.  Redis-unavailable environments are covered
+        # by the DB-poll fallback in the SSE endpoint.
+        if status in {"completed", "completed_with_warnings", "failed"}:
+            try:
+                from app.services.sse_pubsub import publish_event
+
+                summary = await poll_job_summary(db, job_id)
+                if summary is not None:
+                    await publish_event(job_id, "done", summary)
+            except Exception:
+                logger.debug(
+                    "SSE terminal publish failed for job %s (DB fallback remains available)",
+                    job_id, exc_info=True,
+                )
 
 
 # ================================================================
@@ -722,29 +744,44 @@ async def _run_single_image(
     """OCR → 清洗 → 现有 TXT 导入流水线。返回结果 dict（含 raw/cleaned 文本）。
 
     支持两种 OCR 模式：
-    - local: 本地 PaddleOCR（默认）
-    - api:   PaddleOCR-VL 远程 API（跳过本地 OCR + pipeline 纠错）
+    - local: 兼容值，表示“标准模式”，实际执行后端由 OCR_EXECUTION_BACKEND 决定
+             （推荐 paddlex_http/httpx GPU；也可显式 local_process）
+    - api:   PaddleOCR-VL 厂商 API（跳过标准 OCR correction）
     """
     from app.services.ocr_service import clean_ocr_text
 
     ocr_mode = options.get("ocr_mode", "local")
     ocr_start = _now()
+    ocr_result: dict = {}
+    pre_extracted_blocks: list[dict] | None = None
+    configured_backend = "paddleocr-vl" if ocr_mode == "api" else "configured"
 
     if ocr_mode == "api":
-        # ── API 模式：使用 PaddleOCR-VL 替代本地 OCR ──
+        # API 模式保留厂商专用 PaddleOCR-VL。该模式本身已经完成视觉 OCR，
+        # 因此跳过后续文本 OCR correction。
         raw_ocr_text = await _run_vl_ocr(content, source_file)
         skip_ocr_correction = True
     else:
-        # ── 本地模式：本地 PaddleOCR ──
-        from app.services.ocr_executor_service import ocr_executor
-        raw_ocr_text = await ocr_executor.run_ocr(content)
+        # 标准模式必须服从 OCR_EXECUTION_BACKEND。以前这里直接调用
+        # ocr_executor，导致即使配置 paddlex_http/GPU 仍启动本地 CPU
+        # PaddleOCR；批量导题还会在 VL_REBUILD 再做一次远程 OCR。
+        from app.core.ocr_runtime_config import get_runtime_config
+        from app.services.import_pipeline_service import (
+            _build_pre_extracted_ocr_blocks,
+            _run_ocr_via_configured_backend,
+        )
+
+        runtime_cfg = get_runtime_config()
+        configured_backend = runtime_cfg.execution_backend
+        ocr_result = await _run_ocr_via_configured_backend(content)
+        raw_ocr_text = str(ocr_result.get("text") or "")
         skip_ocr_correction = False
 
     ocr_duration = int((_now() - ocr_start).total_seconds() * 1000)
 
     logger.info(
-        "【OCR-1】OCR 原始结果 | file=%s mode=%s %s",
-        source_file, ocr_mode, safe_text_preview(raw_ocr_text),
+        "【OCR-1】OCR 原始结果 | file=%s mode=%s backend=%s %s",
+        source_file, ocr_mode, configured_backend, safe_text_preview(raw_ocr_text),
     )
 
     cleaned_text = clean_ocr_text(raw_ocr_text)
@@ -754,6 +791,21 @@ async def _run_single_image(
         " (未变化)" if cleaned_text == raw_ocr_text else "",
         safe_text_preview(cleaned_text),
     )
+
+    if ocr_mode != "api" and ocr_result:
+        from app.services.import_pipeline_service import _build_pre_extracted_ocr_blocks
+        pre_extracted_blocks = _build_pre_extracted_ocr_blocks(
+            image_bytes=content,
+            cleaned_text=cleaned_text,
+            ocr_result=ocr_result,
+        )
+        logger.info(
+            "【OCR-3】保留首轮 OCR 几何 | file=%s backend=%s blocks=%d boxes=%d",
+            source_file,
+            configured_backend,
+            len(pre_extracted_blocks),
+            sum(len(block.get("boxes") or []) for block in pre_extracted_blocks),
+        )
 
     # 空文本检查 —— 在写入 trace 之前，避免误报 success
     if not cleaned_text.strip():
@@ -781,10 +833,34 @@ async def _run_single_image(
         ),
     )
 
+    await _update_item_with_trace(
+        item_id, job_id,
+        fields={},
+        trace=_TraceData(
+            step="pipeline", status="running",
+            message="开始结构解析与 AI 修复",
+            item_seq=seq,
+        ),
+    )
+
     async with async_session() as pdb:
 
-        # API 模式：VL 已产出高质量文本，跳过 pipeline 的 ocr_correction 阶段
+        # API 模式：VL 已产出高质量文本，跳过 pipeline 的 ocr_correction 阶段。
+        # 批量图片默认启用 single-AI-pass：通用 repair 已能同时修复代码结构
+        # 与缺失答案时，不再先做一次独立 code-structure LLM 调用。
         pipeline_opts = {**options, "skip_ocr_correction": skip_ocr_correction, "_original_raw_text": raw_ocr_text}
+        if pipeline_opts.get("batch_fast_mode", True) and pipeline_opts.get("enable_ai_repair", True):
+            pipeline_opts.setdefault("enable_code_structure_reconstruct", False)
+
+        # paddlex_http 首轮 OCR 已经拿到文本 + bbox 时，不再因为低 layout
+        # confidence 触发同一图片的第二次 VL_REBUILD OCR。让 layout_enhanced
+        # 直接使用首轮几何结果即可。
+        if configured_backend == "paddlex_http" and pre_extracted_blocks:
+            has_geometry = any(block.get("boxes") for block in pre_extracted_blocks)
+            if has_geometry:
+                strategy = dict(pipeline_opts.get("strategy") or {})
+                strategy.setdefault("force_split_mode", "layout_enhanced")
+                pipeline_opts["strategy"] = strategy
 
         # Save image to temp file for VL_REBUILD fallback (needs disk path)
         import tempfile
@@ -816,6 +892,7 @@ async def _run_single_image(
                 options=pipeline_opts,
                 db=pdb,
                 page_images={1: content},
+                pre_extracted_blocks=pre_extracted_blocks,
             )
         finally:
             # Clean up temp image file

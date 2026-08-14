@@ -3,41 +3,40 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Brain,
   CheckCircle2,
   Loader2,
   Save,
   SlidersHorizontal,
   Wifi,
-  Zap,
-  Settings2,
-  Network,
-  Brain,
 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Toggle } from "@/components/ui/toggle";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
 import type {
+  AdminAiModelConfig,
   EmbeddingTestResponse,
   VectorConfig,
   VectorConfigPatchRequest,
 } from "@/lib/api/types";
 
-type Tab = "search" | "api" | "model";
+type Tab = "search" | "embedding";
 
 const TABS: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: "search", label: "检索配置", icon: SlidersHorizontal },
-  { key: "api", label: "Embedding API", icon: Network },
-  { key: "model", label: "模型参数", icon: Brain },
+  { key: "embedding", label: "Embedding 模型", icon: Brain },
 ];
 
 const inputCls =
   "mt-1 h-9 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition-colors focus:border-[var(--color-primary)]";
-const monoCls =
-  "mt-1 h-9 w-full rounded-lg border border-[var(--color-border)] bg-white px-3 font-mono text-xs outline-none transition-colors focus:border-[var(--color-primary)]";
 const labelCls = "text-[11px] font-medium text-[var(--color-text-hint)]";
+
+function hasEmbeddingCapability(model: AdminAiModelConfig) {
+  return (model.features ?? []).includes("embedding") || model.feature === "embedding";
+}
 
 export function VectorConfigSection() {
   const queryClient = useQueryClient();
@@ -47,17 +46,25 @@ export function VectorConfigSection() {
 
   function showToast(msg: string, isError = false) {
     const el = document.createElement("div");
-    el.className = "fixed left-1/2 top-4 z-[200] -translate-x-1/2 rounded-xl border bg-white px-5 py-3 text-sm font-semibold shadow-[var(--shadow-card)] animate-rise-in" + (isError ? " border-[var(--color-danger)]/30 text-[var(--color-danger)]" : " border-[var(--color-success)]/30 text-[var(--color-success)]");
-    const icon = isError ? "alert-circle" : "check-circle";
-    el.innerHTML = `<svg class="-mt-0.5 mr-1.5 inline-block h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>${msg}`;
+    el.className =
+      "fixed left-1/2 top-4 z-[200] -translate-x-1/2 rounded-xl border bg-white px-5 py-3 text-sm font-semibold shadow-[var(--shadow-card)] animate-rise-in" +
+      (isError
+        ? " border-[var(--color-danger)]/30 text-[var(--color-danger)]"
+        : " border-[var(--color-success)]/30 text-[var(--color-success)]");
+    el.textContent = msg;
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 2500);
   }
-  const [keyEditing, setKeyEditing] = useState(false);
 
   const config = useQuery({
     queryKey: ["vector-config"],
     queryFn: () => apiRequest<VectorConfig>("/vector-config"),
+    staleTime: 30_000,
+  });
+
+  const models = useQuery({
+    queryKey: ["ai-models"],
+    queryFn: () => apiRequest<AdminAiModelConfig[]>("/ai-models"),
     staleTime: 30_000,
   });
 
@@ -70,25 +77,47 @@ export function VectorConfigSection() {
     onSuccess: (data) => {
       queryClient.setQueryData(["vector-config"], data);
       setForm({});
-      setKeyEditing(false);
-      showToast("配置已保存");
+      setTestResult(null);
+      showToast("向量配置已保存");
     },
     onError: (err) => showToast(getErrorMessage(err), true),
   });
 
+  const set = useCallback(
+    <K extends keyof VectorConfigPatchRequest>(key: K, value: VectorConfigPatchRequest[K]) => {
+      setForm((prev) => ({ ...prev, [key]: value }));
+    },
+    [],
+  );
+
+  const c = config.data;
+  const selectedModelId =
+    form.embedding_model_config_id !== undefined
+      ? form.embedding_model_config_id
+      : c?.embedding_model_config_id ?? null;
+
+  const embeddingModels = useMemo(
+    () => (models.data ?? []).filter((model) => model.is_enabled && hasEmbeddingCapability(model)),
+    [models.data],
+  );
+
+  const selectedModel = useMemo(
+    () => (models.data ?? []).find((model) => model.id === selectedModelId) ?? null,
+    [models.data, selectedModelId],
+  );
+
   const testMutation = useMutation({
-    mutationFn: () =>
-      apiRequest<EmbeddingTestResponse>("/vector-config/test-embedding", {
+    mutationFn: () => {
+      if (!selectedModelId) throw new Error("请先选择 Embedding 模型");
+      return apiRequest<EmbeddingTestResponse>("/vector-config/test-embedding", {
         method: "POST",
         body: JSON.stringify({
-          api_base_url: form.embedding_base_url ?? config.data?.embedding_base_url ?? "",
-          // 用户未在表单中输入新 key 时不传 api_key，后端自动使用 DB 中已存储的 key
-          ...(form.embedding_api_key ? { api_key: form.embedding_api_key } : {}),
-          model: form.embedding_model ?? config.data?.embedding_model ?? "",
-          dim: form.embedding_dim ?? config.data?.embedding_dim ?? 1024,
-          timeout: form.embedding_timeout ?? config.data?.embedding_timeout ?? 30,
+          model_config_id: selectedModelId,
+          dim: form.embedding_dim ?? c?.embedding_dim ?? 1024,
+          timeout: form.embedding_timeout ?? c?.embedding_timeout ?? 30,
         }),
-      }),
+      });
+    },
     onSuccess: (data) => setTestResult(data),
     onError: (err) =>
       setTestResult({
@@ -100,18 +129,7 @@ export function VectorConfigSection() {
       }),
   });
 
-  const set = useCallback(
-    <K extends keyof VectorConfigPatchRequest>(key: K, value: VectorConfigPatchRequest[K]) => {
-      setForm((prev) => ({ ...prev, [key]: value }));
-    },
-    [],
-  );
-
-  const dirty = Object.keys(form).length > 0;
-  const c = config.data;
-
-  // ── Loading ──
-  if (config.isLoading) {
+  if (config.isLoading || models.isLoading) {
     return (
       <div className="rounded-2xl border border-[var(--color-border)]/80 bg-white/80 p-8 text-center shadow-sm">
         <Loader2 className="mx-auto h-5 w-5 animate-spin text-[var(--color-primary)]" />
@@ -120,7 +138,6 @@ export function VectorConfigSection() {
     );
   }
 
-  // ── Error ──
   if (config.isError || !c) {
     return (
       <p className="rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
@@ -129,37 +146,27 @@ export function VectorConfigSection() {
     );
   }
 
+  const dirty = Object.keys(form).length > 0;
   const isEnabled = form.vector_enabled ?? c.vector_enabled;
+  const selectedInvalid = Boolean(selectedModel && (!selectedModel.is_enabled || !hasEmbeddingCapability(selectedModel)));
 
   return (
     <section className="overflow-hidden rounded-2xl border border-[var(--color-border)]/80 bg-white/80 shadow-[var(--shadow-card)] animate-rise-in">
-      {/* ── Header ── */}
       <div className="flex items-center justify-between border-b border-[var(--color-border)]/60 px-5 py-4">
         <div>
-          <h3 className="font-display text-xl font-bold text-[var(--ink)]">
-            向量检索 & Embedding
-          </h3>
+          <h3 className="font-display text-xl font-bold text-[var(--ink)]">向量检索 & Embedding</h3>
           <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">
-            pgvector 检索配置与 Embedding API 管理
+            选择模型配置中已注册的 Embedding 模型，并管理 pgvector 检索参数
           </p>
         </div>
         <Button disabled={!dirty || saveMutation.isPending} onClick={() => saveMutation.mutate(form)}>
-          {saveMutation.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}
+          {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           保存
         </Button>
       </div>
 
-
-
-      {/* ── Body: Sidebar + Content ── */}
-      <div className="flex min-h-[380px]">
-        {/* ── Sidebar ── */}
-        <nav className="flex w-[152px] shrink-0 flex-col gap-1 border-r border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/50 p-2.5">
-          {/* Enable toggle */}
+      <div className="flex min-h-[360px]">
+        <nav className="flex w-[160px] shrink-0 flex-col gap-1 border-r border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/50 p-2.5">
           <div
             className={cn(
               "mb-2 flex items-center justify-between rounded-lg border px-3 py-2.5 transition-colors",
@@ -168,69 +175,37 @@ export function VectorConfigSection() {
                 : "border-[var(--color-border)] bg-white/60",
             )}
           >
-            <span
-              className={cn(
-                "text-xs font-semibold",
-                isEnabled ? "text-[var(--color-success)]" : "text-[var(--color-text-hint)]",
-              )}
-            >
+            <span className={cn("text-xs font-semibold", isEnabled ? "text-[var(--color-success)]" : "text-[var(--color-text-hint)]")}>
               {isEnabled ? "已启用" : "已禁用"}
             </span>
-            <Toggle
-              checked={isEnabled}
-              size="sm"
-              onChange={() => set("vector_enabled", !isEnabled)}
-            />
+            <Toggle checked={isEnabled} size="sm" onChange={() => set("vector_enabled", !isEnabled)} />
           </div>
 
-          {/* Tab buttons */}
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            const active = tab === t.key;
+          {TABS.map((item) => {
+            const Icon = item.icon;
+            const active = tab === item.key;
             return (
               <button
-                key={t.key}
+                key={item.key}
                 type="button"
-                onClick={() => setTab(t.key)}
+                onClick={() => setTab(item.key)}
                 className={cn(
                   "flex items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] transition-all",
                   active
                     ? "bg-white font-semibold text-[var(--ink)] shadow-[0_2px_8px_rgba(0,0,0,.06)]"
-                    : "font-normal text-[var(--color-text-secondary)] hover:bg-white/60",
+                    : "text-[var(--color-text-secondary)] hover:bg-white/60",
                 )}
               >
-                <Icon
-                  className={cn(
-                    "h-3.5 w-3.5",
-                    active ? "text-[var(--color-primary)]" : "text-[var(--color-text-hint)]",
-                  )}
-                />
-                {t.label}
+                <Icon className={cn("h-3.5 w-3.5", active ? "text-[var(--color-primary)]" : "text-[var(--color-text-hint)]")} />
+                {item.label}
               </button>
             );
           })}
-
-          {/* Footer in sidebar */}
-          <div className="mt-auto">
-            {c.updated_at && (
-              <p className="px-3 text-[10px] leading-tight text-[var(--color-text-hint)]">
-                更新于
-                <br />
-                {new Date(c.updated_at).toLocaleString("zh-CN")}
-              </p>
-            )}
-          </div>
         </nav>
 
-        {/* ── Content ── */}
         <div className="flex-1 p-5">
-          {/* ═══ Tab: 检索配置 ═══ */}
           {tab === "search" && (
             <div className="space-y-5 animate-rise-in">
-              {/* Mode selector */}
-
-
-              {/* Search parameters */}
               <div className="grid grid-cols-3 gap-3">
                 <label className="block">
                   <span className={labelCls}>Top K</span>
@@ -268,153 +243,93 @@ export function VectorConfigSection() {
                 </label>
               </div>
 
-
+              <div className="rounded-lg border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/35 px-4 py-3 text-xs leading-relaxed text-[var(--color-text-secondary)]">
+                Provider、API Key、Base URL 与 Model ID 统一在「模型配置」维护；本页不再保存第二套 Embedding 凭据。
+              </div>
             </div>
           )}
 
-          {/* ═══ Tab: Embedding API ═══ */}
-          {tab === "api" && (
+          {tab === "embedding" && (
             <div className="space-y-4 animate-rise-in">
-              {/* Key status badge */}
-              <div className="flex items-center gap-2">
-                {c.embedding_api_key_configured ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-success-light)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-success)]">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Key 已配置
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-warning-light)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-warning)]">
-                    <Zap className="h-3.5 w-3.5" />
-                    Key 未配置
-                  </span>
-                )}
-              </div>
+              {models.isError && (
+                <div className="rounded-lg border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-3 py-2 text-xs text-[var(--color-danger)]">
+                  {getErrorMessage(models.error)}
+                </div>
+              )}
 
-              <div className="space-y-3">
-                <label className="block">
-                  <span className={labelCls}>API Base URL</span>
-                  <input
-                    type="url"
-                    placeholder="https://api.openai.com/v1"
-                    className={inputCls}
-                    value={form.embedding_base_url ?? c.embedding_base_url}
-                    onChange={(e) => set("embedding_base_url", e.target.value)}
-                  />
-                </label>
-
-                <label className="block">
-                  <span className={labelCls}>API Key</span>
-                  <input
-                    type="password"
-                    placeholder="sk-..."
-                    className={inputCls}
-                    value={
-                      form.embedding_api_key ??
-                      (keyEditing ? "" : c.embedding_api_key_configured ? "••••••••••••••••••••••••••••••" : "")
-                    }
-                    onChange={(e) => {
-                      if (!keyEditing) setKeyEditing(true);
-                      set("embedding_api_key", e.target.value);
-                    }}
-                    onFocus={() => {
-                      if (!keyEditing && c.embedding_api_key_configured) {
-                        setKeyEditing(true);
-                        setForm((prev) => {
-                          const next = { ...prev };
-                          delete next.embedding_api_key;
-                          return next;
-                        });
-                      }
-                    }}
-                    onBlur={() => {
-                      if (keyEditing && !form.embedding_api_key) {
-                        setKeyEditing(false);
-                      }
-                    }}
-                  />
-                </label>
-
-                <label className="block">
-                  <span className={labelCls}>Provider</span>
-                  <input
-                    type="text"
-                    placeholder="openai_compatible"
-                    className={inputCls}
-                    value={form.embedding_provider ?? c.embedding_provider}
-                    onChange={(e) => set("embedding_provider", e.target.value)}
-                  />
-                </label>
-              </div>
-
-              {/* Test connection */}
-              <div className="border-t border-[var(--color-border)]/40 pt-4">
-                <Button
-                  variant="secondary"
-                  disabled={testMutation.isPending}
-                  onClick={() => {
-                    setTestResult(null);
-                    testMutation.mutate();
-                  }}
-                >
-                  {testMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Wifi className="h-4 w-4" />
-                  )}
-                  测试 Embedding 连接
-                </Button>
-
-                {testResult && (
-                  <div
-                    className={cn(
-                      "mt-3 rounded-lg px-3 py-2.5 text-xs",
-                      testResult.success
-                        ? "border border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)]"
-                        : "border border-[var(--color-danger)] bg-[var(--color-danger-light)] text-[var(--color-danger)]",
-                    )}
-                  >
-                    <div className="flex items-start gap-2">
-                      {testResult.success ? (
-                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                      ) : (
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                      )}
-                      <div className="min-w-0">
-                        <p className="font-semibold">
-                          {testResult.success ? "连接成功" : "连接失败"}
-                        </p>
-                        <p className="mt-0.5 break-words leading-relaxed">{testResult.message}</p>
-                        {(testResult.latency_ms > 0 || testResult.returned_dim != null) && (
-                          <p className="mt-1 opacity-70">
-                            {testResult.latency_ms > 0 && `耗时 ${testResult.latency_ms}ms`}
-                            {testResult.latency_ms > 0 && testResult.returned_dim != null && " · "}
-                            {testResult.returned_dim != null && `维度 ${testResult.returned_dim}`}
-                          </p>
-                        )}
-                      </div>
+              {embeddingModels.length === 0 ? (
+                <div className="rounded-xl border border-[var(--color-warning)]/40 bg-[var(--color-warning-light)] px-4 py-4">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-warning)]" />
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--ink)]">尚未注册 Embedding 模型</p>
+                      <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-secondary)]">
+                        请先到「模型」标签添加模型，并将模型类型设置为 Embedding。API Key、Base URL 和模型标识只需配置一次。
+                      </p>
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ═══ Tab: 模型参数 ═══ */}
-          {tab === "model" && (
-            <div className="animate-rise-in">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                </div>
+              ) : (
                 <label className="block">
-                  <span className={labelCls}>模型</span>
-                  <input
-                    type="text"
-                    placeholder="BAAI/bge-m3"
-                    className={monoCls}
-                    value={form.embedding_model ?? c.embedding_model}
-                    onChange={(e) => set("embedding_model", e.target.value)}
-                  />
+                  <span className={labelCls}>当前 Embedding 模型</span>
+                  <select
+                    className={inputCls}
+                    value={selectedModelId ?? ""}
+                    onChange={(e) => {
+                      set("embedding_model_config_id", e.target.value ? Number(e.target.value) : null);
+                      setTestResult(null);
+                    }}
+                  >
+                    <option value="">请选择模型</option>
+                    {embeddingModels.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.display_name} · {model.name} · {model.provider}
+                      </option>
+                    ))}
+                  </select>
                 </label>
+              )}
+
+              {selectedModel && (
+                <div className="grid grid-cols-2 gap-3 rounded-xl border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/30 p-4">
+                  <div>
+                    <p className={labelCls}>Provider</p>
+                    <p className="mt-1 text-sm font-semibold text-[var(--ink)]">{selectedModel.provider}</p>
+                  </div>
+                  <div>
+                    <p className={labelCls}>模型标识</p>
+                    <p className="mt-1 break-all font-mono text-xs font-semibold text-[var(--ink)]">{selectedModel.name}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <p className={labelCls}>API Base URL</p>
+                    <p className="mt-1 break-all font-mono text-xs text-[var(--color-text-secondary)]">
+                      {selectedModel.api_base_url || "未配置"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className={labelCls}>API Key</p>
+                    <p className={cn("mt-1 text-xs font-semibold", selectedModel.api_configured ? "text-[var(--color-success)]" : "text-[var(--color-warning)]")}>
+                      {selectedModel.api_configured ? "● 已配置" : "● 未配置"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className={labelCls}>状态</p>
+                    <p className={cn("mt-1 text-xs font-semibold", selectedModel.is_enabled ? "text-[var(--color-success)]" : "text-[var(--color-danger)]")}>
+                      {selectedModel.is_enabled ? "● 可用" : "● 已禁用"}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {selectedInvalid && (
+                <div className="rounded-lg border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-3 py-2 text-xs text-[var(--color-danger)]">
+                  当前选择的模型已禁用或不再具备 Embedding 能力，请重新选择。
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-3">
                 <label className="block">
-                  <span className={labelCls}>维度</span>
+                  <span className={labelCls}>向量维度</span>
                   <input
                     type="number"
                     min={1}
@@ -425,7 +340,7 @@ export function VectorConfigSection() {
                   />
                 </label>
                 <label className="block">
-                  <span className={labelCls}>超时 (秒)</span>
+                  <span className={labelCls}>请求超时 (秒)</span>
                   <input
                     type="number"
                     min={1}
@@ -448,17 +363,48 @@ export function VectorConfigSection() {
                 </label>
               </div>
 
-              {/* Info */}
-              <div className="mt-5 rounded-lg border border-[var(--color-border)]/40 bg-[var(--color-bg-input)]/40 px-4 py-3">
-                <div className="flex items-start gap-2">
-                  <Settings2 className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-text-hint)]" />
-                  <div className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
-                    <p>
-                      模型名称和维度决定了向量检索时调用的 Embedding API 参数。
-                      修改模型或维度后，已有的向量数据可能需要重新生成。
-                    </p>
+              <div className="border-t border-[var(--color-border)]/40 pt-4">
+                <Button
+                  variant="secondary"
+                  disabled={testMutation.isPending || !selectedModelId || !selectedModel?.api_configured || selectedInvalid}
+                  onClick={() => {
+                    setTestResult(null);
+                    testMutation.mutate();
+                  }}
+                >
+                  {testMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
+                  测试 Embedding
+                </Button>
+
+                {testResult && (
+                  <div
+                    className={cn(
+                      "mt-3 rounded-lg px-3 py-2.5 text-xs",
+                      testResult.success
+                        ? "border border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)]"
+                        : "border border-[var(--color-danger)] bg-[var(--color-danger-light)] text-[var(--color-danger)]",
+                    )}
+                  >
+                    <div className="flex items-start gap-2">
+                      {testResult.success ? (
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      )}
+                      <div>
+                        <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
+                        <p className="mt-0.5 break-words leading-relaxed">{testResult.message}</p>
+                        {(testResult.latency_ms > 0 || testResult.returned_dim != null) && (
+                          <p className="mt-1 opacity-70">
+                            {testResult.latency_ms > 0 && `耗时 ${testResult.latency_ms}ms`}
+                            {testResult.latency_ms > 0 && testResult.returned_dim != null && " · "}
+                            {testResult.returned_dim != null && `维度 ${testResult.returned_dim}`}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           )}

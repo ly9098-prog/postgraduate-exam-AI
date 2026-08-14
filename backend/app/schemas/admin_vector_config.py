@@ -1,25 +1,33 @@
-"""pgvector / Embedding 配置的 Pydantic schemas。"""
+"""pgvector / Embedding 运行配置 schemas。
+
+Embedding 的 Provider / API Key / Base URL / Model ID 统一来自
+``admin_ai_model_configs``。本配置只保存“选哪个 Embedding 模型”以及
+向量检索运行参数，避免形成第二套模型凭据来源。
+"""
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.secret_crypto import is_mask_placeholder
+
+def _parse_optional_int(raw: str | None) -> int | None:
+    if raw is None or not str(raw).strip():
+        return None
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 def _configs_to_response(configs: dict[str, str]) -> "VectorConfigResponse":
-    """从 admin_ai_configs 键值对构建 VectorConfigResponse。"""
-    encrypted = configs.get("embedding_api_key_encrypted", "")
+    """从 ``admin_ai_configs`` 键值对构建向量运行配置。"""
     return VectorConfigResponse(
         vector_enabled=configs.get("vector_enabled", "false").lower() == "true",
-
         vector_cache_ttl_sec=int(configs.get("vector_cache_ttl_sec", 300)),
         vector_top_k=int(configs.get("vector_top_k", 100)),
         vector_similarity_threshold=float(configs.get("vector_similarity_threshold", "0.15")),
-        embedding_provider=configs.get("embedding_provider", "openai_compatible"),
-        embedding_api_key_configured=bool(encrypted),
-        embedding_base_url=configs.get("embedding_base_url", ""),
-        embedding_model=configs.get("embedding_model", "BAAI/bge-m3"),
+        embedding_model_config_id=_parse_optional_int(configs.get("embedding_model_config_id")),
         embedding_dim=int(configs.get("embedding_dim", 1024)),
         embedding_timeout=int(configs.get("embedding_timeout", 30)),
         embedding_batch_size=int(configs.get("embedding_batch_size", 16)),
@@ -27,7 +35,11 @@ def _configs_to_response(configs: dict[str, str]) -> "VectorConfigResponse":
 
 
 class VectorConfigResponse(BaseModel):
-    """返回给前端的完整向量配置。API key 以掩码形式返回，不暴露明文。"""
+    """向量检索配置。
+
+    模型凭据不在这里返回；前端通过 ``/ai-models`` 获取已注册模型，并按
+    ``features`` 中的 ``embedding`` 能力筛选。
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -37,12 +49,8 @@ class VectorConfigResponse(BaseModel):
     vector_top_k: int
     vector_similarity_threshold: float
 
-    # ── Embedding ──
-    embedding_provider: str
-    embedding_api_key_configured: bool = False
-    embedding_api_key_masked: str = ""
-    embedding_base_url: str
-    embedding_model: str
+    # ── Embedding runtime ──
+    embedding_model_config_id: int | None = None
     embedding_dim: int
     embedding_timeout: int
     embedding_batch_size: int
@@ -52,7 +60,7 @@ class VectorConfigResponse(BaseModel):
 
 
 class VectorConfigPatchRequest(BaseModel):
-    """部分更新向量配置。所有字段可选，只更新提供的字段。"""
+    """部分更新向量配置。模型凭据必须在“模型配置”页面维护。"""
 
     # ── Vector Search ──
     vector_enabled: bool | None = None
@@ -60,41 +68,19 @@ class VectorConfigPatchRequest(BaseModel):
     vector_top_k: int | None = Field(default=None, ge=1, le=10000)
     vector_similarity_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
 
-    # ── Embedding ──
-    embedding_provider: str | None = None
-    embedding_api_key: SecretStr | None = None  # null/None = 不修改, 空字符串 = 清除
-    embedding_base_url: str | None = None
-    embedding_model: str | None = None
+    # ── Embedding model selection / runtime ──
+    embedding_model_config_id: int | None = Field(default=None, ge=1)
     embedding_dim: int | None = Field(default=None, ge=1, le=8192)
     embedding_timeout: int | None = Field(default=None, ge=1, le=300)
     embedding_batch_size: int | None = Field(default=None, ge=1, le=256)
 
-    def get_embedding_api_key_value(self) -> str | None:
-        """Return the plaintext embedding API key, handling None, mask, and empty."""
-        if self.embedding_api_key is None:
-            return None  # not provided — keep existing
-        val = self.embedding_api_key.get_secret_value()
-        if is_mask_placeholder(val):
-            return None  # mask — keep existing
-        return val  # may be "" (explicit clear) or a real key
-
 
 class EmbeddingTestRequest(BaseModel):
-    """测试 Embedding API 连通性。api_key 为空时从 DB 读取已存储的 key。"""
+    """测试当前/指定的已注册 Embedding 模型。"""
 
-    api_base_url: str
-    api_key: SecretStr | None = None
-    model: str
-    dim: int = 1024
-    timeout: int = 30
-
-    def get_api_key_value(self) -> str | None:
-        if self.api_key is None:
-            return None
-        val = self.api_key.get_secret_value()
-        if not val or is_mask_placeholder(val):
-            return None
-        return val
+    model_config_id: int | None = Field(default=None, ge=1)
+    dim: int | None = Field(default=None, ge=1, le=8192)
+    timeout: int | None = Field(default=None, ge=1, le=300)
 
 
 class EmbeddingTestResponse(BaseModel):

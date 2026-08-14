@@ -299,6 +299,7 @@ Page({
       questionTimeMap: {},
       currentQuestionStartedAt: 0,
       requestId: '',
+      recommendationRequestId: '',
       backgroundMs: 0,
       _bgStartAt: null,
       optionKeys: [],
@@ -852,7 +853,9 @@ Page({
         questionIds: questions.map(q => q.id),
       })
       this._practiceSession.comboCount = 0
-      this._practiceSession.requestId = res.request_id || ''
+      // 推荐批次 request_id 只用于 recommendation_logs 归因；不要复用为
+      // 交卷幂等 key，否则推荐链路与提交重试语义被耦合。
+      this._practiceSession.recommendationRequestId = res.request_id || ''
 
       // Build first question's render model synchronously, with error fallback
       var firstQuestion = null
@@ -1489,16 +1492,19 @@ Page({
     // 阶段一：服务器提交 — 只有此步骤失败才提示"提交失败"
     // ═══════════════════════════════════════════════════
     var submitResult, storedResults
+    // submission requestId 仅负责本次交卷重试幂等；推荐归因使用后端在
+    // /practice/questions 返回的 recommendationRequestId，两种语义必须分开。
     const requestId = this._practiceSession.requestId || ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
     // 持久化 requestId 供重试时复用
     if (!this._practiceSession.requestId) {
       this._practiceSession.requestId = requestId
     }
+    const recommendationRequestId = this._practiceSession.recommendationRequestId || null
     const answers = completedQuestions.map(q => ({
       question_id: q.id,
       user_answer: answerMap[String(q.id)] || '',
       used_time: questionTimeMap[String(q.id)] || 0,
-      request_id: requestId,
+      request_id: recommendationRequestId,
     }))
 
     // 刷题会话元数据：后端据此落库 PracticeSession（一次完整刷题会话），
