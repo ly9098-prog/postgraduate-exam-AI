@@ -1764,55 +1764,56 @@ async def get_smart_scored_questions(
     try:
         from app.core.config import settings as _settings
         if _settings.ADAPTIVE_LEARNING_ENABLED and _settings.ADAPTIVE_PATH_ENABLED:
-            weak_target_ids = _pick_graph_target_kps(
-                kp_mastery,
-                limit=int(graph_runtime.get("weak_target_limit", 5)),
-            )
-            if weak_target_ids:
-                from app.services import adaptive_learning_service
-                graph_context = await adaptive_learning_service.get_recommendation_graph_context(
-                    db=db,
-                    user_id=user_id,
-                    target_kp_ids=weak_target_ids,
-                    subject_ids=scope_ids,
-                    max_depth=int(graph_runtime.get("max_depth", 2)),
-                    max_nodes=int(graph_runtime.get("max_nodes", 24)),
-                    min_mastery=float(graph_runtime.get("prerequisite_mastery_threshold", 60.0)),
-                    min_confidence=float(graph_runtime.get("prerequisite_confidence_threshold", 0.3)),
+            # 图谱扩展属于可选增强能力。使用 SAVEPOINT 隔离其数据库错误，
+            # 避免 PostgreSQL 在任一图谱查询失败后把整个请求事务标记为 aborted。
+            async with db.begin_nested():
+                weak_target_ids = _pick_graph_target_kps(
+                    kp_mastery,
+                    limit=int(graph_runtime.get("weak_target_limit", 5)),
                 )
-
-                graph_candidate_ids = list(graph_context.get("prerequisite_candidates", {}).keys())
-                if graph_candidate_ids:
-                    existing_ids = {q.id for q in candidates}
-                    graph_limit = max(count * 3, 30)
-                    graph_query = (
-                        select(Question)
-                        .join(
-                            QuestionKnowledgePoint,
-                            QuestionKnowledgePoint.question_id == Question.id,
-                        )
-                        .where(
-                            and_(
-                                *active_candidate_conditions,
-                                QuestionKnowledgePoint.knowledge_point_id.in_(graph_candidate_ids),
-                                Question.id.notin_(existing_ids),
-                            )
-                        )
-                        .options(selectinload(Question.subject_ref))
-                        .distinct()
-                        .limit(graph_limit)
+                if weak_target_ids:
+                    from app.services import adaptive_learning_service
+                    graph_context = await adaptive_learning_service.get_recommendation_graph_context(
+                        db=db,
+                        user_id=user_id,
+                        target_kp_ids=weak_target_ids,
+                        subject_ids=scope_ids,
+                        max_depth=int(graph_runtime.get("max_depth", 2)),
+                        max_nodes=int(graph_runtime.get("max_nodes", 24)),
+                        min_mastery=float(graph_runtime.get("prerequisite_mastery_threshold", 60.0)),
+                        min_confidence=float(graph_runtime.get("prerequisite_confidence_threshold", 0.3)),
                     )
-                    graph_result = await db.execute(graph_query)
-                    graph_questions = list(graph_result.scalars().all())
-                    candidates.extend(graph_questions)
-                    if graph_questions:
-                        logger.info(
-                            "[smart_scored_graph] uid=%s targets=%s prereq_kps=%s expanded_questions=%d",
-                            user_id,
-                            weak_target_ids,
-                            graph_candidate_ids,
-                            len(graph_questions),
+
+                    graph_candidate_ids = list(graph_context.get("prerequisite_candidates", {}).keys())
+                    if graph_candidate_ids:
+                        existing_ids = {q.id for q in candidates}
+                        graph_limit = max(count * 3, 30)
+                        graph_question_ids = select(QuestionKnowledgePoint.question_id).where(
+                            QuestionKnowledgePoint.knowledge_point_id.in_(graph_candidate_ids)
                         )
+                        graph_query = (
+                            select(Question)
+                            .where(
+                                and_(
+                                    *active_candidate_conditions,
+                                    Question.id.in_(graph_question_ids),
+                                    Question.id.notin_(existing_ids),
+                                )
+                            )
+                            .options(selectinload(Question.subject_ref))
+                            .limit(graph_limit)
+                        )
+                        graph_result = await db.execute(graph_query)
+                        graph_questions = list(graph_result.scalars().all())
+                        candidates.extend(graph_questions)
+                        if graph_questions:
+                            logger.info(
+                                "[smart_scored_graph] uid=%s targets=%s prereq_kps=%s expanded_questions=%d",
+                                user_id,
+                                weak_target_ids,
+                                graph_candidate_ids,
+                                len(graph_questions),
+                            )
     except Exception:
         # Graph is an enhancement, never a single point of failure.
         logger.warning("V6.5 图谱候选扩展失败（继续使用基础 scored）uid=%s", user_id, exc_info=True)
