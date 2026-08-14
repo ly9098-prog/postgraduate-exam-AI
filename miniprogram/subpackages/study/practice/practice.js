@@ -231,6 +231,7 @@ Page({
     // computed
     progressPercent: 0,
     errorText: '',
+    sequentialProgress: null,
 
     // 题目列表
     questions: [],
@@ -776,6 +777,7 @@ Page({
       submitted: false,
       wrongCount: 0,
       errorText: '',
+      sequentialProgress: null,
       feedbackVisible: false,
       feedbackType: '',
       feedbackTitle: '',
@@ -835,15 +837,83 @@ Page({
         ),
         count: this.data.count || 5,
         mode,
-        exclude_answered: true,
-        no_repeat_days: 30,
-        use_leitner: true,
         _traceId: this._practiceSession.traceId,
+      }
+      if (mode === 'sequential') {
+        // 顺序模式由后端维护独立的题库进度，不参与 Leitner / 近期去重。
+        // 即使未来公共接口默认值变化，也明确告诉后端这里要严格顺序取题。
+        params.exclude_answered = false
+        params.use_leitner = false
+      } else {
+        params.exclude_answered = true
+        params.no_repeat_days = 30
+        params.use_leitner = true
       }
       // smart 策略由后端统一解析（默认 weakness_vector，并可被实验配置覆盖）。
       // 小程序不再强制 scored，避免绕过 pgvector 召回链路。
       const res = await api.get('/practice/questions', params)
       const questions = adapter.applyAnsweredFlags(res.questions || [], {}, 'id')
+      const sequentialProgress = mode === 'sequential'
+        ? (res.sequential_progress || null)
+        : null
+      this.setData({ sequentialProgress })
+
+      // 顺序模式完成一整轮后不自动绕回第一题，避免用户无感重复刷。
+      // 由用户显式确认“重新开始一轮”，后端写入 reset marker 后再从头推进。
+      if (
+        mode === 'sequential' &&
+        questions.length === 0 &&
+        sequentialProgress &&
+        sequentialProgress.cycle_completed
+      ) {
+        const total = Number(sequentialProgress.total_questions || 0)
+        const name = this.data.selectedSubjectName || String(subjectId)
+        this._clearTimer()
+        this.setData({
+          loading: false,
+          started: false,
+          questions: [],
+          totalQuestions: 0,
+          currentQuestion: null,
+          currentAnswerState: null,
+        })
+
+        const restart = await this._showSubmitConfirm({
+          scenario: 'info',
+          eyebrow: 'ROUND COMPLETE',
+          title: '本轮顺序刷题已完成',
+          message: `「${name}」本轮 ${total} 题已全部完成。\n重新开始后会从第一道题按顺序再刷一轮。`,
+          confirmText: '重新开始一轮',
+          cancelText: '返回选题',
+        })
+        if (!restart) return
+
+        try {
+          await api.post('/practice/sequential/reset', {
+            subject_id: subjectId,
+            _traceId: this._practiceSession.traceId,
+          })
+        } catch (resetErr) {
+          console.error('重置顺序刷题进度失败', resetErr)
+          this.setData({ errorText: '重置顺序进度失败，请稍后重试' })
+          wx.showToast({ title: '重置进度失败', icon: 'none' })
+          return
+        }
+
+        // 新一轮从确认重置时重新计时；Trace 保持同一用户动作链路。
+        this._practiceSession.startTime = Date.now()
+        this._practiceSession.backgroundMs = 0
+        this._practiceSession._bgStartAt = null
+        this.setData({
+          started: true,
+          errorText: '',
+          sequentialProgress: null,
+        })
+        this._startTimer()
+        await this._loadQuestions()
+        return
+      }
+
       debugLog(this._practiceSession.traceId, 'STATE_AFTER_API', {
         total: questions.length,
         responseTraceId: res.trace_id,
