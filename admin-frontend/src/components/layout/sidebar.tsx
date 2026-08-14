@@ -29,7 +29,7 @@ function filterNavigation(
   permissions: ReturnType<typeof useAuthStore.getState>["permissions"],
   isSuperAdmin: boolean,
 ): AdminNavigationItem[] {
-  return items.flatMap((item) => {
+  return items.flatMap<AdminNavigationItem>((item): AdminNavigationItem[] => {
     if (item.type === "route") {
       return canViewRoute(item.route, permissions, isSuperAdmin) ? [item] : [];
     }
