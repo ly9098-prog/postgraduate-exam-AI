@@ -26,6 +26,7 @@ TASK_TYPES = [
     "import_pipeline", "image_pipeline", "excel_pipeline",
     "resume_pipeline", "admin_resume", "batch_image",
     "formula_batch", "prewarm_analysis", "export_mistakes",
+    "answer_projection",
 ]
 
 

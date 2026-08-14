@@ -293,7 +293,7 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
     registry.create(_periodic_export_processor(), "export-processor")
     registry.create(_periodic_export_cleanup(), "export-cleanup")
 
-    # Outbox dispatcher + reconciler
+    # Outbox dispatcher + DB/Redis reconciler
     try:
         from app.services.outbox_service import (
             run_outbox_dispatcher,
@@ -306,9 +306,25 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
 
         registry.create(run_outbox_dispatcher(_enqueue_from_outbox), "outbox-dispatcher")
         registry.create(run_outbox_reconciler(), "outbox-reconciler")
-        logger.info("Outbox dispatcher + reconciler started")
+        logger.info("Outbox dispatcher + DB/Redis reconciler started")
     except Exception as e:
         logger.warning("Outbox init failed (non-fatal): %s", e)
+
+    # Business-level answer projection reconciler.  Keep this safety net
+    # independent from the generic DB/Redis outbox reconciler so one component
+    # failing to initialize cannot disable the other.
+    try:
+        from app.services.practice.projection_reconciliation_service import (
+            run_answer_projection_reconciler,
+        )
+
+        registry.create(
+            run_answer_projection_reconciler(),
+            "answer-projection-reconciler",
+        )
+        logger.info("Answer projection business reconciler started")
+    except Exception as e:
+        logger.warning("Answer projection reconciler init failed (non-fatal): %s", e)
 
 
 # ── Periodic task implementations (shared between roles) ──

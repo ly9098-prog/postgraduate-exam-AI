@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     APP_ENV: str = "production"
     APP_SECRET: str = "change-me-in-production"
     PROCESS_ROLE: str = "web"  # "web" | "worker" | "scheduler" | "all"
+    # Local FastAPI startup is web-only by default, even when an old .env still
+    # contains PROCESS_ROLE=all.  Full in-process worker/scheduler startup must
+    # be explicitly opted into for local end-to-end debugging.
+    LOCAL_ASYNC_RUNTIME_ENABLED: bool = False
     JWT_EXPIRE_DAYS: int = 1
     JWT_ISSUER: str = "memograd-api"
     USER_JWT_AUDIENCE: str = "memograd-user"
@@ -137,6 +141,17 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = ""
 
+    # Outbox Redis infrastructure backoff.  Redis outages are infrastructure
+    # failures, not business-task failures, so they wait indefinitely with
+    # bounded exponential backoff and do not consume TaskOutbox.retry_count.
+    OUTBOX_REDIS_BACKOFF_INITIAL_SEC: float = 5.0
+    OUTBOX_REDIS_BACKOFF_MAX_SEC: float = 60.0
+
+    # Answer projection reconciliation (PracticeRecord -> derived learning state)
+    ANSWER_PROJECTION_RECONCILE_INTERVAL_SEC: int = 300
+    ANSWER_PROJECTION_RECONCILE_GRACE_SEC: int = 600
+    ANSWER_PROJECTION_RECONCILE_BATCH_SIZE: int = 100
+
     # Database connection pool
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10
@@ -199,6 +214,9 @@ class Settings(BaseSettings):
     TASK_QUEUE_MAX_READY_AI: int = 20
     TASK_QUEUE_MAX_READY_BATCH_IMAGE: int = 10
     TASK_QUEUE_MAX_READY_FORMULA: int = 20
+    # Answer projections are generated once per submitted answer and must not be
+    # constrained by the small generic queue default used for admin jobs.
+    TASK_QUEUE_MAX_READY_ANSWER_PROJECTION: int = 2000
     # TASK_QUEUE_MAX_RETRY renamed to TASK_QUEUE_RETRY_MAX (kept for backward compat, warning on conflict)
     TASK_QUEUE_MAX_RETRY: int = 500
     TASK_QUEUE_RETRY_MAX: int = 500
@@ -330,6 +348,33 @@ class Settings(BaseSettings):
             logger.warning("Configuration deprecation: %s", msg)
 
         return conflicts
+
+
+_LOCAL_APP_ENVS = frozenset({"development", "dev", "local", "test", "testing"})
+
+
+def resolve_effective_process_role(
+    app_env: str,
+    process_role: str,
+    local_async_runtime_enabled: bool = False,
+) -> str:
+    """Resolve the runtime role used by the FastAPI process.
+
+    Local development historically used ``PROCESS_ROLE=all`` to make a single
+    uvicorn process also run workers and schedulers.  That is useful for an
+    explicit full-stack debug session, but it is a poor default for ordinary
+    API/frontend work: Redis may not be running and production-grade background
+    loops then flood local logs.
+
+    In local/test environments, legacy ``all`` therefore degrades to ``web``
+    unless ``LOCAL_ASYNC_RUNTIME_ENABLED=true`` is explicitly set.  Production
+    role semantics are unchanged.
+    """
+    env = (app_env or "").strip().lower()
+    role = (process_role or "web").strip().lower()
+    if role == "all" and env in _LOCAL_APP_ENVS and not local_async_runtime_enabled:
+        return "web"
+    return role
 
 
 settings = Settings()

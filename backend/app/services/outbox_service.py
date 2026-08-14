@@ -34,6 +34,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
 from app.models.task_outbox import TaskOutbox
+from app.services.outbox_runtime import (
+    REDIS_BACKOFF_INITIAL_SEC,
+    is_redis_infrastructure_exception,
+    next_redis_backoff,
+)
 
 logger = logging.getLogger("postgraduate-ai.outbox")
 
@@ -185,7 +190,7 @@ async def claim_pending(
 
     if claimed:
         await db.commit()
-        logger.info("Outbox claimed: %d records", len(claimed))
+        logger.debug("Outbox claimed: %d records", len(claimed))
     else:
         await db.rollback()
 
@@ -224,6 +229,84 @@ async def mark_failed(
     )
     await db.commit()
     logger.warning("Outbox failed: id=%d task_id=%s error=%s", outbox_id, task_id, error[:200])
+
+
+async def mark_retryable(
+    db: AsyncSession,
+    outbox_id: int,
+    task_id: str,
+    error: str,
+) -> bool:
+    """Return a transient publish failure to ``pending`` for later dispatch.
+
+    Retryable business/queue failures such as queue saturation are returned to
+    ``pending`` and consume the finite publish retry budget. Redis infrastructure
+    outages are handled separately by ``release_infrastructure_failure`` and do
+    not call this function. Retry count is stored
+    in PostgreSQL; once the configured outbox retry ceiling is reached the row
+    is explicitly marked failed for operator/reconciliation handling.
+
+    Returns ``True`` when another publish attempt is allowed.
+    """
+    row = await db.scalar(
+        select(TaskOutbox)
+        .where(TaskOutbox.id == outbox_id)
+        .with_for_update()
+    )
+    if row is None:
+        await db.rollback()
+        return False
+
+    row.retry_count = int(row.retry_count or 0) + 1
+    row.error_message = error[:500]
+    row.lease_token = None
+    row.lease_expires_at = None
+    row.updated_at = utcnow()
+    retryable = row.retry_count < _OUTBOX_MAX_RETRIES
+    row.status = "pending" if retryable else "failed"
+    await db.commit()
+
+    if retryable:
+        logger.warning(
+            "Outbox publish retry scheduled: id=%d task_id=%s retry=%d/%d error=%s",
+            outbox_id, task_id, row.retry_count, _OUTBOX_MAX_RETRIES, error[:200],
+        )
+    else:
+        logger.error(
+            "Outbox publish retries exhausted: id=%d task_id=%s retries=%d error=%s",
+            outbox_id, task_id, row.retry_count, error[:200],
+        )
+    return retryable
+
+
+async def release_infrastructure_failure(
+    db: AsyncSession,
+    outbox_ids: list[int],
+    error: str,
+) -> int:
+    """Release a claimed batch after Redis/infrastructure unavailability.
+
+    Infrastructure downtime must not consume the finite business publish retry
+    budget.  Rows return to ``pending`` with their existing ``retry_count``
+    unchanged; the dispatcher owns the exponential sleep before trying Redis
+    again.  The batch update also prevents one WARNING per task during a Redis
+    outage.
+    """
+    if not outbox_ids:
+        return 0
+    result = await db.execute(
+        update(TaskOutbox)
+        .where(TaskOutbox.id.in_(outbox_ids))
+        .values(
+            status="pending",
+            lease_token=None,
+            lease_expires_at=None,
+            error_message=error[:500],
+            updated_at=utcnow(),
+        )
+    )
+    await db.commit()
+    return int(result.rowcount or 0)
 
 
 async def mark_cancelled(
@@ -383,11 +466,11 @@ async def run_outbox_dispatcher(
 ) -> None:
     """Background dispatcher: reads pending outbox records and enqueues to Redis.
 
-    Uses ``FOR UPDATE SKIP LOCKED`` for safe concurrent dispatching.
-    The provided ``enqueue_fn`` is called with ``(task_id, task_type, payload)``
-    for each claimed outbox record.
-
-    Designed to run as a background ``asyncio.Task`` in the scheduler role.
+    Redis unavailability is handled as an infrastructure pause rather than a
+    task failure: claimed rows are released without incrementing retry_count and
+    the dispatcher waits with bounded exponential backoff for as long as Redis
+    remains unavailable.  A Redis outage therefore cannot permanently fail
+    otherwise-valid business tasks.
     """
     global _outbox_dispatcher_running
     _outbox_dispatcher_running = True
@@ -395,6 +478,9 @@ async def run_outbox_dispatcher(
     from app.core.database import async_session
 
     logger.info("Outbox dispatcher started: poll_interval=%ss batch_size=%d", poll_interval, batch_size)
+    redis_backoff = REDIS_BACKOFF_INITIAL_SEC
+    redis_paused = False
+    redis_pause_started = None
 
     try:
         while _outbox_dispatcher_running and not _outbox_dispatcher_draining:
@@ -404,36 +490,132 @@ async def run_outbox_dispatcher(
                         db, batch_size=batch_size, lease_sec=lease_sec,
                     )
 
-                for outbox in claimed:
+                retry_pause = 0.0
+                transient_reasons = {
+                    "queue_full",
+                    "internal_error",
+                    "enqueue_failed",
+                }
+                infrastructure_paused_this_cycle = False
+
+                for index, outbox in enumerate(claimed):
                     try:
-                        # Enqueue to Redis via the provided enqueue function
                         async with async_session() as publish_db:
                             result = await enqueue_fn(
                                 outbox.task_id, outbox.task_type, outbox.payload,
                             )
                             if result and result.accepted:
                                 await mark_published(publish_db, outbox.id, outbox.task_id)
+                                if redis_paused:
+                                    paused_for = 0.0
+                                    if redis_pause_started is not None:
+                                        paused_for = max(0.0, asyncio.get_running_loop().time() - redis_pause_started)
+                                    logger.info(
+                                        "Outbox dispatcher resumed after Redis recovery: paused_for=%.1fs",
+                                        paused_for,
+                                    )
+                                    redis_paused = False
+                                    redis_pause_started = None
+                                    redis_backoff = REDIS_BACKOFF_INITIAL_SEC
                                 logger.debug(
-                                    "Outbox dispatched: task_id=%s type=%s",
+                                    "Outbox dispatched: task_id=%s type=%s reason=%s",
                                     outbox.task_id, outbox.task_type,
+                                    getattr(result, "reason", ""),
+                                )
+                                continue
+
+                            reason = getattr(result, "reason", "unknown")
+                            error = f"enqueue rejected: {reason}"
+                            if reason == "redis_unavailable":
+                                remaining_ids = [item.id for item in claimed[index:]]
+                                async with async_session() as infra_db:
+                                    released = await release_infrastructure_failure(
+                                        infra_db, remaining_ids, error,
+                                    )
+                                if not redis_paused:
+                                    redis_paused = True
+                                    redis_pause_started = asyncio.get_running_loop().time()
+                                    logger.warning(
+                                        "Outbox dispatcher paused: reason=redis_unavailable "
+                                        "released=%d backoff=%.1fs (retry budget preserved)",
+                                        released,
+                                        redis_backoff,
+                                    )
+                                else:
+                                    logger.debug(
+                                        "Redis still unavailable: released=%d backoff=%.1fs",
+                                        released,
+                                        redis_backoff,
+                                    )
+                                infrastructure_paused_this_cycle = True
+                                break
+
+                            if reason in transient_reasons:
+                                await mark_retryable(
+                                    publish_db, outbox.id, outbox.task_id, error,
+                                )
+                                retry_pause = max(
+                                    retry_pause,
+                                    float(getattr(result, "retry_after", 0) or poll_interval),
                                 )
                             else:
-                                reason = getattr(result, "reason", "unknown")
-                                if reason == "duplicate":
-                                    # Already in Redis — mark as published
-                                    await mark_published(publish_db, outbox.id, outbox.task_id)
-                                else:
-                                    await mark_failed(
-                                        publish_db, outbox.id, outbox.task_id,
-                                        f"enqueue rejected: {reason}",
-                                    )
+                                await mark_failed(
+                                    publish_db, outbox.id, outbox.task_id, error,
+                                )
                     except Exception as e:
+                        if is_redis_infrastructure_exception(e):
+                            error = f"redis unavailable: {type(e).__name__}: {e}"
+                            remaining_ids = [item.id for item in claimed[index:]]
+                            try:
+                                async with async_session() as infra_db:
+                                    released = await release_infrastructure_failure(
+                                        infra_db, remaining_ids, error,
+                                    )
+                                if not redis_paused:
+                                    redis_paused = True
+                                    redis_pause_started = asyncio.get_running_loop().time()
+                                    logger.warning(
+                                        "Outbox dispatcher paused: reason=redis_unavailable "
+                                        "released=%d backoff=%.1fs (retry budget preserved)",
+                                        released,
+                                        redis_backoff,
+                                    )
+                                else:
+                                    logger.debug(
+                                        "Redis still unavailable: released=%d backoff=%.1fs",
+                                        released,
+                                        redis_backoff,
+                                    )
+                                infrastructure_paused_this_cycle = True
+                                break
+                            except Exception:
+                                logger.exception("Outbox infrastructure release failed")
+                                retry_pause = max(retry_pause, poll_interval)
+                                continue
+
                         logger.warning(
                             "Outbox dispatch error: task_id=%s error=%s",
                             outbox.task_id, e,
                         )
+                        try:
+                            async with async_session() as retry_db:
+                                await mark_retryable(
+                                    retry_db, outbox.id, outbox.task_id,
+                                    f"dispatcher exception: {type(e).__name__}: {e}",
+                                )
+                            retry_pause = max(retry_pause, poll_interval)
+                        except Exception:
+                            logger.exception(
+                                "Outbox retry state update failed: task_id=%s",
+                                outbox.task_id,
+                            )
 
-                if not claimed:
+                if infrastructure_paused_this_cycle:
+                    await asyncio.sleep(redis_backoff)
+                    redis_backoff = next_redis_backoff(redis_backoff)
+                elif retry_pause > 0:
+                    await asyncio.sleep(min(60.0, max(poll_interval, retry_pause)))
+                elif not claimed:
                     await asyncio.sleep(poll_interval)
 
             except asyncio.CancelledError:

@@ -246,6 +246,7 @@ def _get_max_ready(task_type: str) -> int:
         "prewarm_analysis": settings.TASK_QUEUE_MAX_READY_AI,
         "formula_batch": settings.TASK_QUEUE_MAX_READY_FORMULA,
         "batch_image": settings.TASK_QUEUE_MAX_READY_BATCH_IMAGE,
+        "answer_projection": settings.TASK_QUEUE_MAX_READY_ANSWER_PROJECTION,
     }
     return mapping.get(task_type, settings.TASK_QUEUE_MAX_READY_DEFAULT)
 
@@ -2125,7 +2126,10 @@ class DurableTaskQueue:
 
             return EnqueueResult(accepted=True, task_id=tid)
         except (redis_exc.ConnectionError, redis_exc.TimeoutError) as e:
-            logger.error("v2 Enqueue Redis error: %s", e)
+            # Redis availability is surfaced structurally to callers.  The
+            # Outbox dispatcher owns outage-level pause/resume logging, so do
+            # not emit one ERROR per enqueue attempt here.
+            logger.debug("v2 Enqueue Redis unavailable: %s", e)
             return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
 
     async def dequeue_v2(
