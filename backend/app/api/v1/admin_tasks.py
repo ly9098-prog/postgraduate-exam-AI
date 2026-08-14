@@ -11,11 +11,15 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
+from app.core.database import get_db
 from app.core.error_codes import ApiError, ErrorCode, task_not_found
 
 logger = logging.getLogger(__name__)
@@ -40,6 +44,8 @@ class TaskSummary(BaseModel):
     retry_count: int = 0
     max_retries: int = 0
     generation: int = 0
+    trace_id: str | None = None
+    request_id: str | None = None
     last_error: str | None = None
     created_at: str | None = None
 
@@ -133,27 +139,59 @@ async def _resolve_task_type(task_id: str, client) -> str | None:
 
 
 def _parse_task_data(data: dict) -> dict:
-    """Extract fields from the Redis hash, parsing the JSON 'data' blob.
-
-    Redis hash fields: data (JSON), status, owner_token, generation,
-    retry_count, lease_expires_at, error.
-    Fields like task_type, max_retries, payload, created_at are inside
-    the JSON 'data' blob, not top-level hash keys.
-    """
-    result: dict = {}
+    """Parse the JSON ``data`` field stored in a Redis v2 task hash."""
     raw_data = data.get("data", "")
+    if isinstance(raw_data, dict):
+        return raw_data
     if raw_data:
         try:
             parsed = json.loads(raw_data)
-            result["_parsed"] = parsed
-        except json.JSONDecodeError:
-            result["_parsed"] = {}
-    else:
-        result["_parsed"] = {}
-    return result
+            return parsed if isinstance(parsed, dict) else {}
+        except (json.JSONDecodeError, TypeError):
+            return {}
+    return {}
+
+
+def _format_task_timestamp(value) -> str | None:
+    if value in (None, ""):
+        return None
+    try:
+        return datetime.fromtimestamp(float(value), UTC).isoformat().replace("+00:00", "Z")
+    except (TypeError, ValueError, OSError):
+        return str(value)[:64]
 
 
 # ── Routes ──
+
+
+_TRACE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
+
+
+@router.get("/diagnostics")
+async def task_diagnostics(
+    _=Depends(require_permissions("import:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a live PostgreSQL + Redis + answer-projection health snapshot."""
+    from app.services.task_observability_service import collect_task_diagnostics
+
+    return await collect_task_diagnostics(db)
+
+
+@router.get("/trace/{trace_id}")
+async def trace_task_lifecycle(
+    trace_id: str,
+    limit: int = Query(50, ge=1, le=100),
+    _=Depends(require_permissions("import:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resolve a trace id to its durable outbox/queue/projection lifecycle."""
+    if not _TRACE_ID_RE.fullmatch(trace_id):
+        raise HTTPException(status_code=400, detail="Invalid trace id")
+
+    from app.services.task_observability_service import find_trace_tasks
+
+    return await find_trace_tasks(db, trace_id=trace_id, limit=limit)
 
 
 @router.get("/queue-status", response_model=QueueStatusResponse)
@@ -221,7 +259,7 @@ async def list_tasks(
                     continue
                 if status and data.get("status") != status:
                     continue
-                parsed = _parse_task_data(data)._parsed
+                parsed = _parse_task_data(data)
                 result_tasks.append(TaskSummary(
                     task_id=task_id,
                     task_type=parsed.get("task_type", tt),
@@ -229,8 +267,10 @@ async def list_tasks(
                     retry_count=int(data.get("retry_count", 0)),
                     max_retries=int(parsed.get("max_retries", 0)),
                     generation=int(data.get("generation", 0)),
+                    trace_id=str(parsed.get("trace_id") or "") or None,
+                    request_id=str(parsed.get("request_id") or "") or None,
                     last_error=data.get("error", "")[:200] if data.get("error") else None,
-                    created_at=parsed.get("created_at"),
+                    created_at=_format_task_timestamp(parsed.get("created_at")),
                 ))
 
             # List corrupt tasks
@@ -242,7 +282,7 @@ async def list_tasks(
                     continue
                 if status and data.get("status") != status:
                     continue
-                parsed = _parse_task_data(data)._parsed
+                parsed = _parse_task_data(data)
                 result_tasks.append(TaskSummary(
                     task_id=task_id,
                     task_type=parsed.get("task_type", tt),
@@ -250,8 +290,10 @@ async def list_tasks(
                     retry_count=int(data.get("retry_count", 0)),
                     max_retries=int(parsed.get("max_retries", 0)),
                     generation=int(data.get("generation", 0)),
+                    trace_id=str(parsed.get("trace_id") or "") or None,
+                    request_id=str(parsed.get("request_id") or "") or None,
                     last_error=data.get("error", "")[:200] if data.get("error") else None,
-                    created_at=parsed.get("created_at"),
+                    created_at=_format_task_timestamp(parsed.get("created_at")),
                 ))
     finally:
         pass  # client is managed by the queue service
@@ -286,7 +328,7 @@ async def inspect_task(
     if not data:
         raise task_not_found(task_id)
 
-    parsed = _parse_task_data(data)._parsed
+    parsed = _parse_task_data(data)
     task_type = parsed.get("task_type", "")
     status = data.get("status", "unknown")
 
@@ -338,12 +380,34 @@ async def inspect_task(
         retry_count=int(data.get("retry_count", 0)),
         max_retries=int(parsed.get("max_retries", 0)),
         generation=int(data.get("generation", 0)),
+        trace_id=str(parsed.get("trace_id") or "") or None,
+        request_id=str(parsed.get("request_id") or "") or None,
         last_error=data.get("error", "")[:200] if data.get("error") else None,
-        created_at=parsed.get("created_at"),
+        created_at=_format_task_timestamp(parsed.get("created_at")),
         payload_summary=payload_summary,
         queue_location=queue_location,
         has_heartbeat=has_heartbeat,
         owner_token_prefix=owner_prefix,
+    )
+
+
+@router.post("/outbox/{outbox_id}/retry", response_model=TaskOperationResult)
+async def retry_outbox(
+    outbox_id: int,
+    _=Depends(require_permissions("import:write")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset a permanently failed Outbox row to pending for normal dispatch."""
+    from app.services.outbox_service import retry_failed_outbox
+
+    row = await retry_failed_outbox(db, outbox_id)
+    if row is None:
+        raise HTTPException(status_code=409, detail="Outbox row is not in failed state")
+    return TaskOperationResult(
+        task_id=row.task_id,
+        operation="outbox_retry",
+        success=True,
+        message="Outbox task scheduled for retry.",
     )
 
 
@@ -363,7 +427,7 @@ async def retry_task(
     if not data:
         raise task_not_found(task_id)
 
-    parsed = _parse_task_data(data)._parsed
+    parsed = _parse_task_data(data)
     task_type = parsed.get("task_type", "")
     status = data.get("status", "")
 
@@ -415,7 +479,7 @@ async def cancel_task(
         await client.aclose()
         raise task_not_found(task_id)
 
-    parsed = _parse_task_data(data)._parsed
+    parsed = _parse_task_data(data)
     task_type = parsed.get("task_type", "")
     await client.aclose()
 

@@ -326,6 +326,17 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
     except Exception as e:
         logger.warning("Answer projection reconciler init failed (non-fatal): %s", e)
 
+    # Production async-task health monitor.  It derives state from PostgreSQL
+    # and Redis and only logs/reports when the health signature changes, so a
+    # persistent incident does not create one alert per polling interval.
+    try:
+        from app.services.task_observability_service import run_task_health_monitor
+
+        registry.create(run_task_health_monitor(), "async-task-health-monitor")
+        logger.info("Async task health monitor started")
+    except Exception as e:
+        logger.warning("Async task health monitor init failed (non-fatal): %s", e)
+
 
 # ── Periodic task implementations (shared between roles) ──
 

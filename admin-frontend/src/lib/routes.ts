@@ -14,6 +14,7 @@ import {
   BarChart3,
   FileSearch,
   Network,
+  Activity,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PermissionKey } from "@/lib/permissions/permissions";
@@ -153,6 +154,14 @@ const auditLogsRoute: AdminRoute = {
   icon: History,
 };
 
+const systemTasksRoute: AdminRoute = {
+  href: "/system/tasks",
+  label: "任务诊断",
+  description: "队列与链路",
+  permission: "import:read",
+  icon: Activity,
+};
+
 const formulasRoute: AdminRoute = {
   href: "/formulas",
   label: "公式库",
@@ -221,6 +230,7 @@ export const adminRoutes: AdminRoute[] = [
   rolesRoute,
   aiSettingsRoute,
   auditLogsRoute,
+  systemTasksRoute,
   formulasRoute,
   formulaCategoriesRoute,
   recommendationStrategiesRoute,
@@ -253,6 +263,7 @@ export const adminNavigation: AdminNavigationItem[] = [
   { type: "route", route: rolesRoute },
   { type: "route", route: aiSettingsRoute },
   { type: "route", route: auditLogsRoute },
+  { type: "route", route: systemTasksRoute },
   {
     type: "group",
     key: "formula-management",

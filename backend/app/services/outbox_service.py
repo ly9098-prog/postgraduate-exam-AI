@@ -309,6 +309,32 @@ async def release_infrastructure_failure(
     return int(result.rowcount or 0)
 
 
+async def retry_failed_outbox(db: AsyncSession, outbox_id: int) -> TaskOutbox | None:
+    """Reset a permanently failed Outbox row back to ``pending`` for admin repair.
+
+    This does not enqueue directly; the normal dispatcher owns publication so
+    Redis idempotency and infrastructure backoff semantics remain unchanged.
+    """
+    row = await db.scalar(
+        select(TaskOutbox)
+        .where(TaskOutbox.id == outbox_id)
+        .with_for_update()
+    )
+    if row is None or row.status != "failed":
+        await db.rollback()
+        return None
+
+    row.status = "pending"
+    row.retry_count = 0
+    row.error_message = None
+    row.lease_token = None
+    row.lease_expires_at = None
+    row.updated_at = utcnow()
+    await db.commit()
+    logger.info("Outbox admin retry scheduled: id=%d task_id=%s", row.id, row.task_id)
+    return row
+
+
 async def mark_cancelled(
     db: AsyncSession, task_id: str,
 ) -> bool:
