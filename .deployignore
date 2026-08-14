@@ -129,3 +129,4 @@ CLAUDE.md
 # 部署所需的 deploy/scripts/ 不受影响。
 /scripts/
 log.txt
+/tests/
