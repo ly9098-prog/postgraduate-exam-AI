@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.gateway import chat_with_db_model
@@ -44,26 +44,26 @@ async def _check_token_limit(db: AsyncSession, user_id: int, tokens_needed: int 
     today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     first_of_month = today.replace(day=1)
 
+    # One indexed user/month scan instead of two round-trips.  The monthly
+    # predicate bounds the row set; CASE derives the daily subtotal from the
+    # same scan.
     result = await db.execute(
-        select(func.coalesce(func.sum(AiChat.tokens_used), 0)).where(
-            AiChat.user_id == user_id,
-            AiChat.created_at >= today,
-        )
-    )
-    used_today = result.scalar() or 0
-
-    if daily_limit > 0 and (used_today + tokens_needed) > daily_limit:
-        return False
-
-    result = await db.execute(
-        select(func.coalesce(func.sum(AiChat.tokens_used), 0)).where(
+        select(
+            func.coalesce(
+                func.sum(case((AiChat.created_at >= today, AiChat.tokens_used), else_=0)),
+                0,
+            ),
+            func.coalesce(func.sum(AiChat.tokens_used), 0),
+        ).where(
             AiChat.user_id == user_id,
             AiChat.created_at >= first_of_month,
         )
     )
-    used_monthly = result.scalar() or 0
+    used_today, used_monthly = result.one()
 
-    if monthly_limit > 0 and (used_monthly + tokens_needed) > monthly_limit:
+    if daily_limit > 0 and (int(used_today or 0) + tokens_needed) > daily_limit:
+        return False
+    if monthly_limit > 0 and (int(used_monthly or 0) + tokens_needed) > monthly_limit:
         return False
 
     return True

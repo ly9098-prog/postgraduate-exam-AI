@@ -97,6 +97,42 @@ async def check_ai_model_config(db: AsyncSession) -> AiModelConfigCheck:
 
 
 
+def check_ai_runtime_health() -> dict:
+    """Return process-local AI admission/circuit health without external I/O."""
+    try:
+        from app.core.ai_runtime_guard import ai_runtime_guard
+        from app.core.config import settings
+
+        metrics = ai_runtime_guard.metrics_snapshot()
+        open_circuits = int(metrics.get("open_circuits") or 0)
+        severity = "warning" if open_circuits > 0 else "ok"
+        return {
+            "ok": open_circuits == 0,
+            "severity": severity,
+            "code": "AI_PROVIDER_CIRCUIT_OPEN" if open_circuits else "AI_RUNTIME_OK",
+            "message": (
+                f"AI 提供方熔断中：{open_circuits} 个端点"
+                if open_circuits
+                else "AI 运行时资源保护正常"
+            ),
+            "open_circuits": open_circuits,
+            "in_flight": int(metrics.get("in_flight") or 0),
+            "rejected_rate_limit": int(metrics.get("rejected_rate_limit") or 0),
+            "rejected_overload": int(metrics.get("rejected_overload") or 0),
+            "max_concurrency": int(settings.AI_MAX_CONCURRENCY),
+            "user_rpm_limit": int(settings.AI_USER_RPM_LIMIT),
+            "single_max_tokens": int(settings.AI_SINGLE_MAX_TOKENS),
+        }
+    except Exception as exc:
+        logger.warning("AI runtime health check failed: %s", exc)
+        return {
+            "ok": False,
+            "severity": "warning",
+            "code": "AI_RUNTIME_HEALTH_CHECK_FAILED",
+            "message": "AI 运行时健康检查失败",
+        }
+
+
 async def check_async_task_health(db: AsyncSession) -> dict:
     """Return a compact async-task SLI summary for the system health endpoint."""
     try:
@@ -143,11 +179,13 @@ async def check_async_task_health(db: AsyncSession) -> dict:
 async def check_system_health(db: AsyncSession) -> SystemHealthResult:
     """Run all health checks and return aggregate result."""
     ai_config = await check_ai_model_config(db)
+    ai_runtime = check_ai_runtime_health()
     async_tasks = await check_async_task_health(db)
 
     result = SystemHealthResult(
         checks={
             "ai_model_config": asdict(ai_config),
+            "ai_runtime": ai_runtime,
             "async_tasks": async_tasks,
         }
     )

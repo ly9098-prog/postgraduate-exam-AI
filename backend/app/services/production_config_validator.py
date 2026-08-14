@@ -64,6 +64,7 @@ def validate_production_config() -> None:
         _check_deployment_profile,
         _check_process_role,
         _check_ai_encrypt_key,
+        _check_ai_runtime_guard,
         _check_outbound_url_policy,
         _check_wechat_credentials,
         _check_internal_api_auth,
@@ -259,6 +260,26 @@ def _check_ai_encrypt_key(errors: list[str]) -> None:
             " 变量值不记录在日志中。"
         )
 
+
+
+def _check_ai_runtime_guard(errors: list[str]) -> None:
+    """Reject unsafe or effectively-disabled AI resource governance settings."""
+    if not 1 <= settings.AI_MAX_CONCURRENCY <= 32:
+        errors.append("AI_MAX_CONCURRENCY 必须在 1~32 之间")
+    if not 0.05 <= float(settings.AI_QUEUE_WAIT_TIMEOUT_SEC) <= 30:
+        errors.append("AI_QUEUE_WAIT_TIMEOUT_SEC 必须在 0.05~30 秒之间")
+    if settings.AI_USER_RPM_LIMIT <= 0:
+        errors.append("生产环境 AI_USER_RPM_LIMIT 必须大于 0")
+    if settings.AI_SINGLE_MAX_TOKENS <= 0:
+        errors.append("生产环境 AI_SINGLE_MAX_TOKENS 必须大于 0")
+    if settings.AI_MAX_PROMPT_CHARS < 1000:
+        errors.append("AI_MAX_PROMPT_CHARS 不得小于 1000")
+    if settings.AI_CIRCUIT_FAILURE_THRESHOLD < 1:
+        errors.append("AI_CIRCUIT_FAILURE_THRESHOLD 必须大于 0")
+    if float(settings.AI_CIRCUIT_RECOVERY_SEC) < 1:
+        errors.append("AI_CIRCUIT_RECOVERY_SEC 必须至少为 1 秒")
+    if not settings.AI_RATE_LIMIT_FAIL_CLOSED:
+        errors.append("生产环境必须设置 AI_RATE_LIMIT_FAIL_CLOSED=true")
 
 
 def _check_wechat_credentials(errors: list[str]) -> None:

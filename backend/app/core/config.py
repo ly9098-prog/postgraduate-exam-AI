@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     AI_DAILY_TOKEN_LIMIT: int = 50000
     AI_MONTHLY_TOKEN_LIMIT: int = 500000
     AI_SINGLE_MAX_TOKENS: int = 2000
+    # Unified AI admission / cost guard.  These are enforced in the shared
+    # OpenAI-compatible client so every feature gets the same protection.
+    AI_MAX_CONCURRENCY: int = 3
+    AI_QUEUE_WAIT_TIMEOUT_SEC: float = 3.0
+    AI_USER_RPM_LIMIT: int = 12
+    AI_RATE_LIMIT_FAIL_CLOSED: bool = True
+    AI_CIRCUIT_FAILURE_THRESHOLD: int = 5
+    AI_CIRCUIT_RECOVERY_SEC: float = 30.0
+    AI_MAX_PROMPT_CHARS: int = 50000
     AI_CONFIG_ENCRYPT_KEY: str = ""
     AI_ALLOW_HTTP_BASE_URLS: bool = False
 

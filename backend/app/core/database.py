@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 
 from sqlalchemy import event, inspect, text
@@ -55,47 +56,73 @@ if "sqlite" in settings.DATABASE_URL:
         finally:
             cursor.close()
 
-# ── Slow query logging ─────────────────────────────────────
+# ── Query performance metrics / slow query logging ─────────
 
 _slow_query_logger = logging.getLogger("app.db.slow_query")
+_query_metrics_lock = threading.Lock()
+_query_metrics: dict[str, int | float] = {
+    "total": 0,
+    "slow": 0,
+    "duration_ms_total": 0.0,
+    "duration_ms_max": 0.0,
+}
+
+
+def get_db_query_metrics() -> dict[str, int | float]:
+    """Return process-local DB execution metrics for Prometheus/health output."""
+    with _query_metrics_lock:
+        metrics = dict(_query_metrics)
+    total = max(1, int(metrics["total"]))
+    metrics["duration_ms_avg"] = float(metrics["duration_ms_total"]) / total
+    return metrics
 
 try:
     from app.core.log_context import log_event as _log_event
 except ImportError:  # pragma: no cover
     _log_event = None
 
-if settings.SLOW_QUERY_MS > 0:
+@event.listens_for(engine.sync_engine, "before_cursor_execute")
+def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    context._query_start_time = time.perf_counter()
 
-    @event.listens_for(engine.sync_engine, "before_cursor_execute")
-    def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
-        context._query_start_time = time.perf_counter()
 
-    @event.listens_for(engine.sync_engine, "after_cursor_execute")
-    def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
-        start = getattr(context, "_query_start_time", None)
-        if start is None:
-            return
-        duration_ms = (time.perf_counter() - start) * 1000
-        if duration_ms >= settings.SLOW_QUERY_MS:
-            compact_sql = " ".join(statement.split())
-            if len(compact_sql) > 1200:
-                compact_sql = compact_sql[:1200] + "..."
-            if _log_event is not None:
-                _log_event(
-                    _slow_query_logger, "db.slow_query", "warning",
-                    duration_ms=round(duration_ms, 1),
-                    rowcount=getattr(cursor, "rowcount", None),
-                    executemany=executemany,
-                    sql_preview=compact_sql,
-                )
-            else:
-                _slow_query_logger.warning(
-                    "slow query duration_ms=%.1f rowcount=%s executemany=%s sql=%s",
-                    duration_ms,
-                    getattr(cursor, "rowcount", None),
-                    executemany,
-                    compact_sql,
-                )
+@event.listens_for(engine.sync_engine, "after_cursor_execute")
+def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    start = getattr(context, "_query_start_time", None)
+    if start is None:
+        return
+    duration_ms = (time.perf_counter() - start) * 1000
+    with _query_metrics_lock:
+        _query_metrics["total"] = int(_query_metrics["total"]) + 1
+        _query_metrics["duration_ms_total"] = float(_query_metrics["duration_ms_total"]) + duration_ms
+        _query_metrics["duration_ms_max"] = max(
+            float(_query_metrics["duration_ms_max"]), duration_ms
+        )
+        is_slow = settings.SLOW_QUERY_MS > 0 and duration_ms >= settings.SLOW_QUERY_MS
+        if is_slow:
+            _query_metrics["slow"] = int(_query_metrics["slow"]) + 1
+
+    if not is_slow:
+        return
+    compact_sql = " ".join(statement.split())
+    if len(compact_sql) > 1200:
+        compact_sql = compact_sql[:1200] + "..."
+    if _log_event is not None:
+        _log_event(
+            _slow_query_logger, "db.slow_query", "warning",
+            duration_ms=round(duration_ms, 1),
+            rowcount=getattr(cursor, "rowcount", None),
+            executemany=executemany,
+            sql_preview=compact_sql,
+        )
+    else:
+        _slow_query_logger.warning(
+            "slow query duration_ms=%.1f rowcount=%s executemany=%s sql=%s",
+            duration_ms,
+            getattr(cursor, "rowcount", None),
+            executemany,
+            compact_sql,
+        )
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
