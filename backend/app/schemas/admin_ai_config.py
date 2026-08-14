@@ -26,6 +26,8 @@ class AdminAiModelConfigResponse(BaseModel):
 
 class AdminAiModelConfigPatchRequest(BaseModel):
     name: str | None = None
+    display_name: str | None = None
+    provider: str | None = None
     is_enabled: bool | None = None
     is_default: bool | None = None
     api_key: SecretStr | None = None
@@ -47,7 +49,7 @@ class AdminAiModelConfigCreateRequest(BaseModel):
     name: str
     display_name: str
     provider: str
-    api_base_url: str | None = None
+    api_base_url: str
     api_key: SecretStr | None = None
     feature: str | None = None
     features: list[str] | None = None

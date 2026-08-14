@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import fallback
-from app.ai.client import deepseek
+from app.ai.gateway import chat_with_db_model
 from app.ai.prompts import (
     build_complete_question,
     build_enrich_question,
@@ -67,24 +67,17 @@ def _build_log(
 
 
 async def _call_or_fallback(
+    db: AsyncSession,
     messages: list,
     fallback_value: dict,
 ) -> tuple[dict, str | None, dict | None]:
-    """调用 deepseek，失败则返回 fallback。
-    返回 (result_payload, raw_text_or_none, response_or_none)
-    payload 结构与 deepseek.chat 兼容（content/tokens_used/model/duration_ms），
-    fallback 时 model="fallback"。
-    """
-    if not deepseek.is_available():
-        return (
-            {"content": "", "tokens_used": 0, "model": "fallback", "duration_ms": 0,
-             "fallback_value": fallback_value, "error": "AI模型API Key未配置"},
-            None, None,
-        )
+    """调用后台配置的 OpenAI-compatible 补全模型，失败则返回 fallback。"""
     try:
-        resp = await deepseek.chat(messages)
+        resp = await chat_with_db_model(db, messages, feature="completion")
+        if resp is None:
+            raise RuntimeError("AI补全模型未配置")
         return (resp, resp["content"], resp)
-    except RuntimeError as e:
+    except (OSError, ValueError, RuntimeError, TimeoutError) as e:
         return (
             {"content": "", "tokens_used": 0, "model": "fallback", "duration_ms": 0,
              "fallback_value": fallback_value, "error": str(e)},
@@ -107,7 +100,7 @@ async def enrich_import(
 
     messages = build_enrich_question(qi_to_dict(qi))
     prompt_text = json.dumps(messages, ensure_ascii=False)
-    resp, raw, _ = await _call_or_fallback(messages, fallback.get_fallback_enrich())
+    resp, raw, _ = await _call_or_fallback(db, messages, fallback.get_fallback_enrich())
 
     if raw is None:
         parsed = resp["fallback_value"]
@@ -218,7 +211,7 @@ async def generate_drafts(
     prompt_text = json.dumps(messages, ensure_ascii=False)
 
     resp, raw, _ = await _call_or_fallback(
-        messages, fallback.get_fallback_generation(count)
+        db, messages, fallback.get_fallback_generation(count)
     )
     if raw is None:
         db.add(_build_log(
@@ -311,7 +304,7 @@ async def complete_import(
     messages = build_complete_question(qi_to_dict(qi), missing)
     prompt_text = json.dumps(messages, ensure_ascii=False)
     resp, raw, _ = await _call_or_fallback(
-        messages, fallback.get_fallback_complete(missing)
+        db, messages, fallback.get_fallback_complete(missing)
     )
 
     if raw is None:

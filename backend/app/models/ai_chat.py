@@ -16,6 +16,6 @@ class AiChat(Base):
     ai_response: Mapped[str] = mapped_column(Text, nullable=False)
     context_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     tokens_used: Mapped[int] = mapped_column(Integer, default=0)
-    model: Mapped[str] = mapped_column(String(64), default="deepseek-chat")
+    model: Mapped[str] = mapped_column(String(64), default="openai-compatible")
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

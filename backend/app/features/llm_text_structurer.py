@@ -376,19 +376,12 @@ async def structure_text_block(
     if not settings.TEXT_IMPORT_LLM_ENABLED:
         return None
 
-    from app.ai.client import deepseek
+    from app.ai.gateway import chat_with_db_model
     from app.ai.prompts import build_text_structure
+    from app.services.model_config_resolver import AICapability
 
-    if not deepseek.is_available():
+    if db is None:
         return None
-
-    # Read model name from DB config when available, fall back to env var
-    _model_name = settings.TEXT_IMPORT_LLM_MODEL
-    if db is not None:
-        from app.services.model_config_resolver import ensure_db_model_configured
-        _creds = await ensure_db_model_configured(db)
-        if _creds:
-            _model_name = _creds[2]
 
     messages = build_text_structure(block_text, rule_hint)
     estimated = estimate_tokens(json.dumps(messages, ensure_ascii=False))
@@ -403,11 +396,14 @@ async def structure_text_block(
         return None
 
     try:
-        result = await deepseek.chat(
+        result = await chat_with_db_model(
+            db,
             messages,
+            capability=AICapability.TEXT_STRUCTURING,
             temperature=0.0,
-            model=_model_name,
         )
+        if result is None:
+            return None
     except Exception as exc:
         logger.warning("text_structure llm call failed: %s", exc)
         return None

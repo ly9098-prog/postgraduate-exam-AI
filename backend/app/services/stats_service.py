@@ -703,8 +703,8 @@ def _adaptive_summary(status: str, recall_rate: float, target: float) -> str:
 
 
 async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
-    """AI 错题诊断：基于真实错题数据调用 DeepSeek 生成个性化诊断报告。"""
-    from app.ai.client import deepseek
+    """AI 错题诊断：基于真实错题数据调用后台配置的兼容模型。"""
+    from app.ai.gateway import chat_with_db_model, resolve_llm_runtime_config
     from app.ai.prompts_learning import build_report_prompt
 
     today = utcnow().date()
@@ -749,7 +749,8 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
             "total_wrong": total,
         })
 
-    if not deepseek.is_available():
+    runtime = await resolve_llm_runtime_config(db, feature="analysis")
+    if runtime is None:
         # 本地降级：基于错题掌握率生成诊断
         weak = [kp for kp in knowledge_point_stats if kp["mastery_rate"] < 0.5]
         strong = [kp for kp in knowledge_point_stats if kp["mastery_rate"] >= 0.7]
@@ -777,12 +778,9 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
             knowledge_point_stats=knowledge_point_stats,
         )
 
-        # Use DB-configured model when available
-        from app.services.model_config_resolver import ensure_db_model_configured
-        _creds = await ensure_db_model_configured(db)
-        _model_name = _creds[2] if _creds else None
-
-        ai_resp = await deepseek.chat(messages, temperature=0.3, model=_model_name)
+        ai_resp = await chat_with_db_model(db, messages, feature="analysis", temperature=0.3)
+        if ai_resp is None:
+            raise RuntimeError("AI分析模型未配置")
         content = ai_resp["content"]
         import json
         try:
@@ -823,7 +821,7 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
 async def get_dashboard_llm_analysis(
     db: AsyncSession, user_id: int, *, trend_days: int = 7
 ) -> dict:
-    """Dashboard LLM 手动分析 — 聚合学习数据，调用 DeepSeek 生成诊断。"""
+    """Dashboard LLM 手动分析 — 聚合学习数据，调用后台配置的兼容模型。"""
     from app.core.time_utils import utcnow
 
     now = utcnow()
@@ -872,17 +870,16 @@ async def get_dashboard_llm_analysis(
         },
     }
 
-    from app.ai.client import deepseek
-    if not deepseek.is_available():
+    from app.ai.gateway import chat_with_db_model, resolve_llm_runtime_config
+    runtime = await resolve_llm_runtime_config(db, feature="analysis")
+    if runtime is None:
         return _rule_based_dashboard_analysis(data_payload, now, trend_days)
 
     prompt_messages = _build_dashboard_llm_prompt(data_payload, trend_days)
     try:
-        from app.services.model_config_resolver import ensure_db_model_configured
-        creds = await ensure_db_model_configured(db, feature="analysis")
-        model_name = creds[2] if creds else None
-
-        ai_resp = await deepseek.chat(prompt_messages, temperature=0.3, model=model_name)
+        ai_resp = await chat_with_db_model(db, prompt_messages, feature="analysis", temperature=0.3)
+        if ai_resp is None:
+            return _rule_based_dashboard_analysis(data_payload, now, trend_days)
         content = ai_resp["content"]
         try:
             content = content.strip()
@@ -892,7 +889,7 @@ async def get_dashboard_llm_analysis(
         except (json.JSONDecodeError, ValueError, IndexError):
             return _rule_based_dashboard_analysis(data_payload, now, trend_days)
 
-        model_used = ai_resp.get("model", model_name or "deepseek")
+        model_used = ai_resp.get("model", runtime.model_name)
         return {
             "summary": parsed.get("summary", ""),
             "findings": parsed.get("findings", [])[:6],

@@ -671,19 +671,26 @@ async def _run_vl_ocr(content: bytes, source_file: str) -> str:
     从 DB 模型配置中读取 api_key/api_base_url/model_name，
     通过 PaddleOCRVLClient 异步提交+轮询获取结果。
     """
-    from app.services.model_config_resolver import resolve_active_model
+    from app.services.model_config_resolver import AICapability, AIModelConfigResolver
 
-    # 解析 DB 中的 PaddleOCR-VL 模型配置
+    # PaddleOCR-VL 使用厂商专用 job API，不属于通用 chat/completions。
+    # 单独按 OCR_VL capability 解析，避免把标记为 OCR 纠错的 Qwen/DeepSeek
+    # 等 OpenAI-compatible 模型误当成 PaddleOCR 端点。
     async with async_session() as db:
-        resolved = await resolve_active_model(db, feature="ocr")
-    if not resolved or not resolved.get("api_key"):
+        resolver = AIModelConfigResolver(db)
+        try:
+            resolved = await resolver.resolve_for_capability(AICapability.OCR_VL.value)
+            api_token = await resolver.resolve_secret(resolved)
+        except (ValueError, TypeError):
+            resolved = None
+            api_token = ""
+    if not resolved or not api_token:
         raise ValueError(
-            "PaddleOCR-VL 未配置：请在 AI 设置页面配置 paddleocr-vl 模型的 API Key"
+            "PaddleOCR-VL 未配置：请在 AI 设置页面配置 provider=paddleocr-vl 且用途=vision 的模型"
         )
 
-    api_token = resolved["api_key"]
-    base_url = resolved.get("api_base_url", "https://paddleocr.aistudio-app.com")
-    model = resolved.get("model_name", "PaddleOCR-VL-1.6")
+    base_url = resolved.endpoint or "https://paddleocr.aistudio-app.com"
+    model = resolved.model_name or "PaddleOCR-VL-1.6"
 
     from app.features.ocr_vl.paddleocr_vl_client import PaddleOCRVLClient
 
@@ -1035,13 +1042,6 @@ async def run_batch_job(
         subject=subject, ocr_mode=(options or {}).get("ocr_mode", "local"),
     )
 
-    # Pre-resolve OCR model config once for the entire job (api mode only).
-    # This avoids per-image resolution calls and ensures config is cached.
-    ocr_mode = (options or {}).get("ocr_mode", "local")
-    if ocr_mode == "api":
-        from app.services.model_config_resolver import resolve_active_model
-        async with async_session() as db:
-            _resolved_ocr_config = await resolve_active_model(db, feature="ocr")
     try:
         await _set_job_status_with_trace(
             job_id, "running",

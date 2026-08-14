@@ -2,7 +2,7 @@
 
 支持策略：
 - manual: 手动选择模型
-- auto: PaddleOCR-VL → DeepSeek → rule fallback（默认）
+- auto: PaddleOCR-VL → OpenAI-compatible LLM → rule fallback（默认）
 
 每个 adapter 输出必须通过 safety/quality gate 才能被接受。
 非空不等于有效 — 选项丢失、代码符号破坏、题干丢失等都会触发拒绝。
@@ -30,7 +30,7 @@ except ImportError:  # pragma: no cover
         pass
 
 # Default fallback chain for "auto" strategy
-_AUTO_CHAIN = ["paddleocr-vl", "deepseek", "rule_fallback"]
+_AUTO_CHAIN = ["paddleocr-vl", "openai-compatible", "rule_fallback"]
 
 # Strategy constants
 STRATEGY_MANUAL = "manual"
@@ -195,6 +195,11 @@ class OCRFixRouter:
         """Build a fingerprint of the current config for adapter cache validation."""
         import hashlib
         relevant_keys = [
+            "llm_api_key",
+            "llm_base_url",
+            "llm_model_name",
+            "llm_provider",
+            # legacy aliases kept in fingerprint for rolling upgrades
             "deepseek_api_key",
             "deepseek_base_url",
             "paddleocr_vl_api_token",
@@ -214,7 +219,7 @@ class OCRFixRouter:
 
         if old_fingerprint and self._config_fingerprint != old_fingerprint:
             # 配置 fingerprint 变化 → 清除惰性创建的 adapter
-            lazy_adapters = {"rule_fallback", "deepseek", "paddleocr-vl"}
+            lazy_adapters = {"rule_fallback", "openai-compatible", "deepseek", "paddleocr-vl"}
             for name in lazy_adapters:
                 self._adapters.pop(name, None)
             logger.info(
@@ -238,14 +243,20 @@ class OCRFixRouter:
             self._adapters[name] = RuleFixer(config=self._config)
             return self._adapters[name]
 
-        if name == "deepseek":
-            from app.features.ocr_fix.deepseek_adapter import DeepSeekFixer
-            api_key = self._config.get("deepseek_api_key")
-            base_url = self._config.get("deepseek_base_url")
-            self._adapters[name] = DeepSeekFixer(
-                api_key=api_key, base_url=base_url, config=self._config,
+        if name in {"openai-compatible", "openai_compatible", "deepseek"}:
+            from app.features.ocr_fix.openai_compatible_adapter import OpenAICompatibleFixer
+            api_key = self._config.get("llm_api_key") or self._config.get("deepseek_api_key")
+            base_url = self._config.get("llm_base_url") or self._config.get("deepseek_base_url")
+            model_name = self._config.get("llm_model_name")
+            provider = self._config.get("llm_provider") or ("deepseek" if name == "deepseek" else "openai_compatible")
+            adapter = OpenAICompatibleFixer(
+                api_key=api_key, base_url=base_url, model_name=model_name,
+                provider=provider, config=self._config,
             )
-            return self._adapters[name]
+            # Cache under canonical and requested alias so legacy manual configs work.
+            self._adapters["openai-compatible"] = adapter
+            self._adapters[name] = adapter
+            return adapter
 
         if name == "paddleocr-vl":
             from app.features.ocr_vl.paddleocr_vl_adapter import PaddleOCRVLAdapter
@@ -267,6 +278,8 @@ class OCRFixRouter:
         if strategy == STRATEGY_MANUAL:
             selected = self._config.get("ocr_fix_model", "")
             if selected:
+                if selected in {"deepseek", "openai_compatible"}:
+                    selected = "openai-compatible"
                 return [selected]
             return ["rule_fallback"]  # 手动模式未选模型时走 rule，而非自动链首项
 

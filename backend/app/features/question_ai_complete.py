@@ -14,7 +14,8 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import fallback
-from app.ai.client import deepseek
+from app.ai.client import llm
+from app.ai.gateway import resolve_llm_runtime_config
 from app.ai.prompts import (
     build_batch_complete_question,
     build_complete_question,
@@ -597,11 +598,7 @@ async def batch_complete_questions(
     except Exception:
         pass
 
-    from app.services.model_config_resolver import ensure_db_model_configured
-    creds = await ensure_db_model_configured(db, feature="completion")
-    _api_key = creds[0] if creds else None
-    _base_url = creds[1] if creds else None
-    _model_name = creds[2] if creds else None
+    runtime = await resolve_llm_runtime_config(db, feature="completion")
 
     # Step 1: 顺序预读取所有 QI
     subject_list = await _get_active_subjects(db)
@@ -647,7 +644,7 @@ async def batch_complete_questions(
         if "messages" not in item:
             return item
         async with sem:
-            if not (_api_key or deepseek.is_available()):
+            if runtime is None:
                 item["resp_raw"] = None
                 item["parsed_raw"] = item["fallback_value"]
                 item["error"] = "AI模型API Key未配置"
@@ -665,9 +662,12 @@ async def batch_complete_questions(
                     item["error"] = "token_budget_exhausted"
                     return item
             try:
-                resp = await deepseek.chat(
-                    item["messages"], model=_model_name,
-                    api_key=_api_key, base_url=_base_url,
+                resp = await llm.chat(
+                    item["messages"],
+                    model=runtime.model_name,
+                    api_key=runtime.api_key,
+                    base_url=runtime.base_url,
+                    provider=runtime.provider,
                 )
                 item["resp_raw"] = resp["content"]
                 item["parsed_raw"] = _extract_json(resp["content"]) or {}

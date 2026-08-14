@@ -610,6 +610,8 @@ export type AdminAiModelConfig = {
 
 export type AdminAiModelConfigPatchRequest = {
   name?: string;
+  display_name?: string;
+  provider?: string;
   is_enabled?: boolean;
   is_default?: boolean;
   api_key?: string;
@@ -622,7 +624,7 @@ export type AdminAiModelConfigCreateRequest = {
   name: string;
   display_name: string;
   provider: string;
-  api_base_url?: string;
+  api_base_url: string;
   api_key?: string;
   feature?: string | null;
   features?: string[] | null;
@@ -638,7 +640,7 @@ export type AdminAiConfigsPatchRequest = {
 
 export type ModelTestConnectionRequest = {
   api_base_url: string;
-  api_key: string;
+  api_key?: string;
   model_name: string;
   model_id?: number;
   provider?: string;

@@ -7,6 +7,8 @@ from urllib.parse import urljoin, urlsplit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.client import build_chat_completions_url
+
 from app.core.admin_security import AdminPrincipal
 from app.core.config import settings
 from app.core.secret_crypto import (
@@ -92,7 +94,7 @@ _DEFAULT_CONFIGS: dict[str, str] = {
     "ocr_filter_max_tokens": "4096",
     "ocr_filter_sensitive": "true",
     # OCR 纠错模型路由配置
-    "ocr_fix_model": "deepseek",
+    "ocr_fix_model": "openai-compatible",
     "ocr_fix_strategy": "auto",
     "completion_prompt": (
         "你是考研题目补全助手。根据已有的题干和上下文，补全缺失字段。"
@@ -284,6 +286,12 @@ async def patch_model(
     if data.name is not None and data.name.strip():
         model.name = data.name.strip()
         changes["name"] = data.name.strip()
+    if data.display_name is not None and data.display_name.strip():
+        model.display_name = data.display_name.strip()
+        changes["display_name"] = data.display_name.strip()
+    if data.provider is not None and data.provider.strip():
+        model.provider = data.provider.strip().lower()
+        changes["provider"] = model.provider
 
     if data.is_default is True:
         # 清除其它模型的 default 标志
@@ -307,6 +315,8 @@ async def patch_model(
     new_key = data.get_api_key_value()
     if data.api_base_url is not None:
         new_base_url = _validated_api_base_url(data.api_base_url)
+        if not new_base_url:
+            raise ValueError("API Base URL 不能为空")
         old_base_url = (model.api_base_url or "").rstrip("/") or None
         if (
             new_base_url != old_base_url
@@ -406,10 +416,12 @@ async def create_model(
         new_features = [data.feature]
 
     api_base_url = _validated_api_base_url(data.api_base_url)
+    if not api_base_url:
+        raise ValueError("API Base URL 不能为空；请填写 OpenAI-compatible SDK 使用的 base_url")
     model = AdminAiModelConfig(
-        name=data.name,
-        display_name=data.display_name,
-        provider=data.provider,
+        name=data.name.strip(),
+        display_name=data.display_name.strip(),
+        provider=data.provider.strip().lower(),
         api_base_url=api_base_url,
         is_enabled=True,
         is_default=False,
@@ -551,8 +563,8 @@ async def test_model_connection(
     3. 项目明确支持的环境变量 fallback；
     4. 都没有则返回安全的 auth_error。
 
-    - Chat 模型 (deepseek/openai): 调用 /v1/chat/completions
-    - OCR 模型 (paddleocr_vl): 提交极小图片测试连通性
+    - OpenAI-compatible Chat 模型：按 SDK base_url 语义调用 /chat/completions
+    - PaddleOCR-VL：提交极小图片测试其专用 OCR 接口
     """
 
     # 确定 provider / features：优先参数，其次 DB
@@ -562,20 +574,22 @@ async def test_model_connection(
         effective_features.append(feature)
 
     # Key priority 1: explicit temp key from request
-    effective_api_key = api_key
+    effective_api_key = (api_key or "").strip() or None
 
     # Key priority 2: from DB via model_id (only if no explicit key provided)
     if effective_api_key is None and model_id is not None and db is not None:
 
         model = await db.get(AdminAiModelConfig, model_id)
         if model is not None:
-            if model.api_base_url:
-                api_base_url = model.api_base_url
-            model_name = model.name
-            effective_provider = model.provider
-            effective_features = model.features if model.features else (
-                [model.feature] if model.feature else []
-            )
+            # model_id is primarily used to reuse the encrypted saved secret.
+            # Keep the request's Base URL / model name / provider so the Admin
+            # form can test unsaved edits before persisting them.
+            if not effective_provider:
+                effective_provider = model.provider
+            if not effective_features:
+                effective_features = model.features if model.features else (
+                    [model.feature] if model.feature else []
+                )
 
             if model.api_key_encrypted:
                 try:
@@ -593,13 +607,12 @@ async def test_model_connection(
             await db.flush()
             model = await db.get(AdminAiModelConfig, model_id)
             if model is not None:
-                if model.api_base_url:
-                    api_base_url = model.api_base_url
-                model_name = model.name
-                effective_provider = model.provider
-                effective_features = model.features if model.features else (
-                    [model.feature] if model.feature else []
-                )
+                if not effective_provider:
+                    effective_provider = model.provider
+                if not effective_features:
+                    effective_features = model.features if model.features else (
+                        [model.feature] if model.feature else []
+                    )
                 if model.api_key_encrypted:
                     try:
                         effective_api_key = decrypt_secret(model.api_key_encrypted)
@@ -631,9 +644,8 @@ async def test_model_connection(
         }
 
     # PaddleOCR-VL 特殊处理：不调用 chat/completions
-    _is_paddleocr = (
-        (effective_provider and "paddleocr" in effective_provider.lower())
-        or "vision" in effective_features
+    _is_paddleocr = bool(
+        effective_provider and "paddleocr" in effective_provider.lower()
     )
     if _is_paddleocr:
         return await _test_paddleocr_vl_connection(api_base_url, effective_api_key)
@@ -649,9 +661,7 @@ async def _test_chat_connection(
 ) -> dict:
     """对 Chat 模型发起一次最小 chat/completions 调用。"""
     base = _validated_api_base_url(api_base_url) or ""
-    if base.endswith("/v1"):
-        base = base[:-3]
-    url = f"{base}/v1/chat/completions"
+    url = build_chat_completions_url(base)
 
     payload = {
         "model": model_name,
