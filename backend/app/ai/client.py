@@ -13,13 +13,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import threading
 import time
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 
+from app.core.ai_runtime_guard import AIResourceRejected, ai_runtime_guard
 from app.core.config import settings
 from app.core.log_context import get_trace_headers
 from app.core.log_context import log_event
@@ -27,31 +27,6 @@ from app.services.safe_remote_fetch import request_remote_bytes
 from app.utils.sentry_utils import capture_exception, set_tag, start_span
 
 _ai_logger = logging.getLogger("app.ai")
-
-# LLM call concurrency limit. Keep blocking remote fetches from exhausting the
-# shared thread pool used by staging/OCR work.
-_AI_MAX_CONCURRENT = 3
-_ai_sem_lock = threading.Lock()
-_ai_sems: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Semaphore]] = {}
-
-
-def _ai_call_semaphore() -> asyncio.Semaphore:
-    loop = asyncio.get_running_loop()
-    key = id(loop)
-    with _ai_sem_lock:
-        _sweep_closed_ai_sems()
-        entry = _ai_sems.get(key)
-        if entry is None:
-            sem = asyncio.Semaphore(_AI_MAX_CONCURRENT)
-            _ai_sems[key] = (loop, sem)
-            entry = (loop, sem)
-    return entry[1]
-
-
-def _sweep_closed_ai_sems() -> None:
-    for k in [k for k, (loop, _) in _ai_sems.items() if loop.is_closed()]:
-        del _ai_sems[k]
-
 
 def build_chat_completions_url(base_url: str) -> str:
     """Build a chat-completions URL using OpenAI SDK base-url semantics.
@@ -180,20 +155,29 @@ class OpenAICompatibleClient:
         if request_timeout <= 0:
             raise ValueError("timeout must be positive")
 
+        endpoint_key = f"{effective_provider}:{base_url_host}"
+        ai_runtime_guard.validate_prompt(prompt_chars)
+        await ai_runtime_guard.enforce_rate_limit()
+        ai_runtime_guard.record_request()
+
         payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
         }
         if temperature is not None:
             payload["temperature"] = temperature
-        if max_tokens is not None:
-            payload["max_tokens"] = max_tokens
         if response_format is not None:
             payload["response_format"] = response_format
         if extra_body:
             # Explicit caller overrides are useful for compatible providers that
             # expose additional OpenAI-style fields (thinking, top_p, etc.).
             payload.update(extra_body)
+
+        # Cost cap is applied last so extra_body cannot bypass it.
+        requested_output_tokens = payload.get("max_tokens", max_tokens)
+        effective_max_tokens = ai_runtime_guard.bounded_max_tokens(requested_output_tokens)
+        if effective_max_tokens is not None:
+            payload["max_tokens"] = effective_max_tokens
 
         log_event(
             _ai_logger,
@@ -211,6 +195,7 @@ class OpenAICompatibleClient:
             set_tag("ai.provider", effective_provider)
 
             start = time.time()
+            provider_outcome_recorded = False
             try:
                 url = build_chat_completions_url(effective_base_url)
                 request_body = json.dumps(
@@ -218,8 +203,9 @@ class OpenAICompatibleClient:
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ).encode("utf-8")
-                sem = _ai_call_semaphore()
-                async with sem:
+                sem, queue_wait_ms = await ai_runtime_guard.acquire_slot()
+                try:
+                    ai_runtime_guard.assert_circuit_available(endpoint_key)
                     remote = await asyncio.to_thread(
                         request_remote_bytes,
                         url,
@@ -236,12 +222,20 @@ class OpenAICompatibleClient:
                             "Accept": "application/json",
                         },
                     )
+                finally:
+                    ai_runtime_guard.release_slot(sem)
 
                 response_text = remote.data.decode("utf-8", errors="replace")
                 elapsed = int((time.time() - start) * 1000)
 
                 if remote.status < 200 or remote.status >= 300:
                     error_body = response_text[:300]
+                    retryable_status = remote.status == 429 or remote.status == 408 or remote.status >= 500
+                    ai_runtime_guard.record_provider_failure(
+                        endpoint_key, retryable=retryable_status
+                    )
+                    ai_runtime_guard.record_failure()
+                    provider_outcome_recorded = True
                     log_event(
                         _ai_logger,
                         "ai.chat.error",
@@ -274,6 +268,9 @@ class OpenAICompatibleClient:
 
                 set_tag("ai.tokens", tokens)
                 set_tag("ai.duration_ms", elapsed)
+                ai_runtime_guard.record_provider_success(endpoint_key)
+                ai_runtime_guard.record_success(tokens)
+                provider_outcome_recorded = True
 
                 log_event(
                     _ai_logger,
@@ -281,6 +278,7 @@ class OpenAICompatibleClient:
                     provider=effective_provider,
                     model=model,
                     duration_ms=elapsed,
+                    queue_wait_ms=round(queue_wait_ms, 1),
                     tokens_used=tokens,
                     response_chars=response_chars,
                 )
@@ -293,7 +291,22 @@ class OpenAICompatibleClient:
                     "duration_ms": elapsed,
                     "finish_reason": choice.get("finish_reason"),
                 }
+            except AIResourceRejected as exc:
+                log_event(
+                    _ai_logger,
+                    "ai.chat.rejected",
+                    level="warning",
+                    provider=effective_provider,
+                    model=model,
+                    reason=exc.reason,
+                    retry_after_sec=exc.retry_after_sec,
+                )
+                raise
             except Exception as exc:
+                if not provider_outcome_recorded:
+                    ai_runtime_guard.record_provider_failure(endpoint_key, retryable=True)
+                    ai_runtime_guard.record_failure()
+                    provider_outcome_recorded = True
                 if not (
                     isinstance(exc, RuntimeError)
                     and "OpenAI-compatible API error" in str(exc)
@@ -317,6 +330,7 @@ class OpenAICompatibleClient:
     async def close(self) -> None:
         if self._client:
             await self._client.aclose()
+        await ai_runtime_guard.close()
 
 
 # Canonical singleton used by new code.

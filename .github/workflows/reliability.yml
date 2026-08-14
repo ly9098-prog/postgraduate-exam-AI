@@ -82,8 +82,10 @@ jobs:
             backend/tests/unit/test_task_queue_reliability.py \
             backend/tests/unit/test_local_runtime_and_outbox_backoff.py \
             backend/tests/unit/test_task_observability.py \
+            backend/tests/unit/test_ai_resource_governance.py \
             backend/tests/integration/test_practice_answer_projection.py \
-            backend/tests/integration/test_answer_projection_reconciliation.py
+            backend/tests/integration/test_answer_projection_reconciliation.py \
+            backend/tests/integration/test_shared_ai_token_budget.py
 
   admin-build:
     runs-on: ubuntu-latest

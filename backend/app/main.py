@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.router import api_router
+from app.core.ai_runtime_guard import AIResourceRejected
 from app.core.config import resolve_effective_process_role, settings
 from app.core.database import async_session, init_db
 from app.core.error_codes import ApiError, ErrorCode
@@ -805,6 +806,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning("Task queue close error: %s", e)
 
+        # 8b. Close AI resource-governance Redis pools.
+        try:
+            from app.core.ai_runtime_guard import ai_runtime_guard
+            await ai_runtime_guard.close()
+            from app.features.token_budget import close_token_budget
+            await close_token_budget()
+            logger.info("AI runtime resource pools closed")
+        except Exception as e:
+            logger.warning("AI runtime resource pool close error: %s", e)
+
         # 9. Dispose SQLAlchemy engine
         try:
             from app.core.database import engine
@@ -1081,6 +1092,7 @@ def _api_error_status(code: ErrorCode) -> int:
         ErrorCode.DB_UNAVAILABLE,
         ErrorCode.STAGING_UNAVAILABLE,
         ErrorCode.OCR_PROVIDER_ERROR,
+        ErrorCode.AI_PROVIDER_UNAVAILABLE,
         ErrorCode.RESOURCE_MEMORY_LOW,
         ErrorCode.RESOURCE_DISK_LOW,
     }
@@ -1089,6 +1101,7 @@ def _api_error_status(code: ErrorCode) -> int:
         ErrorCode.RESOURCE_QUEUE_FULL,
         ErrorCode.OCR_RATE_LIMIT,
         ErrorCode.AI_RATE_LIMIT,
+        ErrorCode.AI_OVERLOADED,
         ErrorCode.RESOURCE_DB_POOL_BUSY,
     }
     codes_409 = {
@@ -1124,6 +1137,54 @@ def _api_error_status(code: ErrorCode) -> int:
     if code in codes_504:
         return 504
     return 500
+
+
+@app.exception_handler(AIResourceRejected)
+async def ai_resource_rejected_handler(request: Request, exc: AIResourceRejected):
+    """Translate AI admission failures into the same safe public error contract."""
+    if exc.reason == "ai_rate_limited":
+        code = ErrorCode.AI_RATE_LIMIT
+        status_code = 429
+    elif exc.reason == "ai_overloaded":
+        code = ErrorCode.AI_OVERLOADED
+        status_code = 429
+    elif exc.reason == "ai_prompt_too_large":
+        code = ErrorCode.VALIDATION_ERROR
+        status_code = 422
+    else:
+        code = ErrorCode.AI_PROVIDER_UNAVAILABLE
+        status_code = 503
+
+    try:
+        from app.core.log_context import log_event
+
+        log_event(
+            logging.getLogger("app.access"),
+            "http.ai_resource_rejected",
+            level="warning",
+            method=request.method,
+            path=request.url.path,
+            status_code=status_code,
+            error_code=code.value,
+            rejection_reason=exc.reason,
+            retry_after_sec=exc.retry_after_sec,
+        )
+    except Exception:
+        pass
+
+    headers = {}
+    if exc.retry_after_sec:
+        headers["Retry-After"] = str(max(1, int(exc.retry_after_sec)))
+    return JSONResponse(
+        status_code=status_code,
+        content=_public_error_content(
+            request,
+            status_code=status_code,
+            code=code.value,
+            retryable=status_code in {429, 503},
+        ),
+        headers=headers,
+    )
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -1640,7 +1701,12 @@ async def metrics_endpoint():
     _append = lines.append
 
     # ── Task queue metrics ──
-    task_types = ["import_pipeline", "image_pipeline", "excel_pipeline"]
+    task_types = [
+        "import_pipeline", "image_pipeline", "excel_pipeline",
+        "resume_pipeline", "admin_resume", "batch_image",
+        "formula_batch", "prewarm_analysis", "export_mistakes",
+        "answer_projection",
+    ]
     try:
         from app.services.task_queue_service import task_queue
         for tt in task_types:
@@ -1698,6 +1764,31 @@ async def metrics_endpoint():
     except Exception:
         _append('ocr_circuit 0')
 
+    # ── AI runtime / cost guard metrics ──
+    try:
+        from app.core.ai_runtime_guard import ai_runtime_guard
+        am = ai_runtime_guard.metrics_snapshot()
+        _append(f'ai_requests_total {am.get("requests", 0)}')
+        _append(f'ai_success_total {am.get("success", 0)}')
+        _append(f'ai_failures_total {am.get("failures", 0)}')
+        _append(f'ai_tokens_total {am.get("tokens", 0)}')
+        _append(f'ai_in_flight {am.get("in_flight", 0)}')
+        _append(f'ai_queue_wait_ms_total {am.get("queue_wait_ms_total", 0)}')
+        _append(f'ai_queue_wait_ms_avg {am.get("queue_wait_ms_avg", 0)}')
+        _append(f'ai_rejected_total{{reason="rate_limit"}} {am.get("rejected_rate_limit", 0)}')
+        _append(f'ai_rejected_total{{reason="overload"}} {am.get("rejected_overload", 0)}')
+        _append(f'ai_rejected_total{{reason="circuit"}} {am.get("rejected_circuit", 0)}')
+        _append(f'ai_rejected_total{{reason="prompt_too_large"}} {am.get("rejected_prompt_too_large", 0)}')
+        _append(f'ai_circuit_trips_total {am.get("circuit_trips", 0)}')
+        _append(f'ai_open_circuits {am.get("open_circuits", 0)}')
+        from app.features.token_budget import get_shared_token_usage_snapshot
+        budget = await get_shared_token_usage_snapshot()
+        _append(f'ai_pipeline_tokens_daily {budget.get("daily", 0)}')
+        _append(f'ai_pipeline_tokens_monthly {budget.get("monthly", 0)}')
+        _append(f'ai_pipeline_token_budget_shared {1 if budget.get("shared") else 0}')
+    except Exception:
+        _append('ai_runtime_metrics_available 0')
+
     # ── Staging storage metrics ──
     try:
         from app.services.staging_storage import get_metrics
@@ -1713,6 +1804,18 @@ async def metrics_endpoint():
     for k, v in pool_stats.items():
         if isinstance(v, (int, float)):
             _append(f'db_pool_{k} {v}')
+
+    # ── DB query performance metrics ──
+    try:
+        from app.core.database import get_db_query_metrics
+        qm = get_db_query_metrics()
+        _append(f'db_query_total {qm.get("total", 0)}')
+        _append(f'db_slow_query_total {qm.get("slow", 0)}')
+        _append(f'db_query_duration_ms_total {qm.get("duration_ms_total", 0)}')
+        _append(f'db_query_duration_ms_avg {qm.get("duration_ms_avg", 0)}')
+        _append(f'db_query_duration_ms_max {qm.get("duration_ms_max", 0)}')
+    except Exception:
+        _append('db_query_metrics_available 0')
 
     # ── Process info ──
     _append(f'process_info{{role="{settings.PROCESS_ROLE}",env="{settings.APP_ENV}"}} 1')
