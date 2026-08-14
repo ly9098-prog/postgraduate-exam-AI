@@ -2,7 +2,7 @@
 
 The shared detection/filter functions live in ocr_correction_common.py.
 The AI correction logic was migrated to ocr_fix/router.py (strategy pattern
-with PaddleOCR-VL → DeepSeek → rule fallback chain).
+with PaddleOCR-VL → OpenAI-compatible LLM → rule fallback chain).
 
 This module remains for backward-compatible imports only.
 """
@@ -69,12 +69,13 @@ async def correct_ocr_blocks(
             "skipped_reason": "disabled",
         }
 
-    # Check AI availability (delegates to router which handles fallbacks)
-    try:
-        from app.ai.client import deepseek
-        ai_available = deepseek.is_available()
-    except Exception:
-        ai_available = False
+    # Check configured adapter availability. The legacy wrapper has no DB
+    # session, so it relies on credentials already injected into ``config``.
+    ai_available = bool(
+        cfg.get("llm_api_key")
+        or cfg.get("deepseek_api_key")
+        or cfg.get("paddleocr_vl_api_token")
+    )
 
     if not ai_available:
         return {

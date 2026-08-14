@@ -89,20 +89,9 @@ async def _call_llm_for_structure_reconstruct(
     Returns: {"repaired_stem": str, "code_fixed": bool, "confidence": float, "token_used": int}
              or None on failure/overshoot.
     """
-    from app.ai.client import deepseek
+    from app.ai.gateway import chat_with_db_model
     from app.ai.prompts import build_code_structure_reconstruct
-
-    # Resolve credentials if db is available
-    api_key = None
-    base_url = None
-    model_name = None
-    if db is not None:
-        from app.services.model_config_resolver import ensure_db_model_configured
-        creds = await ensure_db_model_configured(db)
-        if creds:
-            api_key = creds[0]
-            base_url = creds[1]
-            model_name = creds[2]
+    from app.services.model_config_resolver import AICapability
 
     messages = build_code_structure_reconstruct(stem)
     prompt_text = json.dumps(messages, ensure_ascii=False)
@@ -112,11 +101,17 @@ async def _call_llm_for_structure_reconstruct(
         logger.warning("Token limit exceeded for code structure reconstruction")
         return None
 
-    kwargs = dict(messages=messages, temperature=0.2, api_key=api_key, base_url=base_url)
-    if model_name:
-        kwargs["model"] = model_name
+    if db is None:
+        return None
     try:
-        result = await deepseek.chat(**kwargs)
+        result = await chat_with_db_model(
+            db,
+            messages,
+            capability=AICapability.TEXT_STRUCTURING,
+            temperature=0.2,
+        )
+        if result is None:
+            return None
     except Exception as e:
         logger.warning("Code structure LLM call failed: %s", e)
         return None
@@ -246,7 +241,7 @@ async def run_code_structure_stage(
             original_text=stem_before,
             candidate_text=result["repaired_stem"],
             context={"is_code_context": True},
-            provenance={"stage": "code_structure_reconstruct", "model": "deepseek"},
+            provenance={"stage": "code_structure_reconstruct", "model": "openai_compatible"},
         )
 
         if evaluation.decision != CandidateDecision.ACCEPT:

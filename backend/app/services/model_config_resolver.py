@@ -1,8 +1,7 @@
-"""Model config resolver — ties DB-stored model config to the runtime DeepSeek client.
+"""Model config resolver for DB-stored AI model configurations.
 
-Call ``ensure_db_model_configured(db, feature)`` before any AI call that
-should obey the admin-configured model enable/disable, API key settings,
-and model name.
+Use ``AIModelConfigResolver``/``app.ai.gateway`` for new call sites. The legacy
+``ensure_db_model_configured`` helper remains for backward compatibility.
 
 Each feature (ocr / completion / analysis) can have its own dedicated model.
 A model tagged with ``features=None`` serves as the default fallback for all
@@ -60,6 +59,7 @@ class AICapability(StrEnum):
     TEXT_CORRECTION = "text_correction"
     TEXT_STRUCTURING = "text_structuring"
     COMPLETION = "completion"
+    ANALYSIS = "analysis"
     EMBEDDING = "embedding"
 
 
@@ -193,6 +193,7 @@ class AIModelConfigResolver:
         "ai_repair": 150.0,
         "text_structuring": 120.0,
         "completion": 120.0,
+        "analysis": 120.0,
     }
 
     _DEFAULT_RETRIES: dict[str, int] = {
@@ -232,13 +233,19 @@ class AIModelConfigResolver:
         4. Any enabled model (last resort)
 
         Capability mapping to DB features:
-        - ``ocr_vl``         → features contains "vision"
+        - ``ocr_vl``          → features contains "vision" and provider is PaddleOCR
         - ``ocr_lightweight`` → features contains "ocr"
-        - ``ocr_fix``        → features contains "ocr_fix" (or "ocr" as fallback)
-        - ``ai_repair``      → features contains "completion"
+        - ``ocr_fix``         → "ocr_fix" / "text_correction" / legacy "ocr"
+        - ``ai_repair``       → "ai_repair" / legacy "completion"
+        - ``analysis``        → "analysis"
+
+        Provider routing is also enforced: proprietary PaddleOCR endpoints are
+        never selected as a fallback for OpenAI-compatible chat capabilities.
 
         Raises ``ValueError`` with an ``AIConfigErrorCode`` on failure.
         """
+        capability = capability.value if isinstance(capability, AICapability) else str(capability)
+
         # Check cache
         cache_key = f"{capability}:{requested_config_id or ''}"
         if cache_key in self._cache:
@@ -288,10 +295,10 @@ class AIModelConfigResolver:
         requested_config_id: int | str | None = None,
     ) -> ResolvedAIModelConfig:
         """Internal resolution logic."""
-        db_feature = self._capability_to_db_feature(capability)
+        db_features = self._capability_to_db_features(capability)
 
         if requested_config_id is not None:
-            return await self._resolve_by_id(requested_config_id, db_feature, capability=capability)
+            return await self._resolve_by_id(requested_config_id, db_features, capability=capability)
 
         # Query all enabled models
         result = await self._db.execute(
@@ -310,11 +317,23 @@ class AIModelConfigResolver:
                 "No enabled AI model configs found in database",
             )
 
-        # 1. Feature-specific match
-        for model in all_enabled:
-            model_features = _get_model_features(model)
-            if db_feature and db_feature in model_features:
-                return self._to_resolved(model, capability)
+        all_enabled = [
+            model for model in all_enabled
+            if self._provider_matches_capability(model.provider, capability)
+        ]
+        if not all_enabled:
+            raise ValueError(
+                AIConfigErrorCode.AI_CONFIG_PROVIDER_UNSUPPORTED.value,
+                f"No provider-compatible model for capability '{capability}'",
+            )
+
+        # 1. Capability-specific match. More specific feature labels are
+        # checked before legacy coarse labels, e.g. ocr_fix before ocr.
+        for db_feature in db_features:
+            for model in all_enabled:
+                model_features = _get_model_features(model)
+                if db_feature in model_features:
+                    return self._to_resolved(model, capability)
 
         # 2. Untagged default (no features)
         for model in all_enabled:
@@ -338,7 +357,7 @@ class AIModelConfigResolver:
     async def _resolve_by_id(
         self,
         config_id: int | str,
-        db_feature: str | None,
+        db_features: tuple[str, ...],
         capability: str = "unknown",
     ) -> ResolvedAIModelConfig:
         """Resolve a specific model config by ID."""
@@ -353,13 +372,18 @@ class AIModelConfigResolver:
                 AIConfigErrorCode.AI_MODEL_DISABLED.value,
                 f"Model config id={config_id} ('{model.name}') is disabled",
             )
-        if db_feature:
+        if not self._provider_matches_capability(model.provider, capability):
+            raise ValueError(
+                AIConfigErrorCode.AI_CONFIG_PROVIDER_UNSUPPORTED.value,
+                f"Provider '{model.provider}' cannot serve capability '{capability}'",
+            )
+        if db_features:
             model_features = _get_model_features(model)
-            if model_features and db_feature not in model_features:
+            if model_features and not any(f in model_features for f in db_features):
                 raise ValueError(
                     AIConfigErrorCode.AI_CONFIG_CAPABILITY_MISMATCH.value,
                     f"Model config id={config_id} ('{model.name}') does not support "
-                    f"feature '{db_feature}' (has: {model_features})",
+                    f"features {list(db_features)} (has: {model_features})",
                 )
         return self._to_resolved(model, capability)
 
@@ -402,19 +426,43 @@ class AIModelConfigResolver:
         )
 
     @staticmethod
-    def _capability_to_db_feature(capability: str) -> str | None:
-        """Map unified capability to DB features column value."""
-        mapping: dict[str, str] = {
-            "ocr_vl": "vision",
-            "ocr_lightweight": "ocr",
-            "ocr_fix": "ocr",
-            "ai_repair": "completion",
-            "text_correction": "ocr",
-            "text_structuring": "completion",
-            "completion": "completion",
-            "embedding": "embedding",
+    def _provider_matches_capability(provider: str | None, capability: str) -> bool:
+        """Keep proprietary OCR endpoints out of generic chat fallback routing."""
+        normalized = (provider or "").strip().lower().replace("_", "-")
+        is_paddleocr = normalized.startswith("paddleocr")
+        if capability == AICapability.OCR_VL.value:
+            return is_paddleocr
+        if capability in {
+            AICapability.OCR_FIX.value,
+            AICapability.AI_REPAIR.value,
+            AICapability.TEXT_CORRECTION.value,
+            AICapability.TEXT_STRUCTURING.value,
+            AICapability.COMPLETION.value,
+            AICapability.ANALYSIS.value,
+        }:
+            return not is_paddleocr
+        return True
+
+    @staticmethod
+    def _capability_to_db_features(capability: str) -> tuple[str, ...]:
+        """Map runtime capability to DB feature labels, specific first.
+
+        Legacy coarse labels (ocr/completion) remain fallbacks so existing
+        installations continue to work without a data migration.
+        """
+        mapping: dict[str, tuple[str, ...]] = {
+            "ocr_vl": ("vision",),
+            "ocr_lightweight": ("ocr_lightweight", "ocr"),
+            "ocr_fix": ("ocr_fix", "text_correction", "ocr"),
+            "ai_repair": ("ai_repair", "completion"),
+            "text_correction": ("text_correction", "ocr_fix", "ocr"),
+            "text_structuring": ("text_structuring", "completion"),
+            "completion": ("completion",),
+            "analysis": ("analysis",),
+            "embedding": ("embedding",),
         }
-        return mapping.get(capability)
+        return mapping.get(capability, (capability,) if capability else ())
+
 
 
 # ---------------------------------------------------------------------------
@@ -570,7 +618,8 @@ def _decrypt_model(model: AdminAiModelConfig) -> dict | None:
         return None
     return {
         "api_key": api_key,
-        "api_base_url": model.api_base_url or "https://api.deepseek.com",
+        "id": model.id,
+        "api_base_url": model.api_base_url or "",
         "model_name": model.name,
         "provider": model.provider,
         "feature": model.feature,
@@ -587,8 +636,8 @@ async def ensure_db_model_configured(
     Returns ``(api_key, base_url, model_name)`` when a DB model is available,
     ``None`` when falling back to environment variables.
 
-    Does NOT modify the global ``DeepSeekClient`` singleton — callers
-    must pass the returned credentials to ``deepseek.chat()`` explicitly.
+    Does not modify any process-global client. New code should prefer
+    ``app.ai.gateway.resolve_llm_runtime_config`` so provider metadata is kept.
     """
     config = await resolve_active_model(db, feature=feature)
     if config:

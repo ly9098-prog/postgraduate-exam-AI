@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.client import deepseek
+from app.ai.gateway import chat_with_db_model
 from app.ai.fallback import (
     get_fallback_explain,
     get_fallback_mistake_analysis,
@@ -85,28 +85,19 @@ async def _record_token_usage(
             user_message=user_message[:500],
             ai_response=ai_response[:2000],
             tokens_used=result.get("tokens_used", 0),
-            model=result.get("model", "deepseek-chat"),
+            model=result.get("model", "unknown"),
             duration_ms=result.get("duration_ms", 0),
         )
     )
     await db.commit()
 
 
-async def _call_ai(messages: list, db: AsyncSession | None = None) -> dict:
-    """调用 DeepSeek API，失败返回 None。"""
-    creds = None
-    if db is not None:
-        from app.services.model_config_resolver import ensure_db_model_configured
-        creds = await ensure_db_model_configured(db, feature="analysis")
-
-    api_key = creds[0] if creds else None
-    base_url = creds[1] if creds else None
-    model_name = creds[2] if creds else None
-
-    if not (api_key or deepseek.is_available()):
+async def _call_ai(messages: list, db: AsyncSession | None = None) -> dict | None:
+    """调用后台配置的 OpenAI-compatible 分析模型，失败返回 None。"""
+    if db is None:
         return None
     try:
-        return await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
+        return await chat_with_db_model(db, messages, feature="analysis")
     except RuntimeError:
         return None
 

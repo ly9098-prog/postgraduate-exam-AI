@@ -74,15 +74,25 @@ export default function AISettingsPage() {
 
   const resolvedModels = useMemo(() => {
     const list = models.data ?? [];
-    const resolve = (feature: string): string | null => {
-      const featured = list.find((m) => m.is_enabled && (m.features ?? []).includes(feature));
-      if (featured) return featured.display_name;
-      const untagged = list.find((m) => m.is_enabled && (!m.features || m.features.length === 0));
+    const isPaddleOcr = (provider: string) => provider.toLowerCase().replace(/_/g, "-").startsWith("paddleocr");
+    const resolve = (featurePriority: string[], mode: "chat" | "paddle" = "chat"): string | null => {
+      const candidates = list.filter((m) =>
+        m.is_enabled && (mode === "paddle" ? isPaddleOcr(m.provider) : !isPaddleOcr(m.provider)),
+      );
+      for (const feature of featurePriority) {
+        const featured = candidates.find((m) => (m.features ?? []).includes(feature));
+        if (featured) return featured.display_name;
+      }
+      const untagged = candidates.find((m) => !m.features || m.features.length === 0);
       if (untagged) return untagged.display_name;
-      const any = list.find((m) => m.is_enabled);
-      return any?.display_name ?? null;
+      return candidates[0]?.display_name ?? null;
     };
-    return { ocr: resolve("ocr"), completion: resolve("completion"), analysis: resolve("analysis"), vision: resolve("vision") };
+    return {
+      ocr: resolve(["ocr_fix", "text_correction", "ocr"]),
+      completion: resolve(["completion"]),
+      analysis: resolve(["analysis"]),
+      vision: resolve(["vision"], "paddle"),
+    };
   }, [models.data]);
 
   const current = settings.data;

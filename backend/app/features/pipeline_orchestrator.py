@@ -3169,7 +3169,7 @@ class ImportPipeline:
         return features
 
     async def _run_ocr_correction(self, normalized_blocks: list[dict], options: dict | None = None, **_kw) -> dict:
-        """Stage 1.5: AI OCR text correction via multi-model router (PaddleOCR-VL → DeepSeek → rule)."""
+        """Stage 1.5: AI OCR text correction via multi-model router (PaddleOCR-VL → OpenAI-compatible LLM → rule)."""
         opts = options or {}
         db = _kw.get("db")
 
@@ -3559,40 +3559,40 @@ class ImportPipeline:
 
                 resolver = AIModelConfigResolver(db)
 
-                # Resolve OCR_FIX capability — primary model (VL or DeepSeek)
+                # Resolve OCR_FIX capability. PaddleOCR-VL keeps its vendor-specific
+                # adapter; every other provider is treated as an OpenAI-compatible
+                # text LLM for OCR correction.
                 try:
                     ocr_fix_config = await resolver.resolve_for_capability(AICapability.OCR_FIX)
                     secret = await resolver.resolve_secret(ocr_fix_config)
-                    provider = ocr_fix_config.provider
+                    provider = (ocr_fix_config.provider or "").lower().replace("_", "-")
 
-                    if provider == "deepseek":
-                        config["deepseek_api_key"] = secret
-                        if ocr_fix_config.endpoint:
-                            config["deepseek_base_url"] = ocr_fix_config.endpoint
-                    elif provider in ("paddleocr-vl", "paddleocr_vl"):
+                    if provider.startswith("paddleocr"):
                         config["paddleocr_vl_api_token"] = secret
                         if ocr_fix_config.endpoint:
                             config["paddleocr_vl_base_url"] = ocr_fix_config.endpoint
                         config["paddleocr_vl_model"] = ocr_fix_config.model_name
                     else:
-                        # Unknown provider → assume PaddleOCR-VL compatible
-                        config["paddleocr_vl_api_token"] = secret
-                        if ocr_fix_config.endpoint:
-                            config["paddleocr_vl_base_url"] = ocr_fix_config.endpoint
-                        config["paddleocr_vl_model"] = ocr_fix_config.model_name
+                        config["llm_api_key"] = secret
+                        config["llm_base_url"] = ocr_fix_config.endpoint or ""
+                        config["llm_model_name"] = ocr_fix_config.model_name
+                        config["llm_provider"] = ocr_fix_config.provider
                 except ValueError:
                     logger.info("OCR router: no OCR_FIX config resolved via AIModelConfigResolver")
 
-                # DeepSeek fallback for auto chain (if primary is not DeepSeek)
-                if "deepseek_api_key" not in config:
+                # Text-LLM fallback for the auto chain when the primary OCR fixer is
+                # PaddleOCR-VL. Reuse AI_REPAIR as a backward-compatible fallback.
+                if "llm_api_key" not in config:
                     try:
-                        ds_config = await resolver.resolve_for_capability(AICapability.AI_REPAIR)
-                        if ds_config.provider == "deepseek":
-                            config["deepseek_api_key"] = await resolver.resolve_secret(ds_config)
-                            if ds_config.endpoint:
-                                config["deepseek_base_url"] = ds_config.endpoint
+                        fallback_config = await resolver.resolve_for_capability(AICapability.AI_REPAIR)
+                        fallback_provider = (fallback_config.provider or "").lower().replace("_", "-")
+                        if not fallback_provider.startswith("paddleocr"):
+                            config["llm_api_key"] = await resolver.resolve_secret(fallback_config)
+                            config["llm_base_url"] = fallback_config.endpoint or ""
+                            config["llm_model_name"] = fallback_config.model_name
+                            config["llm_provider"] = fallback_config.provider
                     except ValueError:
-                        logger.info("OCR router: no AI_REPAIR fallback config resolved")
+                        logger.info("OCR router: no OpenAI-compatible fallback config resolved")
             except Exception:
                 logger.warning("OCR router: AIModelConfigResolver failed", exc_info=True)
 
@@ -3610,9 +3610,11 @@ class ImportPipeline:
             except Exception:
                 logger.warning("OCR router: admin_ai_configs read failed", exc_info=True)
 
-        # DeepSeek env var fallback for backward compat only
+        # Legacy aliases for rolling upgrades. New router code reads llm_* keys.
         if "deepseek_api_key" not in config:
-            config["deepseek_api_key"] = ""  # managed via admin_ai_model_configs
+            config["deepseek_api_key"] = config.get("llm_api_key", "")
+        if "deepseek_base_url" not in config:
+            config["deepseek_base_url"] = config.get("llm_base_url", "")
 
         return config
 

@@ -1627,12 +1627,38 @@ def _pick_graph_target_kps(
     return [kp_id for kp_id, _score in ranked[:limit]]
 
 
+def _get_observed_weak_kp_ids(
+    kp_ids: list[int],
+    kp_mastery: dict[int, tuple],
+    kp_observations: dict[int, tuple[int, int]] | None = None,
+) -> list[int]:
+    """Return KPs with an early but meaningful weak-performance signal.
+
+    This is intentionally weaker than ``weak_kp``: two or more attempts with
+    at least two wrong answers and mastery <= 40 are enough to say that recent
+    performance needs more validation, but not enough to declare a confirmed
+    weakness. ``calculate_smart_score`` only emits this signal when the
+    existing confirmed-weakness threshold has not been reached.
+    """
+    kp_observations = kp_observations or {}
+    observed: list[int] = []
+    for kp_id in kp_ids:
+        mastery, _confidence = kp_mastery.get(kp_id, (50.0, 0.0))
+        attempt_count, wrong_count = kp_observations.get(kp_id, (0, 0))
+        mastery_value = 50.0 if mastery is None else float(mastery)
+        if int(attempt_count or 0) >= 2 and int(wrong_count or 0) >= 2 and mastery_value <= 40.0:
+            observed.append(kp_id)
+    return observed
+
+
 def _build_smart_recommendation_reason(
     reason_codes: list[str],
     kp_ids: list[int],
     kp_names: dict[int, str],
     graph_candidates: dict[int, dict] | None = None,
     blocked_kps: dict[int, list[dict]] | None = None,
+    kp_mastery: dict[int, tuple] | None = None,
+    kp_observations: dict[int, tuple[int, int]] | None = None,
 ) -> str:
     """Convert internal score reason codes into a concise combined Chinese reason.
 
@@ -1643,6 +1669,8 @@ def _build_smart_recommendation_reason(
     """
     graph_candidates = graph_candidates or {}
     blocked_kps = blocked_kps or {}
+    kp_mastery = kp_mastery or {}
+    kp_observations = kp_observations or {}
     reason_set = set(reason_codes)
     is_new = "new_question" in reason_set
     is_diverse = "diversity" in reason_set
@@ -1651,6 +1679,10 @@ def _build_smart_recommendation_reason(
 
     def _first_kp_name() -> str | None:
         return next((kp_names.get(k) for k in kp_ids if kp_names.get(k)), None)
+
+    def _first_observed_weak_kp_name() -> str | None:
+        observed_ids = _get_observed_weak_kp_ids(kp_ids, kp_mastery, kp_observations)
+        return next((kp_names.get(k) for k in observed_ids if kp_names.get(k)), None)
 
     def _append_new_context(text: str) -> str:
         if not is_new:
@@ -1692,6 +1724,18 @@ def _build_smart_recommendation_reason(
         if has_wrong_history:
             return "你最近在这类知识点上的掌握度较低，而且之前在相关题目上出现过错误，建议继续巩固。"
         return "你最近在这类知识点上的掌握度较低，建议继续巩固。"
+
+    if "observed_weak" in reason_set:
+        name = _first_observed_weak_kp_name() or _first_kp_name()
+        if name:
+            if is_new:
+                return f"你近期在「{name}」上的练习表现有待提升，推荐一道尚未练过的新题继续巩固并确认掌握情况。"
+            if has_wrong_history:
+                return f"你近期在「{name}」上的练习表现有待提升，而且之前在相关题目上出现过错误，建议继续巩固并确认掌握情况。"
+            return f"你近期在「{name}」上的练习表现有待提升，这道题适合继续巩固并确认掌握情况。"
+        if is_new:
+            return "你近期在相关知识点上的练习表现有待提升，推荐一道尚未练过的新题继续巩固并确认掌握情况。"
+        return "你近期在相关知识点上的练习表现有待提升，建议继续巩固并确认掌握情况。"
 
     if has_wrong_history:
         if is_long_unpracticed:
@@ -1740,6 +1784,7 @@ def calculate_smart_score(
     kp_mastery: dict[int, tuple],   # kp_id -> (mastery_score, confidence)
     recent_kp_ids: set[int],
     now: datetime,
+    kp_observations: dict[int, tuple[int, int]] | None = None,  # kp_id -> (attempt_count, wrong_count)
     blocked_kps: dict[int, list[dict]] | None = None,  # V6.3: kp_id -> [weak prereqs]
     graph_candidates: dict[int, dict] | None = None,  # V6.5: prereq kp -> graph context
     prerequisites_by_target: dict[int, list[dict]] | None = None,
@@ -1752,6 +1797,7 @@ def calculate_smart_score(
       1. due_score        — 复习到期 (+40)         × due_weight
       2. overdue_score    — 逾期天数 (+2/天, max 20) × due_weight
       3. weakness_score   — 知识点薄弱              × weakness_weight
+         observed_weak    — 低置信度弱势迹象 (+12)   × weakness_weight
       4. wrong_history    — 错题历史 (+8/次, max 30) × wrong_weight
       5. new_question     — 新题 (+20)              × new_question_weight
       6. long_unpracticed — 长期未练                × diversity_weight
@@ -1771,6 +1817,7 @@ def calculate_smart_score(
     path_total = 0.0
 
     graph_config = graph_config or {}
+    kp_observations = kp_observations or {}
     prerequisite_mastery_threshold = max(
         1.0, min(float(graph_config.get("prerequisite_mastery_threshold", 60.0)), 100.0)
     )
@@ -1801,6 +1848,17 @@ def calculate_smart_score(
             weakness_total += ws
             if ws >= 15:
                 reasons.append("weak_kp")
+            else:
+                observed_weak_kp_ids = _get_observed_weak_kp_ids(
+                    kp_ids, kp_mastery, kp_observations
+                )
+                if observed_weak_kp_ids:
+                    # Early-stage users often spread a small number of attempts
+                    # across many KPs. Give repeated poor performance a medium
+                    # bonus so related new questions can outrank generic new
+                    # questions, without prematurely declaring a confirmed weak KP.
+                    weakness_total += 12.0
+                    reasons.append("observed_weak")
 
     # ── 4: 错题历史 ──
     if q_state:
@@ -2035,9 +2093,14 @@ async def get_smart_scored_questions(
             UserKnowledgeState.subject_id.in_(scope_ids),
         )
     )
+    knowledge_states = list(ks_result.scalars().all())
     kp_mastery: dict[int, tuple] = {
         s.knowledge_point_id: (s.mastery_score, s.confidence)
-        for s in ks_result.scalars().all()
+        for s in knowledge_states
+    }
+    kp_observations: dict[int, tuple[int, int]] = {
+        s.knowledge_point_id: (s.attempt_count, s.wrong_count)
+        for s in knowledge_states
     }
 
     graph_context: dict = {
@@ -2191,6 +2254,7 @@ async def get_smart_scored_questions(
         qs = q_state_map.get(q.id)
         sc, reasons = calculate_smart_score(
             q, qs, kp_ids, kp_mastery, recent_kp_ids, now,
+            kp_observations=kp_observations,
             blocked_kps=blocked_kps,
             graph_candidates=graph_candidates,
             prerequisites_by_target=prerequisites_by_target,
@@ -2235,6 +2299,8 @@ async def get_smart_scored_questions(
                 kp_names,
                 graph_candidates=graph_candidates,
                 blocked_kps=blocked_kps,
+                kp_mastery=kp_mastery,
+                kp_observations=kp_observations,
             ),
             "strategy": "smart_scored",
             "strategy_config_id": scored_runtime.get("strategy_config_id"),
@@ -2259,6 +2325,8 @@ async def get_smart_scored_questions(
                     kp_names,
                     graph_candidates=graph_candidates,
                     blocked_kps=blocked_kps,
+                    kp_mastery=kp_mastery,
+                    kp_observations=kp_observations,
                 ),
                 "strategy": "smart_scored",
                 "strategy_config_id": scored_runtime.get("strategy_config_id"),

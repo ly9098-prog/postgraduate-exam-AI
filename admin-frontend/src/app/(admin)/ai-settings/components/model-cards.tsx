@@ -23,29 +23,53 @@ import { Button } from "@/components/ui/button";
 
 const PROVIDER_ICONS: Record<string, React.ElementType> = {
   deepseek: Brain, openai: Globe, anthropic: Cpu,
-  "qwen-vl": ScanEye, qwen: ScanEye,
+  "qwen-vl": ScanEye, qwen: ScanEye, glm: Brain, minimax: Brain,
+  moonshot: Brain, openrouter: Globe, vllm: Cpu, custom: Cpu,
 };
 
 const PROVIDER_COLORS: Record<string, string> = {
   deepseek: "#5b7b9a", openai: "#6b9b6b", anthropic: "#c49a6b",
-  "qwen-vl": "#7c5ce7", qwen: "#7c5ce7",
+  "qwen-vl": "#7c5ce7", qwen: "#7c5ce7", glm: "#4f72b8",
+  minimax: "#8b6bb1", moonshot: "#506c8f", openrouter: "#5d6b76",
   paddleocr: "#e67e22", paddleocr_vl: "#e67e22", "paddleocr-vl": "#e67e22",
 };
 
+const PROVIDER_PRESETS = [
+  "openai", "deepseek", "qwen", "qwen-vl", "glm", "minimax",
+  "moonshot", "openrouter", "vllm", "custom", "paddleocr-vl",
+];
+
 const FEATURE_LABELS: Record<string, { label: string; color: string }> = {
-  ocr: { label: "OCR", color: "#5b7b9a" },
-  completion: { label: "补全", color: "#6b9b6b" },
-  analysis: { label: "解析", color: "#c49a6b" },
-  vision: { label: "视觉", color: "#e67e22" },
+  analysis: { label: "学习/错题分析", color: "#c49a6b" },
+  completion: { label: "题目补全", color: "#6b9b6b" },
+  ai_repair: { label: "题目审核修复", color: "#8b6bb1" },
+  text_structuring: { label: "文本导题结构化", color: "#4f72b8" },
+  ocr_fix: { label: "OCR LLM纠错", color: "#5b7b9a" },
+  text_correction: { label: "OCR文本纠错", color: "#6887a5" },
+  ocr: { label: "OCR通用(兼容)", color: "#5b7b9a" },
+  vision: { label: "视觉/OCR-VL", color: "#e67e22" },
+  embedding: { label: "Embedding", color: "#65756b" },
 };
 
 const FEATURE_OPTIONS = [
-  { value: "", label: "通用（所有功能）" },
-  { value: "ocr", label: "OCR 纠错" },
-  { value: "completion", label: "AI 补全" },
-  { value: "analysis", label: "AI 解析" },
-  { value: "vision", label: "视觉层" },
+  { value: "analysis", label: "学习/错题分析", desc: "小程序错题分析、学习建议、Dashboard AI 诊断" },
+  { value: "completion", label: "题目补全", desc: "单题/批量补全、题目元数据补全（兼容旧配置）" },
+  { value: "ai_repair", label: "题目审核修复", desc: "导题审核、低置信度题目修复、答案/解析辅助补全" },
+  { value: "text_structuring", label: "文本导题结构化", desc: "文本导入和代码结构重建" },
+  { value: "ocr_fix", label: "OCR LLM 纠错", desc: "OCR 后的文本纠错与修复，走 OpenAI-compatible chat/completions" },
+  { value: "text_correction", label: "OCR 文本纠错", desc: "文本纠错细分能力，可与 ocr_fix 分开指定模型" },
+  { value: "ocr", label: "OCR 通用（兼容）", desc: "旧 OCR LLM 纠错配置兼容标签" },
+  { value: "vision", label: "PaddleOCR-VL 视觉 OCR", desc: "PaddleOCR 厂商专用 Job API，不走 OpenAI-compatible chat/completions" },
+  { value: "embedding", label: "Embedding", desc: "向量模型（不走 chat/completions）" },
 ];
+
+function isPaddleOcrProvider(provider: string) {
+  return provider.toLowerCase().replace(/_/g, "-").startsWith("paddleocr");
+}
+
+function adapterLabel(provider: string) {
+  return isPaddleOcrProvider(provider) ? "PaddleOCR 专用" : "OpenAI 兼容";
+}
 
 function getProviderIcon(p: string) { return PROVIDER_ICONS[p] || Brain; }
 function getProviderColor(p: string) { return PROVIDER_COLORS[p] || "#5b7b9a"; }
@@ -105,10 +129,10 @@ function AddModelDialog({
   };
 
   const handleSave = () => {
-    if (!name.trim() || !displayName.trim() || !provider.trim()) return;
+    if (!name.trim() || !displayName.trim() || !provider.trim() || !apiBaseUrl.trim()) return;
     onSave({
       name: name.trim(), display_name: displayName.trim(), provider: provider.trim(),
-      api_base_url: apiBaseUrl.trim() || undefined,
+      api_base_url: apiBaseUrl.trim(),
       api_key: apiKey.trim() || undefined,
       features: features.length > 0 ? features : null,
     });
@@ -138,11 +162,16 @@ function AddModelDialog({
           </div>
           <label className="block">
             <span className="text-[11px] font-medium text-[var(--color-text-hint)]">提供商 *</span>
-            <input value={provider} onChange={(e) => setProvider(e.target.value)} className={cn(inputCls, "mt-1")} placeholder="openai" />
+            <input list="ai-provider-presets-add" value={provider} onChange={(e) => setProvider(e.target.value)} className={cn(inputCls, "mt-1")} placeholder="openai / qwen / glm / custom" />
+            <datalist id="ai-provider-presets-add">
+              {PROVIDER_PRESETS.map((item) => <option key={item} value={item} />)}
+            </datalist>
+            <span className="mt-1 block text-[10px] text-[var(--color-text-hint)]">{adapterLabel(provider)}；provider 仅用于路由标识与监控，不限制厂商名称。</span>
           </label>
           <label className="block">
-            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Base URL</span>
+            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Base URL *</span>
             <input value={apiBaseUrl} onChange={(e) => setApiBaseUrl(e.target.value)} className={cn(inputCls, "mt-1")} placeholder="https://api.openai.com/v1" />
+            <span className="mt-1 block text-[10px] leading-4 text-[var(--color-text-hint)]">填写 OpenAI SDK 的 base_url，不要手动追加 /chat/completions；兼容 /v1、/compatible-mode/v1、/api/v3 等路径。</span>
           </label>
           <label className="block">
             <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Key</span>
@@ -174,7 +203,7 @@ function AddModelDialog({
                       selected ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-[var(--color-border)]")}>
                       {selected && <CheckCircle2 className="h-2.5 w-2.5" />}
                     </div>
-                    {opt.label}
+                    <span title={opt.desc}>{opt.label}</span>
                   </label>
                 );
               })}
@@ -198,7 +227,7 @@ function AddModelDialog({
 
         <div className="mt-4 flex justify-end gap-3">
           <Button variant="secondary" onClick={handleClose} disabled={loading}>取消</Button>
-          <Button onClick={handleSave} disabled={loading || !name.trim() || !displayName.trim() || !provider.trim()}>
+          <Button onClick={handleSave} disabled={loading || !name.trim() || !displayName.trim() || !provider.trim() || !apiBaseUrl.trim()}>
             {loading ? "添加中..." : "添加"}
           </Button>
         </div>
@@ -222,6 +251,8 @@ function DetailPanel({
   disabled: boolean;
 }) {
   const [nameInput, setNameInput] = useState(model.name);
+  const [displayNameInput, setDisplayNameInput] = useState(model.display_name);
+  const [providerInput, setProviderInput] = useState(model.provider);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiBaseUrlInput, setApiBaseUrlInput] = useState(model.api_base_url ?? "");
   const [featuresInput, setFeaturesInput] = useState<string[]>(model.features ?? []);
@@ -238,10 +269,10 @@ function DetailPanel({
         method: "POST",
         body: JSON.stringify({
           api_base_url: apiBaseUrlInput.trim(),
-          api_key: apiKeyInput.trim(),
+          api_key: apiKeyInput.trim() || undefined,
           model_name: nameInput.trim(),
           model_id: model.id,
-          provider: model.provider,
+          provider: providerInput,
           features: featuresInput,
         } satisfies ModelTestConnectionRequest),
       });
@@ -256,6 +287,8 @@ function DetailPanel({
   const save = () => {
     const payload: AdminAiModelConfigPatchRequest = {};
     if (nameInput.trim() && nameInput.trim() !== model.name) payload.name = nameInput.trim();
+    if (displayNameInput.trim() && displayNameInput.trim() !== model.display_name) payload.display_name = displayNameInput.trim();
+    if (providerInput.trim() && providerInput.trim() !== model.provider) payload.provider = providerInput.trim();
     if (apiKeyInput) payload.api_key = apiKeyInput;
     if (apiBaseUrlInput !== model.api_base_url) payload.api_base_url = apiBaseUrlInput;
     if (JSON.stringify(featuresInput) !== JSON.stringify(model.features ?? [])) {
@@ -285,9 +318,24 @@ function DetailPanel({
                   className={cn(inputCls, "mt-1")} />
               </label>
               <label className="block">
+                <span className="text-[11px] font-medium text-[var(--color-text-hint)]">显示名称</span>
+                <input type="text" value={displayNameInput} onChange={(e) => setDisplayNameInput(e.target.value)}
+                  className={cn(inputCls, "mt-1")} />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium text-[var(--color-text-hint)]">Provider</span>
+                <input list={`ai-provider-presets-${model.id}`} type="text" value={providerInput} onChange={(e) => setProviderInput(e.target.value)}
+                  className={cn(inputCls, "mt-1")} placeholder="qwen / glm / custom" />
+                <datalist id={`ai-provider-presets-${model.id}`}>
+                  {PROVIDER_PRESETS.map((item) => <option key={item} value={item} />)}
+                </datalist>
+                <span className="mt-1 block text-[10px] text-[var(--color-text-hint)]">{adapterLabel(providerInput)}</span>
+              </label>
+              <label className="block">
                 <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Base URL</span>
                 <input type="text" value={apiBaseUrlInput} onChange={(e) => setApiBaseUrlInput(e.target.value)}
                   className={cn(inputCls, "mt-1")} placeholder="https://api.openai.com/v1" />
+                <span className="mt-1 block text-[10px] text-[var(--color-text-hint)]">按 SDK base_url 填写，不追加 /chat/completions</span>
               </label>
             </div>
             <label className="block">
@@ -480,6 +528,16 @@ export function ModelCards() {
         ) : null,
       )}
 
+      <div className="mx-5 mt-3 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary-light)]/35 px-4 py-3">
+        <div className="flex items-start gap-2">
+          <Globe className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary)]" />
+          <div className="text-[11px] leading-5 text-[var(--color-text-secondary)]">
+            <p className="font-semibold text-[var(--ink)]">通用 OpenAI-compatible 适配</p>
+            <p>除 PaddleOCR-VL 的厂商专用 OCR Job API 外，DeepSeek、Qwen、GLM、MiniMax、Moonshot、OpenRouter、vLLM 等均通过同一 chat/completions 适配器调用。功能映射决定 OCR LLM 纠错、题目审核/补全和小程序分析分别使用哪个模型。</p>
+          </div>
+        </div>
+      </div>
+
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
@@ -558,8 +616,9 @@ export function ModelCards() {
                         </td>
 
                         {/* Provider */}
-                        <td className="px-4 py-3 text-xs capitalize text-[var(--color-text-secondary)]">
-                          {model.provider}
+                        <td className="px-4 py-3 text-xs text-[var(--color-text-secondary)]">
+                          <div className="font-medium">{model.provider}</div>
+                          <div className="mt-0.5 text-[9px] text-[var(--color-text-hint)]">{adapterLabel(model.provider)}</div>
                         </td>
 
                         {/* Feature badges */}

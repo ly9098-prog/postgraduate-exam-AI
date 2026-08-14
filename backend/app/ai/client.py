@@ -1,8 +1,21 @@
+"""OpenAI-compatible chat-completions client.
+
+This module is intentionally provider-neutral. Runtime credentials/model selection
+come from ``admin_ai_model_configs`` and are passed explicitly by the gateway or
+call site. Any provider exposing an OpenAI-compatible ``chat/completions`` API
+with Bearer authentication can use the same adapter (OpenAI, DeepSeek, Qwen,
+GLM, MiniMax, Moonshot, Volcengine Ark compatible endpoints, self-hosted vLLM,
+etc.).
+"""
+
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import threading
 import time
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -14,15 +27,10 @@ from app.utils.sentry_utils import capture_exception, set_tag, start_span
 
 _ai_logger = logging.getLogger("app.ai")
 
-# DeepSeek 调用并发上限：裸 asyncio.to_thread 走默认线程池（2 核 ≈6 线程），
-# 多并发 AI 调用（批量导入修复/错题分析）可占满该池并拖垮同一池上其它
-# to_thread 工作（staging 文件复制、OCR base64 编码等）。按事件循环键控：
-# 生产单 loop 即进程级限流；测试多 loop 各自限流，避免跨 loop 绑定错误。
+# LLM call concurrency limit. Keep blocking remote fetches from exhausting the
+# shared thread pool used by staging/OCR work.
 _AI_MAX_CONCURRENT = 3
 _ai_sem_lock = threading.Lock()
-# 值存 (loop, semaphore)：持有 loop 强引用可防止 id(loop) 复用误取已关闭
-# loop 的信号量；已关闭 loop 的条目在下次调用时清理，避免多 loop 环境（测试）
-# 下 dict 与钉死的 loop 无界累积。
 _ai_sems: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Semaphore]] = {}
 
 
@@ -40,15 +48,77 @@ def _ai_call_semaphore() -> asyncio.Semaphore:
 
 
 def _sweep_closed_ai_sems() -> None:
-    """清理已关闭事件循环的残留信号量条目（须持有 _ai_sem_lock 时调用）。"""
-    for k in [k for k, (l, _) in _ai_sems.items() if l.is_closed()]:
+    for k in [k for k, (loop, _) in _ai_sems.items() if loop.is_closed()]:
         del _ai_sems[k]
 
 
-class DeepSeekClient:
-    def __init__(self):
-        self._api_key = ""  # managed via admin_ai_model_configs
-        self._base_url = ""  # managed per-model in admin_ai_model_configs
+def build_chat_completions_url(base_url: str) -> str:
+    """Build a chat-completions URL using OpenAI SDK base-url semantics.
+
+    Examples:
+    - https://api.openai.com/v1 -> .../v1/chat/completions
+    - https://dashscope.aliyuncs.com/compatible-mode/v1 -> .../v1/chat/completions
+    - https://ark.cn-beijing.volces.com/api/v3 -> .../api/v3/chat/completions
+    - https://api.deepseek.com -> .../v1/chat/completions (legacy root compatibility)
+    - a full .../chat/completions endpoint is preserved as-is.
+    """
+    normalized = (base_url or "").strip().rstrip("/")
+    if not normalized:
+        raise RuntimeError("AI模型 API Base URL 未配置")
+
+    parsed = urlparse(normalized)
+    path = (parsed.path or "").rstrip("/")
+    if path.endswith("/chat/completions"):
+        return normalized
+    # Historical DeepSeek config in this project stores the host root. Preserve
+    # compatibility by inserting /v1 only when the URL has no path at all.
+    if not path:
+        return f"{normalized}/v1/chat/completions"
+    return f"{normalized}/chat/completions"
+
+
+def _normalise_message_content(content: Any) -> str:
+    """Normalise common OpenAI-compatible content shapes to plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    if content is None:
+        return ""
+    return str(content)
+
+
+def _tokens_used(data: dict[str, Any]) -> int:
+    usage = data.get("usage")
+    if not isinstance(usage, dict):
+        return 0
+    total = usage.get("total_tokens")
+    if isinstance(total, (int, float)):
+        return int(total)
+    prompt = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+    completion = usage.get("completion_tokens") or usage.get("output_tokens") or 0
+    try:
+        return int(prompt) + int(completion)
+    except (TypeError, ValueError):
+        return 0
+
+
+class OpenAICompatibleClient:
+    """Provider-neutral OpenAI-compatible ``chat/completions`` client."""
+
+    def __init__(self) -> None:
+        # DB-managed runtime configuration; intentionally no provider-specific
+        # process-global defaults.
+        self._api_key = ""
+        self._base_url = ""
         self.timeout = settings.AI_TIMEOUT
         self._client: httpx.AsyncClient | None = None
 
@@ -62,68 +132,86 @@ class DeepSeekClient:
 
     @property
     def client(self) -> httpx.AsyncClient:
+        # Kept for backward compatibility with code/tests that inspect it.
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=self.timeout)
         return self._client
 
     def is_available(self) -> bool:
-        return bool(self._api_key)
+        """Whether process-global credentials exist (normally False).
+
+        Runtime DB-backed code should resolve a model through ``app.ai.gateway``
+        instead of relying on this legacy process-global check.
+        """
+        return bool(self._api_key and self._base_url)
 
     async def chat(
         self,
-        messages: list,
-        temperature: float = 0.3,
+        messages: list[dict[str, Any]],
+        temperature: float | None = 0.3,
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        provider: str | None = None,
         timeout: float | None = None,
-    ) -> dict:
-        _api_key = api_key if api_key is not None else self._api_key
-        _base_url = base_url if base_url is not None else self._base_url
+        max_tokens: int | None = None,
+        response_format: dict[str, Any] | None = None,
+        extra_body: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        effective_key = api_key if api_key is not None else self._api_key
+        effective_base_url = base_url if base_url is not None else self._base_url
+        effective_provider = (provider or "openai_compatible").strip() or "openai_compatible"
 
-        if not _api_key:
-            raise RuntimeError("AI模型API Key未配置，请先在后台AI设置页面配置模型API Key")
+        if not effective_key:
+            raise RuntimeError("AI模型 API Key 未配置，请先在后台 AI 设置页面配置模型凭据")
+        if not effective_base_url:
+            raise RuntimeError("AI模型 API Base URL 未配置，请先在后台 AI 设置页面配置兼容接口地址")
+        if not model:
+            raise RuntimeError("AI模型标识未配置，请先在后台 AI 设置页面配置 model name")
 
-        # 兜底：显式传 None 不会覆盖默认值，确保 payload["model"] 永远是字符串
-        model = model or "deepseek-v4-flash"
-
-        # Extract host only — never log full URL (may contain tokens)
         try:
-            base_url_host = urlparse(_base_url).hostname or "-"
+            base_url_host = urlparse(effective_base_url).hostname or "-"
         except Exception:
             base_url_host = "-"
 
-        # Estimate prompt size without logging content
         prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
-
         request_timeout = float(timeout if timeout is not None else self.timeout)
         if request_timeout <= 0:
             raise ValueError("timeout must be positive")
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
-            "temperature": temperature,
         }
+        if temperature is not None:
+            payload["temperature"] = temperature
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if response_format is not None:
+            payload["response_format"] = response_format
+        if extra_body:
+            # Explicit caller overrides are useful for compatible providers that
+            # expose additional OpenAI-style fields (thinking, top_p, etc.).
+            payload.update(extra_body)
 
         log_event(
-            _ai_logger, "ai.chat.start",
-            provider="deepseek", model=model,
+            _ai_logger,
+            "ai.chat.start",
+            provider=effective_provider,
+            model=model,
             base_url_host=base_url_host,
             temperature=temperature,
             message_count=len(messages),
             prompt_chars=prompt_chars,
         )
 
-        with start_span(op="ai.deepseek.chat", description=f"model={model}"):
+        with start_span(op="ai.openai_compatible.chat", description=f"model={model}"):
             set_tag("ai.model", model)
-            set_tag("ai.provider", "deepseek")
+            set_tag("ai.provider", effective_provider)
 
             start = time.time()
             try:
-                _url = _base_url.rstrip("/")
-                if _url.endswith("/v1"):
-                    _url = _url[:-3]
+                url = build_chat_completions_url(effective_base_url)
                 request_body = json.dumps(
                     payload,
                     ensure_ascii=False,
@@ -133,7 +221,7 @@ class DeepSeekClient:
                 async with sem:
                     remote = await asyncio.to_thread(
                         request_remote_bytes,
-                        f"{_url}/v1/chat/completions",
+                        url,
                         method="POST",
                         body=request_body,
                         max_bytes=10 * 1024 * 1024,
@@ -141,74 +229,99 @@ class DeepSeekClient:
                         allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
                         follow_redirects=False,
                         headers={
-                            "Authorization": f"Bearer {_api_key}",
+                            "Authorization": f"Bearer {effective_key}",
                             "Content-Type": "application/json",
                             "Accept": "application/json",
                         },
                     )
+
                 response_text = remote.data.decode("utf-8", errors="replace")
                 elapsed = int((time.time() - start) * 1000)
 
-                if remote.status != 200:
-                    # Truncate error body — never log full response
+                if remote.status < 200 or remote.status >= 300:
                     error_body = response_text[:300]
                     log_event(
-                        _ai_logger, "ai.chat.error",
+                        _ai_logger,
+                        "ai.chat.error",
                         level="error",
-                        provider="deepseek", model=model,
+                        provider=effective_provider,
+                        model=model,
                         duration_ms=elapsed,
                         status_code=remote.status,
                         error_type="HTTPError",
                         error_message=error_body,
                     )
                     raise RuntimeError(
-                        f"DeepSeek API error: {remote.status} {error_body}"
+                        f"OpenAI-compatible API error: {remote.status} {error_body}"
                     )
 
                 data = json.loads(response_text)
-                choice = data["choices"][0]
-                tokens = data["usage"]["total_tokens"]
-                response_chars = len(choice["message"].get("content", ""))
+                choices = data.get("choices")
+                if not isinstance(choices, list) or not choices:
+                    raise RuntimeError("OpenAI-compatible API response missing choices[0]")
+                choice = choices[0]
+                if not isinstance(choice, dict):
+                    raise RuntimeError("OpenAI-compatible API response has invalid choice format")
+                message = choice.get("message")
+                if not isinstance(message, dict):
+                    raise RuntimeError("OpenAI-compatible API response missing choice.message")
+
+                content = _normalise_message_content(message.get("content"))
+                tokens = _tokens_used(data)
+                response_chars = len(content)
 
                 set_tag("ai.tokens", tokens)
                 set_tag("ai.duration_ms", elapsed)
-                if elapsed >= request_timeout * 1000:
-                    set_tag("ai.timeout", True)
 
                 log_event(
-                    _ai_logger, "ai.chat.finish",
-                    provider="deepseek", model=model,
+                    _ai_logger,
+                    "ai.chat.finish",
+                    provider=effective_provider,
+                    model=model,
                     duration_ms=elapsed,
                     tokens_used=tokens,
                     response_chars=response_chars,
                 )
 
                 return {
-                    "content": choice["message"]["content"],
+                    "content": content,
                     "tokens_used": tokens,
-                    "model": data["model"],
+                    "model": data.get("model") or model,
+                    "provider": effective_provider,
                     "duration_ms": elapsed,
+                    "finish_reason": choice.get("finish_reason"),
                 }
             except Exception as exc:
-                # Only log if not already logged above (HTTP error path)
-                if not isinstance(exc, RuntimeError) or "DeepSeek API error" not in str(exc):
+                if not (
+                    isinstance(exc, RuntimeError)
+                    and "OpenAI-compatible API error" in str(exc)
+                ):
                     log_event(
-                        _ai_logger, "ai.chat.error",
+                        _ai_logger,
+                        "ai.chat.error",
                         level="error",
-                        provider="deepseek", model=model,
+                        provider=effective_provider,
+                        model=model,
                         duration_ms=int((time.time() - start) * 1000),
                         error_type=type(exc).__name__,
                         error_message=str(exc)[:300],
                     )
                 capture_exception(
                     exc,
-                    tags={"ai.model": model, "ai.provider": "deepseek"},
+                    tags={"ai.model": model, "ai.provider": effective_provider},
                 )
                 raise
 
-    async def close(self):
+    async def close(self) -> None:
         if self._client:
             await self._client.aclose()
 
 
-deepseek = DeepSeekClient()
+# Canonical singleton used by new code.
+llm = OpenAICompatibleClient()
+openai_compatible = llm
+
+# Backward-compatible aliases for extensions/tests that still import the old
+# symbols. Internal project call sites are migrated to ``llm``/gateway.
+DeepSeekClient = OpenAICompatibleClient
+deepseek = llm

@@ -13,7 +13,8 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import fallback
-from app.ai.client import deepseek
+from app.ai.client import llm
+from app.ai.gateway import resolve_llm_runtime_config
 from app.ai.prompts import build_enrich_question
 from app.features.question_ai_complete import _has_complete_answer_risk
 from app.features.question_pipeline import (
@@ -190,12 +191,8 @@ async def enrich_batch(
     if not records:
         return {"processed": 0, "succeeded": 0, "fallback": 0}
 
-    # 预读模型凭据（仅一次）
-    from app.services.model_config_resolver import ensure_db_model_configured
-    creds = await ensure_db_model_configured(db, feature="completion")
-    _api_key = creds[0] if creds else None
-    _base_url = creds[1] if creds else None
-    _model_name = creds[2] if creds else None
+    # 预读 OpenAI-compatible 模型配置（仅一次，避免并发阶段访问 DB）
+    runtime = await resolve_llm_runtime_config(db, feature="completion")
 
     # P3-5: skip enrich for questions with high-risk complete
     skipped_count = 0
@@ -228,7 +225,7 @@ async def enrich_batch(
 
     async def _call(item: dict) -> dict:
         async with sem:
-            if not (_api_key or deepseek.is_available()):
+            if runtime is None:
                 item["error"] = "AI模型API Key未配置"
                 return item
             from app.core.config import settings
@@ -241,9 +238,12 @@ async def enrich_batch(
                 item["error"] = "token_budget_exhausted"
                 return item
             try:
-                resp = await deepseek.chat(
-                    item["messages"], model=_model_name,
-                    api_key=_api_key, base_url=_base_url,
+                resp = await llm.chat(
+                    item["messages"],
+                    model=runtime.model_name,
+                    api_key=runtime.api_key,
+                    base_url=runtime.base_url,
+                    provider=runtime.provider,
                 )
                 item["resp"] = resp
                 item["raw"] = resp["content"]

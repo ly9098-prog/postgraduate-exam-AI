@@ -1,6 +1,6 @@
 """AI 修复服务 — 对规则解析失败的低置信度题目进行 AI 辅助修复。
 
-纯规则触发 + DeepSeek API 修复 + token 限额控制 + 静默降级。
+纯规则触发 + OpenAI-compatible LLM 修复 + token 限额控制 + 静默降级。
 不修改上游数据，修复结果需经 Stage 7 审核。
 """
 
@@ -502,8 +502,9 @@ def _parse_batch_ai_response(content: str) -> list[dict] | None:
 async def _call_ai_for_repair(
     raw_text: str, existing: dict, config: dict, db: AsyncSession | None = None,
     api_key: str | None = None, base_url: str | None = None, model_name: str | None = None,
+    provider: str | None = None,
 ) -> dict | None:
-    """调用 DeepSeek 修复单题。返回修复结果或 None（降级）。
+    """调用 OpenAI-compatible 模型修复单题。返回修复结果或 None（降级）。
 
     外部可传入 api_key/base_url/model_name 避免重复查询 DB 凭据。
 
@@ -512,22 +513,18 @@ async def _call_ai_for_repair(
           防止 AI 看到并尝试改写冻结的选项结构。
         - 选项的恢复在 ``repair_questions()`` 的循环中统一处理。
     """
-    from app.ai.client import deepseek
+    from app.ai.client import llm
+    from app.ai.gateway import resolve_llm_runtime_config
     from app.ai.prompts import build_repair_question
+    from app.services.model_config_resolver import AICapability
 
     if db is not None and api_key is None:
-        from app.services.model_config_resolver import (
-            AICapability,
-            AIModelConfigResolver,
-        )
-        try:
-            resolver = AIModelConfigResolver(db)
-            ai_repair_config = await resolver.resolve_for_capability(AICapability.AI_REPAIR)
-            api_key = await resolver.resolve_secret(ai_repair_config)
-            base_url = ai_repair_config.endpoint
-            model_name = ai_repair_config.model_name
-        except ValueError:
-            api_key = base_url = model_name = None
+        runtime = await resolve_llm_runtime_config(db, capability=AICapability.AI_REPAIR)
+        if runtime is not None:
+            api_key = runtime.api_key
+            base_url = runtime.base_url
+            model_name = runtime.model_name
+            provider = runtime.provider
 
     # ── Structure Freeze: prevent AI from seeing frozen options ──
     # When is_frozen is True, the freeze stage is the single source of truth.
@@ -545,7 +542,7 @@ async def _call_ai_for_repair(
         return None
 
     try:
-        result = await deepseek.chat(messages, temperature=0.3, model=model_name, api_key=api_key, base_url=base_url)
+        result = await llm.chat(messages, temperature=0.3, model=model_name, api_key=api_key, base_url=base_url, provider=provider)
     except Exception:
         return None
 
@@ -569,27 +566,23 @@ async def _call_ai_for_batch_repair(
     config: dict,
     db: AsyncSession | None = None,
 ) -> list[tuple[int, dict | None]]:
-    """批量调用 DeepSeek 修复多题。自动分批（每批最多 _BATCH_LIMIT 题）。"""
-    from app.ai.client import deepseek
+    """批量调用 OpenAI-compatible 模型修复多题。自动分批（每批最多 _BATCH_LIMIT 题）。"""
+    from app.ai.client import llm
+    from app.ai.gateway import resolve_llm_runtime_config
     from app.ai.prompts import build_batch_repair_prompt
+    from app.services.model_config_resolver import AICapability
 
     if not candidates:
         return []
 
-    api_key = base_url = model_name = None
+    api_key = base_url = model_name = provider = None
     if db is not None:
-        from app.services.model_config_resolver import (
-            AICapability,
-            AIModelConfigResolver,
-        )
-        try:
-            resolver = AIModelConfigResolver(db)
-            ai_repair_config = await resolver.resolve_for_capability(AICapability.AI_REPAIR)
-            api_key = await resolver.resolve_secret(ai_repair_config)
-            base_url = ai_repair_config.endpoint
-            model_name = ai_repair_config.model_name
-        except ValueError:
-            api_key = base_url = model_name = None
+        runtime = await resolve_llm_runtime_config(db, capability=AICapability.AI_REPAIR)
+        if runtime is not None:
+            api_key = runtime.api_key
+            base_url = runtime.base_url
+            model_name = runtime.model_name
+            provider = runtime.provider
 
     all_results: list[tuple[int, dict | None]] = []
 
@@ -612,9 +605,9 @@ async def _call_ai_for_batch_repair(
             continue
 
         try:
-            result = await deepseek.chat(
+            result = await llm.chat(
                 messages, temperature=0.3, model=model_name,
-                api_key=api_key, base_url=base_url,
+                api_key=api_key, base_url=base_url, provider=provider,
             )
         except Exception:
             for idx, _q, _rt in batch:
@@ -648,7 +641,10 @@ async def _call_ai_for_batch_repair(
                 len(responses) if responses else 0, len(batch),
             )
             for idx, q, raw_text in batch:
-                single = await _call_ai_for_repair(raw_text, q, config, db, api_key=api_key, base_url=base_url, model_name=model_name)
+                single = await _call_ai_for_repair(
+                    raw_text, q, config, db, api_key=api_key, base_url=base_url,
+                    model_name=model_name, provider=provider,
+                )
                 if single:
                     single["_batch_fallback"] = True  # L2: mark degradation source
                 all_results.append((idx, single))
@@ -688,28 +684,23 @@ async def _call_ai_for_roman_decision(
     config: dict,
     db: AsyncSession | None = None,
 ) -> dict | None:
-    """Call DeepSeek for constrained Roman numeral repair decisions.
+    """Call the configured OpenAI-compatible model for constrained Roman numeral repair decisions.
 
     Returns: {"decisions": [...], "token_used": N} or None on failure.
     """
-    from app.ai.client import deepseek
+    from app.ai.client import llm
+    from app.ai.gateway import resolve_llm_runtime_config
     from app.ai.prompts import build_roman_decision_prompt
+    from app.services.model_config_resolver import AICapability
 
+    api_key = base_url = model_name = provider = None
     if db is not None:
-        from app.services.model_config_resolver import (
-            AICapability,
-            AIModelConfigResolver,
-        )
-        try:
-            resolver = AIModelConfigResolver(db)
-            ai_repair_config = await resolver.resolve_for_capability(AICapability.AI_REPAIR)
-            api_key = await resolver.resolve_secret(ai_repair_config)
-            base_url = ai_repair_config.endpoint
-            model_name = ai_repair_config.model_name
-        except ValueError:
-            api_key = base_url = model_name = None
-    else:
-        api_key = base_url = model_name = None
+        runtime = await resolve_llm_runtime_config(db, capability=AICapability.AI_REPAIR)
+        if runtime is not None:
+            api_key = runtime.api_key
+            base_url = runtime.base_url
+            model_name = runtime.model_name
+            provider = runtime.provider
 
     messages = build_roman_decision_prompt(question, anomalies)
     prompt_text = json.dumps(messages, ensure_ascii=False)
@@ -719,9 +710,9 @@ async def _call_ai_for_roman_decision(
         return None
 
     try:
-        result = await deepseek.chat(
+        result = await llm.chat(
             messages, temperature=0.2, model=model_name,
-            api_key=api_key, base_url=base_url,
+            api_key=api_key, base_url=base_url, provider=provider,
         )
     except Exception:
         return None
@@ -957,9 +948,11 @@ async def repair_questions(
             },
         }
 
-    from app.ai.client import deepseek
+    from app.ai.gateway import resolve_llm_runtime_config
+    from app.services.model_config_resolver import AICapability
 
-    if not deepseek.is_available():
+    runtime = await resolve_llm_runtime_config(db, capability=AICapability.AI_REPAIR) if db is not None else None
+    if runtime is None:
         for i, q in enumerate(questions):
             unrepaired.append({
                 "question_index": i,
@@ -981,7 +974,7 @@ async def repair_questions(
     roman_results: dict[int, dict] = {}  # index → {decisions, token_used}
     roman_total_tokens = 0
 
-    if roman_diagnostics and deepseek.is_available():
+    if roman_diagnostics and runtime is not None:
         phase1_results = await _run_roman_repair_phase(
             questions, roman_diagnostics, config, db,
         )
@@ -1290,7 +1283,7 @@ async def repair_questions(
 
         safety_trace, _safe_stem = evaluate_and_trace(
             stage="ai_repair",
-            model="deepseek",
+            model="openai_compatible",
             before=before_stem,
             after=after_stem,
             context=safety_context,

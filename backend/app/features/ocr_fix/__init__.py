@@ -14,6 +14,7 @@ from app.features.ocr_fix.canonical_output import (
     canonicalize,
 )
 from app.features.ocr_fix.deepseek_adapter import DeepSeekFixer
+from app.features.ocr_fix.openai_compatible_adapter import OpenAICompatibleFixer
 from app.features.ocr_fix.interfaces import (
     CandidateDecision,
     CandidateEvaluation,
@@ -30,6 +31,7 @@ __all__ = [
     "CandidateEvaluation",
     "RuleFixer",
     "DeepSeekFixer",
+    "OpenAICompatibleFixer",
     "OCRFixRouter",
     "STRATEGY_AUTO",
     "STRATEGY_MANUAL",

@@ -89,6 +89,24 @@ function cubicPoint(
   };
 }
 
+function cubicUnitNormal(
+  start: { x: number; y: number },
+  control1: { x: number; y: number },
+  control2: { x: number; y: number },
+  end: { x: number; y: number },
+  t: number,
+) {
+  const mt = 1 - t;
+  const dx = 3 * mt * mt * (control1.x - start.x)
+    + 6 * mt * t * (control2.x - control1.x)
+    + 3 * t * t * (end.x - control2.x);
+  const dy = 3 * mt * mt * (control1.y - start.y)
+    + 6 * mt * t * (control2.y - control1.y)
+    + 3 * t * t * (end.y - control2.y);
+  const length = Math.max(0.001, Math.hypot(dx, dy));
+  return { x: -dy / length, y: dx / length };
+}
+
 function segmentsProperlyIntersect(
   a: { x: number; y: number },
   b: { x: number; y: number },
@@ -612,8 +630,10 @@ function GraphCanvas({
       const baseLen = Math.max(1, Math.hypot(baseDx, baseDy));
       let sx = source.x + (baseDx / baseLen) * (sourceRadius + 5);
       let sy = source.y + (baseDy / baseLen) * (sourceRadius + 5);
-      let tx = target.x - (baseDx / baseLen) * (targetRadius + 11);
-      let ty = target.y - (baseDy / baseLen) * (targetRadius + 11);
+      // 箭头尖端只与目标节点保留很小的视觉间隙。旧版预留 11~12px，
+      // 会让箭头看起来悬空，尤其在曲线或关系标签附近容易失去“指向谁”的语义。
+      let tx = target.x - (baseDx / baseLen) * (targetRadius + 3.5);
+      let ty = target.y - (baseDy / baseLen) * (targetRadius + 3.5);
 
       // 直接关系采用“扇区端口”：同侧的多条边会沿圆周错开，避免中心节点旁形成线束。
       const activePortAngle = activeDirect ? activePortAngles.get(edge.id) : undefined;
@@ -623,8 +643,8 @@ function GraphCanvas({
           sy = source.y + Math.sin(activePortAngle) * (sourceRadius + 7);
         }
         if (target.id === activeId) {
-          tx = target.x + Math.cos(activePortAngle) * (targetRadius + 12);
-          ty = target.y + Math.sin(activePortAngle) * (targetRadius + 12);
+          tx = target.x + Math.cos(activePortAngle) * (targetRadius + 3.5);
+          ty = target.y + Math.sin(activePortAngle) * (targetRadius + 3.5);
         }
       }
 
@@ -764,37 +784,47 @@ function GraphCanvas({
           : activeId != null && edge.source === activeId
             ? [0.72, 0.64, 0.56, 0.8]
             : [0.5, 0.38, 0.62];
+        labelSearch:
         for (const t of labelCandidates) {
-          const point = cubicPoint(start, control1, control2, end, t);
-          const clearOfNodes = nodes.every((node) => {
-            const visual = nodeVisuals.get(node.id);
-            const radius = visual?.radius ?? nodeRadius(node);
-            const isActive = node.id === activeId;
-            if (Math.hypot(point.x - node.x, point.y - node.y) < radius + (isActive ? 48 : 22)) return false;
-            if (!visual?.showLabel) return true;
-            const box = visual.placement.box;
-            const padding = isActive ? 24 : 9;
-            return !(
-              point.x >= box.x - padding && point.x <= box.x + box.width + padding
-              && point.y >= box.y - padding && point.y <= box.y + box.height + padding
-            );
-          });
-          if (!clearOfNodes) continue;
+          const pathPoint = cubicPoint(start, control1, control2, end, t);
+          const labelNormal = cubicUnitNormal(start, control1, control2, end, t);
+          // 关系标签不再直接盖在线上。优先放到曲线一侧，必要时尝试另一侧/更远位置，
+          // 这样既保留连续的方向线索，也避免白色标签底遮住箭头前后的短线段。
+          for (const normalOffset of [15, -15, 22, -22]) {
+            const point = {
+              x: pathPoint.x + labelNormal.x * normalOffset,
+              y: pathPoint.y + labelNormal.y * normalOffset,
+            };
+            const clearOfNodes = nodes.every((node) => {
+              const visual = nodeVisuals.get(node.id);
+              const radius = visual?.radius ?? nodeRadius(node);
+              const isActive = node.id === activeId;
+              if (Math.hypot(point.x - node.x, point.y - node.y) < radius + (isActive ? 48 : 22)) return false;
+              if (!visual?.showLabel) return true;
+              const box = visual.placement.box;
+              const padding = isActive ? 24 : 9;
+              return !(
+                point.x >= box.x - padding && point.x <= box.x + box.width + padding
+                && point.y >= box.y - padding && point.y <= box.y + box.height + padding
+              );
+            });
+            if (!clearOfNodes) continue;
 
-          const candidateBox = { x: point.x - 23, y: point.y - 11, width: 46, height: 22 };
-          const clearOfLabels = occupiedLabels.every((box) => (
-            candidateBox.x + candidateBox.width + 6 < box.x
-            || box.x + box.width + 6 < candidateBox.x
-            || candidateBox.y + candidateBox.height + 6 < box.y
-            || box.y + box.height + 6 < candidateBox.y
-          ));
-          if (!clearOfLabels) continue;
+            const candidateBox = { x: point.x - 23, y: point.y - 11, width: 46, height: 22 };
+            const clearOfLabels = occupiedLabels.every((box) => (
+              candidateBox.x + candidateBox.width + 6 < box.x
+              || box.x + box.width + 6 < candidateBox.x
+              || candidateBox.y + candidateBox.height + 6 < box.y
+              || box.y + box.height + 6 < candidateBox.y
+            ));
+            if (!clearOfLabels) continue;
 
-          labelPoint = point;
-          occupiedLabels.push(candidateBox);
-          labeledRelationTypes.add(edge.relation_type);
-          visibleRelationLabelCount += 1;
-          break;
+            labelPoint = point;
+            occupiedLabels.push(candidateBox);
+            labeledRelationTypes.add(edge.relation_type);
+            visibleRelationLabelCount += 1;
+            break labelSearch;
+          }
         }
       }
 
@@ -854,8 +884,18 @@ function GraphCanvas({
     >
       <defs>
         {(Object.keys(RELATIONS) as RelationKey[]).map((type) => (
-          <marker key={type} id={`kg-arrow-${type}`} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
-            <path d="M0,0 L8,4 L0,8 z" fill={RELATIONS[type].color} />
+          <marker
+            key={type}
+            id={`kg-arrow-${type}`}
+            markerWidth="9"
+            markerHeight="9"
+            refX="8.2"
+            refY="4.5"
+            orient="auto"
+            markerUnits="userSpaceOnUse"
+            overflow="visible"
+          >
+            <path d="M0.7,0.6 L8.8,4.5 L0.7,8.4 z" fill={RELATIONS[type].color} />
           </marker>
         ))}
         <filter id="kg-node-shadow" x="-50%" y="-50%" width="200%" height="200%">
@@ -881,6 +921,7 @@ function GraphCanvas({
                 strokeWidth={primary ? 1.15 + edge.confidence * 0.5 : 0.7}
                 strokeOpacity={primary ? 0.58 : 0.06}
                 strokeDasharray={edge.source_type === "inferred" ? "7 6" : undefined}
+                strokeLinecap="round"
                 markerEnd={primary ? `url(#kg-arrow-${edge.relation_type})` : undefined}
               />
             );

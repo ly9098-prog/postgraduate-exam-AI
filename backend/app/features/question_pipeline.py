@@ -23,7 +23,7 @@ from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.client import deepseek
+from app.ai.client import llm
 from app.core.config import settings
 from app.features.question_normalizer import run_ocr_quality_gate
 from app.features.question_splitter import split_questions
@@ -1505,14 +1505,17 @@ async def _call_or_fallback(
     messages: list, fallback_value: dict, db: AsyncSession | None = None,
     *, api_key: str | None = None, base_url: str | None = None, model_name: str | None = None,
 ) -> tuple[dict, str | None, dict | None]:
+    provider: str | None = None
     if api_key is None and db is not None:
-        from app.services.model_config_resolver import ensure_db_model_configured
-        creds = await ensure_db_model_configured(db, feature="completion")
-        api_key = creds[0] if creds else None
-        base_url = creds[1] if creds else None
-        model_name = creds[2] if creds else None
+        from app.ai.gateway import resolve_llm_runtime_config
+        runtime = await resolve_llm_runtime_config(db, feature="completion")
+        if runtime is not None:
+            api_key = runtime.api_key
+            base_url = runtime.base_url
+            model_name = runtime.model_name
+            provider = runtime.provider
 
-    if not (api_key or deepseek.is_available()):
+    if not api_key:
         return (
             {
                 "content": "", "tokens_used": 0, "model": "fallback",
@@ -1522,7 +1525,7 @@ async def _call_or_fallback(
             None, None,
         )
     try:
-        resp = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
+        resp = await llm.chat(messages, model=model_name, api_key=api_key, base_url=base_url, provider=provider)
         return (resp, resp["content"], resp)
     except (OSError, ValueError, RuntimeError, TimeoutError) as e:
         # 网络/超时/URL 校验类故障 → 降级（UnsafeRemoteURLError 是 ValueError）。

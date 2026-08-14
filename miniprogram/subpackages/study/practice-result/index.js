@@ -1,3 +1,6 @@
+const { toPlainInlineMathText } = require('../utils/stem-render');
+const { formatInlineMathText } = require('../utils/math-format');
+
 const ERROR_COLORS = ['#B8FF13', '#78D74D', '#43B968', '#238E58', '#86A83E', '#C9DC73'];
 
 const DEFAULT_GROWTH = {
@@ -58,17 +61,45 @@ function safeDecodeJson(value) {
   return null;
 }
 
+function formatMathPreviewText(value) {
+  if (value === undefined || value === null) return '';
+
+  const source = String(value)
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!source) return '';
+
+  // 结果页题目列表是单行摘要，不适合直接挂 mp-html。
+  // 优先复用题干渲染层的“列表预览”转换；复杂 LaTeX 再降级为 Unicode/纯文本形式，
+  // 避免把 $...$、\leq、\frac 等源码直接显示给用户。
+  const plain = toPlainInlineMathText(source);
+  const rendered = plain !== null ? plain : formatInlineMathText(source);
+  return String(rendered || source).replace(/\s+/g, ' ').trim();
+}
+
+function formatAnswerPreview(value) {
+  return typeof value === 'string' ? formatMathPreviewText(value) : value;
+}
+
 function getQuestionTitle(question) {
   if (!question) return '';
   const content = question.content || {};
-  return (
+  return formatMathPreviewText(
     content.stem ||
     content.text ||
     question.stem ||
     question.text ||
     question.title ||
     ''
-  ).replace(/\s+/g, ' ').trim();
+  );
 }
 
 function normalizeKpList(value) {
@@ -554,8 +585,8 @@ Page({
       displayIndex: pad2(index + 1),
       title: getQuestionTitle(question) || `第 ${index + 1} 题`,
       isCorrect: !!isCorrectRaw,
-      userAnswer: answer.user_answer ?? answer.userAnswer ?? result.user_answer ?? result.userAnswer ?? '',
-      correctAnswer: result.correct_answer ?? result.correctAnswer ?? question.answer ?? '',
+      userAnswer: formatAnswerPreview(answer.user_answer ?? answer.userAnswer ?? result.user_answer ?? result.userAnswer ?? ''),
+      correctAnswer: formatAnswerPreview(result.correct_answer ?? result.correctAnswer ?? question.answer ?? ''),
       analysis: result.analysis ?? question.analysis ?? '',
       knowledgePoints: kpList,
       knowledgePoint: kpList[0] || '未标注知识点'
@@ -568,10 +599,10 @@ Page({
     return {
       questionId: item.questionId ?? item.question_id ?? item.id ?? index + 1,
       displayIndex: item.displayIndex || pad2(index + 1),
-      title: item.title || getQuestionTitle(item) || `第 ${index + 1} 题`,
+      title: formatMathPreviewText(item.title || getQuestionTitle(item)) || `第 ${index + 1} 题`,
       isCorrect: !!isCorrectRaw,
-      userAnswer: item.userAnswer ?? item.user_answer ?? item.wrong_answer ?? '',
-      correctAnswer: item.correctAnswer ?? item.correct_answer ?? item.answer ?? '',
+      userAnswer: formatAnswerPreview(item.userAnswer ?? item.user_answer ?? item.wrong_answer ?? ''),
+      correctAnswer: formatAnswerPreview(item.correctAnswer ?? item.correct_answer ?? item.answer ?? ''),
       analysis: item.analysis ?? '',
       knowledgePoints: kpList,
       knowledgePoint: item.knowledgePoint || kpList[0] || '未标注知识点'

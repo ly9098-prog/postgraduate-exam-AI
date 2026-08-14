@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.client import deepseek
+from app.ai.gateway import chat_with_db_model, resolve_llm_runtime_config
 from app.ai.context import build_error_context
 from app.ai.fallback import get_fallback_advice, get_fallback_analysis
 from app.ai.prompts import (
@@ -340,10 +340,9 @@ async def analyze_error(
                 _generating.discard(wq_pk)
                 return cached
 
-        from app.services.model_config_resolver import ensure_db_model_configured
-        creds = await ensure_db_model_configured(db, feature="analysis")
+        runtime = await resolve_llm_runtime_config(db, feature="analysis")
 
-        if not creds:
+        if runtime is None:
             # force_regenerate 失败时有旧缓存则返回旧缓存
             old_cache = build_any_cached_error_analysis_response(wq)
             if old_cache and force_regenerate:
@@ -362,8 +361,6 @@ async def analyze_error(
                 "cache_preserved": False,
             }
 
-        api_key, base_url, model_name = creds
-
         kp_map = await load_question_kps(db, [q.id])
         context = build_error_context(wq, q, kp_map.get(q.id, []))
         messages = build_error_analysis(
@@ -371,16 +368,17 @@ async def analyze_error(
         )
 
         try:
-            # deepseek.chat 内部是阻塞 HTTP 在线程池中执行。把相同的超时显式传入
-            # 底层 socket，避免只取消 await、但后台线程仍继续占用资源并丢失结果。
+            # OpenAI-compatible client performs the blocking remote fetch in the
+            # shared bounded thread pool; keep socket and coroutine timeout aligned.
             async with asyncio.timeout(timeout_sec + ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS):
-                result = await deepseek.chat(
+                result = await chat_with_db_model(
+                    db,
                     messages,
-                    model=model_name,
-                    api_key=api_key,
-                    base_url=base_url,
+                    feature="analysis",
                     timeout=timeout_sec,
                 )
+                if result is None:
+                    raise RuntimeError("AI分析模型未配置")
         except TimeoutError:
             old_cache = build_any_cached_error_analysis_response(wq)
             logger.warning(
@@ -540,14 +538,9 @@ async def prewarm_wrong_question_analysis(
 
 
 async def generate_advice(db: AsyncSession, user_id: int, subject_id: int | None = None) -> dict:
-    from app.services.model_config_resolver import ensure_db_model_configured
-    creds = await ensure_db_model_configured(db, feature="analysis")
+    runtime = await resolve_llm_runtime_config(db, feature="analysis")
 
-    api_key = creds[0] if creds else None
-    base_url = creds[1] if creds else None
-    model_name = creds[2] if creds else None
-
-    if not (api_key or deepseek.is_available()):
+    if runtime is None:
         return {
             "content": get_fallback_advice(),
             "from_cache": False,
@@ -597,7 +590,9 @@ async def generate_advice(db: AsyncSession, user_id: int, subject_id: int | None
     )
 
     try:
-        result = await deepseek.chat(messages, model=model_name, api_key=api_key, base_url=base_url)
+        result = await chat_with_db_model(db, messages, feature="analysis")
+        if result is None:
+            raise RuntimeError("AI分析模型未配置")
     except Exception:
         fallback = get_fallback_advice()
         return {

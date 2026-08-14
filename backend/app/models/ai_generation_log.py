@@ -21,7 +21,7 @@ class AiGenerationLog(Base):
     parsed_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    model: Mapped[str] = mapped_column(String(64), default="deepseek-chat")
+    model: Mapped[str] = mapped_column(String(64), default="openai-compatible")
     tokens_used: Mapped[int] = mapped_column(Integer, default=0)
     duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     success: Mapped[int] = mapped_column(Integer, default=1)
