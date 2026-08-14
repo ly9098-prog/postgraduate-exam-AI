@@ -472,6 +472,8 @@ async def auto_schedule_wrong_question(
     db: AsyncSession,
     user_id: int,
     question_id: int,
+    *,
+    commit: bool = True,
 ) -> ReviewSchedule | None:
     """错题自动进入复习调度。已存在则更新，不存在则创建。"""
     result = await db.execute(
@@ -511,8 +513,11 @@ async def auto_schedule_wrong_question(
         db.add(schedule)
 
     await _sync_schedule_to_wq(db, schedule)
-    await db.commit()
-    await db.refresh(schedule)
+    if commit:
+        await db.commit()
+        await db.refresh(schedule)
+    else:
+        await db.flush()
     return schedule
 
 

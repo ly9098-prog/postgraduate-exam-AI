@@ -19,6 +19,7 @@ async def record_answer_behavior(
     correct_answer: str | None = None,
     subject_id: int | None = None,
     session_type: str = "random",
+    commit: bool = True,
 ) -> AnswerBehavior:
     """记录一条答题行为数据"""
     # 检查是否已有相同记录
@@ -42,8 +43,11 @@ async def record_answer_behavior(
             existing.correct_answer = correct_answer or existing.correct_answer
             if subject_id is not None:
                 existing.subject_id = subject_id
-            await db.commit()
-            await db.refresh(existing)
+            if commit:
+                await db.commit()
+                await db.refresh(existing)
+            else:
+                await db.flush()
             return existing
 
     behavior = AnswerBehavior(
@@ -62,8 +66,11 @@ async def record_answer_behavior(
         session_type=session_type,
     )
     db.add(behavior)
-    await db.commit()
-    await db.refresh(behavior)
+    if commit:
+        await db.commit()
+        await db.refresh(behavior)
+    else:
+        await db.flush()
     return behavior
 
 
