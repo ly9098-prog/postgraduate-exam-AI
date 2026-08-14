@@ -2,6 +2,7 @@ import hashlib
 import logging
 import random
 from datetime import date, datetime, timedelta
+from uuid import uuid4
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -26,6 +27,10 @@ from app.services.wrong_question_service import record_wrong
 from app.utils.answer_normalizer import is_answer_correct
 
 logger = logging.getLogger(__name__)
+
+_SEQUENTIAL_MODE = "sequential"
+_SEQUENTIAL_RESET_MODE = "sequential_reset"
+_SEQUENTIAL_RESET_STATUS = "marker"
 
 # 单次刷题会话时长上限（秒）。自由计时番茄钟上限 5h，刷题会话留余量到 6h；
 # 用于防御异常客户端上报 duration_sec=999999999。
@@ -570,6 +575,165 @@ async def get_aggregated_smart_questions(
     )
 
 
+async def _get_sequential_reset_at(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    subject_id: int,
+) -> datetime | None:
+    """Return the start boundary of the current sequential-practice round."""
+    return await db.scalar(
+        select(func.max(PracticeSession.finished_at)).where(
+            PracticeSession.user_id == user_id,
+            PracticeSession.subject_id == subject_id,
+            PracticeSession.mode == _SEQUENTIAL_RESET_MODE,
+            PracticeSession.status == _SEQUENTIAL_RESET_STATUS,
+        )
+    )
+
+
+def _sequential_answered_ids_query(
+    *,
+    user_id: int,
+    subject_id: int,
+    reset_at: datetime | None,
+):
+    """Question IDs completed in sequential mode during the current round."""
+    query = select(PracticeRecord.question_id).where(
+        PracticeRecord.user_id == user_id,
+        PracticeRecord.subject_id == subject_id,
+        PracticeRecord.mode == _SEQUENTIAL_MODE,
+    )
+    if reset_at is not None:
+        query = query.where(PracticeRecord.answered_at > reset_at)
+    return query.distinct()
+
+
+async def get_sequential_practice_questions(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    subject_id: int,
+    subject_ids: list[int],
+    count: int = 20,
+    knowledge_points: list[str] | None = None,
+) -> tuple[list[Question], dict]:
+    """Strict sequential practice with durable per-user, per-subject progress.
+
+    Sequential mode intentionally does *not* use Leitner, weakness scoring,
+    no-repeat windows, or general historical-answer exclusion. Its only
+    scheduling rule is deterministic question order (Question.id ASC) inside
+    the selected leaf subject.
+
+    Progress is derived from PracticeRecord.mode="sequential" after the latest
+    sequential-reset marker, so no new table/migration is required. Only
+    questions actually answered are marked complete; skipped questions remain
+    in the next batch.
+    """
+    if len(subject_ids) != 1 or subject_ids[0] != subject_id:
+        raise ValueError("顺序练习仅支持单一具体科目")
+
+    base_conditions = [
+        Question.is_active,
+        Question.subject_id == subject_id,
+    ]
+    if knowledge_points:
+        base_conditions.extend(kp_exact_conditions(knowledge_points))
+
+    reset_at = await _get_sequential_reset_at(
+        db, user_id=user_id, subject_id=subject_id,
+    )
+    answered_ids = _sequential_answered_ids_query(
+        user_id=user_id,
+        subject_id=subject_id,
+        reset_at=reset_at,
+    )
+
+    total_query = select(func.count(Question.id)).where(and_(*base_conditions))
+    total_questions = int((await db.scalar(total_query)) or 0)
+
+    completed_query = select(func.count(Question.id)).where(
+        and_(*base_conditions),
+        Question.id.in_(answered_ids),
+    )
+    completed_questions = int((await db.scalar(completed_query)) or 0)
+
+    result = await db.execute(
+        select(Question)
+        .where(
+            and_(*base_conditions),
+            Question.id.notin_(answered_ids),
+        )
+        .options(selectinload(Question.subject_ref))
+        .order_by(Question.id.asc())
+        .limit(count)
+    )
+    questions = list(result.scalars().all())
+
+    remaining_questions = max(0, total_questions - completed_questions)
+    progress = {
+        "subject_id": subject_id,
+        "total_questions": total_questions,
+        "completed_questions": completed_questions,
+        "remaining_questions": remaining_questions,
+        "cycle_completed": total_questions > 0 and remaining_questions == 0,
+        "next_question_id": questions[0].id if questions else None,
+    }
+
+    logger.info(
+        "[Sequential Query] uid=%d subject_id=%d count=%d total=%d completed=%d "
+        "remaining=%d returned=%d reset_at=%s next_question_id=%s",
+        user_id,
+        subject_id,
+        count,
+        total_questions,
+        completed_questions,
+        remaining_questions,
+        len(questions),
+        reset_at,
+        progress["next_question_id"],
+    )
+    return questions, progress
+
+
+async def reset_sequential_progress(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    subject_id: int,
+) -> None:
+    """Start a new sequential round without deleting practice history.
+
+    A zero-duration marker is stored in PracticeSession with status="marker".
+    Study-duration/history queries only consume status="completed", so the
+    marker does not pollute learning statistics while still giving us a
+    durable reset boundary without a schema migration.
+    """
+    now = utcnow()
+    marker = PracticeSession(
+        user_id=user_id,
+        subject_id=subject_id,
+        request_id=f"seqreset:{user_id}:{subject_id}:{uuid4().hex}",
+        mode=_SEQUENTIAL_RESET_MODE,
+        started_at=now,
+        finished_at=now,
+        duration_sec=0,
+        question_count=0,
+        answered_count=0,
+        correct_count=0,
+        wrong_count=0,
+        status=_SEQUENTIAL_RESET_STATUS,
+    )
+    db.add(marker)
+    await db.commit()
+    logger.info(
+        "[Sequential Reset] uid=%d subject_id=%d reset_at=%s",
+        user_id,
+        subject_id,
+        now,
+    )
+
+
 async def get_practice_questions(
     db: AsyncSession,
     user_id: int,
@@ -597,6 +761,20 @@ async def get_practice_questions(
 
     if knowledge_points:
         base_conditions.extend(kp_exact_conditions(knowledge_points))
+
+    # ── 顺序模式：严格题库进度，不参与 Leitner / no-repeat 调度 ──
+    if mode == _SEQUENTIAL_MODE:
+        if len(ids) != 1:
+            raise ValueError("顺序练习仅支持单一具体科目")
+        questions, _progress = await get_sequential_practice_questions(
+            db,
+            user_id=user_id,
+            subject_id=ids[0],
+            subject_ids=ids,
+            count=count,
+            knowledge_points=knowledge_points,
+        )
+        return questions
 
     # ── V2 Leitner 模式 ──
     if use_leitner:
@@ -2723,6 +2901,12 @@ async def batch_submit_answers(
             logger.warning("practice session 结构非法，跳过会话落库: %s", e)
             session_values = None
         if session_values is not None:
+            # PracticeRecord.mode 是顺序进度的事实来源之一。仅在 session 元数据
+            # 通过完整校验后写入，避免非法客户端数据污染历史记录。
+            record_mode = session_values["mode"]
+            for record, _q, _is_correct, _user_answer, _used_time in records:
+                record.mode = record_mode
+
             subject_id = session_values["subject_id"]
             if subject_id is None:
                 session_values["subject_id"] = fallback_subject_id

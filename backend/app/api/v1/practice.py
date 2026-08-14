@@ -23,6 +23,8 @@ from app.schemas.practice import (
     PracticeQuestionsResponse,
     PracticeRecordItem,
     PracticeStatsResponse,
+    SequentialPracticeResetRequest,
+    SequentialPracticeResetResponse,
 )
 from app.services import practice_service as svc
 from app.services.knowledge_point_service import load_question_kps
@@ -241,6 +243,7 @@ async def get_practice_questions(
     # metadata: 题目推荐元数据（仅 smart/similar 模式使用）
     question_metadata: dict[int, dict] = {}
     request_id: str | None = None
+    sequential_progress: dict | None = None
 
     if mode == "similar":
         if not source_question_id:
@@ -286,6 +289,21 @@ async def get_practice_questions(
             except Exception:
                 logger.warning("similar 推荐日志写入失败", exc_info=True)
 
+    elif mode == "sequential":
+        # 顺序模式是独立的题库进度模式：严格按 Question.id 推进，
+        # 不参与 Leitner、薄弱点、错题优先或 no-repeat 调度。
+        try:
+            questions, sequential_progress = await svc.get_sequential_practice_questions(
+                db=db,
+                user_id=current_user.id,
+                subject_id=subject_id,
+                subject_ids=scope_subject_ids,
+                count=count,
+                knowledge_points=kps,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     elif mode == "smart":
         import uuid
         request_id = str(uuid.uuid4())
@@ -310,7 +328,7 @@ async def get_practice_questions(
             )
 
     else:
-        # random / sequential
+        # random
         if len(scope_subject_ids) > 1:
             # 父级科目聚合随机
             questions = await svc.get_aggregated_random_questions(
@@ -387,6 +405,7 @@ async def get_practice_questions(
         mode=mode,
         trace_id=trace_id,
         request_id=request_id,
+        sequential_progress=sequential_progress,
     )
     debug_log(
         trace_id,
@@ -404,6 +423,37 @@ async def get_practice_questions(
         },
     )
     return response
+
+
+@router.post(
+    "/sequential/reset",
+    response_model=SequentialPracticeResetResponse,
+)
+async def reset_sequential_practice(
+    data: SequentialPracticeResetRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """完成一轮后显式开始新的顺序刷题轮次。"""
+    resolved = await svc.resolve_subject_id_to_code(db, data.subject_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail="科目不存在")
+
+    has_enabled_children, scope_subject_ids = await svc.resolve_practice_subject_scope(
+        db, data.subject_id, include_children=False,
+    )
+    if has_enabled_children or len(scope_subject_ids) != 1:
+        raise HTTPException(
+            status_code=400,
+            detail="顺序练习仅支持具体科目，不支持父级科目聚合刷题",
+        )
+
+    await svc.reset_sequential_progress(
+        db,
+        user_id=current_user.id,
+        subject_id=data.subject_id,
+    )
+    return SequentialPracticeResetResponse(subject_id=data.subject_id, reset=True)
 
 
 @router.post("/submit", response_model=AnswerResult)

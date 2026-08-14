@@ -23,12 +23,32 @@ class PracticeQuestion(BaseModel):
     similarity: float | None = None
 
 
+class SequentialPracticeProgress(BaseModel):
+    """顺序刷题当前轮次进度。"""
+    subject_id: int
+    total_questions: int
+    completed_questions: int
+    remaining_questions: int
+    cycle_completed: bool
+    next_question_id: int | None = None
+
+
 class PracticeQuestionsResponse(BaseModel):
     questions: list[PracticeQuestion]
     total: int
     mode: str
     trace_id: str | None = None
     request_id: str | None = None
+    sequential_progress: SequentialPracticeProgress | None = None
+
+
+class SequentialPracticeResetRequest(BaseModel):
+    subject_id: int
+
+
+class SequentialPracticeResetResponse(BaseModel):
+    subject_id: int
+    reset: bool = True
 
 
 # --- POST /practice/submit ---

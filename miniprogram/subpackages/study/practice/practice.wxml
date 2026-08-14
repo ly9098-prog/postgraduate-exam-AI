@@ -100,7 +100,7 @@
             <view class="mode-card {{selectedMode==='sequential' ? 'active' : ''}}" hover-class="option-pressed" bindtap="chooseMode" data-mode="sequential">
               <text class="mode-icon">≡</text>
               <text class="mode-title">顺序推进</text>
-              <text class="mode-desc">体系巩固</text>
+              <text class="mode-desc">按题库顺序续刷</text>
               <view class="option-check" wx:if="{{selectedMode==='sequential'}}">✓</view>
             </view>
             <view class="mode-card {{selectedMode==='smart' ? 'active' : ''}}" hover-class="option-pressed" bindtap="chooseMode" data-mode="smart">
@@ -334,7 +334,7 @@
 
   <!-- 加载 -->
   <view class="loading-wrap" wx:if="{{started && loading}}">
-    <loading-lottie text="正在生成挑战题组..." size="large" />
+    <loading-lottie text="{{selectedMode==='sequential' ? '正在读取顺序进度...' : '正在生成挑战题组...'}}" size="large" />
   </view>
 
 </view>
