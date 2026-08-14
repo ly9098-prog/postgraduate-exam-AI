@@ -152,6 +152,21 @@ class Settings(BaseSettings):
     ANSWER_PROJECTION_RECONCILE_GRACE_SEC: int = 600
     ANSWER_PROJECTION_RECONCILE_BATCH_SIZE: int = 100
 
+    # Async task observability / health thresholds.  These thresholds only
+    # produce state-transition alerts; the diagnostics endpoint always exposes
+    # the raw values so operators can tune them without losing visibility.
+    TASK_HEALTH_MONITOR_INTERVAL_SEC: int = 60
+    TASK_HEALTH_OUTBOX_OLDEST_WARN_SEC: int = 120
+    TASK_HEALTH_OUTBOX_OLDEST_ERROR_SEC: int = 900
+    TASK_HEALTH_QUEUE_OLDEST_WARN_SEC: int = 120
+    TASK_HEALTH_QUEUE_OLDEST_ERROR_SEC: int = 900
+    TASK_HEALTH_DEAD_WARN_COUNT: int = 1
+    TASK_HEALTH_DEAD_ERROR_COUNT: int = 20
+    TASK_HEALTH_PROJECTION_WARN_COUNT: int = 1
+    TASK_HEALTH_PROJECTION_ERROR_COUNT: int = 50
+    TASK_HEALTH_FAILED_OUTBOX_WARN_COUNT: int = 1
+    TASK_HEALTH_FAILED_OUTBOX_ERROR_COUNT: int = 20
+
     # Database connection pool
     DB_POOL_SIZE: int = 5
     DB_MAX_OVERFLOW: int = 10

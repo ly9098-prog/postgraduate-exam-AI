@@ -95,13 +95,60 @@ async def check_ai_model_config(db: AsyncSession) -> AiModelConfigCheck:
     return check
 
 
+
+
+async def check_async_task_health(db: AsyncSession) -> dict:
+    """Return a compact async-task SLI summary for the system health endpoint."""
+    try:
+        from app.services.task_observability_service import collect_task_diagnostics
+
+        snapshot = await collect_task_diagnostics(db)
+        health = snapshot["health"]
+        outbox = snapshot["outbox"]
+        redis = snapshot["redis"]
+        projection = snapshot["projection"]
+        issues = health.get("issues") or []
+        if health["severity"] == "ok":
+            message = (
+                "异步任务链路正常"
+                if snapshot.get("async_runtime_expected")
+                else "本地 Web-only 模式：异步任务运行时未启用"
+            )
+        else:
+            message = "；".join(str(item.get("message") or "") for item in issues[:3])
+        return {
+            "ok": bool(health["ok"]),
+            "severity": health["severity"],
+            "code": issues[0]["code"] if issues else "ASYNC_TASKS_OK",
+            "message": message,
+            "issues": issues,
+            "redis_available": bool(redis.get("available")),
+            "outbox_unpublished": int(outbox.get("unpublished") or 0),
+            "outbox_oldest_seconds": int(outbox.get("oldest_unpublished_seconds") or 0),
+            "queue_ready": int((redis.get("totals") or {}).get("ready", 0)),
+            "queue_dead": int((redis.get("totals") or {}).get("dead", 0)),
+            "projection_unprojected": int(projection.get("unprojected") or 0),
+        }
+    except Exception as exc:
+        logger.warning("async task health check failed: %s", exc)
+        return {
+            "ok": False,
+            "severity": "error",
+            "code": "ASYNC_TASK_HEALTH_CHECK_FAILED",
+            "message": "异步任务健康检查失败",
+            "issues": [],
+        }
+
+
 async def check_system_health(db: AsyncSession) -> SystemHealthResult:
     """Run all health checks and return aggregate result."""
     ai_config = await check_ai_model_config(db)
+    async_tasks = await check_async_task_health(db)
 
     result = SystemHealthResult(
         checks={
             "ai_model_config": asdict(ai_config),
+            "async_tasks": async_tasks,
         }
     )
 

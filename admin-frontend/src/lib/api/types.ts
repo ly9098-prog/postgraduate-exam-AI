@@ -1158,3 +1158,103 @@ export type KnowledgeGraphResponse = {
   hot_nodes: Array<{ id: number; name: string; degree: number }>;
   focus_id: number | null;
 };
+
+// ── Async task observability / diagnostics ──
+
+export type TaskHealthIssue = {
+  code: string;
+  severity: "warning" | "error";
+  message: string;
+  value?: number | null;
+};
+
+export type TaskQueueDiagnostic = {
+  task_type: string;
+  ready: number;
+  processing: number;
+  retry: number;
+  dead: number;
+  corrupt: number;
+  oldest_ready_seconds: number;
+};
+
+export type TaskOutboxFailure = {
+  outbox_id: number;
+  task_id: string;
+  task_type: string;
+  retry_count: number;
+  last_error?: string | null;
+  trace_id?: string | null;
+  request_id?: string | null;
+  updated_at: string;
+};
+
+export type TaskDiagnosticsResponse = {
+  generated_at: string;
+  async_runtime_expected: boolean;
+  health: {
+    ok: boolean;
+    severity: "ok" | "warning" | "error";
+    issues: TaskHealthIssue[];
+  };
+  outbox: {
+    counts: Record<string, number>;
+    unpublished: number;
+    oldest_unpublished_seconds: number;
+    oldest_unpublished_at?: string | null;
+    pending_by_type: Record<string, number>;
+    recent_failures: TaskOutboxFailure[];
+  };
+  redis: {
+    configured: boolean;
+    available: boolean;
+    error?: string | null;
+    queues: TaskQueueDiagnostic[];
+    totals: {
+      ready: number;
+      processing: number;
+      retry: number;
+      dead: number;
+      corrupt: number;
+    };
+    oldest_ready_seconds: number;
+  };
+  projection: {
+    unprojected: number;
+    oldest_age_sec: number;
+    oldest_answered_at?: string | null;
+    projection_receipts_total: number;
+    repairs_scheduled_24h: number;
+  };
+};
+
+export type TaskTraceItem = {
+  outbox_id: number;
+  task_id: string;
+  task_type: string;
+  trace_id?: string | null;
+  request_id?: string | null;
+  outbox_status: string;
+  outbox_retry_count: number;
+  outbox_error?: string | null;
+  created_at: string;
+  published_at?: string | null;
+  updated_at: string;
+  practice_record_id?: number | null;
+  projection_receipt_at?: string | null;
+  queue?: {
+    status?: string | null;
+    retry_count: number;
+    generation: number;
+    created_at?: number | null;
+    updated_at?: number | null;
+    last_error?: string | null;
+  } | null;
+};
+
+export type TaskTraceResponse = {
+  trace_id: string;
+  redis_available: boolean;
+  items: TaskTraceItem[];
+  total: number;
+};
