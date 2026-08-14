@@ -151,6 +151,30 @@ async def _cleanup_work_copy(work_path: str | None) -> None:
         await async_cleanup_work_copy(work_path)
 
 
+async def _process_answer_projection_task(task: Task) -> None:
+    """Project one committed PracticeRecord into all derived learning state."""
+    from app.core.database import async_session
+    from app.services.practice.answer_projection_service import project_practice_answer
+
+    practice_record_id = int(task.payload.get("practice_record_id") or 0)
+    if practice_record_id <= 0:
+        raise ValueError(f"invalid practice_record_id for task_id={task.task_id}")
+
+    async with async_session() as db:
+        result = await project_practice_answer(
+            db,
+            practice_record_id=practice_record_id,
+            request_id=task.payload.get("request_id"),
+        )
+    logger.info(
+        "Answer projection task finished: task_id=%s record_id=%s processed=%s duplicate=%s",
+        task.task_id,
+        practice_record_id,
+        result.get("processed"),
+        result.get("duplicate", False),
+    )
+
+
 # ── task type constants ──
 
 TASK_TYPE_IMPORT_PIPELINE = "import_pipeline"
@@ -161,6 +185,7 @@ TASK_TYPE_EXCEL_PIPELINE = "excel_pipeline"
 TASK_TYPE_PREWARM_ANALYSIS = "prewarm_analysis"
 TASK_TYPE_FORMULA_BATCH = "formula_batch"
 TASK_TYPE_BATCH_IMAGE = "batch_image"
+TASK_TYPE_ANSWER_PROJECTION = "answer_projection"
 
 # Current worker version for rolling deployment compatibility.
 # Must be incremented when backward-incompatible task processing changes are made.
@@ -628,6 +653,9 @@ async def _process_task(task: Task) -> None:
         except Exception:
             logger.warning("Failed to store admin resume result for %s", pipeline_id)
 
+    elif task_type == TASK_TYPE_ANSWER_PROJECTION:
+        await _process_answer_projection_task(task)
+
     elif task_type == TASK_TYPE_FORMULA_BATCH:
         from sqlalchemy import select
 
@@ -720,6 +748,7 @@ async def run_pipeline_worker(
         TASK_TYPE_ADMIN_RESUME,
         TASK_TYPE_BATCH_IMAGE,
         TASK_TYPE_FORMULA_BATCH,
+        TASK_TYPE_ANSWER_PROJECTION,
     ]
 
     logger.info("Pipeline worker started: polling every %ss", poll_interval)
@@ -1046,6 +1075,9 @@ async def _process_task_v2(task: Task) -> None:
                 await _set_pipeline_store(pipeline_id, result)
             except Exception:
                 logger.warning("Failed to store admin resume result for %s", pipeline_id)
+
+        elif task_type == TASK_TYPE_ANSWER_PROJECTION:
+            await _process_answer_projection_task(task)
 
         elif task_type == TASK_TYPE_FORMULA_BATCH:
             from sqlalchemy import select
@@ -1384,6 +1416,7 @@ async def run_dispatcher_v2(
         TASK_TYPE_ADMIN_RESUME,
         TASK_TYPE_BATCH_IMAGE,
         TASK_TYPE_FORMULA_BATCH,
+        TASK_TYPE_ANSWER_PROJECTION,
     ]
 
     logger.info(
@@ -1723,6 +1756,7 @@ async def run_reaper_loop(
         TASK_TYPE_ADMIN_RESUME,
         TASK_TYPE_BATCH_IMAGE,
         TASK_TYPE_FORMULA_BATCH,
+        TASK_TYPE_ANSWER_PROJECTION,
         TASK_TYPE_PREWARM_ANALYSIS,
     ]
 
@@ -1767,6 +1801,7 @@ async def run_reaper_loop_v2(
         TASK_TYPE_ADMIN_RESUME,
         TASK_TYPE_BATCH_IMAGE,
         TASK_TYPE_FORMULA_BATCH,
+        TASK_TYPE_ANSWER_PROJECTION,
         TASK_TYPE_PREWARM_ANALYSIS,
     ]
 

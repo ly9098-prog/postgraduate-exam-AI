@@ -15,7 +15,7 @@ from app.services.knowledge_point_service import kp_fuzzy_condition, load_questi
 
 
 async def record_wrong(
-    db: AsyncSession, user_id: int, question_id: int, wrong_answer: str
+    db: AsyncSession, user_id: int, question_id: int, wrong_answer: str, *, commit: bool = True
 ) -> WrongQuestion:
     result = await db.execute(
         select(WrongQuestion).where(
@@ -48,8 +48,12 @@ async def record_wrong(
 
     # 错题自动进入复习调度（SM-2 由 ReviewSchedule 管理）
     from app.services import review_scheduler
-    await review_scheduler.auto_schedule_wrong_question(db, user_id, question_id)
+    await review_scheduler.auto_schedule_wrong_question(
+        db, user_id, question_id, commit=commit,
+    )
 
+    if not commit:
+        await db.flush()
     await db.refresh(wq)
     return wq
 
