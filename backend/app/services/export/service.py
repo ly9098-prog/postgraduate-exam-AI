@@ -190,12 +190,26 @@ async def create_export_task(
         config.get("file_format", "pdf"),
     )
 
+    task_filters = dict(config.get("filters") or {})
+    try:
+        from app.core.log_context import get_log_context
+
+        trace_id = get_log_context().get("trace_id")
+        if trace_id not in (None, "", "-"):
+            # Export tasks are processed by a scheduler process later. Persist
+            # only the safe trace ID in the existing internal filters JSON so
+            # no schema migration is required; range_resolver ignores unknown
+            # keys and API responses never expose filters.
+            task_filters["_trace_id"] = str(trace_id)
+    except Exception:
+        pass
+
     task = ExportTask(
         user_id=user_id,
         status=ExportTaskStatus.PENDING,
         file_format=config.get("file_format", "pdf"),
         range_type=config.get("range_type", ExportRangeType.ALL),
-        filters=config.get("filters"),
+        filters=task_filters or None,
         selected_ids=config.get("selected_ids"),
         title=title,
         show_date=config.get("show_date", True),

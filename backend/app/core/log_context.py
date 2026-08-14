@@ -20,6 +20,7 @@ from __future__ import annotations
 import contextvars
 import hashlib
 import logging
+import re
 import uuid
 from typing import Any
 
@@ -59,6 +60,53 @@ def generate_request_id(prefix: str = "req") -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
+_CORRELATION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
+_TRACEPARENT_RE = re.compile(
+    r"^[0-9a-fA-F]{2}-([0-9a-fA-F]{32})-([0-9a-fA-F]{16})-[0-9a-fA-F]{2}$"
+)
+
+
+def normalize_trace_id(value: str | None, traceparent: str | None = None) -> str:
+    """Accept a safe client trace ID or derive one from W3C traceparent.
+
+    Invalid/unbounded header values are never copied into logs.
+    """
+    candidate = (value or "").strip()
+    if candidate and _CORRELATION_ID_RE.fullmatch(candidate):
+        return candidate
+
+    parent = (traceparent or "").strip()
+    match = _TRACEPARENT_RE.fullmatch(parent)
+    if match and match.group(1) != "0" * 32:
+        return f"tr_{match.group(1).lower()}"
+
+    return generate_trace_id()
+
+
+def normalize_request_id(value: str | None) -> str:
+    """Accept a safe client request ID or generate a new one."""
+    candidate = (value or "").strip()
+    if candidate and _CORRELATION_ID_RE.fullmatch(candidate):
+        return candidate
+    return generate_request_id()
+
+
+def get_trace_headers() -> dict[str, str]:
+    """Return correlation headers for outbound HTTP calls.
+
+    Empty context produces no headers, so scheduled/health traffic is unchanged.
+    """
+    ctx = get_log_context()
+    headers: dict[str, str] = {}
+    trace_id = ctx.get("trace_id")
+    request_id = ctx.get("request_id")
+    if isinstance(trace_id, str) and trace_id and trace_id != "-":
+        headers["X-Trace-ID"] = trace_id
+    if isinstance(request_id, str) and request_id and request_id != "-":
+        headers["X-Request-ID"] = request_id
+    return headers
+
+
 # ---------------------------------------------------------------------------
 # Context manipulation
 # ---------------------------------------------------------------------------
@@ -81,6 +129,10 @@ def bind_log_context(**kwargs: Any) -> list[contextvars.Token]:
             current[key] = kwargs[key]
     token = _log_context_var.set(current)
     tokens.append(token)
+    try:
+        sync_sentry_tags()
+    except Exception:
+        pass
     return tokens
 
 
@@ -88,6 +140,10 @@ def reset_log_context(tokens: list[contextvars.Token]) -> None:
     """Reset context using tokens returned by :func:`bind_log_context`."""
     for token in reversed(tokens):
         _log_context_var.reset(token)
+    try:
+        sync_sentry_tags()
+    except Exception:
+        pass
 
 
 def get_log_context() -> dict[str, Any]:
@@ -98,6 +154,10 @@ def get_log_context() -> dict[str, Any]:
 def clear_log_context() -> None:
     """Reset the log context to an empty dict."""
     _log_context_var.set({})
+    try:
+        sync_sentry_tags()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +325,6 @@ def sync_sentry_tags() -> None:
         ctx = get_log_context()
         for key in _CONTEXT_FIELDS:
             value = ctx.get(key)
-            if value is not None and value != "-":
-                set_tag(f"log.{key}", value)
+            set_tag(f"log.{key}", value if value not in (None, "") else "-")
     except Exception:
         pass  # Never let Sentry sync crash the application

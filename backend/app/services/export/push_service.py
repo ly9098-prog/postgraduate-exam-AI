@@ -89,7 +89,25 @@ async def _subscribe_all():
                             # The payload already contains user_id from build_status_event
                             user_id = payload.get("user_id")
                             if user_id:
-                                await send_to_user(user_id, payload)
+                                log_tokens = []
+                                trace_id = payload.get("trace_id")
+                                if isinstance(trace_id, str) and trace_id:
+                                    from app.core.log_context import (
+                                        bind_log_context,
+                                        normalize_trace_id,
+                                        reset_log_context,
+                                    )
+
+                                    log_tokens = bind_log_context(
+                                        trace_id=normalize_trace_id(trace_id),
+                                        user_id=user_id,
+                                        job_id=f"export:{_task_id}" if _task_id else None,
+                                    )
+                                try:
+                                    await send_to_user(user_id, payload)
+                                finally:
+                                    if log_tokens:
+                                        reset_log_context(log_tokens)
                         except (json.JSONDecodeError, KeyError):
                             logger.warning("Invalid Redis pmessage payload")
                     retry_delay = 1  # reset on success
@@ -234,6 +252,7 @@ def build_status_event(task: dict) -> dict:
         "version": task.get("version", 0),
         "downloadable": task.get("status") == "completed",
         "user_id": task.get("user_id"),
+        "trace_id": task.get("trace_id"),
     }
 
 

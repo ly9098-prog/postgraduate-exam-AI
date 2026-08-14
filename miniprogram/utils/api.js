@@ -1,12 +1,13 @@
 const config = require('../config')
 const storage = require('./storage')
-const { debugLog, isDebugMode, saveDebugSnapshot } = require('./debug')
+const { debugLog, saveDebugSnapshot } = require('./debug')
 
 const { KEYS } = storage
 
 // ═══════════════════════════════════════════════
 // 统一 API 错误对象
-// 页面统一使用：error.code / error.message / error.detail
+// 页面统一使用：error.code / error.statusCode / error.message。
+// error.message 只允许前端安全文案，禁止直接透传后端 detail/error.message。
 // ═══════════════════════════════════════════════
 class ApiError extends Error {
   constructor(message, options = {}) {
@@ -16,6 +17,8 @@ class ApiError extends Error {
     this.statusCode = options.statusCode
     this.detail = options.detail
     this.raw = options.raw
+    this.requestId = options.requestId || (options.detail && options.detail.requestId)
+    this.traceId = options.traceId || (options.detail && options.detail.traceId)
   }
 }
 
@@ -25,6 +28,77 @@ let _redirecting = false
 // 主动续签阈值：token 过期前 1 小时即触发续签
 // 避免因 24h 阈值适配短生命周期 token 时持续刷新
 const PROACTIVE_REFRESH_SEC = 3600
+
+function _generateCorrelationId(prefix) {
+  const random = Math.random().toString(36).slice(2, 12)
+  return `${prefix}_${Date.now().toString(36)}${random}`.slice(0, 64)
+}
+
+function _normalizeCorrelationId(value, prefix) {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (/^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(text)) return text
+  return _generateCorrelationId(prefix)
+}
+
+function _getResponseHeader(headers, name) {
+  if (!headers || typeof headers !== 'object') return undefined
+  const target = String(name).toLowerCase()
+  const key = Object.keys(headers).find(k => String(k).toLowerCase() === target)
+  const value = key ? headers[key] : undefined
+  return typeof value === 'string' && value.length <= 64 ? value : undefined
+}
+
+function _safeHttpMessage(statusCode) {
+  switch (Number(statusCode) || 0) {
+    case 0: return '网络连接失败，请检查网络后重试'
+    case 400: return '请求参数有误，请检查后重试'
+    case 401: return '登录状态已失效，请重新登录'
+    case 403: return '没有权限执行此操作'
+    case 404: return '请求的资源不存在'
+    case 405: return '请求方式不支持'
+    case 409: return '当前数据状态已变化，请刷新后重试'
+    case 413: return '上传内容过大，请调整后重试'
+    case 415: return '不支持的内容类型'
+    case 422: return '提交内容校验未通过，请检查后重试'
+    case 429: return '请求过于频繁，请稍后重试'
+    case 502:
+    case 503: return '服务暂时不可用，请稍后重试'
+    case 504: return '服务响应超时，请稍后重试'
+    default:
+      if (Number(statusCode) >= 500) return '服务器内部错误，请稍后重试'
+      return '请求失败，请稍后重试'
+  }
+}
+
+function _extractErrorCode(data, statusCode) {
+  if (data && typeof data === 'object') {
+    if (data.error && typeof data.error === 'object' && typeof data.error.code === 'string') {
+      return data.error.code
+    }
+    if (typeof data.code === 'string') return data.code
+    if (data.detail && typeof data.detail === 'object' && typeof data.detail.error_code === 'string') {
+      return data.detail.error_code
+    }
+    if (typeof data.detail === 'string' && /^[A-Z][A-Z0-9_]{2,63}$/.test(data.detail)) {
+      return data.detail
+    }
+  }
+  return Number(statusCode) || 'HTTP_ERROR'
+}
+
+function _safeErrorMeta(data, responseHeaders) {
+  const meta = {}
+  if (data && typeof data === 'object' && data.error && typeof data.error === 'object') {
+    if (typeof data.error.request_id === 'string') meta.requestId = data.error.request_id
+    if (typeof data.error.trace_id === 'string') meta.traceId = data.error.trace_id
+    if (data.error.retryable === true) meta.retryable = true
+  }
+  const headerRequestId = _getResponseHeader(responseHeaders, 'X-Request-ID')
+  const headerTraceId = _getResponseHeader(responseHeaders, 'X-Trace-ID')
+  if (!meta.requestId && headerRequestId) meta.requestId = headerRequestId
+  if (!meta.traceId && headerTraceId) meta.traceId = headerTraceId
+  return Object.keys(meta).length ? meta : undefined
+}
 
 // 重置重定向锁，供登录成功后调用
 function resetRedirecting() {
@@ -79,7 +153,8 @@ function _summarizeResponseData(data) {
   if (Array.isArray(data.results)) summary.result_count = data.results.length
   if (typeof data.total_correct === 'number') summary.total_correct = data.total_correct
   if (typeof data.total_wrong === 'number') summary.total_wrong = data.total_wrong
-  if (data.detail) summary.error = String(data.detail).slice(0, 200)
+  const errorCode = _extractErrorCode(data, 0)
+  if (typeof errorCode === 'string' && errorCode !== 'HTTP_ERROR') summary.errorCode = errorCode
   return summary
 }
 
@@ -113,15 +188,19 @@ function _wxLogin() {
 
 // Refresh JWT token: only try refresh token, never auto-wx.login
 // wx.login must only happen in login.js after user consent
-async function _refreshToken() {
+async function _refreshToken(traceId = '') {
   const refreshToken = storage.get(KEYS.REFRESH_TOKEN)
   if (!refreshToken) {
     // No refresh token → must re-login at login page
     _clearAuthAndRedirect()
-    throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401 })
+    throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401, traceId })
   }
 
-  const header = { 'Content-Type': 'application/json' }
+  const header = {
+    'Content-Type': 'application/json',
+    'X-Trace-ID': _normalizeCorrelationId(traceId, 'tr'),
+    'X-Request-ID': _generateCorrelationId('req'),
+  }
   const res = await _rawRequest('POST', '/auth/refresh', { refresh_token: refreshToken }, header)
   if (res.statusCode === 200 && res.data && res.data.access_token) {
     try {
@@ -139,7 +218,7 @@ async function _refreshToken() {
 
   // Refresh token invalid → clear auth, redirect to login
   _clearAuthAndRedirect()
-  throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401 })
+  throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401, traceId })
 }
 
 function _clearAuthAndRedirect() {
@@ -153,7 +232,7 @@ function _clearAuthAndRedirect() {
 
 // Force refresh token: always makes an API call, ignores local expiry
 // Used by file-request.js when server returns 401 on a valid-looking token
-async function forceRefreshToken() {
+async function forceRefreshToken(traceId = '') {
   if (_refreshing) {
     try {
       return await _refreshing
@@ -161,7 +240,7 @@ async function forceRefreshToken() {
       throw e
     }
   }
-  _refreshing = _refreshToken().finally(() => { _refreshing = null })
+  _refreshing = _refreshToken(traceId).finally(() => { _refreshing = null })
   return _refreshing
 }
 
@@ -171,7 +250,7 @@ function _skipProactiveRefresh(url) {
   return url === '/auth/login'
 }
 
-async function ensureValidToken() {
+async function ensureValidToken(traceId = '') {
   const token = storage.get(KEYS.TOKEN)
   if (!token) return false
 
@@ -184,7 +263,7 @@ async function ensureValidToken() {
   // Token 即将过期 → 主动续签（最多重试 1 次，应对冷启动网络延迟）
   for (let attempt = 0; attempt <= 1; attempt++) {
     if (!_refreshing) {
-      _refreshing = _refreshToken().finally(() => { _refreshing = null })
+      _refreshing = _refreshToken(traceId).finally(() => { _refreshing = null })
     }
     try {
       await _refreshing
@@ -200,41 +279,43 @@ async function ensureValidToken() {
   return false
 }
 
-function _buildHeader(traceId) {
+function _buildHeader(traceId, requestId) {
   const token = storage.get(KEYS.TOKEN)
   const header = { 'Content-Type': 'application/json' }
   if (token) header['Authorization'] = `Bearer ${token}`
-  if (traceId && isDebugMode()) header['X-Trace-Id'] = traceId
+  header['X-Trace-ID'] = traceId
+  header['X-Request-ID'] = requestId
   return header
 }
 
 async function request(method, url, data = {}, options = {}) {
-  const traceId = _extractTraceId(data)
+  const traceId = _normalizeCorrelationId(_extractTraceId(data), 'tr')
   const payload = _stripTraceId(data)
   const timeout = options.timeout || 0
 
   // 主动续签：在发起请求前检查 token 是否需要刷新
   if (!_skipProactiveRefresh(url)) {
-    const valid = await ensureValidToken()
+    const valid = await ensureValidToken(traceId)
     // ensureValidToken 两次重试后仍然失败 → 阻止本次请求
     // 注意：不检查 storage.get(KEYS.TOKEN)，因为 _refreshToken 失败时已调用
     // _clearAuthAndRedirect 清除了本地 token。即使 token 一开始就不存在，
     // 也应抛出错误避免发送无鉴权请求。
     if (!valid) {
-      throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401 })
+      throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401, traceId })
     }
   }
 
-  const header = _buildHeader(traceId)
+  let requestId = _generateCorrelationId('req')
+  const header = _buildHeader(traceId, requestId)
 
   // First attempt
   let res
   try {
     res = await _rawRequest(method, url, payload, header, timeout)
   } catch (err) {
-    debugLog(traceId, 'API_ERROR', { method, url, message: err?.errMsg || '网络异常' })
+    debugLog(traceId, 'API_ERROR', { method, url, requestId, message: err?.errMsg || '网络异常' })
     wx.showToast({ title: '网络异常', icon: 'none' })
-    throw new ApiError(err?.errMsg || '网络异常', { code: 'NETWORK_ERROR', raw: err })
+    throw new ApiError(_safeHttpMessage(0), { code: 'NETWORK_ERROR', statusCode: 0, traceId, requestId, raw: err })
   }
 
   // Auto-refresh JWT on 401
@@ -243,42 +324,52 @@ async function request(method, url, data = {}, options = {}) {
 
     let newToken
     try {
-      newToken = await forceRefreshToken()
+      newToken = await forceRefreshToken(traceId)
     } catch (_e) {
       // _refreshToken already clears auth and redirects to login
-      throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401 })
+      throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401, traceId })
     }
 
-    // Retry original request with new token
+    // Retry original request with new token under the same trace but a new HTTP request ID
     header['Authorization'] = `Bearer ${newToken}`
+    requestId = _generateCorrelationId('req')
+    header['X-Request-ID'] = requestId
     try {
       res = await _rawRequest(method, url, payload, header, timeout)
     } catch (err) {
-      debugLog(traceId, 'API_ERROR', { method, url, message: err?.errMsg || '网络异常' })
+      debugLog(traceId, 'API_ERROR', { method, url, requestId, message: err?.errMsg || '网络异常' })
       wx.showToast({ title: '网络异常', icon: 'none' })
-      throw new ApiError(err?.errMsg || '网络异常', { code: 'NETWORK_ERROR', raw: err })
+      throw new ApiError(_safeHttpMessage(0), { code: 'NETWORK_ERROR', statusCode: 0, traceId, requestId, raw: err })
     }
   }
 
-  debugLog(traceId, 'API_RESPONSE', { method, url, statusCode: res.statusCode })
-  saveDebugSnapshot(traceId, 'api', {
+  const responseRequestId = _getResponseHeader(res.header, 'X-Request-ID') || requestId
+  const responseTraceId = _getResponseHeader(res.header, 'X-Trace-ID') || traceId
+  debugLog(responseTraceId, 'API_RESPONSE', {
     method,
     url,
     statusCode: res.statusCode,
+    requestId: responseRequestId,
+  })
+  saveDebugSnapshot(responseTraceId, 'api', {
+    method,
+    url,
+    statusCode: res.statusCode,
+    requestId: responseRequestId,
     response: _summarizeResponseData(res.data),
   })
 
   if (res.statusCode >= 400) {
-    const detail = res.data?.detail
-    const message = typeof detail === 'object' && detail?.message ? detail.message
-      : typeof detail === 'string' ? detail
-      : '请求失败'
-    const errorCode = typeof detail === 'object' ? detail?.error_code : undefined
-    throw new ApiError(message, {
-      code: errorCode || res.data?.code || res.statusCode,
+    // 后端响应只用于机器判断和调试快照；展示文案完全由前端按 HTTP 状态生成。
+    const errorCode = _extractErrorCode(res.data, res.statusCode)
+    const safeMeta = _safeErrorMeta(res.data, res.header)
+    throw new ApiError(_safeHttpMessage(res.statusCode), {
+      code: errorCode,
       statusCode: res.statusCode,
-      detail,
-      raw: res.data,
+      detail: safeMeta,
+      requestId: safeMeta && safeMeta.requestId,
+      traceId: safeMeta && safeMeta.traceId,
+      raw: undefined,
     })
   }
 
@@ -295,5 +386,8 @@ module.exports = {
   forceRefreshToken,
   request,
   ApiError,
+  getErrorMessage: (error) => error instanceof ApiError ? error.message : '请求失败，请稍后重试',
   normalizeExpiresAt: _normalizeExpiresAt,
+  createTraceId: () => _generateCorrelationId('tr'),
+  createRequestId: () => _generateCorrelationId('req'),
 }

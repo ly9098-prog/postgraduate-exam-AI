@@ -1081,8 +1081,12 @@ Page({
     })
   },
 
-  _requestFileBuffer(url, token) {
-    const header = {}
+  _requestFileBuffer(url, token, traceId) {
+    const activeTraceId = traceId || requestApi.createTraceId()
+    const header = {
+      'X-Trace-ID': activeTraceId,
+      'X-Request-ID': requestApi.createRequestId(),
+    }
     if (token) header.Authorization = 'Bearer ' + token
 
     return new Promise(function(resolve, reject) {
@@ -1109,10 +1113,11 @@ Page({
   },
 
   async _requestStreamFile(url, task, cacheKey) {
+    const traceId = requestApi.createTraceId()
     const filePath = this._buildPreviewFilePath(task, cacheKey)
-    if (!filePath) return this._downloadFile(url, true)
+    if (!filePath) return this._downloadFile(url, true, traceId)
 
-    const tokenReady = await requestApi.ensureValidToken()
+    const tokenReady = await requestApi.ensureValidToken(traceId)
     if (!tokenReady) {
       const error = new Error('登录状态已过期')
       error.statusCode = 401
@@ -1122,24 +1127,26 @@ Page({
     let token = wx.getStorageSync('token')
     let data
     try {
-      data = await this._requestFileBuffer(url, token)
+      data = await this._requestFileBuffer(url, token, traceId)
     } catch (err) {
       if (Number(err && err.statusCode) === 401) {
         token = await requestApi.forceRefreshToken()
-        data = await this._requestFileBuffer(url, token)
+        data = await this._requestFileBuffer(url, token, traceId)
       } else {
         // Some older base-library versions handle binary responses more
         // reliably through downloadFile. Keep it as a compatibility fallback.
-        return this._downloadFile(url, true)
+        return this._downloadFile(url, true, traceId)
       }
     }
 
     return this._writePreviewFile(filePath, data)
   },
 
-  _downloadFile(url, useAuth = true) {
+  _downloadFile(url, useAuth = true, traceId = '') {
     const header = {}
     if (useAuth) {
+      header['X-Trace-ID'] = traceId || requestApi.createTraceId()
+      header['X-Request-ID'] = requestApi.createRequestId()
       const token = wx.getStorageSync('token')
       if (token) header.Authorization = 'Bearer ' + token
     }

@@ -256,6 +256,12 @@ def _schedule_local_fallback(
     if existing is not None and not existing.done():
         return EnqueueResult(accepted=True, task_id=tid, reason="duplicate_local")
 
+    try:
+        from app.core.log_context import get_log_context
+        _ctx = get_log_context()
+    except Exception:
+        _ctx = {}
+
     task = Task(
         task_id=tid,
         task_type=task_type,
@@ -264,6 +270,8 @@ def _schedule_local_fallback(
         owner_token=f"local-{uuid.uuid4().hex}",
         generation=max(1, int(time.time() * 1000)),
         lease_expires_at=time.time() + _LEASE_SEC,
+        trace_id=str(_ctx.get("trace_id") or ""),
+        request_id=str(_ctx.get("request_id") or ""),
     )
     background = asyncio.create_task(
         _run_local_fallback_task(task),
@@ -1229,6 +1237,23 @@ async def _process_claimed_task_v2(task: Task, lease_sec: int, sem: asyncio.Sema
     The caller (*run_dispatcher_v2*) acquires the semaphore before claiming
     the task. The semaphore is released in this function's ``finally`` block.
     """
+    from app.core.log_context import (
+        bind_log_context,
+        generate_request_id,
+        generate_trace_id,
+        reset_log_context,
+    )
+
+    pipeline_id = str(task.payload.get("pipeline_id") or task.payload.get("job_id") or task.task_id)
+    trace_id = task.trace_id or generate_trace_id("tr_job")
+    request_id = task.request_id or generate_request_id("req_job")
+    log_tokens = bind_log_context(
+        trace_id=trace_id,
+        request_id=request_id,
+        job_id=task.task_id,
+        pipeline_id=pipeline_id,
+    )
+
     owner_lost = asyncio.Event()
 
     hb_task = asyncio.create_task(
@@ -1325,6 +1350,7 @@ async def _process_claimed_task_v2(task: Task, lease_sec: int, sem: asyncio.Sema
             except (asyncio.CancelledError, Exception):
                 pass
 
+        reset_log_context(log_tokens)
         sem.release()
 
 

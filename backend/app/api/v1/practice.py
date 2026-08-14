@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
 from app.core.database import get_db
+from app.core.log_context import get_log_context, normalize_trace_id
 
 logger = logging.getLogger(__name__)
 from app.core.security import get_current_user
@@ -67,7 +68,7 @@ def _contains_code(text: str) -> bool:
         if re.search(r'\b' + re.escape(kw) + r'\b', text):
             score += 1
     return score >= 3
-from app.utils.trace.debug import create_trace_id, debug_log, save_debug_snapshot
+from app.utils.trace.debug import debug_log, save_debug_snapshot
 
 _TRUE_FALSE_OPTIONS = {"A": "正确", "B": "错误"}
 
@@ -230,7 +231,7 @@ async def get_practice_questions(
             detail="顺序练习仅支持具体科目，不支持父级科目聚合刷题",
         )
 
-    trace_id = x_trace_id or create_trace_id()
+    trace_id = str(get_log_context().get("trace_id") or normalize_trace_id(x_trace_id))
     kps = (
         [kp.strip() for kp in knowledge_point.split(",") if kp.strip()]
         if knowledge_point
@@ -437,7 +438,7 @@ async def batch_submit(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    trace_id = x_trace_id or create_trace_id()
+    trace_id = str(get_log_context().get("trace_id") or normalize_trace_id(x_trace_id))
     debug_log(
         trace_id,
         "SUBMIT",

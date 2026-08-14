@@ -1,5 +1,6 @@
 const { toPlainInlineMathText } = require('../utils/stem-render');
 const { formatInlineMathText } = require('../utils/math-format');
+const api = require('../../../utils/api');
 
 const ERROR_COLORS = ['#B8FF13', '#78D74D', '#43B968', '#238E58', '#86A83E', '#C9DC73'];
 
@@ -121,65 +122,6 @@ function normalizeKpList(value) {
   return [];
 }
 
-function unwrapApiBody(body) {
-  let current = body;
-  for (let i = 0; i < 3; i += 1) {
-    if (!current || typeof current !== 'object' || Array.isArray(current)) break;
-
-    if (
-      Object.prototype.hasOwnProperty.call(current, 'data') &&
-      current.data !== null &&
-      typeof current.data === 'object'
-    ) {
-      const keys = Object.keys(current);
-      const wrapperKeys = ['data', 'code', 'message', 'msg', 'success', 'status'];
-      const looksWrapped = keys.every(key => wrapperKeys.indexOf(key) !== -1);
-      if (looksWrapped) {
-        current = current.data;
-        continue;
-      }
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(current, 'result') &&
-      current.result !== null &&
-      typeof current.result === 'object' &&
-      Object.keys(current).length <= 4
-    ) {
-      current = current.result;
-      continue;
-    }
-    break;
-  }
-  return current;
-}
-
-function extractToken(value) {
-  if (!value) return '';
-  if (typeof value === 'string') return value.trim();
-  if (typeof value !== 'object') return '';
-
-  const keys = [
-    'access_token',
-    'accessToken',
-    'token',
-    'authToken',
-    'auth_token',
-    'userToken',
-    'jwt'
-  ];
-  for (const key of keys) {
-    if (typeof value[key] === 'string' && value[key].trim()) return value[key].trim();
-  }
-
-  const nestedKeys = ['auth', 'tokenInfo', 'loginInfo', 'session', 'user'];
-  for (const key of nestedKeys) {
-    const nested = extractToken(value[key]);
-    if (nested) return nested;
-  }
-  return '';
-}
-
 function stripLevelPrefix(title, level) {
   const text = String(title || '').trim();
   if (!text) return level === 1 ? '起步' : '';
@@ -285,26 +227,6 @@ function growthFromOverview(overview) {
   }
 
   return growthFromTotalExp(totalExp, streak);
-}
-
-function resolveApiUrl(baseUrl, path) {
-  const rawBase = String(baseUrl || '').trim().replace(/\/+$/, '');
-  const rawPath = String(path || '').trim();
-  if (!rawBase) return '';
-  if (/^https?:\/\//i.test(rawPath)) return rawPath;
-
-  const normalizedPath = rawPath.charAt(0) === '/' ? rawPath : `/${rawPath}`;
-
-  if (/\/api\/v1$/i.test(rawBase) && normalizedPath.indexOf('/api/v1/') === 0) {
-    return `${rawBase}${normalizedPath.slice('/api/v1'.length)}`;
-  }
-  if (/\/api$/i.test(rawBase) && normalizedPath.indexOf('/api/') === 0) {
-    return `${rawBase}${normalizedPath.slice('/api'.length)}`;
-  }
-  if (/\/v1$/i.test(rawBase) && normalizedPath.indexOf('/api/v1/') === 0) {
-    return `${rawBase}${normalizedPath.slice('/api/v1'.length)}`;
-  }
-  return `${rawBase}${normalizedPath}`;
 }
 
 Page({
@@ -822,125 +744,10 @@ Page({
   },
 
   requestApi(path, data = {}) {
-    return new Promise((resolve, reject) => {
-      let app = null;
-      try {
-        app = typeof getApp === 'function' ? getApp() : null;
-      } catch (e) {}
-
-      const globalData = (app && app.globalData) || {};
-      const config = globalData.config || globalData.env || globalData.apiConfig || {};
-
-      const baseCandidates = [
-        globalData.apiBaseUrl,
-        globalData.apiBaseURL,
-        globalData.apiBase,
-        globalData.baseUrl,
-        globalData.baseURL,
-        globalData.baseApi,
-        globalData.apiHost,
-        globalData.host,
-        globalData.serverUrl,
-        globalData.serverURL,
-        globalData.apiUrl,
-        globalData.apiURL,
-        config.apiBaseUrl,
-        config.apiBaseURL,
-        config.baseUrl,
-        config.baseURL,
-        config.apiHost,
-        config.host
-      ];
-
-      const storageBaseKeys = [
-        'apiBaseUrl',
-        'apiBaseURL',
-        'baseUrl',
-        'baseURL',
-        'apiHost',
-        'serverUrl',
-        'serverURL'
-      ];
-      storageBaseKeys.forEach(key => {
-        try {
-          const value = wx.getStorageSync(key);
-          if (value) baseCandidates.push(value);
-        } catch (e) {}
-      });
-
-      const baseUrl = baseCandidates
-        .map(value => typeof value === 'string' ? value.trim() : '')
-        .find(Boolean) || '';
-
-      const url = resolveApiUrl(baseUrl, path);
-      if (!url) {
-        reject(new Error('API base URL not found'));
-        return;
-      }
-
-      const tokenSources = [
-        globalData.access_token,
-        globalData.accessToken,
-        globalData.token,
-        globalData.authToken,
-        globalData.auth,
-        globalData.tokenInfo,
-        globalData.loginInfo,
-        globalData.user
-      ];
-
-      const tokenKeys = [
-        'access_token',
-        'accessToken',
-        'token',
-        'authToken',
-        'auth_token',
-        'userToken',
-        'jwt',
-        'tokenInfo',
-        'loginInfo',
-        'auth',
-        'userInfo',
-        'user'
-      ];
-      tokenKeys.forEach(key => {
-        try {
-          const value = wx.getStorageSync(key);
-          if (value) tokenSources.push(value);
-        } catch (e) {}
-      });
-
-      let token = '';
-      for (const source of tokenSources) {
-        token = extractToken(source);
-        if (token) break;
-      }
-
-      const header = {
-        'content-type': 'application/json',
-        Accept: 'application/json'
-      };
-      if (token) {
-        header.Authorization = /^Bearer\s/i.test(token) ? token : `Bearer ${token}`;
-      }
-
-      wx.request({
-        url,
-        method: 'GET',
-        data,
-        header,
-        success: res => {
-          if (res.statusCode >= 200 && res.statusCode < 300) {
-            resolve(unwrapApiBody(res.data));
-            return;
-          }
-
-          const detail = res && res.data && (res.data.detail || res.data.message || res.data.msg);
-          reject(new Error(detail || `HTTP ${res.statusCode}`));
-        },
-        fail: reject
-      });
-    });
+    // This page previously bypassed the shared API client with a raw wx.request,
+    // which broke auth refresh, correlation headers, and safe error handling.
+    const normalizedPath = String(path || '').replace(/^\/api\/v1(?=\/|$)/, '') || '/'
+    return api.get(normalizedPath, data)
   },
 
   switchTab(e) {

@@ -21,6 +21,8 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from app.core.log_context import get_trace_headers
+
 logger = logging.getLogger(__name__)
 
 
@@ -819,7 +821,10 @@ class PaddleOCRVLClient:
         """Submit an OCR job via multipart upload. Returns job_id."""
         url = urljoin(self._base_url, _OCR_VL_API_PATH)
         logger.info("PaddleOCR-VL submit_job url=%s", url)
-        headers = {"Authorization": f"Bearer {self._api_token}"}
+        headers = {
+            **get_trace_headers(),
+            "Authorization": f"Bearer {self._api_token}",
+        }
 
         client = self._get_client()
         response = await client.post(
@@ -839,6 +844,7 @@ class PaddleOCRVLClient:
         url = urljoin(self._base_url, _OCR_VL_API_PATH)
         logger.info("PaddleOCR-VL submit_url_job url=%s file_url=%.120s", url, file_url)
         headers = {
+            **get_trace_headers(),
             "Authorization": f"Bearer {self._api_token}",
             "Content-Type": "application/json",
         }
@@ -933,7 +939,10 @@ class PaddleOCRVLClient:
         """Poll the job status once. Returns the unwrapped data dict."""
         url = urljoin(self._base_url, f"{_OCR_VL_API_PATH}/{job_id}")
         logger.debug("PaddleOCR-VL poll_job url=%s job_id=%s", url, job_id)
-        headers = {"Authorization": f"Bearer {self._api_token}"}
+        headers = {
+            **get_trace_headers(),
+            "Authorization": f"Bearer {self._api_token}",
+        }
 
         client = self._get_client()
         response = await client.get(url, headers=headers)
@@ -1011,7 +1020,10 @@ class PaddleOCRVLClient:
         """Attempt to cancel a running remote OCR job (best-effort)."""
         try:
             url = urljoin(self._base_url, f"{_OCR_VL_API_PATH}/{job_id}")
-            headers = {"Authorization": f"Bearer {self._api_token}"}
+            headers = {
+            **get_trace_headers(),
+            "Authorization": f"Bearer {self._api_token}",
+        }
             client = self._get_client()
             await client.delete(url, headers=headers)
             logger.info("[PaddleOCR-VL] cancel job=%s", job_id)
