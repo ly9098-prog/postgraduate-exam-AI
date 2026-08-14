@@ -15,7 +15,7 @@ const OPTIONS: {
   desc: string;
   icon: typeof Server;
 }[] = [
-  { value: "local", label: "本地模式", desc: "完整 OCR pipeline · 可控可调试", icon: Server },
+  { value: "local", label: "标准模式", desc: "按 OCR 后端配置 · HTTP GPU 优先", icon: Server },
   { value: "api", label: "API 模式", desc: "PaddleOCR-VL · 更快", icon: Cloud },
 ];
 

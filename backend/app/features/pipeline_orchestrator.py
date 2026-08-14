@@ -2553,6 +2553,7 @@ class ImportPipeline:
         file_content: bytes | None = None,
         source_type: str = "pdf",
         file_path: str | None = None,
+        pre_extracted_blocks: list[dict] | None = None,
         **_kw,
     ) -> dict:
         """Extract raw text blocks from file content.
@@ -2695,10 +2696,18 @@ class ImportPipeline:
                     "PDF 中未提取到文本内容（文本层为空且 OCR 未启用或失败）"
                 )
         else:
-            text_source = file_content if file_content is not None else file_path
-            if text_source is None:
-                raise ValueError("either file_content or file_path must be provided")
-            raw_blocks = _extract_text_blocks(text_source)
+            # Image imports may already have a structured OCR result from the
+            # configured OCR Gateway.  Prefer those blocks so bbox/geometry is
+            # not discarded when the OCR text is bridged into the TXT parser.
+            # A defensive copy keeps downstream in-place layout enrichment
+            # from mutating the worker result retained in diagnostics.
+            if pre_extracted_blocks:
+                raw_blocks = [dict(block) for block in pre_extracted_blocks]
+            else:
+                text_source = file_content if file_content is not None else file_path
+                if text_source is None:
+                    raise ValueError("either file_content or file_path must be provided")
+                raw_blocks = _extract_text_blocks(text_source)
             exercise_regions_result = []
             exercise_regions_missing = False
 
@@ -4943,6 +4952,7 @@ class ImportPipeline:
         progress_callback=None,
         file_path: str | None = None,
         page_images: dict[int, bytes] | None = None,
+        pre_extracted_blocks: list[dict] | None = None,
         # P3-2: resume checkpoint — when set, single-pass skips completed stages
         resume_from_checkpoint: dict | None = None,
     ) -> dict:
@@ -4968,6 +4978,9 @@ class ImportPipeline:
                          When provided (e.g. from image imports), bypasses
                          _render_page_images so the ocr_correction stage can
                          pass the original image to multimodal models like PaddleOCR-VL.
+            pre_extracted_blocks: optional structured OCR blocks supplied by an
+                         upstream image OCR pass. Used by image imports to keep
+                         bbox/geometry while reusing the normal TXT pipeline.
 
         Returns:
             Pipeline result dict with status, stats, stages, and errors.
@@ -5038,10 +5051,9 @@ class ImportPipeline:
 
         from app.services.pdf_renderer_service import pdf_renderer
 
-        page_images: dict[int, bytes] | None = None
         page_image_refs: dict[int, str] | None = None
         pdf_render_result = None
-        if pre_render and source_type == "pdf":
+        if pre_render and source_type == "pdf" and page_images is None:
             pdf_render_result = await pdf_renderer.render_pages(
                 file_content=file_content,
                 file_path=file_path,
@@ -5075,6 +5087,7 @@ class ImportPipeline:
                     started_at=started_at,
                     page_images=page_images,
                     page_image_refs=page_image_refs,
+                    pre_extracted_blocks=pre_extracted_blocks,
                     resume_from_checkpoint=resume_from_checkpoint,
                 )
             else:
@@ -5186,6 +5199,7 @@ class ImportPipeline:
         chunk_logical_end: int | None = None,
         page_images: dict[int, bytes] | None = None,
         page_image_refs: dict[int, str] | None = None,
+        pre_extracted_blocks: list[dict] | None = None,
         # P3-2: when set, skip already-completed stages. Only used by
         # resume (single-pass). Chunked mode always passes None.
         resume_from_checkpoint: dict | None = None,
@@ -5255,6 +5269,7 @@ class ImportPipeline:
             "watermark_patterns": shared["watermark_patterns"],
             "page_images": page_images,
             "page_image_refs": page_image_refs,
+            "pre_extracted_blocks": pre_extracted_blocks,
             "raw_blocks": [],
             "normalized_blocks": [],
             "layout_result": {},
@@ -5929,6 +5944,7 @@ async def run_import_pipeline(
     created_by: str | None = None,
     source_sha256: str | None = None,
     page_images: dict[int, bytes] | None = None,
+    pre_extracted_blocks: list[dict] | None = None,
     # P3-2: resume checkpoint for single-pass resume
     resume_from_checkpoint: dict | None = None,
 ) -> dict:
@@ -5948,6 +5964,8 @@ async def run_import_pipeline(
         page_images: 预渲染的页面图片字典（{1: image_bytes}），传入后管线跳过
                      _render_page_images，直接使用。用于图片导入场景，让多模态
                      OCR 纠错模型（如 PaddleOCR-VL）能看到原始图片。
+        pre_extracted_blocks: 上游 OCR 已生成的结构化 blocks。图片导入时用于
+                     保留 PaddleX HTTP 返回的 bbox/geometry，避免退化成纯文本。
         resume_from_checkpoint: P3-2 resume checkpoint data. When set, the
                      pipeline re-runs from extract but uses the same pipeline_id
                      for status continuity.
@@ -6007,6 +6025,7 @@ async def run_import_pipeline(
             db=db,
             progress_callback=progress_callback,
             page_images=page_images,
+            pre_extracted_blocks=pre_extracted_blocks,
             resume_from_checkpoint=resume_from_checkpoint,
         )
 

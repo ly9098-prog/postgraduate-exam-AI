@@ -321,6 +321,13 @@ class AIModelConfigResolver:
             model for model in all_enabled
             if self._provider_matches_capability(model.provider, capability)
         ]
+        # Endpoint-type isolation: Embedding models must never become a generic
+        # Chat/OCR fallback, and embedding resolution must only consider models
+        # explicitly registered with the embedding capability.
+        if capability == AICapability.EMBEDDING.value:
+            all_enabled = [model for model in all_enabled if "embedding" in _get_model_features(model)]
+        else:
+            all_enabled = [model for model in all_enabled if "embedding" not in _get_model_features(model)]
         if not all_enabled:
             raise ValueError(
                 AIConfigErrorCode.AI_CONFIG_PROVIDER_UNSUPPORTED.value,
@@ -429,7 +436,7 @@ class AIModelConfigResolver:
     def _provider_matches_capability(provider: str | None, capability: str) -> bool:
         """Keep proprietary OCR endpoints out of generic chat fallback routing."""
         normalized = (provider or "").strip().lower().replace("_", "-")
-        is_paddleocr = normalized.startswith("paddleocr")
+        is_paddleocr = normalized == "paddle" or normalized.startswith("paddleocr")
         if capability == AICapability.OCR_VL.value:
             return is_paddleocr
         if capability in {
@@ -581,6 +588,11 @@ async def resolve_active_model(db: AsyncSession, feature: str | None = None) -> 
         )
     )
     all_enabled = result.scalars().all()
+
+    if feature == "embedding":
+        all_enabled = [model for model in all_enabled if "embedding" in _get_model_features(model)]
+    else:
+        all_enabled = [model for model in all_enabled if "embedding" not in _get_model_features(model)]
 
     if feature:
         for model in all_enabled:

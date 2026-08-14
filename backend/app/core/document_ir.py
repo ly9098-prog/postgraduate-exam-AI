@@ -830,16 +830,20 @@ def document_ir_to_blocks(doc: DocumentIR) -> list[dict]:
         boxes = []
         for region in page.regions:
             for line in region.lines:
-                box_entry: dict[str, Any] = {
-                    "conf": line.confidence,
-                    "text": line.text,
-                    "line_id": line.line_id,
-                }
+                # ``boxes`` is geometry, not merely a second copy of text.
+                # Keep geometry-less synthetic IR lines in ``all_text`` but
+                # do not advertise them as OCR boxes; otherwise downstream
+                # layout code incorrectly assumes spatial data is available.
                 if line.bbox:
-                    box_entry["bbox"] = line.bbox.as_tuple()
-                flags = line.flags
-                box_entry["low_conf"] = "low_conf" in flags
-                boxes.append(box_entry)
+                    box_entry: dict[str, Any] = {
+                        "conf": line.confidence,
+                        "text": line.text,
+                        "line_id": line.line_id,
+                        "bbox": line.bbox.as_tuple(),
+                    }
+                    flags = line.flags
+                    box_entry["low_conf"] = "low_conf" in flags
+                    boxes.append(box_entry)
 
         blocks.append({
             "page": page.page_index + 1,

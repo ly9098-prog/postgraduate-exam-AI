@@ -20,7 +20,7 @@ const MAX_FILES = (() => {
 })();
 const DEFAULT_CONCURRENCY = (() => {
   const n = Number(process.env.NEXT_PUBLIC_BATCH_IMAGE_DEFAULT_CONCURRENCY);
-  return Number.isFinite(n) && n >= 1 && n <= 10 ? String(Math.floor(n)) : "2";
+  return Number.isFinite(n) && n >= 1 && n <= 4 ? String(Math.floor(n)) : "2";
 })();
 const ACCEPT = ".jpg,.jpeg,.png,.webp";
 const IMAGE_MIME = /^image\/(jpeg|png|webp)$/;
@@ -66,9 +66,24 @@ function dedupeFiles(existing: File[], incoming: File[]) {
   return merged.slice(0, MAX_FILES);
 }
 
-function fmtTime(ts?: number) {
-  const d = ts ? new Date(ts) : new Date();
-  return d.toLocaleTimeString("en-US", { hour12: false });
+function taskProgress(task: ImageTask) {
+  if (task.status === "succeeded" || task.status === "failed") return 100;
+  if (task.status === "uploading") return 10;
+  if (task.status === "pending") return task.jobId ? 15 : 0;
+
+  const hasPipelineSuccess = task.traceEvents.some(
+    (event) => event.step === "pipeline" && event.status === "success",
+  );
+  if (hasPipelineSuccess) return 90;
+  const hasPipelineRunning = task.traceEvents.some(
+    (event) => event.step === "pipeline" && event.status === "running",
+  );
+  if (hasPipelineRunning) return 55;
+  const hasOcrSuccess = task.traceEvents.some(
+    (event) => event.step === "ocr" && event.status === "success",
+  );
+  if (hasOcrSuccess) return 40;
+  return 20;
 }
 
 // ── Component ─────────────────────────────────────────────────
@@ -97,15 +112,23 @@ export default function BatchImagePage() {
   const [subjectSelectOpen, setSubjectSelectOpen] = useState(false);
   const subjectSelectRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const imageTasksRef = useRef<ImageTask[]>([]);
-
-  // Keep ref in sync
-  useEffect(() => { imageTasksRef.current = imageTasks; }, [imageTasks]);
-
   // ── SSE streaming (replaces per-image polling) ────────────
 
   const abortSourcesRef = useRef<Map<string, () => void>>(new Map());
+  const pollTimersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
   const doneRef = useRef(false); // guard: completion message shown once
+
+  // Always tear down long-lived requests when leaving the page. This avoids
+  // stale SSE/watchdog callbacks updating an unmounted batch-import screen.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      for (const [, close] of abortSourcesRef.current) close();
+      abortSourcesRef.current.clear();
+      for (const [, timer] of pollTimersRef.current) clearInterval(timer);
+      pollTimersRef.current.clear();
+    };
+  }, []);
 
   // Watch for all-tasks-done to show summary + invalidate review queue
   useEffect(() => {
@@ -136,29 +159,27 @@ export default function BatchImagePage() {
     }
 
     const filesToProcess = [...files];
-    const total = filesToProcess.length;
-    const maxConc = Math.max(1, Math.min(10, Number(concurrency) || 2));
+    const maxConc = Math.max(1, Math.min(4, Number(concurrency) || 2));
     const batchId = `batch_${Date.now()}`;
+    const requestId = `req_${batchId}`;
     const now = Date.now();
     doneRef.current = false;
 
-    // 1. Clear files, create task items
     setFiles([]);
-
     const initialTasks: ImageTask[] = filesToProcess.map((file, idx) => ({
       id: `img_${now}_${idx + 1}`,
       seq: idx + 1,
       batchId,
       imageId: `img_${batchId}_${idx + 1}`,
-      requestId: `req_${batchId}_${idx + 1}`,
+      requestId,
       file,
-      status: "pending",
+      status: "uploading",
       jobId: null,
       jobStatus: null,
       traceEvents: [],
       questionCount: 0,
       errorMessage: null,
-      startedAt: 0,
+      startedAt: Date.now(),
       finishedAt: null,
     }));
 
@@ -169,135 +190,143 @@ export default function BatchImagePage() {
     const abortCtrl = new AbortController();
     abortRef.current = abortCtrl;
 
-    // 2. Process in chunks
     try {
-      for (let start = 0; start < total; start += maxConc) {
-        const chunk = initialTasks.slice(start, start + maxConc);
+      // The backend endpoint is already a true batch API.  Submit all images in
+      // one request so its semaphore/concurrency control, merge logic and one
+      // SSE stream can be used.  The previous frontend created one backend job
+      // per image, which multiplied queue/SSE overhead and defeated batch merge.
+      const formData = new FormData();
+      for (const file of filesToProcess) formData.append("files", file);
 
-        await Promise.all(
-          chunk.map(async (task) => {
-            if (abortCtrl.signal.aborted) return;
+      const qs = toQuery({
+        subject_id: subjectId ? Number(subjectId) : undefined,
+        concurrency: maxConc,
+        enable_ai_repair: true,
+        confidence_threshold: "0.6",
+        batch_fast_mode: true,
+        ocr_mode: ocrMode,
+        batch_id: batchId,
+        request_id: requestId,
+      });
 
-            const fileIdx = task.seq - 1;
+      const result = await apiRequest<BatchImageUploadResponse>(
+        `/imports/batch-image/upload${qs}`,
+        { method: "POST", body: formData, signal: abortCtrl.signal },
+      );
 
-            // Mark uploading
+      setQueuePhase("polling");
+      setMessage({
+        text: `全部 ${filesToProcess.length} 张图片已提交，正在识别中...`,
+        type: "info",
+      });
+      setImageTasks((prev) =>
+        prev.map((task) => ({ ...task, status: "pending" as const, jobId: result.job_id })),
+      );
+
+      let terminal = false;
+      const syncJobStatus = async () => {
+        if (terminal || abortCtrl.signal.aborted) return;
+        try {
+          const status = await apiRequest<BatchImageJobStatusResponse>(
+            `/imports/batch-image/${result.job_id}`,
+            { signal: abortCtrl.signal },
+          );
+
+          const itemsBySeq = new Map(status.items.map((item) => [item.seq, item]));
+          setImageTasks((prev) =>
+            prev.map((task) => {
+              const item = itemsBySeq.get(task.seq);
+              if (!item) return { ...task, jobStatus: status };
+              const nextStatus: ImageTask["status"] =
+                item.status === "succeeded" ? "succeeded"
+                  : item.status === "failed" ? "failed"
+                    : item.status === "processing" ? "processing"
+                      : "pending";
+              return {
+                ...task,
+                status: nextStatus,
+                jobStatus: status,
+                questionCount: item.question_count || 0,
+                errorMessage: item.error_message,
+                finishedAt:
+                  nextStatus === "succeeded" || nextStatus === "failed"
+                    ? (task.finishedAt || Date.now())
+                    : null,
+              };
+            }),
+          );
+
+          if (["completed", "completed_with_warnings", "failed"].includes(status.status)) {
+            terminal = true;
+            const timer = pollTimersRef.current.get(result.job_id);
+            if (timer) clearInterval(timer);
+            pollTimersRef.current.delete(result.job_id);
+            abortSourcesRef.current.get(result.job_id)?.();
+            abortSourcesRef.current.delete(result.job_id);
+          }
+        } catch {
+          // SSE remains primary; watchdog polling is intentionally best-effort.
+        }
+      };
+
+      const seenSeqs = new Set<number>();
+      const stream = connectSSE(
+        `/imports/batch-image/${result.job_id}/stream`,
+        getApiAccessToken(),
+        {
+          onTrace: (event) => {
+            if (seenSeqs.has(event.seq)) return;
+            seenSeqs.add(event.seq);
+            if (!event.item_seq) return;
             setImageTasks((prev) =>
-              prev.map((p) =>
-                p.id === task.id
-                  ? { ...p, status: "uploading" as const, startedAt: Date.now() }
-                  : p,
+              prev.map((task) =>
+                task.seq === event.item_seq
+                  ? {
+                      ...task,
+                      status: task.status === "pending" ? "processing" : task.status,
+                      traceEvents: [...task.traceEvents, event],
+                    }
+                  : task,
               ),
             );
+          },
+          onDone: () => { void syncJobStatus(); },
+          onError: () => { void syncJobStatus(); },
+        },
+      );
+      abortSourcesRef.current.set(result.job_id, stream.close);
 
-            try {
-              const formData = new FormData();
-              formData.append("files", filesToProcess[fileIdx]);
-              const qs = toQuery({
-                subject_id: subjectId ? Number(subjectId) : undefined,
-                concurrency: 1,
-                enable_ai_repair: true,
-                confidence_threshold: "0.6",
-                ocr_mode: ocrMode,
-                batch_id: task.batchId,
-                image_id: task.imageId,
-                request_id: task.requestId,
-              });
-
-              const result = await apiRequest<BatchImageUploadResponse>(
-                `/imports/batch-image/upload${qs}`,
-                { method: "POST", body: formData, signal: abortCtrl.signal },
-              );
-
-              setImageTasks((prev) =>
-                prev.map((p) =>
-                  p.id === task.id
-                    ? {
-                        ...p,
-                        status: "processing" as const,
-                        jobId: result.job_id,
-                      }
-                    : p,
-                ),
-              );
-
-              // Open SSE stream for this job
-              const seenSeqs = new Set<number>();
-              const close = connectSSE(
-                `/imports/batch-image/${result.job_id}/stream`,
-                getApiAccessToken(),
-                {
-                  onTrace: (event) => {
-                    // Deduplicate events from SSE reconnection
-                    if (seenSeqs.has(event.seq)) return;
-                    seenSeqs.add(event.seq);
-                    setImageTasks((prev) =>
-                      prev.map((p) =>
-                        p.id === task.id
-                          ? { ...p, traceEvents: [...p.traceEvents, event] }
-                          : p,
-                      ),
-                    );
-                  },
-                  onDone: (summary) => {
-                    setImageTasks((prev) =>
-                      prev.map((p) =>
-                        p.id === task.id
-                          ? {
-                              ...p,
-                              status:
-                                summary.status === "completed"
-                                  ? ("succeeded" as const)
-                                  : ("failed" as const),
-                              questionCount: summary.total_questions,
-                              errorMessage: summary.error_message,
-                              finishedAt: Date.now(),
-                            }
-                          : p,
-                      ),
-                    );
-                    abortSourcesRef.current.delete(result.job_id);
-                  },
-                },
-              );
-              abortSourcesRef.current.set(result.job_id, close.close);
-            } catch (err: unknown) {
-              if (abortCtrl.signal.aborted) return;
-              const msg = err instanceof Error ? err.message : String(err);
-              setImageTasks((prev) =>
-                prev.map((p) =>
-                  p.id === task.id
-                    ? {
-                        ...p,
-                        status: "failed" as const,
-                        errorMessage: msg,
-                        startedAt: task.startedAt || Date.now(),
-                        finishedAt: Date.now(),
-                      }
-                    : p,
-                ),
-              );
-            }
-          }),
-        );
-
-        if (abortCtrl.signal.aborted) break;
+      // Safety watchdog: backend DB is the source of truth.  This prevents a
+      // Redis/SSE disconnect from leaving the page forever at “识别中 / 0%”.
+      await syncJobStatus();
+      if (!terminal) {
+        const timer = setInterval(() => { void syncJobStatus(); }, 2500);
+        pollTimersRef.current.set(result.job_id, timer);
       }
-
-      // 3. All uploads submitted → polling phase
-      setQueuePhase("polling");
-      const totalImg = imageTasksRef.current.length;
-      setMessage({ text: `全部 ${totalImg} 张图片已提交，正在识别中...`, type: "info" });
-    } catch {
-      // Abort or unexpected error
+    } catch (err: unknown) {
+      if (abortCtrl.signal.aborted) return;
+      const msg = err instanceof Error ? err.message : String(err);
+      setImageTasks((prev) =>
+        prev.map((task) => ({
+          ...task,
+          status: "failed" as const,
+          errorMessage: msg,
+          finishedAt: Date.now(),
+        })),
+      );
+      setQueuePhase("done");
+      setMessage({ text: msg, type: "error" });
     }
   }, [files, subjectId, concurrency, ocrMode]);
 
   const resetQueue = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
-    // Close all SSE connections
+    // Close all SSE connections + watchdog polling timers
     for (const [, close] of abortSourcesRef.current) close();
     abortSourcesRef.current.clear();
+    for (const [, timer] of pollTimersRef.current) clearInterval(timer);
+    pollTimersRef.current.clear();
     doneRef.current = false;
     setImageTasks([]);
     setQueuePhase("idle");
@@ -342,10 +371,9 @@ export default function BatchImagePage() {
   // ── Computed aggregate values ────────────────────────────────
 
   const totalImages = imageTasks.length;
-  const doneImages = imageTasks.filter(
-    (t) => t.status === "succeeded" || t.status === "failed",
-  ).length;
-  const progressPct = totalImages > 0 ? Math.round((doneImages / totalImages) * 100) : 0;
+  const progressPct = totalImages > 0
+    ? Math.round(imageTasks.reduce((sum, task) => sum + taskProgress(task), 0) / totalImages)
+    : 0;
   const succeededCount = imageTasks.filter((t) => t.status === "succeeded").length;
   const failedCount = imageTasks.filter((t) => t.status === "failed").length;
   const totalQuestions = imageTasks.reduce((s, t) => s + t.questionCount, 0);
@@ -436,11 +464,7 @@ export default function BatchImagePage() {
     { value: "1", label: "1", tag: "最稳", tagClass: "bg-amber-50 text-amber-700" },
     { value: "2", label: "2", tag: "推荐", tagClass: "bg-green-50 text-green-700" },
     { value: "3", label: "3", tag: null, tagClass: "" },
-    { value: "4", label: "4", tag: "均衡", tagClass: "bg-blue-50 text-blue-700" },
-    { value: "5", label: "5", tag: null, tagClass: "" },
-    { value: "6", label: "6", tag: null, tagClass: "" },
-    { value: "8", label: "8", tag: null, tagClass: "" },
-    { value: "10", label: "10", tag: "最快", tagClass: "bg-indigo-50 text-indigo-700" },
+    { value: "4", label: "4", tag: "上限", tagClass: "bg-blue-50 text-blue-700" },
   ];
 
   return (

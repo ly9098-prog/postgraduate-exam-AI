@@ -516,6 +516,11 @@ def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: 
         if strategy == "fill_empty"
         else "请重新生成以下字段的内容，覆盖原有值。"
     )
+    analysis_instruction = (
+        "\n若需补全 analysis：必须在 JSON 中返回 analysis 键，内容应为可供学生阅读的完整题目解析；"
+        "不要只把解题过程写入 reason/reasoning/explanation。无法可靠解析时 analysis 返回空字符串。"
+        if "analysis" in target_fields else ""
+    )
     subject_list_text = ""
     if subject_list:
         subject_list_text = "\n【可用科目列表】" + json.dumps(subject_list, ensure_ascii=False) + "\n"
@@ -532,7 +537,7 @@ def build_batch_complete_question(qi: dict, target_fields: list[str], strategy: 
                 f"【已有学科】{subject_code}\n"
                 f"【已有题型】{question_type}\n"
                 f"【需补全字段】{field_names}\n"
-                f"【策略】{instruction}\n"
+                f"【策略】{instruction}{analysis_instruction}\n"
                 "输出 JSON 包含上述所有需补全字段。若答案不确定，"
                 "请将 answer_uncertain 设为 true。"
             ),
@@ -549,6 +554,11 @@ def build_complete_question(qi: dict, missing_fields: list[str], system_prompt: 
     subject_list_text = ""
     if subject_list:
         subject_list_text = "\n【可用科目列表】" + json.dumps(subject_list, ensure_ascii=False) + "\n"
+    analysis_instruction = (
+        "\n若缺失字段包含 analysis：必须在 JSON 中返回 analysis 键，内容应为可供学生阅读的完整题目解析；"
+        "不要只把解题过程写入 reason/reasoning/explanation。无法可靠解析时 analysis 返回空字符串。"
+        if "analysis" in missing_fields else ""
+    )
     return [
         {"role": "system", "content": system_prompt or SYSTEM_PROMPTS["complete_question"]},
         {
@@ -560,7 +570,7 @@ def build_complete_question(qi: dict, missing_fields: list[str], system_prompt: 
                 f"【已有答案】{answer}\n"
                 f"【已有解析】{analysis}\n"
                 f"【已有学科】{subject_code}\n"
-                f"【缺失字段】{missing_fields}\n"
+                f"【缺失字段】{missing_fields}{analysis_instruction}\n"
                 "请仅补全缺失字段，已有字段保持不变。若答案不确定，"
                 "请将 answer_uncertain 设为 true。"
             ),

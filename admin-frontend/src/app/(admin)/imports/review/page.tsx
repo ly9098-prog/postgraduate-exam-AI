@@ -288,6 +288,23 @@ function stringSuggestion(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
+function normalizeAnswerForCompare(value: unknown): string {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const compact = text.replace(/[，、；;\s]+/g, ",").replace(/^,+|,+$/g, "");
+  const upper = compact.toUpperCase();
+  if (/^[A-Z](?:,[A-Z])*$/.test(upper)) {
+    return upper.split(",").filter(Boolean).sort().join(",");
+  }
+  return compact;
+}
+
+function answersEquivalent(left: unknown, right: unknown): boolean {
+  const a = normalizeAnswerForCompare(left);
+  const b = normalizeAnswerForCompare(right);
+  return Boolean(a && b && a === b);
+}
+
 const ALL_BATCH_FIELDS = ["answer", "analysis", "knowledge_points", "difficulty", "subject_id", "question_type", "stem", "options", "tips", "tags"];
 
 const STATUS_OPTIONS = [
@@ -631,6 +648,9 @@ export default function ImportReviewPage() {
 
   const completeSuggestion = completeSuggestionFromItem(previewItem);
   const answerSuggestion = stringSuggestion(completeSuggestion?.answer);
+  const answerSuggestionApplied = Boolean(
+    answerSuggestion && answersEquivalent(editState?.answer ?? previewItem?.parsed_answer, answerSuggestion),
+  );
   const allChecked = items.length > 0 && items.every((item) => selectedIds.has(item.id));
 
   const actionMutation = useMutation({
@@ -835,6 +855,11 @@ export default function ImportReviewPage() {
           : `AI 补全完成${missingFields}，请复核后保存/通过。`,
       );
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
+      // Keep the active drawer in sync immediately.  The detail query has higher
+      // precedence than completedItem, so leaving its old cache entry in place
+      // makes freshly completed parsed_analysis look as if it was never saved.
+      queryClient.setQueryData(["import-question-detail", result.item.id], result.item);
+      syncedDetailRef.current.add(result.item.id);
       setPreviewId(result.item.id);
       setCompletedItem(result.item);
       setEditState(editStateFromItem(result.item));
@@ -1035,6 +1060,23 @@ export default function ImportReviewPage() {
       const failedIdStr = failedItems.length > 0 ? `（${failedItems.map((i) => `#${i.import_id}`).join("、")}）` : "";
       setMessage(`批量补全完成：成功 ${result.succeeded}，失败 ${result.failed}，跳过 ${result.skipped}${failedIdStr}`);
       queryClient.invalidateQueries({ queryKey: ["import-review-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["import-question-detail"] });
+
+      // If the completed question is currently open, refresh it eagerly so the
+      // newly persisted answer/analysis is visible in the drawer without closing
+      // it or manually reloading the page.
+      if (previewId !== null && ids.includes(previewId)) {
+        try {
+          const refreshed = await apiRequest<ImportQuestionItem>(`/imports/questions/${previewId}`);
+          queryClient.setQueryData(["import-question-detail", previewId], refreshed);
+          syncedDetailRef.current.add(previewId);
+          setCompletedItem(refreshed);
+          setEditState(editStateFromItem(refreshed));
+        } catch {
+          // The completion itself has succeeded; a transient detail refresh must
+          // not turn the whole batch operation into a failure message.
+        }
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "批量补全失败，请稍后重试。");
     } finally {
@@ -2249,10 +2291,21 @@ export default function ImportReviewPage() {
                         </div>
                         {answerSuggestion ? (
                           <button
-                            onClick={() => { setEditState((prev) => prev ? { ...prev, answer: answerSuggestion } : prev); }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-primary)]/30 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[var(--color-primary-dark)] shadow-sm transition hover:bg-[var(--color-primary)] hover:text-white"
+                            type="button"
+                            disabled={answerSuggestionApplied}
+                            onClick={() => {
+                              if (answerSuggestionApplied) return;
+                              setEditState((prev) => prev ? { ...prev, answer: answerSuggestion } : prev);
+                            }}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold shadow-sm transition",
+                              answerSuggestionApplied
+                                ? "cursor-not-allowed border-emerald-200 bg-emerald-50 text-emerald-700 opacity-80"
+                                : "border-[var(--color-primary)]/30 bg-white text-[var(--color-primary-dark)] hover:bg-[var(--color-primary)] hover:text-white",
+                            )}
                           >
-                            应用答案
+                            {answerSuggestionApplied ? <Check className="h-3 w-3" /> : null}
+                            {answerSuggestionApplied ? "已应用" : "应用答案"}
                           </button>
                         ) : null}
                       </div>
@@ -2732,10 +2785,21 @@ export default function ImportReviewPage() {
                         </div>
                         {answerSuggestion ? (
                           <button
-                            onClick={() => setEditState({ ...editState, answer: answerSuggestion })}
-                            className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-primary)]/30 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[var(--color-primary-dark)] shadow-sm transition hover:bg-[var(--color-primary)] hover:text-white"
+                            type="button"
+                            disabled={answerSuggestionApplied}
+                            onClick={() => {
+                              if (answerSuggestionApplied) return;
+                              setEditState({ ...editState, answer: answerSuggestion });
+                            }}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold shadow-sm transition",
+                              answerSuggestionApplied
+                                ? "cursor-not-allowed border-emerald-200 bg-emerald-50 text-emerald-700 opacity-80"
+                                : "border-[var(--color-primary)]/30 bg-white text-[var(--color-primary-dark)] hover:bg-[var(--color-primary)] hover:text-white",
+                            )}
                           >
-                            应用答案
+                            {answerSuggestionApplied ? <Check className="h-3 w-3" /> : null}
+                            {answerSuggestionApplied ? "已应用" : "应用答案"}
                           </button>
                         ) : null}
                       </div>

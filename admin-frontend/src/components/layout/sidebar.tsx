@@ -70,29 +70,19 @@ export function Sidebar() {
   const activeRoute = getActiveAdminRoute(pathname, adminRoutes);
   const activeGroupKey = findActiveGroupKey(activeRoute, visibleNavigation);
 
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    () => new Set(activeGroupKey ? [activeGroupKey] : []),
-  );
+  // Accordion semantics: at most one parent group can be expanded at a time.
+  // The active route's parent wins on navigation so the current page remains visible.
+  const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(activeGroupKey);
 
   // Keep the current page visible before paint when the route changes. useLayoutEffect
   // avoids a one-frame collapsed state when navigating directly into a child route.
   useLayoutEffect(() => {
     if (!activeGroupKey) return;
-    setExpandedGroups((current) => {
-      if (current.has(activeGroupKey)) return current;
-      const next = new Set(current);
-      next.add(activeGroupKey);
-      return next;
-    });
+    setExpandedGroupKey(activeGroupKey);
   }, [activeGroupKey, pathname]);
 
   const toggleGroup = (key: string) => {
-    setExpandedGroups((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    setExpandedGroupKey((current) => (current === key ? null : key));
   };
 
   return (
@@ -136,7 +126,7 @@ export function Sidebar() {
           }
 
           const GroupIcon = item.icon;
-          const expanded = expandedGroups.has(item.key);
+          const expanded = expandedGroupKey === item.key;
           const groupActive = activeGroupKey === item.key;
 
           return (

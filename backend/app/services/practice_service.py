@@ -2581,10 +2581,13 @@ async def submit_answer(
         logger.warning("推荐日志标记失败（不影响答题）qid=%d uid=%d", question_id, user_id, exc_info=True)
 
     # ── V2: Leitner 盒子状态更新（best-effort）──
+    # 先在覆盖 next_review_at 之前拿到“本次作答前是否已到期”，再交给 V6。
+    review_transition = None
     try:
         from app.services import question_review_service
-        await question_review_service.update_user_question_state_after_answer(
+        review_transition = await question_review_service.update_user_question_state_after_answer(
             db, user_id, question_id, is_correct, used_time=used_time,
+            answered_at=record.answered_at,
         )
     except Exception:
         logger.warning(
@@ -2599,6 +2602,12 @@ async def submit_answer(
             db, user_id=user_id, question_id=question_id,
             is_correct=is_correct, answer_time_seconds=used_time,
             answered_at=record.answered_at,
+            is_due_review=(
+                review_transition.is_due_review if review_transition is not None else None
+            ),
+            is_overdue_review=(
+                review_transition.is_overdue_review if review_transition is not None else None
+            ),
         )
     except Exception:
         logger.warning(
@@ -2807,7 +2816,43 @@ async def batch_submit_answers(
         except Exception:
             logger.warning("批量推荐日志标记失败 qid=%d uid=%d", q.id, user_id, exc_info=True)
 
-    # 批量路径 mastery / 推荐日志不内部 commit，统一收尾提交，否则 session 关闭时回滚丢失。
+        # 批量提交必须与单题提交保持相同的 Leitner + V6 后置链路。
+        # 之前这里完全漏掉两步，导致 batch-submit 产生 PracticeRecord 后，
+        # user_question_difficulty_state / adaptive profile 长期不再更新。
+        review_transition = None
+        try:
+            from app.services import question_review_service
+            review_transition = await question_review_service.update_user_question_state_after_answer(
+                db, user_id, q.id, is_correct, used_time=used_time,
+                answered_at=record.answered_at,
+            )
+        except Exception:
+            logger.warning(
+                "批量 Leitner 状态更新失败 qid=%d uid=%d",
+                q.id, user_id, exc_info=True,
+            )
+
+        try:
+            from app.services import adaptive_learning_service
+            await adaptive_learning_service.update_adaptive_state_after_answer(
+                db, user_id=user_id, question_id=q.id,
+                is_correct=is_correct, answer_time_seconds=used_time,
+                answered_at=record.answered_at,
+                is_due_review=(
+                    review_transition.is_due_review if review_transition is not None else None
+                ),
+                is_overdue_review=(
+                    review_transition.is_overdue_review if review_transition is not None else None
+                ),
+            )
+        except Exception:
+            logger.warning(
+                "批量 V6 自适应更新失败 qid=%d uid=%d",
+                q.id, user_id, exc_info=True,
+            )
+
+    # 批量路径 mastery / 推荐日志 / Leitner / V6 都不内部 commit，统一收尾提交，
+    # 否则 session 关闭时会回滚这些后置状态。
     try:
         await db.commit()
     except Exception:

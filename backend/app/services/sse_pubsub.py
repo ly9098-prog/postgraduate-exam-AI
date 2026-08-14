@@ -39,7 +39,7 @@ async def check_health() -> bool:
         return False
 
 
-async def publish_event(job_id: int, event_type: str, data: dict) -> None:
+async def publish_event(job_id: str | int, event_type: str, data: dict) -> None:
     """Publish an event to the job's Redis channel.
 
     Uses the shared cache client to avoid creating a new connection per event.
@@ -63,7 +63,7 @@ async def publish_event(job_id: int, event_type: str, data: dict) -> None:
 
 
 async def subscribe_job(
-    job_id: int,
+    job_id: str | int,
     on_event: Callable,
     on_done: Callable,
     poll_fn: Callable | None = None,
@@ -114,20 +114,20 @@ async def subscribe_job(
                                 await on_done()
                                 return
                         except json.JSONDecodeError:
-                            logger.warning("Invalid PubSub message for job %d", job_id)
+                            logger.warning("Invalid PubSub message for job %s", job_id)
                         get_msg_timeout = 0.05  # reset after message
                     else:
                         get_msg_timeout = min(get_msg_timeout * 1.5, max_get_msg_timeout)
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    logger.warning("PubSub error for job %d, falling back to poll", job_id)
+                    logger.warning("PubSub error for job %s, falling back to poll", job_id)
                     break
 
             await pubsub.unsubscribe(channel)
 
     except Exception:
-        logger.info("PubSub unavailable for job %d, using polling fallback", job_id)
+        logger.info("PubSub unavailable for job %s, using polling fallback", job_id)
 
     # Fallback: call poll_fn periodically with exponential backoff
     if poll_fn is not None:
@@ -151,6 +151,6 @@ async def subscribe_job(
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.warning("Poll fallback error for job %d", job_id)
+                logger.warning("Poll fallback error for job %s", job_id)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, max_backoff)

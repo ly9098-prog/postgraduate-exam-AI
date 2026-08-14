@@ -218,7 +218,9 @@ async def update_knowledge_interval_factor(
         s.knowledge_point_id: s for s in existing_result.scalars().all()
     }
 
-    # 批量创建缺失状态
+    # 批量创建缺失状态。新 ORM 对象的 Column(default=...) 在 flush 前未必
+    # 已填入 Python 属性；必须先 flush，才能安全读取 interval_factor / 计数器。
+    created_any = False
     for kp_id in knowledge_point_ids:
         if kp_id not in state_map:
             state = UserKnowledgeAdaptiveState(
@@ -226,7 +228,8 @@ async def update_knowledge_interval_factor(
             )
             db.add(state)
             state_map[kp_id] = state
-    if any(kp_id not in state_map for kp_id in knowledge_point_ids):
+            created_any = True
+    if created_any:
         await db.flush()
 
     # 统一更新
@@ -434,15 +437,20 @@ async def update_adaptive_state_after_answer(
     is_correct: bool,
     answer_time_seconds: int | None,
     answered_at: datetime,
+    is_due_review: bool | None = None,
+    is_overdue_review: bool | None = None,
 ) -> None:
     """答题后更新 V6 全部自适应状态。
+
+    ``is_due_review`` / ``is_overdue_review`` 应优先由 Leitner 更新函数在覆盖
+    ``next_review_at`` **之前**计算并传入。保留空值回退只用于兼容旧调用方；
+    新答题链路不得依赖更新后的 ``next_review_at`` 判断本次是否到期。
 
     调用方应在 try/except 中调用此函数，确保 V6 出错不影响主流程。
     """
     if not settings.ADAPTIVE_LEARNING_ENABLED:
         return
 
-    # 判断是否为到期复习
     uqs_result = await db.execute(
         select(UserQuestionState).where(
             UserQuestionState.user_id == user_id,
@@ -451,13 +459,16 @@ async def update_adaptive_state_after_answer(
     )
     uqs = uqs_result.scalar_one_or_none()
 
-    is_due_review = False
-    is_overdue_review = False
-    if uqs is not None:
-        nra = getattr(uqs, "next_review_at", None)
-        if nra is not None:
-            is_due_review = answered_at >= nra
-            is_overdue_review = answered_at >= nra + timedelta(days=1)
+    # 兼容旧调用方：只有未显式传入 pre-update 状态时才自行判断。
+    # 注意：如果调用方已经先更新了 Leitner，这个 fallback 读到的是未来时间，
+    # 因此当前 practice 单题/批量链路都会显式传入两个布尔值。
+    nra = getattr(uqs, "next_review_at", None) if uqs is not None else None
+    if is_due_review is None:
+        is_due_review = bool(nra is not None and answered_at >= nra)
+    if is_overdue_review is None:
+        is_overdue_review = bool(
+            nra is not None and answered_at >= nra + timedelta(days=1)
+        )
 
     # V6.1: 更新用户间隔倍率
     if settings.ADAPTIVE_INTERVAL_ENABLED and is_due_review:

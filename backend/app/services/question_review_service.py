@@ -6,6 +6,7 @@ V2 核心：为每个用户、每道题维护独立的复习状态，
 
 import logging
 from datetime import datetime, timedelta
+from typing import NamedTuple
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,10 +47,25 @@ def compute_next_box_level(
     return max(level - 2, 0)
 
 
-def compute_next_review_at(box_level: int) -> datetime:
-    """根据盒子等级计算下次复习时间。"""
+class ReviewTransition(NamedTuple):
+    """本次作答发生前的复习到期状态。
+
+    必须在覆盖 ``next_review_at`` 之前计算，并传给 V6 自适应逻辑；否则
+    V6 读到的是本次作答后新生成的未来复习时间，导致到期复习永远无法命中。
+    """
+
+    is_due_review: bool
+    is_overdue_review: bool
+
+
+def compute_next_review_at(box_level: int, base_time: datetime | None = None) -> datetime:
+    """根据盒子等级计算下次复习时间。
+
+    ``base_time`` 由答题记录时间传入时，可保证批量提交的复习时间与实际
+    PracticeRecord.answered_at 使用同一时间基准。
+    """
     interval_days = LEITNER_INTERVAL_DAYS.get(box_level, 1)
-    return utcnow() + timedelta(days=interval_days)
+    return (base_time or utcnow()) + timedelta(days=interval_days)
 
 
 async def update_user_question_state_after_answer(
@@ -58,15 +74,19 @@ async def update_user_question_state_after_answer(
     question_id: int,
     is_correct: bool,
     used_time: int | None = None,
-) -> None:
+    answered_at: datetime | None = None,
+) -> ReviewTransition:
     """每次提交答案后，创建或更新 user_question_state。
+
+    返回本次作答**之前**的到期状态，供 V6 自适应逻辑使用。这样调用方即使
+    先更新 Leitner，再更新 V6，也不会用新的 ``next_review_at`` 错判本次复习。
 
     采用 best-effort 模式：失败时记录日志，不影响答题主流程。
     使用 flush() 而非 commit()，由调用方控制事务边界。
     """
-    now = utcnow()
+    now = answered_at or utcnow()
 
-    # 查询已有状态
+    # 查询已有状态，并在任何字段覆盖之前保存本次作答前的到期状态。
     result = await db.execute(
         select(UserQuestionState).where(
             UserQuestionState.user_id == user_id,
@@ -74,6 +94,15 @@ async def update_user_question_state_after_answer(
         )
     )
     state = result.scalar_one_or_none()
+
+    previous_next_review_at = state.next_review_at if state is not None else None
+    is_due_review = bool(
+        previous_next_review_at is not None and now >= previous_next_review_at
+    )
+    is_overdue_review = bool(
+        previous_next_review_at is not None
+        and now >= previous_next_review_at + timedelta(days=1)
+    )
 
     if state is None:
         # 首次作答：创建新状态
@@ -93,7 +122,7 @@ async def update_user_question_state_after_answer(
     new_box_level = compute_next_box_level(state.box_level, is_correct)
     state.box_level = new_box_level
     state.last_answered_at = now
-    state.next_review_at = compute_next_review_at(new_box_level)
+    state.next_review_at = compute_next_review_at(new_box_level, base_time=now)
 
     # 更新计数
     state.answer_count = (state.answer_count or 0) + 1
@@ -112,6 +141,10 @@ async def update_user_question_state_after_answer(
     state.updated_at = now
 
     await db.flush()
+    return ReviewTransition(
+        is_due_review=is_due_review,
+        is_overdue_review=is_overdue_review,
+    )
 
 
 async def get_due_question_ids(

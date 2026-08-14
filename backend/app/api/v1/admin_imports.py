@@ -974,6 +974,10 @@ async def batch_image_upload(
     concurrency: int | None = None,
     enable_ai_repair: bool = True,
     confidence_threshold: float = 0.6,
+    batch_fast_mode: bool = Query(
+        True,
+        description="批量图片快速模式：避免重复 OCR，并将代码结构修复并入通用 AI repair 单次调用",
+    ),
     ocr_mode: str = Query("local", alias="ocr_mode"),
     # Idempotency / trace identifiers
     batch_id: str | None = Query(None, description="前端生成的 batch 标识"),
@@ -1128,6 +1132,7 @@ async def batch_image_upload(
     options = {
         "enable_ai_repair": enable_ai_repair,
         "confidence_threshold": confidence_threshold,
+        "batch_fast_mode": batch_fast_mode,
         "ocr_mode": ocr_mode,
     }
 
@@ -1316,11 +1321,14 @@ async def stream_batch_image_job(
                     ev_id = ev.get("id")
                     if ev_id is not None:
                         last_event_id = max(last_event_id, int(ev_id))
-                return [
-                    {"type": "done" if ev.get("status") in ("completed", "failed") else "trace",
-                     "data": ev}
-                    for ev in events
-                ]
+
+                payloads = [{"type": "trace", "data": ev} for ev in events]
+                summary = await batch_svc.poll_job_summary(db, job_id)
+                if summary and summary.get("status") in {
+                    "completed", "completed_with_warnings", "failed"
+                }:
+                    payloads.append({"type": "done", "data": summary})
+                return payloads
 
         # Try Redis Pub/Sub subscription with DB polling fallback
         from app.core.background_tasks import create_background_task
@@ -1406,7 +1414,7 @@ async def _run_sse_subscribe(
     try:
         from app.services.sse_pubsub import subscribe_job
         await subscribe_job(
-            job_id=int(job_id) if str(job_id).isdigit() else 0,
+            job_id=job_id,
             on_event=on_event,
             on_done=on_done,
             poll_fn=poll_fn,
