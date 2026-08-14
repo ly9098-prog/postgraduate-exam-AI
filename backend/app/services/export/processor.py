@@ -116,10 +116,11 @@ def validate_transition(
 
 @dataclass
 class _TaskSlot:
-    """Tracks a claimed task for concurrency accounting."""
+    """Tracks a claimed task for concurrency accounting and tracing."""
     task_id: int
     user_id: int
     file_format: str
+    trace_id: str = ""
 
 
 def _on_worker_done(task: asyncio.Task[None]) -> None:
@@ -360,32 +361,50 @@ async def _try_claim_task() -> _TaskSlot | None:
                 processing_started_at=now,
                 heartbeat_at=now,
             )
-            .returning(ExportTask.id, ExportTask.user_id, ExportTask.file_format)
+            .returning(ExportTask.id, ExportTask.user_id, ExportTask.file_format, ExportTask.filters)
         )
         claim_row = result.one_or_none()
         if claim_row is None:
             return None
-        task_id, user_id, file_format = claim_row.tuple()
+        task_id, user_id, file_format, filters = claim_row.tuple()
         await db.commit()
 
+    trace_id = ""
+    if isinstance(filters, dict):
+        candidate_trace_id = filters.get("_trace_id")
+        if isinstance(candidate_trace_id, str):
+            trace_id = candidate_trace_id
+
     _in_flight.add(task_id)
-    return _TaskSlot(task_id=task_id, user_id=user_id, file_format=file_format)
+    return _TaskSlot(
+        task_id=task_id,
+        user_id=user_id,
+        file_format=file_format,
+        trace_id=trace_id,
+    )
 
 
 async def _process_claimed_task(slot: _TaskSlot) -> None:
     """Process a claimed export task with full lifecycle management.
 
     Runs as a standalone ``asyncio.Task`` in the event loop, allowing
-    multiple tasks to process concurrently.
-
-    Manages:
-    - Global semaphore acquisition
-    - Format-specific semaphore acquisition
-    - Heartbeat refresh loop (as a subtask)
-    - Real timeout tracking
-    - Proper cleanup on all exit paths
+    multiple tasks to process concurrently. The originating HTTP trace is
+    rebound here because the scheduler process has no request ContextVar.
     """
+    from app.core.log_context import (
+        bind_log_context,
+        generate_request_id,
+        generate_trace_id,
+        reset_log_context,
+    )
+
     assert _concurrency_semaphore is not None
+    log_tokens = bind_log_context(
+        trace_id=slot.trace_id or generate_trace_id("tr_export"),
+        request_id=generate_request_id("req_export"),
+        user_id=slot.user_id,
+        job_id=f"export:{slot.task_id}",
+    )
 
     try:
         # Acquire global semaphore first
@@ -393,6 +412,7 @@ async def _process_claimed_task(slot: _TaskSlot) -> None:
             await _process_with_semaphore(slot)
     finally:
         _in_flight.discard(slot.task_id)
+        reset_log_context(log_tokens)
 
 
 async def _process_with_semaphore(slot: _TaskSlot) -> None:
@@ -592,9 +612,12 @@ async def _publish_task_event(task_id: int, task: ExportTask) -> None:
             send_to_user,
         )
 
+        from app.core.log_context import get_log_context
+
         event = build_status_event({
             "id": task.id,
             "user_id": task.user_id,
+            "trace_id": get_log_context().get("trace_id"),
             "status": task.status,
             "file_format": task.file_format,
             "success_count": task.success_count,

@@ -11,6 +11,7 @@ from app.ai.client import build_chat_completions_url
 
 from app.core.admin_security import AdminPrincipal
 from app.core.config import settings
+from app.core.log_context import get_trace_headers
 from app.core.secret_crypto import (
     SecretDecryptionError,
     SecretEncryptionError,
@@ -756,6 +757,7 @@ async def _test_chat_connection(
             allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
             follow_redirects=False,
             headers={
+                **get_trace_headers(),
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
@@ -862,6 +864,7 @@ async def _test_paddleocr_vl_connection(
             allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
             follow_redirects=False,
             headers={
+                **get_trace_headers(),
                 "Authorization": f"Bearer {api_key}",
                 "Accept": "application/json",
             },

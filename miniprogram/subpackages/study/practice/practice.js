@@ -1,6 +1,6 @@
 const api = require('../../../utils/api')
 const config = require('../../../config')
-const { createTraceId, debugLog, saveDebugSnapshot, shouldDebugQuestion } = require('../../../utils/debug')
+const { debugLog, saveDebugSnapshot, shouldDebugQuestion } = require('../../../utils/debug')
 const { buildRenderModel, setRenderGuardPage, resetRenderGuard } = require('../utils/stem-render')
 const adapter = require('../utils/question-runner-adapter')
 
@@ -762,7 +762,7 @@ Page({
       wx.showToast({ title: '顺序练习仅支持具体科目', icon: 'none' })
       return
     }
-    const traceId = createTraceId()
+    const traceId = api.createTraceId()
     this._resetSession()
     this._practiceSession.traceId = traceId
     this._practiceSession.startTime = Date.now()

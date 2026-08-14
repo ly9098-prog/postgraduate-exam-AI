@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.log_context import get_trace_headers
 from app.core.security import issue_user_token
 from app.models.admin import AdminUser, Permission, Role, RolePermission
 from app.models.app_user_admin_binding import AppUserAdminBinding
@@ -43,6 +44,7 @@ async def wechat_login(db: AsyncSession, code: str) -> tuple[str, int, User]:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
                     WX_URL,
+                    headers=get_trace_headers(),
                     params={
                         "appid": settings.WECHAT_APP_ID,
                         "secret": settings.WECHAT_APP_SECRET,

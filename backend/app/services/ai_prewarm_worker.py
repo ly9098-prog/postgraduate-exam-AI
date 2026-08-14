@@ -154,6 +154,19 @@ async def run_prewarm_worker(
                 await asyncio.sleep(poll_interval)
                 continue
 
+            from app.core.log_context import (
+                bind_log_context,
+                generate_request_id,
+                generate_trace_id,
+                reset_log_context,
+            )
+
+            log_tokens = bind_log_context(
+                trace_id=task.trace_id or generate_trace_id("tr_prewarm"),
+                request_id=task.request_id or generate_request_id("req_prewarm"),
+                job_id=task.task_id,
+                user_id=task.payload.get("user_id"),
+            )
             try:
                 heartbeat_task = asyncio.create_task(
                     _heartbeat_loop(task, lease_sec)
@@ -189,6 +202,7 @@ async def run_prewarm_worker(
                     except asyncio.CancelledError:
                         pass
             finally:
+                reset_log_context(log_tokens)
                 semaphore.release()
 
     except asyncio.CancelledError:

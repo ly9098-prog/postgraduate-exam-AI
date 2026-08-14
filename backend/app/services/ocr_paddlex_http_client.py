@@ -32,6 +32,7 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
+from app.core.log_context import get_trace_headers
 from app.core.ocr_runtime_config import (
     OcrRuntimeConfig,
     sanitize_url,
@@ -694,8 +695,8 @@ class PaddleXHttpOcrWorkerClient:
         Includes pre-request size check, retry with backoff, and
         streamed response with size budget enforcement.
         """
-        # Build auth headers
-        headers = {}
+        # Build auth + correlation headers
+        headers = get_trace_headers()
         if self._auth_token:
             headers[self._auth_header] = f"{self._auth_scheme} {self._auth_token}"
 
@@ -1325,7 +1326,7 @@ async def health_check(
         return {"reachable": False, "error": "No health URL configured"}
 
     try:
-        headers = {}
+        headers = get_trace_headers()
         if client._auth_token:
             headers[client._auth_header] = f"{client._auth_scheme} {client._auth_token}"
         resp = await client._client.get(

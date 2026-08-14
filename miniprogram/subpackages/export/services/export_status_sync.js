@@ -74,6 +74,8 @@ class ExportStatusSyncManager {
     this._hidden = false
     this._reconnectAttempts = 0
     this._maxReconnectAttempts = 5
+    // One logical trace spans WS reconnects and calibration/polling requests.
+    this._traceId = api.createTraceId()
   }
 
   // ── Public API ──
@@ -242,7 +244,14 @@ class ExportStatusSyncManager {
     const wsUrl = `${wsBase}/api/v1/exports/ws?token=${encodeURIComponent(token || '')}`
 
     try {
-      const socketTask = wx.connectSocket({ url: wsUrl, fail: () => this._fallbackToPolling() })
+      const socketTask = wx.connectSocket({
+        url: wsUrl,
+        header: {
+          'X-Trace-ID': this._traceId,
+          'X-Request-ID': api.createRequestId(),
+        },
+        fail: () => this._fallbackToPolling(),
+      })
       this._ws = socketTask
 
       socketTask.onOpen(() => {
@@ -423,7 +432,7 @@ class ExportStatusSyncManager {
     for (const tid of ids) {
       if (this._stopped || this._allTerminal()) return
       try {
-        const task = await api.get(`/exports/${tid}`)
+        const task = await api.get(`/exports/${tid}`, { _traceId: this._traceId })
         this._consecutiveErrors = 0
 
         // Transition protection: don't regress terminal state
@@ -481,7 +490,7 @@ class ExportStatusSyncManager {
         for (const tid of ids) {
           if (this._stopped) return
           try {
-            const task = await api.get(`/exports/${tid}`)
+            const task = await api.get(`/exports/${tid}`, { _traceId: this._traceId })
             this._consecutiveErrors = 0
 
             // Transition protection

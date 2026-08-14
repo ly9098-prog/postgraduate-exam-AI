@@ -158,6 +158,7 @@ class Task:
     minimum_worker_version: int = _MINIMUM_WORKER_VERSION
     created_by_version: str = ""
     trace_id: str = ""
+    request_id: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -177,6 +178,7 @@ class Task:
             "minimum_worker_version": self.minimum_worker_version,
             "created_by_version": self.created_by_version,
             "trace_id": self.trace_id,
+            "request_id": self.request_id,
         }
 
     @classmethod
@@ -198,7 +200,38 @@ class Task:
             minimum_worker_version=d.get("minimum_worker_version", 1),
             created_by_version=d.get("created_by_version", ""),
             trace_id=d.get("trace_id", ""),
+            request_id=d.get("request_id", ""),
         )
+
+
+def _task_correlation(payload: dict[str, Any]) -> tuple[str, str]:
+    """Resolve trace/request IDs at enqueue time.
+
+    Prefer the active HTTP/log context. Fall back to reserved payload metadata
+    used by already-detached import jobs so cross-process dispatch keeps the
+    original correlation IDs.
+    """
+    try:
+        from app.core.log_context import get_log_context
+
+        ctx = get_log_context()
+    except Exception:
+        ctx = {}
+
+    trace_id = str(ctx.get("trace_id") or "")
+    request_id = str(ctx.get("request_id") or "")
+
+    options = payload.get("options")
+    if isinstance(options, dict):
+        trace_id = trace_id or str(options.get("_trace_id") or "")
+        request_id = request_id or str(options.get("_request_id") or "")
+
+    reserved = payload.get("_trace")
+    if isinstance(reserved, dict):
+        trace_id = trace_id or str(reserved.get("trace_id") or "")
+        request_id = request_id or str(reserved.get("request_id") or "")
+
+    return trace_id, request_id
 
 
 def _get_max_ready(task_type: str) -> int:
@@ -1282,11 +1315,14 @@ class DurableTaskQueue:
             )
         tid = task_id or f"task_{uuid.uuid4().hex}"
 
+        trace_id, request_id = _task_correlation(payload)
         task = Task(
             task_id=tid,
             task_type=task_type,
             payload=payload,
             max_retries=max_retries,
+            trace_id=trace_id,
+            request_id=request_id,
         )
         task_json = json.dumps(task.to_dict(), default=str)
 
@@ -2032,11 +2068,14 @@ class DurableTaskQueue:
         (``taskq:v2:*`` namespace).
         """
         tid = task_id or f"task_{uuid.uuid4().hex}"
+        trace_id, request_id = _task_correlation(payload)
         task = Task(
             task_id=tid,
             task_type=task_type,
             payload=payload,
             max_retries=max_retries,
+            trace_id=trace_id,
+            request_id=request_id,
         )
         task_json = json.dumps(task.to_dict(), default=str)
         max_ready = _get_max_ready(task_type)

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.log_context import get_trace_headers
 from app.core.secret_crypto import (
     SecretDecryptionError,
     SecretEncryptionError,
@@ -205,7 +206,11 @@ async def test_embedding_connection(
     from app.services.embedding_service import build_embeddings_url
 
     url = build_embeddings_url(api_base_url)
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {
+        **get_trace_headers(),
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
     payload = {"model": model, "input": "test"}
     start = _time.monotonic()
 

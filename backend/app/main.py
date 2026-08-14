@@ -5,10 +5,12 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.router import api_router
@@ -841,6 +843,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "X-Trace-ID"],
 )
 
 
@@ -870,16 +873,20 @@ async def log_requests(request: Request, call_next):
     from app.core.log_context import (
         bind_log_context,
         clear_log_context,
-        generate_request_id,
-        generate_trace_id,
         log_event,
+        normalize_request_id,
+        normalize_trace_id,
     )
 
     access_logger = logging.getLogger("app.access")
 
-    # Read or generate trace/request IDs
-    trace_id = request.headers.get("x-trace-id") or generate_trace_id()
-    request_id = request.headers.get("x-request-id") or generate_request_id()
+    # Read or generate bounded correlation IDs. Also accept W3C traceparent
+    # as a bridge from reverse proxies/APM agents when X-Trace-ID is absent.
+    trace_id = normalize_trace_id(
+        request.headers.get("x-trace-id"),
+        request.headers.get("traceparent"),
+    )
+    request_id = normalize_request_id(request.headers.get("x-request-id"))
 
     start = time.time()
     try:
@@ -943,13 +950,112 @@ async def log_requests(request: Request, call_next):
 
 
 
+_PUBLIC_HTTP_MESSAGES: dict[int, str] = {
+    400: "请求参数有误，请检查后重试",
+    401: "登录状态已失效，请重新登录",
+    403: "没有权限执行此操作",
+    404: "请求的资源不存在",
+    405: "请求方式不支持",
+    409: "当前数据状态已变化，请刷新后重试",
+    413: "上传内容过大，请调整后重试",
+    415: "不支持的内容类型",
+    422: "提交内容校验未通过，请检查后重试",
+    429: "请求过于频繁，请稍后重试",
+    500: "服务器内部错误，请稍后重试",
+    502: "服务暂时不可用，请稍后重试",
+    503: "服务暂时不可用，请稍后重试",
+    504: "服务响应超时，请稍后重试",
+}
+
+
+def _public_http_message(status_code: int) -> str:
+    if status_code in _PUBLIC_HTTP_MESSAGES:
+        return _PUBLIC_HTTP_MESSAGES[status_code]
+    if status_code >= 500:
+        return "服务暂时不可用，请稍后重试"
+    if status_code >= 400:
+        return "请求失败，请检查后重试"
+    return "请求失败，请稍后重试"
+
+
+def _extract_public_error_code(detail: object, status_code: int) -> str:
+    """Keep a stable machine-readable code without exposing backend text."""
+    import re
+
+    value: object | None = None
+    if isinstance(detail, dict):
+        value = detail.get("error_code") or detail.get("code")
+        if value is None and isinstance(detail.get("detail"), dict):
+            nested = detail["detail"]
+            value = nested.get("error_code") or nested.get("code")
+    elif isinstance(detail, str):
+        value = detail
+
+    if isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{2,63}", value):
+        return value
+    return f"HTTP_{status_code}"
+
+
+def _request_error_ids(request: Request) -> tuple[str, str]:
+    try:
+        from app.core.log_context import get_log_context
+
+        context = get_log_context()
+    except Exception:
+        context = {}
+    request_id = str(context.get("request_id") or request.headers.get("x-request-id") or "")
+    trace_id = str(context.get("trace_id") or request.headers.get("x-trace-id") or "")
+    return request_id, trace_id
+
+
+def _public_error_content(
+    request: Request,
+    *,
+    status_code: int,
+    code: str,
+    retryable: bool = False,
+) -> dict:
+    request_id, trace_id = _request_error_ids(request)
+    error: dict[str, object] = {
+        "code": code,
+        "message": _public_http_message(status_code),
+        "retryable": retryable,
+    }
+    if request_id:
+        error["request_id"] = request_id
+    if trace_id:
+        error["trace_id"] = trace_id
+    return {"error": error}
+
+
 @app.exception_handler(ApiError)
 async def api_error_handler(request: Request, exc: ApiError):
-    """Handle ApiError with structured JSON response."""
+    """Return a stable public error contract; keep backend detail in logs only."""
     status_code = _api_error_status(exc.code)
+    try:
+        from app.core.log_context import log_event
+
+        log_event(
+            logging.getLogger("app.access"),
+            "http.api_error",
+            level="warning" if status_code < 500 else "error",
+            method=request.method,
+            path=request.url.path,
+            status_code=status_code,
+            error_code=exc.code.value,
+            backend_message=exc.message,
+            backend_details=exc.details,
+        )
+    except Exception:
+        pass
     return JSONResponse(
         status_code=status_code,
-        content=exc.to_dict(),
+        content=_public_error_content(
+            request,
+            status_code=status_code,
+            code=exc.code.value,
+            retryable=exc.retryable,
+        ),
     )
 
 
@@ -959,6 +1065,8 @@ def _api_error_status(code: ErrorCode) -> int:
         ErrorCode.DB_UNAVAILABLE,
         ErrorCode.STAGING_UNAVAILABLE,
         ErrorCode.OCR_PROVIDER_ERROR,
+        ErrorCode.RESOURCE_MEMORY_LOW,
+        ErrorCode.RESOURCE_DISK_LOW,
     }
     codes_429 = {
         ErrorCode.QUEUE_FULL,
@@ -970,6 +1078,8 @@ def _api_error_status(code: ErrorCode) -> int:
     codes_409 = {
         ErrorCode.DB_CONFLICT,
         ErrorCode.TASK_FENCING_REJECTED,
+        ErrorCode.TASK_LEASE_LOST,
+        ErrorCode.TASK_CANCELLED,
     }
     codes_404 = {
         ErrorCode.TASK_NOT_FOUND,
@@ -977,6 +1087,12 @@ def _api_error_status(code: ErrorCode) -> int:
     }
     codes_422 = {
         ErrorCode.REVIEW_REQUIRED,
+        ErrorCode.VALIDATION_ERROR,
+    }
+    codes_504 = {
+        ErrorCode.OCR_TIMEOUT,
+        ErrorCode.AI_TIMEOUT,
+        ErrorCode.PIPELINE_TIMEOUT,
     }
 
     if code in codes_503:
@@ -989,20 +1105,75 @@ def _api_error_status(code: ErrorCode) -> int:
         return 404
     if code in codes_422:
         return 422
+    if code in codes_504:
+        return 504
     return 500
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Sanitize HTTPException.detail before it crosses the API boundary."""
+    code = _extract_public_error_code(exc.detail, exc.status_code)
+    try:
+        from app.core.log_context import log_event
+
+        log_event(
+            logging.getLogger("app.access"),
+            "http.expected_error",
+            level="warning" if exc.status_code < 500 else "error",
+            method=request.method,
+            path=request.url.path,
+            status_code=exc.status_code,
+            error_code=code,
+            backend_detail=exc.detail,
+        )
+    except Exception:
+        pass
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=_public_error_content(
+            request,
+            status_code=exc.status_code,
+            code=code,
+            retryable=exc.status_code in {429, 502, 503, 504},
+        ),
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Do not expose Pydantic validation internals or submitted values to clients."""
+    try:
+        from app.core.log_context import log_event
+
+        log_event(
+            logging.getLogger("app.access"),
+            "http.validation_error",
+            level="warning",
+            method=request.method,
+            path=request.url.path,
+            status_code=422,
+            validation_error_count=len(exc.errors()),
+        )
+    except Exception:
+        pass
+    return JSONResponse(
+        status_code=422,
+        content=_public_error_content(
+            request,
+            status_code=422,
+            code=ErrorCode.VALIDATION_ERROR.value,
+        ),
+    )
 
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    # 兜底：未被 HTTPException 包装的异常，必须返回 JSON。
-    # 否则前端 wx.uploadFile 拿到的是 "Internal Server Error" 纯文本，
-    # JSON.parse 直接抛 "Unexpected token I in JSON at position 0"，错误信息全丢。
+    # 兜底异常始终返回脱敏 JSON；详细异常只进入后端日志。
     logger.exception("Unhandled error on %s %s", request.method, request.url.path)
 
-    # Recover trace context (may have been cleared by middleware finally block)
-    trace_id = request.headers.get("x-trace-id", "")
-    request_id = request.headers.get("x-request-id", "")
-
+    request_id, trace_id = _request_error_ids(request)
     try:
         from app.core.log_context import bind_log_context, log_event
         if trace_id or request_id:
@@ -1019,13 +1190,13 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     except Exception:
         pass  # Never let logging crash the exception handler
 
-    safe_detail = "服务器内部错误"
-    if not _production_mode:
-        safe_detail = f"{type(exc).__name__}: {exc}"
-
     response = JSONResponse(
         status_code=500,
-        content={"detail": safe_detail, "code": "INTERNAL_ERROR"},
+        content=_public_error_content(
+            request,
+            status_code=500,
+            code=ErrorCode.INTERNAL_ERROR.value,
+        ),
     )
     if trace_id:
         response.headers["X-Trace-ID"] = trace_id
@@ -1395,7 +1566,9 @@ async def _check_ocr_remote_connectivity() -> bool:
         import httpx
         url = settings.OCR_REMOTE_URL
         timeout = httpx.Timeout(settings.OCR_REMOTE_HEALTH_TIMEOUT_SEC)
-        headers = {}
+        from app.core.log_context import get_trace_headers
+
+        headers = get_trace_headers()
         if settings.OCR_REMOTE_TOKEN:
             header_name = getattr(settings, "OCR_REMOTE_AUTH_HEADER", "Authorization")
             scheme = getattr(settings, "OCR_REMOTE_AUTH_SCHEME", "Bearer")

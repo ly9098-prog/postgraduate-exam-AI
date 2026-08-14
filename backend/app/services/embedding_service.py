@@ -12,6 +12,7 @@ import logging
 from typing import Any
 
 from app.core.config import settings
+from app.core.log_context import get_trace_headers
 from app.services.safe_remote_fetch import request_remote_bytes
 
 logger = logging.getLogger("postgraduate-ai.embedding")
@@ -188,6 +189,7 @@ async def _request_embeddings(url: str, payload: dict, cfg) -> tuple[int, dict]:
         allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
         follow_redirects=False,
         headers={
+            **get_trace_headers(),
             "Authorization": f"Bearer {cfg.api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",

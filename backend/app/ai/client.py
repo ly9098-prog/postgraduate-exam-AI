@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.config import settings
+from app.core.log_context import get_trace_headers
 from app.core.log_context import log_event
 from app.services.safe_remote_fetch import request_remote_bytes
 from app.utils.sentry_utils import capture_exception, set_tag, start_span
@@ -229,6 +230,7 @@ class OpenAICompatibleClient:
                         allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
                         follow_redirects=False,
                         headers={
+                            **get_trace_headers(),
                             "Authorization": f"Bearer {effective_key}",
                             "Content-Type": "application/json",
                             "Accept": "application/json",

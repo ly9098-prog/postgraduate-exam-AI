@@ -87,10 +87,28 @@ async def create_outbox(
             f"status={existing_row.status}"
         )
 
+    # Persist correlation metadata with the transactional outbox record. The
+    # dispatcher runs in another background task/process, so ContextVar state
+    # from the originating HTTP request is otherwise unavailable at publish time.
+    persisted_payload = dict(payload)
+    try:
+        from app.core.log_context import get_log_context
+
+        ctx = get_log_context()
+        trace_meta = {
+            key: str(ctx.get(key))
+            for key in ("trace_id", "request_id")
+            if ctx.get(key) not in (None, "", "-")
+        }
+        if trace_meta and "_trace" not in persisted_payload:
+            persisted_payload["_trace"] = trace_meta
+    except Exception:
+        pass
+
     outbox = TaskOutbox(
         task_id=task_id,
         task_type=task_type,
-        payload=payload,
+        payload=persisted_payload,
         schema_version=schema_version,
         status="pending",
     )

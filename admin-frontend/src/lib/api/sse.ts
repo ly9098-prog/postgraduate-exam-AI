@@ -1,4 +1,4 @@
-import { getApiAccessToken } from "./client";
+import { createApiRequestId, createApiTraceId, getApiAccessToken } from "./client";
 
 export type TraceEvent = {
   seq: number;
@@ -37,6 +37,8 @@ export type SSEError = {
   type: "http" | "parse" | "heartbeat" | "eof" | "network" | "auth";
   status?: number;
   message: string;
+  traceId?: string;
+  requestId?: string;
 };
 
 export type SSEClient = {
@@ -54,6 +56,8 @@ export type SSEClientOptions = {
   retryDelayMs?: number;
   /** Override token (if not using the shared provider). */
   token?: string | null;
+  /** Optional trace ID shared with the action that opened this stream. */
+  traceId?: string;
 };
 
 function getBaseUrl(override?: string) {
@@ -135,6 +139,7 @@ export function connectSSE(
     retryDelayMs = 1_000,
     baseUrl: baseUrlOverride,
     token: tokenOverride,
+    traceId: requestedTraceId,
   } = options;
 
   const baseUrl = getBaseUrl(baseUrlOverride);
@@ -144,6 +149,19 @@ export function connectSSE(
   let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   let lastDataTime = Date.now();
   let disconnectedByUser = false;
+  const traceId = requestedTraceId && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(requestedTraceId)
+    ? requestedTraceId
+    : createApiTraceId();
+  let currentTraceId = traceId;
+  let currentRequestId = "";
+
+  function emitError(error: SSEError) {
+    handlers.onError?.({
+      ...error,
+      traceId: currentTraceId,
+      requestId: currentRequestId || undefined,
+    });
+  }
 
   function cleanup() {
     if (heartbeatTimer) clearTimeout(heartbeatTimer);
@@ -156,7 +174,7 @@ export function connectSSE(
     lastDataTime = Date.now();
     heartbeatTimer = setTimeout(() => {
       // No data received within heartbeat window
-      handlers.onError?.({
+      emitError({
         type: "heartbeat",
         message: "SSE 连接心跳超时",
       });
@@ -166,7 +184,12 @@ export function connectSSE(
 
   async function connect() {
     const effectiveToken = tokenOverride !== undefined ? tokenOverride : getApiAccessToken() ?? token;
-    const headers: Record<string, string> = {};
+    currentTraceId = traceId;
+    currentRequestId = createApiRequestId();
+    const headers: Record<string, string> = {
+      "X-Trace-ID": traceId,
+      "X-Request-ID": currentRequestId,
+    };
     if (effectiveToken) headers["Authorization"] = `Bearer ${effectiveToken}`;
 
     try {
@@ -176,9 +199,12 @@ export function connectSSE(
         credentials: "same-origin",
       });
 
+      currentTraceId = response.headers.get("X-Trace-ID") || traceId;
+      currentRequestId = response.headers.get("X-Request-ID") || currentRequestId;
+
       if (!response.ok) {
         const errorType = response.status === 401 ? "auth" : "http";
-        handlers.onError?.({
+        emitError({
           type: errorType,
           status: response.status,
           message: response.status === 401
@@ -189,7 +215,7 @@ export function connectSSE(
       }
 
       if (!response.body) {
-        handlers.onError?.({
+        emitError({
           type: "http",
           message: "SSE 响应体为空",
         });
@@ -220,7 +246,7 @@ export function connectSSE(
               const trace = JSON.parse(msg.data) as TraceEvent;
               handlers.onTrace?.(trace);
             } catch {
-              handlers.onError?.({
+              emitError({
                 type: "parse",
                 message: `SSE trace 事件 JSON 解析失败: ${msg.data.slice(0, 100)}`,
               });
@@ -230,7 +256,7 @@ export function connectSSE(
               const done = JSON.parse(msg.data) as DoneEvent;
               handlers.onDone?.(done);
             } catch {
-              handlers.onError?.({
+              emitError({
                 type: "parse",
                 message: `SSE done 事件 JSON 解析失败: ${msg.data.slice(0, 100)}`,
               });
@@ -241,7 +267,7 @@ export function connectSSE(
 
       // Stream ended without a done event
       if (!disconnectedByUser) {
-        handlers.onError?.({
+        emitError({
           type: "eof",
           message: "SSE 流意外结束，任务可能未完成",
         });
@@ -250,7 +276,7 @@ export function connectSSE(
         if (maxRetries > 0 && retryCount < maxRetries) {
           retryCount++;
           const delay = Math.min(retryDelayMs * Math.pow(2, retryCount - 1), 30_000);
-          handlers.onError?.({
+          emitError({
             type: "network",
             message: `SSE 将在 ${Math.round(delay / 1000)} 秒后重连 (第 ${retryCount}/${maxRetries} 次)`,
           });
@@ -266,7 +292,7 @@ export function connectSSE(
       // Network error or abort
       if (error instanceof DOMException && error.name === "AbortError") {
         if (!disconnectedByUser) {
-          handlers.onError?.({
+          emitError({
             type: "network",
             message: "SSE 连接被中断",
           });
@@ -274,7 +300,7 @@ export function connectSSE(
         return;
       }
 
-      handlers.onError?.({
+      emitError({
         type: "network",
         message: error instanceof Error ? error.message : "SSE 网络错误",
       });
