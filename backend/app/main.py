@@ -14,7 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.router import api_router
-from app.core.config import settings
+from app.core.config import resolve_effective_process_role, settings
 from app.core.database import async_session, init_db
 from app.core.error_codes import ApiError, ErrorCode
 from app.core.logging_config import setup_logging
@@ -136,7 +136,23 @@ def _report_startup_failure(component: str, exc: Exception) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    role = settings.PROCESS_ROLE
+    configured_role = settings.PROCESS_ROLE
+    role = resolve_effective_process_role(
+        settings.APP_ENV,
+        configured_role,
+        settings.LOCAL_ASYNC_RUNTIME_ENABLED,
+    )
+    if role != configured_role:
+        logger.info(
+            "Local async runtime disabled: configured PROCESS_ROLE=%s -> effective role=%s. "
+            "Set LOCAL_ASYNC_RUNTIME_ENABLED=true only for full local worker/scheduler debugging.",
+            configured_role,
+            role,
+        )
+        # Keep downstream role-aware code (metrics, DB pool diagnostics, health
+        # checks) consistent with the process that is actually running.
+        settings.PROCESS_ROLE = role
+        os.environ["PROCESS_ROLE"] = role
 
     # Guard: worker/scheduler roles should not serve HTTP.
     # Use app.worker_main or app.scheduler_main entry points instead.
