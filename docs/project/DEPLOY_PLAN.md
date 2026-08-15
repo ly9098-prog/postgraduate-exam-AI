@@ -1,6 +1,6 @@
 # 部署方案
 
-> 更新时间：2026-08-06
+> 更新时间：2026-08-16
 > 生产入口：`deploy/docker-compose.prod.yml` + `deploy/scripts/deploy.sh`
 
 > ✅ **Pomodoro V2 迁移已完成（2026-08-08）**：历史 Pomodoro 数据已规范化到 V2 canonical 模型，
@@ -644,3 +644,64 @@ SQL_ECHO=false
 SQL_LOG_LEVEL=WARNING
 SLOW_QUERY_MS=500
 ```
+
+---
+
+## 9. 2026-08-15/16 部署问题与修复记录
+
+> 本节记录本次全量部署过程中发现并修复的生产问题，供后续部署参考。
+
+### 9.1 生产 Redis 任务队列无消费者（worker 服务缺失）— 重大
+
+**现象：** 任务健康监控持续报 `ANSWER_PROJECTION_BACKLOG` + `QUEUE_STALLED`；practice_records 多条无 `answer_behaviors` 投影回执，对账器每小时重建修复任务但无人执行。
+
+**根因：** 生产 compose 只有 web + scheduler，**没有 `worker` 服务**。`run_dispatcher_v2`（Redis `taskq:v2:*` 唯一消费方）仅在 `PROCESS_ROLE=worker` 时启动；scheduler 的 outbox dispatcher 只负责把 outbox 发布到 Redis，不消费。因此掌握度/Leitner/自适应/推荐反馈等派生状态从未更新。
+
+**修复：** `deploy/docker-compose.prod.yml` 新增 `worker` 服务（与 scheduler 同镜像，`python -m app.worker_main`，mem_limit 384m，挂 `exports_data` 卷）。
+
+**验证：** worker 启动后 `v2 Dispatcher started`，投影积压清零，健康监控 `Async task health recovered`。
+
+> ⚠️ **`deploy.sh update-all` 只重建 app+scheduler+admin，不覆盖 worker。** worker 需单独执行：
+> ```bash
+> docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml build worker
+> docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml up -d --no-deps worker
+> ```
+
+### 9.2 worker 服务生产校验要点（启动被拦截的坑）
+
+worker 启动经过两道校验，缺一不可：
+
+| 校验 | 要求 | 坑 |
+|------|------|-----|
+| `production_config_validator` | `OCR_USE_GPU` 必须显式 `false`（对所有角色强制，config 默认 True） | 漏配即拒绝启动 |
+| 同上 | `EXPORT_DIR` 目录可写 | 必须显式 `EXPORT_DIR=/opt/2240ai-v2/exports` 且挂 `exports_data` 卷（首次挂载继承镜像 chown 的 app:app）；漏配会按相对路径 `var/exports` 创建失败 |
+| `OcrRuntimeConfig`（`_init_worker_dependencies` 无条件调用 `get_runtime_config()`） | `OCR_EXECUTION_BACKEND=disabled` 时无需 remote token | 若为 `paddlex_http` 且 production，强制要求 `remote_auth_token` |
+
+**OCR 配置原则：** 服务器 OCR 仅由 **web 进程经外部 API**（PaddleOCR-VL aistudio，paddlex_http）完成，worker 不承载 OCR。因此 worker 环境硬编码：
+
+```yaml
+OCR_USE_GPU: ${OCR_USE_GPU:-false}
+OCR_EXECUTION_BACKEND: "disabled"
+```
+
+> ⚠️ `OCR_EXECUTION_BACKEND` 必须**硬编码 `disabled`**，不可写 `${OCR_EXECUTION_BACKEND:-disabled}`——服务器 `.env` 的 `paddlex_http` 会覆盖变量默认值，导致 worker 再次因缺 `remote_auth_token` 拒绝启动。
+
+**暂存目录：** `WORKER_SCRATCH_DIR=/tmp/scratch` 用容器 1777 `/tmp` 临时区即可，**不要挂命名卷**（命名卷 root 属主，非 root 的 app 用户不可写）。
+
+### 9.3 `ai_service.py` `analyze_error` 的 `model_name` 未定义 bug
+
+**现象：** worker 的 prewarm 任务（以及同步 `/api/v1/ai` 错因解析）全部失败，日志 `NameError: name 'model_name' is not defined`。
+
+**根因：** `result.get("model", model_name or "")` 的默认值会先于 `.get` 求值，而 `model_name` 从未定义，导致任何成功到达该行的 AI 解析都抛 NameError。
+
+**修复：** 两处（`_meta` 与返回响应）改为 `result.get("model", "")`。`chat_with_db_model` 返回始终含 `model` 键，默认值不会触发。
+
+### 9.4 容器时区与北京时间时差
+
+**现象：** 容器日志时间比北京时间慢 8 小时。
+
+**根因：** 服务器系统时区是 `Asia/Beijing`（正确），但 Docker 容器默认 UTC（TZ 为空）。
+
+**修复：** compose 给 app/scheduler/worker/admin 设 `TZ: Asia/Shanghai`。**安全性**：DB 时间戳一律 `utcnow()`（显式 UTC，不受进程 TZ 影响）；APScheduler 显式 `AsyncIOScheduler(timezone="UTC")` 调度不变；产品时区（study_day/pomodoro）用显式 UTC+8 换算。裸 `datetime.now()` 仅用于 ID 后缀/瞬时 Redis 状态/时长差，无入库污染。
+
+> admin 镜像缺 tzdata，容器内 OS `date` 仍显示 UTC；但 Node 进程尊重 `TZ`，SSR 显示北京时间正确，无需处理。
