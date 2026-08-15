@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     ADMIN_JWT_AUDIENCE: str = "memograd-admin"
     DATABASE_URL: str = "sqlite+aiosqlite:///./postgraduate.db"
 
+    # PostgreSQL backup task center integration.  Production scheduling remains
+    # owned by systemd; these settings only control observability/manual runs.
+    POSTGRES_BACKUP_ENABLED: bool = True
+    POSTGRES_BACKUP_DIR: str = ""
+    POSTGRES_BACKUP_SCRIPT: str = ""
+    POSTGRES_BACKUP_TIMER_UNIT: str = "postgres-backup.timer"
+    POSTGRES_BACKUP_SERVICE_UNIT: str = "postgres-backup.service"
+    POSTGRES_BACKUP_TIMEOUT_SEC: int = 1800
+    POSTGRES_BACKUP_HISTORY_LIMIT: int = 20
+
     # CORS — 使用凭证请求时必须是显式 origin，不能使用 "*"
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",

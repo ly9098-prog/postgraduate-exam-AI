@@ -67,31 +67,39 @@ class AuditLogCleanupScheduler:
 
     async def _safe_cleanup(self) -> None:
         """Try to acquire the distributed lock; skip if held by another worker."""
-        retention_days = max(7, settings.AUDIT_LOG_RETENTION_DAYS)
-        batch_size = max(10, settings.AUDIT_LOG_CLEANUP_BATCH_SIZE)
+        from app.services.system_task_service import TaskRunOutcome, record_system_task_execution
 
-        async with self._lock.acquire_and_renew(ttl=_LOCK_TTL, renew_interval=120) as handle:
-            if not handle.is_still_held():
-                logger.info("审计日志清理锁被其他实例持有，本轮跳过")
-                return
+        async def _run_once():
+            retention_days = max(7, settings.AUDIT_LOG_RETENTION_DAYS)
+            batch_size = max(10, settings.AUDIT_LOG_CLEANUP_BATCH_SIZE)
 
-            try:
-                async with async_session() as db:
-                    deleted = await cleanup_expired_admin_audit_logs(
-                        db,
-                        retention_days=retention_days,
-                        batch_size=batch_size,
-                    )
-                if deleted:
-                    logger.info(
-                        "审计日志清理完成：删除 %d 条，保留天数 %d",
-                        deleted,
-                        retention_days,
-                    )
-                else:
-                    logger.info("审计日志清理：没有过期数据需要清理")
-            except Exception:
-                logger.exception("审计日志清理失败（非致命）")
+            async with self._lock.acquire_and_renew(ttl=_LOCK_TTL, renew_interval=120) as handle:
+                if not handle.is_still_held():
+                    logger.info("审计日志清理锁被其他实例持有，本轮跳过")
+                    return TaskRunOutcome(status="skipped", message="锁被其他实例持有，本轮跳过")
+
+                try:
+                    async with async_session() as db:
+                        deleted = await cleanup_expired_admin_audit_logs(
+                            db,
+                            retention_days=retention_days,
+                            batch_size=batch_size,
+                        )
+                    if deleted:
+                        logger.info(
+                            "审计日志清理完成：删除 %d 条，保留天数 %d",
+                            deleted,
+                            retention_days,
+                        )
+                    else:
+                        logger.info("审计日志清理：没有过期数据需要清理")
+                    return TaskRunOutcome(status="success", message=f"删除 {deleted} 条过期审计日志")
+                except Exception as exc:
+                    logger.exception("审计日志清理失败（非致命）")
+                    return TaskRunOutcome(status="failed", message=str(exc)[:400])
+
+        await record_system_task_execution("audit_log_cleanup", _run_once, source="scheduler")
+
 
 
 audit_log_cleanup_scheduler = AuditLogCleanupScheduler()

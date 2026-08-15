@@ -71,30 +71,41 @@ class RecommendationMetricsScheduler:
             logger.info("推荐指标聚合调度器已停止")
 
     async def _safe_run(self) -> None:
-        """聚合昨日指标并清理超期日志（带分布式锁）。"""
-        retention_days = max(7, settings.RECOMMENDATION_LOG_RETENTION_DAYS)
+        """Aggregate yesterday's metrics and clean logs with shared telemetry."""
+        from app.services.system_task_service import TaskRunOutcome, record_system_task_execution
 
-        async with self._lock.acquire_and_renew(ttl=_LOCK_TTL, renew_interval=120) as handle:
-            if not handle.is_still_held():
-                logger.info("推荐指标聚合锁被其他实例持有，本轮跳过")
-                return
+        async def _run_once():
+            retention_days = max(7, settings.RECOMMENDATION_LOG_RETENTION_DAYS)
 
-            try:
-                async with async_session() as db:
-                    target_date = date.today() - timedelta(days=1)
-                    result = await aggregate_recommendation_metrics_daily(
-                        db, target_date=target_date,
+            async with self._lock.acquire_and_renew(ttl=_LOCK_TTL, renew_interval=120) as handle:
+                if not handle.is_still_held():
+                    logger.info("推荐指标聚合锁被其他实例持有，本轮跳过")
+                    return TaskRunOutcome(status="skipped", message="锁被其他实例持有，本轮跳过")
+
+                try:
+                    async with async_session() as db:
+                        target_date = date.today() - timedelta(days=1)
+                        result = await aggregate_recommendation_metrics_daily(
+                            db, target_date=target_date,
+                        )
+                        await db.commit()
+                        deleted = await cleanup_expired_recommendation_logs(
+                            db, retention_days=retention_days,
+                        )
+                        logger.info(
+                            "推荐指标聚合完成: date=%s aggregated_rows=%d cleanup_deleted=%d",
+                            target_date, result.get("aggregated_rows", 0), deleted,
+                        )
+                    return TaskRunOutcome(
+                        status="success",
+                        message=f"聚合 {result.get('aggregated_rows', 0)} 行，清理 {deleted} 条推荐日志",
                     )
-                    await db.commit()
-                    deleted = await cleanup_expired_recommendation_logs(
-                        db, retention_days=retention_days,
-                    )
-                    logger.info(
-                        "推荐指标聚合完成: date=%s aggregated_rows=%d cleanup_deleted=%d",
-                        target_date, result.get("aggregated_rows", 0), deleted,
-                    )
-            except Exception:
-                logger.exception("推荐指标聚合失败（非致命）")
+                except Exception as exc:
+                    logger.exception("推荐指标聚合失败（非致命）")
+                    return TaskRunOutcome(status="failed", message=str(exc)[:400])
+
+        await record_system_task_execution("recommendation_metrics_daily", _run_once, source="scheduler")
+
 
 
 recommendation_metrics_scheduler = RecommendationMetricsScheduler()

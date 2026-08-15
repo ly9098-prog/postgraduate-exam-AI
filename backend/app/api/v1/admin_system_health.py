@@ -14,13 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
 from app.services.health_check_service import check_system_health
+from app.schemas.observability import SystemHealthResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin/v1/system", tags=["admin-system-health"])
 
 
-@router.get("/health")
+@router.get("/health", response_model=SystemHealthResponse)
 async def system_health(
     _=Depends(require_permissions("import:read")),
     db: AsyncSession = Depends(get_db),

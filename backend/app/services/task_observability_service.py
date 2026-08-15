@@ -16,7 +16,7 @@ import asyncio
 import json
 import logging
 import time
-from datetime import timedelta
+from datetime import datetime, time as datetime_time, timedelta
 from typing import Any
 
 from sqlalchemy import func, select
@@ -45,6 +45,28 @@ OBSERVED_TASK_TYPES: tuple[str, ...] = (
     "export_mistakes",
     "answer_projection",
 )
+
+
+def _empty_queue_rows() -> list[dict[str, Any]]:
+    """Return the observable queue catalog even when Redis has no live rows.
+
+    Keeping the catalog stable prevents the admin queue table from collapsing
+    to an empty state merely because every queue is currently idle or Redis is
+    temporarily unavailable.  Callers must still use ``available`` to decide
+    whether zeroes are real Redis measurements or placeholders.
+    """
+    return [
+        {
+            "task_type": task_type,
+            "ready": 0,
+            "processing": 0,
+            "retry": 0,
+            "dead": 0,
+            "corrupt": 0,
+            "oldest_ready_seconds": 0,
+        }
+        for task_type in OBSERVED_TASK_TYPES
+    ]
 
 
 async def _collect_outbox_metrics(db: AsyncSession) -> dict[str, Any]:
@@ -136,7 +158,7 @@ async def _collect_queue_metrics() -> dict[str, Any]:
             "configured": False,
             "available": False,
             "error": "redis_not_configured",
-            "queues": [],
+            "queues": _empty_queue_rows(),
             "totals": {"ready": 0, "processing": 0, "retry": 0, "dead": 0, "corrupt": 0},
             "oldest_ready_seconds": 0,
         }
@@ -205,17 +227,12 @@ async def _collect_queue_metrics() -> dict[str, Any]:
                 except (TypeError, ValueError, json.JSONDecodeError):
                     pass
 
-        active_rows = [
-            row
-            for row in rows
-            if row["ready"] + row["processing"] + row["retry"] + row["dead"] + row["corrupt"] > 0
-        ]
         oldest_ready = max((row["oldest_ready_seconds"] for row in rows), default=0)
         return {
             "configured": True,
             "available": True,
             "error": None,
-            "queues": active_rows,
+            "queues": rows,
             "totals": totals,
             "oldest_ready_seconds": oldest_ready,
         }
@@ -225,7 +242,7 @@ async def _collect_queue_metrics() -> dict[str, Any]:
             "configured": True,
             "available": False,
             "error": f"{type(exc).__name__}: {str(exc)[:160]}",
-            "queues": [],
+            "queues": _empty_queue_rows(),
             "totals": {"ready": 0, "processing": 0, "retry": 0, "dead": 0, "corrupt": 0},
             "oldest_ready_seconds": 0,
         }
@@ -265,6 +282,70 @@ async def _collect_projection_metrics(db: AsyncSession) -> dict[str, Any]:
     }
 
 
+async def _collect_activity_trend(db: AsyncSession, *, days: int = 7) -> list[dict[str, Any]]:
+    """Return a small DB-backed task activity series for the admin dashboard.
+
+    The series deliberately uses PostgreSQL/SQLite-portable ORM queries and
+    buckets rows in Python.  That keeps local development diagnostics useful
+    without introducing dialect-specific ``date_trunc`` expressions.
+
+    ``projection_receipts`` comes from ``answer_behaviors`` and acts as the
+    durable business-side completion signal for answer-projection work.
+    """
+    window_days = max(1, min(int(days), 31))
+    today = utcnow().date()
+    first_day = today - timedelta(days=window_days - 1)
+    start_at = datetime.combine(first_day, datetime_time.min)
+
+    buckets: dict[str, dict[str, Any]] = {}
+    ordered_keys: list[str] = []
+    for offset in range(window_days):
+        day = first_day + timedelta(days=offset)
+        key = day.isoformat()
+        ordered_keys.append(key)
+        buckets[key] = {
+            "date": key,
+            "created": 0,
+            "published": 0,
+            "failed": 0,
+            "projection_receipts": 0,
+        }
+
+    outbox_rows = await db.execute(
+        select(
+            TaskOutbox.created_at,
+            TaskOutbox.published_at,
+            TaskOutbox.updated_at,
+            TaskOutbox.status,
+        ).where(TaskOutbox.created_at >= start_at)
+    )
+    for created_at, published_at, updated_at, status in outbox_rows:
+        if created_at is not None:
+            key = created_at.date().isoformat()
+            if key in buckets:
+                buckets[key]["created"] += 1
+        if published_at is not None:
+            key = published_at.date().isoformat()
+            if key in buckets:
+                buckets[key]["published"] += 1
+        if status == "failed" and updated_at is not None:
+            key = updated_at.date().isoformat()
+            if key in buckets:
+                buckets[key]["failed"] += 1
+
+    receipt_rows = await db.execute(
+        select(AnswerBehavior.created_at).where(AnswerBehavior.created_at >= start_at)
+    )
+    for (created_at,) in receipt_rows:
+        if created_at is None:
+            continue
+        key = created_at.date().isoformat()
+        if key in buckets:
+            buckets[key]["projection_receipts"] += 1
+
+    return [buckets[key] for key in ordered_keys]
+
+
 def _async_runtime_expected() -> bool:
     role = resolve_effective_process_role(
         settings.APP_ENV,
@@ -281,6 +362,7 @@ def _async_runtime_expected() -> bool:
 async def collect_task_diagnostics(db: AsyncSession) -> dict[str, Any]:
     outbox = await _collect_outbox_metrics(db)
     projection = await _collect_projection_metrics(db)
+    trend = await _collect_activity_trend(db)
     redis = await _collect_queue_metrics()
     async_runtime_expected = _async_runtime_expected()
     health = evaluate_task_health(
@@ -296,6 +378,7 @@ async def collect_task_diagnostics(db: AsyncSession) -> dict[str, Any]:
         "outbox": outbox,
         "redis": redis,
         "projection": projection,
+        "trend": trend,
     }
 
 
