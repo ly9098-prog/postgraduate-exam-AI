@@ -47,12 +47,7 @@ from docx.text.paragraph import Paragraph
 from app.core.config import settings
 from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
 from app.services.export.exporter_base import Exporter, ExportResult
-from app.services.export.analysis_content import (
-    clean_analysis_section_body,
-    split_analysis_list_items,
-    split_analysis_paragraphs,
-    split_analysis_sections,
-)
+from app.services.export.analysis_content import split_analysis_sections
 from app.services.export.latex_render import find_latex_segments, has_latex
 from app.services.export.omml_converter import render_latex_as_omml_or_fallback
 from app.services.export.question_content import (
@@ -723,36 +718,111 @@ class DocxExporter(Exporter):
                     self._set_east_asian_font(run, _BODY_FONT_EA)
         return table
 
-    def _add_answer_grid(self, doc: Document, items: list[dict]):
+    def _choose_answer_columns(self, items: list[dict]) -> int:
         answers = [self._sanitize_text(item.get("answer")) or "—" for item in items]
         max_units = max((self._display_units(answer) for answer in answers), default=1)
-        columns = 8 if max_units <= 4 else 4 if max_units <= 16 else 2 if max_units <= 36 else 1
-        rows = (len(items) + columns - 1) // columns
-        table = doc.add_table(rows=rows, cols=columns)
-        table.alignment = WD_TABLE_ALIGNMENT.LEFT
-        table.autofit = False
-        self._set_table_borders_none(table)
-        self._set_table_indent(table, 0)
-        cell_width = Cm(BODY_W_CM / columns)
+        if max_units <= 4:
+            preferred = 6
+        elif max_units <= 12:
+            preferred = 4
+        elif max_units <= 28:
+            preferred = 2
+        else:
+            preferred = 1
+        return max(1, min(preferred, len(items)))
 
-        for row_index, row in enumerate(table.rows):
-            self._set_row_cant_split(row)
-            for col_index, cell in enumerate(row.cells):
-                cell.width = cell_width
-                cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-                self._set_cell_margins(cell, top=0, left=0, bottom=0.02, right=0.08)
-                item_index = row_index * columns + col_index
-                paragraph = cell.paragraphs[0]
-                paragraph.paragraph_format.space_after = Pt(1.5)
-                paragraph.paragraph_format.line_spacing = 1.15
-                if item_index < len(items):
-                    item = items[item_index]
+    def _add_answer_grid(self, doc: Document, items: list[dict]):
+        columns = self._choose_answer_columns(items)
+        blocks = (len(items) + columns - 1) // columns
+        rows = blocks * 2
+        table = doc.add_table(rows=rows, cols=columns)
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.autofit = False
+        self._set_table_borders_all(table)
+        self._set_table_indent(table, 0)
+
+        max_cell_cm = 1.5 if columns >= 4 else 2.4 if columns == 2 else 5.6
+        table_width_cm = min(BODY_W_CM, max_cell_cm * columns)
+        cell_width = Cm(table_width_cm / columns)
+
+        number_size = Pt(9.2 if columns >= 4 else 9.0)
+        answer_size = Pt(11.5 if columns >= 4 else 10.5)
+
+        for block_index in range(blocks):
+            number_row = table.rows[block_index * 2]
+            answer_row = table.rows[block_index * 2 + 1]
+            self._set_row_cant_split(number_row)
+            self._set_row_cant_split(answer_row)
+            self._set_row_height_exact(number_row, 0.52)
+            self._set_row_height_exact(answer_row, 0.78)
+            start = block_index * columns
+            row_items = items[start:start + columns]
+
+            for col_index in range(columns):
+                num_cell = number_row.cells[col_index]
+                ans_cell = answer_row.cells[col_index]
+                num_cell.width = cell_width
+                ans_cell.width = cell_width
+                num_cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                ans_cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                self._set_cell_margins(num_cell, top=0.0, left=0.02, bottom=0.0, right=0.02)
+                self._set_cell_margins(ans_cell, top=0.01, left=0.02, bottom=0.01, right=0.02)
+
+                num_p = num_cell.paragraphs[0]
+                ans_p = ans_cell.paragraphs[0]
+                num_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                ans_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                num_p.paragraph_format.space_before = Pt(0)
+                num_p.paragraph_format.space_after = Pt(0)
+                ans_p.paragraph_format.space_before = Pt(0)
+                ans_p.paragraph_format.space_after = Pt(0)
+                num_p.paragraph_format.line_spacing = 1.0
+                ans_p.paragraph_format.line_spacing = 1.0
+
+                if col_index < len(row_items):
+                    item = row_items[col_index]
                     answer = self._sanitize_text(item.get("answer")) or "—"
-                    run = paragraph.add_run(f"{item['num']}．{answer}")
-                    run.font.size = Pt(9.5)
-                    run.font.name = _BODY_FONT
-                    self._set_east_asian_font(run, _BODY_FONT_EA)
+
+                    num_run = num_p.add_run(str(item["num"]))
+                    num_run.bold = True
+                    num_run.font.size = number_size
+                    num_run.font.name = _HEADING_FONT
+                    self._set_east_asian_font(num_run, _HEADING_FONT)
+
+                    ans_run = ans_p.add_run(answer)
+                    ans_run.bold = True
+                    ans_run.font.size = answer_size
+                    ans_run.font.name = _HEADING_FONT
+                    self._set_east_asian_font(ans_run, _HEADING_FONT)
         return table
+
+    @staticmethod
+    def _set_row_height_exact(row, height_cm: float) -> None:
+        tr_pr = row._tr.get_or_add_trPr()
+        tr_height = tr_pr.find(qn("w:trHeight"))
+        if tr_height is None:
+            tr_height = OxmlElement("w:trHeight")
+            tr_pr.append(tr_height)
+        tr_height.set(qn("w:val"), str(int(Cm(height_cm).twips)))
+        tr_height.set(qn("w:hRule"), "exact")
+
+    @staticmethod
+    def _set_table_borders_all(table) -> None:
+        tbl_pr = table._tbl.tblPr
+        borders = tbl_pr.find(qn("w:tblBorders"))
+        if borders is None:
+            borders = OxmlElement("w:tblBorders")
+            tbl_pr.append(borders)
+        else:
+            for child in list(borders):
+                borders.remove(child)
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            el = OxmlElement(f"w:{edge}")
+            el.set(qn("w:val"), "single")
+            el.set(qn("w:sz"), "12")
+            el.set(qn("w:space"), "0")
+            el.set(qn("w:color"), "000000")
+            borders.append(el)
 
     @staticmethod
     def _set_table_borders_none(table) -> None:
@@ -831,178 +901,105 @@ class DocxExporter(Exporter):
         self._set_east_asian_font(run, _HEADING_FONT)
 
     def _add_analysis_after_question(self, doc: Document, text: str) -> list[Paragraph]:
-        """Render inline analysis with the same scan-friendly hierarchy as the end section."""
+        """Render inline analysis using labeled, indented semantic sections."""
         sections = split_analysis_sections(text)
         if not sections or not any(label for label, _ in sections):
             p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(3)
-            p.paragraph_format.space_after = Pt(4)
-            p.paragraph_format.line_spacing = 1.4
+            p.paragraph_format.space_before = Pt(2)
             self._add_labeled_text(p, "解析", text)
             return [p]
 
         paragraphs: list[Paragraph] = []
         title = doc.add_paragraph()
-        title.paragraph_format.space_before = Pt(4)
-        title.paragraph_format.space_after = Pt(3)
-        title.paragraph_format.keep_with_next = True
+        title.paragraph_format.space_before = Pt(2)
+        title.paragraph_format.space_after = Pt(1.5)
         title_run = title.add_run("解析")
         title_run.bold = True
-        title_run.font.size = Pt(11)
-        title_run.font.name = _HEADING_FONT
-        self._set_east_asian_font(title_run, _HEADING_FONT)
+        title_run.font.size = Pt(10)
+        title_run.font.name = _BODY_FONT
+        self._set_east_asian_font(title_run, _BODY_FONT_EA)
         paragraphs.append(title)
 
         for label, body in sections:
-            paragraphs.extend(self._add_analysis_subsection(doc, label, body, indent_cm=0.35))
+            paragraphs.extend(self._add_analysis_subsection(doc, label, body, indent_cm=0.55))
+        return paragraphs
+
+    def _add_analysis_item(self, doc: Document, number: int, text: str) -> list[Paragraph]:
+        """Render an end-section item with bold labels and indented body text."""
+        sections = split_analysis_sections(text)
+        if not sections or not any(label for label, _ in sections):
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(6)
+            number_run = p.add_run(f"{number}．")
+            number_run.bold = True
+            number_run.font.size = Pt(10)
+            number_run.font.name = _BODY_FONT
+            self._set_east_asian_font(number_run, _BODY_FONT_EA)
+            run = p.add_run(text)
+            run.font.size = Pt(10)
+            run.font.name = _BODY_FONT
+            self._set_east_asian_font(run, _BODY_FONT_EA)
+            return [p]
+
+        paragraphs: list[Paragraph] = []
+        first = True
+        for label, body in sections:
+            heading = doc.add_paragraph()
+            heading.paragraph_format.space_before = Pt(2 if first else 1)
+            heading.paragraph_format.space_after = Pt(0.8)
+            if not first:
+                heading.paragraph_format.left_indent = Cm(0.55)
+            prefix = f"{number}．{label}" if first else label
+            run = heading.add_run(prefix)
+            run.bold = True
+            run.font.size = Pt(10)
+            run.font.name = _BODY_FONT
+            self._set_east_asian_font(run, _BODY_FONT_EA)
+            heading.paragraph_format.keep_with_next = bool(body)
+            paragraphs.append(heading)
+
+            if body:
+                body_p = doc.add_paragraph()
+                body_p.paragraph_format.left_indent = Cm(0.78)
+                body_p.paragraph_format.space_after = Pt(2.2)
+                body_p.paragraph_format.line_spacing = 1.35
+                body_run = body_p.add_run(body)
+                body_run.font.size = Pt(10)
+                body_run.font.name = _BODY_FONT
+                self._set_east_asian_font(body_run, _BODY_FONT_EA)
+                paragraphs.append(body_p)
+            first = False
+
         if paragraphs:
             paragraphs[-1].paragraph_format.space_after = Pt(7)
         return paragraphs
 
-    def _add_analysis_item(self, doc: Document, number: int, text: str) -> list[Paragraph]:
-        """Render one end-of-document analysis entry as a distinct question block."""
-        sections = split_analysis_sections(text)
+    def _add_analysis_subsection(
+        self, doc: Document, label: str, body: str, indent_cm: float = 0.55
+    ) -> list[Paragraph]:
         paragraphs: list[Paragraph] = []
-
-        # Separate the question number from semantic section labels.  This gives
-        # readers a strong visual anchor when scanning a long answer-analysis
-        # appendix and avoids the dense ``1.错因诊断`` look.
-        header = doc.add_paragraph()
-        header.paragraph_format.space_before = Pt(9)
-        header.paragraph_format.space_after = Pt(5)
-        header.paragraph_format.keep_with_next = True
-        run = header.add_run(f"第 {number} 题")
+        heading = doc.add_paragraph()
+        heading.paragraph_format.left_indent = Cm(indent_cm)
+        heading.paragraph_format.space_after = Pt(0.8)
+        run = heading.add_run(label)
         run.bold = True
-        run.font.size = Pt(11.5)
-        run.font.name = _HEADING_FONT
-        self._set_east_asian_font(run, _HEADING_FONT)
-        self._set_paragraph_border(header, "bottom", color="C9C9C9", size="6", space="3")
-        paragraphs.append(header)
+        run.font.size = Pt(10)
+        run.font.name = _BODY_FONT
+        self._set_east_asian_font(run, _BODY_FONT_EA)
+        heading.paragraph_format.keep_with_next = bool(body)
+        paragraphs.append(heading)
 
-        if not sections or not any(label for label, _ in sections):
+        if body:
             body_p = doc.add_paragraph()
-            body_p.paragraph_format.left_indent = Cm(0.45)
-            body_p.paragraph_format.space_after = Pt(10)
-            body_p.paragraph_format.line_spacing = 1.4
-            body_run = body_p.add_run(text)
-            body_run.font.size = Pt(10.5)
+            body_p.paragraph_format.left_indent = Cm(indent_cm + 0.23)
+            body_p.paragraph_format.space_after = Pt(2)
+            body_p.paragraph_format.line_spacing = 1.35
+            body_run = body_p.add_run(body)
+            body_run.font.size = Pt(10)
             body_run.font.name = _BODY_FONT
             self._set_east_asian_font(body_run, _BODY_FONT_EA)
             paragraphs.append(body_p)
-            return paragraphs
-
-        for label, body in sections:
-            paragraphs.extend(self._add_analysis_subsection(doc, label, body, indent_cm=0.35))
-
-        if paragraphs:
-            paragraphs[-1].paragraph_format.space_after = Pt(11)
         return paragraphs
-
-    def _add_analysis_subsection(
-        self, doc: Document, label: str, body: str, indent_cm: float = 0.35
-    ) -> list[Paragraph]:
-        """Render one semantic analysis section using prose, bullets, or steps."""
-        paragraphs: list[Paragraph] = []
-        label = str(label or "").strip()
-        clean_body = clean_analysis_section_body(label, body)
-        if not label and not clean_body:
-            return paragraphs
-
-        if label:
-            heading = doc.add_paragraph()
-            heading.paragraph_format.left_indent = Cm(indent_cm)
-            heading.paragraph_format.space_before = Pt(2.5)
-            heading.paragraph_format.space_after = Pt(2.5)
-            heading.paragraph_format.keep_with_next = bool(clean_body)
-            run = heading.add_run(f"【{label}】")
-            run.bold = True
-            run.font.size = Pt(10.5)
-            run.font.name = _HEADING_FONT
-            self._set_east_asian_font(run, _HEADING_FONT)
-            paragraphs.append(heading)
-
-        body_indent = indent_cm + 0.35
-        if not clean_body:
-            return paragraphs
-
-        if label == "错因诊断":
-            chunks = split_analysis_paragraphs(clean_body)
-            for index, chunk in enumerate(chunks):
-                p = doc.add_paragraph()
-                p.paragraph_format.left_indent = Cm(body_indent)
-                p.paragraph_format.space_after = Pt(3.5 if index < len(chunks) - 1 else 5)
-                p.paragraph_format.line_spacing = 1.4
-                run = p.add_run(chunk)
-                run.font.size = Pt(10.5)
-                run.font.name = _BODY_FONT
-                self._set_east_asian_font(run, _BODY_FONT_EA)
-                paragraphs.append(p)
-            return paragraphs
-
-        if label in {"补漏重点", "复练任务"}:
-            items = split_analysis_list_items(label, clean_body)
-            numbered = label == "复练任务"
-            for index, item in enumerate(items, 1):
-                p = doc.add_paragraph()
-                p.paragraph_format.left_indent = Cm(body_indent + 0.28)
-                p.paragraph_format.first_line_indent = Cm(-0.28)
-                p.paragraph_format.space_before = Pt(0.6)
-                p.paragraph_format.space_after = Pt(2.2)
-                p.paragraph_format.line_spacing = 1.35
-                prefix = f"{index}. " if numbered else "• "
-                prefix_run = p.add_run(prefix)
-                prefix_run.bold = numbered
-                prefix_run.font.size = Pt(10.5)
-                prefix_run.font.name = _BODY_FONT
-                self._set_east_asian_font(prefix_run, _BODY_FONT_EA)
-                body_run = p.add_run(item)
-                body_run.font.size = Pt(10.5)
-                body_run.font.name = _BODY_FONT
-                self._set_east_asian_font(body_run, _BODY_FONT_EA)
-                if numbered:
-                    # A restrained left rule makes action items easy to find
-                    # without relying on colour, so the file remains print-safe.
-                    self._set_paragraph_border(p, "left", color="D2D2D2", size="10", space="4")
-                paragraphs.append(p)
-            if paragraphs:
-                paragraphs[-1].paragraph_format.space_after = Pt(5)
-            return paragraphs
-
-        p = doc.add_paragraph()
-        p.paragraph_format.left_indent = Cm(body_indent)
-        p.paragraph_format.space_after = Pt(5)
-        p.paragraph_format.line_spacing = 1.4
-        run = p.add_run(clean_body)
-        run.font.size = Pt(10.5)
-        run.font.name = _BODY_FONT
-        self._set_east_asian_font(run, _BODY_FONT_EA)
-        paragraphs.append(p)
-        return paragraphs
-
-    @staticmethod
-    def _set_paragraph_border(
-        paragraph: Paragraph,
-        side: str,
-        *,
-        color: str = "D9D9D9",
-        size: str = "6",
-        space: str = "1",
-    ) -> None:
-        """Add a simple Word paragraph border without requiring a table/card."""
-        p_pr = paragraph._p.get_or_add_pPr()
-        p_bdr = p_pr.find(qn("w:pBdr"))
-        if p_bdr is None:
-            p_bdr = OxmlElement("w:pBdr")
-            p_pr.append(p_bdr)
-        tag = qn(f"w:{side}")
-        edge = p_bdr.find(tag)
-        if edge is None:
-            edge = OxmlElement(f"w:{side}")
-            p_bdr.append(edge)
-        edge.set(qn("w:val"), "single")
-        edge.set(qn("w:sz"), str(size))
-        edge.set(qn("w:space"), str(space))
-        edge.set(qn("w:color"), color)
 
     def _add_end_section_title(self, doc: Document, title: str) -> None:
         p = doc.add_paragraph()

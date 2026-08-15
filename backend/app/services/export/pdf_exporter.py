@@ -21,6 +21,7 @@ import asyncio
 import io
 import logging
 import os
+import unicodedata
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -28,12 +29,7 @@ from dataclasses import dataclass
 from app.core.config import settings
 from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
 from app.services.export.exporter_base import Exporter, ExportResult
-from app.services.export.analysis_content import (
-    clean_analysis_section_body,
-    split_analysis_list_items,
-    split_analysis_paragraphs,
-    split_analysis_sections,
-)
+from app.services.export.analysis_content import split_analysis_sections
 from app.services.export.latex_render import (
     find_latex_segments,
     has_latex,
@@ -456,165 +452,70 @@ class PdfExporter(Exporter):
         )
 
     def _write_analysis_after_question(self, pdf, text: str) -> None:
-        """Render inline analysis with prose/bullets/steps instead of dense text."""
+        """Render inline analysis with bold-ish section labels and body indent."""
         sections = split_analysis_sections(text)
         if not sections or not any(label for label, _ in sections):
             self._write_labeled_paragraph(pdf, "解析", text)
             return
 
-        self._check_page_break(pdf, 16)
-        pdf.ln(1.5)
+        self._check_page_break(pdf, 14)
+        pdf.ln(1)
         pdf.set_text_color(*_COLOR_TEXT)
-        pdf.set_font(_HEADING_FONT_NAME, "", 10.5)
+        pdf.set_font(_HEADING_FONT_NAME, "", 10)
         pdf.cell(BODY_W, 6, text="解析", new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(0.8)
         for label, body in sections:
-            self._write_analysis_subsection(pdf, label, body, indent_mm=4.5)
-        pdf.ln(2)
+            self._write_analysis_subsection(pdf, label, body, indent_mm=6)
+        pdf.ln(1.5)
 
     def _write_analysis_item(self, pdf, number: int, text: str) -> None:
-        """Render one end-of-document analysis entry as a distinct question block."""
+        """Render one end-of-document analysis entry with clear hierarchy."""
         sections = split_analysis_sections(text)
-        self._check_page_break(pdf, 22)
-        pdf.ln(2)
-
-        # Question number is its own visual anchor.  A light separator keeps
-        # consecutive analyses distinct without turning the document into a
-        # heavy card layout.
-        pdf.set_text_color(*_COLOR_TEXT)
-        pdf.set_font(_HEADING_FONT_NAME, "", 11)
-        pdf.cell(BODY_W, 6.5, text=f"第 {number} 题", new_x="LMARGIN", new_y="NEXT")
-        y = pdf.get_y() + 0.6
-        pdf.set_draw_color(*_COLOR_LIGHT_LINE)
-        pdf.set_line_width(0.25)
-        pdf.line(MARGIN_L, y, MARGIN_L + BODY_W, y)
-        pdf.set_draw_color(*_COLOR_TEXT)
-        pdf.ln(4.2)
-
         if not sections or not any(label for label, _ in sections):
-            self._write_analysis_plain_paragraph(pdf, text, indent_mm=5)
-            pdf.ln(5.5)
+            self._check_page_break(pdf, 16)
+            self._write_numbered_item(pdf, number, text, compact=False)
             return
 
+        self._check_page_break(pdf, 18)
+        first = True
         for label, body in sections:
-            self._write_analysis_subsection(pdf, label, body, indent_mm=4.5)
-        pdf.ln(5.5)
-
-    def _write_analysis_subsection(self, pdf, label: str, body: str, indent_mm: float = 4.5) -> None:
-        """Render one analysis section using the most readable structure for it."""
-        label = str(label or "").strip()
-        clean_body = clean_analysis_section_body(label, body)
-        if not label and not clean_body:
-            return
-
-        self._check_page_break(pdf, 13)
-        if label:
-            pdf.set_x(MARGIN_L + indent_mm)
+            self._check_page_break(pdf, 12)
+            heading = f"{number}．{label}" if first else label
+            x = MARGIN_L if first else MARGIN_L + 6
+            width = BODY_W if first else BODY_W - 6
+            pdf.set_x(x)
             pdf.set_text_color(*_COLOR_TEXT)
-            pdf.set_font(_HEADING_FONT_NAME, "", 10.2)
-            pdf.cell(
-                BODY_W - indent_mm, 5.8, text=f"【{label}】",
-                new_x="LMARGIN", new_y="NEXT",
+            pdf.set_font(_HEADING_FONT_NAME, "", 10)
+            pdf.multi_cell(
+                width, 5.8, text=heading,
+                new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
             )
-            pdf.ln(1.0)
+            if body:
+                self._write_analysis_body(pdf, body, indent_mm=8)
+            pdf.ln(1.1)
+            first = False
+        pdf.ln(2.5)
 
-        if not clean_body:
-            return
-
-        body_indent = indent_mm + 3.5
-        if label == "错因诊断":
-            chunks = split_analysis_paragraphs(clean_body)
-            for index, chunk in enumerate(chunks):
-                self._write_analysis_plain_paragraph(
-                    pdf,
-                    chunk,
-                    indent_mm=body_indent,
-                    bottom_gap=2.1 if index < len(chunks) - 1 else 3.2,
-                )
-            return
-
-        if label in {"补漏重点", "复练任务"}:
-            items = split_analysis_list_items(label, clean_body)
-            self._write_analysis_list(
-                pdf,
-                items,
-                indent_mm=body_indent,
-                numbered=(label == "复练任务"),
-            )
-            pdf.ln(2.2)
-            return
-
-        self._write_analysis_plain_paragraph(pdf, clean_body, indent_mm=body_indent, bottom_gap=3)
-
-    def _write_analysis_plain_paragraph(
-        self,
-        pdf,
-        body: str,
-        *,
-        indent_mm: float = 8,
-        bottom_gap: float = 2,
-    ) -> None:
-        text = str(body or "").strip()
-        if not text:
-            return
+    def _write_analysis_subsection(self, pdf, label: str, body: str, indent_mm: float = 6) -> None:
+        self._check_page_break(pdf, 11)
         pdf.set_x(MARGIN_L + indent_mm)
         pdf.set_text_color(*_COLOR_TEXT)
-        pdf.set_font(_BODY_FONT_NAME, "", 10.2)
-        pdf.multi_cell(
-            BODY_W - indent_mm,
-            6.25,
-            text=text,
-            new_x="LMARGIN",
-            new_y="NEXT",
-            wrapmode="WORD",
+        pdf.set_font(_HEADING_FONT_NAME, "", 9.8)
+        pdf.cell(
+            BODY_W - indent_mm, 5.6, text=label,
+            new_x="LMARGIN", new_y="NEXT",
         )
-        if bottom_gap:
-            pdf.ln(bottom_gap)
+        if body:
+            self._write_analysis_body(pdf, body, indent_mm=indent_mm + 2)
+        pdf.ln(0.8)
 
-    def _write_analysis_list(
-        self,
-        pdf,
-        items: list[str],
-        *,
-        indent_mm: float = 8,
-        numbered: bool = False,
-    ) -> None:
-        """Render hanging-indent bullet/number lists with stable page breaks."""
-        if not items:
-            return
-        prefix_w = 7.0 if numbered else 5.0
-        body_w = BODY_W - indent_mm - prefix_w
-        for index, item in enumerate(items, 1):
-            text = str(item or "").strip()
-            if not text:
-                continue
-            # Estimate at least one line so the marker is not orphaned at the
-            # bottom of a page. ``multi_cell`` itself handles longer items.
-            self._check_page_break(pdf, 8.5)
-            y = pdf.get_y()
-            x = MARGIN_L + indent_mm
-            if numbered:
-                # A light rule turns action items into a subtle task block while
-                # remaining readable in black-and-white printouts.
-                pdf.set_draw_color(*_COLOR_LIGHT_LINE)
-                pdf.set_line_width(0.45)
-                pdf.line(x - 2.0, y + 0.3, x - 2.0, y + 6.1)
-                pdf.set_draw_color(*_COLOR_TEXT)
-            pdf.set_xy(x, y)
-            pdf.set_text_color(*_COLOR_TEXT)
-            pdf.set_font(_BODY_FONT_NAME, "", 10.2)
-            prefix = f"{index}." if numbered else "•"
-            pdf.cell(prefix_w, 6.2, text=prefix, new_x="RIGHT", new_y="TOP")
-            pdf.set_xy(x + prefix_w, y)
-            pdf.multi_cell(
-                body_w,
-                6.2,
-                text=text,
-                new_x="LMARGIN",
-                new_y="NEXT",
-                wrapmode="WORD",
-            )
-            pdf.ln(1.2)
+    def _write_analysis_body(self, pdf, body: str, indent_mm: float = 8) -> None:
+        pdf.set_x(MARGIN_L + indent_mm)
+        pdf.set_text_color(*_COLOR_TEXT)
+        pdf.set_font(_BODY_FONT_NAME, "", 10)
+        pdf.multi_cell(
+            BODY_W - indent_mm, 6.1, text=body,
+            new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+        )
 
     def _write_end_section_title(self, pdf, title: str) -> None:
         pdf.set_text_color(*_COLOR_TEXT)
@@ -622,49 +523,88 @@ class PdfExporter(Exporter):
         pdf.cell(BODY_W, 8, text=title, align="C", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(5)
 
+    @staticmethod
+    def _display_units(text: str) -> int:
+        units = 0
+        for char in str(text):
+            units += 2 if unicodedata.east_asian_width(char) in ("W", "F", "A") else 1
+        return units
+
+    def _choose_answer_columns(self, items: list[dict]) -> int:
+        answers = [self._sanitize_text(item.get("answer")) or "—" for item in items]
+        max_units = max((self._display_units(answer) for answer in answers), default=1)
+        if max_units <= 4:
+            preferred = 6
+        elif max_units <= 12:
+            preferred = 4
+        elif max_units <= 28:
+            preferred = 2
+        else:
+            preferred = 1
+        # Do not create a full-width six-column grid for only a few answers.
+        return max(1, min(preferred, len(items)))
+
     def _write_answer_grid(self, pdf, items: list[dict]) -> None:
-        """Render short answers as the compact grid used by printed answer keys."""
+        """Render end answers as a bordered two-row-per-block answer table."""
         if not items:
             return
-        groups: list[tuple[int, list[dict]]] = []
-        for item in items:
-            answer = self._sanitize_text(item.get("answer")) or "—"
-            columns = 8 if len(answer) <= 2 else 4 if len(answer) <= 8 else 1
-            if groups and groups[-1][0] == columns:
-                groups[-1][1].append(item)
-            else:
-                groups.append((columns, [item]))
-
-        for columns, group in groups:
-            self._write_answer_grid_group(pdf, group, columns)
+        columns = self._choose_answer_columns(items)
+        self._write_answer_grid_group(pdf, items, columns)
 
     def _write_answer_grid_group(self, pdf, items: list[dict], columns: int) -> None:
-        gap = 2.2
-        cell_w = (BODY_W - gap * (columns - 1)) / columns
-        line_h = 5.4
-        pdf.set_font(_BODY_FONT_NAME, "", 9.6)
+        # Keep the answer key visually compact: short answers use a fixed,
+        # narrow cell width and the whole table is centered instead of
+        # stretching across the full printable page width.
+        max_cell_w = 15.0 if columns >= 4 else 24.0 if columns == 2 else 56.0
+        table_w = min(BODY_W, max_cell_w * columns)
+        cell_w = table_w / columns
+        table_x = MARGIN_L + (BODY_W - table_w) / 2
+
+        num_h = 5.2
+        line_h = 4.0
+        pdf.set_draw_color(*_COLOR_TEXT)
+        pdf.set_line_width(0.25)
         pdf.set_text_color(*_COLOR_TEXT)
+
+        number_font_size = 9.2 if columns >= 4 else 9.0
+        answer_font_size = 11.5 if columns >= 4 else 10.5
 
         for row_start in range(0, len(items), columns):
             row = items[row_start:row_start + columns]
-            texts = [
-                f"{item['num']}．{self._sanitize_text(item.get('answer')) or '—'}"
-                for item in row
+            answers = [self._sanitize_text(item.get("answer")) or "—" for item in row]
+            pdf.set_font(_BODY_FONT_NAME, "", answer_font_size)
+            text_heights = [
+                self._estimate_wrapped_height(pdf, answer, max(cell_w - 4, 10), line_h)
+                for answer in answers
             ]
-            row_h = max(
-                self._estimate_wrapped_height(pdf, text, cell_w, line_h)
-                for text in texts
-            )
-            self._check_page_break(pdf, row_h + 1.2)
+            answer_h = max(7.8, max(text_heights, default=line_h) + 1.8)
+            block_h = num_h + answer_h
+            self._check_page_break(pdf, block_h + 4)
             y = pdf.get_y()
-            for col, text in enumerate(texts):
-                x = MARGIN_L + col * (cell_w + gap)
-                pdf.set_xy(x, y)
-                pdf.multi_cell(
-                    cell_w, line_h, text=text,
-                    new_x="RIGHT", new_y="TOP", wrapmode="CHAR",
-                )
-            pdf.set_xy(MARGIN_L, y + row_h + 1.0)
+
+            for col in range(columns):
+                x = table_x + col * cell_w
+                pdf.rect(x, y, cell_w, num_h)
+                pdf.rect(x, y + num_h, cell_w, answer_h)
+
+                if col < len(row):
+                    item = row[col]
+                    answer = answers[col]
+
+                    pdf.set_xy(x, y)
+                    pdf.set_font(_HEADING_FONT_NAME, "", number_font_size)
+                    pdf.cell(cell_w, num_h, text=str(item["num"]), align="C")
+
+                    pdf.set_font(_HEADING_FONT_NAME, "", answer_font_size)
+                    text_h = text_heights[col]
+                    text_y = y + num_h + max((answer_h - text_h) / 2, 0.35)
+                    pdf.set_xy(x + 0.5, text_y)
+                    pdf.multi_cell(
+                        cell_w - 1.0, line_h, text=answer, align="C",
+                        new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
+                    )
+
+            pdf.set_xy(MARGIN_L, y + block_h + 1.8)
 
     def _write_numbered_item(self, pdf, number: int, text: str, compact: bool) -> None:
         pdf.set_text_color(*_COLOR_TEXT)
