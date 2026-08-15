@@ -83,9 +83,66 @@ jobs:
             backend/tests/unit/test_local_runtime_and_outbox_backoff.py \
             backend/tests/unit/test_task_observability.py \
             backend/tests/unit/test_ai_resource_governance.py \
+            backend/tests/contract/test_openapi_contract.py \
             backend/tests/integration/test_practice_answer_projection.py \
             backend/tests/integration/test_answer_projection_reconciliation.py \
             backend/tests/integration/test_shared_ai_token_budget.py
+
+  api-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ENV: test
+      APP_SECRET: ci-only-secret
+      DATABASE_URL: sqlite+aiosqlite:///./contract.db
+      PROCESS_ROLE: web
+      LOCAL_ASYNC_RUNTIME_ENABLED: "false"
+      OCR_ENABLED: "false"
+      VECTOR_ENABLED: "false"
+      PYTHONPATH: ${{ github.workspace }}/backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Export deterministic OpenAPI contract
+        run: python backend/scripts/export_openapi.py --output .contract/openapi.json
+
+      - name: Verify frontend-owned operations exist
+        run: python backend/scripts/verify_client_routes.py .contract/openapi.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Generate TypeScript from FastAPI OpenAPI
+        run: node admin-frontend/scripts/generate-openapi-types.mjs .contract/openapi.json admin-frontend/.contract/openapi.ts
+
+      - name: Type-check critical admin response contracts
+        working-directory: admin-frontend
+        run: npx --yes --package=typescript@5.9.2 tsc -p contracts/tsconfig.json
+
+      - name: Upload generated OpenAPI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-contract
+          path: |
+            .contract/openapi.json
+            admin-frontend/.contract/openapi.ts
+          if-no-files-found: error
+          retention-days: 7
 
   admin-build:
     runs-on: ubuntu-latest
