@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Area,
@@ -9,7 +9,6 @@ import {
   Cell,
   Pie,
   PieChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -95,6 +94,73 @@ function traceStatusTone(status?: string | null) {
   if (["processing", "retry", "pending", "leased"].includes(status || "")) return "warning" as const;
   return "neutral" as const;
 }
+
+const STATUS_LABELS_ZH: Record<string, string> = {
+  pending: "待发布",
+  leased: "发布中",
+  published: "已发布",
+  failed: "失败",
+  cancelled: "已取消",
+  ready: "待处理",
+  processing: "处理中",
+  retry: "等待重试",
+  dead: "死信",
+  corrupt: "损坏",
+  completed: "已完成",
+  success: "成功",
+  skipped: "已跳过",
+  running: "运行中",
+  idle: "空闲",
+  disabled: "已停用",
+  cancel_requested: "取消中",
+  review_required: "待人工处理",
+  active: "运行中",
+  inactive: "未运行",
+  activating: "启动中",
+  deactivating: "停止中",
+  not_found: "未找到",
+  "not-found": "未找到",
+};
+
+function statusLabelZh(value?: string | null) {
+  if (!value) return "未知";
+  const key = String(value).trim().toLowerCase();
+  return STATUS_LABELS_ZH[key] || value;
+}
+
+function queueLocationLabelZh(value?: string | null) {
+  if (!value) return "—";
+  const key = String(value).trim().toLowerCase();
+  const labels: Record<string, string> = {
+    ready: "待处理队列",
+    processing: "处理中队列",
+    retry: "重试队列",
+    dead: "死信队列",
+    corrupt: "损坏队列",
+  };
+  return labels[key] || `${statusLabelZh(value)}队列`;
+}
+
+function severityLabelZh(value?: string | null) {
+  if (value === "error") return "错误";
+  if (value === "warning") return "警告";
+  return "正常";
+}
+
+const ISSUE_CODE_LABELS_ZH: Record<string, string> = {
+  REDIS_NOT_CONFIGURED: "Redis 未配置",
+  REDIS_UNAVAILABLE: "Redis 不可用",
+  OUTBOX_STALLED: "Outbox 严重积压",
+  OUTBOX_DELAYED: "Outbox 发布延迟",
+  QUEUE_STALLED: "队列严重积压",
+  QUEUE_DELAYED: "队列消费延迟",
+  TASK_DEADLETTER_HIGH: "死信任务过多",
+  TASK_DEADLETTER_PRESENT: "存在死信任务",
+  ANSWER_PROJECTION_BACKLOG_HIGH: "答题投影严重积压",
+  ANSWER_PROJECTION_BACKLOG: "答题投影积压",
+  OUTBOX_FAILED_HIGH: "Outbox 永久失败过多",
+  OUTBOX_FAILED_PRESENT: "存在 Outbox 永久失败",
+};
 
 type MetricTone = "primary" | "success" | "warning" | "danger";
 
@@ -211,11 +277,11 @@ function traceStageState(item: TaskTraceItem, redisAvailable: boolean) {
 
   return {
     outbox: {
-      value: item.outbox_status,
+      value: statusLabelZh(item.outbox_status),
       tone: outboxFailed ? "danger" as const : outboxDone ? "success" as const : "warning" as const,
     },
     redis: {
-      value: redisAvailable ? queueStatus : "Redis 不可用",
+      value: redisAvailable ? statusLabelZh(queueStatus) : "Redis 不可用",
       tone: !redisAvailable
         ? "danger" as const
         : ["failed", "dead", "corrupt"].includes(queueStatus)
@@ -225,7 +291,7 @@ function traceStageState(item: TaskTraceItem, redisAvailable: boolean) {
             : "neutral" as const,
     },
     worker: {
-      value: item.queue?.status || "未进入",
+      value: item.queue?.status ? statusLabelZh(item.queue.status) : "未进入",
       tone: ["failed", "dead", "corrupt"].includes(queueStatus)
         ? "danger" as const
         : ["processing", "retry", "pending"].includes(queueStatus)
@@ -246,11 +312,11 @@ function traceStageState(item: TaskTraceItem, redisAvailable: boolean) {
 }
 
 const STATUS_PIE = [
-  { key: "pending", label: "Pending", color: "#c49a6b" },
-  { key: "leased", label: "Leased", color: "#7e95a8" },
-  { key: "published", label: "Published", color: "#6b9b6b" },
-  { key: "failed", label: "Failed", color: "#c96565" },
-  { key: "cancelled", label: "Cancelled", color: "#9aabba" },
+  { key: "pending", label: "待发布", color: "#c49a6b" },
+  { key: "leased", label: "发布中", color: "#7e95a8" },
+  { key: "published", label: "已发布", color: "#6b9b6b" },
+  { key: "failed", label: "失败", color: "#c96565" },
+  { key: "cancelled", label: "已取消", color: "#9aabba" },
  ] as const;
 
 type TaskScope = "all" | "scheduled" | "system" | "async";
@@ -268,7 +334,7 @@ const ASYNC_TASK_LABELS: Record<string, string> = {
   formula_batch: "公式批处理",
   prewarm_analysis: "AI 预热分析",
   export_mistakes: "错题导出",
-  answer_projection: "答题 Projection",
+  answer_projection: "答题投影",
   ocr_pipeline: "OCR 处理",
 };
 
@@ -286,7 +352,7 @@ function taskStatusMeta(status: string, location?: string | null) {
   if (["ready", "pending", "idle"].includes(value)) return { label: "等待中", tone: "neutral" as const };
   if (value === "disabled") return { label: "已停用", tone: "neutral" as const };
   if (["completed", "published", "success"].includes(value)) return { label: "成功", tone: "success" as const };
-  return { label: status || "未知", tone: "neutral" as const };
+  return { label: statusLabelZh(status), tone: "neutral" as const };
 }
 
 function runResultMeta(status?: string | null) {
@@ -294,6 +360,78 @@ function runResultMeta(status?: string | null) {
   if (status === "failed") return { label: "失败", tone: "danger" as const };
   if (status === "skipped") return { label: "跳过", tone: "warning" as const };
   return { label: "暂无记录", tone: "neutral" as const };
+}
+
+function TaskTrendChart({ data }: { data: Array<{
+  date: string;
+  label: string;
+  created: number;
+  published: number;
+  failed: number;
+  projection_receipts: number;
+}> }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+
+    let frame = 0;
+    const measure = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const rect = element.getBoundingClientRect();
+        const width = Math.floor(rect.width);
+        const height = Math.floor(rect.height);
+        if (width <= 0 || height <= 0) return;
+        setSize((current) =>
+          current.width === width && current.height === height ? current : { width, height },
+        );
+      });
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
+  return (
+    <div ref={containerRef} className="h-[150px] min-h-[150px] w-full min-w-0 overflow-hidden">
+      {size.width > 0 && size.height > 0 ? (
+        <AreaChart
+          width={size.width}
+          height={size.height}
+          data={data}
+          margin={{ top: 8, right: 8, left: -26, bottom: 0 }}
+        >
+          <defs>
+            <linearGradient id="taskCreated" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#5b7b9a" stopOpacity={0.22} />
+              <stop offset="95%" stopColor="#5b7b9a" stopOpacity={0.01} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke="rgba(91,123,154,0.10)" strokeDasharray="3 4" vertical={false} />
+          <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: "#8192a3" }} />
+          <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: "#8192a3" }} width={32} />
+          <Tooltip content={<TrendTooltip />} />
+          <Area type="monotone" dataKey="created" name="创建" stroke="#5b7b9a" fill="url(#taskCreated)" strokeWidth={2} dot={false} />
+          <Area type="monotone" dataKey="published" name="发布" stroke="#6b9b6b" fill="transparent" strokeWidth={1.8} dot={false} />
+          <Area type="monotone" dataKey="failed" name="失败" stroke="#c96565" fill="transparent" strokeWidth={1.8} dot={false} />
+          <Area type="monotone" dataKey="projection_receipts" name="答题投影回执" stroke="#c49a6b" fill="transparent" strokeWidth={1.8} dot={false} />
+        </AreaChart>
+      ) : (
+        <div className="flex h-full items-center justify-center text-[10px] text-[var(--color-text-hint)]">图表加载中…</div>
+      )}
+    </div>
+  );
 }
 
 function TrendTooltip({
@@ -332,6 +470,13 @@ export default function SystemTasksPage() {
   const [selectedAsyncId, setSelectedAsyncId] = useState<string | null>(null);
   const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{ tone: "success" | "warning" | "danger"; message: string } | null>(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (!actionFeedback) return;
+    const timer = window.setTimeout(() => setActionFeedback(null), 3_000);
+    return () => window.clearTimeout(timer);
+  }, [actionFeedback]);
 
   const diagnostics = useQuery({
     queryKey: ["task-diagnostics"],
@@ -383,11 +528,24 @@ export default function SystemTasksPage() {
     retry: false,
   });
 
-  const refreshTaskViews = () => {
-    diagnostics.refetch();
-    scheduledTasks.refetch();
-    if (selectedScheduledId === "postgres_backup") backupHistory.refetch();
-    if (data?.redis.available) asyncTasks.refetch();
+  const refreshTaskViews = async (showLoading = false) => {
+    const startedAt = Date.now();
+    if (showLoading) setManualRefreshing(true);
+    try {
+      const requests: Promise<unknown>[] = [
+        diagnostics.refetch(),
+        scheduledTasks.refetch(),
+      ];
+      if (selectedScheduledId === "postgres_backup") requests.push(backupHistory.refetch());
+      if (data?.redis.available) requests.push(asyncTasks.refetch());
+      await Promise.allSettled(requests);
+    } finally {
+      if (showLoading) {
+        const remaining = 650 - (Date.now() - startedAt);
+        if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
+        setManualRefreshing(false);
+      }
+    }
   };
 
   const retryOutbox = useMutation({
@@ -519,7 +677,73 @@ export default function SystemTasksPage() {
   }
 
   return (
-    <div className="space-y-3 pb-2">
+    <div className="relative space-y-3 pb-2">
+      {actionFeedback ? (
+        <div
+          className="fixed right-4 top-4 z-[140] w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-[var(--color-border)] bg-white/95 p-3.5 shadow-[0_18px_50px_rgba(36,52,64,0.16)] backdrop-blur-md"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
+                actionFeedback.tone === "success"
+                  ? "bg-[var(--color-success-light)] text-[var(--color-success)]"
+                  : actionFeedback.tone === "danger"
+                    ? "bg-[var(--color-danger-light)] text-[var(--color-danger)]"
+                    : "bg-[var(--color-warning-light)] text-[#9b6f3b]"
+              }`}
+            >
+              {actionFeedback.tone === "success" ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : actionFeedback.tone === "danger" ? (
+                <XCircle className="h-4 w-4" />
+              ) : (
+                <AlertTriangle className="h-4 w-4" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold text-[var(--ink)]">
+                    {actionFeedback.tone === "success" ? "操作成功" : actionFeedback.tone === "danger" ? "操作失败" : "操作提醒"}
+                  </p>
+                  <p className="mt-1 break-words text-[10px] leading-5 text-[var(--color-text-secondary)]">
+                    {actionFeedback.message}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="关闭消息"
+                  onClick={() => setActionFeedback(null)}
+                  className="-mr-1 -mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-base leading-none text-[var(--color-text-hint)] transition hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {manualRefreshing ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-[var(--color-bg)]/72 backdrop-blur-[2px]"
+          role="status"
+          aria-live="polite"
+          aria-label="正在刷新任务数据"
+        >
+          <div className="flex min-w-[180px] flex-col items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white/95 px-7 py-6 shadow-[0_18px_50px_rgba(36,52,64,0.14)]">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-primary-light)] text-[var(--color-primary)]">
+              <RefreshCw className="h-5 w-5 animate-spin" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-[var(--ink)]">正在刷新任务数据</p>
+              <p className="mt-1 text-[11px] text-[var(--color-text-secondary)]">同步诊断、队列与任务运行状态…</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -527,7 +751,7 @@ export default function SystemTasksPage() {
             <h1 className="text-xl font-bold text-[var(--ink)]">异步任务诊断</h1>
           </div>
           <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">
-            聚合 Outbox、Redis Queue、Worker 与 Projection，快速定位积压、重试和永久失败。
+            聚合 Outbox、Redis 队列、Worker 与答题投影，快速定位积压、重试和永久失败。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -536,9 +760,15 @@ export default function SystemTasksPage() {
             <span>15s 自动刷新</span>
             {data ? <span className="text-[var(--color-text-hint)]">· {formatTime(data.generated_at)}</span> : null}
           </div>
-          <Button size="sm" variant="secondary" onClick={refreshTaskViews} disabled={diagnostics.isFetching || scheduledTasks.isFetching || asyncTasks.isFetching}>
-            <RefreshCw className={`h-3.5 w-3.5 ${diagnostics.isFetching || scheduledTasks.isFetching || asyncTasks.isFetching ? "animate-spin" : ""}`} />
-            刷新
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => void refreshTaskViews(true)}
+            disabled={manualRefreshing}
+            aria-busy={manualRefreshing}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${manualRefreshing ? "animate-spin" : ""}`} />
+            {manualRefreshing ? "刷新中…" : "刷新"}
           </Button>
         </div>
       </div>
@@ -566,12 +796,12 @@ export default function SystemTasksPage() {
                       <StatusBadge tone={healthTone(health.severity)}>{health.ok ? "健康" : "存在异常"}</StatusBadge>
                     </div>
                     <p className="mt-0.5 truncate text-[10px] text-[var(--color-text-secondary)]">
-                      {data.async_runtime_expected ? "异步运行时应处于工作状态" : "当前为本地 Web-only 模式，不要求异步 Worker 常驻"}
+                      {data.async_runtime_expected ? "异步运行时应处于工作状态" : "当前为本地仅 Web 模式，不要求异步 Worker 常驻"}
                     </p>
                   </div>
                 </div>
                 <StatusBadge tone={data.redis.available ? "success" : data.redis.configured ? "danger" : "neutral"}>
-                  {data.redis.available ? "Redis Connected" : data.redis.configured ? "Redis Unavailable" : "Redis Not configured"}
+                  {data.redis.available ? "Redis 已连接" : data.redis.configured ? "Redis 不可用" : "Redis 未配置"}
                 </StatusBadge>
               </div>
 
@@ -584,21 +814,21 @@ export default function SystemTasksPage() {
                 />
                 <ArrowRight className="my-auto h-4 w-4 shrink-0 text-[var(--color-text-hint)]" />
                 <RuntimeNode
-                  title="Redis Queue"
-                  subtitle={data.redis.available ? `${data.redis.totals.ready} 条 Ready` : "连接不可用"}
-                  value={data.redis.available ? `${queueTotal} total` : "—"}
+                  title="Redis 队列"
+                  subtitle={data.redis.available ? `${data.redis.totals.ready} 条待处理` : "连接不可用"}
+                  value={data.redis.available ? `总计 ${queueTotal}` : "—"}
                   tone={data.redis.available ? (data.redis.totals.ready > 0 ? "warning" : "success") : "danger"}
                 />
                 <ArrowRight className="my-auto h-4 w-4 shrink-0 text-[var(--color-text-hint)]" />
                 <RuntimeNode
-                  title="Worker"
+                  title="Worker 执行器"
                   subtitle={data.redis.available ? `${data.redis.totals.processing} 条处理中` : "状态未知"}
-                  value={data.redis.available ? `${data.redis.totals.retry} retry` : "—"}
+                  value={data.redis.available ? `${data.redis.totals.retry} 条待重试` : "—"}
                   tone={!data.redis.available ? "neutral" : failedQueueTotal > 0 ? "danger" : data.redis.totals.retry > 0 ? "warning" : "success"}
                 />
                 <ArrowRight className="my-auto h-4 w-4 shrink-0 text-[var(--color-text-hint)]" />
                 <RuntimeNode
-                  title="Projection"
+                  title="答题投影"
                   subtitle={`${data.projection.unprojected} 条待回执`}
                   value={`24h +${data.projection.repairs_scheduled_24h}`}
                   tone={data.projection.unprojected > 0 ? "warning" : "success"}
@@ -616,7 +846,7 @@ export default function SystemTasksPage() {
               tone={data.outbox.unpublished > 0 ? "warning" : "success"}
             />
             <MetricCard
-              label="Redis Ready"
+              label="Redis 待处理"
               value={data.redis.available ? data.redis.totals.ready : "—"}
               hint={data.redis.available ? `最老等待 ${duration(data.redis.oldest_ready_seconds)}` : "Redis 不可用，队列表改用 Outbox 数据补位"}
               icon={<Workflow className="h-4 w-4" />}
@@ -630,7 +860,7 @@ export default function SystemTasksPage() {
               tone={!data.redis.available ? "warning" : failedQueueTotal > 0 ? "danger" : data.redis.totals.retry > 0 ? "warning" : "success"}
             />
             <MetricCard
-              label="未完成 Projection"
+              label="未完成答题投影"
               value={data.projection.unprojected}
               hint={`最老 ${duration(data.projection.oldest_age_sec)} · 24h 补偿 ${data.projection.repairs_scheduled_24h}`}
               icon={<TimerReset className="h-4 w-4" />}
@@ -669,7 +899,7 @@ export default function SystemTasksPage() {
                     <div className="mb-1.5 flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs font-semibold text-[var(--ink)]">任务执行趋势（近 7 天）</p>
-                        <p className="text-[10px] text-[var(--color-text-hint)]">创建、发布、失败与 Projection 回执</p>
+                        <p className="text-[10px] text-[var(--color-text-hint)]">创建、发布、失败与答题投影回执</p>
                       </div>
                       <div className="hidden flex-wrap gap-x-3 text-[9px] text-[var(--color-text-secondary)] sm:flex">
                         <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#5b7b9a]" />创建</span>
@@ -678,30 +908,13 @@ export default function SystemTasksPage() {
                         <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#c49a6b]" />回执</span>
                       </div>
                     </div>
-                    <div className="h-[150px] w-full">
-                      {trendData.length ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={trendData} margin={{ top: 8, right: 8, left: -26, bottom: 0 }}>
-                            <defs>
-                              <linearGradient id="taskCreated" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#5b7b9a" stopOpacity={0.22} />
-                                <stop offset="95%" stopColor="#5b7b9a" stopOpacity={0.01} />
-                              </linearGradient>
-                            </defs>
-                            <CartesianGrid stroke="rgba(91,123,154,0.10)" strokeDasharray="3 4" vertical={false} />
-                            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: "#8192a3" }} />
-                            <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 9, fill: "#8192a3" }} width={32} />
-                            <Tooltip content={<TrendTooltip />} />
-                            <Area type="monotone" dataKey="created" name="创建" stroke="#5b7b9a" fill="url(#taskCreated)" strokeWidth={2} dot={false} />
-                            <Area type="monotone" dataKey="published" name="发布" stroke="#6b9b6b" fill="transparent" strokeWidth={1.8} dot={false} />
-                            <Area type="monotone" dataKey="failed" name="失败" stroke="#c96565" fill="transparent" strokeWidth={1.8} dot={false} />
-                            <Area type="monotone" dataKey="projection_receipts" name="Projection 回执" stroke="#c49a6b" fill="transparent" strokeWidth={1.8} dot={false} />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-xs text-[var(--color-text-hint)]">暂无趋势数据</div>
-                      )}
-                    </div>
+                    {trendData.length ? (
+                      <TaskTrendChart data={trendData} />
+                    ) : (
+                      <div className="flex h-[150px] min-h-[150px] w-full min-w-0 items-center justify-center text-xs text-[var(--color-text-hint)]">
+                        暂无趋势数据
+                      </div>
+                    )}
                   </div>
 
                   <div className="px-4 py-3">
@@ -710,27 +923,25 @@ export default function SystemTasksPage() {
                         <p className="text-xs font-semibold text-[var(--ink)]">Outbox 状态分布</p>
                         <p className="text-[10px] text-[var(--color-text-hint)]">持久化任务当前状态</p>
                       </div>
-                      <span className="font-mono text-[10px] text-[var(--color-text-hint)]">{outboxTotal} total</span>
+                      <span className="font-mono text-[10px] text-[var(--color-text-hint)]">总计 {outboxTotal}</span>
                     </div>
                     <div className="grid h-[150px] grid-cols-[150px_minmax(0,1fr)] items-center">
                       <div className="relative h-[144px] w-[144px]">
                         {statusPieData.length ? (
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={statusPieData}
-                                dataKey="value"
-                                nameKey="label"
-                                innerRadius={42}
-                                outerRadius={63}
-                                paddingAngle={2}
-                                strokeWidth={0}
-                              >
-                                {statusPieData.map((entry) => <Cell key={entry.key} fill={entry.color} />)}
-                              </Pie>
-                              <Tooltip formatter={(value) => [Number(value || 0), "数量"]} />
-                            </PieChart>
-                          </ResponsiveContainer>
+                          <PieChart width={144} height={144}>
+                            <Pie
+                              data={statusPieData}
+                              dataKey="value"
+                              nameKey="label"
+                              innerRadius={42}
+                              outerRadius={63}
+                              paddingAngle={2}
+                              strokeWidth={0}
+                            >
+                              {statusPieData.map((entry) => <Cell key={entry.key} fill={entry.color} />)}
+                            </Pie>
+                            <Tooltip formatter={(value) => [Number(value || 0), "数量"]} />
+                          </PieChart>
                         ) : (
                           <div className="flex h-full items-center justify-center text-[10px] text-[var(--color-text-hint)]">暂无 Outbox</div>
                         )}
@@ -760,19 +971,6 @@ export default function SystemTasksPage() {
                     </div>
                   </div>
                 </div>
-
-                {actionFeedback ? (
-                  <div className={`mx-4 mt-3 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-[10px] ${
-                    actionFeedback.tone === "success"
-                      ? "border-[var(--color-success)]/25 bg-[var(--color-success-light)] text-[var(--color-success)]"
-                      : actionFeedback.tone === "danger"
-                        ? "border-[var(--color-danger)]/25 bg-[var(--color-danger-light)] text-[var(--color-danger)]"
-                        : "border-[var(--color-warning)]/35 bg-[var(--color-warning-light)] text-[#8d6639]"
-                  }`}>
-                    <span className="min-w-0 truncate">{actionFeedback.message}</span>
-                    <button type="button" className="shrink-0 font-semibold opacity-70 hover:opacity-100" onClick={() => setActionFeedback(null)}>关闭</button>
-                  </div>
-                ) : null}
 
                 <div className="flex flex-col gap-2 px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
                   <div className="flex flex-wrap items-center gap-1 rounded-xl bg-[var(--color-bg-input)] p-1">
@@ -821,10 +1019,10 @@ export default function SystemTasksPage() {
                     />
                     {data.redis.available ? (
                       <div className="hidden items-center gap-2 text-[9px] text-[var(--color-text-hint)] 2xl:flex">
-                        <span>Ready <b className="font-mono text-[var(--ink)]">{data.redis.totals.ready}</b></span>
-                        <span>Processing <b className="font-mono text-[var(--ink)]">{data.redis.totals.processing}</b></span>
-                        <span>Retry <b className="font-mono text-[#9b6f3b]">{data.redis.totals.retry}</b></span>
-                        <span>Dead <b className="font-mono text-[var(--color-danger)]">{failedQueueTotal}</b></span>
+                        <span>待处理 <b className="font-mono text-[var(--ink)]">{data.redis.totals.ready}</b></span>
+                        <span>处理中 <b className="font-mono text-[var(--ink)]">{data.redis.totals.processing}</b></span>
+                        <span>待重试 <b className="font-mono text-[#9b6f3b]">{data.redis.totals.retry}</b></span>
+                        <span>死信/损坏 <b className="font-mono text-[var(--color-danger)]">{failedQueueTotal}</b></span>
                       </div>
                     ) : (
                       <StatusBadge tone="warning">Redis 不可用</StatusBadge>
@@ -906,7 +1104,7 @@ export default function SystemTasksPage() {
                               ? `第 ${task.retry_count} 次重试`
                               : task.queue_location === "ready"
                                 ? "等待 Worker"
-                                : task.status;
+                                : statusLabelZh(task.status);
                         return (
                           <tr key={`async:${task.task_id}`} className="border-t border-[var(--color-border-light)] transition hover:bg-white/65">
                             <td className="px-4 py-2.5 align-middle">
@@ -926,8 +1124,8 @@ export default function SystemTasksPage() {
                             </td>
                             <td className="px-3 py-2.5 align-middle"><StatusBadge tone={statusMeta.tone}>{statusMeta.label}</StatusBadge></td>
                             <td className="px-3 py-2.5 align-middle">
-                              <p className="text-[10px] font-medium text-[var(--color-text-primary)]">{task.queue_location ? `${task.queue_location.toUpperCase()} 队列` : "—"}</p>
-                              <p className="mt-0.5 text-[9px] text-[var(--color-text-hint)]">retry {task.retry_count}/{task.max_retries || "—"} · gen {task.generation}</p>
+                              <p className="text-[10px] font-medium text-[var(--color-text-primary)]">{queueLocationLabelZh(task.queue_location)}</p>
+                              <p className="mt-0.5 text-[9px] text-[var(--color-text-hint)]">重试 {task.retry_count}/{task.max_retries || "—"} · 代次 {task.generation}</p>
                             </td>
                             <td className="px-3 py-2.5 align-middle">
                               <div className="flex items-center gap-1.5">
@@ -999,8 +1197,8 @@ export default function SystemTasksPage() {
                         )}
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-mono text-[9px] text-[var(--color-text-hint)]">{issue.code}</span>
-                            <StatusBadge tone={issue.severity === "error" ? "danger" : "warning"}>{issue.severity.toUpperCase()}</StatusBadge>
+                            <span className="text-[9px] font-medium text-[var(--color-text-hint)]">{ISSUE_CODE_LABELS_ZH[issue.code] || issue.code}</span>
+                            <StatusBadge tone={issue.severity === "error" ? "danger" : "warning"}>{severityLabelZh(issue.severity)}</StatusBadge>
                           </div>
                           <p className="mt-1 text-[11px] leading-5 text-[var(--color-text-primary)]">{issue.message}</p>
                           {issue.value !== null && issue.value !== undefined ? (
@@ -1051,7 +1249,7 @@ export default function SystemTasksPage() {
               <Card className="rounded-2xl">
                 <CardHeader className="px-4 py-3.5">
                   <h2 className="text-sm font-semibold text-[var(--ink)]">Trace 链路查询</h2>
-                  <p className="mt-0.5 text-[10px] text-[var(--color-text-secondary)]">关联 Outbox、Redis Task、Worker 与 Projection 回执。</p>
+                  <p className="mt-0.5 text-[10px] text-[var(--color-text-secondary)]">关联 Outbox、Redis 任务、Worker 与答题投影回执。</p>
                 </CardHeader>
                 <CardContent className="p-4">
                   <form
@@ -1100,13 +1298,13 @@ export default function SystemTasksPage() {
                                 <p className="truncate font-mono text-[10px] font-semibold text-[var(--ink)]">{item.task_type}</p>
                                 <p className="mt-0.5 truncate font-mono text-[9px] text-[var(--color-text-hint)]">{item.task_id}</p>
                               </div>
-                              <StatusBadge tone={traceStatusTone(item.queue?.status || item.outbox_status)}>{item.queue?.status || item.outbox_status}</StatusBadge>
+                              <StatusBadge tone={traceStatusTone(item.queue?.status || item.outbox_status)}>{statusLabelZh(item.queue?.status || item.outbox_status)}</StatusBadge>
                             </div>
                             <div className="grid grid-cols-2 gap-1.5">
                               <TraceStage label="Outbox" value={stage.outbox.value} tone={stage.outbox.tone} />
-                              <TraceStage label="Redis" value={stage.redis.value} tone={stage.redis.tone} />
+                              <TraceStage label="Redis 队列" value={stage.redis.value} tone={stage.redis.tone} />
                               <TraceStage label="Worker" value={stage.worker.value} tone={stage.worker.tone} />
-                              <TraceStage label="Projection" value={stage.projection.value} tone={stage.projection.tone} />
+                              <TraceStage label="答题投影" value={stage.projection.value} tone={stage.projection.tone} />
                             </div>
                             {item.outbox_error || item.queue?.last_error ? (
                               <p className="mt-2 line-clamp-2 rounded-lg bg-[var(--color-danger-light)] px-2 py-1.5 text-[9px] leading-4 text-[var(--color-danger)]">
@@ -1165,7 +1363,7 @@ export default function SystemTasksPage() {
                 ["执行计划", selectedScheduledTask.schedule],
                 ["下次执行", selectedScheduledTask.next_run_at ? formatTime(selectedScheduledTask.next_run_at) : selectedScheduledTask.next_run_label || (selectedScheduledTask.task_type === "system" ? "由宿主机 timer 调度" : "—")],
                 ["最近执行", formatTime(selectedScheduledTask.last_run_at)],
-                ["执行来源", selectedScheduledTask.last_source === "manual" ? "管理员手动" : selectedScheduledTask.last_source === "scheduler" ? "Scheduler" : selectedScheduledTask.last_source === "systemd" ? "systemd" : selectedScheduledTask.executor],
+                ["执行来源", selectedScheduledTask.last_source === "manual" ? "管理员手动" : selectedScheduledTask.last_source === "scheduler" ? "应用调度器" : selectedScheduledTask.last_source === "systemd" ? "systemd 系统调度" : selectedScheduledTask.executor],
                 ["最近耗时", selectedScheduledTask.last_duration_ms != null ? `${selectedScheduledTask.last_duration_ms} ms` : "—"],
                 ["是否启用", selectedScheduledTask.enabled ? "已启用" : "已停用"],
               ].map(([label, value]) => (
@@ -1193,7 +1391,7 @@ export default function SystemTasksPage() {
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-[10px] font-semibold text-[var(--color-text-hint)]">PostgreSQL 备份状态</p>
                     <StatusBadge tone={selectedScheduledTask.executor_available === false ? "warning" : selectedScheduledTask.executor_state === "active" ? "success" : "neutral"}>
-                      {selectedScheduledTask.executor_available === false ? "systemd 不可观测" : selectedScheduledTask.executor_state || "未知"}
+                      {selectedScheduledTask.executor_available === false ? "systemd 不可观测" : statusLabelZh(selectedScheduledTask.executor_state)}
                     </StatusBadge>
                   </div>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -1202,8 +1400,8 @@ export default function SystemTasksPage() {
                       ["可见备份", `${selectedScheduledTask.backup_count ?? backupHistory.data?.total ?? 0} 份`],
                       ["最近文件", selectedScheduledTask.artifact_name || "—"],
                       ["最近大小", selectedScheduledTask.artifact_name ? formatBytes(selectedScheduledTask.artifact_size_bytes) : "—"],
-                      ["Timer", selectedScheduledTask.timer_unit || "postgres-backup.timer"],
-                      ["执行能力", selectedScheduledTask.executor_available && selectedScheduledTask.service_loaded ? "systemd service" : selectedScheduledTask.script_available ? "项目备份脚本" : selectedScheduledTask.pg_dump_available ? "pg_dump fallback" : "当前不可执行"],
+                      ["定时器", selectedScheduledTask.timer_unit || "postgres-backup.timer"],
+                      ["执行能力", selectedScheduledTask.executor_available && selectedScheduledTask.service_loaded ? "systemd 服务" : selectedScheduledTask.script_available ? "项目备份脚本" : selectedScheduledTask.pg_dump_available ? "pg_dump 兜底" : "当前不可执行"],
                     ].map(([label, value]) => (
                       <div key={label} className="min-w-0 rounded-lg bg-[var(--color-bg-input)]/65 px-2.5 py-2">
                         <p className="text-[9px] text-[var(--color-text-hint)]">{label}</p>
@@ -1217,7 +1415,7 @@ export default function SystemTasksPage() {
                 <div className="rounded-xl border border-[var(--color-border-light)] px-3 py-3">
                   <div className="flex items-center justify-between">
                     <p className="text-[10px] font-semibold text-[var(--color-text-hint)]">最近备份</p>
-                    <span className="font-mono text-[9px] text-[var(--color-text-hint)]">{backupHistory.data?.total ?? selectedScheduledTask.backup_count ?? 0} files</span>
+                    <span className="font-mono text-[9px] text-[var(--color-text-hint)]">{backupHistory.data?.total ?? selectedScheduledTask.backup_count ?? 0} 个文件</span>
                   </div>
                   <div className="mt-2 divide-y divide-[var(--color-border-light)]">
                     {backupHistory.isFetching ? (
@@ -1277,10 +1475,10 @@ export default function SystemTasksPage() {
 
               <div className="grid gap-2 sm:grid-cols-2">
                 {[
-                  ["队列位置", taskDetail.data.queue_location || "—"],
+                  ["队列位置", queueLocationLabelZh(taskDetail.data.queue_location)],
                   ["重试次数", `${taskDetail.data.retry_count}/${taskDetail.data.max_retries || "—"}`],
-                  ["Generation", String(taskDetail.data.generation)],
-                  ["Heartbeat", taskDetail.data.has_heartbeat ? "正常" : "无"],
+                  ["任务代次", String(taskDetail.data.generation)],
+                  ["心跳", taskDetail.data.has_heartbeat ? "正常" : "无"],
                   ["创建时间", formatTime(taskDetail.data.created_at)],
                   ["更新时间", formatTime(taskDetail.data.updated_at)],
                 ].map(([label, value]) => (
