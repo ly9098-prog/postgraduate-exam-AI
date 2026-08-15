@@ -182,6 +182,61 @@ services:
     # Override CMD: run scheduler_main instead of gunicorn (no HTTP server)
     command: ["python", "-m", "app.scheduler_main"]
 
+  worker:
+    build:
+      context: ../backend
+      dockerfile: docker/Dockerfile
+    restart: always
+    mem_limit: 384m
+    mem_reservation: 256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENV: ${SENTRY_ENV:-production}
+      PROCESS_ROLE: worker
+      APP_SECRET: ${APP_SECRET:?必须设置 APP_SECRET}
+      DATABASE_URL: ${DATABASE_URL:?必须设置 DATABASE_URL}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-cloud_api}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      DB_POOL_SIZE_WORKER: ${DB_POOL_SIZE_WORKER:-2}
+      DB_MAX_OVERFLOW_WORKER: ${DB_MAX_OVERFLOW_WORKER:-3}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+      WORKER_SCRATCH_DIR: ${WORKER_SCRATCH_DIR:-/tmp/scratch}
+      # AI 配置加密密钥（Fernet）
+      AI_CONFIG_ENCRYPT_KEY: ${AI_CONFIG_ENCRYPT_KEY:?必须设置 AI_CONFIG_ENCRYPT_KEY}
+      # 生产验证所需（worker 虽无 HTTP，但配置验证器会检查）
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-["xzshub.top"]}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://xzshub.top}
+      WECHAT_APP_ID: ${WECHAT_APP_ID:?必须设置 WECHAT_APP_ID}
+      WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?必须设置 WECHAT_APP_SECRET}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["https://xzshub.top"]}
+      OCR_ENABLED: ${OCR_ENABLED:-true}
+      OCR_USE_GPU: ${OCR_USE_GPU:-false}
+      OCR_EXECUTION_BACKEND: ${OCR_EXECUTION_BACKEND:-paddlex_http}
+      VECTOR_ENABLED: ${VECTOR_ENABLED:-false}
+      VECTOR_MODE: ${VECTOR_MODE:-off}
+      PDF_RENDER_PAGE_WINDOW: ${PDF_RENDER_PAGE_WINDOW:-1}
+      PDF_MAX_RENDER_PAGES_CONCURRENT: ${PDF_MAX_RENDER_PAGES_CONCURRENT:-1}
+      PDF_MAX_PAGES: ${PDF_MAX_PAGES:-30}
+      OMP_NUM_THREADS: 1
+      MKL_NUM_THREADS: 1
+      MPLCONFIGDIR: ${MPLCONFIGDIR:-/tmp/matplotlib}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - worker_scratch_data:/tmp/scratch
+    # Override CMD: run worker_main — consumes the Redis v2 task queue
+    # (pipeline dispatcher + reaper + AI prewarm). Without this process the
+    # outbox-published answer_projection and pipeline tasks never execute.
+    command: ["python", "-m", "app.worker_main"]
+
   admin:
     build:
       context: ../admin-frontend
@@ -251,3 +306,4 @@ volumes:
   staging_data:
   exports_data:
   question_assets_data:
+  worker_scratch_data:
