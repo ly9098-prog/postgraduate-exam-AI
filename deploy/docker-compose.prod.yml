@@ -219,9 +219,12 @@ services:
       WECHAT_APP_ID: ${WECHAT_APP_ID:?必须设置 WECHAT_APP_ID}
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:?必须设置 WECHAT_APP_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS:-["https://xzshub.top"]}
-      # OCR_USE_GPU 必须显式 false（生产校验器对所有角色强制要求），其余 OCR
-      # 配置（paddlex_http/OCR_REMOTE）由 web 进程经外部 API 完成，worker 不需要。
+      # 服务器 OCR 仅由 web 进程经外部 API 完成；worker 不承载 OCR，故硬编码
+      # OCR_EXECUTION_BACKEND=disabled（不能用 ${...:-disabled}，服务器 .env 的
+      # paddlex_http 会覆盖它，而 paddlex_http 在生产强制要求 remote token）。
+      # OCR_USE_GPU 必须显式 false（生产校验器对所有角色强制要求）。
       OCR_USE_GPU: ${OCR_USE_GPU:-false}
+      OCR_EXECUTION_BACKEND: "disabled"
       VECTOR_ENABLED: ${VECTOR_ENABLED:-false}
       VECTOR_MODE: ${VECTOR_MODE:-off}
       PDF_RENDER_PAGE_WINDOW: ${PDF_RENDER_PAGE_WINDOW:-1}
