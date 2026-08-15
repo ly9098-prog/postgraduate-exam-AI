@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
 from app.core.error_codes import ApiError, ErrorCode, task_not_found
+from app.schemas.observability import TaskDiagnosticsResponse, TaskTraceResponse
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ TASK_TYPES = [
     "import_pipeline", "image_pipeline", "excel_pipeline",
     "resume_pipeline", "admin_resume", "batch_image",
     "formula_batch", "prewarm_analysis", "export_mistakes",
-    "answer_projection",
+    "answer_projection", "ocr_pipeline",
 ]
 
 
@@ -41,6 +42,7 @@ class TaskSummary(BaseModel):
     task_id: str
     task_type: str
     status: str
+    queue_location: str | None = None
     retry_count: int = 0
     max_retries: int = 0
     generation: int = 0
@@ -48,6 +50,7 @@ class TaskSummary(BaseModel):
     request_id: str | None = None
     last_error: str | None = None
     created_at: str | None = None
+    updated_at: str | None = None
 
 
 class TaskDetail(TaskSummary):
@@ -69,6 +72,58 @@ class QueueStatus(BaseModel):
 class QueueStatusResponse(BaseModel):
     queues: list[QueueStatus]
     totals: dict[str, int]
+
+
+class ScheduledTaskSummary(BaseModel):
+    task_id: str
+    name: str
+    description: str
+    task_type: str = "scheduled"
+    executor: str = "scheduler"
+    status: str
+    enabled: bool
+    schedule: str
+    next_run_at: str | None = None
+    next_run_label: str | None = None
+    last_run_at: str | None = None
+    last_status: str | None = None
+    last_message: str | None = None
+    last_duration_ms: int | None = None
+    last_source: str | None = None
+    can_run_now: bool = False
+    executor_available: bool | None = None
+    executor_state: str | None = None
+    note: str | None = None
+    artifact_name: str | None = None
+    artifact_size_bytes: int | None = None
+    artifact_created_at: str | None = None
+    backup_count: int | None = None
+    backup_dir: str | None = None
+    script_available: bool | None = None
+    pg_dump_available: bool | None = None
+    timer_unit: str | None = None
+    service_unit: str | None = None
+    service_loaded: bool | None = None
+
+
+class ScheduledTaskListResponse(BaseModel):
+    generated_at: str
+    tasks: list[ScheduledTaskSummary]
+
+
+class DatabaseBackupArtifact(BaseModel):
+    name: str
+    path: str
+    size_bytes: int
+    created_at: str
+    method: str | None = None
+    database: str | None = None
+
+
+class DatabaseBackupHistoryResponse(BaseModel):
+    backup_dir: str
+    items: list[DatabaseBackupArtifact]
+    total: int
 
 
 class TaskOperationResult(BaseModel):
@@ -167,7 +222,7 @@ def _format_task_timestamp(value) -> str | None:
 _TRACE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 
 
-@router.get("/diagnostics")
+@router.get("/diagnostics", response_model=TaskDiagnosticsResponse)
 async def task_diagnostics(
     _=Depends(require_permissions("import:read")),
     db: AsyncSession = Depends(get_db),
@@ -178,7 +233,7 @@ async def task_diagnostics(
     return await collect_task_diagnostics(db)
 
 
-@router.get("/trace/{trace_id}")
+@router.get("/trace/{trace_id}", response_model=TaskTraceResponse)
 async def trace_task_lifecycle(
     trace_id: str,
     limit: int = Query(50, ge=1, le=100),
@@ -229,79 +284,130 @@ async def get_queue_status(
     return QueueStatusResponse(queues=queues, totals=totals)
 
 
+@router.get("/scheduled", response_model=ScheduledTaskListResponse)
+async def list_scheduled_tasks(
+    _=Depends(require_permissions("import:read")),
+):
+    """List recurring scheduler jobs with cross-process execution telemetry."""
+    from app.core.time_utils import serialize_utc_datetime, utcnow
+    from app.services.system_task_service import list_system_scheduled_tasks
+
+    tasks = await list_system_scheduled_tasks()
+    return ScheduledTaskListResponse(
+        generated_at=serialize_utc_datetime(utcnow()),
+        tasks=[ScheduledTaskSummary(**item) for item in tasks],
+    )
+
+
+@router.get("/system/postgres-backup/history", response_model=DatabaseBackupHistoryResponse)
+async def postgres_backup_history(
+    limit: int = Query(10, ge=1, le=50),
+    _=Depends(require_permissions("import:read")),
+):
+    """List recent PostgreSQL backup artifacts visible to the admin service."""
+    from app.services.database_backup_service import inspect_database_backup, list_backup_artifacts
+
+    info = await inspect_database_backup()
+    items = list_backup_artifacts(limit)
+    return DatabaseBackupHistoryResponse(
+        backup_dir=str(info.get("backup_dir") or ""),
+        items=[DatabaseBackupArtifact(**item) for item in items],
+        total=int(info.get("backup_count") or len(items)),
+    )
+
+
+@router.post("/scheduled/{task_id}/run", response_model=TaskOperationResult)
+async def run_scheduled_task(
+    task_id: str,
+    _=Depends(require_permissions("import:write")),
+):
+    """Run a safe recurring maintenance job once, using the same distributed locks."""
+    from app.services.system_task_service import run_scheduled_task_now
+
+    try:
+        outcome = await run_scheduled_task_now(task_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown scheduled task: {task_id}")
+    except Exception as exc:
+        logger.exception("Admin scheduled task run failed: task_id=%s", task_id)
+        raise HTTPException(status_code=500, detail=str(exc)[:300]) from exc
+
+    return TaskOperationResult(
+        task_id=task_id,
+        operation="run_now",
+        success=outcome.status == "success",
+        message=outcome.message,
+    )
+
+
 @router.get("", response_model=TaskListResponse)
 async def list_tasks(
     task_type: str | None = Query(None, description="Filter by task type"),
-    status: str | None = Query(None, description="Filter by status"),
+    status: str | None = Query(None, description="Filter by task status or queue location"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     _=Depends(require_permissions("import:read")),
 ):
-    """List tasks with optional filtering. Searches dead-letter and corrupt queues."""
+    """List live async task instances across ready/processing/retry/dead/corrupt queues."""
     from app.services.task_queue_service import (
         _v2_corrupt_key,
+        _v2_dead_key,
+        _v2_p_key,
+        _v2_q_key,
+        _v2_retry_key,
         _v2_task_hash_key,
     )
 
     client = await _get_redis_client()
-
-    result_tasks: list[TaskSummary] = []
     types_to_search = [task_type] if task_type else TASK_TYPES
+    result_tasks: list[TaskSummary] = []
+    seen: set[str] = set()
 
-    try:
-        for tt in types_to_search:
-            # List dead tasks
-            dead_entries = await client.lrange(f"taskq:v2:dead:{tt}", 0, -1)
-            for task_id in dead_entries:
-                hash_key = _v2_task_hash_key(task_id)
-                data = await client.hgetall(hash_key)
-                if not data:
-                    continue
-                if status and data.get("status") != status:
-                    continue
-                parsed = _parse_task_data(data)
-                result_tasks.append(TaskSummary(
-                    task_id=task_id,
-                    task_type=parsed.get("task_type", tt),
-                    status=data.get("status", "dead"),
-                    retry_count=int(data.get("retry_count", 0)),
-                    max_retries=int(parsed.get("max_retries", 0)),
-                    generation=int(data.get("generation", 0)),
-                    trace_id=str(parsed.get("trace_id") or "") or None,
-                    request_id=str(parsed.get("request_id") or "") or None,
-                    last_error=data.get("error", "")[:200] if data.get("error") else None,
-                    created_at=_format_task_timestamp(parsed.get("created_at")),
-                ))
+    async def append_tasks(tt: str, location: str, task_ids: list[str]) -> None:
+        for task_id in task_ids:
+            if task_id in seen:
+                continue
+            seen.add(task_id)
+            data = await client.hgetall(_v2_task_hash_key(task_id))
+            if not data:
+                continue
+            parsed = _parse_task_data(data)
+            task_status = data.get("status") or location
+            if status and status not in (task_status, location):
+                continue
+            result_tasks.append(TaskSummary(
+                task_id=task_id,
+                task_type=parsed.get("task_type", tt),
+                status=task_status,
+                queue_location=location,
+                retry_count=int(data.get("retry_count", 0)),
+                max_retries=int(parsed.get("max_retries", 0)),
+                generation=int(data.get("generation", 0)),
+                trace_id=str(parsed.get("trace_id") or "") or None,
+                request_id=str(parsed.get("request_id") or "") or None,
+                last_error=data.get("error", "")[:200] if data.get("error") else None,
+                created_at=_format_task_timestamp(parsed.get("created_at")),
+                updated_at=_format_task_timestamp(parsed.get("updated_at")),
+            ))
 
-            # List corrupt tasks
-            corrupt_entries = await client.zrange(_v2_corrupt_key(tt), 0, -1)
-            for task_id in corrupt_entries:
-                hash_key = _v2_task_hash_key(task_id)
-                data = await client.hgetall(hash_key)
-                if not data:
-                    continue
-                if status and data.get("status") != status:
-                    continue
-                parsed = _parse_task_data(data)
-                result_tasks.append(TaskSummary(
-                    task_id=task_id,
-                    task_type=parsed.get("task_type", tt),
-                    status=data.get("status", "corrupt"),
-                    retry_count=int(data.get("retry_count", 0)),
-                    max_retries=int(parsed.get("max_retries", 0)),
-                    generation=int(data.get("generation", 0)),
-                    trace_id=str(parsed.get("trace_id") or "") or None,
-                    request_id=str(parsed.get("request_id") or "") or None,
-                    last_error=data.get("error", "")[:200] if data.get("error") else None,
-                    created_at=_format_task_timestamp(parsed.get("created_at")),
-                ))
-    finally:
-        pass  # client is managed by the queue service
+    for tt in types_to_search:
+        ready_ids = await client.lrange(_v2_q_key(tt), 0, -1)
+        processing_ids = await client.zrange(_v2_p_key(tt), 0, -1)
+        retry_ids = await client.zrange(_v2_retry_key(tt), 0, -1)
+        dead_ids = await client.lrange(_v2_dead_key(tt), 0, -1)
+        corrupt_ids = await client.zrange(_v2_corrupt_key(tt), 0, -1)
+        await append_tasks(tt, "ready", ready_ids)
+        await append_tasks(tt, "processing", processing_ids)
+        await append_tasks(tt, "retry", retry_ids)
+        await append_tasks(tt, "dead", dead_ids)
+        await append_tasks(tt, "corrupt", corrupt_ids)
 
+    def sort_key(item: TaskSummary):
+        return item.updated_at or item.created_at or ""
+
+    result_tasks.sort(key=sort_key, reverse=True)
     total = len(result_tasks)
-    result_tasks = result_tasks[offset:offset + limit]
-
-    return TaskListResponse(tasks=result_tasks, total=total)
+    return TaskListResponse(tasks=result_tasks[offset:offset + limit], total=total)
 
 
 @router.get("/{task_id}", response_model=TaskDetail)
@@ -384,6 +490,7 @@ async def inspect_task(
         request_id=str(parsed.get("request_id") or "") or None,
         last_error=data.get("error", "")[:200] if data.get("error") else None,
         created_at=_format_task_timestamp(parsed.get("created_at")),
+        updated_at=_format_task_timestamp(parsed.get("updated_at")),
         payload_summary=payload_summary,
         queue_location=queue_location,
         has_heartbeat=has_heartbeat,

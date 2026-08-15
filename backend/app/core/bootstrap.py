@@ -352,17 +352,23 @@ async def _periodic_token_cleanup() -> None:
     while True:
         await asyncio.sleep(interval_sec)
         try:
-            async with lock.acquire_and_renew(ttl=300, renew_interval=60) as handle:
-                if not handle.is_still_held():
-                    logger.debug("Token cleanup lock held by another instance, skipping")
-                    continue
-                from app.core.database import async_session
-                from app.services import token_service
+            from app.services.system_task_service import TaskRunOutcome, record_system_task_execution
 
-                async with async_session() as db:
-                    deleted = await token_service.cleanup_expired_tokens(db)
+            async def _run_once():
+                async with lock.acquire_and_renew(ttl=300, renew_interval=60) as handle:
+                    if not handle.is_still_held():
+                        logger.debug("Token cleanup lock held by another instance, skipping")
+                        return TaskRunOutcome(status="skipped", message="锁被其他实例持有，本轮跳过")
+                    from app.core.database import async_session
+                    from app.services import token_service
+
+                    async with async_session() as db:
+                        deleted = await token_service.cleanup_expired_tokens(db)
                     if deleted:
                         logger.info("Cleaned up %d expired refresh tokens", deleted)
+                    return f"清理 {deleted} 条过期 refresh token"
+
+            await record_system_task_execution("refresh_token_cleanup", _run_once, source="scheduler")
         except Exception as e:
             logger.warning("Token cleanup failed (non-fatal): %s", e)
 
@@ -373,10 +379,15 @@ async def _periodic_staging_cleanup() -> None:
         await asyncio.sleep(3600)
         try:
             from app.services.staging_storage import async_cleanup_orphans
+            from app.services.system_task_service import record_system_task_execution
 
-            removed = await async_cleanup_orphans()
-            if removed:
-                logger.info("Staging cleanup removed %d expired objects", removed)
+            async def _run_once():
+                removed = await async_cleanup_orphans()
+                if removed:
+                    logger.info("Staging cleanup removed %d expired objects", removed)
+                return f"清理 {removed} 个过期 staging 对象"
+
+            await record_system_task_execution("staging_cleanup", _run_once, source="scheduler")
         except Exception as e:
             logger.warning("Staging cleanup failed (non-fatal): %s", e)
 
@@ -399,11 +410,16 @@ async def _periodic_export_cleanup() -> None:
         try:
             from app.core.database import async_session
             from app.services.export.cleanup import cleanup_expired
+            from app.services.system_task_service import record_system_task_execution
 
-            async with async_session() as db:
-                stats = await cleanup_expired(db)
+            async def _run_once():
+                async with async_session() as db:
+                    stats = await cleanup_expired(db)
                 if stats["tasks_expired"] > 0:
                     logger.info("Export cleanup: %s", stats)
+                return f"过期任务 {stats['tasks_expired']}，删除文件 {stats['files_deleted']}"
+
+            await record_system_task_execution("export_cleanup", _run_once, source="scheduler")
         except Exception as e:
             logger.warning("Export cleanup failed (non-fatal): %s", e)
 

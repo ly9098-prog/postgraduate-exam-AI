@@ -1226,6 +1226,13 @@ export type TaskDiagnosticsResponse = {
     projection_receipts_total: number;
     repairs_scheduled_24h: number;
   };
+  trend: Array<{
+    date: string;
+    created: number;
+    published: number;
+    failed: number;
+    projection_receipts: number;
+  }>;
 };
 
 export type TaskTraceItem = {
@@ -1257,4 +1264,91 @@ export type TaskTraceResponse = {
   redis_available: boolean;
   items: TaskTraceItem[];
   total: number;
+};
+
+// ── System task center ────────────────────────────────────────
+
+export type ScheduledSystemTask = {
+  task_id: string;
+  name: string;
+  description: string;
+  task_type: "scheduled" | "system";
+  executor: "scheduler" | "systemd" | string;
+  status: "idle" | "running" | "failed" | "disabled" | string;
+  enabled: boolean;
+  schedule: string;
+  next_run_at?: string | null;
+  next_run_label?: string | null;
+  last_run_at?: string | null;
+  last_status?: "success" | "failed" | "skipped" | string | null;
+  last_message?: string | null;
+  last_duration_ms?: number | null;
+  last_source?: "scheduler" | "manual" | "systemd" | string | null;
+  can_run_now: boolean;
+  executor_available?: boolean | null;
+  executor_state?: string | null;
+  note?: string | null;
+  artifact_name?: string | null;
+  artifact_size_bytes?: number | null;
+  artifact_created_at?: string | null;
+  backup_count?: number | null;
+  backup_dir?: string | null;
+  script_available?: boolean | null;
+  pg_dump_available?: boolean | null;
+  timer_unit?: string | null;
+  service_unit?: string | null;
+  service_loaded?: boolean | null;
+};
+
+export type ScheduledSystemTaskListResponse = {
+  generated_at: string;
+  tasks: ScheduledSystemTask[];
+};
+
+export type DatabaseBackupArtifact = {
+  name: string;
+  path: string;
+  size_bytes: number;
+  created_at: string;
+  method?: string | null;
+  database?: string | null;
+};
+
+export type DatabaseBackupHistoryResponse = {
+  backup_dir: string;
+  items: DatabaseBackupArtifact[];
+  total: number;
+};
+
+export type AsyncTaskSummary = {
+  task_id: string;
+  task_type: string;
+  status: string;
+  queue_location?: "ready" | "processing" | "retry" | "dead" | "corrupt" | string | null;
+  retry_count: number;
+  max_retries: number;
+  generation: number;
+  trace_id?: string | null;
+  request_id?: string | null;
+  last_error?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type AsyncTaskListResponse = {
+  tasks: AsyncTaskSummary[];
+  total: number;
+};
+
+export type AsyncTaskDetail = AsyncTaskSummary & {
+  payload_summary?: Record<string, unknown> | null;
+  has_heartbeat: boolean;
+  owner_token_prefix?: string | null;
+};
+
+export type TaskOperationResult = {
+  task_id: string;
+  operation: string;
+  success: boolean;
+  message: string;
 };
