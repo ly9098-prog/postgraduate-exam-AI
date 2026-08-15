@@ -223,7 +223,14 @@ async def list_admin_questions(
     if year is not None:
         conditions.append(Question.year == year)
     if import_batch_id:
-        conditions.append(Question.import_batch_id == import_batch_id)
+        escaped_batch_id = _escape_like_keyword(import_batch_id.strip())
+        if escaped_batch_id:
+            conditions.append(
+                Question.import_batch_id.ilike(
+                    f"%{escaped_batch_id}%",
+                    escape="\\",
+                )
+            )
     if difficulty is not None:
         conditions.append(Question.difficulty == difficulty)
 

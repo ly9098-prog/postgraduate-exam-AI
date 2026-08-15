@@ -12,7 +12,6 @@ import {
   BookOpen,
   BarChart3,
   Tag,
-  Hash,
   Layers,
   Clock,
   Pencil,
@@ -77,6 +76,8 @@ const pageSizeOptions = [
 ];
 
 const KEYWORD_DEBOUNCE_MS = 300;
+const IMPORT_BATCH_DEBOUNCE_MS = 450;
+const BATCH_DELETE_CHUNK_SIZE = 50;
 
 type ConfirmState =
   | { action: "batch-delete" }
@@ -403,6 +404,7 @@ export default function QuestionsPage() {
     import_batch_id: "",
   });
   const [keywordInput, setKeywordInput] = useState(filters.keyword);
+  const [importBatchInput, setImportBatchInput] = useState(filters.import_batch_id);
   const [subjectOptions, setSubjectOptions] = useState<
     Array<{ id: number; code: string; name: string }>
   >([]);
@@ -496,11 +498,37 @@ export default function QuestionsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (state: Exclude<ConfirmState, null>) => {
-      if (state.action === "batch-delete")
-        return apiRequest<BatchDeleteResult>("/questions/batch-delete", {
-          method: "POST",
-          body: JSON.stringify({ ids: Array.from(selectedIds) }),
-        });
+      if (state.action === "batch-delete") {
+        const ids = Array.from(selectedIds);
+        const aggregate: BatchDeleteResult = { success_ids: [], failed_items: [] };
+
+        // 后端单次批量删除最多接收 50 条；前端分块执行，避免 50/100 条每页时直接 422。
+        for (let start = 0; start < ids.length; start += BATCH_DELETE_CHUNK_SIZE) {
+          const chunk = ids.slice(start, start + BATCH_DELETE_CHUNK_SIZE);
+          try {
+            const result = await apiRequest<BatchDeleteResult>(
+              "/questions/batch-delete",
+              {
+                method: "POST",
+                body: JSON.stringify({ ids: chunk }),
+              },
+            );
+            aggregate.success_ids?.push(
+              ...(result.success_ids ?? result.successIds ?? []),
+            );
+            aggregate.failed_items?.push(
+              ...(result.failed_items ?? result.failedItems ?? []),
+            );
+          } catch (error) {
+            const errorText =
+              error instanceof Error ? error.message : "批量删除请求失败";
+            aggregate.failed_items?.push(
+              ...chunk.map((id) => ({ id, error: errorText })),
+            );
+          }
+        }
+        return aggregate;
+      }
       return apiRequest<{ status: string }>(`/questions/${state.id}`, {
         method: "DELETE",
       });
@@ -514,10 +542,18 @@ export default function QuestionsPage() {
         const r = result as BatchDeleteResult;
         const successIds = r.success_ids ?? r.successIds ?? [];
         const failedItems = r.failed_items ?? r.failedItems ?? [];
+        const failurePreview = failedItems
+          .slice(0, 5)
+          .map((item) => `#${item.id} ${item.error}`)
+          .join("；");
         const failures = failedItems.length
-          ? `失败 ${failedItems.length} 条：${failedItems.map((item) => `#${item.id} ${item.error}`).join("；")}`
+          ? `失败 ${failedItems.length} 条：${failurePreview}${failedItems.length > 5 ? "；…" : ""}`
           : "无失败项";
         setMessage(`批量删除完成，成功 ${successIds.length} 条，${failures}。`);
+        if (selectedQuestionId !== null && successIds.includes(selectedQuestionId)) {
+          setSelectedQuestionId(null);
+          setIsDetailDrawerOpen(false);
+        }
       }
       setSelectedIds(new Set());
       setConfirmState(null);
@@ -639,14 +675,20 @@ export default function QuestionsPage() {
   const updateFilter = (key: keyof typeof filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(1);
+    // 筛选语义变化后清理旧列表上下文，避免隐藏选中项被误导出/误删除。
+    setSelectedIds(new Set());
+    setSelectedQuestionId(null);
+    setIsDetailDrawerOpen(false);
   };
 
   // 搜索框防抖：停止输入 KEYWORD_DEBOUNCE_MS 后才提交 filters.keyword 并请求
   const keywordTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const importBatchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (keywordTimer.current) clearTimeout(keywordTimer.current);
+      if (importBatchTimer.current) clearTimeout(importBatchTimer.current);
     };
   }, []);
 
@@ -662,9 +704,23 @@ export default function QuestionsPage() {
     }, KEYWORD_DEBOUNCE_MS);
   };
 
+  const handleImportBatchChange = (value: string) => {
+    setImportBatchInput(value);
+    if (importBatchTimer.current) clearTimeout(importBatchTimer.current);
+    if (value.trim() === "") {
+      updateFilter("import_batch_id", "");
+      return;
+    }
+    importBatchTimer.current = setTimeout(() => {
+      updateFilter("import_batch_id", value.trim());
+    }, IMPORT_BATCH_DEBOUNCE_MS);
+  };
+
   const handleResetFilters = () => {
     if (keywordTimer.current) clearTimeout(keywordTimer.current);
+    if (importBatchTimer.current) clearTimeout(importBatchTimer.current);
     setKeywordInput("");
+    setImportBatchInput("");
     setFilters({
       subject_id: "",
       is_active: "",
@@ -675,6 +731,9 @@ export default function QuestionsPage() {
       import_batch_id: "",
     });
     setPage(1);
+    setSelectedIds(new Set());
+    setSelectedQuestionId(null);
+    setIsDetailDrawerOpen(false);
   };
 
   const handlePageSizeChange = (value: string) => {
@@ -686,6 +745,7 @@ export default function QuestionsPage() {
     patch: Partial<typeof filters>,
   ) => {
     if (keywordTimer.current) clearTimeout(keywordTimer.current);
+    if (importBatchTimer.current) clearTimeout(importBatchTimer.current);
     const next = {
       subject_id: "",
       is_active: "",
@@ -698,7 +758,11 @@ export default function QuestionsPage() {
     };
     setFilters(next);
     setKeywordInput(next.keyword);
+    setImportBatchInput(next.import_batch_id);
     setPage(1);
+    setSelectedIds(new Set());
+    setSelectedQuestionId(null);
+    setIsDetailDrawerOpen(false);
     setIsCommonFilterMenuOpen(false);
   };
 
@@ -729,6 +793,31 @@ export default function QuestionsPage() {
       setIsCommonFilterMenuOpen(false);
     }
   };
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(null), 3800);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
+  useEffect(() => {
+    const totalPages = questions.data?.total_pages;
+    if (typeof totalPages !== "number") return;
+    const safeLastPage = Math.max(1, totalPages);
+    if (page > safeLastPage) setPage(safeLastPage);
+  }, [page, questions.data?.total_pages]);
+
+  useEffect(() => {
+    if (!(isCommonFilterMenuOpen || isMoreFilterOpen || isExportMenuOpen)) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setIsCommonFilterMenuOpen(false);
+      setIsMoreFilterOpen(false);
+      setIsExportMenuOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isCommonFilterMenuOpen, isMoreFilterOpen, isExportMenuOpen]);
 
   useEffect(() => {
     if (!isCommonFilterMenuOpen) return;
@@ -788,12 +877,12 @@ export default function QuestionsPage() {
               ? undefined
               : filters.is_active === "true",
           question_type: filters.question_type || undefined,
-          keyword: filters.keyword || undefined,
+          keyword: keywordInput.trim() || undefined,
           year: filters.year ? Number(filters.year) : undefined,
           difficulty: filters.difficulty
             ? Number(filters.difficulty)
             : undefined,
-          import_batch_id: filters.import_batch_id || undefined,
+          import_batch_id: importBatchInput.trim() || undefined,
         }),
       });
       const url = URL.createObjectURL(response.blob);
@@ -818,9 +907,14 @@ export default function QuestionsPage() {
   };
 
   const toggleAll = () => {
-    setSelectedIds(() => {
-      if (allChecked) return new Set();
-      return new Set(items.map((item) => item.id));
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allChecked) {
+        items.forEach((item) => next.delete(item.id));
+      } else {
+        items.forEach((item) => next.add(item.id));
+      }
+      return next;
     });
   };
 
@@ -935,13 +1029,13 @@ export default function QuestionsPage() {
                   ) : null}
                 </label>
 
-                <button
-                  type="button"
-                  className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
+                <span
+                  className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm font-semibold text-[var(--ink)] shadow-sm"
+                  aria-label="筛选条件"
                 >
                   <Filter className="h-4 w-4 text-[var(--color-primary)]" />
                   筛选
-                </button>
+                </span>
 
                 <Button
                   variant="ghost"
@@ -958,7 +1052,13 @@ export default function QuestionsPage() {
                 <div ref={commonFilterMenuRef} className="relative shrink-0">
                   <button
                     type="button"
-                    onClick={() => setIsCommonFilterMenuOpen((open) => !open)}
+                    onClick={() => {
+                      setIsCommonFilterMenuOpen((open) => !open);
+                      setIsMoreFilterOpen(false);
+                      setIsExportMenuOpen(false);
+                    }}
+                    aria-expanded={isCommonFilterMenuOpen}
+                    aria-haspopup="menu"
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--ink)] shadow-sm transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
                   >
                     常用筛选
@@ -1072,7 +1172,13 @@ export default function QuestionsPage() {
                     className="h-9 min-w-0 border-0 bg-transparent px-0 text-sm shadow-none focus:bg-transparent focus:ring-0"
                     placeholder="选择年份"
                     value={filters.year}
-                    onChange={(event) => updateFilter("year", event.target.value)}
+                    maxLength={4}
+                    onChange={(event) =>
+                      updateFilter(
+                        "year",
+                        event.target.value.replace(/\D/g, "").slice(0, 4),
+                      )
+                    }
                   />
                 </label>
 
@@ -1093,7 +1199,13 @@ export default function QuestionsPage() {
                 <div ref={moreFilterRef} className="relative justify-self-start xl:justify-self-end">
                   <button
                     type="button"
-                    onClick={() => setIsMoreFilterOpen((open) => !open)}
+                    onClick={() => {
+                      setIsMoreFilterOpen((open) => !open);
+                      setIsCommonFilterMenuOpen(false);
+                      setIsExportMenuOpen(false);
+                    }}
+                    aria-expanded={isMoreFilterOpen}
+                    aria-haspopup="dialog"
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--ink)] shadow-sm transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
                   >
                     <SlidersHorizontal className="h-4 w-4 text-[var(--color-text-secondary)]" />
@@ -1106,15 +1218,12 @@ export default function QuestionsPage() {
                       </p>
                       <Input
                         className="mt-2 h-10 rounded-xl border-[var(--color-border)] bg-white px-3"
-                        placeholder="输入批次 ID"
-                        value={filters.import_batch_id}
+                        placeholder="输入批次 ID 片段"
+                        value={importBatchInput}
                         onChange={(event) =>
-                          updateFilter("import_batch_id", event.target.value)
+                          handleImportBatchChange(event.target.value)
                         }
                       />
-                      <p className="mt-2 text-[11px] leading-5 text-[var(--color-text-hint)]">
-                        仅在需要按导入批次精确定位题目时使用。
-                      </p>
                     </div>
                   ) : null}
                 </div>
@@ -1134,19 +1243,24 @@ export default function QuestionsPage() {
             </div>
           ) : null}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.4rem] border border-[var(--color-border)] bg-white/88 px-4 py-3 shadow-[0_12px_30px_rgba(40,60,90,0.06)]">
+          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <section className="min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-[var(--color-border)] bg-white px-3 py-2.5 shadow-sm">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="inline-flex h-10 items-center gap-1.5 rounded-full bg-[var(--porcelain)] px-4 text-sm font-semibold text-[var(--ink)]">
-                <Hash className="h-3.5 w-3.5 text-[var(--color-primary)]" />
+              <span className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[var(--color-primary-light)] px-3 text-xs font-semibold text-[var(--color-primary-dark)]">
+                <Layers className="h-3.5 w-3.5" />
+                题目总览
+              </span>
+              <span className="inline-flex h-9 items-center rounded-full bg-[var(--porcelain)] px-3 text-xs font-semibold text-[var(--ink)]">
                 当前页 {items.length} 题
               </span>
               {questions.data ? (
-                <span className="inline-flex h-10 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--color-text-secondary)]">
+                <span className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--color-text-secondary)]">
                   共 {questions.data.total} 题
                 </span>
               ) : null}
               {hasActiveFilters ? (
-                <span className="inline-flex h-10 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--color-text-secondary)]">
+                <span className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--color-text-secondary)]">
                   已启用筛选
                 </span>
               ) : null}
@@ -1154,20 +1268,43 @@ export default function QuestionsPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               {selectedIds.size > 0 ? (
-                <span className="inline-flex h-10 items-center rounded-full bg-[var(--color-primary-light)] px-4 text-sm font-semibold text-[var(--color-primary-dark)]">
+                <span className="inline-flex h-9 items-center rounded-full bg-[var(--color-primary-light)] px-4 text-sm font-semibold text-[var(--color-primary-dark)]">
                   已选 {selectedIds.size} 项
                 </span>
               ) : null}
-              <label className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary-light)]">
-                <CustomCheckbox checked={allChecked} onChange={toggleAll} className="mt-0" />
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={allChecked}
+                onClick={toggleAll}
+                className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
+              >
+                <span
+                  aria-hidden="true"
+                  className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+                    allChecked
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary)]"
+                      : "border-[var(--color-border)] bg-white"
+                  }`}
+                >
+                  {allChecked ? (
+                    <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                  ) : null}
+                </span>
                 <span className="font-medium">选择当前页</span>
-              </label>
+              </button>
               <div ref={exportMenuRef} className="relative">
                 <Button
                   variant="secondary"
-                  onClick={() => setIsExportMenuOpen((value) => !value)}
+                  onClick={() => {
+                    setIsExportMenuOpen((value) => !value);
+                    setIsCommonFilterMenuOpen(false);
+                    setIsMoreFilterOpen(false);
+                  }}
+                  aria-expanded={isExportMenuOpen}
+                  aria-haspopup="menu"
                   disabled={!!exportingFormat}
-                  className="h-10 rounded-full px-4"
+                  className="h-9 rounded-full px-3"
                 >
                   <Download className="h-4 w-4" />
                   {exportingFormat
@@ -1199,16 +1336,15 @@ export default function QuestionsPage() {
                 ) : null}
               </div>
             </div>
-          </div>
+              </div>
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-            <section className="space-y-3">
+              <div className="space-y-2.5">
               {questions.isLoading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 5 }, (_, index) => (
                     <div
                       key={index}
-                      className="h-28 animate-pulse rounded-[1.35rem] border border-[var(--color-border)] bg-white/60"
+                      className="h-28 animate-pulse rounded-[1.2rem] border border-[var(--color-border)] bg-white/60"
                     />
                   ))}
                 </div>
@@ -1221,13 +1357,13 @@ export default function QuestionsPage() {
                 return (
                   <article
                     key={question.id}
-                    className={`rounded-[1.35rem] border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] ${
+                    className={`rounded-[1.2rem] border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] ${
                       isSelected
                         ? "border-[var(--color-primary)] ring-4 ring-[var(--color-primary-light)]"
                         : "border-[var(--color-border)] hover:border-[var(--color-primary-light)]"
                     }`}
                   >
-                    <div className="flex items-start gap-3 px-4 py-3.5">
+                    <div className="flex items-start gap-3 px-4 py-3">
                       <CustomCheckbox
                         checked={selectedIds.has(question.id)}
                         onChange={() => toggleOne(question.id)}
@@ -1257,7 +1393,7 @@ export default function QuestionsPage() {
                             </span>
                           </div>
 
-                          <div className="mt-2 line-clamp-2 text-sm font-medium leading-7 text-[var(--ink)]">
+                          <div className="mt-2 line-clamp-2 text-sm font-medium leading-6 text-[var(--ink)]">
                             <MathFormula text={stemText} />
                           </div>
 
@@ -1313,127 +1449,10 @@ export default function QuestionsPage() {
                   题目接口当前不可用，若 router 未挂载则属于后端阻塞。
                 </div>
               ) : null}
-            </section>
-
-            <aside className="hidden xl:block">
-              <div className="sticky top-6 min-h-[calc(100dvh-4rem)] rounded-[1.8rem] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-card)]">
-                {selectedQuestionId === null ? (
-                  <div className="flex h-full min-h-[520px] flex-col items-center justify-center text-center">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-[var(--color-border)] bg-[var(--porcelain)] text-[var(--color-text-hint)] shadow-sm">
-                      <FileQuestion className="h-8 w-8" />
-                    </div>
-                    <p className="mt-5 text-2xl font-bold text-[var(--ink)]">
-                      选择一道题目
-                    </p>
-                    <p className="mt-2 max-w-xs text-sm leading-6 text-[var(--color-text-secondary)]">
-                      在左侧列表中选择题目，查看详情、编辑内容或进行版本对比。
-                    </p>
-                  </div>
-                ) : selectedQuestion ? (
-                  <div className="space-y-5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="font-mono text-xs uppercase tracking-[0.28em] text-[var(--color-text-hint)]">
-                          Question
-                        </p>
-                        <h3 className="mt-2 text-2xl font-bold text-[var(--ink)]">
-                          题目 #{selectedQuestion.id}
-                        </h3>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <TypeBadge type={selectedQuestion.question_type} />
-                          <DifficultyBadge difficulty={selectedQuestion.difficulty} />
-                        </div>
-                      </div>
-                      <Button
-                        variant="secondary"
-                        onClick={() => setIsDetailDrawerOpen(true)}
-                        className="shrink-0 rounded-full"
-                      >
-                        <FileQuestion className="h-4 w-4" />
-                        完整详情
-                      </Button>
-                    </div>
-
-                    <section className="rounded-[1.5rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-5 shadow-sm">
-                      <p className="mb-3 flex items-center justify-between gap-3 font-semibold text-[var(--ink)]">
-                        <span>题干</span>
-                        <span className="font-mono text-[11px] font-normal text-[var(--color-text-hint)]">
-                          #{selectedQuestion.id}
-                        </span>
-                      </p>
-                      <div className="max-h-[280px] overflow-auto whitespace-pre-wrap pr-1 text-base leading-8 text-[var(--ink)]">
-                        <QuestionContentRenderer
-                          content={selectedQuestion.content}
-                          fallbackText={textFromContent(selectedQuestion.content)}
-                        />
-                      </div>
-                    </section>
-
-                    <section className="rounded-[1.5rem] border border-[var(--color-border)] bg-white p-4">
-                      <p className="font-semibold text-[var(--ink)]">选项</p>
-                      <div className="mt-3">
-                        <QuestionOptions
-                          options={normalizeQuestionOptions(resolveQuestionOptions(selectedQuestion))}
-                        />
-                      </div>
-                    </section>
-
-                    <section className="rounded-[1.5rem] border border-[var(--color-success-light)] bg-[var(--color-success-light)] p-4">
-                      <p className="font-semibold text-[var(--color-success)]">答案</p>
-                      <div className="mt-2 whitespace-pre-wrap text-base font-semibold leading-7 text-[var(--ink)]">
-                        <MathFormula text={selectedQuestion.answer || "—"} />
-                      </div>
-                    </section>
-
-                    <section className="rounded-[1.5rem] border border-[var(--color-border)] bg-white p-4">
-                      <p className="font-semibold text-[var(--ink)]">解析</p>
-                      <div className="mt-3 max-h-52 overflow-auto pr-1">
-                        <QuestionAnalysis value={selectedQuestion.analysis} compact />
-                      </div>
-                    </section>
-
-                    {renderSecondaryQuestionInfo(selectedQuestion)}
-
-                    <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
-                      {canWrite ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => {
-                            startEditing();
-                            setIsDetailDrawerOpen(true);
-                          }}
-                        >
-                          <Pencil className="h-4 w-4" />
-                          编辑
-                        </Button>
-                      ) : null}
-                      {canDelete ? (
-                        <Button
-                          variant="danger"
-                          onClick={() =>
-                            setConfirmState({
-                              action: "delete",
-                              id: selectedQuestion.id,
-                            })
-                          }
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          删除
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex h-full min-h-[420px] items-center justify-center text-sm text-[var(--color-text-secondary)]">
-                    正在加载详情...
-                  </div>
-                )}
               </div>
-            </aside>
-          </div>
 
-          {questions.data && questions.data.total_pages > 1 ? (
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-[1.35rem] border border-[var(--color-border)] bg-white px-4 py-3 shadow-sm">
+              {questions.data && questions.data.total_pages > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-[1.2rem] border border-[var(--color-border)] bg-white px-3 py-2.5 shadow-sm">
               <div className="flex flex-wrap items-center gap-3 text-sm text-[var(--color-text-secondary)]">
                 <span>
                   共 <span className="font-semibold text-[var(--ink)]">{questions.data.total}</span> 条
@@ -1493,7 +1512,125 @@ export default function QuestionsPage() {
                 </button>
               </div>
             </div>
-          ) : null}
+              ) : null}
+            </section>
+
+            <aside className="hidden xl:sticky xl:top-4 xl:block xl:h-[calc(100dvh-2rem)] xl:min-h-0 xl:self-start">
+              <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[1.45rem] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-card)]">
+                {selectedQuestionId === null ? (
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center text-center">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-[var(--color-border)] bg-[var(--porcelain)] text-[var(--color-text-hint)] shadow-sm">
+                      <FileQuestion className="h-8 w-8" />
+                    </div>
+                    <p className="mt-5 text-2xl font-bold text-[var(--ink)]">
+                      选择一道题目
+                    </p>
+                    <p className="mt-2 max-w-xs text-sm leading-6 text-[var(--color-text-secondary)]">
+                      在左侧列表中选择题目，查看详情、编辑内容或进行版本对比。
+                    </p>
+                  </div>
+                ) : selectedQuestion ? (
+                  <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs uppercase tracking-[0.28em] text-[var(--color-text-hint)]">
+                          Question
+                        </p>
+                        <h3 className="mt-2 text-2xl font-bold text-[var(--ink)]">
+                          题目 #{selectedQuestion.id}
+                        </h3>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <TypeBadge type={selectedQuestion.question_type} />
+                          <DifficultyBadge difficulty={selectedQuestion.difficulty} />
+                        </div>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        onClick={() => setIsDetailDrawerOpen(true)}
+                        className="shrink-0 rounded-full"
+                      >
+                        <FileQuestion className="h-4 w-4" />
+                        完整详情
+                      </Button>
+                    </div>
+
+                    <section className="rounded-[1.3rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-5 shadow-sm">
+                      <p className="mb-3 flex items-center justify-between gap-3 font-semibold text-[var(--ink)]">
+                        <span>题干</span>
+                        <span className="font-mono text-[11px] font-normal text-[var(--color-text-hint)]">
+                          #{selectedQuestion.id}
+                        </span>
+                      </p>
+                      <div className="whitespace-pre-wrap text-base leading-8 text-[var(--ink)]">
+                        <QuestionContentRenderer
+                          content={selectedQuestion.content}
+                          fallbackText={textFromContent(selectedQuestion.content)}
+                        />
+                      </div>
+                    </section>
+
+                    <section className="rounded-[1.3rem] border border-[var(--color-border)] bg-white p-4">
+                      <p className="font-semibold text-[var(--ink)]">选项</p>
+                      <div className="mt-3">
+                        <QuestionOptions
+                          options={normalizeQuestionOptions(resolveQuestionOptions(selectedQuestion))}
+                        />
+                      </div>
+                    </section>
+
+                    <section className="rounded-[1.3rem] border border-[var(--color-success-light)] bg-[var(--color-success-light)] p-4">
+                      <p className="font-semibold text-[var(--color-success)]">答案</p>
+                      <div className="mt-2 whitespace-pre-wrap text-base font-semibold leading-7 text-[var(--ink)]">
+                        <MathFormula text={selectedQuestion.answer || "—"} />
+                      </div>
+                    </section>
+
+                    <section className="rounded-[1.3rem] border border-[var(--color-border)] bg-white p-4">
+                      <p className="font-semibold text-[var(--ink)]">解析</p>
+                      <div className="mt-3">
+                        <QuestionAnalysis value={selectedQuestion.analysis} compact />
+                      </div>
+                    </section>
+
+                    {renderSecondaryQuestionInfo(selectedQuestion)}
+
+                    <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
+                      {canWrite ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            startEditing();
+                            setIsDetailDrawerOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          编辑
+                        </Button>
+                      ) : null}
+                      {canDelete ? (
+                        <Button
+                          variant="danger"
+                          onClick={() =>
+                            setConfirmState({
+                              action: "delete",
+                              id: selectedQuestion.id,
+                            })
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          删除
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-[var(--color-text-secondary)]">
+                    正在加载详情...
+                  </div>
+                )}
+              </div>
+            </aside>
+          </div>
         </CardContent>
       </Card>
 
