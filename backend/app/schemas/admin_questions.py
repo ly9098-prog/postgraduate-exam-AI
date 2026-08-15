@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -138,6 +138,36 @@ class AdminQuestionToggleActiveRequest(BaseModel):
 
 class AdminQuestionBatchRequest(BaseModel):
     ids: list[int] = Field(min_length=1, max_length=50)
+
+
+class AdminQuestionExportRequest(BaseModel):
+    format: Literal["csv", "docx"] = "csv"
+    ids: list[int] | None = Field(default=None, max_length=5000)
+    subject_id: int | None = None
+    review_status: str | None = None
+    is_active: bool | None = None
+    question_type: str | None = Field(default=None, max_length=32)
+    keyword: str | None = Field(default=None, max_length=200)
+    year: int | None = None
+    import_batch_id: str | None = Field(default=None, max_length=64)
+    difficulty: int | None = Field(default=None, ge=1, le=5)
+
+    @field_validator("question_type")
+    @classmethod
+    def _validate_export_question_type(cls, v: str | None) -> str | None:
+        if v:
+            validate_question_type(v)
+        return v
+
+    @field_validator("ids")
+    @classmethod
+    def _validate_export_ids(cls, v: list[int] | None) -> list[int] | None:
+        if v is None:
+            return None
+        normalized = list(dict.fromkeys(v))
+        if any(item <= 0 for item in normalized):
+            raise ValueError("ids 必须是正整数")
+        return normalized
 
 
 class AdminQuestionBatchFailure(BaseModel):

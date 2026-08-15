@@ -5,7 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
+  Download,
   FileQuestion,
+  Filter,
   Search,
   BookOpen,
   BarChart3,
@@ -17,7 +19,9 @@ import {
   Trash2,
   Save,
   X,
+  RotateCcw,
   SlidersHorizontal,
+  Star,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -28,6 +32,7 @@ import { QuestionContentRenderer } from "@/components/question-content-renderer"
 import { StructuredTableEditor } from "@/components/structured-table-editor";
 import { QuestionOptions } from "@/components/question-options";
 import { QuestionImageField } from "@/components/questions/question-image-field";
+import { QuestionAnalysis } from "@/components/questions/question-analysis";
 import { QuickAddOptions } from "@/components/questions/quick-add-options";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import {
@@ -35,7 +40,7 @@ import {
   normalizeQuestionOptions,
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
-import { apiRequest, toQuery } from "@/lib/api/client";
+import { apiRequest, apiRequestBlob, toQuery } from "@/lib/api/client";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, getQuestionTypeLabel, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import { isTableSegment, normalizeStructuredTableSegment } from "@/lib/structured-table";
@@ -54,6 +59,21 @@ const activeOptions = [
   { label: "全部状态", value: "" },
   { label: "启用", value: "true" },
   { label: "停用", value: "false" },
+];
+
+const difficultyOptions = [
+  { label: "全部难度", value: "" },
+  { label: "简单", value: "1" },
+  { label: "较易", value: "2" },
+  { label: "中等", value: "3" },
+  { label: "较难", value: "4" },
+  { label: "困难", value: "5" },
+];
+
+const pageSizeOptions = [
+  { label: "20 条/页", value: "20" },
+  { label: "50 条/页", value: "50" },
+  { label: "100 条/页", value: "100" },
 ];
 
 const KEYWORD_DEBOUNCE_MS = 300;
@@ -379,6 +399,8 @@ export default function QuestionsPage() {
     question_type: "",
     keyword: "",
     year: "",
+    difficulty: "",
+    import_batch_id: "",
   });
   const [keywordInput, setKeywordInput] = useState(filters.keyword);
   const [subjectOptions, setSubjectOptions] = useState<
@@ -399,6 +421,7 @@ export default function QuestionsPage() {
   }, []);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [selectedQuestionId, setSelectedQuestionId] = useState<number | null>(
     null,
   );
@@ -406,8 +429,15 @@ export default function QuestionsPage() {
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isCommonFilterMenuOpen, setIsCommonFilterMenuOpen] = useState(false);
+  const [isMoreFilterOpen, setIsMoreFilterOpen] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "docx" | null>(null);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<QuestionEditRequest>({});
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const commonFilterMenuRef = useRef<HTMLDivElement | null>(null);
+  const moreFilterRef = useRef<HTMLDivElement | null>(null);
 
   const canWrite = hasPermission(permissions, "question:write");
   const canDelete = hasPermission(permissions, "question:delete");
@@ -415,14 +445,16 @@ export default function QuestionsPage() {
   const queryParams = useMemo(
     () => ({
       page,
-      page_size: 20,
+      page_size: pageSize,
       subject_id: filters.subject_id ? Number(filters.subject_id) : undefined,
       is_active: filters.is_active,
       question_type: filters.question_type,
       keyword: filters.keyword,
       year: filters.year,
+      difficulty: filters.difficulty ? Number(filters.difficulty) : undefined,
+      import_batch_id: filters.import_batch_id || undefined,
     }),
-    [page, filters],
+    [page, pageSize, filters],
   );
 
   const questions = useQuery({
@@ -525,6 +557,15 @@ export default function QuestionsPage() {
     () => questions.data?.items ?? [],
     [questions.data?.items],
   );
+  const hasActiveFilters = Boolean(
+    filters.subject_id ||
+      filters.question_type ||
+      filters.year ||
+      filters.is_active ||
+      filters.keyword ||
+      filters.difficulty ||
+      filters.import_batch_id,
+  );
   const allChecked =
     items.length > 0 && items.every((item) => selectedIds.has(item.id));
   const selectedQuestion = detail.data;
@@ -621,6 +662,161 @@ export default function QuestionsPage() {
     }, KEYWORD_DEBOUNCE_MS);
   };
 
+  const handleResetFilters = () => {
+    if (keywordTimer.current) clearTimeout(keywordTimer.current);
+    setKeywordInput("");
+    setFilters({
+      subject_id: "",
+      is_active: "",
+      question_type: "",
+      keyword: "",
+      year: "",
+      difficulty: "",
+      import_batch_id: "",
+    });
+    setPage(1);
+  };
+
+  const handlePageSizeChange = (value: string) => {
+    setPageSize(Number(value) || 20);
+    setPage(1);
+  };
+
+  const applyFilterPreset = (
+    patch: Partial<typeof filters>,
+  ) => {
+    if (keywordTimer.current) clearTimeout(keywordTimer.current);
+    const next = {
+      subject_id: "",
+      is_active: "",
+      question_type: "",
+      keyword: "",
+      year: "",
+      difficulty: "",
+      import_batch_id: "",
+      ...patch,
+    };
+    setFilters(next);
+    setKeywordInput(next.keyword);
+    setPage(1);
+    setIsCommonFilterMenuOpen(false);
+  };
+
+  const handleSaveCurrentFilters = () => {
+    try {
+      window.localStorage.setItem(
+        "admin-question-saved-filter",
+        JSON.stringify(filters),
+      );
+      setMessage("当前筛选条件已保存到本机。 ");
+    } catch {
+      setMessage("筛选保存失败，请检查浏览器存储权限。 ");
+    }
+  };
+
+  const handleApplySavedFilters = () => {
+    try {
+      const raw = window.localStorage.getItem("admin-question-saved-filter");
+      if (!raw) {
+        setMessage("暂无已保存的筛选条件。 ");
+        setIsCommonFilterMenuOpen(false);
+        return;
+      }
+      const parsed = JSON.parse(raw) as Partial<typeof filters>;
+      applyFilterPreset(parsed);
+    } catch {
+      setMessage("已保存的筛选条件无法读取。 ");
+      setIsCommonFilterMenuOpen(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isCommonFilterMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        commonFilterMenuRef.current &&
+        !commonFilterMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsCommonFilterMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isCommonFilterMenuOpen]);
+
+  useEffect(() => {
+    if (!isMoreFilterOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        moreFilterRef.current &&
+        !moreFilterRef.current.contains(event.target as Node)
+      ) {
+        setIsMoreFilterOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isMoreFilterOpen]);
+
+  useEffect(() => {
+    if (!isExportMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (
+        exportMenuRef.current &&
+        !exportMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isExportMenuOpen]);
+
+  const handleExport = async (format: "csv" | "docx") => {
+    try {
+      setExportingFormat(format);
+      setIsExportMenuOpen(false);
+      const response = await apiRequestBlob("/questions/export", {
+        method: "POST",
+        timeoutMs: 120_000,
+        body: JSON.stringify({
+          format,
+          ids: selectedIds.size > 0 ? Array.from(selectedIds) : undefined,
+          subject_id: filters.subject_id ? Number(filters.subject_id) : undefined,
+          is_active:
+            filters.is_active === ""
+              ? undefined
+              : filters.is_active === "true",
+          question_type: filters.question_type || undefined,
+          keyword: filters.keyword || undefined,
+          year: filters.year ? Number(filters.year) : undefined,
+          difficulty: filters.difficulty
+            ? Number(filters.difficulty)
+            : undefined,
+          import_batch_id: filters.import_batch_id || undefined,
+        }),
+      });
+      const url = URL.createObjectURL(response.blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download =
+        response.filename ?? `questions-export.${format === "docx" ? "docx" : "csv"}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setMessage(
+        format === "csv" ? "CSV 导出已开始。" : "Word 导出已开始。",
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "导出失败，请稍后重试。",
+      );
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
   const toggleAll = () => {
     setSelectedIds(() => {
       if (allChecked) return new Set();
@@ -693,9 +889,9 @@ export default function QuestionsPage() {
       : "删除后该题目将从题库永久移除，此操作不可撤销。";
 
   return (
-    <div className="space-y-6 pb-24">
-      <Card className="overflow-visible">
-        <CardHeader className="space-y-4">
+    <div className="space-y-4 pb-10">
+      <Card className="overflow-visible border border-[var(--color-border)] bg-white/90 shadow-[var(--shadow-card)]">
+        <CardHeader className="space-y-4 pb-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h3 className="font-display text-2xl font-bold text-[var(--ink)]">
@@ -705,7 +901,7 @@ export default function QuestionsPage() {
                 点击题目查看题干、选项、答案与解析；详情面板用于编辑、版本对比或删除。
               </p>
             </div>
-            {canDelete && (
+            {canDelete ? (
               <Button
                 variant="danger"
                 disabled={selectedIds.size === 0}
@@ -714,46 +910,220 @@ export default function QuestionsPage() {
                 <Trash2 className="h-4 w-4" />
                 批量删除
               </Button>
-            )}
+            ) : null}
           </div>
 
-          <div className="relative z-10 rounded-3xl border border-[var(--color-border)] bg-white/65 p-3 shadow-sm backdrop-blur">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_150px_120px_130px]">
-              <label className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
-                <Input
-                  className="pl-9"
-                  placeholder="搜索题干 / 科目"
-                  value={keywordInput}
-                  onChange={(event) => handleKeywordChange(event.target.value)}
-                />
-              </label>
-              <CustomSelect
-                value={filters.subject_id}
-                onChange={(v) => updateFilter("subject_id", v)}
-                options={[{ label: "全部科目", value: "" }, ...subjectOptions.map((s) => ({ label: s.name, value: String(s.id) }))]}
-              />
-              <CustomSelect
-                placeholder="全部题型"
-                value={filters.question_type}
-                onChange={(v) => updateFilter("question_type", v)}
-                options={QUESTION_TYPE_OPTIONS}
-              />
-              <Input
-                placeholder="年份"
-                value={filters.year}
-                onChange={(event) => updateFilter("year", event.target.value)}
-              />
-              <CustomSelect
-                value={filters.is_active}
-                onChange={(v) => updateFilter("is_active", v)}
-                options={activeOptions}
-              />
+          <div className="space-y-3">
+            <div className="rounded-[1.35rem] border border-[var(--color-border)] bg-white/90 px-5 py-3 shadow-[0_8px_24px_rgba(40,60,90,0.055)]">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+                <label className="flex h-11 w-full min-w-0 items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 shadow-sm transition hover:border-[var(--color-primary-light)] xl:w-[38%] xl:min-w-[440px] xl:max-w-[600px]">
+                  <Search className="h-4 w-4 shrink-0 text-[var(--color-text-hint)]" />
+                  <Input
+                    className="h-9 border-0 bg-transparent px-0 shadow-none focus:bg-transparent focus:ring-0"
+                    placeholder="搜索题干 / 科目 / 题目编号"
+                    value={keywordInput}
+                    onChange={(event) => handleKeywordChange(event.target.value)}
+                  />
+                  {keywordInput ? (
+                    <button
+                      type="button"
+                      onClick={() => handleKeywordChange("")}
+                      className="inline-flex h-7 shrink-0 items-center rounded-full px-2.5 text-xs font-medium text-[var(--color-text-hint)] transition hover:bg-[var(--porcelain)] hover:text-[var(--ink)]"
+                    >
+                      清空
+                    </button>
+                  ) : null}
+                </label>
+
+                <button
+                  type="button"
+                  className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
+                >
+                  <Filter className="h-4 w-4 text-[var(--color-primary)]" />
+                  筛选
+                </button>
+
+                <Button
+                  variant="ghost"
+                  onClick={handleResetFilters}
+                  disabled={!hasActiveFilters}
+                  className="h-11 shrink-0 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm text-[var(--color-text-secondary)] shadow-sm hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)] disabled:opacity-45"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  重置
+                </Button>
+
+                <div className="hidden h-7 w-px shrink-0 bg-[var(--color-border)] xl:block" />
+
+                <div ref={commonFilterMenuRef} className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsCommonFilterMenuOpen((open) => !open)}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--ink)] shadow-sm transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
+                  >
+                    常用筛选
+                    <ChevronDown
+                      className={`h-4 w-4 text-[var(--color-text-hint)] transition ${isCommonFilterMenuOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {isCommonFilterMenuOpen ? (
+                    <div className="absolute left-0 top-full z-30 mt-2 min-w-[176px] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-floating)]">
+                      <button
+                        type="button"
+                        onClick={() => applyFilterPreset({})}
+                        className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--ink)] transition hover:bg-[var(--porcelain)]"
+                      >
+                        全部题目
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyFilterPreset({ is_active: "true" })}
+                        className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--ink)] transition hover:bg-[var(--porcelain)]"
+                      >
+                        仅看已启用
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => applyFilterPreset({ difficulty: "5" })}
+                        className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--ink)] transition hover:bg-[var(--porcelain)]"
+                      >
+                        困难题目
+                      </button>
+                      <div className="my-1 border-t border-[var(--color-border)]" />
+                      <button
+                        type="button"
+                        onClick={handleApplySavedFilters}
+                        className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--ink)] transition hover:bg-[var(--porcelain)]"
+                      >
+                        已保存筛选
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveCurrentFilters}
+                  className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--ink)] shadow-sm transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
+                >
+                  <Star className="h-4 w-4 text-[var(--color-text-secondary)]" />
+                  保存筛选
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-[1.35rem] border border-[var(--color-border)] bg-white/90 px-5 py-3 shadow-[0_8px_24px_rgba(40,60,90,0.05)]">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1.16fr_1fr_1fr_0.92fr_1fr_auto] xl:items-center">
+                <div className="flex h-11 min-w-0 items-center rounded-2xl border border-[var(--color-border)] bg-white px-3 shadow-sm">
+                  <span className="mr-2 shrink-0 text-xs font-semibold text-[var(--color-text-secondary)]">
+                    科目
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <CustomSelect
+                      className="h-9 rounded-xl border-0 bg-transparent pl-0 pr-1 shadow-none ring-0 hover:border-transparent"
+                      value={filters.subject_id}
+                      onChange={(v) => updateFilter("subject_id", v)}
+                      options={[
+                        { label: "全部科目", value: "" },
+                        ...subjectOptions.map((subject) => ({
+                          label: subject.name,
+                          value: String(subject.id),
+                        })),
+                      ]}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex h-11 min-w-0 items-center rounded-2xl border border-[var(--color-border)] bg-white px-3 shadow-sm">
+                  <span className="mr-2 shrink-0 text-xs font-semibold text-[var(--color-text-secondary)]">
+                    题型
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <CustomSelect
+                      className="h-9 rounded-xl border-0 bg-transparent pl-0 pr-1 shadow-none ring-0 hover:border-transparent"
+                      placeholder="全部题型"
+                      value={filters.question_type}
+                      onChange={(v) => updateFilter("question_type", v)}
+                      options={QUESTION_TYPE_OPTIONS}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex h-11 min-w-0 items-center rounded-2xl border border-[var(--color-border)] bg-white px-3 shadow-sm">
+                  <span className="mr-2 shrink-0 text-xs font-semibold text-[var(--color-text-secondary)]">
+                    状态
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <CustomSelect
+                      className="h-9 rounded-xl border-0 bg-transparent pl-0 pr-1 shadow-none ring-0 hover:border-transparent"
+                      value={filters.is_active}
+                      onChange={(v) => updateFilter("is_active", v)}
+                      options={activeOptions}
+                    />
+                  </div>
+                </div>
+
+                <label className="flex h-11 min-w-0 items-center rounded-2xl border border-[var(--color-border)] bg-white px-3 shadow-sm transition focus-within:border-[var(--color-primary-light)]">
+                  <span className="mr-3 shrink-0 text-xs font-semibold text-[var(--color-text-secondary)]">
+                    年份
+                  </span>
+                  <Input
+                    inputMode="numeric"
+                    className="h-9 min-w-0 border-0 bg-transparent px-0 text-sm shadow-none focus:bg-transparent focus:ring-0"
+                    placeholder="选择年份"
+                    value={filters.year}
+                    onChange={(event) => updateFilter("year", event.target.value)}
+                  />
+                </label>
+
+                <div className="flex h-11 min-w-0 items-center rounded-2xl border border-[var(--color-border)] bg-white px-3 shadow-sm">
+                  <span className="mr-2 shrink-0 text-xs font-semibold text-[var(--color-text-secondary)]">
+                    难度
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <CustomSelect
+                      className="h-9 rounded-xl border-0 bg-transparent pl-0 pr-1 shadow-none ring-0 hover:border-transparent"
+                      value={filters.difficulty}
+                      onChange={(v) => updateFilter("difficulty", v)}
+                      options={difficultyOptions}
+                    />
+                  </div>
+                </div>
+
+                <div ref={moreFilterRef} className="relative justify-self-start xl:justify-self-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsMoreFilterOpen((open) => !open)}
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--ink)] shadow-sm transition hover:border-[var(--color-primary-light)] hover:bg-[var(--porcelain)]"
+                  >
+                    <SlidersHorizontal className="h-4 w-4 text-[var(--color-text-secondary)]" />
+                    更多条件
+                  </button>
+                  {isMoreFilterOpen ? (
+                    <div className="absolute right-0 top-full z-30 mt-2 w-[320px] rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-floating)]">
+                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                        导入批次 ID
+                      </p>
+                      <Input
+                        className="mt-2 h-10 rounded-xl border-[var(--color-border)] bg-white px-3"
+                        placeholder="输入批次 ID"
+                        value={filters.import_batch_id}
+                        onChange={(event) =>
+                          updateFilter("import_batch_id", event.target.value)
+                        }
+                      />
+                      <p className="mt-2 text-[11px] leading-5 text-[var(--color-text-hint)]">
+                        仅在需要按导入批次精确定位题目时使用。
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
             </div>
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-4">
           {message ? (
             <div
               role="status"
@@ -764,34 +1134,81 @@ export default function QuestionsPage() {
             </div>
           ) : null}
 
-          {items.length > 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--color-border)] bg-white/60 px-4 py-3 text-xs text-[var(--color-text-secondary)]">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="flex items-center gap-1.5 font-medium text-[var(--ink)]">
-                  <Hash className="h-3.5 w-3.5" />
-                  当前页 {items.length} 题
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.4rem] border border-[var(--color-border)] bg-white/88 px-4 py-3 shadow-[0_12px_30px_rgba(40,60,90,0.06)]">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="inline-flex h-10 items-center gap-1.5 rounded-full bg-[var(--porcelain)] px-4 text-sm font-semibold text-[var(--ink)]">
+                <Hash className="h-3.5 w-3.5 text-[var(--color-primary)]" />
+                当前页 {items.length} 题
+              </span>
+              {questions.data ? (
+                <span className="inline-flex h-10 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--color-text-secondary)]">
+                  共 {questions.data.total} 题
                 </span>
-              </div>
-              <label className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-[var(--color-border)] bg-white/80 px-3 py-2 text-sm text-[var(--color-text-secondary)] transition hover:bg-white">
-                <CustomCheckbox checked={allChecked} onChange={toggleAll} className="mt-0.5" />
-                <span className="font-medium">选择当前页</span>
-                {selectedIds.size > 0 && (
-                  <span className="rounded-md bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-dark)]">
-                    {selectedIds.size}
-                  </span>
-                )}
-              </label>
+              ) : null}
+              {hasActiveFilters ? (
+                <span className="inline-flex h-10 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--color-text-secondary)]">
+                  已启用筛选
+                </span>
+              ) : null}
             </div>
-          ) : null}
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
+            <div className="flex flex-wrap items-center gap-2">
+              {selectedIds.size > 0 ? (
+                <span className="inline-flex h-10 items-center rounded-full bg-[var(--color-primary-light)] px-4 text-sm font-semibold text-[var(--color-primary-dark)]">
+                  已选 {selectedIds.size} 项
+                </span>
+              ) : null}
+              <label className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary-light)]">
+                <CustomCheckbox checked={allChecked} onChange={toggleAll} className="mt-0" />
+                <span className="font-medium">选择当前页</span>
+              </label>
+              <div ref={exportMenuRef} className="relative">
+                <Button
+                  variant="secondary"
+                  onClick={() => setIsExportMenuOpen((value) => !value)}
+                  disabled={!!exportingFormat}
+                  className="h-10 rounded-full px-4"
+                >
+                  <Download className="h-4 w-4" />
+                  {exportingFormat
+                    ? exportingFormat === "csv"
+                      ? "导出 CSV 中..."
+                      : "导出 Word 中..."
+                    : "导出"}
+                  <ChevronDown
+                    className={`h-4 w-4 transition ${isExportMenuOpen ? "rotate-180" : ""}`}
+                  />
+                </Button>
+                {isExportMenuOpen ? (
+                  <div className="absolute right-0 top-full z-20 mt-2 min-w-[160px] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-floating)]">
+                    <button
+                      type="button"
+                      onClick={() => void handleExport("csv")}
+                      className="flex w-full items-center rounded-xl px-3 py-2 text-sm text-[var(--ink)] transition hover:bg-[var(--porcelain)]"
+                    >
+                      导出 CSV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleExport("docx")}
+                      className="flex w-full items-center rounded-xl px-3 py-2 text-sm text-[var(--ink)] transition hover:bg-[var(--porcelain)]"
+                    >
+                      导出 Word
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
             <section className="space-y-3">
               {questions.isLoading ? (
                 <div className="space-y-3">
-                  {Array.from({ length: 4 }, (_, index) => (
+                  {Array.from({ length: 5 }, (_, index) => (
                     <div
                       key={index}
-                      className="h-36 animate-pulse rounded-[1.6rem] border border-[var(--color-border)] bg-white/60"
+                      className="h-28 animate-pulse rounded-[1.35rem] border border-[var(--color-border)] bg-white/60"
                     />
                   ))}
                 </div>
@@ -804,67 +1221,76 @@ export default function QuestionsPage() {
                 return (
                   <article
                     key={question.id}
-                    className={`group relative overflow-hidden rounded-[1.6rem] border bg-white/78 shadow-sm transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] ${
+                    className={`rounded-[1.35rem] border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] ${
                       isSelected
                         ? "border-[var(--color-primary)] ring-4 ring-[var(--color-primary-light)]"
-                        : "border-[var(--color-border)] hover:border-[var(--color-primary-light)] hover:bg-white"
+                        : "border-[var(--color-border)] hover:border-[var(--color-primary-light)]"
                     }`}
                   >
-                    <span
-                      className="absolute left-0 top-0 h-full w-1 bg-[var(--color-primary)]"
-                      aria-hidden="true"
-                    />
-                    <div className="flex items-start gap-3 p-4 pl-5">
+                    <div className="flex items-start gap-3 px-4 py-3.5">
                       <CustomCheckbox
                         checked={selectedIds.has(question.id)}
                         onChange={() => toggleOne(question.id)}
-                        className="mt-0.5"
+                        className="mt-1"
                       />
 
-                      <button
-                        type="button"
-                        onClick={() => selectQuestion(question.id)}
-                        className="min-w-0 flex-1 text-left"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <TypeBadge type={question.question_type} />
-                          <DifficultyBadge difficulty={question.difficulty} />
-                        </div>
-
-                        <div className="mt-3 line-clamp-4 rounded-2xl border border-[var(--color-border)] bg-[var(--porcelain)] px-4 py-3 text-sm leading-7 text-[var(--ink)]">
-                          <MathFormula text={stemText} />
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--color-text-hint)]">
-                          <span className="inline-flex items-center gap-1 font-mono">
-                            <Clock className="h-3 w-3" />#{question.id}
-                          </span>
-                          {question.subject_name || question.subject_code ? (
-                            <span className="inline-flex items-center gap-1">
-                              <BookOpen className="h-3 w-3" />
-                              {question.subject_name || question.subject_code}
-                            </span>
-                          ) : null}
-                          {question.year && (
-                            <span className="inline-flex items-center gap-1">
-                              <Tag className="h-3 w-3" />
-                              {question.year}
-                            </span>
-                          )}
-                          <span>{question.is_active ? "启用" : "停用"}</span>
-                        </div>
-                      </button>
-
-                      <div className="flex shrink-0 flex-col gap-2">
-                        <Button
-                          variant="secondary"
-                          onClick={() => openDetail(question.id)}
-                          className="h-9 gap-1.5 px-3 text-xs font-medium xl:hidden"
+                      <div className="min-w-0 flex-1">
+                        <button
+                          type="button"
+                          onClick={() => selectQuestion(question.id)}
+                          className="w-full text-left"
                         >
-                          <FileQuestion className="h-4 w-4" />
-                          详情
-                        </Button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center rounded-full bg-[var(--color-primary-light)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-primary-dark)]">
+                              #{String(question.id).padStart(4, "0")}
+                            </span>
+                            <TypeBadge type={question.question_type} />
+                            <DifficultyBadge difficulty={question.difficulty} />
+                            <span
+                              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+                                question.is_active
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-slate-200 bg-slate-50 text-slate-500"
+                              }`}
+                            >
+                              {question.is_active ? "已启用" : "已停用"}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 line-clamp-2 text-sm font-medium leading-7 text-[var(--ink)]">
+                            <MathFormula text={stemText} />
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--color-text-hint)]">
+                            {question.subject_name || question.subject_code ? (
+                              <span className="inline-flex items-center gap-1">
+                                <BookOpen className="h-3 w-3" />
+                                {question.subject_name || question.subject_code}
+                              </span>
+                            ) : null}
+                            {question.year ? (
+                              <span className="inline-flex items-center gap-1">
+                                <Tag className="h-3 w-3" />
+                                {question.year} 年
+                              </span>
+                            ) : null}
+                            {question.updated_at ? (
+                              <span className="inline-flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                更新于 {question.updated_at.slice(0, 16).replace("T", " ")}
+                              </span>
+                            ) : null}
+                          </div>
+                        </button>
                       </div>
+
+                      <Button
+                        variant="ghost"
+                        onClick={() => openDetail(question.id)}
+                        className="mt-1 h-9 rounded-full px-3 text-xs text-[var(--color-text-secondary)]"
+                      >
+                        详情
+                      </Button>
                     </div>
                   </article>
                 );
@@ -890,17 +1316,17 @@ export default function QuestionsPage() {
             </section>
 
             <aside className="hidden xl:block">
-              <div className="sticky top-6 h-[calc(100dvh-3rem)] overflow-y-auto rounded-[2rem] border border-[var(--color-border)] bg-white/85 p-5 shadow-[var(--shadow-card)] backdrop-blur">
+              <div className="sticky top-6 min-h-[calc(100dvh-4rem)] rounded-[1.8rem] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-card)]">
                 {selectedQuestionId === null ? (
                   <div className="flex h-full min-h-[520px] flex-col items-center justify-center text-center">
                     <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-[var(--color-border)] bg-[var(--porcelain)] text-[var(--color-text-hint)] shadow-sm">
-                      <SlidersHorizontal className="h-8 w-8" />
+                      <FileQuestion className="h-8 w-8" />
                     </div>
-                    <p className="mt-5 font-display text-2xl font-bold text-[var(--ink)]">
+                    <p className="mt-5 text-2xl font-bold text-[var(--ink)]">
                       选择一道题目
                     </p>
                     <p className="mt-2 max-w-xs text-sm leading-6 text-[var(--color-text-secondary)]">
-                      在左侧点击题目查看内容；需要编辑、删除或查看完整版本对比时，再打开详情面板。
+                      在左侧列表中选择题目，查看详情、编辑内容或进行版本对比。
                     </p>
                   </div>
                 ) : selectedQuestion ? (
@@ -910,34 +1336,32 @@ export default function QuestionsPage() {
                         <p className="font-mono text-xs uppercase tracking-[0.28em] text-[var(--color-text-hint)]">
                           Question
                         </p>
-                        <h3 className="mt-2 font-display text-2xl font-bold text-[var(--ink)]">
+                        <h3 className="mt-2 text-2xl font-bold text-[var(--ink)]">
                           题目 #{selectedQuestion.id}
                         </h3>
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <TypeBadge type={selectedQuestion.question_type} />
-                          <DifficultyBadge
-                            difficulty={selectedQuestion.difficulty}
-                          />
+                          <DifficultyBadge difficulty={selectedQuestion.difficulty} />
                         </div>
                       </div>
                       <Button
                         variant="secondary"
                         onClick={() => setIsDetailDrawerOpen(true)}
-                        className="shrink-0"
+                        className="shrink-0 rounded-full"
                       >
                         <FileQuestion className="h-4 w-4" />
                         完整详情
                       </Button>
                     </div>
 
-                    <section className="rounded-[1.6rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-5 shadow-sm">
+                    <section className="rounded-[1.5rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-5 shadow-sm">
                       <p className="mb-3 flex items-center justify-between gap-3 font-semibold text-[var(--ink)]">
                         <span>题干</span>
                         <span className="font-mono text-[11px] font-normal text-[var(--color-text-hint)]">
                           #{selectedQuestion.id}
                         </span>
                       </p>
-                      <div className="whitespace-pre-wrap text-base leading-8 text-[var(--ink)]">
+                      <div className="max-h-[280px] overflow-auto whitespace-pre-wrap pr-1 text-base leading-8 text-[var(--ink)]">
                         <QuestionContentRenderer
                           content={selectedQuestion.content}
                           fallbackText={textFromContent(selectedQuestion.content)}
@@ -945,75 +1369,26 @@ export default function QuestionsPage() {
                       </div>
                     </section>
 
-                    <section className="rounded-[1.6rem] border border-[var(--color-border)] bg-white/80 p-4">
+                    <section className="rounded-[1.5rem] border border-[var(--color-border)] bg-white p-4">
                       <p className="font-semibold text-[var(--ink)]">选项</p>
                       <div className="mt-3">
                         <QuestionOptions
-                          options={normalizeQuestionOptions(
-                            resolveQuestionOptions(selectedQuestion),
-                          )}
+                          options={normalizeQuestionOptions(resolveQuestionOptions(selectedQuestion))}
                         />
                       </div>
                     </section>
 
-                    <section className="rounded-[1.6rem] border border-[var(--color-success-light)] bg-[var(--color-success-light)] p-4">
-                      <p className="font-semibold text-[var(--color-success)]">
-                        答案
-                      </p>
+                    <section className="rounded-[1.5rem] border border-[var(--color-success-light)] bg-[var(--color-success-light)] p-4">
+                      <p className="font-semibold text-[var(--color-success)]">答案</p>
                       <div className="mt-2 whitespace-pre-wrap text-base font-semibold leading-7 text-[var(--ink)]">
                         <MathFormula text={selectedQuestion.answer || "—"} />
                       </div>
                     </section>
 
-                    <section className="rounded-[1.6rem] border border-[var(--color-border)] bg-white/80 p-4">
+                    <section className="rounded-[1.5rem] border border-[var(--color-border)] bg-white p-4">
                       <p className="font-semibold text-[var(--ink)]">解析</p>
-                      <div className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap text-sm leading-7 text-[var(--color-text-secondary)]">
-                        <MathFormula text={selectedQuestion.analysis || "—"} />
-                      </div>
-                    </section>
-
-                    <section className="rounded-[1.6rem] border border-[var(--color-border)] bg-white/70 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="font-semibold text-[var(--ink)]">
-                          版本历史
-                        </p>
-                        <span className="text-xs text-[var(--color-text-hint)]">
-                          {versions.data?.items?.length ?? 0} 个版本
-                        </span>
-                      </div>
-                      <div className="mt-3 space-y-2">
-                        {(versions.data?.items ?? [])
-                          .slice(0, 6)
-                          .map((version) => (
-                            <button
-                              key={version.id}
-                              type="button"
-                              onClick={() =>
-                                setSelectedVersion(version.version)
-                              }
-                              className={`flex w-full items-center justify-between rounded-2xl border px-3 py-2 text-left text-sm transition ${
-                                selectedVersion === version.version
-                                  ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]"
-                                  : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-primary-light)]"
-                              }`}
-                            >
-                              <span className="font-semibold">
-                                v{version.version}
-                              </span>
-                              <span className="text-xs text-[var(--color-text-hint)]">
-                                {version.created_at
-                                  ? new Date(
-                                      version.created_at,
-                                    ).toLocaleDateString()
-                                  : "历史快照"}
-                              </span>
-                            </button>
-                          ))}
-                        {(versions.data?.items ?? []).length === 0 ? (
-                          <p className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--porcelain)] px-3 py-4 text-center text-sm text-[var(--color-text-hint)]">
-                            暂无版本记录
-                          </p>
-                        ) : null}
+                      <div className="mt-3 max-h-52 overflow-auto pr-1">
+                        <QuestionAnalysis value={selectedQuestion.analysis} compact />
                       </div>
                     </section>
 
@@ -1058,51 +1433,39 @@ export default function QuestionsPage() {
           </div>
 
           {questions.data && questions.data.total_pages > 1 ? (
-            <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--blueprint-line)] bg-white/80 px-5 py-3 shadow-[var(--shadow-crisp)]">
-              <span className="font-display text-sm tracking-wide text-[var(--color-text-secondary)]">
-                <span className="font-semibold text-[var(--ink)]">
-                  {questions.data.total}
-                </span>{" "}
-                道题目
-                <span className="mx-2 text-[var(--color-text-hint)]">/</span>
-                <span className="text-[var(--color-text-hint)]">第 </span>
-                <span className="font-semibold text-[var(--ink)]">
-                  {questions.data.page}
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-[1.35rem] border border-[var(--color-border)] bg-white px-4 py-3 shadow-sm">
+              <div className="flex flex-wrap items-center gap-3 text-sm text-[var(--color-text-secondary)]">
+                <span>
+                  共 <span className="font-semibold text-[var(--ink)]">{questions.data.total}</span> 条
                 </span>
-                <span className="text-[var(--color-text-hint)]">
-                  {" "}
-                  / {questions.data.total_pages} 页
+                <span>
+                  第 <span className="font-semibold text-[var(--ink)]">{questions.data.page}</span> / {questions.data.total_pages} 页
                 </span>
-              </span>
+                <CustomSelect
+                  className="h-10 min-w-[116px] rounded-full border-[var(--color-border)] bg-white px-3"
+                  value={String(pageSize)}
+                  onChange={handlePageSizeChange}
+                  options={pageSizeOptions}
+                  clearable={false}
+                />
+              </div>
+
               <div className="flex items-center gap-1.5">
                 <button
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="inline-flex h-9 items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
+                  className="inline-flex h-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
                 >
-                  <svg
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M15 19l-7-7 7-7"
-                    />
-                  </svg>
                   上一页
                 </button>
                 {Array.from(
                   { length: Math.min(questions.data.total_pages, 5) },
                   (_, i) => {
-                    const start = Math.max(
+                    const startPage = Math.max(
                       1,
                       Math.min(page - 2, questions.data.total_pages - 4),
                     );
-                    const p = start + i;
+                    const p = startPage + i;
                     if (p > questions.data.total_pages) return null;
                     const isActive = p === page;
                     return (
@@ -1112,8 +1475,8 @@ export default function QuestionsPage() {
                         onClick={() => setPage(p)}
                         className={
                           isActive
-                            ? "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-primary-dark)] bg-[var(--color-primary)] text-sm font-bold text-white shadow-[var(--shadow-crisp)]"
-                            : "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white/80 text-sm font-medium text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
+                            ? "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-primary-dark)] bg-[var(--color-primary)] text-sm font-bold text-white shadow-sm"
+                            : "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white text-sm font-medium text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]"
                         }
                       >
                         {p}
@@ -1124,52 +1487,15 @@ export default function QuestionsPage() {
                 <button
                   disabled={page >= (questions.data?.total_pages ?? 1)}
                   onClick={() => setPage((p) => p + 1)}
-                  className="inline-flex h-9 items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white/80 px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
+                  className="inline-flex h-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
                 >
                   下一页
-                  <svg
-                    className="h-3.5 w-3.5"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M9 5l7 7-7 7"
-                    />
-                  </svg>
                 </button>
               </div>
             </div>
           ) : null}
         </CardContent>
       </Card>
-
-      {selectedIds.size > 0 ? (
-        <div className="fixed bottom-6 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-5 py-3 text-[var(--ink)] shadow-lg">
-          <span className="text-sm font-semibold">
-            已选择 {selectedIds.size} 道题
-          </span>
-          <button
-            type="button"
-            onClick={() => setSelectedIds(new Set())}
-            className="min-h-10 rounded-xl px-3 py-2 text-xs font-semibold text-[var(--color-text-secondary)] transition hover:bg-[var(--color-bg-input)]"
-          >
-            清空
-          </button>
-          {canDelete ? (
-            <Button
-              variant="danger"
-              onClick={() => setConfirmState({ action: "batch-delete" })}
-            >
-              <Trash2 className="h-4 w-4" />
-              批量删除
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
 
       {/* Detail drawer */}
       {isDetailDrawerOpen && selectedQuestionId !== null ? (
@@ -1647,8 +1973,8 @@ export default function QuestionsPage() {
                     <p className="font-display text-lg font-bold text-[var(--ink)]">
                       解析
                     </p>
-                    <div className="mt-3 whitespace-pre-wrap font-sans leading-7 text-[var(--color-text-secondary)]">
-                      <MathFormula text={selectedQuestion.analysis || "—"} />
+                    <div className="mt-3">
+                      <QuestionAnalysis value={selectedQuestion.analysis} />
                     </div>
                   </section>
 

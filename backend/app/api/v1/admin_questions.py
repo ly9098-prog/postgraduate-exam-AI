@@ -12,6 +12,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
@@ -22,6 +23,7 @@ from app.schemas.admin_questions import (
     AdminQuestionBatchResult,
     AdminQuestionDeleteImageRequest,
     AdminQuestionDetail,
+    AdminQuestionExportRequest,
     AdminQuestionListItem,
     AdminQuestionPatchRequest,
     AdminQuestionToggleActiveRequest,
@@ -48,6 +50,7 @@ from app.services.admin_question_service import (
     upsert_option_image,
     upsert_stem_image,
 )
+from app.services.admin_question_export_service import build_admin_question_export
 from app.services.knowledge_point_service import load_question_kps
 from app.services.storage_backend import compress_image, get_question_assets_storage
 from app.services.streaming_upload_handler import stream_to_temp
@@ -77,11 +80,12 @@ async def list_questions(
     page_size: int = Query(20, ge=1, le=100),
     subject_id: int | None = None,
     review_status: str | None = None,
-    is_active: bool | None = Query(True),
+    is_active: bool | None = Query(None),
     question_type: str | None = None,
     keyword: str | None = None,
     year: int | None = None,
     import_batch_id: str | None = None,
+    difficulty: int | None = Query(None, ge=1, le=5),
     _=Depends(require_permissions("question:read")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -96,6 +100,7 @@ async def list_questions(
         keyword,
         year,
         import_batch_id,
+        difficulty,
     )
     kp_map = await load_question_kps(db, [q.id for q in questions])
     return paginated_response(
@@ -103,6 +108,28 @@ async def list_questions(
         total,
         page,
         page_size,
+    )
+
+
+@router.post("/export")
+async def export_questions(
+    data: AdminQuestionExportRequest,
+    _=Depends(require_permissions("question:read")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export selected questions, or the current filter result, as CSV/DOCX."""
+    try:
+        content, filename, media_type = await build_admin_question_export(db, data)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

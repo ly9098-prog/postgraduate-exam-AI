@@ -152,6 +152,7 @@ async def list_admin_questions(
     keyword: str | None = None,
     year: int | None = None,
     import_batch_id: str | None = None,
+    difficulty: int | None = None,
 ) -> tuple[list[Question], int]:
     conditions = []
     if subject_id is not None:
@@ -195,18 +196,36 @@ async def list_admin_questions(
                 )
             )
         )
-        conditions.append(
+        subject_ids = select(Subject.id).where(
             or_(
-                Question.answer.ilike(pattern, escape="\\"),
-                Question.analysis.ilike(pattern, escape="\\"),
-                Question.raw_content.ilike(pattern, escape="\\"),
-                Question.id.in_(kp_qids),
+                Subject.name.ilike(pattern, escape="\\"),
+                Subject.code.ilike(pattern, escape="\\"),
+                Subject.path.ilike(pattern, escape="\\"),
             )
+        )
+        keyword_conditions = [
+            Question.content["stem"].as_string().ilike(pattern, escape="\\"),
+            Question.content["text"].as_string().ilike(pattern, escape="\\"),
+            Question.content["question"].as_string().ilike(pattern, escape="\\"),
+            Question.content["title"].as_string().ilike(pattern, escape="\\"),
+            Question.answer.ilike(pattern, escape="\\"),
+            Question.analysis.ilike(pattern, escape="\\"),
+            Question.raw_content.ilike(pattern, escape="\\"),
+            Question.id.in_(kp_qids),
+            Question.subject_id.in_(subject_ids),
+        ]
+        numeric_keyword = keyword.strip().removeprefix("#")
+        if numeric_keyword.isdigit():
+            keyword_conditions.append(Question.id == int(numeric_keyword))
+        conditions.append(
+            or_(*keyword_conditions)
         )
     if year is not None:
         conditions.append(Question.year == year)
     if import_batch_id:
         conditions.append(Question.import_batch_id == import_batch_id)
+    if difficulty is not None:
+        conditions.append(Question.difficulty == difficulty)
 
     query = select(Question)
     count_query = select(func.count()).select_from(Question)
