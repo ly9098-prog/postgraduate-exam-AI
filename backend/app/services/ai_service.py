@@ -450,7 +450,7 @@ async def analyze_error(
 
         # 附加元信息
         parsed["_meta"] = {
-            "model": result.get("model", model_name or ""),
+            "model": result.get("model", ""),
             "generated_at": datetime.now(UTC).isoformat(),
             "version": AI_ANALYSIS_PROMPT_VERSION,
             "from_fallback": False,
@@ -486,7 +486,7 @@ async def analyze_error(
             "from_cache": False,
             "from_fallback": False,
             "tokens_used": result.get("tokens_used", 0),
-            "model": result.get("model", model_name or ""),
+            "model": result.get("model", ""),
             "duration_ms": result.get("duration_ms", 0),
             "force_regenerated": force_regenerate,
         }
