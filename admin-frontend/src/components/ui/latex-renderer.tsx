@@ -35,7 +35,11 @@ export function LatexRenderer({
       return katex.renderToString(source, {
         displayMode,
         throwOnError: false,
-        strict: "warn",
+        // CJK text can legitimately appear in legacy formula payloads. KaTeX
+        // renders it, but `warn` floods the browser console with
+        // unicodeTextInMathMode messages. Keep warnings for every other strict
+        // check while silencing only that known-compatible case.
+        strict: (errorCode) => errorCode === "unicodeTextInMathMode" ? "ignore" : "warn",
         trust: false,
         output: "htmlAndMathml",
       });

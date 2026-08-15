@@ -3,7 +3,7 @@ import json
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
@@ -89,7 +89,18 @@ async def _log_audit(
 
 # ── Category helpers ──
 
-def _build_category_tree(categories: list[FormulaCategory]) -> list[dict]:
+def _build_category_tree(
+    categories: list[FormulaCategory],
+    formula_counts: dict[int, int] | None = None,
+) -> list[dict]:
+    """Build the hierarchy and attach direct/subtree formula counters.
+
+    ``formula_count`` counts cards assigned directly to the node, while
+    ``subtree_formula_count`` includes every descendant. Admin list views can
+    therefore show a useful count for subject/chapter nodes and use the same
+    semantics when filtering by a parent category.
+    """
+    formula_counts = formula_counts or {}
     cat_map = {}
     for cat in categories:
         cat_map[cat.id] = {
@@ -102,6 +113,8 @@ def _build_category_tree(categories: list[FormulaCategory]) -> list[dict]:
             "description": cat.description,
             "sort_order": cat.sort_order,
             "is_active": cat.is_active,
+            "formula_count": int(formula_counts.get(cat.id, 0)),
+            "subtree_formula_count": 0,
             "created_at": cat.created_at.isoformat() if cat.created_at else None,
             "updated_at": cat.updated_at.isoformat() if cat.updated_at else None,
             "children": [],
@@ -114,13 +127,39 @@ def _build_category_tree(categories: list[FormulaCategory]) -> list[dict]:
         elif pid in cat_map:
             cat_map[pid]["children"].append(cat_dict)
 
-    def _sort(nodes):
-        nodes.sort(key=lambda n: n["sort_order"])
-        for n in nodes:
-            _sort(n["children"])
+    def _sort_and_rollup(nodes):
+        nodes.sort(key=lambda n: (n["sort_order"], n["id"]))
+        for node in nodes:
+            _sort_and_rollup(node["children"])
+            node["subtree_formula_count"] = node["formula_count"] + sum(
+                child["subtree_formula_count"] for child in node["children"]
+            )
         return nodes
 
-    return _sort(roots)
+    return _sort_and_rollup(roots)
+
+
+def _collect_category_subtree_ids(
+    categories: list[tuple[int, int | None]],
+    root_id: int,
+) -> list[int]:
+    """Return ``root_id`` plus every descendant id without extra DB round trips."""
+    children_by_parent: dict[int, list[int]] = {}
+    for category_id, parent_id in categories:
+        if parent_id is not None:
+            children_by_parent.setdefault(parent_id, []).append(category_id)
+
+    result: list[int] = []
+    stack = [root_id]
+    seen: set[int] = set()
+    while stack:
+        category_id = stack.pop()
+        if category_id in seen:
+            continue
+        seen.add(category_id)
+        result.append(category_id)
+        stack.extend(children_by_parent.get(category_id, ()))
+    return result
 
 
 # ════════════════════════════════════════════════════════════
@@ -136,7 +175,14 @@ async def list_formula_categories(
         select(FormulaCategory).order_by(FormulaCategory.sort_order.asc())
     )
     categories = list(result.scalars().all())
-    return {"items": _build_category_tree(categories)}
+
+    count_result = await db.execute(
+        select(FormulaCard.category_id, func.count(FormulaCard.id))
+        .where(FormulaCard.deleted_at.is_(None))
+        .group_by(FormulaCard.category_id)
+    )
+    formula_counts = {category_id: count for category_id, count in count_result.all()}
+    return {"items": _build_category_tree(categories, formula_counts)}
 
 
 @router.post("/categories")
@@ -372,8 +418,10 @@ async def _create_version_snapshot(
 async def list_formula_cards(
     status: str | None = Query(None),
     category_id: int | None = Query(None),
+    include_descendants: bool = Query(False),
     q: str | None = Query(None),
     library_type: str | None = Query(None),
+    graph_status: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     _=Depends(require_permissions("formula:read")),
@@ -384,15 +432,40 @@ async def list_formula_cards(
     if status:
         query = query.where(FormulaCard.status == status)
     if category_id:
-        query = query.where(FormulaCard.category_id == category_id)
-    if q:
-        like = f"%{q}%"
+        if include_descendants:
+            category_rows = await db.execute(
+                select(FormulaCategory.id, FormulaCategory.parent_id)
+            )
+            category_ids = _collect_category_subtree_ids(
+                [(row[0], row[1]) for row in category_rows.all()],
+                category_id,
+            )
+            query = query.where(FormulaCard.category_id.in_(category_ids))
+        else:
+            query = query.where(FormulaCard.category_id == category_id)
+    if q and (search_term := q.strip()):
+        like = f"%{search_term}%"
         query = query.where(
             or_(
                 FormulaCard.title.ilike(like),
                 FormulaCard.search_text.ilike(like),
+                FormulaCard.summary.ilike(like),
+                cast(FormulaCard.aliases, String).ilike(like),
+                cast(FormulaCard.formula_blocks, String).ilike(like),
             )
         )
+
+    if graph_status:
+        allowed_graph_statuses = {
+            "not_applicable", "unconfigured", "missing", "generating",
+            "draft", "ready", "failed", "ignored",
+        }
+        if graph_status not in allowed_graph_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"无效的 graph_status: '{graph_status}'",
+            )
+        query = query.where(FormulaCard.graph_status == graph_status)
 
     if library_type == "function_graph":
         exists_subq = (

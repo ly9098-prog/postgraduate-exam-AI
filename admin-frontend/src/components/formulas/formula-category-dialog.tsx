@@ -73,11 +73,14 @@ export function FormulaCategoryDialog({ parentNode, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-[rgba(16,24,40,0.42)] backdrop-blur-[2px] pt-[15vh]"
+      className="fixed inset-0 z-50 flex animate-fade-in items-start justify-center bg-[rgba(16,24,40,0.42)] backdrop-blur-[2px] pt-[15vh]"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="w-full max-w-md animate-drop-in rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
