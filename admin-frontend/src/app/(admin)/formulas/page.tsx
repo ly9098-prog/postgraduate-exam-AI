@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search,
@@ -223,6 +223,7 @@ export default function FormulasPage() {
   const [searchDraft, setSearchDraft] = useState("");
   const [searchDebouncing, setSearchDebouncing] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
+  const detailScrollRef = useRef<HTMLDivElement>(null);
 
   // ── Batch selection ──
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -371,6 +372,14 @@ export default function FormulasPage() {
       setSelectedId(items[0].id);
     }
   }, [items, selectedId]);
+
+  useEffect(() => {
+    if (selectedId === null) return;
+    const frame = window.requestAnimationFrame(() => {
+      detailScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedId]);
 
   // ── Batch selection logic ──
   const safeSelectedIds = useMemo(() => {
@@ -606,7 +615,7 @@ export default function FormulasPage() {
         </div>
       )}
 
-      <Card className="overflow-hidden">
+      <Card className="overflow-visible">
         {/* ── Workspace filters ── */}
         <div className="border-b border-[var(--color-border)] bg-white/72 p-4">
           <div className="grid gap-2 lg:grid-cols-[minmax(260px,1fr)_150px_150px_165px_auto]">
@@ -663,9 +672,10 @@ export default function FormulasPage() {
         </div>
 
         {/* ── Three-column management workspace ── */}
-        <div className="grid min-h-[680px] xl:grid-cols-[230px_minmax(430px,1fr)_minmax(330px,0.78fr)]">
+        <div className="grid min-h-[680px] xl:grid-cols-[230px_minmax(430px,1fr)_minmax(330px,0.78fr)] xl:items-stretch">
           {/* Category navigation */}
-          <aside className="border-b border-[var(--color-border)] bg-[var(--porcelain)]/55 p-4 xl:border-b-0 xl:border-r">
+          <aside className="border-b border-[var(--color-border)] bg-[var(--porcelain)]/55 p-4 xl:self-stretch xl:border-b-0 xl:border-r">
+            <div className="xl:sticky xl:top-0 xl:flex xl:h-dvh xl:min-h-0 xl:flex-col xl:overflow-hidden">
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--color-text-hint)]">分类目录</p>
@@ -700,7 +710,7 @@ export default function FormulasPage() {
               <span className="flex items-center gap-2"><Layers className="h-3.5 w-3.5" />全部分类</span>
               <span className="tabular-nums text-[10px] text-[var(--color-text-hint)]">{totalCategoryFormulaCount}</span>
             </button>
-            <div className="max-h-[560px] space-y-0.5 overflow-y-auto pr-1">
+            <div className="max-h-[560px] space-y-0.5 overflow-y-auto pr-1 xl:min-h-0 xl:max-h-none xl:flex-1 xl:overscroll-contain">
               {categories.isLoading ? (
                 <div className="space-y-2 py-2">
                   {Array.from({ length: 7 }, (_, i) => <div key={i} className="h-8 animate-pulse rounded-lg bg-white/70" />)}
@@ -718,6 +728,7 @@ export default function FormulasPage() {
                   管理分类
                 </Button>
               </Link>
+            </div>
             </div>
           </aside>
 
@@ -895,16 +906,21 @@ export default function FormulasPage() {
           </main>
 
           {/* Detail / preview */}
-          <aside className="min-w-0 bg-white/62 p-4">
+          <aside className="min-w-0 bg-white/62 p-4 xl:self-stretch">
+            <div className="xl:sticky xl:top-0 xl:h-dvh xl:min-h-0 xl:overflow-hidden">
             {detail.isLoading && selectedId !== null ? (
-              <div className="sticky top-20 space-y-3 animate-fade-in">
+              <div className="space-y-3 animate-fade-in">
                 <div className="h-16 animate-pulse rounded-2xl bg-[var(--color-bg-input)]/75" />
                 <div className="h-24 animate-pulse rounded-2xl bg-[var(--color-bg-input)]/60" />
                 <div className="h-48 animate-pulse rounded-2xl bg-[var(--color-bg-input)]/50" />
               </div>
             ) : selectedCard ? (
-              <div key={selectedCard.id} className="sticky top-20 space-y-4 animate-fade-in">
-                <div className="flex items-start justify-between gap-3">
+              <div
+                ref={detailScrollRef}
+                key={selectedCard.id}
+                className="space-y-4 animate-fade-in xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain xl:pr-1"
+              >
+                <div className="sticky top-0 z-10 -mx-1 flex items-start justify-between gap-3 rounded-xl bg-white/94 px-1 pb-2 pt-0.5 backdrop-blur supports-[backdrop-filter]:bg-white/82">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_BADGE[selectedCard.status] || ""}`}>
@@ -943,7 +959,7 @@ export default function FormulasPage() {
                     <p className="text-xs font-bold text-[var(--ink)]">公式预览</p>
                     <span className="text-[10px] text-[var(--color-text-hint)]">{selectedCard.formula_blocks?.length || 0} 个公式块</span>
                   </div>
-                  <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
+                  <div className="space-y-2">
                     {selectedCard.formula_blocks?.length ? selectedCard.formula_blocks.map((block, index) => (
                       <div key={index} className="rounded-xl border border-[var(--color-border)] bg-[var(--porcelain)]/45 p-3">
                         {block.label ? <p className="mb-1 text-[10px] font-semibold text-[var(--color-text-hint)]">{block.label}</p> : null}
@@ -1049,6 +1065,7 @@ export default function FormulasPage() {
                 <p className="text-xs text-[var(--color-text-hint)]">详情、预览与审核操作将在此处展示</p>
               </div>
             )}
+            </div>
           </aside>
         </div>
       </Card>

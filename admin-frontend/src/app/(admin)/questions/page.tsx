@@ -8,6 +8,8 @@ import {
   Download,
   FileQuestion,
   Filter,
+  Loader2,
+  AlertCircle,
   Search,
   BookOpen,
   BarChart3,
@@ -404,6 +406,7 @@ export default function QuestionsPage() {
     import_batch_id: "",
   });
   const [keywordInput, setKeywordInput] = useState(filters.keyword);
+  const [searchDebouncing, setSearchDebouncing] = useState(false);
   const [importBatchInput, setImportBatchInput] = useState(filters.import_batch_id);
   const [subjectOptions, setSubjectOptions] = useState<
     Array<{ id: number; code: string; name: string }>
@@ -440,6 +443,7 @@ export default function QuestionsPage() {
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const commonFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const moreFilterRef = useRef<HTMLDivElement | null>(null);
+  const detailScrollRef = useRef<HTMLDivElement | null>(null);
 
   const canWrite = hasPermission(permissions, "question:write");
   const canDelete = hasPermission(permissions, "question:delete");
@@ -465,6 +469,7 @@ export default function QuestionsPage() {
       apiRequest<PaginatedResponse<AdminQuestion>>(
         `/questions${toQuery(queryParams)}`,
       ),
+    placeholderData: (previousData) => previousData,
     retry: false,
   });
 
@@ -675,9 +680,8 @@ export default function QuestionsPage() {
   const updateFilter = (key: keyof typeof filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(1);
-    // 筛选语义变化后清理旧列表上下文，避免隐藏选中项被误导出/误删除。
+    // 与公式库保持一致：筛选刷新时保留详情上下文，等新列表返回后再自动校正选中项。
     setSelectedIds(new Set());
-    setSelectedQuestionId(null);
     setIsDetailDrawerOpen(false);
   };
 
@@ -695,12 +699,22 @@ export default function QuestionsPage() {
   const handleKeywordChange = (value: string) => {
     setKeywordInput(value);
     if (keywordTimer.current) clearTimeout(keywordTimer.current);
-    if (value === "") {
-      updateFilter("keyword", "");
+    const next = value.trim();
+    if (next === filters.keyword) {
+      setSearchDebouncing(false);
+      return;
+    }
+    setSearchDebouncing(true);
+    if (next === "") {
+      keywordTimer.current = setTimeout(() => {
+        updateFilter("keyword", "");
+        setSearchDebouncing(false);
+      }, 100);
       return;
     }
     keywordTimer.current = setTimeout(() => {
-      updateFilter("keyword", value);
+      updateFilter("keyword", next);
+      setSearchDebouncing(false);
     }, KEYWORD_DEBOUNCE_MS);
   };
 
@@ -720,6 +734,7 @@ export default function QuestionsPage() {
     if (keywordTimer.current) clearTimeout(keywordTimer.current);
     if (importBatchTimer.current) clearTimeout(importBatchTimer.current);
     setKeywordInput("");
+    setSearchDebouncing(false);
     setImportBatchInput("");
     setFilters({
       subject_id: "",
@@ -732,7 +747,6 @@ export default function QuestionsPage() {
     });
     setPage(1);
     setSelectedIds(new Set());
-    setSelectedQuestionId(null);
     setIsDetailDrawerOpen(false);
   };
 
@@ -758,10 +772,10 @@ export default function QuestionsPage() {
     };
     setFilters(next);
     setKeywordInput(next.keyword);
+    setSearchDebouncing(false);
     setImportBatchInput(next.import_batch_id);
     setPage(1);
     setSelectedIds(new Set());
-    setSelectedQuestionId(null);
     setIsDetailDrawerOpen(false);
     setIsCommonFilterMenuOpen(false);
   };
@@ -942,6 +956,38 @@ export default function QuestionsPage() {
     [selectQuestion],
   );
 
+  const prefetchDetail = useCallback(
+    (id: number) => {
+      void queryClient.prefetchQuery({
+        queryKey: ["questions", id, "detail"],
+        queryFn: () => apiRequest<AdminQuestionDetail>(`/questions/${id}`),
+        staleTime: 30_000,
+      });
+    },
+    [queryClient],
+  );
+
+  useEffect(() => {
+    if (!items.length) {
+      if (!questions.isFetching) setSelectedQuestionId(null);
+      return;
+    }
+    if (selectedQuestionId === null || !items.some((item) => item.id === selectedQuestionId)) {
+      setSelectedQuestionId(items[0].id);
+      setSelectedVersion(null);
+      setEditing(false);
+      setEditForm({});
+    }
+  }, [items, questions.isFetching, selectedQuestionId]);
+
+  useEffect(() => {
+    if (selectedQuestionId === null) return;
+    const frame = window.requestAnimationFrame(() => {
+      detailScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedQuestionId]);
+
   const startEditing = () => {
     if (!selectedQuestion) return;
     // Pre-fill form from current question data
@@ -995,22 +1041,13 @@ export default function QuestionsPage() {
                 点击题目查看题干、选项、答案与解析；详情面板用于编辑、版本对比或删除。
               </p>
             </div>
-            {canDelete ? (
-              <Button
-                variant="danger"
-                disabled={selectedIds.size === 0}
-                onClick={() => setConfirmState({ action: "batch-delete" })}
-              >
-                <Trash2 className="h-4 w-4" />
-                批量删除
-              </Button>
-            ) : null}
+
           </div>
 
           <div className="space-y-3">
             <div className="rounded-[1.35rem] border border-[var(--color-border)] bg-white/90 px-5 py-3 shadow-[0_8px_24px_rgba(40,60,90,0.055)]">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-                <label className="flex h-11 w-full min-w-0 items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 shadow-sm transition hover:border-[var(--color-primary-light)] xl:w-[38%] xl:min-w-[440px] xl:max-w-[600px]">
+                <label className="flex h-11 w-full min-w-0 items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 shadow-sm transition-all duration-200 hover:border-[var(--color-primary-light)] focus-within:border-[var(--color-primary)] focus-within:shadow-[0_0_0_3px_var(--color-primary-light)] xl:w-[38%] xl:min-w-[440px] xl:max-w-[600px]">
                   <Search className="h-4 w-4 shrink-0 text-[var(--color-text-hint)]" />
                   <Input
                     className="h-9 border-0 bg-transparent px-0 shadow-none focus:bg-transparent focus:ring-0"
@@ -1018,15 +1055,21 @@ export default function QuestionsPage() {
                     value={keywordInput}
                     onChange={(event) => handleKeywordChange(event.target.value)}
                   />
-                  {keywordInput ? (
-                    <button
-                      type="button"
-                      onClick={() => handleKeywordChange("")}
-                      className="inline-flex h-7 shrink-0 items-center rounded-full px-2.5 text-xs font-medium text-[var(--color-text-hint)] transition hover:bg-[var(--porcelain)] hover:text-[var(--ink)]"
-                    >
-                      清空
-                    </button>
-                  ) : null}
+                  <div className="flex shrink-0 items-center gap-1">
+                    {(searchDebouncing || (questions.isFetching && Boolean(filters.keyword))) ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--color-text-hint)]" />
+                    ) : null}
+                    {keywordInput ? (
+                      <button
+                        type="button"
+                        onClick={() => handleKeywordChange("")}
+                        className="grid h-7 w-7 place-items-center rounded-lg text-[var(--color-text-hint)] transition hover:bg-[var(--color-primary-light)] hover:text-[var(--ink)]"
+                        aria-label="清空搜索"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
                 </label>
 
                 <span
@@ -1067,7 +1110,7 @@ export default function QuestionsPage() {
                     />
                   </button>
                   {isCommonFilterMenuOpen ? (
-                    <div className="absolute left-0 top-full z-30 mt-2 min-w-[176px] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-floating)]">
+                    <div className="absolute left-0 top-full z-30 mt-2 min-w-[176px] animate-drop-in overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-floating)]">
                       <button
                         type="button"
                         onClick={() => applyFilterPreset({})}
@@ -1212,7 +1255,7 @@ export default function QuestionsPage() {
                     更多条件
                   </button>
                   {isMoreFilterOpen ? (
-                    <div className="absolute right-0 top-full z-30 mt-2 w-[320px] rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-floating)]">
+                    <div className="absolute right-0 top-full z-30 mt-2 w-[320px] animate-drop-in rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-floating)]">
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
                         导入批次 ID
                       </p>
@@ -1234,12 +1277,22 @@ export default function QuestionsPage() {
 
         <CardContent className="space-y-4">
           {message ? (
-            <div
-              role="status"
-              aria-live="polite"
-              className="fixed right-6 top-6 z-[60] max-w-sm rounded-2xl border border-[var(--color-success)] bg-white px-5 py-4 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-floating)]"
-            >
-              {message}
+            <div className="fixed right-6 top-24 z-[60] animate-fade-in">
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex max-w-sm items-center gap-3 rounded-full border border-[var(--color-success)]/30 bg-white/92 py-2 pl-5 pr-2 text-sm font-medium text-[var(--ink)] shadow-[var(--shadow-floating)] backdrop-blur-xl"
+              >
+                <span>{message}</span>
+                <button
+                  type="button"
+                  onClick={() => setMessage(null)}
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-[var(--color-text-hint)] transition hover:bg-[var(--color-success-light)] hover:text-[var(--color-success)]"
+                  aria-label="关闭提示"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -1254,6 +1307,12 @@ export default function QuestionsPage() {
               <span className="inline-flex h-9 items-center rounded-full bg-[var(--porcelain)] px-3 text-xs font-semibold text-[var(--ink)]">
                 当前页 {items.length} 题
               </span>
+              {questions.isFetching && !questions.isLoading ? (
+                <span className="inline-flex h-9 items-center gap-1.5 rounded-full px-2 text-xs font-medium text-[var(--color-text-hint)]">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  更新中
+                </span>
+              ) : null}
               {questions.data ? (
                 <span className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white px-4 text-sm font-medium text-[var(--color-text-secondary)]">
                   共 {questions.data.total} 题
@@ -1317,7 +1376,7 @@ export default function QuestionsPage() {
                   />
                 </Button>
                 {isExportMenuOpen ? (
-                  <div className="absolute right-0 top-full z-20 mt-2 min-w-[160px] overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-floating)]">
+                  <div className="absolute right-0 top-full z-20 mt-2 min-w-[160px] animate-drop-in overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-floating)]">
                     <button
                       type="button"
                       onClick={() => void handleExport("csv")}
@@ -1338,7 +1397,7 @@ export default function QuestionsPage() {
             </div>
               </div>
 
-              <div className="space-y-2.5">
+              <div className={`space-y-2.5 transition-opacity duration-200 ${questions.isFetching && !questions.isLoading ? "opacity-70" : "opacity-100"}`}>
               {questions.isLoading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 5 }, (_, index) => (
@@ -1350,6 +1409,10 @@ export default function QuestionsPage() {
                 </div>
               ) : null}
 
+              <div
+                key={`${filters.subject_id}-${filters.question_type}-${filters.is_active}-${filters.year}-${filters.difficulty}-${filters.keyword}-${filters.import_batch_id}-${page}-${pageSize}`}
+                className="stagger-enter space-y-2.5"
+              >
               {items.map((question) => {
                 const stemText =
                   textFromContent(question.content) || `题目 #${question.id}`;
@@ -1357,10 +1420,11 @@ export default function QuestionsPage() {
                 return (
                   <article
                     key={question.id}
-                    className={`rounded-[1.2rem] border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] ${
+                    onMouseEnter={() => prefetchDetail(question.id)}
+                    className={`group rounded-[1.2rem] border transition-all duration-200 ${
                       isSelected
-                        ? "border-[var(--color-primary)] ring-4 ring-[var(--color-primary-light)]"
-                        : "border-[var(--color-border)] hover:border-[var(--color-primary-light)]"
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/30 shadow-sm ring-2 ring-[var(--color-primary-light)]"
+                        : "border-[var(--color-border)] bg-white/85 shadow-sm hover:border-[var(--color-primary)]/45 hover:bg-white hover:shadow-[var(--shadow-card)]"
                     }`}
                   >
                     <div className="flex items-start gap-3 px-4 py-3">
@@ -1423,7 +1487,7 @@ export default function QuestionsPage() {
                       <Button
                         variant="ghost"
                         onClick={() => openDetail(question.id)}
-                        className="mt-1 h-9 rounded-full px-3 text-xs text-[var(--color-text-secondary)]"
+                        className="mt-1 h-9 rounded-full px-3 text-xs text-[var(--color-text-secondary)] transition-all duration-200 group-hover:bg-[var(--porcelain)] group-hover:text-[var(--ink)]"
                       >
                         详情
                       </Button>
@@ -1431,22 +1495,35 @@ export default function QuestionsPage() {
                   </article>
                 );
               })}
+              </div>
 
-              {!questions.isLoading && items.length === 0 ? (
-                <div className="flex flex-col items-center gap-3 rounded-[1.6rem] border border-dashed border-[var(--color-border)] bg-white/60 py-16 text-center">
+              {!questions.isLoading && !questions.isError && items.length === 0 ? (
+                <div className="flex flex-col items-center gap-3 rounded-[1.6rem] border border-dashed border-[var(--color-border)] bg-white/60 py-16 text-center animate-fade-in">
                   <FileQuestion className="h-12 w-12 text-[var(--color-text-hint)]" />
                   <p className="text-sm font-semibold text-[var(--color-text-secondary)]">
-                    暂无题目
+                    暂无匹配题目
                   </p>
                   <p className="text-xs text-[var(--color-text-hint)]">
-                    尝试调整筛选条件
+                    尝试调整搜索关键词或筛选条件
                   </p>
+                  {hasActiveFilters ? (
+                    <Button variant="secondary" size="sm" onClick={handleResetFilters}>
+                      清除筛选
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
 
               {questions.isError ? (
-                <div className="rounded-2xl border border-[var(--color-danger-light)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
-                  题目接口当前不可用，若 router 未挂载则属于后端阻塞。
+                <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-red-200 bg-red-50/45 py-12 text-center animate-fade-in">
+                  <AlertCircle className="h-9 w-9 text-red-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-700">题目加载失败</p>
+                    <p className="mt-1 text-xs text-red-500">请检查查询条件或后端服务后重试</p>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={() => questions.refetch()}>
+                    重新加载
+                  </Button>
                 </div>
               ) : null}
               </div>
@@ -1471,7 +1548,7 @@ export default function QuestionsPage() {
 
               <div className="flex items-center gap-1.5">
                 <button
-                  disabled={page <= 1}
+                  disabled={page <= 1 || questions.isFetching}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   className="inline-flex h-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
                 >
@@ -1490,7 +1567,7 @@ export default function QuestionsPage() {
                     return (
                       <button
                         key={p}
-                        disabled={isActive}
+                        disabled={isActive || questions.isFetching}
                         onClick={() => setPage(p)}
                         className={
                           isActive
@@ -1504,7 +1581,7 @@ export default function QuestionsPage() {
                   },
                 )}
                 <button
-                  disabled={page >= (questions.data?.total_pages ?? 1)}
+                  disabled={page >= (questions.data?.total_pages ?? 1) || questions.isFetching}
                   onClick={() => setPage((p) => p + 1)}
                   className="inline-flex h-9 items-center justify-center rounded-xl border border-[var(--color-border)] bg-white px-3 text-xs font-semibold text-[var(--color-text-secondary)] shadow-sm transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:pointer-events-none disabled:opacity-40"
                 >
@@ -1515,10 +1592,11 @@ export default function QuestionsPage() {
               ) : null}
             </section>
 
-            <aside className="hidden xl:sticky xl:top-4 xl:block xl:h-[calc(100dvh-2rem)] xl:min-h-0 xl:self-start">
+            <aside className="hidden xl:block xl:min-h-0 xl:self-stretch">
+              <div className="xl:sticky xl:top-0 xl:h-dvh xl:min-h-0 xl:overflow-hidden">
               <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[1.45rem] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-card)]">
                 {selectedQuestionId === null ? (
-                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center text-center">
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center text-center animate-fade-in">
                     <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-[var(--color-border)] bg-[var(--porcelain)] text-[var(--color-text-hint)] shadow-sm">
                       <FileQuestion className="h-8 w-8" />
                     </div>
@@ -1530,8 +1608,12 @@ export default function QuestionsPage() {
                     </p>
                   </div>
                 ) : selectedQuestion ? (
-                  <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                    <div className="flex items-start justify-between gap-4">
+                  <div
+                    ref={detailScrollRef}
+                    key={selectedQuestion.id}
+                    className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1 animate-fade-in [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  >
+                    <div className="sticky top-0 z-10 -mx-1 flex items-start justify-between gap-4 rounded-xl bg-white/94 px-1 pb-3 pt-0.5 backdrop-blur supports-[backdrop-filter]:bg-white/82">
                       <div className="min-w-0">
                         <p className="font-mono text-xs uppercase tracking-[0.28em] text-[var(--color-text-hint)]">
                           Question
@@ -1623,25 +1705,64 @@ export default function QuestionsPage() {
                       ) : null}
                     </div>
                   </div>
+                ) : detail.isError && selectedQuestionId !== null ? (
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-center animate-fade-in">
+                    <AlertCircle className="h-9 w-9 text-red-400" />
+                    <p className="text-sm font-semibold text-red-700">详情加载失败</p>
+                    <Button variant="secondary" size="sm" onClick={() => detail.refetch()}>重新加载</Button>
+                  </div>
                 ) : (
-                  <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-[var(--color-text-secondary)]">
-                    正在加载详情...
+                  <div className="min-h-0 flex-1 space-y-3 animate-fade-in">
+                    <div className="h-16 animate-pulse rounded-2xl bg-[var(--color-bg-input)]/75" />
+                    <div className="h-28 animate-pulse rounded-2xl bg-[var(--color-bg-input)]/60" />
+                    <div className="h-44 animate-pulse rounded-2xl bg-[var(--color-bg-input)]/50" />
                   </div>
                 )}
+              </div>
               </div>
             </aside>
           </div>
         </CardContent>
       </Card>
 
+      {selectedIds.size > 0 ? (
+        <div className="fixed bottom-8 left-1/2 z-30 -translate-x-1/2 animate-drop-in">
+          <div className="flex items-center gap-3 rounded-full border border-[var(--color-border)] bg-white/94 py-2 pl-4 pr-2 shadow-[var(--shadow-floating)] backdrop-blur-xl">
+            <span className="text-sm text-[var(--color-text-secondary)]">
+              已选 <strong className="text-[var(--ink)]">{selectedIds.size}</strong> 项
+            </span>
+            <span className="h-5 w-px bg-[var(--color-border)]" />
+            {canDelete ? (
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={deleteMutation.isPending}
+                onClick={() => setConfirmState({ action: "batch-delete" })}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                批量删除
+              </Button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="grid h-8 w-8 place-items-center rounded-full text-[var(--color-text-hint)] transition-colors hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary)]"
+              aria-label="清除选择"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Detail drawer */}
       {isDetailDrawerOpen && selectedQuestionId !== null ? (
         <div
-          className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.42)] backdrop-blur-[2px]"
+          className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.42)] backdrop-blur-[2px] animate-fade-in"
           onClick={() => setIsDetailDrawerOpen(false)}
         >
           <aside
-            className="h-full w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-[var(--shadow-floating)]"
+            className="h-full w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-[var(--shadow-floating)] animate-drop-in"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-4">
