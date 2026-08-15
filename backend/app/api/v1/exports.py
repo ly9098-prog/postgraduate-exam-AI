@@ -65,6 +65,20 @@ def _mime_for_format(file_format: str) -> str:
     return _FORMAT_MIME.get(file_format, "application/octet-stream")
 
 
+def _wake_local_export_processor() -> None:
+    """Best-effort low-latency wakeup for a processor in this process.
+
+    Split web/scheduler deployments still rely on the processor's periodic DB
+    scan, so this helper intentionally has no cross-process side effects.
+    """
+    try:
+        from app.services.export.processor import wake_export_processor
+
+        wake_export_processor()
+    except Exception:
+        logger.debug("Local export processor wakeup failed", exc_info=True)
+
+
 @router.get("/capabilities", response_model=ExportCapabilityResponse)
 async def export_capabilities(
     current_user: User = Depends(get_current_user),
@@ -127,6 +141,7 @@ async def create_export(
     if idempotency_key:
         existing = await _find_existing_task(db, current_user.id, idempotency_key)
         if existing is not None:
+            _wake_local_export_processor()
             return _task_to_response(existing)
 
     # Per-user concurrency limit
@@ -182,6 +197,7 @@ async def create_export(
         raise_export_error(409, ExportErrorCode.TASK_ALREADY_EXISTS, "相同配置的导出任务已存在")
     await db.commit()
     await db.refresh(task)
+    _wake_local_export_processor()
     logger.info("export_task_created", extra={
         "task_id": task.id,
         "user_id": current_user.id,
@@ -425,6 +441,7 @@ async def retry_export(
     new_task.total_count = count
     await db.commit()
     await db.refresh(new_task)
+    _wake_local_export_processor()
     logger.info("export_task_retried", extra={
         "task_id": new_task.id,
         "source_task_id": task.id,
@@ -518,6 +535,7 @@ async def re_export(
 
     await db.commit()
     await db.refresh(task)
+    _wake_local_export_processor()
     logger.info(
         "export_task_reexported_in_place",
         extra={

@@ -72,6 +72,7 @@ _worker_tasks: set[asyncio.Task[None]] = set()
 _draining = False
 _processor_started_at: float | None = None
 _processor_heartbeat_at: float | None = None
+_processor_wakeup: asyncio.Event | None = None
 
 # Semaphores for real concurrency control
 _concurrency_semaphore: asyncio.Semaphore | None = None
@@ -124,8 +125,10 @@ class _TaskSlot:
 
 
 def _on_worker_done(task: asyncio.Task[None]) -> None:
-    """Release a completed worker task and surface unexpected failures."""
+    """Release a completed worker task and wake the claimer for queued work."""
     _worker_tasks.discard(task)
+    if _processor_wakeup is not None:
+        _processor_wakeup.set()
     if task.cancelled():
         return
     try:
@@ -182,16 +185,21 @@ async def _drain_worker_tasks() -> None:
 
 
 async def run_export_processor():
-    """Main loop — poll for pending tasks and spawn concurrent workers.
+    """Process pending tasks promptly while retaining DB-backed durability.
 
-    Unlike the old serial loop, this spawns an ``asyncio.Task`` per claimed
-    task so multiple exports process concurrently (up to ``_MAX_CONCURRENT``).
+    The previous loop claimed at most one task per poll interval, so two queued
+    exports could wait several seconds even when worker capacity was idle.  The
+    processor now drains all immediately available slots in one pass and sleeps
+    on a wake event.  API-created/retried tasks and worker completions can wake
+    the loop instantly; the timeout remains as a cross-process safety net.
     """
     global _concurrency_semaphore, _pdf_semaphore, _docx_semaphore, _draining
+    global _processor_started_at, _processor_heartbeat_at, _processor_wakeup
     _draining = False
     _concurrency_semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
     _pdf_semaphore = asyncio.Semaphore(_PDF_CONCURRENCY)
     _docx_semaphore = asyncio.Semaphore(_DOCX_CONCURRENCY)
+    _processor_wakeup = asyncio.Event()
 
     logger.info(
         "Export processor started (poll=%ds, timeout=%ds, max_concurrent=%d, pdf_c=%d, docx_c=%d)",
@@ -200,16 +208,26 @@ async def run_export_processor():
     )
     logger.info("export_processor_started role=%s", getattr(settings, "PROCESS_ROLE", "unknown"))
 
-    global _processor_started_at, _processor_heartbeat_at
     _processor_started_at = time.time()
     _processor_heartbeat_at = _processor_started_at
 
     while not _draining:
+        # Clear before scanning.  If a task arrives during the scan the event is
+        # set again and the wait below returns immediately, avoiding a lost wakeup.
+        _processor_wakeup.clear()
         try:
             await _recover_stale_tasks()
-            slot = await _try_claim_task()
-            if slot is not None:
-                logger.info("Claimed task %d for user %d (%s)", slot.task_id, slot.user_id, slot.file_format)
+
+            # Fill every currently available worker slot in the same iteration.
+            # _try_claim_task() already performs atomic DB fencing.
+            while not _draining and len(_in_flight) < _MAX_CONCURRENT:
+                slot = await _try_claim_task()
+                if slot is None:
+                    break
+                logger.info(
+                    "Claimed task %d for user %d (%s)",
+                    slot.task_id, slot.user_id, slot.file_format,
+                )
                 _spawn_worker(slot)
         except asyncio.CancelledError:
             logger.info("Export processor cancelled")
@@ -218,11 +236,20 @@ async def run_export_processor():
             logger.warning("Export processor error (non-fatal): %s", e)
 
         _processor_heartbeat_at = time.time()
-        await asyncio.sleep(_POLL_INTERVAL_SEC)
+        if _draining:
+            break
+
+        try:
+            await asyncio.wait_for(_processor_wakeup.wait(), timeout=_POLL_INTERVAL_SEC)
+        except TimeoutError:
+            # Periodic scan is still required when the task was created by a
+            # different process and therefore cannot signal this in-process event.
+            pass
 
     logger.info("export_processor_stopped role=%s", getattr(settings, "PROCESS_ROLE", "unknown"))
 
     await _drain_worker_tasks()
+    _processor_wakeup = None
     logger.info(
         "Export processor stopped (draining=%s, in_flight=%d, worker_tasks=%d)",
         _draining,
@@ -570,10 +597,25 @@ async def _execute_task_with_heartbeat(slot: _TaskSlot) -> None:
             pass
 
 
+def wake_export_processor() -> bool:
+    """Wake the local export processor after a task is made runnable.
+
+    Returns ``True`` when a processor loop exists in this process.  In split
+    deployments the web process normally returns ``False`` and the scheduler's
+    periodic DB scan remains the cross-process fallback.
+    """
+    if _processor_wakeup is None or _draining:
+        return False
+    _processor_wakeup.set()
+    return True
+
+
 async def stop_processor():
     """Signal the processor to stop after current tasks complete."""
     global _draining
     _draining = True
+    if _processor_wakeup is not None:
+        _processor_wakeup.set()
     logger.info("Export processor drain requested (in_flight=%d)", len(_in_flight))
 
 

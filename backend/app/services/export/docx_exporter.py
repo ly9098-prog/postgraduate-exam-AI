@@ -47,6 +47,12 @@ from docx.text.paragraph import Paragraph
 from app.core.config import settings
 from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
 from app.services.export.exporter_base import Exporter, ExportResult
+from app.services.export.analysis_content import (
+    clean_analysis_section_body,
+    split_analysis_list_items,
+    split_analysis_paragraphs,
+    split_analysis_sections,
+)
 from app.services.export.latex_render import find_latex_segments, has_latex
 from app.services.export.omml_converter import render_latex_as_omml_or_fallback
 from app.services.export.question_content import (
@@ -296,10 +302,9 @@ class DocxExporter(Exporter):
             if config.get("analysis_position") == "after_question":
                 analysis_text = self._sanitize_text(q.get("analysis", ""))
                 if analysis_text:
-                    ana_p = doc.add_paragraph()
-                    ana_p.paragraph_format.space_before = Pt(2)
-                    self._add_labeled_text(ana_p, "解析", analysis_text)
-                    question_paragraphs.append(ana_p)
+                    question_paragraphs.extend(
+                        self._add_analysis_after_question(doc, analysis_text)
+                    )
 
             if config.get("answer_position") == "at_end":
                 answer_section.append({
@@ -332,17 +337,7 @@ class DocxExporter(Exporter):
                 spacer.paragraph_format.space_after = Pt(7)
             self._add_end_section_title(doc, "答案解析")
             for item in analysis_section:
-                p = doc.add_paragraph()
-                p.paragraph_format.space_after = Pt(6)
-                number_run = p.add_run(f"{item['num']}．")
-                number_run.bold = True
-                number_run.font.size = Pt(10)
-                number_run.font.name = _BODY_FONT
-                self._set_east_asian_font(number_run, _BODY_FONT_EA)
-                run = p.add_run(item["analysis"])
-                run.font.size = Pt(10)
-                run.font.name = _BODY_FONT
-                self._set_east_asian_font(run, _BODY_FONT_EA)
+                self._add_analysis_item(doc, item["num"], item["analysis"])
 
         buf = io.BytesIO()
         doc.save(buf)
@@ -834,6 +829,180 @@ class DocxExporter(Exporter):
         run.font.size = Pt(11)
         run.font.name = _HEADING_FONT
         self._set_east_asian_font(run, _HEADING_FONT)
+
+    def _add_analysis_after_question(self, doc: Document, text: str) -> list[Paragraph]:
+        """Render inline analysis with the same scan-friendly hierarchy as the end section."""
+        sections = split_analysis_sections(text)
+        if not sections or not any(label for label, _ in sections):
+            p = doc.add_paragraph()
+            p.paragraph_format.space_before = Pt(3)
+            p.paragraph_format.space_after = Pt(4)
+            p.paragraph_format.line_spacing = 1.4
+            self._add_labeled_text(p, "解析", text)
+            return [p]
+
+        paragraphs: list[Paragraph] = []
+        title = doc.add_paragraph()
+        title.paragraph_format.space_before = Pt(4)
+        title.paragraph_format.space_after = Pt(3)
+        title.paragraph_format.keep_with_next = True
+        title_run = title.add_run("解析")
+        title_run.bold = True
+        title_run.font.size = Pt(11)
+        title_run.font.name = _HEADING_FONT
+        self._set_east_asian_font(title_run, _HEADING_FONT)
+        paragraphs.append(title)
+
+        for label, body in sections:
+            paragraphs.extend(self._add_analysis_subsection(doc, label, body, indent_cm=0.35))
+        if paragraphs:
+            paragraphs[-1].paragraph_format.space_after = Pt(7)
+        return paragraphs
+
+    def _add_analysis_item(self, doc: Document, number: int, text: str) -> list[Paragraph]:
+        """Render one end-of-document analysis entry as a distinct question block."""
+        sections = split_analysis_sections(text)
+        paragraphs: list[Paragraph] = []
+
+        # Separate the question number from semantic section labels.  This gives
+        # readers a strong visual anchor when scanning a long answer-analysis
+        # appendix and avoids the dense ``1.错因诊断`` look.
+        header = doc.add_paragraph()
+        header.paragraph_format.space_before = Pt(9)
+        header.paragraph_format.space_after = Pt(5)
+        header.paragraph_format.keep_with_next = True
+        run = header.add_run(f"第 {number} 题")
+        run.bold = True
+        run.font.size = Pt(11.5)
+        run.font.name = _HEADING_FONT
+        self._set_east_asian_font(run, _HEADING_FONT)
+        self._set_paragraph_border(header, "bottom", color="C9C9C9", size="6", space="3")
+        paragraphs.append(header)
+
+        if not sections or not any(label for label, _ in sections):
+            body_p = doc.add_paragraph()
+            body_p.paragraph_format.left_indent = Cm(0.45)
+            body_p.paragraph_format.space_after = Pt(10)
+            body_p.paragraph_format.line_spacing = 1.4
+            body_run = body_p.add_run(text)
+            body_run.font.size = Pt(10.5)
+            body_run.font.name = _BODY_FONT
+            self._set_east_asian_font(body_run, _BODY_FONT_EA)
+            paragraphs.append(body_p)
+            return paragraphs
+
+        for label, body in sections:
+            paragraphs.extend(self._add_analysis_subsection(doc, label, body, indent_cm=0.35))
+
+        if paragraphs:
+            paragraphs[-1].paragraph_format.space_after = Pt(11)
+        return paragraphs
+
+    def _add_analysis_subsection(
+        self, doc: Document, label: str, body: str, indent_cm: float = 0.35
+    ) -> list[Paragraph]:
+        """Render one semantic analysis section using prose, bullets, or steps."""
+        paragraphs: list[Paragraph] = []
+        label = str(label or "").strip()
+        clean_body = clean_analysis_section_body(label, body)
+        if not label and not clean_body:
+            return paragraphs
+
+        if label:
+            heading = doc.add_paragraph()
+            heading.paragraph_format.left_indent = Cm(indent_cm)
+            heading.paragraph_format.space_before = Pt(2.5)
+            heading.paragraph_format.space_after = Pt(2.5)
+            heading.paragraph_format.keep_with_next = bool(clean_body)
+            run = heading.add_run(f"【{label}】")
+            run.bold = True
+            run.font.size = Pt(10.5)
+            run.font.name = _HEADING_FONT
+            self._set_east_asian_font(run, _HEADING_FONT)
+            paragraphs.append(heading)
+
+        body_indent = indent_cm + 0.35
+        if not clean_body:
+            return paragraphs
+
+        if label == "错因诊断":
+            chunks = split_analysis_paragraphs(clean_body)
+            for index, chunk in enumerate(chunks):
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Cm(body_indent)
+                p.paragraph_format.space_after = Pt(3.5 if index < len(chunks) - 1 else 5)
+                p.paragraph_format.line_spacing = 1.4
+                run = p.add_run(chunk)
+                run.font.size = Pt(10.5)
+                run.font.name = _BODY_FONT
+                self._set_east_asian_font(run, _BODY_FONT_EA)
+                paragraphs.append(p)
+            return paragraphs
+
+        if label in {"补漏重点", "复练任务"}:
+            items = split_analysis_list_items(label, clean_body)
+            numbered = label == "复练任务"
+            for index, item in enumerate(items, 1):
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Cm(body_indent + 0.28)
+                p.paragraph_format.first_line_indent = Cm(-0.28)
+                p.paragraph_format.space_before = Pt(0.6)
+                p.paragraph_format.space_after = Pt(2.2)
+                p.paragraph_format.line_spacing = 1.35
+                prefix = f"{index}. " if numbered else "• "
+                prefix_run = p.add_run(prefix)
+                prefix_run.bold = numbered
+                prefix_run.font.size = Pt(10.5)
+                prefix_run.font.name = _BODY_FONT
+                self._set_east_asian_font(prefix_run, _BODY_FONT_EA)
+                body_run = p.add_run(item)
+                body_run.font.size = Pt(10.5)
+                body_run.font.name = _BODY_FONT
+                self._set_east_asian_font(body_run, _BODY_FONT_EA)
+                if numbered:
+                    # A restrained left rule makes action items easy to find
+                    # without relying on colour, so the file remains print-safe.
+                    self._set_paragraph_border(p, "left", color="D2D2D2", size="10", space="4")
+                paragraphs.append(p)
+            if paragraphs:
+                paragraphs[-1].paragraph_format.space_after = Pt(5)
+            return paragraphs
+
+        p = doc.add_paragraph()
+        p.paragraph_format.left_indent = Cm(body_indent)
+        p.paragraph_format.space_after = Pt(5)
+        p.paragraph_format.line_spacing = 1.4
+        run = p.add_run(clean_body)
+        run.font.size = Pt(10.5)
+        run.font.name = _BODY_FONT
+        self._set_east_asian_font(run, _BODY_FONT_EA)
+        paragraphs.append(p)
+        return paragraphs
+
+    @staticmethod
+    def _set_paragraph_border(
+        paragraph: Paragraph,
+        side: str,
+        *,
+        color: str = "D9D9D9",
+        size: str = "6",
+        space: str = "1",
+    ) -> None:
+        """Add a simple Word paragraph border without requiring a table/card."""
+        p_pr = paragraph._p.get_or_add_pPr()
+        p_bdr = p_pr.find(qn("w:pBdr"))
+        if p_bdr is None:
+            p_bdr = OxmlElement("w:pBdr")
+            p_pr.append(p_bdr)
+        tag = qn(f"w:{side}")
+        edge = p_bdr.find(tag)
+        if edge is None:
+            edge = OxmlElement(f"w:{side}")
+            p_bdr.append(edge)
+        edge.set(qn("w:val"), "single")
+        edge.set(qn("w:sz"), str(size))
+        edge.set(qn("w:space"), str(space))
+        edge.set(qn("w:color"), color)
 
     def _add_end_section_title(self, doc: Document, title: str) -> None:
         p = doc.add_paragraph()
