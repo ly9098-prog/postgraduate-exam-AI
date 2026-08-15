@@ -29,7 +29,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import and_, delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow
@@ -335,6 +335,59 @@ async def retry_failed_outbox(db: AsyncSession, outbox_id: int) -> TaskOutbox | 
     return row
 
 
+async def recover_infrastructure_failed_outbox(
+    db: AsyncSession,
+    *,
+    limit: int = _RECONCILE_BATCH_SIZE,
+) -> int:
+    """Recover legacy rows that were permanently failed only by a Redis outage.
+
+    Current dispatcher code already treats ``redis_unavailable`` as an
+    infrastructure pause and returns claimed rows to ``pending`` without
+    consuming retry budget.  Older deployments may still contain ``failed``
+    rows whose last error is only ``enqueue rejected: redis_unavailable`` (or
+    the equivalent Redis-unavailable exception text).  Once Redis is healthy,
+    these rows are safe to re-publish because task IDs are idempotent and
+    business consumers are designed for at-least-once delivery.
+
+    The caller must only invoke this after a successful Redis health probe.
+    """
+    rows = list((await db.execute(
+        select(TaskOutbox)
+        .where(
+            TaskOutbox.status == "failed",
+            TaskOutbox.error_message.is_not(None),
+            or_(
+                func.lower(TaskOutbox.error_message).like("%redis_unavailable%"),
+                func.lower(TaskOutbox.error_message).like("%redis unavailable%"),
+            ),
+        )
+        .order_by(TaskOutbox.updated_at.asc(), TaskOutbox.id.asc())
+        .limit(max(1, int(limit)))
+        .with_for_update(skip_locked=True)
+    )).scalars().all())
+
+    if not rows:
+        await db.rollback()
+        return 0
+
+    now = utcnow()
+    for row in rows:
+        row.status = "pending"
+        row.retry_count = 0
+        row.error_message = None
+        row.lease_token = None
+        row.lease_expires_at = None
+        row.updated_at = now
+
+    await db.commit()
+    logger.warning(
+        "Recovered %d legacy Outbox rows failed only by Redis unavailability",
+        len(rows),
+    )
+    return len(rows)
+
+
 async def mark_cancelled(
     db: AsyncSession, task_id: str,
 ) -> bool:
@@ -390,9 +443,31 @@ async def reconcile(db: AsyncSession, task_queue: Any, batch_size: int = _RECONC
     3. Outbox=published but Redis task is terminal → outbox is correct
     4. Outbox=leased with expired lease → re-claim (handled by claim_pending)
 
-    Returns count of actions taken: {checked, fixed_publish, fixed_status, errors}
+    Returns count of actions taken, including legacy infrastructure-failure recovery.
     """
-    stats = {"checked": 0, "fixed_publish": 0, "fixed_status": 0, "errors": 0}
+    stats = {
+        "checked": 0,
+        "fixed_publish": 0,
+        "fixed_status": 0,
+        "recovered_infra_failed": 0,
+        "errors": 0,
+    }
+
+    # A Redis outage must never become a permanent business-task failure.
+    # New dispatcher code already preserves pending rows; this probe + repair
+    # handles legacy failed rows created by older deployments.
+    try:
+        await task_queue.get_task_v2("__outbox_reconcile_health_probe__")
+    except Exception:
+        pass
+    else:
+        try:
+            stats["recovered_infra_failed"] = await recover_infrastructure_failed_outbox(
+                db, limit=batch_size,
+            )
+        except Exception as exc:
+            stats["errors"] += 1
+            logger.warning("Legacy Redis-outage Outbox recovery failed: %s", exc)
 
     # Find non-terminal outbox records
     result = await db.execute(
