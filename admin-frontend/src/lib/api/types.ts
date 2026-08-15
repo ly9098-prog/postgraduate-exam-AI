@@ -674,6 +674,12 @@ export type SystemHealthResponse = {
   checks: Record<string, HealthCheckItem>;
 };
 
+export type ReadyHealthResponse = {
+  status: "ok" | "degraded" | string;
+  db: "ok" | "unavailable" | string;
+  redis: "ok" | "degraded" | string;
+};
+
 // ── Vector / Embedding Config ──
 
 export type VectorConfig = {

@@ -243,27 +243,40 @@ export const adminRoutes: AdminRoute[] = [
 /**
  * Sidebar navigation hierarchy.
  *
- * The three grouped sections mirror the operational domains shown in the admin UI:
- * - 题目管理: 题库 + 导入
+ * Group routes by the administrator's primary workflow so the top-level sidebar
+ * stays compact while preserving every existing URL and permission check:
+ * - 角色管理: 小程序用户 + 管理员 + 角色权限
+ * - 题目管理: 题库 + 导入 + 知识图谱
+ * - 系统管理: AI 解析设置 + 审计日志 + 任务诊断
  * - 公式管理: 公式库 + 分类
  * - 推荐管理: 策略 + 实验 + 指标 + 报表
  */
 export const adminNavigation: AdminNavigationItem[] = [
   { type: "route", route: dashboardRoute },
-  { type: "route", route: appUsersRoute },
-  { type: "route", route: adminUsersRoute },
+  {
+    type: "group",
+    key: "role-management",
+    label: "角色管理",
+    description: "用户、账号与权限",
+    icon: UserCog,
+    children: [appUsersRoute, adminUsersRoute, rolesRoute],
+  },
   {
     type: "group",
     key: "question-management",
     label: "题目管理",
-    description: "题库与导入",
+    description: "题库、导入与知识图谱",
     icon: FileQuestion,
-    children: [questionsRoute, importsRoute],
+    children: [questionsRoute, importsRoute, knowledgeGraphRoute],
   },
-  { type: "route", route: rolesRoute },
-  { type: "route", route: aiSettingsRoute },
-  { type: "route", route: auditLogsRoute },
-  { type: "route", route: systemTasksRoute },
+  {
+    type: "group",
+    key: "system-management",
+    label: "系统管理",
+    description: "配置、审计与任务",
+    icon: SlidersHorizontal,
+    children: [aiSettingsRoute, auditLogsRoute, systemTasksRoute],
+  },
   {
     type: "group",
     key: "formula-management",
@@ -285,5 +298,4 @@ export const adminNavigation: AdminNavigationItem[] = [
       recommendationReportsRoute,
     ],
   },
-  { type: "route", route: knowledgeGraphRoute },
 ];
