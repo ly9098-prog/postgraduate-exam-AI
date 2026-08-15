@@ -2146,6 +2146,7 @@ async def _create_answer_projection_outbox(
     *,
     practice_record_id: int,
     request_id: str | None,
+    wrong_question_projected: bool = False,
 ) -> None:
     """Persist the answer projection event in the same transaction as the answer."""
     from app.services.outbox_service import create_outbox
@@ -2157,6 +2158,11 @@ async def _create_answer_projection_outbox(
         payload={
             "practice_record_id": practice_record_id,
             "request_id": request_id,
+            # Wrong-book persistence is user-visible and is written
+            # synchronously with PracticeRecord.  The async projection worker
+            # must therefore skip recording the same wrong answer a second
+            # time (which would incorrectly increment review_count twice).
+            "wrong_question_projected": wrong_question_projected,
         },
     )
 
@@ -2169,13 +2175,12 @@ async def submit_answer(
     used_time: int | None = None,
     request_id: str | None = None,
 ) -> dict:
-    """Persist an answer and its projection event atomically.
+    """Persist an answer, wrong-book state, and its projection event atomically.
 
-    Learning projections (wrong-book, behavior, mastery, recommendation feedback,
-    Leitner and adaptive state) are intentionally not executed in the HTTP
-    transaction.  The transactional outbox guarantees that a committed answer
-    is eventually projected by the durable worker without partial best-effort
-    state.
+    Wrong-book state is user-visible and therefore written synchronously for a
+    wrong answer.  The remaining learning projections (behavior, mastery,
+    recommendation feedback, Leitner and adaptive state) stay behind the
+    transactional outbox and are applied by the durable worker.
     """
     result = await db.execute(
         select(Question)
@@ -2205,10 +2210,28 @@ async def submit_answer(
     db.add(record)
     # The DB-generated record id is the stable event/idempotency key.
     await db.flush()
+
+    # Wrong-book is a user-visible source of truth.  Persist it in the same
+    # transaction as the answer instead of waiting for the optional
+    # scheduler/worker runtime.  In web-only/local deployments the outbox can
+    # legitimately remain pending, but a wrong answer must still appear in the
+    # wrong-book immediately after submit returns.
+    if not is_correct:
+        from app.services.wrong_question_service import record_wrong
+
+        await record_wrong(
+            db,
+            user_id,
+            question_id,
+            normalized_answer,
+            commit=False,
+        )
+
     await _create_answer_projection_outbox(
         db,
         practice_record_id=record.id,
         request_id=request_id,
+        wrong_question_projected=not is_correct,
     )
     await db.commit()
     await db.refresh(record)
@@ -2232,7 +2255,7 @@ async def batch_submit_answers(
     answers: list[dict],
     session_meta: dict | None = None,
 ) -> dict:
-    """Batch-persist answers + outbox events in one transaction.
+    """Batch-persist answers + wrong-book state + outbox events atomically.
 
     Each PracticeRecord gets its own durable projection task.  This keeps retry
     granularity small: one poisoned answer cannot block the rest of the batch.
@@ -2335,15 +2358,26 @@ async def batch_submit_answers(
                             request_id, user_id,
                         )
 
-    # Allocate all record ids before writing outbox rows.  Outbox and answers
-    # then commit atomically: there is no state where an answer exists without
-    # a durable projection event.
+    # Allocate all record ids before writing wrong-book/outbox rows.  Wrong
+    # answers are added to the wrong-book synchronously so the result is visible
+    # immediately even when this API process is running in web-only mode.
     await db.flush()
-    for record, q, _is_correct, _user_answer, _used_time in records:
+    from app.services.wrong_question_service import record_wrong
+
+    for record, q, is_correct, user_answer, _used_time in records:
+        if not is_correct:
+            await record_wrong(
+                db,
+                user_id,
+                q.id,
+                user_answer,
+                commit=False,
+            )
         await _create_answer_projection_outbox(
             db,
             practice_record_id=record.id,
             request_id=answer_request_ids.get(q.id),
+            wrong_question_projected=not is_correct,
         )
 
     await db.commit()
@@ -2358,6 +2392,7 @@ async def batch_submit_answers(
                 "correct_answer": q.answer,
                 "analysis": q.analysis,
                 "knowledge_points": kp_map.get(q.id, []),
+                "is_wrong_added": not c,
             }
             for r, q, c, _, _ in records
         ],

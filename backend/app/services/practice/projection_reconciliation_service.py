@@ -64,6 +64,13 @@ def _payload_trace(outbox: TaskOutbox | None) -> dict[str, str] | None:
     return trace or None
 
 
+def _payload_wrong_question_projected(outbox: TaskOutbox | None) -> bool:
+    """Preserve synchronous wrong-book projection state on repair tasks."""
+    if outbox is None or not isinstance(outbox.payload, dict):
+        return False
+    return bool(outbox.payload.get("wrong_question_projected", False))
+
+
 async def get_projection_backlog_metrics(
     db: AsyncSession,
     *,
@@ -195,6 +202,11 @@ async def reconcile_answer_projections(
         payload: dict[str, Any] = {
             "practice_record_id": int(record.id),
             "request_id": _payload_request_id(original),
+            # New practice submits persist wrong-book state synchronously.
+            # Preserve this marker when replacing a lost/terminal async task so
+            # the repair worker does not increment WrongQuestion.review_count
+            # for the same answer a second time.
+            "wrong_question_projected": _payload_wrong_question_projected(original),
             "reconciliation": {
                 "source": "practice_record_without_projection_receipt",
                 "original_task_id": original_task_id,

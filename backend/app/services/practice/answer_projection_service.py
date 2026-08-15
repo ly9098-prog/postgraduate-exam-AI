@@ -1,10 +1,11 @@
 """Eventually-consistent projections derived from a committed practice answer.
 
 The HTTP transaction writes ``PracticeRecord`` + a transactional outbox row.
-The queue worker later calls :func:`project_practice_answer`.  All projection
-writes are committed together.  ``AnswerBehavior.practice_record_id`` acts as
-the durable processing receipt: if a Redis task is delivered again after the DB
-commit but before queue acknowledgement, the whole event becomes a no-op.
+For wrong answers it also writes the user-visible ``WrongQuestion`` row
+synchronously.  The queue worker later calls :func:`project_practice_answer`
+for the remaining derived state.  ``AnswerBehavior.practice_record_id`` acts
+as the durable processing receipt: if a Redis task is delivered again after the
+DB commit but before queue acknowledgement, the whole event becomes a no-op.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.answer_behavior import AnswerBehavior
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
+from app.models.wrong_question import WrongQuestion
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,7 @@ async def project_practice_answer(
     *,
     practice_record_id: int,
     request_id: str | None = None,
+    wrong_question_projected: bool = False,
 ) -> dict:
     """Apply all answer-derived learning projections exactly once per record.
 
@@ -71,15 +74,32 @@ async def project_practice_answer(
 
     wrong_question_id = None
     if not is_correct:
-        from app.services.wrong_question_service import record_wrong
+        # New submit paths persist WrongQuestion synchronously in the same
+        # transaction as PracticeRecord so the wrong-book is immediately
+        # consistent even when no scheduler/worker process is running.  Keep
+        # this async path as a backward-compatible fallback for historical
+        # outbox/reconciliation tasks, but never count the same wrong answer
+        # twice when the synchronous projection already succeeded.
+        wrong = None
+        if wrong_question_projected:
+            wrong = await db.scalar(
+                select(WrongQuestion).where(
+                    WrongQuestion.user_id == user_id,
+                    WrongQuestion.question_id == question_id,
+                    WrongQuestion.is_active,
+                )
+            )
 
-        wrong = await record_wrong(
-            db,
-            user_id,
-            question_id,
-            user_answer,
-            commit=False,
-        )
+        if wrong is None:
+            from app.services.wrong_question_service import record_wrong
+
+            wrong = await record_wrong(
+                db,
+                user_id,
+                question_id,
+                user_answer,
+                commit=False,
+            )
         wrong_question_id = wrong.id
 
     # Insert/update the idempotency receipt in the same transaction as every
