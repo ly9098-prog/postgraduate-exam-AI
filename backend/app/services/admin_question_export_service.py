@@ -11,6 +11,7 @@ import asyncio
 import csv
 import io
 import json
+import tempfile
 from datetime import datetime
 from typing import Iterable
 
@@ -22,6 +23,8 @@ from app.models.question import Question
 from app.schemas.admin_questions import AdminQuestionExportRequest
 from app.services.admin_question_service import list_admin_questions
 from app.services.knowledge_point_service import load_question_kps
+from app.services.export.docx_exporter import DocxContext, DocxExporter
+from app.utils.question_content import extract_image_urls_from_content
 
 _MAX_EXPORT_QUESTIONS = 5000
 
@@ -68,7 +71,7 @@ def _content_text(content: object) -> str:
     return json.dumps(content, ensure_ascii=False, separators=(",", ":"))
 
 
-def _option_value_text(value: object) -> str:
+def _option_value_text(value: object, *, include_image_marker: bool = True) -> str:
     if value is None:
         return ""
     if isinstance(value, str):
@@ -77,22 +80,22 @@ def _option_value_text(value: object) -> str:
         text = value.get("text")
         image_url = value.get("image_url") or value.get("imageUrl") or value.get("url")
         if isinstance(text, str) and image_url:
-            return f"{text} [图片: {image_url}]"
+            return f"{text} [图片: {image_url}]" if include_image_marker else text
         if isinstance(text, str):
             return text
         if image_url:
-            return f"[图片: {image_url}]"
+            return f"[图片: {image_url}]" if include_image_marker else ""
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
-def _options_text(options: object) -> str:
+def _options_text(options: object, *, include_image_marker: bool = True) -> str:
     if options is None:
         return ""
     if isinstance(options, str):
         return options
     if isinstance(options, dict):
         return "\n".join(
-            f"{key}. {_option_value_text(value)}" for key, value in options.items()
+            f"{key}. {_option_value_text(value, include_image_marker=include_image_marker)}" for key, value in options.items()
         )
     if isinstance(options, list):
         rows: list[str] = []
@@ -101,9 +104,149 @@ def _options_text(options: object) -> str:
                 key = value["key"]
             else:
                 key = chr(ord("A") + index) if index < 26 else str(index + 1)
-            rows.append(f"{key}. {_option_value_text(value)}")
+            rows.append(f"{key}. {_option_value_text(value, include_image_marker=include_image_marker)}")
         return "\n".join(rows)
     return json.dumps(options, ensure_ascii=False, separators=(",", ":"))
+
+
+_ANALYSIS_LABELS = {
+    "mistake_diagnosis": "易错点诊断",
+    "knowledge_patch": "知识补充",
+    "review_task": "巩固练习",
+    "reason": "原因",
+    "summary": "总结",
+    "explanation": "说明",
+    "steps": "解题步骤",
+    "analysis": "解析",
+}
+
+
+def _analysis_value(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, list):
+        parts = [_analysis_value(item) for item in value]
+        return "\n".join(f"• {item}" for item in parts if item)
+    if isinstance(value, dict):
+        rows: list[str] = []
+        for key, item in value.items():
+            item_text = _analysis_value(item)
+            if not item_text:
+                continue
+            label = _ANALYSIS_LABELS.get(str(key), str(key).replace("_", " "))
+            rows.append(f"{label}：{item_text}")
+        return "\n".join(rows)
+    return str(value)
+
+
+def _parse_analysis(analysis: object) -> object:
+    if not isinstance(analysis, str):
+        return analysis
+    raw = analysis.strip()
+    if not raw:
+        return ""
+    if raw.startswith("```") and raw.endswith("```"):
+        lines = raw.splitlines()
+        raw = "\n".join(lines[1:-1]).strip()
+    if raw[:1] not in {"{", "["}:
+        return raw
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return raw
+    if isinstance(parsed, str) and parsed[:1] in {"{", "["}:
+        try:
+            return json.loads(parsed)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return parsed
+    return parsed
+
+
+def _append_analysis(document, analysis: object) -> None:
+    from docx.shared import Pt
+
+    parsed = _parse_analysis(analysis)
+    if parsed in (None, "", [], {}):
+        return
+
+    if isinstance(parsed, dict):
+        title = document.add_paragraph()
+        title_run = title.add_run("解析")
+        title_run.bold = True
+        title_run.font.size = Pt(10)
+        _set_east_asia_font(title_run)
+        for key, value in parsed.items():
+            value_text = _analysis_value(value)
+            if not value_text:
+                continue
+            paragraph = document.add_paragraph()
+            label = _ANALYSIS_LABELS.get(str(key), str(key).replace("_", " "))
+            label_run = paragraph.add_run(f"{label}：")
+            label_run.bold = True
+            label_run.font.size = Pt(9.5)
+            _set_east_asia_font(label_run)
+            body_run = paragraph.add_run(value_text)
+            body_run.font.size = Pt(9.5)
+            _set_east_asia_font(body_run)
+        return
+
+    paragraph = document.add_paragraph()
+    label_run = paragraph.add_run("解析：")
+    label_run.bold = True
+    label_run.font.size = Pt(9.5)
+    _set_east_asia_font(label_run)
+    body_run = paragraph.add_run(_analysis_value(parsed))
+    body_run.font.size = Pt(9.5)
+    _set_east_asia_font(body_run)
+
+
+def _collect_image_urls(value: object, seen: set[str], urls: list[str]) -> None:
+    if isinstance(value, str):
+        candidate = value.strip()
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            urls.append(candidate)
+        return
+    if isinstance(value, dict):
+        for key in ("image_url", "imageUrl", "url", "src"):
+            candidate = value.get(key)
+            if isinstance(candidate, str):
+                _collect_image_urls(candidate, seen, urls)
+        for key, nested in value.items():
+            if key not in {"image_url", "imageUrl", "url", "src", "text"}:
+                if isinstance(nested, (dict, list)):
+                    _collect_image_urls(nested, seen, urls)
+        return
+    if isinstance(value, list):
+        for nested in value:
+            _collect_image_urls(nested, seen, urls)
+
+
+def _question_image_urls(question: Question) -> list[str]:
+    seen: set[str] = set()
+    urls: list[str] = []
+
+    content = question.content if isinstance(question.content, dict) else None
+    for url in extract_image_urls_from_content(content) or []:
+        _collect_image_urls(url, seen, urls)
+
+    _collect_image_urls(question.image_url, seen, urls)
+
+    options = question.options
+    if isinstance(options, dict):
+        for value in options.values():
+            if isinstance(value, (dict, list)):
+                _collect_image_urls(value, seen, urls)
+    elif isinstance(options, list):
+        for value in options:
+            if isinstance(value, (dict, list)):
+                _collect_image_urls(value, seen, urls)
+
+    return urls
 
 
 async def _resolve_questions(
@@ -213,65 +356,72 @@ def _build_docx(questions: list[Question], kp_map: dict[int, list[str]]) -> byte
     _set_east_asia_font(title_run)
 
     summary = document.add_paragraph()
+    summary.alignment = WD_ALIGN_PARAGRAPH.CENTER
     summary_run = summary.add_run(
         f"共 {len(questions)} 道题 · 导出时间 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     )
     summary_run.font.size = Pt(9)
     _set_east_asia_font(summary_run)
 
-    for index, question in enumerate(questions, start=1):
-        subject_name = ""
-        if getattr(question, "subject_ref", None) is not None:
-            subject_name = question.subject_ref.name or question.subject_ref.code or ""
+    image_exporter = DocxExporter()
+    with tempfile.TemporaryDirectory(prefix="admin-question-export-") as temp_dir:
+        image_context = DocxContext(temp_dir=temp_dir)
 
-        heading = document.add_paragraph()
-        heading_run = heading.add_run(f"{index}. [#{question.id}] {_content_text(question.content)}")
-        heading_run.bold = True
-        heading_run.font.size = Pt(11)
-        _set_east_asia_font(heading_run)
+        for index, question in enumerate(questions, start=1):
+            stem = document.add_paragraph()
+            stem.paragraph_format.space_before = Pt(7)
+            stem.paragraph_format.space_after = Pt(5)
+            number_run = stem.add_run(f"{index}. ")
+            number_run.bold = False
+            number_run.font.size = Pt(11)
+            _set_east_asia_font(number_run)
+            stem_run = stem.add_run(_content_text(question.content))
+            # 题干按普通正文输出，不使用粗体，避免导出后视觉过重。
+            stem_run.bold = False
+            stem_run.font.size = Pt(11)
+            _set_east_asia_font(stem_run)
 
-        meta = document.add_paragraph()
-        meta_parts = [
-            _TYPE_LABELS.get(question.question_type, question.question_type),
-            _DIFFICULTY_LABELS.get(question.difficulty, str(question.difficulty)),
-            "启用" if question.is_active else "停用",
-        ]
-        if subject_name:
-            meta_parts.insert(0, subject_name)
-        if question.year:
-            meta_parts.append(str(question.year))
-        meta_run = meta.add_run(" · ".join(meta_parts))
-        meta_run.font.size = Pt(8.5)
-        _set_east_asia_font(meta_run)
+            for image_url in _question_image_urls(question):
+                image_paragraph = document.add_paragraph()
+                image_paragraph.paragraph_format.space_before = Pt(2)
+                image_paragraph.paragraph_format.space_after = Pt(4)
+                image_exporter._embed_image_in_doc(
+                    image_paragraph,
+                    image_url,
+                    image_context,
+                )
 
-        options = _options_text(question.options)
-        if options:
-            p = document.add_paragraph()
-            r = p.add_run(options)
-            r.font.size = Pt(10)
-            _set_east_asia_font(r)
+            options = _options_text(question.options, include_image_marker=False)
+            if options.strip():
+                p = document.add_paragraph()
+                p.paragraph_format.space_after = Pt(4)
+                r = p.add_run(options)
+                r.font.size = Pt(10)
+                _set_east_asia_font(r)
 
-        answer = document.add_paragraph()
-        answer_run = answer.add_run(f"答案：{question.answer or '—'}")
-        answer_run.bold = True
-        answer_run.font.size = Pt(10)
-        _set_east_asia_font(answer_run)
+            answer = document.add_paragraph()
+            answer.paragraph_format.space_before = Pt(3)
+            answer_run = answer.add_run(f"答案：{question.answer or '—'}")
+            answer_run.bold = True
+            answer_run.font.size = Pt(10)
+            _set_east_asia_font(answer_run)
 
-        if question.analysis:
-            analysis = document.add_paragraph()
-            analysis_run = analysis.add_run(f"解析：{question.analysis}")
-            analysis_run.font.size = Pt(9.5)
-            _set_east_asia_font(analysis_run)
+            _append_analysis(document, question.analysis)
 
-        kps = kp_map.get(question.id, [])
-        if kps:
-            kp_paragraph = document.add_paragraph()
-            kp_run = kp_paragraph.add_run(f"知识点：{'、'.join(kps)}")
-            kp_run.font.size = Pt(8.5)
-            _set_east_asia_font(kp_run)
+            kps = kp_map.get(question.id, [])
+            if kps:
+                kp_paragraph = document.add_paragraph()
+                kp_run = kp_paragraph.add_run(f"知识点：{'、'.join(kps)}")
+                kp_run.font.size = Pt(8.5)
+                _set_east_asia_font(kp_run)
 
-        if index != len(questions):
-            document.add_paragraph("—" * 28)
+            if index != len(questions):
+                separator = document.add_paragraph()
+                separator.paragraph_format.space_before = Pt(5)
+                separator.paragraph_format.space_after = Pt(3)
+                separator_run = separator.add_run("─" * 36)
+                separator_run.font.size = Pt(8)
+                _set_east_asia_font(separator_run)
 
     buffer = io.BytesIO()
     document.save(buffer)
