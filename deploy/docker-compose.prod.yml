@@ -206,6 +206,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-cloud_api}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      EXPORT_DIR: ${EXPORT_DIR:-/opt/2240ai-v2/exports}
       DB_POOL_SIZE_WORKER: ${DB_POOL_SIZE_WORKER:-2}
       DB_MAX_OVERFLOW_WORKER: ${DB_MAX_OVERFLOW_WORKER:-3}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
@@ -221,6 +222,8 @@ services:
       OCR_ENABLED: ${OCR_ENABLED:-true}
       OCR_USE_GPU: ${OCR_USE_GPU:-false}
       OCR_EXECUTION_BACKEND: ${OCR_EXECUTION_BACKEND:-paddlex_http}
+      OCR_REMOTE_URL: ${OCR_REMOTE_URL:-}
+      OCR_REMOTE_TOKEN: ${OCR_REMOTE_TOKEN:-}
       VECTOR_ENABLED: ${VECTOR_ENABLED:-false}
       VECTOR_MODE: ${VECTOR_MODE:-off}
       PDF_RENDER_PAGE_WINDOW: ${PDF_RENDER_PAGE_WINDOW:-1}
@@ -231,10 +234,14 @@ services:
       MPLCONFIGDIR: ${MPLCONFIGDIR:-/tmp/matplotlib}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
-      - worker_scratch_data:/tmp/scratch
+      # exports 卷与 scheduler 一致：校验器会检查 EXPORT_DIR 可写，且容器以
+      # 非 root 用户运行，需挂载镜像已 chown 的卷（首次挂载继承 app:app）。
+      - exports_data:/opt/2240ai-v2/exports
     # Override CMD: run worker_main — consumes the Redis v2 task queue
     # (pipeline dispatcher + reaper + AI prewarm). Without this process the
     # outbox-published answer_projection and pipeline tasks never execute.
+    # WORKER_SCRATCH_DIR 指向容器内 /tmp/scratch（/tmp 为 1777，非 root 可写），
+    # 暂存目录是临时工作区，无需持久化卷。
     command: ["python", "-m", "app.worker_main"]
 
   admin:
@@ -306,4 +313,3 @@ volumes:
   staging_data:
   exports_data:
   question_assets_data:
-  worker_scratch_data:
