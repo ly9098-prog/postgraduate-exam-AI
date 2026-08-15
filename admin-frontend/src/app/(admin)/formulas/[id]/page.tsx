@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { LatexRenderer } from "@/components/ui/latex-renderer";
 import { MixedLatexRenderer } from "@/components/ui/mixed-latex-renderer";
-import { FormulaEditorForm } from "@/components/formulas/formula-editor-form";
+import { FormulaEditWorkbench } from "@/components/formulas/formula-edit-workbench";
 import { FormulaGraphAssetPanel } from "@/components/formulas/formula-graph-asset-panel";
 import { FormulaGraphSpecPanel } from "@/components/formulas/formula-graph-spec-panel";
 import { FunctionPropertiesPanel } from "@/components/formulas/function-properties-panel";
@@ -145,6 +145,9 @@ type FormulaCard = {
   graph_last_error: string | null;
   graph_generated_at: string | null;
   graph_confirmed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  updated_by: number | null;
 };
 
 const STATUS_BADGE: Record<string, string> = {
@@ -170,7 +173,6 @@ export default function EditFormulaPage() {
   const canReview = hasPermission(permissions, "formula:review");
   const canDelete = hasPermission(permissions, "formula:delete");
 
-  const [isEditing, setIsEditing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<string | null>(null);
   const [reviewReason, setReviewReason] = useState("");
@@ -222,30 +224,38 @@ export default function EditFormulaPage() {
     return <div className="p-12 text-sm">公式未找到</div>;
   }
 
-  // If editing, show the shared form
-  if (isEditing) {
+  // Editors land directly in the Scheme C workbench. The previous read-only
+  // detail page created a redundant second “编辑” click between the list and
+  // the actual editor. Users without update permission still receive the
+  // read-only detail view below.
+  if (canUpdate) {
     return (
-      <FormulaEditorForm
-        mode="edit"
+      <FormulaEditWorkbench
         cardId={cardId}
         initialData={{
           categoryId: card.category_id,
           title: card.title,
-          aliases: card.aliases?.join(", ") || "",
-          summary: card.summary || "",
-          conditions: card.conditions || "",
-          symbolNotes: card.symbol_notes || "",
-          secondaryConclusions: card.secondary_conclusions || "",
-          errorTips: card.error_tips || "",
-          selectedTags: card.tags?.map((t) => t.code) || [],
+          aliases: card.aliases,
+          summary: card.summary,
+          conditions: card.conditions,
+          symbolNotes: card.symbol_notes,
+          secondaryConclusions: card.secondary_conclusions,
+          errorTips: card.error_tips,
+          tags: card.tags || [],
           blocks: card.formula_blocks?.length ? card.formula_blocks : [{ latex: "" }],
-          examples: card.examples || [],
+          examples: card.examples,
           sortOrder: card.sort_order || 0,
           cardType: card.card_type || "auto",
           functionProperties: card.function_properties ?? null,
+          status: card.status,
+          version: card.version,
+          publishedAt: card.published_at,
+          createdAt: card.created_at,
+          updatedAt: card.updated_at,
+          updatedBy: card.updated_by,
         }}
-        onSaveSuccess={() => {
-          setIsEditing(false);
+        onClose={() => router.push("/formulas")}
+        onSaved={() => {
           queryClient.invalidateQueries({ queryKey: ["admin-formulas", cardId] });
           queryClient.invalidateQueries({ queryKey: ["admin-formulas"] });
         }}
@@ -253,9 +263,9 @@ export default function EditFormulaPage() {
     );
   }
 
-  // ── Readonly Detail View ──
+  // ── Readonly Detail View (no formula:update permission) ──
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-6 px-4 py-6 pb-24 lg:px-8">
       <Card>
         <CardHeader className="space-y-4">
           <div className="flex items-center justify-between">
@@ -294,9 +304,6 @@ export default function EditFormulaPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {canUpdate && (
-                <Button variant="secondary" onClick={() => setIsEditing(true)}>编辑</Button>
-              )}
               <Link href="/formulas">
                 <Button variant="ghost">返回列表</Button>
               </Link>

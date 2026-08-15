@@ -96,10 +96,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     return `?next=${encodeURIComponent(pathname)}`;
   }, [pathname]);
 
-  // The create page already has its own sticky navigation/action header.
-  // Hiding the global topbar prevents the two sticky regions from stacking
-  // and removes the translucent strip that previously exposed form content.
-  const isFocusedFormulaEditor = pathname === "/formulas/new" || pathname.startsWith("/formulas/new/");
+  // Formula create/edit pages provide their own sticky navigation/action header.
+  // Keep the global topbar out of those focused workspaces so sticky regions
+  // never stack, overlap the form, or reveal scrolled fields behind the header.
+  const isFormulaEditRoute = /^\/formulas\/\d+$/.test(pathname);
+  const isFocusedFormulaEditor = pathname === "/formulas/new" || pathname.startsWith("/formulas/new/") || isFormulaEditRoute;
 
   useEffect(() => {
     if (!isBootstrapping && !isAuthenticated) {
