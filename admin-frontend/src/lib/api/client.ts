@@ -184,6 +184,41 @@ async function handleResponse(response: Response) {
   return payload;
 }
 
+
+function parseContentDispositionFilename(contentDisposition: string | null) {
+  if (!contentDisposition) return null;
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const quotedMatch = contentDisposition.match(/filename="([^"]+)"/i);
+  if (quotedMatch?.[1]) return quotedMatch[1];
+  const plainMatch = contentDisposition.match(/filename=([^;]+)/i);
+  return plainMatch?.[1]?.trim() ?? null;
+}
+
+export interface ApiBlobResponse {
+  blob: Blob;
+  filename: string | null;
+  mediaType: string | null;
+}
+
+async function handleBlobResponse(response: Response): Promise<ApiBlobResponse> {
+  if (!response.ok) {
+    const payload = await parseResponse(response);
+    throw new ApiError(response.status, classifyError(response.status), readSafeErrorMeta(payload, response));
+  }
+  return {
+    blob: await response.blob(),
+    filename: parseContentDispositionFilename(response.headers.get('Content-Disposition')),
+    mediaType: response.headers.get('Content-Type'),
+  };
+}
+
 async function attemptRefresh(traceId: string): Promise<string | null> {
   // Single-flight: if a refresh is already in-flight, join it
   if (refreshPromise) return refreshPromise;
@@ -275,4 +310,49 @@ export function toQuery(params: Record<string, string | number | boolean | undef
   });
   const text = query.toString();
   return text ? `?${text}` : "";
+}
+
+
+export async function apiRequestBlob(
+  path: string,
+  init: ApiRequestOptions = {},
+): Promise<ApiBlobResponse> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, skipRefresh, traceId: requestedTraceId, ...fetchInit } = init;
+  const url = `${getBaseUrl()}${normalizePath(path)}`;
+  const traceId = normalizeCorrelationId(requestedTraceId, 'tr');
+  let requestId = createApiRequestId();
+  const headers = buildHeaders(fetchInit, traceId, requestId);
+  const signal = fetchInit.signal ?? undefined;
+
+  try {
+    const response = await requestWithTimeout(url, { ...fetchInit, headers, credentials: 'include' }, timeoutMs, signal);
+    return await handleBlobResponse(response);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401 && !skipRefresh && path !== '/auth/refresh') {
+      const newToken = await attemptRefresh(traceId);
+      if (newToken) {
+        const retryHeaders = new Headers(headers);
+        retryHeaders.set('Authorization', `Bearer ${newToken}`);
+        requestId = createApiRequestId();
+        retryHeaders.set('X-Request-ID', requestId);
+        try {
+          const retryResponse = await requestWithTimeout(url, { ...fetchInit, headers: retryHeaders, credentials: 'include' }, timeoutMs, signal);
+          return await handleBlobResponse(retryResponse);
+        } catch (retryError) {
+          if (retryError instanceof ApiError && retryError.status === 401) onAuthExpired?.();
+          throw retryError;
+        }
+      }
+      onAuthExpired?.();
+      throw new ApiError(401, '认证已过期，请重新登录', { traceId, requestId });
+    }
+
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new ApiError(0, '请求已取消或超时，请重试', { traceId, requestId });
+    }
+    if (!(error instanceof ApiError)) {
+      throw new ApiError(0, classifyError(0), { traceId, requestId });
+    }
+    throw error;
+  }
 }
