@@ -31,7 +31,7 @@ const storage = require('../../../utils/storage')
 
 const TERMINAL_STATES = ['completed', 'failed', 'expired']
 const WS_HEARTBEAT_INTERVAL = 25000
-const CALIBRATION_INTERVAL_WS = 5000   // calibration interval when WS is healthy (slow)
+const CALIBRATION_INTERVAL_WS = 12000  // WS is primary; DB calibration is only a missed-event safety net
 const CALIBRATION_INTERVAL_FALLBACK = 3000  // polling interval when WS is unavailable
 
 /**
@@ -67,6 +67,7 @@ class ExportStatusSyncManager {
     this._ws = null
     this._wsOpened = false
     this._pollTimer = null
+    this._calibrationPromise = null
     this._reconnectTimer = null
     this._heartbeatTimer = null
     this._consecutiveErrors = 0
@@ -402,11 +403,15 @@ class ExportStatusSyncManager {
     this._stopCalibration()
     if (this._allTerminal()) return
 
-    const calibrate = () => {
-      if (this._stopped || this._allTerminal()) return
-      this._calibrateOnce()
-      // Schedule next calibration
-      if (!this._stopped) {
+    const calibrate = async () => {
+      if (this._stopped || this._hidden || this._allTerminal()) return
+
+      // Wait for the current calibration to finish before scheduling another.
+      // The previous fire-and-forget loop could stack GET requests indefinitely
+      // on a slow network, making the records page appear frozen.
+      await this._calibrateOnce()
+
+      if (!this._stopped && !this._hidden && !this._allTerminal() && this._wsOpened) {
         this._pollTimer = setTimeout(calibrate, CALIBRATION_INTERVAL_WS)
       }
     }
@@ -425,12 +430,22 @@ class ExportStatusSyncManager {
   /** Fetch latest task status from DB for all tracked non-terminal tasks. */
   async _calibrateOnce() {
     if (this._stopped || this._allTerminal()) return
+    if (this._calibrationPromise) return this._calibrationPromise
 
+    this._calibrationPromise = this._runCalibrationOnce()
+    try {
+      return await this._calibrationPromise
+    } finally {
+      this._calibrationPromise = null
+    }
+  }
+
+  async _runCalibrationOnce() {
     // Collect IDs from tasks that are not known to be terminal
     const ids = Array.from(this._taskIds)
 
     for (const tid of ids) {
-      if (this._stopped || this._allTerminal()) return
+      if (this._stopped || this._hidden || this._allTerminal()) return
       try {
         const task = await api.get(`/exports/${tid}`, { _traceId: this._traceId })
         this._consecutiveErrors = 0

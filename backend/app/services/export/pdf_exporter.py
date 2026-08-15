@@ -28,6 +28,12 @@ from dataclasses import dataclass
 from app.core.config import settings
 from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
 from app.services.export.exporter_base import Exporter, ExportResult
+from app.services.export.analysis_content import (
+    clean_analysis_section_body,
+    split_analysis_list_items,
+    split_analysis_paragraphs,
+    split_analysis_sections,
+)
 from app.services.export.latex_render import (
     find_latex_segments,
     has_latex,
@@ -237,7 +243,7 @@ class PdfExporter(Exporter):
             if config.get("analysis_position") == "after_question":
                 analysis_text = latex_to_plain_text(self._sanitize_text(q.get("analysis", "")))
                 if analysis_text:
-                    self._write_labeled_paragraph(pdf, "解析", analysis_text)
+                    self._write_analysis_after_question(pdf, analysis_text)
 
             if config.get("answer_position") == "at_end":
                 answer_section.append({
@@ -267,10 +273,7 @@ class PdfExporter(Exporter):
                 pdf.ln(6)
             self._write_end_section_title(pdf, "答案解析")
             for item in analysis_section:
-                self._check_page_break(pdf, 16)
-                self._write_numbered_item(
-                    pdf, item["num"], item["analysis"], compact=False,
-                )
+                self._write_analysis_item(pdf, item["num"], item["analysis"])
 
         self._add_running_headers(pdf, config)
         self._add_page_numbers(pdf)
@@ -451,6 +454,167 @@ class PdfExporter(Exporter):
             BODY_W, 6, text=f"{label}：{text}",
             new_x="LMARGIN", new_y="NEXT", wrapmode="CHAR",
         )
+
+    def _write_analysis_after_question(self, pdf, text: str) -> None:
+        """Render inline analysis with prose/bullets/steps instead of dense text."""
+        sections = split_analysis_sections(text)
+        if not sections or not any(label for label, _ in sections):
+            self._write_labeled_paragraph(pdf, "解析", text)
+            return
+
+        self._check_page_break(pdf, 16)
+        pdf.ln(1.5)
+        pdf.set_text_color(*_COLOR_TEXT)
+        pdf.set_font(_HEADING_FONT_NAME, "", 10.5)
+        pdf.cell(BODY_W, 6, text="解析", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(0.8)
+        for label, body in sections:
+            self._write_analysis_subsection(pdf, label, body, indent_mm=4.5)
+        pdf.ln(2)
+
+    def _write_analysis_item(self, pdf, number: int, text: str) -> None:
+        """Render one end-of-document analysis entry as a distinct question block."""
+        sections = split_analysis_sections(text)
+        self._check_page_break(pdf, 22)
+        pdf.ln(2)
+
+        # Question number is its own visual anchor.  A light separator keeps
+        # consecutive analyses distinct without turning the document into a
+        # heavy card layout.
+        pdf.set_text_color(*_COLOR_TEXT)
+        pdf.set_font(_HEADING_FONT_NAME, "", 11)
+        pdf.cell(BODY_W, 6.5, text=f"第 {number} 题", new_x="LMARGIN", new_y="NEXT")
+        y = pdf.get_y() + 0.6
+        pdf.set_draw_color(*_COLOR_LIGHT_LINE)
+        pdf.set_line_width(0.25)
+        pdf.line(MARGIN_L, y, MARGIN_L + BODY_W, y)
+        pdf.set_draw_color(*_COLOR_TEXT)
+        pdf.ln(4.2)
+
+        if not sections or not any(label for label, _ in sections):
+            self._write_analysis_plain_paragraph(pdf, text, indent_mm=5)
+            pdf.ln(5.5)
+            return
+
+        for label, body in sections:
+            self._write_analysis_subsection(pdf, label, body, indent_mm=4.5)
+        pdf.ln(5.5)
+
+    def _write_analysis_subsection(self, pdf, label: str, body: str, indent_mm: float = 4.5) -> None:
+        """Render one analysis section using the most readable structure for it."""
+        label = str(label or "").strip()
+        clean_body = clean_analysis_section_body(label, body)
+        if not label and not clean_body:
+            return
+
+        self._check_page_break(pdf, 13)
+        if label:
+            pdf.set_x(MARGIN_L + indent_mm)
+            pdf.set_text_color(*_COLOR_TEXT)
+            pdf.set_font(_HEADING_FONT_NAME, "", 10.2)
+            pdf.cell(
+                BODY_W - indent_mm, 5.8, text=f"【{label}】",
+                new_x="LMARGIN", new_y="NEXT",
+            )
+            pdf.ln(1.0)
+
+        if not clean_body:
+            return
+
+        body_indent = indent_mm + 3.5
+        if label == "错因诊断":
+            chunks = split_analysis_paragraphs(clean_body)
+            for index, chunk in enumerate(chunks):
+                self._write_analysis_plain_paragraph(
+                    pdf,
+                    chunk,
+                    indent_mm=body_indent,
+                    bottom_gap=2.1 if index < len(chunks) - 1 else 3.2,
+                )
+            return
+
+        if label in {"补漏重点", "复练任务"}:
+            items = split_analysis_list_items(label, clean_body)
+            self._write_analysis_list(
+                pdf,
+                items,
+                indent_mm=body_indent,
+                numbered=(label == "复练任务"),
+            )
+            pdf.ln(2.2)
+            return
+
+        self._write_analysis_plain_paragraph(pdf, clean_body, indent_mm=body_indent, bottom_gap=3)
+
+    def _write_analysis_plain_paragraph(
+        self,
+        pdf,
+        body: str,
+        *,
+        indent_mm: float = 8,
+        bottom_gap: float = 2,
+    ) -> None:
+        text = str(body or "").strip()
+        if not text:
+            return
+        pdf.set_x(MARGIN_L + indent_mm)
+        pdf.set_text_color(*_COLOR_TEXT)
+        pdf.set_font(_BODY_FONT_NAME, "", 10.2)
+        pdf.multi_cell(
+            BODY_W - indent_mm,
+            6.25,
+            text=text,
+            new_x="LMARGIN",
+            new_y="NEXT",
+            wrapmode="WORD",
+        )
+        if bottom_gap:
+            pdf.ln(bottom_gap)
+
+    def _write_analysis_list(
+        self,
+        pdf,
+        items: list[str],
+        *,
+        indent_mm: float = 8,
+        numbered: bool = False,
+    ) -> None:
+        """Render hanging-indent bullet/number lists with stable page breaks."""
+        if not items:
+            return
+        prefix_w = 7.0 if numbered else 5.0
+        body_w = BODY_W - indent_mm - prefix_w
+        for index, item in enumerate(items, 1):
+            text = str(item or "").strip()
+            if not text:
+                continue
+            # Estimate at least one line so the marker is not orphaned at the
+            # bottom of a page. ``multi_cell`` itself handles longer items.
+            self._check_page_break(pdf, 8.5)
+            y = pdf.get_y()
+            x = MARGIN_L + indent_mm
+            if numbered:
+                # A light rule turns action items into a subtle task block while
+                # remaining readable in black-and-white printouts.
+                pdf.set_draw_color(*_COLOR_LIGHT_LINE)
+                pdf.set_line_width(0.45)
+                pdf.line(x - 2.0, y + 0.3, x - 2.0, y + 6.1)
+                pdf.set_draw_color(*_COLOR_TEXT)
+            pdf.set_xy(x, y)
+            pdf.set_text_color(*_COLOR_TEXT)
+            pdf.set_font(_BODY_FONT_NAME, "", 10.2)
+            prefix = f"{index}." if numbered else "•"
+            pdf.cell(prefix_w, 6.2, text=prefix, new_x="RIGHT", new_y="TOP")
+            pdf.set_xy(x + prefix_w, y)
+            pdf.multi_cell(
+                body_w,
+                6.2,
+                text=text,
+                new_x="LMARGIN",
+                new_y="NEXT",
+                wrapmode="WORD",
+            )
+            pdf.ln(1.2)
 
     def _write_end_section_title(self, pdf, title: str) -> None:
         pdf.set_text_color(*_COLOR_TEXT)

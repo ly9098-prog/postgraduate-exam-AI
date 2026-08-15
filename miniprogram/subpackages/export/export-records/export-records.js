@@ -93,10 +93,15 @@ function pad2(value) {
   return Number(value) < 10 ? '0' + Number(value) : String(value)
 }
 
+// Export timestamps follow the project's server-time convention: naive ISO
+// values are UTC, while product-facing time is fixed to China Standard Time
+// (UTC+8) and must not change with the device timezone.
+const CHINA_OFFSET_MS = 8 * 60 * 60 * 1000
+
 /**
  * Parse API timestamps consistently on iOS and Android.
- * Timestamps without a timezone are treated as local time, matching the
- * existing page behaviour while avoiding iOS Date parsing differences.
+ * The backend stores/returns naive timestamps in UTC, so an ISO value without
+ * an explicit timezone must be interpreted as UTC instead of device local time.
  */
 function parseDateValue(value) {
   if (!value) return null
@@ -107,28 +112,29 @@ function parseDateValue(value) {
   const raw = String(value).trim()
   if (!raw) return null
 
-  let normalized = raw
   const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)
-  if (!hasTimezone) {
-    normalized = raw
-      .replace(/-/g, '/')
-      .replace('T', ' ')
-      .replace(/\.\d+$/, '')
-  }
+  let normalized = raw.replace(' ', 'T')
+  if (!hasTimezone) normalized += 'Z'
 
   const date = new Date(normalized)
   return Number.isNaN(date.getTime()) ? null : date
+}
+
+/** Return a Date whose UTC fields represent the China wall-clock time. */
+function toChinaWallDate(date) {
+  return new Date(date.getTime() + CHINA_OFFSET_MS)
 }
 
 function formatDateTime(value) {
   const date = parseDateValue(value)
   if (!date) return value ? String(value) : ''
 
+  const china = toChinaWallDate(date)
   return [
-    date.getFullYear() + '年',
-    date.getMonth() + 1 + '月',
-    date.getDate() + '日 ',
-    pad2(date.getHours()) + ':' + pad2(date.getMinutes()),
+    china.getUTCFullYear() + '年',
+    china.getUTCMonth() + 1 + '月',
+    china.getUTCDate() + '日 ',
+    pad2(china.getUTCHours()) + ':' + pad2(china.getUTCMinutes()),
   ].join('')
 }
 
@@ -158,9 +164,10 @@ function formatExpiry(value, status) {
     relative = '剩余 ' + days + ' 天'
   }
 
+  const china = toChinaWallDate(date)
   return {
-    expiresText: '有效期至 ' + (date.getMonth() + 1) + '月' + date.getDate() + '日 ' +
-      pad2(date.getHours()) + ':' + pad2(date.getMinutes()),
+    expiresText: '有效期至 ' + (china.getUTCMonth() + 1) + '月' + china.getUTCDate() + '日 ' +
+      pad2(china.getUTCHours()) + ':' + pad2(china.getUTCMinutes()),
     expiresRelativeText: relative,
     expiresSoon: diffMs > 0 && diffMs <= 24 * 60 * 60 * 1000,
   }
@@ -432,16 +439,27 @@ Page({
     // Check if this is a transition INTO completed
     const numericTaskId = Number(taskId)
     const oldTask = this.data.list.find(t => Number(t.id) === numericTaskId)
+
+    // Calibration requests often return the exact same task snapshot. Avoid
+    // replacing the whole list in setData for no-op updates; on long-running
+    // exports that repeated full-list diffing can make the page visibly janky.
+    if (oldTask && this._isStatusUpdateUnchanged(oldTask, normalized)) {
+      return
+    }
     const wasCompleted = oldTask && TERMINAL_STATES.includes(oldTask.status)
     const isNowCompleted = TERMINAL_STATES.includes(normalized.status)
 
     if (isNowCompleted && !wasCompleted && normalized.status === 'completed') {
-      // Load full task details for completed tasks (WS events are partial)
-      try {
-        const full = await exportApi.getExport(taskId)
-        Object.assign(normalized, full)
-      } catch (e) {
-        // Use what we have
+      // WebSocket events are partial, while calibration GET responses are already
+      // complete. Only perform the extra detail request for a partial WS event.
+      const hasFullTaskPayload = data && data.file_name !== undefined && data.has_file !== undefined
+      if (!hasFullTaskPayload) {
+        try {
+          const full = await exportApi.getExport(taskId)
+          Object.assign(normalized, full)
+        } catch (e) {
+          // Use what we have
+        }
       }
     }
 
@@ -482,6 +500,19 @@ Page({
     }
 
     return normalized
+  },
+
+  _isStatusUpdateUnchanged(current, incoming) {
+    const fields = [
+      'status', 'success_count', 'skip_count', 'file_size', 'file_name',
+      'error_message', 'status_reason', 'status_message', 'completed_at',
+      'expires_at', 'updated_at', 'version', 'has_file', 'is_reexporting',
+      'reexport_failed',
+    ]
+
+    return fields.every(function(field) {
+      return incoming[field] === undefined || incoming[field] === current[field]
+    })
   },
 
   /**
@@ -727,7 +758,11 @@ Page({
     // Initialize watch start time for non-terminal tasks
     if (!st.terminal && this._taskWatchStartedAt) {
       if (!this._taskWatchStartedAt.has(task.id)) {
-        this._taskWatchStartedAt.set(task.id, Date.now())
+        const createdAt = parseDateValue(task.created_at)
+        this._taskWatchStartedAt.set(
+          task.id,
+          createdAt ? createdAt.getTime() : Date.now()
+        )
       }
     } else if (st.terminal && this._taskWatchStartedAt) {
       this._taskWatchStartedAt.delete(task.id)

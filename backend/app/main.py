@@ -173,6 +173,18 @@ async def lifespan(app: FastAPI):
     _outbox_dispatcher_task = None
     _outbox_reconciler_task = None
 
+    # A plain local ``uvicorn app.main:app`` process resolves to the web role
+    # when LOCAL_ASYNC_RUNTIME_ENABLED is false. Export generation does not
+    # depend on the Redis task runtime, so keep its lightweight DB-backed
+    # processor available locally; otherwise export tasks remain pending forever
+    # unless developers also start a separate scheduler process. Production
+    # keeps the existing web/scheduler split.
+    _local_web_export_processor = (
+        role == "web"
+        and (settings.APP_ENV or "").strip().lower()
+        in {"development", "dev", "local", "test", "testing"}
+    )
+
     # ── Common startup (all roles) ──
     validate_production_config()
     await validate_production_config_async()
@@ -498,6 +510,15 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             _report_startup_failure("OCR Gateway", e)
 
+    # Local web development still needs a runnable export processor. Starting
+    # only this processor avoids enabling the full Redis-dependent async runtime
+    # while making the documented single-process uvicorn workflow functional.
+    if _local_web_export_processor:
+        _export_processor_task = asyncio.create_task(
+            _periodic_export_processor(), name="export-processor-local"
+        )
+        logger.info("Local web export processor started")
+
     # ── Role: worker — pipeline processing + AI prewarm ──
     if role in ("worker", "all"):
         try:
@@ -625,8 +646,8 @@ async def lifespan(app: FastAPI):
             except asyncio.CancelledError:
                 pass
 
-        # 3b. Signal export processor to drain
-        if role in ("scheduler", "all"):
+        # 3b. Signal export processor to drain (scheduler/all or local-web fallback)
+        if _export_processor_task is not None:
             try:
                 from app.services.export.processor import stop_processor
                 await stop_processor()

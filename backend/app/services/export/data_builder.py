@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
+from app.services.export.analysis_content import resolve_preferred_analysis
 from app.services.export.question_content import (
     extract_option_text,
     extract_question_text,
@@ -47,25 +48,28 @@ async def build_snapshot_data(
     )
     rows = result.fetchall()
 
-    # Order by the sorted wq_ids
-    wq_map = {}
+    # Order by the sorted wq_ids. Keep the WrongQuestion row together with
+    # Question because wrong-detail prefers the per-user cached AI analysis and
+    # only falls back to the question-bank analysis when that cache is empty.
+    wq_map: dict[int, tuple[WrongQuestion, Question]] = {}
     for wq, q in rows:
-        wq_map[wq.id] = q
+        wq_map[wq.id] = (wq, q)
 
-    kp_map = await load_question_kps(db, [q.id for q in wq_map.values()])
+    kp_map = await load_question_kps(db, [q.id for _, q in wq_map.values()])
 
     questions_data = []
     skip_count = 0
     skip_reasons: dict[str, int] = {}
 
     for wq_id in wq_ids:
-        q = wq_map.get(wq_id)
-        if q is None:
+        row = wq_map.get(wq_id)
+        if row is None:
             skip_count += 1
             skip_reasons.setdefault("题目数据不存在", 0)
             skip_reasons["题目数据不存在"] += 1
             continue
 
+        wq, q = row
         kps = kp_map.get(q.id, [])
 
         # Validate and normalize core content. Older imported questions can
@@ -101,7 +105,10 @@ async def build_snapshot_data(
             "raw_content": q.raw_content or "",
             "options": options,
             "answer": q.answer or "",
-            "analysis": q.analysis or "",
+            # Match wrong-detail: prefer wrong_questions.ai_analysis, then
+            # questions.analysis, and turn structured JSON into readable
+            # sections instead of printing the raw payload into the file.
+            "analysis": resolve_preferred_analysis(wq.ai_analysis, q.analysis),
             "subject": {"id": q.subject_id, "label": subject_label} if subject_label else {"id": q.subject_id},
             "knowledge_points": kps,
             "primary_knowledge_point": _get_primary_kp(kps),
@@ -130,6 +137,7 @@ async def build_snapshot_data(
         "skip_count": skip_count,
         "skip_reasons": skip_reasons if skip_reasons else None,
     }
+
 
 
 def _normalize_options(options) -> dict[str, str]:
