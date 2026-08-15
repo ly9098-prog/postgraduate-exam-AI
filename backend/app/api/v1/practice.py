@@ -194,7 +194,7 @@ async def get_practice_subjects(
     return await svc.get_practice_subject_tree(db)
 
 
-@router.get("/questions")
+@router.get("/questions", response_model=PracticeQuestionsResponse)
 async def get_practice_questions(
     subject_id: int = Query(...),
     include_children: bool = Query(True),
