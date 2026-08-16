@@ -84,7 +84,7 @@ export function AuditLogDrawer({ detailId, onClose }: AuditLogDrawerProps) {
                 日志 <span className="font-mono text-[var(--color-text-secondary)]">#{data.id}</span>
                 <span className="ml-3 font-mono text-[10px]">{data.action}</span>
               </p>
-              <p>{formatLocalDateTime(data.created_at)}（本地）</p>
+              <p>{formatLocalDateTime(data.created_at)}（北京时间）</p>
               <p>UTC：{formatUtcTime(data.created_at)}</p>
             </div>
           </Section>

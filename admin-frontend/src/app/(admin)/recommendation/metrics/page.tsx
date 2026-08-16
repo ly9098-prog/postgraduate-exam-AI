@@ -10,17 +10,15 @@ import { apiRequest, toQuery } from "@/lib/api/client";
 import { getErrorMessage } from "@/lib/api/errors";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import { hasPermission } from "@/lib/permissions/permissions";
+import { chinaDateString } from "@/lib/time";
 import type { MetricsAggregateResponse, MetricsBackfillResponse, RecommendationMetricsDaily } from "@/lib/api/types";
 
 function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return chinaDateString();
 }
 
 function daysAgoISO(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return chinaDateString(-days);
 }
 
 function showToast(msg: string, error = false) {

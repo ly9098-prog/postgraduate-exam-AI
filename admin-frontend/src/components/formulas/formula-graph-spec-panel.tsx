@@ -23,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { apiRequest } from "@/lib/api/client";
+import { formatChinaDateTime } from "@/lib/time";
 import type {
   GraphSpec,
   GraphSpecExpression,
@@ -137,8 +138,7 @@ function intervalDisplay(iv: DomainInterval): string {
 }
 
 function formatDt(d: string | null | undefined) {
-  if (!d) return "—";
-  try { return new Date(d).toLocaleString("zh-CN"); } catch { return d; }
+  return formatChinaDateTime(d);
 }
 
 function defaultPanel(template: string, count: number): GraphSpecPanel[] {

@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { CustomCheckbox } from "@/components/ui/custom-checkbox";
 import { LatexRenderer } from "@/components/ui/latex-renderer";
+import { formatChinaDate } from "@/lib/time";
 import { MixedLatexRenderer } from "@/components/ui/mixed-latex-renderer";
 import type { FormulaCategoryNode } from "@/components/formulas/formula-category-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
@@ -840,7 +841,7 @@ export default function FormulasPage() {
                             <span>#{card.id}</span>
                             <span>{card.formula_blocks?.length || 0} 个公式块</span>
                             <span>v{card.version}</span>
-                            <span>{new Date(card.updated_at).toLocaleDateString("zh-CN")}</span>
+                            <span>{formatChinaDate(card.updated_at)}</span>
                           </div>
                         </button>
                         {card.card_type === "function_graph" && card.graph_asset?.thumbnail_url ? (
