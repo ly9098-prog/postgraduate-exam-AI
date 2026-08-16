@@ -63,11 +63,11 @@ async def prewarm_analysis(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """批量预生成错题 AI 分析。已缓存的跳过，未生成的后台任务处理。"""
+    """批量预生成错题 AI 分析。后台任务统一校验缓存新鲜度并按需生成。"""
     from sqlalchemy import select
 
     from app.models.wrong_question import WrongQuestion
-    from app.services.ai_prewarm_worker import enqueue_prewarm
+    from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
 
     queued: list[int] = []
     skipped: list[int] = []
@@ -86,13 +86,22 @@ async def prewarm_analysis(
         if not wq:
             skipped.append(wq_id)
             continue
-        if wq.ai_analysis and isinstance(wq.ai_analysis, dict) and len(wq.ai_analysis) > 0:
-            skipped.append(wq_id)
-            continue
-        # 优先使用 Redis 可靠队列；不可用时跳过预热（不降级为 create_task）
-        queued_ok = await enqueue_prewarm(wq_id, current_user.id)
+        # The worker is the authoritative freshness checker. Do not skip merely
+        # because a JSON cache exists: prompt/model/question revisions may make
+        # that cache stale. Revisioned task ids still dedupe identical events.
+        revision = build_prewarm_revision(
+            review_count=wq.review_count,
+            wrong_answer=wq.wrong_answer,
+        )
+        queued_ok = await enqueue_prewarm(
+            wq_id,
+            current_user.id,
+            revision=revision,
+        )
         if not queued_ok:
             logger.warning("Prewarm queue unavailable (Redis?), skipped wq_id=%d", wq_id)
+            skipped.append(wq_id)
+            continue
         queued.append(wq_id)
 
     return AiPrewarmResponse(queued=queued, skipped=skipped)

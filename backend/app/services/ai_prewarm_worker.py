@@ -12,8 +12,11 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import time
 
+from app.ai.prompts import AI_ANALYSIS_PROMPT_VERSION
 from app.services.task_queue_service import Task, TaskQueueUnavailableError, task_queue
 
 logger = logging.getLogger(__name__)
@@ -29,11 +32,26 @@ _worker_task: asyncio.Task | None = None
 # ── Public API ──
 
 
+def build_prewarm_revision(*, review_count: int | None, wrong_answer: str | None) -> str:
+    """Stable, non-sensitive revision for one wrong-question state.
+
+    The durable queue keeps idempotency keys for seven days. A fixed task id such
+    as ``prewarm:{wq_id}`` therefore suppresses legitimate regeneration when the
+    same question is answered incorrectly again within that window. Include the
+    wrong-question revision in the task id while hashing the answer so no user
+    content is exposed in Redis keys/logs.
+    """
+    raw = f"{AI_ANALYSIS_PROMPT_VERSION}|{int(review_count or 0)}|{wrong_answer or ''}"
+    state_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:14]
+    return f"r{int(review_count or 0)}:{state_hash}"
+
+
 async def enqueue_prewarm(
     wq_id: int,
     user_id: int,
     retries: int = 0,
     delay_seconds: int = 0,
+    revision: str | None = None,
 ) -> bool:
     """Enqueue a prewarm analysis task via the durable task queue.
 
@@ -45,7 +63,11 @@ async def enqueue_prewarm(
         "wq_id": wq_id,
         "user_id": user_id,
     }
-    task_id = f"prewarm:{wq_id}"
+    if revision:
+        payload["revision"] = revision
+    # A revisioned id deduplicates the same answer event across direct submit +
+    # projection fallback, while still allowing a later wrong attempt to prewarm.
+    task_id = f"prewarm:{wq_id}:{revision or 'legacy'}"
 
     max_retries = max(0, 3 - retries)  # remaining retries from current count
     # If delay > 0, don't use idempotent key (it may be a retry)
@@ -74,6 +96,8 @@ async def enqueue_prewarm(
 async def enqueue_prewarm_batch(
     wrong_question_ids: list[int],
     user_id: int,
+    *,
+    revisions: dict[int, str] | None = None,
 ) -> dict[str, list[int]]:
     """Queue a completed practice's wrong questions as one best-effort batch.
 
@@ -87,7 +111,9 @@ async def enqueue_prewarm_batch(
 
     for wq_id in unique_ids:
         try:
-            accepted = await enqueue_prewarm(wq_id, user_id)
+            accepted = await enqueue_prewarm(
+                wq_id, user_id, revision=(revisions or {}).get(wq_id)
+            )
         except Exception:
             logger.warning(
                 "[prewarm] batch enqueue failed wq_id=%d uid=%d",
@@ -243,7 +269,17 @@ async def _process_task(task: Task) -> None:
         logger.warning("[prewarm] invalid task payload: %s", task.payload)
         return
 
-    await prewarm_wrong_question_analysis(wq_id, user_id)
+    queue_wait_ms = max(0, int((time.time() - float(task.created_at or time.time())) * 1000))
+    logger.info(
+        "[prewarm] start wq_id=%d uid=%d revision=%s queue_wait_ms=%d",
+        wq_id,
+        user_id,
+        task.payload.get("revision") or "legacy",
+        queue_wait_ms,
+    )
+    await prewarm_wrong_question_analysis(
+        wq_id, user_id, expected_revision=task.payload.get("revision")
+    )
     logger.info("[prewarm] processed wq_id=%d uid=%d", wq_id, user_id)
 
 

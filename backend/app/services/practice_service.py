@@ -2223,10 +2223,11 @@ async def submit_answer(
     # scheduler/worker runtime.  In web-only/local deployments the outbox can
     # legitimately remain pending, but a wrong answer must still appear in the
     # wrong-book immediately after submit returns.
+    wrong_for_prewarm = None
     if not is_correct:
         from app.services.wrong_question_service import record_wrong
 
-        await record_wrong(
+        wrong_for_prewarm = await record_wrong(
             db,
             user_id,
             question_id,
@@ -2242,6 +2243,31 @@ async def submit_answer(
     )
     await db.commit()
     await db.refresh(record)
+
+    # Queue AI analysis immediately after the wrong-book transaction is durable.
+    # Previously prewarm waited for the answer-projection worker, which added
+    # avoidable queue latency before the 4~16s model call even started.
+    if wrong_for_prewarm is not None:
+        try:
+            from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
+
+            revision = build_prewarm_revision(
+                review_count=wrong_for_prewarm.review_count,
+                wrong_answer=wrong_for_prewarm.wrong_answer,
+            )
+            await enqueue_prewarm(
+                wrong_for_prewarm.id,
+                user_id,
+                revision=revision,
+            )
+        except Exception:
+            # Prewarm is best effort and must never make answer submission fail.
+            logger.warning(
+                "AI prewarm enqueue failed after submit wq_id=%s uid=%s",
+                getattr(wrong_for_prewarm, "id", None),
+                user_id,
+                exc_info=True,
+            )
 
     return {
         "record_id": record.id,
@@ -2371,15 +2397,17 @@ async def batch_submit_answers(
     await db.flush()
     from app.services.wrong_question_service import record_wrong
 
+    prewarm_wrong_questions = []
     for record, q, is_correct, user_answer, _used_time in records:
         if not is_correct:
-            await record_wrong(
+            wrong = await record_wrong(
                 db,
                 user_id,
                 q.id,
                 user_answer,
                 commit=False,
             )
+            prewarm_wrong_questions.append(wrong)
         await _create_answer_projection_outbox(
             db,
             practice_record_id=record.id,
@@ -2388,6 +2416,33 @@ async def batch_submit_answers(
         )
 
     await db.commit()
+
+    if prewarm_wrong_questions:
+        try:
+            from app.services.ai_prewarm_worker import (
+                build_prewarm_revision,
+                enqueue_prewarm_batch,
+            )
+
+            revisions = {
+                wrong.id: build_prewarm_revision(
+                    review_count=wrong.review_count,
+                    wrong_answer=wrong.wrong_answer,
+                )
+                for wrong in prewarm_wrong_questions
+            }
+            await enqueue_prewarm_batch(
+                [wrong.id for wrong in prewarm_wrong_questions],
+                user_id,
+                revisions=revisions,
+            )
+        except Exception:
+            logger.warning(
+                "AI prewarm batch enqueue failed after submit uid=%s count=%s",
+                user_id,
+                len(prewarm_wrong_questions),
+                exc_info=True,
+            )
 
     kp_map = await load_question_kps(db, [q.id for _r, q, _c, _x, _y in records])
     return {

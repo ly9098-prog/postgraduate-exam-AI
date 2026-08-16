@@ -56,7 +56,7 @@ class WrongQuestionResponse(BaseModel):
     image_url: list | None = None
     # AI 分析（已持久化的结果）
     ai_analysis: dict | None = None
-    ai_analysis_status: str | None = None  # "ready" | "empty" | "fallback" | "generating"
+    ai_analysis_status: str | None = None  # "ready" | "empty" | "stale" | "fallback" | "generating"
     # 扩展字段
     wrong_count: int = 0
     review_record_count: int = 0            # 真实复习次数（from ReviewRecord）

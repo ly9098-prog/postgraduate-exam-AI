@@ -1,6 +1,7 @@
 import ast
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import re
@@ -485,21 +486,117 @@ def _normalize_ai_analysis(cached: dict) -> dict:
     return _extract_analysis_fields(cached) if cached else dict(_EMPTY_ANALYSIS)
 
 
-def is_ai_analysis_fresh(ai_analysis: dict | None) -> bool:
-    """A reusable wrong-detail cache must prove that the question image was read."""
+def _analysis_input_signature(
+    wq: WrongQuestion,
+    q: Question,
+    knowledge_points: list[str] | None,
+    *,
+    visual_sources: list[str] | None = None,
+) -> str:
+    """Hash every persisted input that can materially change wrong-detail advice.
+
+    The digest lets us invalidate a cache when the question, answer, visual
+    source, user's latest wrong answer, error classification, review count, or
+    knowledge-point mapping changes without storing duplicate source content in
+    ``_meta``.  ``default=str`` keeps the signature deterministic for datetime
+    or enum-like values that may appear in JSON payloads.
+    """
+    payload = {
+        "prompt_version": AI_ANALYSIS_PROMPT_VERSION,
+        "question_id": q.id,
+        "question_sync_version": getattr(q, "sync_version", None),
+        "question_updated_at": getattr(q, "updated_at", None),
+        "content": q.content,
+        "options": q.options,
+        "answer": q.answer,
+        "image_sources": visual_sources if visual_sources is not None else _collect_question_visual_sources(q),
+        "knowledge_points": list(knowledge_points or []),
+        "wrong_answer": wq.wrong_answer,
+        "error_type": wq.error_type,
+        "review_count": int(wq.review_count or 0),
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _analysis_model_signature(runtime) -> str | None:
+    """Return a stable digest for the currently selected analysis model."""
+    if runtime is None:
+        return None
+    payload = {
+        "model_config_id": runtime.model_config_id,
+        "provider": runtime.provider,
+        "model_name": runtime.model_name,
+        "base_url": runtime.base_url,
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _analysis_cache_age_ms(ai_analysis: dict | None) -> int | None:
+    if not isinstance(ai_analysis, dict):
+        return None
+    meta = ai_analysis.get("_meta") or {}
+    raw = str(meta.get("generated_at") or "").strip()
+    if not raw:
+        return None
+    try:
+        generated = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if generated.tzinfo is None:
+            generated = generated.replace(tzinfo=UTC)
+        return max(0, int((datetime.now(UTC) - generated.astimezone(UTC)).total_seconds() * 1000))
+    except (TypeError, ValueError):
+        return None
+
+
+def _analysis_cache_stale_reason(
+    ai_analysis: dict | None,
+    *,
+    expected_input_signature: str | None = None,
+    expected_model_signature: str | None = None,
+) -> str | None:
     if not isinstance(ai_analysis, dict) or len(ai_analysis) == 0:
-        return False
+        return "empty"
     meta = ai_analysis.get("_meta") or {}
     if meta.get("version", "") != AI_ANALYSIS_PROMPT_VERSION:
-        return False
+        return "prompt_version"
     if int(meta.get("visual_input_count") or 0) <= 0:
-        return False
-    return _visual_evidence_is_valid(str(meta.get("visual_evidence") or ""))
+        return "visual_input"
+    if not _visual_evidence_is_valid(str(meta.get("visual_evidence") or "")):
+        return "visual_evidence"
+    if expected_input_signature is not None and meta.get("input_signature") != expected_input_signature:
+        return "input_signature"
+    if expected_model_signature is not None and meta.get("model_signature") != expected_model_signature:
+        return "model_signature"
+    return None
 
 
-def build_cached_error_analysis_response(wq) -> dict | None:
+def is_ai_analysis_fresh(
+    ai_analysis: dict | None,
+    *,
+    expected_input_signature: str | None = None,
+    expected_model_signature: str | None = None,
+) -> bool:
+    """A reusable wrong-detail cache must prove that the question image was read."""
+    return _analysis_cache_stale_reason(
+        ai_analysis,
+        expected_input_signature=expected_input_signature,
+        expected_model_signature=expected_model_signature,
+    ) is None
+
+
+def build_cached_error_analysis_response(
+    wq,
+    *,
+    expected_input_signature: str | None = None,
+    expected_model_signature: str | None = None,
+) -> dict | None:
     """If the wrong question has a fresh cached AI analysis, return it; otherwise None."""
-    if not is_ai_analysis_fresh(wq.ai_analysis):
+    if not is_ai_analysis_fresh(
+        wq.ai_analysis,
+        expected_input_signature=expected_input_signature,
+        expected_model_signature=expected_model_signature,
+    ):
         return None
     meta = (wq.ai_analysis or {}).get("_meta") or {}
     return {
@@ -537,6 +634,60 @@ def build_any_cached_error_analysis_response(wq) -> dict | None:
         "cache_preserved": True,
         "visual_input_count": int(meta.get("visual_input_count") or 0),
         "visual_evidence": meta.get("visual_evidence") or None,
+    }
+
+
+async def evaluate_cached_error_analysis(
+    db: AsyncSession,
+    wq: WrongQuestion,
+    q: Question,
+    *,
+    knowledge_points: list[str] | None = None,
+) -> dict:
+    """Evaluate whether ``wrong_questions.ai_analysis`` is safe to show directly.
+
+    The wrong-detail endpoint embeds cached AI content in its initial payload,
+    so it must use the same freshness rules as ``analyze_error``. Returning a
+    stale cache here would make prewarm/version invalidation ineffective because
+    the mini-program could render the old content before calling the AI endpoint.
+    """
+    if not isinstance(wq.ai_analysis, dict) or not wq.ai_analysis:
+        return {"status": "empty", "analysis": None, "reason": "empty"}
+
+    visual_sources = _collect_question_visual_sources(q)
+    if not visual_sources:
+        return {"status": "stale", "analysis": None, "reason": "visual_input"}
+
+    if knowledge_points is None:
+        kp_map = await load_question_kps(db, [q.id])
+        knowledge_points = kp_map.get(q.id, [])
+    runtime = await resolve_llm_runtime_config(db, feature="analysis")
+    input_signature = _analysis_input_signature(
+        wq, q, knowledge_points, visual_sources=visual_sources
+    )
+    model_signature = _analysis_model_signature(runtime)
+    reason = _analysis_cache_stale_reason(
+        wq.ai_analysis,
+        expected_input_signature=input_signature,
+        expected_model_signature=model_signature,
+    )
+    if reason is not None:
+        logger.info(
+            "ai.error_analysis.detail_cache_stale wq_id=%d user_id=%d reason=%s",
+            wq.id, wq.user_id, reason,
+        )
+        return {"status": "stale", "analysis": None, "reason": reason}
+    age_ms = _analysis_cache_age_ms(wq.ai_analysis)
+    logger.info(
+        "ai.error_analysis.detail_cache_hit wq_id=%d user_id=%d age_ms=%s model=%s",
+        wq.id, wq.user_id, age_ms,
+        ((wq.ai_analysis or {}).get("_meta") or {}).get("model") or "unknown",
+    )
+    return {
+        "status": "ready",
+        "analysis": wq.ai_analysis,
+        "reason": None,
+        "age_ms": age_ms,
     }
 
 
@@ -581,12 +732,41 @@ async def analyze_error(
             "visual_input_count": 0,
         }
 
+    kp_map = await load_question_kps(db, [q.id])
+    knowledge_points = kp_map.get(q.id, [])
+    # Resolve the currently selected analysis model before the cache decision.
+    # This is a cheap DB lookup compared with an LLM call and lets a model
+    # configuration change invalidate old advice deterministically.
+    runtime = await resolve_llm_runtime_config(db, feature="analysis")
+    input_signature = _analysis_input_signature(
+        wq, q, knowledge_points, visual_sources=stored_visual_sources
+    )
+    model_signature = _analysis_model_signature(runtime)
+
     effective_force = bool(force_regenerate)
 
     if not effective_force:
-        cached = build_cached_error_analysis_response(wq)
+        cached = build_cached_error_analysis_response(
+            wq,
+            expected_input_signature=input_signature,
+            expected_model_signature=model_signature,
+        )
         if cached is not None:
+            logger.info(
+                "ai.error_analysis.cache_hit wq_id=%d user_id=%d age_ms=%s model=%s",
+                wq.id, user_id, _analysis_cache_age_ms(wq.ai_analysis),
+                ((wq.ai_analysis or {}).get("_meta") or {}).get("model") or "unknown",
+            )
             return cached
+        stale_reason = _analysis_cache_stale_reason(
+            wq.ai_analysis,
+            expected_input_signature=input_signature,
+            expected_model_signature=model_signature,
+        )
+        logger.info(
+            "ai.error_analysis.cache_miss wq_id=%d user_id=%d reason=%s",
+            wq.id, user_id, stale_reason or "unknown",
+        )
     else:
         logger.info(
             "force regenerate error analysis wq_id=%d user_id=%d",
@@ -632,9 +812,23 @@ async def analyze_error(
 
     try:
         await db.refresh(wq)
+        # The same wrong-question row can be updated while this request waits
+        # for the cross-process generation lock. Recompute the digest so a
+        # just-written cache is only reused if it matches the latest answer.
+        input_signature = _analysis_input_signature(
+            wq, q, knowledge_points, visual_sources=stored_visual_sources
+        )
         if not effective_force:
-            cached = build_cached_error_analysis_response(wq)
+            cached = build_cached_error_analysis_response(
+                wq,
+                expected_input_signature=input_signature,
+                expected_model_signature=model_signature,
+            )
             if cached is not None:
+                logger.info(
+                    "ai.error_analysis.cache_hit_after_lock wq_id=%d user_id=%d age_ms=%s",
+                    wq.id, user_id, _analysis_cache_age_ms(wq.ai_analysis),
+                )
                 return cached
 
         image_data_urls, visual_meta = await _prepare_visual_inputs(q)
@@ -663,7 +857,6 @@ async def analyze_error(
         # analysis LLM as the original text-only flow. Images are passed
         # directly to that model as multimodal message content; OCR/VL model
         # routing is intentionally not used here.
-        runtime = await resolve_llm_runtime_config(db, feature="analysis")
         if runtime is None:
             return {
                 "content": get_fallback_analysis(),
@@ -677,8 +870,7 @@ async def analyze_error(
                 "visual_input_count": len(image_data_urls),
             }
 
-        kp_map = await load_question_kps(db, [q.id])
-        context = build_error_context(wq, q, kp_map.get(q.id, []))
+        context = build_error_context(wq, q, knowledge_points)
         context["question"]["structured_visual"] = structured_visual
         qwen_fast_path = _qwen_error_analysis_fast_path(runtime.provider, runtime.model_name)
         image_max_pixels = _ERROR_ANALYSIS_QWEN_MAX_PIXELS if qwen_fast_path else None
@@ -791,12 +983,16 @@ async def analyze_error(
 
         parsed["_meta"] = {
             "model": result.get("model", ""),
+            "provider": runtime.provider,
+            "model_config_id": runtime.model_config_id,
             "generated_at": datetime.now(UTC).isoformat(),
             "version": AI_ANALYSIS_PROMPT_VERSION,
             "from_fallback": False,
             "force_regenerated": effective_force,
             "visual_input_count": len(image_data_urls),
             "visual_evidence": visual_evidence or None,
+            "input_signature": input_signature,
+            "model_signature": model_signature,
         }
 
         wq.ai_analysis = parsed
@@ -851,7 +1047,10 @@ async def analyze_error(
 
 
 async def prewarm_wrong_question_analysis(
-    wrong_question_id: int, user_id: int,
+    wrong_question_id: int,
+    user_id: int,
+    *,
+    expected_revision: str | None = None,
 ) -> None:
     """后台预生成错题 AI 分析。独立 session。
 
@@ -873,18 +1072,29 @@ async def prewarm_wrong_question_analysis(
         if not wq:
             logger.info("[prewarm] wrong_question not found id=%d uid=%d", wrong_question_id, user_id)
             return
-        # 已有 fresh 缓存则跳过（版本不匹配时触发重新生成）
-        if is_ai_analysis_fresh(wq.ai_analysis):
-            logger.info("[prewarm] fresh cache exists id=%d uid=%d", wrong_question_id, user_id)
-            return
-        if wq.ai_analysis and not is_ai_analysis_fresh(wq.ai_analysis):
-            logger.info("[prewarm] stale cache (version mismatch) id=%d uid=%d", wrong_question_id, user_id)
-        # 复用现有 analyze_error 逻辑
+        if expected_revision:
+            from app.services.ai_prewarm_worker import build_prewarm_revision
+
+            current_revision = build_prewarm_revision(
+                review_count=wq.review_count,
+                wrong_answer=wq.wrong_answer,
+            )
+            if current_revision != expected_revision:
+                logger.info(
+                    "[prewarm] superseded id=%d uid=%d expected_revision=%s current_revision=%s",
+                    wrong_question_id, user_id, expected_revision, current_revision,
+                )
+                return
+
+        # Reuse the canonical analysis path. It performs full input/model cache
+        # validation, cross-process locking, and returns immediately on a hit.
         result = await analyze_error(bg_db, user_id, wrong_question_id)
         logger.info(
-            "[prewarm] done id=%d uid=%d from_cache=%s from_fallback=%s",
+            "[prewarm] done id=%d uid=%d revision=%s from_cache=%s from_fallback=%s model=%s duration_ms=%s",
             wrong_question_id, user_id,
+            expected_revision or "legacy",
             result.get("from_cache"), result.get("from_fallback"),
+            result.get("model"), result.get("duration_ms"),
         )
 
 
