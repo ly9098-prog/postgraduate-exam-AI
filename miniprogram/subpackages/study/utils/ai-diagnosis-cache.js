@@ -5,6 +5,7 @@
  */
 
 var storage = require('../../../utils/storage')
+var chinaTime = require('../../../utils/china-time')
 
 var CACHE_VERSION = 1
 var CACHE_PREFIX = 'wrong_book_ai_diagnosis'
@@ -150,30 +151,20 @@ function canRefresh(cachedAt) {
  */
 function formatCacheTime(timestamp) {
   if (!timestamp) return ''
-  var d = new Date(timestamp)
-  if (Number.isNaN(d.getTime())) return ''
-  var now = new Date()
-  var diff = now - d
+  var ms = Number(timestamp)
+  if (!isFinite(ms)) return ''
+  var diff = Date.now() - ms
   var minutes = Math.floor(diff / 60000)
   if (minutes < 1) return '刚刚更新'
   if (minutes < 60) return minutes + ' 分钟前更新'
   var hours = Math.floor(minutes / 60)
   if (hours < 6) return hours + ' 小时前更新'
-  // 同一天
-  if (d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
-    return '今天 ' + _pad(d.getHours()) + ':' + _pad(d.getMinutes()) + ' 更新'
-  }
-  // 昨天
-  var yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
-  if (d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear()) {
-    return '昨天 ' + _pad(d.getHours()) + ':' + _pad(d.getMinutes()) + ' 更新'
-  }
-  return (d.getMonth() + 1) + '月' + d.getDate() + '日更新'
-}
 
-function _pad(n) {
-  return n < 10 ? '0' + n : '' + n
+  var dayDiff = chinaTime.chinaCalendarDayDiff(ms, Date.now())
+  var timeText = chinaTime.formatChinaTimeHM(ms)
+  if (dayDiff === 0) return '今天 ' + timeText + ' 更新'
+  if (dayDiff === 1) return '昨天 ' + timeText + ' 更新'
+  return chinaTime.formatChinaMonthDayCn(ms) + '更新'
 }
 
 module.exports = {

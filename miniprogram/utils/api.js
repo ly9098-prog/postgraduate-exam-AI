@@ -1,6 +1,7 @@
 const config = require('../config')
 const storage = require('./storage')
 const { debugLog, saveDebugSnapshot } = require('./debug')
+const { parseServerUtc } = require('./china-time')
 
 const { KEYS } = storage
 
@@ -116,8 +117,8 @@ function _normalizeExpiresAt(value) {
     if (!isNaN(parsed)) {
       seconds = parsed
     } else {
-      const d = new Date(value)
-      if (!isNaN(d.getTime())) seconds = Math.floor(d.getTime() / 1000)
+      const ms = parseServerUtc(value)
+      if (!isNaN(ms)) seconds = Math.floor(ms / 1000)
       else return null
     }
   } else {
@@ -165,6 +166,21 @@ function _rawRequest(method, url, data, header, timeout) {
       url: `${config.BASE_URL}${url}`,
       method,
       data: data,
+      header,
+      timeout: timeout || 30000,
+      success: resolve,
+      fail: reject,
+    })
+  })
+}
+
+function _rawUploadFile(url, filePath, name, formData, header, timeout) {
+  return new Promise((resolve, reject) => {
+    wx.uploadFile({
+      url: `${config.BASE_URL}${url}`,
+      filePath,
+      name: name || 'file',
+      formData: formData || {},
       header,
       timeout: timeout || 30000,
       success: resolve,
@@ -376,6 +392,97 @@ async function request(method, url, data = {}, options = {}) {
   return res.data
 }
 
+function _parseUploadResponseData(raw) {
+  if (raw == null || raw === '') return {}
+  if (typeof raw === 'object') return raw
+  try {
+    return JSON.parse(raw)
+  } catch (_) {
+    return {}
+  }
+}
+
+/**
+ * Authenticated multipart upload with the same JWT refresh behaviour as request().
+ * wx.uploadFile manages the multipart Content-Type boundary, so it must not reuse
+ * the JSON Content-Type header from normal API requests.
+ */
+async function uploadFile(url, filePath, options = {}) {
+  const traceId = _normalizeCorrelationId(options.traceId, 'tr')
+  const valid = await ensureValidToken(traceId)
+  if (!valid) {
+    throw new ApiError('登录已过期，请重新登录', { code: 'AUTH_REQUIRED', statusCode: 401, traceId })
+  }
+
+  const buildUploadHeader = (token, requestId) => {
+    const header = {
+      'X-Trace-ID': traceId,
+      'X-Request-ID': requestId,
+    }
+    if (token) header.Authorization = `Bearer ${token}`
+    return header
+  }
+
+  let requestId = _generateCorrelationId('req')
+  let token = storage.get(KEYS.TOKEN)
+  let res
+  try {
+    res = await _rawUploadFile(
+      url,
+      filePath,
+      options.name || 'file',
+      options.formData || {},
+      buildUploadHeader(token, requestId),
+      options.timeout
+    )
+  } catch (err) {
+    throw new ApiError(_safeHttpMessage(0), {
+      code: 'NETWORK_ERROR',
+      statusCode: 0,
+      traceId,
+      requestId,
+      raw: err,
+    })
+  }
+
+  if (res.statusCode === 401) {
+    token = await forceRefreshToken(traceId)
+    requestId = _generateCorrelationId('req')
+    try {
+      res = await _rawUploadFile(
+        url,
+        filePath,
+        options.name || 'file',
+        options.formData || {},
+        buildUploadHeader(token, requestId),
+        options.timeout
+      )
+    } catch (err) {
+      throw new ApiError(_safeHttpMessage(0), {
+        code: 'NETWORK_ERROR',
+        statusCode: 0,
+        traceId,
+        requestId,
+        raw: err,
+      })
+    }
+  }
+
+  const data = _parseUploadResponseData(res.data)
+  if (res.statusCode >= 400) {
+    const safeMeta = _safeErrorMeta(data, res.header)
+    throw new ApiError(_safeHttpMessage(res.statusCode), {
+      code: _extractErrorCode(data, res.statusCode),
+      statusCode: res.statusCode,
+      detail: safeMeta,
+      requestId: (safeMeta && safeMeta.requestId) || requestId,
+      traceId: (safeMeta && safeMeta.traceId) || traceId,
+    })
+  }
+
+  return data
+}
+
 module.exports = {
   get: (url, data, options) => request('GET', url, data, options),
   post: (url, data, options) => request('POST', url, data, options),
@@ -384,6 +491,7 @@ module.exports = {
   resetRedirecting,
   ensureValidToken,
   forceRefreshToken,
+  uploadFile,
   request,
   ApiError,
   getErrorMessage: (error) => error instanceof ApiError ? error.message : '请求失败，请稍后重试',

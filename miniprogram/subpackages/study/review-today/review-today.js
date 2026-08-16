@@ -11,6 +11,7 @@ const {
 } = require('../utils/answer')
 const adapter = require('../utils/question-runner-adapter')
 const { getSubjectName } = require('../../../utils/subject-meta')
+const { getChinaWallParts } = require('../../../utils/china-time')
 
 var KF = 'schedule_id'
 
@@ -244,10 +245,10 @@ Page({
   },
 
   _setDateStr() {
-    const now = new Date()
+    const now = getChinaWallParts(Date.now())
     const weekdays = ['日', '一', '二', '三', '四', '五', '六']
     this.setData({
-      _dateStr: `${now.getMonth() + 1}月${now.getDate()}日 星期${weekdays[now.getDay()]}`
+      _dateStr: `${now.month}月${now.day}日 星期${weekdays[now.weekday]}`
     })
   },
 

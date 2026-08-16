@@ -6,6 +6,7 @@ const storage = require('../../../utils/storage')
 const aiCache = require('../utils/ai-diagnosis-cache')
 const { getSubjectName, getSubjectShortName } = require('../../../utils/subject-meta')
 const exportApi = require('../utils/export-capability')
+const { parseServerUtc, getChinaDayRangeUtcMs, chinaCalendarDayDiff, formatChinaMonthDayCn } = require('../../../utils/china-time')
 
 const AI_AUTO_SETTING_PREFIX = 'ai_wrong_book_auto_v1_'
 const BATCH_CAPSULE_IDLE_MS = 5000
@@ -1387,34 +1388,32 @@ Page({
   _reviewDueInfo(item, isMastered) {
     if (isMastered) return { today: false, overdue: false, date: null }
     const raw = item.next_review_at || item.review_due_at || item.scheduled_at || item.due_at
-    let date = raw ? new Date(raw) : null
-    if (date && Number.isNaN(date.getTime())) date = null
+    const dueMs = raw ? parseServerUtc(raw) : NaN
+    const date = isFinite(dueMs) ? new Date(dueMs) : null
 
     const explicitToday = item.is_today_due === true || item.today_due === true || item.is_due === true
     if (!date && explicitToday) return { today: true, overdue: false, date: null }
     if (!date) return { today: false, overdue: false, date: null }
 
-    const now = new Date()
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    const range = getChinaDayRangeUtcMs()
     return {
-      today: date < end,
-      overdue: date < start,
+      today: dueMs < range.end,
+      overdue: dueMs < range.start,
       date,
     }
   },
 
   _isRecentDate(raw, days) {
     if (!raw) return false
-    const date = new Date(raw)
-    if (Number.isNaN(date.getTime())) return false
-    const diff = Date.now() - date.getTime()
+    const ms = parseServerUtc(raw)
+    if (!isFinite(ms)) return false
+    const diff = Date.now() - ms
     return diff >= 0 && diff <= days * 86400000
   },
 
   _shortDateLabel(date) {
     if (!date || Number.isNaN(date.getTime())) return ''
-    return `${date.getMonth() + 1}月${date.getDate()}日`
+    return formatChinaMonthDayCn(date.getTime())
   },
 
   _buildTaskGroups(list = []) {
@@ -1430,11 +1429,11 @@ Page({
     const high = take(item => !item._isMastered && item._wrongCount >= 3)
       .sort((a, b) => b._wrongCount - a._wrongCount)
     const recent = take(item => !item._isMastered && item._isRecent)
-      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+      .sort((a, b) => (parseServerUtc(b.created_at) || 0) - (parseServerUtc(a.created_at) || 0))
     const waiting = take(item => !item._isMastered)
       .sort((a, b) => a._masteryPercent - b._masteryPercent || b._wrongCount - a._wrongCount)
     const mastered = take(item => item._isMastered)
-      .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
+      .sort((a, b) => (parseServerUtc(b.updated_at || b.created_at) || 0) - (parseServerUtc(a.updated_at || a.created_at) || 0))
 
     const maxPreview = 3
     const configs = [
@@ -1643,17 +1642,13 @@ Page({
 
   _timeLabel(dateStr) {
     if (!dateStr) return ''
-    const d = new Date(dateStr)
-    if (Number.isNaN(d.getTime())) return ''
-    const now = new Date()
-    const diff = now - d
-    const days = Math.floor(diff / 86400000)
+    const ms = parseServerUtc(dateStr)
+    if (!isFinite(ms)) return ''
+    const days = chinaCalendarDayDiff(ms, Date.now())
     if (days === 0) return '今天'
     if (days === 1) return '昨天'
-    if (days <= 7) return `${days} 天前`
-    const m = d.getMonth() + 1
-    const day = d.getDate()
-    return `${m}月${day}日`
+    if (days > 1 && days <= 7) return `${days} 天前`
+    return formatChinaMonthDayCn(ms)
   },
 
   _toCleanText(text) {

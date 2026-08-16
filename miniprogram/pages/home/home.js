@@ -1,6 +1,7 @@
 const auth = require('../../utils/auth')
 const api = require('../../utils/api')
 const storage = require('../../utils/storage')
+const { getChinaWallParts } = require('../../utils/china-time')
 
 const TODAY_GOAL_TOTAL = 30
 const TODAY_GOAL_KEY = 'home_today_goal_total'
@@ -11,6 +12,14 @@ Page({
     user: {},
     displayName: '研友',
     userInitial: '研',
+    showProfileSheet: false,
+    profileNickname: '',
+    profileAvatarPreview: '',
+    profileAvatarPath: '',
+    profileNicknameRejected: false,
+    profileSaving: false,
+    profileNicknameFocus: false,
+    isDevtools: false,
     greeting: '',
     dateStr: '',
     motto: '',
@@ -50,9 +59,11 @@ Page({
   _authed: false,
   _growthTargets: { streakDays: 0, todayGoalDone: 0, levelProgress: 0 },
   _animTimer: null,
+  _profilePrompted: false,
 
   onLoad() {
     this.measureNavigation()
+    this.detectRuntime()
   },
 
   async onShow() {
@@ -81,11 +92,200 @@ Page({
         displayName: this.getDisplayName(syncedUser),
         userInitial: this.getUserInitial(syncedUser),
       })
+      this._maybePromptProfile(syncedUser)
     } catch (e) {
       console.error('同步用户权限失败', e)
       return
     }
     await this.loadGrowthSnapshot()
+  },
+
+  _maybePromptProfile(user) {
+    if (this._profilePrompted || auth.isProfileCompleted(user)) return
+    this._profilePrompted = true
+    setTimeout(() => {
+      if (!this.data.showProfileSheet && this._authed) this.openProfileSheet()
+    }, 260)
+  },
+
+  openProfileSheet() {
+    if (!this._authed) return
+    const user = this.data.user || auth.getUser() || {}
+    this.setData({
+      showProfileSheet: true,
+      profileNickname: user.nickname || '',
+      profileAvatarPreview: user.avatar_url || '',
+      profileAvatarPath: '',
+      profileNicknameRejected: false,
+      profileNicknameFocus: false,
+    })
+  },
+
+  closeProfileSheet() {
+    if (this.data.profileSaving) return
+    clearTimeout(this._profileAutoSaveTimer)
+    this._profileAutoSaveTimer = null
+    this.setData({
+      showProfileSheet: false,
+      profileAvatarPath: '',
+      profileNicknameFocus: false,
+    })
+  },
+
+  noop() {},
+
+  detectRuntime() {
+    let platform = ''
+    try {
+      const info = wx.getSystemInfoSync ? wx.getSystemInfoSync() : {}
+      platform = String(info.platform || '').toLowerCase()
+    } catch (_) {}
+    this.setData({ isDevtools: platform === 'devtools' })
+  },
+
+  _isNativeCancel(error) {
+    const message = String((error && (error.errMsg || error.message)) || '')
+    return /cancel/i.test(message)
+  },
+
+  _applyProfileAvatar(avatarPath) {
+    if (!avatarPath) return
+    this.setData({
+      profileAvatarPreview: avatarPath,
+      profileAvatarPath: avatarPath,
+      profileNicknameFocus: false,
+    }, () => {
+      // 微信头像确认完成后，直接把焦点交给 nickname 原生输入框。
+      // 真机上会出现微信昵称快捷填写入口，用户通常无需手动输入。
+      if (!this.data.profileNickname && !this.data.isDevtools) {
+        setTimeout(() => this.setData({ profileNicknameFocus: true }), 100)
+      }
+    })
+  },
+
+  onChooseAvatar(e) {
+    const avatarPath = e && e.detail && e.detail.avatarUrl
+    if (!avatarPath) return
+    this._applyProfileAvatar(avatarPath)
+  },
+
+  async chooseAvatarInDevtools() {
+    if (this.data.profileSaving) return
+    try {
+      const res = await wx.chooseMedia({
+        count: 1,
+        mediaType: ['image'],
+        sourceType: ['album'],
+        sizeType: ['compressed'],
+      })
+      const file = res && Array.isArray(res.tempFiles) ? res.tempFiles[0] : null
+      const avatarPath = file && (file.tempFilePath || file.path)
+      if (avatarPath) this._applyProfileAvatar(avatarPath)
+    } catch (error) {
+      // 开发者工具取消选择属于正常用户操作，不记录为错误。
+      if (this._isNativeCancel(error)) return
+      console.warn('开发者工具头像选择失败', error)
+      wx.showToast({ title: '头像选择失败，请重试', icon: 'none' })
+    }
+  },
+
+  onProfileNicknameInput(e) {
+    this.setData({
+      profileNickname: (e && e.detail && e.detail.value) || '',
+      profileNicknameRejected: false,
+    })
+  },
+
+  onProfileNicknameFocus() {
+    if (!this.data.profileNicknameFocus) this.setData({ profileNicknameFocus: true })
+  },
+
+  onProfileNicknameBlur() {
+    if (this.data.profileNicknameFocus) this.setData({ profileNicknameFocus: false })
+  },
+
+  onProfileNicknameReview(e) {
+    const rejected = !!(e && e.detail && e.detail.pass === false)
+    this.setData({ profileNicknameRejected: rejected })
+    if (rejected) wx.showToast({ title: '该昵称暂不可使用，请修改后重试', icon: 'none' })
+  },
+
+  onNativeProfileChange(e) {
+    if (this.data.profileSaving) return
+    const detail = (e && e.detail) || {}
+    const userInfo = detail.userInfo || {}
+    const field = String(detail.field || '')
+    const nickname = String(userInfo.nickname || '').trim().replace(/\s+/g, ' ')
+    const avatar = String(userInfo.avatar || '')
+    const storedAvatar = String((this.data.user && this.data.user.avatar_url) || '')
+    const nextAvatarPath = avatar && avatar !== storedAvatar ? avatar : this.data.profileAvatarPath
+
+    this.setData({
+      profileNickname: nickname,
+      profileAvatarPreview: avatar || this.data.profileAvatarPreview,
+      profileAvatarPath: nextAvatarPath || '',
+      profileNicknameRejected: false,
+    })
+
+    // 官方头像昵称组件会把两项资料统一通过 change 事件交给业务层。
+    // 首次使用时头像+昵称都选好后自动保存；头像仍保持可选，可只填昵称后手动保存。
+    const profileAlreadyCompleted = auth.isProfileCompleted(this.data.user)
+    const firstProfileHasBoth = !profileAlreadyCompleted && !!nickname && !!nextAvatarPath
+    const existingProfileChanged = profileAlreadyCompleted && !!nickname && (field === 'nickname' || field === 'avatar')
+    if (firstProfileHasBoth || existingProfileChanged) {
+      clearTimeout(this._profileAutoSaveTimer)
+      this._profileAutoSaveTimer = setTimeout(() => this.saveProfile(), 120)
+    }
+  },
+
+  onNativeProfileError(e) {
+    const detail = (e && e.detail) || {}
+    const code = String(detail.code || '')
+    const message = String(detail.message || '微信资料选择失败，请重试')
+    if (code === 'NICKNAME_REVIEW_REJECTED') {
+      this.setData({ profileNicknameRejected: true })
+    }
+    wx.showToast({ title: message, icon: 'none' })
+  },
+
+  async saveProfile() {
+    if (this.data.profileSaving) return
+    clearTimeout(this._profileAutoSaveTimer)
+    this._profileAutoSaveTimer = null
+    const nickname = String(this.data.profileNickname || '').trim().replace(/\s+/g, ' ')
+    if (!nickname) {
+      wx.showToast({ title: '请填写昵称', icon: 'none' })
+      return
+    }
+    if (this.data.profileNicknameRejected) {
+      wx.showToast({ title: '请修改昵称后再保存', icon: 'none' })
+      return
+    }
+
+    this.setData({ profileSaving: true })
+    try {
+      const updatedUser = await auth.updateProfile({
+        nickname,
+        avatarPath: this.data.profileAvatarPath || '',
+      })
+      this.setData({
+        user: updatedUser,
+        displayName: this.getDisplayName(updatedUser),
+        userInitial: this.getUserInitial(updatedUser),
+        showProfileSheet: false,
+        profileNickname: updatedUser.nickname || '',
+        profileAvatarPreview: updatedUser.avatar_url || '',
+        profileAvatarPath: '',
+        profileNicknameRejected: false,
+        profileNicknameFocus: false,
+      })
+      wx.showToast({ title: '资料已保存', icon: 'success' })
+    } catch (e) {
+      const message = e && e.message ? e.message : '保存失败，请稍后重试'
+      wx.showToast({ title: message, icon: 'none' })
+    } finally {
+      this.setData({ profileSaving: false })
+    }
   },
 
   measureNavigation() {
@@ -400,7 +600,7 @@ Page({
   },
 
   getGreeting() {
-    const h = new Date().getHours()
+    const h = getChinaWallParts(Date.now()).hour
     if (h < 6) return '夜深了'
     if (h < 9) return '早上好'
     if (h < 12) return '上午好'
@@ -410,7 +610,7 @@ Page({
   },
 
   getMotto() {
-    const h = new Date().getHours()
+    const h = getChinaWallParts(Date.now()).hour
     if (h < 6) return '休息也是学习的一部分，明天再战'
     if (h < 9) return '清晨是记忆的黄金时间'
     if (h < 12) return '开始今天的学习计划吧'
@@ -420,9 +620,9 @@ Page({
   },
 
   getDateStr() {
-    const d = new Date()
+    const d = getChinaWallParts(Date.now())
     const week = ['日', '一', '二', '三', '四', '五', '六']
-    return `${d.getMonth() + 1}月${d.getDate()}日 · 星期${week[d.getDay()]}`
+    return `${d.month}月${d.day}日 · 星期${week[d.weekday]}`
   },
 
   startPrimaryTask() {

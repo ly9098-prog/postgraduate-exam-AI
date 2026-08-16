@@ -1,6 +1,7 @@
 const { toPlainInlineMathText } = require('../utils/stem-render');
 const { formatInlineMathText } = require('../utils/math-format');
 const api = require('../../../utils/api');
+const { getChinaDate } = require('../../../utils/china-time');
 
 const ERROR_COLORS = ['#B8FF13', '#78D74D', '#43B968', '#238E58', '#86A83E', '#C9DC73'];
 
@@ -618,15 +619,10 @@ Page({
   },
 
   buildFallbackTrend() {
-    const today = new Date();
     const list = [];
     for (let i = 6; i >= 0; i -= 1) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const mm = pad2(d.getMonth() + 1);
-      const dd = pad2(d.getDate());
       list.push({
-        date: `${d.getFullYear()}-${mm}-${dd}`,
+        date: getChinaDate(-i),
         accuracy: i === 0 ? this.data.accuracyPct : 0,
         questions: i === 0 ? this.data.totalCount : 0
       });

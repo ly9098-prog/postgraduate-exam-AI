@@ -1,6 +1,7 @@
 const api = require('../../utils/api')
 const model = require('./dashboard.model')
 const charts = require('./dashboard.charts')
+const { getChinaDate, parseServerUtc } = require('../../utils/china-time')
 
 function clampPct(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)))
@@ -658,11 +659,8 @@ Page({
     const byDate = {}
     ;(trends || []).forEach(t => { if (t && t.date) byDate[t.date] = t })
     const cells = []
-    const today = new Date()
     for (let i = 364; i >= 0; i--) {
-      const d = new Date(today)
-      d.setDate(today.getDate() - i)
-      const date = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+      const date = getChinaDate(-i)
       const src = byDate[date] || {}
       const q = src.questions || 0
       cells.push({ date, questions: q, shortDate: date.slice(5), heatClass: q === 0 ? '' : q <= 5 ? 'lv1' : q <= 15 ? 'lv2' : q <= 30 ? 'lv3' : 'lv4' })
@@ -680,7 +678,7 @@ Page({
 
     // 60s cooldown
     if (this.data.llmAnalysisGeneratedAt) {
-      const elapsed = Date.now() - new Date(this.data.llmAnalysisGeneratedAt).getTime()
+      const elapsed = Date.now() - parseServerUtc(this.data.llmAnalysisGeneratedAt)
       if (elapsed < 60000) {
         wx.showToast({ title: '刚刚已生成分析，可稍后再试', icon: 'none' })
         return
