@@ -20,6 +20,8 @@ class AiResponse(BaseModel):
     from_fallback: bool = False
     force_regenerated: bool = False
     cache_preserved: bool = False
+    visual_input_count: int = 0
+    visual_evidence: str | None = None
 
 
 class AiPrewarmRequest(BaseModel):

@@ -1,14 +1,18 @@
 import ast
 import asyncio
+import base64
 import json
 import logging
 import re
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.client import llm
 from app.ai.gateway import chat_with_db_model, resolve_llm_runtime_config
 from app.ai.context import build_error_context
 from app.ai.fallback import get_fallback_advice, get_fallback_analysis
@@ -22,6 +26,8 @@ from app.models.ai_chat import AiChat
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 from app.services.knowledge_point_service import load_question_kps
+from app.services.safe_remote_fetch import request_remote_bytes
+from app.services.storage_backend import compress_image
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +60,301 @@ _DIAGNOSIS_KEYS = ("mistake_diagnosis", "error_analysis", "diagnosis", "mistakeD
 _KNOWLEDGE_KEYS = ("knowledge_patch", "knowledge_weakness", "knowledge", "knowledgePatch", "knowledgepatch", "补漏重点")
 _TASK_KEYS = ("review_task", "suggestion", "task", "reviewTask", "reviewtask", "reviewask", "复练任务")
 _EMPTY_ANALYSIS = {"mistake_diagnosis": "", "knowledge_patch": "", "review_task": ""}
+
+# Vision context is deliberately bounded. A wrong-detail request should stay well
+# below the mini-program's ~60s request budget and avoid sending full-resolution
+# camera photos to a multimodal model.
+_MAX_VISUAL_IMAGES = 4
+_MAX_VISUAL_SOURCE_BYTES = 6 * 1024 * 1024
+_VISUAL_FETCH_TIMEOUT_SECONDS = 6.0
+
+
+def _detect_image_mime(data: bytes, fallback: str = "") -> str:
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if fallback.startswith("image/"):
+        return fallback.split(";", 1)[0].strip().lower()
+    return "image/jpeg"
+
+
+def _image_bytes_to_data_url(
+    data: bytes, *, content_type: str = "", already_compressed: bool = False,
+) -> str:
+    # Re-encode through PIL so malformed/non-image stored sources cannot be
+    # forwarded to the model. Multipart uploads are already validated/compressed
+    # once at the API boundary; do not JPEG-compress a table screenshot twice.
+    compressed = bytes(data) if already_compressed else compress_image(data)
+    mime = _detect_image_mime(compressed, content_type)
+    encoded = base64.b64encode(compressed).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
+
+
+def _iter_url_values(value):
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            yield text
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _iter_url_values(item)
+
+
+def _collect_question_visual_sources(question: Question) -> list[str]:
+    """Collect image/table-image URLs that are part of the question itself."""
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def add(value) -> None:
+        for raw in _iter_url_values(value):
+            if raw not in seen:
+                seen.add(raw)
+                out.append(raw)
+
+    add(question.image_url)
+    content = question.content if isinstance(question.content, dict) else {}
+    add(content.get("image_url"))
+    segments = content.get("segments")
+    if isinstance(segments, list):
+        for seg in segments:
+            if not isinstance(seg, dict):
+                continue
+            seg_type = str(seg.get("type") or "").strip().lower()
+            if seg_type in {"image", "math_image", "table_image", "code_image"}:
+                add(seg.get("url"))
+                add(seg.get("source_image_url"))
+                add(seg.get("fallback_image_url"))
+            elif seg_type == "table":
+                add(seg.get("source_image_url"))
+                add(seg.get("fallback_image_url"))
+                add(seg.get("url"))
+
+    # Some option schemas store an image next to text. Only inspect image-named
+    # keys so arbitrary option strings can never be treated as remote URLs.
+    options = question.options if isinstance(question.options, dict) else {}
+    for value in options.values():
+        if not isinstance(value, dict):
+            continue
+        add(value.get("image_url"))
+        add(value.get("image"))
+
+    return out[:_MAX_VISUAL_IMAGES]
+
+
+_VISUAL_REFERENCE_RE = re.compile(
+    r"(?:如下?[图表]|下[图表]|[图表]中|根据[图表]|由[图表](?:可知|可见|所示)?|见[图表]|"
+    r"示意图|流程图|电路图|统计图|数据表|表格所示|as shown in (?:the )?(?:figure|table)|"
+    r"(?:figure|table|diagram)\s*\d*)",
+    re.IGNORECASE,
+)
+
+
+def _question_declares_visual(question: Question) -> bool:
+    """Best-effort signal that text alone is insufficient for this question.
+
+    This catches legacy records where the stem still says “如下图/表中” but the
+    image URL was lost during OCR/import. In that case returning a text-only AI
+    answer is worse than explicitly asking the mini-program for a screenshot.
+    """
+    content = question.content if isinstance(question.content, dict) else {}
+    segments = content.get("segments")
+    if isinstance(segments, list):
+        for seg in segments:
+            if isinstance(seg, dict) and str(seg.get("type") or "").lower() in {
+                "image", "math_image", "table_image", "code_image", "table",
+            }:
+                return True
+
+    text_parts = []
+    for value in (
+        content.get("text"), content.get("stem"), content.get("question"),
+        getattr(question, "stem", None),
+    ):
+        if isinstance(value, str) and value.strip():
+            text_parts.append(value)
+    return bool(_VISUAL_REFERENCE_RE.search("\n".join(text_parts)))
+
+
+def _extract_structured_visual(content: dict | None) -> str:
+    """Serialize native table segments so a text model can still read them."""
+    if not isinstance(content, dict):
+        return ""
+    segments = content.get("segments")
+    if not isinstance(segments, list):
+        return ""
+    tables: list[dict] = []
+    for seg in segments:
+        if not isinstance(seg, dict) or str(seg.get("type") or "").lower() != "table":
+            continue
+        safe = {
+            key: seg.get(key)
+            for key in ("caption", "headers", "rows", "cells", "text", "markdown")
+            if seg.get(key) not in (None, "", [], {})
+        }
+        if safe:
+            tables.append(safe)
+    if not tables:
+        return ""
+    try:
+        return json.dumps(tables, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return str(tables)
+
+
+def _read_local_public_asset(url: str) -> tuple[bytes, str] | None:
+    """Read our own /static asset without doing an SSRF-prone HTTP round trip."""
+    raw = str(url or "").strip()
+    if not raw:
+        return None
+    parsed = urlsplit(raw)
+    path = unquote(parsed.path if parsed.scheme else raw.split("?", 1)[0])
+    public_base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
+    if parsed.scheme and public_base and not raw.startswith(public_base + "/"):
+        return None
+    if not path.startswith("/static/"):
+        return None
+
+    # services/ai_service.py lives under <repo>/app/services in production.
+    repo_root = Path(__file__).resolve().parents[2]
+    static_root = (repo_root / "static").resolve()
+    candidate = (repo_root / path.lstrip("/")).resolve()
+    try:
+        candidate.relative_to(static_root)
+    except ValueError:
+        return None
+    if not candidate.is_file():
+        return None
+    size = candidate.stat().st_size
+    if size < 1 or size > _MAX_VISUAL_SOURCE_BYTES:
+        return None
+    data = candidate.read_bytes()
+    return data, _detect_image_mime(data)
+
+
+async def _visual_source_to_data_url(url: str) -> str | None:
+    raw = str(url or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("data:image/"):
+        # Existing data URLs are accepted only when bounded and syntactically
+        # simple. They will still be decoded/re-encoded by the caller when they
+        # originate from uploads; this branch is for stored question content.
+        if len(raw) <= (_MAX_VISUAL_SOURCE_BYTES * 2):
+            return raw
+        return None
+
+    local = await asyncio.to_thread(_read_local_public_asset, raw)
+    if local is not None:
+        data, content_type = local
+        try:
+            return _image_bytes_to_data_url(data, content_type=content_type)
+        except Exception:
+            return None
+
+    if not raw.startswith(("https://", "http://")):
+        return None
+    try:
+        remote = await asyncio.to_thread(
+            request_remote_bytes,
+            raw,
+            max_bytes=_MAX_VISUAL_SOURCE_BYTES,
+            timeout=_VISUAL_FETCH_TIMEOUT_SECONDS,
+            allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
+            follow_redirects=True,
+            max_redirects=2,
+            require_2xx=True,
+            headers={"Accept": "image/*"},
+        )
+        return _image_bytes_to_data_url(remote.data, content_type=remote.content_type)
+    except Exception:
+        logger.warning("ai.error_analysis.visual_fetch_failed url=%s", raw[:180])
+        return None
+
+
+async def _prepare_visual_inputs(
+    question: Question,
+    supplemental_image: dict | None,
+) -> tuple[list[str], dict]:
+    data_urls: list[str] = []
+    sources = _collect_question_visual_sources(question)
+    supplemental_ok = False
+
+    if supplemental_image and isinstance(supplemental_image.get("data"), (bytes, bytearray)):
+        try:
+            data_urls.append(_image_bytes_to_data_url(
+                bytes(supplemental_image["data"]),
+                content_type=str(supplemental_image.get("content_type") or ""),
+                already_compressed=True,
+            ))
+            supplemental_ok = True
+        except Exception:
+            logger.warning("ai.error_analysis.supplemental_image_invalid question_id=%s", question.id)
+
+    # Stored question assets can point to remote object storage. Resolve the
+    # bounded set concurrently so four 6-second fetch timeouts never become a
+    # 24-second serial delay before the LLM call.
+    remaining = max(0, _MAX_VISUAL_IMAGES - len(data_urls))
+    if remaining and sources:
+        candidates = sources[:remaining]
+        resolved = await asyncio.gather(
+            *(_visual_source_to_data_url(source) for source in candidates),
+            return_exceptions=False,
+        )
+        for data_url in resolved:
+            if len(data_urls) >= _MAX_VISUAL_IMAGES:
+                break
+            if data_url and data_url not in data_urls:
+                data_urls.append(data_url)
+
+    structured_visual = _extract_structured_visual(question.content)
+    return data_urls, {
+        "declared_source_count": len(sources),
+        "loaded_count": len(data_urls),
+        "supplemental_ok": supplemental_ok,
+        "structured_visual": structured_visual,
+        "visual_expected": bool(sources or supplemental_image or _question_declares_visual(question)),
+    }
+
+
+def _extract_visual_evidence(raw: str) -> str:
+    decoded = _decode_structured_content(raw or "")
+
+    def find(value, depth: int = 0) -> str:
+        if depth > 5:
+            return ""
+        if isinstance(value, dict):
+            for key in ("visual_evidence", "visualEvidence", "image_evidence"):
+                if key in value:
+                    return _coerce_analysis_text(value.get(key), depth + 1)
+            for key in _ANALYSIS_WRAPPER_KEYS:
+                if key in value:
+                    found = find(value.get(key), depth + 1)
+                    if found:
+                        return found
+        elif isinstance(value, list):
+            for item in value:
+                found = find(item, depth + 1)
+                if found:
+                    return found
+        return ""
+
+    return find(decoded)
+
+
+def _visual_evidence_is_valid(value: str) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    compact = re.sub(r"[\s_\-]+", "", text)
+    return compact not in {
+        "unreadable", "cannotread", "unabletoread", "novisualinput", "noimage",
+        "无法读取", "无法识别", "图片无法读取", "图片无法识别", "未收到图片",
+    }
 
 
 def _coerce_analysis_text(value, depth: int = 0) -> str:
@@ -226,6 +527,7 @@ def build_cached_error_analysis_response(wq) -> dict | None:
     """If the wrong question has a fresh cached AI analysis, return it; otherwise None."""
     if not is_ai_analysis_fresh(wq.ai_analysis):
         return None
+    meta = (wq.ai_analysis or {}).get("_meta") or {}
     return {
         "content": _normalize_ai_analysis(wq.ai_analysis),
         "from_cache": True,
@@ -233,6 +535,8 @@ def build_cached_error_analysis_response(wq) -> dict | None:
         "tokens_used": 0,
         "model": "cache",
         "duration_ms": 0,
+        "visual_input_count": int(meta.get("visual_input_count") or 0),
+        "visual_evidence": meta.get("visual_evidence") or None,
     }
 
 
@@ -247,6 +551,7 @@ def build_any_cached_error_analysis_response(wq) -> dict | None:
     content = _normalize_ai_analysis(wq.ai_analysis)
     if not is_valid_ai_analysis(content):
         return None
+    meta = (wq.ai_analysis or {}).get("_meta") or {}
     return {
         "content": content,
         "from_cache": True,
@@ -256,45 +561,52 @@ def build_any_cached_error_analysis_response(wq) -> dict | None:
         "duration_ms": 0,
         "force_regenerated": False,
         "cache_preserved": True,
+        "visual_input_count": int(meta.get("visual_input_count") or 0),
+        "visual_evidence": meta.get("visual_evidence") or None,
     }
 
 
 async def analyze_error(
-    db: AsyncSession, user_id: int, wrong_question_id: int,
+    db: AsyncSession,
+    user_id: int,
+    wrong_question_id: int,
     force_regenerate: bool = False,
+    supplemental_image: dict | None = None,
 ) -> dict:
-    wq = await db.execute(
+    wq_result = await db.execute(
         select(WrongQuestion).where(
             WrongQuestion.id == wrong_question_id,
             WrongQuestion.user_id == user_id,
         )
     )
-    wq = wq.scalar_one_or_none()
+    wq = wq_result.scalar_one_or_none()
     if not wq:
         raise ValueError("错题记录不存在")
 
-    q = await db.execute(
-        select(Question).where(Question.id == wq.question_id)
-    )
-    q = q.scalar_one_or_none()
+    q_result = await db.execute(select(Question).where(Question.id == wq.question_id))
+    q = q_result.scalar_one_or_none()
     if not q:
         raise ValueError("题目不存在")
 
-    # Check cache — 版本不匹配时跳过缓存以重新生成
-    if not force_regenerate:
+    # A user-supplied screenshot is an explicit request to re-evaluate the
+    # question with new context, so it must never be short-circuited by cache.
+    effective_force = bool(force_regenerate or supplemental_image)
+
+    if not effective_force:
         cached = build_cached_error_analysis_response(wq)
         if cached is not None:
             return cached
     else:
-        import logging
-        logging.getLogger(__name__).info(
-            "force regenerate error analysis wq_id=%d user_id=%d", wq.id, user_id,
+        logger.info(
+            "force regenerate error analysis wq_id=%d user_id=%d supplemental=%s",
+            wq.id, user_id, bool(supplemental_image),
         )
 
-    timeout_sec = ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS if force_regenerate else ERROR_ANALYSIS_TIMEOUT_SECONDS
+    timeout_sec = (
+        ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS
+        if effective_force else ERROR_ANALYSIS_TIMEOUT_SECONDS
+    )
 
-    # 分布式锁：防止并发重复调用大模型（跨进程）
-    # 先用进程内集合做快速检测，再用 Redis 分布式锁
     wq_pk = wq.id
     if wq_pk in _generating:
         return {
@@ -309,18 +621,14 @@ async def analyze_error(
 
     from app.core.cache import cache
     lock_key = f"ai:error_analysis:{wq_pk}"
-    # 必须使用每次请求唯一的 owner token。仅用 user_id 时，旧请求可能误删
-    # 同一用户后续请求重新获取的锁。
     lock_value = f"{user_id}:{uuid.uuid4().hex}"
     lock_ttl = timeout_sec + ERROR_ANALYSIS_LOCK_GRACE_SECONDS
     try:
         have_lock = await cache.acquire_lock(lock_key, lock_value, ttl=lock_ttl)
     except Exception:
-        # acquire_lock 异常时清除进程内锁，防止泄漏
         _generating.discard(wq_pk)
         raise
     if not have_lock and cache.is_enabled:
-        # Redis 不可用时降级到进程内锁；Redis 可用但锁已被占则返回 generating
         _generating.discard(wq_pk)
         return {
             "content": {"mistake_diagnosis": "AI 分析正在生成中，请稍后刷新查看", "knowledge_patch": "", "review_task": ""},
@@ -332,142 +640,201 @@ async def analyze_error(
         }
 
     try:
-        # 获取锁后二次检查缓存（另一个进程可能刚写入）
         await db.refresh(wq)
-        if not force_regenerate:
+        if not effective_force:
             cached = build_cached_error_analysis_response(wq)
             if cached is not None:
-                _generating.discard(wq_pk)
                 return cached
 
-        runtime = await resolve_llm_runtime_config(db, feature="analysis")
+        image_data_urls, visual_meta = await _prepare_visual_inputs(q, supplemental_image)
+        structured_visual = str(visual_meta.get("structured_visual") or "")
 
-        if runtime is None:
-            # force_regenerate 失败时有旧缓存则返回旧缓存
-            old_cache = build_any_cached_error_analysis_response(wq)
-            if old_cache and force_regenerate:
-                _generating.discard(wq_pk)
-                return old_cache
-            # 无旧缓存时才返回 fallback
-            _generating.discard(wq_pk)
+        # If the question declares an image/table-image but the server could not
+        # load any of it, do not ask a text-only LLM to guess from incomplete
+        # context. The mini-program can then request a clean screenshot.
+        if visual_meta.get("visual_expected") and not image_data_urls and not structured_visual:
             return {
                 "content": get_fallback_analysis(),
                 "from_cache": False,
                 "from_fallback": True,
                 "tokens_used": 0,
-                "model": "fallback",
+                "model": "vision_input_missing",
                 "duration_ms": 0,
                 "force_regenerated": False,
                 "cache_preserved": False,
+                "visual_input_count": 0,
+            }
+
+        feature = "vision" if image_data_urls else "analysis"
+        runtime = await resolve_llm_runtime_config(db, feature=feature)
+        if runtime is None:
+            old_cache = build_any_cached_error_analysis_response(wq)
+            if old_cache and effective_force and not image_data_urls:
+                return old_cache
+            return {
+                "content": get_fallback_analysis(),
+                "from_cache": False,
+                "from_fallback": True,
+                "tokens_used": 0,
+                "model": "vision_unavailable" if image_data_urls else "fallback",
+                "duration_ms": 0,
+                "force_regenerated": False,
+                "cache_preserved": False,
+                "visual_input_count": len(image_data_urls),
+            }
+
+        # Tagged models are authoritative. An untagged legacy default is allowed
+        # to try multimodal input; the visual-evidence handshake below prevents a
+        # text-only model from silently producing a seemingly valid answer.
+        if image_data_urls and runtime.capabilities and "vision" not in runtime.capabilities:
+            return {
+                "content": get_fallback_analysis(),
+                "from_cache": False,
+                "from_fallback": True,
+                "tokens_used": 0,
+                "model": "vision_unavailable",
+                "duration_ms": 0,
+                "force_regenerated": False,
+                "cache_preserved": False,
+                "visual_input_count": len(image_data_urls),
             }
 
         kp_map = await load_question_kps(db, [q.id])
         context = build_error_context(wq, q, kp_map.get(q.id, []))
+        context["question"]["structured_visual"] = structured_visual
         messages = build_error_analysis(
-            context["question"], wq.wrong_answer, q.answer
+            context["question"],
+            wq.wrong_answer,
+            q.answer,
+            image_data_urls=image_data_urls,
         )
 
+        # Mini-program upload requests have a ~58s client budget. Remote visual
+        # resolution may consume up to ~6s, so reserve a few seconds for upload,
+        # parsing and the HTTP response instead of spending the full 50s in LLM.
+        model_timeout_sec = min(timeout_sec, 46) if image_data_urls else timeout_sec
         try:
-            # OpenAI-compatible client performs the blocking remote fetch in the
-            # shared bounded thread pool; keep socket and coroutine timeout aligned.
-            async with asyncio.timeout(timeout_sec + ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS):
-                result = await chat_with_db_model(
-                    db,
+            async with asyncio.timeout(model_timeout_sec + ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS):
+                result = await llm.chat(
                     messages,
-                    feature="analysis",
-                    timeout=timeout_sec,
+                    temperature=0.3,
+                    model=runtime.model_name,
+                    api_key=runtime.api_key,
+                    base_url=runtime.base_url,
+                    provider=runtime.provider,
+                    timeout=model_timeout_sec,
                 )
-                if result is None:
-                    raise RuntimeError("AI分析模型未配置")
         except TimeoutError:
             old_cache = build_any_cached_error_analysis_response(wq)
             logger.warning(
-                "ai.error_analysis.timeout wq_id=%s force=%s timeout_sec=%s has_old_cache=%s",
-                wq.id, force_regenerate, timeout_sec, bool(old_cache),
+                "ai.error_analysis.timeout wq_id=%s force=%s visual=%s timeout_sec=%s has_old_cache=%s",
+                wq.id, effective_force, bool(image_data_urls), model_timeout_sec, bool(old_cache),
             )
-            if old_cache and force_regenerate:
-                _generating.discard(wq_pk)
+            if old_cache and effective_force and not image_data_urls:
                 return old_cache
-            resp = {
+            return {
                 "content": get_fallback_analysis(),
                 "from_cache": False,
                 "from_fallback": True,
                 "tokens_used": 0,
                 "model": "timeout",
-                "duration_ms": timeout_sec * 1000,
+                "duration_ms": model_timeout_sec * 1000,
                 "force_regenerated": False,
                 "cache_preserved": False,
+                "visual_input_count": len(image_data_urls),
             }
-            return resp
-        except Exception as e:
+        except Exception as exc:
             old_cache = build_any_cached_error_analysis_response(wq)
             logger.exception(
-                "ai.error_analysis.exception wq_id=%s force=%s err=%s has_old_cache=%s",
-                wq.id, force_regenerate, repr(e), bool(old_cache),
+                "ai.error_analysis.exception wq_id=%s force=%s visual=%s err=%s has_old_cache=%s",
+                wq.id, effective_force, bool(image_data_urls), repr(exc), bool(old_cache),
             )
-            if old_cache and force_regenerate:
-                _generating.discard(wq_pk)
+            if old_cache and effective_force and not image_data_urls:
+                return old_cache
+            error_text = str(exc).lower()
+            looks_like_vision_rejection = bool(image_data_urls) and any(
+                token in error_text
+                for token in ("image", "vision", "multimodal", "image_url", "content type")
+            )
+            return {
+                "content": get_fallback_analysis(),
+                "from_cache": False,
+                "from_fallback": True,
+                "tokens_used": 0,
+                "model": "vision_unavailable" if looks_like_vision_rejection else "fallback",
+                "duration_ms": 0,
+                "force_regenerated": False,
+                "cache_preserved": False,
+                "visual_input_count": len(image_data_urls),
+            }
+
+        raw_content = result.get("content", "")
+        parsed = parse_error_analysis_content(raw_content)
+        parsed_valid = is_valid_ai_analysis(parsed)
+        visual_evidence = _extract_visual_evidence(raw_content) if image_data_urls else ""
+
+        if image_data_urls and not _visual_evidence_is_valid(visual_evidence):
+            logger.info(
+                "ai.error_analysis.visual_ack_failed wq_id=%s model=%s evidence=%r",
+                wq.id, result.get("model"), visual_evidence[:120],
+            )
+            return {
+                "content": get_fallback_analysis(),
+                "from_cache": False,
+                "from_fallback": True,
+                "model": "vision_parse_failed",
+                "tokens_used": result.get("tokens_used", 0),
+                "duration_ms": result.get("duration_ms", 0),
+                "force_regenerated": False,
+                "cache_preserved": False,
+                "visual_input_count": len(image_data_urls),
+            }
+
+        if not parsed_valid:
+            old_cache = build_any_cached_error_analysis_response(wq)
+            if old_cache and effective_force and not image_data_urls:
                 return old_cache
             resp = {
                 "content": get_fallback_analysis(),
                 "from_cache": False,
                 "from_fallback": True,
-                "tokens_used": 0,
-                "model": "fallback",
-                "duration_ms": 25000,
-                "force_regenerated": False,
-                "cache_preserved": False,
-            }
-            return resp
-
-        raw_content = result.get("content", "")
-        parsed = parse_error_analysis_content(raw_content)
-        parsed_valid = is_valid_ai_analysis(parsed)
-
-        if not parsed_valid:
-            old_cache = build_any_cached_error_analysis_response(wq)
-            if old_cache and force_regenerate:
-                _generating.discard(wq_pk)
-                return old_cache
-            # 无有效内容且无旧缓存：返回 fallback，不保存
-            fallback = get_fallback_analysis()
-            resp = {
-                "content": fallback,
-                "from_cache": False,
-                "from_fallback": True,
                 "model": "parse_failed",
                 "tokens_used": 0,
                 "duration_ms": 0,
+                "visual_input_count": len(image_data_urls),
             }
-            if force_regenerate:
+            if effective_force:
                 resp["force_regenerated"] = False
                 resp["cache_preserved"] = False
             logger.info(
                 "ai.error_analysis.empty wq_id=%s force=%s model=parse_failed",
-                wq.id, force_regenerate,
+                wq.id, effective_force,
             )
             return resp
 
-        # 附加元信息
         parsed["_meta"] = {
             "model": result.get("model", ""),
             "generated_at": datetime.now(UTC).isoformat(),
             "version": AI_ANALYSIS_PROMPT_VERSION,
             "from_fallback": False,
-            "force_regenerated": force_regenerate,
+            "force_regenerated": effective_force,
+            "visual_input_count": len(image_data_urls),
+            "visual_evidence": visual_evidence or None,
         }
 
-        # 持久化到 wrong_questions.ai_analysis（仅有效非 fallback 才保存）
         wq.ai_analysis = parsed
         await db.commit()
 
-        # Log chat
+        context_snapshot = dict(context)
+        context_snapshot["visual_input_count"] = len(image_data_urls)
+        context_snapshot["visual_evidence"] = visual_evidence or None
+        # Never persist base64 image payloads in chat logs/context snapshots.
         db.add(AiChat(
             user_id=user_id,
             session_type="error_analysis",
             user_message=str(context["question"]),
             ai_response=result["content"],
-            context_snapshot=context,
+            context_snapshot=context_snapshot,
             tokens_used=result["tokens_used"],
             model=result["model"],
             duration_ms=result["duration_ms"],
@@ -475,8 +842,8 @@ async def analyze_error(
         await db.commit()
 
         logger.info(
-            "ai.error_analysis.result wq_id=%s force=%s model=%s from_fallback=%s parsed_valid=%s fields=%s duration_ms=%s",
-            wq.id, force_regenerate, result.get("model"), False, parsed_valid,
+            "ai.error_analysis.result wq_id=%s force=%s model=%s visual_count=%s parsed_valid=%s fields=%s duration_ms=%s",
+            wq.id, effective_force, result.get("model"), len(image_data_urls), parsed_valid,
             {k: bool(parsed.get(k)) for k in ["mistake_diagnosis", "knowledge_patch", "review_task"]},
             result.get("duration_ms"),
         )
@@ -488,7 +855,9 @@ async def analyze_error(
             "tokens_used": result.get("tokens_used", 0),
             "model": result.get("model", ""),
             "duration_ms": result.get("duration_ms", 0),
-            "force_regenerated": force_regenerate,
+            "force_regenerated": effective_force,
+            "visual_input_count": len(image_data_urls),
+            "visual_evidence": visual_evidence or None,
         }
     finally:
         _generating.discard(wq_pk)

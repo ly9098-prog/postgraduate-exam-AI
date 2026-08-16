@@ -72,6 +72,30 @@ def _normalise_message_content(content: Any) -> str:
     return str(content)
 
 
+def _message_prompt_chars(content: Any) -> int:
+    """Count textual prompt size without charging inline image base64 as text.
+
+    Multimodal OpenAI-compatible messages represent images inside ``content``
+    arrays. The image payload is bounded by the feature service; feeding its
+    base64 representation into the text-char admission guard would reject every
+    normal screenshot before the request reaches a vision model.
+    """
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, list):
+        total = 0
+        for item in content:
+            if isinstance(item, str):
+                total += len(item)
+            elif isinstance(item, dict):
+                if isinstance(item.get("text"), str):
+                    total += len(item["text"])
+                elif item.get("type") == "image_url":
+                    total += 32  # small structural charge; image bytes are bounded separately
+        return total
+    return len(str(content)) if content is not None else 0
+
+
 def _tokens_used(data: dict[str, Any]) -> int:
     usage = data.get("usage")
     if not isinstance(usage, dict):
@@ -150,7 +174,7 @@ class OpenAICompatibleClient:
         except Exception:
             base_url_host = "-"
 
-        prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
+        prompt_chars = sum(_message_prompt_chars(m.get("content", "")) for m in messages)
         request_timeout = float(timeout if timeout is not None else self.timeout)
         if request_timeout <= 0:
             raise ValueError("timeout must be positive")

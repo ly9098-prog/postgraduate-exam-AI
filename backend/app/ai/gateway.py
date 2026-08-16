@@ -22,6 +22,7 @@ class LLMRuntimeConfig:
     model_name: str
     provider: str
     model_config_id: int | str | None = None
+    capabilities: frozenset[str] = frozenset()
 
 
 def _is_non_chat_provider(provider: str | None) -> bool:
@@ -59,6 +60,7 @@ async def resolve_llm_runtime_config(
                 model_name=resolved.model_name,
                 provider=resolved.provider,
                 model_config_id=resolved.model_config_id,
+                capabilities=frozenset(resolved.capabilities),
             )
         except (ValueError, TypeError):
             return None
@@ -77,6 +79,7 @@ async def resolve_llm_runtime_config(
         model_name=str(config["model_name"]),
         provider=str(config.get("provider") or "openai_compatible"),
         model_config_id=config.get("id"),
+        capabilities=frozenset(str(item) for item in (config.get("features") or []) if item),
     )
 
 
