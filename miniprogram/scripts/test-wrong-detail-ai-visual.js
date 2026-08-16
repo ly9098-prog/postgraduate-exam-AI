@@ -18,5 +18,7 @@ assert(!wxml.includes('视觉上下文'), 'visual context upload panel should be
 assert(!wxml.includes('添加题图 / 表格'), 'manual upload CTA should be removed')
 assert(!wxml.includes('aiAttachment'), 'attachment-dependent rendering should be removed')
 assert(!wxss.includes('.ai-visual-context'), 'unused visual upload styles should be removed')
+assert(js.includes("wq.ai_analysis_status && wq.ai_analysis_status !== 'ready'"), 'stale/generating AI caches must not be treated as ready')
+assert(js.includes("!wq.ai_analysis_status || wq.ai_analysis_status === 'ready'"), 'only ready/legacy caches may render directly')
 
 console.log('wrong-detail AI DB-image-only regression passed')
