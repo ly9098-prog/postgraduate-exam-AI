@@ -113,7 +113,11 @@ function _hasStoredAnalysisValue(raw) {
 }
 
 function _detectAiCache(wq) {
-  return !!(wq && _hasStoredAnalysisValue(wq.ai_analysis))
+  if (!wq) return false
+  // New backend versions explicitly mark stale AI caches. Never recover or
+  // render one merely because the historical JSON column is non-empty.
+  if (wq.ai_analysis_status && wq.ai_analysis_status !== 'ready') return false
+  return _hasStoredAnalysisValue(wq.ai_analysis)
 }
 
 function _resolvePreferredAnalysis(wq) {
@@ -121,7 +125,7 @@ function _resolvePreferredAnalysis(wq) {
 
   // 同一区域只选择一个来源：wrong_questions.ai_analysis 非空时优先，
   // 否则回退到 questions.analysis。两个来源都走同一套标准化/富文本渲染。
-  if (_hasStoredAnalysisValue(wq.ai_analysis)) {
+  if ((!wq.ai_analysis_status || wq.ai_analysis_status === 'ready') && _hasStoredAnalysisValue(wq.ai_analysis)) {
     return {
       normalized: _normalizeAiPayload(wq.ai_analysis),
       source: 'ai',
