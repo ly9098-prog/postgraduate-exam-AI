@@ -1,14 +1,15 @@
 const api = require('../../../utils/api')
 const config = require('../../../config')
 const {
-  buildRenderModel, resetRenderGuard, setRenderGuardPage,
-  toPlainInlineMathText, needsRichRender, textToHtml
+  buildRenderModel, resetRenderGuard, setRenderGuardPage
 } = require('../utils/stem-render')
 const { isTrueFalseType } = require('../utils/answer')
 const adapter = require('../utils/question-runner-adapter')
 const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../utils/ai-analysis-normalizer')
+const { buildAiRichText } = require('../utils/ai-math-render')
 
 const AI_REQUEST_TIMEOUT_MS = 58000
+const AI_VISUAL_MAX_BYTES = 8 * 1024 * 1024
 const AI_CACHE_POLL_INTERVAL_MS = 1500
 const AI_CACHE_POLL_ATTEMPTS = 6
 const QUESTION_SWITCH_OUT_MS = 150
@@ -23,7 +24,50 @@ function _sleep(ms) {
 function _fallbackMessage(model) {
   if (model === 'timeout') return 'AI 分析生成超时，请稍后重试'
   if (model === 'parse_failed') return 'AI 返回格式异常，请重新生成'
+  if (model === 'vision_input_missing') return 'AI 没有获得题目图片或表格，请补充清晰截图后重试'
+  if (model === 'vision_unavailable') return '当前 AI 模型暂不支持图片理解，请稍后重试或联系管理员配置视觉模型'
+  if (model === 'vision_parse_failed') return 'AI 未能确认已读到图片或表格，请上传更清晰、完整的截图后重试'
   return 'AI 服务暂时不可用，请稍后重试'
+}
+
+function _getQuestionVisualMeta(wq) {
+  if (!wq) return { imageCount: 0, hasTable: false, hasVisual: false }
+  var seen = {}
+  var count = 0
+  var add = function(url) {
+    if (!url || typeof url !== 'string') return
+    var key = url.trim()
+    if (!key || seen[key]) return
+    seen[key] = true
+    count++
+  }
+  var urls = adapter.getQuestionImages ? adapter.getQuestionImages(wq) : []
+  var embedded = adapter.getEmbeddedImageUrls ? adapter.getEmbeddedImageUrls(wq.content || {}) : []
+  ;(urls || []).forEach(add)
+  ;(embedded || []).forEach(add)
+
+  var hasTable = false
+  var segments = wq.content && Array.isArray(wq.content.segments) ? wq.content.segments : []
+  for (var i = 0; i < segments.length; i++) {
+    var seg = segments[i]
+    if (!seg || typeof seg !== 'object') continue
+    var type = String(seg.type || '').toLowerCase()
+    if (type === 'table' || type === 'table_image') hasTable = true
+  }
+  return { imageCount: count, hasTable: hasTable, hasVisual: count > 0 || hasTable }
+}
+
+function _storedVisualCount(wq) {
+  var meta = wq && wq.ai_analysis && typeof wq.ai_analysis === 'object' ? wq.ai_analysis._meta : null
+  var n = Number(meta && meta.visual_input_count)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0
+}
+
+function _formatFileSize(bytes) {
+  var n = Number(bytes) || 0
+  if (n <= 0) return ''
+  if (n < 1024 * 1024) return Math.max(1, Math.round(n / 1024)) + 'KB'
+  return (n / 1024 / 1024).toFixed(1) + 'MB'
 }
 
 function _subjectLabel(s) {
@@ -67,20 +111,7 @@ function _processWqData(wq, safeMode) {
 }
 
 function _buildAiRichText(value) {
-  const raw = String(value || '').trim()
-  if (!raw) {
-    return { raw: '', text: '', html: '', needsRich: false }
-  }
-  const plain = toPlainInlineMathText(raw)
-  // 已是 HTML（含标签）时直接透传，避免 textToHtml 二次转义把 <p>/<br> 显示成 &lt;p&gt;
-  const alreadyHtml = /<\/?[a-z][\s\S]*>/i.test(raw)
-  const needsRich = !plain && needsRichRender(raw)
-  return {
-    raw,
-    text: plain || raw,
-    html: needsRich ? (alreadyHtml ? raw : textToHtml(raw)) : '',
-    needsRich,
-  }
+  return buildAiRichText(value)
 }
 
 function _normalizeAiResult(content) {
@@ -174,6 +205,11 @@ Page({
     aiRegenerating: false,
     aiSkeletonVisible: false,
     aiInlineNotice: '',
+    aiAttachment: null,
+    aiQuestionVisualCount: 0,
+    aiQuestionHasTable: false,
+    aiVisualUsedCount: 0,
+    aiNeedsVisualAttachment: false,
     contentTransitionClass: '',
     showSwitchMask: false,
     renderTraces: [],
@@ -279,6 +315,9 @@ Page({
       aiRequested: false,
       aiFromCache: false,
       aiFromQuestionAnalysis: false,
+      aiAttachment: null,
+      aiVisualUsedCount: 0,
+      aiNeedsVisualAttachment: false,
       masterConfirmVisible: false,
       moreMenuVisible: false,
       removeConfirmVisible: false,
@@ -289,6 +328,7 @@ Page({
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (!wq) throw new Error('not found')
       const raw = _processWqData(wq, this.data.safeModeActive)
+      const visualMeta = _getQuestionVisualMeta(wq)
 
       // Build quiz-runner compatible currentQuestion
       const currentQuestion = Object.assign({}, wq, {
@@ -325,6 +365,10 @@ Page({
         aiFromQuestionAnalysis: false,
         aiFallback: false,
         aiErrorText: '',
+        aiQuestionVisualCount: visualMeta.imageCount,
+        aiQuestionHasTable: visualMeta.hasTable,
+        aiVisualUsedCount: _storedVisualCount(wq),
+        aiNeedsVisualAttachment: false,
         isCurrentMastered: _isWqMastered(wq),
         masterSubmitting: false,
         removeSubmitting: false,
@@ -368,7 +412,7 @@ Page({
     }
   },
 
-  /** 统一复位 AI 加载状态 */
+  /** 统一复位 AI 加载状态；视觉上下文由题目切换/用户操作单独管理 */
   _resetAiLoadingState() {
     this.setData({
       aiLoading: false,
@@ -384,6 +428,86 @@ Page({
     const entry = this._wqCache[wqId]
     if (!entry) return
     entry.data = Object.assign({}, entry.data, { ai_analysis: normalized })
+  },
+
+  async chooseAiVisual() {
+    if (this.data.aiLoading || this.data.aiRegenerating) return
+    try {
+      const res = await wx.chooseMedia({
+        count: 1,
+        mediaType: ['image'],
+        sourceType: ['album', 'camera'],
+        sizeType: ['compressed'],
+      })
+      const file = res && res.tempFiles && res.tempFiles[0]
+      const path = file && (file.tempFilePath || file.path)
+      if (!path) return
+      const size = Number(file.size) || 0
+      if (size > AI_VISUAL_MAX_BYTES) {
+        wx.showToast({ title: '图片过大，请选择 8MB 以内截图', icon: 'none' })
+        return
+      }
+      this.setData({
+        aiAttachment: {
+          tempFilePath: path,
+          size: size,
+          sizeText: _formatFileSize(size),
+          label: '补充题图 / 表格',
+        },
+        aiNeedsVisualAttachment: false,
+        aiInlineNotice: this.data.aiCards ? '已添加视觉截图，重新生成时会一并读取' : '',
+      })
+    } catch (e) {
+      var msg = e && (e.errMsg || e.message) ? String(e.errMsg || e.message) : ''
+      if (msg && msg.indexOf('cancel') < 0) {
+        wx.showToast({ title: '选择图片失败，请重试', icon: 'none' })
+      }
+    }
+  },
+
+  removeAiVisual() {
+    if (this.data.aiLoading || this.data.aiRegenerating) return
+    this.setData({ aiAttachment: null })
+  },
+
+  previewAiVisual() {
+    const attachment = this.data.aiAttachment
+    if (!attachment || !attachment.tempFilePath) return
+    wx.previewImage({ current: attachment.tempFilePath, urls: [attachment.tempFilePath] })
+  },
+
+  async _requestAiAnalysis(wqId, forceRegenerate) {
+    const attachment = this.data.aiAttachment
+    if (attachment && attachment.tempFilePath) {
+      return api.uploadFile('/ai/error-analysis/with-image', attachment.tempFilePath, {
+        name: 'file',
+        formData: {
+          wrong_question_id: String(wqId),
+          force_regenerate: forceRegenerate ? 'true' : 'false',
+        },
+        timeout: AI_REQUEST_TIMEOUT_MS,
+      })
+    }
+    return api.post('/ai/error-analysis', {
+      wrong_question_id: wqId,
+      force_regenerate: !!forceRegenerate,
+    }, { timeout: AI_REQUEST_TIMEOUT_MS })
+  },
+
+  _visualFailureState(model) {
+    var needsAttachment = model === 'vision_input_missing' || model === 'vision_parse_failed'
+    return {
+      aiNeedsVisualAttachment: needsAttachment,
+      aiErrorText: _fallbackMessage(model),
+    }
+  },
+
+  _visualSuccessState(result) {
+    var count = Number(result && result.visual_input_count) || 0
+    return {
+      aiVisualUsedCount: count > 0 ? Math.floor(count) : 0,
+      aiNeedsVisualAttachment: false,
+    }
   },
 
   onTapAiAnalysis() {
@@ -429,14 +553,20 @@ Page({
     this._resetAiLoadingState()
     this._aiResult = recovered.normalized
     if (recovered.latestWq) this._syncWqCacheAi(recovered.latestWq.id, recovered.normalized)
+    const latestWq = recovered.latestWq || this.data.wq
+    const visualMeta = _getQuestionVisualMeta(latestWq)
     this.setData({
-      wq: recovered.latestWq || this.data.wq,
+      wq: latestWq,
       aiCards: _normalizeAiResult(recovered.normalized),
       aiFallback: false,
       aiFromCache: true,
       aiFromQuestionAnalysis: false,
       aiErrorText: '',
       aiInlineNotice: '',
+      aiQuestionVisualCount: visualMeta.imageCount,
+      aiQuestionHasTable: visualMeta.hasTable,
+      aiVisualUsedCount: _storedVisualCount(latestWq),
+      aiNeedsVisualAttachment: false,
     })
     return true
   },
@@ -451,9 +581,10 @@ Page({
       aiFallback: false,
       aiErrorText: '',
       aiInlineNotice: '',
+      aiNeedsVisualAttachment: false,
     })
     try {
-      const result = await api.post('/ai/error-analysis', { wrong_question_id: wqId }, { timeout: AI_REQUEST_TIMEOUT_MS })
+      const result = await this._requestAiAnalysis(wqId, false)
       // Stale response guard
       if (!this._isCurrentAiRequest(requestId, wqId)) {
         this._resetAiLoadingState()
@@ -475,7 +606,7 @@ Page({
       // fallback 本身带有三段通用文案，不能仅凭“有内容”判定为成功。
       if (fromFallback) {
         this._resetAiLoadingState()
-        this.setData({ aiFallback: true, aiErrorText: _fallbackMessage(model) })
+        this.setData(Object.assign({ aiFallback: true }, this._visualFailureState(model)))
         return
       }
       if (!hasContent) {
@@ -486,13 +617,13 @@ Page({
       this._resetAiLoadingState()
       this._aiResult = normalized
       this._syncWqCacheAi(wqId, normalized)
-      this.setData({
+      this.setData(Object.assign({
         aiCards: _normalizeAiResult(normalized),
         aiFallback: false,
         aiFromCache: !!(result && result.from_cache),
         aiFromQuestionAnalysis: false,
         aiErrorText: '',
-      })
+      }, this._visualSuccessState(result)))
     } catch (e) {
       console.error('加载 AI 分析失败', e)
       if (this._isCurrentAiRequest(requestId, wqId)) {
@@ -523,12 +654,10 @@ Page({
       aiErrorText: '',
       aiFallback: false,
       aiInlineNotice: '',
+      aiNeedsVisualAttachment: false,
     })
     try {
-      const result = await api.post('/ai/error-analysis', {
-        wrong_question_id: wqId,
-        force_regenerate: true,
-      }, { timeout: AI_REQUEST_TIMEOUT_MS })
+      const result = await this._requestAiAnalysis(wqId, true)
       // Stale response guard — 必须复位 ai state
       if (!this._isCurrentAiRequest(requestId, wqId)) {
         this._resetAiLoadingState()
@@ -566,14 +695,17 @@ Page({
       // fallback 带有通用正文，必须按失败处理，不能覆盖成“生成成功”。
       if (fromFallback) {
         this._resetAiLoadingState()
+        var visualFailure = this._visualFailureState(model)
         if (oldCards) {
-          this.setData({
+          this.setData(Object.assign({
             aiFallback: false,
-            aiInlineNotice: '重新生成失败，已保留当前解析',
-          })
-          wx.showToast({ title: '重新生成失败，已保留当前解析', icon: 'none' })
+            aiInlineNotice: visualFailure.aiNeedsVisualAttachment
+              ? visualFailure.aiErrorText
+              : '重新生成失败，已保留当前解析',
+          }, { aiNeedsVisualAttachment: visualFailure.aiNeedsVisualAttachment }))
+          wx.showToast({ title: visualFailure.aiNeedsVisualAttachment ? '需要补充清晰题图' : '重新生成失败，已保留当前解析', icon: 'none' })
         } else {
-          this.setData({ aiFallback: true, aiErrorText: _fallbackMessage(model) })
+          this.setData(Object.assign({ aiFallback: true }, visualFailure))
         }
         return
       }
@@ -598,13 +730,13 @@ Page({
       this._resetAiLoadingState()
       this._aiResult = normalized
       this._syncWqCacheAi(wqId, normalized)
-      this.setData({
+      this.setData(Object.assign({
         aiCards: _normalizeAiResult(normalized),
         aiFallback: false,
         aiFromCache: !!(result && result.from_cache),
         aiFromQuestionAnalysis: false,
         aiErrorText: '',
-      })
+      }, this._visualSuccessState(result)))
       wx.showToast({ title: '已重新生成', icon: 'success' })
     } catch (e) {
       console.error('重新生成 AI 分析失败', e)
@@ -1055,6 +1187,7 @@ Page({
       this._prefetchWrongQuestion(idx - 1)
       this._prefetchWrongQuestion(idx + 1)
       const raw = _processWqData(wq, this.data.safeModeActive)
+      const visualMeta = _getQuestionVisualMeta(wq)
 
       // Build quiz-runner compatible currentQuestion
       const currentQuestion = Object.assign({}, wq, {
@@ -1090,6 +1223,11 @@ Page({
         aiFromQuestionAnalysis: false,
         aiFallback: false,
         aiErrorText: '',
+        aiAttachment: null,
+        aiQuestionVisualCount: visualMeta.imageCount,
+        aiQuestionHasTable: visualMeta.hasTable,
+        aiVisualUsedCount: _storedVisualCount(wq),
+        aiNeedsVisualAttachment: false,
         isCurrentMastered: _isWqMastered(wq),
         masterSubmitting: false,
         removeSubmitting: false,
