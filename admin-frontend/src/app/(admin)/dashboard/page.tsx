@@ -36,6 +36,7 @@ import type {
   TaskDiagnosticsResponse,
 } from "@/lib/api/types";
 import { useAuthStore } from "@/lib/auth/auth-store";
+import { chinaDateString } from "@/lib/time";
 import { DashboardTrendChart } from "./components/dashboard-trend-chart";
 import { ReviewStatusChart } from "./components/review-status-chart";
 
@@ -197,15 +198,10 @@ export default function DashboardPage() {
   const [period, setPeriod] = useState<Period>("7d");
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
-  const dailyQuery = useMemo(() => {
-    const to = new Date();
-    const from = new Date(to);
-    from.setDate(from.getDate() - (period === "7d" ? 6 : 29));
-    return {
-      from: from.toISOString().slice(0, 10),
-      to: to.toISOString().slice(0, 10),
-    };
-  }, [period]);
+  const dailyQuery = useMemo(() => ({
+    from: chinaDateString(-(period === "7d" ? 6 : 29)),
+    to: chinaDateString(),
+  }), [period]);
 
   const overview = useQuery({
     queryKey: ["dashboard", "overview"],
@@ -341,9 +337,7 @@ export default function DashboardPage() {
   const queuePending = (queueTotals?.ready ?? 0) + (queueTotals?.processing ?? 0) + (queueTotals?.retry ?? 0);
   const queueErrors = (queueTotals?.dead ?? 0) + (queueTotals?.corrupt ?? 0);
 
-  const dateLabel = new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" })
-    .format(new Date())
-    .replaceAll("/", "-");
+  const dateLabel = chinaDateString();
 
   const redisConfigured = taskDiagnostics.data?.redis.configured === true;
   const redisAvailable = redisConfigured && taskDiagnostics.data?.redis.available === true;

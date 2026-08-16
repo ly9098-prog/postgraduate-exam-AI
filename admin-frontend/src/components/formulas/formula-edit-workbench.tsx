@@ -33,6 +33,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatChinaDateTime } from "@/lib/time";
 import { Input } from "@/components/ui/input";
 import { LatexRenderer } from "@/components/ui/latex-renderer";
 import { MixedLatexRenderer } from "@/components/ui/mixed-latex-renderer";
@@ -143,17 +144,7 @@ type WorkspaceTab = "block" | "supplement" | "examples" | "graph";
 type RailTab = "properties" | "preview";
 
 function formatDateTime(value: string | null | undefined) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  return formatChinaDateTime(value);
 }
 
 function editableText(value: unknown) {

@@ -40,6 +40,7 @@ import { Drawer } from "@/components/ui/drawer";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { apiRequest } from "@/lib/api/client";
+import { formatChinaDateTime } from "@/lib/time";
 import type {
   AsyncTaskDetail,
   AsyncTaskListResponse,
@@ -61,10 +62,7 @@ function duration(seconds?: number | null) {
 }
 
 function formatTime(value?: string | null) {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", { hour12: false });
+  return formatChinaDateTime(value);
 }
 
 function formatShortDate(value: string) {

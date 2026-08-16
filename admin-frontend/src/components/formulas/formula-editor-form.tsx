@@ -35,6 +35,7 @@ import { FormulaGraphAssetPanel } from "@/components/formulas/formula-graph-asse
 import { apiRequest } from "@/lib/api/client";
 import { normalizeFormulaText } from "@/lib/formula-normalize";
 import { normalizeLatexExpression } from "@/lib/math-text";
+import { formatChinaClock, formatChinaDateTime } from "@/lib/time";
 
 /* ── Types ── */
 
@@ -939,7 +940,7 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
             <div>
               <p className="text-sm font-semibold text-amber-900">发现未完成的本地草稿</p>
               <p className="mt-0.5 text-xs text-amber-700">
-                保存于 {new Date(recoverableDraft.savedAt).toLocaleString()}，可恢复后继续编辑。
+                保存于 {formatChinaDateTime(recoverableDraft.savedAt)}（北京时间），可恢复后继续编辑。
               </p>
             </div>
           </div>
@@ -1575,7 +1576,7 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
                 {mode === "create" && (
                   <p className="mt-1">
                     {lastAutoSavedAt
-                      ? `本地草稿已自动保存于 ${lastAutoSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                      ? `本地草稿已自动保存于 ${formatChinaClock(lastAutoSavedAt.getTime())}（北京时间）`
                       : "填写后会自动保存到当前浏览器。"}
                   </p>
                 )}

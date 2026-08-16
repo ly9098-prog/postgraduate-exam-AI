@@ -18,6 +18,7 @@ import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest } from "@/lib/api/client";
 import type { FormulaGraphAsset } from "@/lib/api/types";
 import { decodeApiText, normalizeLatexExpression } from "@/lib/math-text";
+import { formatChinaDate } from "@/lib/time";
 import Link from "next/link";
 
 /* ── Structured content renderers for JSON-encoded fields ── */
@@ -299,7 +300,7 @@ export default function EditFormulaPage() {
                 </div>
                 <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
                   #{card.id} · v{card.version}
-                  {card.published_at ? ` · 发布于 ${new Date(card.published_at).toLocaleDateString()}` : ""}
+                  {card.published_at ? ` · 发布于 ${formatChinaDate(card.published_at)}` : ""}
                 </p>
               </div>
             </div>

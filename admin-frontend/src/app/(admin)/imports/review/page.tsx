@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
+import { formatChinaClock } from "@/lib/time";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import { hasVisualSegments, isImageSegmentType, getSegmentTypeLabel, reorderSegmentUp, reorderSegmentDown, moveSegment, deleteSegmentAtIndex, updateSegOptionKey, updateSegUrl } from "@/lib/segment-utils";
 import { QUESTION_TYPE_OPTIONS, QUESTION_TYPE_LABELS, canonicalizeQuestionType, getQuestionTypeLabel, getQuestionTypeShortLabel, formatUnknownType } from "@/lib/question-types";
@@ -1318,7 +1319,7 @@ export default function ImportReviewPage() {
             <p className="min-w-0 flex-1 pt-0.5 text-sm leading-relaxed text-[var(--ink)]">{message}</p>
           </div>
           <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border)]/30 pt-2.5">
-            <span className="text-[10px] text-[var(--color-text-hint)]">{new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
+            <span className="text-[10px] text-[var(--color-text-hint)]">{formatChinaClock()}</span>
             <div className="ml-auto">
               <button aria-label="关闭提示" className="rounded-lg px-3 py-1 text-[10px] font-medium text-[var(--color-text-hint)] transition hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]" onClick={() => setMessage(null)}>关闭</button>
             </div>

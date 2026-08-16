@@ -1,46 +1,25 @@
+import {
+  chinaDateToUtcIso,
+  formatChinaDateTime,
+  formatUtcTime as formatUtc,
+} from "@/lib/time";
+
 export function formatLocalDateTime(isoString: string | null | undefined): string {
-  if (!isoString) return "";
-  try {
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return "时间格式异常";
-    const fmt = new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-    return fmt.format(d);
-  } catch {
-    return "时间格式异常";
-  }
+  return formatChinaDateTime(isoString, { second: "2-digit" });
 }
 
 export function formatUtcTime(isoString: string | null | undefined): string {
-  if (!isoString) return "";
-  try {
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return "时间格式异常";
-    return d.toISOString().replace("Z", " UTC");
-  } catch {
-    return "时间格式异常";
-  }
+  return formatUtc(isoString);
 }
 
-/** Convert a local date string (YYYY-MM-DD) to a UTC ISO string at local midnight. */
+/** Convert an Asia/Shanghai date string (YYYY-MM-DD) to UTC ISO at China midnight. */
 export function localDateToUtcIso(dateStr: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const local = new Date(y, m - 1, d);
-  return local.toISOString();
+  return chinaDateToUtcIso(dateStr);
 }
 
-/** Convert a local date string (YYYY-MM-DD) to the NEXT local midnight in UTC ISO (exclusive end). */
+/** Convert an Asia/Shanghai date string to the next China midnight in UTC (exclusive end). */
 export function localDateToUtcIsoNext(dateStr: string): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const local = new Date(y, m - 1, d + 1);
-  return local.toISOString();
+  return chinaDateToUtcIso(dateStr, 1);
 }
 
 export function truncate(str: string | null | undefined, maxLen: number): string {

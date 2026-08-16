@@ -6,6 +6,7 @@ import { Upload, Trash2, ExternalLink, ImageIcon, AlertCircle, Check, Loader2, R
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { apiRequest } from "@/lib/api/client";
+import { formatChinaDateTime } from "@/lib/time";
 import type { FormulaGraphAsset } from "@/lib/api/types";
 
 type Props = {
@@ -21,8 +22,7 @@ function getDisplayUrl(asset: FormulaGraphAsset): string {
 }
 
 function formatDt(d: string | null | undefined) {
-  if (!d) return "—";
-  try { return new Date(d).toLocaleString("zh-CN"); } catch { return d; }
+  return formatChinaDateTime(d);
 }
 
 function AltDescEditor({
