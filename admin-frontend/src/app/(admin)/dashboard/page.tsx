@@ -54,12 +54,12 @@ type MetricCard = {
 };
 
 const TONE_STYLES: Record<Tone, { icon: string; iconBg: string; line: string }> = {
-  blue: { icon: "text-[#2f74df]", iconBg: "bg-[#edf4ff]", line: "#2f74df" },
-  green: { icon: "text-[#14936f]", iconBg: "bg-[#eaf8f3]", line: "#14936f" },
-  orange: { icon: "text-[#df7a22]", iconBg: "bg-[#fff4e9]", line: "#df7a22" },
-  red: { icon: "text-[#d95454]", iconBg: "bg-[#fff0f0]", line: "#d95454" },
-  purple: { icon: "text-[#7c61d6]", iconBg: "bg-[#f2efff]", line: "#7c61d6" },
-  slate: { icon: "text-[#53708d]", iconBg: "bg-[#edf3f7]", line: "#53708d" },
+  blue: { icon: "text-[var(--color-primary)]", iconBg: "bg-[var(--color-primary-light)]", line: "#4a6f8a" },
+  green: { icon: "text-[#648764]", iconBg: "bg-[#edf4ed]", line: "#6d906d" },
+  orange: { icon: "text-[#ad8259]", iconBg: "bg-[var(--color-warning-light)]", line: "#b58a62" },
+  red: { icon: "text-[#b85c57]", iconBg: "bg-[var(--color-danger-light)]", line: "#b96862" },
+  purple: { icon: "text-[#82758f]", iconBg: "bg-[#f1eef3]", line: "#8b7c97" },
+  slate: { icon: "text-[#6f8391]", iconBg: "bg-[#eef2f4]", line: "#78909f" },
 };
 
 function numberValue(value: unknown) {
@@ -151,12 +151,12 @@ function MetricCardView({ item, index }: { item: MetricCard; index: number }) {
 
   return (
     <section
-      className="dashboard-motion-safe group min-w-0 rounded-2xl border border-[var(--color-border-light)] bg-white/[0.86] px-4 py-3.5 shadow-[0_5px_18px_rgba(37,61,89,0.045)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 hover:border-[#c4d8ed] hover:bg-white/[0.94] hover:shadow-[0_12px_30px_rgba(37,82,132,0.10)]"
+      className="dashboard-motion-safe group min-w-0 rounded-2xl border border-[var(--color-border-light)] bg-white/[0.84] px-4 py-3.5 shadow-[0_4px_16px_rgba(27,39,51,0.04)] backdrop-blur-sm transition-[border-color,box-shadow,background-color,transform] duration-300 hover:-translate-y-0.5 hover:border-[#d3dce1] hover:bg-white/[0.94] hover:shadow-[0_8px_22px_rgba(27,39,51,0.075)]"
       style={{ animation: `dashboard-card-in 520ms cubic-bezier(.2,.8,.2,1) ${index * 45}ms both` }}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-full transition-transform duration-300 group-hover:scale-110 ${style.iconBg}`}>
-          <Icon className={`h-[18px] w-[18px] transition-transform duration-300 group-hover:-rotate-3 ${style.icon}`} />
+        <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/60 transition-transform duration-300 group-hover:scale-[1.04] ${style.iconBg}`}>
+          <Icon className={`h-[18px] w-[18px] transition-transform duration-300 ${style.icon}`} />
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-[11px] font-semibold text-[var(--color-text-secondary)]">{item.label}</p>
@@ -385,32 +385,23 @@ export default function DashboardPage() {
           from { opacity: 0; translate: 0 10px; scale: .985; }
           to { opacity: 1; translate: 0 0; scale: 1; }
         }
-        @keyframes dashboard-loading {
-          0% { transform: translateX(-110%); }
-          50% { transform: translateX(55%); }
-          100% { transform: translateX(220%); }
-        }
         @media (prefers-reduced-motion: reduce) {
           .dashboard-motion-safe { animation: none !important; transition: none !important; }
         }
       `}</style>
       {manualRefreshing ? (
         <div
-          className="fixed inset-0 z-[100] grid place-items-center bg-[#eef3f7]/72 backdrop-blur-[3px]"
+          className="fixed right-6 top-5 z-[100] flex items-center gap-3 rounded-xl border border-[var(--color-border-light)] bg-white/95 px-4 py-3 shadow-[0_12px_34px_rgba(27,39,51,0.12)] backdrop-blur-md"
           role="status"
           aria-live="polite"
           aria-label="正在刷新仪表盘数据"
         >
-          <div className="flex min-w-[210px] flex-col items-center rounded-3xl border border-white/80 bg-white/92 px-8 py-7 shadow-[0_22px_60px_rgba(35,62,94,0.18)]">
-            <div className="relative grid h-14 w-14 place-items-center rounded-2xl bg-[#edf4ff] text-[#2f74df]">
-              <span className="absolute inset-0 rounded-2xl border border-[#2f74df]/20 animate-ping" />
-              <RefreshCw className="h-6 w-6 animate-spin" />
-            </div>
-            <p className="mt-4 text-sm font-bold text-[var(--ink)]">正在刷新运营数据</p>
-            <p className="mt-1 text-xs text-[var(--color-text-hint)]">正在同步 Dashboard 最新状态…</p>
-            <div className="mt-4 h-1.5 w-32 overflow-hidden rounded-full bg-[#e9f0f7]">
-              <div className="h-full w-1/2 animate-[dashboard-loading_1s_ease-in-out_infinite] rounded-full bg-[#2f74df]" />
-            </div>
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-[var(--color-primary-light)] text-[var(--color-primary)]">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+          </span>
+          <div>
+            <p className="text-xs font-bold text-[var(--ink)]">正在刷新运营数据</p>
+            <p className="mt-0.5 text-[10px] text-[var(--color-text-hint)]">页面可继续使用，数据完成后自动更新</p>
           </div>
         </div>
       ) : null}
@@ -427,13 +418,13 @@ export default function DashboardPage() {
               void refreshAll();
             }}
             disabled={manualRefreshing}
-            className="inline-flex h-11 items-center gap-2 rounded-2xl border border-[var(--color-border-light)] bg-white/[0.92] px-4 text-sm font-semibold text-[var(--color-text-secondary)] shadow-[0_4px_14px_rgba(37,61,89,0.06)] transition hover:-translate-y-0.5 hover:border-[#c7d7e7] hover:text-[var(--ink)] disabled:cursor-wait disabled:opacity-75"
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--color-border-light)] bg-white/[0.9] px-3.5 text-xs font-semibold text-[var(--color-text-secondary)] shadow-[0_3px_10px_rgba(27,39,51,0.04)] transition hover:border-[#cfd9df] hover:bg-white hover:text-[var(--ink)] disabled:cursor-wait disabled:opacity-75"
           >
-            <RefreshCw className="h-4 w-4" />
-            <span>刷新数据</span>
+            <RefreshCw className={`h-4 w-4 ${manualRefreshing ? "animate-spin" : ""}`} />
+            <span>{manualRefreshing ? "刷新中" : "刷新数据"}</span>
           </button>
-          <div className="inline-flex h-11 min-w-[138px] items-center gap-2 rounded-2xl border border-[var(--color-border-light)] bg-white/[0.92] px-4 text-sm font-semibold text-[var(--color-text-secondary)] shadow-[0_4px_14px_rgba(37,61,89,0.06)]">
-            <CalendarDays className="h-4 w-4 text-[#2f74df]" />
+          <div className="inline-flex h-10 min-w-[132px] items-center gap-2 rounded-xl border border-[var(--color-border-light)] bg-white/[0.9] px-3.5 text-xs font-semibold text-[var(--color-text-secondary)] shadow-[0_3px_10px_rgba(27,39,51,0.04)]">
+            <CalendarDays className="h-4 w-4 text-[var(--color-primary)]" />
             <span>{dateLabel}</span>
           </div>
         </div>
@@ -449,48 +440,50 @@ export default function DashboardPage() {
         <DashboardTrendChart data={daily.data} loading={daily.isLoading} period={period} onPeriodChange={setPeriod} />
 
         <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-1">
-          <section className="min-w-0 overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-white/[0.82] shadow-[0_6px_24px_rgba(37,61,89,0.055)] backdrop-blur-sm">
-            <div className="flex items-center gap-2 border-b border-[var(--color-border-light)] px-5 py-4">
-              <h3 className="font-display text-xl font-bold text-[var(--ink)]">审核状态分布</h3>
-              <span className="grid h-4 w-4 place-items-center rounded-full border border-[var(--color-border)] text-[9px] font-semibold text-[var(--color-text-hint)]">i</span>
+          <section className="min-w-0 overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-white/[0.84] shadow-[0_5px_20px_rgba(27,39,51,0.045)] backdrop-blur-sm">
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-light)] px-5 py-3.5">
+              <div>
+                <h3 className="font-display text-lg font-bold text-[var(--ink)]">审核状态分布</h3>
+                <p className="mt-0.5 text-[10px] text-[var(--color-text-hint)]">按当前题目审核状态统计</p>
+              </div>
+              <span className="rounded-lg bg-[var(--color-primary-light)] px-2 py-1 text-[10px] font-semibold tabular-nums text-[var(--color-primary-dark)]">{numberValue(reviewTotal)} 题</span>
             </div>
             <div className="h-[252px]">
               <ReviewStatusChart data={pieData} animationKey={stats.dataUpdatedAt} />
             </div>
           </section>
 
-          <section className="min-w-0 rounded-2xl border border-[var(--color-border-light)] bg-white/[0.82] px-5 py-4 shadow-[0_6px_24px_rgba(37,61,89,0.055)] backdrop-blur-sm">
+          <section className="min-w-0 rounded-2xl border border-[var(--color-border-light)] bg-white/[0.84] px-5 py-4 shadow-[0_5px_20px_rgba(27,39,51,0.045)] backdrop-blur-sm">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <h3 className="font-display text-xl font-bold text-[var(--ink)]">系统运行概览</h3>
-                <span className="grid h-4 w-4 place-items-center rounded-full border border-[var(--color-border)] text-[9px] font-semibold text-[var(--color-text-hint)]">i</span>
+                <div><h3 className="font-display text-lg font-bold text-[var(--ink)]">系统运行概览</h3><p className="mt-0.5 text-[10px] text-[var(--color-text-hint)]">核心依赖与异步服务健康状态</p></div>
               </div>
-              <a href="/system/tasks" className="text-[11px] font-semibold text-[#2f74df] hover:underline">查看详情 ›</a>
+              <a href="/system/tasks" className="text-[11px] font-semibold text-[var(--color-primary)] hover:underline">查看详情 ›</a>
             </div>
 
-            <div className="grid gap-x-5 gap-y-2 sm:grid-cols-2">
-              <div className="flex items-center justify-between gap-3 rounded-lg py-1.5">
-                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><Server className="h-4 w-4 shrink-0 text-[#2f74df]" />Dashboard API</span>
+            <div className="grid overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-white/45 sm:grid-cols-2 sm:divide-x sm:divide-[var(--color-border-light)]">
+              <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-light)] px-3 py-2.5 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0">
+                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><Server className="h-4 w-4 shrink-0 text-[var(--color-primary)]" />Dashboard API</span>
                 <StatusPill tone={overview.isError ? "error" : overview.isLoading ? "muted" : "ok"}>{overview.isError ? "异常" : overview.isLoading ? "检测中" : "正常"}</StatusPill>
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg py-1.5">
-                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><Database className="h-4 w-4 shrink-0 text-[#2f74df]" />数据库</span>
+              <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-light)] px-3 py-2.5 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0">
+                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><Database className="h-4 w-4 shrink-0 text-[var(--color-primary)]" />数据库</span>
                 <StatusPill tone={readyHealth.data?.db === "ok" ? "ok" : readyHealth.isLoading ? "muted" : "error"}>{readyHealth.isLoading ? "检测中" : readyHealth.data?.db === "ok" ? "正常" : "异常"}</StatusPill>
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg py-1.5">
-                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><HardDrive className={`h-4 w-4 shrink-0 ${redisConfigured ? "text-[#2f74df]" : "text-slate-400"}`} />Redis</span>
+              <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-light)] px-3 py-2.5 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0">
+                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><HardDrive className={`h-4 w-4 shrink-0 ${redisConfigured ? "text-[var(--color-primary)]" : "text-slate-400"}`} />Redis</span>
                 <StatusPill tone={redisStatus.tone}>{redisStatus.label}</StatusPill>
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg py-1.5">
-                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><Network className={`h-4 w-4 shrink-0 ${redisConfigured ? "text-[#2f74df]" : "text-slate-400"}`} />Task Queue</span>
+              <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-light)] px-3 py-2.5 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0">
+                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><Network className={`h-4 w-4 shrink-0 ${redisConfigured ? "text-[var(--color-primary)]" : "text-slate-400"}`} />Task Queue</span>
                 <StatusPill tone={taskQueueStatus.tone}>{taskQueueStatus.label}</StatusPill>
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg py-1.5">
-                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><BrainCircuit className="h-4 w-4 shrink-0 text-[#7c61d6]" />AI Settings API</span>
+              <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-light)] px-3 py-2.5 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0">
+                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><BrainCircuit className="h-4 w-4 shrink-0 text-[#82758f]" />AI Settings API</span>
                 <StatusPill tone={aiStats.data ? "ok" : aiStats.isLoading ? "muted" : "warning"}>{aiStats.data ? "正常" : aiStats.isLoading ? "检测中" : "未授权"}</StatusPill>
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-lg py-1.5">
-                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><CheckCircle2 className="h-4 w-4 shrink-0 text-[#14936f]" />系统就绪</span>
+              <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-light)] px-3 py-2.5 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0">
+                <span className="flex min-w-0 items-center gap-2 text-xs font-medium text-[var(--color-text-secondary)]"><CheckCircle2 className="h-4 w-4 shrink-0 text-[#648764]" />系统就绪</span>
                 <StatusPill tone={readyHealth.data?.status === "ok" ? "ok" : readyHealth.isLoading ? "muted" : "warning"}>{readyHealth.isLoading ? "检测中" : readyHealth.data?.status === "ok" ? "Ready" : "Degraded"}</StatusPill>
               </div>
             </div>
@@ -498,45 +491,45 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <section className="rounded-2xl border border-[var(--color-border-light)] bg-white/[0.78] p-4 shadow-[0_6px_24px_rgba(37,61,89,0.05)] backdrop-blur-sm">
+      <section className="rounded-2xl border border-[var(--color-border-light)] bg-white/[0.8] p-4 shadow-[0_5px_20px_rgba(27,39,51,0.045)] backdrop-blur-sm">
         <div className="mb-3 flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-[#2f74df]" />
+          <Sparkles className="h-4 w-4 text-[var(--color-primary)]" />
           <h3 className="font-display text-lg font-bold text-[var(--ink)]">运营重点</h3>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <article className="rounded-xl border border-[var(--color-border-light)] bg-white/70 p-4">
+          <article className="rounded-xl border border-[var(--color-border-light)] bg-white/62 p-4 transition-colors hover:bg-white/82">
             <div className="mb-3 flex items-center gap-2">
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#edf4ff] text-[#2f74df]"><FileStack className="h-4 w-4" /></span>
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--color-primary-light)] text-[var(--color-primary)]"><FileStack className="h-4 w-4" /></span>
               <h4 className="text-sm font-bold text-[var(--ink)]">待办事项</h4>
             </div>
             <div className="space-y-2.5 text-xs text-[var(--color-text-secondary)]">
-              <p className="flex items-center justify-between gap-3"><span className="flex items-center gap-2"><CircleDot className="h-3 w-3 text-[#2f74df]" />待审核题目</span><strong className="tabular-nums text-[var(--ink)]">{numberValue(overview.data?.questions_pending_review)}</strong></p>
+              <p className="flex items-center justify-between gap-3"><span className="flex items-center gap-2"><CircleDot className="h-3 w-3 text-[var(--color-primary)]" />待审核题目</span><strong className="tabular-nums text-[var(--ink)]">{numberValue(overview.data?.questions_pending_review)}</strong></p>
               <p className="flex items-center justify-between gap-3"><span className="flex items-center gap-2"><CircleDot className="h-3 w-3 text-amber-500" />待处理导入</span><strong className="tabular-nums text-[var(--ink)]">{numberValue(overview.data?.imports_pending)}</strong></p>
               <p className="flex items-center justify-between gap-3"><span className="flex items-center gap-2"><CircleDot className="h-3 w-3 text-red-500" />关键审计</span><strong className="tabular-nums text-[var(--ink)]">{numberValue(overview.data?.audit_critical_today)}</strong></p>
             </div>
           </article>
 
-          <article className="rounded-xl border border-[var(--color-border-light)] bg-white/70 p-4">
+          <article className="rounded-xl border border-[var(--color-border-light)] bg-white/62 p-4 transition-colors hover:bg-white/82">
             <div className="mb-3 flex items-center gap-2">
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#eaf8f3] text-[#14936f]"><Layers3 className="h-4 w-4" /></span>
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#edf4ed] text-[#648764]"><Layers3 className="h-4 w-4" /></span>
               <div className="min-w-0"><h4 className="text-sm font-bold text-[var(--ink)]">题库结构</h4>{topSubject && <p className="mt-0.5 truncate text-[10px] text-[var(--color-text-hint)]">题量最多：{topSubject.name}</p>}</div>
             </div>
             <div className="grid grid-cols-3 divide-x divide-[var(--color-border-light)]">
               <DetailMetric label="科目数" value={stats.isLoading ? "--" : String(subjects.length)} />
               <DetailMetric label="难度层级" value={stats.isLoading ? "--" : String(difficultyCount)} />
-              <DetailMetric label="已通过占比" value={reviewedRate} accent="text-emerald-600" />
+              <DetailMetric label="已通过占比" value={reviewedRate} accent="text-[#648764]" />
             </div>
           </article>
 
-          <article className="rounded-xl border border-[var(--color-border-light)] bg-white/70 p-4">
+          <article className="rounded-xl border border-[var(--color-border-light)] bg-white/62 p-4 transition-colors hover:bg-white/82">
             <div className="mb-3 flex items-center gap-2">
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#f2efff] text-[#7c61d6]"><Cpu className="h-4 w-4" /></span>
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#f1eef3] text-[#82758f]"><Cpu className="h-4 w-4" /></span>
               <h4 className="text-sm font-bold text-[var(--ink)]">AI 运行</h4>
             </div>
             {aiStats.data ? (
               <div className="grid grid-cols-3 divide-x divide-[var(--color-border-light)]">
-                <DetailMetric label="成功率" value={`${aiStats.data.success_rate.toFixed(1)}%`} accent="text-emerald-600" />
+                <DetailMetric label="成功率" value={`${aiStats.data.success_rate.toFixed(1)}%`} accent="text-[#648764]" />
                 <DetailMetric label="平均响应" value={`${(aiStats.data.avg_latency_ms / 1000).toFixed(1)}s`} />
                 <DetailMetric label="7日 Token" value={aiStats.data.total_tokens >= 1000 ? `${(aiStats.data.total_tokens / 1000).toFixed(1)}k` : String(aiStats.data.total_tokens)} />
               </div>
@@ -545,16 +538,16 @@ export default function DashboardPage() {
             )}
           </article>
 
-          <article className="rounded-xl border border-[var(--color-border-light)] bg-white/70 p-4">
+          <article className="rounded-xl border border-[var(--color-border-light)] bg-white/62 p-4 transition-colors hover:bg-white/82">
             <div className="mb-3 flex items-center gap-2">
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#edf7fb] text-[#2787a8]"><Clock3 className="h-4 w-4" /></span>
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-[#eef3f5] text-[#67889a]"><Clock3 className="h-4 w-4" /></span>
               <h4 className="text-sm font-bold text-[var(--ink)]">异步任务</h4>
             </div>
             {taskDiagnostics.data && redisConfigured ? (
               <div className="grid grid-cols-3 divide-x divide-[var(--color-border-light)]">
                 <DetailMetric label="等待" value={String(queueTotals?.ready ?? 0)} />
-                <DetailMetric label="处理中" value={String(queueTotals?.processing ?? 0)} accent="text-[#2f74df]" />
-                <DetailMetric label="异常" value={String(queueErrors)} accent={queueErrors > 0 ? "text-red-500" : "text-emerald-600"} />
+                <DetailMetric label="处理中" value={String(queueTotals?.processing ?? 0)} accent="text-[var(--color-primary)]" />
+                <DetailMetric label="异常" value={String(queueErrors)} accent={queueErrors > 0 ? "text-[var(--color-danger)]" : "text-[#648764]"} />
               </div>
             ) : taskDiagnostics.data && !redisConfigured ? (
               <p className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-3 text-xs text-slate-500"><HardDrive className="h-3.5 w-3.5" />Redis 未配置，当前不展示队列计数</p>

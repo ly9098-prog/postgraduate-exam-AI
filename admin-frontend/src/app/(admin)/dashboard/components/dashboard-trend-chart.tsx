@@ -23,10 +23,10 @@ interface SeriesMeta {
 }
 
 const SERIES: SeriesMeta[] = [
-  { key: "users", dataKey: "users_new", label: "新增用户", color: "#2f74df", glow: "#76a9ff" },
-  { key: "questions", dataKey: "questions_new", label: "新增题目", color: "#15a37d", glow: "#6bd7b9" },
-  { key: "imports", dataKey: "imports_new", label: "导入批次", color: "#8b6bd6", glow: "#bca9f0" },
-  { key: "audits", dataKey: "audits_total", label: "审计事件", color: "#f08a35", glow: "#ffc187" },
+  { key: "users", dataKey: "users_new", label: "新增用户", color: "#4a6f8a", glow: "#9bb0bf" },
+  { key: "questions", dataKey: "questions_new", label: "新增题目", color: "#6d906d", glow: "#a8bea8" },
+  { key: "imports", dataKey: "imports_new", label: "导入批次", color: "#8b7c97", glow: "#b8afc1" },
+  { key: "audits", dataKey: "audits_total", label: "审计事件", color: "#b58a62", glow: "#d7b99b" },
 ];
 
 const VIEWBOX_HEIGHT = 318;
@@ -218,7 +218,7 @@ export function DashboardTrendChart({
               onClick={() => onPeriodChange(item)}
               className={`rounded-[9px] px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
                 period === item
-                  ? "bg-white text-[#2f74df] shadow-sm ring-1 ring-[#2f74df]/15"
+                  ? "bg-white text-[var(--color-primary-dark)] shadow-sm ring-1 ring-[var(--color-primary)]/15"
                   : "text-[var(--color-text-hint)] hover:bg-white/50 hover:text-[var(--ink)]"
               }`}
             >
@@ -290,9 +290,9 @@ export function DashboardTrendChart({
           >
             <defs>
               <linearGradient id="dashboardUsersArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#2f74df" stopOpacity="0.14" />
-                <stop offset="48%" stopColor="#2f74df" stopOpacity="0.065" />
-                <stop offset="100%" stopColor="#2f74df" stopOpacity="0.008" />
+                <stop offset="0%" stopColor="#4a6f8a" stopOpacity="0.13" />
+                <stop offset="48%" stopColor="#4a6f8a" stopOpacity="0.055" />
+                <stop offset="100%" stopColor="#4a6f8a" stopOpacity="0.006" />
               </linearGradient>
             </defs>
 
@@ -303,12 +303,12 @@ export function DashboardTrendChart({
                   x2={PLOT.left + chart.plotWidth}
                   y1={tick.y}
                   y2={tick.y}
-                  stroke="#dfe8f1"
+                  stroke="#e3e0da"
                   strokeOpacity="0.75"
                   strokeDasharray="4 5"
                   vectorEffect="non-scaling-stroke"
                 />
-                <text x={PLOT.left - 10} y={tick.y + 4} textAnchor="end" fontSize="11" fill="#8493a3">
+                <text x={PLOT.left - 10} y={tick.y + 4} textAnchor="end" fontSize="11" fill="#8a9ba9">
                   {Math.round(tick.value)}
                 </text>
               </g>
@@ -323,12 +323,12 @@ export function DashboardTrendChart({
                     x2={x}
                     y1={PLOT.top}
                     y2={PLOT.top + PLOT_HEIGHT}
-                    stroke="#e4ebf2"
+                    stroke="#ece8e1"
                     strokeOpacity="0.62"
                     strokeDasharray="4 6"
                     vectorEffect="non-scaling-stroke"
                   />
-                  <text x={x} y={VIEWBOX_HEIGHT - 9} textAnchor="middle" fontSize="11" fill="#8493a3">
+                  <text x={x} y={VIEWBOX_HEIGHT - 9} textAnchor="middle" fontSize="11" fill="#8a9ba9">
                     {formatDateTick(rows[index]?.date ?? "")}
                   </text>
                 </g>

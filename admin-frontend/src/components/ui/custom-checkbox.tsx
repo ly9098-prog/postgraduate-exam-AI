@@ -1,6 +1,6 @@
 "use client";
 
-import { type ButtonHTMLAttributes, type MouseEvent, useId } from "react";
+import { type ButtonHTMLAttributes, type MouseEvent } from "react";
 import { Check, Minus } from "lucide-react";
 
 export type CustomCheckboxProps = {
@@ -35,16 +35,10 @@ export function CustomCheckbox({
           onCheckedChange(!checked);
         }
       }}
-      onKeyDown={(e) => {
-        if ((e.key === " " || e.key === "Enter") && !disabled) {
-          e.preventDefault();
-          onCheckedChange(!checked);
-        }
-      }}
       className={`
         relative inline-flex items-center justify-center
         h-[18px] w-[18px] shrink-0 rounded-[4px] border
-        transition-colors duration-150
+        transition-all duration-150 active:scale-90
         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-1
         ${disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer"}
         ${

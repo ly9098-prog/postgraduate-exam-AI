@@ -2,14 +2,27 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+// Keep the chart in the same low-saturation blue/stone palette as the admin shell.
+// Statuses use stable semantic colors instead of depending on response order.
 const PALETTE = [
-  { topStart: "#78aaff", topEnd: "#2f74df", sideStart: "#2a69ca", sideEnd: "#194c9f", dot: "#2f74df" },
-  { topStart: "#ffc46f", topEnd: "#f59e0b", sideStart: "#dd8b08", sideEnd: "#a96305", dot: "#f59e0b" },
-  { topStart: "#ff9696", topEnd: "#ef5b5b", sideStart: "#d74b4b", sideEnd: "#a73838", dot: "#ef5b5b" },
-  { topStart: "#62d1b0", topEnd: "#15a37d", sideStart: "#118e6d", sideEnd: "#08694f", dot: "#15a37d" },
-  { topStart: "#bca9f0", topEnd: "#8b6bd6", sideStart: "#7656c2", sideEnd: "#56399b", dot: "#8b6bd6" },
-  { topStart: "#a9b7c8", topEnd: "#7b8da3", sideStart: "#65778d", sideEnd: "#46576c", dot: "#7b8da3" },
+  { topStart: "#7894a8", topEnd: "#4a6f8a", sideStart: "#3d627c", sideEnd: "#2d5068", dot: "#4a6f8a" },
+  { topStart: "#97ad95", topEnd: "#6d906d", sideStart: "#5c7e5c", sideEnd: "#476647", dot: "#6d906d" },
+  { topStart: "#d6b691", topEnd: "#c49a6b", sideStart: "#a98055", sideEnd: "#82613f", dot: "#c49a6b" },
+  { topStart: "#d29a95", topEnd: "#b96862", sideStart: "#9f5752", sideEnd: "#7c413d", dot: "#b96862" },
+  { topStart: "#a9b7c1", topEnd: "#8396a3", sideStart: "#70828e", sideEnd: "#536672", dot: "#8396a3" },
+  { topStart: "#b0a4ba", topEnd: "#8b7c97", sideStart: "#756780", sideEnd: "#5a4d65", dot: "#8b7c97" },
 ];
+
+const STATUS_PALETTE_INDEX: Record<string, number> = {
+  pending: 2,
+  reviewing: 0,
+  approved: 1,
+  published: 1,
+  rejected: 3,
+  error: 3,
+  draft: 4,
+  archived: 5,
+};
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "待审核",
@@ -36,12 +49,12 @@ type Point = { x: number; y: number };
 type ArcSegment = { start: number; end: number };
 
 const START_ANGLE = 16;
-const DEPTH = 13;
+const DEPTH = 9;
 const RADIUS_X = 112;
 const RADIUS_Y = 66;
 const CX = 165;
 const CY = 105;
-const ANIMATION_MS = 900;
+const ANIMATION_MS = 720;
 
 function polarToCartesian(cx: number, cy: number, rx: number, ry: number, angle: number): Point {
   const rad = (Math.PI / 180) * angle;
@@ -142,7 +155,7 @@ export function ReviewStatusChart({ data, animationKey }: { data: ReviewStatusDa
         startAngle,
         endAngle,
         midAngle: startAngle + sliceAngle / 2,
-        paletteIndex: index % PALETTE.length,
+        paletteIndex: STATUS_PALETTE_INDEX[item.name] ?? index % PALETTE.length,
       };
     });
   }, [data, total]);
@@ -192,7 +205,7 @@ export function ReviewStatusChart({ data, animationKey }: { data: ReviewStatusDa
     <div className="grid h-full min-h-[230px] grid-cols-1 items-center gap-1 px-4 pb-4 pt-2 sm:grid-cols-[minmax(250px,1fr)_minmax(210px,0.82fr)] sm:px-5">
       <div className="relative min-w-0">
         {activeEntry ? (
-          <div className="pointer-events-none absolute left-3 top-3 z-10 translate-y-0 rounded-2xl border border-[var(--color-border-light)] bg-white/95 px-3.5 py-2.5 text-xs shadow-[0_12px_26px_rgba(37,61,89,0.12)] backdrop-blur transition-all duration-200">
+          <div className="pointer-events-none absolute left-3 top-3 z-10 translate-y-0 rounded-xl border border-[var(--color-border-light)] bg-white/96 px-3.5 py-2.5 text-xs shadow-[0_12px_26px_rgba(37,61,89,0.12)] backdrop-blur transition-all duration-200">
             <p className="font-semibold text-[var(--ink)]">{activeEntry.name}</p>
             <p className="mt-1 text-[var(--color-text-secondary)]">
               {formatValue(activeEntry.count)}
@@ -225,8 +238,8 @@ export function ReviewStatusChart({ data, animationKey }: { data: ReviewStatusDa
               </linearGradient>
             ))}
             <radialGradient id="pie-sheen" cx="32%" cy="25%" r="70%">
-              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.27" />
-              <stop offset="46%" stopColor="#ffffff" stopOpacity="0.07" />
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.18" />
+              <stop offset="46%" stopColor="#ffffff" stopOpacity="0.045" />
               <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
             </radialGradient>
             <linearGradient id="pie-placeholder-top" x1="0" y1="0" x2="1" y2="1">
@@ -235,7 +248,7 @@ export function ReviewStatusChart({ data, animationKey }: { data: ReviewStatusDa
             </linearGradient>
           </defs>
 
-          <ellipse cx={CX} cy={CY + DEPTH + 21} rx={RADIUS_X * 0.78} ry="13" fill="#31577f" opacity={0.055 * animationProgress} />
+          <ellipse cx={CX} cy={CY + DEPTH + 21} rx={RADIUS_X * 0.78} ry="13" fill="#2d5068" opacity={0.045 * animationProgress} />
 
           {!enriched.length ? (
             <g opacity="0.85">
@@ -280,7 +293,7 @@ export function ReviewStatusChart({ data, animationKey }: { data: ReviewStatusDa
                 const visibleEnd = getVisibleEnd(entry);
                 if (visibleEnd <= entry.startAngle + 0.05) return [];
                 const active = activeName === entry.name;
-                const distance = active ? 6 : 0;
+                const distance = active ? 4 : 0;
                 const offsetX = Math.cos((entry.midAngle * Math.PI) / 180) * distance;
                 const offsetY = Math.sin((entry.midAngle * Math.PI) / 180) * distance * 0.48;
                 return getFrontSideSegments(entry.startAngle, visibleEnd).map((segment) => (
@@ -298,7 +311,7 @@ export function ReviewStatusChart({ data, animationKey }: { data: ReviewStatusDa
                 const visibleEnd = getVisibleEnd(entry);
                 if (visibleEnd <= entry.startAngle + 0.05) return null;
                 const active = activeName === entry.name;
-                const distance = active ? 6 : 0;
+                const distance = active ? 4 : 0;
                 const offsetX = Math.cos((entry.midAngle * Math.PI) / 180) * distance;
                 const offsetY = Math.sin((entry.midAngle * Math.PI) / 180) * distance * 0.48;
                 const inactive = activeName !== null && !active;
@@ -354,8 +367,8 @@ export function ReviewStatusChart({ data, animationKey }: { data: ReviewStatusDa
                 onMouseLeave={() => setActiveName(null)}
                 className={`grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 rounded-xl border px-2.5 py-2 text-left outline-none transition-all duration-200 ${
                   active
-                    ? "border-[#d9e6f4] bg-[#f7faff] shadow-[0_5px_16px_rgba(47,116,223,0.08)]"
-                    : "border-transparent hover:border-[var(--color-border-light)] hover:bg-[#f8fbff]"
+                    ? "border-[#cbd9e2] bg-[var(--color-primary-light)]/70 shadow-[0_5px_16px_rgba(45,80,104,0.07)]"
+                    : "border-transparent hover:border-[var(--color-border-light)] hover:bg-white/65"
                 }`}
                 style={{ opacity: dimmed ? 0.48 : 1 }}
               >

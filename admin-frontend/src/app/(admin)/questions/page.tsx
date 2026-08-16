@@ -412,16 +412,19 @@ export default function QuestionsPage() {
     Array<{ id: number; code: string; name: string }>
   >([]);
   useEffect(() => {
-    apiRequest<
-      Array<{
-        id: number;
-        code: string;
-        name: string;
-        path: string;
-        level: number;
-      }>
-    >("/imports/subject-options")
-      .then(setSubjectOptions)
+    type SubjectNode = {
+      id: number;
+      code: string;
+      name: string;
+      path: string;
+      level: number;
+      children?: SubjectNode[];
+    };
+    const flattenSubjects = (items: SubjectNode[]): SubjectNode[] =>
+      items.flatMap((item) => [item, ...flattenSubjects(item.children ?? [])]);
+
+    apiRequest<{ items: SubjectNode[] }>("/subjects")
+      .then((response) => setSubjectOptions(flattenSubjects(response.items ?? [])))
       .catch(() => {});
   }, []);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
