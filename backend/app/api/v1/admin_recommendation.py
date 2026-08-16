@@ -37,7 +37,7 @@ router = APIRouter(prefix="/api/admin/v1/recommendation", tags=["admin-recommend
 @router.get("/strategies", response_model=list[StrategyConfigResponse])
 async def list_strategies(
     scene: str | None = Query(None),
-    _=Depends(require_permissions("question:read")),
+    _=Depends(require_permissions("recommendation:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """查询策略配置列表。"""
@@ -69,7 +69,7 @@ async def create_or_update_strategy(
 @router.get("/experiments", response_model=list[ExperimentResponseExtended])
 async def list_experiments(
     scene: str | None = Query(None),
-    _=Depends(require_permissions("question:read")),
+    _=Depends(require_permissions("recommendation:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """查询实验列表。"""
@@ -140,7 +140,7 @@ async def get_metrics(
     subject_id: int | None = Query(None),
     scene: str | None = Query(None),
     strategy: str | None = Query(None),
-    _=Depends(require_permissions("question:read")),
+    _=Depends(require_permissions("recommendation:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """查询每日推荐指标。"""
@@ -161,7 +161,7 @@ async def compare_experiment_variants(
     experiment_id: int,
     date_from: date = Query(...),
     date_to: date = Query(...),
-    _=Depends(require_permissions("question:read")),
+    _=Depends(require_permissions("recommendation:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """返回实验各分组对比指标。"""
@@ -180,7 +180,7 @@ async def compare_experiment_variants(
 @router.get("/quality-report", response_model=RecommendationQualityReportResponse)
 async def get_recommendation_quality_report(
     subject_id: int | None = Query(None),
-    _=Depends(require_permissions("question:read")),
+    _=Depends(require_permissions("recommendation:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """返回推荐质量报告。"""
@@ -195,7 +195,7 @@ async def get_recommendation_quality_report(
 @router.get("/knowledge-quality-report", response_model=KnowledgeQualityReportResponse)
 async def get_knowledge_quality_report(
     subject_id: int | None = Query(None),
-    _=Depends(require_permissions("question:read")),
+    _=Depends(require_permissions("recommendation:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """返回知识图谱质量报告。"""
@@ -270,7 +270,7 @@ async def health_report(
     subject_id: int | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
-    _=Depends(require_permissions("question:read")),
+    _=Depends(require_permissions("recommendation:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """推荐系统健康报告。"""

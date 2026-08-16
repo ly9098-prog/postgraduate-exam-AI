@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import hash_admin_password, verify_admin_password
@@ -11,43 +11,47 @@ ADMIN_ROLE_NAME = "admin"
 LOCAL_APP_ENVS = {"development", "local", "test"}
 
 ADMIN_ROLE_PERMISSION_NAMES = {
+    # 普通管理员：除 /admin-users、/roles、/ai-settings 外的后台能力。
     "dashboard:read",
     "app-user:read",
     "app-user:write",
     "app-user:ban",
-    "admin-user:read",
-    "admin-user:create",
-    "admin-user:update",
-    "admin-user:delete",
-    "admin-user:force-logout",
-    "admin-user:reset-password",
     "question:read",
     "question:write",
+    "question:delete",
+    "question:review",
+    "question:batch_review",
     "subject:read",
     "subject:write",
-    "role:read",
+    "subject:delete",
     "import:read",
     "import:write",
-    "ai_setting:read",
     "audit:read",
+    "sync:write",
+    "knowledge:read",
+    "recommendation:read",
     "formula:read",
     "formula:create",
     "formula:update",
+    "formula:review",
+    "formula:publish",
+    "formula:delete",
     "formula:import",
     "formula:ai-generate",
     "formula-category:read",
     "formula-category:write",
 }
 
-FORMULA_REVIEWER_PERMISSION_NAMES = {
+
+LEGACY_REMOVED_ROLE_NAMES = {"formula_reviewer"}
+USER_ROLE_NAME = "user"
+USER_ROLE_PERMISSION_NAMES = {
+    "question:read",
+    "subject:read",
+    "knowledge:read",
     "formula:read",
-    "formula:update",
-    "formula:review",
-    "formula:publish",
     "formula-category:read",
 }
-
-FORMULA_REVIEWER_ROLE_NAME = "formula_reviewer"
 
 ADMIN_PERMISSION_DEFINITIONS: tuple[dict[str, str], ...] = (
     {"name": "dashboard:read", "resource": "dashboard", "action": "read", "category": "dashboard", "description": "查看统计概览"},
@@ -63,6 +67,8 @@ ADMIN_PERMISSION_DEFINITIONS: tuple[dict[str, str], ...] = (
     {"name": "question:read", "resource": "question", "action": "read", "category": "question", "description": "查看题目"},
     {"name": "question:write", "resource": "question", "action": "write", "category": "question", "description": "创建和编辑题目"},
     {"name": "question:delete", "resource": "question", "action": "delete", "category": "question", "description": "删除题目"},
+    {"name": "question:review", "resource": "question", "action": "review", "category": "question", "description": "审核题目"},
+    {"name": "question:batch_review", "resource": "question", "action": "batch_review", "category": "question", "description": "批量审核题目"},
     {"name": "subject:read", "resource": "subject", "action": "read", "category": "subject", "description": "查看科目"},
     {"name": "subject:write", "resource": "subject", "action": "write", "category": "subject", "description": "创建和编辑科目"},
     {"name": "subject:delete", "resource": "subject", "action": "delete", "category": "subject", "description": "删除科目"},
@@ -76,6 +82,8 @@ ADMIN_PERMISSION_DEFINITIONS: tuple[dict[str, str], ...] = (
     {"name": "ai_setting:write", "resource": "ai_setting", "action": "write", "category": "ai_setting", "description": "修改 AI 解析设置"},
     {"name": "audit:read", "resource": "audit", "action": "read", "category": "audit", "description": "查看审计日志"},
     {"name": "sync:write", "resource": "sync", "action": "write", "category": "sync", "description": "执行本地→云端数据同步"},
+    {"name": "knowledge:read", "resource": "knowledge", "action": "read", "category": "knowledge", "description": "查看知识图谱"},
+    {"name": "recommendation:read", "resource": "recommendation", "action": "read", "category": "recommendation", "description": "查看推荐策略、实验、指标与报表"},
     {"name": "formula:read", "resource": "formula", "action": "read", "category": "formula", "description": "查看公式"},
     {"name": "formula:create", "resource": "formula", "action": "create", "category": "formula", "description": "创建公式"},
     {"name": "formula:update", "resource": "formula", "action": "update", "category": "formula", "description": "编辑公式"},
@@ -95,12 +103,13 @@ async def ensure_dev_super_admin(db: AsyncSession, app_env: str) -> bool:
 
     role = await _ensure_super_admin_role(db)
     admin_role = await _ensure_admin_role(db)
-    reviewer_role = await _ensure_formula_reviewer_role(db)
+    user_role = await _ensure_user_role(db)
+    await _remove_legacy_roles(db, fallback_role_id=admin_role.id)
     permissions = await _ensure_permissions(db)
     permission_map = {permission.name: permission.id for permission in permissions}
     await _ensure_role_permissions(db, role.id, [permission.id for permission in permissions])
     await _ensure_role_permissions(db, admin_role.id, [permission_map[name] for name in ADMIN_ROLE_PERMISSION_NAMES])
-    await _ensure_role_permissions(db, reviewer_role.id, [permission_map[name] for name in FORMULA_REVIEWER_PERMISSION_NAMES])
+    await _ensure_role_permissions(db, user_role.id, [permission_map[name] for name in USER_ROLE_PERMISSION_NAMES])
     created_admin = await _ensure_admin_user(db, role.id)
 
     if created_admin:
@@ -153,15 +162,35 @@ async def _ensure_admin_role(db: AsyncSession) -> Role:
     return role
 
 
-async def _ensure_formula_reviewer_role(db: AsyncSession) -> Role:
-    result = await db.execute(select(Role).where(Role.name == FORMULA_REVIEWER_ROLE_NAME))
+async def _remove_legacy_roles(db: AsyncSession, fallback_role_id: int) -> None:
+    """Remove roles that were accidentally introduced by an old development bootstrap.
+
+    Existing admin accounts on those roles are moved back to the normal administrator
+    role before deletion so startup remains safe and foreign keys stay valid.
+    """
+    result = await db.execute(select(Role).where(Role.name.in_(LEGACY_REMOVED_ROLE_NAMES)))
+    legacy_roles = list(result.scalars().all())
+    for legacy_role in legacy_roles:
+        await db.execute(
+            update(AdminUser)
+            .where(AdminUser.role_id == legacy_role.id)
+            .values(role_id=fallback_role_id)
+        )
+        await db.execute(delete(RolePermission).where(RolePermission.role_id == legacy_role.id))
+        await db.delete(legacy_role)
+    if legacy_roles:
+        await db.flush()
+
+
+async def _ensure_user_role(db: AsyncSession) -> Role:
+    result = await db.execute(select(Role).where(Role.name == USER_ROLE_NAME))
     role = result.scalar_one_or_none()
     if role:
         return role
     role = Role(
-        name=FORMULA_REVIEWER_ROLE_NAME,
-        display_name="公式审核员",
-        description="公式审核与发布管理员",
+        name=USER_ROLE_NAME,
+        display_name="用户",
+        description="题库、知识图谱、公式库与公式分类只读",
         is_system=True,
     )
     db.add(role)

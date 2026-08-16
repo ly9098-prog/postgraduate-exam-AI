@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/admin/v1/knowledge", tags=["admin-knowledge"])
 
 @router.get("/status", response_model=KnowledgeStatusResponse)
 async def get_knowledge_status(
-    _=Depends(require_permissions("question:read")),
+    _=Depends(require_permissions("knowledge:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """返回知识点映射状态统计。"""
@@ -36,7 +36,7 @@ async def get_knowledge_status(
 
 @router.get("/subjects")
 async def list_knowledge_graph_subjects(
-    _=Depends(require_permissions("question:read")),
+    _=Depends(require_permissions("knowledge:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """返回存在知识点的科目，供管理端知识图谱筛选。"""
@@ -88,7 +88,7 @@ async def get_knowledge_graph(
     search: str | None = Query(None, max_length=128),
     depth: int = Query(2, ge=1, le=3),
     max_nodes: int = Query(70, ge=10, le=120),
-    _=Depends(require_permissions("question:read")),
+    _=Depends(require_permissions("knowledge:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """返回管理端知识图谱可视化所需的节点、边与汇总信息。
@@ -436,7 +436,7 @@ async def infer_knowledge_edges(
 @router.get("/edges/status", response_model=KnowledgeEdgeStatusResponse)
 async def get_edge_status(
     subject_id: int = Query(...),
-    _=Depends(require_permissions("question:read")),
+    _=Depends(require_permissions("knowledge:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """返回指定科目知识图谱边统计。"""

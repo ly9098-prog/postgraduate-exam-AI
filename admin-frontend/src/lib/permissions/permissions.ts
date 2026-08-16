@@ -12,6 +12,8 @@ export type PermissionKey =
   | "question:read"
   | "question:write"
   | "question:delete"
+  | "knowledge:read"
+  | "recommendation:read"
   | "role:read"
   | "role:write"
   | "permission:read"
