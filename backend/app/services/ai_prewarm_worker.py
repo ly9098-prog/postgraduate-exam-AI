@@ -24,9 +24,13 @@ logger = logging.getLogger(__name__)
 TASK_TYPE_PREWARM = "prewarm_analysis"
 _DEFAULT_LEASE_SEC = 120  # 2 minutes — AI analysis is usually fast
 _HEARTBEAT_INTERVAL = 30
+_LOCAL_FALLBACK_MAX_TASKS = 100
+_LOCAL_FALLBACK_CONCURRENCY = 2
 
 _worker_running = False
 _worker_task: asyncio.Task | None = None
+_local_fallback_tasks: dict[str, asyncio.Task] = {}
+_local_fallback_semaphore: asyncio.Semaphore | None = None
 
 
 # ── Public API ──
@@ -46,6 +50,88 @@ def build_prewarm_revision(*, review_count: int | None, wrong_answer: str | None
     return f"r{int(review_count or 0)}:{state_hash}"
 
 
+def _get_local_fallback_semaphore() -> asyncio.Semaphore:
+    global _local_fallback_semaphore
+    if _local_fallback_semaphore is None:
+        _local_fallback_semaphore = asyncio.Semaphore(_LOCAL_FALLBACK_CONCURRENCY)
+    return _local_fallback_semaphore
+
+
+def _schedule_local_fallback(
+    *,
+    task_id: str,
+    wq_id: int,
+    user_id: int,
+    revision: str | None,
+    delay_seconds: int = 0,
+) -> bool:
+    """Best-effort in-process prewarm when Redis is unavailable.
+
+    The durable Redis queue remains the primary path.  In single-instance or
+    temporarily degraded deployments, rejecting every prewarm task makes the
+    optimization disappear entirely.  This bounded fallback keeps the user
+    experience benefit without turning a Redis outage into unbounded local
+    work.  Tasks are revision-deduplicated and limited to two concurrent LLM
+    calls; they are intentionally not durable across process restarts.
+    """
+
+    existing = _local_fallback_tasks.get(task_id)
+    if existing is not None and not existing.done():
+        logger.info("[prewarm] local duplicate task_id=%s", task_id)
+        return True
+
+    # Drop completed entries before enforcing the bounded backlog.
+    for key, task in list(_local_fallback_tasks.items()):
+        if task.done():
+            _local_fallback_tasks.pop(key, None)
+    if len(_local_fallback_tasks) >= _LOCAL_FALLBACK_MAX_TASKS:
+        logger.warning(
+            "[prewarm] local fallback full wq_id=%d uid=%d backlog=%d",
+            wq_id, user_id, len(_local_fallback_tasks),
+        )
+        return False
+
+    async def runner() -> None:
+        try:
+            if delay_seconds > 0:
+                await asyncio.sleep(delay_seconds)
+            async with _get_local_fallback_semaphore():
+                started = time.monotonic()
+                logger.info(
+                    "[prewarm] local start wq_id=%d uid=%d revision=%s",
+                    wq_id, user_id, revision or "legacy",
+                )
+                from app.services.ai_service import prewarm_wrong_question_analysis
+
+                await prewarm_wrong_question_analysis(
+                    wq_id, user_id, expected_revision=revision
+                )
+                logger.info(
+                    "[prewarm] local completed wq_id=%d uid=%d duration_ms=%d",
+                    wq_id, user_id, int((time.monotonic() - started) * 1000),
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning(
+                "[prewarm] local failed wq_id=%d uid=%d",
+                wq_id, user_id, exc_info=True,
+            )
+        finally:
+            _local_fallback_tasks.pop(task_id, None)
+
+    try:
+        task = asyncio.create_task(runner(), name=f"ai-prewarm-local:{wq_id}")
+    except RuntimeError:
+        return False
+    _local_fallback_tasks[task_id] = task
+    logger.info(
+        "[prewarm] local fallback scheduled wq_id=%d uid=%d task_id=%s",
+        wq_id, user_id, task_id,
+    )
+    return True
+
+
 async def enqueue_prewarm(
     wq_id: int,
     user_id: int,
@@ -56,8 +142,9 @@ async def enqueue_prewarm(
     """Enqueue a prewarm analysis task via the durable task queue.
 
     Returns True if the task was accepted (queued or idempotent duplicate).
-    Returns False if the queue is unavailable (no Redis in production =
-    503 to the caller).
+    If Redis is unavailable, a bounded in-process fallback is used so prewarm
+    still works on a single healthy web instance.  The local path is best
+    effort and intentionally not durable across process restarts.
     """
     payload = {
         "wq_id": wq_id,
@@ -80,9 +167,22 @@ async def enqueue_prewarm(
     )
 
     if not result.accepted:
+        if result.reason == "redis_unavailable":
+            accepted_local = _schedule_local_fallback(
+                task_id=task_id,
+                wq_id=wq_id,
+                user_id=user_id,
+                revision=revision,
+                delay_seconds=delay_seconds,
+            )
+            logger.warning(
+                "[prewarm] Redis unavailable; local_fallback=%s wq_id=%d uid=%d retries=%d",
+                accepted_local, wq_id, user_id, retries,
+            )
+            return accepted_local
         logger.warning(
-            "[prewarm] queue rejected wq_id=%d uid=%d retries=%d (Redis unavailable)",
-            wq_id, user_id, retries,
+            "[prewarm] queue rejected wq_id=%d uid=%d retries=%d reason=%s",
+            wq_id, user_id, retries, result.reason or "unknown",
         )
         return False
 
@@ -298,6 +398,13 @@ async def stop_worker():
     """Stop the background prewarm worker. Call in FastAPI lifespan shutdown."""
     global _worker_task, _worker_running
     _worker_running = False
+    local_tasks = list(_local_fallback_tasks.values())
+    for task in local_tasks:
+        if not task.done():
+            task.cancel()
+    if local_tasks:
+        await asyncio.gather(*local_tasks, return_exceptions=True)
+        _local_fallback_tasks.clear()
     if _worker_task is None:
         return
     _worker_task.cancel()
