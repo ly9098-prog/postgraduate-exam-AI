@@ -26,6 +26,12 @@ _DEFAULT_LEASE_SEC = 120  # 2 minutes — AI analysis is usually fast
 _HEARTBEAT_INTERVAL = 30
 _LOCAL_FALLBACK_MAX_TASKS = 100
 _LOCAL_FALLBACK_CONCURRENCY = 2
+_LOCAL_FALLBACK_MAX_RETRIES = 2
+_PREWARM_INPUT_FAILURE_CODES = {
+    "vision_input_missing",
+    "vision_parse_failed",
+    "vision_unavailable",
+}
 
 _worker_running = False
 _worker_task: asyncio.Task | None = None
@@ -92,29 +98,61 @@ def _schedule_local_fallback(
         return False
 
     async def runner() -> None:
+        from app.services.ai_service import PrewarmAnalysisError, prewarm_wrong_question_analysis
+
         try:
             if delay_seconds > 0:
                 await asyncio.sleep(delay_seconds)
             async with _get_local_fallback_semaphore():
                 started = time.monotonic()
-                logger.info(
-                    "[prewarm] local start wq_id=%d uid=%d revision=%s",
-                    wq_id, user_id, revision or "legacy",
-                )
-                from app.services.ai_service import prewarm_wrong_question_analysis
+                attempt = 0
+                while True:
+                    logger.info(
+                        "[prewarm] local start wq_id=%d uid=%d revision=%s attempt=%d",
+                        wq_id, user_id, revision or "legacy", attempt + 1,
+                    )
+                    try:
+                        outcome = await prewarm_wrong_question_analysis(
+                            wq_id, user_id, expected_revision=revision
+                        )
+                        status = str(outcome.get("status") or "success")
+                        logger.info(
+                            "[prewarm] local %s wq_id=%d uid=%d duration_ms=%d",
+                            status, wq_id, user_id, int((time.monotonic() - started) * 1000),
+                        )
+                        break
+                    except PrewarmAnalysisError as exc:
+                        if exc.retryable and attempt < _LOCAL_FALLBACK_MAX_RETRIES:
+                            attempt += 1
+                            backoff = min(2 ** attempt, 30)
+                            logger.warning(
+                                "[prewarm] local retry wq_id=%d uid=%d attempt=%d/%d "
+                                "delay_sec=%d error_code=%s",
+                                wq_id, user_id, attempt, _LOCAL_FALLBACK_MAX_RETRIES,
+                                backoff, exc.error_code,
+                            )
+                            await asyncio.sleep(backoff)
+                            continue
 
-                await prewarm_wrong_question_analysis(
-                    wq_id, user_id, expected_revision=revision
-                )
-                logger.info(
-                    "[prewarm] local completed wq_id=%d uid=%d duration_ms=%d",
-                    wq_id, user_id, int((time.monotonic() - started) * 1000),
-                )
+                        category = (
+                            "failed_input"
+                            if exc.error_code in _PREWARM_INPUT_FAILURE_CODES
+                            else "failed_permanent"
+                            if not exc.retryable
+                            else "failed_transient_exhausted"
+                        )
+                        logger.warning(
+                            "[prewarm] local %s wq_id=%d uid=%d error_code=%s "
+                            "retryable=%s attempts=%d duration_ms=%d",
+                            category, wq_id, user_id, exc.error_code, exc.retryable,
+                            attempt + 1, int((time.monotonic() - started) * 1000),
+                        )
+                        break
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.warning(
-                "[prewarm] local failed wq_id=%d uid=%d",
+                "[prewarm] local failed_unexpected wq_id=%d uid=%d",
                 wq_id, user_id, exc_info=True,
             )
         finally:
@@ -244,6 +282,7 @@ async def run_prewarm_worker(
     global _worker_running
     _worker_running = True
 
+    from app.services.ai_service import PrewarmAnalysisError
     from app.core.worker_concurrency import get_worker_semaphore
     semaphore = await get_worker_semaphore()
 
@@ -299,7 +338,7 @@ async def run_prewarm_worker(
                 )
 
                 try:
-                    await _process_task(task)
+                    outcome = await _process_task(task)
                     ok = await task_queue.complete_v2(task)
                     if not ok:
                         logger.warning(
@@ -308,15 +347,74 @@ async def run_prewarm_worker(
                         )
                     else:
                         logger.info(
-                            "[prewarm] completed wq_id=%s uid=%s",
+                            "[prewarm] %s wq_id=%s uid=%s",
+                            str(outcome.get("status") or "success"),
                             task.payload.get("wq_id"), task.payload.get("user_id"),
+                        )
+                except PrewarmAnalysisError as exc:
+                    if not exc.retryable:
+                        # Force the durable queue directly into its dead-letter
+                        # branch: auth/config/input failures will not recover by
+                        # replaying the exact same payload.
+                        task.max_retries = task.retry_count + 1
+
+                    fail_result = await task_queue.fail_v2(
+                        task, f"{exc.error_code}: {exc.model}"
+                    )
+                    task_status = str(getattr(task.status, "value", task.status or ""))
+                    dead_lettered = fail_result == 2 or task_status == "dead"
+
+                    if not exc.retryable:
+                        category = (
+                            "failed_input"
+                            if exc.error_code in _PREWARM_INPUT_FAILURE_CODES
+                            else "failed_permanent"
+                        )
+                        if dead_lettered:
+                            logger.warning(
+                                "[prewarm] %s wq_id=%s uid=%s error_code=%s retryable=false",
+                                category, task.payload.get("wq_id"),
+                                task.payload.get("user_id"), exc.error_code,
+                            )
+                        else:
+                            logger.warning(
+                                "[prewarm] permanent fail rejected task_id=%s result=%s status=%s error_code=%s",
+                                task.task_id, fail_result, task_status, exc.error_code,
+                            )
+                    elif dead_lettered:
+                        logger.warning(
+                            "[prewarm] failed_transient_exhausted wq_id=%s uid=%s "
+                            "error_code=%s retry_count=%d",
+                            task.payload.get("wq_id"), task.payload.get("user_id"),
+                            exc.error_code, task.retry_count,
+                        )
+                    elif fail_result == 1:
+                        logger.warning(
+                            "[prewarm] retry wq_id=%s uid=%s error_code=%s retry_count=%d/%d",
+                            task.payload.get("wq_id"), task.payload.get("user_id"),
+                            exc.error_code, task.retry_count, task.max_retries,
+                        )
+                    else:
+                        logger.warning(
+                            "[prewarm] fail rejected (owner/generation mismatch): task_id=%s",
+                            task.task_id,
                         )
                 except Exception as e:
                     logger.exception(
-                        "[prewarm] processing failed: task_id=%s", task.task_id,
+                        "[prewarm] failed_unexpected task_id=%s", task.task_id,
                     )
-                    ok = await task_queue.fail_v2(task, str(e))
-                    if not ok:
+                    fail_result = await task_queue.fail_v2(task, str(e))
+                    task_status = str(getattr(task.status, "value", task.status or ""))
+                    if fail_result == 2 or task_status == "dead":
+                        logger.warning(
+                            "[prewarm] failed_unexpected_exhausted task_id=%s", task.task_id,
+                        )
+                    elif fail_result == 1:
+                        logger.warning(
+                            "[prewarm] retry_unexpected task_id=%s retry_count=%d/%d",
+                            task.task_id, task.retry_count, task.max_retries,
+                        )
+                    elif not fail_result:
                         logger.warning(
                             "[prewarm] fail rejected (owner mismatch): task_id=%s",
                             task.task_id,
@@ -358,8 +456,8 @@ async def _heartbeat_loop(task: Task, lease_sec: int) -> None:
             break
 
 
-async def _process_task(task: Task) -> None:
-    """Execute a single prewarm analysis task."""
+async def _process_task(task: Task) -> dict:
+    """Execute a single prewarm analysis task and return its terminal outcome."""
     from app.services.ai_service import prewarm_wrong_question_analysis
 
     wq_id = task.payload.get("wq_id")
@@ -367,7 +465,7 @@ async def _process_task(task: Task) -> None:
 
     if not wq_id or not user_id:
         logger.warning("[prewarm] invalid task payload: %s", task.payload)
-        return
+        return {"status": "skipped", "reason": "invalid_payload"}
 
     queue_wait_ms = max(0, int((time.time() - float(task.created_at or time.time())) * 1000))
     logger.info(
@@ -377,10 +475,9 @@ async def _process_task(task: Task) -> None:
         task.payload.get("revision") or "legacy",
         queue_wait_ms,
     )
-    await prewarm_wrong_question_analysis(
+    return await prewarm_wrong_question_analysis(
         wq_id, user_id, expected_revision=task.payload.get("revision")
     )
-    logger.info("[prewarm] processed wq_id=%d uid=%d", wq_id, user_id)
 
 
 # ── Lifecycle ──
