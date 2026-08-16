@@ -22,6 +22,8 @@ class AiResponse(BaseModel):
     cache_preserved: bool = False
     visual_input_count: int = 0
     visual_evidence: str | None = None
+    error_code: str | None = None
+    retryable: bool | None = None
 
 
 class AiPrewarmRequest(BaseModel):

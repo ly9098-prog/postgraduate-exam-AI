@@ -78,6 +78,98 @@ _ERROR_ANALYSIS_MAX_TOKENS = 800
 _ERROR_ANALYSIS_QWEN_MAX_PIXELS = 1024 * 1024
 
 
+class PrewarmAnalysisError(RuntimeError):
+    """Typed prewarm failure used by queue/local runners for retry policy.
+
+    ``analyze_error`` intentionally returns a structured fallback response to
+    synchronous mini-program requests so the UI can degrade gracefully. A
+    background prewarm, however, must not count that fallback as a successful
+    cache warm. This exception converts the structured fallback back into queue
+    semantics without changing the public API behavior.
+    """
+
+    def __init__(
+        self,
+        error_code: str,
+        *,
+        retryable: bool,
+        model: str = "fallback",
+        detail: str = "",
+    ) -> None:
+        self.error_code = str(error_code or "ai_analysis_failed")
+        self.retryable = bool(retryable)
+        self.model = str(model or "fallback")
+        self.detail = str(detail or "")
+        message = self.error_code if not self.detail else f"{self.error_code}: {self.detail}"
+        super().__init__(message)
+
+
+def _classify_ai_provider_exception(exc: Exception, *, visual: bool) -> tuple[str, bool, str]:
+    """Map provider/client failures to stable API + prewarm semantics.
+
+    The OpenAI-compatible client currently raises ``RuntimeError`` with the
+    upstream HTTP status embedded in the text, so classification is deliberately
+    conservative and does not expose provider response bodies to clients.
+    """
+    text = str(exc or "").lower()
+    status_match = re.search(r"(?:api error:|status(?:_code)?[=: ]+)\s*(\d{3})", text)
+    status = int(status_match.group(1)) if status_match else None
+
+    if status in {401, 403} or any(
+        token in text
+        for token in ("invalid_api_key", "invalid api-key", "authentication", "unauthorized", "forbidden")
+    ):
+        return "ai_provider_auth_failed", False, "fallback"
+
+    if status == 429 or any(
+        token in text for token in ("rate limit", "rate_limit", "too many requests", "quota")
+    ):
+        return "ai_provider_rate_limited", True, "fallback"
+
+    if status in {408, 425, 500, 502, 503, 504} or any(
+        token in text
+        for token in ("timeout", "timed out", "temporarily unavailable", "connection reset", "connection error")
+    ):
+        return "ai_provider_transient", True, "fallback"
+
+    looks_like_vision_rejection = visual and any(
+        token in text
+        for token in ("image", "vision", "multimodal", "image_url", "content type")
+    )
+    if looks_like_vision_rejection:
+        return "vision_unavailable", False, "vision_unavailable"
+
+    # Unknown provider/client failures may be transient; allow the durable
+    # queue's bounded retry policy to absorb short-lived upstream issues.
+    return "ai_provider_error", True, "fallback"
+
+
+def _prewarm_failure_from_result(result: dict) -> PrewarmAnalysisError:
+    model = str(result.get("model") or "fallback")
+    error_code = str(result.get("error_code") or "")
+    retryable = result.get("retryable")
+
+    if not error_code:
+        defaults = {
+            "generating": ("generation_in_progress", True),
+            "timeout": ("ai_provider_timeout", True),
+            "vision_input_missing": ("vision_input_missing", False),
+            "vision_unavailable": ("vision_unavailable", False),
+            "vision_parse_failed": ("vision_parse_failed", False),
+            "parse_failed": ("ai_response_parse_failed", True),
+            "fallback": ("ai_analysis_failed", True),
+        }
+        error_code, default_retryable = defaults.get(model, ("ai_analysis_failed", True))
+        if retryable is None:
+            retryable = default_retryable
+
+    return PrewarmAnalysisError(
+        error_code,
+        retryable=bool(retryable),
+        model=model,
+    )
+
+
 def _qwen_error_analysis_fast_path(provider: str | None, model: str | None) -> bool:
     """Whether the configured analysis model supports our Qwen fast path.
 
@@ -792,6 +884,8 @@ async def analyze_error(
             "force_regenerated": False,
             "cache_preserved": False,
             "visual_input_count": 0,
+            "error_code": "vision_input_missing",
+            "retryable": False,
         }
 
     kp_map = await load_question_kps(db, [q.id])
@@ -851,6 +945,8 @@ async def analyze_error(
             "tokens_used": 0,
             "model": "generating",
             "duration_ms": 0,
+            "error_code": "generation_in_progress",
+            "retryable": True,
         }
     _generating.add(wq_pk)
 
@@ -872,6 +968,8 @@ async def analyze_error(
             "tokens_used": 0,
             "model": "generating",
             "duration_ms": 0,
+            "error_code": "generation_in_progress",
+            "retryable": True,
         }
 
     try:
@@ -917,6 +1015,8 @@ async def analyze_error(
                 "force_regenerated": False,
                 "cache_preserved": False,
                 "visual_input_count": 0,
+                "error_code": "vision_input_missing",
+                "retryable": False,
             }
 
         # Wrong-detail AI analysis must always use the same DB-configured
@@ -934,6 +1034,8 @@ async def analyze_error(
                 "force_regenerated": False,
                 "cache_preserved": False,
                 "visual_input_count": len(image_data_urls),
+                "error_code": "ai_model_unconfigured",
+                "retryable": False,
             }
 
         context = build_error_context(wq, q, knowledge_points)
@@ -982,28 +1084,32 @@ async def analyze_error(
                 "force_regenerated": False,
                 "cache_preserved": False,
                 "visual_input_count": len(image_data_urls),
+                "error_code": "ai_provider_timeout",
+                "retryable": True,
             }
         except Exception as exc:
             old_cache = build_any_cached_error_analysis_response(wq)
-            logger.exception(
-                "ai.error_analysis.exception wq_id=%s force=%s visual=%s err=%s has_old_cache=%s",
-                wq.id, effective_force, bool(image_data_urls), repr(exc), bool(old_cache),
+            error_code, retryable, failure_model = _classify_ai_provider_exception(
+                exc, visual=bool(image_data_urls)
             )
-            error_text = str(exc).lower()
-            looks_like_vision_rejection = bool(image_data_urls) and any(
-                token in error_text
-                for token in ("image", "vision", "multimodal", "image_url", "content type")
+            logger.exception(
+                "ai.error_analysis.exception wq_id=%s force=%s visual=%s error_code=%s "
+                "retryable=%s err=%s has_old_cache=%s",
+                wq.id, effective_force, bool(image_data_urls), error_code, retryable,
+                repr(exc), bool(old_cache),
             )
             return {
                 "content": get_fallback_analysis(),
                 "from_cache": False,
                 "from_fallback": True,
                 "tokens_used": 0,
-                "model": "vision_unavailable" if looks_like_vision_rejection else "fallback",
+                "model": failure_model,
                 "duration_ms": 0,
                 "force_regenerated": False,
                 "cache_preserved": False,
                 "visual_input_count": len(image_data_urls),
+                "error_code": error_code,
+                "retryable": retryable,
             }
 
         raw_content = result.get("content", "")
@@ -1026,6 +1132,8 @@ async def analyze_error(
                 "force_regenerated": False,
                 "cache_preserved": False,
                 "visual_input_count": len(image_data_urls),
+                "error_code": "vision_parse_failed",
+                "retryable": False,
             }
 
         if not parsed_valid:
@@ -1037,6 +1145,8 @@ async def analyze_error(
                 "tokens_used": 0,
                 "duration_ms": 0,
                 "visual_input_count": len(image_data_urls),
+                "error_code": "ai_response_parse_failed",
+                "retryable": True,
             }
             if effective_force:
                 resp["force_regenerated"] = False
@@ -1120,27 +1230,39 @@ async def prewarm_wrong_question_analysis(
     user_id: int,
     *,
     expected_revision: str | None = None,
-) -> None:
-    """后台预生成错题 AI 分析。独立 session。
+) -> dict:
+    """Pre-generate one wrong-question analysis using queue-friendly semantics.
 
-    Exceptions propagate to the durable worker, which handles retry/dead-letter
-    via the failing task's fail_v2 path. The function itself does NOT catch
-    exceptions to allow proper retry semantics.
+    The synchronous ``analyze_error`` API returns fallback payloads on provider
+    failures so the mini-program can degrade gracefully. A prewarm job must not
+    treat those payloads as a successful warm, otherwise monitoring reports a
+    false positive and the next detail-page open still has no valid cache.
+
+    Success/cache-hit/superseded cases return an outcome dict. Structured
+    fallback results are converted to :class:`PrewarmAnalysisError`, carrying a
+    stable ``error_code`` plus whether the durable/local worker may retry.
     """
-    import logging
-    logger = logging.getLogger(__name__)
     from app.core.database import async_session
+
     async with async_session() as bg_db:
-        wq = await bg_db.execute(
+        wq_result = await bg_db.execute(
             select(WrongQuestion).where(
                 WrongQuestion.id == wrong_question_id,
                 WrongQuestion.user_id == user_id,
             )
         )
-        wq = wq.scalar_one_or_none()
+        wq = wq_result.scalar_one_or_none()
         if not wq:
-            logger.info("[prewarm] wrong_question not found id=%d uid=%d", wrong_question_id, user_id)
-            return
+            logger.info(
+                "[prewarm] skipped_not_found id=%d uid=%d",
+                wrong_question_id, user_id,
+            )
+            return {
+                "status": "skipped",
+                "reason": "wrong_question_not_found",
+                "from_cache": False,
+            }
+
         if expected_revision:
             from app.services.ai_prewarm_worker import build_prewarm_revision
 
@@ -1153,18 +1275,45 @@ async def prewarm_wrong_question_analysis(
                     "[prewarm] superseded id=%d uid=%d expected_revision=%s current_revision=%s",
                     wrong_question_id, user_id, expected_revision, current_revision,
                 )
-                return
+                return {
+                    "status": "superseded",
+                    "reason": "revision_changed",
+                    "from_cache": False,
+                }
 
-        # Reuse the canonical analysis path. It performs full input/model cache
-        # validation, cross-process locking, and returns immediately on a hit.
         result = await analyze_error(bg_db, user_id, wrong_question_id)
+
+        if result.get("from_fallback"):
+            failure = _prewarm_failure_from_result(result)
+            category = (
+                "failed_input"
+                if failure.error_code in {
+                    "vision_input_missing",
+                    "vision_parse_failed",
+                    "vision_unavailable",
+                }
+                else "retry" if failure.retryable else "failed_permanent"
+            )
+            logger.warning(
+                "[prewarm] %s id=%d uid=%d revision=%s error_code=%s retryable=%s model=%s",
+                category, wrong_question_id, user_id, expected_revision or "legacy",
+                failure.error_code, failure.retryable, failure.model,
+            )
+            raise failure
+
+        status = "cache_hit" if result.get("from_cache") else "success"
         logger.info(
-            "[prewarm] done id=%d uid=%d revision=%s from_cache=%s from_fallback=%s model=%s duration_ms=%s",
-            wrong_question_id, user_id,
-            expected_revision or "legacy",
-            result.get("from_cache"), result.get("from_fallback"),
+            "[prewarm] %s id=%d uid=%d revision=%s model=%s duration_ms=%s",
+            status, wrong_question_id, user_id, expected_revision or "legacy",
             result.get("model"), result.get("duration_ms"),
         )
+        return {
+            "status": status,
+            "reason": None,
+            "from_cache": bool(result.get("from_cache")),
+            "model": result.get("model"),
+            "duration_ms": result.get("duration_ms", 0),
+        }
 
 
 async def generate_advice(db: AsyncSession, user_id: int, subject_id: int | None = None) -> dict:
