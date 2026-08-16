@@ -2,6 +2,7 @@ const api = require('../../utils/api')
 const config = require('../../config')
 const { safeDecodeURIComponent } = require('../../utils/route-params')
 const pomodoroTheme = require('../../utils/pomodoro-theme')
+const { parseServerUtc, getChinaWallParts, getChinaDayStartUtcMs } = require('../../utils/china-time')
 
 const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'ceremony' }
 
@@ -38,12 +39,7 @@ const PRESETS = [
 const FREE_TIMER_MAX_MS = 5 * 60 * 60 * 1000 // 5 hours max for free timer
 
 function parseServerTime(value) {
-  if (!value) return NaN
-  if (typeof value === 'number') return value
-  const s = String(value).trim()
-  if (!s) return NaN
-  const hasTimezone = /Z$|[+-]\d{2}:?\d{2}$/.test(s)
-  return new Date(hasTimezone ? s : s + '+00:00').getTime()
+  return parseServerUtc(value)
 }
 
 const MOTTOES = [
@@ -2376,27 +2372,24 @@ Page({
   },
 
   getDateStr() {
-    const d = new Date()
+    const d = getChinaWallParts(Date.now())
     const week = ['日', '一', '二', '三', '四', '五', '六']
-    return `${d.getMonth() + 1}月${d.getDate()}日 星期${week[d.getDay()]}`
+    return `${d.month}月${d.day}日 星期${week[d.weekday]}`
   },
 
   _getExamDays() {
-    const now = new Date()
-    now.setHours(0, 0, 0, 0)
-    const getExamDate = (year) => {
-      const dec31 = new Date(year, 11, 31)
-      const dayOfWeek = dec31.getDay()
-      const lastSaturday = dec31.getDate() - ((dayOfWeek - 6 + 7) % 7)
+    const nowParts = getChinaWallParts(Date.now())
+    const todayStart = getChinaDayStartUtcMs(`${nowParts.year}-${String(nowParts.month).padStart(2, '0')}-${String(nowParts.day).padStart(2, '0')}`)
+    const getExamDayUtc = (year) => {
+      const dec31 = new Date(Date.UTC(year, 11, 31))
+      const dayOfWeek = dec31.getUTCDay()
+      const lastSaturday = 31 - ((dayOfWeek - 6 + 7) % 7)
       const targetDay = lastSaturday - 7
-      return new Date(year, 11, targetDay)
+      return Date.UTC(year, 11, targetDay) - 8 * 60 * 60 * 1000
     }
-    let examDate = getExamDate(now.getFullYear())
-    if (examDate < now) {
-      examDate = getExamDate(now.getFullYear() + 1)
-    }
-    const diff = Math.ceil((examDate - now) / (1000 * 60 * 60 * 24))
-    return Math.max(0, diff)
+    let examStart = getExamDayUtc(nowParts.year)
+    if (examStart < todayStart) examStart = getExamDayUtc(nowParts.year + 1)
+    return Math.max(0, Math.round((examStart - todayStart) / (24 * 60 * 60 * 1000)))
   },
 
 })

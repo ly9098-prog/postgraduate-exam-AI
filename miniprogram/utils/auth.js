@@ -8,8 +8,11 @@ function normalizeUser(user) {
   const normalized = user || {}
   const role = normalized.role || normalized.role_name || ''
   const permissions = Array.isArray(normalized.permissions) ? normalized.permissions : []
+  const nickname = typeof normalized.nickname === 'string' ? normalized.nickname.trim() : ''
   return {
     ...normalized,
+    nickname: nickname || null,
+    profile_completed: normalized.profile_completed === true || !!nickname,
     role,
     role_name: normalized.role_name || role,
     is_admin: normalized.is_admin === true || role === 'admin' || role === 'super_admin' || permissions.includes('import:write'),
@@ -21,6 +24,24 @@ async function syncCurrentUser() {
   if (!getToken()) return null
   const user = normalizeUser(await api.get('/users/me'))
   storage.set(KEYS.USER, user)
+  return user
+}
+
+function isProfileCompleted(user) {
+  const normalized = normalizeUser(user)
+  return normalized.profile_completed === true
+}
+
+async function updateProfile({ nickname, avatarPath } = {}) {
+  const normalizedNickname = typeof nickname === 'string' ? nickname.trim().replace(/\s+/g, ' ') : ''
+  if (!normalizedNickname) throw new Error('请输入昵称')
+
+  if (avatarPath) {
+    await api.uploadFile('/users/me/avatar', avatarPath, { name: 'file', timeout: 30000 })
+  }
+
+  const user = normalizeUser(await api.put('/users/me', { nickname: normalizedNickname }))
+  storage.setStrict(KEYS.USER, user)
   return user
 }
 
@@ -126,4 +147,19 @@ async function checkAndRefreshToken() {
   }
 }
 
-module.exports = { wechatLogin, loginDirect, logout, getToken, isLoggedIn, getUser, isAdmin, requireAdminAccess, redirectToLogin, syncCurrentUser, normalizeUser, checkAndRefreshToken }
+module.exports = {
+  wechatLogin,
+  loginDirect,
+  logout,
+  getToken,
+  isLoggedIn,
+  getUser,
+  isAdmin,
+  requireAdminAccess,
+  redirectToLogin,
+  syncCurrentUser,
+  normalizeUser,
+  isProfileCompleted,
+  updateProfile,
+  checkAndRefreshToken,
+}

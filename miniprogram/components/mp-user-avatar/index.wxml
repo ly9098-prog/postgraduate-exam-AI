@@ -1,0 +1,55 @@
+<view class="mp-profile-row">
+  <button
+    wx:if="{{!isDevtools}}"
+    class="mp-avatar-button"
+    open-type="chooseAvatar"
+    bindchooseavatar="onChooseAvatar"
+    disabled="{{!editable}}"
+    aria-label="选择微信头像"
+  >
+    <image
+      wx:if="{{currentAvatar || defaultAvatar}}"
+      class="mp-avatar avatar-class"
+      src="{{currentAvatar || defaultAvatar}}"
+      mode="aspectFill"
+    />
+    <view wx:else class="mp-avatar mp-avatar-placeholder avatar-class">微</view>
+  </button>
+
+  <button
+    wx:else
+    class="mp-avatar-button"
+    bindtap="chooseAvatarInDevtools"
+    disabled="{{!editable}}"
+    aria-label="选择测试头像"
+  >
+    <image
+      wx:if="{{currentAvatar || defaultAvatar}}"
+      class="mp-avatar avatar-class"
+      src="{{currentAvatar || defaultAvatar}}"
+      mode="aspectFill"
+    />
+    <view wx:else class="mp-avatar mp-avatar-placeholder avatar-class">微</view>
+  </button>
+
+  <view class="mp-profile-main">
+    <input
+      class="mp-nickname nickname-class"
+      type="{{isDevtools ? 'text' : 'nickname'}}"
+      value="{{currentNickname}}"
+      placeholder="{{defaultNickname || '选择微信昵称'}}"
+      placeholder-class="mp-nickname-placeholder"
+      maxlength="32"
+      focus="{{nicknameFocus}}"
+      disabled="{{!editable}}"
+      bindfocus="onNicknameFocus"
+      bindinput="onNicknameInput"
+      bindblur="onNicknameBlur"
+      bindnicknamereview="onNicknameReview"
+      confirm-type="done"
+    />
+    <text class="mp-profile-hint">{{isDevtools ? '开发者工具：本地模拟头像昵称' : '微信头像昵称填写'}}</text>
+  </view>
+
+  <view class="mp-profile-check {{currentNickname ? 'is-ready' : ''}}">{{currentNickname ? '✓' : '›'}}</view>
+</view>

@@ -10,7 +10,7 @@
 const storage = require('./storage')
 
 // 当前协议版本号（更新协议后修改此值）
-const CURRENT_PRIVACY_VERSION = '1.0'
+const CURRENT_PRIVACY_VERSION = '1.1'
 
 const AGREEMENT_ITEMS = [
   'user_agreement',
