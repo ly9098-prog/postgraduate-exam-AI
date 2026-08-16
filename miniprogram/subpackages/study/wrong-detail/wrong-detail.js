@@ -20,12 +20,19 @@ function _sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-function _fallbackMessage(model) {
+function _fallbackMessage(model, errorCode, retryable) {
+  if (errorCode === 'ai_provider_auth_failed') return 'AI 服务配置异常，请稍后再试'
+  if (errorCode === 'ai_model_unconfigured') return 'AI 分析模型尚未正确配置，请稍后再试'
+  if (errorCode === 'ai_provider_rate_limited') return 'AI 服务当前繁忙，请稍后重试'
+  if (errorCode === 'ai_provider_timeout') return 'AI 分析生成超时，请稍后重试'
+  if (errorCode === 'ai_provider_transient') return 'AI 服务暂时不可用，请稍后重试'
+  if (errorCode === 'ai_response_parse_failed') return 'AI 返回格式异常，请重新生成'
   if (model === 'timeout') return 'AI 分析生成超时，请稍后重试'
   if (model === 'parse_failed') return 'AI 返回格式异常，请重新生成'
   if (model === 'vision_input_missing') return '题目图片缺失或无法读取，AI 解析失败'
   if (model === 'vision_unavailable') return '当前 AI 分析模型暂不支持图片理解，请稍后重试或联系管理员检查分析模型配置'
   if (model === 'vision_parse_failed') return 'AI 未能正确读取题目图片，解析失败，请稍后重试'
+  if (retryable === false) return 'AI 服务配置异常，请稍后再试'
   return 'AI 服务暂时不可用，请稍后重试'
 }
 
@@ -387,8 +394,14 @@ Page({
     }, { timeout: AI_REQUEST_TIMEOUT_MS })
   },
 
-  _analysisFailureState(model) {
-    return { aiErrorText: _fallbackMessage(model) }
+  _analysisFailureState(model, result) {
+    return {
+      aiErrorText: _fallbackMessage(
+        model,
+        result && result.error_code,
+        result && result.retryable
+      )
+    }
   },
 
   onTapAiAnalysis() {
@@ -481,7 +494,7 @@ Page({
       // fallback 本身带有三段通用文案，不能仅凭“有内容”判定为成功。
       if (fromFallback) {
         this._resetAiLoadingState()
-        this.setData(Object.assign({ aiFallback: true }, this._analysisFailureState(model)))
+        this.setData(Object.assign({ aiFallback: true }, this._analysisFailureState(model, result)))
         return
       }
       if (!hasContent) {
@@ -569,7 +582,7 @@ Page({
       // fallback 带有通用正文，必须按失败处理，不能覆盖成“生成成功”。
       if (fromFallback) {
         this._resetAiLoadingState()
-        var failure = this._analysisFailureState(model)
+        var failure = this._analysisFailureState(model, result)
         if (oldCards) {
           this.setData({
             aiFallback: false,
