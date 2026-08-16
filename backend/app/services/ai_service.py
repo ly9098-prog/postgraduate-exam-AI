@@ -168,6 +168,52 @@ def _collect_question_visual_sources(question: Question) -> list[str]:
     return out[:_MAX_VISUAL_IMAGES]
 
 
+def _question_has_unresolved_visual_slot(question: Question) -> bool:
+    """Return True when the persisted question explicitly declares a raster visual
+    but does not provide any loadable source URL.
+
+    Text-only questions are valid inputs for wrong-detail analysis.  What should
+    fail fast is the narrower case where the question schema itself says an
+    image/math-image/table-image/code-image exists, yet the corresponding URL is
+    missing.  Native structured tables are *not* treated as missing images: they
+    are serialized into text by ``_extract_structured_visual`` and can be handled
+    by the normal analysis LLM without a raster image.
+    """
+
+    content = question.content if isinstance(question.content, dict) else {}
+    segments = content.get("segments")
+    if isinstance(segments, list):
+        for seg in segments:
+            if not isinstance(seg, dict):
+                continue
+            seg_type = str(seg.get("type") or "").strip().lower()
+            if seg_type not in {"image", "math_image", "table_image", "code_image"}:
+                continue
+            has_source = any(
+                str(seg.get(key) or "").strip()
+                for key in ("url", "source_image_url", "fallback_image_url")
+            )
+            if not has_source:
+                return True
+
+    # Option-image schemas may include an empty ``image_url`` key even for a
+    # normal text option, so only treat the option as visually incomplete when
+    # it explicitly declares itself as an image-bearing option.
+    options = question.options if isinstance(question.options, dict) else {}
+    for value in options.values():
+        if not isinstance(value, dict):
+            continue
+        declares_image = (
+            str(value.get("type") or "").strip().lower() in {"image", "math_image"}
+            or value.get("has_image") is True
+        )
+        if declares_image:
+            if not str(value.get("image_url") or value.get("image") or "").strip():
+                return True
+
+    return False
+
+
 def _extract_structured_visual(content: dict | None) -> str:
     """Serialize native table segments so a text model can still read them."""
     if not isinstance(content, dict):
@@ -268,9 +314,10 @@ async def _prepare_visual_inputs(question: Question) -> tuple[list[str], dict]:
     """Load visual inputs only from the persisted question record.
 
     wrong-detail does not accept user-supplied screenshots. The question image
-    stored in the database/object storage is the single source of truth. If no
-    stored image exists, or none of the stored images can be loaded, the caller
-    returns a parse-failed response instead of asking the LLM to guess.
+    stored in the database/object storage is the single source of truth for
+    questions that actually contain raster visuals.  Text-only questions
+    legitimately return an empty image list and continue through the text path;
+    callers only fail when a declared visual asset cannot be resolved.
     """
     sources = _collect_question_visual_sources(question)
     data_urls: list[str] = []
@@ -552,6 +599,7 @@ def _analysis_cache_age_ms(ai_analysis: dict | None) -> int | None:
 def _analysis_cache_stale_reason(
     ai_analysis: dict | None,
     *,
+    requires_visual: bool = False,
     expected_input_signature: str | None = None,
     expected_model_signature: str | None = None,
 ) -> str | None:
@@ -560,10 +608,11 @@ def _analysis_cache_stale_reason(
     meta = ai_analysis.get("_meta") or {}
     if meta.get("version", "") != AI_ANALYSIS_PROMPT_VERSION:
         return "prompt_version"
-    if int(meta.get("visual_input_count") or 0) <= 0:
-        return "visual_input"
-    if not _visual_evidence_is_valid(str(meta.get("visual_evidence") or "")):
-        return "visual_evidence"
+    if requires_visual:
+        if int(meta.get("visual_input_count") or 0) <= 0:
+            return "visual_input"
+        if not _visual_evidence_is_valid(str(meta.get("visual_evidence") or "")):
+            return "visual_evidence"
     if expected_input_signature is not None and meta.get("input_signature") != expected_input_signature:
         return "input_signature"
     if expected_model_signature is not None and meta.get("model_signature") != expected_model_signature:
@@ -574,12 +623,19 @@ def _analysis_cache_stale_reason(
 def is_ai_analysis_fresh(
     ai_analysis: dict | None,
     *,
+    requires_visual: bool = False,
     expected_input_signature: str | None = None,
     expected_model_signature: str | None = None,
 ) -> bool:
-    """A reusable wrong-detail cache must prove that the question image was read."""
+    """Return whether a wrong-detail cache matches the current input/model.
+
+    Visual evidence is mandatory only for questions that actually have a raster
+    visual dependency.  Pure text questions intentionally cache with
+    ``visual_input_count == 0``.
+    """
     return _analysis_cache_stale_reason(
         ai_analysis,
+        requires_visual=requires_visual,
         expected_input_signature=expected_input_signature,
         expected_model_signature=expected_model_signature,
     ) is None
@@ -588,12 +644,14 @@ def is_ai_analysis_fresh(
 def build_cached_error_analysis_response(
     wq,
     *,
+    requires_visual: bool = False,
     expected_input_signature: str | None = None,
     expected_model_signature: str | None = None,
 ) -> dict | None:
     """If the wrong question has a fresh cached AI analysis, return it; otherwise None."""
     if not is_ai_analysis_fresh(
         wq.ai_analysis,
+        requires_visual=requires_visual,
         expected_input_signature=expected_input_signature,
         expected_model_signature=expected_model_signature,
     ):
@@ -655,8 +713,9 @@ async def evaluate_cached_error_analysis(
         return {"status": "empty", "analysis": None, "reason": "empty"}
 
     visual_sources = _collect_question_visual_sources(q)
-    if not visual_sources:
-        return {"status": "stale", "analysis": None, "reason": "visual_input"}
+    requires_visual = bool(visual_sources) or _question_has_unresolved_visual_slot(q)
+    if requires_visual and not visual_sources:
+        return {"status": "stale", "analysis": None, "reason": "visual_input_missing"}
 
     if knowledge_points is None:
         kp_map = await load_question_kps(db, [q.id])
@@ -668,6 +727,7 @@ async def evaluate_cached_error_analysis(
     model_signature = _analysis_model_signature(runtime)
     reason = _analysis_cache_stale_reason(
         wq.ai_analysis,
+        requires_visual=requires_visual,
         expected_input_signature=input_signature,
         expected_model_signature=model_signature,
     )
@@ -712,12 +772,14 @@ async def analyze_error(
     if not q:
         raise ValueError("题目不存在")
 
-    # wrong-detail requires a persisted question image. Do this check before
-    # serving cached AI content so legacy/image-less records fail explicitly.
     stored_visual_sources = _collect_question_visual_sources(q)
-    if not stored_visual_sources:
+    requires_visual = bool(stored_visual_sources) or _question_has_unresolved_visual_slot(q)
+    # Pure text questions are valid and continue through the normal analysis
+    # path.  Fail fast only when the question schema explicitly declares a
+    # visual element but the persisted asset URL is missing.
+    if requires_visual and not stored_visual_sources:
         logger.info(
-            "ai.error_analysis.image_missing wq_id=%d question_id=%d",
+            "ai.error_analysis.image_missing wq_id=%d question_id=%d reason=declared_visual_without_source",
             wq.id, q.id,
         )
         return {
@@ -748,6 +810,7 @@ async def analyze_error(
     if not effective_force:
         cached = build_cached_error_analysis_response(
             wq,
+            requires_visual=requires_visual,
             expected_input_signature=input_signature,
             expected_model_signature=model_signature,
         )
@@ -760,6 +823,7 @@ async def analyze_error(
             return cached
         stale_reason = _analysis_cache_stale_reason(
             wq.ai_analysis,
+            requires_visual=requires_visual,
             expected_input_signature=input_signature,
             expected_model_signature=model_signature,
         )
@@ -821,6 +885,7 @@ async def analyze_error(
         if not effective_force:
             cached = build_cached_error_analysis_response(
                 wq,
+                requires_visual=requires_visual,
                 expected_input_signature=input_signature,
                 expected_model_signature=model_signature,
             )
@@ -834,9 +899,10 @@ async def analyze_error(
         image_data_urls, visual_meta = await _prepare_visual_inputs(q)
         structured_visual = str(visual_meta.get("structured_visual") or "")
 
-        # A DB image exists, but none of its assets could be loaded. Do not let
-        # the analysis LLM continue with incomplete context or infer from text.
-        if not image_data_urls:
+        # If the question really contains a raster visual, every declared asset
+        # failing to load is a hard failure.  A genuine text-only question has
+        # zero images by design and should continue with a text LLM request.
+        if requires_visual and not image_data_urls:
             logger.info(
                 "ai.error_analysis.image_load_failed wq_id=%d question_id=%d declared_sources=%d",
                 wq.id, q.id, int(visual_meta.get("declared_source_count") or 0),
@@ -991,6 +1057,7 @@ async def analyze_error(
             "force_regenerated": effective_force,
             "visual_input_count": len(image_data_urls),
             "visual_evidence": visual_evidence or None,
+            "input_mode": "vision" if image_data_urls else "text",
             "input_signature": input_signature,
             "model_signature": model_signature,
         }
@@ -1015,10 +1082,11 @@ async def analyze_error(
         await db.commit()
 
         logger.info(
-            "ai.error_analysis.result wq_id=%s force=%s model=%s visual_count=%s "
+            "ai.error_analysis.result wq_id=%s force=%s model=%s input_mode=%s visual_count=%s "
             "visual_evidence_valid=%s parsed_valid=%s thinking=%s max_tokens=%s "
             "image_max_pixels=%s fields=%s duration_ms=%s",
-            wq.id, effective_force, result.get("model"), len(image_data_urls),
+            wq.id, effective_force, result.get("model"),
+            "vision" if image_data_urls else "text", len(image_data_urls),
             _visual_evidence_is_valid(visual_evidence) if image_data_urls else None,
             parsed_valid, False if qwen_fast_path else "default",
             _ERROR_ANALYSIS_MAX_TOKENS, image_max_pixels,
@@ -1036,6 +1104,7 @@ async def analyze_error(
             "force_regenerated": effective_force,
             "visual_input_count": len(image_data_urls),
             "visual_evidence": visual_evidence or None,
+            "input_mode": "vision" if image_data_urls else "text",
         }
     finally:
         _generating.discard(wq_pk)
