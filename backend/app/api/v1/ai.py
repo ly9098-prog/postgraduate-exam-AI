@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -29,6 +29,8 @@ from app.schemas.ai_learning import (
 )
 from app.services import ai_learning_service
 from app.services import ai_service as svc
+from app.services.storage_backend import compress_image
+from app.services.streaming_upload_handler import stream_to_temp
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,80 @@ async def error_analysis(
         session_type="error_analysis",
         **result,
     )
+
+
+_AI_VISUAL_UPLOAD_MAX_BYTES = 8 * 1024 * 1024
+
+
+async def _read_ai_visual_upload(file: UploadFile) -> dict:
+    content_type = (file.content_type or "").lower()
+    if content_type and not content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="仅支持图片或表格截图",
+        )
+    suffix = ".jpg"
+    filename = file.filename or "question-visual.jpg"
+    if "." in filename:
+        suffix = "." + filename.rsplit(".", 1)[-1][:8]
+    try:
+        tmp = await stream_to_temp(file, max_size=_AI_VISUAL_UPLOAD_MAX_BYTES, suffix=suffix)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="图片过大，请上传 8MB 以内的清晰截图",
+        ) from exc
+    try:
+        if tmp.size <= 0:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="图片内容为空")
+        with open(tmp.path, "rb") as fh:
+            raw = fh.read(_AI_VISUAL_UPLOAD_MAX_BYTES + 1)
+        compressed = compress_image(raw)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="图片格式无法识别，请重新选择截图",
+        ) from exc
+    finally:
+        tmp.close()
+
+    if compressed.startswith(b"\x89PNG\r\n\x1a\n"):
+        detected_type = "image/png"
+    elif compressed.startswith(b"RIFF") and compressed[8:12] == b"WEBP":
+        detected_type = "image/webp"
+    else:
+        detected_type = "image/jpeg"
+    return {"data": compressed, "content_type": detected_type}
+
+
+@router.post("/error-analysis/with-image")
+async def error_analysis_with_image(
+    wrong_question_id: int = Form(...),
+    force_regenerate: bool = Form(False),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """错题 AI 分析（附加一张题图/表格截图）。
+
+    上传文件只在本次请求内使用：服务端压缩后直接以内联 multimodal
+    image_url(data URI) 发送给视觉模型，不落库、不写对象存储。
+    """
+    supplemental_image = await _read_ai_visual_upload(file)
+    try:
+        result = await svc.analyze_error(
+            db,
+            current_user.id,
+            wrong_question_id,
+            force_regenerate=force_regenerate,
+            supplemental_image=supplemental_image,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    return AiResponse(session_type="error_analysis", **result)
 
 
 @router.post("/error-analysis/prewarm", response_model=AiPrewarmResponse)

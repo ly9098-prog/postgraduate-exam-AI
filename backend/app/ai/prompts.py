@@ -6,7 +6,7 @@ from app.features.question_type import QT_SINGLE_CHOICE
 
 # 当前 AI 错题分析 prompt 版本。
 # 修改 prompt 后递增此版本号，已缓存旧版本分析会在下次读取时触发重新生成。
-AI_ANALYSIS_PROMPT_VERSION = "v2"
+AI_ANALYSIS_PROMPT_VERSION = "v3-vision"
 
 
 def _clip_text(value, limit=1200):
@@ -325,22 +325,62 @@ SYSTEM_PROMPTS = {
 }
 
 
-def build_error_analysis(question: dict, user_answer: str, correct_answer: str) -> list:
+def build_error_analysis(
+    question: dict,
+    user_answer: str,
+    correct_answer: str,
+    *,
+    image_data_urls: list[str] | None = None,
+) -> list:
     stem = _clip_text(question.get('content', {}).get('text', ''), 1200)
     options_text = _clip_text(question.get('options', {}), 800)
+    structured_visual = _clip_text(question.get('structured_visual', ''), 1800)
+    image_data_urls = [str(url) for url in (image_data_urls or []) if url]
+
+    visual_note = ""
+    if structured_visual:
+        visual_note += f"【结构化表格/视觉信息】{structured_visual}\n"
+    if image_data_urls:
+        visual_note += (
+            f"【视觉输入】随本消息附带 {len(image_data_urls)} 张题目图片/表格截图。"
+            "你必须先读取这些图片，再结合文字题干分析。\n"
+        )
+
+    user_text = (
+        f"【题目】{stem}\n"
+        f"【选项】{options_text}\n"
+        f"【正确答案】{correct_answer}\n"
+        f"【我的答案】{user_answer}\n"
+        f"【知识点】{question.get('knowledge_points', [])}\n"
+        f"{visual_note}"
+        "请分析该错题，输出错因诊断、补漏重点和复练任务。"
+    )
+
+    system_prompt = SYSTEM_PROMPTS["error_analysis"]
+    if image_data_urls:
+        system_prompt += (
+            "\n视觉输入校验：本次请求包含题目图片/表格。你必须实际读取视觉输入，"
+            "并在 JSON 中额外返回 visual_evidence 字段："
+            "若成功读取，写一句只能从图片/表格本身直接看到的关键事实（如表头、数值、节点关系或图形条件），"
+            "不要复述文字题干；若图片无法读取、模型实际没有视觉输入或内容无法辨认，"
+            "只能写 unreadable，禁止猜测。最终 JSON 必须包含 visual_evidence。"
+        )
+
+    if not image_data_urls:
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
+        ]
+
+    content = [{"type": "text", "text": user_text}]
+    for data_url in image_data_urls:
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": data_url, "detail": "high"},
+        })
     return [
-        {"role": "system", "content": SYSTEM_PROMPTS["error_analysis"]},
-        {
-            "role": "user",
-            "content": (
-                f"【题目】{stem}\n"
-                f"【选项】{options_text}\n"
-                f"【正确答案】{correct_answer}\n"
-                f"【我的答案】{user_answer}\n"
-                f"【知识点】{question.get('knowledge_points', [])}\n"
-                "请分析该错题，输出错因诊断、补漏重点和复练任务。"
-            ),
-        },
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": content},
     ]
 
 
