@@ -331,6 +331,7 @@ def build_error_analysis(
     correct_answer: str,
     *,
     image_data_urls: list[str] | None = None,
+    image_max_pixels: int | None = None,
 ) -> list:
     stem = _clip_text(question.get('content', {}).get('text', ''), 1200)
     options_text = _clip_text(question.get('options', {}), 800)
@@ -374,10 +375,19 @@ def build_error_analysis(
 
     content = [{"type": "text", "text": user_text}]
     for data_url in image_data_urls:
-        content.append({
+        image_item = {
             "type": "image_url",
-            "image_url": {"url": data_url, "detail": "high"},
-        })
+            "image_url": {"url": data_url},
+        }
+        if image_max_pixels is not None and image_max_pixels > 0:
+            # Qwen OpenAI-compatible multimodal API accepts max_pixels as a
+            # sibling of image_url. Keep it out of generic requests so other
+            # OpenAI-compatible providers are not exposed to Qwen extensions.
+            image_item["max_pixels"] = int(image_max_pixels)
+        else:
+            # Preserve the existing high-detail hint for generic providers.
+            image_item["image_url"]["detail"] = "high"
+        content.append(image_item)
     return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": content},
