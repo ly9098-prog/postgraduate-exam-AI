@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from sqlalchemy import Float, and_, case, delete, func, select
@@ -12,6 +13,8 @@ from app.models.user_question_state import UserQuestionState
 from app.models.wrong_question import WrongQuestion
 from app.services.admin_subject_service import resolve_subject_ids
 from app.services.knowledge_point_service import kp_fuzzy_condition, load_question_kps
+
+logger = logging.getLogger(__name__)
 
 
 async def record_wrong(
@@ -32,6 +35,10 @@ async def record_wrong(
             wq.removed_at = None
             wq.mastered = False
             wq.mastered_at = None
+        # A new wrong attempt changes the analysis input (wrong_answer and
+        # review_count). Clear the embedded cache immediately so wrong-detail
+        # never renders advice for the previous attempt while prewarm refreshes.
+        wq.ai_analysis = None
         wq.wrong_answer = wrong_answer
         wq.review_count = (wq.review_count or 0) + 1
         wq.last_review_at = utcnow()
@@ -75,10 +82,31 @@ async def update_wrong(
     wq = await get_by_id(db, user_id, wq_id)
     if not wq:
         return None
-    if error_type is not None:
+    should_rewarm = False
+    if error_type is not None and error_type != wq.error_type:
         wq.error_type = error_type
+        wq.ai_analysis = None
+        should_rewarm = True
     await db.commit()
     await db.refresh(wq)
+    if should_rewarm:
+        try:
+            from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
+
+            revision = build_prewarm_revision(
+                review_count=wq.review_count,
+                wrong_answer=wq.wrong_answer,
+            )
+            await enqueue_prewarm(wq.id, user_id, revision=revision)
+        except Exception:
+            # Editing the error classification must succeed even if Redis is
+            # temporarily unavailable; the AI endpoint can regenerate on demand.
+            logger.warning(
+                "AI prewarm enqueue failed after wrong-question update wq_id=%s uid=%s",
+                wq.id,
+                user_id,
+                exc_info=True,
+            )
     return wq
 
 

@@ -73,6 +73,7 @@ async def project_practice_answer(
     user_answer = (record.user_answer or "").strip()
 
     wrong_question_id = None
+    wrong_for_prewarm = None
     if not is_correct:
         # New submit paths persist WrongQuestion synchronously in the same
         # transaction as PracticeRecord so the wrong-book is immediately
@@ -101,6 +102,7 @@ async def project_practice_answer(
                 commit=False,
             )
         wrong_question_id = wrong.id
+        wrong_for_prewarm = wrong
 
     # Insert/update the idempotency receipt in the same transaction as every
     # other projection.  record_answer_behavior must not commit independently.
@@ -178,9 +180,13 @@ async def project_practice_answer(
     # only after the wrong-question projection is durable.
     if wrong_question_id is not None:
         try:
-            from app.services.ai_prewarm_worker import enqueue_prewarm
+            from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
 
-            await enqueue_prewarm(wrong_question_id, user_id)
+            revision = build_prewarm_revision(
+                review_count=getattr(wrong_for_prewarm, "review_count", None),
+                wrong_answer=getattr(wrong_for_prewarm, "wrong_answer", None),
+            )
+            await enqueue_prewarm(wrong_question_id, user_id, revision=revision)
         except Exception:
             logger.warning(
                 "AI prewarm enqueue failed after answer projection wq_id=%s uid=%s",

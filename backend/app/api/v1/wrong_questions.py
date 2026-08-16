@@ -104,7 +104,10 @@ def _sanitize_options(options: dict | None) -> dict | None:
 
 
 def enrich_wq(wq, question, knowledge_points=None, **extra):
-    ai_status = "ready" if isinstance(wq.ai_analysis, dict) and wq.ai_analysis else "empty"
+    ai_analysis = extra["ai_analysis_override"] if "ai_analysis_override" in extra else wq.ai_analysis
+    ai_status = extra.get("ai_analysis_status_override")
+    if ai_status is None:
+        ai_status = "ready" if isinstance(ai_analysis, dict) and ai_analysis else "empty"
     # 硬删除的题（question 为 None）→ knowledge_points 应为 None 而非 []；
     # 存活但无知识点的题 → []。不依赖调用方是否传默认值。
     if question is None:
@@ -129,7 +132,7 @@ def enrich_wq(wq, question, knowledge_points=None, **extra):
         analysis=question.analysis if question else None,
         knowledge_points=kps,
         image_url=question.image_url if question else None,
-        ai_analysis=wq.ai_analysis,
+        ai_analysis=ai_analysis,
         ai_analysis_status=ai_status,
         # New enriched fields
         wrong_count=extra.get("wrong_count", wq.review_count or 0),
@@ -263,7 +266,19 @@ async def get_wrong(
     question = result.scalar_one_or_none()
     kp_map = await load_question_kps(db, [wq.question_id])
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
-    return enrich_wq(wq, question, knowledge_points=kp_map.get(wq.question_id, []), **extra)
+    knowledge_points = kp_map.get(wq.question_id, [])
+    if question is not None:
+        from app.services import ai_service
+
+        cache_state = await ai_service.evaluate_cached_error_analysis(
+            db,
+            wq,
+            question,
+            knowledge_points=knowledge_points,
+        )
+        extra["ai_analysis_override"] = cache_state.get("analysis")
+        extra["ai_analysis_status_override"] = cache_state.get("status")
+    return enrich_wq(wq, question, knowledge_points=knowledge_points, **extra)
 
 
 @router.put("/{wq_id}", response_model=WrongQuestionResponse)
