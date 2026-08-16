@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +27,8 @@ async def list_admin_users(
     keyword: str | None = None,
     is_active: bool | None = None,
     role_id: int | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
 ) -> tuple[list[AdminUser], int]:
     conditions = []
     if keyword:
@@ -40,6 +44,10 @@ async def list_admin_users(
         conditions.append(AdminUser.is_active.is_(is_active))
     if role_id is not None:
         conditions.append(AdminUser.role_id == role_id)
+    if created_from is not None:
+        conditions.append(AdminUser.created_at >= created_from)
+    if created_to is not None:
+        conditions.append(AdminUser.created_at <= created_to)
 
     query = select(AdminUser).options(selectinload(AdminUser.role))
     count_query = select(func.count()).select_from(AdminUser)
