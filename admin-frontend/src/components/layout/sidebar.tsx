@@ -21,6 +21,7 @@ function canViewRoute(
   permissions: ReturnType<typeof useAuthStore.getState>["permissions"],
   isSuperAdmin: boolean,
 ) {
+  if (route.superAdminOnly && !isSuperAdmin) return false;
   return isSuperAdmin || hasPermission(permissions, route.permission);
 }
 

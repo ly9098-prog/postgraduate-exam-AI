@@ -24,6 +24,8 @@ export type AdminRoute = {
   label: string;
   description: string;
   permission?: PermissionKey;
+  /** Restrict this route to the built-in super_admin role regardless of granted permissions. */
+  superAdminOnly?: boolean;
   icon: ComponentType<{ className?: string }>;
   /**
    * Optional additional pathname prefixes that should keep this navigation item active.
@@ -135,6 +137,7 @@ const rolesRoute: AdminRoute = {
   label: "角色权限",
   description: "权限矩阵",
   permission: "role:read",
+  superAdminOnly: true,
   icon: ShieldCheck,
 };
 
@@ -182,7 +185,7 @@ const recommendationStrategiesRoute: AdminRoute = {
   href: "/recommendation/strategies",
   label: "推荐策略",
   description: "策略权重配置",
-  permission: "question:read",
+  permission: "recommendation:read",
   icon: FlaskConical,
 };
 
@@ -190,7 +193,7 @@ const recommendationExperimentsRoute: AdminRoute = {
   href: "/recommendation/experiments",
   label: "推荐实验",
   description: "A/B 实验管理",
-  permission: "question:read",
+  permission: "recommendation:read",
   icon: GitCompareArrows,
 };
 
@@ -198,7 +201,7 @@ const recommendationMetricsRoute: AdminRoute = {
   href: "/recommendation/metrics",
   label: "推荐指标",
   description: "每日聚合指标",
-  permission: "question:read",
+  permission: "recommendation:read",
   icon: BarChart3,
 };
 
@@ -206,7 +209,7 @@ const recommendationReportsRoute: AdminRoute = {
   href: "/recommendation/reports",
   label: "推荐报表",
   description: "质量与健康报告",
-  permission: "question:read",
+  permission: "recommendation:read",
   icon: FileSearch,
 };
 
@@ -214,7 +217,7 @@ const knowledgeGraphRoute: AdminRoute = {
   href: "/knowledge-graph",
   label: "知识图谱",
   description: "关系探索与诊断",
-  permission: "question:read",
+  permission: "knowledge:read",
   icon: Network,
 };
 
