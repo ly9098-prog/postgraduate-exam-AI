@@ -5,14 +5,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.core.config import settings
 from app.core.database import async_session
 from app.core.distributed_lock import DistributedLock
-from app.core.time_utils import utcnow
+from app.core.time_utils import shanghai_today, utcnow
 from app.services.recommendation_log_service import cleanup_expired_recommendation_logs
 from app.services.recommendation_metrics_service import (
     aggregate_recommendation_metrics_daily,
@@ -84,7 +84,7 @@ class RecommendationMetricsScheduler:
 
                 try:
                     async with async_session() as db:
-                        target_date = date.today() - timedelta(days=1)
+                        target_date = shanghai_today() - timedelta(days=1)
                         result = await aggregate_recommendation_metrics_daily(
                             db, target_date=target_date,
                         )

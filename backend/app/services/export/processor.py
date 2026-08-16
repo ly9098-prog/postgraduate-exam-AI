@@ -43,7 +43,7 @@ from sqlalchemy import select, update
 
 from app.core.config import settings
 from app.core.database import async_session
-from app.core.time_utils import utcnow
+from app.core.time_utils import unix_timestamp, utcnow
 from app.models.export_task import ExportTask
 from app.schemas.export_task import ExportTaskStatus
 from app.services.export.generation_token import GenerationToken
@@ -668,7 +668,7 @@ async def _publish_task_event(task_id: int, task: ExportTask) -> None:
             "completed_at": task.completed_at,
             "expires_at": task.expires_at,
             "updated_at": task.updated_at,
-            "version": getattr(task, "version", task.updated_at.timestamp() if task.updated_at else 0),
+            "version": getattr(task, "version", unix_timestamp(task.updated_at) if task.updated_at else 0),
         })
 
         # Try Redis first for cross-process delivery

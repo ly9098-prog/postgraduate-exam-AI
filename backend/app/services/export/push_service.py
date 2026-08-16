@@ -25,6 +25,8 @@ from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from app.core.time_utils import serialize_utc_datetime
+
 logger = logging.getLogger("postgraduate-ai.export-push")
 
 # ── Connection registry ──
@@ -257,11 +259,16 @@ def build_status_event(task: dict) -> dict:
 
 
 def _serialize_dt(val: Any) -> str | None:
-    """Serialize a datetime to ISO string or return None."""
+    """Serialize export timestamps with an explicit UTC timezone marker.
+
+    Export task datetime columns are naive UTC.  ``datetime.isoformat()`` on a
+    naive value omits timezone information, causing mini-program runtimes to
+    treat production UTC wall time as local China time.
+    """
     if val is None:
         return None
     if hasattr(val, "isoformat"):
-        return val.isoformat()
+        return serialize_utc_datetime(val)
     return str(val)
 
 

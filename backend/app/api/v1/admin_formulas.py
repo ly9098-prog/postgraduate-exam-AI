@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
-from app.core.time_utils import utcnow
+from app.core.time_utils import utcnow, serialize_utc_datetime
 from app.models.admin import AuditLog
 from app.models.formula import (
     FormulaCard,
@@ -115,8 +115,8 @@ def _build_category_tree(
             "is_active": cat.is_active,
             "formula_count": int(formula_counts.get(cat.id, 0)),
             "subtree_formula_count": 0,
-            "created_at": cat.created_at.isoformat() if cat.created_at else None,
-            "updated_at": cat.updated_at.isoformat() if cat.updated_at else None,
+            "created_at": serialize_utc_datetime(cat.created_at) if cat.created_at else None,
+            "updated_at": serialize_utc_datetime(cat.updated_at) if cat.updated_at else None,
             "children": [],
         }
     roots = []
@@ -240,8 +240,8 @@ async def create_formula_category(
         "description": category.description,
         "sort_order": category.sort_order,
         "is_active": category.is_active,
-        "created_at": category.created_at,
-        "updated_at": category.updated_at,
+        "created_at": serialize_utc_datetime(category.created_at) if category.created_at else None,
+        "updated_at": serialize_utc_datetime(category.updated_at) if category.updated_at else None,
     }
 
 
@@ -281,7 +281,7 @@ async def update_formula_category(
 def _json_safe(v):
     """Convert non-JSON-safe types for JSON column storage."""
     if isinstance(v, datetime):
-        return v.isoformat()
+        return serialize_utc_datetime(v)
     return v
 
 
@@ -1011,7 +1011,7 @@ async def get_formula_card_versions(
                 "edited_by": v.edited_by,
                 "edit_reason": v.edit_reason,
                 "snapshot": v.snapshot,
-                "created_at": v.created_at,
+                "created_at": serialize_utc_datetime(v.created_at) if v.created_at else None,
             }
             for v in versions
         ]
@@ -1148,8 +1148,8 @@ async def list_formula_import_jobs(
                 "retry_of": j.retry_of,
                 "metadata_json": j.metadata_json,
                 "created_by": j.created_by,
-                "created_at": j.created_at,
-                "updated_at": j.updated_at,
+                "created_at": serialize_utc_datetime(j.created_at) if j.created_at else None,
+                "updated_at": serialize_utc_datetime(j.updated_at) if j.updated_at else None,
             }
             for j in jobs
         ],
@@ -1180,8 +1180,8 @@ async def get_formula_import_job(
         "retry_of": job.retry_of,
         "metadata_json": job.metadata_json,
         "created_by": job.created_by,
-        "created_at": job.created_at,
-        "updated_at": job.updated_at,
+        "created_at": serialize_utc_datetime(job.created_at) if job.created_at else None,
+        "updated_at": serialize_utc_datetime(job.updated_at) if job.updated_at else None,
     }
 
 
@@ -1225,8 +1225,8 @@ async def get_formula_import_items(
                 "review_status": item.review_status,
                 "rejection_reason": item.rejection_reason,
                 "result_card_id": item.result_card_id,
-                "created_at": item.created_at,
-                "updated_at": item.updated_at,
+                "created_at": serialize_utc_datetime(item.created_at) if item.created_at else None,
+                "updated_at": serialize_utc_datetime(item.updated_at) if item.updated_at else None,
             }
             for item in items
         ],

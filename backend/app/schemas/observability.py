@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
+from app.schemas.base import BaseModel
 
 HealthSeverity = Literal["ok", "warning", "error"]
 

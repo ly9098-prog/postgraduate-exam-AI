@@ -1,10 +1,16 @@
 import json
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import case, func, select
+from sqlalchemy import Date as SQLDate, Integer, case, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
+from app.core.time_utils import (
+    serialize_utc_datetime,
+    shanghai_date_utc_range,
+    shanghai_today,
+    shanghai_today_boundaries,
+    utcnow,
+)
 from app.models.answer_behavior import AnswerBehavior
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
@@ -14,9 +20,35 @@ from app.services.knowledge_point_service import load_question_kps
 
 
 def _today_utc() -> datetime:
-    """返回 UTC 今日零点，与 PracticeRecord.answered_at（utcnow）时区一致。"""
-    now = utcnow()
-    return datetime(now.year, now.month, now.day)
+    """Return China today's 00:00 boundary as naive UTC for DB queries."""
+    return shanghai_today_boundaries()[0]
+
+
+async def _china_date_expr(db: AsyncSession, column):
+    """SQL expression that buckets a naive-UTC DB timestamp by China date."""
+    bind = await db.connection()
+    if bind.sync_connection.dialect.name == "sqlite":
+        return func.date(column, "+8 hours")
+    return cast(column + text("INTERVAL '8 hours'"), SQLDate)
+
+
+async def _china_hour_expr(db: AsyncSession, column):
+    """SQL expression for the China wall-clock hour of a UTC DB timestamp."""
+    bind = await db.connection()
+    if bind.sync_connection.dialect.name == "sqlite":
+        return cast(func.strftime("%H", column, "+8 hours"), Integer)
+    return func.extract("hour", column + text("INTERVAL '8 hours'"))
+
+
+def _coerce_date(value) -> date | None:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
 
 
 async def get_overview(db: AsyncSession, user_id: int) -> dict:
@@ -89,15 +121,21 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
 
 
 async def _calc_consecutive_days(db: AsyncSession, user_id: int) -> int:
-    today = utcnow().date()
+    today = shanghai_today()
+    first_day = today - timedelta(days=364)
+    since = shanghai_date_utc_range(first_day)[0]
+    day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
 
     result = await db.execute(
-        select(func.date(PracticeRecord.answered_at))
-        .where(PracticeRecord.user_id == user_id)
+        select(day_expr)
+        .where(
+            PracticeRecord.user_id == user_id,
+            PracticeRecord.answered_at >= since,
+        )
         .distinct()
-        .order_by(func.date(PracticeRecord.answered_at).desc())
+        .order_by(day_expr.desc())
     )
-    dates = {row[0] for row in result.all()}
+    dates = {d for row in result.all() if (d := _coerce_date(row[0])) is not None}
 
     days = 0
     for i in range(365):
@@ -159,15 +197,16 @@ async def get_trends(
 
     start_date: 起始日期（含），默认自动向前推 days 天。
     """
-    today = utcnow().date()
+    today = shanghai_today()
     if start_date is None:
         start_date = today - timedelta(days=days - 1)
 
-    since = datetime.combine(start_date, datetime.min.time())
+    since = shanghai_date_utc_range(start_date)[0]
+    day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
 
     result = await db.execute(
         select(
-            func.date(PracticeRecord.answered_at),
+            day_expr,
             func.count(PracticeRecord.id),
             func.coalesce(
                 func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
@@ -180,8 +219,8 @@ async def get_trends(
             PracticeRecord.user_id == user_id,
             PracticeRecord.answered_at >= since,
         )
-        .group_by(func.date(PracticeRecord.answered_at))
-        .order_by(func.date(PracticeRecord.answered_at))
+        .group_by(day_expr)
+        .order_by(day_expr)
     )
     data = {
         str(r[0]): {"count": r[1], "correct": r[2], "wrong": r[3]}
@@ -236,13 +275,14 @@ async def get_behavior_stats(db: AsyncSession, user_id: int) -> dict:
     for h in range(24):
         hourly.append({"hour": h, "count": 0})
 
+    hour_expr = await _china_hour_expr(db, AnswerBehavior.created_at)
     ab_result = await db.execute(
         select(
-            func.extract("hour", AnswerBehavior.created_at),
+            hour_expr,
             func.count(AnswerBehavior.id),
         )
         .where(AnswerBehavior.user_id == user_id)
-        .group_by(func.extract("hour", AnswerBehavior.created_at))
+        .group_by(hour_expr)
     )
     for r in ab_result.all():
         h = int(r[0])
@@ -261,7 +301,7 @@ async def get_behavior_stats(db: AsyncSession, user_id: int) -> dict:
 
 async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     """遗忘趋势分析（基于 SM-2 数据，SM-2 状态源为 ReviewSchedule）"""
-    today = utcnow().date()
+    today = shanghai_today()
 
     stuck = await db.execute(
         select(func.count(WrongQuestion.id)).where(
@@ -290,9 +330,9 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
             WrongQuestion.user_id == user_id,
             WrongQuestion.mastered,
             WrongQuestion.review_count >= 1,
-            ReviewSchedule.next_review_at <= datetime.combine(
-                today + timedelta(days=3), datetime.min.time()
-            ),
+            ReviewSchedule.next_review_at <= shanghai_date_utc_range(
+                today + timedelta(days=3)
+            )[0],
         )
         .order_by(ReviewSchedule.next_review_at)
         .limit(10)
@@ -314,9 +354,9 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
         select(func.count(ReviewSchedule.id)).where(
             ReviewSchedule.user_id == user_id,
             ~ReviewSchedule.mastered,
-            ReviewSchedule.next_review_at <= datetime.combine(
-                today - timedelta(days=7), datetime.min.time()
-            ),
+            ReviewSchedule.next_review_at <= shanghai_date_utc_range(
+                today - timedelta(days=7)
+            )[0],
         )
     )
 
@@ -476,7 +516,7 @@ async def get_dashboard_v2(
 
     # 3. Trends (current + previous period)
     trend_points = await get_trends(db, user_id, trend_days)
-    today = utcnow().date()
+    today = shanghai_today()
     previous_start = today - timedelta(days=2 * trend_days - 1)
     previous_points = await get_trends(db, user_id, trend_days, start_date=previous_start)
 
@@ -707,8 +747,8 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
     from app.ai.gateway import chat_with_db_model, resolve_llm_runtime_config
     from app.ai.prompts_learning import build_report_prompt
 
-    today = utcnow().date()
-    since = today - timedelta(days=60)
+    today = shanghai_today()
+    since = shanghai_date_utc_range(today - timedelta(days=60))[0]
 
     from app.models.admin import Subject
     result = await db.execute(
@@ -895,7 +935,7 @@ async def get_dashboard_llm_analysis(
             "findings": parsed.get("findings", [])[:6],
             "risks": parsed.get("risks", [])[:4],
             "actions": parsed.get("actions", [])[:4],
-            "generated_at": now.isoformat(),
+            "generated_at": serialize_utc_datetime(now),
             "model": model_used,
         }
     except Exception:
@@ -939,7 +979,7 @@ def _rule_based_dashboard_analysis(payload: dict, now, trend_days: int) -> dict:
             "findings": findings,
             "risks": [],
             "actions": [{"type": "practice", "title": "开始第一次练习", "desc": "完成练习后回来查看分析。"}],
-            "generated_at": now.isoformat(),
+            "generated_at": serialize_utc_datetime(now),
             "model": "rule-based",
         }
 
@@ -988,6 +1028,6 @@ def _rule_based_dashboard_analysis(payload: dict, now, trend_days: int) -> dict:
         "findings": findings[:4],
         "risks": risks[:3],
         "actions": actions[:3],
-        "generated_at": now.isoformat(),
+        "generated_at": serialize_utc_datetime(now),
         "model": "rule-based",
     }

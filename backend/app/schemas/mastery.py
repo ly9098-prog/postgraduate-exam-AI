@@ -1,7 +1,7 @@
+from app.schemas.base import BaseModel
 """V3 知识点掌握度查询 Schema。"""
 from datetime import datetime
 
-from pydantic import BaseModel
 
 
 class KnowledgeStateItem(BaseModel):

@@ -1,10 +1,11 @@
 """Phase 4 — 推荐指标聚合与查询服务。"""
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import shanghai_date_utc_range, shanghai_today
 from app.models.recommendation_experiment import RecommendationExperiment
 from app.models.recommendation_log import RecommendationLog
 from app.models.recommendation_metrics_daily import RecommendationMetricsDaily
@@ -23,11 +24,10 @@ async def aggregate_recommendation_metrics_daily(
     返回聚合行数。
     """
     if target_date is None:
-        target_date = date.today()
+        target_date = shanghai_today()
 
-    # 构建日期范围（当天 00:00 ~ 次日 00:00）
-    day_start = datetime.combine(target_date, datetime.min.time())
-    day_end = day_start + timedelta(days=1)
+    # recommendation_logs 按 naive UTC 存储，这里将北京时间自然日转换为 UTC 半开区间。
+    day_start, day_end = shanghai_date_utc_range(target_date)
 
     # 聚合查询
     conditions = [
@@ -39,7 +39,6 @@ async def aggregate_recommendation_metrics_daily(
 
     agg_query = (
         select(
-            func.date(RecommendationLog.shown_at).label("date"),
             RecommendationLog.subject_id,
             RecommendationLog.scene,
             RecommendationLog.strategy,
@@ -61,7 +60,6 @@ async def aggregate_recommendation_metrics_daily(
         )
         .where(*conditions)
         .group_by(
-            func.date(RecommendationLog.shown_at),
             RecommendationLog.subject_id,
             RecommendationLog.scene,
             RecommendationLog.strategy,
@@ -204,8 +202,8 @@ async def compare_experiment_variants(
             "variants": [],
         }
 
-    day_start = datetime.combine(date_from, datetime.min.time())
-    day_end = datetime.combine(date_to + timedelta(days=1), datetime.min.time())
+    day_start = shanghai_date_utc_range(date_from)[0]
+    day_end = shanghai_date_utc_range(date_to + timedelta(days=1))[0]
 
     metrics_result = await db.execute(
         select(

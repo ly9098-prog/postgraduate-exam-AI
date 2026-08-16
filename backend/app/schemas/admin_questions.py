@@ -1,9 +1,9 @@
+from app.schemas.base import BaseModel
 import re
 from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import (
-    BaseModel,
     ConfigDict,
     Field,
     computed_field,

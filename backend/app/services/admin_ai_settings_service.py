@@ -1,11 +1,11 @@
-from datetime import datetime, time, timedelta
+from datetime import timedelta
 
 from fastapi import Request
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import Date, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
-from app.core.time_utils import utcnow
+from app.core.time_utils import shanghai_date_utc_range, shanghai_now, shanghai_today, utcnow
 from app.models.admin import AdminAISettings, AdminAIUsageMonthly, Role
 from app.models.ai_generation_log import AiGenerationLog
 from app.schemas.admin_ai_settings import (
@@ -21,7 +21,7 @@ DEFAULT_MONTHLY_CALL_LIMIT = 1000
 
 
 def current_year_month() -> str:
-    return utcnow().strftime("%Y-%m")
+    return shanghai_now().strftime("%Y-%m")
 
 
 async def get_or_create_ai_settings(db: AsyncSession) -> AdminAISettings:
@@ -179,13 +179,18 @@ async def ensure_ai_parse_allowed(
 
 async def get_ai_stats(db: AsyncSession, days: int = 7) -> AdminAIStatsResponse:
     """从 AiGenerationLog 聚合统计数据和趋势。"""
-    now = utcnow()
-    today_start = datetime.combine(now.date(), time.min)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    trend_start = today_start - timedelta(days=days - 1)
+    today_date = shanghai_today()
+    today_start = shanghai_date_utc_range(today_date)[0]
+    month_start = shanghai_date_utc_range(today_date.replace(day=1))[0]
+    trend_first_date = today_date - timedelta(days=days - 1)
+    trend_start = shanghai_date_utc_range(trend_first_date)[0]
+    tomorrow_start = shanghai_date_utc_range(today_date + timedelta(days=1))[0]
 
     dialect_name = db.bind.dialect.name if db.bind else "postgresql"
-    bucket_expr = func.date(AiGenerationLog.created_at) if dialect_name == "sqlite" else cast(AiGenerationLog.created_at, Date)
+    if dialect_name == "sqlite":
+        bucket_expr = func.date(AiGenerationLog.created_at, "+8 hours")
+    else:
+        bucket_expr = cast(AiGenerationLog.created_at + text("INTERVAL '8 hours'"), Date)
 
     # 当日统计
     today_row = (
@@ -196,7 +201,7 @@ async def get_ai_stats(db: AsyncSession, days: int = 7) -> AdminAIStatsResponse:
                 func.avg(AiGenerationLog.duration_ms).label("latency"),
                 func.sum(AiGenerationLog.success).label("success_count"),
             )
-            .where(AiGenerationLog.created_at >= today_start, AiGenerationLog.created_at < today_start + timedelta(days=1))
+            .where(AiGenerationLog.created_at >= today_start, AiGenerationLog.created_at < tomorrow_start)
         )
     ).one()
 
@@ -224,7 +229,7 @@ async def get_ai_stats(db: AsyncSession, days: int = 7) -> AdminAIStatsResponse:
                 func.sum(AiGenerationLog.success).label("success_count"),
                 func.count().label("total"),
             )
-            .where(AiGenerationLog.created_at >= trend_start, AiGenerationLog.created_at < today_start + timedelta(days=1))
+            .where(AiGenerationLog.created_at >= trend_start, AiGenerationLog.created_at < tomorrow_start)
             .group_by(bucket_expr)
             .order_by(bucket_expr)
         )
@@ -244,15 +249,15 @@ async def get_ai_stats(db: AsyncSession, days: int = 7) -> AdminAIStatsResponse:
         }
 
     daily_trends = []
-    current = trend_start
-    while current < today_start + timedelta(days=1):
-        key = current.strftime("%m/%d")
-        iso_key = current.date().isoformat()
+    current_date = trend_first_date
+    while current_date <= today_date:
+        key = current_date.strftime("%m/%d")
+        iso_key = current_date.isoformat()
         if iso_key in trend_map:
             daily_trends.append(trend_map[iso_key])
         else:
             daily_trends.append({"date": key, "calls": 0, "tokens": 0, "success_rate": 0.0, "avg_latency_ms": 0.0})
-        current += timedelta(days=1)
+        current_date += timedelta(days=1)
 
     today_calls = int(today_row.calls or 0)
     month_calls = int(month_row.calls or 0)

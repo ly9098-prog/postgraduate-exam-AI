@@ -15,7 +15,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.time_utils import utcnow
+from app.core.time_utils import utcnow, serialize_utc_datetime
 from app.models.knowledge_edge import KnowledgeEdge
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
@@ -671,7 +671,7 @@ async def get_hard_questions(
         )).all()
         for r in uqs_rows:
             review_map[r.question_id] = (
-                r.next_review_at.isoformat() if r.next_review_at else None
+                serialize_utc_datetime(r.next_review_at) if r.next_review_at else None
             )
 
     items = []

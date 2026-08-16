@@ -37,7 +37,8 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from app.core.time_utils import utcnow
 from typing import Any
 
 from sqlalchemy import select
@@ -133,7 +134,7 @@ class GlobalHashIndex:
             Question.question_hash.isnot(None),
         ]
         if self._recent_days > 0:
-            cutoff = datetime.now(UTC) - timedelta(days=self._recent_days)
+            cutoff = utcnow() - timedelta(days=self._recent_days)
             question_filter.append(Question.created_at >= cutoff)
 
         # 阈值检查（只 count，不真的取行）。SQL fallback 下两个 index 都

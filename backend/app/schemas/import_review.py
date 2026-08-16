@@ -1,9 +1,10 @@
+from app.schemas.base import BaseModel
 """Stage 7 审核系统 — Pydantic schemas."""
 
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 
 # --- submit_to_review ---
 

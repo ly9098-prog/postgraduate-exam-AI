@@ -1,6 +1,6 @@
+from app.schemas.base import BaseModel
 from typing import Literal
 
-from pydantic import BaseModel
 
 
 class DashboardLlmAnalysisRequest(BaseModel):

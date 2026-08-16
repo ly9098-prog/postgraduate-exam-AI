@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.core.time_utils import normalize_to_naive_utc, utcnow
 from app.models.ocr_job import OCRJob
 from app.models.pipeline_enums import (
     OCRJobStatus,
@@ -58,29 +59,17 @@ def _hash_token(token: str) -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    """Return naive UTC for the project's timezone-naive DB columns."""
+    return utcnow()
 
 
 def _as_utc(value: datetime) -> datetime:
-    """Normalize DB datetimes before comparing them with aware UTC values.
-
-    The existing schema uses timezone-naive ``DateTime`` columns, so SQLite
-    and some database drivers return naive values even when an aware UTC value
-    was written.  Treat those values as UTC rather than raising a mixed-aware
-    comparison ``TypeError`` on heartbeat/start/complete calls.
-    """
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
+    """Normalize any timestamp to the project's naive-UTC DB convention."""
+    return normalize_to_naive_utc(value)
 
 
 def _normalize_job_datetimes(job: OCRJob) -> OCRJob:
-    """Normalize naive DB datetimes on a freshly-read job to aware UTC.
-
-    ``UPDATE ... RETURNING`` and fresh SELECTs return naive values from the
-    naive ``DateTime`` columns, while in-memory assignments in the service use
-    aware UTC.  Normalize so callers can compare job timestamps consistently.
-    """
+    """Normalize freshly-read job datetimes to naive UTC consistently."""
     for field in (
         "lease_expires_at",
         "heartbeat_at",

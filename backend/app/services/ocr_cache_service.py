@@ -19,6 +19,7 @@ import time
 from dataclasses import asdict, dataclass, field
 
 from app.core.config import settings
+from app.core.time_utils import serialize_utc_datetime, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +207,7 @@ def set_cached(
             engine="paddleocr",
             config_hash=fingerprint,
             schema_version=_CACHE_SCHEMA_VERSION,
-            created_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+            created_at=serialize_utc_datetime(utcnow()),
         )
         _save_entry(path, entry)
 

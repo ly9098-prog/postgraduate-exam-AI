@@ -1,5 +1,6 @@
 """Phase 3 — 知识图谱边 + 知识路径推荐 Schema。"""
-from pydantic import BaseModel, Field
+from pydantic import Field
+from app.schemas.base import BaseModel
 
 # ── 知识图谱边 ──
 

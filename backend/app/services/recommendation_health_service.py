@@ -4,6 +4,7 @@ import logging
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import shanghai_date_utc_range, shanghai_today
 from app.models.recommendation_log import RecommendationLog
 
 logger = logging.getLogger(__name__)
@@ -19,19 +20,19 @@ async def build_recommendation_health_report(
 
     基于 recommendation_logs 和 recommendation_metrics_daily 计算。
     """
-    from datetime import date, datetime, timedelta
+    from datetime import timedelta
 
     if date_to is None:
-        date_to = date.today()
+        date_to = shanghai_today()
     if date_from is None:
         date_from = date_to - timedelta(days=30)
 
-    day_start = datetime.combine(date_from, datetime.min.time())
-    day_end = datetime.combine(date_to, datetime.max.time())
+    day_start = shanghai_date_utc_range(date_from)[0]
+    day_end = shanghai_date_utc_range(date_to + timedelta(days=1))[0]
 
     conditions = [
         RecommendationLog.shown_at >= day_start,
-        RecommendationLog.shown_at <= day_end,
+        RecommendationLog.shown_at < day_end,
     ]
     if subject_id:
         conditions.append(RecommendationLog.subject_id == subject_id)

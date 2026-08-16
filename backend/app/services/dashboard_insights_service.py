@@ -7,10 +7,10 @@ import asyncio
 import math
 from datetime import datetime, timedelta
 
-from sqlalchemy import case, func, select
+from sqlalchemy import Date as SQLDate, case, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
+from app.core.time_utils import serialize_utc_datetime, shanghai_date_utc_range, shanghai_today, shanghai_today_boundaries, utcnow
 from app.models.admin import Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
@@ -21,6 +21,13 @@ from app.models.user_knowledge_state import UserKnowledgeState
 from app.models.wrong_question import WrongQuestion
 from app.services.knowledge_point_service import load_question_kps
 
+async def _china_date_expr(db: AsyncSession, column):
+    bind = await db.connection()
+    if bind.sync_connection.dialect.name == "sqlite":
+        return func.date(column, "+8 hours")
+    return cast(column + text("INTERVAL '8 hours'"), SQLDate)
+
+
 # ──────────────────────────────────────────────
 # 1. Today Quality Score
 # ──────────────────────────────────────────────
@@ -28,7 +35,7 @@ from app.services.knowledge_point_service import load_question_kps
 
 async def compute_today_quality(db: AsyncSession, user_id: int) -> dict | None:
     """今日学习质量评分 (0-100)，不足 5 题返回 None。"""
-    today_start = datetime.combine(utcnow().date(), datetime.min.time())
+    today_start = shanghai_today_boundaries()[0]
 
     row = await db.execute(
         select(
@@ -86,13 +93,13 @@ async def compute_weekly_consistency(
     db: AsyncSession, user_id: int, days: int = 7
 ) -> dict | None:
     """学习稳定性评分：活跃天数、每日题量方差、正确率方差。"""
-    since = datetime.combine(
-        utcnow().date() - timedelta(days=days - 1), datetime.min.time()
-    )
+    today = shanghai_today()
+    since = shanghai_date_utc_range(today - timedelta(days=days - 1))[0]
+    day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
 
     rows = await db.execute(
         select(
-            func.date(PracticeRecord.answered_at),
+            day_expr,
             func.count(PracticeRecord.id),
             func.coalesce(
                 func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
@@ -102,7 +109,7 @@ async def compute_weekly_consistency(
             PracticeRecord.user_id == user_id,
             PracticeRecord.answered_at >= since,
         )
-        .group_by(func.date(PracticeRecord.answered_at))
+        .group_by(day_expr)
     )
     daily_data = {}
     for date_str, q_count, c_count in rows.all():
@@ -123,7 +130,7 @@ async def compute_weekly_consistency(
     acc_values = []
     breakdown = []
     for i in range(days):
-        d = (utcnow().date() - timedelta(days=days - 1 - i)).isoformat()
+        d = (today - timedelta(days=days - 1 - i)).isoformat()
         dd = daily_data.get(d, {"questions": 0, "correct": 0})
         q_count = dd["questions"]
         acc = dd["correct"] / q_count if q_count > 0 else 0
@@ -229,7 +236,7 @@ async def compute_weak_topic_ranking(
                 "recent_wrong_count": row[8] or 0,
                 "due_review_count": due_counts.get(kp_id, 0),
                 "last_practiced_at": (
-                    row[9].isoformat() if row[9] else None
+                    serialize_utc_datetime(row[9]) if row[9] else None
                 ),
             })
         return {"data_available": True, "items": items}
@@ -591,9 +598,9 @@ async def compute_input_output(
 
     效率分 = 正确率 / (该科每题均时 / 全局每题均时)
     """
-    since = datetime.combine(
-        utcnow().date() - timedelta(days=trend_days - 1), datetime.min.time()
-    )
+    since = shanghai_date_utc_range(
+        shanghai_today() - timedelta(days=trend_days - 1)
+    )[0]
 
     rows = await db.execute(
         select(

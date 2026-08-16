@@ -1,6 +1,7 @@
+from app.schemas.base import BaseModel
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 
 # --- GET /practice/questions ---
 

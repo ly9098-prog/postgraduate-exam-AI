@@ -21,7 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.time_utils import utcnow
+from app.core.time_utils import shanghai_now, shanghai_today, utcnow
 from app.models.export_task import ExportTask
 from app.schemas.export_task import (
     ExportErrorCode,
@@ -129,7 +129,7 @@ def _sanitize_filename(title: str) -> str:
 def _build_filename(title: str, date_str: str, ext: str = "pdf") -> str:
     """Build the export filename: {title}_{yyyyMMdd_HHmm}.{ext}"""
     safe_title = _sanitize_filename(title)
-    ts = date_str.replace("-", "") if date_str else utcnow().strftime("%Y%m%d_%H%M")
+    ts = date_str.replace("-", "") if date_str else shanghai_now().strftime("%Y%m%d_%H%M")
     return f"{safe_title}_{ts}.{ext}"
 
 
@@ -183,7 +183,7 @@ async def create_export_task(
     if not title:
         title = "错题巩固练习"
 
-    date_str = config.get("export_date", "") or utcnow().strftime("%Y-%m-%d")
+    date_str = config.get("export_date", "") or shanghai_today().strftime("%Y-%m-%d")
     file_name = _build_filename(
         title,
         date_str.replace("-", ""),

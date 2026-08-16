@@ -16,12 +16,13 @@ from __future__ import annotations
 
 import contextvars
 import logging
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow, serialize_utc_datetime
 from app.models.import_pipeline import ImportPipeline, ImportPipelineChunk
 
 logger = logging.getLogger(__name__)
@@ -60,8 +61,8 @@ _CHECKPOINT_TTL = 86400  # 24h，与 _PIPELINE_STATUS_TTL 对齐
 
 
 def _utcnow() -> datetime:
-    """timezone-aware UTC now（避免 datetime.utcnow 的 deprecation warning）。"""
-    return datetime.now(UTC)
+    """Naive UTC now, matching the pipeline DateTime columns."""
+    return utcnow()
 
 
 # ---------------------------------------------------------------------------
@@ -370,8 +371,8 @@ async def get_pipeline_progress(
         "running_chunks": running,
         "pending_chunks": pending,
         "question_count": int(question_count),
-        "started_at": pipeline_row.started_at.isoformat() if pipeline_row.started_at else None,
-        "finished_at": pipeline_row.finished_at.isoformat() if pipeline_row.finished_at else None,
+        "started_at": serialize_utc_datetime(pipeline_row.started_at) if pipeline_row.started_at else None,
+        "finished_at": serialize_utc_datetime(pipeline_row.finished_at) if pipeline_row.finished_at else None,
         "failed_chunk_details": [
             {
                 "chunk_index": c.chunk_index,

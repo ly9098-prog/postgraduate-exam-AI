@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
-from app.core.time_utils import utcnow
+from app.core.time_utils import utcnow, serialize_utc_datetime
 from app.features import question_pipeline
 from app.models.question_import import QuestionImport
 from app.schemas.admin_imports import (
@@ -1170,8 +1170,8 @@ async def create_enrich_task(
         "task_id": task_id,
         "batch_id": batch_id,
         "status": "pending",
-        "created_at": now.isoformat(),
-        "updated_at": now.isoformat(),
+        "created_at": serialize_utc_datetime(now),
+        "updated_at": serialize_utc_datetime(now),
         "total_count": int(summary_row.total_count or 0),
         "processed_count": 0,
         "error_message": None,

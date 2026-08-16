@@ -1,7 +1,8 @@
 """向量功能相关 Pydantic 模型。"""
 
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from app.schemas.base import BaseModel
 
 
 class EmbeddingBackfillRequest(BaseModel):

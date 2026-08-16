@@ -1,12 +1,14 @@
 """Export task Pydantic schemas — request validation, response models, and enums."""
 
 from __future__ import annotations
+from app.schemas.base import BaseModel
 
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from app.core.time_utils import serialize_utc_datetime
+from pydantic import ConfigDict, Field, field_serializer, field_validator
 
 # ═══════════════════════════════════════════════════
 # Enums (central state definitions — single source)
@@ -191,6 +193,17 @@ class ExportTaskResponse(BaseModel):
     is_reexporting: bool = False
     reexport_failed: bool = False
 
+    @field_serializer("created_at", "completed_at", "expires_at")
+    def serialize_utc_timestamps(self, value: datetime | None) -> str | None:
+        """Expose DB-naive UTC timestamps with an explicit UTC designator.
+
+        ExportTask stores naive UTC datetimes.  Returning an ISO string without
+        ``Z`` makes clients interpret the value as device-local time, which is
+        eight hours behind China Standard Time when the production container is
+        running in UTC.
+        """
+        return serialize_utc_datetime(value) if value is not None else None
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -217,6 +230,11 @@ class ExportRecordListItem(BaseModel):
     created_at: datetime
     completed_at: datetime | None = None
     expires_at: datetime | None = None
+
+    @field_serializer("created_at", "completed_at", "expires_at")
+    def serialize_utc_timestamps(self, value: datetime | None) -> str | None:
+        """Serialize record-list timestamps as explicit UTC ISO 8601 strings."""
+        return serialize_utc_datetime(value) if value is not None else None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import date
 from typing import Any
+
+from app.core.time_utils import shanghai_today
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ def export_failure_case(question_import: dict) -> dict:
         "risk_flags": risk_flags,
         "failure_types": failure_types,
         "expected_template": expected_template,
-        "exported_at": date.today().isoformat(),
+        "exported_at": shanghai_today().isoformat(),
     }
 
     return case
@@ -110,7 +111,7 @@ def export_failure_cases_batch(
 
 def _build_case_id(import_id: int) -> str:
     """Generate a unique case ID from date and import_id."""
-    today = date.today().strftime("%Y%m%d")
+    today = shanghai_today().strftime("%Y%m%d")
     return f"failure_{today}_{import_id}"
 
 

@@ -1,3 +1,4 @@
+from app.schemas.base import BaseModel
 """pgvector / Embedding 运行配置 schemas。
 
 Embedding 的 Provider / API Key / Base URL / Model ID 统一来自
@@ -7,7 +8,7 @@ Embedding 的 Provider / API Key / Base URL / Model ID 统一来自
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 
 def _parse_optional_int(raw: str | None) -> int | None:

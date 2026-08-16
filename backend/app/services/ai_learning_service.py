@@ -3,7 +3,7 @@
 import json
 import logging
 import random
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ from app.ai.prompts_learning import (
     build_report_prompt,
 )
 from app.core.config import settings
+from app.core.time_utils import shanghai_date_utc_range, shanghai_today, utcnow
 from app.models.ai_chat import AiChat
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
@@ -41,8 +42,9 @@ async def _check_token_limit(db: AsyncSession, user_id: int, tokens_needed: int 
     if daily_limit <= 0 and monthly_limit <= 0:
         return True
 
-    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-    first_of_month = today.replace(day=1)
+    today_date = shanghai_today()
+    today = shanghai_date_utc_range(today_date)[0]
+    first_of_month = shanghai_date_utc_range(today_date.replace(day=1))[0]
 
     # One indexed user/month scan instead of two round-trips.  The monthly
     # predicate bounds the row set; CASE derives the daily subtotal from the
@@ -436,7 +438,7 @@ async def generate_learning_report(
         "subject_name": subject_name,
     }
 
-    since = datetime.now(UTC) - timedelta(days=days)
+    since = utcnow() - timedelta(days=days)
 
     # 查询该时间段内用户的做题记录
     records_result = await db.execute(

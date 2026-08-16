@@ -2,10 +2,11 @@ import asyncio
 from datetime import date, datetime, time, timedelta
 from uuid import uuid4
 
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import Date, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
+from app.core.time_utils import shanghai_date_utc_range, shanghai_today
 from app.models.admin import AuditLog
 from app.models.question import Question
 from app.models.question_import import QuestionImport
@@ -13,12 +14,11 @@ from app.models.user import User
 
 
 def _day_bounds(day: date) -> tuple[datetime, datetime]:
-    start = datetime.combine(day, time.min)
-    return start, start + timedelta(days=1)
+    return shanghai_date_utc_range(day)
 
 
 def _normalize_daily_range(created_from: date | None, created_to: date | None) -> tuple[date, date]:
-    end = created_to or date.today()
+    end = created_to or shanghai_today()
     start = created_from or end - timedelta(days=6)
     if start > end:
         raise ValueError("开始日期不能晚于结束日期")
@@ -28,7 +28,7 @@ def _normalize_daily_range(created_from: date | None, created_to: date | None) -
 
 
 async def compute_dashboard_overview(db: AsyncSession) -> dict:
-    today_start, tomorrow_start = _day_bounds(date.today())
+    today_start, tomorrow_start = _day_bounds(shanghai_today())
     return {
         "users_total": int(await db.scalar(select(func.count()).select_from(User)) or 0),
         "users_new_today": int(await db.scalar(select(func.count()).select_from(User).where(User.created_at >= today_start, User.created_at < tomorrow_start)) or 0),
@@ -67,13 +67,16 @@ async def get_dashboard_overview(db: AsyncSession) -> dict:
 
 async def get_dashboard_daily(db: AsyncSession, created_from: date | None, created_to: date | None) -> list[dict]:
     start, end = _normalize_daily_range(created_from, created_to)
-    start_dt = datetime.combine(start, time.min)
-    end_dt = datetime.combine(end + timedelta(days=1), time.min)
+    start_dt = shanghai_date_utc_range(start)[0]
+    end_dt = shanghai_date_utc_range(end + timedelta(days=1))[0]
 
     bind = await db.connection()
 
     async def grouped(model):
-        bucket = func.date(model.created_at) if bind.sync_connection.dialect.name == "sqlite" else cast(model.created_at, Date)
+        if bind.sync_connection.dialect.name == "sqlite":
+            bucket = func.date(model.created_at, "+8 hours")
+        else:
+            bucket = cast(model.created_at + text("INTERVAL '8 hours'"), Date)
         result = await db.execute(
             select(bucket, func.count())
             .where(model.created_at >= start_dt, model.created_at < end_dt)

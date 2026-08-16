@@ -5,6 +5,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.time_utils import serialize_utc_datetime
 from app.core.security import get_current_user
 from app.models.formula import (
     FormulaCard,
@@ -141,10 +142,10 @@ async def _card_to_response(
         "sort_order": card.sort_order,
         "status": card.status,
         "tags": tags,
-        "published_at": card.published_at,
+        "published_at": serialize_utc_datetime(card.published_at) if card.published_at else None,
         "version": card.version,
-        "created_at": card.created_at,
-        "updated_at": card.updated_at,
+        "created_at": serialize_utc_datetime(card.created_at) if card.created_at else None,
+        "updated_at": serialize_utc_datetime(card.updated_at) if card.updated_at else None,
         # Multi-graph support: stable graph specs with independent assets
         "graph_specs": graph_specs,
     }

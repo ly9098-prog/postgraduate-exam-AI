@@ -20,6 +20,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.core.admin_security import require_permissions
 from app.core.config import settings
 from app.core.database import get_db
@@ -292,7 +293,7 @@ async def admin_resume_pipeline(
         "stages": {},
         "stats": {},
         "errors": [],
-        "started_at": datetime.now().isoformat(),
+        "started_at": serialize_utc_datetime(utcnow()),
         "page_range": existing_store.get("page_range"),
     })
 
@@ -1554,8 +1555,8 @@ async def list_pipelines(
             "status": row.status,
             "total_pages": row.total_pages,
             "error_message": row.error_message,
-            "started_at": row.started_at.isoformat() if row.started_at else None,
-            "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+            "started_at": serialize_utc_datetime(row.started_at) if row.started_at else None,
+            "finished_at": serialize_utc_datetime(row.finished_at) if row.finished_at else None,
         }
         # Merge quality_report from in-memory store if available, else DB
         store_data = _pipeline_store.get(row.pipeline_id)

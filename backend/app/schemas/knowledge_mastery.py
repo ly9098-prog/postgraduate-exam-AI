@@ -1,6 +1,7 @@
 """Phase 2 — 知识点画像 + 推荐反馈 Schema。"""
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from app.schemas.base import BaseModel
 
 # ── 用户知识点掌握状态 ──
 
