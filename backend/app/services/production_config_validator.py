@@ -211,7 +211,7 @@ def _check_public_base_url(errors: list[str]) -> None:
 
 def _check_directories(errors: list[str]) -> None:
     """Verify all required directories exist and are writable."""
-    paths = ["static/formulas", "static/question-assets"]
+    paths = ["static/formulas", "static/question-assets", "static/avatars"]
     if settings.EXPORT_DIR:
         paths.append(settings.EXPORT_DIR)
     for path in paths:
