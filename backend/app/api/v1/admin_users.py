@@ -1,8 +1,11 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
+from app.core.time_utils import normalize_to_naive_utc
 from app.schemas.admin_users import (
     AdminUserCreateRequest,
     AdminUserDetail,
@@ -37,10 +40,23 @@ async def list_users(
     keyword: str | None = None,
     is_active: bool | None = None,
     role_id: int | None = None,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
     _=Depends(require_permissions("admin-user:read")),
     db: AsyncSession = Depends(get_db),
 ):
-    users, total = await list_admin_users(db, page, page_size, keyword, is_active, role_id)
+    normalized_from = normalize_to_naive_utc(created_from) if created_from else None
+    normalized_to = normalize_to_naive_utc(created_to) if created_to else None
+    users, total = await list_admin_users(
+        db,
+        page,
+        page_size,
+        keyword,
+        is_active,
+        role_id,
+        normalized_from,
+        normalized_to,
+    )
     return paginated_response([AdminUserListItem.model_validate(user) for user in users], total, page, page_size)
 
 
