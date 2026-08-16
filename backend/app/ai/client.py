@@ -212,6 +212,12 @@ class OpenAICompatibleClient:
             temperature=temperature,
             message_count=len(messages),
             prompt_chars=prompt_chars,
+            max_tokens=effective_max_tokens,
+            thinking_enabled=(
+                payload.get("enable_thinking")
+                if isinstance(payload.get("enable_thinking"), bool)
+                else None
+            ),
         )
 
         with start_span(op="ai.openai_compatible.chat", description=f"model={model}"):

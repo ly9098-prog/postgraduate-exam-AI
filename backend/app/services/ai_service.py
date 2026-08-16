@@ -68,6 +68,30 @@ _MAX_VISUAL_IMAGES = 4
 _MAX_VISUAL_SOURCE_BYTES = 6 * 1024 * 1024
 _VISUAL_FETCH_TIMEOUT_SECONDS = 6.0
 
+# wrong-detail is a short, structured response task. Keep its output bounded and,
+# for Qwen hybrid-thinking multimodal models, prefer direct answer mode. The
+# persisted question images are already resized to <=1200px by compress_image;
+# max_pixels further bounds the model-side visual token budget without adding an
+# OCR/model hop.
+_ERROR_ANALYSIS_MAX_TOKENS = 800
+_ERROR_ANALYSIS_QWEN_MAX_PIXELS = 1024 * 1024
+
+
+def _qwen_error_analysis_fast_path(provider: str | None, model: str | None) -> bool:
+    """Whether the configured analysis model supports our Qwen fast path.
+
+    Do not send provider-specific parameters to arbitrary OpenAI-compatible
+    endpoints: the analysis model is DB-configurable and may be replaced later.
+    """
+    provider_key = str(provider or "").strip().lower()
+    model_key = str(model or "").strip().lower()
+    if not model_key:
+        return False
+    qwen_hybrid_prefixes = ("qwen3.7", "qwen3.6", "qwen3.5", "qwen3-vl")
+    return model_key.startswith(qwen_hybrid_prefixes) and provider_key in {
+        "qwen", "aliyun", "dashscope", "alibaba", "alibaba-cloud",
+    }
+
 
 def _detect_image_mime(data: bytes, fallback: str = "") -> str:
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -656,11 +680,15 @@ async def analyze_error(
         kp_map = await load_question_kps(db, [q.id])
         context = build_error_context(wq, q, kp_map.get(q.id, []))
         context["question"]["structured_visual"] = structured_visual
+        qwen_fast_path = _qwen_error_analysis_fast_path(runtime.provider, runtime.model_name)
+        image_max_pixels = _ERROR_ANALYSIS_QWEN_MAX_PIXELS if qwen_fast_path else None
+        llm_extra_body = {"enable_thinking": False} if qwen_fast_path else None
         messages = build_error_analysis(
             context["question"],
             wq.wrong_answer,
             q.answer,
             image_data_urls=image_data_urls,
+            image_max_pixels=image_max_pixels,
         )
 
         # The mini-program request has a ~58s client budget. Resolving the
@@ -671,12 +699,14 @@ async def analyze_error(
             async with asyncio.timeout(model_timeout_sec + ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS):
                 result = await llm.chat(
                     messages,
-                    temperature=0.3,
+                    temperature=0.2,
                     model=runtime.model_name,
                     api_key=runtime.api_key,
                     base_url=runtime.base_url,
                     provider=runtime.provider,
                     timeout=model_timeout_sec,
+                    max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
+                    extra_body=llm_extra_body,
                 )
         except TimeoutError:
             old_cache = build_any_cached_error_analysis_response(wq)
@@ -789,8 +819,13 @@ async def analyze_error(
         await db.commit()
 
         logger.info(
-            "ai.error_analysis.result wq_id=%s force=%s model=%s visual_count=%s parsed_valid=%s fields=%s duration_ms=%s",
-            wq.id, effective_force, result.get("model"), len(image_data_urls), parsed_valid,
+            "ai.error_analysis.result wq_id=%s force=%s model=%s visual_count=%s "
+            "visual_evidence_valid=%s parsed_valid=%s thinking=%s max_tokens=%s "
+            "image_max_pixels=%s fields=%s duration_ms=%s",
+            wq.id, effective_force, result.get("model"), len(image_data_urls),
+            _visual_evidence_is_valid(visual_evidence) if image_data_urls else None,
+            parsed_valid, False if qwen_fast_path else "default",
+            _ERROR_ANALYSIS_MAX_TOKENS, image_max_pixels,
             {k: bool(parsed.get(k)) for k in ["mistake_diagnosis", "knowledge_patch", "review_task"]},
             result.get("duration_ms"),
         )
