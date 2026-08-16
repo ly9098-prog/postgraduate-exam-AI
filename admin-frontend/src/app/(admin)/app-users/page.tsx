@@ -13,7 +13,7 @@ import {
   UsersRound,
   UserX,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -150,6 +150,9 @@ export default function AppUsersPage() {
   const [banReason, setBanReason] = useState("后台人工封禁");
   const [notice, setNotice] = useState<Notice>(null);
   const [exporting, setExporting] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+
+  const previousUsersRef = useRef<PaginatedResponse<AppUser> | null>(null);
 
   const today = chinaDateString();
   const isBanned = statusToQueryValue(status);
@@ -170,6 +173,13 @@ export default function AppUsersPage() {
         })}`,
       ),
   });
+
+  useEffect(() => {
+    if (users.data) previousUsersRef.current = users.data;
+  }, [users.data]);
+
+  const displayedUsers = users.data ?? previousUsersRef.current;
+  const hasDisplayedUsers = displayedUsers !== null;
 
   const totalUsers = useQuery({
     queryKey: ["app-users-summary", "total"],
@@ -233,12 +243,20 @@ export default function AppUsersPage() {
     },
   });
 
-  const currentItems = users.data?.items ?? [];
-  const totalPages = Math.max(users.data?.total_pages ?? 1, 1);
+  const currentItems = displayedUsers?.items ?? [];
+  const totalPages = Math.max(displayedUsers?.total_pages ?? 1, 1);
   const pagination = useMemo(() => buildPagination(page, totalPages), [page, totalPages]);
   const selectedOnPage = currentItems.filter((user) => selectedIds.has(user.id));
   const allPageSelected = currentItems.length > 0 && selectedOnPage.length === currentItems.length;
   const somePageSelected = selectedOnPage.length > 0 && !allPageSelected;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setKeyword(searchInput.trim());
+      setPage(1);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -248,11 +266,6 @@ export default function AppUsersPage() {
     setSelectedIds(new Set());
     setBatchAction("");
   }, [page, pageSize, keyword, status, createdFrom, createdTo]);
-
-  const applySearch = () => {
-    setKeyword(searchInput.trim());
-    setPage(1);
-  };
 
   const resetFilters = () => {
     setSearchInput("");
@@ -365,23 +378,34 @@ export default function AppUsersPage() {
     }
   };
 
-  const refreshAll = () => {
+  const refreshAll = async () => {
     setNotice(null);
-    queryClient.invalidateQueries({ queryKey: ["app-users"] });
-    queryClient.invalidateQueries({ queryKey: ["app-users-summary"] });
+    setManualRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["app-users"] }),
+        queryClient.invalidateQueries({ queryKey: ["app-users-summary"] }),
+      ]);
+    } finally {
+      setManualRefreshing(false);
+    }
   };
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-5 pb-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.26em] text-[var(--color-text-hint)]">User Management</p>
-          <h1 className="mt-1.5 font-display text-3xl font-bold tracking-tight text-[var(--ink)]">小程序用户管理</h1>
-          <p className="mt-1.5 text-sm text-[var(--color-text-secondary)]">管理小程序用户信息，支持筛选、批量操作及数据导出。</p>
+    <div className="relative mx-auto w-full max-w-[1600px] space-y-5 pb-6">
+      {(manualRefreshing || (users.isLoading && !hasDisplayedUsers)) ? (
+        <div
+          className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-[rgba(245,244,239,0.58)] backdrop-blur-[2px]"
+          role="status"
+          aria-live="polite"
+          aria-label="正在加载数据"
+        >
+          <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border-light)] bg-white/95 px-5 py-3.5 text-sm font-medium text-[var(--color-text-secondary)] shadow-[0_18px_50px_rgba(35,49,42,0.14)]">
+            <RefreshCw className="h-5 w-5 animate-spin text-[var(--color-primary)]" />
+            <span>加载中…</span>
+          </div>
         </div>
-        <div className="hidden text-xs text-[var(--color-text-hint)] md:block">首页 / 用户管理 / <span className="text-[var(--color-text-secondary)]">小程序用户</span></div>
-      </header>
-
+      ) : null}
       <Card className="overflow-visible rounded-2xl">
         <CardContent className="p-4 lg:p-5">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
@@ -392,9 +416,6 @@ export default function AppUsersPage() {
                 placeholder="搜索 OpenID / 昵称"
                 value={searchInput}
                 onChange={(event) => setSearchInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") applySearch();
-                }}
               />
             </label>
 
@@ -438,10 +459,6 @@ export default function AppUsersPage() {
             </div>
 
             <div className="flex items-center gap-2 xl:ml-auto">
-              <Button size="sm" onClick={applySearch} className="h-10 min-w-20 shadow-none">
-                <Search className="h-4 w-4" />
-                查询
-              </Button>
               <Button size="sm" variant="secondary" onClick={resetFilters} className="h-10 px-3">
                 重置
               </Button>
@@ -524,13 +541,13 @@ export default function AppUsersPage() {
               />
               {selectedIds.size ? <span className="text-xs text-[var(--color-text-hint)]">仅操作当前页选中用户</span> : null}
             </div>
-            <Button variant="ghost" size="sm" onClick={refreshAll} disabled={users.isFetching} className="self-start sm:self-auto">
-              <RefreshCw className={cn("h-4 w-4", users.isFetching && "animate-spin")} />
+            <Button variant="ghost" size="sm" onClick={refreshAll} disabled={manualRefreshing} className="self-start sm:self-auto">
+              <RefreshCw className={cn("h-4 w-4", manualRefreshing && "animate-spin")} />
               刷新
             </Button>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full min-w-[940px] border-collapse text-sm">
               <thead className="bg-[rgba(232,240,245,0.55)] text-left">
                 <tr className="border-b border-[var(--color-border-light)]">
@@ -556,7 +573,7 @@ export default function AppUsersPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.isLoading ? (
+                {users.isLoading && !hasDisplayedUsers ? (
                   Array.from({ length: Math.min(pageSize, 8) }, (_, index) => (
                     <tr key={index} className="border-b border-[var(--color-border-light)] last:border-b-0">
                       <td className="px-4 py-3 lg:px-5"><div className="h-[18px] w-[18px] animate-pulse rounded bg-[var(--color-border-light)]" /></td>
@@ -567,7 +584,7 @@ export default function AppUsersPage() {
                       <td className="px-4 py-3"><div className="h-8 w-20 animate-pulse rounded-lg bg-[var(--color-border-light)]" /></td>
                     </tr>
                   ))
-                ) : users.isError ? (
+                ) : users.isError && !hasDisplayedUsers ? (
                   <tr>
                     <td colSpan={6} className="px-5 py-16 text-center text-sm text-[var(--color-danger)]">用户列表加载失败，请点击刷新后重试。</td>
                   </tr>
@@ -633,7 +650,7 @@ export default function AppUsersPage() {
 
           <div className="flex flex-col gap-3 border-t border-[var(--color-border-light)] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between lg:px-5">
             <div className="flex items-center gap-3 text-xs text-[var(--color-text-secondary)]">
-              <span>共 <strong className="font-semibold text-[var(--ink)]">{(users.data?.total ?? 0).toLocaleString("zh-CN")}</strong> 条</span>
+              <span>共 <strong className="font-semibold text-[var(--ink)]">{(displayedUsers?.total ?? 0).toLocaleString("zh-CN")}</strong> 条</span>
               <CustomSelect
                 value={String(pageSize)}
                 onChange={(value) => {

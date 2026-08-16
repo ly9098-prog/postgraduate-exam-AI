@@ -36,7 +36,7 @@ const RELATIONS = {
   prerequisite: { label: "前置", color: "#4a6f8a", text: "学习目标所依赖的基础知识" },
   parent: { label: "父子", color: "#5b8c5b", text: "概念与细分知识点的层级关系" },
   next: { label: "后续", color: "#c49a6b", text: "掌握当前知识后自然衔接的节点" },
-  related: { label: "相关", color: "#9a7bbd", text: "没有强依赖但语义关联紧密" },
+  related: { label: "相关", color: "#8b7c97", text: "没有强依赖但语义关联紧密" },
 } as const;
 
 type RelationKey = keyof typeof RELATIONS;
@@ -467,7 +467,6 @@ function GraphCanvas({
   pan,
   onZoomChange,
   onPanChange,
-  animationKey,
 }: {
   data: KnowledgeGraphResponse;
   selectedId: number | null;
@@ -478,12 +477,14 @@ function GraphCanvas({
   pan: { x: number; y: number };
   onZoomChange: (value: number) => void;
   onPanChange: (value: { x: number; y: number }) => void;
-  animationKey: number;
 }) {
   const dragRef = useRef<{ pointerId: number; x: number; y: number; panX: number; panY: number } | null>(null);
+  // Keep the physical layout stable while users inspect different nodes. Selection now
+  // only changes emphasis/relations; a new layout is produced only when data, focus or
+  // the explicit layout variant changes.
   const nodes = useMemo(
-    () => buildLayout(data.nodes, data.edges, data.focus_id, selectedId, layoutVariant),
-    [data.nodes, data.edges, data.focus_id, selectedId, layoutVariant],
+    () => buildLayout(data.nodes, data.edges, data.focus_id, data.focus_id, layoutVariant),
+    [data.nodes, data.edges, data.focus_id, layoutVariant],
   );
   const nodeMap = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
 
@@ -906,8 +907,7 @@ function GraphCanvas({
       <rect x="0" y="0" width="1000" height="710" fill="transparent" pointerEvents="all" aria-hidden="true" />
 
       <g transform={`translate(${500 + pan.x} ${355 + pan.y}) scale(${zoom}) translate(-500 -355)`}>
-        <g key={animationKey}>
-          <animate attributeName="opacity" from="0.88" to="1" dur="0.34s" fill="freeze" />
+        <g>
         {/* 1. 关系线路层：连续几何路径，永远位于主要节点与文字下方，不再通过 mask 截断。 */}
         <g pointerEvents="none">
           {edgeGeometries.map(({ edge, primary, start, end, control1, control2 }) => {
@@ -963,18 +963,18 @@ function GraphCanvas({
                 data-kg-node="true"
                 transform={`translate(${node.x} ${node.y})`}
                 className="cursor-pointer"
-                style={{ opacity: dimmed ? 0.14 : 1, transition: "opacity 180ms ease" }}
+                style={{ opacity: dimmed ? 0.16 : 1, transition: "opacity 140ms ease" }}
                 onClick={(event) => { event.stopPropagation(); onSelect(node.id); }}
                 onDoubleClick={(event) => { event.stopPropagation(); onFocus(node.id); }}
               >
                 <title>{`${node.name}\n${node.degree} 条关系 · ${node.question_count} 题${node.aliases?.length ? `\n别名：${node.aliases.join("、")}` : ""}`}</title>
-                {selected && <circle r={radius + 8} fill="#4a6f8a" fillOpacity="0.08" stroke="#4a6f8a" strokeOpacity="0.16" strokeWidth="2" />}
+                {selected && <circle r={radius + 7} fill="#4a6f8a" fillOpacity="0.055" stroke="#4a6f8a" strokeOpacity="0.14" strokeWidth="1.6" />}
                 <circle
                   r={radius}
                   fill={selected ? "#4a6f8a" : focused ? "#e7f1f7" : direct ? `${semanticColor}18` : "#ffffff"}
                   stroke={selected ? "#365f79" : focused ? "#5b83a0" : direct ? semanticColor : "#b5c3cc"}
-                  strokeWidth={selected ? 2.2 : focused ? 1.8 : direct ? 1.55 : 1.05}
-                  filter={selected || focused ? "url(#kg-node-shadow)" : undefined}
+                  strokeWidth={selected ? 2 : focused ? 1.65 : direct ? 1.45 : 1.05}
+                  filter={selected ? "url(#kg-node-shadow)" : undefined}
                 />
                 <circle r={selected ? 6 : 5} fill={selected ? "#ffffff" : semanticColor} fillOpacity={selected ? 0.96 : direct ? 0.88 : 0.58} />
                 {showLabel && (
@@ -1125,25 +1125,33 @@ export default function KnowledgeGraphPage() {
     })}`),
   });
 
+  // Keep explicit selection state separate from the fallback selection. This avoids the
+  // mount -> effect -> select cycle that used to repaint/highlight the graph right after entry.
   useEffect(() => {
     const data = graph.data;
     if (!data || graph.isFetching) return;
     if (pendingResetRef.current) {
       pendingResetRef.current = false;
-      setSelectedId(data.focus_id ?? data.nodes[0]?.id ?? null);
+      setSelectedId(null);
       return;
     }
-    if (selectedId != null && data.nodes.some((node) => node.id === selectedId)) return;
-    setSelectedId(data.focus_id ?? data.nodes[0]?.id ?? null);
+    if (selectedId != null && !data.nodes.some((node) => node.id === selectedId)) setSelectedId(null);
   }, [graph.data, graph.isFetching, selectedId]);
 
+  const resolvedSelectedId = useMemo(() => {
+    const data = graph.data;
+    if (!data) return null;
+    if (selectedId != null && data.nodes.some((node) => node.id === selectedId)) return selectedId;
+    return data.focus_id ?? data.nodes[0]?.id ?? null;
+  }, [graph.data, selectedId]);
+
   const selectedNode = useMemo(
-    () => graph.data?.nodes.find((node) => node.id === selectedId) ?? null,
-    [graph.data, selectedId],
+    () => graph.data?.nodes.find((node) => node.id === resolvedSelectedId) ?? null,
+    [graph.data, resolvedSelectedId],
   );
 
   const selectedNeighbors = useMemo(() => {
-    if (!graph.data || selectedId == null) return [];
+    if (!graph.data || resolvedSelectedId == null) return [];
     const nodeMap = new Map(graph.data.nodes.map((node) => [node.id, node]));
     const grouped = new Map<number, {
       node: KnowledgeGraphNode;
@@ -1151,8 +1159,8 @@ export default function KnowledgeGraphPage() {
       maxConfidence: number;
     }>();
     for (const edge of graph.data.edges) {
-      if (edge.source !== selectedId && edge.target !== selectedId) continue;
-      const outgoing = edge.source === selectedId;
+      if (edge.source !== resolvedSelectedId && edge.target !== resolvedSelectedId) continue;
+      const outgoing = edge.source === resolvedSelectedId;
       const otherId = outgoing ? edge.target : edge.source;
       const node = nodeMap.get(otherId);
       if (!node) continue;
@@ -1164,7 +1172,7 @@ export default function KnowledgeGraphPage() {
     return [...grouped.values()]
       .map((item) => ({ ...item, relations: item.relations.sort((a, b) => edgeStrength(b.edge) - edgeStrength(a.edge)) }))
       .sort((a, b) => b.maxConfidence - a.maxConfidence || b.node.degree - a.node.degree);
-  }, [graph.data, selectedId]);
+  }, [graph.data, resolvedSelectedId]);
 
   const visibleSelectedNeighbors = selectedNeighbors.slice(0, 8);
 
@@ -1215,7 +1223,7 @@ export default function KnowledgeGraphPage() {
       setRelationType("");
       setDepth("2");
       setCenterId(null);
-      if (!needsDataReset) setSelectedId(graph.data?.focus_id ?? graph.data?.nodes[0]?.id ?? null);
+      if (!needsDataReset) setSelectedId(null);
     });
     animateViewportReset();
   }
@@ -1295,31 +1303,31 @@ export default function KnowledgeGraphPage() {
   const relationCounts = summary?.relation_counts ?? {};
 
   return (
-    <div className="mx-auto flex max-w-[1540px] flex-col gap-4 [overflow-anchor:none]">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="mx-auto flex max-w-[1580px] flex-col gap-3.5 [overflow-anchor:none]">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="font-display text-3xl font-bold tracking-tight text-[var(--ink)]">知识图谱</h1>
+            <h1 className="font-display text-[28px] font-bold tracking-tight text-[var(--ink)]">知识图谱</h1>
             <span className="rounded-full bg-[var(--color-primary-light)] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[var(--color-primary-dark)]">Graph</span>
           </div>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">探索知识点之间的前置、父子、后续与相关关系，校验智能推荐的学习路径基础。</p>
+          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">探索知识点关系、定位学习路径，并检查图谱连接质量。</p>
         </div>
         {summary && (
           <div className="flex flex-wrap gap-2 text-xs">
-            <span className="rounded-xl border border-[var(--color-border)] bg-white/70 px-3 py-2 text-[var(--color-text-secondary)]">
+            <span className="rounded-lg border border-[var(--color-border-light)] bg-white/68 px-2.5 py-1.5 text-[var(--color-text-secondary)]">
               <b className="mr-1 text-[var(--ink)]">{summary.total_nodes}</b>知识点
             </span>
-            <span className="rounded-xl border border-[var(--color-border)] bg-white/70 px-3 py-2 text-[var(--color-text-secondary)]">
+            <span className="rounded-lg border border-[var(--color-border-light)] bg-white/68 px-2.5 py-1.5 text-[var(--color-text-secondary)]">
               <b className="mr-1 text-[var(--ink)]">{summary.total_edges}</b>关系边
             </span>
-            <span className="rounded-xl border border-[var(--color-border)] bg-white/70 px-3 py-2 text-[var(--color-text-secondary)]">
+            <span className="rounded-lg border border-[var(--color-border-light)] bg-white/68 px-2.5 py-1.5 text-[var(--color-text-secondary)]">
               平均置信度 <b className="ml-1 text-[var(--ink)]">{(summary.avg_confidence * 100).toFixed(0)}%</b>
             </span>
           </div>
         )}
       </div>
 
-      <section className="surface-card rounded-2xl p-4">
+      <section className="surface-card rounded-2xl p-3.5">
         <div className="flex flex-wrap items-center gap-2.5">
           <div className="relative min-w-[300px] flex-1 lg:max-w-[560px]">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
@@ -1398,7 +1406,7 @@ export default function KnowledgeGraphPage() {
         <section
           ref={graphPanelRef}
           className={cn(
-            "surface-card relative min-h-0 overflow-hidden rounded-3xl [overflow-anchor:none]",
+            "surface-card relative min-h-0 overflow-hidden rounded-2xl [overflow-anchor:none]",
             fullscreenMode === "none" && "h-[680px]",
             fullscreenMode === "overlay" && "fixed inset-3 z-[100] h-[calc(100vh-1.5rem)] bg-[var(--porcelain)] shadow-2xl",
             fullscreenMode === "native" && "h-screen w-screen rounded-none bg-[var(--porcelain)]",
@@ -1407,12 +1415,13 @@ export default function KnowledgeGraphPage() {
           <div
             className="absolute inset-0"
             style={{
-              backgroundColor: "#fbfdff",
-              backgroundImage: "radial-gradient(circle at 50% 44%, rgba(74,111,138,0.055), transparent 46%)",
+              backgroundColor: "#fbfcfd",
+              backgroundImage: "linear-gradient(rgba(74,111,138,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(74,111,138,0.045) 1px, transparent 1px), radial-gradient(circle at 50% 44%, rgba(74,111,138,0.05), transparent 46%)",
+              backgroundSize: "28px 28px, 28px 28px, auto",
             }}
           />
 
-          <div className="absolute left-4 top-4 z-10 w-[142px] rounded-xl border border-[var(--color-border-light)] bg-white/92 p-3 shadow-sm backdrop-blur-md">
+          <div className="absolute left-4 top-4 z-10 w-[148px] rounded-xl border border-[var(--color-border-light)] bg-white/94 p-3 shadow-[0_6px_18px_rgba(27,39,51,0.06)] backdrop-blur-md">
             <div className="mb-2 text-[11px] font-semibold text-[var(--ink)]">关系类型</div>
             <div className="mb-2 flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
               <span className="grid h-5 w-5 place-items-center rounded-full border border-[var(--color-primary)] bg-[var(--color-primary-light)]"><Network className="h-3 w-3" /></span>
@@ -1439,20 +1448,21 @@ export default function KnowledgeGraphPage() {
             <button
               type="button"
               onClick={toggleFullscreen}
-              className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--color-border)] bg-white/90 text-[var(--color-text-secondary)] shadow-sm hover:text-[var(--color-primary-dark)]"
+              className="grid h-9 w-9 place-items-center rounded-xl border border-[var(--color-border-light)] bg-white/94 text-[var(--color-text-secondary)] shadow-sm transition hover:border-[#cbd8e0] hover:bg-white hover:text-[var(--color-primary-dark)]"
               title={fullscreenMode !== "none" ? "退出全屏" : "全屏查看"}
+              aria-label={fullscreenMode !== "none" ? "退出全屏" : "全屏查看"}
             >
               {fullscreenMode !== "none" ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
             </button>
           </div>
 
-          <div className="absolute bottom-5 right-5 z-10 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white/95 shadow-sm">
-            <button type="button" onClick={() => setZoom((value) => clamp(value + 0.12, 0.68, 1.5))} className="grid h-10 w-10 place-items-center text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-light)]"><Plus className="h-4 w-4" /></button>
-            <button type="button" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="grid h-10 w-10 place-items-center border-y border-[var(--color-border-light)] text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-light)]"><Focus className="h-4 w-4" /></button>
-            <button type="button" onClick={() => setZoom((value) => clamp(value - 0.12, 0.68, 1.5))} className="grid h-10 w-10 place-items-center text-[var(--color-text-secondary)] hover:bg-[var(--color-primary-light)]"><Minus className="h-4 w-4" /></button>
+          <div className="absolute bottom-5 right-5 z-10 overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-white/95 shadow-[0_6px_18px_rgba(27,39,51,0.06)]">
+            <button type="button" onClick={() => setZoom((value) => clamp(value + 0.12, 0.68, 1.5))} className="grid h-9 w-10 place-items-center text-[var(--color-text-secondary)] transition hover:bg-[var(--color-primary-light)] disabled:cursor-default disabled:opacity-35" disabled={zoom >= 1.5} title="放大" aria-label="放大图谱"><Plus className="h-4 w-4" /></button>
+            <button type="button" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} className="grid h-9 w-10 place-items-center border-y border-[var(--color-border-light)] text-[10px] font-semibold tabular-nums text-[var(--color-text-secondary)] transition hover:bg-[var(--color-primary-light)]" title="重置缩放与位置" aria-label="重置缩放与位置">{Math.round(zoom * 100)}%</button>
+            <button type="button" onClick={() => setZoom((value) => clamp(value - 0.12, 0.68, 1.5))} className="grid h-9 w-10 place-items-center text-[var(--color-text-secondary)] transition hover:bg-[var(--color-primary-light)] disabled:cursor-default disabled:opacity-35" disabled={zoom <= 0.68} title="缩小" aria-label="缩小图谱"><Minus className="h-4 w-4" /></button>
           </div>
 
-          <div className={cn("relative h-full min-h-0 transition-opacity duration-300 ease-out", graph.isFetching ? "opacity-[0.86]" : "opacity-100")}>
+          <div className="relative h-full min-h-0">
             {graph.isLoading ? (
               <div className="absolute inset-0 grid place-items-center">
                 <div className="text-center text-sm text-[var(--color-text-hint)]">
@@ -1470,7 +1480,7 @@ export default function KnowledgeGraphPage() {
             ) : graph.data && graph.data.nodes.length > 0 ? (
               <GraphCanvas
                 data={graph.data}
-                selectedId={selectedId}
+                selectedId={resolvedSelectedId}
                 onSelect={setSelectedId}
                 onFocus={(id) => preserveScroll(() => {
                   setCenterId(id);
@@ -1485,7 +1495,6 @@ export default function KnowledgeGraphPage() {
                 pan={pan}
                 onZoomChange={setZoom}
                 onPanChange={setPan}
-                animationKey={graph.dataUpdatedAt}
               />
             ) : (
               <div className="absolute inset-0 grid place-items-center px-8 text-center text-sm text-[var(--color-text-hint)]">
@@ -1495,17 +1504,17 @@ export default function KnowledgeGraphPage() {
           </div>
 
           {summary && (
-            <div className="absolute bottom-5 left-5 z-10 flex flex-wrap gap-2 text-[10px] text-[var(--color-text-hint)]">
-              <span className="rounded-lg border border-[var(--color-border-light)] bg-white/90 px-2.5 py-1.5">{summary.visible_nodes} 节点 · {summary.visible_edges} 边</span>
-              <span className="rounded-lg border border-[var(--color-border-light)] bg-white/90 px-2.5 py-1.5">拖拽平移 · Ctrl/⌘ + 滚轮缩放</span>
+            <div className="absolute bottom-5 left-5 z-10 flex flex-wrap gap-1.5 text-[10px] text-[var(--color-text-hint)]">
+              <span className="rounded-lg border border-[var(--color-border-light)] bg-white/92 px-2 py-1.5 shadow-[0_2px_8px_rgba(27,39,51,0.035)]">{summary.visible_nodes} 节点 · {summary.visible_edges} 边</span>
+              <span className="rounded-lg border border-[var(--color-border-light)] bg-white/92 px-2 py-1.5 shadow-[0_2px_8px_rgba(27,39,51,0.035)]">单击查看 · 双击聚焦 · Ctrl/⌘ + 滚轮缩放</span>
               {summary.isolated_nodes > 0 && <span className="rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning-light)] px-2.5 py-1.5 text-[#8a6846]">孤立节点 {summary.isolated_nodes}</span>}
             </div>
           )}
         </section>
 
-        <aside className="surface-card min-h-[680px] rounded-3xl p-5 [overflow-anchor:none] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden xl:h-[680px] xl:overflow-y-auto">
+        <aside className="surface-card min-h-[680px] rounded-2xl p-[18px] [overflow-anchor:none] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden xl:h-[680px] xl:overflow-y-auto">
           {selectedNode ? (
-            <div className="space-y-5">
+            <div className="space-y-[18px]">
               <section>
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -1529,7 +1538,7 @@ export default function KnowledgeGraphPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl border border-[var(--color-border-light)] bg-white/55 p-3 text-[11px]">
+                <div className="mt-3.5 grid grid-cols-2 gap-x-3 gap-y-2 rounded-xl border border-[var(--color-border-light)] bg-white/52 p-3 text-[11px]">
                   <div><span className="text-[var(--color-text-hint)]">知识点 ID</span><div className="mt-0.5 font-mono font-semibold text-[var(--ink)]">#{selectedNode.id}</div></div>
                   <div><span className="text-[var(--color-text-hint)]">难度</span><div className="mt-0.5 font-semibold text-[var(--ink)]">{difficultyText(selectedNode.difficulty_level)} · L{selectedNode.difficulty_level}</div></div>
                   <div><span className="text-[var(--color-text-hint)]">关联题目</span><div className="mt-0.5 font-semibold text-[var(--ink)]">{selectedNode.question_count} 题</div></div>

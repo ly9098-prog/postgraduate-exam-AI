@@ -32,8 +32,8 @@ export function ConfirmDialog({
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(16,24,40,0.42)] px-4">
-      <div className="w-full max-w-md rounded-3xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-floating)]">
+    <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-[rgba(16,24,40,0.42)] px-4">
+      <div className="animate-drop-in w-full max-w-md rounded-3xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-floating)]">
         <h3 className="font-display text-2xl font-bold text-[var(--ink)]">{title}</h3>
         {description ? <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">{description}</p> : null}
         {children ? <div className="mt-4">{children}</div> : null}
