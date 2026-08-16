@@ -34,7 +34,8 @@ SYSTEM_PROMPTS = {
         "请用中文回答，严格以 JSON 格式输出：\n"
         '{"mistake_diagnosis": "错因诊断：指出用户为什么错，包括错误类型、关键失分点和题目陷阱，最多120字", '
         '"knowledge_patch": "补漏重点：指出本题暴露的薄弱考点、必补公式/定义/规则、适用条件或易混点，最多120字", '
-        '"review_task": "复练任务：给出下一步复练动作，包括重做、同类题、复刷间隔或下次检查点，最多120字"}'
+        '"review_task": "复练任务：给出下一步复练动作，包括重做、同类题、复刷间隔或下次检查点，最多120字", '
+        '"visual_evidence": "视觉题必须填写一个只能从图片直接观察到的关键事实；纯文本题填写空字符串"}'
     ),
     "study_advice": (
         "你是一个考研学习规划师。根据学生的错题统计数据，"
@@ -360,11 +361,11 @@ def build_error_analysis(
     system_prompt = SYSTEM_PROMPTS["error_analysis"]
     if image_data_urls:
         system_prompt += (
-            "\n视觉输入校验：本次请求包含题目图片/表格。你必须实际读取视觉输入，"
-            "并在 JSON 中额外返回 visual_evidence 字段："
-            "若成功读取，写一句只能从图片/表格本身直接看到的关键事实（如表头、数值、节点关系或图形条件），"
-            "不要复述文字题干；若图片无法读取、模型实际没有视觉输入或内容无法辨认，"
-            "只能写 unreadable，禁止猜测。最终 JSON 必须包含 visual_evidence。"
+            "\n视觉输入校验（视觉题必须执行）：本次请求包含题目图片/表格。"
+            "先读取图片，再完成错题分析。最终 JSON 必须包含且不得遗漏 visual_evidence；"
+            "visual_evidence 必须写一句只能从图片/表格本身直接看到的关键事实"
+            "（如表头、数值、节点名称、边关系、图形条件），不得复述文字题干或根据答案反推；"
+            "若图片实际无法读取或无法辨认，visual_evidence 只能写 unreadable，禁止猜测。"
         )
 
     if not image_data_urls:
@@ -390,6 +391,52 @@ def build_error_analysis(
         content.append(image_item)
     return [
         {"role": "system", "content": system_prompt},
+        {"role": "user", "content": content},
+    ]
+
+
+def build_visual_evidence_probe(
+    image_data_urls: list[str],
+    *,
+    image_max_pixels: int | None = None,
+) -> list:
+    """Build a minimal same-model visual acknowledgement retry.
+
+    This is only used when the main multimodal analysis is otherwise valid but
+    omitted/invalidated ``visual_evidence``.  Keep the retry tiny: it does not
+    redo the pedagogical analysis, it only proves that the configured analysis
+    LLM can actually read the persisted question image.
+    """
+    content = [{
+        "type": "text",
+        "text": (
+            "请只检查随消息附带的题目图片，不要解题。输出严格 JSON："
+            '{"visual_evidence":"..."}。'
+            "visual_evidence 必须是一条只能从图片直接看到的具体事实，例如节点名称与连边、"
+            "表头与数值、图形标注或条件；不要复述任何题干文字。"
+            "若图片确实无法读取或无法辨认，只输出 "
+            '{"visual_evidence":"unreadable"}。'
+        ),
+    }]
+    for data_url in [str(url) for url in (image_data_urls or []) if url]:
+        image_item = {
+            "type": "image_url",
+            "image_url": {"url": data_url},
+        }
+        if image_max_pixels is not None and image_max_pixels > 0:
+            image_item["max_pixels"] = int(image_max_pixels)
+        else:
+            image_item["image_url"]["detail"] = "high"
+        content.append(image_item)
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是视觉输入确认器。只验证图片是否被实际读取，不进行题目推理。"
+                "必须严格输出 JSON，且只允许 visual_evidence 一个字段。"
+            ),
+        },
         {"role": "user", "content": content},
     ]
 

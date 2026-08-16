@@ -21,6 +21,7 @@ from app.ai.prompts import (
     AI_ANALYSIS_PROMPT_VERSION,
     build_error_analysis,
     build_study_advice,
+    build_visual_evidence_probe,
 )
 from app.core.config import settings
 from app.models.ai_chat import AiChat
@@ -76,6 +77,12 @@ _VISUAL_FETCH_TIMEOUT_SECONDS = 6.0
 # OCR/model hop.
 _ERROR_ANALYSIS_MAX_TOKENS = 800
 _ERROR_ANALYSIS_QWEN_MAX_PIXELS = 1024 * 1024
+# The primary visual analysis can occasionally return all three pedagogical
+# fields correctly while omitting only ``visual_evidence``.  A tiny same-model
+# probe repairs that protocol-level omission without re-running the full answer.
+_ERROR_ANALYSIS_VISUAL_ACK_MAX_TOKENS = 160
+_ERROR_ANALYSIS_VISUAL_ACK_TIMEOUT_SECONDS = 8
+_ERROR_ANALYSIS_VISUAL_ACK_RETRY_MAIN_BUDGET_MS = 38_000
 
 
 class PrewarmAnalysisError(RuntimeError):
@@ -1116,24 +1123,85 @@ async def analyze_error(
         parsed = parse_error_analysis_content(raw_content)
         parsed_valid = is_valid_ai_analysis(parsed)
         visual_evidence = _extract_visual_evidence(raw_content) if image_data_urls else ""
+        visual_ack_retried = False
+        visual_ack_retry_ms = 0
+        total_tokens_used = int(result.get("tokens_used") or 0)
+        total_duration_ms = int(result.get("duration_ms") or 0)
 
         if image_data_urls and not _visual_evidence_is_valid(visual_evidence):
+            # A surprisingly common model-protocol failure is: the answer itself
+            # clearly uses the image, all three analysis fields are valid, but the
+            # model omitted the acknowledgement field.  Do one tiny SAME analysis
+            # model visual probe instead of discarding an otherwise good answer.
+            # No OCR/VL routing is introduced.
+            can_probe = (
+                parsed_valid
+                and total_duration_ms <= _ERROR_ANALYSIS_VISUAL_ACK_RETRY_MAIN_BUDGET_MS
+            )
+            if can_probe:
+                visual_ack_retried = True
+                probe_messages = build_visual_evidence_probe(
+                    image_data_urls, image_max_pixels=image_max_pixels
+                )
+                try:
+                    async with asyncio.timeout(_ERROR_ANALYSIS_VISUAL_ACK_TIMEOUT_SECONDS + 1):
+                        probe = await llm.chat(
+                            probe_messages,
+                            temperature=0.0,
+                            model=runtime.model_name,
+                            api_key=runtime.api_key,
+                            base_url=runtime.base_url,
+                            provider=runtime.provider,
+                            timeout=_ERROR_ANALYSIS_VISUAL_ACK_TIMEOUT_SECONDS,
+                            max_tokens=_ERROR_ANALYSIS_VISUAL_ACK_MAX_TOKENS,
+                            extra_body=llm_extra_body,
+                        )
+                    visual_ack_retry_ms = int(probe.get("duration_ms") or 0)
+                    total_duration_ms += visual_ack_retry_ms
+                    total_tokens_used += int(probe.get("tokens_used") or 0)
+                    recovered = _extract_visual_evidence(probe.get("content", ""))
+                    if _visual_evidence_is_valid(recovered):
+                        visual_evidence = recovered
+                        logger.info(
+                            "ai.error_analysis.visual_ack_recovered wq_id=%s model=%s "
+                            "retry_ms=%s evidence=%r",
+                            wq.id, result.get("model"), visual_ack_retry_ms,
+                            visual_evidence[:120],
+                        )
+                    else:
+                        # Preserve explicit unreadable so the failure below can
+                        # distinguish a real visual-input failure from a schema
+                        # omission that is safe for background retry.
+                        visual_evidence = recovered
+                except Exception as exc:
+                    logger.warning(
+                        "ai.error_analysis.visual_ack_retry_failed wq_id=%s model=%s err=%s",
+                        wq.id, result.get("model"), type(exc).__name__,
+                    )
+
+        if image_data_urls and not _visual_evidence_is_valid(visual_evidence):
+            evidence_text = str(visual_evidence or "").strip()
+            ack_missing = not evidence_text
+            error_code = "vision_ack_missing" if ack_missing else "vision_parse_failed"
+            retryable = bool(ack_missing)
             logger.info(
-                "ai.error_analysis.visual_ack_failed wq_id=%s model=%s evidence=%r",
-                wq.id, result.get("model"), visual_evidence[:120],
+                "ai.error_analysis.visual_ack_failed wq_id=%s model=%s evidence=%r "
+                "retried=%s error_code=%s retryable=%s",
+                wq.id, result.get("model"), evidence_text[:120],
+                visual_ack_retried, error_code, retryable,
             )
             return {
                 "content": get_fallback_analysis(),
                 "from_cache": False,
                 "from_fallback": True,
                 "model": "vision_parse_failed",
-                "tokens_used": result.get("tokens_used", 0),
-                "duration_ms": result.get("duration_ms", 0),
+                "tokens_used": total_tokens_used,
+                "duration_ms": total_duration_ms,
                 "force_regenerated": False,
                 "cache_preserved": False,
                 "visual_input_count": len(image_data_urls),
-                "error_code": "vision_parse_failed",
-                "retryable": False,
+                "error_code": error_code,
+                "retryable": retryable,
             }
 
         if not parsed_valid:
@@ -1167,6 +1235,8 @@ async def analyze_error(
             "force_regenerated": effective_force,
             "visual_input_count": len(image_data_urls),
             "visual_evidence": visual_evidence or None,
+            "visual_ack_retried": visual_ack_retried,
+            "visual_ack_retry_ms": visual_ack_retry_ms,
             "input_mode": "vision" if image_data_urls else "text",
             "input_signature": input_signature,
             "model_signature": model_signature,
@@ -1178,6 +1248,8 @@ async def analyze_error(
         context_snapshot = dict(context)
         context_snapshot["visual_input_count"] = len(image_data_urls)
         context_snapshot["visual_evidence"] = visual_evidence or None
+        context_snapshot["visual_ack_retried"] = visual_ack_retried
+        context_snapshot["visual_ack_retry_ms"] = visual_ack_retry_ms
         # Never persist base64 image payloads in chat logs/context snapshots.
         db.add(AiChat(
             user_id=user_id,
@@ -1185,32 +1257,34 @@ async def analyze_error(
             user_message=str(context["question"]),
             ai_response=result["content"],
             context_snapshot=context_snapshot,
-            tokens_used=result["tokens_used"],
+            tokens_used=total_tokens_used,
             model=result["model"],
-            duration_ms=result["duration_ms"],
+            duration_ms=total_duration_ms,
         ))
         await db.commit()
 
         logger.info(
             "ai.error_analysis.result wq_id=%s force=%s model=%s input_mode=%s visual_count=%s "
             "visual_evidence_valid=%s parsed_valid=%s thinking=%s max_tokens=%s "
-            "image_max_pixels=%s fields=%s duration_ms=%s",
+            "image_max_pixels=%s visual_ack_retried=%s visual_ack_retry_ms=%s "
+            "fields=%s duration_ms=%s",
             wq.id, effective_force, result.get("model"),
             "vision" if image_data_urls else "text", len(image_data_urls),
             _visual_evidence_is_valid(visual_evidence) if image_data_urls else None,
             parsed_valid, False if qwen_fast_path else "default",
             _ERROR_ANALYSIS_MAX_TOKENS, image_max_pixels,
+            visual_ack_retried, visual_ack_retry_ms,
             {k: bool(parsed.get(k)) for k in ["mistake_diagnosis", "knowledge_patch", "review_task"]},
-            result.get("duration_ms"),
+            total_duration_ms,
         )
 
         return {
             "content": parsed,
             "from_cache": False,
             "from_fallback": False,
-            "tokens_used": result.get("tokens_used", 0),
+            "tokens_used": total_tokens_used,
             "model": result.get("model", ""),
-            "duration_ms": result.get("duration_ms", 0),
+            "duration_ms": total_duration_ms,
             "force_regenerated": effective_force,
             "visual_input_count": len(image_data_urls),
             "visual_evidence": visual_evidence or None,
