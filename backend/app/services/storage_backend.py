@@ -418,19 +418,36 @@ def get_storage() -> StorageBackend:
     return LocalFileStorage()
 
 
-def get_user_avatar_storage() -> StorageBackend:
-    """Get the storage namespace used for user profile avatars.
+USER_AVATAR_PREFIX = "static/avatars"
+LEGACY_USER_AVATAR_PREFIX = "static/formulas/avatars"
 
-    Keep avatars below the already-public ``/static/formulas`` mount when the
-    local backend is used so no extra deployment/static-file configuration is
-    required.  COS keeps the same configured base prefix and adds an
-    ``avatars`` namespace to avoid mixing user files with formula assets.
+
+def get_user_avatar_storage() -> StorageBackend:
+    """Get the dedicated storage namespace for user profile avatars.
+
+    User avatars are account assets and must not share the formula asset
+    namespace.  Keep the public path stable across local storage and COS:
+    ``/static/avatars/<user_id>/<uuid>.jpg``.
     """
-    prefix = "static/formulas/avatars"
+    prefix = USER_AVATAR_PREFIX
     if settings.STORAGE_BACKEND == "cos":
         storage = COSStorage(prefix=prefix)
-        base_prefix = (settings.COS_PREFIX or "static/formulas/").rstrip("/")
-        storage._cos_prefix = f"{base_prefix}/avatars/"
+        storage._cos_prefix = f"{prefix.rstrip('/')}/"
+        return storage
+    return LocalFileStorage(prefix=prefix)
+
+
+def get_legacy_user_avatar_storage() -> StorageBackend:
+    """Storage adapter used only to clean up avatars written by older builds.
+
+    Older versions placed profile images under ``static/formulas/avatars``.
+    New uploads never use this namespace, but replacement/account deletion
+    still needs to be able to remove those legacy files safely.
+    """
+    prefix = LEGACY_USER_AVATAR_PREFIX
+    if settings.STORAGE_BACKEND == "cos":
+        storage = COSStorage(prefix=prefix)
+        storage._cos_prefix = f"{prefix.rstrip('/')}/"
         return storage
     return LocalFileStorage(prefix=prefix)
 

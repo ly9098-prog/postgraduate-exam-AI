@@ -15,7 +15,11 @@ from app.models.admin import AdminUser, Permission, Role, RolePermission
 from app.models.app_user_admin_binding import AppUserAdminBinding
 from app.models.user import User
 from app.schemas.user import UserResponse
-from app.services.storage_backend import get_user_avatar_storage
+from app.services.storage_backend import (
+    LEGACY_USER_AVATAR_PREFIX,
+    get_legacy_user_avatar_storage,
+    get_user_avatar_storage,
+)
 
 WX_URL = "https://api.weixin.qq.com/sns/jscode2session"
 LOCAL_APP_ENVS = {"development", "local", "test"}
@@ -226,10 +230,21 @@ async def replace_user_avatar(db: AsyncSession, user: User, data: bytes) -> User
 async def delete_user_avatar_file(
     avatar_url: str | None, *, storage=None
 ) -> None:
-    """Best-effort removal of a persisted profile avatar."""
+    """Best-effort removal of a persisted profile avatar.
+
+    Avatars created before the dedicated namespace fix live below
+    ``/static/formulas/avatars``.  Detect those URLs and use a legacy-scoped
+    backend so replacing an old avatar also removes the old object instead of
+    leaving it orphaned.
+    """
     if not avatar_url:
         return
-    backend = storage or get_user_avatar_storage()
+    normalized_url = str(avatar_url).replace("\\", "/")
+    legacy_marker = f"/{LEGACY_USER_AVATAR_PREFIX.strip('/')}/"
+    if legacy_marker in normalized_url or normalized_url.startswith(LEGACY_USER_AVATAR_PREFIX + "/"):
+        backend = get_legacy_user_avatar_storage()
+    else:
+        backend = storage or get_user_avatar_storage()
     try:
         await backend.delete(avatar_url)
     except Exception:
