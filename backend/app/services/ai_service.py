@@ -83,13 +83,10 @@ def _detect_image_mime(data: bytes, fallback: str = "") -> str:
     return "image/jpeg"
 
 
-def _image_bytes_to_data_url(
-    data: bytes, *, content_type: str = "", already_compressed: bool = False,
-) -> str:
-    # Re-encode through PIL so malformed/non-image stored sources cannot be
-    # forwarded to the model. Multipart uploads are already validated/compressed
-    # once at the API boundary; do not JPEG-compress a table screenshot twice.
-    compressed = bytes(data) if already_compressed else compress_image(data)
+def _image_bytes_to_data_url(data: bytes, *, content_type: str = "") -> str:
+    # Re-encode stored question images through PIL so malformed/non-image assets
+    # are never forwarded to the analysis LLM.
+    compressed = compress_image(data)
     mime = _detect_image_mime(compressed, content_type)
     encoded = base64.b64encode(compressed).decode("ascii")
     return f"data:{mime};base64,{encoded}"
@@ -144,40 +141,6 @@ def _collect_question_visual_sources(question: Question) -> list[str]:
         add(value.get("image"))
 
     return out[:_MAX_VISUAL_IMAGES]
-
-
-_VISUAL_REFERENCE_RE = re.compile(
-    r"(?:如下?[图表]|下[图表]|[图表]中|根据[图表]|由[图表](?:可知|可见|所示)?|见[图表]|"
-    r"示意图|流程图|电路图|统计图|数据表|表格所示|as shown in (?:the )?(?:figure|table)|"
-    r"(?:figure|table|diagram)\s*\d*)",
-    re.IGNORECASE,
-)
-
-
-def _question_declares_visual(question: Question) -> bool:
-    """Best-effort signal that text alone is insufficient for this question.
-
-    This catches legacy records where the stem still says “如下图/表中” but the
-    image URL was lost during OCR/import. In that case returning a text-only AI
-    answer is worse than explicitly asking the mini-program for a screenshot.
-    """
-    content = question.content if isinstance(question.content, dict) else {}
-    segments = content.get("segments")
-    if isinstance(segments, list):
-        for seg in segments:
-            if isinstance(seg, dict) and str(seg.get("type") or "").lower() in {
-                "image", "math_image", "table_image", "code_image", "table",
-            }:
-                return True
-
-    text_parts = []
-    for value in (
-        content.get("text"), content.get("stem"), content.get("question"),
-        getattr(question, "stem", None),
-    ):
-        if isinstance(value, str) and value.strip():
-            text_parts.append(value)
-    return bool(_VISUAL_REFERENCE_RE.search("\n".join(text_parts)))
 
 
 def _extract_structured_visual(content: dict | None) -> str:
@@ -276,33 +239,20 @@ async def _visual_source_to_data_url(url: str) -> str | None:
         return None
 
 
-async def _prepare_visual_inputs(
-    question: Question,
-    supplemental_image: dict | None,
-) -> tuple[list[str], dict]:
-    data_urls: list[str] = []
+async def _prepare_visual_inputs(question: Question) -> tuple[list[str], dict]:
+    """Load visual inputs only from the persisted question record.
+
+    wrong-detail does not accept user-supplied screenshots. The question image
+    stored in the database/object storage is the single source of truth. If no
+    stored image exists, or none of the stored images can be loaded, the caller
+    returns a parse-failed response instead of asking the LLM to guess.
+    """
     sources = _collect_question_visual_sources(question)
-    supplemental_ok = False
+    data_urls: list[str] = []
 
-    if supplemental_image and isinstance(supplemental_image.get("data"), (bytes, bytearray)):
-        try:
-            data_urls.append(_image_bytes_to_data_url(
-                bytes(supplemental_image["data"]),
-                content_type=str(supplemental_image.get("content_type") or ""),
-                already_compressed=True,
-            ))
-            supplemental_ok = True
-        except Exception:
-            logger.warning("ai.error_analysis.supplemental_image_invalid question_id=%s", question.id)
-
-    # Stored question assets can point to remote object storage. Resolve the
-    # bounded set concurrently so four 6-second fetch timeouts never become a
-    # 24-second serial delay before the LLM call.
-    remaining = max(0, _MAX_VISUAL_IMAGES - len(data_urls))
-    if remaining and sources:
-        candidates = sources[:remaining]
+    if sources:
         resolved = await asyncio.gather(
-            *(_visual_source_to_data_url(source) for source in candidates),
+            *(_visual_source_to_data_url(source) for source in sources[:_MAX_VISUAL_IMAGES]),
             return_exceptions=False,
         )
         for data_url in resolved:
@@ -311,15 +261,11 @@ async def _prepare_visual_inputs(
             if data_url and data_url not in data_urls:
                 data_urls.append(data_url)
 
-    structured_visual = _extract_structured_visual(question.content)
     return data_urls, {
         "declared_source_count": len(sources),
         "loaded_count": len(data_urls),
-        "supplemental_ok": supplemental_ok,
-        "structured_visual": structured_visual,
-        "visual_expected": bool(sources or supplemental_image or _question_declares_visual(question)),
+        "structured_visual": _extract_structured_visual(question.content),
     }
-
 
 def _extract_visual_evidence(raw: str) -> str:
     decoded = _decode_structured_content(raw or "")
@@ -516,11 +462,15 @@ def _normalize_ai_analysis(cached: dict) -> dict:
 
 
 def is_ai_analysis_fresh(ai_analysis: dict | None) -> bool:
-    """Check whether the cached AI analysis is still valid for the current prompt version."""
+    """A reusable wrong-detail cache must prove that the question image was read."""
     if not isinstance(ai_analysis, dict) or len(ai_analysis) == 0:
         return False
-    cached_version = (ai_analysis.get("_meta") or {}).get("version", "")
-    return cached_version == AI_ANALYSIS_PROMPT_VERSION
+    meta = ai_analysis.get("_meta") or {}
+    if meta.get("version", "") != AI_ANALYSIS_PROMPT_VERSION:
+        return False
+    if int(meta.get("visual_input_count") or 0) <= 0:
+        return False
+    return _visual_evidence_is_valid(str(meta.get("visual_evidence") or ""))
 
 
 def build_cached_error_analysis_response(wq) -> dict | None:
@@ -571,7 +521,6 @@ async def analyze_error(
     user_id: int,
     wrong_question_id: int,
     force_regenerate: bool = False,
-    supplemental_image: dict | None = None,
 ) -> dict:
     wq_result = await db.execute(
         select(WrongQuestion).where(
@@ -588,9 +537,27 @@ async def analyze_error(
     if not q:
         raise ValueError("题目不存在")
 
-    # A user-supplied screenshot is an explicit request to re-evaluate the
-    # question with new context, so it must never be short-circuited by cache.
-    effective_force = bool(force_regenerate or supplemental_image)
+    # wrong-detail requires a persisted question image. Do this check before
+    # serving cached AI content so legacy/image-less records fail explicitly.
+    stored_visual_sources = _collect_question_visual_sources(q)
+    if not stored_visual_sources:
+        logger.info(
+            "ai.error_analysis.image_missing wq_id=%d question_id=%d",
+            wq.id, q.id,
+        )
+        return {
+            "content": get_fallback_analysis(),
+            "from_cache": False,
+            "from_fallback": True,
+            "tokens_used": 0,
+            "model": "vision_input_missing",
+            "duration_ms": 0,
+            "force_regenerated": False,
+            "cache_preserved": False,
+            "visual_input_count": 0,
+        }
+
+    effective_force = bool(force_regenerate)
 
     if not effective_force:
         cached = build_cached_error_analysis_response(wq)
@@ -598,8 +565,8 @@ async def analyze_error(
             return cached
     else:
         logger.info(
-            "force regenerate error analysis wq_id=%d user_id=%d supplemental=%s",
-            wq.id, user_id, bool(supplemental_image),
+            "force regenerate error analysis wq_id=%d user_id=%d",
+            wq.id, user_id,
         )
 
     timeout_sec = (
@@ -646,13 +613,16 @@ async def analyze_error(
             if cached is not None:
                 return cached
 
-        image_data_urls, visual_meta = await _prepare_visual_inputs(q, supplemental_image)
+        image_data_urls, visual_meta = await _prepare_visual_inputs(q)
         structured_visual = str(visual_meta.get("structured_visual") or "")
 
-        # If the question declares an image/table-image but the server could not
-        # load any of it, do not ask a text-only LLM to guess from incomplete
-        # context. The mini-program can then request a clean screenshot.
-        if visual_meta.get("visual_expected") and not image_data_urls and not structured_visual:
+        # A DB image exists, but none of its assets could be loaded. Do not let
+        # the analysis LLM continue with incomplete context or infer from text.
+        if not image_data_urls:
+            logger.info(
+                "ai.error_analysis.image_load_failed wq_id=%d question_id=%d declared_sources=%d",
+                wq.id, q.id, int(visual_meta.get("declared_source_count") or 0),
+            )
             return {
                 "content": get_fallback_analysis(),
                 "from_cache": False,
@@ -665,34 +635,18 @@ async def analyze_error(
                 "visual_input_count": 0,
             }
 
-        feature = "vision" if image_data_urls else "analysis"
-        runtime = await resolve_llm_runtime_config(db, feature=feature)
+        # Wrong-detail AI analysis must always use the same DB-configured
+        # analysis LLM as the original text-only flow. Images are passed
+        # directly to that model as multimodal message content; OCR/VL model
+        # routing is intentionally not used here.
+        runtime = await resolve_llm_runtime_config(db, feature="analysis")
         if runtime is None:
-            old_cache = build_any_cached_error_analysis_response(wq)
-            if old_cache and effective_force and not image_data_urls:
-                return old_cache
             return {
                 "content": get_fallback_analysis(),
                 "from_cache": False,
                 "from_fallback": True,
                 "tokens_used": 0,
                 "model": "vision_unavailable" if image_data_urls else "fallback",
-                "duration_ms": 0,
-                "force_regenerated": False,
-                "cache_preserved": False,
-                "visual_input_count": len(image_data_urls),
-            }
-
-        # Tagged models are authoritative. An untagged legacy default is allowed
-        # to try multimodal input; the visual-evidence handshake below prevents a
-        # text-only model from silently producing a seemingly valid answer.
-        if image_data_urls and runtime.capabilities and "vision" not in runtime.capabilities:
-            return {
-                "content": get_fallback_analysis(),
-                "from_cache": False,
-                "from_fallback": True,
-                "tokens_used": 0,
-                "model": "vision_unavailable",
                 "duration_ms": 0,
                 "force_regenerated": False,
                 "cache_preserved": False,
@@ -709,9 +663,9 @@ async def analyze_error(
             image_data_urls=image_data_urls,
         )
 
-        # Mini-program upload requests have a ~58s client budget. Remote visual
-        # resolution may consume up to ~6s, so reserve a few seconds for upload,
-        # parsing and the HTTP response instead of spending the full 50s in LLM.
+        # The mini-program request has a ~58s client budget. Resolving the
+        # persisted question image may consume a few seconds, so keep response
+        # headroom instead of spending the full timeout in the LLM call.
         model_timeout_sec = min(timeout_sec, 46) if image_data_urls else timeout_sec
         try:
             async with asyncio.timeout(model_timeout_sec + ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS):
@@ -730,8 +684,6 @@ async def analyze_error(
                 "ai.error_analysis.timeout wq_id=%s force=%s visual=%s timeout_sec=%s has_old_cache=%s",
                 wq.id, effective_force, bool(image_data_urls), model_timeout_sec, bool(old_cache),
             )
-            if old_cache and effective_force and not image_data_urls:
-                return old_cache
             return {
                 "content": get_fallback_analysis(),
                 "from_cache": False,
@@ -749,8 +701,6 @@ async def analyze_error(
                 "ai.error_analysis.exception wq_id=%s force=%s visual=%s err=%s has_old_cache=%s",
                 wq.id, effective_force, bool(image_data_urls), repr(exc), bool(old_cache),
             )
-            if old_cache and effective_force and not image_data_urls:
-                return old_cache
             error_text = str(exc).lower()
             looks_like_vision_rejection = bool(image_data_urls) and any(
                 token in error_text
@@ -791,9 +741,6 @@ async def analyze_error(
             }
 
         if not parsed_valid:
-            old_cache = build_any_cached_error_analysis_response(wq)
-            if old_cache and effective_force and not image_data_urls:
-                return old_cache
             resp = {
                 "content": get_fallback_analysis(),
                 "from_cache": False,

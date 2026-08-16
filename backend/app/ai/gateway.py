@@ -25,12 +25,21 @@ class LLMRuntimeConfig:
     capabilities: frozenset[str] = frozenset()
 
 
-def _is_non_chat_provider(provider: str | None) -> bool:
+def _is_non_chat_provider(provider: str | None, model_name: str | None = None) -> bool:
     value = (provider or "").strip().lower().replace("_", "-")
+    model_value = (model_name or "").strip().lower().replace("_", "-")
     # PaddleOCR-VL in this project has a vendor-specific OCR endpoint rather
-    # than OpenAI chat/completions. Other providers, including qwen-vl, may be
-    # OpenAI-compatible and should not be excluded merely because they are VL.
-    return value.startswith("paddleocr")
+    # than OpenAI chat/completions. Some deployed DB rows historically used
+    # the provider alias ``paddleoce``; model-name detection keeps that typo
+    # from leaking into generic chat/analysis routing as well. Other VL chat
+    # providers (for example Qwen-VL) remain valid OpenAI-compatible models.
+    return (
+        value.startswith("paddleocr")
+        or value.startswith("paddle-ocr")
+        or value.startswith("paddleoce")
+        or "paddleocr" in model_value
+        or "paddle-ocr" in model_value
+    )
 
 
 async def resolve_llm_runtime_config(
@@ -51,7 +60,7 @@ async def resolve_llm_runtime_config(
         resolver = AIModelConfigResolver(db)
         try:
             resolved = await resolver.resolve_for_capability(capability_value)
-            if _is_non_chat_provider(resolved.provider) or not resolved.endpoint:
+            if _is_non_chat_provider(resolved.provider, resolved.model_name) or not resolved.endpoint:
                 return None
             secret = await resolver.resolve_secret(resolved)
             return LLMRuntimeConfig(
@@ -68,7 +77,7 @@ async def resolve_llm_runtime_config(
     config = await resolve_active_model(db, feature=feature)
     if not config:
         return None
-    if _is_non_chat_provider(config.get("provider")):
+    if _is_non_chat_provider(config.get("provider"), config.get("model_name")):
         return None
     base_url = str(config.get("api_base_url") or "").strip()
     if not base_url:

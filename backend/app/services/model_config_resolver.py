@@ -437,7 +437,15 @@ class AIModelConfigResolver:
     def _provider_matches_capability(provider: str | None, capability: str) -> bool:
         """Keep proprietary OCR endpoints out of generic chat fallback routing."""
         normalized = (provider or "").strip().lower().replace("_", "-")
-        is_paddleocr = normalized == "paddle" or normalized.startswith("paddleocr")
+        # ``paddleoce`` exists in some historical deployments as a provider
+        # alias/typo for PaddleOCR-VL. Treat it as the proprietary OCR endpoint
+        # so it can never become the fallback for ordinary analysis/chat calls.
+        is_paddleocr = (
+            normalized == "paddle"
+            or normalized.startswith("paddleocr")
+            or normalized.startswith("paddle-ocr")
+            or normalized.startswith("paddleoce")
+        )
         if capability == AICapability.OCR_VL.value:
             return is_paddleocr
         if capability in {
