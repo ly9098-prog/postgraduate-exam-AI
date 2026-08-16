@@ -18,7 +18,6 @@ Page({
     profileAvatarPath: '',
     profileNicknameRejected: false,
     profileSaving: false,
-    profileNicknameFocus: false,
     isDevtools: false,
     greeting: '',
     dateStr: '',
@@ -100,8 +99,13 @@ Page({
     await this.loadGrowthSnapshot()
   },
 
+  _isProfileSetupComplete(user) {
+    const profile = user || {}
+    return !!String(profile.nickname || '').trim() && !!String(profile.avatar_url || '').trim()
+  },
+
   _maybePromptProfile(user) {
-    if (this._profilePrompted || auth.isProfileCompleted(user)) return
+    if (this._profilePrompted || this._isProfileSetupComplete(user)) return
     this._profilePrompted = true
     setTimeout(() => {
       if (!this.data.showProfileSheet && this._authed) this.openProfileSheet()
@@ -117,7 +121,6 @@ Page({
       profileAvatarPreview: user.avatar_url || '',
       profileAvatarPath: '',
       profileNicknameRejected: false,
-      profileNicknameFocus: false,
     })
   },
 
@@ -128,7 +131,6 @@ Page({
     this.setData({
       showProfileSheet: false,
       profileAvatarPath: '',
-      profileNicknameFocus: false,
     })
   },
 
@@ -153,13 +155,6 @@ Page({
     this.setData({
       profileAvatarPreview: avatarPath,
       profileAvatarPath: avatarPath,
-      profileNicknameFocus: false,
-    }, () => {
-      // 微信头像确认完成后，直接把焦点交给 nickname 原生输入框。
-      // 真机上会出现微信昵称快捷填写入口，用户通常无需手动输入。
-      if (!this.data.profileNickname && !this.data.isDevtools) {
-        setTimeout(() => this.setData({ profileNicknameFocus: true }), 100)
-      }
     })
   },
 
@@ -196,13 +191,6 @@ Page({
     })
   },
 
-  onProfileNicknameFocus() {
-    if (!this.data.profileNicknameFocus) this.setData({ profileNicknameFocus: true })
-  },
-
-  onProfileNicknameBlur() {
-    if (this.data.profileNicknameFocus) this.setData({ profileNicknameFocus: false })
-  },
 
   onProfileNicknameReview(e) {
     const rejected = !!(e && e.detail && e.detail.pass === false)
@@ -227,10 +215,11 @@ Page({
       profileNicknameRejected: false,
     })
 
-    // 官方头像昵称组件会把两项资料统一通过 change 事件交给业务层。
-    // 首次使用时头像+昵称都选好后自动保存；头像仍保持可选，可只填昵称后手动保存。
-    const profileAlreadyCompleted = auth.isProfileCompleted(this.data.user)
-    const firstProfileHasBoth = !profileAlreadyCompleted && !!nickname && !!nextAvatarPath
+    // 首次资料需要头像 + 昵称两步都完成，随后自动保存并关闭弹层。
+    // 已经完整保存过资料的用户，修改任一项时直接自动保存。
+    const profileAlreadyCompleted = this._isProfileSetupComplete(this.data.user)
+    const hasAvatar = !!(nextAvatarPath || storedAvatar || this.data.profileAvatarPreview)
+    const firstProfileHasBoth = !profileAlreadyCompleted && !!nickname && hasAvatar
     const existingProfileChanged = profileAlreadyCompleted && !!nickname && (field === 'nickname' || field === 'avatar')
     if (firstProfileHasBoth || existingProfileChanged) {
       clearTimeout(this._profileAutoSaveTimer)
@@ -277,8 +266,7 @@ Page({
         profileAvatarPreview: updatedUser.avatar_url || '',
         profileAvatarPath: '',
         profileNicknameRejected: false,
-        profileNicknameFocus: false,
-      })
+        })
       wx.showToast({ title: '资料已保存', icon: 'success' })
     } catch (e) {
       const message = e && e.message ? e.message : '保存失败，请稍后重试'
