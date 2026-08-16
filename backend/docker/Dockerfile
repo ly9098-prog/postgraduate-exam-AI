@@ -44,6 +44,8 @@ RUN mkdir -p /opt/2240ai-v2/staging && chown app:app /opt/2240ai-v2/staging && c
 RUN mkdir -p /opt/2240ai-v2/exports && chown app:app /opt/2240ai-v2/exports && chmod 700 /opt/2240ai-v2/exports
 # fontconfig 缓存目录（app 无写权限 → "No writable cache directories"，字体仍可用但无缓存）
 RUN mkdir -p /home/app/.cache && chown app:app /home/app/.cache
+# 用户头像上传持久化（Docker volume mount point；static/ 被 gitignore，镜像内显式预建保证命名卷首挂继承 app 属主）
+RUN mkdir -p /app/static/avatars && chown app:app /app/static/avatars && chmod 755 /app/static/avatars
 
 USER app
 
