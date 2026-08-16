@@ -101,6 +101,37 @@
       <view class="ai-mark"><view class="ai-mark-dot"></view><text>AI</text></view>
     </view>
 
+    <view class="ai-visual-context {{aiAttachment ? 'has-attachment' : ''}} {{aiNeedsVisualAttachment ? 'needs-visual' : ''}}">
+      <view class="ai-visual-main">
+        <view class="ai-visual-copy">
+          <view class="ai-visual-title-row">
+            <text class="ai-visual-title">视觉上下文</text>
+            <text wx:if="{{aiVisualUsedCount > 0}}" class="ai-visual-read-badge">已读取 {{aiVisualUsedCount}}</text>
+            <text wx:elif="{{aiNeedsVisualAttachment}}" class="ai-visual-warning-badge">需要补图</text>
+          </view>
+          <text wx:if="{{aiQuestionVisualCount > 0 && aiQuestionHasTable}}" class="ai-visual-desc">题目自带 {{aiQuestionVisualCount}} 张图片并包含表格，生成时会自动读取</text>
+          <text wx:elif="{{aiQuestionVisualCount > 0}}" class="ai-visual-desc">题目自带 {{aiQuestionVisualCount}} 张图片，生成时会自动读取</text>
+          <text wx:elif="{{aiQuestionHasTable}}" class="ai-visual-desc">题目包含表格信息，生成时会自动读取</text>
+          <text wx:else class="ai-visual-desc">若题干依赖图片、表格或流程图，可补充完整截图</text>
+        </view>
+        <button wx:if="{{!aiAttachment}}" class="ai-visual-add" disabled="{{aiLoading || aiRegenerating}}" bindtap="chooseAiVisual">
+          <text class="ai-visual-add-plus">+</text><text>添加题图 / 表格</text>
+        </button>
+      </view>
+
+      <view wx:if="{{aiAttachment}}" class="ai-attachment">
+        <image class="ai-attachment-thumb" src="{{aiAttachment.tempFilePath}}" mode="aspectFill" bindtap="previewAiVisual" />
+        <view class="ai-attachment-copy">
+          <text class="ai-attachment-title">{{aiAttachment.label}}</text>
+          <text class="ai-attachment-meta">{{aiAttachment.sizeText || '已选择截图'}} · 将随本次 AI 分析一起读取</text>
+        </view>
+        <button class="ai-attachment-replace" disabled="{{aiLoading || aiRegenerating}}" bindtap="chooseAiVisual">更换</button>
+        <button class="ai-attachment-remove" disabled="{{aiLoading || aiRegenerating}}" bindtap="removeAiVisual" aria-label="移除补充截图">×</button>
+      </view>
+      <text wx:if="{{aiNeedsVisualAttachment}}" class="ai-visual-alert">当前解析缺少可读取的题图/表格，请补充清晰且完整的截图后重新生成。</text>
+      <text wx:elif="{{aiCards && aiFromCache && (aiQuestionVisualCount > 0 || aiQuestionHasTable) && aiVisualUsedCount === 0}}" class="ai-visual-history-warning">历史 AI 解析未记录视觉读取，建议结合当前题图/表格重新生成。</text>
+    </view>
+
     <!-- 骨架屏 -->
     <view wx:if="{{aiSkeletonVisible || (aiLoading && !aiCards)}}" class="ai-loading-state">
       <view class="ai-skeleton-section" wx:for="{{aiSkeletonSections}}" wx:key="*this">
@@ -155,9 +186,10 @@
       </view>
 
       <text wx:if="{{aiInlineNotice}}" class="ai-inline-notice">{{aiInlineNotice}}</text>
+      <text wx:elif="{{aiVisualUsedCount > 0}}" class="ai-hint">已结合 {{aiVisualUsedCount}} 份题图/表格视觉内容 · AI 生成，仅供参考</text>
       <text wx:else class="ai-hint">{{aiFromQuestionAnalysis ? '当前展示题库解析；重新生成后将切换为 AI 解析' : (aiFromCache ? '来自历史缓存，仅供参考' : '内容由 AI 生成，仅供参考')}}</text>
       <button class="ai-secondary-btn" disabled="{{aiRegenerating}}" bindtap="regenerateAiAnalysis">
-        <text class="ai-secondary-btn-label">{{aiRegenerating ? '重新生成中…' : '重新生成解析'}}</text>
+        <text class="ai-secondary-btn-label">{{aiRegenerating ? '重新生成中…' : (aiAttachment ? '结合截图重新生成' : '重新生成解析')}}</text>
       </button>
     </view>
 
@@ -166,7 +198,8 @@
       <view class="fallback-mark">!</view>
       <text class="fallback-title">AI 复盘暂时不可用</text>
       <text class="fallback-desc">{{aiErrorText || '先查看题目与答案，稍后再试。'}}</text>
-      <button class="ai-action-btn" bindtap="regenerateAiAnalysis">重新生成</button>
+      <button wx:if="{{aiNeedsVisualAttachment && !aiAttachment}}" class="ai-action-btn ai-visual-retry-btn" bindtap="chooseAiVisual">添加题图 / 表格</button>
+      <button wx:else class="ai-action-btn" bindtap="regenerateAiAnalysis">{{aiAttachment ? '带图重新生成' : '重新生成'}}</button>
     </view>
 
     <!-- 未请求 -->
@@ -179,7 +212,7 @@
         </view>
       </view>
       <button class="ai-action-btn ai-generate-btn" bindtap="onTapAiAnalysis">
-        <text class="ai-action-btn-label">生成分析</text>
+        <text class="ai-action-btn-label">{{aiAttachment ? '结合截图生成' : '生成分析'}}</text>
         <text class="ai-action-arrow">→</text>
       </button>
     </view>
