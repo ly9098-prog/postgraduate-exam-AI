@@ -30,6 +30,7 @@ from enum import StrEnum
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.core.secret_crypto import (
     SecretDecryptionError,
     SecretEncryptionError,
@@ -156,7 +157,7 @@ class AIModelConfigSnapshot:
             config_fingerprint=resolved.config_fingerprint,
             timeout_seconds=resolved.timeout_seconds,
             max_retries=resolved.max_retries,
-            resolved_at=resolved_at or datetime.now().isoformat(),
+            resolved_at=resolved_at or serialize_utc_datetime(utcnow()),
         )
 
 

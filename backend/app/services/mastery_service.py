@@ -11,7 +11,7 @@ from math import log1p
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
+from app.core.time_utils import utcnow, serialize_utc_datetime
 from app.models.admin import Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
@@ -488,7 +488,7 @@ async def get_user_knowledge_states(
             "confidence": round(state.confidence, 2),
             "weakness_level": state.weakness_level,
             "recent_wrong_count": state.recent_wrong_count,
-            "last_practiced_at": state.last_practiced_at.isoformat() if state.last_practiced_at else None,
-            "last_wrong_at": state.last_wrong_at.isoformat() if state.last_wrong_at else None,
+            "last_practiced_at": serialize_utc_datetime(state.last_practiced_at) if state.last_practiced_at else None,
+            "last_wrong_at": serialize_utc_datetime(state.last_wrong_at) if state.last_wrong_at else None,
         })
     return items

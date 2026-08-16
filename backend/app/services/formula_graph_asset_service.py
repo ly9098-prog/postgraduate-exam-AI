@@ -5,13 +5,14 @@ import logging
 import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import datetime
 from io import BytesIO
 
 from PIL import Image, ImageOps
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import utcnow
 from app.core.config import settings
 from app.models.formula import FormulaCard, FormulaGraphAsset
 from app.services.storage_backend import get_storage
@@ -308,7 +309,7 @@ async def upload_graph_asset(
         existing.height = height
         existing.file_size = len(image_bytes)
         existing.checksum = checksum
-        existing.updated_at = datetime.now(UTC)
+        existing.updated_at = utcnow()
         db.add(existing)
         await db.flush()
 

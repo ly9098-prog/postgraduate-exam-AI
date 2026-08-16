@@ -3,12 +3,12 @@ import logging
 import random
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import Date as SQLDate, and_, case, cast, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.time_utils import normalize_to_naive_utc, utcnow
+from app.core.time_utils import normalize_to_naive_utc, shanghai_date_utc_range, shanghai_today, utcnow
 from app.models.practice_record import PracticeRecord
 from app.models.practice_session import PracticeSession
 from app.models.question import Question
@@ -43,6 +43,13 @@ logger = logging.getLogger(__name__)
 # 单次刷题会话时长上限（秒）。自由计时番茄钟上限 5h，刷题会话留余量到 6h；
 # 用于防御异常客户端上报 duration_sec=999999999。
 PRACTICE_SESSION_MAX_DURATION_SEC = 6 * 60 * 60
+
+
+async def _china_date_expr(db: AsyncSession, column):
+    bind = await db.connection()
+    if bind.sync_connection.dialect.name == "sqlite":
+        return func.date(column, "+8 hours")
+    return cast(column + text("INTERVAL '8 hours'"), SQLDate)
 _PRACTICE_DURATION_ROUNDING_TOLERANCE = 2  # 允许 finished-start 与 duration 的少量取整误差
 
 
@@ -2447,11 +2454,13 @@ async def get_practice_stats(
             "accuracy": round(correct / answered, 4) if answered > 0 else 0.0,
         })
 
-    # Daily stats
-    since = datetime.combine(date.today() - timedelta(days=days - 1), datetime.min.time())
+    # Daily stats — bucket UTC DB timestamps by China calendar day.
+    today = shanghai_today()
+    since = shanghai_date_utc_range(today - timedelta(days=days - 1))[0]
+    day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
     daily_result = await db.execute(
         select(
-            func.date(PracticeRecord.answered_at),
+            day_expr,
             func.count(PracticeRecord.id),
             func.coalesce(
                 func.sum(case((PracticeRecord.is_correct, 1), else_=0)), 0
@@ -2461,14 +2470,14 @@ async def get_practice_stats(
             PracticeRecord.user_id == user_id,
             PracticeRecord.answered_at >= since,
         )
-        .group_by(func.date(PracticeRecord.answered_at))
-        .order_by(func.date(PracticeRecord.answered_at))
+        .group_by(day_expr)
+        .order_by(day_expr)
     )
     daily_map = {str(r[0]): {"answered": r[1], "correct": r[2]} for r in daily_result.all()}
 
     daily_stats = []
     for i in range(days):
-        d = (date.today() - timedelta(days=days - 1 - i)).isoformat()
+        d = (today - timedelta(days=days - 1 - i)).isoformat()
         entry = daily_map.get(d, {"answered": 0, "correct": 0})
         daily_stats.append({"date": d, **entry})
 
@@ -2485,14 +2494,19 @@ async def get_practice_stats(
 
 
 async def _calc_streak(db: AsyncSession, user_id: int) -> int:
-    today = date.today()
+    today = shanghai_today()
+    since = shanghai_date_utc_range(today - timedelta(days=364))[0]
+    day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
     result = await db.execute(
-        select(func.date(PracticeRecord.answered_at))
-        .where(PracticeRecord.user_id == user_id)
+        select(day_expr)
+        .where(
+            PracticeRecord.user_id == user_id,
+            PracticeRecord.answered_at >= since,
+        )
         .distinct()
-        .order_by(func.date(PracticeRecord.answered_at).desc())
+        .order_by(day_expr.desc())
     )
-    dates = {row[0] for row in result.all()}
+    dates = {date.fromisoformat(row[0]) if isinstance(row[0], str) else row[0] for row in result.all()}
 
     streak = 0
     for i in range(365):

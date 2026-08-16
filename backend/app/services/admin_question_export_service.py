@@ -12,13 +12,13 @@ import csv
 import io
 import json
 import tempfile
-from datetime import datetime
 from typing import Iterable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.time_utils import shanghai_now, to_shanghai
 from app.models.question import Question
 from app.schemas.admin_questions import AdminQuestionExportRequest
 from app.services.admin_question_service import list_admin_questions
@@ -306,7 +306,7 @@ def _rows(
             question.analysis or "",
             "、".join(kp_map.get(question.id, [])),
             question.source or "",
-            question.updated_at.strftime("%Y-%m-%d %H:%M:%S") if question.updated_at else "",
+            to_shanghai(question.updated_at).strftime("%Y-%m-%d %H:%M:%S") if question.updated_at else "",
         ]
 
 
@@ -358,7 +358,7 @@ def _build_docx(questions: list[Question], kp_map: dict[int, list[str]]) -> byte
     summary = document.add_paragraph()
     summary.alignment = WD_ALIGN_PARAGRAPH.CENTER
     summary_run = summary.add_run(
-        f"共 {len(questions)} 道题 · 导出时间 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        f"共 {len(questions)} 道题 · 导出时间 {shanghai_now().strftime('%Y-%m-%d %H:%M')}"
     )
     summary_run.font.size = Pt(9)
     _set_east_asia_font(summary_run)
@@ -434,7 +434,7 @@ async def build_admin_question_export(
 ) -> tuple[bytes, str, str]:
     questions = await _resolve_questions(db, request)
     kp_map = await load_question_kps(db, [question.id for question in questions])
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = shanghai_now().strftime("%Y%m%d_%H%M%S")
 
     if request.format == "docx":
         return (

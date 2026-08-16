@@ -32,6 +32,12 @@ _engine_kwargs: dict = {
 if "sqlite" in settings.DATABASE_URL:
     _connect_args = {"check_same_thread": False}
 else:
+    # Production uses PostgreSQL+asyncpg.  DateTime columns intentionally store
+    # naive UTC, while many models rely on server_default=func.now().  Pin the
+    # PostgreSQL session timezone to UTC so CURRENT_TIMESTAMP cannot silently
+    # become a local wall-clock value when the DB host/session timezone differs.
+    if "postgresql+asyncpg" in settings.DATABASE_URL:
+        _connect_args = {"server_settings": {"timezone": "UTC"}}
     _engine_kwargs["pool_size"] = _pool_size
     _engine_kwargs["max_overflow"] = _max_overflow
     _engine_kwargs["pool_timeout"] = settings.DB_POOL_TIMEOUT

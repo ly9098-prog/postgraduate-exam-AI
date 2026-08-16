@@ -15,7 +15,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.core.document_ir import DocumentIR
+    from app.core.time_utils import serialize_utc_datetime, utcnow
+from app.core.document_ir import DocumentIR
 
 
 import asyncio
@@ -839,7 +840,7 @@ async def _write_stage_checkpoint(
         "source_file": source_file,
         "subject": subject,
         "options": options,
-        "updated_at": datetime.now().isoformat(),
+        "updated_at": serialize_utc_datetime(utcnow()),
     }
     # Strip large fields to keep checkpoint lightweight
     if "stage_statuses" in ckpt and ckpt["stage_statuses"]:
@@ -4991,7 +4992,7 @@ class ImportPipeline:
         if options is not None:
             self.options = opts
 
-        started_at = datetime.now().isoformat()
+        started_at = serialize_utc_datetime(utcnow())
 
         # Resolve import mode and strategy (shared across all chunks)
         mode_str = opts.get("import_mode", "auto")
@@ -5493,7 +5494,7 @@ class ImportPipeline:
 
         stats = _build_stats(data, self.stages)
         diagnostics = _build_diagnostics(data, self.stages)
-        finished_at = datetime.now().isoformat()
+        finished_at = serialize_utc_datetime(utcnow())
 
         # P4-5: quality report from existing data
         quality_report = _build_quality_report(data, diagnostics)
@@ -5877,7 +5878,7 @@ class ImportPipeline:
 
         risk_flag_counts = _merge_risk_flag_counts(chunk_results)
 
-        finished_at = datetime.now().isoformat()
+        finished_at = serialize_utc_datetime(utcnow())
         # Pick a representative batch_id for the overall pipeline (first
         # successful chunk's batch). Each chunk has its own batch_id under
         # the hood; resume logic uses chunk-level records, not this field.
@@ -6076,7 +6077,7 @@ async def run_pipeline_background(
     if file_path is None and file_content is None:
         raise ValueError("either file_path or file_content must be provided")
 
-    started_at = datetime.now().isoformat()
+    started_at = serialize_utc_datetime(utcnow())
     # Preserve page_range from the initial store (set by start_import_pipeline)
     # so it survives the background-task store overwrite.
     initial_page_range = _pipeline_store.get(pipeline_id, {}).get("page_range")
@@ -6182,7 +6183,7 @@ async def run_pipeline_background(
             "source_type": source_type,
             "errors": [str(exc)],
             "started_at": existing.get("started_at", ""),
-            "finished_at": datetime.now().isoformat(),
+            "finished_at": serialize_utc_datetime(utcnow()),
             "page_range": existing.get("page_range"),
         })
 
@@ -6404,7 +6405,7 @@ async def resume_pipeline_background(
 
     pipeline = ImportPipeline(options=opts)
     pipeline.pipeline_id = pipeline_id
-    started_at = datetime.now().isoformat()
+    started_at = serialize_utc_datetime(utcnow())
 
     chunk_results: list[dict] = []
     any_chunk_failed = False
@@ -6476,7 +6477,7 @@ async def run_excel_pipeline_background(
         "stages": {"extract": {"status": "running"}},
         "stats": {},
         "errors": [],
-        "started_at": datetime.now().isoformat(),
+        "started_at": serialize_utc_datetime(utcnow()),
     })
 
     try:
@@ -6493,7 +6494,7 @@ async def run_excel_pipeline_background(
             "stages": {"extract": {"status": "completed"}},
             "errors": [],
             "started_at": _pipeline_store[pipeline_id]["started_at"],
-            "finished_at": datetime.now().isoformat(),
+            "finished_at": serialize_utc_datetime(utcnow()),
         })
     except Exception as exc:
         logger.exception("Excel pipeline %s failed", pipeline_id)
@@ -6503,7 +6504,7 @@ async def run_excel_pipeline_background(
             "source_type": "excel",
             "errors": [str(exc)],
             "started_at": _pipeline_store.get(pipeline_id, {}).get("started_at", ""),
-            "finished_at": datetime.now().isoformat(),
+            "finished_at": serialize_utc_datetime(utcnow()),
         })
 
 

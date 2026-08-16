@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from app.schemas.base import BaseModel
 
 
 class BadgeStatus(BaseModel):

@@ -10,13 +10,13 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Awaitable, Callable, Literal
 
 import redis.asyncio as redis_async
 
 from app.core.config import settings
-from app.core.time_utils import serialize_utc_datetime, utcnow
+from app.core.time_utils import normalize_to_naive_utc, serialize_utc_datetime, shanghai_today, utcnow
 
 RunStatus = Literal["success", "failed", "skipped"]
 TaskStatus = Literal["idle", "running", "failed", "disabled"]
@@ -223,13 +223,18 @@ async def record_system_task_execution(
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
+    """Parse an API/Redis timestamp into the project's internal naive-UTC form.
+
+    Redis telemetry is serialized with an explicit ``Z`` while ``utcnow()`` and
+    database ``DateTime`` values are intentionally naive UTC.  Normalizing here
+    keeps arithmetic/comparisons homogeneous and avoids mixing aware/naive
+    datetimes in ``_next_run_at``.
+    """
     if not value:
         return None
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=UTC)
-        return parsed.astimezone(UTC)
+        return normalize_to_naive_utc(parsed)
     except ValueError:
         return None
 
@@ -393,13 +398,11 @@ async def _run_audit_cleanup() -> TaskRunOutcome:
 
 async def _run_recommendation_metrics() -> TaskRunOutcome:
     async def work():
-        from datetime import date
-
         from app.core.database import async_session
         from app.services.recommendation_log_service import cleanup_expired_recommendation_logs
         from app.services.recommendation_metrics_service import aggregate_recommendation_metrics_daily
 
-        target_date = date.today() - timedelta(days=1)
+        target_date = shanghai_today() - timedelta(days=1)
         retention_days = max(7, settings.RECOMMENDATION_LOG_RETENTION_DAYS)
         async with async_session() as db:
             result = await aggregate_recommendation_metrics_daily(db, target_date=target_date)

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.time_utils import utcnow
+from app.core.time_utils import unix_timestamp, utcnow
 from app.models.admin import AdminUser, Permission, Role, RolePermission
 
 admin_security = HTTPBearer()
@@ -155,7 +155,7 @@ def verify_admin_password(password: str, password_hash: str) -> bool:
 
 
 async def blacklist_admin_token(jti: str, exp: int) -> None:
-    ttl = max(exp - int(utcnow().timestamp()), 1)
+    ttl = max(exp - int(unix_timestamp(utcnow())), 1)
     try:
         await cache.set_strict(f"admin:jwt:blacklist:{jti}", 1, ttl=ttl)
     except CacheUnavailableError as exc:
@@ -169,7 +169,7 @@ async def set_admin_user_nbf(user_id: int, timestamp: int | None = None) -> None
     try:
         await cache.set_strict(
             f"admin:user:nbf:{user_id}",
-            timestamp or (int(utcnow().timestamp()) + 1),
+            timestamp or (int(unix_timestamp(utcnow())) + 1),
             ttl=60 * 60 * 24 * 30,
         )
     except CacheUnavailableError as exc:
@@ -279,7 +279,7 @@ async def consume_admin_refresh_token(
     if user_nbf and token_iat < int(user_nbf):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
-    ttl = max(token_exp - int(utcnow().timestamp()), 1)
+    ttl = max(token_exp - int(unix_timestamp(utcnow())), 1)
     try:
         consumed = await cache.acquire_lock_strict(
             f"admin:refresh:used:{jti}",

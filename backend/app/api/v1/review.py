@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.time_utils import serialize_utc_datetime
 from app.models.question import Question
 from app.models.user import User
 from app.schemas.review_scheduler import (
@@ -180,7 +181,7 @@ async def grade_submit(
             "schedule_id": review_result["schedule_id"],
             "interval_after": review_result["interval_after"],
             "ease_factor_after": review_result["ease_factor_after"],
-            "next_review_at": review_result["next_review_at"],
+            "next_review_at": serialize_utc_datetime(review_result["next_review_at"]),
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

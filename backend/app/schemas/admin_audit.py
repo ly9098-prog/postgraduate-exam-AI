@@ -1,7 +1,8 @@
+from app.schemas.base import BaseModel
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_serializer
+from pydantic import ConfigDict, field_serializer
 
 from app.core.time_utils import serialize_utc_datetime
 

@@ -32,7 +32,7 @@ from typing import Any
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
+from app.core.time_utils import unix_timestamp, utcnow
 from app.models.task_outbox import TaskOutbox
 from app.services.outbox_runtime import (
     REDIS_BACKOFF_INITIAL_SEC,
@@ -177,13 +177,13 @@ async def claim_pending(
         # Only claim pending OR expired-lease records
         if row.status == "pending":
             row.status = "leased"
-            row.lease_token = f"lease_{row.id}_{int(now.timestamp())}"
+            row.lease_token = f"lease_{row.id}_{int(unix_timestamp(now))}"
             row.lease_expires_at = lease_expiry
             claimed.append(row)
         elif row.status == "leased" and row.lease_expires_at and row.lease_expires_at < now:
             # Expired lease — reclaim
             row.retry_count += 1
-            row.lease_token = f"lease_{row.id}_{int(now.timestamp())}"
+            row.lease_token = f"lease_{row.id}_{int(unix_timestamp(now))}"
             row.lease_expires_at = lease_expiry
             row.error_message = "lease expired, reclaimed"
             claimed.append(row)

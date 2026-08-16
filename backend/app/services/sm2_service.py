@@ -1,6 +1,8 @@
 import math
 from datetime import date, timedelta
 
+from app.core.time_utils import shanghai_today
+
 
 def calc_sm2(
     quality: int,
@@ -39,7 +41,7 @@ def calc_sm2(
     new_efactor = efactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
     new_efactor = max(1.3, new_efactor)
 
-    today = review_date or date.today()
+    today = review_date or shanghai_today()
     next_review_date = today + timedelta(days=new_interval)
 
     return {

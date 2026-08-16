@@ -4,7 +4,7 @@ from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.time_utils import shanghai_today_boundaries, utcnow
+from app.core.time_utils import shanghai_date_utc_range, shanghai_today, shanghai_today_boundaries, utcnow
 from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.wrong_question import WrongQuestion
@@ -130,10 +130,10 @@ async def get_today_review(
     subject_id: int | None = None,
     limit: int = 20,
 ) -> dict:
-    now = utcnow()
+    _, today_end = shanghai_today_boundaries()
     conditions = [
         ReviewSchedule.user_id == user_id,
-        ReviewSchedule.next_review_at <= now,
+        ReviewSchedule.next_review_at <= today_end,
         ~ReviewSchedule.mastered,
     ]
     if subject_id:
@@ -222,7 +222,7 @@ async def submit_review(
         efactor=schedule.ease_factor,
         interval=schedule.interval,
         repetitions=schedule.repetitions,
-        review_date=utcnow().date(),
+        review_date=shanghai_today(),
     )
 
     interval_before = schedule.interval
@@ -231,9 +231,9 @@ async def submit_review(
     schedule.ease_factor = sm2_result["efactor"]
     schedule.interval = sm2_result["interval"]
     schedule.repetitions = sm2_result["repetitions"]
-    schedule.next_review_at = datetime.combine(
-        sm2_result["next_review_date"], datetime.min.time()
-    )
+    schedule.next_review_at = shanghai_date_utc_range(
+        sm2_result["next_review_date"]
+    )[0]
     schedule.last_reviewed_at = utcnow()
 
     # 同步复习状态；本次仍答错时，同时刷新错题详情中的“我的错题”。
@@ -312,9 +312,9 @@ async def get_review_stats(
     user_id: int,
     days: int = 7,
 ) -> dict:
-    now = utcnow()
-    today_start = datetime.combine(now.date(), datetime.min.time())
-    since = today_start - timedelta(days=days - 1)
+    today = shanghai_today()
+    today_start, today_end = shanghai_today_boundaries()
+    since = shanghai_date_utc_range(today - timedelta(days=days - 1))[0]
 
     # Total scheduled
     total_q = select(func.count(ReviewSchedule.id)).where(
@@ -326,13 +326,14 @@ async def get_review_stats(
     reviewed_today_q = select(func.count(ReviewRecord.id)).where(
         ReviewRecord.user_id == user_id,
         ReviewRecord.reviewed_at >= today_start,
+        ReviewRecord.reviewed_at <= today_end,
     )
     total_reviewed_today = (await db.execute(reviewed_today_q)).scalar()
 
     # Remaining today (exclude mastered)
     remaining_q = select(func.count(ReviewSchedule.id)).where(
         ReviewSchedule.user_id == user_id,
-        ReviewSchedule.next_review_at <= now,
+        ReviewSchedule.next_review_at <= today_end,
         ~ReviewSchedule.mastered,
     )
     remaining_today = (await db.execute(remaining_q)).scalar()
@@ -340,7 +341,7 @@ async def get_review_stats(
     # Overdue (next_review_at < now, not reviewed today, exclude mastered)
     overdue_q = select(func.count(ReviewSchedule.id)).where(
         ReviewSchedule.user_id == user_id,
-        ReviewSchedule.next_review_at < now,
+        ReviewSchedule.next_review_at < today_start,
         ~ReviewSchedule.mastered,
     )
     overdue = (await db.execute(overdue_q)).scalar()
@@ -370,7 +371,7 @@ async def get_review_stats(
             func.count(ReviewSchedule.id).label("scheduled"),
             func.sum(
                 case(
-                    (and_(ReviewSchedule.next_review_at <= now, ~ReviewSchedule.mastered), 1), else_=0
+                    (and_(ReviewSchedule.next_review_at <= today_end, ~ReviewSchedule.mastered), 1), else_=0
                 )
             ).label("remaining"),
         )
@@ -388,6 +389,7 @@ async def get_review_stats(
         .where(
             ReviewRecord.user_id == user_id,
             ReviewRecord.reviewed_at >= today_start,
+            ReviewRecord.reviewed_at <= today_end,
         )
         .group_by(ReviewSchedule.subject_id)
     )
@@ -779,7 +781,7 @@ async def get_today_review_result(
 ) -> dict:
     """获取今日复习最终结果。"""
     today_start, today_end = shanghai_today_boundaries()
-    tomorrow_start = today_end + timedelta(seconds=1)
+    tomorrow_start = today_end + timedelta(microseconds=1)
 
     # All review records from today
     result = await db.execute(
@@ -853,7 +855,7 @@ async def get_today_review_result(
     subject_stats = [v for v in subject_map.values()]
 
     # Tomorrow's due count
-    tomorrow_end = tomorrow_start + timedelta(days=1) - timedelta(seconds=1)
+    tomorrow_end = tomorrow_start + timedelta(days=1) - timedelta(microseconds=1)
     tomorrow_q = await db.execute(
         select(func.count(ReviewSchedule.id)).where(
             ReviewSchedule.user_id == user_id,

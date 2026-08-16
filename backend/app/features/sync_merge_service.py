@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import normalize_to_naive_utc, serialize_utc_datetime
 from app.models.question import Question
 from app.models.tag import Tag
 
@@ -46,12 +47,8 @@ class SyncReport:
 def _parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
-    if value.endswith("Z"):
-        value = value[:-1]
-    dt = datetime.fromisoformat(value)
-    if dt.tzinfo is not None:
-        dt = dt.replace(tzinfo=None)
-    return dt
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return normalize_to_naive_utc(dt)
 
 
 def _build_tag(data: dict) -> Tag:
@@ -174,9 +171,11 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
                 pending_syncs.append((q, kp_names))
         else:
             local_updated = _parse_datetime(q_data.get("updated_at"))
-            cloud_updated = existing.updated_at
-            if cloud_updated and cloud_updated.tzinfo is not None:
-                cloud_updated = cloud_updated.replace(tzinfo=None)
+            cloud_updated = (
+                normalize_to_naive_utc(existing.updated_at)
+                if existing.updated_at is not None
+                else None
+            )
 
             if local_updated and cloud_updated and local_updated > cloud_updated:
                 prev_subject_id = existing.subject_id
@@ -198,7 +197,7 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
                 report.conflicts.append({
                     "sync_uuid": sync_uuid,
                     "reason": "cloud_newer",
-                    "cloud_updated_at": existing.updated_at.isoformat(),
+                    "cloud_updated_at": serialize_utc_datetime(existing.updated_at),
                     "local_updated_at": q_data.get("updated_at"),
                 })
             else:

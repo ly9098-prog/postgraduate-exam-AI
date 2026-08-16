@@ -1,6 +1,6 @@
+from app.schemas.base import BaseModel
 from datetime import datetime
 
-from pydantic import BaseModel
 
 
 class PublishRequest(BaseModel):

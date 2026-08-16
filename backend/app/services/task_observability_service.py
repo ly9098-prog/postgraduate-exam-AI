@@ -16,14 +16,20 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime, time as datetime_time, timedelta
+from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import resolve_effective_process_role, settings
-from app.core.time_utils import serialize_utc_datetime, utcnow
+from app.core.time_utils import (
+    serialize_utc_datetime,
+    shanghai_date_for_utc,
+    shanghai_date_utc_range,
+    shanghai_today,
+    utcnow,
+)
 from app.models.answer_behavior import AnswerBehavior
 from app.models.task_outbox import TaskOutbox
 from app.services.task_observability_rules import evaluate_task_health
@@ -293,9 +299,9 @@ async def _collect_activity_trend(db: AsyncSession, *, days: int = 7) -> list[di
     durable business-side completion signal for answer-projection work.
     """
     window_days = max(1, min(int(days), 31))
-    today = utcnow().date()
+    today = shanghai_today()
     first_day = today - timedelta(days=window_days - 1)
-    start_at = datetime.combine(first_day, datetime_time.min)
+    start_at = shanghai_date_utc_range(first_day)[0]
 
     buckets: dict[str, dict[str, Any]] = {}
     ordered_keys: list[str] = []
@@ -321,15 +327,15 @@ async def _collect_activity_trend(db: AsyncSession, *, days: int = 7) -> list[di
     )
     for created_at, published_at, updated_at, status in outbox_rows:
         if created_at is not None:
-            key = created_at.date().isoformat()
+            key = shanghai_date_for_utc(created_at).isoformat()
             if key in buckets:
                 buckets[key]["created"] += 1
         if published_at is not None:
-            key = published_at.date().isoformat()
+            key = shanghai_date_for_utc(published_at).isoformat()
             if key in buckets:
                 buckets[key]["published"] += 1
         if status == "failed" and updated_at is not None:
-            key = updated_at.date().isoformat()
+            key = shanghai_date_for_utc(updated_at).isoformat()
             if key in buckets:
                 buckets[key]["failed"] += 1
 
@@ -339,7 +345,7 @@ async def _collect_activity_trend(db: AsyncSession, *, days: int = 7) -> list[di
     for (created_at,) in receipt_rows:
         if created_at is None:
             continue
-        key = created_at.date().isoformat()
+        key = shanghai_date_for_utc(created_at).isoformat()
         if key in buckets:
             buckets[key]["projection_receipts"] += 1
 

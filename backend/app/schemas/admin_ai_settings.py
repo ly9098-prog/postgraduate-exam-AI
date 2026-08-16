@@ -1,6 +1,7 @@
+from app.schemas.base import BaseModel
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 
 class AdminAIUsageMonthlyResponse(BaseModel):

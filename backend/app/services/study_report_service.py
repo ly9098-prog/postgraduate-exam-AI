@@ -5,10 +5,10 @@ import json
 import logging
 from datetime import datetime, timedelta
 
-from sqlalchemy import case, func, select
+from sqlalchemy import Date as SQLDate, case, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
+from app.core.time_utils import shanghai_date_utc_range, shanghai_today, shanghai_today_boundaries, utcnow
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
@@ -23,9 +23,15 @@ logger = logging.getLogger(__name__)
 
 
 def _today_utc() -> datetime:
-    """返回 UTC 今日零点（naive）。"""
-    now = utcnow()
-    return datetime(now.year, now.month, now.day)
+    """Return China today's midnight converted to naive UTC."""
+    return shanghai_today_boundaries()[0]
+
+
+async def _china_date_expr(db: AsyncSession, column):
+    bind = await db.connection()
+    if bind.sync_connection.dialect.name == "sqlite":
+        return func.date(column, "+8 hours")
+    return cast(column + text("INTERVAL '8 hours'"), SQLDate)
 
 
 def _safe_accuracy(correct: int, total: int) -> float:
@@ -632,11 +638,12 @@ async def get_wrong_questions_summary(
 
 
 async def get_study_trend(db: AsyncSession, user_id: int, subject_id: int | None = None, days: int = 7) -> dict:
-    today = utcnow().date()
-    since = datetime.combine(today - timedelta(days=days - 1), datetime.min.time())
+    today = shanghai_today()
+    since = shanghai_date_utc_range(today - timedelta(days=days - 1))[0]
+    day_expr = await _china_date_expr(db, PracticeRecord.answered_at)
 
     q = select(
-        func.date(PracticeRecord.answered_at).label("d"),
+        day_expr.label("d"),
         func.count(PracticeRecord.id).label("total"),
         func.coalesce(
             func.sum(case((PracticeRecord.is_correct == True, 1), else_=0)), 0  # noqa: E712
@@ -650,9 +657,7 @@ async def get_study_trend(db: AsyncSession, user_id: int, subject_id: int | None
             Question.subject_id == subject_id
         )
 
-    q = q.group_by(func.date(PracticeRecord.answered_at)).order_by(
-        func.date(PracticeRecord.answered_at)
-    )
+    q = q.group_by(day_expr).order_by(day_expr)
     rows = (await db.execute(q)).all()
 
     data: dict[str, dict] = {}

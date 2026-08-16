@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
-from app.core.time_utils import utcnow
+from app.core.time_utils import utcnow, serialize_utc_datetime
 from app.features.question_type import (
     QT_MULTIPLE_CHOICE,
     QT_SINGLE_CHOICE,
@@ -568,7 +568,7 @@ async def generate_preview(
         "batch_question_count": len(questions),
         "batch_version": _batch_version(questions),
         "items": _make_preview_items(items, questions[: len(parsed_answers)]),
-        "created_at": utcnow().isoformat(),
+        "created_at": serialize_utc_datetime(utcnow()),
     }
     token = _generate_token(preview_data)
     await cache.set(
@@ -600,7 +600,7 @@ def _make_preview_items(items: list[dict], questions: list[QuestionImport]) -> l
             "will_update": item.get("will_update", False),
             "question_type": item.get("question_type"),
             "options_hash": _options_hash(q) if q else "",
-            "updated_at": q.updated_at.isoformat() if q and q.updated_at else "",
+            "updated_at": serialize_utc_datetime(q.updated_at) if q and q.updated_at else "",
         })
     return enriched
 
@@ -610,7 +610,7 @@ def _batch_version(questions: list[QuestionImport]) -> str:
     sig_parts = []
     for q in questions:
         sig_parts.append(
-            f"{q.id}:{q.source_order_index}:{q.parsed_answer}:{q.updated_at.isoformat() if q.updated_at else ''}"
+            f"{q.id}:{q.source_order_index}:{q.parsed_answer}:{serialize_utc_datetime(q.updated_at) if q.updated_at else ''}"
         )
     return hashlib.sha256("\n".join(sig_parts).encode()).hexdigest()[:32]
 

@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
 from app.core.cache import cache
-from app.core.time_utils import utcnow
+from app.core.time_utils import utcnow, serialize_utc_datetime
 from app.features.question_type import (
     QT_MULTIPLE_CHOICE,
     QT_SINGLE_CHOICE,
@@ -614,7 +614,7 @@ async def generate_image_preview(
         "writable_answer_count": summary["writable_answer_count"],
         "writable_analysis_count": summary["writable_analysis_count"],
         "items": snapshot_items,
-        "created_at": utcnow().isoformat(),
+        "created_at": serialize_utc_datetime(utcnow()),
     }
     token = _generate_token(preview_data)
     await cache.set(f"{_PREVIEW_TOKEN_PREFIX}{token}", preview_data, ttl=_PREVIEW_TOKEN_TTL)

@@ -1,8 +1,9 @@
 from __future__ import annotations
+from app.schemas.base import BaseModel
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 
 class AdminSubjectCreateRequest(BaseModel):

@@ -13,6 +13,7 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import async_session
@@ -141,7 +142,7 @@ async def _set_image_pipeline_status(image_pipeline_id: str, **updates) -> dict:
             "stats": {},
             "errors": [],
             "batch_id": "",
-            "started_at": datetime.now().isoformat(),
+            "started_at": serialize_utc_datetime(utcnow()),
         },
     )
     if "started_at" in updates and status.get("started_at"):
@@ -426,7 +427,7 @@ async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
         status="failed",
         errors=errors,
         stages=stages,
-        finished_at=datetime.now().isoformat(),
+        finished_at=serialize_utc_datetime(utcnow()),
     )
 
 
@@ -558,7 +559,7 @@ async def _run_image_pipeline_with_db(
         result["pipeline_id"] = pipeline_id
         result["status"] = status
         result["raw_text_preview"] = raw_text[:500]
-        result["finished_at"] = datetime.now().isoformat()
+        result["finished_at"] = serialize_utc_datetime(utcnow())
         result_stats = result.setdefault("stats", {})
         result_stats["ocr"] = ocr_diagnostics
         result["diagnostics"] = {
@@ -571,7 +572,7 @@ async def _run_image_pipeline_with_db(
         if status == "completed" and result.get("batch_id"):
             result["question_count"] = result.get("stats", {}).get("to_review", 0)
         current = await _get_image_pipeline_status(pipeline_id) or {}
-        result.setdefault("started_at", current.get("started_at", datetime.now().isoformat()))
+        result.setdefault("started_at", current.get("started_at", serialize_utc_datetime(utcnow())))
         await _set_image_pipeline_status(pipeline_id, **result)
         log_event(
             logger, "import.background.finish",
@@ -837,7 +838,7 @@ async def start_import_pipeline(
                 "stages": {"upload": {"status": "completed"}},
                 "stats": {},
                 "errors": [],
-                "started_at": datetime.now().isoformat(),
+                "started_at": serialize_utc_datetime(utcnow()),
                 "staging_object_id": staging_obj.object_id,
             })
 
@@ -913,7 +914,7 @@ async def start_import_pipeline(
             "stages": {"upload": {"status": "completed"}},
             "stats": {},
             "errors": [],
-            "started_at": datetime.now().isoformat(),
+            "started_at": serialize_utc_datetime(utcnow()),
             "staging_object_id": staging_obj.object_id,
         }
         if page_range:

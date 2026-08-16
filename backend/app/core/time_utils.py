@@ -8,8 +8,8 @@ def utcnow() -> datetime:
     (no ``timezone=True``).  This helper returns a naive datetime so that
     comparisons with DB-loaded values do not raise ``TypeError``.
 
-    When converting to ISO 8601 for API output, use ``utcnow().isoformat() + "Z"``
-    or :func:`utcnow_aware` instead.
+    When converting to ISO 8601 for API output, use
+    :func:`serialize_utc_datetime` instead.
     """
     return datetime.now(UTC).replace(tzinfo=None)
 
@@ -35,6 +35,22 @@ def normalize_to_naive_utc(value: datetime) -> datetime:
     if value.tzinfo is not None:
         return value.astimezone(UTC).replace(tzinfo=None)
     return value
+
+
+def unix_timestamp(value: datetime) -> float:
+    """Convert a DB/UTC datetime to Unix epoch seconds without local-TZ leakage.
+
+    Python interprets ``naive_datetime.timestamp()`` in the operating system's
+    local timezone.  This project stores naive datetimes as UTC, so always
+    attach/convert UTC explicitly before computing epoch seconds.
+    """
+    if not isinstance(value, datetime):
+        raise TypeError("value must be datetime")
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    else:
+        value = value.astimezone(UTC)
+    return value.timestamp()
 
 
 def serialize_utc_datetime(value: datetime) -> str:
@@ -81,6 +97,46 @@ def shanghai_today_boundaries() -> tuple[datetime, datetime]:
     start_utc = (start_shanghai - timedelta(hours=8)).replace(tzinfo=None)
     end_utc = (end_shanghai - timedelta(hours=8)).replace(tzinfo=None)
     return start_utc, end_utc
+
+
+
+
+def shanghai_now() -> datetime:
+    """Return the current product-local time in Asia/Shanghai (UTC+8)."""
+    return datetime.now(_SHANGHAI_TZ)
+
+
+def shanghai_today() -> date:
+    """Return the current calendar date in Asia/Shanghai.
+
+    Use this for product concepts such as "today", streaks, daily reports and
+    scheduler target dates.  Never derive those concepts from the server's
+    local timezone or from ``utcnow().date()``.
+    """
+    return shanghai_now().date()
+
+
+def shanghai_date_utc_range(target_date: date) -> tuple[datetime, datetime]:
+    """Return the half-open naive-UTC range for a China calendar date.
+
+    Example: 2026-08-16 China time maps to
+    [2026-08-15 16:00:00, 2026-08-16 16:00:00) UTC.
+    """
+    local_start = datetime.combine(target_date, time.min, tzinfo=_SHANGHAI_TZ)
+    start_utc = local_start.astimezone(UTC).replace(tzinfo=None)
+    return start_utc, start_utc + timedelta(days=1)
+
+
+def to_shanghai(value: datetime) -> datetime:
+    """Interpret naive datetimes as UTC and convert them to Asia/Shanghai."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(_SHANGHAI_TZ)
+
+
+def shanghai_date_for_utc(value: datetime) -> date:
+    """Return the China calendar date for a DB/UTC datetime."""
+    return to_shanghai(value).date()
 
 
 # ── China study-day helpers ──────────────────────────────────────────────

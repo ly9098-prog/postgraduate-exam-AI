@@ -1,7 +1,7 @@
+from app.schemas.base import BaseModel
 from math import ceil
 from typing import Generic, TypeVar
 
-from pydantic import BaseModel
 
 T = TypeVar("T")
 

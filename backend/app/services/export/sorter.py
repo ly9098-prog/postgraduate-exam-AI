@@ -14,12 +14,13 @@ from __future__ import annotations
 import hashlib
 import logging
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.time_utils import normalize_to_naive_utc
 from app.features.question_type import (
     QUESTION_TYPE_SORT_ORDER,
     QuestionType,
@@ -120,7 +121,8 @@ def _datetime_timestamp(value) -> float | None:
         return None
     if isinstance(value, datetime):
         try:
-            return value.timestamp()
+            normalized = normalize_to_naive_utc(value)
+            return normalized.replace(tzinfo=UTC).timestamp()
         except (OSError, OverflowError, ValueError):
             return None
     if isinstance(value, str):
@@ -128,7 +130,9 @@ def _datetime_timestamp(value) -> float | None:
         if not text:
             return None
         try:
-            return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            normalized = normalize_to_naive_utc(parsed)
+            return normalized.replace(tzinfo=UTC).timestamp()
         except (OSError, OverflowError, ValueError):
             return None
     return None

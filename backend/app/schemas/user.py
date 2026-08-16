@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+from pydantic import Field, field_validator
+from app.schemas.base import BaseModel
 
 
 class WechatLogin(BaseModel):
@@ -9,6 +10,7 @@ class UserResponse(BaseModel):
     id: int
     nickname: str | None = None
     avatar_url: str | None = None
+    profile_completed: bool = False
     is_admin: bool = False
     role: str = "user"
     role_name: str = "user"
@@ -29,7 +31,16 @@ class RefreshRequest(BaseModel):
 
 class UserUpdate(BaseModel):
     nickname: str | None = Field(default=None, max_length=64)
-    avatar_url: str | None = Field(default=None, max_length=2048)
+
+    @field_validator("nickname")
+    @classmethod
+    def normalize_nickname(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.strip().split())
+        if not normalized:
+            raise ValueError("昵称不能为空")
+        return normalized
 
 
 class DeletionResponse(BaseModel):

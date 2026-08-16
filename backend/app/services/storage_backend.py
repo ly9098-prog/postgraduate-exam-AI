@@ -418,6 +418,23 @@ def get_storage() -> StorageBackend:
     return LocalFileStorage()
 
 
+def get_user_avatar_storage() -> StorageBackend:
+    """Get the storage namespace used for user profile avatars.
+
+    Keep avatars below the already-public ``/static/formulas`` mount when the
+    local backend is used so no extra deployment/static-file configuration is
+    required.  COS keeps the same configured base prefix and adds an
+    ``avatars`` namespace to avoid mixing user files with formula assets.
+    """
+    prefix = "static/formulas/avatars"
+    if settings.STORAGE_BACKEND == "cos":
+        storage = COSStorage(prefix=prefix)
+        base_prefix = (settings.COS_PREFIX or "static/formulas/").rstrip("/")
+        storage._cos_prefix = f"{base_prefix}/avatars/"
+        return storage
+    return LocalFileStorage(prefix=prefix)
+
+
 def get_question_assets_storage() -> StorageBackend:
     """获取用于题图存储的 storage backend（独立于公式图存储）。"""
     prefix = "static/question-assets"

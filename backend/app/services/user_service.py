@@ -1,6 +1,10 @@
+import asyncio
 import hashlib
+import io
+import uuid
 
 import httpx
+from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,9 +15,12 @@ from app.models.admin import AdminUser, Permission, Role, RolePermission
 from app.models.app_user_admin_binding import AppUserAdminBinding
 from app.models.user import User
 from app.schemas.user import UserResponse
+from app.services.storage_backend import get_user_avatar_storage
 
 WX_URL = "https://api.weixin.qq.com/sns/jscode2session"
 LOCAL_APP_ENVS = {"development", "local", "test"}
+AVATAR_SIZE = 512
+AVATAR_JPEG_QUALITY = 88
 
 
 def _dev_openid(code: str) -> str:
@@ -100,6 +107,7 @@ async def get_user_response(db: AsyncSession, user: User) -> UserResponse:
             id=user.id,
             nickname=user.nickname,
             avatar_url=user.avatar_url,
+            profile_completed=bool(user.nickname and user.nickname.strip()),
             is_admin=True,
             role="super_admin",
             role_name="super_admin",
@@ -134,6 +142,7 @@ async def get_user_response(db: AsyncSession, user: User) -> UserResponse:
         id=user.id,
         nickname=user.nickname,
         avatar_url=user.avatar_url,
+        profile_completed=bool(user.nickname and user.nickname.strip()),
         is_admin=is_admin,
         role=role_name,
         role_name=role_name,
@@ -143,16 +152,87 @@ async def get_user_response(db: AsyncSession, user: User) -> UserResponse:
 
 
 async def update_user(
-    db: AsyncSession, user_id: int, nickname: str | None, avatar_url: str | None
+    db: AsyncSession, user_id: int, nickname: str | None
 ) -> User | None:
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         return None
     if nickname is not None:
-        user.nickname = nickname
-    if avatar_url is not None:
-        user.avatar_url = avatar_url
+        user.nickname = " ".join(nickname.strip().split())
     await db.commit()
     await db.refresh(user)
     return user
+
+
+def _normalize_avatar_bytes(data: bytes) -> bytes:
+    """Decode and normalize a user supplied avatar into a bounded JPEG."""
+    try:
+        with Image.open(io.BytesIO(data)) as source:
+            source.load()
+            image = ImageOps.exif_transpose(source)
+            if image.width <= 0 or image.height <= 0:
+                raise ValueError("头像图片尺寸无效")
+            # chooseAvatar normally returns a square crop.  ImageOps.fit also
+            # gives us a stable square result for camera/gallery edge cases.
+            image = ImageOps.fit(
+                image.convert("RGB"),
+                (AVATAR_SIZE, AVATAR_SIZE),
+                method=Image.Resampling.LANCZOS,
+            )
+            output = io.BytesIO()
+            image.save(
+                output,
+                format="JPEG",
+                quality=AVATAR_JPEG_QUALITY,
+                optimize=True,
+            )
+            return output.getvalue()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise ValueError("头像文件不是有效图片") from exc
+
+
+async def replace_user_avatar(db: AsyncSession, user: User, data: bytes) -> User:
+    """Persist a normalized avatar and replace the user's previous avatar."""
+    normalized = await asyncio.to_thread(_normalize_avatar_bytes, data)
+    storage = get_user_avatar_storage()
+    key = f"{user.id}/{uuid.uuid4().hex}.jpg"
+    try:
+        new_url = await storage.upload(key, normalized)
+    except Exception as exc:
+        raise RuntimeError("avatar storage upload failed") from exc
+    previous_url = user.avatar_url
+
+    user.avatar_url = new_url
+    try:
+        await db.commit()
+        await db.refresh(user)
+    except Exception:
+        await db.rollback()
+        try:
+            await storage.delete(new_url)
+        except Exception:
+            pass
+        raise
+
+    # The new avatar is already durable at this point.  Deletion is best-effort
+    # so a transient storage error never rolls the user's profile back.
+    if previous_url and previous_url != new_url:
+        await delete_user_avatar_file(previous_url, storage=storage)
+
+    return user
+
+
+async def delete_user_avatar_file(
+    avatar_url: str | None, *, storage=None
+) -> None:
+    """Best-effort removal of a persisted profile avatar."""
+    if not avatar_url:
+        return
+    backend = storage or get_user_avatar_storage()
+    try:
+        await backend.delete(avatar_url)
+    except Exception:
+        # Profile/account updates must not fail only because old media cleanup
+        # encountered a transient storage error.
+        pass

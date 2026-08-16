@@ -1,13 +1,14 @@
 import hashlib
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.time_utils import normalize_to_naive_utc, utcnow_aware
 from app.core.security import get_current_user, issue_user_token, set_user_nbf
 from app.models.user import User
 from app.schemas.user import (
@@ -21,6 +22,7 @@ from app.schemas.user import (
 from app.services import token_service, user_service
 
 router = APIRouter(prefix="/api/v1")
+MAX_AVATAR_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
 def _user_login_rate_key(request: Request) -> str:
@@ -124,11 +126,42 @@ async def update_me(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    user = await user_service.update_user(
-        db, current_user.id, data.nickname, data.avatar_url
-    )
+    user = await user_service.update_user(db, current_user.id, data.nickname)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
+    return await user_service.get_user_response(db, user)
+
+
+@router.post("/users/me/avatar", response_model=UserResponse)
+async def upload_my_avatar(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload and persist the current user's WeChat-selected avatar.
+
+    The miniprogram ``chooseAvatar`` API returns a temporary local file.  This
+    endpoint converts it to a bounded JPEG and stores it in server/object
+    storage so clearing WeChat cache or reinstalling the miniprogram does not
+    lose the profile image.
+    """
+    try:
+        raw = await file.read(MAX_AVATAR_UPLOAD_BYTES + 1)
+    finally:
+        await file.close()
+
+    if not raw:
+        raise HTTPException(status_code=400, detail="头像文件为空")
+    if len(raw) > MAX_AVATAR_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="头像文件不能超过 5MB")
+
+    try:
+        user = await user_service.replace_user_avatar(db, current_user, raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="头像存储服务暂时不可用") from exc
+
     return await user_service.get_user_response(db, user)
 
 
@@ -167,9 +200,16 @@ async def request_deletion(
     if current_user.deleted_at:
         raise HTTPException(status_code=400, detail="账号已注销")
 
-    now = datetime.now(UTC)
-    current_user.deleted_at = now
+    now = utcnow_aware()
+    previous_avatar_url = current_user.avatar_url
+    current_user.nickname = None
+    current_user.avatar_url = None
+    current_user.deleted_at = normalize_to_naive_utc(now)
     await db.commit()
+
+    # Profile media is account-scoped.  Remove it after the database state is
+    # committed; storage cleanup is best-effort and must not undo deletion.
+    await user_service.delete_user_avatar_file(previous_avatar_url)
 
     # Revoke all tokens so ongoing sessions are immediately invalidated
     await token_service.revoke_all_user_tokens(db, current_user.id)

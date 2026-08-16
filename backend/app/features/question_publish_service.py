@@ -5,13 +5,14 @@ from __future__ import annotations
 import logging
 import re
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
+from app.core.time_utils import unix_timestamp
 from app.features.question_pipeline import process_question_pipeline
 from app.models.question import Question
 from app.models.question_import import QuestionImport
@@ -249,9 +250,7 @@ async def _duplicate_import_ranks(
 def _datetime_rank(value: datetime | None) -> float:
     if value is None:
         return float("-inf")
-    if value.tzinfo is not None:
-        value = value.astimezone(timezone.utc).replace(tzinfo=None)
-    return value.timestamp()
+    return unix_timestamp(value)
 
 
 async def _retain_latest_duplicate(

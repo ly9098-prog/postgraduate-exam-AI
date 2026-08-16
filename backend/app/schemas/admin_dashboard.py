@@ -1,6 +1,6 @@
+from app.schemas.base import BaseModel
 from datetime import date
 
-from pydantic import BaseModel
 
 
 class AdminDashboardOverview(BaseModel):

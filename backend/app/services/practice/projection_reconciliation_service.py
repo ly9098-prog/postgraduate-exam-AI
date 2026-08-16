@@ -23,7 +23,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.time_utils import utcnow
+from app.core.time_utils import (
+    normalize_to_naive_utc,
+    serialize_utc_datetime,
+    unix_timestamp,
+    utcnow,
+)
 from app.models.answer_behavior import AnswerBehavior
 from app.models.practice_record import PracticeRecord
 from app.models.task_outbox import TaskOutbox
@@ -39,7 +44,7 @@ _REPAIR_BUCKET_SEC = 3600
 
 def _repair_task_id(practice_record_id: int, now: datetime) -> str:
     """Return a bounded retry id; at most one repair event is created per hour."""
-    bucket = int(now.timestamp()) // _REPAIR_BUCKET_SEC
+    bucket = int(unix_timestamp(now)) // _REPAIR_BUCKET_SEC
     return f"{_REPAIR_TASK_PREFIX}:{practice_record_id}:{bucket}"
 
 
@@ -91,7 +96,7 @@ async def get_projection_backlog_metrics(
             else settings.ANSWER_PROJECTION_RECONCILE_GRACE_SEC
         ),
     )
-    current = now or utcnow()
+    current = normalize_to_naive_utc(now) if now is not None else utcnow()
     cutoff = current - timedelta(seconds=effective_grace)
 
     aggregate = (await db.execute(
@@ -116,7 +121,7 @@ async def get_projection_backlog_metrics(
     return {
         "unprojected": count,
         "oldest_age_sec": oldest_age_sec,
-        "oldest_answered_at": oldest.isoformat() + "Z" if oldest is not None else None,
+        "oldest_answered_at": serialize_utc_datetime(oldest) if oldest is not None else None,
     }
 
 
@@ -149,7 +154,7 @@ async def reconcile_answer_projections(
             else settings.ANSWER_PROJECTION_RECONCILE_GRACE_SEC
         ),
     )
-    current = now or utcnow()
+    current = normalize_to_naive_utc(now) if now is not None else utcnow()
     cutoff = current - timedelta(seconds=effective_grace)
 
     query = (

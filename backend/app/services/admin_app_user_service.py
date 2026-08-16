@@ -5,7 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
-from app.core.time_utils import utcnow
+from app.core.time_utils import normalize_to_naive_utc, serialize_utc_datetime, utcnow
 from app.models.admin import AdminUser, Role
 from app.models.app_user_admin_binding import AppUserAdminBinding
 from app.models.practice_record import PracticeRecord
@@ -44,9 +44,9 @@ async def list_app_users(
     if is_banned is not None:
         conditions.append(User.is_banned.is_(is_banned))
     if created_from:
-        conditions.append(User.created_at >= created_from)
+        conditions.append(User.created_at >= normalize_to_naive_utc(created_from))
     if created_to:
-        conditions.append(User.created_at <= created_to)
+        conditions.append(User.created_at <= normalize_to_naive_utc(created_to))
 
     query = select(User)
     count_query = select(func.count()).select_from(User)
@@ -132,7 +132,7 @@ async def ban_app_user(
     before = {
         "is_banned": user.is_banned,
         "banned_reason": user.banned_reason,
-        "banned_at": user.banned_at.isoformat() if user.banned_at else None,
+        "banned_at": serialize_utc_datetime(user.banned_at) if user.banned_at else None,
         "banned_by": user.banned_by,
     }
     user.is_banned = True
@@ -142,7 +142,7 @@ async def ban_app_user(
     after = {
         "is_banned": user.is_banned,
         "banned_reason": user.banned_reason,
-        "banned_at": user.banned_at.isoformat() if user.banned_at else None,
+        "banned_at": serialize_utc_datetime(user.banned_at) if user.banned_at else None,
         "banned_by": user.banned_by,
     }
 
@@ -172,7 +172,7 @@ async def unban_app_user(
     before = {
         "is_banned": user.is_banned,
         "banned_reason": user.banned_reason,
-        "banned_at": user.banned_at.isoformat() if user.banned_at else None,
+        "banned_at": serialize_utc_datetime(user.banned_at) if user.banned_at else None,
         "banned_by": user.banned_by,
     }
     user.is_banned = False

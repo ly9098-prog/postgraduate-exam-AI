@@ -1,6 +1,7 @@
+from app.schemas.base import BaseModel
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 
 class ReviewQuestion(BaseModel):

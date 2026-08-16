@@ -6,12 +6,13 @@ import json
 import logging
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.core.executor_registry import get_executor
 from app.models.formula import FormulaCard, FormulaGraphAsset, FormulaGraphPreview
 from app.services.formula_graph_spec_renderer import (
@@ -114,7 +115,7 @@ async def generate_preview(
             select(FormulaGraphPreview).where(
                 FormulaGraphPreview.formula_card_id == card.id,
                 FormulaGraphPreview.checksum == checksum,
-                FormulaGraphPreview.expires_at > datetime.now(UTC),
+                FormulaGraphPreview.expires_at > utcnow(),
             )
         )
         existing = existing_result.scalar_one_or_none()
@@ -193,7 +194,7 @@ async def generate_preview(
 
         # Create new preview
         preview_token = uuid.uuid4().hex
-        expires_at = datetime.now(UTC) + timedelta(minutes=PREVIEW_TTL_MINUTES)
+        expires_at = utcnow() + timedelta(minutes=PREVIEW_TTL_MINUTES)
 
         preview = FormulaGraphPreview(
             formula_card_id=card.id,
@@ -235,7 +236,7 @@ def _preview_to_dict(preview: FormulaGraphPreview, quality: dict | None = None) 
             "warnings": preview.quality_warnings or [],
             "passed": len(preview.quality_errors or []) == 0,
         } if quality is None else quality,
-        "expires_at": preview.expires_at.isoformat() if preview.expires_at else None,
+        "expires_at": serialize_utc_datetime(preview.expires_at) if preview.expires_at else None,
     }
 
 
@@ -291,7 +292,7 @@ async def confirm_preview(
     if not preview:
         raise ValueError("Preview not found or token invalid", "404")
 
-    if preview.expires_at and preview.expires_at < datetime.now(UTC):
+    if preview.expires_at and preview.expires_at < utcnow():
         raise ValueError("Preview has expired. Please regenerate.", "422")
 
     # Check quality
@@ -339,7 +340,7 @@ async def confirm_preview(
         new_thumbnail_url = await storage.upload(thumb_path, thumb_data) if thumb_data else (preview.thumbnail_url or "")
 
         # 3. Create new generated asset
-        now = datetime.now(UTC)
+        now = utcnow()
         asset = FormulaGraphAsset(
             formula_card_id=card.id,
             source_type="generated",
@@ -562,8 +563,8 @@ async def start_batch_generate(
         "failed": 0,
         "skipped": 0,
         "errors": [],
-        "created_at": datetime.now(UTC).isoformat(),
-        "started_at": datetime.now(UTC).isoformat(),
+        "created_at": serialize_utc_datetime(utcnow()),
+        "started_at": serialize_utc_datetime(utcnow()),
         "finished_at": None,
     }
     card_ids = [c.id for c in cards]
@@ -657,7 +658,7 @@ async def _process_batch(job_id: str, cards: list[FormulaCard], admin_id: int) -
         job["status"] = "failed"
     else:
         job["status"] = "completed"
-    job["finished_at"] = datetime.now(UTC).isoformat()
+    job["finished_at"] = serialize_utc_datetime(utcnow())
 
     # Cleanup old jobs (keep last 10)
     _cleanup_old_jobs()

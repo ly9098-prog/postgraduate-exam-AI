@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from sqlalchemy import select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.core.cache import cache
 from app.core.config import settings
 from app.core.database import get_db
@@ -76,7 +77,7 @@ async def _set_image_pipeline_status(image_pipeline_id: str, **updates) -> dict:
             "stats": {},
             "errors": [],
             "batch_id": "",
-            "started_at": datetime.now().isoformat(),
+            "started_at": serialize_utc_datetime(utcnow()),
         },
     )
     if "started_at" in updates and status.get("started_at"):
@@ -190,7 +191,7 @@ async def _fail_image_pipeline(pipeline_id: str, error: str) -> None:
         status="failed",
         errors=errors,
         stages=stages,
-        finished_at=datetime.now().isoformat(),
+        finished_at=serialize_utc_datetime(utcnow()),
     )
 
 

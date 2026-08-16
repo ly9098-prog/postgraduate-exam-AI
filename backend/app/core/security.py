@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.time_utils import utcnow
+from app.core.time_utils import unix_timestamp, utcnow
 from app.models.admin import AdminUser, Permission, RolePermission
 from app.models.app_user_admin_binding import AppUserAdminBinding
 
@@ -93,7 +93,7 @@ async def set_user_nbf(user_id: int, timestamp: int | None = None) -> None:
     try:
         await cache.set_strict(
             f"user:jwt:nbf:{user_id}",
-            timestamp or (int(utcnow().timestamp()) + 1),
+            timestamp or (int(unix_timestamp(utcnow())) + 1),
             ttl=max(settings.JWT_EXPIRE_DAYS, 1) * 24 * 60 * 60,
         )
     except CacheUnavailableError as exc:

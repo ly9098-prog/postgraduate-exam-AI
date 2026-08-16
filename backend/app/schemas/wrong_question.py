@@ -1,7 +1,8 @@
+from app.schemas.base import BaseModel
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
 
 # ── 枚举 ──
 

@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.time_utils import serialize_utc_datetime
 from app.core.config import settings
 from app.core.database import async_session
 from app.core.log_context import safe_text_preview
@@ -1325,7 +1326,7 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
             "status": e.status,
             "message": e.message,
             "duration_ms": e.duration_ms,
-            "created_at": e.created_at.isoformat(),
+            "created_at": serialize_utc_datetime(e.created_at),
         }
         for e in events
     ]
@@ -1349,8 +1350,8 @@ async def get_batch_job_status(db: AsyncSession, job_id: str) -> dict:
         "current_seq": current_seq,
         "current_file": current_file,
         "error_message": job.error_message,
-        "started_at": job.started_at.isoformat() if job.started_at else "",
-        "finished_at": job.finished_at.isoformat() if job.finished_at else "",
+        "started_at": serialize_utc_datetime(job.started_at) if job.started_at else "",
+        "finished_at": serialize_utc_datetime(job.finished_at) if job.finished_at else "",
         "items": items,
         "trace_events": trace_events,
     }
@@ -1384,7 +1385,7 @@ async def poll_trace_events(
             "status": e.status,
             "message": e.message,
             "duration_ms": e.duration_ms,
-            "created_at": e.created_at.isoformat(),
+            "created_at": serialize_utc_datetime(e.created_at),
         }
         for e in rows
     ]

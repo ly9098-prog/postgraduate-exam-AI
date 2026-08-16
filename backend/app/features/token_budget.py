@@ -10,10 +10,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import UTC, datetime
 from typing import Any
 
 from app.core.config import settings
+from app.core.time_utils import shanghai_now
 from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ def estimate_tokens(text: str) -> int:
 
 
 def _periods() -> tuple[str, str]:
-    now = datetime.now(UTC)
+    now = shanghai_now()
     return now.strftime("%Y-%m-%d"), now.strftime("%Y-%m")
 
 

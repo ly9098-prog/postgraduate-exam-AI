@@ -1,12 +1,12 @@
 """Phase 4 — 推荐 A/B 实验服务。"""
 import hashlib
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow
+from app.core.time_utils import shanghai_date_utc_range, utcnow
 from app.models.recommendation_experiment import RecommendationExperiment
 from app.models.recommendation_experiment_assignment import (
     RecommendationExperimentAssignment,
@@ -218,8 +218,8 @@ async def evaluate_experiment_safety(
     if not experiment:
         return {"paused": False, "reason": "实验不存在", "metrics": {}}
 
-    day_start = datetime.combine(date_from, datetime.min.time())
-    day_end = datetime.combine(date_to + timedelta(days=1), datetime.min.time())
+    day_start = shanghai_date_utc_range(date_from)[0]
+    day_end = shanghai_date_utc_range(date_to + timedelta(days=1))[0]
     variant_keys = [
         str(variant.get("key", "")).strip()
         for variant in (experiment.variants or [])
