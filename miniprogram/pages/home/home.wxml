@@ -201,61 +201,51 @@
     <view class="profile-sheet profile-consent-sheet" catchtap="noop">
       <view class="profile-sheet-handle"></view>
 
-      <view class="profile-sheet-head">
+      <view class="profile-sheet-head profile-sheet-head-compact">
         <view>
           <text class="profile-sheet-kicker">WECHAT PROFILE</text>
-          <text class="profile-sheet-title">{{user.profile_completed ? '头像和昵称' : '申请使用头像和昵称'}}</text>
-          <text class="profile-sheet-desc">用于展示和识别你的学习账号。资料保存到账号后，重新进入小程序无需重复选择。</text>
+          <text class="profile-sheet-title">头像和昵称</text>
+          <text class="profile-sheet-desc">两步完成，资料会自动保存。</text>
         </view>
         <view class="profile-sheet-close" bindtap="closeProfileSheet" aria-label="关闭">×</view>
       </view>
 
-      <view class="profile-consent-card">
-        <view class="profile-consent-heading">
-          <text class="profile-consent-label">申请使用</text>
-          <text class="profile-consent-title">你的昵称、头像</text>
+      <view class="profile-step-guide">
+        <view class="profile-step {{profileAvatarPreview ? 'is-done' : 'is-active'}}">
+          <view class="profile-step-index">{{profileAvatarPreview ? '✓' : '1'}}</view>
+          <text>选择头像</text>
         </view>
+        <view class="profile-step-line {{profileAvatarPreview ? 'is-done' : ''}}"></view>
+        <view class="profile-step {{profileNickname ? 'is-done' : (profileAvatarPreview ? 'is-active' : '')}}">
+          <view class="profile-step-index">{{profileNickname ? '✓' : '2'}}</view>
+          <text>选择昵称</text>
+        </view>
+      </view>
 
-        <view class="profile-consent-divider"></view>
-
+      <view class="profile-consent-card profile-consent-card-compact">
         <mp-user-avatar
           avatar="{{profileAvatarPreview}}"
           nickname="{{profileNickname}}"
-          default-nickname="选择微信昵称"
+          default-nickname="点击选择微信昵称"
           editable="{{!profileSaving}}"
           is-devtools="{{isDevtools}}"
           bind:change="onNativeProfileChange"
           bind:error="onNativeProfileError"
         />
-
-        <view class="profile-consent-divider"></view>
-        <text class="profile-consent-more">点击头像可使用微信头像或选择其他图片；点击昵称可直接使用微信昵称。</text>
       </view>
 
-      <view class="profile-auto-save-state" wx:if="{{profileSaving}}">
-        <view class="profile-auto-save-dot"></view>
-        <text>正在保存到你的账号…</text>
-      </view>
-      <view class="profile-auto-save-state" wx:elif="{{profileNickname}}">
-        <view class="profile-auto-save-dot is-ready"></view>
-        <text>昵称已选择；可继续选择头像，或直接保存。</text>
-      </view>
-      <view class="profile-auto-save-state" wx:else>
-        <view class="profile-auto-save-dot"></view>
-        <text>请选择微信昵称；头像选择后会自动进入昵称填写。</text>
+      <view class="profile-flow-tip {{profileAvatarPreview && profileNickname ? 'is-ready' : ''}}">
+        <view class="profile-auto-save-dot {{profileAvatarPreview && profileNickname ? 'is-ready' : ''}}"></view>
+        <text wx:if="{{profileSaving}}">正在保存…</text>
+        <text wx:elif="{{profileAvatarPreview && profileNickname}}">资料已完成，正在自动保存</text>
+        <text wx:elif="{{profileAvatarPreview}}">头像已选，再点昵称即可完成</text>
+        <text wx:elif="{{profileNickname}}">昵称已选，再选择头像即可完成</text>
+        <text wx:else>先点头像，再点昵称；完成后自动保存</text>
       </view>
 
-      <view class="profile-consent-actions">
-        <button class="profile-consent-cancel" bindtap="closeProfileSheet" disabled="{{profileSaving}}">取消</button>
-        <button
-          class="profile-consent-allow"
-          bindtap="saveProfile"
-          loading="{{profileSaving}}"
-          disabled="{{profileSaving || !profileNickname}}"
-        >{{user.profile_completed ? '保存' : '允许并保存'}}</button>
+      <view class="profile-consent-actions profile-consent-actions-single">
+        <button class="profile-consent-cancel profile-later-only" bindtap="closeProfileSheet" disabled="{{profileSaving}}">稍后</button>
       </view>
-
-      <text class="profile-privacy-note">头像和昵称仅用于账号展示与识别，不会用于广告营销。</text>
     </view>
   </view>
 </view>

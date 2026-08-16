@@ -14,36 +14,17 @@ Component({
   externalClasses: ['avatar-class', 'nickname-class'],
 
   properties: {
-    avatar: {
-      type: String,
-      value: '',
-    },
-    nickname: {
-      type: String,
-      value: '',
-    },
-    defaultAvatar: {
-      type: String,
-      value: '',
-    },
-    defaultNickname: {
-      type: String,
-      value: '',
-    },
-    editable: {
-      type: Boolean,
-      value: true,
-    },
-    isDevtools: {
-      type: Boolean,
-      value: false,
-    },
+    avatar: { type: String, value: '' },
+    nickname: { type: String, value: '' },
+    defaultAvatar: { type: String, value: '' },
+    defaultNickname: { type: String, value: '' },
+    editable: { type: Boolean, value: true },
+    isDevtools: { type: Boolean, value: false },
   },
 
   data: {
     currentAvatar: '',
     currentNickname: '',
-    nicknameFocus: false,
   },
 
   lifetimes: {
@@ -86,17 +67,8 @@ Component({
 
     _applyAvatar(avatarUrl) {
       if (!avatarUrl) return
-      this.setData({
-        currentAvatar: avatarUrl,
-        nicknameFocus: false,
-      }, () => {
+      this.setData({ currentAvatar: avatarUrl }, () => {
         this._emitChange('avatar')
-        // 与微信官方头像昵称填写方式一致：头像确认后直接进入 nickname 输入。
-        if (!this.data.currentNickname && !this.properties.isDevtools) {
-          setTimeout(() => {
-            if (this.properties.editable) this.setData({ nicknameFocus: true })
-          }, 120)
-        }
       })
     },
 
@@ -119,7 +91,6 @@ Component({
         const avatarUrl = file && (file.tempFilePath || file.path)
         if (avatarUrl) this._applyAvatar(avatarUrl)
       } catch (error) {
-        // 开发者工具中“取消选择”是正常交互，不能当成错误上报。
         if (this._isCancel(error)) return
         this.triggerEvent('error', {
           code: 'AVATAR_PICK_FAILED',
@@ -134,14 +105,10 @@ Component({
       this.setData({ currentNickname: value })
     },
 
-    onNicknameFocus() {
-      if (!this.data.nicknameFocus) this.setData({ nicknameFocus: true })
-    },
-
     onNicknameBlur(event) {
       if (!this.properties.editable) return
       const value = String((event && event.detail && event.detail.value) || this.data.currentNickname || '').trim()
-      this.setData({ currentNickname: value, nicknameFocus: false })
+      this.setData({ currentNickname: value })
       if (canReviewNickname && !this.properties.isDevtools) {
         this._pendingNickname = value
         return
@@ -159,7 +126,11 @@ Component({
         })
         return
       }
-      const value = String(this._pendingNickname || this.data.currentNickname || '').trim()
+      const value = String(
+        (event && event.detail && event.detail.nickname) ||
+        this._pendingNickname ||
+        this.data.currentNickname || ''
+      ).trim()
       this._pendingNickname = ''
       this.setData({ currentNickname: value })
       this._emitChange('nickname')

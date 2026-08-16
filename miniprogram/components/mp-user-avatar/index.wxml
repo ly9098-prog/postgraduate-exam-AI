@@ -37,18 +37,16 @@
       class="mp-nickname nickname-class"
       type="{{isDevtools ? 'text' : 'nickname'}}"
       value="{{currentNickname}}"
-      placeholder="{{defaultNickname || '选择微信昵称'}}"
+      placeholder="{{defaultNickname || '点击选择微信昵称'}}"
       placeholder-class="mp-nickname-placeholder"
       maxlength="32"
-      focus="{{nicknameFocus}}"
       disabled="{{!editable}}"
-      bindfocus="onNicknameFocus"
       bindinput="onNicknameInput"
       bindblur="onNicknameBlur"
       bindnicknamereview="onNicknameReview"
       confirm-type="done"
     />
-    <text class="mp-profile-hint">{{isDevtools ? '开发者工具：本地模拟头像昵称' : '微信头像昵称填写'}}</text>
+    <text class="mp-profile-hint">{{currentNickname ? '已选择昵称' : '点击昵称可直接使用微信昵称'}}</text>
   </view>
 
   <view class="mp-profile-check {{currentNickname ? 'is-ready' : ''}}">{{currentNickname ? '✓' : '›'}}</view>
