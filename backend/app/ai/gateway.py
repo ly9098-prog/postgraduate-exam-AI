@@ -52,7 +52,10 @@ async def resolve_llm_runtime_config(
     capability_value = (
         capability.value if isinstance(capability, AICapability) else str(capability)
     ) if capability is not None else None
-    known_capabilities = {item.value for item in AICapability}
+    # ``analysis`` is retained as a compatibility capability even though it is
+    # not a strict AICapability enum member. This preserves the existing DB-backed
+    # analysis routing used by stats/AI services.
+    known_capabilities = {item.value for item in AICapability} | {"analysis"}
     if capability_value is None and feature in known_capabilities:
         capability_value = feature
 

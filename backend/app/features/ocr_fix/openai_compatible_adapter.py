@@ -8,8 +8,8 @@ import time
 from typing import Any
 
 from app.ai.client import llm
+from app.features.ocr_fix import interfaces as ocr_fix_interfaces
 from app.features.ocr_fix.canonical_output import canonicalize
-from app.features.ocr_fix.interfaces import OCRFixResult
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +52,12 @@ class OpenAICompatibleFixer:
         image: bytes | None = None,
         ocr_text: str = "",
         context: dict[str, Any] | None = None,
-    ) -> OCRFixResult:
+    ) -> ocr_fix_interfaces.OCRFixResult:
         if not ocr_text.strip():
-            return OCRFixResult(fixed_text=ocr_text, model_used=self.model_name)
+            return ocr_fix_interfaces.OCRFixResult(fixed_text=ocr_text, model_used=self.model_name)
 
         if not self.is_available:
-            return OCRFixResult(
+            return ocr_fix_interfaces.OCRFixResult(
                 fixed_text=ocr_text,
                 confidence=None,
                 model_used=self.model_name,
@@ -91,7 +91,7 @@ class OpenAICompatibleFixer:
             corrected_raw = (result.get("content") or "").strip()
             corrected, _meta = canonicalize(corrected_raw, model_name=self.model_name)
             if not corrected:
-                return OCRFixResult(
+                return ocr_fix_interfaces.OCRFixResult(
                     fixed_text=ocr_text,
                     model_used=self.model_name,
                     duration_ms=duration_ms,
@@ -99,7 +99,7 @@ class OpenAICompatibleFixer:
 
             original_len = len(ocr_text)
             if len(corrected) > original_len * 2 or len(corrected) < original_len * 0.5:
-                return OCRFixResult(
+                return ocr_fix_interfaces.OCRFixResult(
                     fixed_text=ocr_text,
                     model_used=self.model_name,
                     duration_ms=duration_ms,
@@ -123,7 +123,7 @@ class OpenAICompatibleFixer:
                             original_score,
                             fixed_score,
                         )
-                        return OCRFixResult(
+                        return ocr_fix_interfaces.OCRFixResult(
                             fixed_text=ocr_text,
                             model_used=self.model_name,
                             duration_ms=duration_ms,
@@ -143,7 +143,7 @@ class OpenAICompatibleFixer:
                 and not re.search(r"^\s*\d+\s*[.．、]", corrected, re.MULTILINE)
             ):
                 logger.warning("LLM OCR correction dropped question stem; reverting")
-                return OCRFixResult(
+                return ocr_fix_interfaces.OCRFixResult(
                     fixed_text=ocr_text,
                     model_used=self.model_name,
                     duration_ms=duration_ms,
@@ -161,7 +161,7 @@ class OpenAICompatibleFixer:
                 tokens_used=result.get("tokens_used"),
                 corrected_chars=len(corrected),
             )
-            return OCRFixResult(
+            return ocr_fix_interfaces.OCRFixResult(
                 fixed_text=corrected,
                 confidence=0.85,
                 model_used=self.model_name,
@@ -181,7 +181,7 @@ class OpenAICompatibleFixer:
                 error_type=type(exc).__name__,
                 error_message=str(exc)[:200],
             )
-            return OCRFixResult(
+            return ocr_fix_interfaces.OCRFixResult(
                 fixed_text=ocr_text,
                 model_used=self.model_name,
                 raw_response=f"error: {exc}",

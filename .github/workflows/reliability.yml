@@ -49,10 +49,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
@@ -62,7 +62,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
-          # app.main imports the admin export service, which imports `docx` at module load time.
+          # app.main imports the DOCX export stack during router import.
           pip install python-docx pytest pytest-asyncio
 
       - name: Compile backend
@@ -108,10 +108,15 @@ jobs:
           print(f"Database heads: {sorted(actual_heads)}")
 
           if actual_heads != expected_heads:
-              raise SystemExit(
-                  "Database revision does not match the repository Alembic heads"
-              )
+              raise SystemExit("Database revision does not match repository Alembic heads")
           PY
+
+      - name: Report ORM-to-migration drift
+        # `alembic check` can be noisy on a legacy schema. Keep the diagnostic,
+        # while the applied-head check above remains the deterministic hard gate.
+        working-directory: backend
+        run: alembic check
+        continue-on-error: true
 
       - name: Run reliability unit and integration tests
         shell: bash
@@ -131,14 +136,13 @@ jobs:
           )
 
           tests=()
+          missing=()
           for candidate in "${candidates[@]}"; do
             if [[ -f "$candidate" ]]; then
               tests+=("$candidate")
               continue
             fi
 
-            # Tests occasionally move between unit/contract/integration folders.
-            # Resolve by basename before treating the configured path as stale.
             mapfile -t matches < <(
               find backend/tests -type f -name "$(basename "$candidate")" -print 2>/dev/null | sort
             )
@@ -146,7 +150,8 @@ jobs:
               echo "Resolved moved test: $candidate -> ${matches[0]}"
               tests+=("${matches[0]}")
             else
-              echo "::warning file=$candidate::Configured reliability test is not present in this revision; skipping it"
+              missing+=("$candidate")
+              echo "::warning file=$candidate::Configured reliability test is not present in this revision"
             fi
           done
 
@@ -156,7 +161,11 @@ jobs:
             exit 1
           fi
 
-          printf 'Running %d reliability test file(s):\n' "${#tests[@]}"
+          printf 'Running %d reliability test file(s)' "${#tests[@]}"
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            printf ' (%d configured path(s) unavailable)' "${#missing[@]}"
+          fi
+          printf ':\n'
           printf '  %s\n' "${tests[@]}"
           pytest -q "${tests[@]}"
 
@@ -174,10 +183,10 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/backend
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
@@ -242,17 +251,13 @@ jobs:
           if operation_count == 0:
               raise SystemExit("Exported OpenAPI contract contains no operations")
 
-          print(
-              f"OpenAPI contract OK: {len(paths)} paths, "
-              f"{operation_count} operations"
-          )
+          print(f"OpenAPI contract OK: {len(paths)} paths, {operation_count} operations")
           PY
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
-          package-manager-cache: false
 
       - name: Generate TypeScript from FastAPI OpenAPI
         run: node admin-frontend/scripts/generate-openapi-types.mjs .contract/openapi.json admin-frontend/.contract/openapi.ts
@@ -262,7 +267,7 @@ jobs:
         run: npx --yes --package=typescript@5.9.2 tsc -p contracts/tsconfig.json
 
       - name: Upload generated OpenAPI artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: openapi-contract
           path: |
@@ -276,7 +281,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Detect admin frontend manifest
         id: admin-manifest
@@ -291,10 +296,9 @@ jobs:
 
       - name: Set up Node.js
         if: steps.admin-manifest.outputs.present == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
-          package-manager-cache: false
 
       - name: Install admin dependencies
         if: steps.admin-manifest.outputs.present == 'true'

@@ -24,18 +24,17 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.core.secret_crypto import (
     SecretDecryptionError,
     SecretEncryptionError,
     decrypt_secret,
 )
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.models.admin_ai_config import AdminAiModelConfig
 
 logger = logging.getLogger(__name__)
@@ -60,8 +59,20 @@ class AICapability(StrEnum):
     TEXT_CORRECTION = "text_correction"
     TEXT_STRUCTURING = "text_structuring"
     COMPLETION = "completion"
-    ANALYSIS = "analysis"
     EMBEDDING = "embedding"
+
+
+class _LegacyCapabilityValue(str):
+    """String capability shim with an Enum-like ``value`` attribute."""
+
+    @property
+    def value(self) -> str:
+        return str(self)
+
+
+# Keep the historical attribute available to callers without exposing it as a
+# strict enum member. The public enum contract intentionally excludes analysis.
+AICapability.ANALYSIS = _LegacyCapabilityValue("analysis")  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------
@@ -380,11 +391,10 @@ class AIModelConfigResolver:
                 AIConfigErrorCode.AI_MODEL_DISABLED.value,
                 f"Model config id={config_id} ('{model.name}') is disabled",
             )
-        if not self._provider_matches_capability(model.provider, capability):
-            raise ValueError(
-                AIConfigErrorCode.AI_CONFIG_PROVIDER_UNSUPPORTED.value,
-                f"Provider '{model.provider}' cannot serve capability '{capability}'",
-            )
+        # ``requested_config_id`` is an explicit administrative selection.
+        # Keep feature compatibility validation, but do not reject custom
+        # providers solely because their provider label is not one of the
+        # resolver's built-in aliases. Automatic resolution remains strict.
         if db_features:
             model_features = _get_model_features(model)
             if model_features and not any(f in model_features for f in db_features):
@@ -448,8 +458,11 @@ class AIModelConfigResolver:
         )
         if capability == AICapability.OCR_VL.value:
             return is_paddleocr
+        if capability == AICapability.OCR_FIX.value:
+            # OCR correction supports both the PaddleOCR-VL vendor adapter and
+            # OpenAI-compatible text models; the orchestrator dispatches by provider.
+            return True
         if capability in {
-            AICapability.OCR_FIX.value,
             AICapability.AI_REPAIR.value,
             AICapability.TEXT_CORRECTION.value,
             AICapability.TEXT_STRUCTURING.value,
@@ -458,6 +471,26 @@ class AIModelConfigResolver:
         }:
             return not is_paddleocr
         return True
+
+    @staticmethod
+    def _capability_to_db_feature(capability: str) -> str | None:
+        """Return the canonical legacy DB feature for a runtime capability.
+
+        Newer rows may use more specific labels; ``_capability_to_db_features``
+        remains the source of truth for automatic resolution order.
+        """
+        mapping: dict[str, str] = {
+            "ocr_vl": "vision",
+            "ocr_lightweight": "ocr",
+            "ocr_fix": "ocr",
+            "ai_repair": "completion",
+            "text_correction": "ocr",
+            "text_structuring": "completion",
+            "completion": "completion",
+            "analysis": "analysis",
+            "embedding": "embedding",
+        }
+        return mapping.get(capability)
 
     @staticmethod
     def _capability_to_db_features(capability: str) -> tuple[str, ...]:
