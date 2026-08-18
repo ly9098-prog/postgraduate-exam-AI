@@ -15,25 +15,25 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Required for the changed-file lint ratchet below.
+          fetch-depth: 2
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install minimum dependencies
+      - name: Install CI dependencies
         run: |
           python -m pip install --upgrade pip
-          # Install lint/audit tools
-          # ruff 固定版本与本地开发工具（ruff --version = 0.15.21）对齐，避免 CI 每次拉最新版导致 lint 规则漂移
+          # Keep the linter pinned to the local development version so rules do not drift.
           pip install ruff==0.15.21 mypy pip-audit bandit
-          # Install runtime deps（项目依赖在 requirements.txt，pyproject 未声明 dependencies）
           pip install -r requirements.txt
-          # app.main 的导出模块会在 import 阶段加载 python-docx；CI 需要显式补齐。
+          # app.main imports the DOCX export stack during API/router import.
+          # Keep CI explicit until python-docx is guaranteed by the runtime dependency lock.
           pip install python-docx
-          # Install project with test extras (pytest 等)
           pip install -e ".[test]"
-          # Generate requirements-lock
           pip freeze > requirements-lock.txt
 
       - name: compileall — syntax check all Python files
@@ -47,14 +47,55 @@ jobs:
           print('compileall: OK')
           "
 
-      - name: Ruff lint — report existing debt
-        # 当前代码库已有一批 I001/F401/N818 历史问题；先保留 GitHub annotations，
-        # 不让这些存量格式问题阻断功能 CI。compileall 和回归测试仍然是硬门禁。
-        run: ruff check app/ --output-format=github --exit-zero
+      - name: Ruff correctness gate
+        # I001/F401/N818 are existing repository debt. Keep every other configured
+        # Ruff rule blocking so the workflow does not become a blanket lint bypass.
+        run: ruff check app/ --output-format=github --ignore I001,F401,N818
+
+      - name: Ruff strict gate for changed backend files
+        # New/edited Python must satisfy the complete Ruff policy, including the
+        # historical debt rules above. This gradually removes debt without touching
+        # unrelated runtime code just to make CI green.
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+
+          base="${BASE_SHA:-}"
+          if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            if git rev-parse HEAD^ >/dev/null 2>&1; then
+              base="$(git rev-parse HEAD^)"
+            else
+              echo "No parent commit is available; skipping changed-file Ruff gate."
+              exit 0
+            fi
+          fi
+
+          files=()
+          while IFS= read -r path; do
+            [[ "$path" == backend/app/*.py || "$path" == backend/app/**/*.py ]] || continue
+            relative="${path#backend/}"
+            [[ -f "$relative" ]] && files+=("$relative")
+          done < <(git diff --name-only --diff-filter=ACMR "$base" HEAD -- app/ | grep -E '\.py$' || true)
+
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No changed backend/app Python files."
+            exit 0
+          fi
+
+          printf 'Strict Ruff check for %d changed file(s):\n' "${#files[@]}"
+          printf '  %s\n' "${files[@]}"
+          ruff check "${files[@]}" --output-format=github
+
+      - name: Ruff legacy debt report
+        # Keep annotations for the known debt so it remains visible and measurable,
+        # while the changed-file gate prevents new debt from being introduced.
+        run: ruff check app/ --select I001,F401,N818 --output-format=github --exit-zero
 
       - name: Ruff format check
         run: ruff format --check app/ || true
-        continue-on-error: true  # format is advisory
+        continue-on-error: true  # formatting remains advisory while legacy files are migrated
 
       - name: MyPy type check
         run: mypy app/ || true
@@ -70,57 +111,28 @@ jobs:
         continue-on-error: true
 
       - name: Static architecture & non-GPU regression tests
-        shell: bash
         run: |
-          set -euo pipefail
-
-          candidates=(
-            tests/test_architecture_boundaries.py
-            tests/test_gateway_bypass_zero.py
-            tests/test_document_ir_production_write_zero.py
-            tests/test_artifact_path_traversal.py
-            tests/test_p5_ssrf_http_lifecycle.py
-            tests/test_coordinator_mode_e2e.py
-            tests/test_coordinator_boundaries.py
-            tests/test_coordinator_rollback.py
-            tests/test_pipeline_coordinator_shadow.py
-            tests/test_ai_capability_model_separation.py
-            tests/test_ai_model_config_resolver.py
-            tests/test_ai_config_snapshot.py
-            tests/test_code_integrity.py
-            tests/test_ocr_resume_equivalence.py
-            tests/test_candidate_evaluator_privacy.py
-            tests/test_pipeline_fingerprint.py
-            tests/test_artifact_fingerprint_compatibility.py
-            tests/test_p6_fingerprint_manifest.py
-            tests/test_unified_safety_evaluator.py
-          )
-
-          tests=()
-          for candidate in "${candidates[@]}"; do
-            if [[ -f "$candidate" ]]; then
-              tests+=("$candidate")
-              continue
-            fi
-
-            mapfile -t matches < <(
-              find tests -type f -name "$(basename "$candidate")" -print 2>/dev/null | sort
-            )
-            if [[ ${#matches[@]} -eq 1 ]]; then
-              echo "Resolved moved test: $candidate -> ${matches[0]}"
-              tests+=("${matches[0]}")
-            else
-              echo "::warning file=$candidate::Configured regression test is not present in this revision; skipping it"
-            fi
-          done
-
-          if [[ ${#tests[@]} -eq 0 ]]; then
-            echo "::error::None of the configured regression tests exist under backend/tests"
-            find tests -type f -name 'test_*.py' -print 2>/dev/null | sort | head -200 || true
-            exit 1
-          fi
-
-          python -m pytest "${tests[@]}" -v --tb=short 2>&1
+          python -m pytest \
+            tests/test_architecture_boundaries.py \
+            tests/test_gateway_bypass_zero.py \
+            tests/test_document_ir_production_write_zero.py \
+            tests/test_artifact_path_traversal.py \
+            tests/test_p5_ssrf_http_lifecycle.py \
+            tests/test_coordinator_mode_e2e.py \
+            tests/test_coordinator_boundaries.py \
+            tests/test_coordinator_rollback.py \
+            tests/test_pipeline_coordinator_shadow.py \
+            tests/test_ai_capability_model_separation.py \
+            tests/test_ai_model_config_resolver.py \
+            tests/test_ai_config_snapshot.py \
+            tests/test_code_integrity.py \
+            tests/test_ocr_resume_equivalence.py \
+            tests/test_candidate_evaluator_privacy.py \
+            tests/test_pipeline_fingerprint.py \
+            tests/test_artifact_fingerprint_compatibility.py \
+            tests/test_p6_fingerprint_manifest.py \
+            tests/test_unified_safety_evaluator.py \
+            -v --tb=short 2>&1
 
       - name: Import smoke test
         run: |
