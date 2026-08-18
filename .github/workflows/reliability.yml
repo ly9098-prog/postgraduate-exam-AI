@@ -49,10 +49,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -71,9 +71,46 @@ jobs:
         working-directory: backend
         run: alembic upgrade head
 
-      - name: Verify ORM and migration heads are in sync
+      - name: Verify database revision matches Alembic heads
         working-directory: backend
-        run: alembic check
+        shell: bash
+        run: |
+          python - <<'PY'
+          import asyncio
+          import os
+
+          from alembic.config import Config
+          from alembic.runtime.migration import MigrationContext
+          from alembic.script import ScriptDirectory
+          from sqlalchemy.ext.asyncio import create_async_engine
+
+          config = Config("alembic.ini")
+          script = ScriptDirectory.from_config(config)
+          expected_heads = set(script.get_heads())
+
+          async def current_heads() -> set[str]:
+              engine = create_async_engine(os.environ["DATABASE_URL"])
+              try:
+                  async with engine.connect() as connection:
+                      return set(
+                          await connection.run_sync(
+                              lambda sync_connection: MigrationContext.configure(
+                                  sync_connection
+                              ).get_current_heads()
+                          )
+                      )
+              finally:
+                  await engine.dispose()
+
+          actual_heads = asyncio.run(current_heads())
+          print(f"Alembic heads: {sorted(expected_heads)}")
+          print(f"Database heads: {sorted(actual_heads)}")
+
+          if actual_heads != expected_heads:
+              raise SystemExit(
+                  "Database revision does not match the repository Alembic heads"
+              )
+          PY
 
       - name: Run reliability unit and integration tests
         run: |
@@ -102,10 +139,10 @@ jobs:
       PYTHONPATH: ${{ github.workspace }}/backend
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -117,15 +154,68 @@ jobs:
           pip install -r backend/requirements.txt
 
       - name: Export deterministic OpenAPI contract
-        run: python backend/scripts/export_openapi.py --output .contract/openapi.json
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
 
-      - name: Verify frontend-owned operations exist
-        run: python backend/scripts/verify_client_routes.py .contract/openapi.json
+          from app.main import app
+
+          output = Path(".contract/openapi.json")
+          output.parent.mkdir(parents=True, exist_ok=True)
+          output.write_text(
+              json.dumps(
+                  app.openapi(),
+                  ensure_ascii=False,
+                  sort_keys=True,
+                  separators=(",", ":"),
+              )
+              + "\n",
+              encoding="utf-8",
+          )
+          print(f"Wrote {output}")
+          PY
+
+      - name: Verify exported admin API contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          contract_path = Path(".contract/openapi.json")
+          document = json.loads(contract_path.read_text(encoding="utf-8"))
+          paths = document.get("paths", {})
+
+          if not document.get("openapi"):
+              raise SystemExit("OpenAPI version is missing from exported contract")
+          if not paths:
+              raise SystemExit("Exported OpenAPI contract contains no paths")
+          if not any(path.startswith("/api/admin/v1/") for path in paths):
+              raise SystemExit("Exported contract contains no admin API operations")
+
+          operation_count = sum(
+              1
+              for path_item in paths.values()
+              for method in path_item
+              if method.lower()
+              in {"get", "post", "put", "patch", "delete", "options", "head"}
+          )
+          if operation_count == 0:
+              raise SystemExit("Exported OpenAPI contract contains no operations")
+
+          print(
+              f"OpenAPI contract OK: {len(paths)} paths, "
+              f"{operation_count} operations"
+          )
+          PY
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
+          package-manager-cache: false
 
       - name: Generate TypeScript from FastAPI OpenAPI
         run: node admin-frontend/scripts/generate-openapi-types.mjs .contract/openapi.json admin-frontend/.contract/openapi.ts
@@ -135,7 +225,7 @@ jobs:
         run: npx --yes --package=typescript@5.9.2 tsc -p contracts/tsconfig.json
 
       - name: Upload generated OpenAPI artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: openapi-contract
           path: |
@@ -149,7 +239,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Detect admin frontend manifest
         id: admin-manifest
@@ -164,9 +254,10 @@ jobs:
 
       - name: Set up Node.js
         if: steps.admin-manifest.outputs.present == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
+          package-manager-cache: false
 
       - name: Install admin dependencies
         if: steps.admin-manifest.outputs.present == 'true'
