@@ -1052,8 +1052,9 @@ export default function QuestionsPage() {
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
                 <label className="flex h-11 w-full min-w-0 items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white px-4 shadow-sm transition-all duration-200 hover:border-[var(--color-primary-light)] focus-within:border-[var(--color-primary)] focus-within:shadow-[0_0_0_3px_var(--color-primary-light)] xl:w-[38%] xl:min-w-[440px] xl:max-w-[600px]">
                   <Search className="h-4 w-4 shrink-0 text-[var(--color-text-hint)]" />
-                  <Input
-                    className="h-9 border-0 bg-transparent px-0 shadow-none focus:bg-transparent focus:ring-0"
+                  <input
+                    type="text"
+                    className="h-9 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-hint)] focus:outline-none"
                     placeholder="搜索题干 / 科目 / 题目编号"
                     value={keywordInput}
                     onChange={(event) => handleKeywordChange(event.target.value)}
