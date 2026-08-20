@@ -186,5 +186,5 @@ jobs:
           CIEOF
 
       - name: Build app Docker image
-        run: docker compose -f deploy/docker-compose.prod.yml --env-file backend/.env.ci build app --progress=plain
-        timeout-minutes: 15
+        run: docker compose --progress=plain -f deploy/docker-compose.prod.yml --env-file backend/.env.ci build app
+        timeout-minutes: 35
