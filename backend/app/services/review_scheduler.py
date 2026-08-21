@@ -4,7 +4,12 @@ from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.time_utils import shanghai_date_utc_range, shanghai_today, shanghai_today_boundaries, utcnow
+from app.core.time_utils import (
+    shanghai_date_utc_range,
+    shanghai_today,
+    shanghai_today_boundaries,
+    utcnow,
+)
 from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.wrong_question import WrongQuestion
