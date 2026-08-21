@@ -474,9 +474,11 @@ async def submit_answer(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # 失效用户相关缓存
+    # 失效用户相关缓存。单题答错会更新 ReviewSchedule，需同步清理复习缓存，
+    # 与 batch-submit 的缓存失效策略保持一致。
     await cache.delete(f"practice:stats:{current_user.id}:*")
     await cache.delete(f"stats:*:{current_user.id}*")
+    await cache.delete(f"review:*:{current_user.id}*")
 
     return AnswerResult(**result)
 

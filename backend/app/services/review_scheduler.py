@@ -477,7 +477,15 @@ async def auto_schedule_wrong_question(
     *,
     commit: bool = True,
 ) -> ReviewSchedule | None:
-    """错题自动进入复习调度。已存在则更新，不存在则创建。"""
+    """错题自动进入复习调度，首次复习从北京时间次日开始。
+
+    ``utcnow()`` 仍用于记录真实发生时间；复习调度属于“日历日”业务，
+    因此必须先按 Asia/Shanghai 确定次日，再转换成数据库使用的 naive UTC。
+    这样当天新产生的错题只进入错题池，不会被当天的“今日复习”查询命中。
+    """
+    first_review_date = shanghai_today() + timedelta(days=1)
+    first_review_at = shanghai_date_utc_range(first_review_date)[0]
+
     result = await db.execute(
         select(ReviewSchedule).where(
             ReviewSchedule.user_id == user_id,
@@ -487,11 +495,11 @@ async def auto_schedule_wrong_question(
     schedule = result.scalar_one_or_none()
 
     if schedule:
-        # 已有 schedule → 重置为困难状态
+        # 已有 schedule → 按新错题重新进入记忆周期，次日开始首次复习
         schedule.interval = 1
         schedule.ease_factor = 2.5
         schedule.repetitions = 0
-        schedule.next_review_at = utcnow()
+        schedule.next_review_at = first_review_at
         schedule.last_reviewed_at = None
     else:
         # 获取题目科目
@@ -510,7 +518,7 @@ async def auto_schedule_wrong_question(
             interval=1,
             ease_factor=2.5,
             repetitions=0,
-            next_review_at=utcnow(),
+            next_review_at=first_review_at,
         )
         db.add(schedule)
 
