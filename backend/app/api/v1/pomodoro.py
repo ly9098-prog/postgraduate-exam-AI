@@ -10,6 +10,7 @@ from app.schemas.pomodoro import (
     PomodoroCompleteRequest,
     PomodoroDailySummaryResponse,
     PomodoroHistoryResponse,
+    PomodoroPauseRequest,
     PomodoroResumeRequest,
     PomodoroSessionResponse,
     PomodoroSettingsResponse,
@@ -67,7 +68,9 @@ async def complete_session(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        session = await svc.complete_session(db, session_id, current_user.id)
+        session = await svc.complete_session(
+            db, session_id, current_user.id, client_action_at=req.client_action_at
+        )
     except ValueError as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(e))
@@ -86,7 +89,9 @@ async def interrupt_session(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        session = await svc.interrupt_session(db, session_id, current_user.id)
+        session = await svc.interrupt_session(
+            db, session_id, current_user.id, client_action_at=req.client_action_at
+        )
     except ValueError as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(e))
@@ -105,7 +110,9 @@ async def resume_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.resume_session(db, session_id, current_user.id)
+    session = await svc.resume_session(
+        db, session_id, current_user.id, client_action_at=req.client_action_at
+    )
     if not session:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
@@ -116,10 +123,13 @@ async def resume_session(
 @router.post("/{session_id}/pause", response_model=PomodoroSessionResponse)
 async def pause_session(
     session_id: int,
+    req: PomodoroPauseRequest = PomodoroPauseRequest(),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.pause_session(db, session_id, current_user.id)
+    session = await svc.pause_session(
+        db, session_id, current_user.id, client_action_at=req.client_action_at
+    )
     if not session:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")

@@ -1414,9 +1414,15 @@ page {
 
 .profile-consent-card-compact {
   margin-top: 20rpx;
-  padding: 22rpx 24rpx;
+  padding: 22rpx 20rpx;
   border-radius: 24rpx;
   box-shadow: 0 12rpx 34rpx rgba(21, 49, 35, .045);
+}
+
+.profile-avatar-editor {
+  display: block;
+  width: 100%;
+  min-width: 0;
 }
 
 .profile-flow-tip {

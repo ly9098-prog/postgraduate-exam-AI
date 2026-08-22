@@ -10,6 +10,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from app.core.time_utils import (
     current_study_day,
     minute_to_time_text,
+    normalize_to_naive_utc,
     study_day_for_utc,
     study_day_utc_range,
     study_week_utc_range,
@@ -30,6 +31,8 @@ from app.services.pomodoro_attribution import (
 )
 
 logger = logging.getLogger(__name__)
+
+FREE_TIMER_MAX_DURATION_SEC = 5 * 60 * 60
 
 
 def _effective_paused_sec(session, now) -> int:
@@ -99,6 +102,66 @@ def _server_actual_duration(session, now) -> int:
     return max(0, raw - _effective_paused_sec(session, now))
 
 
+def _latest_session_event_time(session) -> datetime:
+    """Latest canonical timestamp already recorded on the session timeline."""
+    latest = session.start_time
+    for interval in getattr(session, "pause_intervals", ()) or ():
+        if interval.started_at is not None and interval.started_at > latest:
+            latest = interval.started_at
+        if interval.ended_at is not None and interval.ended_at > latest:
+            latest = interval.ended_at
+    return latest
+
+
+def _closing_action_floor(session) -> datetime:
+    """Timeline floor for an action that may close an open pause interval."""
+    floor = _latest_session_event_time(session)
+    open_interval = next(
+        (i for i in getattr(session, "pause_intervals", ()) or () if i.ended_at is None),
+        None,
+    )
+    if open_interval is not None:
+        floor = max(floor, open_interval.started_at + timedelta(microseconds=1))
+    return floor
+
+
+def _resolve_client_action_time(
+    session,
+    client_action_at: datetime | None,
+    server_now: datetime,
+    *,
+    floor: datetime | None = None,
+) -> datetime:
+    """Clamp an optional client event timestamp to a safe session timeline.
+
+    Offline clients may synchronize pause/resume/complete later. The timestamp is
+    used only to reconstruct *when* the already-authorized user action happened;
+    it can never move before session start / prior canonical events or beyond the
+    current server time. Invalid values fall back to ``server_now``.
+    """
+    if client_action_at is None:
+        candidate = server_now
+    else:
+        try:
+            candidate = normalize_to_naive_utc(client_action_at)
+        except (TypeError, ValueError):
+            candidate = server_now
+
+    lower = session.start_time
+    if floor is not None and floor > lower:
+        lower = floor
+    if candidate < lower:
+        candidate = lower
+    if candidate > server_now:
+        candidate = server_now
+    # If a floor is microscopically newer than server_now (possible when closing
+    # an interval created in the immediately preceding request), prefer the floor
+    # so CHECK ended_at > started_at remains true.
+    if candidate < lower:
+        candidate = lower
+    return candidate
+
+
 async def start_session(
     db: AsyncSession,
     user_id: int,
@@ -158,15 +221,40 @@ async def start_session(
         notification_sent=False,
         openid_snapshot=openid_snapshot,
     )
-    db.add(session)
-    await db.flush()
+    # The database also enforces one active (running/paused) session per user.
+    # Keep the service-level pre-check for a friendly error, but use a SAVEPOINT
+    # around INSERT so a concurrent start that loses the unique-index race does
+    # not poison the outer request transaction.
+    try:
+        async with db.begin_nested():
+            db.add(session)
+            await db.flush()
+    except IntegrityError as exc:
+        # Do not blanket-convert unrelated integrity failures into an active-session
+        # conflict. After the SAVEPOINT rollback, verify that the partial unique
+        # index race really produced an active row; otherwise preserve the original
+        # database error for observability.
+        conflict = await get_active_session(db, user_id)
+        if conflict is not None:
+            logger.info(
+                "pomodoro start_session: active-session uniqueness race for user %s",
+                user_id,
+            )
+            raise ValueError("当前已有进行中的专注，请先结束后再开始") from exc
+        raise
+
     await db.refresh(session)
     # Populate subject_ref for post-commit serialization
     session.subject_ref = subj
     return session
 
 
-async def complete_session(db: AsyncSession, session_id: int, user_id: int) -> PomodoroSession | None:
+async def complete_session(
+    db: AsyncSession,
+    session_id: int,
+    user_id: int,
+    client_action_at: datetime | None = None,
+) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)
         .options(
@@ -176,24 +264,61 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int) -> P
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status.in_(["running", "paused"]),
+            PomodoroSession.status.in_(["running", "paused", "completed"]),
         )
     )
     session = result.scalar_one_or_none()
     if not session:
         return None
-    now = utcnow()
 
-    # Close any open pause interval so the whole pause is captured by intervals.
+    # Completion is idempotent. Mobile clients may retry after a timeout even when
+    # the first request committed successfully; returning the existing completed
+    # row prevents a false 404 and makes local pending-sync retries safe.
+    if session.status == "completed":
+        return session
+
+    now = utcnow()
+    action_time = _resolve_client_action_time(
+        session, client_action_at, now, floor=_closing_action_floor(session)
+    )
+
+    # Close any open pause interval at the client event time (clamped to the
+    # canonical timeline) so delayed offline completion does not absorb wait time.
     if session.paused_at is not None:
-        _close_open_pause_interval(session, now)
+        _close_open_pause_interval(session, action_time)
         session.paused_at = None
 
-    session.end_time = now
     # actual_duration is computed entirely server-side from timestamps + intervals
-    # (§14); the client never overrides it.
-    session.actual_duration = _server_actual_duration(session, now)
-    session.total_paused_sec = _effective_paused_sec(session, now)  # derived cache
+    # (§14); the client never overrides it. Delayed mobile retries must not inflate
+    # a finished countdown: a 25-minute timer completed offline and synchronized
+    # five minutes later is still a 25-minute focus session.
+    paused_sec = _effective_paused_sec(session, action_time)
+    actual_duration = _server_actual_duration(session, action_time)
+    effective_end = action_time
+    if session.preset == "free":
+        # Free timer is a product-level maximum of five active hours.
+        actual_duration = min(actual_duration, FREE_TIMER_MAX_DURATION_SEC)
+        if actual_duration >= FREE_TIMER_MAX_DURATION_SEC:
+            effective_end = min(
+                action_time,
+                session.start_time + timedelta(seconds=paused_sec + FREE_TIMER_MAX_DURATION_SEC),
+            )
+    else:
+        # /complete represents natural countdown completion; early user termination
+        # goes through /interrupt. Cap both duration and end_time to the configured
+        # work duration so a delayed retry cannot include the offline delay.
+        work_cap_sec = max(0, int(session.work_duration or 0) * 60)
+        if work_cap_sec > 0:
+            actual_duration = min(actual_duration, work_cap_sec)
+            if actual_duration >= work_cap_sec:
+                effective_end = min(
+                    action_time,
+                    session.start_time + timedelta(seconds=paused_sec + work_cap_sec),
+                )
+
+    session.end_time = effective_end
+    session.actual_duration = actual_duration
+    session.total_paused_sec = paused_sec  # derived cache
     session.status = "completed"
     if not session.notification_sent:
         session.notification_sent = True
@@ -205,7 +330,12 @@ async def complete_session(db: AsyncSession, session_id: int, user_id: int) -> P
     return session
 
 
-async def interrupt_session(db: AsyncSession, session_id: int, user_id: int) -> PomodoroSession | None:
+async def interrupt_session(
+    db: AsyncSession,
+    session_id: int,
+    user_id: int,
+    client_action_at: datetime | None = None,
+) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)
         .options(
@@ -215,21 +345,54 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int) -> 
         .where(
             PomodoroSession.id == session_id,
             PomodoroSession.user_id == user_id,
-            PomodoroSession.status.in_(["running", "paused"]),
+            PomodoroSession.status.in_(["running", "paused", "interrupted"]),
         )
     )
     session = result.scalar_one_or_none()
     if not session:
         return None
+
+    # Idempotent for mobile retries: if the first interrupt committed but its
+    # response was lost, return the already-interrupted session instead of 404.
+    if session.status == "interrupted":
+        return session
+
     now = utcnow()
+    action_time = _resolve_client_action_time(
+        session, client_action_at, now, floor=_closing_action_floor(session)
+    )
 
     if session.paused_at is not None:
-        _close_open_pause_interval(session, now)
+        _close_open_pause_interval(session, action_time)
         session.paused_at = None
 
-    session.end_time = now
-    session.actual_duration = _server_actual_duration(session, now)
-    session.total_paused_sec = _effective_paused_sec(session, now)  # derived cache
+    paused_sec = _effective_paused_sec(session, action_time)
+    actual_duration = _server_actual_duration(session, action_time)
+    effective_end = action_time
+    # Interrupts are also retryable from the client. Bound old-client / delayed
+    # requests to the product's maximum active duration even when no
+    # client_action_at is available; current clients send the exact local action
+    # timestamp, so this is mainly a defensive ceiling.
+    if session.preset == "free":
+        actual_duration = min(actual_duration, FREE_TIMER_MAX_DURATION_SEC)
+        if actual_duration >= FREE_TIMER_MAX_DURATION_SEC:
+            effective_end = min(
+                action_time,
+                session.start_time + timedelta(seconds=paused_sec + FREE_TIMER_MAX_DURATION_SEC),
+            )
+    else:
+        work_cap_sec = max(0, int(session.work_duration or 0) * 60)
+        if work_cap_sec > 0:
+            actual_duration = min(actual_duration, work_cap_sec)
+            if actual_duration >= work_cap_sec:
+                effective_end = min(
+                    action_time,
+                    session.start_time + timedelta(seconds=paused_sec + work_cap_sec),
+                )
+
+    session.end_time = effective_end
+    session.actual_duration = actual_duration
+    session.total_paused_sec = paused_sec  # derived cache
     session.status = "interrupted"
     if not session.notification_sent:
         session.notification_sent = True
@@ -241,7 +404,12 @@ async def interrupt_session(db: AsyncSession, session_id: int, user_id: int) -> 
     return session
 
 
-async def pause_session(db: AsyncSession, session_id: int, user_id: int) -> PomodoroSession | None:
+async def pause_session(
+    db: AsyncSession,
+    session_id: int,
+    user_id: int,
+    client_action_at: datetime | None = None,
+) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)
         .options(
@@ -267,14 +435,17 @@ async def pause_session(db: AsyncSession, session_id: int, user_id: int) -> Pomo
         await db.refresh(session)
         return session
     now = utcnow()
+    action_time = _resolve_client_action_time(
+        session, client_action_at, now, floor=_latest_session_event_time(session)
+    )
     # Record the pause interval so attribution can subtract exactly where the
     # pause fell.  Defensive: never create a second open interval (covers engines
     # without SELECT FOR UPDATE, e.g. SQLite, and double-tap races).
     if not any(i.ended_at is None for i in session.pause_intervals):
         session.pause_intervals.append(
-            PomodoroPauseInterval(session_id=session.id, started_at=now, ended_at=None)
+            PomodoroPauseInterval(session_id=session.id, started_at=action_time, ended_at=None)
         )
-    session.paused_at = now
+    session.paused_at = action_time
     session.status = "paused"
     # The partial unique index is the final guard: on SQLite the row lock above
     # is a no-op, so two concurrent pause requests can both pass the defensive
@@ -300,6 +471,7 @@ async def resume_session(
     db: AsyncSession,
     session_id: int,
     user_id: int,
+    client_action_at: datetime | None = None,
 ) -> PomodoroSession | None:
     result = await db.execute(
         select(PomodoroSession)
@@ -318,12 +490,17 @@ async def resume_session(
         return None
 
     now = utcnow()
+    open_interval = next((i for i in session.pause_intervals if i.ended_at is None), None)
+    floor = _latest_session_event_time(session)
+    if open_interval is not None:
+        floor = max(floor, open_interval.started_at + timedelta(microseconds=1))
+    action_time = _resolve_client_action_time(session, client_action_at, now, floor=floor)
 
     # Close any stray open pause interval regardless of status, so a running
     # session carrying a leftover open interval (migration artifact / pause race)
     # is repaired on resume too instead of being left on the completed session.
     if any(i.ended_at is None for i in session.pause_intervals):
-        _close_open_pause_interval(session, now)
+        _close_open_pause_interval(session, action_time)
 
     if session.status == "paused" and session.paused_at is not None:
         session.paused_at = None
@@ -331,7 +508,7 @@ async def resume_session(
 
     # Recompute the derived cache and the countdown end from canonical data —
     # idempotent: repeated resumes never double-extend the countdown.
-    session.total_paused_sec = _effective_paused_sec(session, now)
+    session.total_paused_sec = _effective_paused_sec(session, action_time)
     if session.status == "running" and session.expected_end_time is not None:
         session.expected_end_time = (
             session.start_time

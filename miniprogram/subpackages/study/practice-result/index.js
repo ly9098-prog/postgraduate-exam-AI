@@ -505,6 +505,7 @@ Page({
 
     return {
       questionId,
+      wrongQuestionId: result.wrong_question_id ?? result.wrongQuestionId ?? null,
       displayIndex: pad2(index + 1),
       title: getQuestionTitle(question) || `第 ${index + 1} 题`,
       isCorrect: !!isCorrectRaw,
@@ -521,6 +522,7 @@ Page({
     const kpList = normalizeKpList(item.knowledge_points ?? item.knowledgePoints ?? item.knowledgePoint);
     return {
       questionId: item.questionId ?? item.question_id ?? item.id ?? index + 1,
+      wrongQuestionId: item.wrongQuestionId ?? item.wrong_question_id ?? null,
       displayIndex: item.displayIndex || pad2(index + 1),
       title: formatMathPreviewText(item.title || getQuestionTitle(item)) || `第 ${index + 1} 题`,
       isCorrect: !!isCorrectRaw,
@@ -784,6 +786,21 @@ Page({
         icon: 'none'
       });
     }
+  },
+
+  openWrongDetail(e) {
+    const wrongQuestionId = e.currentTarget.dataset.wqid;
+    if (!wrongQuestionId) {
+      wx.showToast({
+        title: '该题暂无错题详情',
+        icon: 'none'
+      });
+      return;
+    }
+
+    wx.navigateTo({
+      url: `/subpackages/study/wrong-detail/wrong-detail?id=${encodeURIComponent(wrongQuestionId)}`
+    });
   },
 
 

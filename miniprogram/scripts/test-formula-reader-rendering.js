@@ -542,6 +542,73 @@ assert(errorTipHtml.indexOf('\\ne') >= 0 || errorTipHtml.indexOf('$') >= 0, 'err
 
 console.log('✓ Issue 4 (existing content areas) tests passed')
 
+
+// Screenshot coverage: decimals inside the reader prose areas must stay inside
+// the same KaTeX fragment. Previously `e≈2.71828` was split at the decimal point
+// and rendered as KaTeX `e≈2` followed by plain `.71828` text.
+var symbolDecimalHtml = formulaContent.normalizeMixedContent('e≈2.71828，为自然对数的底数。')
+assert(symbolDecimalHtml.indexOf('2.71828') >= 0, 'symbol note decimal must be preserved')
+assert((symbolDecimalHtml.match(/\$\\displaystyle/g) || []).length === 1, 'e≈2.71828 must use one inline KaTeX wrapper')
+assert(!/\$\.71828/.test(symbolDecimalHtml), 'decimal tail must not leak outside the KaTeX wrapper')
+
+var decimalEquationHtml = formulaContent.normalizeMixedContent('x=1.5，y=2.25。')
+assert((decimalEquationHtml.match(/\$\\displaystyle/g) || []).length === 2, 'decimal equations on both sides must render as two complete math fragments')
+assert(decimalEquationHtml.indexOf('x=1.5') >= 0 && decimalEquationHtml.indexOf('y=2.25') >= 0, 'decimal equations must remain intact inside reader rich text')
+
+console.log('✓ Reader screenshot decimal LaTeX coverage tests passed')
+
+// =============================
+// Formula-table Unicode / legacy notation coverage
+// =============================
+// Representative values below come from formula_cards.csv and cover the
+// notation that previously leaked as plain text or was split into malformed
+// KaTeX fragments in summary / conditions / symbols / conclusions / errors.
+var tableCoverageCases = [
+  ['0/0或∞/∞型不定式', ['\\frac{0}{0}', '\\infty /\\infty']],
+  ["且f'(x)/g'(x)的极限存在", ["f'(x)/g'(x)"]],
+  ['lim_{x→−∞} arctan x = −π/2', ['\\lim_{x\\to -\\infty', '\\arctan x=-\\pi']],
+  ['|sin x| ≤ 1', ['|\\sin x| \\le 1']],
+  ['x∈ℝ', ['x\\in \\mathbb{R}']],
+  ['f″(x₀)=0', ["f''(x_{0})=0"]],
+  ['若∂P/∂y≠∂Q/∂x', ['\\partial P/\\partial y\\ne \\partial Q/\\partial x']],
+  ['A为m×n矩阵', ['m\\times n']],
+  ['x²-(x₁+x₂)x=0', ['x^{2}-(x_{1}+x_{2})x=0']],
+  ['det Q = ±1', ['\\left|Q\\right|=\\pm 1']],
+  ['∀α>0', ['\\forall \\alpha{}&gt;0']],
+  ['x! 的增长速度更快', ['x!']],
+  ['ln x ≺ x^α ≺ a^x', ['\\ln x \\prec x^\\alpha{} \\prec a^x']],
+  ['分母为√(A²+B²)', ['\\sqrt{A^{2}+B^{2}}']],
+  ['f\'(x)>0 ⇒ f 递增', ["f'(x)&gt;0 \\Rightarrow f"]],
+]
+
+tableCoverageCases.forEach(function (fixture) {
+  var html = formulaContent.normalizeMixedContent(fixture[0])
+  fixture[1].forEach(function (fragment) {
+    assert(html.indexOf(fragment) >= 0, 'formula-table notation must be covered by KaTeX: ' + fixture[0] + ' -> ' + fragment)
+  })
+  var nodes = parse(html)
+  var serialized = JSON.stringify(nodes)
+  assert(collectClasses(nodes).some(function (name) { return /katex/.test(name) }), 'formula-table notation must create KaTeX nodes: ' + fixture[0])
+  assert(serialized.indexOf('color:red') < 0, 'formula-table notation must not create red KaTeX errors: ' + fixture[0])
+  assert(serialized.indexOf('KaTeX parse error') < 0, 'formula-table notation must not expose parse errors: ' + fixture[0])
+})
+
+assert.strictEqual(
+  formulaContent.normalizeLatexSource('y = arccot x'),
+  'y = \\operatorname{arccot} x',
+  'bare arccot in formula blocks must use operatorname so KaTeX can render it',
+)
+
+// Multiplication used as Chinese prose should not be promoted just because the
+// glyph × is present; only actual math operands such as m×n are converted.
+assert.strictEqual(
+  formulaContent.normalizeMixedContent('先把每一项写成 f(采样点)×区间宽度。'),
+  '先把每一项写成 f(采样点)×区间宽度。',
+  'prose multiplication wording must remain plain text',
+)
+
+console.log('✓ Formula-table Unicode / legacy notation coverage tests passed')
+
 // =============================
 // New: non-math patterns guard
 // =============================

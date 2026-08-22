@@ -71,15 +71,56 @@ function replaceUnicodeGreek(value) {
   })
 }
 
+function replaceUnicodeScripts(value) {
+  var superscripts = {
+    '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
+    '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9',
+    '⁺': '+', '⁻': '-', 'ⁿ': 'n',
+  }
+  var subscripts = {
+    '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4',
+    '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9',
+    '₊': '+', '₋': '-',
+  }
+
+  return String(value == null ? '' : value)
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿ]+/g, function (run) {
+      return '^{' + run.split('').map(function (ch) { return superscripts[ch] || ch }).join('') + '}'
+    })
+    .replace(/[₀₁₂₃₄₅₆₇₈₉₊₋]+/g, function (run) {
+      return '_{' + run.split('').map(function (ch) { return subscripts[ch] || ch }).join('') + '}'
+    })
+}
+
 function replaceUnicodeMath(value) {
-  return replaceUnicodeGreek(value)
+  return replaceUnicodeScripts(replaceUnicodeGreek(value))
+    .replace(/−/g, '-')
+    .replace(/′/g, "'")
+    .replace(/″/g, "''")
     .replace(/(?:→|->)/g, '\\to ')
+    .replace(/⇒/g, '\\Rightarrow ')
     .replace(/(?:∞|\binfinity\b)/gi, '\\infty ')
     .replace(/≤/g, '\\le ')
     .replace(/≥/g, '\\ge ')
     .replace(/≠/g, '\\ne ')
     .replace(/≈/g, '\\approx ')
+    .replace(/≡/g, '\\equiv ')
+    .replace(/∈/g, '\\in ')
+    .replace(/∉/g, '\\notin ')
+    .replace(/∀/g, '\\forall ')
+    .replace(/±/g, '\\pm ')
+    .replace(/∂/g, '\\partial ')
+    .replace(/∫/g, '\\int ')
     .replace(/∑/g, '\\sum ')
+    .replace(/∏/g, '\\prod ')
+    .replace(/×/g, '\\times ')
+    .replace(/÷/g, '\\div ')
+    .replace(/∝/g, '\\propto ')
+    .replace(/≺/g, '\\prec ')
+    .replace(/⋯/g, '\\cdots ')
+    .replace(/ℝ/g, '\\mathbb{R}')
+    .replace(/ℤ/g, '\\mathbb{Z}')
+    .replace(/ℕ/g, '\\mathbb{N}')
 }
 
 function normalizeTrendPhrases(value) {
@@ -144,11 +185,11 @@ function normalizePowers(value) {
 
 function normalizeFractions(value) {
   var source = String(value == null ? '' : value)
-  var functionName = '(?:arcsin|arccos|arctan|sin|cos|tan|cot|sec|csc|ln|log|det|exp)'
+  var functionName = '(?:arcsin|arccos|arctan|arccot|sin|cos|tan|cot|sec|csc|ln|log|det|exp)'
 
   // Parenthesised numerator: (sin x)/x, (x+1)/(x-1), etc. Run this
   // before simple fractions so the numerator remains one semantic unit.
-  source = source.replace(/\(\s*([^()]+?)\s*\)\s*\/\s*(\([^()]+\)|[A-Za-z0-9]+)(?=$|[\s,;=+\-*^)\]}])/g, function (_, numerator, denominator) {
+  source = source.replace(/\(\s*([^()]+?)\s*\)\s*\/\s*(\([^()]+\)|[A-Za-z0-9]+)(?=$|[\s,;=+\-*)\]}])/g, function (_, numerator, denominator) {
     return '\\frac{' + normalizeFractionOperand(numerator) + '}{' + normalizeFractionOperand(denominator) + '}'
   })
 
@@ -166,7 +207,7 @@ function normalizeFractions(value) {
 
   // Conservative atom fractions. This covers 1/x and 1/(1+x) while the
   // isMathRun guards keep dates, URLs and paths out of this conversion path.
-  source = source.replace(/(^|[\s(=+\-*,])([A-Za-z0-9]+)\s*\/\s*(\([^()]+\)|[A-Za-z0-9]+)(?=$|[\s,;=+\-*^)\]}])/g, function (_, prefix, numerator, denominator) {
+  source = source.replace(/(^|[\s(=+\-*,])([A-Za-z0-9]+)\s*\/\s*(\([^()]+\)|[A-Za-z0-9]+)(?=$|[\s,;=+\-*)\]}])/g, function (_, prefix, numerator, denominator) {
     return prefix + '\\frac{' + normalizeFractionOperand(numerator) + '}{' + normalizeFractionOperand(denominator) + '}'
   })
 
@@ -217,6 +258,7 @@ function normalizeLatexSource(value) {
   }
 
   source = replaceUnicodeMath(source)
+  source = normalizeNamedOperators(source)
   source = normalizeFunctionNames(source)
     .replace(/[ \t]+/g, ' ')
     .trim()
@@ -554,14 +596,15 @@ function normalizeDeterminantNotation(source) {
 
 function normalizeNamedOperators(value) {
   // KaTeX does not expose every textbook operator as a dedicated command.
-  // Historical formula data commonly stores `sgn x` as plain text, while
-  // newer records may already contain `\operatorname{sgn}`. Convert only the
-  // former and leave the latter untouched.
+  // Historical formula data commonly stores `sgn x` / `arccot x` as plain
+  // text, while newer records may already contain `\operatorname{...}`.
+  // Convert only the bare forms and leave explicit LaTeX untouched.
   return String(value || '').replace(
-    /(^|[^\\A-Za-z{])(sgn)(?=\s*[A-Za-z0-9([{\\]|\s*$)/gi,
+    /(^|[^\\A-Za-z{])(sgn|arccot)(?=\s*[A-Za-z0-9([{\\]|\s*$)/gi,
     function (_, prefix, name) { return prefix + '\\operatorname{' + name.toLowerCase() + '}' },
   )
 }
+
 
 /**
  * Regularise leftover dirty-data patterns before sending the formula to KaTeX.
@@ -680,9 +723,25 @@ function isMathRun(value) {
   // paths have already been protected above. A whitelist caused valid commands
   // such as \operatorname, \lfloor and \rfloor to leak into the UI as source.
   if (/\\[A-Za-z]+/.test(source)) return true
-  if (/(?:lim|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|ln|log|det|exp|sgn)\s*\(?/i.test(source)) return true
-  if (/[A-Za-z0-9)}\]]\s*(?:=|≠|≈|≤|≥|<|>|→|->|\+|\-|\*|\/|\^|_)/.test(source)) return true
-  if (/(?:=|≠|≈|≤|≥|<|>|→|->|\+|\-|\*|\/|\^|_)\s*[A-Za-z0-9({\[]/.test(source)) return true
+  if (/(?:lim|arcsin|arccos|arctan|arccot|sin|cos|tan|cot|sec|csc|ln|log|det|exp|sgn)\s*\(?/i.test(source)) return true
+
+  // Formula-table history contains a number of Unicode-only operators. Once a
+  // token has been isolated from Chinese prose, these are unambiguous math
+  // signals and should be handed to KaTeX as one fragment rather than split.
+  if (/[∞∑√∂∫∏∈∉⇒∀±≡∝≺ℝℤℕ]/.test(source)) return true
+  if (/[A-Za-z0-9)\]}|]\s*(?:=|≠|≈|≤|≥|<|>|→|->|⇒|∈|∉|≡|∝|≺|\+|\-|−|\*|\/|\^|_)/.test(source)) return true
+  if (/(?:=|≠|≈|≤|≥|<|>|→|->|⇒|∈|∉|≡|∝|≺|\+|\-|−|\*|\/|\^|_)\s*[A-Za-z0-9({\[|]/.test(source)) return true
+  if (/[A-Za-z0-9)\]}]\s*[×÷]\s*[A-Za-z0-9({\[]/.test(source)) return true
+
+  // Derivatives, factorials and Unicode super/subscripts often appear without
+  // another relation sign (for example F′, f″, x!, x², x₀).
+  if (/[A-Za-z][A-Za-z0-9_{}()]*[′″']+/.test(source)) return true
+  if (/[A-Za-z0-9)\]}][!⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿ₀₁₂₃₄₅₆₇₈₉₊₋]/.test(source)) return true
+
+  // Absolute-value / determinant-style bars should remain attached to the
+  // expression inside them instead of rendering as plain bars around KaTeX.
+  if (/\|[^|]+\|/.test(source) && /[A-Za-z0-9\\]/.test(source)) return true
+
   return /[A-Za-z].*[∞∑√]/.test(source)
 }
 
@@ -868,8 +927,11 @@ function processPlainTextNode(value) {
   var result = ''
   var cursor = 0
   // Deliberately excludes newlines (already normalised) and Chinese punctuation,
-  // so prose cannot be swallowed into one malformed KaTeX expression.
-  var pattern = /[A-Za-z0-9\\()[\]{}_^+\-*\/=<>→∞≈≠≤≥∑√·, \t]+/g
+  // so prose cannot be swallowed into one malformed KaTeX expression. Decimal
+  // points are admitted only when followed by digits; this keeps values such as
+  // `e≈2.71828` / `x=1.5` inside one KaTeX fragment without swallowing normal
+  // sentence-ending periods into the math run.
+  var pattern = /(?:[A-Za-z0-9\\()[\]{}_^+\-*\/=<>→∞≈≠≤≥∑√·|!'′″−±×÷∂∫∏∈∉⇒∀≡∝≺⋯ℝℤℕ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿ₀₁₂₃₄₅₆₇₈₉₊₋, \t]+|\.\d+)+/g
   var match
   while ((match = pattern.exec(source))) {
     result += escapeHtml(source.slice(cursor, match.index))
