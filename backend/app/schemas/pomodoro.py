@@ -14,18 +14,26 @@ class PomodoroStartRequest(BaseModel):
     notification_enabled: bool = False
 
 
-class PomodoroCompleteRequest(BaseModel):
-    """Empty body — actual_duration is server-authoritative (§14).
+class PomodoroActionRequest(BaseModel):
+    """Optional client event time used only to reconstruct delayed offline actions.
 
-    Extra fields from older clients are ignored (Pydantic default), so shipping the
-    backend before every client is updated is safe.
+    Duration remains server-authoritative: the service clamps this timestamp to the
+    session timeline and current server time before using it. Older clients can keep
+    sending an empty body.
     """
+
+    client_action_at: datetime | None = None
+
+
+class PomodoroCompleteRequest(PomodoroActionRequest):
     pass
 
 
-class PomodoroResumeRequest(BaseModel):
-    """Empty body — pause totals are recomputed server-side from intervals."""
+class PomodoroResumeRequest(PomodoroActionRequest):
+    pass
 
+
+class PomodoroPauseRequest(PomodoroActionRequest):
     pass
 
 

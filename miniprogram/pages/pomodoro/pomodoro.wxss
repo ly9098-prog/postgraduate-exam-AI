@@ -39,7 +39,7 @@ page {
 }
 
 .animation-entrance.entered {
-  animation: page-enter 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: page-enter 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @keyframes page-enter {
@@ -535,7 +535,7 @@ page {
   display: flex;
   flex-direction: column;
   align-items: center;
-  animation: timer-in 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: timer-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @keyframes timer-in {
@@ -578,8 +578,9 @@ page {
 }
 
 .ring-wrapper {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  width: 100%;
+  height: 100%;
   transform: none;
 }
 
@@ -621,14 +622,25 @@ page {
 }
 
 .ring-canvas {
-  position: absolute;
-  inset: 0;
+  /* Keep the native Canvas in normal flow inside the fixed-size ring stage.
+     Double absolute-positioning can lose the ancestor Y offset when a real
+     device rebuilds the native layer after page re-entry. */
+  position: relative;
   width: 520rpx;
   height: 520rpx;
   display: block;
   box-sizing: border-box;
   z-index: 1;
-  transition: opacity 0.3s ease;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.ring-canvas-ready {
+  opacity: 1;
+}
+
+.ring-canvas-preparing {
+  opacity: 0;
 }
 
 .ring-wrapper-confirming .ring-glow {
@@ -1080,11 +1092,25 @@ page {
 
 .confirm-cover-body {
   display: block;
+  width: 100%;
+  box-sizing: border-box;
   text-align: center;
   font-size: 28rpx;
   color: rgba(255,255,255,0.72);
-  line-height: 1.7;
+  line-height: 1.55;
   margin-bottom: 44rpx;
+}
+
+.confirm-cover-body-line {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.confirm-cover-body-line-secondary {
+  margin-top: 4rpx;
 }
 
 .confirm-cover-actions {

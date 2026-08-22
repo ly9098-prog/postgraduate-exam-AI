@@ -224,6 +224,7 @@
 
       <view class="profile-consent-card profile-consent-card-compact">
         <mp-user-avatar
+          class="profile-avatar-editor"
           avatar="{{profileAvatarPreview}}"
           nickname="{{profileNickname}}"
           default-nickname="点击选择微信昵称"

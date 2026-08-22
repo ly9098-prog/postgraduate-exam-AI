@@ -2276,9 +2276,11 @@ async def submit_answer(
         "correct_answer": question.answer,
         "analysis": question.analysis,
         "knowledge_points": kp_map.get(question_id, []),
-        # The wrong-book write is eventual, but the answer result already tells
-        # us deterministically whether this event will create/update it.
+        # Wrong-book state is already persisted in this transaction, so expose
+        # the concrete row id. The mini-program result page can navigate directly
+        # to /wrong-detail without a second lookup by question_id.
         "is_wrong_added": not is_correct,
+        "wrong_question_id": wrong_for_prewarm.id if wrong_for_prewarm is not None else None,
     }
 
 
@@ -2398,6 +2400,7 @@ async def batch_submit_answers(
     from app.services.wrong_question_service import record_wrong
 
     prewarm_wrong_questions = []
+    wrong_question_ids: dict[int, int] = {}
     for record, q, is_correct, user_answer, _used_time in records:
         if not is_correct:
             wrong = await record_wrong(
@@ -2408,6 +2411,7 @@ async def batch_submit_answers(
                 commit=False,
             )
             prewarm_wrong_questions.append(wrong)
+            wrong_question_ids[q.id] = wrong.id
         await _create_answer_projection_outbox(
             db,
             practice_record_id=record.id,
@@ -2455,6 +2459,7 @@ async def batch_submit_answers(
                 "analysis": q.analysis,
                 "knowledge_points": kp_map.get(q.id, []),
                 "is_wrong_added": not c,
+                "wrong_question_id": wrong_question_ids.get(q.id),
             }
             for r, q, c, _, _ in records
         ],

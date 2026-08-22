@@ -207,6 +207,8 @@
             wx:for="{{wrongReviewItems}}"
             wx:key="questionId"
             class="wrong-row"
+            data-wqid="{{item.wrongQuestionId}}"
+            bindtap="openWrongDetail"
           >
             <view class="wrong-row-top">
               <view class="wrong-index-wrap">

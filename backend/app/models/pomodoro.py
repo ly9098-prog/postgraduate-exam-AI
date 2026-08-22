@@ -22,6 +22,15 @@ class PomodoroSession(Base):
     __table_args__ = (
         Index("ix_pomodoro_sessions_user_status_start", "user_id", "status", "start_time"),
         Index("ix_pomodoro_sessions_user_status_end", "user_id", "status", "end_time"),
+        # Database-level concurrency guard: a user can have at most one active
+        # session across both running and paused states.
+        Index(
+            "ux_pomodoro_sessions_one_active_per_user",
+            "user_id",
+            unique=True,
+            sqlite_where=text("status IN ('running', 'paused')"),
+            postgresql_where=text("status IN ('running', 'paused')"),
+        ),
         # Post-migration invariant: a completed session always has a non-negative
         # actual_duration within its wall clock.
         CheckConstraint(

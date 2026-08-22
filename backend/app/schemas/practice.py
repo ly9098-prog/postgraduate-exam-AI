@@ -68,6 +68,7 @@ class AnswerResult(BaseModel):
     analysis: str | None = None
     knowledge_points: list | None = None
     is_wrong_added: bool = False
+    wrong_question_id: int | None = None
 
 
 # --- POST /practice/batch-submit ---
