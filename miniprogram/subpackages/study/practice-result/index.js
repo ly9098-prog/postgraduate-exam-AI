@@ -4,6 +4,7 @@ const api = require('../../../utils/api');
 const { getChinaDate } = require('../../../utils/china-time');
 
 const ERROR_COLORS = ['#B8FF13', '#78D74D', '#43B968', '#238E58', '#86A83E', '#C9DC73'];
+const RESULT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const DEFAULT_GROWTH = {
   total_exp: 0,
@@ -271,15 +272,24 @@ Page({
   },
 
   onLoad(options) {
+    this._pageAlive = true;
     this._pageReady = false;
     this._sessionPayload = null;
+    this._dashboardLoadId = 0;
 
     this.bindEventChannel();
     const optionPayload = this.readPayloadFromOptions(options || {});
-    const cachePayload = optionPayload ? null : this.readPayloadFromCache();
-    this.applyPracticePayload(optionPayload || cachePayload || {});
+    const cachePayload = optionPayload ? null : this.readPayloadFromCache(options || {});
+    const summaryPayload = optionPayload || cachePayload ? null : this.readSummaryFromOptions(options || {});
+    this.applyPracticePayload(optionPayload || cachePayload || summaryPayload || {});
 
     this.loadDashboardData();
+  },
+
+  onUnload() {
+    this._pageAlive = false;
+    this._pageReady = false;
+    this._dashboardLoadId++;
   },
 
   onReady() {
@@ -325,7 +335,54 @@ Page({
     return null;
   },
 
-  readPayloadFromCache() {
+  readSummaryFromOptions(options) {
+    const keys = ['correct', 'wrong', 'total', 'duration', 'subject_id', 'subject_name'];
+    if (!keys.some(key => options[key] !== undefined && options[key] !== null && options[key] !== '')) return null;
+
+    let subjectName = options.subject_name || '';
+    if (typeof subjectName === 'string') {
+      try { subjectName = decodeURIComponent(subjectName); } catch (_) {}
+    }
+    return {
+      total_correct: Number(options.correct) || 0,
+      total_wrong: Number(options.wrong) || 0,
+      total: Math.max(0, Number(options.total) || 0),
+      duration: Math.max(0, Number(options.duration) || 0),
+      subject_id: options.subject_id != null ? Number(options.subject_id) : null,
+      subject_name: subjectName,
+    };
+  },
+
+  _getCurrentUserId() {
+    try {
+      const user = wx.getStorageSync('user');
+      const id = user && (user.id ?? user.user_id ?? user.openid);
+      return id === undefined || id === null ? '' : String(id);
+    } catch (_) {
+      return '';
+    }
+  },
+
+  _isResultCacheValid(value, expectedCacheKey) {
+    if (!value || typeof value !== 'object') return false;
+
+    if (expectedCacheKey && String(value._cacheKey || '') !== expectedCacheKey) return false;
+
+    const currentUserId = this._getCurrentUserId();
+    const cachedUserId = value._userId === undefined || value._userId === null ? '' : String(value._userId);
+    if (cachedUserId && (!currentUserId || cachedUserId !== currentUserId)) return false;
+
+    let createdAt = Number(value._createdAt || 0);
+    if (!(createdAt > 0) && value._cacheKey) {
+      const match = /^pr_(\d+)_/.exec(String(value._cacheKey));
+      if (match) createdAt = Number(match[1]) || 0;
+    }
+    if (createdAt > 0 && Date.now() - createdAt > RESULT_CACHE_MAX_AGE_MS) return false;
+    return true;
+  },
+
+  readPayloadFromCache(options) {
+    const expectedCacheKey = options && options._ck ? String(options._ck) : '';
     const keys = [
       'practiceResult',
       'practice_result',
@@ -335,9 +392,9 @@ Page({
     for (const key of keys) {
       try {
         const value = wx.getStorageSync(key);
-        if (value && typeof value === 'object') return value;
+        if (value && typeof value === 'object' && this._isResultCacheValid(value, expectedCacheKey)) return value;
         const parsed = safeDecodeJson(value);
-        if (parsed) return parsed;
+        if (parsed && this._isResultCacheValid(parsed, expectedCacheKey)) return parsed;
       } catch (e) {}
     }
     return null;
@@ -454,8 +511,9 @@ Page({
     const wrongReviewItems = reviewItems.filter(item => !item.isCorrect);
     const localErrorDistribution = this.buildLocalErrorDistribution(wrongReviewItems);
 
-    const resultTip = this.getResultTip(accuracyPct, wrongCount);
+    const resultTip = this.getResultTip(accuracyPct, wrongCount, totalCount);
 
+    if (!this._pageAlive) return;
     this.setData({
       subjectName,
       correctCount,
@@ -560,27 +618,35 @@ Page({
     }));
   },
 
-  getResultTip(accuracy, wrongCount) {
-    if (wrongCount === 0 && this.data.totalCount > 0) return '本组表现稳定，可以继续挑战更高难度。';
+  getResultTip(accuracy, wrongCount, totalCount) {
+    if (wrongCount === 0 && Number(totalCount) > 0) return '本组表现稳定，可以继续挑战更高难度。';
     if (accuracy >= 80) return '整体掌握较好，建议快速复盘错题后继续练习。';
     if (accuracy >= 60) return '基础已掌握，优先复盘错题对应知识点。';
     return '本组错题较多，建议先定位错误原因，再进行同类题巩固。';
   },
 
   async loadDashboardData() {
+    if (!this._pageAlive) return;
+    const loadId = ++this._dashboardLoadId;
     await Promise.allSettled([
-      this.loadTrends(),
-      this.loadGrowth(),
-      this.loadBehavior()
+      this.loadTrends(loadId),
+      this.loadGrowth(loadId),
+      this.loadBehavior(loadId)
     ]);
 
-    if (this._pageReady) this.drawVisibleCharts();
+    if (this._isDashboardLoadCurrent(loadId) && this._pageReady) this.drawVisibleCharts();
   },
 
-  async loadTrends() {
+  _isDashboardLoadCurrent(loadId) {
+    return this._pageAlive && loadId === this._dashboardLoadId;
+  },
+
+  async loadTrends(loadId = this._dashboardLoadId) {
+    if (!this._isDashboardLoadCurrent(loadId)) return;
     this.setData({ trendLoading: true });
     try {
       const raw = await this.requestApi('/api/v1/stats/trends', { days: 7 });
+      if (!this._isDashboardLoadCurrent(loadId)) return;
       const list = Array.isArray(raw)
         ? raw
         : Array.isArray(raw && raw.items)
@@ -612,8 +678,10 @@ Page({
         this.setData({ trendData: this.buildFallbackTrend() });
       }
     } catch (e) {
+      if (!this._isDashboardLoadCurrent(loadId)) return;
       this.setData({ trendData: this.buildFallbackTrend() });
     } finally {
+      if (!this._isDashboardLoadCurrent(loadId)) return;
       this.setData({ trendLoading: false }, () => {
         if (this._pageReady && this.data.activeTab === 'overview') this.drawTrendChart();
       });
@@ -632,7 +700,8 @@ Page({
     return list;
   },
 
-  async loadGrowth() {
+  async loadGrowth(loadId = this._dashboardLoadId) {
+    if (!this._isDashboardLoadCurrent(loadId)) return;
     let resolved = null;
 
     // 1. 优先使用练习提交结果里已经携带的成长数据，避免页面首屏闪 0。
@@ -649,6 +718,7 @@ Page({
     // 2. 后端独立成长接口是最完整的数据源。
     try {
       const raw = await this.requestApi('/api/v1/stats/growth');
+      if (!this._isDashboardLoadCurrent(loadId)) return;
       const growth = normalizeGrowthProfile(raw);
       if (growth) resolved = growth;
     } catch (e) {}
@@ -662,6 +732,7 @@ Page({
           include_growth: true,
           include_adaptive: false
         });
+        if (!this._isDashboardLoadCurrent(loadId)) return;
         const growth = normalizeGrowthProfile(dashboard && dashboard.growth);
         if (growth && (growth.total_exp > 0 || !resolved)) resolved = growth;
       } catch (e) {}
@@ -671,6 +742,7 @@ Page({
     if (!resolved || (resolved.total_exp === 0 && this.data.totalCount > 0)) {
       try {
         const overview = await this.requestApi('/api/v1/stats/overview');
+        if (!this._isDashboardLoadCurrent(loadId)) return;
         const growth = growthFromOverview(overview);
         if (growth && (growth.total_exp > 0 || !resolved)) resolved = growth;
       } catch (e) {}
@@ -689,7 +761,7 @@ Page({
       resolved = growthFromTotalExp(localExp, localQuestionCount > 0 ? 1 : 0);
     }
 
-    if (!resolved) return;
+    if (!resolved || !this._isDashboardLoadCurrent(loadId)) return;
 
     const unlockedBadgeCount = (resolved.badges || []).filter(item => item && item.unlocked).length;
     this.setData({
@@ -698,9 +770,11 @@ Page({
     });
   },
 
-  async loadBehavior() {
+  async loadBehavior(loadId = this._dashboardLoadId) {
+    if (!this._isDashboardLoadCurrent(loadId)) return;
     try {
       const raw = await this.requestApi('/api/v1/stats/behavior');
+      if (!this._isDashboardLoadCurrent(loadId)) return;
       const dist = raw && Array.isArray(raw.error_type_distribution)
         ? raw.error_type_distribution
         : [];
@@ -814,16 +888,19 @@ Page({
   },
 
   drawVisibleCharts() {
-    if (!this._pageReady || this.data.activeTab !== 'overview') return;
+    if (!this._pageAlive || !this._pageReady || this.data.activeTab !== 'overview') return;
     wx.nextTick(() => {
+      if (!this._pageAlive) return;
       this.drawTrendChart();
       this.drawErrorChart();
     });
   },
 
   drawTrendChart() {
+    if (!this._pageAlive) return;
     const query = wx.createSelectorQuery().in(this);
     query.select('#trendCanvas').fields({ node: true, size: true }).exec(res => {
+      if (!this._pageAlive) return;
       const target = res && res[0];
       if (!target || !target.node || !target.width || !target.height) return;
 
@@ -938,8 +1015,10 @@ Page({
   },
 
   drawErrorChart() {
+    if (!this._pageAlive) return;
     const query = wx.createSelectorQuery().in(this);
     query.select('#errorCanvas').fields({ node: true, size: true }).exec(res => {
+      if (!this._pageAlive) return;
       const target = res && res[0];
       if (!target || !target.node || !target.width || !target.height) return;
 

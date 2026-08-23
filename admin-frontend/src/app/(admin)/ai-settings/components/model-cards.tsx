@@ -17,7 +17,7 @@ import type {
   ModelTestConnectionRequest,
   ModelTestConnectionResponse,
 } from "@/lib/api/types";
-import { getErrorMessage } from "@/lib/api/errors";
+import { ApiError, getErrorMessage } from "@/lib/api/errors";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 
@@ -93,6 +93,30 @@ function featuresForKind(kind: ModelKind, current: string[] = []): string[] {
   if (kind === "embedding") return ["embedding"];
   if (kind === "ocr_job") return ["vision"];
   return current.filter((feature) => feature !== "embedding" && feature !== "vision");
+}
+
+function configuredFeatures(model: Pick<AdminAiModelConfig, "features" | "feature">): string[] {
+  if (model.features?.length) return model.features;
+  return model.feature ? [model.feature] : [];
+}
+
+type FeatureConflict = {
+  feature: string;
+  model: AdminAiModelConfig;
+};
+
+function findEnabledFeatureConflicts(features: string[], models: AdminAiModelConfig[]): FeatureConflict[] {
+  const selected = new Set(features.filter((feature) => feature !== "embedding"));
+  if (selected.size === 0) return [];
+
+  const conflicts: FeatureConflict[] = [];
+  for (const model of models) {
+    if (!model.is_enabled) continue;
+    for (const feature of configuredFeatures(model)) {
+      if (selected.has(feature)) conflicts.push({ feature, model });
+    }
+  }
+  return conflicts;
 }
 
 const MODEL_KIND_META: Record<ModelKind, { label: string; desc: string }> = {
@@ -291,12 +315,13 @@ function ProviderSelect({
 // ---------------------------------------------------------------------------
 
 function AddModelDialog({
-  open, onClose, onSave, loading,
+  open, onClose, onSave, loading, existingModels,
 }: {
   open: boolean;
   onClose: () => void;
-  onSave: (data: AdminAiModelConfigCreateRequest) => void;
+  onSave: (data: AdminAiModelConfigCreateRequest) => Promise<AdminAiModelConfig>;
   loading: boolean;
+  existingModels: AdminAiModelConfig[];
 }) {
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -307,10 +332,12 @@ function AddModelDialog({
   const [features, setFeatures] = useState<string[]>([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ModelTestConnectionResponse | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   if (!open) return null;
 
   const effectiveFeatures = featuresForKind(modelKind, features);
+  const featureConflicts = findEnabledFeatureConflicts(effectiveFeatures, existingModels);
 
   const handleTestConnection = async () => {
     if (!apiBaseUrl.trim() || !apiKey.trim() || !name.trim()) return;
@@ -337,24 +364,37 @@ function AddModelDialog({
 
   const reset = () => {
     setName(""); setDisplayName(""); setProvider("openai"); setModelKind("chat");
-    setApiBaseUrl(""); setApiKey(""); setFeatures([]); setTestResult(null);
+    setApiBaseUrl(""); setApiKey(""); setFeatures([]); setTestResult(null); setSubmitError(null);
   };
 
-  const handleSave = () => {
-    if (!name.trim() || !displayName.trim() || !provider.trim() || !apiBaseUrl.trim()) return;
-    onSave({
-      name: name.trim(), display_name: displayName.trim(), provider: provider.trim(),
-      api_base_url: apiBaseUrl.trim(),
-      api_key: apiKey.trim() || undefined,
-      features: effectiveFeatures.length > 0 ? effectiveFeatures : null,
-    });
+  const handleSave = async () => {
+    if (!name.trim() || !displayName.trim() || !provider.trim() || !apiBaseUrl.trim() || featureConflicts.length > 0) return;
+    setSubmitError(null);
+    try {
+      await onSave({
+        name: name.trim(), display_name: displayName.trim(), provider: provider.trim(),
+        api_base_url: apiBaseUrl.trim(),
+        api_key: apiKey.trim() || undefined,
+        features: effectiveFeatures.length > 0 ? effectiveFeatures : null,
+      });
+      reset();
+      onClose();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400) {
+        setSubmitError(
+          "添加失败：模型配置未通过校验。若所选功能已由其他启用模型使用，请先在模型列表禁用旧模型，再重新添加；同时请检查模型标识、Provider 与 API Base URL。",
+        );
+      } else {
+        setSubmitError(getErrorMessage(err));
+      }
+    }
   };
 
   const handleClose = () => { reset(); onClose(); };
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(16,24,40,0.42)] px-4">
-      <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-card)]">
+      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-card)]">
         <div className="mb-5 flex items-center justify-between">
           <h3 className="font-display text-xl font-bold text-[var(--ink)]">添加模型</h3>
           <button onClick={handleClose} className="text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]">
@@ -432,28 +472,58 @@ function AddModelDialog({
           </label>
           {modelKind === "chat" ? (
             <div>
-              <span className="text-[11px] font-medium text-[var(--color-text-hint)]">功能映射（可多选）</span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] font-medium text-[var(--color-text-hint)]">功能映射（可多选）</span>
+                <span className="text-[10px] text-[var(--color-text-hint)]">同一功能仅允许 1 个启用模型</span>
+              </div>
               <div className="mt-1.5 flex flex-wrap gap-2">
                 {CHAT_FEATURE_OPTIONS.map((opt) => {
                   const selected = features.includes(opt.value);
+                  const owners = existingModels.filter(
+                    (model) => model.is_enabled && configuredFeatures(model).includes(opt.value),
+                  );
+                  const occupied = owners.length > 0;
                   return (
                     <label key={opt.value}
+                      title={occupied
+                        ? `${opt.desc}；当前启用模型：${owners.map((model) => model.display_name).join("、")}`
+                        : opt.desc}
                       className={cn(
                         "flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                        selected ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]"
-                          : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
+                        selected && occupied
+                          ? "border-[var(--color-danger)]/55 bg-[var(--color-danger-light)] text-[var(--color-danger)]"
+                          : selected
+                            ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]"
+                            : occupied
+                              ? "border-amber-300 bg-amber-50/70 text-amber-800 hover:border-amber-400"
+                              : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
                       )}>
                       <input type="checkbox" className="sr-only" checked={selected}
-                        onChange={() => setFeatures((prev) => prev.includes(opt.value) ? prev.filter((f) => f !== opt.value) : [...prev, opt.value])} />
+                        onChange={() => {
+                          setSubmitError(null);
+                          setFeatures((prev) => prev.includes(opt.value) ? prev.filter((f) => f !== opt.value) : [...prev, opt.value]);
+                        }} />
                       <div className={cn("flex h-3.5 w-3.5 items-center justify-center rounded border transition-colors",
-                        selected ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-[var(--color-border)]")}>
+                        selected && occupied
+                          ? "border-[var(--color-danger)] bg-[var(--color-danger)] text-white"
+                          : selected
+                            ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
+                            : occupied ? "border-amber-400" : "border-[var(--color-border)]")}>
                         {selected && <CheckCircle2 className="h-2.5 w-2.5" />}
                       </div>
-                      <span title={opt.desc}>{opt.label}</span>
+                      <span>{opt.label}</span>
+                      {occupied && (
+                        <span className="rounded bg-white/70 px-1 py-0.5 text-[9px] font-semibold">
+                          已占用
+                        </span>
+                      )}
                     </label>
                   );
                 })}
               </div>
+              <p className="mt-1.5 text-[10px] leading-4 text-[var(--color-text-hint)]">
+                切换模型时请先在列表中禁用旧模型，再添加并绑定新模型；Embedding 模型不受此限制。
+              </p>
             </div>
           ) : (
             <div className="rounded-lg border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/40 px-3 py-2.5">
@@ -463,6 +533,28 @@ function AddModelDialog({
                   ? "Embedding 模型只负责向量生成；在“向量”页选择当前检索使用的模型。"
                   : "OCR Job 模型用于 PaddleOCR-VL 等厂商专用视觉识别，不参与 Chat 功能映射。"}
               </p>
+            </div>
+          )}
+
+          {featureConflicts.length > 0 && (
+            <div role="alert" className="rounded-xl border border-[var(--color-danger)]/35 bg-[var(--color-danger-light)] px-3 py-2.5 text-xs text-[var(--color-danger)]">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-semibold">存在功能占用冲突，当前无法添加</p>
+                  <div className="mt-1 space-y-0.5 leading-5">
+                    {featureConflicts.map(({ feature, model }) => (
+                      <p key={`${feature}-${model.id}`}>
+                        「{FEATURE_LABELS[feature]?.label ?? feature}」已由启用模型「{model.display_name}」使用
+                        {model.is_default ? "（默认模型）" : ""}
+                      </p>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 leading-5">
+                    新模型创建后默认启用。请先关闭弹窗，在模型列表禁用上述旧模型，再重新添加；否则后端会拒绝重复功能映射。
+                  </p>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -481,10 +573,19 @@ function AddModelDialog({
           </div>
         )}
 
+        {submitError && (
+          <div role="alert" aria-live="polite" className="mt-3 rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger-light)] px-3 py-2 text-xs leading-5 text-[var(--color-danger)]">
+            <span className="font-semibold">添加失败：</span>{submitError.replace(/^添加失败[：:]?\s*/, "")}
+          </div>
+        )}
+
         <div className="mt-4 flex justify-end gap-3">
           <Button variant="secondary" onClick={handleClose} disabled={loading}>取消</Button>
-          <Button onClick={handleSave} disabled={loading || !name.trim() || !displayName.trim() || !provider.trim() || !apiBaseUrl.trim()}>
-            {loading ? "添加中..." : "添加"}
+          <Button
+            onClick={handleSave}
+            disabled={loading || featureConflicts.length > 0 || !name.trim() || !displayName.trim() || !provider.trim() || !apiBaseUrl.trim()}
+          >
+            {loading ? "添加中..." : featureConflicts.length > 0 ? "请先禁用冲突模型" : "添加"}
           </Button>
         </div>
       </div>
@@ -845,6 +946,7 @@ export function ModelCards() {
     mutationFn: (data: AdminAiModelConfigCreateRequest) =>
       apiRequest<AdminAiModelConfig>("/ai-models", { method: "POST", body: JSON.stringify(data) }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["ai-models"] }); showToast("模型已添加"); },
+    onError: () => queryClient.invalidateQueries({ queryKey: ["ai-models"] }),
   });
 
   const deleteMutation = useMutation({
@@ -890,7 +992,7 @@ export function ModelCards() {
       </div>
 
       {/* Errors */}
-      {[patchMutation, createMutation, deleteMutation, models].map((q, i) =>
+      {[patchMutation, deleteMutation, models].map((q, i) =>
         q.isError ? (
           <p key={i} className="mx-5 mt-3 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 py-3 text-sm text-[var(--color-danger)]">
             {getErrorMessage(q.error)}
@@ -1070,8 +1172,9 @@ export function ModelCards() {
       <AddModelDialog
         open={showAddDialog}
         onClose={() => setShowAddDialog(false)}
-        onSave={(data) => { createMutation.mutate(data); setShowAddDialog(false); }}
+        onSave={(data) => createMutation.mutateAsync(data)}
         loading={createMutation.isPending}
+        existingModels={modelList}
       />
 
       <ConfirmDialog

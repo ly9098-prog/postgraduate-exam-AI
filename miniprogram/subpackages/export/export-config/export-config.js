@@ -147,7 +147,9 @@ Page({
 
   // Non-reactive fields
   _navigating: false,
+  _capabilityRequestSeq: 0,
   _previewRequestSeq: 0,
+  _submitRequestSeq: 0,
   _previewDebounceTimer: null,
   _floatingIdleTimer: null,
   _floatingEntranceTimer: null,
@@ -196,11 +198,10 @@ Page({
     if (this.data.pickerOpen || this.data.titleInputFocused) {
       this.setData({ pickerOpen: false, titleInputFocused: false })
     }
-    if (this.data.submitting) {
-      this.setData({ submitting: false }, () => {
-        if (this._pageReady) this._syncFloatingAction()
-      })
-    } else if (this._pageReady) {
+    // Do not reset `submitting` here. onShow also runs after returning from the
+    // background; unlocking an in-flight create request would allow a second
+    // tap to create a duplicate export task.
+    if (this._pageReady) {
       this._showFloatingAction(true)
     }
   },
@@ -214,7 +215,9 @@ Page({
     // Clean up transient state — do NOT cancel back-end export tasks.
     this._pageDestroyed = true
     this._navigating = false
+    this._capabilityRequestSeq += 1
     this._previewRequestSeq += 1
+    this._submitRequestSeq += 1
     if (this._previewDebounceTimer) {
       clearTimeout(this._previewDebounceTimer)
       this._previewDebounceTimer = null
@@ -316,6 +319,9 @@ Page({
   },
 
   async _checkCapabilities() {
+    if (this._pageDestroyed) return
+    const capabilityRequestSeq = ++this._capabilityRequestSeq
+
     // Invalidate any in-flight count request before restarting capability
     // discovery so stale results cannot overwrite the new page state.
     this._previewRequestSeq += 1
@@ -331,14 +337,43 @@ Page({
 
     try {
       const cap = await exportApi.getCapabilities()
-      if (this._pageDestroyed) return
-      const wordDisabled = !cap.docx_enabled
+      if (this._pageDestroyed || capabilityRequestSeq !== this._capabilityRequestSeq) return
+
+      // Treat an explicit capability denial as authoritative. Network failures
+      // still use the PDF-safe fallback below, but a successful response that
+      // disables export must never leave a previously calculated count usable.
+      const exportAvailable = !!(
+        cap &&
+        cap.export_enabled === true &&
+        cap.pdf_enabled === true
+      )
+      if (!exportAvailable) {
+        this._previewRequestSeq += 1
+        const capabilityError = exportApi.getExportCapabilityErrorMessage(null, cap)
+        this.setData({
+          wordDisabled: true,
+          wordTip: 'Word 导出暂未开放',
+          format: 'pdf',
+          _wsEnabled: false,
+          capabilityLoading: false,
+          capabilityError,
+          countLoading: false,
+          previewCountReady: false,
+        }, () => this._syncFloatingAction())
+        return
+      }
+
+      const wordDisabled = cap.docx_enabled !== true
       const wordTip = wordDisabled ? 'Word 导出暂未开放' : ''
+      const maxQuestionCountRaw = Number(cap.max_question_count)
+      const maxQuestionCount = Number.isFinite(maxQuestionCountRaw) && maxQuestionCountRaw > 0
+        ? Math.floor(maxQuestionCountRaw)
+        : 100
       this.setData({
         wordDisabled,
         wordTip,
-        _wsEnabled: cap.websocket_enabled,
-        maxQuestionCount: cap.max_question_count || 100,
+        _wsEnabled: cap.websocket_enabled === true,
+        maxQuestionCount,
         capabilityLoading: false,
         capabilityError: '',
       }, () => this._syncFloatingAction())
@@ -348,7 +383,7 @@ Page({
       }
       this._schedulePreviewCount(true)
     } catch (e) {
-      if (this._pageDestroyed) return
+      if (this._pageDestroyed || capabilityRequestSeq !== this._capabilityRequestSeq) return
       // A capability endpoint failure must not leave the page permanently in
       // "checking" state. Continue in PDF-safe mode and try the actual count
       // endpoint; if the current selected range is known locally, it remains
@@ -424,6 +459,8 @@ Page({
       countError: '',
       submitError: '',
       previewCount: selectedCount !== null ? selectedCount : this.data.previewCount,
+      // A count calculated for another range is never valid for the new range.
+      // Selected IDs are the only range whose count is known synchronously.
       previewCountReady: selectedCount !== null,
     }, () => {
       this._registerInteraction()
@@ -563,6 +600,11 @@ Page({
 
   // ── Preview count ──
   _schedulePreviewCount(immediate = false) {
+    if (this._pageDestroyed) return
+    // Invalidate the current request immediately, not when the debounce fires.
+    // Otherwise an old-range response can briefly become submit-ready during
+    // the debounce window after the user changes the export range.
+    this._previewRequestSeq += 1
     if (this._previewDebounceTimer) {
       clearTimeout(this._previewDebounceTimer)
       this._previewDebounceTimer = null
@@ -578,6 +620,7 @@ Page({
   },
 
   async _updatePreviewCount() {
+    if (this._pageDestroyed) return
     const requestSeq = ++this._previewRequestSeq
     const hadReadyCount = !!this.data.previewCountReady
     this.setData({ countLoading: true, countError: '' }, () => this._syncFloatingAction())
@@ -585,8 +628,10 @@ Page({
       const params = this._buildRangeParams()
       const res = await exportApi.previewCount(params)
       if (requestSeq !== this._previewRequestSeq || this._pageDestroyed) return
+      const rawCount = Number(res && res.count)
+      const previewCount = Number.isFinite(rawCount) && rawCount > 0 ? Math.floor(rawCount) : 0
       this.setData({
-        previewCount: Number(res && res.count) || 0,
+        previewCount,
         previewCountReady: true,
         countLoading: false,
         countError: '',
@@ -607,7 +652,7 @@ Page({
   // ── Submit ──
 
   async onSubmit() {
-    if (this.data.submitting || this._navigating) return
+    if (this._pageDestroyed || this.data.submitting || this._navigating) return
     if (this.data.capabilityLoading) return
     this._registerInteraction()
 
@@ -634,6 +679,7 @@ Page({
       return
     }
 
+    const submitRequestSeq = ++this._submitRequestSeq
     this.setData({ submitting: true, submitError: '' }, () => this._syncFloatingAction())
 
     try {
@@ -642,7 +688,7 @@ Page({
         range_type: rangeParams.range_type,
         filters: rangeParams.filters,
         selected_ids: rangeParams.selected_ids,
-        title: this.data.title || this.data.titleDefault,
+        title: (typeof this.data.title === 'string' ? this.data.title.trim() : '') || this.data.titleDefault,
         show_date: false,
         export_date: '',
         sort_by: this.data.sortBy,
@@ -654,6 +700,7 @@ Page({
       }
 
       const task = await exportApi.createExport(params)
+      if (this._pageDestroyed || submitRequestSeq !== this._submitRequestSeq) return
 
       // Task created — reset submitting immediately, don't wait for file generation
       this.setData({ submitting: false }, () => this._syncFloatingAction())
@@ -676,12 +723,13 @@ Page({
         this._navigating = false
       }
     } catch (err) {
-      const msg = err.message || '创建导出任务失败'
+      if (this._pageDestroyed || submitRequestSeq !== this._submitRequestSeq) return
+      const msg = (err && err.message) || '创建导出任务失败'
       this.setData({ submitError: msg, submitting: false }, () => this._syncFloatingAction())
       wx.showToast({ title: msg, icon: 'none' })
     } finally {
-      // Safety net: ensure submitting is reset regardless of path
-      if (this.data.submitting) {
+      // Safety net: only the current request may unlock the current page.
+      if (!this._pageDestroyed && submitRequestSeq === this._submitRequestSeq && this.data.submitting) {
         this.setData({ submitting: false }, () => this._syncFloatingAction())
       }
     }
@@ -712,8 +760,15 @@ Page({
 
   // ── View records ──
   onViewRecords() {
+    if (this._pageDestroyed || this._navigating) return
     this._registerInteraction()
-    wx.navigateTo({ url: '/subpackages/export/export-records/export-records' })
+    this._navigating = true
+    wx.navigateTo({
+      url: '/subpackages/export/export-records/export-records',
+      fail: () => {
+        if (!this._pageDestroyed) this._navigating = false
+      },
+    })
   },
 
   // ── Helpers ──
@@ -752,6 +807,7 @@ Page({
   },
 
   _applyExportContext(context) {
+    if (this._pageDestroyed) return
     const data = context || {}
     const hasSelected = Object.prototype.hasOwnProperty.call(data, 'selectedIds')
     const hasFilters = Object.prototype.hasOwnProperty.call(data, 'filters')

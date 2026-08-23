@@ -56,47 +56,74 @@ Page({
 
   /* 实例状态 — 不通过 setData 写入 */
   _authed: false,
+  _alive: false,
+  _visible: false,
+  _showSeq: 0,
+  _growthSeq: 0,
+  _profileSaveSeq: 0,
+  _hasGrowthSnapshot: false,
   _growthTargets: { streakDays: 0, todayGoalDone: 0, levelProgress: 0 },
   _animTimer: null,
+  _profilePromptTimer: null,
+  _profileAutoSaveTimer: null,
   _profilePrompted: false,
 
   onLoad() {
+    this._alive = true
     this.measureNavigation()
     this.detectRuntime()
   },
 
   async onShow() {
+    this._alive = true
+    this._visible = true
+    const showSeq = ++this._showSeq
     this._authed = auth.isLoggedIn()
     this._isAdmin = this._authed ? auth.isAdmin() : false
     const localUser = auth.getUser() || {}
-    this.setData({
+    const basePatch = {
       user: localUser,
       displayName: this.getDisplayName(localUser),
       userInitial: this.getUserInitial(localUser),
       greeting: this.getGreeting(),
       dateStr: this.getDateStr(),
       motto: this.getMotto(),
-      _animStreakDays: 0,
-      _animGoalDone: 0,
-      _animLevelProgress: 0,
-      ...this.getGrowthFallback(),
-    })
+    }
+    if (!this._hasGrowthSnapshot) {
+      Object.assign(basePatch, {
+        _animStreakDays: 0,
+        _animGoalDone: 0,
+        _animLevelProgress: 0,
+        ...this.getGrowthFallback(),
+      })
+    }
+    this.setData(basePatch)
     if (!this._authed) return
+
+    let profileUser = localUser
     try {
       const syncedUser = await auth.syncCurrentUser()
-      if (!syncedUser) return
-      this._isAdmin = auth.isAdmin()
-      this.setData({
-        user: syncedUser || {},
-        displayName: this.getDisplayName(syncedUser),
-        userInitial: this.getUserInitial(syncedUser),
-      })
-      this._maybePromptProfile(syncedUser)
+      if (!this._alive || !this._visible || showSeq !== this._showSeq) return
+      if (syncedUser) {
+        profileUser = syncedUser
+        this._isAdmin = auth.isAdmin()
+        this.setData({
+          user: syncedUser,
+          displayName: this.getDisplayName(syncedUser),
+          userInitial: this.getUserInitial(syncedUser),
+        })
+      }
     } catch (e) {
+      // Profile/permission sync is helpful but must not block the home dashboard.
+      // A transient /users/me failure should still allow growth data to load.
       console.error('同步用户权限失败', e)
-      return
+      if (!this._alive || !this._visible || showSeq !== this._showSeq) return
+      this._authed = auth.isLoggedIn()
+      if (!this._authed) return
     }
-    await this.loadGrowthSnapshot()
+
+    this._maybePromptProfile(profileUser)
+    await this.loadGrowthSnapshot(showSeq)
   },
 
   _isProfileSetupComplete(user) {
@@ -107,7 +134,14 @@ Page({
   _maybePromptProfile(user) {
     if (this._profilePrompted || this._isProfileSetupComplete(user)) return
     this._profilePrompted = true
-    setTimeout(() => {
+    clearTimeout(this._profilePromptTimer)
+    this._profilePromptTimer = setTimeout(() => {
+      this._profilePromptTimer = null
+      if (!this._alive || !this._visible) {
+        // The prompt never became visible; allow the next onShow to schedule it.
+        this._profilePrompted = false
+        return
+      }
       if (!this.data.showProfileSheet && this._authed) this.openProfileSheet()
     }, 260)
   },
@@ -173,6 +207,7 @@ Page({
         sourceType: ['album'],
         sizeType: ['compressed'],
       })
+      if (!this._alive) return
       const file = res && Array.isArray(res.tempFiles) ? res.tempFiles[0] : null
       const avatarPath = file && (file.tempFilePath || file.path)
       if (avatarPath) this._applyProfileAvatar(avatarPath)
@@ -223,7 +258,10 @@ Page({
     const existingProfileChanged = profileAlreadyCompleted && !!nickname && (field === 'nickname' || field === 'avatar')
     if (firstProfileHasBoth || existingProfileChanged) {
       clearTimeout(this._profileAutoSaveTimer)
-      this._profileAutoSaveTimer = setTimeout(() => this.saveProfile(), 120)
+      this._profileAutoSaveTimer = setTimeout(() => {
+        this._profileAutoSaveTimer = null
+        if (this._alive) this.saveProfile()
+      }, 120)
     }
   },
 
@@ -238,7 +276,7 @@ Page({
   },
 
   async saveProfile() {
-    if (this.data.profileSaving) return
+    if (this.data.profileSaving || !this._alive) return
     clearTimeout(this._profileAutoSaveTimer)
     this._profileAutoSaveTimer = null
     const nickname = String(this.data.profileNickname || '').trim().replace(/\s+/g, ' ')
@@ -251,12 +289,14 @@ Page({
       return
     }
 
+    const saveSeq = ++this._profileSaveSeq
     this.setData({ profileSaving: true })
     try {
       const updatedUser = await auth.updateProfile({
         nickname,
         avatarPath: this.data.profileAvatarPath || '',
       })
+      if (!this._alive || saveSeq !== this._profileSaveSeq) return
       this.setData({
         user: updatedUser,
         displayName: this.getDisplayName(updatedUser),
@@ -266,13 +306,16 @@ Page({
         profileAvatarPreview: updatedUser.avatar_url || '',
         profileAvatarPath: '',
         profileNicknameRejected: false,
-        })
+      })
       wx.showToast({ title: '资料已保存', icon: 'success' })
     } catch (e) {
+      if (!this._alive || saveSeq !== this._profileSaveSeq) return
       const message = e && e.message ? e.message : '保存失败，请稍后重试'
       wx.showToast({ title: message, icon: 'none' })
     } finally {
-      this.setData({ profileSaving: false })
+      if (this._alive && saveSeq === this._profileSaveSeq) {
+        this.setData({ profileSaving: false })
+      }
     }
   },
 
@@ -306,22 +349,39 @@ Page({
     })
   },
 
-  async loadGrowthSnapshot() {
+  async loadGrowthSnapshot(showSeq = this._showSeq) {
+    if (!this._alive || !this._visible) return
+    const requestSeq = ++this._growthSeq
     this._clearAnimTimer()
-    this._growthTargets = { streakDays: 0, todayGoalDone: 0, levelProgress: 0 }
-    this.setData({ _animStreakDays: 0, _animGoalDone: 0, _animLevelProgress: 0 })
     try {
       const [dashRes, growthRes] = await Promise.all([
         api.get('/stats/dashboard'),
         api.get('/stats/growth').catch(() => null),
       ])
+      if (
+        !this._alive ||
+        !this._visible ||
+        requestSeq !== this._growthSeq ||
+        showSeq !== this._showSeq
+      ) return
+
       const overview = (dashRes && dashRes.overview) || {}
       const growth = growthRes || null
       this._lastGrowth = growth
       const snapshot = this.buildGrowthSnapshot(overview, growth)
-      this.setData(snapshot)
-      this._animateNumbers()
+      this._hasGrowthSnapshot = true
+      this.setData(snapshot, () => {
+        if (this._alive && this._visible && requestSeq === this._growthSeq) {
+          this._animateNumbers()
+        }
+      })
     } catch (e) {
+      if (
+        !this._alive ||
+        !this._visible ||
+        requestSeq !== this._growthSeq ||
+        showSeq !== this._showSeq
+      ) return
       console.error('加载成长数据失败', e)
     }
   },
@@ -346,6 +406,10 @@ Page({
     const startTime = Date.now()
 
     const tick = () => {
+      if (!this._alive || !this._visible) {
+        this._animTimer = null
+        return
+      }
       const elapsed = Date.now() - startTime
       const data = {}
       let allDone = true
@@ -630,7 +694,8 @@ Page({
   },
 
   drawSubjectPie() {
-    if (!this.data.subjectPieData.length) return
+    const subjectPieData = Array.isArray(this.data.subjectPieData) ? this.data.subjectPieData : []
+    if (!subjectPieData.length) return
     const query = wx.createSelectorQuery().in(this)
     query.select('#subject-pie-canvas').boundingClientRect(rect => {
       if (!rect || !rect.width || !rect.height) return
@@ -639,7 +704,7 @@ Page({
       const center = canvasSize / 2
       const radius = center - 10
       ctx.clearRect(0, 0, canvasSize, canvasSize)
-      this.data.subjectPieData.forEach(item => {
+      subjectPieData.forEach(item => {
         const start = (item._startAngle - 90) * Math.PI / 180
         const end = (item._endAngle - 90) * Math.PI / 180
         ctx.beginPath()
@@ -668,10 +733,28 @@ Page({
   },
 
   onHide() {
+    this._visible = false
+    this._showSeq++
+    this._growthSeq++
     this._clearAnimTimer()
+    if (this._profilePromptTimer) {
+      clearTimeout(this._profilePromptTimer)
+      this._profilePromptTimer = null
+      // It was scheduled but never displayed. Allow scheduling again on return.
+      this._profilePrompted = false
+    }
   },
 
   onUnload() {
+    this._alive = false
+    this._visible = false
+    this._showSeq++
+    this._growthSeq++
+    this._profileSaveSeq++
     this._clearAnimTimer()
+    clearTimeout(this._profilePromptTimer)
+    this._profilePromptTimer = null
+    clearTimeout(this._profileAutoSaveTimer)
+    this._profileAutoSaveTimer = null
   },
 })

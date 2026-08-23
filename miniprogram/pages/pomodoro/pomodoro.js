@@ -37,9 +37,14 @@ const PRESETS = [
 ]
 
 const FREE_TIMER_MAX_MS = 5 * 60 * 60 * 1000 // 5 hours max for free timer
-const POMODORO_LOCAL_STATE_TTL_MS = 6 * 60 * 60 * 1000
-const POMODORO_PENDING_SYNC_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const POMODORO_PENDING_SYNC_KEY = 'pomodoro_pending_sync' // v2 stores an ordered array; legacy object is migrated on read
+const POMODORO_UNKNOWN_START_KEY = 'pomodoro_unknown_start'
+const POMODORO_TERMINAL_CONFLICT_KEY = 'pomodoro_terminal_conflict'
+const CANVAS_INIT_MAX_RETRIES = 16
+const POMODORO_PAUSE_TOGGLE_COOLDOWN_MS = 500
+const POMODORO_PENDING_SYNC_MAX_ACTIONS = 200
+const POMODORO_PENDING_SYNC_NON_TERMINAL_LIMIT = 196 // reserve terminal slots so completion/interrupt can still persist
+const POMODORO_SYNC_RETRY_DELAYS_MS = [2000, 5000, 15000, 30000, 60000]
 
 function parseServerTime(value) {
   return parseServerUtc(value)
@@ -120,6 +125,7 @@ Page({
     endConfirmText: '',
     endConfirmLine1: '',
     endConfirmLine2: '',
+    endConfirmLine3: '',
     endConfirmOkText: '确认结束',
     endConfirmCancelText: '继续计时',
     actionLoading: false,
@@ -176,6 +182,14 @@ Page({
   _lastDrawnIsBreak: undefined,
   _ringCache: null,
   _canvasInitSeq: 0,
+  _startInFlight: false,
+  _completionBreakSec: null,
+  _pauseToggleLocked: false,
+  _pauseToggleUnlockTimer: null,
+  _networkStatusHandler: null,
+  _pendingSyncRetryTimer: null,
+  _pendingSyncRetryAttempt: 0,
+  _statsRequestSeq: 0,
 
   /* ==================== Lifecycle ==================== */
 
@@ -198,6 +212,7 @@ Page({
 
   onLoad(opts) {
     this._timerState = this._createTimerState()
+    this._registerNetworkStatusListener()
     const themeMode = pomodoroTheme.getTheme()
     pomodoroTheme.applyNativeTheme(themeMode)
     this.setData({
@@ -230,32 +245,110 @@ Page({
       this.setData({ pageEntered: true })
     }
 
-    // Completion flag — check before active fetch since it may short-circuit
-    const completionFlag = wx.getStorageSync('pomodoro_completion')
+    if (pendingSync && pendingSync.storageUnreadable) {
+      this._showPomodoroPersistenceError()
+      return
+    }
+
+    // A /start request may have committed on the server while its response was
+    // lost. Resolve that rare uncertainty before normal active-session restore so
+    // leaving during the request cannot create a hidden "ghost" timer.
+    const unknownStartResolution = await this._reconcileUnknownStartAttempt()
+    if (!this._pageVisible || activeSyncSeq !== this._activeSyncSeq) return
+    if (unknownStartResolution === 'storage_error') {
+      this._showPomodoroPersistenceError()
+      return
+    }
+    if (unknownStartResolution === 'cancelled' || unknownStartResolution === 'restored') {
+      setTimeout(() => this.loadTodayStats(), 200)
+      return
+    }
+
+    // A terminal conflict is persisted before its pending mutation is removed.
+    // Consume it before trusting a stale completion marker after a cold restart.
+    const startupTerminalConflict = this._consumeAnyPomodoroTerminalConflict()
+    if (startupTerminalConflict) {
+      this._handlePomodoroTerminalConflict(startupTerminalConflict.sessionId, startupTerminalConflict)
+      return
+    }
+
+    // Completion flag — check before active fetch since it may short-circuit.
+    // A read failure is not equivalent to "no completion"; fail closed so a
+    // stale running snapshot cannot resurrect a just-finished session.
+    const completionStored = this._safeGetPomodoroStorage('pomodoro_completion', 'onShow completion')
+    if (!completionStored.ok) {
+      this._showPomodoroPersistenceError()
+      return
+    }
+    const completionFlag = completionStored.value
     if (completionFlag) {
       if (!completionFlag.sessionId) {
-        wx.removeStorageSync('pomodoro_completion')
-      } else if (!this.data.showCelebration) {
-        wx.vibrateLong()
-        this.setData({ showCelebration: true, celebrationMotto: completionFlag.motto, celebrationType: completionFlag.type || 'excellent' })
-        // Celebration rendering must not suppress a pending completion retry.
-        if (pendingSync) this._retryPendingPomodoroSync()
-        return
+        this._safeRemovePomodoroStorage('pomodoro_completion', 'best-effort cleanup')
       } else {
-        wx.removeStorageSync('pomodoro_completion')
+        // A completion marker remains authoritative until the celebration is
+        // actually dismissed. Never delete it merely because onShow fired while
+        // the overlay was already visible; doing so could resurrect the just-
+        // completed running snapshot after a background/foreground transition.
+        this._completionBreakSec = completionFlag.breakSec !== undefined && Number.isFinite(Number(completionFlag.breakSec))
+          ? Math.max(0, Number(completionFlag.breakSec))
+          : null
+        const selectedSubjectId = completionFlag.selectedSubjectId || this.data.selectedSubjectId
+        const selectedSubject = selectedSubjectId ? {
+          id: selectedSubjectId,
+          code: completionFlag.selectedSubjectCode || (this.data.selectedSubject && this.data.selectedSubject.code) || '',
+          name: completionFlag.selectedSubjectName || (this.data.selectedSubject && this.data.selectedSubject.name) || '',
+        } : this.data.selectedSubject
+        if (!this.data.showCelebration) wx.vibrateLong()
+        this.setData({
+          phase: PHASE.IDLE,
+          isPaused: false,
+          showEndConfirm: false,
+          showCelebration: true,
+          celebrationMotto: completionFlag.motto,
+          celebrationType: completionFlag.type || 'excellent',
+          selectedPreset: completionFlag.selectedPreset || this.data.selectedPreset,
+          workDuration: Number.isFinite(Number(completionFlag.workDuration)) ? Number(completionFlag.workDuration) : this.data.workDuration,
+          breakDuration: Number.isFinite(Number(completionFlag.breakDuration)) ? Number(completionFlag.breakDuration) : this.data.breakDuration,
+          selectedSubjectId,
+          selectedSubject,
+        })
+        // Celebration rendering must not suppress a pending completion retry.
+        if (pendingSync) {
+          this._retryPendingPomodoroSync().then(synced => {
+            const conflict = this._consumeAnyPomodoroTerminalConflict()
+            if (conflict) {
+              this._handlePomodoroTerminalConflict(conflict.sessionId, conflict)
+              return
+            }
+            if (synced) this.loadTodayStats()
+          })
+        }
+        // A cold restart may have no in-memory stats yet even when the completion
+        // was already committed on the server.
+        setTimeout(() => this.loadTodayStats(), 200)
+        return
       }
     }
 
     // Navigation guard: returning from pomodoro-stats — don't restore stale snapshot
     if (this._navigatingToStats) {
       this._navigatingToStats = false
-      wx.removeStorageSync('pomodoro_confirm_pause')
+      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
       this._confirmTimerSnapshot = null
       this._timerState.endConfirmMode = ''
       this.setData({ showEndConfirm: false })
     } else {
-      // Validate and optionally restore confirm snapshot
-      const confirmSnapshot = this._confirmTimerSnapshot || wx.getStorageSync('pomodoro_confirm_pause')
+      // Validate and optionally restore confirm snapshot. As with pending and
+      // completion state, a read failure must never be interpreted as absence.
+      let confirmSnapshot = this._confirmTimerSnapshot
+      if (!confirmSnapshot) {
+        const storedConfirm = this._safeGetPomodoroStorage('pomodoro_confirm_pause', 'onShow confirm snapshot')
+        if (!storedConfirm.ok) {
+          this._showPomodoroPersistenceError()
+          return
+        }
+        confirmSnapshot = storedConfirm.value
+      }
       if (confirmSnapshot && confirmSnapshot.sessionId) {
         if (this._isValidConfirmSnapshot(confirmSnapshot)) {
       const restoredConfirmSeq = (this._confirmActionSeq || 0) + 1
@@ -271,7 +364,7 @@ Page({
         this._timerState.elapsedSec = confirmSnapshot.elapsedSec || 0
         this._timerState.freeFriendlyText = fmt.friendly
         this._timerState.totalPausedMs = confirmSnapshot.totalPausedMs || 0
-        this._timerState.freeDisplayOffsetMs = Number(confirmSnapshot.freeDisplayOffsetMs || 0)
+        this._timerState.freeDisplayOffsetMs = 0
         this.setData({
           ...this._buildEndConfirmViewModel('free-complete', confirmSnapshot),
           phase: PHASE.RUNNING,
@@ -285,7 +378,7 @@ Page({
             .then(() => {
               if (confirmSnapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
               confirmSnapshot.backendPauseDone = true
-              wx.setStorageSync('pomodoro_confirm_pause', confirmSnapshot)
+              this._safeSetPomodoroStorage('pomodoro_confirm_pause', confirmSnapshot, 'confirm snapshot refresh')
             })
             .catch(() => {})
         }
@@ -318,7 +411,7 @@ Page({
           .then(() => {
             if (confirmSnapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
             confirmSnapshot.backendPauseDone = true
-            wx.setStorageSync('pomodoro_confirm_pause', confirmSnapshot)
+            this._safeSetPomodoroStorage('pomodoro_confirm_pause', confirmSnapshot, 'confirm snapshot refresh')
           })
           .catch(() => {})
       }
@@ -326,7 +419,7 @@ Page({
       return
     }
       // Snapshot exists but is invalid — clean up stale data
-      wx.removeStorageSync('pomodoro_confirm_pause')
+      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
       this._confirmTimerSnapshot = null
       this._timerState.endConfirmMode = ''
       this.setData({ showEndConfirm: false })
@@ -337,13 +430,16 @@ Page({
     // without waiting for /pomodoro/active. The server response below remains
     // authoritative and will reconcile stale/cross-device state afterwards.
     const cachedActive = this._getCachedActiveSession()
+    if (this._isPomodoroStorageError(cachedActive)) {
+      this._showPomodoroPersistenceError()
+      return
+    }
     let restoredFromCache = false
     if (cachedActive) {
-      if (this._canLightSyncActive(cachedActive)) {
-        this._syncActiveSessionLight(cachedActive)
-      } else {
-        this._restoreSession(cachedActive)
-      }
+      const restored = this._canLightSyncActive(cachedActive)
+        ? this._syncActiveSessionLight(cachedActive, true)
+        : this._restoreSession(cachedActive)
+      if (restored === false) return
       restoredFromCache = this.data.phase === PHASE.RUNNING && this._timerState.sessionId === cachedActive.id
     }
 
@@ -357,6 +453,11 @@ Page({
     if (pendingSync) {
       const synced = await this._retryPendingPomodoroSync()
       if (!this._pageVisible || activeSyncSeq !== this._activeSyncSeq) return
+      const conflict = this._consumeAnyPomodoroTerminalConflict()
+      if (conflict) {
+        this._handlePomodoroTerminalConflict(conflict.sessionId, conflict)
+        return
+      }
       if (!synced) {
         // Keep the locally restored state stable while offline. Fetching /active
         // after a failed retry can only return the same stale server state and may
@@ -368,23 +469,26 @@ Page({
 
     const active = await this._fetchActiveSession()
     if (!this._pageVisible || activeSyncSeq !== this._activeSyncSeq) return
+    if (this._isPomodoroStorageError(active)) {
+      this._showPomodoroPersistenceError()
+      return
+    }
 
     const activeHasPendingTerminal = active && this._hasPendingPomodoroAction(active.id, ['complete', 'interrupt'])
     if (activeHasPendingTerminal) {
       // A terminal local action is final from the user's perspective. Never
       // resurrect the same stale server row while its retry remains queued.
-      wx.removeStorageSync('pomodoro_running_state')
+      this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
     } else if (active) {
       if (restoredBreak) {
         this._clearTimer()
-        wx.removeStorageSync('pomodoro_break')
+        this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
         restoredBreak = false
       }
-      if (this._canLightSyncActive(active)) {
-        this._syncActiveSessionLight(active)
-      } else {
-        this._restoreSession(active)
-      }
+      const restored = this._canLightSyncActive(active)
+        ? this._syncActiveSessionLight(active, true)
+        : this._restoreSession(active)
+      if (restored === false) return
     } else if (restoredFromCache && this.data.phase === PHASE.RUNNING) {
       // Server confirmed there is no active session. Discard the optimistic
       // local recovery instead of leaving a stale timer running indefinitely.
@@ -402,6 +506,16 @@ Page({
     this._pageVisible = false
     this._activeSyncSeq = (this._activeSyncSeq || 0) + 1
     this._startRequestSeq = (this._startRequestSeq || 0) + 1
+    this._clearPendingPomodoroSyncRetryTimer()
+
+    const unknownStart = this._safeGetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'onHide unknown start')
+    if (unknownStart.ok && unknownStart.value) {
+      this._safeSetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, {
+        ...unknownStart.value,
+        cancelIfFound: true,
+        cancelAt: api.now(),
+      }, 'onHide cancel unknown start')
+    }
 
     // Native 2D canvas backing surfaces may be recreated while a Mini Program page
     // is hidden. Never reuse a context across onHide/onShow, even when selector
@@ -422,11 +536,15 @@ Page({
 
     // Persist confirm snapshot before it's lost
     if (this.data.showEndConfirm && this._confirmTimerSnapshot) {
-      wx.setStorageSync('pomodoro_confirm_pause', this._confirmTimerSnapshot)
+      this._safeSetPomodoroStorage('pomodoro_confirm_pause', this._confirmTimerSnapshot, 'onHide confirm snapshot')
     }
 
-    if (this.data.phase === PHASE.RUNNING && this._timerState.sessionId) {
-      wx.setStorageSync('pomodoro_running_state', {
+    const completionOnHide = this._safeGetPomodoroStorage('pomodoro_completion', 'onHide completion')
+    if (
+      completionOnHide.ok && !completionOnHide.value &&
+      this.data.phase === PHASE.RUNNING && this._timerState.sessionId && !this.data.showCelebration
+    ) {
+      this._safeSetPomodoroStorage('pomodoro_running_state', {
         sessionStartTime: this._timerState.sessionStartTime,
         workDuration: this.data.workDuration,
         breakDuration: this.data.breakDuration,
@@ -436,13 +554,13 @@ Page({
         selectedSubjectName: this.data.selectedSubject ? this.data.selectedSubject.name : '',
         isPaused: this.data.isPaused,
         totalPausedMs: this._timerState.totalPausedMs,
-        pauseStartTime: this.data.isPaused ? (this._timerState.pauseStartTime || Date.now()) : null,
+        pauseStartTime: this.data.isPaused ? (this._timerState.pauseStartTime || api.now()) : null,
         sessionId: this._timerState.sessionId,
         isFreeTimer: this.data.isFreeTimer,
         elapsedSec: this._timerState.elapsedSec,
-        freeDisplayOffsetMs: this._timerState.freeDisplayOffsetMs || 0,
-        savedAt: Date.now(),
-      })
+        freeDisplayOffsetMs: 0,
+        savedAt: api.now(),
+      }, 'onHide running snapshot')
     }
     // Single cleanup call — _clearTimer already clears free interval too
     this._clearTimer()
@@ -458,6 +576,10 @@ Page({
     this._ctx = null
     this._ringCache = null
     this._clearTimer()
+    this._releasePauseToggleLock()
+    this._clearPendingPomodoroSyncRetryTimer(true)
+    this._statsRequestSeq = (this._statsRequestSeq || 0) + 1
+    this._unregisterNetworkStatusListener()
     if (this._themeSwitchTimer) {
       clearTimeout(this._themeSwitchTimer)
       this._themeSwitchTimer = null
@@ -476,6 +598,101 @@ Page({
       }
       if (wx.setBackgroundTextStyle) wx.setBackgroundTextStyle({ textStyle: 'dark' })
     } catch (_) {}
+  },
+
+  _registerNetworkStatusListener() {
+    if (
+      this._networkStatusHandler ||
+      typeof wx.onNetworkStatusChange !== 'function' ||
+      typeof wx.offNetworkStatusChange !== 'function'
+    ) return
+
+    this._networkStatusHandler = status => {
+      if (!status || !status.isConnected || !this._pageVisible) return
+      if (!this._getPendingPomodoroSync()) return
+
+      // Reconnect is a strong signal that an earlier transient failure may have
+      // recovered. Cancel any delayed retry and drain immediately. The drain is
+      // single-flight, so duplicate network callbacks cannot issue duplicates.
+      this._clearPendingPomodoroSyncRetryTimer(true)
+      this._retryPendingPomodoroSync().then(synced => {
+        if (!this._pageVisible) return
+        const conflict = this._consumeAnyPomodoroTerminalConflict()
+        if (conflict) {
+          this._handlePomodoroTerminalConflict(conflict.sessionId, conflict)
+          return
+        }
+        if (synced) this.loadTodayStats()
+      }).catch(error => {
+        console.warn('pomodoro reconnect sync failed', error)
+      })
+    }
+
+    wx.onNetworkStatusChange(this._networkStatusHandler)
+  },
+
+  _unregisterNetworkStatusListener() {
+    if (!this._networkStatusHandler) return
+    try {
+      if (typeof wx.offNetworkStatusChange === 'function') {
+        wx.offNetworkStatusChange(this._networkStatusHandler)
+      }
+    } catch (_) {}
+    this._networkStatusHandler = null
+  },
+
+  _isRetryablePomodoroSyncError(error) {
+    const statusCode = Number(error && error.statusCode) || 0
+    return !!(
+      (error && error.code === 'NETWORK_ERROR') ||
+      statusCode === 0 ||
+      statusCode === 408 ||
+      statusCode === 429 ||
+      statusCode >= 500
+    )
+  },
+
+  _clearPendingPomodoroSyncRetryTimer(resetAttempt = false) {
+    if (this._pendingSyncRetryTimer) {
+      clearTimeout(this._pendingSyncRetryTimer)
+      this._pendingSyncRetryTimer = null
+    }
+    if (resetAttempt) this._pendingSyncRetryAttempt = 0
+  },
+
+  _schedulePendingPomodoroSyncRetry(error) {
+    if (!this._pageVisible || !this._getPendingPomodoroSync() || !this._isRetryablePomodoroSyncError(error)) return
+    if (this._pendingSyncRetryTimer) return
+
+    const attempt = Math.max(0, Number(this._pendingSyncRetryAttempt || 0))
+    const delayIndex = Math.min(attempt, POMODORO_SYNC_RETRY_DELAYS_MS.length - 1)
+    const delay = POMODORO_SYNC_RETRY_DELAYS_MS[delayIndex]
+    this._pendingSyncRetryAttempt = attempt + 1
+    this._pendingSyncRetryTimer = setTimeout(() => {
+      this._pendingSyncRetryTimer = null
+      if (!this._pageVisible || !this._getPendingPomodoroSync()) return
+      this._retryPendingPomodoroSync().catch(retryError => {
+        console.warn('pomodoro delayed sync retry failed', retryError)
+      })
+    }, delay)
+  },
+
+  _releasePauseToggleLock() {
+    if (this._pauseToggleUnlockTimer) {
+      clearTimeout(this._pauseToggleUnlockTimer)
+      this._pauseToggleUnlockTimer = null
+    }
+    this._pauseToggleLocked = false
+  },
+
+  _acquirePauseToggleLock() {
+    if (this._pauseToggleLocked) return false
+    this._pauseToggleLocked = true
+    this._pauseToggleUnlockTimer = setTimeout(() => {
+      this._pauseToggleUnlockTimer = null
+      this._pauseToggleLocked = false
+    }, POMODORO_PAUSE_TOGGLE_COOLDOWN_MS)
+    return true
   },
 
   /* ==================== Subject Loading ==================== */
@@ -525,19 +742,18 @@ Page({
   },
 
   _migrateRunningStateCache(subjects) {
-    try {
-      const local = wx.getStorageSync('pomodoro_running_state')
-      if (!local || local.selectedSubjectId || !local.selectedSubjectCode) return
-      const match = (subjects || []).find(s => s.code === local.selectedSubjectCode)
-      if (match) {
-        local.selectedSubjectId = match.id
-        if (!local.selectedSubjectName) local.selectedSubjectName = match.name || ''
-        wx.setStorageSync('pomodoro_running_state', local)
-      } else {
-        // 无法映射的旧 code 缓存 → 安全清除，避免恢复出无科目会话
-        wx.removeStorageSync('pomodoro_running_state')
-      }
-    } catch (_) {}
+    const stored = this._safeGetPomodoroStorage('pomodoro_running_state', 'migrate running snapshot')
+    if (!stored.ok) return false
+    const local = stored.value
+    if (!local || local.selectedSubjectId || !local.selectedSubjectCode) return true
+    const match = (subjects || []).find(s => s.code === local.selectedSubjectCode)
+    if (match) {
+      local.selectedSubjectId = match.id
+      if (!local.selectedSubjectName) local.selectedSubjectName = match.name || ''
+      return this._safeSetPomodoroStorage('pomodoro_running_state', local, 'running snapshot refresh')
+    }
+    // 无法映射的旧 code 缓存 → 安全清除，避免恢复出无科目会话
+    return this._safeRemovePomodoroStorage('pomodoro_running_state', 'stale running snapshot')
   },
 
   /* ==================== UI Handlers ==================== */
@@ -625,56 +841,286 @@ Page({
     }
   },
 
+  _buildUnknownStartAttempt(overrides = {}) {
+    const clientStartId = overrides.clientStartId || api.createClientStartId()
+    return {
+      requestedAt: api.now(),
+      cancelIfFound: false,
+      cancelAt: null,
+      clientStartId,
+      subjectId: this.data.selectedSubjectId,
+      chapterId: this.data.fromChapterId || null,
+      preset: this.data.selectedPreset,
+      workDuration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
+      breakDuration: this.data.selectedPreset === 'debug' ? 1 : this.data.breakDuration,
+      notificationEnabled: false,
+      ...overrides,
+    }
+  },
+
+  _unknownStartPayload(attempt) {
+    if (!attempt || !attempt.clientStartId) return null
+    return {
+      subject_id: attempt.subjectId,
+      chapter_id: attempt.chapterId || null,
+      preset: attempt.preset,
+      work_duration: Number(attempt.workDuration || 0),
+      break_duration: Number(attempt.breakDuration || 0),
+      notification_enabled: !!attempt.notificationEnabled,
+      client_start_id: attempt.clientStartId,
+    }
+  },
+
+  _matchesUnknownStartAttempt(session, attempt) {
+    return !!(
+      session && attempt && session.id && attempt.clientStartId &&
+      session.client_start_id === attempt.clientStartId
+    )
+  },
+
+  _startCancellationAt(session, cancelAt) {
+    const requestedAt = Number(cancelAt)
+    const fallback = Number.isFinite(requestedAt) && requestedAt > 0 ? requestedAt : api.now()
+    const serverStartAt = session && session.start_time ? parseServerTime(session.start_time) : NaN
+    return Number.isFinite(serverStartAt) ? Math.max(serverStartAt, fallback) : fallback
+  },
+
+  async _reconcileUnknownStartAttempt(explicitAttempt) {
+    let attempt = explicitAttempt
+    const stored = this._safeGetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'unknown start')
+    if (!stored.ok) return 'storage_error'
+
+    // onHide may mark the persisted attempt cancelIfFound while the original
+    // request is still unwinding. Prefer that latest copy even when the caller
+    // passes its older in-memory attempt object.
+    const storedAttempt = stored.value
+    if (storedAttempt && (!attempt || storedAttempt.clientStartId === attempt.clientStartId)) {
+      attempt = storedAttempt
+    }
+
+    if (!attempt || !attempt.clientStartId) {
+      if (attempt && !this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'invalid unknown start')) {
+        return 'storage_error'
+      }
+      return 'none'
+    }
+
+    const payload = this._unknownStartPayload(attempt)
+    if (!payload) {
+      return this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'invalid unknown start payload')
+        ? 'none'
+        : 'storage_error'
+    }
+
+    let session
+    try {
+      // Retry the exact same idempotent /start instead of guessing from /active.
+      // If the first request committed, the backend returns that same row. If it
+      // did not commit and another device owns the active row, this gets a 409 and
+      // never mistakes/interrupts the other device's timer.
+      session = await api.post('/pomodoro/start', payload)
+    } catch (e) {
+      const statusCode = Number(e && e.statusCode) || 0
+      if (statusCode === 0 || statusCode >= 500) return 'offline'
+      return this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'settled failed start')
+        ? 'none'
+        : 'storage_error'
+    }
+
+    if (!this._matchesUnknownStartAttempt(session, attempt)) {
+      return this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'mismatched unknown start')
+        ? 'none'
+        : 'storage_error'
+    }
+
+    if (attempt.cancelIfFound && (session.status === 'running' || session.status === 'paused')) {
+      const cancelAt = this._startCancellationAt(session, attempt.cancelAt)
+      const pending = this._setPendingPomodoroSync('interrupt', session.id, cancelAt)
+      if (!pending) {
+        // Keep/reinforce the idempotent start marker so a later storage recovery
+        // can still find and cancel the server row. Never clear the only recovery
+        // credential when the interrupt intent itself was not durable.
+        this._safeSetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, {
+          ...attempt,
+          cancelIfFound: true,
+          cancelAt,
+        }, 'retain cancelled unknown start')
+        return 'storage_error'
+      }
+      this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'interrupt queued for unknown start')
+      await this._retryPendingPomodoroSync()
+      this._resetToIdle()
+      return 'cancelled'
+    }
+
+    if (session.status === 'running' || session.status === 'paused') {
+      // Do not restore a timer while its unknown-start marker is still durable.
+      // If cleanup fails, a later onHide could otherwise mark the stale marker as
+      // cancelIfFound and unexpectedly interrupt a legitimate running session.
+      if (!this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'resolved active start')) {
+        return 'storage_error'
+      }
+      if (this._pageVisible && this._restoreSession(session) === false) return 'storage_error'
+      return 'restored'
+    }
+
+    return this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'resolved terminal start')
+      ? 'settled'
+      : 'storage_error'
+  },
+
+  async _postPomodoroStartWithReconciliation(payload, startSeq) {
+    const clientStartId = payload.client_start_id || api.createClientStartId()
+    const requestPayload = { ...payload, client_start_id: clientStartId }
+    const attempt = this._buildUnknownStartAttempt({
+      clientStartId,
+      subjectId: requestPayload.subject_id,
+      chapterId: requestPayload.chapter_id || null,
+      preset: requestPayload.preset,
+      workDuration: requestPayload.work_duration,
+      breakDuration: requestPayload.break_duration,
+      notificationEnabled: !!requestPayload.notification_enabled,
+    })
+
+    // The idempotency key is useful only if it survives a lost response. Refuse
+    // to send /start unless the recovery credential is durable first.
+    if (!this._safeSetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, attempt, 'before pomodoro start')) {
+      this._showPomodoroPersistenceError()
+      this._resetToIdle()
+      return { handled: true, session: null }
+    }
+
+    let session
+    try {
+      session = await api.post('/pomodoro/start', requestPayload)
+    } catch (e) {
+      const statusCode = Number(e && e.statusCode) || 0
+      const resultIsUncertain = statusCode === 0 || statusCode >= 500
+      if (resultIsUncertain) {
+        const resolution = await this._reconcileUnknownStartAttempt(attempt)
+        if (resolution === 'cancelled' || resolution === 'restored') {
+          return { handled: true, session: null }
+        }
+        if (resolution === 'settled') {
+          this._resetToIdle()
+          return { handled: true, session: null }
+        }
+        if (resolution === 'storage_error') {
+          this._showPomodoroPersistenceError()
+          this._resetToIdle()
+          return { handled: true, session: null }
+        }
+      } else if (!this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'failed pomodoro start')) {
+        this._showPomodoroPersistenceError()
+        this._resetToIdle()
+        return { handled: true, session: null }
+      }
+      throw e
+    }
+
+    const latestStored = this._safeGetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'completed pomodoro start')
+    const latestAttempt = latestStored.ok && latestStored.value ? latestStored.value : attempt
+
+    if (!this._pageVisible || startSeq !== this._startRequestSeq) {
+      const cancelAt = this._startCancellationAt(session, latestAttempt.cancelAt)
+      const pending = this._setPendingPomodoroSync('interrupt', session.id, cancelAt)
+      if (pending) {
+        // Once the interrupt intent is durable, pending sync becomes the recovery
+        // source of truth and the start marker may be removed best-effort.
+        this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'start cancelled after response')
+        this._retryPendingPomodoroSync()
+      } else {
+        // If pending storage is unavailable, preserve the original idempotent key
+        // and mark it for cancellation. A later onShow can safely replay /start and
+        // enqueue the interrupt without guessing which active row belongs to us.
+        this._safeSetPomodoroStorage(POMODORO_UNKNOWN_START_KEY, {
+          ...latestAttempt,
+          cancelIfFound: true,
+          cancelAt,
+        }, 'retain cancelled start after response')
+      }
+      return { handled: true, session: null }
+    }
+
+    if (!latestStored.ok || !this._safeRemovePomodoroStorage(POMODORO_UNKNOWN_START_KEY, 'accepted pomodoro start')) {
+      this._showPomodoroPersistenceError()
+      this._resetToIdle()
+      return { handled: true, session: null }
+    }
+    return { handled: false, session }
+  },
+
   /* ==================== Start Ceremony ==================== */
 
   async startSession() {
+    // A real in-flight lock is separate from lifecycle generations. A rapid
+    // double tap must not invalidate the first successful /start response and
+    // then enqueue an interrupt for the very session the UI is about to restore.
+    if (this._startInFlight || this.data.phase === PHASE.CEREMONY || this.data.phase === PHASE.RUNNING) return
+    this._startInFlight = true
+
     const startSeq = (this._startRequestSeq || 0) + 1
     this._startRequestSeq = startSeq
 
-    // Flush any earlier local actions first. A terminal complete/interrupt that is
-    // still pending would otherwise make /start collide with the old active row.
-    if (this._getPendingPomodoroSyncQueue().length) {
-      const synced = await this._retryPendingPomodoroSync()
+    try {
+      // Never overwrite an unresolved idempotent start with a new client key.
+      // Replaying the previous key either restores that exact session or proves
+      // deterministically that no such start exists.
+      const unresolvedStart = await this._reconcileUnknownStartAttempt()
       if (!this._pageVisible || startSeq !== this._startRequestSeq) return
-      if (!synced) {
-        wx.showToast({ title: '上次专注尚未同步，请联网后重试', icon: 'none' })
+      if (unresolvedStart === 'offline') {
+        wx.showToast({ title: '上次启动结果待确认，请联网后重试', icon: 'none' })
         return
       }
-    }
+      if (unresolvedStart === 'storage_error') {
+        this._showPomodoroPersistenceError()
+        return
+      }
+      if (unresolvedStart === 'restored' || unresolvedStart === 'cancelled') return
 
-    if (!this.data.selectedSubjectId || !this.data.selectedSubject) {
-      wx.showToast({ title: '请选择学习科目', icon: 'none' })
-      return
-    }
-    if (this.data.subjectsError) {
-      wx.showToast({ title: '科目加载异常，请重试', icon: 'none' })
-      return
-    }
+      // Flush any earlier local actions first. A terminal complete/interrupt that is
+      // still pending would otherwise make /start collide with the old active row.
+      const pendingQueue = this._getPendingPomodoroSyncQueue()
+      if (pendingQueue === null) {
+        this._showPomodoroPersistenceError()
+        return
+      }
+      if (pendingQueue.length) {
+        const synced = await this._retryPendingPomodoroSync()
+        if (!this._pageVisible || startSeq !== this._startRequestSeq) return
+        if (!synced) {
+          wx.showToast({ title: '上次专注尚未同步，请联网后重试', icon: 'none' })
+          return
+        }
+      }
 
-    if (this.data.selectedPreset === 'free') {
-      await this._startFreeSession(startSeq)
-      return
-    }
+      if (!this.data.selectedSubjectId || !this.data.selectedSubject) {
+        wx.showToast({ title: '请选择学习科目', icon: 'none' })
+        return
+      }
+      if (this.data.subjectsError) {
+        wx.showToast({ title: '科目加载异常，请重试', icon: 'none' })
+        return
+      }
 
-    this.setData({ phase: PHASE.CEREMONY })
-    await new Promise(r => setTimeout(r, this.data.selectedPreset === 'debug' ? 1000 : 2500))
-    if (!this._pageVisible || startSeq !== this._startRequestSeq || this.data.phase !== PHASE.CEREMONY) return
+      if (this.data.selectedPreset === 'free') {
+        await this._startFreeSession(startSeq)
+        return
+      }
 
-    try {
-      const session = await api.post('/pomodoro/start', {
+      this.setData({ phase: PHASE.CEREMONY })
+      await new Promise(r => setTimeout(r, this.data.selectedPreset === 'debug' ? 1000 : 2500))
+      if (!this._pageVisible || startSeq !== this._startRequestSeq || this.data.phase !== PHASE.CEREMONY) return
+
+      const startResult = await this._postPomodoroStartWithReconciliation({
         subject_id: this.data.selectedSubjectId,
         chapter_id: this.data.fromChapterId || null,
         preset: this.data.selectedPreset,
         work_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.workDuration,
         break_duration: this.data.selectedPreset === 'debug' ? 1 : this.data.breakDuration,
-      })
-      if (!this._pageVisible || startSeq !== this._startRequestSeq) {
-        // Request crossed a lifecycle boundary. Do not leave a hidden active row.
-        this._setPendingPomodoroSync('interrupt', session.id)
-        this._retryPendingPomodoroSync()
-        return
-      }
-      this._beginCountdown(session)
+      }, startSeq)
+      if (startResult.handled || !startResult.session) return
+      this._beginCountdown(startResult.session)
     } catch (e) {
       if (!this._pageVisible || startSeq !== this._startRequestSeq) return
       const detail = (e && (e.detail || e.message || '')) || ''
@@ -682,11 +1128,20 @@ Page({
       if (isActiveConflict) {
         wx.showToast({ title: '已有进行中的专注，请先结束', icon: 'none' })
         const active = await this._fetchActiveSession()
-        if (this._pageVisible && startSeq === this._startRequestSeq && active) this._restoreSession(active)
+        if (this._pageVisible && startSeq === this._startRequestSeq && this._isPomodoroStorageError(active)) {
+          this._showPomodoroPersistenceError()
+          this.setData({ phase: PHASE.IDLE })
+        } else if (this._pageVisible && startSeq === this._startRequestSeq && active) {
+          if (this._restoreSession(active) === false) this.setData({ phase: PHASE.IDLE })
+        } else if (this._pageVisible && startSeq === this._startRequestSeq) {
+          this.setData({ phase: PHASE.IDLE })
+        }
       } else {
         wx.showToast({ title: '启动失败', icon: 'none' })
         this.setData({ phase: PHASE.IDLE })
       }
+    } finally {
+      this._startInFlight = false
     }
   },
 
@@ -696,7 +1151,12 @@ Page({
     const startSeq = existingStartSeq || ((this._startRequestSeq || 0) + 1)
     if (!existingStartSeq) this._startRequestSeq = startSeq
 
-    if (this._getPendingPomodoroSyncQueue().length) {
+    const pendingQueue = this._getPendingPomodoroSyncQueue()
+    if (pendingQueue === null) {
+      this._showPomodoroPersistenceError()
+      return
+    }
+    if (pendingQueue.length) {
       const synced = await this._retryPendingPomodoroSync()
       if (!this._pageVisible || startSeq !== this._startRequestSeq) return
       if (!synced) {
@@ -705,19 +1165,15 @@ Page({
       }
     }
     try {
-      const session = await api.post('/pomodoro/start', {
+      const startResult = await this._postPomodoroStartWithReconciliation({
         subject_id: this.data.selectedSubjectId,
         chapter_id: this.data.fromChapterId || null,
         preset: 'free',
         work_duration: 0,
         break_duration: 0,
-      })
-      if (!this._pageVisible || startSeq !== this._startRequestSeq) {
-        this._setPendingPomodoroSync('interrupt', session.id)
-        this._retryPendingPomodoroSync()
-        return
-      }
-      this._beginFreeTimer(session)
+      }, startSeq)
+      if (startResult.handled || !startResult.session) return
+      this._beginFreeTimer(startResult.session)
     } catch (e) {
       if (!this._pageVisible || startSeq !== this._startRequestSeq) return
       const detail = (e && (e.detail || e.message || '')) || ''
@@ -725,7 +1181,11 @@ Page({
       if (isActiveConflict) {
         wx.showToast({ title: '已有进行中的专注，请先结束', icon: 'none' })
         const active = await this._fetchActiveSession()
-        if (this._pageVisible && startSeq === this._startRequestSeq && active) this._restoreSession(active)
+        if (this._pageVisible && startSeq === this._startRequestSeq && this._isPomodoroStorageError(active)) {
+          this._showPomodoroPersistenceError()
+        } else if (this._pageVisible && startSeq === this._startRequestSeq && active) {
+          this._restoreSession(active)
+        }
       } else {
         wx.showToast({ title: '启动失败，请重试', icon: 'none' })
       }
@@ -734,28 +1194,37 @@ Page({
 
   _beginFreeTimer(session) {
     const startTime = parseServerTime(session.start_time)
-    const totalPausedSec = session.total_paused_sec || 0
-    const now = Date.now()
-    const startupElapsedMs = Math.max(0, now - startTime - totalPausedSec * 1000)
+    const totalPausedMs = Math.max(0, Number(session.total_paused_sec || 0) * 1000)
+    const now = api.now()
+    const elapsedMs = Math.max(0, now - startTime - totalPausedMs)
+    const elapsedSec = Math.min(Math.floor(elapsedMs / 1000), Math.floor(FREE_TIMER_MAX_MS / 1000))
+    const fmt = formatElapsedSec(elapsedSec)
 
     this._clearTimer()
     this._timerState.sessionId = session.id
     this._timerState.sessionStartTime = startTime
-    this._timerState.totalPausedMs = totalPausedSec * 1000
-    this._timerState.freeDisplayOffsetMs = startupElapsedMs
+    this._timerState.totalPausedMs = totalPausedMs
+    // Server start_time is the single clock origin. Do not hide /start network
+    // latency behind a client-only display offset, otherwise UI and statistics
+    // diverge by the request round-trip time.
+    this._timerState.freeDisplayOffsetMs = 0
     this._timerState.pauseStartTime = null
-    this._timerState.elapsedSec = 0
-    this._timerState.freeFriendlyText = ''
+    this._timerState.elapsedSec = elapsedSec
+    this._timerState.freeFriendlyText = fmt.friendly
     this._timerState.progress = 1
     this.setData({
       phase: PHASE.RUNNING,
       ringCanvasVisible: true,
       isFreeTimer: true,
       isPaused: false,
-      freeDisplayTime: '00:00:00',
+      freeDisplayTime: fmt.display,
       showEndConfirm: false,
     })
     this._updateComputedFields()
+    if (elapsedMs >= FREE_TIMER_MAX_MS) {
+      this._autoFinishFreeTimer()
+      return
+    }
     this._startFreeTimerInterval()
     wx.nextTick(() => {
       this._initCanvas(true)
@@ -829,22 +1298,27 @@ Page({
   async _pauseFreeTimer() {
     if (!this._timerState.sessionId || this.data.actionLoading) return
     const sessionId = this._timerState.sessionId
-    const pauseStartedAt = Date.now()
+    const pauseStartedAt = api.now()
+
+    const pending = this._setPendingPomodoroSync('pause', sessionId, pauseStartedAt)
+    if (!pending) {
+      this._showPomodoroPersistenceError()
+      return
+    }
 
     this._updateFreeElapsed()
     this._clearFreeTimerInterval()
     this._timerState.pauseStartTime = pauseStartedAt
     this._timerState.freeFriendlyText = formatElapsedSec(this._timerState.elapsedSec).friendly
     this.setData({ isPaused: true, actionLoading: true })
-    wx.setStorageSync('pomodoro_free_pause', {
+    this._safeSetPomodoroStorage('pomodoro_free_pause', {
       totalPausedMs: this._timerState.totalPausedMs || 0,
       pauseStartTime: pauseStartedAt,
       sessionId,
       elapsedSec: this._timerState.elapsedSec,
-      freeDisplayOffsetMs: this._timerState.freeDisplayOffsetMs || 0,
-    })
+      freeDisplayOffsetMs: 0,
+    }, 'free pause snapshot')
 
-    this._setPendingPomodoroSync('pause', sessionId, pauseStartedAt)
     this.setData({ actionLoading: false })
     this._retryPendingPomodoroSync().then(synced => {
       if (!synced) wx.showToast({ title: '已暂停，网络恢复后自动同步', icon: 'none' })
@@ -854,26 +1328,33 @@ Page({
   async _resumeFreeTimer() {
     if (!this._timerState.sessionId || this.data.actionLoading) return
     const sessionId = this._timerState.sessionId
-    const now = Date.now()
+    const now = api.now()
     const openPauseMs = this._timerState.pauseStartTime
       ? Math.max(0, now - this._timerState.pauseStartTime)
       : 0
     const localTotalPausedMs = Math.max(0, Number(this._timerState.totalPausedMs || 0) + openPauseMs)
 
-    wx.setStorageSync('pomodoro_pause_adjustment', {
+    // Queue ordering is important: if a previous /pause timed out, it stays ahead
+    // of this /resume and is synchronized first instead of being overwritten.
+    // Persist the intent before changing local UI so a storage failure cannot turn
+    // a durable paused state into an unrecoverable local-only resume.
+    const pending = this._setPendingPomodoroSync('resume', sessionId, now)
+    if (!pending) {
+      this._showPomodoroPersistenceError()
+      return
+    }
+
+    this._safeSetPomodoroStorage('pomodoro_pause_adjustment', {
       sessionId,
       totalPausedMs: localTotalPausedMs,
       savedAt: now,
-    })
-    wx.removeStorageSync('pomodoro_free_pause')
+    }, 'free resume adjustment')
+    this._safeRemovePomodoroStorage('pomodoro_free_pause', 'free resume snapshot')
     this._timerState.totalPausedMs = localTotalPausedMs
     this._timerState.pauseStartTime = null
     this.setData({ isPaused: false, ringCanvasVisible: true, actionLoading: true })
     this._startFreeTimerInterval()
 
-    // Queue ordering is important: if a previous /pause timed out, it stays ahead
-    // of this /resume and is synchronized first instead of being overwritten.
-    this._setPendingPomodoroSync('resume', sessionId, now)
     this.setData({ actionLoading: false })
     this._retryPendingPomodoroSync().then(synced => {
       if (!synced) wx.showToast({ title: '已继续计时，网络恢复后自动同步', icon: 'none' })
@@ -915,9 +1396,9 @@ Page({
           ringCanvasVisible: true,
         })
         this._startFreeTimerInterval()
-        wx.removeStorageSync('pomodoro_free_pause')
+        this._safeRemovePomodoroStorage('pomodoro_free_pause', 'best-effort cleanup')
       } else {
-        const now = Date.now()
+        const now = api.now()
         const totalSec = this._getCurrentTotalSec()
 
         // Merge with local pause adjustment
@@ -938,7 +1419,7 @@ Page({
           ringCanvasVisible: true,
         })
         this._startTimer(totalSec)
-        wx.removeStorageSync('pomodoro_pause')
+        this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
       }
       wx.showToast({ title: '已恢复计时', icon: 'none' })
     } catch (_) {
@@ -952,7 +1433,7 @@ Page({
     if (snapshot.confirmVisible === false) return false
     if (!snapshot.openedAt) return false
     // Snapshots older than 1 hour are stale
-    if (Date.now() - snapshot.openedAt > 3600000) return false
+    if (api.now() - snapshot.openedAt > 3600000) return false
     return true
   },
 
@@ -968,9 +1449,11 @@ Page({
         endConfirmText: hasElapsed
           ? `本次已专注 ${fmt.friendly}，确认后将计入学习统计。`
           : '当前计时时长较短，确认后仍会结束本次计时。',
-        // cover-view 在部分基础库/真机上不会可靠自动换行，显式拆行为两行。
-        endConfirmLine1: hasElapsed ? `本次已专注 ${fmt.friendly}` : '当前计时时长较短',
-        endConfirmLine2: hasElapsed ? '确认后将计入学习统计。' : '确认后仍会结束本次计时。',
+        // cover-view 在部分基础库/真机上不会可靠自动换行。长时长和
+        // 大字体下把“标签 / 时长 / 说明”拆成独立行，避免 nowrap 裁字。
+        endConfirmLine1: hasElapsed ? '本次已专注' : '当前计时时长较短',
+        endConfirmLine2: hasElapsed ? fmt.friendly : '确认后仍会结束本次计时。',
+        endConfirmLine3: hasElapsed ? '确认后将计入学习统计。' : '',
         endConfirmOkText: '确认结束',
         endConfirmCancelText: '继续计时',
       }
@@ -988,8 +1471,9 @@ Page({
         endConfirmText: hasElapsed
           ? `本次已专注 ${fmt.friendly}。确认后将结束当前番茄钟。`
           : '确认后将结束当前番茄钟。',
-        endConfirmLine1: hasElapsed ? `本次已专注 ${fmt.friendly}` : '确认后将结束当前番茄钟。',
-        endConfirmLine2: hasElapsed ? '确认后将结束当前番茄钟。' : '',
+        endConfirmLine1: hasElapsed ? '本次已专注' : '确认后将结束当前番茄钟。',
+        endConfirmLine2: hasElapsed ? fmt.friendly : '',
+        endConfirmLine3: hasElapsed ? '确认后将结束当前番茄钟。' : '',
         endConfirmOkText: '结束',
         endConfirmCancelText: isBreak ? '继续休息' : '继续专注',
       }
@@ -1001,12 +1485,10 @@ Page({
   async _showEndFreeConfirm() {
     if (!this._timerState.sessionId || this.data.actionLoading) return
 
-    const now = Date.now()
+    const now = api.now()
     const wasPaused = !!this.data.isPaused
     const elapsed = Math.max(0, this._timerState.elapsedSec || 0)
     const fmt = formatElapsedSec(elapsed)
-
-    this._clearFreeTimerInterval()
 
     const confirmActionSeq = (this._confirmActionSeq || 0) + 1
     this._confirmActionSeq = confirmActionSeq
@@ -1023,12 +1505,21 @@ Page({
       sessionStartTime: this._timerState.sessionStartTime,
       backendPauseDone: false,
       confirmVisible: true,
-      freeDisplayOffsetMs: this._timerState.freeDisplayOffsetMs || 0,
+      freeDisplayOffsetMs: 0,
+    }
+
+    if (!this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'free confirm snapshot')) {
+      this._showPomodoroPersistenceError()
+      return
+    }
+    if (!wasPaused && !this._setPendingPomodoroSync('pause', this._timerState.sessionId, now)) {
+      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'free confirm rollback')
+      this._showPomodoroPersistenceError()
+      return
     }
 
     this._confirmTimerSnapshot = snapshot
-    wx.setStorageSync('pomodoro_confirm_pause', snapshot)
-
+    this._clearFreeTimerInterval()
     this._timerState.elapsedSec = elapsed
     this._timerState.pauseStartTime = now
     this._timerState.freeFriendlyText = fmt.friendly
@@ -1047,7 +1538,7 @@ Page({
           if (snapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
           snapshot.backendPauseDone = true
           this._confirmTimerSnapshot = snapshot
-          wx.setStorageSync('pomodoro_confirm_pause', snapshot)
+          this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'confirm snapshot refresh')
         })
         .catch(e => console.warn('free confirm pause backend sync failed', e))
     }
@@ -1068,7 +1559,8 @@ Page({
   // intentionally serialized with resume/complete/interrupt so a late /pause can
   // never arrive after the user has already chosen "continue".
   async _postPauseWithRetry(sessionId, clientActionAt) {
-    this._setPendingPomodoroSync('pause', sessionId, clientActionAt)
+    const pending = this._setPendingPomodoroSync('pause', sessionId, clientActionAt)
+    if (!pending) throw new Error('pomodoro local persistence unavailable')
     const synced = await this._retryPendingPomodoroSync()
     if (!synced) throw new Error('pomodoro pause sync pending')
     return true
@@ -1077,7 +1569,7 @@ Page({
   async _pauseCountdownForEndConfirm() {
     if (!this._timerState.sessionId || this.data.actionLoading) return false
 
-    const now = Date.now()
+    const now = api.now()
     const totalSec = this._getCurrentTotalSec()
     const totalMs = Math.max(1, totalSec * 1000)
 
@@ -1088,8 +1580,6 @@ Page({
     const remainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
     const progress = totalMs > 0 ? remainingMs / totalMs : 0
     const wasPaused = !!this.data.isPaused
-
-    this._clearTimer()
 
     const confirmActionSeq = (this._confirmActionSeq || 0) + 1
     this._confirmActionSeq = confirmActionSeq
@@ -1114,9 +1604,21 @@ Page({
       confirmVisible: true,
     }
 
-    this._confirmTimerSnapshot = snapshot
-    wx.setStorageSync('pomodoro_confirm_pause', snapshot)
+    // The confirm snapshot and, when needed, the backend pause intent are both
+    // durable before the local timer is stopped. This keeps the operation
+    // fail-closed when local storage is unavailable.
+    if (!this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'countdown confirm snapshot')) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
+    if (!wasPaused && !this._setPendingPomodoroSync('pause', this._timerState.sessionId, now)) {
+      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'countdown confirm rollback')
+      this._showPomodoroPersistenceError()
+      return false
+    }
 
+    this._confirmTimerSnapshot = snapshot
+    this._clearTimer()
     this._countdownEndAt = 0
 
     const fmt = this._formatCountdownDisplay(remainingSec)
@@ -1143,7 +1645,7 @@ Page({
           if (snapshot.confirmActionSeq !== this._confirmActionSeq || !this.data.showEndConfirm) return
           snapshot.backendPauseDone = true
           this._confirmTimerSnapshot = snapshot
-          wx.setStorageSync('pomodoro_confirm_pause', snapshot)
+          this._safeSetPomodoroStorage('pomodoro_confirm_pause', snapshot, 'confirm snapshot refresh')
         })
         .catch(e => console.warn('confirm pause backend sync failed', e))
     }
@@ -1174,8 +1676,16 @@ Page({
     if (this.data.actionLoading) return
 
     const mode = this._timerState.endConfirmMode
-    const snapshot = this._confirmTimerSnapshot || wx.getStorageSync('pomodoro_confirm_pause')
-    const now = Date.now()
+    let snapshot = this._confirmTimerSnapshot
+    if (!snapshot) {
+      const storedConfirm = this._safeGetPomodoroStorage('pomodoro_confirm_pause', 'cancel end confirm')
+      if (!storedConfirm.ok) {
+        this._showPomodoroPersistenceError()
+        return
+      }
+      snapshot = storedConfirm.value
+    }
+    const now = api.now()
     this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
 
     if (mode === 'countdown-interrupt' && snapshot && snapshot.sessionId) {
@@ -1186,7 +1696,7 @@ Page({
         // Was paused before confirm — keep paused after cancel
         this._timerState.remainingSec = snapshot.remainingSec
         this._timerState.progress = snapshot.progress
-        this._timerState.pauseStartTime = snapshot.pauseStartTime || Date.now()
+        this._timerState.pauseStartTime = snapshot.pauseStartTime || api.now()
         this._timerState.totalPausedMs = snapshot.totalPausedMs || 0
         this._timerState.endConfirmMode = ''
         this.setData({
@@ -1195,12 +1705,15 @@ Page({
           endConfirmTheme: '',
           endConfirmTitle: '',
           endConfirmText: '',
+      endConfirmLine1: '',
+      endConfirmLine2: '',
+      endConfirmLine3: '',
           displayMin: fmt.min,
           displaySec: fmt.sec,
           isPaused: true,
         })
 
-        wx.removeStorageSync('pomodoro_confirm_pause')
+        this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
         this._confirmTimerSnapshot = null
 
         wx.nextTick(() => {
@@ -1215,13 +1728,18 @@ Page({
       const pauseDelta = Math.max(0, now - snapshot.openedAt)
       const localTotalPausedMs = (snapshot.totalPausedMs || 0) + pauseDelta
 
-      // 2. Save local pause adjustment to storage (survives onShow/active-sync)
-      wx.setStorageSync('pomodoro_pause_adjustment', {
+      // 2. Persist resume intent before changing local state. If the pending
+      // queue cannot be written, keep the confirmation pause in place.
+      if (!this._setPendingPomodoroSync('resume', snapshot.sessionId, now)) {
+        this._showPomodoroPersistenceError()
+        return
+      }
+      this._safeSetPomodoroStorage('pomodoro_pause_adjustment', {
         sessionId: snapshot.sessionId,
         totalPausedMs: localTotalPausedMs,
-        savedAt: Date.now(),
+        savedAt: api.now(),
         source: 'cancel_end_confirm',
-      })
+      }, 'cancel confirm resume adjustment')
 
       // 3. Restore UI immediately from snapshot — no await
       this._timerState.remainingSec = snapshot.remainingSec
@@ -1241,7 +1759,7 @@ Page({
         actionLoading: false,
       })
 
-      wx.removeStorageSync('pomodoro_confirm_pause')
+      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
 
       // 4. Start timer immediately from snapshot remainingMs
       this._countdownTotalSec = snapshot.totalSec
@@ -1254,9 +1772,8 @@ Page({
 
       this._confirmTimerSnapshot = null
 
-      // 5. Queue backend resume after the confirm pause. The ordered queue keeps
-      // pause -> resume sequencing stable even if the first request timed out.
-      this._setPendingPomodoroSync('resume', snapshot.sessionId, now)
+      // 5. Drain the already-persisted resume after the confirm pause. The ordered
+      // queue keeps pause -> resume sequencing stable even if pause timed out.
       this._retryPendingPomodoroSync().then(synced => {
         if (!synced) console.warn('resume after cancel confirm pending; keep local timer')
       })
@@ -1265,8 +1782,6 @@ Page({
     }
 
     if (mode === 'free-complete') {
-      const snapshot = this._confirmTimerSnapshot || wx.getStorageSync('pomodoro_confirm_pause')
-
       if (!snapshot || snapshot.mode !== 'free-complete') {
         this._timerState.endConfirmMode = ''
         this.setData({
@@ -1289,12 +1804,12 @@ Page({
 
       // Was paused before confirm — keep paused after cancel
       if (snapshot.wasPaused) {
-        this._timerState.pauseStartTime = snapshot.pauseStartTime || Date.now()
+        this._timerState.pauseStartTime = snapshot.pauseStartTime || api.now()
         this._timerState.totalPausedMs = snapshot.totalPausedMs || 0
         this._timerState.elapsedSec = snapshot.elapsedSec || 0
         this._timerState.freeFriendlyText = fmt.friendly
         this._timerState.endConfirmMode = ''
-        this._timerState.freeDisplayOffsetMs = Number(snapshot.freeDisplayOffsetMs || 0)
+        this._timerState.freeDisplayOffsetMs = 0
         this.setData({
           showEndConfirm: false,
           ringCanvasVisible: true,
@@ -1305,29 +1820,33 @@ Page({
           freeDisplayTime: fmt.display,
         })
 
-        wx.removeStorageSync('pomodoro_confirm_pause')
+        this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
         this._confirmTimerSnapshot = null
         this._redrawFreeRingAfterOverlay()
         return
       }
 
       // Was running before confirm — resume from snapshot.elapsedSec
-      const pauseDelta = Math.max(0, Date.now() - snapshot.openedAt)
+      const pauseDelta = Math.max(0, api.now() - snapshot.openedAt)
       const localTotalPausedMs = (snapshot.totalPausedMs || 0) + pauseDelta
 
-      wx.setStorageSync('pomodoro_pause_adjustment', {
+      if (!this._setPendingPomodoroSync('resume', snapshot.sessionId, now)) {
+        this._showPomodoroPersistenceError()
+        return
+      }
+      this._safeSetPomodoroStorage('pomodoro_pause_adjustment', {
         sessionId: snapshot.sessionId,
         totalPausedMs: localTotalPausedMs,
-        savedAt: Date.now(),
+        savedAt: api.now(),
         source: 'cancel_free_end_confirm',
-      })
+      }, 'cancel free confirm resume adjustment')
 
       this._timerState.pauseStartTime = null
       this._timerState.totalPausedMs = localTotalPausedMs
       this._timerState.elapsedSec = snapshot.elapsedSec || 0
       this._timerState.freeFriendlyText = ''
       this._timerState.endConfirmMode = ''
-      this._timerState.freeDisplayOffsetMs = Number(snapshot.freeDisplayOffsetMs || 0)
+      this._timerState.freeDisplayOffsetMs = 0
       this.setData({
         showEndConfirm: false,
         ringCanvasVisible: true,
@@ -1338,14 +1857,13 @@ Page({
         freeDisplayTime: fmt.display,
       })
 
-      wx.removeStorageSync('pomodoro_confirm_pause')
+      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
       this._confirmTimerSnapshot = null
 
       this._restartFreeTimerInterval()
       this._redrawFreeRingAfterOverlay()
 
       // Backend resume is serialized behind the confirm pause.
-      this._setPendingPomodoroSync('resume', snapshot.sessionId, now)
       this._retryPendingPomodoroSync().then(synced => {
         if (!synced) console.warn('resume free timer after cancel confirm pending; keep local timer')
       })
@@ -1394,7 +1912,7 @@ Page({
     if (!sessionId) {
       this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
       this._confirmTimerSnapshot = null
-      wx.removeStorageSync('pomodoro_confirm_pause')
+      this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
       this.setData({ showEndConfirm: false, actionLoading: false })
       return
     }
@@ -1411,22 +1929,32 @@ Page({
     const snapshot = this._confirmTimerSnapshot
     let totalPausedMs = this._timerState.totalPausedMs || 0
     if (snapshot && snapshot.openedAt) {
-      totalPausedMs = Math.max(0, Number(snapshot.totalPausedMs || 0) + (Date.now() - snapshot.openedAt))
+      totalPausedMs = Math.max(0, Number(snapshot.totalPausedMs || 0) + (api.now() - snapshot.openedAt))
     }
     this._timerState.totalPausedMs = totalPausedMs
     this._confirmActionSeq = (this._confirmActionSeq || 0) + 1
 
-    // End locally first; the ordered queue persists the terminal mutation and
-    // retries it without holding the UI behind a network timeout.
-    this._setPendingPomodoroSync('interrupt', sessionId, Date.now())
+    // Persist the terminal intent before ending locally. Terminal actions have
+    // reserved queue capacity, so reaching the pause/resume safety valve still
+    // allows the user to finish the session.
+    if (!this._setPendingPomodoroSync('interrupt', sessionId, api.now())) {
+      this._showPomodoroPersistenceError()
+      this.setData({ actionLoading: false })
+      return
+    }
     this._retryPendingPomodoroSync().then(synced => {
+      const conflict = this._consumePomodoroTerminalConflict(sessionId, 'interrupt')
+      if (conflict) {
+        this._handlePomodoroTerminalConflict(sessionId, conflict)
+        return
+      }
       if (!synced) wx.showToast({ title: '网络恢复后将自动同步', icon: 'none' })
       else this.loadTodayStats()
     })
 
     wx.showToast({ title: '已结束本次专注', icon: 'none' })
-    wx.removeStorageSync('pomodoro_pause_adjustment')
-    wx.removeStorageSync('pomodoro_confirm_pause')
+    this._safeRemovePomodoroStorage('pomodoro_pause_adjustment', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
     this._confirmTimerSnapshot = null
     this.setData({ showEndConfirm: false, actionLoading: false })
     this._resetToIdle()
@@ -1436,7 +1964,12 @@ Page({
     if (!this._timerState.sessionId) return
     const sessionId = this._timerState.sessionId
     this._clearTimer()
-    this._completePomodoroWithRetry(sessionId, Date.now()).then(synced => {
+    this._completePomodoroWithRetry(sessionId, api.now()).then(synced => {
+      const conflict = this._consumePomodoroTerminalConflict(sessionId, 'complete')
+      if (conflict) {
+        this._handlePomodoroTerminalConflict(sessionId, conflict)
+        return
+      }
       if (synced) this.loadTodayStats()
     })
     this._resetToIdle()
@@ -1458,24 +1991,42 @@ Page({
   _beginCountdown(session) {
     const startTime = parseServerTime(session.start_time)
     const totalSec = this.data.selectedPreset === 'debug' ? 10 : this.data.workDuration * 60
+    const totalPausedMs = Math.max(0, Number(session.total_paused_sec || 0) * 1000)
+    const elapsedMs = Math.max(0, api.now() - startTime - totalPausedMs)
+    const remainingMs = Math.max(0, totalSec * 1000 - elapsedMs)
+
     this._timerState.sessionId = session.id
     this._timerState.sessionStartTime = startTime
-    this._timerState.remainingSec = totalSec
-    this._timerState.progress = 1
-    this._timerState.totalPausedMs = 0
+    this._timerState.remainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
+    this._timerState.progress = totalSec > 0 ? remainingMs / (totalSec * 1000) : 0
+    this._timerState.totalPausedMs = totalPausedMs
     this._timerState.pauseStartTime = null
     this.setData({
       phase: PHASE.RUNNING,
       ringCanvasVisible: true,
       isPaused: false,
     })
-    this._countdownTotalSec = totalSec
-    this._countdownEndAt = Date.now() + totalSec * 1000
-    this._startTimer(totalSec)
     this._updateComputedFields()
+
+    // Use the server-issued start_time as the only clock origin. If /start took
+    // two seconds to return, the first frame correctly begins near 24:58 instead
+    // of showing a client-only 25:00 that disagrees with persisted statistics.
+    if (remainingMs <= 0) {
+      this._onWorkComplete()
+      return
+    }
+    this._startTimer(totalSec, { remainingMs, forceRunning: true })
   },
 
   togglePause() {
+    if (
+      this.data.phase !== PHASE.RUNNING ||
+      !this._timerState.sessionId ||
+      this.data.actionLoading ||
+      this.data.showEndConfirm ||
+      !this._acquirePauseToggleLock()
+    ) return
+
     if (this.data.isFreeTimer) {
       if (this.data.isPaused) {
         this._resumeFreeTimer()
@@ -1492,18 +2043,23 @@ Page({
   async _pauseSession() {
     if (!this._timerState.sessionId || this.data.actionLoading) return
     const sessionId = this._timerState.sessionId
-    const pauseStartedAt = Date.now()
+    const pauseStartedAt = api.now()
+
+    const pending = this._setPendingPomodoroSync('pause', sessionId, pauseStartedAt)
+    if (!pending) {
+      this._showPomodoroPersistenceError()
+      return
+    }
 
     this._clearTimer()
     this._timerState.pauseStartTime = pauseStartedAt
     this.setData({ isPaused: true, actionLoading: true })
-    wx.setStorageSync('pomodoro_pause', {
+    this._safeSetPomodoroStorage('pomodoro_pause', {
       totalPausedMs: this._timerState.totalPausedMs || 0,
       pauseStartTime: pauseStartedAt,
       sessionId,
-    })
+    }, 'countdown pause snapshot')
 
-    this._setPendingPomodoroSync('pause', sessionId, pauseStartedAt)
     this.setData({ actionLoading: false })
     this._retryPendingPomodoroSync().then(synced => {
       if (!synced) wx.showToast({ title: '已暂停，网络恢复后自动同步', icon: 'none' })
@@ -1519,19 +2075,25 @@ Page({
     if (!this._timerState.sessionId || this.data.actionLoading) return
 
     const sessionId = this._timerState.sessionId
-    const now = Date.now()
+    const now = api.now()
     const openPauseMs = this._timerState.pauseStartTime
       ? Math.max(0, now - this._timerState.pauseStartTime)
       : 0
     const localTotalPausedMs = Math.max(0, Number(this._timerState.totalPausedMs || 0) + openPauseMs)
     const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration ?? 25) * 60
 
-    wx.setStorageSync('pomodoro_pause_adjustment', {
+    const pending = this._setPendingPomodoroSync('resume', sessionId, now)
+    if (!pending) {
+      this._showPomodoroPersistenceError()
+      return
+    }
+
+    this._safeSetPomodoroStorage('pomodoro_pause_adjustment', {
       sessionId,
       totalPausedMs: localTotalPausedMs,
       savedAt: now,
-    })
-    wx.removeStorageSync('pomodoro_pause')
+    }, 'countdown resume adjustment')
+    this._safeRemovePomodoroStorage('pomodoro_pause', 'countdown resume snapshot')
     this._timerState.totalPausedMs = localTotalPausedMs
     this._timerState.pauseStartTime = null
     this.setData({ isPaused: false, ringCanvasVisible: true, actionLoading: true })
@@ -1540,7 +2102,6 @@ Page({
     const remainingMs = Math.max(0, totalSec * 1000 - elapsedMs)
     this._startTimer(totalSec, { remainingMs, forceRunning: true, reuseCanvas: true })
 
-    this._setPendingPomodoroSync('resume', sessionId, now)
     this.setData({ actionLoading: false })
     this._retryPendingPomodoroSync().then(synced => {
       if (!synced) wx.showToast({ title: '已继续计时，网络恢复后自动同步', icon: 'none' })
@@ -1559,92 +2120,360 @@ Page({
 
   /* ==================== Pending Network Sync ==================== */
 
-  _getPendingPomodoroSyncQueue() {
+  _safeGetPomodoroStorage(key, context = '') {
     try {
-      const raw = wx.getStorageSync(POMODORO_PENDING_SYNC_KEY)
-      if (!raw) return []
-      let list
-      if (Array.isArray(raw)) {
-        list = raw
-      } else {
-        // Migrate the previous single-slot format. The old implementation could
-        // encode "pause/resume then complete" as completeAfter=true; preserve that
-        // terminal action instead of silently dropping it during upgrade.
-        list = [raw]
-        if (raw.completeAfter && raw.sessionId && raw.action !== 'complete') {
-          list.push({
-            action: 'complete',
-            sessionId: raw.sessionId,
-            savedAt: Number(raw.savedAt || Date.now()),
-            clientActionAt: Number(raw.savedAt || Date.now()),
-            nonce: `${raw.nonce || 'legacy'}-complete`,
-          })
-        }
+      return { ok: true, value: wx.getStorageSync(key) }
+    } catch (error) {
+      console.error(`pomodoro storage read failed${context ? ` (${context})` : ''}: ${key}`, error)
+      return { ok: false, value: null }
+    }
+  },
+
+  _safeSetPomodoroStorage(key, value, context = '') {
+    try {
+      wx.setStorageSync(key, value)
+      return true
+    } catch (error) {
+      console.error(`pomodoro storage write failed${context ? ` (${context})` : ''}: ${key}`, error)
+      return false
+    }
+  },
+
+  _safeRemovePomodoroStorage(key, context = '') {
+    try {
+      wx.removeStorageSync(key)
+      return true
+    } catch (error) {
+      console.warn(`pomodoro storage remove failed${context ? ` (${context})` : ''}: ${key}`, error)
+      return false
+    }
+  },
+
+  _showPomodoroPersistenceError() {
+    wx.showToast({
+      title: '本地存储异常，操作未执行，请清理空间后重试',
+      icon: 'none',
+      duration: 2500,
+    })
+  },
+
+  _writePendingPomodoroSyncQueue(queue) {
+    if (!Array.isArray(queue)) return false
+    if (!queue.length) return this._safeRemovePomodoroStorage(POMODORO_PENDING_SYNC_KEY, 'pending queue')
+    return this._safeSetPomodoroStorage(POMODORO_PENDING_SYNC_KEY, queue, 'pending queue')
+  },
+
+  _getPendingPomodoroSyncQueue() {
+    const stored = this._safeGetPomodoroStorage(POMODORO_PENDING_SYNC_KEY, 'pending queue')
+    if (!stored.ok) return null
+    const raw = stored.value
+    if (!raw) return []
+
+    let list
+    if (Array.isArray(raw)) {
+      list = raw
+    } else {
+      // Migrate the previous single-slot format. The old implementation could
+      // encode "pause/resume then complete" as completeAfter=true; preserve that
+      // terminal action instead of silently dropping it during upgrade.
+      list = [raw]
+      if (raw.completeAfter && raw.sessionId && raw.action !== 'complete') {
+        list.push({
+          action: 'complete',
+          sessionId: raw.sessionId,
+          savedAt: Number(raw.savedAt || api.now()),
+          clientActionAt: Number(raw.savedAt || api.now()),
+          nonce: `${raw.nonce || 'legacy'}-complete`,
+        })
       }
-      const now = Date.now()
-      const validActions = ['pause', 'resume', 'complete', 'interrupt']
-      const valid = list.filter(item => {
-        const savedAt = Number(item && item.savedAt)
-        return !!(
-          item && item.sessionId && validActions.includes(item.action) &&
-          Number.isFinite(savedAt) && savedAt > 0 &&
-          savedAt <= now + 5 * 60 * 1000 &&
-          now - savedAt <= POMODORO_PENDING_SYNC_TTL_MS
-        )
-      })
-      if (valid.length !== list.length || !Array.isArray(raw)) {
-        if (valid.length) wx.setStorageSync(POMODORO_PENDING_SYNC_KEY, valid)
-        else wx.removeStorageSync(POMODORO_PENDING_SYNC_KEY)
-      }
-      return valid
-    } catch (_) { return [] }
+    }
+
+    const validActions = ['pause', 'resume', 'complete', 'interrupt']
+    const valid = list.filter(item => {
+      const savedAt = Number(item && item.savedAt)
+      return !!(
+        item && item.sessionId && validActions.includes(item.action) &&
+        Number.isFinite(savedAt) && savedAt > 0
+      )
+    })
+    if (valid.length !== list.length || !Array.isArray(raw)) {
+      // Never report a repaired in-memory queue as durable if the cleanup write
+      // failed. Returning null makes every caller fail closed instead of later
+      // overwriting an unreadable/corrupt queue with a newly created action.
+      if (!this._writePendingPomodoroSyncQueue(valid)) return null
+    }
+    return valid
   },
 
   _getPendingPomodoroSync() {
-    return this._getPendingPomodoroSyncQueue()[0] || null
+    const queue = this._getPendingPomodoroSyncQueue()
+    // A truthy sentinel keeps reconnect/retry guards conservative: unreadable
+    // storage is not the same thing as an empty queue.
+    if (queue === null) return { storageUnreadable: true }
+    return queue[0] || null
   },
 
   _hasPendingPomodoroAction(sessionId, actions) {
+    const queue = this._getPendingPomodoroSyncQueue()
+    if (queue === null) return true
     const allowed = Array.isArray(actions) ? actions : [actions]
-    return this._getPendingPomodoroSyncQueue().some(item => (
+    return queue.some(item => (
       item.sessionId === sessionId && allowed.includes(item.action)
     ))
   },
 
   _setPendingPomodoroSync(action, sessionId, clientActionAt) {
     const queue = this._getPendingPomodoroSyncQueue()
+    if (queue === null) return null
     const last = queue[queue.length - 1]
     if (last && last.sessionId === sessionId && last.action === action) return last
 
     // complete/interrupt are terminal for a session. Reuse an already queued
     // terminal action instead of sending duplicate terminal mutations.
-    if (action === 'complete' || action === 'interrupt') {
+    const terminal = action === 'complete' || action === 'interrupt'
+    if (terminal) {
       const existing = queue.find(item => item.sessionId === sessionId && item.action === action)
       if (existing) return existing
+    }
+
+    // Never truncate already persisted actions: that would change study duration.
+    // Instead stop accepting additional non-terminal toggles before the hard cap
+    // and reserve a few slots for terminal actions so the user can still finish.
+    const limit = terminal
+      ? POMODORO_PENDING_SYNC_MAX_ACTIONS
+      : POMODORO_PENDING_SYNC_NON_TERMINAL_LIMIT
+    if (queue.length >= limit) {
+      console.warn('pomodoro pending queue safety valve reached', { action, sessionId, length: queue.length })
+      return null
     }
 
     const pending = {
       action,
       sessionId,
-      savedAt: Date.now(),
-      clientActionAt: Number.isFinite(clientActionAt) ? clientActionAt : Date.now(),
-      nonce: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      savedAt: api.now(),
+      clientActionAt: Number.isFinite(clientActionAt) ? clientActionAt : api.now(),
+      nonce: `${api.now()}-${Math.random().toString(36).slice(2, 8)}`,
     }
     queue.push(pending)
-    wx.setStorageSync(POMODORO_PENDING_SYNC_KEY, queue)
+    if (!this._writePendingPomodoroSyncQueue(queue)) return null
     return pending
   },
 
   _clearPendingPomodoroSync(expected) {
-    try {
-      if (!expected) {
-        wx.removeStorageSync(POMODORO_PENDING_SYNC_KEY)
-        return
+    if (!expected) return this._writePendingPomodoroSyncQueue([])
+    const queue = this._getPendingPomodoroSyncQueue()
+    if (queue === null) return false
+    return this._writePendingPomodoroSyncQueue(
+      queue.filter(item => item.nonce !== expected.nonce)
+    )
+  },
+
+  _updatePendingPomodoroSync(expected, patch) {
+    const queue = this._getPendingPomodoroSyncQueue()
+    if (queue === null) return null
+    const next = queue.map(item => item.nonce === expected.nonce ? { ...item, ...patch } : item)
+    if (!this._writePendingPomodoroSyncQueue(next)) return null
+    return next.find(item => item.nonce === expected.nonce) || null
+  },
+
+  _dropPendingPomodoroSessionActions(sessionId) {
+    const queue = this._getPendingPomodoroSyncQueue()
+    if (queue === null) return false
+    const persisted = this._writePendingPomodoroSyncQueue(
+      queue.filter(item => item.sessionId !== sessionId)
+    )
+    if (!persisted) return false
+
+    // Also remove stale per-session optimistic snapshots. Never touch a newer
+    // session's cache when reconciliation discovers an old cross-device row.
+    for (const key of ['pomodoro_pause', 'pomodoro_free_pause', 'pomodoro_pause_adjustment']) {
+      const stored = this._safeGetPomodoroStorage(key, 'drop reconciled session snapshot')
+      if (!stored.ok) return false
+      if (stored.value && stored.value.sessionId === sessionId) {
+        if (!this._safeRemovePomodoroStorage(key, 'drop reconciled session snapshot')) return false
       }
-      const queue = this._getPendingPomodoroSyncQueue().filter(item => item.nonce !== expected.nonce)
-      if (queue.length) wx.setStorageSync(POMODORO_PENDING_SYNC_KEY, queue)
-      else wx.removeStorageSync(POMODORO_PENDING_SYNC_KEY)
-    } catch (_) {}
+    }
+    const running = this._safeGetPomodoroStorage('pomodoro_running_state', 'drop reconciled running snapshot')
+    if (!running.ok) return false
+    if (running.value && running.value.sessionId === sessionId) {
+      if (!this._safeRemovePomodoroStorage('pomodoro_running_state', 'drop reconciled running snapshot')) return false
+    }
+    return true
+  },
+
+  _isPomodoroStorageError(value) {
+    return !!(value && value.storageUnreadable)
+  },
+
+  _recordPomodoroTerminalConflict(sessionId, requestedAction, serverStatus) {
+    const conflict = { sessionId, requestedAction, serverStatus, savedAt: api.now() }
+    // The conflict marker is the durable bridge between a server-side terminal
+    // result and removal of the pending client mutation. Never acknowledge/drop
+    // the pending action unless this marker has actually reached local storage.
+    if (!this._safeSetPomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY, conflict, 'terminal conflict')) {
+      return false
+    }
+    this._pomodoroTerminalConflict = conflict
+    return true
+  },
+
+  _readPomodoroTerminalConflict() {
+    if (this._pomodoroTerminalConflict) return this._pomodoroTerminalConflict
+    const stored = this._safeGetPomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY, 'terminal conflict')
+    if (!stored.ok) return { storageUnreadable: true }
+    const conflict = stored.value
+    if (conflict && conflict.sessionId && conflict.requestedAction) {
+      this._pomodoroTerminalConflict = conflict
+      return conflict
+    }
+    return null
+  },
+
+  // These helpers intentionally *peek* rather than durably deleting the marker.
+  // The marker is acknowledged only after _handlePomodoroTerminalConflict has
+  // successfully cleaned local state, so a process kill/storage error cannot
+  // lose the only evidence of a cross-device terminal result.
+  _consumePomodoroTerminalConflict(sessionId, requestedAction) {
+    const conflict = this._readPomodoroTerminalConflict()
+    if (this._isPomodoroStorageError(conflict)) return conflict
+    if (!conflict || conflict.sessionId !== sessionId || conflict.requestedAction !== requestedAction) return null
+    return conflict
+  },
+
+  _consumeAnyPomodoroTerminalConflict() {
+    return this._readPomodoroTerminalConflict()
+  },
+
+  _ackPomodoroTerminalConflict(conflict) {
+    if (!conflict || this._isPomodoroStorageError(conflict)) return false
+    if (!this._safeRemovePomodoroStorage(POMODORO_TERMINAL_CONFLICT_KEY, 'terminal conflict ack')) {
+      return false
+    }
+    if (
+      this._pomodoroTerminalConflict &&
+      this._pomodoroTerminalConflict.sessionId === conflict.sessionId &&
+      this._pomodoroTerminalConflict.requestedAction === conflict.requestedAction
+    ) {
+      this._pomodoroTerminalConflict = null
+    }
+    return true
+  },
+
+  _handlePomodoroTerminalConflict(sessionId, conflict) {
+    if (!conflict) return false
+    if (this._isPomodoroStorageError(conflict)) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
+    if (!this._dropPendingPomodoroSessionActions(sessionId)) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
+    const completionStored = this._safeGetPomodoroStorage('pomodoro_completion', 'terminal conflict completion')
+    if (!completionStored.ok) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
+    const completion = completionStored.value
+    if (
+      completion && completion.sessionId === sessionId &&
+      !this._safeRemovePomodoroStorage('pomodoro_completion', 'terminal conflict completion')
+    ) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
+    // Break/adjustment are derived UI caches. Their cleanup is best effort, but
+    // the conflict marker itself is acknowledged only after all critical session
+    // and completion state has been durably cleaned.
+    this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_pause_adjustment', 'best-effort cleanup')
+    if (!this._ackPomodoroTerminalConflict(conflict)) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
+    this._completionBreakSec = null
+    this._clearTimer()
+    this.setData({ showCelebration: false, showEndConfirm: false })
+    this._resetToIdle()
+    const title = conflict.serverStatus === 'completed'
+      ? '已同步其他设备的完成状态'
+      : '已同步其他设备的结束状态'
+    wx.showToast({ title, icon: 'none', duration: 2000 })
+    this.loadTodayStats()
+    return true
+  },
+
+  async _reconcilePendingPomodoroSyncFailure(pending, error) {
+    const statusCode = Number(error && error.statusCode) || 0
+    if (statusCode !== 404 && statusCode !== 409) return false
+
+    let active
+    try {
+      active = await api.get('/pomodoro/active')
+    } catch (_) {
+      return false
+    }
+
+    if (active && active.id === pending.sessionId) {
+      // Lost response: server may already be in the requested state.
+      if (pending.action === 'pause' && active.status === 'paused') {
+        if (!this._clearPendingPomodoroSync(pending)) return false
+        this._maybeClearLocalPauseAdjustment(pending.sessionId)
+        return true
+      }
+      if (pending.action === 'resume' && active.status === 'running') {
+        if (!this._clearPendingPomodoroSync(pending)) return false
+        this._maybeClearLocalPauseAdjustment(pending.sessionId)
+        return true
+      }
+
+      if (error && error.code === 'POMODORO_CLOCK_SKEW') {
+        // /active has just refreshed api.now() from server_now/Date. Replay the
+        // user's actual intent with a calibrated timestamp instead of deleting it.
+        const retries = Number(pending.clockSkewRetries || 0)
+        if (retries < 2) {
+          this._updatePendingPomodoroSync(pending, {
+            clientActionAt: api.now(),
+            clockSkewRetries: retries + 1,
+          })
+          return true
+        }
+        // Keep the intent queued if clock calibration is still unusable. A later
+        // online drain can retry; never silently turn pause/interrupt back into run.
+        return false
+      }
+
+      if (
+        error &&
+        (error.code === 'POMODORO_STALE_ACTION' || error.code === 'POMODORO_NOT_READY')
+      ) {
+        if (pending.action === 'complete' || pending.action === 'interrupt') {
+          const completionStored = this._safeGetPomodoroStorage('pomodoro_completion', 'stale terminal reconcile')
+          if (!completionStored.ok) return false
+          const completion = completionStored.value
+          if (
+            completion && completion.sessionId === pending.sessionId &&
+            !this._safeRemovePomodoroStorage('pomodoro_completion', 'stale terminal reconcile')
+          ) return false
+          this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
+          this._completionBreakSec = null
+          this.setData({ showCelebration: false, showEndConfirm: false })
+        }
+        if (this._pageVisible && this._restoreSession(active) === false) return false
+        if (!this._clearPendingPomodoroSync(pending)) return false
+        this._maybeClearLocalPauseAdjustment(pending.sessionId)
+        return true
+      }
+    }
+
+    if (!active || active.id !== pending.sessionId) {
+      // The old session is terminal/missing. Terminal POSTs normally return the
+      // final row directly; this fallback prevents obsolete non-terminal actions
+      // from blocking the queue forever.
+      return this._dropPendingPomodoroSessionActions(pending.sessionId)
+    }
+
+    return false
   },
 
   async _retryPendingPomodoroSync() {
@@ -1653,7 +2482,14 @@ Page({
     this._pendingSyncDrainPromise = (async () => {
       while (true) {
         const queue = this._getPendingPomodoroSyncQueue()
-        if (!queue.length) return true
+        if (queue === null) {
+          this._showPomodoroPersistenceError()
+          return false
+        }
+        if (!queue.length) {
+          this._clearPendingPomodoroSyncRetryTimer(true)
+          return true
+        }
         const pending = queue[0]
         try {
           let body = {}
@@ -1663,9 +2499,46 @@ Page({
               body = { client_action_at: new Date(actionAtMs).toISOString() }
             } catch (_) {}
           }
-          await api.post(`/pomodoro/${pending.sessionId}/${pending.action}`, body)
-          this._clearPendingPomodoroSync(pending)
-        } catch (_) {
+          const response = await api.post(`/pomodoro/${pending.sessionId}/${pending.action}`, body)
+          if (pending.action === 'complete' || pending.action === 'interrupt') {
+            const expectedStatus = pending.action === 'complete' ? 'completed' : 'interrupted'
+            if (response && response.status && response.status !== expectedStatus) {
+              if (!this._recordPomodoroTerminalConflict(pending.sessionId, pending.action, response.status)) {
+                // Server already committed a terminal state, but without a durable
+                // conflict marker we must keep the pending mutation as the recovery
+                // credential. A later retry is state-idempotent and can reconcile.
+                this._showPomodoroPersistenceError()
+                return false
+              }
+              if (!this._dropPendingPomodoroSessionActions(pending.sessionId)) {
+                this._showPomodoroPersistenceError()
+                return false
+              }
+              this._clearPendingPomodoroSyncRetryTimer(true)
+              continue
+            }
+          }
+
+          // Any successful mutation proves the server is reachable again, so the
+          // next transient failure starts a fresh backoff sequence. Persistently
+          // removing the head is part of acknowledging the server commit; if local
+          // storage cannot do that, stop instead of spinning duplicate POSTs.
+          this._clearPendingPomodoroSyncRetryTimer(true)
+          if (!this._clearPendingPomodoroSync(pending)) {
+            console.error('pomodoro pending action committed but local acknowledgement could not be persisted', pending)
+            this._showPomodoroPersistenceError()
+            return false
+          }
+          if (pending.action === 'pause' || pending.action === 'resume') {
+            this._maybeClearLocalPauseAdjustment(pending.sessionId)
+          }
+        } catch (error) {
+          const reconciled = await this._reconcilePendingPomodoroSyncFailure(pending, error)
+          if (reconciled) {
+            this._clearPendingPomodoroSyncRetryTimer(true)
+            continue
+          }
+          this._schedulePendingPomodoroSyncRetry(error)
           return false
         }
       }
@@ -1680,56 +2553,83 @@ Page({
 
   async _completePomodoroWithRetry(sessionId, clientActionAt) {
     if (!sessionId) return false
-    this._setPendingPomodoroSync('complete', sessionId, clientActionAt)
+    const pending = this._setPendingPomodoroSync('complete', sessionId, clientActionAt)
+    if (!pending) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
     const synced = await this._retryPendingPomodoroSync()
-    return !!synced && !this._hasPendingPomodoroAction(sessionId, 'complete')
+    const conflict = this._readPomodoroTerminalConflict()
+    if (this._isPomodoroStorageError(conflict)) return false
+    return !!synced && !this._hasPendingPomodoroAction(sessionId, 'complete') && !(
+      conflict && conflict.sessionId === sessionId && conflict.requestedAction === 'complete'
+    )
   },
 
   async _interruptPomodoroWithRetry(sessionId, clientActionAt) {
     if (!sessionId) return false
-    this._setPendingPomodoroSync('interrupt', sessionId, clientActionAt)
+    const pending = this._setPendingPomodoroSync('interrupt', sessionId, clientActionAt)
+    if (!pending) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
     const synced = await this._retryPendingPomodoroSync()
-    return !!synced && !this._hasPendingPomodoroAction(sessionId, 'interrupt')
+    const conflict = this._readPomodoroTerminalConflict()
+    if (this._isPomodoroStorageError(conflict)) return false
+    return !!synced && !this._hasPendingPomodoroAction(sessionId, 'interrupt') && !(
+      conflict && conflict.sessionId === sessionId && conflict.requestedAction === 'interrupt'
+    )
   },
 
   /* ==================== Local Pause Adjustment ==================== */
 
-  _getLocalPauseAdjustment(sessionId) {
-    try {
-      const adjust = wx.getStorageSync('pomodoro_pause_adjustment')
-      if (!adjust || adjust.sessionId !== sessionId) return 0
-      if (Date.now() - adjust.savedAt > POMODORO_LOCAL_STATE_TTL_MS) {
-        wx.removeStorageSync('pomodoro_pause_adjustment')
-        return 0
-      }
-      return Number(adjust.totalPausedMs || 0)
-    } catch (_) { return 0 }
+  _clearLocalPauseAdjustment(sessionId) {
+    const stored = this._safeGetPomodoroStorage('pomodoro_pause_adjustment', 'pause adjustment cleanup')
+    if (!stored.ok) return false
+    const adjust = stored.value
+    if (!adjust || adjust.sessionId === sessionId) {
+      return this._safeRemovePomodoroStorage('pomodoro_pause_adjustment', 'best-effort cleanup')
+    }
+    return true
   },
 
-  _mergeLocalPauseAdjustment(sessionId, serverPausedMs) {
-    const localPausedMs = this._getLocalPauseAdjustment(sessionId)
+  _maybeClearLocalPauseAdjustment(sessionId) {
+    if (this._hasPendingPomodoroAction(sessionId, ['pause', 'resume'])) return false
+    return this._clearLocalPauseAdjustment(sessionId)
+  },
+
+  _getLocalPauseAdjustment(sessionId, failClosed = false) {
+    const stored = this._safeGetPomodoroStorage('pomodoro_pause_adjustment', 'pause adjustment')
+    if (!stored.ok) return failClosed ? null : 0
+    const adjust = stored.value
+    if (!adjust || adjust.sessionId !== sessionId) return 0
+    const value = Number(adjust.totalPausedMs || 0)
+    return Number.isFinite(value) && value >= 0 ? value : 0
+  },
+
+  _mergeLocalPauseAdjustment(sessionId, serverPausedMs, failClosed = false) {
+    const localPausedMs = this._getLocalPauseAdjustment(sessionId, failClosed)
+    if (localPausedMs === null) return null
     return Math.max(Number(serverPausedMs || 0), Number(localPausedMs || 0))
   },
 
   /* ==================== Free Timer Display Offset ==================== */
 
   _getFreeElapsedMs(now) {
-    if (typeof now !== 'number') now = Date.now()
+    if (typeof now !== 'number') now = api.now()
     const startTime = Number(this._timerState.sessionStartTime)
     if (!Number.isFinite(startTime) || startTime <= 0) return 0
     const totalPausedMs = Number(this._timerState.totalPausedMs || 0)
-    const displayOffsetMs = Number(this._timerState.freeDisplayOffsetMs || 0)
-    return Math.max(0, now - startTime - totalPausedMs - displayOffsetMs)
+    return Math.max(0, now - startTime - totalPausedMs)
   },
 
   _getEffectiveFreeElapsedMs(now) {
-    if (typeof now !== 'number') now = Date.now()
+    if (typeof now !== 'number') now = api.now()
     const startTime = Number(this._timerState.sessionStartTime)
     if (!Number.isFinite(startTime) || startTime <= 0) return 0
     let totalPausedMs = Number(this._timerState.totalPausedMs || 0)
     totalPausedMs = this._mergeLocalPauseAdjustment(this._timerState.sessionId, totalPausedMs)
-    const displayOffsetMs = Number(this._timerState.freeDisplayOffsetMs || 0)
-    return Math.max(0, now - startTime - totalPausedMs - displayOffsetMs)
+    return Math.max(0, now - startTime - totalPausedMs)
   },
 
   _checkFreeTimerLimitAndAutoEnd() {
@@ -1766,9 +2666,14 @@ Page({
     const sessionId = this._timerState.sessionId
     if (!sessionId) return
     this._clearFreeTimerInterval()
-    const completedAt = Date.now()
+    const completedAt = api.now()
 
     this._completePomodoroWithRetry(sessionId, completedAt).then(synced => {
+      const conflict = this._consumePomodoroTerminalConflict(sessionId, 'complete')
+      if (conflict) {
+        this._handlePomodoroTerminalConflict(sessionId, conflict)
+        return
+      }
       wx.showToast({
         title: synced ? '已记录本次专注' : '网络恢复后将自动同步',
         icon: 'none',
@@ -1788,7 +2693,7 @@ Page({
     if (session.paused_at) {
       const pausedAtMs = parseServerTime(session.paused_at)
       if (Number.isFinite(pausedAtMs)) {
-        serverEffectiveMs += Math.max(0, Date.now() - pausedAtMs)
+        serverEffectiveMs += Math.max(0, api.now() - pausedAtMs)
       }
     }
 
@@ -1817,7 +2722,7 @@ Page({
     const fmt = this._formatCountdownDisplay(displayRemainingSec)
 
     this._countdownTotalSec = totalSec
-    this._countdownEndAt = Date.now() + remainMs
+    this._countdownEndAt = api.now() + remainMs
 
     this._timerState.remainingSec = displayRemainingSec
     this._timerState.progress = progress
@@ -1833,7 +2738,7 @@ Page({
         return
       }
 
-      const remainingMs = Math.max(0, this._countdownEndAt - Date.now())
+      const remainingMs = Math.max(0, this._countdownEndAt - api.now())
       const displayRemainingSec = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / 1000)
       const progress = totalMs > 0 ? remainingMs / totalMs : 0
       const fmt = this._formatCountdownDisplay(displayRemainingSec)
@@ -1876,6 +2781,67 @@ Page({
 
   /* ==================== Work Complete ==================== */
 
+  _showCompletionCelebration(sessionId, options) {
+    options = options || {}
+    const workDuration = Number.isFinite(Number(options.workDuration)) ? Number(options.workDuration) : this.data.workDuration
+    const breakDuration = Number.isFinite(Number(options.breakDuration)) ? Number(options.breakDuration) : this.data.breakDuration
+    const selectedPreset = options.selectedPreset || this.data.selectedPreset
+    const selectedSubject = options.selectedSubject || this.data.selectedSubject
+    const selectedSubjectId = options.selectedSubjectId || this.data.selectedSubjectId || (selectedSubject && selectedSubject.id) || null
+    const breakSec = selectedPreset === 'debug' ? 5 : Math.max(0, breakDuration * 60)
+    const motto = options.motto || MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
+    const type = options.type || this._nextCelebrationType()
+
+    // Completion is final locally immediately. Remove every running snapshot
+    // before showing the animation so onHide cannot persist/resurrect this session.
+    this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_free_pause', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_pause_adjustment', 'best-effort cleanup')
+    this._confirmTimerSnapshot = null
+    this._timerState.endConfirmMode = ''
+    this._completionBreakSec = breakSec
+
+    const completionFlag = {
+      motto,
+      type,
+      sessionId,
+      breakSec,
+      workDuration,
+      breakDuration,
+      selectedPreset,
+      selectedSubjectId,
+      selectedSubjectCode: selectedSubject ? selectedSubject.code || '' : '',
+      selectedSubjectName: selectedSubject ? selectedSubject.name || '' : '',
+    }
+    this._safeSetPomodoroStorage('pomodoro_completion', completionFlag, 'completion marker')
+
+    // Invalidate the native canvas before the running wx:if block disappears.
+    this._canvasInitSeq = (this._canvasInitSeq || 0) + 1
+    this._canvasInitPending = false
+    this._canvasReady = false
+    this._ctx = null
+    this._ringCache = null
+    this._pendingDraw = null
+
+    this.setData({
+      phase: PHASE.IDLE,
+      isPaused: false,
+      showEndConfirm: false,
+      ringCanvasVisible: false,
+      ringCanvasPaintReady: false,
+      showCelebration: true,
+      celebrationMotto: motto,
+      celebrationType: type,
+      selectedPreset,
+      workDuration,
+      breakDuration,
+      selectedSubjectId,
+      selectedSubject,
+    })
+  },
+
   async _onWorkComplete() {
     const sessionId = this._timerState.sessionId
     if (!sessionId) {
@@ -1883,31 +2849,43 @@ Page({
       return
     }
 
-    const completedAt = Date.now()
+    const completedAt = api.now()
+    this._clearTimer()
     wx.vibrateLong()
     this._completePomodoroWithRetry(sessionId, completedAt).then(synced => {
+      const conflict = this._consumePomodoroTerminalConflict(sessionId, 'complete')
+      if (conflict) {
+        this._handlePomodoroTerminalConflict(sessionId, conflict)
+        return
+      }
       if (synced) {
-        wx.removeStorageSync('pomodoro_pause_adjustment')
         this.loadTodayStats()
       } else {
         wx.showToast({ title: '已完成，网络恢复后自动同步', icon: 'none' })
       }
     })
 
-    // Completion UI is local and immediate. The server-side /complete endpoint is
-    // idempotent and duration-capped, so a delayed retry cannot inflate statistics.
-    const motto = MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
-    const type = this._nextCelebrationType()
-    wx.setStorageSync('pomodoro_completion', { motto, type, sessionId })
-    if (this._pageVisible) {
-      this.setData({ showCelebration: true, celebrationMotto: motto, celebrationType: type })
-    }
+    this._showCompletionCelebration(sessionId)
   },
 
   dismissCelebration() {
-    wx.removeStorageSync('pomodoro_completion')
+    const completionStored = this._safeGetPomodoroStorage('pomodoro_completion', 'dismiss celebration')
+    if (!completionStored.ok) {
+      this._showPomodoroPersistenceError()
+      return
+    }
+    const completionFlag = completionStored.value
+    let breakSec
+    if (completionFlag && completionFlag.breakSec !== undefined && Number.isFinite(Number(completionFlag.breakSec))) {
+      breakSec = Math.max(0, Number(completionFlag.breakSec))
+    } else if (Number.isFinite(this._completionBreakSec)) {
+      breakSec = Math.max(0, Number(this._completionBreakSec))
+    } else {
+      breakSec = this.data.selectedPreset === 'debug' ? 5 : Math.max(0, Number(this.data.breakDuration || 0) * 60)
+    }
+    this._safeRemovePomodoroStorage('pomodoro_completion', 'best-effort cleanup')
+    this._completionBreakSec = null
     this.setData({ showCelebration: false })
-    const breakSec = this.data.selectedPreset === 'debug' ? 5 : this.data.breakDuration * 60
     if (breakSec > 0) {
       this._startBreak(breakSec)
     } else {
@@ -1919,22 +2897,22 @@ Page({
 
   _startBreak(totalSec, options = {}) {
     const originalTotalSec = Math.max(1, Number(totalSec) || 1)
-    const breakStartTime = Number.isFinite(options.startTime) ? options.startTime : Date.now()
+    const breakStartTime = Number.isFinite(options.startTime) ? options.startTime : api.now()
     const totalMs = originalTotalSec * 1000
-    const naturalRemainingMs = Math.max(0, breakStartTime + totalMs - Date.now())
+    const naturalRemainingMs = Math.max(0, breakStartTime + totalMs - api.now())
     const remainingMs = Number.isFinite(options.remainingMs)
       ? Math.max(0, Math.min(totalMs, options.remainingMs))
       : naturalRemainingMs
 
     if (remainingMs <= 0) {
-      wx.removeStorageSync('pomodoro_break')
+      this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
       this._resetToIdle()
       return
     }
 
     // Preserve the original break start/total across page restores. Re-basing the
     // timer to `remaining` made the dial jump back to a full ring on every onShow.
-    wx.setStorageSync('pomodoro_break', { startTime: breakStartTime, totalSec: originalTotalSec })
+    this._safeSetPomodoroStorage('pomodoro_break', { startTime: breakStartTime, totalSec: originalTotalSec }, 'break snapshot')
     this._timerState.breakStartTime = breakStartTime
     this._timerState.remainingSec = Math.ceil(remainingMs / 1000)
     this._timerState.progress = remainingMs / totalMs
@@ -1952,7 +2930,7 @@ Page({
     this.drawRing(originalTotalSec, true)
 
     const tick = () => {
-      const currentRemainingMs = Math.max(0, this._countdownEndAt - Date.now())
+      const currentRemainingMs = Math.max(0, this._countdownEndAt - api.now())
       const displayRemainingSec = currentRemainingMs <= 0 ? 0 : Math.ceil(currentRemainingMs / 1000)
       const progress = currentRemainingMs / totalMs
       const fmt = this._formatCountdownDisplay(displayRemainingSec)
@@ -1969,7 +2947,7 @@ Page({
 
       if (currentRemainingMs <= 0) {
         this._clearTimer()
-        wx.removeStorageSync('pomodoro_break')
+        this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
         this._resetToIdle()
         return
       }
@@ -1982,7 +2960,7 @@ Page({
 
   skipBreak() {
     this._clearTimer()
-    wx.removeStorageSync('pomodoro_break')
+    this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
     this._resetToIdle()
   },
 
@@ -1998,8 +2976,8 @@ Page({
     return true
   },
 
-  _syncActiveSessionLight(active) {
-    const now = Date.now()
+  _syncActiveSessionLight(active, failClosed = false) {
+    const now = api.now()
     const serverStartTime = parseServerTime(active.start_time)
     if (Number.isFinite(serverStartTime) && serverStartTime > 0) {
       this._timerState.sessionStartTime = serverStartTime
@@ -2009,8 +2987,13 @@ Page({
     const localPausedMs = Math.max(0, Number(this._timerState.totalPausedMs || 0))
     const totalPausedMs = this._mergeLocalPauseAdjustment(
       this._timerState.sessionId,
-      Math.max(serverPausedMs, localPausedMs)
+      Math.max(serverPausedMs, localPausedMs),
+      failClosed
     )
+    if (totalPausedMs === null) {
+      if (failClosed) this._showPomodoroPersistenceError()
+      return false
+    }
     this._timerState.totalPausedMs = totalPausedMs
 
     if (this.data.isFreeTimer) {
@@ -2023,7 +3006,7 @@ Page({
         })
       }
       if (!this.data.isPaused) {
-        const elapsedMs = this._getEffectiveFreeElapsedMs(now)
+        const elapsedMs = Math.max(0, now - this._timerState.sessionStartTime - totalPausedMs)
         const cappedMs = Math.min(elapsedMs, FREE_TIMER_MAX_MS)
         const elapsed = Math.floor(cappedMs / 1000)
         if (elapsed !== this._timerState.elapsedSec) {
@@ -2033,12 +3016,12 @@ Page({
         }
         if (elapsedMs >= FREE_TIMER_MAX_MS) {
           this._autoFinishFreeTimer()
-          return
+          return true
         }
         // onHide clears the interval, so onShow must always restart it.
         this._startFreeTimerInterval()
       }
-      return
+      return true
     }
 
     const totalSec = this.data.selectedPreset === 'debug' ? 10 : (this.data.workDuration ?? 25) * 60
@@ -2050,7 +3033,7 @@ Page({
           this.drawRing(totalSec, false)
         })
       }
-      return
+      return true
     }
 
     const elapsedMs = Math.max(0, now - this._timerState.sessionStartTime - totalPausedMs)
@@ -2058,16 +3041,20 @@ Page({
     if (remainingMs <= 0) {
       this._clearTimer()
       this._onWorkComplete()
-      return
+      return true
     }
 
     // onHide clears the timeout. Restart from wall-clock-derived remaining time
     // instead of repainting only one frame and leaving the countdown stopped.
     this._startTimer(totalSec, { remainingMs, forceRunning: true, reuseCanvas: true })
+    return true
   },
 
   _buildCachedActiveSession(local) {
-    if (!local || Date.now() - Number(local.savedAt || 0) >= POMODORO_LOCAL_STATE_TTL_MS) return null
+    // An active session can remain paused for days. Do not silently discard its
+    // only offline recovery snapshot on a fixed wall-clock TTL; the server's
+    // terminal/active state is authoritative and clears this cache when reachable.
+    if (!local) return null
     const cachedStartTime = Number(local.sessionStartTime)
     if (!Number.isFinite(cachedStartTime) || cachedStartTime <= 0 || !local.sessionId) return null
     const isPaused = !!local.isPaused
@@ -2086,67 +3073,80 @@ Page({
       subject_code: local.selectedSubjectCode || '',
       subject_name: local.selectedSubjectName || '',
       _local_elapsed_sec: local.isFreeTimer ? Number(local.elapsedSec || 0) : undefined,
-      _localFreeDisplayOffsetMs: local.isFreeTimer ? Number(local.freeDisplayOffsetMs || 0) : 0,
     }
   },
 
   _getCachedActiveSession() {
-    try {
-      const local = wx.getStorageSync('pomodoro_running_state')
-      const cached = this._buildCachedActiveSession(local)
-      if (!cached && local) wx.removeStorageSync('pomodoro_running_state')
-      return cached
-    } catch (_) {
-      return null
+    const stored = this._safeGetPomodoroStorage('pomodoro_running_state', 'cached active session')
+    if (!stored.ok) return { storageUnreadable: true }
+    const local = stored.value
+    const cached = this._buildCachedActiveSession(local)
+    if (!cached && local && !this._safeRemovePomodoroStorage('pomodoro_running_state', 'stale cached active session')) {
+      return { storageUnreadable: true }
     }
+    return cached
   },
 
   async _fetchActiveSession() {
-    const local = wx.getStorageSync('pomodoro_running_state')
+    const stored = this._safeGetPomodoroStorage('pomodoro_running_state', 'fetch active session')
+    if (!stored.ok) return { storageUnreadable: true }
+    const local = stored.value
     const cached = this._buildCachedActiveSession(local)
     try {
       const server = await api.get('/pomodoro/active')
       if (server) {
-        // Preserve local free display offset before clearing storage.
-        if (local && local.sessionId === server.id && server.preset === 'free') {
-          server._localFreeDisplayOffsetMs = Number(local.freeDisplayOffsetMs || 0)
-          server._localElapsedSec = Number(local.elapsedSec || 0)
+        if (!this._safeRemovePomodoroStorage('pomodoro_running_state', 'server active reconcile')) {
+          return { storageUnreadable: true }
         }
-        wx.removeStorageSync('pomodoro_running_state')
+        if (!this._hasPendingPomodoroAction(server.id, ['pause', 'resume'])) {
+          if (!this._clearLocalPauseAdjustment(server.id)) return { storageUnreadable: true }
+        }
         return server
       }
-      wx.removeStorageSync('pomodoro_running_state')
+      if (!this._safeRemovePomodoroStorage('pomodoro_running_state', 'server no-active reconcile')) {
+        return { storageUnreadable: true }
+      }
       return null
     } catch (_) {
       // Weak/offline network: keep the timer usable from a fresh local snapshot.
       if (cached) return cached
     }
-    wx.removeStorageSync('pomodoro_running_state')
+    if (!this._safeRemovePomodoroStorage('pomodoro_running_state', 'invalid cached active session')) {
+      return { storageUnreadable: true }
+    }
     return null
   },
 
   _restoreSession(session) {
     // Free timer recovery
     if (session.preset === 'free') {
-      this._restoreFreeSession(session)
-      return
+      return this._restoreFreeSession(session)
     }
 
-    // Guard: if confirm snapshot is active, don't overwrite with server state
-    const confirmSnapshot = this._confirmTimerSnapshot || wx.getStorageSync('pomodoro_confirm_pause')
+    // Guard: if confirm snapshot is active, don't overwrite with server state.
+    // A storage read failure is not equivalent to "no confirm snapshot".
+    let confirmSnapshot = this._confirmTimerSnapshot
+    if (!confirmSnapshot) {
+      const storedConfirm = this._safeGetPomodoroStorage('pomodoro_confirm_pause', 'restore countdown confirm')
+      if (!storedConfirm.ok) {
+        this._showPomodoroPersistenceError()
+        return false
+      }
+      confirmSnapshot = storedConfirm.value
+    }
     if (confirmSnapshot && confirmSnapshot.sessionId === session.id && this.data.showEndConfirm) {
-      return
+      return true
     }
 
     const startTime = parseServerTime(session.start_time)
     const totalSec = session.work_duration * 60
 
     if (!Number.isFinite(startTime) || !Number.isFinite(totalSec) || totalSec <= 0) {
-      wx.removeStorageSync('pomodoro_pause')
-      wx.removeStorageSync('pomodoro_running_state')
+      this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
+      this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
       this._resetToIdle()
       wx.showToast({ title: '番茄钟状态异常，已重置', icon: 'none' })
-      return
+      return true
     }
 
     // Compute effective paused ms: server base + current segment + local adjustment
@@ -2154,28 +3154,43 @@ Page({
     let totalPausedMs = serverBaseMs
     let isPaused = false
 
-    const savedPause = wx.getStorageSync('pomodoro_pause')
+    const storedPause = this._safeGetPomodoroStorage('pomodoro_pause', 'restore countdown pause')
+    if (!storedPause.ok) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
+    const savedPause = storedPause.value
     if (savedPause && savedPause.sessionId === session.id) {
       const savedTotal = Number(savedPause.totalPausedMs || 0)
-      const pauseStart = Number(savedPause.pauseStartTime || Date.now())
+      const pauseStart = Number(savedPause.pauseStartTime || api.now())
       totalPausedMs = Number.isFinite(savedTotal) && Number.isFinite(pauseStart)
-        ? savedTotal + (Date.now() - pauseStart)
+        ? savedTotal + Math.max(0, api.now() - pauseStart)
         : serverBaseMs
-      isPaused = totalPausedMs > 0
+      // The presence of a valid pause snapshot is itself the paused-state signal.
+      // Do not infer state from elapsed pause milliseconds: a just-paused session
+      // can legitimately have 0ms accumulated, and device-clock rollback must not
+      // accidentally resume it during cold restore.
+      isPaused = true
     } else if (session.paused_at) {
       const pausedAtMs = parseServerTime(session.paused_at)
       if (Number.isFinite(pausedAtMs)) {
-        totalPausedMs = serverBaseMs + Math.max(0, Date.now() - pausedAtMs)
+        totalPausedMs = serverBaseMs + Math.max(0, api.now() - pausedAtMs)
         isPaused = true
       }
     }
 
     if (!Number.isFinite(totalPausedMs) || totalPausedMs < 0) totalPausedMs = 0
 
-    // Apply local pause adjustment (e.g. from cancelEndConfirm)
-    totalPausedMs = this._mergeLocalPauseAdjustment(session.id, totalPausedMs)
+    // Apply local pause adjustment (e.g. from cancelEndConfirm). During cold
+    // restore this is critical state: unreadable storage must stop reconciliation
+    // instead of silently treating the adjustment as zero.
+    totalPausedMs = this._mergeLocalPauseAdjustment(session.id, totalPausedMs, true)
+    if (totalPausedMs === null) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
 
-    const elapsed = Math.floor((Date.now() - startTime - totalPausedMs) / 1000)
+    const elapsed = Math.floor((api.now() - startTime - totalPausedMs) / 1000)
     const remaining = Number.isFinite(totalSec) && Number.isFinite(elapsed)
       ? Math.max(0, totalSec - elapsed) : 0
 
@@ -2185,13 +3200,20 @@ Page({
     const subjectName = session.subject_name || '未分类'
 
     if (remaining <= 0) {
-      wx.removeStorageSync('pomodoro_pause')
-      wx.removeStorageSync('pomodoro_running_state')
+      this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
+      this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
       const completedAt = Math.min(
-        Date.now(),
+        api.now(),
         startTime + Math.max(0, totalPausedMs) + totalSec * 1000
       )
-      this._completePomodoroWithRetry(session.id, completedAt).catch(() => {})
+      this._completePomodoroWithRetry(session.id, completedAt).then(synced => {
+        const conflict = this._consumePomodoroTerminalConflict(session.id, 'complete')
+        if (conflict) {
+          this._handlePomodoroTerminalConflict(session.id, conflict)
+          return
+        }
+        if (synced) this.loadTodayStats()
+      }).catch(() => {})
       this._timerState.totalPausedMs = 0
       this._timerState.pauseStartTime = null
       this.setData({
@@ -2205,18 +3227,21 @@ Page({
       this._updateComputedFields()
       this.loadTodayStats()
       wx.vibrateLong()
-      const motto = MOTTOES[Math.floor(Math.random() * MOTTOES.length)]
-      const type = this._nextCelebrationType()
-      wx.setStorageSync('pomodoro_completion', { motto, type: type, sessionId: session.id })
-      this.setData({ showCelebration: true, celebrationMotto: motto, celebrationType: type })
-      return
+      this._showCompletionCelebration(session.id, {
+        selectedPreset: session.preset || 'standard',
+        workDuration: session.work_duration,
+        breakDuration: session.break_duration,
+        selectedSubjectId: subjectId,
+        selectedSubject: subjectId ? { id: subjectId, code: subjectCode, name: subjectName } : null,
+      })
+      return true
     }
 
     this._timerState.sessionId = session.id
     this._timerState.sessionStartTime = startTime
     this._timerState.remainingSec = remaining
     this._timerState.totalPausedMs = totalPausedMs
-    this._timerState.pauseStartTime = isPaused ? Date.now() : null
+    this._timerState.pauseStartTime = isPaused ? api.now() : null
     this._timerState.progress = totalSec > 0 ? remaining / totalSec : 0
     this.setData({
       phase: PHASE.RUNNING,
@@ -2232,9 +3257,9 @@ Page({
     })
 
     if (isPaused) {
-      wx.setStorageSync('pomodoro_pause', {
+      this._safeSetPomodoroStorage('pomodoro_pause', {
         totalPausedMs: totalPausedMs,
-        pauseStartTime: Date.now(),
+        pauseStartTime: api.now(),
         sessionId: session.id,
       })
       // Draw ring at the paused progress — canvas never destroyed with hidden
@@ -2246,96 +3271,69 @@ Page({
       this._startTimer(totalSec)
     }
     this._updateComputedFields()
+    return true
   },
 
   _restoreFreeSession(session) {
     const startTime = parseServerTime(session.start_time)
     if (!Number.isFinite(startTime) || startTime <= 0) {
-      wx.removeStorageSync('pomodoro_free_pause')
-      wx.removeStorageSync('pomodoro_running_state')
+      this._safeRemovePomodoroStorage('pomodoro_free_pause', 'best-effort cleanup')
+      this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
       this._resetToIdle()
-      return
+      return true
     }
 
-    // Restore local display offset (from running_state or free_pause)
-    const localOffsetMs = Number(session._localFreeDisplayOffsetMs || 0)
-    const hasLocalOffset = Number.isFinite(localOffsetMs) && localOffsetMs >= 0 && session._localFreeDisplayOffsetMs !== undefined
-
     const serverTotalPausedSec = session.total_paused_sec || 0
-    const savedPause = wx.getStorageSync('pomodoro_free_pause')
+    const storedPause = this._safeGetPomodoroStorage('pomodoro_free_pause', 'restore free pause')
+    if (!storedPause.ok) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
+    const savedPause = storedPause.value
     let totalPausedMs = serverTotalPausedSec * 1000
     let isPaused = false
-    let savedElapsed = 0
-    let savedOffsetMs = 0
 
     if (savedPause && savedPause.sessionId === session.id) {
       const savedTotal = Number(savedPause.totalPausedMs || 0)
-      const pauseStart = Number(savedPause.pauseStartTime || Date.now())
+      const pauseStart = Number(savedPause.pauseStartTime || api.now())
       totalPausedMs = Number.isFinite(savedTotal) && Number.isFinite(pauseStart)
-        ? savedTotal + (Date.now() - pauseStart)
+        ? savedTotal + Math.max(0, api.now() - pauseStart)
         : totalPausedMs
       isPaused = true
-      savedElapsed = Number(savedPause.elapsedSec || 0)
-      savedOffsetMs = Number(savedPause.freeDisplayOffsetMs || 0)
     } else if (session.paused_at) {
       const pausedAtMs = parseServerTime(session.paused_at)
       if (Number.isFinite(pausedAtMs)) {
         isPaused = true
-        totalPausedMs += Date.now() - pausedAtMs
+        totalPausedMs += Math.max(0, api.now() - pausedAtMs)
       }
     }
 
     if (!Number.isFinite(totalPausedMs) || totalPausedMs < 0) totalPausedMs = 0
+    totalPausedMs = this._mergeLocalPauseAdjustment(session.id, totalPausedMs, true)
+    if (totalPausedMs === null) {
+      this._showPomodoroPersistenceError()
+      return false
+    }
 
-    // Apply local pause adjustment (e.g. from cancelEndConfirm)
-    totalPausedMs = this._mergeLocalPauseAdjustment(session.id, totalPausedMs)
-
-    // Determine effective offset: from running_state, or from free_pause fallback
-    const effectiveOffset = hasLocalOffset ? localOffsetMs : savedOffsetMs
-    const hasEffectiveOffset = hasLocalOffset || (savedOffsetMs > 0)
-
-    // Seed timing state before calling elapsed helpers. Cold/local restore used to
-    // call _getFreeElapsedMs() while sessionStartTime still belonged to the previous
-    // page instance, which could briefly render 00:00:00 until /active returned.
+    // Server start_time remains the only clock origin during cold restore too;
+    // legacy freeDisplayOffsetMs caches are intentionally ignored.
     this._timerState.sessionId = session.id
     this._timerState.sessionStartTime = startTime
     this._timerState.totalPausedMs = totalPausedMs
-    this._timerState.freeDisplayOffsetMs = effectiveOffset
-    this._timerState.pauseStartTime = isPaused ? Date.now() : null
+    this._timerState.freeDisplayOffsetMs = 0
+    this._timerState.pauseStartTime = isPaused ? api.now() : null
 
-    // Use unified elapsed calculation with offset, or fallback to server elapsed
-    let elapsed
-    if (hasEffectiveOffset && !isPaused) {
-      this._timerState.freeDisplayOffsetMs = effectiveOffset
-      elapsed = Math.floor(this._getFreeElapsedMs() / 1000)
-    } else if (hasEffectiveOffset && isPaused) {
-      this._timerState.freeDisplayOffsetMs = effectiveOffset
-      elapsed = savedElapsed || Math.floor(this._getFreeElapsedMs() / 1000)
-    } else {
-      // No local offset — fallback to server elapsed (other device or cold restore)
-      this._timerState.freeDisplayOffsetMs = 0
-      elapsed = isPaused
-        ? savedElapsed || Math.max(0, Math.floor((Date.now() - startTime - totalPausedMs) / 1000))
-        : Math.max(0, Math.floor((Date.now() - startTime - totalPausedMs) / 1000))
-    }
-
-    // Cap elapsed at 5-hour max to prevent display showing >05:00:00 during restore
+    let elapsed = Math.max(0, Math.floor((api.now() - startTime - totalPausedMs) / 1000))
     elapsed = Math.min(elapsed, Math.floor(FREE_TIMER_MAX_MS / 1000))
-
     const fmt = formatElapsedSec(elapsed)
 
-    // Resolve subject (legacy cache may only carry subject_code)
     const subjectId = session.subject_id || this._lookupSubjectIdByCode(session.subject_code) || null
     const subjectCode = session.subject_code || ''
     const subjectName = session.subject_name || '未分类'
 
     this._clearTimer()
-    this._timerState.sessionId = session.id
-    this._timerState.sessionStartTime = startTime
-    this._timerState.totalPausedMs = totalPausedMs
-    this._timerState.pauseStartTime = isPaused ? Date.now() : null
     this._timerState.elapsedSec = elapsed
-    this._timerState.freeFriendlyText = ''
+    this._timerState.freeFriendlyText = fmt.friendly
     this._timerState.progress = 1
     this.setData({
       phase: PHASE.RUNNING,
@@ -2359,9 +3357,9 @@ Page({
 
     if (!isPaused) {
       this._startFreeTimerInterval()
-      // Check limit immediately after starting interval so elapsed never stays >5h
       this._checkFreeTimerLimitAndAutoEnd()
     }
+    return true
   },
 
   _restoreBreak() {
@@ -2369,9 +3367,9 @@ Page({
       const saved = wx.getStorageSync('pomodoro_break')
       if (!saved || !saved.startTime || !saved.totalSec) return false
       const totalMs = Math.max(1, Number(saved.totalSec) * 1000)
-      const remainingMs = Math.max(0, Number(saved.startTime) + totalMs - Date.now())
+      const remainingMs = Math.max(0, Number(saved.startTime) + totalMs - api.now())
       if (remainingMs <= 0) {
-        wx.removeStorageSync('pomodoro_break')
+        this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
         this._resetToIdle()
         return false
       }
@@ -2427,7 +3425,7 @@ Page({
 
   _scheduleCanvasInit(retryCount, initSeq, previousRect) {
     if (initSeq !== this._canvasInitSeq) return
-    if (retryCount > 7) {
+    if (retryCount > CANVAS_INIT_MAX_RETRIES) {
       this._canvasInitPending = false
       return
     }
@@ -2448,7 +3446,8 @@ Page({
         const stageRect = res && res[0]
         const canvasInfo = res && res[1]
         if (!stageRect || !canvasInfo || !canvasInfo.node || !canvasInfo.width || !canvasInfo.height) {
-          setTimeout(() => this._scheduleCanvasInit(retryCount + 1, initSeq, previousRect), 16)
+          const delay = Math.min(140, 16 + retryCount * 8)
+          setTimeout(() => this._scheduleCanvasInit(retryCount + 1, initSeq, previousRect), delay)
           return
         }
 
@@ -2473,7 +3472,8 @@ Page({
         // context. This avoids measuring while the running-state block is still
         // being inserted/reflowed during onShow restoration.
         if (!stageAligned || !stable) {
-          setTimeout(() => this._scheduleCanvasInit(retryCount + 1, initSeq, rect), 16)
+          const delay = Math.min(140, 16 + retryCount * 8)
+          setTimeout(() => this._scheduleCanvasInit(retryCount + 1, initSeq, rect), delay)
           return
         }
 
@@ -2534,11 +3534,17 @@ Page({
   drawRing(totalSec, isBreak) {
     if (!this._ctx) {
       this._pendingDraw = { totalSec, isBreak }
+      // Self-heal after an unusually slow native-canvas mount. If the first
+      // initialization exhausted its retry window, the next timer tick retries
+      // automatically instead of leaving a permanently blank ring.
+      if (this._pageVisible && !this.data.showEndConfirm && this.data.ringCanvasVisible && !this._canvasInitPending) {
+        this._initCanvas(false)
+      }
       return
     }
     var ctx = this._ctx
     var progress = this._timerState.progress
-    var now = Date.now()
+    var now = api.now()
     // Keep throttling expensive canvas work, but guarantee a visible refresh at
     // least about once per second. The old fixed 1/360 threshold meant a 25-min
     // ring could wait ~4.2s and a 50-min ring ~8.3s before moving.
@@ -2624,13 +3630,13 @@ Page({
     this._lastDrawnIsBreak = undefined
     this._ringCache = null
     this._timerState = this._createTimerState()
-    wx.removeStorageSync('pomodoro_break')
-    wx.removeStorageSync('pomodoro_completion')
-    wx.removeStorageSync('pomodoro_pause')
-    wx.removeStorageSync('pomodoro_free_pause')
-    wx.removeStorageSync('pomodoro_running_state')
-    wx.removeStorageSync('pomodoro_confirm_pause')
-    wx.removeStorageSync('pomodoro_pause_adjustment')
+    this._safeRemovePomodoroStorage('pomodoro_break', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_completion', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_pause', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_free_pause', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_running_state', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_confirm_pause', 'best-effort cleanup')
+    this._safeRemovePomodoroStorage('pomodoro_pause_adjustment', 'best-effort cleanup')
     this.setData({
       phase: PHASE.IDLE,
       displayMin: '00',
@@ -2643,15 +3649,25 @@ Page({
       endConfirmTheme: '',
       endConfirmTitle: '',
       endConfirmText: '',
+      endConfirmLine1: '',
+      endConfirmLine2: '',
+      endConfirmLine3: '',
     })
+    this._completionBreakSec = null
     this._updateComputedFields()
   },
 
   /* ==================== Stats ==================== */
 
   async loadTodayStats() {
+    const requestSeq = (this._statsRequestSeq || 0) + 1
+    this._statsRequestSeq = requestSeq
     try {
       const stats = await api.get('/pomodoro/stats')
+      // Multiple lifecycle/conflict paths can refresh stats concurrently. Only the
+      // newest request may update UI, so a slower pre-completion response cannot
+      // overwrite a newer post-completion total.
+      if (requestSeq !== this._statsRequestSeq) return
       const m = Math.floor((stats.today_duration_sec || 0) / 60)
       this._timerState.todayDurationSec = stats.today_duration_sec || 0
       this.setData({
@@ -2772,13 +3788,13 @@ Page({
   },
 
   getDateStr() {
-    const d = getChinaWallParts(Date.now())
+    const d = getChinaWallParts(api.now())
     const week = ['日', '一', '二', '三', '四', '五', '六']
     return `${d.month}月${d.day}日 星期${week[d.weekday]}`
   },
 
   _getExamDays() {
-    const nowParts = getChinaWallParts(Date.now())
+    const nowParts = getChinaWallParts(api.now())
     const todayStart = getChinaDayStartUtcMs(`${nowParts.year}-${String(nowParts.month).padStart(2, '0')}-${String(nowParts.day).padStart(2, '0')}`)
     const getExamDayUtc = (year) => {
       const dec31 = new Date(Date.UTC(year, 11, 31))

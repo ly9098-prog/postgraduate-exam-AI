@@ -249,6 +249,9 @@ Page({
   _adaptiveHash: '',
   _insightsLoading: false,
   _insightsError: null,
+  _insightSeq: 0,
+  _insightRetryTimer: null,
+  _insightKickoffTimer: null,
 
   goBack() {
     wx.navigateBack({ fail: () => wx.reLaunch({ url: '/pages/home/home' }) })
@@ -289,7 +292,14 @@ Page({
     this._visible = false
     this._chartsCancelled = true
     this._dashboardSeq++
+    this._trendSeq++
+    this._yearlySeq++
+    this._insightSeq++
     this._loadPromise = null  // 页面隐藏后使当前加载失效，允许下一次 onShow 发起新请求
+    clearTimeout(this._insightRetryTimer)
+    this._insightRetryTimer = null
+    clearTimeout(this._insightKickoffTimer)
+    this._insightKickoffTimer = null
     clearTimeout(this._ringTimer)
     this._ringTimer = null
     clearTimeout(this._trendTimer)
@@ -300,13 +310,30 @@ Page({
     this._growthTimer = null
     clearTimeout(this._adaptiveTimer)
     this._adaptiveTimer = null
+    // Requests invalidated above will intentionally skip their completion
+    // handlers, so clear transient loading flags here to avoid a stuck spinner
+    // when the page is shown again within the normal refresh debounce window.
+    this.setData({
+      backgroundRefreshing: false,
+      trendLoading: false,
+      pendingTrendDays: null,
+      _activeTabDays: this.data.trendDays,
+      yearlyLoading: false,
+    })
   },
 
   onUnload() {
     this._alive = false
     this._visible = false
     this._dashboardSeq++
+    this._trendSeq++
+    this._yearlySeq++
+    this._insightSeq++
     this._loadPromise = null
+    clearTimeout(this._insightRetryTimer)
+    this._insightRetryTimer = null
+    clearTimeout(this._insightKickoffTimer)
+    this._insightKickoffTimer = null
     clearTimeout(this._ringTimer)
     this._ringTimer = null
     clearTimeout(this._trendTimer)
@@ -341,7 +368,7 @@ Page({
     }
     // silent: no visual change
 
-    this._loadPromise = (async () => {
+    const loadPromise = (async () => {
       try {
         const res = await api.get('/stats/dashboard-v2', {
           trend_days: this.data.trendDays,
@@ -349,14 +376,14 @@ Page({
           include_growth: true,
           include_adaptive: true,
         })
-        if (!this._alive || seq !== this._dashboardSeq) return null
+        if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
 
         this._lastLoadAt = Date.now()
         this._processDashboard(res, mode)
         return res
       } catch (e) {
         console.error('[dashboard] load failed', e)
-        if (!this._alive || seq !== this._dashboardSeq) return null
+        if (!this._alive || !this._visible || seq !== this._dashboardSeq) return null
 
         if (!hasExistingData) {
           this.setData({ initialLoading: false, error: '学习数据加载失败' })
@@ -366,26 +393,37 @@ Page({
           wx.showToast({ title: '刷新失败', icon: 'none' })
         }
         return null
-      } finally {
-        this._loadPromise = null
       }
     })()
 
-    return this._loadPromise
+    this._loadPromise = loadPromise
+    try {
+      return await loadPromise
+    } finally {
+      // A request invalidated by onHide may finish after a new onShow request
+      // has already started. Never let the old request clear the new promise.
+      if (this._loadPromise === loadPromise) this._loadPromise = null
+    }
   },
 
-  async loadInsights(retryCount = 0) {
-    if (!this._alive) return
-    this._insightSeq = (this._insightSeq || 0) + 1
-    const seq = this._insightSeq
-    if (retryCount === 0) this._insightsLoading = true
+  async loadInsights(retryCount = 0, requestSeq = null) {
+    if (!this._alive || !this._visible) return
+
+    let seq = requestSeq
+    if (retryCount === 0 || seq == null) {
+      clearTimeout(this._insightRetryTimer)
+      this._insightRetryTimer = null
+      seq = ++this._insightSeq
+      this._insightsLoading = true
+    }
+
     try {
       const res = await api.get('/stats/dashboard-insights', {
         days: this.data.trendDays,
         include_subjects: true,
         include_topics: true,
       })
-      if (!this._alive || seq !== this._insightSeq) return
+      if (!this._alive || !this._visible || seq !== this._insightSeq) return
       const insights = model.buildInsights(res)
       // Enrich subjects with input_output data
       const enrichedMap = {}
@@ -438,11 +476,15 @@ Page({
       this.setData({ subjects: nextSubjects, insights, ...deepState })
     } catch (e) {
       console.error('[dashboard] insights load failed', e)
-      if (!this._alive) return
+      if (!this._alive || !this._visible || seq !== this._insightSeq) return
       if (retryCount < 2) {
-        // Retry twice with 2s delay
-        await new Promise(r => setTimeout(r, 2000))
-        return this.loadInsights(retryCount + 1)
+        clearTimeout(this._insightRetryTimer)
+        this._insightRetryTimer = setTimeout(() => {
+          this._insightRetryTimer = null
+          if (!this._alive || !this._visible || seq !== this._insightSeq) return
+          this.loadInsights(retryCount + 1, seq)
+        }, 2000)
+        return
       }
       this._insightsLoading = false
       this._insightsError = '诊断数据加载失败'
@@ -459,8 +501,12 @@ Page({
 
   _processDashboard(res, mode = 'initial') {
     // Kick off insights load (non-blocking, after main content renders)
-    if (this._alive) {
-      setTimeout(() => this.loadInsights(), 200)
+    if (this._alive && this._visible) {
+      clearTimeout(this._insightKickoffTimer)
+      this._insightKickoffTimer = setTimeout(() => {
+        this._insightKickoffTimer = null
+        if (this._alive && this._visible) this.loadInsights()
+      }, 200)
     }
 
     const hero = model.buildHero(res.overview)
@@ -586,7 +632,7 @@ Page({
         include_growth: false,
         include_adaptive: false,
       })
-      if (!this._alive || seq !== this._trendSeq) return
+      if (!this._alive || !this._visible || seq !== this._trendSeq) return
       const trend = model.buildTrends(res.trends)
       const trendHash = trend ? [trend.points, trend.previousPoints || []].map(list => list.map(p => p.date + p.questions + p.accuracy).join('|')).join('::') : ''
       this._trendHash = trendHash
@@ -602,14 +648,14 @@ Page({
           // Clear any pending draw timer
           clearTimeout(this._trendTimer)
           this._trendTimer = setTimeout(() => {
-            if (!this._alive) return
+            if (!this._alive || !this._visible) return
             charts.drawTrendChart('trend-chart', this, trend.points, { metric: this.data.trendMetric, previousPoints: trend.previousPoints })
           }, 80)
         }
       })
     } catch (e) {
       console.error('[dashboard] trend load failed', e)
-      if (!this._alive || seq !== this._trendSeq) return
+      if (!this._alive || !this._visible || seq !== this._trendSeq) return
       // Keep old trend data visible, show inline error
       this.setData({ trendLoading: false, pendingTrendDays: null, _activeTabDays: this.data.trendDays, trendError: '趋势数据加载失败' })
     }
@@ -640,16 +686,17 @@ Page({
   },
 
   async _loadYearlyHeatmap() {
+    if (!this._alive || !this._visible || this.data.yearlyLoading) return
     this.setData({ yearlyLoading: true, yearlyError: null })
     const seq = ++this._yearlySeq
     try {
       const res = await api.get('/stats/trends', { days: 365 })
-      if (!this._alive || seq !== this._yearlySeq) return
+      if (!this._alive || !this._visible || seq !== this._yearlySeq) return
       const weeks = this._buildHeatmapWeeks(res || [])
       this.setData({ showYearlyHeatmap: true, yearlyLoading: false, yearlyHeatmapWeeks: weeks })
     } catch (e) {
       console.error('[dashboard] yearly heatmap load failed', e)
-      if (!this._alive || seq !== this._yearlySeq) return
+      if (!this._alive || !this._visible || seq !== this._yearlySeq) return
       this.setData({ yearlyLoading: false, yearlyError: '热力图加载失败' })
       wx.showToast({ title: '热力图加载失败', icon: 'none' })
     }

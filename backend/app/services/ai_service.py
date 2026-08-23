@@ -177,20 +177,60 @@ def _prewarm_failure_from_result(result: dict) -> PrewarmAnalysisError:
     )
 
 
-def _qwen_error_analysis_fast_path(provider: str | None, model: str | None) -> bool:
+def _is_aliyun_model_studio_endpoint(base_url: str | None) -> bool:
+    """Return whether ``base_url`` is an Alibaba Cloud Model Studio endpoint.
+
+    The admin UI intentionally treats ``provider`` as a routing/monitoring label,
+    so users may legitimately save an Alibaba-hosted GLM/Qwen model with provider
+    set to ``openai``. Runtime feature detection therefore must also inspect the
+    configured endpoint instead of relying on the provider label alone.
+    """
+    try:
+        host = (urlsplit(str(base_url or "").strip()).hostname or "").lower()
+    except ValueError:
+        return False
+    return host.endswith(".aliyuncs.com") and ("maas" in host or "dashscope" in host)
+
+
+def _qwen_error_analysis_fast_path(
+    provider: str | None,
+    model: str | None,
+    base_url: str | None = None,
+) -> bool:
     """Whether the configured analysis model supports our Qwen fast path.
 
-    Do not send provider-specific parameters to arbitrary OpenAI-compatible
-    endpoints: the analysis model is DB-configurable and may be replaced later.
+    Avoid sending Alibaba-specific parameters to arbitrary OpenAI-compatible
+    endpoints. A matching provider label *or* an Alibaba Model Studio endpoint is
+    enough because the admin UI allows provider to stay as the generic ``openai``.
     """
     provider_key = str(provider or "").strip().lower()
     model_key = str(model or "").strip().lower()
     if not model_key:
         return False
-    qwen_hybrid_prefixes = ("qwen3.7", "qwen3.6", "qwen3.5", "qwen3-vl")
-    return model_key.startswith(qwen_hybrid_prefixes) and provider_key in {
+    qwen_hybrid_prefixes = ("qwen3.8", "qwen3.7", "qwen3.6", "qwen3.5", "qwen3-vl")
+    provider_matches = provider_key in {
         "qwen", "aliyun", "dashscope", "alibaba", "alibaba-cloud",
     }
+    return model_key.startswith(qwen_hybrid_prefixes) and (
+        provider_matches or _is_aliyun_model_studio_endpoint(base_url)
+    )
+
+
+def _glm_error_analysis_direct_answer_path(model: str | None, base_url: str | None) -> bool:
+    """Use non-thinking mode for Alibaba-hosted GLM hybrid reasoning models.
+
+    Alibaba Model Studio enables thinking by default for GLM-5.x and GLM-4.5+
+    hybrid models. Wrong-detail analysis has a deliberately small output budget
+    (800 tokens); leaving thinking enabled can spend that budget on
+    ``reasoning_content`` and return an empty final ``message.content``.
+    """
+    if not _is_aliyun_model_studio_endpoint(base_url):
+        return False
+    model_key = str(model or "").strip().lower()
+    return (
+        model_key == "glm-5"
+        or model_key.startswith(("glm-5.", "glm-4.7", "glm-4.6", "glm-4.5"))
+    )
 
 
 def _detect_image_mime(data: bytes, fallback: str = "") -> str:
@@ -1047,9 +1087,19 @@ async def analyze_error(
 
         context = build_error_context(wq, q, knowledge_points)
         context["question"]["structured_visual"] = structured_visual
-        qwen_fast_path = _qwen_error_analysis_fast_path(runtime.provider, runtime.model_name)
+        qwen_fast_path = _qwen_error_analysis_fast_path(
+            runtime.provider, runtime.model_name, runtime.base_url
+        )
+        glm_direct_answer = _glm_error_analysis_direct_answer_path(
+            runtime.model_name, runtime.base_url
+        )
+        direct_answer_mode = qwen_fast_path or glm_direct_answer
         image_max_pixels = _ERROR_ANALYSIS_QWEN_MAX_PIXELS if qwen_fast_path else None
-        llm_extra_body = {"enable_thinking": False} if qwen_fast_path else None
+        # Wrong-detail needs a short final JSON answer, not a long reasoning trace.
+        # In Alibaba Model Studio GLM-5.2 defaults to thinking mode; with the
+        # bounded 800-token response budget that can yield reasoning_content only
+        # and an empty message.content, which then appears as parse_failed.
+        llm_extra_body = {"enable_thinking": False} if direct_answer_mode else None
         messages = build_error_analysis(
             context["question"],
             wq.wrong_answer,
@@ -1271,7 +1321,7 @@ async def analyze_error(
             wq.id, effective_force, result.get("model"),
             "vision" if image_data_urls else "text", len(image_data_urls),
             _visual_evidence_is_valid(visual_evidence) if image_data_urls else None,
-            parsed_valid, False if qwen_fast_path else "default",
+            parsed_valid, False if direct_answer_mode else "default",
             _ERROR_ANALYSIS_MAX_TOKENS, image_max_pixels,
             visual_ack_retried, visual_ack_retry_ms,
             {k: bool(parsed.get(k)) for k in ["mistake_diagnosis", "knowledge_patch", "review_task"]},

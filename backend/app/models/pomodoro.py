@@ -22,6 +22,14 @@ class PomodoroSession(Base):
     __table_args__ = (
         Index("ix_pomodoro_sessions_user_status_start", "user_id", "status", "start_time"),
         Index("ix_pomodoro_sessions_user_status_end", "user_id", "status", "end_time"),
+        Index(
+            "ux_pomodoro_sessions_user_client_start_id",
+            "user_id",
+            "client_start_id",
+            unique=True,
+            sqlite_where=text("client_start_id IS NOT NULL"),
+            postgresql_where=text("client_start_id IS NOT NULL"),
+        ),
         # Database-level concurrency guard: a user can have at most one active
         # session across both running and paused states.
         Index(
@@ -43,6 +51,9 @@ class PomodoroSession(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     subject_id: Mapped[int | None] = mapped_column(ForeignKey("subjects.id"), nullable=True, index=True)
     chapter_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Client-generated idempotency key for /start. It lets a mobile client retry an
+    # uncertain start without guessing which cross-device active session is its own.
+    client_start_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     subject_ref = relationship("Subject", back_populates="pomodoro_sessions")
     # Default lazy load: every code path that needs intervals eager-loads them via

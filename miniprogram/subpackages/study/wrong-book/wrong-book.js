@@ -119,8 +119,16 @@ Page({
   _batchMasterUndoTimer: null,
   _aiAutoSwitchTimer: null,
   _exportCapabilityRequestId: 0,
+  _statsRequestSeq: 0,
+  _reviewOverviewRequestSeq: 0,
+  _subjectsRequestSeq: 0,
+  _destroyed: false,
 
   onLoad(options) {
+    this._destroyed = false
+    this._statsRequestSeq = 0
+    this._reviewOverviewRequestSeq = 0
+    this._subjectsRequestSeq = 0
     this.setData({ enableMathImage: config.enableMathImage || false })
     // 从 dashboard 跳转携带 subject_id 或 topic 参数
     const subjectId = options && options.subject_id != null ? Number(options.subject_id) : null
@@ -166,7 +174,13 @@ Page({
 
   onUnload() {
     this._alive = false
+    this._destroyed = true
     this._exportCapabilityRequestId++
+    this._statsRequestSeq++
+    this._reviewOverviewRequestSeq++
+    this._subjectsRequestSeq++
+    this._listRequestSeq++
+    this._aiDiagnosisRequestId++
     this._clearBatchCapsuleIdleTimer()
     if (this._selectionPulseTimer) {
       clearTimeout(this._selectionPulseTimer)
@@ -176,7 +190,7 @@ Page({
       clearTimeout(this._aiAutoSwitchTimer)
       this._aiAutoSwitchTimer = null
     }
-    this._clearBatchMasterUndo()
+    this._clearBatchMasterUndo(true)
   },
 
   async _checkExportCapability() {
@@ -231,6 +245,7 @@ Page({
       this.loadList(true),
       this.loadReviewOverview(),
     ])
+    if (this._destroyed) return
     // 首次加载完成后检查 AI 诊断
     await this._checkAiDiagnosis()
   },
@@ -319,8 +334,10 @@ Page({
   },
 
   async loadStats() {
+    const requestSeq = ++this._statsRequestSeq
     try {
       const stats = await api.get('/wrong-questions/stats')
+      if (this._destroyed || requestSeq !== this._statsRequestSeq) return
       this._aiStatsLoaded = true
       const masteredCount = typeof stats.unmastered === 'number'
         ? Math.max(0, (stats.total || 0) - stats.unmastered)
@@ -354,13 +371,16 @@ Page({
         })
       }
     } catch (e) {
+      if (this._destroyed || requestSeq !== this._statsRequestSeq) return
       console.error('加载错题统计失败', e)
     }
   },
 
   async loadReviewOverview() {
+    const requestSeq = ++this._reviewOverviewRequestSeq
     try {
       const overview = await api.get('/review/today/overview')
+      if (this._destroyed || requestSeq !== this._reviewOverviewRequestSeq) return
       const due = this._positiveNumber(overview.today_due_count, 0)
       const completed = this._positiveNumber(overview.today_completed_count, 0)
       const remaining = this._positiveNumber(overview.today_remaining_count, Math.max(0, due - completed))
@@ -378,6 +398,7 @@ Page({
         heroRingStyle: this._buildHeroRingStyle(progress),
       })
     } catch (e) {
+      if (this._destroyed || requestSeq !== this._reviewOverviewRequestSeq) return
       // 兼容尚未提供 overview 接口的旧后端；页面其它能力继续可用。
       console.warn('今日复习概览暂不可用，已使用错题统计兜底', e)
       const fallback = this.data.primaryStatCount || 0
@@ -451,9 +472,11 @@ Page({
 
   async loadSubjects() {
     if (this.data.subjectsLoading) return
+    const requestSeq = ++this._subjectsRequestSeq
     this.setData({ subjectsLoading: true, subjectsError: false })
     try {
       const raw = await api.get('/practice/subjects')
+      if (this._destroyed || requestSeq !== this._subjectsRequestSeq) return
       const subjects = this._flattenSubjectOptions(raw)
       this.setData({
         subjects: [{ value: '', label: '全部' }, ...subjects],
@@ -462,6 +485,7 @@ Page({
         subjectsLoaded: true,
       })
     } catch (e) {
+      if (this._destroyed || requestSeq !== this._subjectsRequestSeq) return
       console.error('加载学科筛选失败', e)
       this.setData({
         subjects: [{ value: '', label: '全部' }],
@@ -664,8 +688,12 @@ Page({
   _navigateToDetail(id) {
     const ids = this.data.list.map(item => item.id)
     const idx = ids.findIndex(itemId => String(itemId) === String(id))
-    wx.setStorageSync('wrong_detail_nav', { ids, ts: Date.now() })
-    wx.navigateTo({ url: `/subpackages/study/wrong-detail/wrong-detail?id=${id}&idx=${Math.max(0, idx)}&source=wrong-book` })
+    try {
+      wx.setStorageSync('wrong_detail_nav', { ids, ts: Date.now() })
+    } catch (e) {
+      console.warn('保存错题详情导航上下文失败', e)
+    }
+    wx.navigateTo({ url: `/subpackages/study/wrong-detail/wrong-detail?id=${encodeURIComponent(id)}&idx=${Math.max(0, idx)}&source=wrong-book` })
   },
 
   _toggleQuestionSelection(id) {
@@ -798,6 +826,7 @@ Page({
     try {
       const result = await api.post('/wrong-questions/batch', { action, ids })
       wx.hideLoading()
+      if (this._destroyed) return
 
       if (action === 'mark_mastered') {
         // 标记已掌握 → 显示撤销条，不清除选中、不退出批量模式
@@ -840,6 +869,7 @@ Page({
       await this._reloadAfterBatch()
     } catch (err) {
       wx.hideLoading()
+      if (this._destroyed) return
       this.setData({ batchSubmitting: false })
       const isMissingEndpoint = err && (err.statusCode === 404 || err.statusCode === 405)
       if (isMissingEndpoint) {
@@ -863,6 +893,7 @@ Page({
   },
 
   _reloadAfterBatch() {
+    if (this._destroyed) return Promise.resolve([])
     return Promise.all([this.loadStats(), this.loadList(true), this.loadReviewOverview()])
   },
 
@@ -909,6 +940,7 @@ Page({
     wx.showLoading({ title: '正在撤销', mask: true })
     api.post('/wrong-questions/batch', { action: 'unmark_mastered', ids }).then(result => {
       wx.hideLoading()
+      if (this._destroyed) return
       wx.showToast({
         title: `已撤销掌握 ${result.updated_count != null ? result.updated_count : ids.length} 项`,
         icon: 'success',
@@ -916,17 +948,20 @@ Page({
       this._reloadAfterBatch()
     }).catch(err => {
       wx.hideLoading()
+      if (this._destroyed) return
       wx.showToast({ title: (err && err.message) || '撤销失败', icon: 'none' })
     })
   },
 
-  _clearBatchMasterUndo() {
+  _clearBatchMasterUndo(skipSetData) {
     if (this._batchMasterUndoTimer) {
       clearTimeout(this._batchMasterUndoTimer)
       this._batchMasterUndoTimer = null
     }
     this._batchMasterUndoIds = []
-    this.setData({ batchMasterUndoVisible: false, _batchMasterUndoCount: 0 })
+    if (!skipSetData && !this._destroyed) {
+      this.setData({ batchMasterUndoVisible: false, _batchMasterUndoCount: 0 })
+    }
   },
 
   _confirmBatchAction(title, content) {
@@ -1003,6 +1038,7 @@ Page({
    * 安全：不因为 stats 未加载就清除已有诊断
    */
   async _checkAiDiagnosis() {
+    if (this._destroyed) return null
     var stats = this.data.stats || {}
     var total = stats.total
     // stats 尚未加载成功时，不基于初始值 { total: 0 } 做任何判断
