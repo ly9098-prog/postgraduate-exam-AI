@@ -71,29 +71,59 @@ function replaceUnicodeGreek(value) {
   })
 }
 
+function replaceUnicodeAccents(value) {
+  return String(value == null ? '' : value)
+    .replace(/ȳ/g, '\\bar{y}')
+    .replace(/([A-Za-z])\u0304/g, function (_, symbol) {
+      return '\\bar{' + symbol + '}'
+    })
+}
+
 function replaceUnicodeScripts(value) {
   var superscripts = {
     '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4',
     '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9',
-    '⁺': '+', '⁻': '-', 'ⁿ': 'n',
+    '⁺': '+', '⁻': '-', 'ⁿ': 'n', 'ⁱ': 'i', 'ʲ': 'j', 'ᵗ': 't',
   }
   var subscripts = {
     '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4',
     '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9',
-    '₊': '+', '₋': '-',
+    '₊': '+', '₋': '-', 'ₐ': 'a', 'ₑ': 'e', 'ₕ': 'h', 'ᵢ': 'i',
+    'ⱼ': 'j', 'ₖ': 'k', 'ₗ': 'l', 'ₘ': 'm', 'ₙ': 'n', 'ₒ': 'o',
+    'ₚ': 'p', 'ᵣ': 'r', 'ₛ': 's', 'ₜ': 't', 'ₓ': 'x',
   }
 
   return String(value == null ? '' : value)
-    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿ]+/g, function (run) {
+    .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿⁱʲᵗ]+/g, function (run) {
       return '^{' + run.split('').map(function (ch) { return superscripts[ch] || ch }).join('') + '}'
     })
-    .replace(/[₀₁₂₃₄₅₆₇₈₉₊₋]+/g, function (run) {
+    .replace(/[₀₁₂₃₄₅₆₇₈₉₊₋ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜₓ]+/g, function (run) {
       return '_{' + run.split('').map(function (ch) { return subscripts[ch] || ch }).join('') + '}'
     })
 }
 
+function replaceCircledNumerals(value) {
+  return String(value == null ? '' : value).replace(/[①-⑳]/g, function (symbol) {
+    var number = symbol.charCodeAt(0) - '①'.charCodeAt(0) + 1
+    return '\\text{(' + number + ')}'
+  })
+}
+
+function normalizeUnicodeRadicals(value) {
+  return String(value == null ? '' : value)
+    .replace(/√\s*\(([^()]*)\)/g, '\\sqrt{$1}')
+    .replace(/∛\s*\(([^()]*)\)/g, '\\sqrt[3]{$1}')
+    .replace(/∜\s*\(([^()]*)\)/g, '\\sqrt[4]{$1}')
+    .replace(/√\s*([A-Za-z0-9]+(?:\^\{[^{}]+\})?)/g, '\\sqrt{$1}')
+    .replace(/∛\s*([A-Za-z0-9]+(?:\^\{[^{}]+\})?)/g, '\\sqrt[3]{$1}')
+    .replace(/∜\s*([A-Za-z0-9]+(?:\^\{[^{}]+\})?)/g, '\\sqrt[4]{$1}')
+}
+
 function replaceUnicodeMath(value) {
-  return replaceUnicodeScripts(replaceUnicodeGreek(value))
+  var source = replaceUnicodeScripts(replaceUnicodeAccents(replaceUnicodeGreek(value)))
+  source = replaceCircledNumerals(source)
+  source = normalizeUnicodeRadicals(source)
+  return source
     .replace(/−/g, '-')
     .replace(/′/g, "'")
     .replace(/″/g, "''")
@@ -115,12 +145,124 @@ function replaceUnicodeMath(value) {
     .replace(/∏/g, '\\prod ')
     .replace(/×/g, '\\times ')
     .replace(/÷/g, '\\div ')
+    .replace(/·/g, '\\cdot ')
     .replace(/∝/g, '\\propto ')
     .replace(/≺/g, '\\prec ')
     .replace(/⋯/g, '\\cdots ')
+    .replace(/\.\.\./g, '\\ldots ')
     .replace(/ℝ/g, '\\mathbb{R}')
     .replace(/ℤ/g, '\\mathbb{Z}')
     .replace(/ℕ/g, '\\mathbb{N}')
+}
+
+var PROTECTED_TEXT_COMMANDS = ['\\text{', '\\textrm{', '\\textbf{', '\\textit{', '\\mathrm{', '\\operatorname{']
+
+/**
+ * Apply a math normalizer only outside text/container commands. Legacy formula
+ * data sometimes contains prose such as `\\text{...det...}` or Greek glyphs
+ * inside `\\text{...}`. Escaping those tokens as math commands while still in
+ * text mode produces KaTeX errors or missing glyphs.
+ */
+function transformOutsideProtectedText(value, transform) {
+  var source = String(value == null ? '' : value)
+  var result = ''
+  var cursor = 0
+
+  while (cursor < source.length) {
+    var foundAt = -1
+    var foundCommand = ''
+    for (var i = 0; i < PROTECTED_TEXT_COMMANDS.length; i++) {
+      var command = PROTECTED_TEXT_COMMANDS[i]
+      var index = source.indexOf(command, cursor)
+      if (index >= 0 && (foundAt < 0 || index < foundAt)) {
+        foundAt = index
+        foundCommand = command
+      }
+    }
+
+    if (foundAt < 0) {
+      result += transform(source.slice(cursor))
+      break
+    }
+
+    result += transform(source.slice(cursor, foundAt))
+    var bodyStart = foundAt + foundCommand.length
+    var block = scanBalancedBraces(source.slice(bodyStart))
+    if (!block) {
+      result += source.slice(foundAt)
+      break
+    }
+
+    result += source.slice(foundAt, bodyStart + block.consumed)
+    cursor = bodyStart + block.consumed
+  }
+
+  return result
+}
+
+/**
+ * Unicode Greek inside \\text{...} is not reliably supported by katex-mini's
+ * text fonts. Lift only the Greek glyph itself back into math mode while
+ * preserving the surrounding prose as text.
+ */
+function liftUnicodeGreekFromText(value) {
+  var source = String(value == null ? '' : value)
+  var commands = ['\\text{', '\\textrm{', '\\textbf{', '\\textit{']
+  var result = ''
+  var cursor = 0
+
+  while (cursor < source.length) {
+    var foundAt = -1
+    var foundCommand = ''
+    for (var i = 0; i < commands.length; i++) {
+      var command = commands[i]
+      var index = source.indexOf(command, cursor)
+      if (index >= 0 && (foundAt < 0 || index < foundAt)) {
+        foundAt = index
+        foundCommand = command
+      }
+    }
+
+    if (foundAt < 0) {
+      result += source.slice(cursor)
+      break
+    }
+
+    result += source.slice(cursor, foundAt)
+    var bodyStart = foundAt + foundCommand.length
+    var block = scanBalancedBraces(source.slice(bodyStart))
+    if (!block) {
+      result += source.slice(foundAt)
+      break
+    }
+
+    var fullEnd = bodyStart + block.consumed
+    var body = source.slice(bodyStart, fullEnd - 1)
+    if (!/[α-ωΑ-Ωϵϑϖϱϕ]/.test(body)) {
+      result += source.slice(foundAt, fullEnd)
+      cursor = fullEnd
+      continue
+    }
+
+    var parts = body.split(/([α-ωΑ-Ωϵϑϖϱϕ])/g)
+    for (var partIndex = 0; partIndex < parts.length; partIndex++) {
+      var part = parts[partIndex]
+      if (!part) continue
+      if (/^[α-ωΑ-Ωϵϑϖϱϕ]$/.test(part)) {
+        result += replaceUnicodeGreek(part)
+      } else {
+        result += foundCommand + part + '}'
+      }
+    }
+    cursor = fullEnd
+  }
+
+  return result
+}
+
+function stripTrailingOrphanBackslash(value) {
+  var source = String(value == null ? '' : value)
+  return source.replace(/(^|[^\\])\\\s*$/, '$1')
 }
 
 function normalizeTrendPhrases(value) {
@@ -186,6 +328,10 @@ function normalizePowers(value) {
 function normalizeFractions(value) {
   var source = String(value == null ? '' : value)
   var functionName = '(?:arcsin|arccos|arctan|arccot|sin|cos|tan|cot|sec|csc|ln|log|det|exp)'
+  // Treat a named function together with its argument as one fraction atom.
+  // Without this, `sin x/cos x` became `\\frac{\\sin x}{\\cos} x`, and
+  // `ln x/ln a` became `\\frac{\\ln x}{\\ln} a`.
+  var functionOperand = '(?:\\\\)?' + functionName + '(?:\\s*\\([^()]+\\)|\\s+(?:\\d+\\s*)?[A-Za-z][A-Za-z0-9]*)'
 
   // Parenthesised numerator: (sin x)/x, (x+1)/(x-1), etc. Run this
   // before simple fractions so the numerator remains one semantic unit.
@@ -193,15 +339,27 @@ function normalizeFractions(value) {
     return '\\frac{' + normalizeFractionOperand(numerator) + '}{' + normalizeFractionOperand(denominator) + '}'
   })
 
-  // Function fractions without numerator parentheses: sin x/x, sin 2x/x.
-  var functionFraction = new RegExp('((?:\\\\)?' + functionName + '\\s+(?:\\d+\\s*)?[A-Za-z][A-Za-z0-9]*)\\s*\\/\\s*(\\([^()]+\\)|[A-Za-z0-9]+)', 'gi')
+  // Function fractions without numerator parentheses: sin x/x, sin 2x/x,
+  // sin x/cos x, ln x/ln a. Put the function-operand alternative first so
+  // the denominator is not truncated to the command name.
+  var functionFraction = new RegExp('(' + functionOperand + ')\\s*\\/\\s*(' + functionOperand + '|\\([^()]+\\)|[A-Za-z0-9]+)', 'gi')
   source = source.replace(functionFraction, function (_, numerator, denominator) {
     return '\\frac{' + normalizeFractionOperand(numerator) + '}{' + normalizeFractionOperand(denominator) + '}'
   })
 
-  // Function denominator: x/sin x.
-  var functionDenominator = new RegExp('(^|[\\s(=+\\-*,])([A-Za-z0-9]+)\\s*\\/\\s*((?:\\\\)?' + functionName + '\\s+(?:\\d+\\s*)?[A-Za-z][A-Za-z0-9]*)', 'gi')
+  // Function denominator: x/sin x, x/sin(x).
+  var functionDenominator = new RegExp('(^|[\\s(=+\\-*,])([A-Za-z0-9]+)\\s*\\/\\s*(' + functionOperand + ')', 'gi')
   source = source.replace(functionDenominator, function (_, prefix, numerator, denominator) {
+    return prefix + '\\frac{' + normalizeFractionOperand(numerator) + '}{' + normalizeFractionOperand(denominator) + '}'
+  })
+
+  // Radical atoms need a dedicated pass because the generic atom matcher
+  // deliberately does not consume LaTeX commands. This turns 1/√x into a real
+  // fraction after the Unicode radical has become \sqrt{x}.
+  source = source.replace(/(^|[\s(=+\-*,])([A-Za-z0-9]+)\s*\/\s*(\\sqrt(?:\[[^\]]+\])?\{(?:[^{}]|\{[^{}]*\})+\})(?=$|[\s,;=+\-*)\]}])/g, function (_, prefix, numerator, denominator) {
+    return prefix + '\\frac{' + normalizeFractionOperand(numerator) + '}{' + normalizeFractionOperand(denominator) + '}'
+  })
+  source = source.replace(/(^|[\s(=+\-*,])(\\sqrt(?:\[[^\]]+\])?\{(?:[^{}]|\{[^{}]*\})+\})\s*\/\s*([A-Za-z0-9]+)(?=$|[\s,;=+\-*)\]}])/g, function (_, prefix, numerator, denominator) {
     return prefix + '\\frac{' + normalizeFractionOperand(numerator) + '}{' + normalizeFractionOperand(denominator) + '}'
   })
 
@@ -257,9 +415,11 @@ function normalizeLatexSource(value) {
     source = source.replace(/(?:\s*\\(?:qquad|quad)\s*)+/g, ' \\qquad ')
   }
 
-  source = replaceUnicodeMath(source)
-  source = normalizeNamedOperators(source)
-  source = normalizeFunctionNames(source)
+  source = stripTrailingOrphanBackslash(sanitizeLatexContent(source))
+  source = transformOutsideProtectedText(source, replaceUnicodeMath)
+  source = liftUnicodeGreekFromText(source)
+  source = transformOutsideProtectedText(source, normalizeNamedOperators)
+  source = transformOutsideProtectedText(source, normalizeFunctionNames)
     .replace(/[ \t]+/g, ' ')
     .trim()
 
@@ -651,23 +811,23 @@ function normalizeMathRun(value) {
   var source = stripOuterMathDelimiters(String(value || '').trim())
   if (!source) return ''
 
-  source = replaceUnicodeMath(source)
-    .replace(/√\s*\(([^)]+)\)/g, '\\sqrt{$1}')
+  source = transformOutsideProtectedText(source, replaceUnicodeMath)
     .replace(/(^|[^\\A-Za-z])lim\s*\(\s*([A-Za-z][A-Za-z0-9_]*)\s*(?:\\to|→|->)\s*([^)]+)\)/gi, function (_, prefix, variable, target) {
       return prefix + '\\lim_{' + variable + '\\to ' + replaceUnicodeMath(target).trim() + '}'
     })
+  source = liftUnicodeGreekFromText(source)
 
   // Sanitize common dirty-data patterns before structure transforms, so
   // incomplete \text{... etc. are tolerant rather than producing red errors.
-  source = sanitizeLatexContent(source)
+  source = stripTrailingOrphanBackslash(sanitizeLatexContent(source))
 
   // Structure-sensitive transformations must happen before generic function
   // escaping. Otherwise the reader merely italicises legacy text such as
   // (sin x)/x instead of producing a real KaTeX fraction.
-  source = normalizePowers(source)
-  source = normalizeFractions(source)
-  source = normalizeNamedOperators(source)
-  source = normalizeFunctionNames(source)
+  source = transformOutsideProtectedText(source, normalizePowers)
+  source = transformOutsideProtectedText(source, normalizeFractions)
+  source = transformOutsideProtectedText(source, normalizeNamedOperators)
+  source = transformOutsideProtectedText(source, normalizeFunctionNames)
     .replace(/\s*=\s*/g, '=')
     .replace(/[ \t]+/g, ' ')
     .trim()
@@ -728,7 +888,7 @@ function isMathRun(value) {
   // Formula-table history contains a number of Unicode-only operators. Once a
   // token has been isolated from Chinese prose, these are unambiguous math
   // signals and should be handed to KaTeX as one fragment rather than split.
-  if (/[∞∑√∂∫∏∈∉⇒∀±≡∝≺ℝℤℕ]/.test(source)) return true
+  if (/[∞∑√∛∜∂∫∏∈∉⇒∀±≡∝≺ℝℤℕ]/.test(source)) return true
   if (/[A-Za-z0-9)\]}|]\s*(?:=|≠|≈|≤|≥|<|>|→|->|⇒|∈|∉|≡|∝|≺|\+|\-|−|\*|\/|\^|_)/.test(source)) return true
   if (/(?:=|≠|≈|≤|≥|<|>|→|->|⇒|∈|∉|≡|∝|≺|\+|\-|−|\*|\/|\^|_)\s*[A-Za-z0-9({\[|]/.test(source)) return true
   if (/[A-Za-z0-9)\]}]\s*[×÷]\s*[A-Za-z0-9({\[]/.test(source)) return true
@@ -736,13 +896,18 @@ function isMathRun(value) {
   // Derivatives, factorials and Unicode super/subscripts often appear without
   // another relation sign (for example F′, f″, x!, x², x₀).
   if (/[A-Za-z][A-Za-z0-9_{}()]*[′″']+/.test(source)) return true
-  if (/[A-Za-z0-9)\]}][!⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿ₀₁₂₃₄₅₆₇₈₉₊₋]/.test(source)) return true
+  if (/[A-Za-z0-9)\]}][!⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿⁱʲᵗ₀₁₂₃₄₅₆₇₈₉₊₋ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜₓ]/.test(source)) return true
+
+  // Common symbol-table entries can be a single variable, differential, or
+  // one-letter function call without another operator (for example C, dx, h(y)).
+  if (/^(?:[A-Za-z]|d[xyzstuvr]|[A-Za-z]\([^()]*\))$/.test(source)) return true
+  if (/(?:ȳ|[A-Za-z]\u0304)/.test(source)) return true
 
   // Absolute-value / determinant-style bars should remain attached to the
   // expression inside them instead of rendering as plain bars around KaTeX.
   if (/\|[^|]+\|/.test(source) && /[A-Za-z0-9\\]/.test(source)) return true
 
-  return /[A-Za-z].*[∞∑√]/.test(source)
+  return /[A-Za-z].*[∞∑√∛∜]/.test(source)
 }
 
 function collapseProseWhitespace(value) {
@@ -931,7 +1096,7 @@ function processPlainTextNode(value) {
   // points are admitted only when followed by digits; this keeps values such as
   // `e≈2.71828` / `x=1.5` inside one KaTeX fragment without swallowing normal
   // sentence-ending periods into the math run.
-  var pattern = /(?:[A-Za-z0-9\\()[\]{}_^+\-*\/=<>→∞≈≠≤≥∑√·|!'′″−±×÷∂∫∏∈∉⇒∀≡∝≺⋯ℝℤℕ⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿ₀₁₂₃₄₅₆₇₈₉₊₋, \t]+|\.\d+)+/g
+  var pattern = /(?:[A-Za-z0-9\\()[\]{}_^+\-*\/=<>→∞≈≠≤≥∑√∛∜·|!'′″−±×÷∂∫∏∈∉⇒∀≡∝≺⋯ℝℤℕȳ\u0304⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿⁱʲᵗ₀₁₂₃₄₅₆₇₈₉₊₋ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜₓ, \t]+|\.\.\.|\.\d+)+/g
   var match
   while ((match = pattern.exec(source))) {
     result += escapeHtml(source.slice(cursor, match.index))
@@ -962,11 +1127,17 @@ function normalizeMixedContent(value) {
   var source = String(value == null ? '' : value).trim()
   if (!source) return ''
 
-  // Preserve trusted markup for mp-html / Parser sanitisation, while only
-  // normalising the text nodes between tags.
-  var tagPattern = /(<\/?[A-Za-z][^>]*>)/g
+  // Preserve actual HTML markup for mp-html / Parser sanitisation, while only
+  // normalising text nodes between tags. The old `<[A-Za-z][^>]*>` matcher was
+  // too permissive: an inequality sequence such as `0<a<1 ... x>0` could be
+  // mistaken for one giant `<a ...>` tag and disappear from the rendered text.
+  // A tag name must now be followed by either a real attribute assignment or
+  // the tag close; mathematical `<a`, `<b`, `<x` sequences stay plain text and
+  // are escaped later by serializeMathHtml.
+  var tagPattern = /(<\/?[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][A-Za-z0-9_:.-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))*\s*\/?>)/g
+  var tagCheck = /^<\/?[A-Za-z][A-Za-z0-9-]*(?:\s+[A-Za-z_:][A-Za-z0-9_:.-]*\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))*\s*\/?>$/
   return source.split(tagPattern).map(function (part) {
-    return /^<\/?[A-Za-z][^>]*>$/.test(part) ? part : processPlainTextNode(part)
+    return tagCheck.test(part) ? part : processPlainTextNode(part)
   }).join('').trim()
 }
 

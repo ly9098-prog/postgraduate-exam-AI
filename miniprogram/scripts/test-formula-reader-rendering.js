@@ -610,6 +610,112 @@ assert.strictEqual(
 console.log('✓ Formula-table Unicode / legacy notation coverage tests passed')
 
 // =============================
+// Extended formula-table audit regressions
+// =============================
+// Unicode subscript letters must stay attached to their variable instead of
+// splitting one expression into several KaTeX/plain-text fragments.
+var unicodeLetterSubscriptHtml = formulaContent.normalizeMixedContent("x²y''=yₜₜ''-yₜ'")
+assert(unicodeLetterSubscriptHtml.indexOf("y_{tt}''-y_{t}'") >= 0, 'Unicode subscript letters t must become one LaTeX subscript')
+assert.strictEqual((unicodeLetterSubscriptHtml.match(/\$\\displaystyle/g) || []).length, 1, 'Unicode subscript letters must not split the equation')
+
+var betaSubscriptHtml = formulaContent.normalizeMixedContent('(βⱼ,βⱼ)≠0')
+assert(betaSubscriptHtml.indexOf('\\beta{}_{j},\\beta{}_{j}') >= 0, 'Unicode subscript j must stay attached to beta')
+
+var xiSubscriptHtml = formulaContent.normalizeMixedContent('ξᵢ 可在各小区间任取')
+assert(xiSubscriptHtml.indexOf('\\xi{}_{i}') >= 0, 'Unicode subscript i must stay attached to xi')
+
+// Macron variables are used by the centroid card and must render as x-bar/y-bar.
+var centroidHtml = formulaContent.normalizeMixedContent('(x̄,ȳ)为形心坐标')
+assert(centroidHtml.indexOf('\\bar{x}') >= 0 && centroidHtml.indexOf('\\bar{y}') >= 0, 'macron variables must become \\bar{} expressions')
+assert.strictEqual((centroidHtml.match(/\$\\displaystyle/g) || []).length, 1, 'centroid coordinate pair must render as one formula')
+
+// ASCII ellipsis inside a vector sequence belongs to the same math fragment.
+var vectorSequenceHtml = formulaContent.normalizeMixedContent('α₁,α₂,...,α_n线性无关')
+assert(vectorSequenceHtml.indexOf('\\ldots') >= 0, 'ASCII ... inside a vector sequence must become a LaTeX ellipsis')
+assert.strictEqual((vectorSequenceHtml.match(/\$\\displaystyle/g) || []).length, 1, 'vector sequence must stay in one formula wrapper')
+
+// Raw radicals occur in prose fields. Cover both √(...) and √x, including a
+// radical used as the denominator of a fraction.
+var radicalHtml = formulaContent.normalizeMixedContent('x+1/x−2=(√x−1/√x)²≥0')
+assert(radicalHtml.indexOf('\\sqrt{x}') >= 0, 'raw square-root atom must become \\sqrt{x}')
+assert(radicalHtml.indexOf('\\frac{1}{\\sqrt{x}}') >= 0, '1/√x must become a real LaTeX fraction')
+assert(!radicalHtml.includes('√'), 'raw square-root glyph must not leak into KaTeX input')
+
+// Simple symbol-table entries should also get math typography even when they do
+// not contain an operator.
+var simpleSymbolHtml = formulaContent.normalizeStructuredContent('[{"symbol":"dx","note":"自变量微分"},{"symbol":"C","note":"任意常数"}]', 'symbols')
+assert(simpleSymbolHtml.indexOf('$\\displaystyle dx$') >= 0, 'dx symbol entry must render through KaTeX')
+assert(simpleSymbolHtml.indexOf('$\\displaystyle C$') >= 0, 'single-letter symbol entry must render through KaTeX')
+
+// Historical formula blocks contain four dirty-data shapes that previously
+// fell back to visible raw LaTeX source. Each one must now remain renderable.
+var repairedFormulaBlocks = [
+  '\\text{反对幂指三——分部积分选取}u\\text{的优先级：',
+  '\\begin{array}{l} \\text{等价：任意矩阵，保持秩} \\\\ \\text{相似：方阵，保持特征多项式、特征值、det、tr、秩} \\\\ \\text{合同：实对称，保持秩、惯性指数} \\end{array}',
+  '\\text{原X型区域的边界函数x=ψ(y)在投影区间内出现分段表达式时，} \\\\ \\text{交换后需要拆成多个Y型积分之和。}',
+  "\\iint_\\Sigma P(x,y,z)dydz=\\pm\\iint_D P[x(y,z),y,z]\\,dydz\\ (\\text{前}``+''\\ \\text{后}``-''\\ );\\ Q\\ \\text{类似，右}``+''\\ \\text{左}``-''\\",
+  '①\\ f(t)=P_m(t);\\ ②\\ f(t)=P_m(t)b^t',
+]
+repairedFormulaBlocks.forEach(function (source) {
+  var normalized = formulaContent.normalizeLatexSource(source)
+  var nodes = parse('$' + normalized + '$')
+  var serialized = JSON.stringify(nodes)
+  assert(serialized.indexOf('color:red') < 0, 'repaired historical formula must not produce a red KaTeX error: ' + source)
+  assert(serialized.indexOf('KaTeX parse error') < 0, 'repaired historical formula must not expose a parse error: ' + source)
+})
+
+assert.strictEqual(
+  formulaContent.normalizeLatexSource('\\text{相似：特征值、det、tr、秩}'),
+  '\\text{相似：特征值、det、tr、秩}',
+  'function-name normalization must not rewrite det inside \\text{}',
+)
+var greekTextRepair = formulaContent.normalizeLatexSource('\\text{边界函数x=ψ(y)在区间内}')
+assert(greekTextRepair.indexOf('\\psi{}') >= 0, 'Greek glyph inside \\text{} must be lifted into math mode')
+assert(greekTextRepair.indexOf('\\text{边界函数x=}') >= 0, 'prose around lifted Greek glyph must stay in text mode')
+assert(!/[①-⑳]/.test(formulaContent.normalizeLatexSource('① a>0; ② b>0')), 'circled numerals must not reach katex-mini as unsupported glyphs')
+assert(!/\\\s*$/.test(formulaContent.normalizeLatexSource('x+y\\')), 'orphan trailing backslash must be removed from dirty formula data')
+
+console.log('✓ Extended formula-table audit regression tests passed')
+
+
+// =============================
+// Follow-up full-table audit regressions
+// =============================
+// A permissive HTML-tag splitter previously interpreted inequality text such
+// as `0<a<1 ... x>0` as a fake <a ...> tag, causing the middle of the sentence
+// to disappear after mp-html parsing. Keep relational chains inside KaTeX while
+// continuing to preserve real markup.
+var chainedInequalitySource = '底数大于 1 时递增，0<a<1 时递减；二者定义域均 x>0，均过 (1,0)。'
+var chainedInequalityHtml = formulaContent.normalizeMixedContent(chainedInequalitySource)
+assert(chainedInequalityHtml.indexOf('$\\displaystyle 0&lt;a&lt;1$') >= 0, '0<a<1 must be serialized as math, not mistaken for an HTML tag')
+assert(chainedInequalityHtml.indexOf('$\\displaystyle x&gt;0$') >= 0, 'x>0 after a chained inequality must remain a separate KaTeX fragment')
+assert(collectText(parse(chainedInequalityHtml)).join('').indexOf('时递减；二者定义域均') >= 0, 'inequality prose between < and > must not disappear during HTML parsing')
+
+var explicitLessThanSource = '\\ln(1+x)<x（x>0）。'
+var explicitLessThanHtml = formulaContent.normalizeMixedContent(explicitLessThanSource)
+assert(explicitLessThanHtml.indexOf('$\\displaystyle \\ln(1+x)&lt;x$') >= 0, 'bare \\ln inequality must keep < inside the KaTeX fragment')
+assert(explicitLessThanHtml.indexOf('$\\displaystyle x&gt;0$') >= 0, 'parenthetical x>0 must remain renderable after the < relation')
+assert(collectText(parse(explicitLessThanHtml)).join('').indexOf('0）') >= 0, 'text following a <x ... > sequence must not be swallowed as markup')
+
+var realMarkupHtml = formulaContent.normalizeMixedContent('<b>重点</b> 与 x<0')
+assert(realMarkupHtml.indexOf('<b>重点</b>') === 0, 'real simple HTML markup must still be preserved by mixed-content normalization')
+assert(realMarkupHtml.indexOf('$\\displaystyle x&lt;0$') >= 0, 'math next to preserved HTML markup must still be normalized')
+
+// Function-valued denominators must include their arguments. Previously
+// `sin x/cos x` became `\\frac{\\sin x}{\\cos}x` and `ln x/ln a` became
+// `\\frac{\\ln x}{\\ln}a`, which is visibly and semantically wrong.
+assert.strictEqual(formulaContent.normalizeMathRun('sin x/cos x'), '\\frac{\\sin x}{\\cos x}')
+assert.strictEqual(formulaContent.normalizeMathRun('cos x/sin x'), '\\frac{\\cos x}{\\sin x}')
+assert.strictEqual(formulaContent.normalizeMathRun('ln x/ln a'), '\\frac{\\ln x}{\\ln a}')
+assert.strictEqual(formulaContent.normalizeMathRun('x/sin(x)'), '\\frac{x}{\\sin(x)}')
+
+var changeOfBaseHtml = formulaContent.normalizeMixedContent('log_a x = ln x / ln a（换底公式）')
+assert(changeOfBaseHtml.indexOf('\\frac{\\ln x}{\\ln a}') >= 0, 'change-of-base formula denominator must include the logarithm argument')
+assert(changeOfBaseHtml.indexOf('}{\\ln} a') < 0, 'truncated function denominator must not remain in output')
+
+console.log('✓ Follow-up full-table audit regressions passed')
+
+// =============================
 // New: non-math patterns guard
 // =============================
 

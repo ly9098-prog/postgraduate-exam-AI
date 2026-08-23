@@ -50,9 +50,14 @@ async def start_session(
             req.work_duration,
             req.break_duration,
             notification_enabled=req.notification_enabled,
+            client_start_id=req.client_start_id,
+        )
+    except svc.PomodoroStartIdempotencyConflictError:
+        raise HTTPException(
+            status_code=409,
+            detail={"error_code": "POMODORO_START_IDEMPOTENCY_CONFLICT"},
         )
     except ValueError as e:
-        from fastapi import HTTPException
         detail = str(e)
         status_code = 409 if "已有进行中的专注" in detail else 400
         raise HTTPException(status_code=status_code, detail=detail)
@@ -71,8 +76,13 @@ async def complete_session(
         session = await svc.complete_session(
             db, session_id, current_user.id, client_action_at=req.client_action_at
         )
+    except svc.PomodoroStaleActionError:
+        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"})
+    except svc.PomodoroClockSkewError:
+        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"})
+    except svc.PomodoroNotReadyError:
+        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_NOT_READY"})
     except ValueError as e:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(e))
     if not session:
         from fastapi import HTTPException
@@ -92,8 +102,11 @@ async def interrupt_session(
         session = await svc.interrupt_session(
             db, session_id, current_user.id, client_action_at=req.client_action_at
         )
+    except svc.PomodoroStaleActionError:
+        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"})
+    except svc.PomodoroClockSkewError:
+        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"})
     except ValueError as e:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(e))
     if not session:
         from fastapi import HTTPException
@@ -110,9 +123,14 @@ async def resume_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.resume_session(
-        db, session_id, current_user.id, client_action_at=req.client_action_at
-    )
+    try:
+        session = await svc.resume_session(
+            db, session_id, current_user.id, client_action_at=req.client_action_at
+        )
+    except svc.PomodoroStaleActionError:
+        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"})
+    except svc.PomodoroClockSkewError:
+        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"})
     if not session:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
@@ -127,9 +145,14 @@ async def pause_session(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    session = await svc.pause_session(
-        db, session_id, current_user.id, client_action_at=req.client_action_at
-    )
+    try:
+        session = await svc.pause_session(
+            db, session_id, current_user.id, client_action_at=req.client_action_at
+        )
+    except svc.PomodoroStaleActionError:
+        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_STALE_ACTION"})
+    except svc.PomodoroClockSkewError:
+        raise HTTPException(status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"})
     if not session:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")

@@ -12,6 +12,12 @@ class PomodoroStartRequest(BaseModel):
     work_duration: int = Field(default=25, ge=0, le=120)
     break_duration: int = Field(default=5, ge=0, le=120)
     notification_enabled: bool = False
+    client_start_id: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{7,63}$",
+    )
 
 
 class PomodoroActionRequest(BaseModel):
@@ -44,6 +50,7 @@ class PomodoroSessionResponse(BaseModel):
     subject_code: str = ""
     subject_name: str = ""
     chapter_id: str | None = None
+    client_start_id: str | None = None
     preset: str
     work_duration: int
     break_duration: int
@@ -58,6 +65,7 @@ class PomodoroSessionResponse(BaseModel):
     paused_at: datetime | None = None
     total_paused_sec: int = 0
     created_at: datetime
+    server_now: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -68,6 +76,7 @@ class PomodoroSessionResponse(BaseModel):
             "user_id": session.user_id,
             "subject_id": session.subject_id,
             "chapter_id": session.chapter_id,
+            "client_start_id": session.client_start_id,
             "preset": session.preset,
             "work_duration": session.work_duration,
             "break_duration": session.break_duration,
@@ -82,6 +91,7 @@ class PomodoroSessionResponse(BaseModel):
             "paused_at": session.paused_at,
             "total_paused_sec": session.total_paused_sec or 0,
             "created_at": session.created_at,
+            "server_now": datetime.utcnow(),
         }
         if session.subject_ref:
             d["subject_code"] = session.subject_ref.code or ""

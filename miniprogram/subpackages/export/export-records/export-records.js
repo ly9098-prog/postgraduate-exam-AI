@@ -221,6 +221,8 @@ Page({
   _statusSyncManager: null,
   _hasLoadedOnce: false,
   _loadPromise: null,
+  _loadPromiseReset: false,
+  _listRequestId: 0,
   _completedNotified: null,
   _taskWatchStartedAt: null,  // Map<taskId, timestamp> for timeout detection
   _watchTimer: null,  // periodic check for long-running tasks
@@ -263,7 +265,11 @@ Page({
 
     this._startWatchTimer()
 
-    if (this._hasLoadedOnce) {
+    if (!this._hasLoadedOnce) {
+      // Capability checks can finish while the page is hidden. In that case the
+      // initial list request is intentionally skipped and must be started here.
+      this._loadList(true)
+    } else {
       // Opening WeChat's share panel briefly hides/shows the page. Skip the
       // single resulting refresh so scroll position and card layout stay put.
       if (this._suppressNextShowRefresh) {
@@ -293,6 +299,9 @@ Page({
     this._pageDestroyed = true
     this._pageAlive = false
     this._capabilityRequestId++
+    this._listRequestId++
+    this._loadPromise = null
+    this._loadPromiseReset = false
     this._stopWatchTimer()
     this._destroySyncManager()
     if (this._completedNotified) this._completedNotified.clear()
@@ -354,9 +363,14 @@ Page({
         })
 
         if (!available) return false
-        this._createSyncManager()
-        this._startWatchTimer()
-        await this._loadList(true)
+        // If the capability response arrives while hidden, keep only the
+        // capability state. onShow will start timers/sync and perform the first
+        // list load, avoiding background work that immediately gets torn down.
+        if (this._pageAlive) {
+          this._createSyncManager()
+          this._startWatchTimer()
+          await this._loadList(true)
+        }
         return true
       } catch (error) {
         if (this._pageDestroyed || requestId !== this._capabilityRequestId) return false
@@ -434,43 +448,54 @@ Page({
     if (!this._pageAlive) return
 
     // Normalize: WS events use task_id, API responses use id
-    const normalized = this._normalizeUpdate(taskId, data)
-
-    // Check if this is a transition INTO completed
     const numericTaskId = Number(taskId)
-    const oldTask = this.data.list.find(t => Number(t.id) === numericTaskId)
+    if (!numericTaskId) return
+    const normalized = this._normalizeUpdate(numericTaskId, data || {})
+    let currentTask = this.data.list.find(t => Number(t.id) === numericTaskId)
 
     // Calibration requests often return the exact same task snapshot. Avoid
     // replacing the whole list in setData for no-op updates; on long-running
     // exports that repeated full-list diffing can make the page visibly janky.
-    if (oldTask && this._isStatusUpdateUnchanged(oldTask, normalized)) {
+    if (currentTask && this._isStatusUpdateUnchanged(currentTask, normalized)) {
       return
     }
-    const wasCompleted = oldTask && TERMINAL_STATES.includes(oldTask.status)
-    const isNowCompleted = TERMINAL_STATES.includes(normalized.status)
 
-    if (isNowCompleted && !wasCompleted && normalized.status === 'completed') {
+    const incomingCompleted = normalized.status === 'completed'
+    const currentTerminal = currentTask && TERMINAL_STATES.includes(currentTask.status)
+    if (incomingCompleted && !currentTerminal) {
       // WebSocket events are partial, while calibration GET responses are already
       // complete. Only perform the extra detail request for a partial WS event.
       const hasFullTaskPayload = data && data.file_name !== undefined && data.has_file !== undefined
       if (!hasFullTaskPayload) {
         try {
-          const full = await exportApi.getExport(taskId)
-          Object.assign(normalized, full)
+          const full = await exportApi.getExport(numericTaskId)
+          if (!this._pageAlive) return
+          Object.assign(normalized, full || {}, { id: numericTaskId })
         } catch (e) {
+          if (!this._pageAlive) return
           // Use what we have
         }
       }
     }
 
+    if (!this._pageAlive) return
+    // The detail request above can be slower than another WS/calibration update.
+    // Re-read the current task and reject an older snapshot instead of allowing
+    // a late response to regress the UI.
+    currentTask = this.data.list.find(t => Number(t.id) === numericTaskId)
+    if (currentTask && this._isTaskSnapshotOlder(normalized, currentTask)) return
+
+    const wasTerminal = currentTask && TERMINAL_STATES.includes(currentTask.status)
+    const finalCompleted = normalized.status === 'completed'
+
     // Enrich and merge
-    const enriched = this._enrichTask({ ...(oldTask || {}), ...normalized, id: numericTaskId })
+    const enriched = this._enrichTask({ ...(currentTask || {}), ...normalized, id: numericTaskId })
     this._mergeTask(enriched)
 
     // Show completion toast once per task
-    if (isNowCompleted && !wasCompleted && normalized.status === 'completed') {
-      if (!this._completedNotified.has(taskId)) {
-        this._completedNotified.add(taskId)
+    if (finalCompleted && !wasTerminal) {
+      if (!this._completedNotified.has(numericTaskId)) {
+        this._completedNotified.add(numericTaskId)
         wx.showToast({ title: '导出完成', icon: 'success' })
       }
     }
@@ -480,6 +505,7 @@ Page({
    * Normalize a status update to a consistent shape.
    */
   _normalizeUpdate(taskId, data) {
+    data = data || {}
     const numericTaskId = Number(taskId)
     const base = { id: numericTaskId }
     // WS events use task_id/status; API responses use id/status
@@ -515,13 +541,38 @@ Page({
     })
   },
 
+  _isTaskSnapshotOlder(incoming, current) {
+    if (!incoming || !current) return false
+
+    const incomingVersion = Number(incoming.version)
+    const currentVersion = Number(current.version)
+    if (Number.isFinite(incomingVersion) && Number.isFinite(currentVersion) && incomingVersion !== currentVersion) {
+      return incomingVersion < currentVersion
+    }
+
+    const incomingUpdated = parseDateValue(incoming.updated_at || incoming.completed_at || incoming.created_at)
+    const currentUpdated = parseDateValue(current.updated_at || current.completed_at || current.created_at)
+    if (incomingUpdated && currentUpdated && incomingUpdated.getTime() !== currentUpdated.getTime()) {
+      return incomingUpdated.getTime() < currentUpdated.getTime()
+    }
+
+    // Last-resort protection when an older endpoint omits version/update time.
+    // Do not regress a terminal task to a normal pending/processing snapshot.
+    return TERMINAL_STATES.includes(current.status) &&
+      !TERMINAL_STATES.includes(incoming.status) &&
+      !incoming.is_reexporting
+  },
+
   /**
    * Merge a single task update into the list. Preserves fields the update
    * doesn't carry (WS events are partial).
    */
   _mergeTask(updated) {
+    if (this._pageDestroyed) return
+    const updatedId = Number(updated && updated.id)
+    if (!updatedId) return
     const list = this.data.list.map(t => {
-      if (t.id !== updated.id) return t
+      if (Number(t.id) !== updatedId) return t
       const merged = { ...t, ...updated }
       if (this._previewCacheVersion(t) !== this._previewCacheVersion(merged)) {
         this._invalidatePreviewCache(t.id)
@@ -558,23 +609,36 @@ Page({
   // ── List loading ──
 
   async _loadList(reset = false) {
-    if (!this._pageAlive) return
-    if (!this.data.exportAvailable) return
-    if (this.data.loading) return
+    if (!this._pageAlive || !this.data.exportAvailable) return null
 
-    // Dedup concurrent loads
+    // A foreground reset is allowed to supersede an in-flight load-more. This
+    // matters when the user leaves/returns while pagination is still pending.
     if (this._loadPromise) {
-      return this._loadPromise
+      if (!reset || this._loadPromiseReset) return this._loadPromise
+      this._listRequestId++
+      this._loadPromise = null
+      this._loadPromiseReset = false
     }
+    if (this.data.loading && !reset) return null
 
     this.setData({ loading: true })
-
+    const requestId = ++this._listRequestId
     const page = reset ? 1 : this.data.page + 1
-    const loadFn = async () => {
+
+    const loadPromise = (async () => {
       try {
         const res = await exportApi.listExports(page, 20)
+        if (this._pageDestroyed || requestId !== this._listRequestId) return null
+
         const tasks = res.items || []
-        const enriched = tasks.map(t => this._enrichTask(t))
+        const currentById = new Map(
+          (this.data.list || []).map((task) => [Number(task.id), task])
+        )
+        const enriched = tasks.map((task) => {
+          const incoming = this._enrichTask(task)
+          const current = currentById.get(Number(incoming.id))
+          return current && this._isTaskSnapshotOlder(incoming, current) ? current : incoming
+        })
         const combined = reset ? enriched : [...this.data.list, ...enriched]
         const seen = {}
         const list = combined.filter(function(item) {
@@ -591,28 +655,33 @@ Page({
         this.setData({
           list,
           totalRecords,
-          page: res.page || page,
+          page: Number(res.page) || page,
           hasMore: list.length < totalRecords,
           loading: false,
         })
 
         this._hasLoadedOnce = true
-
-        // Rebuild sync manager task set
         this._restartStatusSync()
+        return res
       } catch (err) {
+        if (this._pageDestroyed || requestId !== this._listRequestId) return null
         this.setData({ loading: false })
         if (this._pageAlive) {
           wx.showToast({ title: '加载失败', icon: 'none' })
         }
+        return null
       }
-    }
+    })()
 
-    this._loadPromise = loadFn()
+    this._loadPromise = loadPromise
+    this._loadPromiseReset = reset
     try {
-      return await this._loadPromise
+      return await loadPromise
     } finally {
-      this._loadPromise = null
+      if (this._loadPromise === loadPromise) {
+        this._loadPromise = null
+        this._loadPromiseReset = false
+      }
     }
   },
 
@@ -622,6 +691,7 @@ Page({
    */
   _startWatchTimer() {
     this._stopWatchTimer()
+    if (!this._pageAlive || this._pageDestroyed) return
     this._watchTimer = setInterval(() => {
       if (!this._pageAlive) {
         this._stopWatchTimer()
@@ -722,6 +792,9 @@ Page({
   },
 
   _enrichTask(task) {
+    task = task || {}
+    const numericTaskId = Number(task.id)
+    const normalizedTaskId = numericTaskId > 0 ? numericTaskId : task.id
     const reexportFailed = !!(task.reexport_failed || task.error_code === 'reexport_failed')
     const reexporting = !!(
       task.is_reexporting ||
@@ -757,15 +830,15 @@ Page({
 
     // Initialize watch start time for non-terminal tasks
     if (!st.terminal && this._taskWatchStartedAt) {
-      if (!this._taskWatchStartedAt.has(task.id)) {
+      if (!this._taskWatchStartedAt.has(normalizedTaskId)) {
         const createdAt = parseDateValue(task.created_at)
         this._taskWatchStartedAt.set(
-          task.id,
+          normalizedTaskId,
           createdAt ? createdAt.getTime() : Date.now()
         )
       }
     } else if (st.terminal && this._taskWatchStartedAt) {
-      this._taskWatchStartedAt.delete(task.id)
+      this._taskWatchStartedAt.delete(normalizedTaskId)
     }
 
     // Only expose task-specific, actionable status messages. Processor
@@ -789,6 +862,7 @@ Page({
 
     return {
       ...task,
+      id: normalizedTaskId,
       is_reexporting: reexporting,
       reexport_failed: reexportFailed,
       visualStatus: reexportFailed ? 'warning' : task.status,
@@ -879,6 +953,9 @@ Page({
   // ── Custom dialog ──
 
   _showDialog(options = {}) {
+    if (this._pageDestroyed) {
+      return Promise.resolve({ confirm: false, cancel: true })
+    }
     if (this._dialogResolver) {
       this._dialogResolver({ confirm: false, cancel: true })
       this._dialogResolver = null
@@ -1039,6 +1116,7 @@ Page({
     this.setData({ previewingTaskId: taskId })
     try {
       const filePath = await this._getPreviewFile(task)
+      if (this._pageDestroyed) return
       const fileType = task.file_format === 'docx' ? 'docx' : 'pdf'
       // wx.openDocument briefly hides and shows the page. Set the flag only
       // after the existing server file has been downloaded successfully, so a
@@ -1236,6 +1314,7 @@ Page({
     this.setData({ deletingTaskId: taskId })
     try {
       await exportApi.deleteExport(taskId)
+      if (this._pageDestroyed) return
       if (this._statusSyncManager) {
         this._statusSyncManager.removeTask(taskId)
       }
@@ -1250,6 +1329,7 @@ Page({
       })
       wx.showToast({ title: '已删除', icon: 'success' })
     } catch (err) {
+      if (this._pageDestroyed) return
       await this._showDialog({
         title: '删除失败',
         content: (err && err.message) || '暂时无法删除该记录，请稍后重试。',
@@ -1270,10 +1350,12 @@ Page({
     this.setData({ retryingTaskId: taskId })
     try {
       const task = await exportApi.retryExport(taskId)
+      if (this._pageDestroyed) return
       if (!task || !task.id) throw new Error('服务端未返回新的导出任务')
       this._upsertTaskAtTop(task)
       wx.showToast({ title: '已重新提交', icon: 'success' })
     } catch (err) {
+      if (this._pageDestroyed) return
       wx.showToast({ title: err.message || '重试失败', icon: 'none' })
     } finally {
       if (!this._pageDestroyed) this.setData({ retryingTaskId: null })
@@ -1293,6 +1375,7 @@ Page({
     })
     try {
       const task = await exportApi.reExport(taskId)
+      if (this._pageDestroyed) return
       if (!task || Number(task.id) !== taskId) {
         throw new Error('服务端未能原位更新导出记录')
       }
@@ -1306,6 +1389,7 @@ Page({
       this._restartStatusSync()
       wx.showToast({ title: '正在重新导出', icon: 'none' })
     } catch (err) {
+      if (this._pageDestroyed) return
       wx.showToast({ title: err.message || '重新导出失败', icon: 'none' })
     } finally {
       if (this._pageAlive) this.setData({ reExportingTaskId: null })

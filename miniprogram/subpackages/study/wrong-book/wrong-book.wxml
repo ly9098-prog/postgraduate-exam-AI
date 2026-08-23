@@ -287,7 +287,7 @@
   </view>
 
   <!-- 任务流视图 -->
-  <view class="task-flow" wx:if="{{!loading && list.length > 0 && activeView === 'task'}}">
+  <view class="task-flow" wx:if="{{list.length > 0 && activeView === 'task'}}">
     <view class="section-title-row">
       <view>
         <text class="section-title">错题任务流</text>
@@ -368,7 +368,7 @@
   </view>
 
   <!-- 全部错题视图 -->
-  <view class="all-view" wx:if="{{!loading && list.length > 0 && activeView === 'all'}}">
+  <view class="all-view" wx:if="{{list.length > 0 && activeView === 'all'}}">
     <view class="section-title-row all-head">
       <view>
         <text class="section-title">全部错题</text>

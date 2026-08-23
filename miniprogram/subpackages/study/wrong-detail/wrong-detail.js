@@ -221,6 +221,8 @@ Page({
     this._switchWatchdogTimer = null
     this._masterUndoTimer = null
     this._masterAdvanceTimer = null
+    this._removeBackTimer = null
+    this._masterUndoInFlight = false
     this._pendingMasterUndo = null
     const currentId = Number(options.id)
     if (!Number.isFinite(currentId) || currentId <= 0) {
@@ -262,6 +264,10 @@ Page({
       clearTimeout(this._switchWatchdogTimer)
       this._switchWatchdogTimer = null
     }
+    if (this._removeBackTimer) {
+      clearTimeout(this._removeBackTimer)
+      this._removeBackTimer = null
+    }
     this._clearMasterUndo()
     // 清空页面实例缓存，防止跨页面串用
     this._wqCache = null
@@ -288,6 +294,7 @@ Page({
     })
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
+      if (loadSeq !== this._aiRequestId || !this._alive) return
       if (!wq) throw new Error('not found')
       const raw = _processWqData(wq, this.data.safeModeActive)
 
@@ -353,6 +360,7 @@ Page({
       }
       // 不再自动调用 AI 分析，用户点击按钮后手动触发
     } catch (e) {
+      if (loadSeq !== this._aiRequestId || !this._alive) return
       console.error('加载错题详情失败', e)
       this._aiResult = null
       this.setData({
@@ -662,6 +670,7 @@ Page({
         action: 'mark_mastered',
         ids: [wqId],
       })
+      if (!this._alive) return
 
       this._clearMasterUndo()
       this._pendingMasterUndo = {
@@ -686,7 +695,7 @@ Page({
       this._masterUndoTimer = setTimeout(() => {
         this._pendingMasterUndo = null
         this._masterUndoTimer = null
-        this.setData({ masterUndoVisible: false })
+        if (this._alive) this.setData({ masterUndoVisible: false })
       }, 5000)
 
       if (this.data.currentIdx < this.data.questionIds.length - 1) {
@@ -696,6 +705,7 @@ Page({
         }, 120)
       }
     } catch (e) {
+      if (!this._alive) return
       console.error('标记已掌握失败', e)
       this.setData({ masterSubmitting: false })
       wx.showToast({ title: '操作失败，请重试', icon: 'none' })
@@ -704,13 +714,15 @@ Page({
 
   async undoMastered() {
     const pending = this._pendingMasterUndo
-    if (!pending) return
+    if (!pending || this._masterUndoInFlight) return
+    this._masterUndoInFlight = true
 
     try {
       await api.post('/wrong-questions/batch', {
         action: 'unmark_mastered',
         ids: [pending.wqId],
       })
+      if (!this._alive) return
 
       if (this._wqCache && this._wqCache[pending.wqId]) {
         this._wqCache[pending.wqId].data = Object.assign({}, this._wqCache[pending.wqId].data, { is_mastered: false })
@@ -731,8 +743,11 @@ Page({
       }
       wx.showToast({ title: '已撤销掌握', icon: 'none' })
     } catch (e) {
+      if (!this._alive) return
       console.error('撤销已掌握失败', e)
       wx.showToast({ title: '撤销失败，请重试', icon: 'none' })
+    } finally {
+      this._masterUndoInFlight = false
     }
   },
 
@@ -746,7 +761,7 @@ Page({
       this._masterAdvanceTimer = null
     }
     this._pendingMasterUndo = null
-    if (this.data && this.data.masterUndoVisible) {
+    if (this._alive && this.data && this.data.masterUndoVisible) {
       this.setData({ masterUndoVisible: false })
     }
   },
@@ -779,6 +794,7 @@ Page({
         action: 'remove_from_book',
         ids: [wqId],
       })
+      if (!this._alive) return
 
       const oldIds = this.data.questionIds || []
       const currentIdx = this.data.currentIdx
@@ -798,7 +814,11 @@ Page({
 
       if (!nextIds.length) {
         wx.showToast({ title: '已移出错题本', icon: 'none' })
-        setTimeout(() => this.goBack(), 220)
+        if (this._removeBackTimer) clearTimeout(this._removeBackTimer)
+        this._removeBackTimer = setTimeout(() => {
+          this._removeBackTimer = null
+          if (this._alive) this.goBack()
+        }, 220)
         return
       }
 
@@ -807,6 +827,7 @@ Page({
       await this.loadData(nextIds[nextIdx])
       wx.showToast({ title: '已移出错题本', icon: 'none' })
     } catch (e) {
+      if (!this._alive) return
       console.error('移出错题本失败', e)
       this.setData({ removeSubmitting: false })
       wx.showToast({ title: '移出失败，请重试', icon: 'none' })
@@ -915,6 +936,7 @@ Page({
   },
 
   _beginContentSwitchTransition(direction) {
+    if (!this._alive) return
     const dir = direction === 'right' ? 'right' : 'left'
     if (this._contentTransitionTimer) {
       clearTimeout(this._contentTransitionTimer)
@@ -962,7 +984,7 @@ Page({
     }
     this._contentTransitionStartedAt = 0
     this._contentTransitionDirection = ''
-    this.setData({ contentTransitionClass: '' })
+    if (this._alive) this.setData({ contentTransitionClass: '' })
   },
 
   // ---- 切题锁看门狗：fetch 阶段用长看门狗，动画阶段重武装为短看门狗，
@@ -1037,6 +1059,7 @@ Page({
     if (!wqId) return
     // 并发保护
     if (this._switching) return
+    if (this.data.masterSubmitting || this.data.removeSubmitting) return
     if (idx < 0 || idx >= this.data.questionIds.length) return
     if (idx === this.data.currentIdx) return
 
@@ -1053,7 +1076,7 @@ Page({
     // 由下方 _waitForContentSwitchOut 在 fetch 完成后统一退出/进入，避免整段网络等待期空白。
     var self = this
     this._switchMaskTimer = setTimeout(function() {
-      self.setData({ showSwitchMask: true })
+      if (self._alive) self.setData({ showSwitchMask: true })
     }, 250)
 
     try {
@@ -1066,8 +1089,10 @@ Page({
       if (!wq) {
         wq = await api.get(`/wrong-questions/${wqId}`)
         if (!wq) throw new Error('not found')
+        if (!this._alive) return
         this._wqCache[wqId] = { data: wq, ts: Date.now() }
       }
+      if (!this._alive) return
       // 预取相邻题
       this._prefetchWrongQuestion(idx - 1)
       this._prefetchWrongQuestion(idx + 1)
@@ -1126,6 +1151,7 @@ Page({
       // 题目区域与 AI 学习建议由同一个父容器统一退出/进入，
       // quiz-runner 内部动画已关闭，避免两个区域各自计时造成不同步。
       await this._waitForContentSwitchOut(switchDirection, animMs)
+      if (!this._alive) return
       clearTimeout(this._switchMaskTimer)
       // fetch 已就绪，动画阶段改挂短看门狗：setData 回调丢失时 5s 内强制复位
       this._armSwitchWatchdog(QUESTION_SWITCH_ANIM_WATCHDOG_MS)
@@ -1134,6 +1160,7 @@ Page({
       })
       this._checkRenderInvariant(raw._renderModel)
     } catch (e) {
+      if (!this._alive) return
       console.error('切换题目失败', e)
       wx.showToast({ title: '加载失败', icon: 'none' })
       clearTimeout(this._switchMaskTimer)
@@ -1159,7 +1186,7 @@ Page({
     if (cached && Date.now() - cached.ts < 300000) return
     var self = this
     api.get(`/wrong-questions/${wqId}`).then(function(wq) {
-      if (wq) self._wqCache[wqId] = { data: wq, ts: Date.now() }
+      if (wq && self._alive && self._wqCache) self._wqCache[wqId] = { data: wq, ts: Date.now() }
     }).catch(function() {})
   },
 })

@@ -263,6 +263,8 @@ Page({
 
   onLoad() {
     this._pageAlive = true
+    this._subjectsRequestSeq = 0
+    this._questionsRequestSeq = 0
     this._lastSubjectOptionTap = null
     this._resetSession()
     this._pendingResultUrl = ''
@@ -274,6 +276,8 @@ Page({
 
   onUnload() {
     this._pageAlive = false
+    this._subjectsRequestSeq++
+    this._questionsRequestSeq++
     this._lastSubjectOptionTap = null
     resetRenderGuard()
     this._clearTimer()
@@ -317,12 +321,18 @@ Page({
       s.backgroundMs = (s.backgroundMs || 0) + (Date.now() - s._bgStartAt)
       s._bgStartAt = null
     }
+    if (s && s.startTime && this.data.started && !this.data.loading && !this.data.submitting) {
+      s.currentQuestionStartedAt = Date.now()
+    }
   },
 
   onHide() {
     // 记录离开时间点；onShow 回来时结算 backgroundMs。
     const s = this._practiceSession
     if (s && s.startTime && s._bgStartAt === null) {
+      if (this.data.started && !this.data.loading && !this.data.submitting) {
+        this._settleQuestionTime(true)
+      }
       s._bgStartAt = Date.now()
     }
   },
@@ -336,12 +346,15 @@ Page({
   /* ==================== 设置阶段 ==================== */
 
   async loadPracticeSubjects() {
+    const requestSeq = ++this._subjectsRequestSeq
     try {
       const res = await api.get('/practice/subjects')
+      if (!this._pageAlive || requestSeq !== this._subjectsRequestSeq) return
       const subjectTree = this.normalizeSubjectTree(res || [])
       this.setData({ subjectTree })
       this.initDefaultSubject(subjectTree)
     } catch (e) {
+      if (!this._pageAlive || requestSeq !== this._subjectsRequestSeq) return
       console.error('加载科目树失败', e)
       wx.showToast({ title: '加载科目失败', icon: 'none' })
     }
@@ -755,6 +768,7 @@ Page({
   },
 
   async startPractice() {
+    if (this.data.loading || this.data.submitting) return
     if (!this.data.selectedSubjectId) {
       this.openSubjectSheet()
       return
@@ -792,7 +806,14 @@ Page({
   _startTimer() {
     this._clearTimer()
     this._timer = setInterval(() => {
-      const sec = Math.floor((Date.now() - this._practiceSession.startTime) / 1000)
+      if (!this._pageAlive || !this._practiceSession.startTime) return
+      const now = Date.now()
+      const backgroundMs = (this._practiceSession.backgroundMs || 0) + (
+        this._practiceSession._bgStartAt !== null
+          ? Math.max(0, now - this._practiceSession._bgStartAt)
+          : 0
+      )
+      const sec = Math.max(0, Math.floor((now - this._practiceSession.startTime - backgroundMs) / 1000))
       this._practiceSession.elapsedSec = sec
       this.setData({ elapsedText: this._fmt(sec) })
     }, 1000)
@@ -813,6 +834,7 @@ Page({
   },
 
   async _loadQuestions() {
+    const loadSeq = ++this._questionsRequestSeq
     this.setData({ loading: true })
     try {
       const subjectId = this.data.selectedSubjectId
@@ -852,6 +874,7 @@ Page({
       // smart 策略由后端统一解析（默认 weakness_vector，并可被实验配置覆盖）。
       // 小程序不再强制 scored，避免绕过 pgvector 召回链路。
       const res = await api.get('/practice/questions', params)
+      if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
       const questions = adapter.applyAnsweredFlags(res.questions || [], {}, 'id')
       const sequentialProgress = mode === 'sequential'
         ? (res.sequential_progress || null)
@@ -886,6 +909,7 @@ Page({
           confirmText: '重新开始一轮',
           cancelText: '返回选题',
         })
+        if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
         if (!restart) return
 
         try {
@@ -893,7 +917,9 @@ Page({
             subject_id: subjectId,
             _traceId: this._practiceSession.traceId,
           })
+          if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
         } catch (resetErr) {
+          if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
           console.error('重置顺序刷题进度失败', resetErr)
           this.setData({ errorText: '重置顺序进度失败，请稍后重试' })
           wx.showToast({ title: '重置进度失败', icon: 'none' })
@@ -978,6 +1004,7 @@ Page({
         })
       }
     } catch (e) {
+      if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
       console.error('加载题目失败', e)
       this._clearTimer()
       this.setData({
@@ -1092,17 +1119,18 @@ Page({
     }
   },
 
-  _settleQuestionTime() {
+  _settleQuestionTime(pause) {
     const { currentIndex, questions } = this.data
     const { currentQuestionStartedAt, questionTimeMap } = this._practiceSession
     if (!currentQuestionStartedAt || !questions.length) return
     const q = questions[currentIndex]
     if (!q) return
-    const elapsed = Math.floor((Date.now() - currentQuestionStartedAt) / 1000)
+    const elapsed = Math.max(0, Math.floor((Date.now() - currentQuestionStartedAt) / 1000))
     const key = String(q.id)
     const map = { ...questionTimeMap }
     map[key] = (map[key] || 0) + elapsed
     this._practiceSession.questionTimeMap = map
+    this._practiceSession.currentQuestionStartedAt = pause ? 0 : Date.now()
   },
 
   _showQuestion(index) {
@@ -1179,6 +1207,8 @@ Page({
       cancelText: '继续作答',
     })
     if (!confirmed) return
+    if (!this._pageAlive) return
+    this._questionsRequestSeq++
     this._clearTimer()
     if (this._feedbackTimer) {
       clearTimeout(this._feedbackTimer)
@@ -1545,7 +1575,7 @@ Page({
 
     this._clearTimer()
     // 结算最后一题的用时
-    this._settleQuestionTime()
+    this._settleQuestionTime(true)
     this.setData({ submitting: true })
 
     // ── 交卷时间点锁定：finishedAt / duration 在发请求之前冻结 ──
@@ -1591,14 +1621,34 @@ Page({
       status: 'completed',
     }
 
+    const submitStartedAt = Date.now()
+    const submitBackgroundMsAtStart = this._practiceSession.backgroundMs || 0
     try {
       submitResult = await api.post('/practice/batch-submit', {
         answers,
         session,
         _traceId: this._practiceSession.traceId,
       })
+      if (!this._pageAlive) return
     } catch (e) {
+      if (!this._pageAlive) return
       console.error('提交失败', e)
+      // 失败请求的网络等待不属于学习时长；重试时继续沿用同一会话起点。
+      const failedAt = Date.now()
+      const submitWaitMs = Math.max(0, failedAt - submitStartedAt)
+      const settledBackgroundDuringSubmit = Math.max(
+        0,
+        (this._practiceSession.backgroundMs || 0) - submitBackgroundMsAtStart,
+      )
+      const ongoingBackgroundDuringSubmit = this._practiceSession._bgStartAt !== null
+        ? Math.max(0, failedAt - Math.max(this._practiceSession._bgStartAt, submitStartedAt))
+        : 0
+      const uncoveredSubmitWaitMs = Math.max(
+        0,
+        submitWaitMs - settledBackgroundDuringSubmit - ongoingBackgroundDuringSubmit,
+      )
+      this._practiceSession.backgroundMs = (this._practiceSession.backgroundMs || 0) + uncoveredSubmitWaitMs
+      this._practiceSession.currentQuestionStartedAt = Date.now()
       // 恢复页面可操作状态和计时器
       this._startTimer()
       this.setData({ submitting: false })
@@ -1647,7 +1697,8 @@ Page({
       if (userInfo && userInfo.id) userId = String(userInfo.id)
     } catch (_) {}
     // 生成唯一缓存键，用于结果页验证
-    var cacheKey = 'pr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)
+    var cacheCreatedAt = Date.now()
+    var cacheKey = 'pr_' + cacheCreatedAt + '_' + Math.random().toString(36).slice(2, 8)
     try {
       wx.setStorageSync('lastPracticeResult', {
         correct: submitResult.total_correct || 0,
@@ -1663,6 +1714,7 @@ Page({
         comboCount,
         _cacheKey: cacheKey,
         _userId: userId,
+        _createdAt: cacheCreatedAt,
       })
     } catch (storageError) {
       console.warn('答题已提交成功，但本地结果缓存失败', storageError)

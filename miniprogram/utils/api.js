@@ -25,6 +25,50 @@ class ApiError extends Error {
 
 let _refreshing = null
 let _redirecting = false
+let _serverClockOffsetMs = 0
+let _serverClockSynced = false
+let _serverClockSampleAtMs = 0
+let _serverClockBestRttMs = Infinity
+let _serverClockSourceRank = 0
+
+function _updateServerClock(res, requestStartedAt, responseReceivedAt) {
+  if (!res) return
+  let serverMs = NaN
+  let sourceRank = 0
+  if (res.data && typeof res.data === 'object' && res.data.server_now) {
+    serverMs = parseServerUtc(res.data.server_now)
+    if (Number.isFinite(serverMs)) sourceRank = 2
+  }
+  if (!Number.isFinite(serverMs)) {
+    const dateHeader = _getResponseHeader(res.header, 'Date')
+    if (dateHeader) serverMs = Date.parse(dateHeader)
+    if (Number.isFinite(serverMs)) sourceRank = 1
+  }
+  if (!Number.isFinite(serverMs)) return
+
+  const receivedAt = Number.isFinite(responseReceivedAt) ? responseReceivedAt : Date.now()
+  const startedAt = Number.isFinite(requestStartedAt) ? requestStartedAt : receivedAt
+  const rttMs = Math.max(0, receivedAt - startedAt)
+  const clientMidpointMs = startedAt + rttMs / 2
+  const candidateOffsetMs = serverMs - clientMidpointMs
+  const sampleExpired = !_serverClockSampleAtMs || receivedAt - _serverClockSampleAtMs > 10 * 60 * 1000
+  const sourceImproved = sourceRank > _serverClockSourceRank
+  const rttImproved = sourceRank === _serverClockSourceRank && rttMs <= _serverClockBestRttMs + 50
+
+  // Prefer explicit server_now and low-RTT samples. Periodically accept a fresh
+  // sample even when RTT is worse so a device clock adjustment can self-heal.
+  if (!_serverClockSynced || sampleExpired || sourceImproved || rttImproved) {
+    _serverClockOffsetMs = candidateOffsetMs
+    _serverClockSynced = true
+    _serverClockSampleAtMs = receivedAt
+    _serverClockBestRttMs = rttMs
+    _serverClockSourceRank = sourceRank
+  }
+}
+
+function now() {
+  return Date.now() + (_serverClockSynced ? _serverClockOffsetMs : 0)
+}
 
 // 主动续签阈值：token 过期前 1 小时即触发续签
 // 避免因 24h 阈值适配短生命周期 token 时持续刷新
@@ -326,8 +370,11 @@ async function request(method, url, data = {}, options = {}) {
 
   // First attempt
   let res
+  let requestStartedAt = Date.now()
+  let responseReceivedAt = requestStartedAt
   try {
     res = await _rawRequest(method, url, payload, header, timeout)
+    responseReceivedAt = Date.now()
   } catch (err) {
     debugLog(traceId, 'API_ERROR', { method, url, requestId, message: err?.errMsg || '网络异常' })
     wx.showToast({ title: '网络异常', icon: 'none' })
@@ -350,14 +397,18 @@ async function request(method, url, data = {}, options = {}) {
     header['Authorization'] = `Bearer ${newToken}`
     requestId = _generateCorrelationId('req')
     header['X-Request-ID'] = requestId
+    requestStartedAt = Date.now()
     try {
       res = await _rawRequest(method, url, payload, header, timeout)
+      responseReceivedAt = Date.now()
     } catch (err) {
       debugLog(traceId, 'API_ERROR', { method, url, requestId, message: err?.errMsg || '网络异常' })
       wx.showToast({ title: '网络异常', icon: 'none' })
       throw new ApiError(_safeHttpMessage(0), { code: 'NETWORK_ERROR', statusCode: 0, traceId, requestId, raw: err })
     }
   }
+
+  _updateServerClock(res, requestStartedAt, responseReceivedAt)
 
   const responseRequestId = _getResponseHeader(res.header, 'X-Request-ID') || requestId
   const responseTraceId = _getResponseHeader(res.header, 'X-Trace-ID') || traceId
@@ -498,4 +549,6 @@ module.exports = {
   normalizeExpiresAt: _normalizeExpiresAt,
   createTraceId: () => _generateCorrelationId('tr'),
   createRequestId: () => _generateCorrelationId('req'),
+  createClientStartId: () => _generateCorrelationId('pstart'),
+  now,
 }

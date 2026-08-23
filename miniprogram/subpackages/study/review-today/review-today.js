@@ -195,12 +195,23 @@ Page({
       overviewLoading: false,
       // Timer state (non-observable, kept in session object)
       timerStartedAt: 0,
+      timerLastTickAt: 0,
       timerElapsedMs: 0,
       timerRunning: false,
     }
   },
 
-  onLoad() {
+  onLoad(options) {
+    this._alive = true
+    this._overviewRequestSeq = 0
+    this._flowRequestSeq = 0
+    this._masterUndoInFlight = false
+    this._autoStartPending = !!(
+      options && (
+        String(options.autostart || '') === '1' ||
+        String(options.autostart || '').toLowerCase() === 'true'
+      )
+    )
     this._reviewSession = this._createReviewSession()
     this._timerInterval = null
     this._resultDockFadeTimer = null
@@ -235,6 +246,10 @@ Page({
   },
 
   onUnload() {
+    this._alive = false
+    this._overviewRequestSeq++
+    this._flowRequestSeq++
+    this._autoStartPending = false
     resetRenderGuard()
     this._clearMasterUndo()
     this._clearReviewTimer()
@@ -255,10 +270,12 @@ Page({
   /* ==================== 今日复习概览 ==================== */
 
   async loadTodayReviewOverview() {
+    const requestSeq = ++this._overviewRequestSeq
     this._reviewSession.overviewLoading = true
     this.setData({ phase: 'loading', isStarting: false, isContinuing: false })
     try {
       const overview = await api.get('/review/today/overview')
+      if (!this._alive || requestSeq !== this._overviewRequestSeq) return
       const vm = this.buildReviewOverviewVM(overview)
       this._reviewSession.reviewOverview = overview
       this._reviewSession.allTodayQuestionIds = overview.all_question_ids || []
@@ -268,13 +285,21 @@ Page({
       // 完成态不再进入第二套“今日最终结果”页面。
       // 当前会话的复习结果统一停留在 group-result；重新进入且已无待复习题时展示空状态。
       const targetPhase = vm.todayRemainingCount > 0 ? 'overview' : 'empty'
+      const shouldAutoStart = this._autoStartPending && targetPhase === 'overview'
+      if (targetPhase === 'empty') this._autoStartPending = false
 
       this._reviewSession.overviewLoading = false
       this.setData({
         ...vm,
         phase: targetPhase,
+      }, () => {
+        if (shouldAutoStart && this._alive && requestSeq === this._overviewRequestSeq) {
+          this._autoStartPending = false
+          this.startTodayReview()
+        }
       })
     } catch (e) {
+      if (!this._alive || requestSeq !== this._overviewRequestSeq) return
       console.error('加载复习概览失败', e)
       this._reviewSession.overviewLoading = false
       this.setData({
@@ -286,8 +311,10 @@ Page({
 
   /** 静默刷新概览数据（不修改 phase/group-result 等页面状态） */
   async refreshOverviewStatsSilently() {
+    const requestSeq = ++this._overviewRequestSeq
     try {
       const overview = await api.get('/review/today/overview')
+      if (!this._alive || requestSeq !== this._overviewRequestSeq) return
       const vm = this.buildReviewOverviewVM(overview)
       this._reviewSession.reviewOverview = overview
       this._reviewSession.allTodayQuestionIds = overview.all_question_ids || []
@@ -310,6 +337,7 @@ Page({
         ...vm,
       })
     } catch (e) {
+      if (!this._alive || requestSeq !== this._overviewRequestSeq) return
       console.error('刷新复习概览失败', e)
     }
   },
@@ -358,6 +386,7 @@ Page({
   async startTodayReview() {
     if (this.data.todayRemainingCount <= 0) return
     if (this.data.isStarting || this.data.isContinuing) return
+    const flowSeq = ++this._flowRequestSeq
 
     // Stay in loading phase while fetching (shows skeleton)
     this.setData({
@@ -369,10 +398,11 @@ Page({
       const batch = await api.post('/review/today/next-batch', {
         batch_size: this.data.reviewBatchSize,
       })
+      if (!this._alive || flowSeq !== this._flowRequestSeq) return
       const rawQuestions = batch.questions || []
       if (!rawQuestions.length) {
         wx.showToast({ title: '今日没有待复习题目', icon: 'none' })
-        this.loadTodayReviewOverview()
+        await this.loadTodayReviewOverview()
         return
       }
 
@@ -463,6 +493,7 @@ Page({
       this._recordRenderTrace(firstEnriched._renderModel && firstEnriched._renderModel.renderTrace)
       this._startReviewTimer()
     } catch (e) {
+      if (!this._alive || flowSeq !== this._flowRequestSeq) return
       console.error('[REVIEW_ERROR] startTodayReview failed',
         'batchSize=' + this.data.reviewBatchSize,
         'statusCode=' + (e.statusCode || 'N/A'),
@@ -803,6 +834,7 @@ Page({
 
     try {
       await api.post(`/review/${scheduleId}/master`)
+      if (!this._alive) return
 
       this._clearMasterUndo()
       this._pendingMasterUndo = {
@@ -835,14 +867,23 @@ Page({
       this._masterUndoTimer = setTimeout(() => {
         this._pendingMasterUndo = null
         this._masterUndoTimer = null
-        this.setData({ masterUndoVisible: false })
+        if (this._alive) this.setData({ masterUndoVisible: false })
       }, 5000)
 
       await this.refreshOverviewStatsSilently()
+      if (!this._alive) return
 
       if (groupQuestions.length === 0) {
         this._clearMasterUndo()
-        this.setData({ phase: 'empty' })
+        this._clearReviewTimer()
+        const nextPhase = this.data.todayRemainingCount > 0 ? 'overview' : 'empty'
+        this.setData({
+          phase: nextPhase,
+          groups: [],
+          groupQuestions: [],
+          currentQuestion: null,
+          currentIndex: 0,
+        })
         return
       }
 
@@ -853,6 +894,7 @@ Page({
       this._syncAnsweredFlags()
       this._showQuestion(currentIndex)
     } catch (e) {
+      if (!this._alive) return
       console.error('标记掌握失败', e)
       wx.showToast({ title: '操作失败，请重试', icon: 'none' })
     }
@@ -860,10 +902,12 @@ Page({
 
   async undoMaster() {
     const pending = this._pendingMasterUndo
-    if (!pending) return
+    if (!pending || this._masterUndoInFlight) return
+    this._masterUndoInFlight = true
 
     try {
       await api.post(`/review/${pending.scheduleId}/unmaster`)
+      if (!this._alive) return
 
       const allQuestions = (this._reviewSession.allQuestions || []).slice()
       const insertAt = Math.min(Math.max(0, pending.originalIndex), allQuestions.length)
@@ -887,10 +931,14 @@ Page({
         this._showQuestion(Math.min(insertAt, groupQuestions.length - 1))
       }
       await this.refreshOverviewStatsSilently()
+      if (!this._alive) return
       wx.showToast({ title: '已撤销掌握', icon: 'none' })
     } catch (e) {
+      if (!this._alive) return
       console.error('撤销掌握失败', e)
       wx.showToast({ title: '撤销失败，请重试', icon: 'none' })
+    } finally {
+      this._masterUndoInFlight = false
     }
   },
 
@@ -900,7 +948,7 @@ Page({
       this._masterUndoTimer = null
     }
     this._pendingMasterUndo = null
-    if (this.data && this.data.masterUndoVisible) {
+    if (this._alive && this.data && this.data.masterUndoVisible) {
       this.setData({ masterUndoVisible: false })
     }
   },
@@ -968,6 +1016,7 @@ Page({
 
     try {
       const res = await api.post('/review/grade-batch', { reviews })
+      if (!this._alive) return
       const results = Array.isArray(res && res.results) ? res.results : []
 
       if (results.length < reviews.length) {
@@ -1062,6 +1111,7 @@ Page({
         if (todayRemainingCount <= 0) this._showResultDockAndRefreshTimer()
       })
     } catch (e) {
+      if (!this._alive) return
       console.error('提交失败', e)
       wx.showToast({ title: '提交失败，请重试', icon: 'none' })
       this.setData({ submittingGroup: false })
@@ -1074,6 +1124,7 @@ Page({
     this._clearMasterUndo()
     this._clearResultDockFadeTimer()
     if (this.data.resultTransitioning) return
+    const flowSeq = ++this._flowRequestSeq
     this.setData({ resultTransitioning: true })
 
     // 检查是否还有跳过的题在当前组的余量中
@@ -1083,6 +1134,7 @@ Page({
     if (nextGroupIdx < currentGroups.length && currentGroups[nextGroupIdx] && currentGroups[nextGroupIdx].length > 0) {
       // 有本地缓存的下一组（跳过题重排的情况）
       this._reviewSession.answers = {}
+      this._reviewSession.allQuestions = currentGroups[nextGroupIdx].slice()
       this.setData({
         phase: 'reviewing',
         currentGroupIdx: nextGroupIdx,
@@ -1109,6 +1161,7 @@ Page({
         const batch = await api.post('/review/today/next-batch', {
           batch_size: this.data.reviewBatchSize,
         })
+        if (!this._alive || flowSeq !== this._flowRequestSeq) return
         const rawQuestions = batch.questions || []
         if (rawQuestions.length > 0) {
           const questions = rawQuestions.map(normalizeReviewQuestion).filter(Boolean)
@@ -1139,7 +1192,16 @@ Page({
           this._startReviewTimer()
           return
         }
+        // 空批次不直接等同“今日完成”：先刷新概览，避免并发调度或短暂不一致导致误判。
+        await this.refreshOverviewStatsSilently()
+        if (!this._alive || flowSeq !== this._flowRequestSeq) return
+        if (this.data.todayRemainingCount > 0) {
+          wx.showToast({ title: '任务状态已更新，请稍后重试', icon: 'none' })
+          this.setData({ resultTransitioning: false })
+          return
+        }
       } catch (e) {
+        if (!this._alive || flowSeq !== this._flowRequestSeq) return
         console.error('获取下一组失败', e)
         wx.showToast({ title: '获取下一组失败', icon: 'none' })
         this.setData({ resultTransitioning: false })
@@ -1175,7 +1237,7 @@ Page({
 
     this._resultDockFadeTimer = setTimeout(() => {
       this._resultDockFadeTimer = null
-      if (this.data.phase === 'group-result' && this.data.todayRemainingCount <= 0) {
+      if (this._alive && this.data.phase === 'group-result' && this.data.todayRemainingCount <= 0) {
         this.setData({ resultDockVisible: false })
       }
     }, 5000)
@@ -1254,19 +1316,23 @@ Page({
 
   /**
    * 开始新组计时（重置为 00:00）。
-   * 基于 Date.now() 时间差计算，不依赖每秒累加。
+   * 按相邻 tick 的 Date.now() 差值累计，既避免后台时间混入，也能限制系统时钟异常跳变。
    */
   _startReviewTimer() {
     if (this._timerInterval) return
     this._reviewSession.timerElapsedMs = 0
     this._reviewSession.timerStartedAt = Date.now()
+    this._reviewSession.timerLastTickAt = this._reviewSession.timerStartedAt
     this._reviewSession.timerRunning = true
     var self = this
     this._timerInterval = setInterval(function () {
+      if (!self._alive) return
       var session = self._reviewSession
-      var rawDelta = Date.now() - session.timerStartedAt
-      var totalMs = session.timerElapsedMs + self._safeTickDelta(rawDelta)
-      self.setData({ elapsedText: formatReviewElapsed(Math.floor(totalMs / 1000)) })
+      var now = Date.now()
+      var lastTickAt = session.timerLastTickAt || session.timerStartedAt || now
+      session.timerElapsedMs += self._safeTickDelta(now - lastTickAt)
+      session.timerLastTickAt = now
+      self.setData({ elapsedText: formatReviewElapsed(Math.floor(session.timerElapsedMs / 1000)) })
     }, 1000)
   },
 
@@ -1276,8 +1342,10 @@ Page({
    */
   _pauseReviewTimer() {
     if (!this._timerInterval) return
-    var rawDelta = Date.now() - this._reviewSession.timerStartedAt
-    this._reviewSession.timerElapsedMs += this._safeTickDelta(rawDelta)
+    var now = Date.now()
+    var lastTickAt = this._reviewSession.timerLastTickAt || this._reviewSession.timerStartedAt || now
+    this._reviewSession.timerElapsedMs += this._safeTickDelta(now - lastTickAt)
+    this._reviewSession.timerLastTickAt = 0
     this._reviewSession.timerRunning = false
     clearInterval(this._timerInterval)
     this._timerInterval = null
@@ -1290,13 +1358,17 @@ Page({
   _resumeReviewTimer() {
     if (this._timerInterval || this._reviewSession.timerRunning) return
     this._reviewSession.timerStartedAt = Date.now()
+    this._reviewSession.timerLastTickAt = this._reviewSession.timerStartedAt
     this._reviewSession.timerRunning = true
     var self = this
     this._timerInterval = setInterval(function () {
+      if (!self._alive) return
       var session = self._reviewSession
-      var rawDelta = Date.now() - session.timerStartedAt
-      var totalMs = session.timerElapsedMs + self._safeTickDelta(rawDelta)
-      self.setData({ elapsedText: formatReviewElapsed(Math.floor(totalMs / 1000)) })
+      var now = Date.now()
+      var lastTickAt = session.timerLastTickAt || session.timerStartedAt || now
+      session.timerElapsedMs += self._safeTickDelta(now - lastTickAt)
+      session.timerLastTickAt = now
+      self.setData({ elapsedText: formatReviewElapsed(Math.floor(session.timerElapsedMs / 1000)) })
     }, 1000)
   },
 
@@ -1307,6 +1379,7 @@ Page({
     this._pauseReviewTimer()
     this._reviewSession.timerElapsedMs = 0
     this._reviewSession.timerStartedAt = 0
+    this._reviewSession.timerLastTickAt = 0
     this._reviewSession.timerRunning = false
     this.setData({ elapsedText: '00:00' })
   },
@@ -1319,6 +1392,7 @@ Page({
       clearInterval(this._timerInterval)
       this._timerInterval = null
     }
+    this._reviewSession.timerLastTickAt = 0
     this._reviewSession.timerRunning = false
   },
 

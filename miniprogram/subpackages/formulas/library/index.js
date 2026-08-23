@@ -31,6 +31,8 @@ const SEARCH_DEBOUNCE_MS = 500
 const LIBRARY_TYPE_FORMULA = 'formula'
 const LIBRARY_TYPE_FUNCTION_GRAPH = 'function_graph'
 const MAX_GRAPH_FALLBACK_PAGES = 10
+const MAX_FAVORITE_PAGES = 50
+const FAVORITE_PAGE_SIZE = 200
 
 function normalizeCardType(item) {
   return String(
@@ -116,7 +118,19 @@ Page({
     loadErrorMessage: '',
   },
 
+
+  _pageAlive: true,
+  _visible: true,
+  _catalogRequestVersion: 0,
+  _tagsRequestVersion: 0,
+  _favoriteRequestVersion: 0,
+  _replaceRequestVersion: 0,
+  _favoriteBusyIds: null,
+
   onLoad(options = {}) {
+    this._pageAlive = true
+    this._visible = true
+    this._favoriteBusyIds = new Set()
     this.measureNavigation()
     const onlyFavorites = options.favorites === '1'
     if (onlyFavorites) this.setData({ onlyFavorites: true })
@@ -127,6 +141,7 @@ Page({
   },
 
   onShow() {
+    this._visible = true
     // onLoad already performs the initial request. Refresh favorites every time
     // the page becomes visible again so a toggle made in the reader is reflected
     // immediately when the user navigates back to the library.
@@ -166,6 +181,8 @@ Page({
   // ── Catalog ──
 
   async loadCatalog() {
+    if (!this._pageAlive) return
+    const requestVersion = ++this._catalogRequestVersion
     try {
       var params = {}
       // Pass library_type so the catalog can show accurate available_count
@@ -180,10 +197,12 @@ Page({
         url += '?' + Object.keys(params).map(function(k) { return k + '=' + encodeURIComponent(params[k]) }).join('&')
       }
       const data = await api.request('GET', url)
+      if (!this._pageAlive || requestVersion !== this._catalogRequestVersion) return
       const catalog = this.normalizeCatalog(data?.items || [])
       this.setData({ catalog })
       this.updateChapters()
     } catch (e) {
+      if (!this._pageAlive || requestVersion !== this._catalogRequestVersion) return
       console.error('Failed to load formula catalog', e)
     }
   },
@@ -210,12 +229,16 @@ Page({
   },
 
   async loadTags() {
+    if (!this._pageAlive) return
+    const requestVersion = ++this._tagsRequestVersion
     try {
       const data = await api.request('GET', '/formulas/tags')
+      if (!this._pageAlive || requestVersion !== this._tagsRequestVersion) return
       this.setData({ tags: data?.items || [] }, () => {
         this._syncTagFlags()
       })
     } catch (e) {
+      if (!this._pageAlive || requestVersion !== this._tagsRequestVersion) return
       console.error('Failed to load formula tags', e)
     }
   },
@@ -239,17 +262,23 @@ Page({
   },
 
   updateChapters() {
-    // Find the currently active subject in catalog
-    const { catalog, activeSubject } = this.data
+    // Find the currently active subject in catalog. Preserve the selected
+    // chapter when a catalog refresh (for example favorite-only) still contains
+    // it; silently resetting it would desynchronise the filters and the list.
+    const { catalog, activeSubject, activeChapterId } = this.data
     const subject = catalog.find(s => s.code === activeSubject)
     if (subject) {
+      const chapters = (subject.children || []).map((chapter) => ({
+        ...chapter,
+        active: activeChapterId != null && String(chapter.id) === String(activeChapterId),
+        available_count: chapter.available_count || 0,
+      }))
+      const keepActiveChapter = activeChapterId != null && chapters.some(
+        (chapter) => String(chapter.id) === String(activeChapterId)
+      )
       this.setData({
-        chapters: (subject.children || []).map((chapter) => ({
-          ...chapter,
-          active: false,
-          available_count: chapter.available_count || 0,
-        })),
-        activeChapterId: null,
+        chapters,
+        activeChapterId: keepActiveChapter ? activeChapterId : null,
       })
     } else {
       this.setData({ chapters: [], activeChapterId: null })
@@ -468,9 +497,20 @@ Page({
     this.loadFormulas(true)
   },
 
+  onHide() {
+    this._visible = false
+  },
+
   onUnload() {
+    this._pageAlive = false
+    this._visible = false
+    this._catalogRequestVersion++
+    this._tagsRequestVersion++
+    this._favoriteRequestVersion++
+    this._replaceRequestVersion++
     if (this._searchTimer) clearTimeout(this._searchTimer)
     this._searchTimer = null
+    if (this._favoriteBusyIds) this._favoriteBusyIds.clear()
   },
 
   // ── Favorites toggle ──
@@ -489,6 +529,7 @@ Page({
   // ── Load Formulas ──
 
   async loadFormulas(replace = false) {
+    if (!this._pageAlive) return
     if (replace) this._replaceRequestVersion = (this._replaceRequestVersion || 0) + 1
     const requestVersion = this._replaceRequestVersion || 0
     const { loading, loadingMore, initialLoading, page, pageSize, activeSubject, activeChapterId,
@@ -542,26 +583,42 @@ Page({
         attempts < MAX_GRAPH_FALLBACK_PAGES
       )
 
-      if (requestVersion !== (this._replaceRequestVersion || 0)) return
+      if (!this._pageAlive || requestVersion !== (this._replaceRequestVersion || 0)) return
 
-      var totalItems = Number(responseData?.filtered_total ?? responseData?.total ?? 0)
+      const rawTotal = responseData?.filtered_total ?? responseData?.total
+      const parsedTotal = Number(rawTotal)
+      const hasKnownTotal = Number.isFinite(parsedTotal) && parsedTotal >= 0
+      const mergedFormulas = replace
+        ? items
+        : [...this.data.formulas, ...items].filter((item, index, list) => (
+          list.findIndex((candidate) => String(candidate.id) === String(item.id)) === index
+        ))
+      const fetchedThroughPage = Math.max(0, requestPage - 1)
+      const totalItems = hasKnownTotal ? parsedTotal : mergedFormulas.length
+      const hasMoreByResponse = rawItems.length === pageSize
       this.setData({
-        formulas: replace ? items : [...this.data.formulas, ...items],
+        formulas: mergedFormulas,
         total: totalItems,
         page: requestPage,
-        hasMore: requestPage * pageSize < totalItems,
+        hasMore: hasKnownTotal
+          ? fetchedThroughPage * pageSize < totalItems
+          : hasMoreByResponse,
         initialLoading: false,
         loadingMore: false,
       })
     } catch (e) {
-      if (requestVersion !== (this._replaceRequestVersion || 0)) return
+      if (!this._pageAlive || requestVersion !== (this._replaceRequestVersion || 0)) return
       console.error('Failed to load formulas', e)
+      const shouldReplaceWithError = replace || !(this.data.formulas || []).length
       this.setData({
         initialLoading: false,
         loadingMore: false,
-        loadError: true,
-        loadErrorMessage: e.message || '加载失败',
+        loadError: shouldReplaceWithError,
+        loadErrorMessage: shouldReplaceWithError ? (e.message || '加载失败') : '',
       })
+      if (!shouldReplaceWithError) {
+        wx.showToast({ title: '加载更多失败，请重试', icon: 'none' })
+      }
     }
   },
 
@@ -603,12 +660,41 @@ Page({
   },
 
   async loadFavoriteIds() {
-    if (!auth.isLoggedIn()) return
+    if (!this._pageAlive || !auth.isLoggedIn()) return
+    const requestVersion = ++this._favoriteRequestVersion
     try {
-      const data = await api.request('GET', '/formulas/favorites/list', { page: 1, page_size: 200 })
-      const favoriteIds = (data?.items || []).map((item) => Number(item.id)).filter(Boolean)
+      const favoriteIds = []
+      const favoriteIdSet = new Set()
+      let page = 1
+      let total = null
+
+      while (page <= MAX_FAVORITE_PAGES) {
+        const data = await api.request('GET', '/formulas/favorites/list', {
+          page,
+          page_size: FAVORITE_PAGE_SIZE,
+        })
+        if (!this._pageAlive || requestVersion !== this._favoriteRequestVersion) return
+
+        const items = data?.items || []
+        items.forEach((item) => {
+          const id = Number(item.id)
+          if (id && !favoriteIdSet.has(id)) {
+            favoriteIdSet.add(id)
+            favoriteIds.push(id)
+          }
+        })
+
+        const parsedTotal = Number(data?.total)
+        if (Number.isFinite(parsedTotal) && parsedTotal >= 0) total = parsedTotal
+        if (items.length < FAVORITE_PAGE_SIZE) break
+        if (total != null && favoriteIds.length >= total) break
+        page += 1
+      }
+
+      if (!this._pageAlive || requestVersion !== this._favoriteRequestVersion) return
+      const favoriteSet = new Set(favoriteIds)
       const formulas = (this.data.formulas || []).map((item) => {
-        const isFavorited = favoriteIds.includes(Number(item.id))
+        const isFavorited = favoriteSet.has(Number(item.id))
         return {
           ...item,
           isFavorited,
@@ -617,6 +703,7 @@ Page({
       }).filter((item) => !this.data.onlyFavorites || item.isFavorited)
       this.setData({ favoriteIds, formulas })
     } catch (e) {
+      if (!this._pageAlive || requestVersion !== this._favoriteRequestVersion) return
       console.warn('Failed to load formula favorites', e)
     }
   },
@@ -628,31 +715,47 @@ Page({
     }
 
     const formulaId = Number(e.currentTarget.dataset.id)
-    if (!formulaId) return
-    const formulas = (this.data.formulas || []).map((item) => ({ ...item }))
-    const index = formulas.findIndex((item) => Number(item.id) === formulaId)
-    if (index < 0) return
+    if (!formulaId || !this._pageAlive) return
+    if (!this._favoriteBusyIds) this._favoriteBusyIds = new Set()
+    if (this._favoriteBusyIds.has(formulaId)) return
 
-    const current = Boolean(formulas[index].isFavorited || formulas[index].is_favorited)
+    const currentItem = (this.data.formulas || []).find((item) => Number(item.id) === formulaId)
+    if (!currentItem) return
+    const current = Boolean(currentItem.isFavorited || currentItem.is_favorited)
+    this._favoriteBusyIds.add(formulaId)
+
     try {
       if (current) {
         await api.request('DELETE', `/formulas/${formulaId}/favorite`)
       } else {
         await api.request('PUT', `/formulas/${formulaId}/favorite`)
       }
+      if (!this._pageAlive) return
 
-      formulas[index].isFavorited = !current
-      formulas[index].is_favorited = !current
-      const favoriteIds = current
-        ? (this.data.favoriteIds || []).filter((id) => Number(id) !== formulaId)
-        : Array.from(new Set([...(this.data.favoriteIds || []), formulaId]))
+      // Invalidate a favorite-list GET that may have started before this write;
+      // an older response must not undo the user's latest toggle.
+      this._favoriteRequestVersion++
+      const isFavorited = !current
+      let formulas = (this.data.formulas || []).map((item) => (
+        Number(item.id) === formulaId
+          ? { ...item, isFavorited, is_favorited: isFavorited }
+          : item
+      ))
+      const favoriteIds = isFavorited
+        ? Array.from(new Set([...(this.data.favoriteIds || []), formulaId]))
+        : (this.data.favoriteIds || []).filter((id) => Number(id) !== formulaId)
 
-      if (this.data.onlyFavorites && current) formulas.splice(index, 1)
+      if (this.data.onlyFavorites && !isFavorited) {
+        formulas = formulas.filter((item) => Number(item.id) !== formulaId)
+      }
       this.setData({ formulas, favoriteIds })
       wx.showToast({ title: current ? '已取消收藏' : '已收藏', icon: 'none' })
     } catch (err) {
+      if (!this._pageAlive) return
       console.error('Toggle formula favorite failed', err)
       wx.showToast({ title: '操作失败，请重试', icon: 'none' })
+    } finally {
+      if (this._favoriteBusyIds) this._favoriteBusyIds.delete(formulaId)
     }
   },
 

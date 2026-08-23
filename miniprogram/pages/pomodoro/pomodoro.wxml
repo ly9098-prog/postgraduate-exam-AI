@@ -228,6 +228,7 @@
       <cover-view class="confirm-cover-body">
         <cover-view class="confirm-cover-body-line">{{endConfirmLine1 || endConfirmText}}</cover-view>
         <cover-view wx:if="{{endConfirmLine2}}" class="confirm-cover-body-line confirm-cover-body-line-secondary">{{endConfirmLine2}}</cover-view>
+        <cover-view wx:if="{{endConfirmLine3}}" class="confirm-cover-body-line confirm-cover-body-line-secondary">{{endConfirmLine3}}</cover-view>
       </cover-view>
       <cover-view class="confirm-cover-actions">
         <cover-view class="confirm-cover-btn confirm-cover-cancel" catchtap="cancelEndConfirm">{{endConfirmCancelText}}</cover-view>

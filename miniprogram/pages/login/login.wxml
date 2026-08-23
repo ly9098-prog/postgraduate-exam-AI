@@ -99,7 +99,7 @@
         <view class="agreement-box">
           <checkbox-group bindchange="onAgreementChange">
             <label class="agreement-check">
-              <checkbox value="agreed" checked="{{agreed}}" color="#173426" />
+              <checkbox value="agreed" checked="{{agreed}}" disabled="{{loading}}" color="#173426" />
               <text class="agreement-text">我已阅读并同意以下协议</text>
             </label>
           </checkbox-group>
