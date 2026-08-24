@@ -85,7 +85,6 @@ async def complete_session(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not session:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
     return PomodoroSessionResponse.from_orm_with_subject(session)
@@ -109,7 +108,6 @@ async def interrupt_session(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not session:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
     return PomodoroSessionResponse.from_orm_with_subject(session)
@@ -132,7 +130,6 @@ async def resume_session(
     except svc.PomodoroClockSkewError:
         raise HTTPException(status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"})
     if not session:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
     return PomodoroSessionResponse.from_orm_with_subject(session)
@@ -154,7 +151,6 @@ async def pause_session(
     except svc.PomodoroClockSkewError:
         raise HTTPException(status_code=409, detail={"error_code": "POMODORO_CLOCK_SKEW"})
     if not session:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="No running session found")
     await db.commit()
     return PomodoroSessionResponse.from_orm_with_subject(session)
