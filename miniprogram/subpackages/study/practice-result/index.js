@@ -268,7 +268,11 @@ Page({
 
     growthGain: 0,
     growth: DEFAULT_GROWTH,
-    unlockedBadgeCount: 0
+    unlockedBadgeCount: 0,
+
+    // 自定义导航栏不能只依赖 env(safe-area-inset-top)：部分 Android 真机
+    // 会返回 0，导致返回按钮压到状态栏。这里使用微信运行时实测值。
+    heroTopPaddingPx: 28
   },
 
   onLoad(options) {
@@ -277,6 +281,7 @@ Page({
     this._sessionPayload = null;
     this._dashboardLoadId = 0;
 
+    this.measureSafeNavigation();
     this.bindEventChannel();
     const optionPayload = this.readPayloadFromOptions(options || {});
     const cachePayload = optionPayload ? null : this.readPayloadFromCache(options || {});
@@ -299,6 +304,24 @@ Page({
 
   onShow() {
     if (this._pageReady) this.drawVisibleCharts();
+  },
+
+  measureSafeNavigation() {
+    let statusBarHeight = 20;
+    let menuTop = 0;
+    try {
+      const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
+      statusBarHeight = Math.max(0, Number(info.statusBarHeight) || 20);
+    } catch (e) {}
+
+    try {
+      const menu = wx.getMenuButtonBoundingClientRect && wx.getMenuButtonBoundingClientRect();
+      if (menu && Number(menu.top) > 0) menuTop = Number(menu.top);
+    } catch (e) {}
+
+    // 与右上角胶囊顶部对齐；拿不到胶囊数据时至少避开系统状态栏。
+    const heroTopPaddingPx = Math.round(Math.max(statusBarHeight + 6, menuTop || 0));
+    this.setData({ heroTopPaddingPx });
   },
 
   bindEventChannel() {
@@ -883,7 +906,7 @@ Page({
     if (pages.length > 1) {
       wx.navigateBack({ delta: 1 });
     } else {
-      wx.reLaunch({ url: '/pages/index/index' });
+      wx.reLaunch({ url: '/pages/home/home' });
     }
   },
 

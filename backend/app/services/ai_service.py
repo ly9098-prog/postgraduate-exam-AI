@@ -576,8 +576,34 @@ def _extract_analysis_fields(value, depth: int = 0) -> dict:
         "knowledge_patch": _pick_field(value, list(_KNOWLEDGE_KEYS)),
         "review_task": _pick_field(value, list(_TASK_KEYS)),
     }
+
+    # Some providers occasionally wrap the complete JSON response inside one
+    # canonical field, e.g. {"mistake_diagnosis": "```json\n{...}\n```"}.
+    # Decode those field values before accepting ``direct``; otherwise the raw
+    # JSON string is considered valid diagnosis text and leaks into the UI.
+    embedded_best = None
+    embedded_score = 0
+    for key in _DIAGNOSIS_KEYS + _KNOWLEDGE_KEYS + _TASK_KEYS:
+        nested = value.get(key)
+        if not isinstance(nested, str) or not _looks_like_structured_analysis_text(_strip_code_fence(nested)):
+            continue
+        decoded = _decode_structured_content(nested)
+        if decoded is None or (isinstance(decoded, str) and decoded.strip() == nested.strip()):
+            continue
+        candidate = _extract_analysis_fields(decoded, depth + 1)
+        score = sum(bool(candidate.get(k)) for k in _EMPTY_ANALYSIS)
+        if score > embedded_score:
+            embedded_best = candidate
+            embedded_score = score
+    if embedded_best and embedded_score > 0:
+        return embedded_best
+
     if is_valid_ai_analysis(direct):
-        return direct
+        # A malformed JSON fragment must not be treated as user-facing prose.
+        if any(_looks_like_structured_analysis_text(text) for text in direct.values() if text):
+            direct = dict(_EMPTY_ANALYSIS)
+        else:
+            return direct
 
     # 优先解包常见响应包装层，再兜底搜索其余嵌套对象。
     nested_values = [value[key] for key in _ANALYSIS_WRAPPER_KEYS if key in value]
@@ -596,8 +622,31 @@ def _extract_analysis_fields(value, depth: int = 0) -> dict:
 
 
 def _strip_code_fence(text: str) -> str:
-    match = re.search(r"```(?:json|javascript|js)?\s*([\s\S]*?)\s*```", text, re.IGNORECASE)
-    return match.group(1).strip() if match else text.strip()
+    """Strip complete or truncated Markdown code fences from model output.
+
+    A request can be interrupted after the opening `````json`` fence but before
+    the closing fence arrives. Keeping that marker in the payload makes the
+    otherwise defensive text fallback render raw JSON to the client.
+    """
+    value = str(text or "").strip()
+    match = re.search(r"```(?:json|javascript|js)?\s*([\s\S]*?)\s*```", value, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    value = re.sub(r"^```(?:json|javascript|js)?\s*", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*```$", "", value)
+    return value.strip()
+
+
+def _looks_like_structured_analysis_text(text: str) -> bool:
+    value = str(text or "").strip()
+    if not value:
+        return False
+    if value[:1] in {"{", "["}:
+        return True
+    keys = _DIAGNOSIS_KEYS + _KNOWLEDGE_KEYS + _TASK_KEYS
+    # Require quoted field names unless the payload already starts with {/[.
+    # Words such as "task" and "knowledge" can legitimately occur in prose.
+    return any(re.search(rf'(["\']){re.escape(key)}\1\s*:', value, re.IGNORECASE) for key in keys)
 
 
 def _decode_structured_content(raw: str):
@@ -635,6 +684,10 @@ def _parse_titled_analysis_text(text: str) -> dict:
     )
     matches = list(heading_re.finditer(stripped))
     if not matches:
+        # Never downgrade malformed/truncated structured output to plain prose.
+        # Doing so would expose literal ```json / { ... } content in wrong-detail.
+        if _looks_like_structured_analysis_text(stripped):
+            return dict(_EMPTY_ANALYSIS)
         return {"mistake_diagnosis": stripped, "knowledge_patch": "", "review_task": ""}
 
     result = dict(_EMPTY_ANALYSIS)
@@ -744,6 +797,8 @@ def _analysis_cache_stale_reason(
 ) -> str | None:
     if not isinstance(ai_analysis, dict) or len(ai_analysis) == 0:
         return "empty"
+    if not is_valid_ai_analysis(_normalize_ai_analysis(ai_analysis)):
+        return "content_invalid"
     meta = ai_analysis.get("_meta") or {}
     if meta.get("version", "") != AI_ANALYSIS_PROMPT_VERSION:
         return "prompt_version"
@@ -884,7 +939,7 @@ async def evaluate_cached_error_analysis(
     )
     return {
         "status": "ready",
-        "analysis": wq.ai_analysis,
+        "analysis": _normalize_ai_analysis(wq.ai_analysis),
         "reason": None,
         "age_ms": age_ms,
     }

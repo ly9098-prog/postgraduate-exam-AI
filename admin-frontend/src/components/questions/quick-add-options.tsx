@@ -109,15 +109,15 @@ export function QuickAddOptions({
   };
 
   return (
-    <div className="rounded-xl border border-[var(--color-border)]/60 bg-white/80 p-4 shadow-sm">
+    <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/40 px-3.5 py-3">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
         disabled={disabled}
-        className="flex w-full items-center justify-between gap-2 text-left"
+        className="flex w-full items-center justify-between gap-2 text-left text-slate-600 transition hover:text-slate-900"
       >
-        <span className="flex items-center gap-2 text-xs font-semibold text-[var(--color-text-secondary)]">
-          <ListPlus className="h-4 w-4 text-[var(--color-primary)]" />
+        <span className="flex items-center gap-2 text-xs font-medium">
+          <ListPlus className="h-4 w-4 text-slate-400" />
           快捷添加选项
         </span>
         <ChevronDown
@@ -129,7 +129,7 @@ export function QuickAddOptions({
         <div className="mt-3 space-y-3">
           <div>
             <textarea
-              className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-[var(--porcelain)] px-3 py-2 font-mono text-xs leading-5 outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
+              className="min-h-24 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs leading-5 text-slate-700 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
               placeholder={"每行一个选项，例如：\nA. 首项内容\n第二项内容（自动分配字母）"}
               value={text}
               disabled={busy}

@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
-from app.models.admin import QuestionVersion, Subject
+from app.models.admin import AdminUser, QuestionVersion, QuestionVersionKnowledgePoint, Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.question import Question
 from app.models.question_import import QuestionImport
@@ -281,16 +281,30 @@ async def _next_question_version(db: AsyncSession, question_id: int) -> int:
     return int(version or 0) + 1
 
 
-def _question_snapshot(question: Question, kps: list[str]) -> dict[str, Any]:
-    """版本历史快照（操作发生前的值）。knowledge_points 用显式 before 列表。"""
+def _question_snapshot(question: Question) -> dict[str, Any]:
+    """版本历史中的标量/JSON 快照；知识点改由关联表单独保存。"""
     return {
         "content": question.content,
         "options": question.options,
         "answer": question.answer,
         "analysis": question.analysis,
         "difficulty": question.difficulty,
-        "knowledge_points": kps,
     }
+
+
+async def _question_kp_link_snapshot(
+    db: AsyncSession, question_id: int
+) -> list[tuple[int, int]]:
+    """读取当前题目的知识点主键和顺序，用于创建不可变的版本关联快照。"""
+    result = await db.execute(
+        select(
+            QuestionKnowledgePoint.knowledge_point_id,
+            QuestionKnowledgePoint.position,
+        )
+        .where(QuestionKnowledgePoint.question_id == question_id)
+        .order_by(QuestionKnowledgePoint.position, QuestionKnowledgePoint.id)
+    )
+    return [(int(kp_id), int(position)) for kp_id, position in result.all()]
 
 
 async def update_admin_question(
@@ -323,18 +337,30 @@ async def update_admin_question(
     if not changed_fields:
         return question
 
-    # Create version snapshot (only when real changes exist) — 用操作前值
+    # Create version snapshot (only when real changes exist) — 用操作前值。
+    # knowledge_points 不再复制名称 JSON，而是复制当前 question_knowledge_points 的主键关联。
     before_changed = {f: _edit_field_value(question, f, before_kps) for f in changed_fields}
-    snapshot = _question_snapshot(question, before_kps)
-    db.add(
-        QuestionVersion(
-            question_id=question.id,
-            version=await _next_question_version(db, question.id),
-            edited_by=operator.id,
-            edit_reason=edit_reason,
-            **snapshot,
-        )
+    before_kp_links = await _question_kp_link_snapshot(db, question.id)
+    version_snapshot = QuestionVersion(
+        question_id=question.id,
+        version=await _next_question_version(db, question.id),
+        edited_by=operator.id,
+        edit_reason=edit_reason,
+        **_question_snapshot(question),
     )
+    db.add(version_snapshot)
+    await db.flush()  # 先取得 question_versions.id，作为关联表外键
+    if before_kp_links:
+        db.add_all(
+            [
+                QuestionVersionKnowledgePoint(
+                    question_version_id=version_snapshot.id,
+                    knowledge_point_id=knowledge_point_id,
+                    position=position,
+                )
+                for knowledge_point_id, position in before_kp_links
+            ]
+        )
 
     # subject_id 优先应用，使后续 KP sync 使用新科目（subject 不变量）
     if "subject_id" in changed_fields:
@@ -663,24 +689,81 @@ async def toggle_active_admin_question(
     return question
 
 
-async def list_question_versions(db: AsyncSession, question_id: int, page: int, page_size: int) -> tuple[list[QuestionVersion], int]:
+def _question_version_payload(
+    question_version: QuestionVersion,
+    editor_display_name: str | None,
+    editor_username: str | None,
+) -> dict[str, Any]:
+    """Serialize a version and include a stable editor display label.
+
+    Prefer the administrator's display name, then username. Keeping the fallback
+    nullable lets the frontend render the numeric editor id if an old record no
+    longer has resolvable administrator metadata.
+    """
+    data = {
+        column.key: getattr(question_version, column.key)
+        for column in question_version.__mapper__.columns
+    }
+    data["edited_by_name"] = (editor_display_name or "").strip() or (editor_username or "").strip() or None
+    return data
+
+
+async def list_question_versions(
+    db: AsyncSession, question_id: int, page: int, page_size: int
+) -> tuple[list[dict[str, Any]], int]:
     await get_admin_question(db, question_id)
-    count_query = select(func.count()).select_from(QuestionVersion).where(QuestionVersion.question_id == question_id)
+    count_query = (
+        select(func.count())
+        .select_from(QuestionVersion)
+        .where(QuestionVersion.question_id == question_id)
+    )
     total = await db.scalar(count_query)
     result = await db.execute(
-        select(QuestionVersion)
+        select(QuestionVersion, AdminUser.display_name, AdminUser.username)
+        .outerjoin(AdminUser, AdminUser.id == QuestionVersion.edited_by)
         .where(QuestionVersion.question_id == question_id)
         .order_by(QuestionVersion.version.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    return list(result.scalars().all()), int(total or 0)
+    versions = [
+        _question_version_payload(question_version, display_name, username)
+        for question_version, display_name, username in result.all()
+    ]
+    return versions, int(total or 0)
 
 
-async def get_question_version_detail(db: AsyncSession, question_id: int, version: int) -> QuestionVersion:
+async def get_question_version_detail(
+    db: AsyncSession, question_id: int, version: int
+) -> dict[str, Any]:
     await get_admin_question(db, question_id)
-    result = await db.execute(select(QuestionVersion).where(QuestionVersion.question_id == question_id, QuestionVersion.version == version))
-    question_version = result.scalar_one_or_none()
-    if not question_version:
+    result = await db.execute(
+        select(QuestionVersion, AdminUser.display_name, AdminUser.username)
+        .outerjoin(AdminUser, AdminUser.id == QuestionVersion.edited_by)
+        .where(
+            QuestionVersion.question_id == question_id,
+            QuestionVersion.version == version,
+        )
+    )
+    row = result.one_or_none()
+    if not row:
         raise ValueError("版本不存在")
-    return question_version
+    question_version, editor_display_name, editor_username = row
+
+    kp_result = await db.execute(
+        select(KnowledgePoint.name)
+        .join(
+            QuestionVersionKnowledgePoint,
+            QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+        )
+        .where(QuestionVersionKnowledgePoint.question_version_id == question_version.id)
+        .order_by(
+            QuestionVersionKnowledgePoint.position,
+            QuestionVersionKnowledgePoint.id,
+        )
+    )
+    data = _question_version_payload(
+        question_version, editor_display_name, editor_username
+    )
+    data["knowledge_points"] = list(kp_result.scalars().all())
+    return data

@@ -183,7 +183,7 @@ export function QuestionImageField({
       {showImage ? (
         isRow ? (
           /* ── Row: compact square thumbnail with hover replace/delete ── */
-          <div className="group/img relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-[var(--color-border)]/60 bg-white">
+          <div className="group/img relative h-9 w-9 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
             <img src={showImage} alt={alt} className="h-full w-full object-cover" />
             <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-black/45 opacity-0 transition-opacity duration-150 group-hover/img:opacity-100">
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-white" /> : overlayButtons}
@@ -191,7 +191,7 @@ export function QuestionImageField({
           </div>
         ) : (
           /* ── Hero: large stem image fills the insert area ── */
-          <div className="group/img relative overflow-hidden rounded-xl border border-[var(--color-border)]/60 bg-white shadow-[var(--shadow-card)]">
+          <div className="group/img relative overflow-hidden rounded-lg border border-slate-200 bg-white">
             <img
               src={showImage}
               alt={alt}
@@ -210,7 +210,7 @@ export function QuestionImageField({
           disabled={busy}
           title={addLabel}
           aria-label={addLabel}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--porcelain)]/60 text-[var(--color-text-hint)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:cursor-wait disabled:opacity-60"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white text-slate-400 transition hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-wait disabled:opacity-60"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
         </button>
@@ -220,7 +220,7 @@ export function QuestionImageField({
           type="button"
           onClick={triggerPicker}
           disabled={busy}
-          className="flex h-28 w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--porcelain)]/60 text-[var(--color-text-hint)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] disabled:cursor-wait disabled:opacity-60"
+          className="flex h-24 w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-200 bg-slate-50/40 text-slate-400 transition hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:cursor-wait disabled:opacity-60"
         >
           {busy ? (
             <Loader2 className="h-5 w-5 animate-spin" />

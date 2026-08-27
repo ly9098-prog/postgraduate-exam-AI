@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 
@@ -35,6 +36,13 @@ _CACHE_SCHEMA_VERSION = "s1"
 # unbounded disk growth from stale cache entries (engine upgrade, config change).
 _CLEANUP_INTERVAL = 200
 _cache_write_counter = 0
+
+# Process-lifetime lookup metrics.  These counters intentionally live in the
+# API process and are used by pipeline profiling/alerting.  They are guarded
+# because cache lookups can be issued from concurrent request/executor paths.
+_cache_stats_lock = threading.Lock()
+_cache_hits = 0
+_cache_misses = 0
 
 
 @dataclass
@@ -162,11 +170,15 @@ def get_cached(
     if not _ENABLED:
         return None
 
+    global _cache_hits, _cache_misses
+
     try:
         sha256, fingerprint = make_cache_key(image_bytes)
         path = _cache_path(sha256, fingerprint)
         entry = _load_entry(path)
         if entry is not None and entry.config_hash == fingerprint:
+            with _cache_stats_lock:
+                _cache_hits += 1
             logger.debug("OCR cache HIT: sha256=%s... path=%s", sha256[:12], path)
             return entry
         if entry is not None:
@@ -177,6 +189,8 @@ def get_cached(
     except Exception as e:
         logger.warning("OCR cache lookup failed, falling through: %s", e)
 
+    with _cache_stats_lock:
+        _cache_misses += 1
     return None
 
 
@@ -231,8 +245,16 @@ def set_cached(
 
 
 def get_cache_stats() -> dict:
-    """返回缓存统计信息。"""
+    """Return process-lifetime OCR cache metrics and configuration metadata."""
+    with _cache_stats_lock:
+        hits = _cache_hits
+        misses = _cache_misses
+
+    total = hits + misses
     return {
+        "hits": hits,
+        "misses": misses,
+        "hit_rate": round(hits / total, 4) if total > 0 else 0.0,
         "enabled": _ENABLED,
         "cache_dir": _CACHE_DIR,
         "config_hash": _build_engine_fingerprint(),

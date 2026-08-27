@@ -181,9 +181,60 @@ class QuestionVersion(Base):
     answer: Mapped[str] = mapped_column(Text, nullable=False)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    knowledge_points: Mapped[list | None] = mapped_column(JSON, nullable=True)
     edited_by: Mapped[int] = mapped_column(ForeignKey("admin_users.id"), nullable=False, index=True)
     edit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     editor: Mapped[AdminUser] = relationship(back_populates="question_versions")
+    knowledge_point_links: Mapped[list["QuestionVersionKnowledgePoint"]] = relationship(
+        back_populates="question_version",
+        lazy="noload",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="(QuestionVersionKnowledgePoint.position, QuestionVersionKnowledgePoint.id)",
+    )
+
+
+class QuestionVersionKnowledgePoint(Base):
+    """题目版本-知识点映射；question_versions.id 是历史快照的关联主键。"""
+
+    __tablename__ = "question_version_knowledge_points"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
+    question_version_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("question_versions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    knowledge_point_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("knowledge_points.id"),
+        nullable=False,
+        index=True,
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    question_version: Mapped[QuestionVersion] = relationship(
+        back_populates="knowledge_point_links",
+        lazy="noload",
+    )
+    knowledge_point = relationship("KnowledgePoint", lazy="noload")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "question_version_id",
+            "knowledge_point_id",
+            name="uq_qvkp_version_kp",
+        ),
+        UniqueConstraint(
+            "question_version_id",
+            "position",
+            name="uq_qvkp_version_position",
+        ),
+    )

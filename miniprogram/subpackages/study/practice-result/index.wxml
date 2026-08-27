@@ -1,11 +1,13 @@
 <view class="page">
   <!-- 顶部成绩区 -->
-  <view class="hero">
+  <view class="hero" style="padding-top: {{heroTopPaddingPx}}px;">
     <view class="hero-grid"></view>
 
     <view class="nav">
-      <view class="nav-back" bindtap="handleBack" aria-label="返回">
-        <text class="nav-back-icon">‹</text>
+      <view class="nav-back-hit" bindtap="handleBack" aria-label="返回">
+        <view class="nav-back">
+          <text class="nav-back-icon">‹</text>
+        </view>
       </view>
       <text class="nav-title">练习结果</text>
       <view class="nav-placeholder"></view>

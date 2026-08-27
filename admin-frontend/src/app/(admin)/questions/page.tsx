@@ -23,6 +23,8 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Star,
+  ArrowLeft,
+  ArrowLeftRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -34,7 +36,13 @@ import { StructuredTableEditor } from "@/components/structured-table-editor";
 import { QuestionOptions } from "@/components/question-options";
 import { QuestionImageField } from "@/components/questions/question-image-field";
 import { QuestionAnalysis } from "@/components/questions/question-analysis";
+import { QuestionAnalysisEditor } from "@/components/questions/question-analysis-editor";
+import { QuestionKnowledgePointsDisplay, QuestionKnowledgePointsEditor } from "@/components/questions/question-knowledge-points-editor";
 import { QuickAddOptions } from "@/components/questions/quick-add-options";
+import {
+  QuestionVersionPicker,
+  type QuestionVersionSelection,
+} from "@/components/questions/question-version-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import {
   resolveQuestionOptions,
@@ -80,6 +88,7 @@ const pageSizeOptions = [
 const KEYWORD_DEBOUNCE_MS = 300;
 const IMPORT_BATCH_DEBOUNCE_MS = 450;
 const BATCH_DELETE_CHUNK_SIZE = 50;
+const VERSION_HISTORY_PAGE_SIZE = 100;
 
 type ConfirmState =
   | { action: "batch-delete" }
@@ -166,6 +175,17 @@ function textFromContent(
   return JSON.stringify(content, null, 2);
 }
 
+function normalizeStemEditorText(value: string) {
+  return String(value ?? "")
+    .replace(/\r\n?/g, "\n")
+    // Imported/OCR stems occasionally contain hard wraps that are only layout
+    // artifacts. Keep intentional blank-line paragraphs, but flatten single
+    // hard wraps so the editor does not preserve accidental line breaks.
+    .replace(/([^\n])\n(?=[^\n])/g, "$1 ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 function renderJson(value: unknown) {
   if (value === undefined || value === null || value === "") return "—";
   if (
@@ -177,32 +197,101 @@ function renderJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
-function renderDiff(label: string, current: unknown, previous: unknown) {
-  const cur = renderJson(current);
-  const prev = renderJson(previous);
-  const changed = cur !== prev;
+function renderVersionValue(label: string, value: unknown, emphasized = false) {
+  if (label === "题干") {
+    const content = value as Record<string, unknown> | string | null | undefined;
+    return (
+      <div className={`min-w-0 text-slate-600 [overflow-wrap:anywhere] ${emphasized ? "text-sm leading-7" : "text-xs leading-6"}`}>
+        <QuestionContentRenderer
+          content={content}
+          fallbackText={textFromContent(content)}
+        />
+      </div>
+    );
+  }
+
+  if (label === "选项") {
+    const options = normalizeQuestionOptions(value as QuestionOptionsValue | undefined);
+    if (options.length === 0) return <span className="text-xs text-slate-400">—</span>;
+    return (
+      <div className="space-y-1.5">
+        {options.map((option) => (
+          <div key={option.key} className="flex items-start gap-2 text-xs leading-5 text-slate-600">
+            <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded bg-slate-100 font-semibold text-slate-500">
+              {option.key}
+            </span>
+            <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+              <MathFormula text={option.text || "—"} />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (label === "答案") {
+    return (
+      <div className="min-w-0 text-xs leading-6 text-slate-600 [overflow-wrap:anywhere]">
+        <MathFormula text={value == null || value === "" ? "—" : String(value)} />
+      </div>
+    );
+  }
+
+  if (label === "解析") {
+    return (
+      <div className="min-w-0 text-xs [&_*]:max-w-full">
+        <QuestionAnalysis
+          value={typeof value === "string" ? value : value ? JSON.stringify(value) : ""}
+          compact
+        />
+      </div>
+    );
+  }
+
+  if (label === "知识点") {
+    return <QuestionKnowledgePointsDisplay value={Array.isArray(value) ? value : []} />;
+  }
+
+  if (label === "难度") {
+    const difficulty = Number(value);
+    return Number.isFinite(difficulty) ? <DifficultyBadge difficulty={difficulty} /> : <span className="text-xs text-slate-400">—</span>;
+  }
+
+  const text = renderJson(value);
+  return <div className="whitespace-pre-wrap break-words text-xs leading-6 text-slate-600">{text}</div>;
+}
+
+function renderDiff(
+  label: string,
+  leftValue: unknown,
+  rightValue: unknown,
+  leftTitle: string,
+  rightTitle: string,
+) {
+  const left = renderJson(leftValue);
+  const right = renderJson(rightValue);
+  const changed = left !== right;
   return (
-    <section key={label} className="space-y-1">
-      <p className="font-semibold text-[var(--ink)]">{label}</p>
+    <section key={label} className={`rounded-xl border border-slate-200 bg-white ${label === "解析" ? "p-3" : "p-4"}`}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-slate-900">{label}</p>
+        <span className={`rounded-md px-2 py-1 text-[10px] font-medium ${changed ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
+          {changed ? "有变更" : "无变更"}
+        </span>
+      </div>
       {changed ? (
-        <div className="space-y-1 rounded-2xl border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-3">
-          <p className="text-xs font-semibold text-[var(--color-warning)]">
-            变更前
-          </p>
-          <pre className="whitespace-pre-wrap text-xs text-[var(--color-text-secondary)] line-through">
-            {prev}
-          </pre>
-          <p className="text-xs font-semibold text-[var(--color-success)]">
-            变更后
-          </p>
-          <pre className="whitespace-pre-wrap text-xs text-[var(--color-success)]">
-            {cur}
-          </pre>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className={`min-w-0 rounded-lg bg-amber-50/70 ${label === "解析" ? "p-2.5" : "p-3"}`}>
+            <p className="mb-2 text-[10px] font-semibold tracking-wide text-amber-700">{leftTitle}</p>
+            {renderVersionValue(label, leftValue)}
+          </div>
+          <div className={`min-w-0 rounded-lg bg-emerald-50/60 ${label === "解析" ? "p-2.5" : "p-3"}`}>
+            <p className="mb-2 text-[10px] font-semibold tracking-wide text-emerald-700">{rightTitle}</p>
+            {renderVersionValue(label, rightValue)}
+          </div>
         </div>
       ) : (
-        <pre className="whitespace-pre-wrap rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-3 text-xs text-[var(--color-text-secondary)]">
-          {cur}
-        </pre>
+        <div className="rounded-lg bg-slate-50 p-3">{renderVersionValue(label, leftValue, label === "题干")}</div>
       )}
     </section>
   );
@@ -424,7 +513,11 @@ export default function QuestionsPage() {
       items.flatMap((item) => [item, ...flattenSubjects(item.children ?? [])]);
 
     apiRequest<{ items: SubjectNode[] }>("/subjects")
-      .then((response) => setSubjectOptions(flattenSubjects(response.items ?? [])))
+      .then((response) =>
+        setSubjectOptions(
+          flattenSubjects(response.items ?? []).filter((subject) => subject.level > 1),
+        ),
+      )
       .catch(() => {});
   }, []);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -434,7 +527,9 @@ export default function QuestionsPage() {
     null,
   );
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
-  const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  const [baseVersion, setBaseVersion] = useState<QuestionVersionSelection>("current");
+  const [compareVersion, setCompareVersion] = useState<QuestionVersionSelection | null>(null);
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -443,6 +538,12 @@ export default function QuestionsPage() {
   const [exportingFormat, setExportingFormat] = useState<"csv" | "docx" | null>(null);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<QuestionEditRequest>({});
+
+  useEffect(() => {
+    setVersionHistoryOpen(false);
+    setBaseVersion("current");
+    setCompareVersion(null);
+  }, [selectedQuestionId]);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const commonFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const moreFilterRef = useRef<HTMLDivElement | null>(null);
@@ -486,23 +587,71 @@ export default function QuestionsPage() {
 
   const versions = useQuery({
     queryKey: ["questions", selectedQuestionId, "versions"],
-    queryFn: () =>
-      apiRequest<PaginatedResponse<QuestionVersion>>(
-        `/questions/${selectedQuestionId}/versions${toQuery({ page: 1, page_size: 20 })}`,
-      ),
+    queryFn: async () => {
+      const firstPage = await apiRequest<PaginatedResponse<QuestionVersion>>(
+        `/questions/${selectedQuestionId}/versions${toQuery({
+          page: 1,
+          page_size: VERSION_HISTORY_PAGE_SIZE,
+        })}`,
+      );
+      if (firstPage.total_pages <= 1) return firstPage;
+
+      // 通常只有几十个版本；超过 100 个时在后台并行补齐后续页，
+      // 选择器仍呈现为一条连续的时间轴，不把“页”的概念暴露给用户。
+      const remainingPages = await Promise.all(
+        Array.from({ length: firstPage.total_pages - 1 }, (_, index) =>
+          apiRequest<PaginatedResponse<QuestionVersion>>(
+            `/questions/${selectedQuestionId}/versions${toQuery({
+              page: index + 2,
+              page_size: VERSION_HISTORY_PAGE_SIZE,
+            })}`,
+          ),
+        ),
+      );
+      return {
+        ...firstPage,
+        items: [
+          ...firstPage.items,
+          ...remainingPages.flatMap((response) => response.items),
+        ],
+      };
+    },
     enabled: selectedQuestionId !== null,
     retry: false,
   });
 
-  const versionDetail = useQuery({
-    queryKey: ["questions", selectedQuestionId, "versions", selectedVersion],
+  const baseVersionDetail = useQuery({
+    queryKey: ["questions", selectedQuestionId, "versions", baseVersion],
     queryFn: () =>
       apiRequest<QuestionVersionDetail>(
-        `/questions/${selectedQuestionId}/versions/${selectedVersion}`,
+        `/questions/${selectedQuestionId}/versions/${baseVersion}`,
       ),
-    enabled: selectedQuestionId !== null && selectedVersion !== null,
+    enabled: selectedQuestionId !== null && typeof baseVersion === "number",
+    // 切换版本时保留上一份已完成的数据，避免对比区域先塌缩成 loading 再重新撑开。
+    placeholderData: (previousData) =>
+      previousData?.question_id === selectedQuestionId ? previousData : undefined,
     retry: false,
   });
+
+  const compareVersionDetail = useQuery({
+    queryKey: ["questions", selectedQuestionId, "versions", compareVersion],
+    queryFn: () =>
+      apiRequest<QuestionVersionDetail>(
+        `/questions/${selectedQuestionId}/versions/${compareVersion}`,
+      ),
+    enabled: selectedQuestionId !== null && typeof compareVersion === "number",
+    placeholderData: (previousData) =>
+      previousData?.question_id === selectedQuestionId ? previousData : undefined,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!versionHistoryOpen || compareVersion !== null) return;
+    const latestHistoricalVersion = versions.data?.items?.[0]?.version;
+    if (latestHistoricalVersion !== undefined) {
+      setCompareVersion(latestHistoricalVersion);
+    }
+  }, [compareVersion, versionHistoryOpen, versions.data?.items]);
 
   const deleteMutation = useMutation({
     mutationFn: async (state: Exclude<ConfirmState, null>) => {
@@ -613,6 +762,35 @@ export default function QuestionsPage() {
   const allChecked =
     items.length > 0 && items.every((item) => selectedIds.has(item.id));
   const selectedQuestion = detail.data;
+  const baseVersionData =
+    baseVersion === "current" ? selectedQuestion : baseVersionDetail.data;
+  const compareVersionData =
+    compareVersion === "current" ? selectedQuestion : compareVersionDetail.data;
+  // placeholderData 会在新版本到达前保留上一份详情，因此标签也跟随“当前实际展示的数据”
+  // 而不是提前切到新版本号，避免短暂出现“新标签 + 旧内容”的错觉。
+  const baseVersionLabel =
+    baseVersion === "current"
+      ? "当前版本"
+      : baseVersionDetail.data?.version
+        ? `v${baseVersionDetail.data.version}`
+        : `v${baseVersion}`;
+  const compareVersionLabel =
+    compareVersion === "current"
+      ? "当前版本"
+      : compareVersion === null
+        ? "请选择版本"
+        : compareVersionDetail.data?.version
+          ? `v${compareVersionDetail.data.version}`
+          : `v${compareVersion}`;
+  const versionComparisonLoading =
+    (typeof baseVersion === "number" && baseVersionDetail.isFetching) ||
+    (typeof compareVersion === "number" && compareVersionDetail.isFetching);
+  const pendingVersionLabel =
+    typeof baseVersion === "number" && baseVersionDetail.isFetching
+      ? `v${baseVersion}`
+      : typeof compareVersion === "number" && compareVersionDetail.isFetching
+        ? `v${compareVersion}`
+        : null;
   const editingSegments = useMemo(
     () => contentSegments(editForm.content),
     [editForm.content],
@@ -946,7 +1124,6 @@ export default function QuestionsPage() {
 
   const selectQuestion = useCallback((id: number) => {
     setSelectedQuestionId(id);
-    setSelectedVersion(null);
     setEditing(false);
     setEditForm({});
   }, []);
@@ -977,7 +1154,6 @@ export default function QuestionsPage() {
     }
     if (selectedQuestionId === null || !items.some((item) => item.id === selectedQuestionId)) {
       setSelectedQuestionId(items[0].id);
-      setSelectedVersion(null);
       setEditing(false);
       setEditForm({});
     }
@@ -996,7 +1172,7 @@ export default function QuestionsPage() {
     // Pre-fill form from current question data
     const content = selectedQuestion.content;
     const clonedContent = JSON.parse(JSON.stringify(content ?? {})) as Record<string, unknown>;
-    const stem = textFromContent(clonedContent);
+    const stem = normalizeStemEditorText(textFromContent(clonedContent));
     const rawOpts = resolveQuestionOptions(selectedQuestion);
     let editOpts: Record<string, unknown> | undefined;
     if (rawOpts && typeof rawOpts === "object" && !Array.isArray(rawOpts)) {
@@ -1019,11 +1195,22 @@ export default function QuestionsPage() {
       knowledge_points: selectedQuestion.knowledge_points ?? undefined,
     });
     setEditing(true);
+    window.requestAnimationFrame(() => {
+      detailScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    });
   };
 
   const cancelEditing = () => {
+    if (dirty && !window.confirm("当前修改尚未保存，确定放弃修改吗？")) return;
     setEditing(false);
     setEditForm({});
+  };
+
+  const closeDetailDrawer = () => {
+    if (editing && dirty && !window.confirm("当前修改尚未保存，确定关闭详情抽屉吗？")) return;
+    setEditing(false);
+    setEditForm({});
+    setIsDetailDrawerOpen(false);
   };
 
   const confirmDescription =
@@ -1167,7 +1354,7 @@ export default function QuestionsPage() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <CustomSelect
-                      className="h-9 rounded-xl border-0 bg-transparent pl-0 pr-1 shadow-none ring-0 hover:border-transparent"
+                      className="h-9 rounded-xl !border-0 !bg-transparent pl-0 pr-1 shadow-none !ring-0 hover:!border-transparent"
                       value={filters.subject_id}
                       onChange={(v) => updateFilter("subject_id", v)}
                       options={[
@@ -1187,7 +1374,7 @@ export default function QuestionsPage() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <CustomSelect
-                      className="h-9 rounded-xl border-0 bg-transparent pl-0 pr-1 shadow-none ring-0 hover:border-transparent"
+                      className="h-9 rounded-xl !border-0 !bg-transparent pl-0 pr-1 shadow-none !ring-0 hover:!border-transparent"
                       placeholder="全部题型"
                       value={filters.question_type}
                       onChange={(v) => updateFilter("question_type", v)}
@@ -1202,7 +1389,7 @@ export default function QuestionsPage() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <CustomSelect
-                      className="h-9 rounded-xl border-0 bg-transparent pl-0 pr-1 shadow-none ring-0 hover:border-transparent"
+                      className="h-9 rounded-xl !border-0 !bg-transparent pl-0 pr-1 shadow-none !ring-0 hover:!border-transparent"
                       value={filters.is_active}
                       onChange={(v) => updateFilter("is_active", v)}
                       options={activeOptions}
@@ -1210,13 +1397,13 @@ export default function QuestionsPage() {
                   </div>
                 </div>
 
-                <label className="flex h-11 min-w-0 items-center rounded-2xl border border-[var(--color-border)] bg-white px-3 shadow-sm transition focus-within:border-[var(--color-primary-light)]">
+                <label className="flex h-11 min-w-0 items-center rounded-2xl border border-[var(--color-border)] bg-white px-3 shadow-sm">
                   <span className="mr-3 shrink-0 text-xs font-semibold text-[var(--color-text-secondary)]">
                     年份
                   </span>
-                  <Input
+                  <input
                     inputMode="numeric"
-                    className="h-9 min-w-0 border-0 bg-transparent px-0 text-sm shadow-none focus:bg-transparent focus:ring-0"
+                    className="h-9 min-w-0 flex-1 border-0 bg-transparent px-0 text-sm text-[var(--color-text-primary)] outline-none shadow-none placeholder:text-[var(--color-text-hint)] focus:border-0 focus:outline-none focus:ring-0"
                     placeholder="选择年份"
                     value={filters.year}
                     maxLength={4}
@@ -1235,7 +1422,7 @@ export default function QuestionsPage() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <CustomSelect
-                      className="h-9 rounded-xl border-0 bg-transparent pl-0 pr-1 shadow-none ring-0 hover:border-transparent"
+                      className="h-9 rounded-xl !border-0 !bg-transparent pl-0 pr-1 shadow-none !ring-0 hover:!border-transparent"
                       value={filters.difficulty}
                       onChange={(v) => updateFilter("difficulty", v)}
                       options={difficultyOptions}
@@ -1598,7 +1785,7 @@ export default function QuestionsPage() {
 
             <aside className="hidden xl:block xl:min-h-0 xl:self-stretch">
               <div className="xl:sticky xl:top-0 xl:h-dvh xl:min-h-0 xl:overflow-hidden">
-              <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[1.45rem] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-card)]">
+              <div className="flex h-full min-h-0 flex-col overflow-hidden border-l border-slate-200 bg-white p-5">
                 {selectedQuestionId === null ? (
                   <div className="flex min-h-0 flex-1 flex-col items-center justify-center text-center animate-fade-in">
                     <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-[var(--color-border)] bg-[var(--porcelain)] text-[var(--color-text-hint)] shadow-sm">
@@ -1617,7 +1804,7 @@ export default function QuestionsPage() {
                     key={selectedQuestion.id}
                     className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1 animate-fade-in [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   >
-                    <div className="sticky top-0 z-10 -mx-1 flex items-start justify-between gap-4 rounded-xl bg-white/94 px-1 pb-3 pt-0.5 backdrop-blur supports-[backdrop-filter]:bg-white/82">
+                    <div className="sticky top-0 z-10 -mx-1 flex items-start justify-between gap-4 border-b border-slate-200 bg-white/96 px-1 pb-4 pt-0.5 backdrop-blur supports-[backdrop-filter]:bg-white/88">
                       <div className="min-w-0">
                         <p className="font-mono text-xs uppercase tracking-[0.28em] text-[var(--color-text-hint)]">
                           Question
@@ -1633,14 +1820,14 @@ export default function QuestionsPage() {
                       <Button
                         variant="secondary"
                         onClick={() => setIsDetailDrawerOpen(true)}
-                        className="shrink-0 rounded-full"
+                        className="shrink-0 rounded-lg border-slate-200 bg-white shadow-none transition hover:bg-slate-50"
                       >
                         <FileQuestion className="h-4 w-4" />
                         完整详情
                       </Button>
                     </div>
 
-                    <section className="rounded-[1.3rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-5 shadow-sm">
+                    <section className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
                       <p className="mb-3 flex items-center justify-between gap-3 font-semibold text-[var(--ink)]">
                         <span>题干</span>
                         <span className="font-mono text-[11px] font-normal text-[var(--color-text-hint)]">
@@ -1655,7 +1842,7 @@ export default function QuestionsPage() {
                       </div>
                     </section>
 
-                    <section className="rounded-[1.3rem] border border-[var(--color-border)] bg-white p-4">
+                    <section className="rounded-xl border border-slate-200 bg-white p-4">
                       <p className="font-semibold text-[var(--ink)]">选项</p>
                       <div className="mt-3">
                         <QuestionOptions
@@ -1664,15 +1851,15 @@ export default function QuestionsPage() {
                       </div>
                     </section>
 
-                    <section className="rounded-[1.3rem] border border-[var(--color-success-light)] bg-[var(--color-success-light)] p-4">
-                      <p className="font-semibold text-[var(--color-success)]">答案</p>
-                      <div className="mt-2 whitespace-pre-wrap text-base font-semibold leading-7 text-[var(--ink)]">
+                    <section className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="font-semibold text-slate-950">答案</p>
+                      <div className="mt-2 inline-flex min-h-9 items-center rounded-md bg-slate-50 px-2.5 py-1.5 text-sm font-semibold leading-6 text-slate-800">
                         <MathFormula text={selectedQuestion.answer || "—"} />
                       </div>
                     </section>
 
-                    <section className="rounded-[1.3rem] border border-[var(--color-border)] bg-white p-4">
-                      <p className="font-semibold text-[var(--ink)]">解析</p>
+                    <section className="rounded-xl border border-slate-200 bg-white p-4">
+                      <p className="font-semibold text-slate-950">解析</p>
                       <div className="mt-3">
                         <QuestionAnalysis value={selectedQuestion.analysis} compact />
                       </div>
@@ -1762,32 +1949,56 @@ export default function QuestionsPage() {
       {/* Detail drawer */}
       {isDetailDrawerOpen && selectedQuestionId !== null ? (
         <div
-          className="fixed inset-0 z-40 flex justify-end bg-[rgba(16,24,40,0.42)] backdrop-blur-[2px] animate-fade-in"
-          onClick={() => setIsDetailDrawerOpen(false)}
+          className="fixed inset-0 z-40 flex justify-end bg-slate-950/25 backdrop-blur-[1px] animate-fade-in"
+          onClick={closeDetailDrawer}
         >
           <aside
-            className="h-full w-full max-w-3xl overflow-y-auto bg-white p-6 shadow-[var(--shadow-floating)] animate-drop-in"
+            className="question-detail-drawer h-full w-full max-w-[880px] overflow-y-auto border-l border-slate-200/80 bg-white shadow-[-18px_0_52px_rgba(15,23,42,0.12)] animate-drop-in"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-4">
-              <h3 className="font-display text-2xl font-bold text-[var(--ink)]">
-                {editing ? "编辑题目" : "题目详情"}
-                {!editing && (
-                  <span className="ml-2 font-mono text-base text-[var(--color-text-hint)]">
-                    #{selectedQuestionId}
-                  </span>
-                )}
-              </h3>
-              <div className="flex items-center gap-2">
-                {!editing && canWrite && (
-                  <Button variant="secondary" onClick={startEditing}>
-                    <Pencil className="h-4 w-4" />
+            <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-4 border-b border-slate-200/80 bg-white/95 px-7 py-3 backdrop-blur-xl">
+              <div className="flex min-w-0 items-center gap-3">
+                {editing ? (
+                  <button
+                    type="button"
+                    onClick={cancelEditing}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                    aria-label="返回题目详情"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </button>
+                ) : null}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="truncate text-[17px] font-semibold tracking-[-0.01em] text-slate-950">
+                      {editing ? "编辑题目" : "题目详情"}
+                    </h3>
+                    {editing && dirty ? (
+                      <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">未保存</span>
+                    ) : null}
+                    {!editing ? (
+                      <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-500">
+                        #{selectedQuestionId}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-slate-400">
+                    {editing ? "修改题目内容、知识点与解析模块" : "查看题目内容与结构化解析信息"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {!editing && canWrite ? (
+                  <Button variant="secondary" size="sm" onClick={startEditing} className="border-slate-200 bg-white shadow-none">
+                    <Pencil className="h-3.5 w-3.5" />
                     编辑
                   </Button>
-                )}
-                {!editing && canDelete && (
+                ) : null}
+                {!editing && canDelete ? (
                   <Button
-                    variant="danger"
+                    variant="ghost"
+                    size="sm"
+                    className="text-slate-500 hover:bg-red-50 hover:text-red-600"
                     onClick={() =>
                       setConfirmState({
                         action: "delete",
@@ -1795,24 +2006,27 @@ export default function QuestionsPage() {
                       })
                     }
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
                     删除
                   </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  onClick={() => setIsDetailDrawerOpen(false)}
+                ) : null}
+                <button
+                  type="button"
+                  onClick={closeDetailDrawer}
+                  className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-900"
+                  aria-label="关闭题目详情"
                 >
-                  关闭
-                </Button>
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-            </div>
+            </header>
 
             {selectedQuestion ? (
               editing ? (
                 /* ===== Edit form ===== */
-                <div className="mt-6 space-y-5">
-                  <div className="grid gap-3 md:grid-cols-3">
+                <div className="question-drawer-edit px-7 pb-24 pt-1">
+                  <section className="border-b border-slate-200 py-5">
+                    <div className="grid gap-x-4 gap-y-3 md:grid-cols-3">
                     <div className="space-y-1">
                       <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
                         科目
@@ -1820,7 +2034,10 @@ export default function QuestionsPage() {
                       <CustomSelect
                         value={String(editForm.subject_id ?? "")}
                         onChange={(v) => setEditForm({ ...editForm, subject_id: v ? Number(v) : null })}
-                        options={[{ label: "未设置", value: "" }, ...subjectOptions.map((s) => ({ label: s.name, value: String(s.id) }))]}
+                        options={subjectOptions.map((s) => ({ label: s.name, value: String(s.id) }))}
+                        placeholder="选择科目"
+                        clearable={false}
+                        className="rounded-lg border-slate-200 bg-slate-50/60 shadow-none hover:border-slate-400"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1840,6 +2057,7 @@ export default function QuestionsPage() {
                           : [...QUESTION_TYPE_OPTIONS, { value: editForm.question_type!, label: formatUnknownType(editForm.question_type!), disabled: true }]
                         }
                         clearable={false}
+                        className="rounded-lg border-slate-200 bg-slate-50/60 shadow-none hover:border-slate-400"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1849,17 +2067,25 @@ export default function QuestionsPage() {
                       <CustomSelect
                         value={String(editForm.difficulty ?? 3)}
                         onChange={(v) => setEditForm({ ...editForm, difficulty: Number(v) })}
-                        options={[1, 2, 3, 4, 5].map((d) => ({ label: `${d} - ${["简单", "较易", "中等", "较难", "困难"][d - 1]}`, value: String(d) }))}
+                        options={["简单", "较易", "中等", "较难", "困难"].map((label, index) => ({ label, value: String(index + 1) }))}
+                        clearable={false}
+                        className="rounded-lg border-slate-200 bg-slate-50/60 shadow-none hover:border-slate-400"
                       />
                     </div>
-                  </div>
+                    </div>
+                  </section>
 
-                  <div className="space-y-1">
-                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                      题干
-                    </p>
+                  <section className="border-b border-slate-200 py-5">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">题干</p>
+                        <p className="mt-1 text-[11px] text-slate-400">编辑题目正文与题干图片</p>
+                      </div>
+                    </div>
                     <textarea
-                      className="min-h-32 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm"
+                      wrap="soft"
+                      spellCheck={false}
+                      className="min-h-36 w-full resize-y overflow-x-hidden whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm leading-7 text-slate-800 outline-none transition [overflow-wrap:anywhere] placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
                       value={textFromContent(editForm.content) ?? ""}
                       onChange={(e) => {
                         setEditForm({
@@ -1871,12 +2097,8 @@ export default function QuestionsPage() {
                         });
                       }}
                     />
-                  </div>
-
-                  <div className="space-y-1">
-                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                      题干图片
-                    </p>
+                    <div className="mt-4">
+                      <p className="mb-2 text-xs font-medium text-slate-500">题干图片</p>
                     {editingSegments.some(isPlainImageSegment) ? (
                       /* 已有图：大图直接占据插入区，hover 替换/删除；无插入按钮 */
                       <div className="space-y-3">
@@ -1905,7 +2127,8 @@ export default function QuestionsPage() {
                         onMutated={handleQuestionMutated}
                       />
                     )}
-                  </div>
+                    </div>
+                  </section>
 
                   {editingSegments.some((segment) => isTableSegment(segment)) ? (
                     <div className="space-y-4">
@@ -1938,25 +2161,29 @@ export default function QuestionsPage() {
                     const qtype = canonicalizeQuestionType(editForm.question_type ?? "");
                     const isChoiceType = qtype === "single_choice" || qtype === "multiple_choice";
                     return (
-                      <section className="rounded-xl border border-[var(--color-border)]/60 bg-white/80 p-4 shadow-sm">
-                        <p className="mb-3 text-xs font-semibold text-[var(--color-text-secondary)]">
-                          选项
-                        </p>
+                      <section className="border-b border-slate-200 py-5">
+                        <div className="mb-4 flex items-end justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-950">选项</p>
+                            <p className="mt-1 text-[11px] text-slate-400">逐项编辑文字或补充选项图片</p>
+                          </div>
+                          <span className="text-[11px] tabular-nums text-slate-400">{optList.length} 个选项</span>
+                        </div>
                         {optList.length === 0 ? (
                           <p className="mb-3 text-sm text-[var(--color-text-hint)]">
                             暂无可编辑选项
                           </p>
                         ) : (
-                          <div className="mb-3 space-y-2">
+                          <div className="mb-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
                             {optList.map((opt, index) => {
                               const imgUrl = optionImageUrl(editForm.options, opt.key);
                               return (
-                                <div key={index} className="flex items-center gap-2">
-                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-light)] text-[10px] font-bold text-[var(--color-primary-dark)]">
+                                <div key={index} className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0">
+                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[11px] font-semibold text-slate-600">
                                     {opt.key}
                                   </span>
                                   <input
-                                    className="h-9 min-w-0 flex-1 rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/15"
+                                    className="h-9 min-w-0 flex-1 border-0 bg-transparent px-1 text-sm text-slate-800 outline-none placeholder:text-slate-300 focus:ring-0"
                                     value={opt.text}
                                     onChange={(e) => {
                                       const currentOptions = (editForm.options ?? {}) as Record<string, unknown>;
@@ -1999,10 +2226,12 @@ export default function QuestionsPage() {
 
                   {/* Answer quick-select */}
                   {optionsToKeyValueList(editForm.options).length > 0 ? (
-                    <section className="rounded-xl border border-[var(--color-border)]/60 bg-white/80 p-4 shadow-sm">
-                      <p className="mb-2 text-xs font-semibold text-[var(--color-text-secondary)]">
-                        快速选择答案
-                      </p>
+                    <section className="border-b border-slate-200 py-5">
+                      <div className="mb-4">
+                        <p className="text-sm font-semibold text-slate-950">答案</p>
+                        <p className="mt-1 text-[11px] text-slate-400">快速选择正确选项，也可直接编辑答案内容</p>
+                      </div>
+                      <p className="mb-2 text-[11px] font-medium text-slate-500">快速选择</p>
                       {editForm.question_type &&
                       isMultiChoice(editForm.question_type) ? (
                         <p className="mb-2 text-[10px] text-[var(--color-text-hint)]">
@@ -2022,10 +2251,10 @@ export default function QuestionsPage() {
                             <button
                               key={opt.key}
                               type="button"
-                              className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3.5 text-sm font-medium transition ${
+                              className={`inline-flex h-8 min-w-9 items-center justify-center rounded-md border px-3 text-sm font-medium transition ${
                                 selected
-                                  ? "border-[var(--color-success)] bg-[var(--color-success)] text-white shadow-sm"
-                                  : "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)] hover:border-[var(--color-success)] hover:text-[var(--color-success)]"
+                                  ? "border-slate-900 bg-slate-900 text-white"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900"
                               }`}
                               onClick={() => {
                                 if (
@@ -2057,12 +2286,11 @@ export default function QuestionsPage() {
                           );
                         })}
                       </div>
-                      <div className="space-y-1">
-                        <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                          答案
-                        </p>
+                      <div className="mt-4 space-y-1.5">
+                        <p className="text-[11px] font-medium text-slate-500">答案内容</p>
                         <Input
                           value={editForm.answer ?? ""}
+                          className="border-slate-200 bg-slate-50/60 shadow-none focus:bg-white"
                           onChange={(e) =>
                             setEditForm({ ...editForm, answer: e.target.value })
                           }
@@ -2070,55 +2298,36 @@ export default function QuestionsPage() {
                       </div>
                     </section>
                   ) : (
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                        答案
-                      </p>
+                    <section className="border-b border-slate-200 py-5">
+                      <p className="mb-3 text-sm font-semibold text-slate-950">答案</p>
+                      <div>
                       <Input
                         value={editForm.answer ?? ""}
+                        className="border-slate-200 bg-slate-50/60 shadow-none focus:bg-white"
                         onChange={(e) =>
                           setEditForm({ ...editForm, answer: e.target.value })
                         }
                       />
-                    </div>
+                      </div>
+                    </section>
                   )}
 
-                  <div className="space-y-1">
-                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                      知识点 (JSON)
-                    </p>
-                    <input
-                      className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 font-mono text-xs"
-                      value={
-                        editForm.knowledge_points
-                          ? JSON.stringify(editForm.knowledge_points)
-                          : ""
-                      }
-                      onChange={(e) => {
-                        try {
-                          setEditForm({
-                            ...editForm,
-                            knowledge_points: JSON.parse(e.target.value),
-                          });
-                        } catch {
-                          // Allow invalid JSON while typing
-                        }
-                      }}
-                    />
-                  </div>
+                  <QuestionKnowledgePointsEditor
+                    value={editForm.knowledge_points ?? []}
+                    onChange={(knowledgePoints) =>
+                      setEditForm((current) => ({
+                        ...current,
+                        knowledge_points: knowledgePoints,
+                      }))
+                    }
+                  />
 
-                  <div className="space-y-1">
-                    <p className="text-xs font-semibold text-[var(--color-text-secondary)]">
-                      解析
-                    </p>
-                    <textarea
-                      className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm"
-                      value={editForm.analysis ?? ""}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, analysis: e.target.value })
-                      }
-                    />
-                  </div>
+                  <QuestionAnalysisEditor
+                    value={editForm.analysis ?? ""}
+                    onChange={(analysis) =>
+                      setEditForm((current) => ({ ...current, analysis }))
+                    }
+                  />
 
                   {unresolvedEditingTableCount > 0 ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -2126,13 +2335,14 @@ export default function QuestionsPage() {
                     </div>
                   ) : null}
 
-                  <div className="flex justify-end gap-3">
-                    <Button variant="secondary" onClick={cancelEditing}>
+                  <div className="sticky bottom-0 z-10 -mx-7 -mb-24 mt-8 flex justify-end gap-2 border-t border-slate-200 bg-white/96 px-7 py-4 shadow-[0_-12px_30px_rgba(15,23,42,0.04)] backdrop-blur-xl">
+                    <Button variant="secondary" className="min-w-24 border-slate-200 bg-white shadow-none" onClick={cancelEditing}>
                       <X className="h-4 w-4" />
                       取消
                     </Button>
                     <Button
                       variant="primary"
+                      className="min-w-28 shadow-none"
                       onClick={() => updateMutation.mutate()}
                       disabled={updateMutation.isPending || unresolvedEditingTableCount > 0}
                     >
@@ -2143,10 +2353,10 @@ export default function QuestionsPage() {
                 </div>
               ) : (
                 /* ===== Detail view ===== */
-                <div className="mt-6 space-y-5 text-sm">
-                  <section className="rounded-[1.7rem] border border-[var(--color-primary-light)] bg-[var(--porcelain)] p-5 shadow-sm">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                      <p className="font-display text-xl font-bold text-[var(--ink)]">
+                <div className="question-drawer-detail px-7 py-6 text-sm">
+                  <section className="border-b border-slate-200 pb-6">
+                    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-950">
                         题干
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
@@ -2156,7 +2366,7 @@ export default function QuestionsPage() {
                         />
                       </div>
                     </div>
-                    <div className="whitespace-pre-wrap font-sans text-base leading-8 text-[var(--ink)]">
+                    <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700">
                       <QuestionContentRenderer
                         content={selectedQuestion.content}
                         fallbackText={textFromContent(selectedQuestion.content)}
@@ -2181,8 +2391,8 @@ export default function QuestionsPage() {
                     if (allUrls.size === 0) return null;
                     const entries = Array.from(allUrls.values());
                     return (
-                      <section className="rounded-[1.7rem] border border-[var(--color-border)] bg-white/80 p-5 shadow-sm">
-                        <p className="font-display text-lg font-bold text-[var(--ink)] mb-3">题目图片</p>
+                      <section className="border-b border-slate-200 py-6">
+                        <p className="mb-3 text-sm font-semibold text-slate-950">题目图片</p>
                         <div className="grid gap-3">
                           {entries.map((src: string, idx: number) => {
                             if (!src) return null;
@@ -2209,8 +2419,8 @@ export default function QuestionsPage() {
                     );
                   })()}
 
-                  <section className="rounded-[1.7rem] border border-[var(--color-border)] bg-white/80 p-5">
-                    <p className="font-display text-lg font-bold text-[var(--ink)]">
+                  <section className="border-b border-slate-200 py-6">
+                    <p className="text-sm font-semibold text-slate-950">
                       选项
                     </p>
                     <div className="mt-3">
@@ -2222,17 +2432,17 @@ export default function QuestionsPage() {
                     </div>
                   </section>
 
-                  <section className="rounded-[1.7rem] border border-[var(--color-success-light)] bg-[var(--color-success-light)] p-5">
-                    <p className="font-display text-lg font-bold text-[var(--color-success)]">
+                  <section className="border-b border-slate-200 py-6">
+                    <p className="text-sm font-semibold text-slate-950">
                       答案
                     </p>
-                    <div className="mt-3 whitespace-pre-wrap font-sans text-base font-semibold leading-7 text-[var(--ink)]">
+                    <div className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[15px] font-semibold leading-6 text-slate-800">
                       <MathFormula text={selectedQuestion.answer || "—"} />
                     </div>
                   </section>
 
-                  <section className="rounded-[1.7rem] border border-[var(--color-border)] bg-white/80 p-5">
-                    <p className="font-display text-lg font-bold text-[var(--ink)]">
+                  <section className="border-b border-slate-200 py-6">
+                    <p className="text-sm font-semibold text-slate-950">
                       解析
                     </p>
                     <div className="mt-3">
@@ -2240,91 +2450,173 @@ export default function QuestionsPage() {
                     </div>
                   </section>
 
-                  <details className="rounded-[1.7rem] border border-[var(--color-border)] bg-white/70 p-5">
-                    <summary className="cursor-pointer list-none font-display text-lg font-bold text-[var(--ink)]">
-                      知识点与难度
-                    </summary>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
-                        <p className="font-semibold text-[var(--ink)]">知识点</p>
-                        <pre className="mt-2 whitespace-pre-wrap font-sans text-[var(--color-text-secondary)]">
-                          {renderJson(selectedQuestion.knowledge_points)}
-                        </pre>
-                      </section>
-                      <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
-                        <p className="font-semibold text-[var(--ink)]">难度</p>
-                        <pre className="mt-2 whitespace-pre-wrap font-sans text-[var(--color-text-secondary)]">
-                          {renderJson(selectedQuestion.difficulty)}
-                        </pre>
-                      </section>
+                  <section className="border-b border-slate-200 py-6">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-950">知识点与难度</p>
+                      <DifficultyBadge difficulty={selectedQuestion.difficulty} />
                     </div>
-                  </details>
+                    <QuestionKnowledgePointsDisplay value={selectedQuestion.knowledge_points} />
+                  </section>
 
-                  <section className="rounded-[1.7rem] border border-[var(--color-border)] p-5">
-                    <p className="font-display text-lg font-bold text-[var(--ink)]">
-                      版本历史
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {(versions.data?.items ?? []).map((version) => (
-                        <Button
-                          key={version.id}
-                          variant={
-                            selectedVersion === version.version
-                              ? "primary"
-                              : "secondary"
-                          }
-                          onClick={() => setSelectedVersion(version.version)}
-                        >
-                          v{version.version}
-                        </Button>
-                      ))}
-                    </div>
-                    {versionDetail.data ? (
-                      <div className="mt-4 space-y-4">
-                        <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
-                          <p className="font-semibold text-[var(--ink)]">
-                            对比基线：当前题目 vs v{versionDetail.data.version}{" "}
-                            历史快照
-                          </p>
-                        </div>
-                        {renderDiff(
-                          "题干",
-                          textFromContent(selectedQuestion.content),
-                          textFromContent(versionDetail.data.content),
+                  <section className="py-6">
+                    <button
+                      type="button"
+                      onClick={() => setVersionHistoryOpen((open) => !open)}
+                      className="flex w-full items-center justify-between gap-4 rounded-lg px-1 py-1 text-left transition hover:bg-slate-50"
+                      aria-expanded={versionHistoryOpen}
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">版本历史</p>
+                        <p className="mt-1 text-[11px] leading-5 text-slate-400">
+                          可按时间、修改人或修改原因查找，并支持任意两个版本对比。
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">
+                          {versions.data?.total ?? 0} 个版本
+                        </span>
+                        <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${versionHistoryOpen ? "rotate-180" : ""}`} />
+                      </div>
+                    </button>
+
+                    {versionHistoryOpen ? (
+                      <div className="mt-4 animate-fade-in">
+                        {(versions.data?.total ?? 0) === 0 && !versions.isFetching ? (
+                          <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-5 text-center text-xs text-slate-400">
+                            暂无历史版本
+                          </div>
+                        ) : (
+                          <>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-3">
+                              <div className="grid items-end gap-3 md:grid-cols-[minmax(0,1fr)_44px_minmax(0,1fr)]">
+                                <div className="min-w-0">
+                                  <p className="mb-2 px-0.5 text-[11px] font-medium text-slate-500">基准版本</p>
+                                  <QuestionVersionPicker
+                                    value={baseVersion}
+                                    onChange={setBaseVersion}
+                                    versions={versions.data?.items ?? []}
+                                    disabledValue={compareVersion}
+                                    loading={versions.isFetching && !versions.data}
+                                  />
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  className="h-10 w-11 rounded-xl p-0 shadow-none"
+                                  disabled={compareVersion === null}
+                                  title="交换对比版本"
+                                  aria-label="交换基准版本和对比版本"
+                                  onClick={() => {
+                                    if (compareVersion === null) return;
+                                    const previousBase = baseVersion;
+                                    setBaseVersion(compareVersion);
+                                    setCompareVersion(previousBase);
+                                  }}
+                                >
+                                  <ArrowLeftRight className="h-4 w-4" />
+                                </Button>
+                                <div className="min-w-0">
+                                  <p className="mb-2 px-0.5 text-[11px] font-medium text-slate-500">对比版本</p>
+                                  <QuestionVersionPicker
+                                    value={compareVersion}
+                                    onChange={setCompareVersion}
+                                    versions={versions.data?.items ?? []}
+                                    disabledValue={baseVersion}
+                                    disabled={compareVersion === null && !versions.isFetching && (versions.data?.total ?? 0) === 0}
+                                    loading={versions.isFetching && !versions.data}
+                                  />
+                                </div>
+                              </div>
+                              <p className="mt-3 text-[10px] leading-5 text-slate-400">
+                                可按日期精确筛选，也可按“今天 / 本周 / 上周 / 更早”浏览；支持搜索版本号、修改人或修改原因。切换版本时会保留当前对比区域，避免页面跳动。
+                              </p>
+                            </div>
+
+                            {compareVersion !== null && baseVersionData && compareVersionData ? (
+                              <div className="relative mt-4 [overflow-anchor:none]">
+                                {versionComparisonLoading ? (
+                                  <div className="mb-2 flex justify-end">
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-medium text-slate-500">
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                      正在切换到 {pendingVersionLabel ?? "所选版本"}
+                                    </span>
+                                  </div>
+                                ) : null}
+                                <div
+                                  key={`${baseVersionLabel}-${compareVersionLabel}`}
+                                  className={`space-y-3 transition-opacity duration-200 ${
+                                    versionComparisonLoading ? "opacity-60" : "animate-fade-in opacity-100"
+                                  }`}
+                                >
+                                  {renderDiff(
+                                    "题干",
+                                    baseVersionData.content,
+                                    compareVersionData.content,
+                                    baseVersionLabel,
+                                    compareVersionLabel,
+                                  )}
+                                  {renderDiff(
+                                    "选项",
+                                    baseVersionData.options ?? null,
+                                    compareVersionData.options ?? null,
+                                    baseVersionLabel,
+                                    compareVersionLabel,
+                                  )}
+                                  {renderDiff(
+                                    "答案",
+                                    baseVersionData.answer,
+                                    compareVersionData.answer,
+                                    baseVersionLabel,
+                                    compareVersionLabel,
+                                  )}
+                                  {renderDiff(
+                                    "解析",
+                                    baseVersionData.analysis ?? null,
+                                    compareVersionData.analysis ?? null,
+                                    baseVersionLabel,
+                                    compareVersionLabel,
+                                  )}
+                                  {renderDiff(
+                                    "难度",
+                                    baseVersionData.difficulty,
+                                    compareVersionData.difficulty,
+                                    baseVersionLabel,
+                                    compareVersionLabel,
+                                  )}
+                                  {renderDiff(
+                                    "知识点",
+                                    baseVersionData.knowledge_points ?? null,
+                                    compareVersionData.knowledge_points ?? null,
+                                    baseVersionLabel,
+                                    compareVersionLabel,
+                                  )}
+                                  <details className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-3 transition-colors hover:border-slate-300">
+                                    <summary className="cursor-pointer select-none text-xs font-medium text-slate-500 hover:text-slate-700">
+                                      查看原始版本数据
+                                    </summary>
+                                    <pre className="mt-3 max-h-72 overflow-auto rounded-lg bg-white p-3 text-[11px] leading-5 text-slate-500">
+                                      {JSON.stringify(
+                                        {
+                                          [baseVersionLabel]: baseVersionData,
+                                          [compareVersionLabel]: compareVersionData,
+                                        },
+                                        null,
+                                        2,
+                                      )}
+                                    </pre>
+                                  </details>
+                                </div>
+                              </div>
+                            ) : versionComparisonLoading ? (
+                              <div className="mt-4 space-y-3 animate-pulse">
+                                <div className="h-24 rounded-xl border border-slate-200 bg-slate-50/60" />
+                                <div className="h-20 rounded-xl border border-slate-200 bg-slate-50/60" />
+                                <div className="h-20 rounded-xl border border-slate-200 bg-slate-50/60" />
+                              </div>
+                            ) : null}
+                          </>
                         )}
-                        {renderDiff(
-                          "选项",
-                          selectedQuestion.options ?? null,
-                          versionDetail.data.options ?? null,
-                        )}
-                        {renderDiff(
-                          "答案",
-                          selectedQuestion.answer,
-                          versionDetail.data.answer,
-                        )}
-                        {renderDiff(
-                          "解析",
-                          selectedQuestion.analysis ?? null,
-                          versionDetail.data.analysis ?? null,
-                        )}
-                        {renderDiff(
-                          "难度",
-                          selectedQuestion.difficulty,
-                          versionDetail.data.difficulty,
-                        )}
-                        {renderDiff(
-                          "知识点",
-                          selectedQuestion.knowledge_points ?? null,
-                          versionDetail.data.knowledge_points ?? null,
-                        )}
-                        <details className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4">
-                          <summary className="cursor-pointer font-semibold text-[var(--ink)]">
-                            原始 JSON
-                          </summary>
-                          <pre className="mt-4 max-h-80 overflow-auto text-xs text-[var(--color-text-secondary)]">
-                            {JSON.stringify(versionDetail.data, null, 2)}
-                          </pre>
-                        </details>
                       </div>
                     ) : null}
                   </section>

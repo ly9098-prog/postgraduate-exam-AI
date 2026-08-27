@@ -341,13 +341,27 @@ Page({
       // 仅使用一个“AI 学习建议”区域：AI 分析优先，否则回退题库解析。
       var preferredAnalysis = _resolvePreferredAnalysis(wq)
       if (preferredAnalysis) {
-        this._aiResult = preferredAnalysis.normalized
-        data.aiCards = _normalizeAiResult(this._aiResult)
+        var preferredNormalized = preferredAnalysis.normalized
         data.aiRequested = true
-        data.aiFromCache = preferredAnalysis.source === 'ai'
-        data.aiFromQuestionAnalysis = preferredAnalysis.source === 'question'
-        data.aiFallback = false
-        data.aiErrorText = ''
+        if (_hasAiContent(preferredNormalized)) {
+          this._aiResult = preferredNormalized
+          data.aiCards = _normalizeAiResult(this._aiResult)
+          data.aiFromCache = preferredAnalysis.source === 'ai'
+          data.aiFromQuestionAnalysis = preferredAnalysis.source === 'question'
+          data.aiFallback = false
+          data.aiErrorText = ''
+        } else {
+          // 历史缓存/题库解析若是截断或嵌套失败的 JSON，不渲染源码，
+          // 直接进入可重试的降级态。
+          this._aiResult = null
+          data.aiCards = null
+          data.aiFromCache = false
+          data.aiFromQuestionAnalysis = false
+          data.aiFallback = true
+          data.aiErrorText = preferredNormalized && preferredNormalized.formatError
+            ? 'AI 返回格式异常，请重新生成'
+            : 'AI 分析结果为空，请重新生成'
+        }
       }
       // Stale response guard
       if (loadSeq !== this._aiRequestId || !this._alive) return
