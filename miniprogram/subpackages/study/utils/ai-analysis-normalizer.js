@@ -42,11 +42,14 @@ function _looksLikeJson(str) {
   if (typeof str !== 'string' || !str) return false
   var t = str.trim()
   if (!t) return false
-  // 以 { 或 [ 开头
+  if (/^```(?:json|javascript|js)?/i.test(t)) return true
+  // 以 { 或 [ 开头，或出现带引号的已知 JSON 字段。不要仅凭 task /
+  // knowledge 等普通英文单词判断，避免误伤正常 AI 文本。
   if (t.charAt(0) === '{' || t.charAt(0) === '[') return true
-  // 包含已知 JSON 字段名
   for (var i = 0; i < ALL_KNOWN_KEYS.length; i++) {
-    if (t.indexOf(ALL_KNOWN_KEYS[i]) !== -1) return true
+    var escaped = ALL_KNOWN_KEYS[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    var re = new RegExp("[\"']" + escaped + "[\"']\\s*:", 'i')
+    if (re.test(t)) return true
   }
   return false
 }
@@ -55,8 +58,14 @@ function _looksLikeJson(str) {
  * 去除 Markdown 代码围栏
  */
 function _stripFence(str) {
-  var m = str.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
-  return m ? m[1].trim() : str
+  var value = String(str || '').trim()
+  var m = value.match(/```(?:json|javascript|js)?\s*\n?([\s\S]*?)\n?```/i)
+  if (m) return m[1].trim()
+  // 网络中断时可能只有开围栏没有闭围栏；先移除围栏，后续按结构化
+  // 内容处理，绝不把 ```json / { ... } 作为普通正文展示。
+  value = value.replace(/^```(?:json|javascript|js)?\s*/i, '')
+  value = value.replace(/\s*```$/, '')
+  return value.trim()
 }
 
 /**
@@ -69,7 +78,7 @@ function _unwrapWrapper(obj, depth) {
     var val = obj[WRAPPER_KEYS[i]]
     if (val !== undefined && val !== null) {
       if (typeof val === 'string') {
-        var parsed = _safeParse(val)
+        var parsed = _tryParseStructuredString(val)
         if (parsed && typeof parsed === 'object') return _unwrapWrapper(parsed, depth + 1)
       } else if (typeof val === 'object' && !Array.isArray(val)) {
         return _unwrapWrapper(val, depth + 1)
@@ -134,6 +143,26 @@ function _splitTopLevelJson(text) {
   return results
 }
 
+function _tryParseStructuredString(value) {
+  if (typeof value !== 'string') return null
+  var stripped = _stripFence(value)
+  if (!stripped) return null
+  var parsed = _safeParse(stripped)
+  if (parsed && typeof parsed === 'object') return parsed
+
+  // 兼容模型输出前后说明文字或连续多个 JSON 对象。
+  var parts = _splitTopLevelJson(stripped)
+  if (!parts.length) return null
+  var candidates = []
+  for (var i = 0; i < parts.length; i++) {
+    var item = _safeParse(parts[i])
+    if (item && typeof item === 'object') candidates.push(item)
+  }
+  if (!candidates.length) return null
+  if (candidates.length === 1) return candidates[0]
+  return _pickBestObject(candidates) || candidates[0]
+}
+
 /**
  * 从数组中选字段最完整的对象
  */
@@ -177,10 +206,13 @@ function _normalizeFieldValue(raw) {
     var trimmed = raw.trim()
     if (!trimmed) return ''
     // 尝试递归解析 JSON 字符串
-    var result = _recursiveParseString(trimmed, 0)
+    var result = _tryParseStructuredString(trimmed)
     if (result !== null && typeof result === 'object') {
       return _extractTextFromObject(result)
     }
+    // 结构化内容解析失败时返回空值，让上层进入 formatError / 重试态，
+    // 避免原始 JSON 被当成“错因诊断”正文直接显示。
+    if (_looksLikeJson(_stripFence(trimmed))) return ''
     return trimmed
   }
   if (typeof raw === 'object') {
@@ -190,7 +222,8 @@ function _normalizeFieldValue(raw) {
       for (var i = 0; i < raw.length; i++) {
         var v = raw[i]
         if (typeof v === 'string' && v.trim()) {
-          if (strs.indexOf(v.trim()) === -1) strs.push(v.trim())
+          var clean = v.trim()
+          if (!_looksLikeJson(_stripFence(clean)) && strs.indexOf(clean) === -1) strs.push(clean)
         } else if (typeof v === 'object' && v !== null) {
           var t = _extractTextFromObject(v)
           if (t && strs.indexOf(t) === -1) strs.push(t)
@@ -317,19 +350,40 @@ function normalizeAiAnalysisPayload(input) {
     } else {
       // 数组但无可用对象
       var arrText = []
+      var arrayFormatError = false
       for (var ai = 0; ai < obj.length; ai++) {
         if (typeof obj[ai] === 'string' && obj[ai].trim()) {
-          if (arrText.indexOf(obj[ai].trim()) === -1) arrText.push(obj[ai].trim())
+          var arrayItem = obj[ai].trim()
+          if (_looksLikeJson(_stripFence(arrayItem))) {
+            arrayFormatError = true
+            continue
+          }
+          if (arrText.indexOf(arrayItem) === -1) arrText.push(arrayItem)
         }
       }
       if (arrText.length) return { mistake_diagnosis: arrText.join('\n'), knowledge_patch: '', review_task: '' }
-      return EMPTY
+      return arrayFormatError
+        ? { mistake_diagnosis: '', knowledge_patch: '', review_task: '', formatError: true }
+        : EMPTY
     }
   }
 
   // 对象 → 递归解包 wrapper
   obj = _unwrapWrapper(obj, 0)
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return EMPTY
+
+  // 部分模型/网关会把完整 JSON 再塞进 mistake_diagnosis 等字段。
+  // 先提升这类嵌套结构，再提取普通字符串字段，防止 raw JSON 泄漏。
+  for (var eki = 0; eki < ALL_KNOWN_KEYS.length; eki++) {
+    var embeddedRaw = obj[ALL_KNOWN_KEYS[eki]]
+    if (typeof embeddedRaw !== 'string') continue
+    var embeddedClean = _stripFence(embeddedRaw)
+    if (!_looksLikeJson(embeddedClean)) continue
+    var embeddedObj = _tryParseStructuredString(embeddedRaw)
+    if (!embeddedObj || typeof embeddedObj !== 'object') continue
+    var embeddedResult = normalizeAiAnalysisPayload(embeddedObj)
+    if (hasAiAnalysisContent(embeddedResult)) return embeddedResult
+  }
 
   // 提取三个字段
   var rawDiagnosis = _extractField(obj, DIAGNOSIS_KEYS)

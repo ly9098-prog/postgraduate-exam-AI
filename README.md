@@ -1,255 +1,305 @@
-# MemoGrad / 22408AI刷题小程序 项目说明
+# MemoGrad / 22408AI 智能刷题系统
 
-MemoGrad 是一个面向考研场景的智能刷题与题库管理系统。项目由 **FastAPI 后端服务**、**Next.js 后台管理端**、**微信小程序端** 三部分组成，覆盖微信登录、题库练习、错题本、复习计划、学习报告、番茄钟、AI 题目讲解、OCR/AI 导题、后台题库治理、角色权限、审计日志、AI 模型配置与向量检索等功能。
+MemoGrad 是一个面向考研学习场景的智能刷题与题库治理系统，由 **FastAPI 后端**、**Next.js 管理后台** 和 **微信小程序** 三部分组成。
+
+系统覆盖题库练习、错题与复习、学习报告、番茄钟、公式卡、AI 讲解、OCR/AI 导题、知识图谱、自适应学习、后台审核、RBAC、审计日志、AI 模型配置、向量检索以及异步任务治理等能力。
+
+> 本 README 面向「首次运行项目、日常开发、CI 排错和部署维护」。API 的完整字段与协议应以运行时 OpenAPI 和 `docs/` 中的专项文档为准。
+
+## 目录
+
+- [1. 系统架构](#1-系统架构)
+- [2. 核心能力](#2-核心能力)
+- [3. 项目结构](#3-项目结构)
+- [4. 技术栈](#4-技术栈)
+- [5. 快速开始](#5-快速开始)
+- [6. 环境与部署画像](#6-环境与部署画像)
+- [7. API 与开发文档](#7-api-与开发文档)
+- [8. 数据库与迁移](#8-数据库与迁移)
+- [9. 测试、代码质量与 CI](#9-测试代码质量与-ci)
+- [10. 生产部署](#10-生产部署)
+- [11. WSL → Windows 同步](#11-wsl--windows-同步)
+- [12. 常见问题](#12-常见问题)
 
 ---
 
-## 1. 项目结构
+## 1. 系统架构
+
+```mermaid
+flowchart LR
+    MP[微信小程序\nMemoGrad] -->|/api/v1| API[FastAPI API]
+    ADMIN[Next.js 管理后台] -->|/api/admin/v1| API
+
+    API --> DB[(PostgreSQL / SQLite)]
+    API --> REDIS[(Redis)]
+    API --> AI[AI Model Gateway]
+    API --> OCR[OCR Pipeline]
+    API --> STORE[Local / COS Storage]
+
+    OCR --> LOCAL_OCR[Local PaddleOCR]
+    OCR --> REMOTE_OCR[PaddleX / PaddleOCR-VL HTTP]
+    AI --> MODEL[OpenAI-compatible / DeepSeek models]
+
+    WORKER[Worker] --> REDIS
+    WORKER --> DB
+    SCHED[Scheduler] --> DB
+    SCHED --> REDIS
+```
+
+### 运行角色
+
+后端支持按进程角色拆分：
+
+| 角色 | 主要职责 |
+|---|---|
+| `web` | HTTP API、鉴权、业务接口、OCR gateway |
+| `worker` | 异步任务、pipeline dispatcher、reaper、AI 预热等 |
+| `scheduler` | 定时任务、清理、提醒、导出任务等 |
+| `all` | 单进程整合模式，仅建议本地开发/调试 |
+
+生产环境建议使用 `web / worker / scheduler` 分离部署，而不是使用 `all`。
+
+---
+
+## 2. 核心能力
+
+### 微信小程序
+
+- 微信登录、token / refresh token 自动续签
+- 刷题、随机练习、答题记录与学习统计
+- 错题本、错题详情、质量反馈
+- 今日复习、复习调度、掌握状态管理
+- 自适应学习、弱知识点、学习路径与推荐
+- 学习报告、趋势、知识掌握分析
+- AI 题目讲解、错因分析、学习建议
+- 番茄钟、暂停/恢复、专注统计与历史记录
+- 公式卡浏览、收藏、分类与公式渲染
+- 错题/学习数据导出
+- KaTeX / mp-html 富文本与数学公式渲染
+
+### 管理后台
+
+- 管理员登录、刷新、退出与密码管理
+- Dashboard 与运营数据概览
+- 小程序用户管理、封禁/解封、管理员绑定
+- 管理员账号、角色与权限矩阵（RBAC）
+- 题库查询、编辑、上下架、版本与图片/选项管理
+- OCR / AI 导题、文本导入、批量图片导入与审核发布
+- 公式卡、分类、版本、审核状态与图形资源管理
+- 知识图谱、知识质量报告
+- 推荐策略、实验、指标与报表
+- AI 模型、OCR、向量检索配置与连接测试
+- 审计日志、系统任务队列与健康检查
+
+### 后端平台能力
+
+- Public API 与 Admin API 分层
+- JWT 用户鉴权与管理员 RBAC
+- SQLAlchemy 2.0 Async ORM + Alembic
+- OCR 导题流水线：页面处理、识别、纠错、拆题、质量门禁、发布
+- AI 统一调用入口、并发/限流/熔断/Token 预算
+- Redis 缓存与持久任务队列
+- 自适应学习、知识状态、推荐与实验指标
+- pgvector 向量检索（可选）
+- 审计日志、健康检查、慢查询与 Sentry（可选）
+- 本地 / 云端双部署画像
+
+---
+
+## 3. 项目结构
 
 ```text
 .
-├── backend/                    # FastAPI 后端服务
-│   ├── app/                    # Python 应用源码
-│   │   ├── main.py             # FastAPI 应用入口
-│   │   ├── api/                # API 路由
-│   │   │   ├── v1/             # 小程序/公共端 API
-│   │   │   └── admin/          # 管理端 API
-│   │   ├── ai/                 # AI Prompt、上下文、兜底逻辑
-│   │   ├── core/               # 配置、数据库、安全、缓存、日志、Sentry
-│   │   ├── features/           # OCR、导题、题目拆分、质量校验、版面识别
-│   │   ├── models/             # SQLAlchemy ORM 模型
-│   │   ├── schemas/            # Pydantic 请求/响应模型
-│   │   ├── services/           # 业务服务层
-│   │   └── utils/              # 工具函数
-│   ├── alembic/                # 数据库迁移
-│   ├── docker/                 # Docker 构建配置
-│   ├── requirements.txt        # Python 依赖
-│   ├── requirements-ocr.txt    # OCR 额外依赖（PaddleOCR 等）
-│   ├── Dockerfile              # Docker 镜像构建
-│   ├── gunicorn.conf.py        # 生产 Gunicorn 配置
-│   └── .env.example            # 环境变量模板
+├── backend/                     # FastAPI 后端
+│   ├── app/
+│   │   ├── main.py              # 应用入口 / lifespan / health
+│   │   ├── api/
+│   │   │   ├── v1/              # 小程序 / Public API
+│   │   │   ├── admin/           # Admin router
+│   │   │   └── internal/        # 内部 worker API
+│   │   ├── ai/                  # AI Prompt、上下文与模型调用辅助
+│   │   ├── core/                # 配置、数据库、安全、部署画像、日志
+│   │   ├── features/            # OCR、pipeline、质量门禁等
+│   │   ├── models/              # SQLAlchemy ORM
+│   │   ├── schemas/             # Pydantic schema
+│   │   ├── services/            # 业务服务、任务、导出、推荐等
+│   │   └── utils/               # 通用工具
+│   ├── alembic/                 # 数据库迁移
+│   ├── requirements.txt
+│   ├── requirements-ocr.txt     # OCR 可选依赖
+│   ├── Dockerfile
+│   └── gunicorn.conf.py
 │
-├── admin-frontend/             # 后台管理端（Next.js）
-│   ├── package.json            # Node 依赖
-│   ├── next.config.ts          # Next.js 配置
-│   ├── tsconfig.json           # TypeScript 配置
-│   └── src/
-│       ├── app/                # App Router 页面
-│       ├── components/         # 通用 UI、布局、审计日志、数据表组件
-│       └── lib/                # API client、权限、鉴权状态、工具函数
+├── admin-frontend/              # Next.js 管理后台
+│   ├── src/app/                 # App Router 页面
+│   ├── src/components/          # UI、表格、题目、公式、审计组件
+│   └── src/lib/                 # API client、鉴权、权限、工具
 │
-├── miniprogram/                # 微信小程序端
-│   ├── pages/                  # 登录、首页、刷题、错题本、复习、导入、报表、番茄钟
-│   ├── subpackages/            # 分包：study（刷题/复习/错题）、productivity（番茄钟）、formulas（公式卡）、export、animation
-│   ├── components/             # 题目卡片、数学公式渲染、动画、mp-html
-│   ├── utils/                  # API、鉴权、缓存、题干渲染、数学格式化
+├── miniprogram/                 # 微信小程序
+│   ├── pages/                   # 登录、协议、首页、Dashboard、番茄钟
+│   ├── subpackages/
+│   │   ├── study/               # 刷题、复习、错题
+│   │   ├── productivity/        # 番茄钟统计
+│   │   ├── formulas/            # 公式卡
+│   │   ├── export/              # 导出
+│   │   └── animation/           # Lottie 动画
+│   ├── components/
+│   ├── utils/
+│   ├── config.js                # API 环境切换
 │   ├── app.js / app.json
-│   └── config.js               # 小程序 API 环境配置
+│   └── project.config.json
 │
-├── deploy/                     # 生产部署
-│   ├── docker-compose.prod.yml # 生产 Docker Compose
-│   ├── docker-compose.dev.yml  # 开发 Docker Compose
-│   ├── Dockerfile.prod         # 生产多阶段构建镜像
-│   ├── nginx/                  # Nginx 配置、SSL 证书
-│   ├── scripts/                # 部署、备份、迁移脚本
-│   └── systemd/                # systemd 服务单元
-│
-├── docs/                       # 项目文档
-│   ├── architecture/           # 系统架构、OCR、记忆系统、复习算法
-│   ├── backend/                # API 端点、DB schema、存储设计
-│   ├── frontend/               # UI 规则、设计系统、组件规范
-│   ├── project/                # 项目规则、路线图、变更日志
-│   ├── ai/                     # AI 管线、OCR 策略、标准化流程
-│   └── ...
-│
-├── prompts/                    # 当前开发任务与系统 Prompt
-├── scripts/                    # 实用脚本
-├── tests/                      # 测试用例
-├── .env.example                # 环境变量模板（根入口）
-└── CLAUDE.md                   # 项目 AI 辅助指令
+├── deploy/                      # Docker / Nginx / systemd / 部署脚本
+├── docs/                        # 架构、API、前端、AI、项目文档
+├── prompts/                     # 开发任务与 Prompt
+├── scripts/                     # 工具脚本
+├── tests/                       # 项目级测试
+├── sync-to-windows.sh           # WSL → Windows 镜像同步
+└── README.md
 ```
 
+> 若某些目录在分支中发生调整，以仓库实际结构为准；README 不应替代 `docs/` 中的专项设计文档。
+
 ---
 
-## 2. 技术栈
+## 4. 技术栈
 
-### 后端 `backend/`
+### 后端
 
-- Python 3.11 + FastAPI 0.111
-- SQLAlchemy 2.0 Async ORM + Alembic 迁移
-- PostgreSQL 15（生产）/ SQLite（开发）
-- Redis 7（生产必需：缓存、番茄钟调度锁）
-- JWT（HS256）+ refresh token + 管理员 RBAC
-- Gunicorn + Uvicorn worker（生产）
-- Docker + Docker Compose 部署
-- APScheduler 定时任务
-- Sentry 错误监控（可选）
-- PyMuPDF / Pillow / PaddleOCR（可选，GPU 加速支持）
-- **OCR 模型**：本地 PP-OCRv4（PaddleOCR 2.10.0）+ 外部 PaddleOCR-VL 1.6（API 服务）
-- DeepSeek API（httpx 直连，无 langchain/llamaindex）
-- pgvector 向量检索（可选）
+- Python 3.11+
+- FastAPI
+- Pydantic / pydantic-settings
+- SQLAlchemy 2.0 Async ORM
+- Alembic
+- PostgreSQL 15 / SQLite
+- Redis 7
+- JWT（用户与管理员 audience 分离）
+- Gunicorn + Uvicorn worker
+- APScheduler / 异步任务体系
+- PyMuPDF / Pillow / PaddleOCR（按部署画像启用）
+- PaddleX / PaddleOCR-VL HTTP OCR
+- OpenAI-compatible AI API / DeepSeek 模型配置
+- pgvector（可选）
+- Sentry（可选）
 
-### 后台管理端 `admin-frontend/`
+### 管理后台
 
-- Next.js 16 + React 19
+- Next.js + React 19
 - TypeScript
 - TanStack Query / TanStack Table
-- Zustand 状态管理
-- ECharts 6 / Recharts 图表
-- Lucide React 图标
-- Tailwind CSS v4
+- Zustand
+- ECharts / Recharts
+- Tailwind CSS
+- Lucide React
+- KaTeX
 
-### 微信小程序 `miniprogram/`
+### 微信小程序
 
 - 原生微信小程序
-- 微信登录 `wx.login`
-- 本地 token / refresh token 存储
-- Lottie 动画分包
-- KaTeX / mp-html 公式和富文本渲染
+- `wx.login`
+- Lottie Mini Program
+- KaTeX / mp-html
+- 主包 + 分包加载
 
 ---
 
-## 3. 核心功能
+## 5. 快速开始
 
-### 小程序端
+### 5.1 环境要求
 
-- 微信登录与自动续签
-- 首页学习入口
-- 刷题练习与答题提交
-- 错题本、错题详情、错题质量反馈
-- 今日复习、复习计划、掌握/未掌握标记、复习调度统计
-- 自适应学习：知识状态、弱点知识点、推荐路径
-- 学习报告、趋势、知识掌握分析
-- AI 题目讲解、错因分析、学习建议
-- 题目导入入口（Excel / PDF / 图片，OCR/AI 辅助）
-- 番茄钟、专注统计、完成提醒、Pomodoro V2 分段/暂停区间
-- 公式卡：浏览、收藏、标签筛选
-- 数学公式与复杂题干渲染
-
-### 后台管理端
-
-- 管理员登录、刷新登录态、退出登录
-- 总览仪表盘
-- 小程序用户管理、封禁/解封、绑定管理员
-- 管理员账号管理、强制下线、重置密码
-- 角色与权限矩阵
-- 题库列表、题目详情、编辑、上下架、版本查看、批量删除、题目图片与选项管理、embedding 回填
-- 题目导入管理：文件上传、文本导入、批量图片导入、单题/批次审核、AI 补全、发布、失败样本导出
-- 公式卡管理：增删改、状态机审核（approve/reject/publish/offline/restore）、版本快照、图生成
-- 知识点 / 知识图谱管理：节点、边、知识质量报告
-- 推荐策略管理：策略、实验、指标聚合
-- AI 解析设置：OCR、补全、模型配置、调用统计、向量配置
-- 水印规则、系统任务队列、审计日志、系统健康检查
-
-### 后端能力
-
-- Public API：登录、刷题、错题、复习、统计、知识点、AI、导入、缓存、番茄钟、同步、RAG、自适应学习、学习报告、公式卡、导出
-- Admin API：管理端认证、用户、角色权限、题库、导入、公式卡、知识图谱、推荐、AI 配置、审计日志、系统健康
-- OCR 导题流水线：页面分类、区域检测、文本纠错、题目拆分、AI 补全、质量门禁、发布
-  - **双 OCR 模型**：本地 PP-OCRv4 作为基础识别引擎，外部 PaddleOCR-VL 1.6 作为高精度纠错与视觉回退
-  - OCR 纠错链路：`PaddleOCR-VL → DeepSeek AI → rule fallback`（自动降级）
-- 自适应学习与推荐：知识状态、难度状态、复习调度、向量召回、推荐实验与指标
-- 定时任务：refresh token 清理、番茄钟提醒、审计日志清理、AI 预热 worker
-
----
-
-## 4. 快速启动
-
-### 4.1 环境要求
+建议准备：
 
 - Python 3.11+
 - Node.js 20+
+- npm
 - 微信开发者工具
+- Git
+- 可选：Docker / Docker Compose
+- 可选：PostgreSQL 15、Redis 7
 
-### 4.2 启动后端服务
+### 5.2 启动后端
 
 #### 1）创建虚拟环境
 
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+source .venv/bin/activate
+```
+
+Windows PowerShell：
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
 
 #### 2）安装依赖
 
 ```bash
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-如需 OCR 能力，额外安装：
+如需本地 OCR：
 
 ```bash
 pip install -r requirements-ocr.txt
 ```
 
-#### 3）创建 `.env`
+#### 3）创建本地配置
 
 ```bash
 cp .env.example .env
 ```
 
-编辑 `.env`，至少填入以下必填项：
+本地开发至少确认以下配置：
 
 ```env
-APP_SECRET=change-me-in-production
+APP_ENV=development
+APP_SECRET=replace-with-a-local-secret
+DATABASE_URL=sqlite+aiosqlite:///./postgraduate.db
+PROCESS_ROLE=web
+
 WECHAT_APP_ID=
 WECHAT_APP_SECRET=
 ```
 
-#### 4）启动服务
+> `APP_ENV` 的代码默认值是 `production`。本地开发建议显式设置为 `development`，避免误触发生产配置校验。
+
+#### 4）启动 API
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-健康检查：
+检查：
 
 ```bash
 curl http://localhost:8000/health
 ```
 
-开发环境也会自动建表并创建初始管理员（`admin / admin`）。
+非生产环境还可访问：
 
-#### 5）使用 Docker Compose（开发）
-
-```bash
-docker compose -f deploy/docker-compose.dev.yml up -d
+```text
+http://localhost:8000/docs
+http://localhost:8000/redoc
+http://localhost:8000/openapi.json
 ```
 
-#### 6）开发环境默认管理员
+#### 5）开发管理员
 
-当 `APP_ENV` 为 `development`、`local` 或 `test` 时，后端启动会尝试创建开发环境超级管理员：
+当 `APP_ENV` 为 `development`、`local` 或 `test` 时，后端会初始化开发用超级管理员：
 
 ```text
 用户名：admin
 密码：admin
 ```
 
-生产环境必须修改默认账号与密码，并配置安全的 `APP_SECRET`、数据库连接和 CORS 白名单。
+**该账号仅用于本地开发。生产环境会对默认 `admin/admin` 等不安全配置执行校验，不应继续使用。**
 
----
-
-#### 7）WSL → Windows 同步（可选）
-
-WSL 开发环境如需将代码同步到 Windows 文件系统（如使用 Windows 端的 IDE、Git GUI 等工具）：
-
-```bash
-rsync -av --delete \
-  --exclude=.git --exclude=.claude --exclude=node_modules \
-  --exclude=.next --exclude=dist --exclude=build \
-  --exclude=.venv --exclude=__pycache__ --exclude=.pytest_cache \
-  --exclude=coverage --exclude=*.pdf --exclude=*.txt \
-  --exclude=.backend_cache --exclude=tests \
-  --exclude=backend/tests --exclude=prompts --exclude=ocr_test \
-  --exclude=.venv-ocr-gpu --exclude=.venv-ocr-gpu-330 \
-  --exclude=artifacts --exclude=static \
-  /home/lmh/projects/postgraduate-ai/ /mnt/d/workspace/postgraduate-ai/
-```
-
----
-
-### 4.3 启动后台管理端
+### 5.3 启动管理后台
 
 ```bash
 cd admin-frontend
@@ -257,507 +307,380 @@ npm install
 npm run dev
 ```
 
-环境变量（可选，默认连接 `http://localhost:8000`）：
-
-```env
-NEXT_PUBLIC_ADMIN_API_BASE_URL=http://localhost:8000/api/admin/v1
-```
-
-访问：
+默认开发地址：
 
 ```text
 http://localhost:3000
 ```
 
-管理端默认跳转到 `/dashboard`，未登录时进入 `/login`。
+常用环境变量：
 
----
+```env
+NEXT_PUBLIC_ADMIN_API_BASE_URL=http://localhost:8000/api/admin/v1
+```
 
-### 4.4 启动微信小程序
+管理后台使用 App Router，主要页面包括 Dashboard、用户、管理员、角色、题库、导入审核、公式卡、知识图谱、推荐策略、AI 设置、审计日志和系统任务等。
 
-#### 1）安装依赖
+### 5.4 启动微信小程序
+
+#### 1）安装 npm 依赖
 
 ```bash
 cd miniprogram
 npm install
 ```
 
-#### 2）配置 API 地址
+#### 2）配置 API 环境
 
 编辑 `miniprogram/config.js`：
 
 ```js
-const DEV = true
+const LOCAL_DEBUG = true
 ```
 
-开发环境默认请求 `http://localhost:8000/api/v1`，生产请求 `https://xzshub.top/api/v1`。
+当前配置含义：
 
-#### 3）微信开发者工具打开
+| 模式 | API |
+|---|---|
+| 本地开发 | `http://localhost:8000/api/v1` |
+| 体验版 / 正式版 | `https://xzshub.top/api/v1` |
 
-使用微信开发者工具打开 `miniprogram/` 目录。当前项目配置：
+发布或真机测试前应将：
+
+```js
+const LOCAL_DEBUG = false
+```
+
+本地 `localhost` 模式主要用于微信开发者工具；真机上的 `localhost` 指向手机自身，不能直接访问电脑上的后端。
+
+#### 3）微信开发者工具
+
+使用微信开发者工具打开 `miniprogram/`。
+
+当前项目配置：
 
 ```text
 projectname: MemoGrad
 appid: wx013724bc2f592940
-libVersion: 3.3.4
+libVersion: 3.6.6
 ```
 
-如使用自己的小程序账号，请替换 `appid`，并在后端 `.env` 中配置对应的 `WECHAT_APP_ID` 与 `WECHAT_APP_SECRET`。
-
----
-
-## 5. 数据库说明
-
-### 5.1 开发环境
-
-默认使用 SQLite：
+如使用自己的小程序账号，请同步修改 AppID，并在后端配置对应的：
 
 ```env
-DATABASE_URL=sqlite+aiosqlite:///./postgraduate.db
-```
-
-开发环境下后端启动时自动执行 `Base.metadata.create_all`，补齐历史字段，创建开发管理员、角色、权限等。
-
-### 5.2 生产环境
-
-生产使用 PostgreSQL 15：
-
-```env
-APP_ENV=production
-DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/postgraduate
-```
-
-注意事项：
-
-- `APP_ENV=production` 时不会自动建表，必须通过 Alembic 迁移。
-- 生产环境还需 Redis 7（必需：缓存、番茄钟调度锁）。
-- 启用向量检索需 PostgreSQL 安装 `pgvector` 扩展。
-- 数据库迁移使用 Alembic，通过 `deploy/scripts/deploy.sh migrate` 显式执行。
-
-### 5.3 主要数据表
-
-代码中定义的核心表包括：
-
-```text
-users                         小程序用户
-refresh_tokens                登录刷新令牌
-questions                     正式题库
-question_imports              导入暂存题目
-question_versions             题目版本
-subjects                      学科/科目
-knowledge_points              知识点
-question_knowledge_points     题目-知识点关联
-wrong_questions               错题记录
-practice_records              练习记录
-practice_sessions             练习会话（(user_id, request_id) 幂等去重）
-review_schedules              复习计划
-review_records                复习记录
-pomodoro_sessions             番茄钟记录
-pomodoro_pause_intervals      番茄钟暂停区间（Pomodoro V2）
-user_pomodoro_settings        用户番茄钟设置
-admin_users                   后台管理员
-roles                         角色
-permissions                   权限
-role_permissions              角色权限关联
-audit_logs                    审计日志
-admin_ai_settings             AI 设置
-admin_ai_model_configs        AI 模型配置
-admin_ai_configs              AI 功能配置
-admin_ai_usage_monthly        AI 月度额度统计
-admin_vector_configs          向量检索配置
-import_pipelines              导入流水线
-import_pipeline_chunks        导入流水线分块
-import_batch_jobs             批量图片导入任务
-import_batch_job_items        批量图片导入明细
-knowledge_edges               知识图谱边
-recommendation_logs           推荐日志
-recommendation_strategy_configs 推荐策略配置
-recommendation_experiments    推荐实验
-recommendation_experiment_assignments 推荐实验用户分配
-recommendation_metrics_daily  推荐每日指标
-watermark_rules               水印规则
-```
-
-公式卡与图生成：
-
-```text
-formula_cards                 公式卡
-formula_card_versions         公式卡版本快照
-formula_card_tags             公式卡-标签关联
-formula_categories            公式卡分类
-formula_tags                  公式标签
-formula_graph_assets          公式图资源
-formula_graph_previews        公式图预览
-formula_graph_specs           公式图规格
-formula_import_items / formula_import_jobs  公式批量导入
-user_formula_favorites        用户公式收藏
-```
-
-自适应学习与 AI：
-
-```text
-user_knowledge_states         用户知识点掌握状态
-user_question_state           用户单题状态
-user_question_difficulty_state 用户题目难度状态
-user_adaptive_profile         用户自适应画像
-user_knowledge_adaptive_state 用户知识自适应状态
-user_recommend_preference     用户推荐偏好
-answer_behaviors              答题行为记录
-ai_chats                      用户 AI 对话
-ai_generation_logs / ai_feedback_logs  AI 生成与反馈日志
-ocr_jobs                      OCR 任务
-export_tasks / export_snapshots  导出任务与快照
-task_outbox                   异步任务 Outbox
-app_user_admin_bindings       用户-管理员绑定
+WECHAT_APP_ID=...
+WECHAT_APP_SECRET=...
 ```
 
 ---
 
-## 6. API 概览
+## 6. 环境与部署画像
 
-### 6.1 公共端 API
+### 6.1 核心配置
 
-公共端接口主要面向微信小程序（`/api/v1`）：
+| 变量 | 代码默认值 | 说明 |
+|---|---|---|
+| `APP_ENV` | `production` | 运行环境；本地建议显式设为 `development` |
+| `APP_SECRET` | `change-me-in-production` | JWT/应用密钥，生产必须替换 |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./postgraduate.db` | 数据库连接 |
+| `PROCESS_ROLE` | `web` | `web` / `worker` / `scheduler` / `all` |
+| `LOCAL_ASYNC_RUNTIME_ENABLED` | `false` | 是否在本地 web 进程显式启用完整异步 runtime |
+| `DEPLOYMENT_PROFILE` | 空 | `local_import` / `cloud_api`，为空时由环境推导 |
+| `CORS_ORIGINS` | localhost / 127.0.0.1:3000 | 管理后台 CORS 白名单 |
+| `ALLOWED_HOSTS` | localhost / 127.0.0.1 / testserver | Host header 白名单 |
+| `LOG_LEVEL` | `INFO` | 日志级别 |
 
-```text
-GET  /health
-GET  /api/v1/health
-GET  /api/v1/version
+### 6.2 部署画像
 
-POST /api/v1/auth/login
-POST /api/v1/auth/refresh
-GET  /api/v1/users/me
-PUT  /api/v1/users/me
+后端支持两个主要 deployment profile：
 
-GET  /api/v1/questions
-POST /api/v1/questions
-GET  /api/v1/questions/random
-GET  /api/v1/questions/{question_id}
-GET  /api/v1/questions/{question_id}/detail
-GET  /api/v1/questions/{question_id}/similar
+| Profile | 适用场景 | 特征 |
+|---|---|---|
+| `local_import` | 本地开发、重 OCR/导题场景 | 可使用本地 OCR / GPU 等能力 |
+| `cloud_api` | 生产 API 服务 | 更严格的资源、安全和 OCR 隔离策略 |
 
-GET  /api/v1/practice/subjects
-GET  /api/v1/practice/questions
-GET  /api/v1/practice/knowledge-states
-GET  /api/v1/practice/weak-knowledge-points
-POST /api/v1/practice/submit
-POST /api/v1/practice/batch-submit
-GET  /api/v1/practice/stats
-GET  /api/v1/practice/records
-GET  /api/v1/practice/random/next
+解析规则概览：
 
-GET  /api/v1/wrong-questions
-GET  /api/v1/wrong-questions/stats
-GET  /api/v1/wrong-questions/task-flow
-GET  /api/v1/wrong-questions/{wq_id}
-PUT  /api/v1/wrong-questions/{wq_id}
-PUT  /api/v1/wrong-questions/{wq_id}/quality
+- `DEPLOYMENT_PROFILE` 显式设置时优先使用。
+- `APP_ENV=production` 时必须使用 `cloud_api`。
+- 非生产环境未指定 profile 时通常解析为 `local_import`。
 
-GET  /api/v1/review/today
-GET  /api/v1/review/today/overview
-GET  /api/v1/review/today/result
-POST /api/v1/review/schedule-submit
-POST /api/v1/review/batch-submit
-POST /api/v1/review/grade-submit
-POST /api/v1/review/grade-batch
-GET  /api/v1/review/schedule-stats
-GET  /api/v1/review/history
-POST /api/v1/review/{schedule_id}/master
-POST /api/v1/review/{schedule_id}/unmaster
-
-POST /api/v1/behavior/record
-GET  /api/v1/behavior/stats
-
-GET  /api/v1/stats/overview
-GET  /api/v1/stats/subjects
-GET  /api/v1/stats/trends
-GET  /api/v1/stats/dashboard
-GET  /api/v1/stats/dashboard-v2
-GET  /api/v1/stats/ai-diagnosis
-GET  /api/v1/stats/forgetting
-
-POST /api/v1/ai/error-analysis
-POST /api/v1/ai/study-advice
-POST /api/v1/ai/explain
-POST /api/v1/ai/recommend
-POST /api/v1/ai/report
-POST /api/v1/ai/analyze-mistake
-
-POST /api/v1/rag/search
-POST /api/v1/rag/context
-
-GET  /api/v1/knowledge-points
-GET  /api/v1/knowledge-points/tree
-GET  /api/v1/knowledge/states
-GET  /api/v1/knowledge/weak-points
-GET  /api/v1/knowledge-path
-GET  /api/v1/knowledge-edges
-
-GET  /api/v1/adaptive-learning/overview
-GET  /api/v1/adaptive-learning/hard-questions
-GET  /api/v1/study-report/overview
-GET  /api/v1/study-report/review-plan
-GET  /api/v1/study-report/knowledge-mastery
-
-GET  /api/v1/formulas
-GET  /api/v1/formulas/catalog
-GET  /api/v1/formulas/tags
-GET  /api/v1/formulas/{formula_id}
-GET  /api/v1/formulas/favorites/list
-PUT  /api/v1/formulas/{formula_id}/favorite
-DELETE /api/v1/formulas/{formula_id}/favorite
-
-POST /api/v1/pomodoro/start
-POST /api/v1/pomodoro/{session_id}/complete
-POST /api/v1/pomodoro/{session_id}/interrupt
-POST /api/v1/pomodoro/{session_id}/pause
-POST /api/v1/pomodoro/{session_id}/resume
-GET  /api/v1/pomodoro/active
-GET  /api/v1/pomodoro/settings     · PUT /api/v1/pomodoro/settings
-GET  /api/v1/pomodoro/stats
-GET  /api/v1/pomodoro/trends
-GET  /api/v1/pomodoro/history
-GET  /api/v1/pomodoro/daily-summary
-
-GET  /api/v1/import/template
-GET  /api/v1/import/batches
-GET  /api/v1/import/batches/{batch_id}
-POST /api/v1/import/pipeline/upload
-GET  /api/v1/import/pipelines/{pipeline_id}
-
-GET  /api/v1/exports/capabilities
-POST /api/v1/exports
-GET  /api/v1/exports/{task_id}
-GET  /api/v1/exports/{task_id}/download
-
-GET  /api/v1/cache/stats
-POST /api/v1/sync/import
-```
-
-> 说明：导入题目的人工审核（通过/拒绝/批量/发布）是管理端接口（`/api/admin/v1/imports/...`），不在此列；完整接口见 `docs/backend/API_SPEC.md`。
-
-### 6.2 管理端 API
-
-管理端接口主要面向 `admin-frontend/`（`/api/admin/v1`）：
-
-```text
-POST /api/admin/v1/auth/login
-POST /api/admin/v1/auth/refresh
-POST /api/admin/v1/auth/logout
-GET  /api/admin/v1/auth/me
-POST /api/admin/v1/auth/change-password
-
-GET  /api/admin/v1/dashboard/overview
-GET  /api/admin/v1/dashboard/daily
-GET  /api/admin/v1/dashboard/questions-stats
-
-GET  /api/admin/v1/app-users
-GET  /api/admin/v1/app-users/{user_id}
-PATCH /api/admin/v1/app-users/{user_id}
-POST /api/admin/v1/app-users/{user_id}/ban
-POST /api/admin/v1/app-users/{user_id}/unban
-
-GET  /api/admin/v1/admin-users
-POST /api/admin/v1/admin-users
-GET  /api/admin/v1/admin-users/{admin_user_id}
-PATCH /api/admin/v1/admin-users/{admin_user_id}
-DELETE /api/admin/v1/admin-users/{admin_user_id}
-POST /api/admin/v1/admin-users/{admin_user_id}/force-logout
-POST /api/admin/v1/admin-users/{admin_user_id}/reset-password
-
-GET  /api/admin/v1/roles
-GET  /api/admin/v1/permissions
-PUT  /api/admin/v1/roles/{role_id}/permissions
-
-GET  /api/admin/v1/subjects
-POST /api/admin/v1/subjects
-PATCH /api/admin/v1/subjects/{subject_id}
-DELETE /api/admin/v1/subjects/{subject_id}
-
-GET  /api/admin/v1/questions
-GET  /api/admin/v1/questions/{question_id}
-PATCH /api/admin/v1/questions/{question_id}
-DELETE /api/admin/v1/questions/{question_id}
-PATCH /api/admin/v1/questions/{question_id}/toggle-active
-POST /api/admin/v1/questions/batch-delete
-POST /api/admin/v1/questions/{question_id}/options
-POST /api/admin/v1/questions/{question_id}/images
-DELETE /api/admin/v1/questions/{question_id}/images
-GET  /api/admin/v1/questions/{question_id}/versions
-POST /api/admin/v1/questions/embeddings/backfill
-GET  /api/admin/v1/questions/embeddings/status
-
-POST /api/admin/v1/imports/upload
-GET  /api/admin/v1/imports
-GET  /api/admin/v1/imports/{batch_id}
-GET  /api/admin/v1/imports/review-queue
-GET  /api/admin/v1/imports/questions/{import_id}
-PUT  /api/admin/v1/imports/questions/{import_id}
-POST /api/admin/v1/imports/questions/{import_id}/approve
-POST /api/admin/v1/imports/questions/{import_id}/reject
-POST /api/admin/v1/imports/questions/{import_id}/complete
-POST /api/admin/v1/imports/questions/batch-complete
-POST /api/admin/v1/imports/{batch_id}/approve
-POST /api/admin/v1/imports/{batch_id}/approve-low-risk
-POST /api/admin/v1/imports/{batch_id}/reject
-POST /api/admin/v1/imports/{batch_id}/publish
-POST /api/admin/v1/imports/{batch_id}/answers/preview
-POST /api/admin/v1/imports/{batch_id}/answers/apply
-POST /api/admin/v1/imports/text-parse
-POST /api/admin/v1/imports/text-import
-POST /api/admin/v1/imports/batch-image/upload
-GET  /api/admin/v1/imports/batch-image/{job_id}
-GET  /api/admin/v1/imports/batch-image/{job_id}/stream
-
-GET  /api/admin/v1/formulas
-POST /api/admin/v1/formulas
-GET  /api/admin/v1/formulas/categories
-PUT  /api/admin/v1/formulas/{card_id}
-DELETE /api/admin/v1/formulas/{card_id}
-POST /api/admin/v1/formulas/{card_id}/review
-GET  /api/admin/v1/formulas/{card_id}/versions
-POST /api/admin/v1/formulas/batch-review
-GET  /api/admin/v1/formulas/import-jobs
-
-GET  /api/admin/v1/knowledge/edges/status
-POST /api/admin/v1/knowledge/edges
-POST /api/admin/v1/knowledge/edges/infer
-GET  /api/admin/v1/knowledge/quality-report
-
-GET  /api/admin/v1/recommendation/strategies
-GET  /api/admin/v1/recommendation/experiments
-GET  /api/admin/v1/recommendation/metrics
-
-GET  /api/admin/v1/ai-settings
-PATCH /api/admin/v1/ai-settings
-GET  /api/admin/v1/ai-settings/usage
-GET  /api/admin/v1/ai-settings/stats
-GET  /api/admin/v1/ai-configs
-PATCH /api/admin/v1/ai-configs
-GET  /api/admin/v1/ai-models
-POST /api/admin/v1/ai-models
-PATCH /api/admin/v1/ai-models/{model_id}
-DELETE /api/admin/v1/ai-models/{model_id}
-POST /api/admin/v1/ai-models/test-connection
-GET  /api/admin/v1/vector-config
-PATCH /api/admin/v1/vector-config
-POST /api/admin/v1/vector-config/test-embedding
-
-GET  /api/admin/v1/watermark-rules
-PUT  /api/admin/v1/watermark-rules/{rule_id}
-DELETE /api/admin/v1/watermark-rules/{rule_id}
-
-GET  /api/admin/v1/audit-logs
-GET  /api/admin/v1/audit-logs/{audit_log_id}
-GET  /api/admin/v1/tasks/queue-status
-GET  /api/admin/v1/system/health
-GET  /api/admin/v1/health/live
-GET  /api/admin/v1/health/ready
-```
-
-> 说明：题目审核（通过/拒绝/发布）全部走导入管理 `/imports` 接口；`/questions/{id}/approve`、`/batch-approve` 等**未实现**，勿按历史文档调用。完整接口见 `docs/admin/ADMIN_API_SPEC.md`。
-
----
-
-## 7. 环境变量参考
-
-### 核心
-
-| 变量 | 默认值 | 说明 |
-|---|---:|---|
-| `APP_ENV` | `development` | 运行环境。生产设为 `production` |
-| `APP_SECRET` | — | **必填**。应用密钥，生产必须使用强随机字符串 |
-| `DATABASE_URL` | `sqlite+aiosqlite:///./postgraduate.db` | 数据库连接（生产使用 PostgreSQL） |
-| `DEPLOYMENT_PROFILE` | 空 | 显式覆盖部署画像：`local_import` | `cloud_api` |
-| `CORS_ORIGINS` | `["http://localhost:3000"]` | 管理端跨域白名单 |
-| `LOG_LEVEL` | `INFO` | 应用日志级别 |
-
-### 微信
-
-| 变量 | 默认值 | 说明 |
-|---|---:|---|
-| `WECHAT_APP_ID` | — | **必填**。微信小程序 AppID |
-| `WECHAT_APP_SECRET` | — | **必填**。微信小程序 AppSecret |
-
-### AI / LLM
+### 6.3 AI / LLM
 
 | 变量 | 默认值 | 说明 |
 |---|---:|---|
 | `AI_TIMEOUT` | `150` | AI 调用超时（秒） |
-| `AI_DAILY_TOKEN_LIMIT` | `50000` | 单日 Token 上限 |
-| `AI_CONFIG_ENCRYPT_KEY` | 空 | AI 模型配置加密密钥（Fernet），AI API Key/Base URL/模型等通过后台页面配置后加密存入 `admin_ai_model_configs` 表 |
+| `AI_DAILY_TOKEN_LIMIT` | `50000` | 日 Token 预算 |
+| `AI_MONTHLY_TOKEN_LIMIT` | `500000` | 月 Token 预算 |
+| `AI_MAX_CONCURRENCY` | `3` | 统一 AI 并发上限 |
+| `AI_USER_RPM_LIMIT` | `12` | 用户级每分钟请求限制 |
+| `AI_CONFIG_ENCRYPT_KEY` | 空 | 后台 AI 凭据加密密钥 |
+| `AI_ALLOW_HTTP_BASE_URLS` | `false` | 是否允许非 HTTPS 的 AI Base URL |
 
-### OCR
+模型 API Key、Base URL、模型标识等主要通过管理后台配置并持久化，而不是直接硬编码到源码。
+
+### 6.4 OCR
 
 | 变量 | 默认值 | 说明 |
 |---|---:|---|
-| `OCR_ENABLED` | `false` | 是否启用 OCR |
-| `OCR_USE_GPU` | `false` | 是否使用 GPU 加速 |
+| `OCR_ENABLED` | `false` | OCR 总开关 |
+| `OCR_USE_GPU` | `true` | 本地 OCR 是否使用 GPU；`cloud_api` 有额外限制 |
 | `OCR_LANGUAGE` | `ch` | OCR 语言 |
-| `OCR_MAX_WORKERS` | `1` | OCR 并发线程数 |
-| `MAX_OCR_PAGES` | `0` | 最大页数，0 不限 |
-| `OCR_EXECUTION_BACKEND` | `disabled` | OCR 执行后端：`disabled` | `local_process` | `paddlex_http` |
-| `OCR_REMOTE_URL` | 空 | 远程 OCR 服务 URL（paddlex_http 模式） |
-| `OCR_REMOTE_TOKEN` | 空 | 远程 OCR 服务鉴权 Token |
-| `OCR_REMOTE_CONNECT_TIMEOUT_SEC` | `5` | 远程 OCR 连接超时（秒） |
-| `OCR_REMOTE_READ_TIMEOUT_SEC` | `600` | 远程 OCR 读取超时（秒） |
+| `OCR_MAX_WORKERS` | `2` | OCR worker 数 |
+| `OCR_EXECUTION_BACKEND` | `paddlex_http` | `disabled` / `local_process` / `paddlex_http` |
+| `OCR_REMOTE_URL` | `http://127.0.0.1:8080/ocr` | 远程 OCR endpoint |
+| `OCR_REMOTE_TOKEN` | 空 | 远程 OCR 鉴权 Token |
+| `OCR_REMOTE_CONNECT_TIMEOUT_SEC` | `5` | 连接超时 |
+| `OCR_REMOTE_READ_TIMEOUT_SEC` | `600` | 读取超时 |
+| `MAX_OCR_PAGES` | `0` | 最大 OCR 页数；`0` 表示不限 |
 
-**OCR 模型配置**（通过后台 AI 设置页面配置，非环境变量）：
+> OCR 配置较多，实际部署时以 `backend/app/core/config.py` 与 `.env.example` 为准。
 
-| 模型 | 类型 | 说明 |
-|------|------|------|
-| PP-OCRv4 | 本地引擎 | PaddleOCR 2.10.0，基于 `requirements-ocr.txt` 安装，用于基础文本识别 |
-| PaddleOCR-VL 1.6 | 外部 API | `https://paddleocr.aistudio-app.com`，需配置 API Token；用于 OCR 纠错第一优先级和视觉回退 |
-
-### Redis
+### 6.5 Redis / 队列
 
 | 变量 | 默认值 | 说明 |
 |---|---:|---|
-| `REDIS_URL` | 空 | Redis 地址。生产必需（缓存、番茄钟调度锁、DurableTaskQueue）|
+| `REDIS_URL` | 空 | Redis 地址；生产任务与缓存能力依赖 Redis |
+| `ALLOW_IN_MEMORY_TASK_QUEUE` | `false` | 是否允许内存队列回退，仅适合本地调试 |
 
-### 向量检索
+### 6.6 数据库连接池
 
-| 变量 | 默认值 | 说明 |
-|---|---:|---|
-| `VECTOR_ENABLED` | `false` | 是否启用向量检索（也支持通过后台页面配置） |
+生产环境支持按进程角色配置独立连接池：
 
-### 生产部署
-
-| 变量 | 默认值 | 说明 |
-|---|---:|---|
-| `PROCESS_ROLE` | `web` | 进程角色：`web` | `worker` | `scheduler` | `all`（仅开发）|
-| `GUNICORN_WORKERS` | `2` | Gunicorn worker 数 |
-| `DB_POOL_SIZE_WEB` | `3` | Web 进程 DB 连接池大小（最大溢出 +5）|
-| `DB_POOL_SIZE_WORKER` | `2` | Worker 进程 DB 连接池大小（最大溢出 +3）|
-| `DB_POOL_SIZE_SCHEDULER` | `1` | Scheduler 进程 DB 连接池大小（最大溢出 +2）|
-| `ALLOW_IN_MEMORY_TASK_QUEUE` | `false` | 允许内存队列回退（仅开发调试）|
-| `COS_ALLOW_LOCAL_FALLBACK` | `false` | 允许 COS 存储回退本地文件（生产需显式启用）|
-| `POSTGRES_USER` | `pguser` | PostgreSQL 用户 |
-| `POSTGRES_PASSWORD` | — | PostgreSQL 密码 |
-| `POSTGRES_DB` | `postgraduate` | PostgreSQL 数据库名 |
-| `CODE_DETECTOR_ENABLED` | `false` | 代码检测器灰度开关 |
-| `SQL_ECHO` | `false` | 是否打印 SQL 日志 |
-| `SQL_LOG_LEVEL` | `WARNING` | SQLAlchemy 日志级别 |
-| `SLOW_QUERY_MS` | `500` | 慢查询阈值（毫秒） |
-| `SENTRY_DSN` | 空 | Sentry DSN |
-| `NEXT_PUBLIC_ADMIN_API_BASE_URL` | `/api/admin/v1` | 管理端 API 地址 |
-| `PUBLIC_BASE_URL` | `http://localhost:8000` | 静态资源公开访问基地址 |
+| 变量 | 默认值 |
+|---|---:|
+| `DB_POOL_SIZE_WEB` | `3` |
+| `DB_MAX_OVERFLOW_WEB` | `5` |
+| `DB_POOL_SIZE_WORKER` | `2` |
+| `DB_MAX_OVERFLOW_WORKER` | `3` |
+| `DB_POOL_SIZE_SCHEDULER` | `1` |
+| `DB_MAX_OVERFLOW_SCHEDULER` | `2` |
 
 ---
 
-## 8. 生产部署
+## 7. API 与开发文档
 
-### 8.1 架构
+### 7.1 Public API
+
+小程序接口前缀：
+
+```text
+/api/v1
+```
+
+主要领域：
+
+| 领域 | 示例 |
+|---|---|
+| 认证 | `/auth/login`, `/auth/refresh` |
+| 用户 | `/users/me` |
+| 题库 | `/questions`, `/questions/{id}` |
+| 刷题 | `/practice/*` |
+| 错题 | `/wrong-questions/*` |
+| 复习 | `/review/*` |
+| 学习统计 | `/stats/*`, `/study-report/*` |
+| AI / RAG | `/ai/*`, `/rag/*` |
+| 知识与自适应 | `/knowledge-*`, `/adaptive-learning/*` |
+| 公式卡 | `/formulas/*` |
+| 番茄钟 | `/pomodoro/*` |
+| 导入 / 导出 | `/import/*`, `/exports/*` |
+| 同步 / 缓存 | `/sync/*`, `/cache/*` |
+
+### 7.2 Admin API
+
+后台接口前缀：
+
+```text
+/api/admin/v1
+```
+
+主要领域：认证、Dashboard、App 用户、管理员、RBAC、科目、题库、导入审核、公式卡、知识图谱、推荐、AI 设置、向量配置、水印、审计日志、任务队列和系统健康。
+
+### 7.3 API source of truth
+
+开发环境优先查看运行时 OpenAPI：
+
+```text
+http://localhost:8000/docs
+http://localhost:8000/openapi.json
+```
+
+项目内文档可继续维护：
+
+```text
+docs/backend/API_SPEC.md
+docs/admin/ADMIN_API_SPEC.md
+```
+
+> README 只保留稳定的接口领域和入口，避免复制完整路由清单后长期失真。
+
+---
+
+## 8. 数据库与迁移
+
+### 8.1 本地开发
+
+推荐使用 SQLite：
+
+```env
+APP_ENV=development
+DATABASE_URL=sqlite+aiosqlite:///./postgraduate.db
+```
+
+`local_import` 画像下，应用启动会注册模型并执行本地数据库初始化/兼容修复逻辑，适合快速开发。
+
+### 8.2 生产环境
+
+推荐：
+
+```env
+APP_ENV=production
+DEPLOYMENT_PROFILE=cloud_api
+DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@HOST:5432/postgraduate
+REDIS_URL=redis://HOST:6379/0
+```
+
+生产数据库应由 Alembic 管理：
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+检查当前 revision：
+
+```bash
+alembic current
+alembic heads
+```
+
+CI 的 Reliability Gate 会执行全部迁移，并校验数据库 revision 与仓库 Alembic heads 一致。
+
+### 8.3 核心数据域
+
+主要模型可按领域理解：
+
+- 用户与认证：`users`, `refresh_tokens`
+- 题库：`questions`, `question_versions`, `subjects`, `knowledge_points`
+- 刷题与错题：`practice_records`, `practice_sessions`, `wrong_questions`
+- 复习：`review_schedules`, `review_records`
+- 番茄钟：`pomodoro_sessions`, `pomodoro_pause_intervals`, `user_pomodoro_settings`
+- 管理后台：`admin_users`, `roles`, `permissions`, `role_permissions`, `audit_logs`
+- AI：`admin_ai_model_configs`, `admin_ai_configs`, AI usage / feedback logs
+- 导题：import pipeline / batch job / OCR job 相关表
+- 公式卡：formula card / version / tag / graph / import 相关表
+- 推荐：strategy / experiment / assignment / metrics / logs
+- 异步任务：`task_outbox` 等任务基础设施表
+
+---
+
+## 9. 测试、代码质量与 CI
+
+仓库当前有三类主要 GitHub Actions 检查：
+
+### 9.1 CI / lint-and-audit
+
+主要包含：
+
+1. `compileall`：全量 Python 语法检查
+2. Ruff correctness gate
+3. 修改文件的严格 Ruff gate
+4. Ruff legacy debt report
+5. Ruff format（当前以迁移/提示为主）
+6. MyPy、Bandit、pip-audit
+7. 静态架构与非 GPU 回归测试
+8. import smoke test
+9. OCR benchmark（advisory）
+10. Docker image build
+
+本地建议至少执行：
+
+```bash
+cd backend
+
+python -m compileall -q app
+ruff check app/ --ignore I001,F401,N818
+```
+
+对于你本次新增或修改的 Python 文件，建议额外严格执行：
+
+```bash
+ruff check path/to/changed_file.py
+```
+
+这样可以提前发现 `F823`、未定义变量、作用域错误等会直接阻塞 CI 的问题。
+
+### 9.2 Reliability Gate
+
+Reliability workflow 会覆盖：
+
+- PostgreSQL + pgvector service
+- Redis service
+- Alembic 全量迁移
+- Alembic head 一致性校验
+- 后端 reliability unit / integration tests
+- OpenAPI contract 导出与校验
+- FastAPI OpenAPI → TypeScript contract
+- 管理后台 TypeScript contract 检查
+- 管理后台构建
+
+### 9.3 前端与小程序
+
+管理后台：
+
+```bash
+cd admin-frontend
+npm run build
+```
+
+微信小程序没有统一测试命令时，可运行 `scripts/test-*.js` 中与当前改动相关的测试脚本，并通过微信开发者工具进行编译、真机/模拟器验证。
+
+---
+
+## 10. 生产部署
+
+### 10.1 部署前检查
+
+生产环境至少确认：
+
+- `APP_ENV=production`
+- `DEPLOYMENT_PROFILE=cloud_api`
+- 替换默认 `APP_SECRET`
+- 配置 PostgreSQL 与 Redis
+- 配置 `ALLOWED_HOSTS` 与 `CORS_ORIGINS`
+- 禁用或修改开发默认管理员
+- 使用 HTTPS
+- 不把 `.env`、数据库密码、微信 AppSecret、AI API Key、OCR Token 提交到 Git
+- 执行 Alembic migration
+- 检查 `/health`、ready/live health
+- 确认 worker 与 scheduler 已启动
+
+### 10.2 GitHub Deploy workflow
+
+当前 Deploy workflow 为手动触发（`workflow_dispatch`）：
+
+1. GitHub Actions 先运行后端测试。
+2. 仅 `main` 分支进入 deploy job。
+3. 通过 SSH 登录服务器。
+4. 在部署目录执行：
+
+```bash
+bash deploy/scripts/deploy.sh update
+```
+
+部署主逻辑应继续集中维护在 `deploy/scripts/`，避免把复杂部署步骤复制到 README 或 workflow 中形成多套实现。
+
+### 10.3 架构
 
 生产环境使用 Docker Compose 部署，包含 5 个服务：
 
-| 服务 | 说明 |
-|------|------|
-| `app` | FastAPI + Gunicorn，源码构建 |
-| `nginx` | nginx:1.25-alpine，HTTPS 反向代理 |
-| `postgres` | PostgreSQL 15，持久卷 |
-| `redis` | Redis 7，持久卷 |
-| `admin` | Next.js 管理前端（仅内网 3000） |
+| 服务       | 说明                              |
+| ---------- | --------------------------------- |
+| `app`      | FastAPI + Gunicorn，源码构建      |
+| `nginx`    | nginx:1.25-alpine，HTTPS 反向代理 |
+| `postgres` | PostgreSQL 15，持久卷             |
+| `redis`    | Redis 7，持久卷                   |
+| `admin`    | Next.js 管理前端（仅内网 3000）   |
 
 网络拓扑：
 
@@ -767,23 +690,23 @@ GET  /api/admin/v1/health/ready
                       → redis:6379（仅 app 可访问）
 ```
 
-### 8.2 服务器信息
+### 10.4 服务器信息
 
 > 2026-08-06 生产已迁移至新服务器并完成 DNS 切流；2026-08-07 旧机服务已停用（数据卷保留，可回滚）。新服务器为当前唯一生产。
 
-| 项目 | 新服务器（当前生产） | 旧服务器（冷备） |
-|------|---------------------|------------------|
-| 域名 | `xzshub.top` | `xzshub.top`（DNS 已改指新服务器） |
-| 公网 IP | `101.33.231.186` | `8.163.56.109` |
-| 内网 IP | `10.1.0.13` | `172.18.50.44` |
-| 部署目录 | `/opt/22408-ai` | `/opt/2240ai-v2` |
-| 连接密钥 | `Linux_connect.pem` | `loginkey.pem` |
-| CPU | 4 核（AMD EPYC 7K62） | 2 核 |
-| 内存 | 3.6 GiB | 1.8 GB |
-| 磁盘 | 40 GB（注意 Docker 镜像/缓存占用，构建前先 `df -h` 检查） | — |
-| OS | OpenCloudOS 9.6（RPM 系） | Linux (Debian) |
+| 项目     | 新服务器（当前生产）                                      | 旧服务器（冷备）                   |
+| -------- | --------------------------------------------------------- | ---------------------------------- |
+| 域名     | `xzshub.top`                                              | `xzshub.top`（DNS 已改指新服务器） |
+| 公网 IP  | `101.33.231.186`                                          | `8.163.56.109`                     |
+| 内网 IP  | `10.1.0.13`                                               | `172.18.50.44`                     |
+| 部署目录 | `/opt/22408-ai`                                           | `/opt/2240ai-v2`                   |
+| 连接密钥 | `Linux_connect.pem`                                       | `loginkey.pem`                     |
+| CPU      | 4 核（AMD EPYC 7K62）                                     | 2 核                               |
+| 内存     | 3.6 GiB                                                   | 1.8 GB                             |
+| 磁盘     | 40 GB（注意 Docker 镜像/缓存占用，构建前先 `df -h` 检查） | —                                  |
+| OS       | OpenCloudOS 9.6（RPM 系）                                 | Linux (Debian)                     |
 
-### 8.3 部署流程
+### 10.5 部署流程
 
 详细部署文档见 `docs/project/DEPLOY_PLAN.md`。
 
@@ -814,97 +737,120 @@ ssh root@101.33.231.186 "cd /opt/22408-ai && bash deploy/scripts/deploy.sh migra
 - ❌ `docker compose build --no-cache` — 破坏 layer cache
 - ❌ 从本地覆盖服务器 `backend/.env`、`cert/`、密钥
 
-### 8.4 关键文件
+### 10.6 关键文件
 
-| 路径 | 说明 |
-|------|------|
-| `deploy/docker-compose.prod.yml` | 生产 Docker Compose 入口 |
-| `deploy/scripts/deploy.sh` | 生产部署脚本 |
-| `deploy/nginx/nginx.conf` | Nginx 配置 |
-| `scripts/postgres_backup.py` | PostgreSQL 备份脚本（pg_dump custom format） |
-| `deploy/scripts/backup.sh` | 旧版备份脚本（已弃用，引用自 Python 脚本） |
-| `deploy/Dockerfile.backup` | 备份容器镜像（Python + postgresql-client） |
-| `deploy/systemd/postgres-backup.service` | systemd backup 服务单元 |
-| `deploy/systemd/postgres-backup.timer` | systemd 定时器（每天 03:00） |
-| `deploy/Dockerfile.prod` | 生产多阶段 Dockerfile |
-
----
-
-## 9. 常见问题
-
-### 9.1 后端启动后访问接口报数据库错误
-
-检查：
-
-- 是否在 `backend/` 下启动，确保 `postgraduate.db` 创建在预期位置。
-- `DATABASE_URL` 是否正确。
-- 生产环境是否已执行 `deploy.sh migrate`。
-
-### 9.2 管理端无法请求后端
-
-检查：
-
-- 后端是否运行在 `http://localhost:8000`。
-- `NEXT_PUBLIC_ADMIN_API_BASE_URL` 是否正确。
-- 后端 `CORS_ORIGINS` 是否包含管理端地址。
-- 登录是否使用开发默认账号 `admin / admin`。
-
-### 9.3 小程序真机调试接口不通
-
-检查：
-
-- 真机不能访问电脑的 `localhost`。
-- 需要使用局域网 IP、内网穿透地址或 HTTPS 正式域名。
-- 微信开发者工具是否关闭了"不校验合法域名"。
-- 正式版必须在微信公众平台配置 request 合法域名。
-
-### 9.4 OCR 或 AI 功能不可用
-
-检查：
-
-- `OCR_ENABLED` 是否开启，OCR 依赖是否安装（`requirements-ocr.txt`）。
-- AI 模型是否已在后台配置并启用。
-- `DEEPSEEK_API_KEY` 或后台模型配置中的 API Key 是否有效。
-- 日志中是否出现 `AI_MODEL_NOT_CONFIGURED` 或模型连接失败信息。
-
-### 9.5 向量检索不可用
-
-检查：
-
-- 是否使用 PostgreSQL（SQLite 不支持向量检索）。
-- 是否安装 `pgvector` 扩展。
-- `VECTOR_ENABLED` 与 `VECTOR_MODE` 是否开启。
-- Embedding 配置是否与模型一致。
-
-### 9.6 Docker 构建缓慢
-
-PaddlePaddle（~500MB）等大包下载较慢。Dockerfile 配置了清华源（`pypi.tuna.tsinghua.edu.cn`），可将构建时间从数小时缩短至 2-3 分钟。如清华源不可用，备选阿里云或中科大镜像。
+| 路径                                     | 说明                                         |
+| ---------------------------------------- | -------------------------------------------- |
+| `deploy/docker-compose.prod.yml`         | 生产 Docker Compose 入口                     |
+| `deploy/scripts/deploy.sh`               | 生产部署脚本                                 |
+| `deploy/nginx/nginx.conf`                | Nginx 配置                                   |
+| `scripts/postgres_backup.py`             | PostgreSQL 备份脚本（pg_dump custom format） |
+| `deploy/scripts/backup.sh`               | 旧版备份脚本（已弃用，引用自 Python 脚本）   |
+| `deploy/Dockerfile.backup`               | 备份容器镜像（Python + postgresql-client）   |
+| `deploy/systemd/postgres-backup.service` | systemd backup 服务单元                      |
+| `deploy/systemd/postgres-backup.timer`   | systemd 定时器（每天 03:00）                 |
+| `deploy/Dockerfile.prod`                 | 生产多阶段 Dockerfile                        |
 
 ---
 
-## 10. 当前文件包注意事项
+## 11. WSL → Windows 同步
 
-1. 后端 `backend/requirements.txt` 已锁定版本，可直接用于生产构建。
-2. `admin-frontend/` 包含完整的 `package.json`、`tsconfig.json`、`next.config.ts`，`npm install` 后即可启动。
-3. 生产部署使用 `deploy/docker-compose.prod.yml` + `deploy/scripts/deploy.sh`，不建议手动使用 `gunicorn` 启动。
-4. 开发环境 SQLite 与生产 PostgreSQL 在布尔类型、JSON 字段、自增 ID 等方面存在差异，迁移数据时需转换。
-5. 开发默认管理员 `admin / admin` 仅适合本地调试，生产环境必须修改。
+仓库提供 `sync-to-windows.sh`，用于将 WSL 中的项目镜像到 Windows 文件系统，方便使用 Windows IDE 或 GUI 工具。
 
----
+脚本特点：
 
-## 11. 推荐补充文件
+- 以 `.gitignore` 作为主要排除规则来源
+- 不同步 `.git`，Git 操作继续留在 WSL
+- 使用适合 drvfs/NTFS 的 rsync 参数，避免 `-a` 带来的 owner/group/permission 问题
+- 使用 `--delete-after` 与 `--partial`
+- 对虚拟环境、tests、prompts、artifacts、SSL 等目录做额外排除
+- 保留 `backend/static/question-assets/` 供本地渲染检查
 
-```text
-requirements-ocr.txt  ✅ 已有
-alembic/              ✅ 已有
-admin-frontend/package.json  ✅ 已有
-Dockerfile            ✅ 已有（dev + prod）
-docker-compose.yml    ✅ 已有（dev + prod）
-.env.example          ✅ 已有
+先预览：
+
+```bash
+./sync-to-windows.sh -n
 ```
 
-暂缺但推荐补充：
+确认后同步：
+
+```bash
+./sync-to-windows.sh
+```
+
+如果脚本没有执行权限：
+
+```bash
+chmod +x sync-to-windows.sh
+```
+
+当前脚本默认目标目录：
 
 ```text
-docker-compose.yml    （根级入口，当前在 deploy/ 下）
+/mnt/d/workspace/postgraduate-ai/
 ```
+
+如本机目录不同，修改脚本中的 `DST` 后再执行。
+
+---
+
+## 12. 常见问题
+
+### 后端一启动就报生产配置错误
+
+检查 `.env` 是否明确设置：
+
+```env
+APP_ENV=development
+```
+
+因为代码默认环境是 `production`，未配置时会执行更严格的生产校验。
+
+### 小程序无法访问本地 API
+
+微信开发者工具可使用：
+
+```text
+http://localhost:8000/api/v1
+```
+
+真机不能通过 `localhost` 访问电脑。真机调试需要使用手机可访问的局域网地址、HTTPS 测试域名或正式域名，并同步处理微信小程序合法域名配置。
+
+### 管理后台请求 401 / 403
+
+依次检查：
+
+- 管理员是否已登录
+- access token 是否过期
+- refresh 是否正常
+- 当前角色是否拥有对应 permission
+- `NEXT_PUBLIC_ADMIN_API_BASE_URL` 是否指向正确后端
+
+### Ruff 报 `F823 Local variable ... referenced before assignment`
+
+这通常不是 workflow 配置问题，而是 Python 作用域问题。例如函数内部再次 `import` 或赋值某个名字，会让该名字被视为局部变量，从而导致前面的引用失效。应修复源码，而不是把 `F823` 加入 Ruff ignore。
+
+### OCR 不工作
+
+优先检查：
+
+```env
+OCR_ENABLED=true
+OCR_EXECUTION_BACKEND=...
+```
+
+若使用远程 OCR，再检查 `OCR_REMOTE_URL`、网络连通性、Token、HTTP/HTTPS 策略以及 deployment profile 是否允许该配置。
+
+---
+
+## 文档维护原则
+
+建议将 README 保持为「入口文档」，而把高频变化内容放到专项文档：
+
+- 完整 API → OpenAPI / `docs/backend/` / `docs/admin/`
+- 系统架构 → `docs/architecture/`
+- OCR / AI pipeline → `docs/ai/`
+- UI / 组件规范 → `docs/frontend/`
+- 发布、迁移、运维 → `deploy/` 与项目运维文档
+
+当代码、环境变量或 workflow 行为变化时，优先更新其 source of truth，再同步 README 中的入口说明。

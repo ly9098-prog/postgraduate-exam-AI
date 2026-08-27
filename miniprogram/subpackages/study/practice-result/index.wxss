@@ -14,7 +14,7 @@ page {
   position: relative;
   box-sizing: border-box;
   min-height: 430rpx;
-  padding: calc(env(safe-area-inset-top) + 16rpx) 32rpx 92rpx;
+  padding: 16rpx 32rpx 92rpx;
   overflow: hidden;
   background:
     radial-gradient(circle at 100% 0%, rgba(99, 198, 87, .14), transparent 38%),
@@ -45,13 +45,23 @@ page {
   justify-content: space-between;
 }
 
-.nav-back,
+.nav-back-hit,
 .nav-placeholder {
-  width: 64rpx;
-  height: 64rpx;
+  width: 88rpx;
+  height: 72rpx;
+}
+
+.nav-back-hit {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .nav-back {
+  width: 64rpx;
+  height: 64rpx;
   display: flex;
   align-items: center;
   justify-content: center;

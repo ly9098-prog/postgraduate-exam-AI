@@ -199,6 +199,7 @@ class AdminQuestionVersionListItem(BaseModel):
     question_id: int
     version: int
     edited_by: int
+    edited_by_name: str | None = None
     edit_reason: str | None = None
     created_at: datetime
 
@@ -209,7 +210,7 @@ class AdminQuestionVersionDetail(AdminQuestionVersionListItem):
     answer: str
     analysis: str | None = None
     difficulty: int
-    knowledge_points: Any | None = None
+    knowledge_points: list[str] = Field(default_factory=list)
 
 
 class AdminQuestionAddOptionItem(BaseModel):

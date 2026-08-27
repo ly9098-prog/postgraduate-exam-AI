@@ -277,8 +277,12 @@ export function QuestionAnalysis({
   const parsed = asAnalysisObject(raw);
   const sections = parsed ? buildSections(parsed) : [];
 
-  if (!parsed || sections.length === 0) {
+  if (!parsed) {
     return <PlainAnalysis value={raw} compact={compact} />;
+  }
+
+  if (sections.length === 0) {
+    return <PlainAnalysis value="—" compact={compact} />;
   }
 
   return (

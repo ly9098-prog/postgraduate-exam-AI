@@ -296,10 +296,12 @@ def clean_ocr_text(text: str, *, trace_id: str = "") -> str:
 def get_ocr_cache_stats() -> dict:
     """Return OCR cache hit/miss statistics."""
     try:
-        from app.services.ocr_cache_service import get_stats
-        return get_stats()
-    except ImportError:
-        return {"hits": 0, "misses": 0, "hit_rate": 0.0}
+        from app.services.ocr_cache_service import get_cache_stats
+
+        return get_cache_stats()
+    except Exception as exc:
+        logger.warning("OCR cache stats unavailable: %s", exc)
+        return {"hits": 0, "misses": 0, "hit_rate": 0.0, "enabled": False}
 
 
 def get_last_transform_tracker():

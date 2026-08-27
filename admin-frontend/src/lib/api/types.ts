@@ -391,6 +391,7 @@ export type QuestionVersion = {
   question_id: number;
   version: number;
   edited_by: number;
+  edited_by_name?: string | null;
   edit_reason?: string | null;
   created_at?: string;
 };
@@ -401,7 +402,7 @@ export type QuestionVersionDetail = QuestionVersion & {
   answer: string;
   analysis?: string | null;
   difficulty: number;
-  knowledge_points?: unknown;
+  knowledge_points: string[];
 };
 
 export type BatchFailure = {
