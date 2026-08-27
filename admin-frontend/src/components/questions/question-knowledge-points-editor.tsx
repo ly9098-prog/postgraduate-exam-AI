@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Tag, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-function displayKnowledgePoint(value: unknown) {
+function displayKnowledgePoint(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
