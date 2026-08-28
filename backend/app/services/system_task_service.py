@@ -308,7 +308,6 @@ async def list_system_scheduled_tasks() -> list[dict]:
                 "artifact_size_bytes": latest.get("size_bytes"),
                 "artifact_created_at": latest.get("created_at"),
                 "backup_count": int(backup_info.get("backup_count") or 0),
-                "backup_dir": backup_info.get("backup_dir"),
                 "script_available": bool(backup_info.get("script_available")),
                 "pg_dump_available": bool(backup_info.get("pg_dump_available")),
                 "timer_unit": backup_info.get("timer_unit"),

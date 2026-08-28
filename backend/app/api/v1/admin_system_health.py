@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/admin/v1/system", tags=["admin-system-health"])
 
 @router.get("/health", response_model=SystemHealthResponse)
 async def system_health(
-    _=Depends(require_permissions("import:read")),
+    _=Depends(require_permissions("system:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Aggregated system health check.
