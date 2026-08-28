@@ -312,13 +312,29 @@ async def pipeline_upload(
 async def pipeline_status(
     pipeline_id: str,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_app_permission("import:read")),
+    current_user: User = Depends(require_app_permission("import:read")),
 ):
-    """查询流水线执行状态和各阶段详情。"""
+    """查询当前用户自己创建的流水线状态和阶段详情。"""
+    from app.models.import_pipeline import ImportPipeline
+
+    requester_id = str(current_user.id)
+    owned_pipeline = (
+        await db.execute(
+            sa_select(ImportPipeline.pipeline_id).where(
+                ImportPipeline.pipeline_id == pipeline_id,
+                ImportPipeline.created_by == requester_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if owned_pipeline is None:
+        # Deliberately return 404 for both nonexistent and foreign pipelines so
+        # callers cannot enumerate other users' pipeline identifiers.
+        raise HTTPException(status_code=404, detail="流水线不存在")
+
     try:
         return await svc_get_pipeline_status(pipeline_id, db)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="流水线不存在")
 
 
 _RESUMABLE_PIPELINE_STATUSES = {"paused", "failed"}

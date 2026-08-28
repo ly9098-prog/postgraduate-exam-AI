@@ -59,18 +59,47 @@ def detect_deployment_profile() -> DeploymentProfile:
                 "部署档案冲突: "
                 f"DEPLOYMENT_PROFILE={explicit!r} 与 DEPLOY_PROFILE={legacy!r} 不一致"
             )
-        if app_env == "production" and profile != DeploymentProfile.CLOUD_API:
-            raise ValueError(
-                "部署档案冲突: APP_ENV='production' 时 "
-                "DEPLOYMENT_PROFILE 必须为 'cloud_api'"
-            )
+        _validate_app_env_profile(app_env, profile)
         return profile
 
     if legacy:
-        return legacy_map[legacy]
+        profile = legacy_map[legacy]
+        _validate_app_env_profile(app_env, profile)
+        return profile
     if app_env == "production":
         return DeploymentProfile.CLOUD_API
     return DeploymentProfile.LOCAL_IMPORT
+
+
+def _validate_app_env_profile(app_env: str, profile: DeploymentProfile) -> None:
+    """Reject mixed security environments instead of choosing the weaker side.
+
+    ``cloud_api`` is a production security boundary: allowing it to coexist
+    with a development/test ``APP_ENV`` would re-enable development-only
+    bootstrap, permission bypasses, documentation and weaker HTTP defaults.
+    """
+    if app_env == "production" and profile != DeploymentProfile.CLOUD_API:
+        raise ValueError(
+            "部署档案冲突: APP_ENV='production' 时 "
+            "DEPLOYMENT_PROFILE 必须为 'cloud_api'"
+        )
+    if profile == DeploymentProfile.CLOUD_API and app_env != "production":
+        raise ValueError(
+            "部署档案冲突: DEPLOYMENT_PROFILE='cloud_api' 时 "
+            "APP_ENV 必须为 'production'"
+        )
+
+
+def is_restricted_environment() -> bool:
+    """Return whether production-grade security restrictions must apply.
+
+    Profile detection is intentionally allowed to raise on an invalid mixed
+    environment so startup fails closed rather than silently enabling dev mode.
+    """
+    return (
+        (app_config.settings.APP_ENV or "").strip().lower() == "production"
+        or detect_deployment_profile() == DeploymentProfile.CLOUD_API
+    )
 
 
 # ── Profile Validation ─────────────────────────────────────────────────────

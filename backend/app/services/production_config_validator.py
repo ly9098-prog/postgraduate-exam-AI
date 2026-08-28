@@ -55,6 +55,7 @@ def validate_production_config() -> None:
 
     checks = (
         _check_app_secret,
+        _check_scoped_security_secrets,
         _check_debug_settings,
         _check_database_url,
         _check_cors,
@@ -136,6 +137,22 @@ def _check_app_secret(errors: list[str]) -> None:
             f"APP_SECRET 长度不足（当前 {len(secret)} 字符），至少需要 32 字符"
         )
 
+
+
+def _check_scoped_security_secrets(errors: list[str]) -> None:
+    """Validate optional independent JWT roots and observability token."""
+    user_secret = (settings.USER_JWT_SECRET or "").strip()
+    admin_secret = (settings.ADMIN_JWT_SECRET or "").strip()
+    if user_secret and len(user_secret) < 32:
+        errors.append("USER_JWT_SECRET 如配置，长度至少需要 32 字符")
+    if admin_secret and len(admin_secret) < 32:
+        errors.append("ADMIN_JWT_SECRET 如配置，长度至少需要 32 字符")
+    if user_secret and admin_secret and user_secret == admin_secret:
+        errors.append("USER_JWT_SECRET 与 ADMIN_JWT_SECRET 必须不同")
+
+    observability_token = (settings.OBSERVABILITY_TOKEN or "").strip()
+    if observability_token and len(observability_token) < 32:
+        errors.append("OBSERVABILITY_TOKEN 如配置，长度至少需要 32 字符")
 
 def _check_debug_settings(errors: list[str]) -> None:
     """Reject settings that can expose sensitive runtime or SQL details."""

@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
+import hashlib
+import hmac
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -11,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.cache import CacheUnavailableError, cache
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 from app.core.time_utils import unix_timestamp, utcnow
 from app.models.admin import AdminUser, Permission, RolePermission
 from app.models.app_user_admin_binding import AppUserAdminBinding
@@ -18,6 +21,23 @@ from app.models.app_user_admin_binding import AppUserAdminBinding
 security = HTTPBearer()
 
 _USER_TOKEN_TYPE = "user_access"
+
+
+def _user_jwt_secret() -> str:
+    """Return a user-token signing key isolated from the admin token domain.
+
+    USER_JWT_SECRET can provide a fully independent root secret.  When it is
+    unset, derive a scoped key from APP_SECRET so user/admin JWTs still never
+    share the exact HMAC key.
+    """
+    configured = (getattr(settings, "USER_JWT_SECRET", "") or "").strip()
+    if configured:
+        return configured
+    return hmac.new(
+        settings.APP_SECRET.encode("utf-8"),
+        b"memograd:user-jwt:v1",
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def create_token(user_id: int, *, issued_at: int | None = None) -> tuple[str, int]:
@@ -34,7 +54,7 @@ def create_token(user_id: int, *, issued_at: int | None = None) -> tuple[str, in
         "exp": int(expire_dt.timestamp()),
     }
     return (
-        jwt.encode(payload, settings.APP_SECRET, algorithm="HS256"),
+        jwt.encode(payload, _user_jwt_secret(), algorithm="HS256"),
         int(expire_dt.timestamp()),
     )
 
@@ -43,7 +63,7 @@ def decode_token_payload(token: str) -> dict[str, Any]:
     try:
         payload = jwt.decode(
             token,
-            settings.APP_SECRET,
+            _user_jwt_secret(),
             algorithms=["HS256"],
             audience=settings.USER_JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
@@ -169,7 +189,15 @@ async def authenticate_user_token(
 
 
 def _is_local_dev_user(user) -> bool:
-    return settings.APP_ENV.lower() in {"development", "local", "test"} and str(getattr(user, "openid", "")).startswith("dev_")
+    if settings.APP_ENV.lower() not in {"development", "dev", "local", "test", "testing"}:
+        return False
+    try:
+        if detect_deployment_profile() != DeploymentProfile.LOCAL_IMPORT:
+            return False
+    except Exception:
+        # Invalid deployment configuration must never grant a permission bypass.
+        return False
+    return str(getattr(user, "openid", "")).startswith("dev_")
 
 
 def require_app_permission(permission_name: str):
