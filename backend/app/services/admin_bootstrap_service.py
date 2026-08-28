@@ -27,6 +27,9 @@ ADMIN_ROLE_PERMISSION_NAMES = {
     "subject:delete",
     "import:read",
     "import:write",
+    # System observability is readable by the default admin role, but destructive
+    # operations and database backup remain explicitly privileged.
+    "system:read",
     "audit:read",
     "sync:write",
     "knowledge:read",
@@ -79,6 +82,9 @@ ADMIN_PERMISSION_DEFINITIONS: tuple[dict[str, str], ...] = (
     {"name": "permission:read", "resource": "permission", "action": "read", "category": "rbac", "description": "查看权限"},
     {"name": "import:read", "resource": "import", "action": "read", "category": "import", "description": "查看导入任务"},
     {"name": "import:write", "resource": "import", "action": "write", "category": "import", "description": "管理导入任务"},
+    {"name": "system:read", "resource": "system", "action": "read", "category": "system", "description": "查看系统任务、队列与运行状态"},
+    {"name": "system:write", "resource": "system", "action": "write", "category": "system", "description": "执行系统维护任务及管理任务队列"},
+    {"name": "system:backup", "resource": "system", "action": "backup", "category": "system", "description": "查看和执行数据库备份"},
     {"name": "ai_setting:read", "resource": "ai_setting", "action": "read", "category": "ai_setting", "description": "查看 AI 解析设置"},
     {"name": "ai_setting:write", "resource": "ai_setting", "action": "write", "category": "ai_setting", "description": "修改 AI 解析设置"},
     {"name": "audit:read", "resource": "audit", "action": "read", "category": "audit", "description": "查看审计日志"},

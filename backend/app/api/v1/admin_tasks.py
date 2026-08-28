@@ -98,7 +98,6 @@ class ScheduledTaskSummary(BaseModel):
     artifact_size_bytes: int | None = None
     artifact_created_at: str | None = None
     backup_count: int | None = None
-    backup_dir: str | None = None
     script_available: bool | None = None
     pg_dump_available: bool | None = None
     timer_unit: str | None = None
@@ -113,7 +112,6 @@ class ScheduledTaskListResponse(BaseModel):
 
 class DatabaseBackupArtifact(BaseModel):
     name: str
-    path: str
     size_bytes: int
     created_at: str
     method: str | None = None
@@ -121,7 +119,6 @@ class DatabaseBackupArtifact(BaseModel):
 
 
 class DatabaseBackupHistoryResponse(BaseModel):
-    backup_dir: str
     items: list[DatabaseBackupArtifact]
     total: int
 
@@ -224,7 +221,7 @@ _TRACE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
 
 @router.get("/diagnostics", response_model=TaskDiagnosticsResponse)
 async def task_diagnostics(
-    _=Depends(require_permissions("import:read")),
+    _=Depends(require_permissions("system:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Return a live PostgreSQL + Redis + answer-projection health snapshot."""
@@ -237,7 +234,7 @@ async def task_diagnostics(
 async def trace_task_lifecycle(
     trace_id: str,
     limit: int = Query(50, ge=1, le=100),
-    _=Depends(require_permissions("import:read")),
+    _=Depends(require_permissions("system:read")),
     db: AsyncSession = Depends(get_db),
 ):
     """Resolve a trace id to its durable outbox/queue/projection lifecycle."""
@@ -251,7 +248,7 @@ async def trace_task_lifecycle(
 
 @router.get("/queue-status", response_model=QueueStatusResponse)
 async def get_queue_status(
-    _=Depends(require_permissions("import:read")),
+    _=Depends(require_permissions("system:read")),
 ):
     """Aggregated queue metrics across all task types."""
     from app.services.task_queue_service import task_queue
@@ -286,7 +283,7 @@ async def get_queue_status(
 
 @router.get("/scheduled", response_model=ScheduledTaskListResponse)
 async def list_scheduled_tasks(
-    _=Depends(require_permissions("import:read")),
+    _=Depends(require_permissions("system:read")),
 ):
     """List recurring scheduler jobs with cross-process execution telemetry."""
     from app.core.time_utils import serialize_utc_datetime, utcnow
@@ -302,7 +299,7 @@ async def list_scheduled_tasks(
 @router.get("/system/postgres-backup/history", response_model=DatabaseBackupHistoryResponse)
 async def postgres_backup_history(
     limit: int = Query(10, ge=1, le=50),
-    _=Depends(require_permissions("import:read")),
+    _=Depends(require_permissions("system:backup")),
 ):
     """List recent PostgreSQL backup artifacts visible to the admin service."""
     from app.services.database_backup_service import inspect_database_backup, list_backup_artifacts
@@ -310,8 +307,16 @@ async def postgres_backup_history(
     info = await inspect_database_backup()
     items = list_backup_artifacts(limit)
     return DatabaseBackupHistoryResponse(
-        backup_dir=str(info.get("backup_dir") or ""),
-        items=[DatabaseBackupArtifact(**item) for item in items],
+        items=[
+            DatabaseBackupArtifact(
+                name=str(item.get("name") or ""),
+                size_bytes=int(item.get("size_bytes") or 0),
+                created_at=str(item.get("created_at") or ""),
+                method=item.get("method"),
+                database=item.get("database"),
+            )
+            for item in items
+        ],
         total=int(info.get("backup_count") or len(items)),
     )
 
@@ -319,9 +324,21 @@ async def postgres_backup_history(
 @router.post("/scheduled/{task_id}/run", response_model=TaskOperationResult)
 async def run_scheduled_task(
     task_id: str,
-    _=Depends(require_permissions("import:write")),
+    current_admin=Depends(require_permissions("system:write")),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Run a safe recurring maintenance job once, using the same distributed locks."""
+    """Run a recurring maintenance job with explicit system privileges.
+
+    Database backup requires the additional ``system:backup`` permission even
+    when the caller can run other system maintenance tasks.
+    """
+    if task_id == "postgres_backup":
+        from app.services.admin_auth_service import get_admin_permission_names
+
+        granted = set(await get_admin_permission_names(db, current_admin.role_id))
+        if "system:backup" not in granted:
+            raise HTTPException(status_code=403, detail="Permission denied")
+
     from app.services.system_task_service import run_scheduled_task_now
 
     try:
@@ -346,7 +363,7 @@ async def list_tasks(
     status: str | None = Query(None, description="Filter by task status or queue location"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    _=Depends(require_permissions("import:read")),
+    _=Depends(require_permissions("system:read")),
 ):
     """List live async task instances across ready/processing/retry/dead/corrupt queues."""
     from app.services.task_queue_service import (
@@ -413,7 +430,7 @@ async def list_tasks(
 @router.get("/{task_id}", response_model=TaskDetail)
 async def inspect_task(
     task_id: str,
-    _=Depends(require_permissions("import:read")),
+    _=Depends(require_permissions("system:read")),
 ):
     """Inspect a specific task. Returns safe summary only (no tokens or full payload)."""
     from app.services.task_queue_service import (
@@ -501,7 +518,7 @@ async def inspect_task(
 @router.post("/outbox/{outbox_id}/retry", response_model=TaskOperationResult)
 async def retry_outbox(
     outbox_id: int,
-    _=Depends(require_permissions("import:write")),
+    _=Depends(require_permissions("system:write")),
     db: AsyncSession = Depends(get_db),
 ):
     """Reset a permanently failed Outbox row to pending for normal dispatch."""
@@ -521,7 +538,7 @@ async def retry_outbox(
 @router.post("/{task_id}/retry", response_model=TaskOperationResult)
 async def retry_task(
     task_id: str,
-    _=Depends(require_permissions("import:write")),
+    _=Depends(require_permissions("system:write")),
 ):
     """Retry a failed/dead/review_required task from dead-letter."""
     from app.services.task_queue_service import _v2_task_hash_key, task_queue
@@ -565,7 +582,7 @@ async def retry_task(
 @router.post("/{task_id}/cancel", response_model=TaskOperationResult)
 async def cancel_task(
     task_id: str,
-    _=Depends(require_permissions("import:write")),
+    _=Depends(require_permissions("system:write")),
 ):
     """Cancel a pending/retry task or request cancellation for a processing task.
 
