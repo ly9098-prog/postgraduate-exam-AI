@@ -1,7 +1,8 @@
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.admin_security import hash_admin_password, verify_admin_password
+from app.core.admin_security import hash_admin_password
+from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
 from app.models.admin import AdminUser, AuditLog, Permission, Role, RolePermission
 
 DEV_ADMIN_USERNAME = "admin"
@@ -99,6 +100,10 @@ ADMIN_PERMISSION_DEFINITIONS: tuple[dict[str, str], ...] = (
 
 async def ensure_dev_super_admin(db: AsyncSession, app_env: str) -> bool:
     if app_env.lower() not in LOCAL_APP_ENVS:
+        return False
+    # Defense in depth: development bootstrap is a local-import capability,
+    # never a cloud capability even if APP_ENV is accidentally misconfigured.
+    if detect_deployment_profile() != DeploymentProfile.LOCAL_IMPORT:
         return False
 
     role = await _ensure_super_admin_role(db)
@@ -227,9 +232,9 @@ async def _ensure_admin_user(db: AsyncSession, role_id: int) -> AdminUser | None
     result = await db.execute(select(AdminUser).where(AdminUser.username == DEV_ADMIN_USERNAME))
     admin_user = result.scalar_one_or_none()
     if admin_user:
-        if not verify_admin_password(DEV_ADMIN_PASSWORD, admin_user.password_hash):
-            admin_user.password_hash = hash_admin_password(DEV_ADMIN_PASSWORD)
-            await db.flush()
+        # Never overwrite an existing administrator password during startup.
+        # Bootstrap may create the development account once, but an operator's
+        # subsequently changed password must remain authoritative.
         return None
 
     admin_user = AdminUser(

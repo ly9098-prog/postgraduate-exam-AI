@@ -124,14 +124,11 @@ async def login(data: AdminLoginRequest, request: Request, response: Response, d
             detail="登录尝试过于频繁，请稍后重试",
             headers={"Retry-After": str(settings.ADMIN_LOGIN_WINDOW_SEC)},
         )
-    # Account-level lockout: consecutive failures on the same account lock it
-    # temporarily regardless of client IP (blocks distributed brute force).
-    if await _read_fail_count(account_lock_key) > 0:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="该账号登录失败次数过多，已被临时锁定，请稍后重试",
-            headers={"Retry-After": str(settings.ADMIN_LOGIN_WINDOW_SEC)},
-        )
+    # An account-level lock still suppresses distributed wrong-password
+    # attempts, but it must not let an attacker deny service to the real admin.
+    # We therefore verify the submitted credential first: a correct password
+    # clears the lock; an incorrect password remains rate-limited.
+    account_locked = await _read_fail_count(account_lock_key) > 0
 
     try:
         admin_user = await authenticate_admin(db, data)
@@ -140,13 +137,21 @@ async def login(data: AdminLoginRequest, request: Request, response: Response, d
         account_fails = await _increment_fail_count(account_fail_key)
         if account_fails >= settings.ADMIN_LOGIN_MAX_FAILURES:
             await cache.set_strict(account_lock_key, 1, ttl=settings.ADMIN_LOGIN_WINDOW_SEC)
+            account_locked = True
         msg = str(exc)
         if "72字节" in msg:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+        if account_locked:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="该账号登录失败次数过多，请稍后重试",
+                headers={"Retry-After": str(settings.ADMIN_LOGIN_WINDOW_SEC)},
+            )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=msg)
 
     await _clear_fail_count(rate_key)
     await _clear_fail_count(account_fail_key)
+    await _clear_fail_count(account_lock_key)
 
     token, refresh_token, user, role, permissions = await build_admin_login_response(db, admin_user)
     admin_user.last_login_at = utcnow()

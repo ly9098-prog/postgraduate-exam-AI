@@ -1,10 +1,11 @@
 import asyncio
 import logging
+import hmac
 import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -18,6 +19,7 @@ from app.core.ai_runtime_guard import AIResourceRejected
 from app.core.config import resolve_effective_process_role, settings
 from app.core.database import async_session, init_db
 from app.core.error_codes import ApiError, ErrorCode
+from app.core.deployment_profile import is_restricted_environment
 from app.core.logging_config import setup_logging
 from app.core.ocr_isolation import (
     is_restricted_ocr_environment,
@@ -869,7 +871,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Active children check failed: %s", e)
 
 
-_production_mode = settings.APP_ENV.strip().lower() == "production"
+_production_mode = is_restricted_environment()
 app = FastAPI(
     title="2240AI",
     version="0.1.0",
@@ -1219,12 +1221,11 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         log_event(
             logging.getLogger("app.access"),
             "http.expected_error",
-            level="warning" if exc.status_code < 500 else "error",
+            level=("info" if exc.status_code == 404 else "warning" if exc.status_code < 500 else "error"),
             method=request.method,
             path=request.url.path,
             status_code=exc.status_code,
             error_code=code,
-            backend_detail=exc.detail,
         )
     except Exception:
         pass
@@ -1349,8 +1350,8 @@ _ocr_remote_consecutive_failures: int = 0
 
 @app.get("/health")
 async def health():
-    """Legacy health endpoint — returns ok regardless of dependency state."""
-    return {"status": "ok", "env": settings.APP_ENV}
+    """Legacy public health endpoint with no environment disclosure."""
+    return {"status": "ok"}
 
 
 @app.get("/health/live")
@@ -1430,13 +1431,17 @@ async def ready_health():
         critical_failures.append("draining")
     all_ok = len(critical_failures) == 0
 
+    response_content = {
+        "status": "ok" if all_ok else "unavailable",
+        "degraded": ocr_status == "degraded" or queue_status == "degraded",
+    }
+    # Public cloud readiness must expose only the decision needed by a load
+    # balancer. Detailed topology/queue/pool information stays local.
+    if not _production_mode:
+        response_content["checks"] = checks
     return JSONResponse(
         status_code=200 if all_ok else 503,
-        content={
-            "status": "ok" if all_ok else "unavailable",
-            "degraded": ocr_status == "degraded" or queue_status == "degraded",
-            "checks": checks,
-        },
+        content=response_content,
     )
 
 
@@ -1708,14 +1713,38 @@ async def _check_queue() -> str | None:
 # --- 路由（聚合 Router） ---
 
 
+def _require_observability_access(request: Request) -> None:
+    """Protect detailed runtime metrics in restricted environments.
+
+    Local development remains convenient. In cloud/production a blank token
+    disables the endpoint (404); otherwise clients must send
+    ``Authorization: Bearer <OBSERVABILITY_TOKEN>``.
+    """
+    if not _production_mode:
+        return
+    expected = (settings.OBSERVABILITY_TOKEN or "").strip()
+    authorization = request.headers.get("authorization", "")
+    scheme, _, supplied = authorization.partition(" ")
+    if (
+        not expected
+        or scheme.lower() != "bearer"
+        or not supplied
+        or not hmac.compare_digest(supplied, expected)
+    ):
+        # Hide the existence of the diagnostics endpoint from unauthenticated
+        # internet scanners rather than advertising an auth-protected target.
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
 @app.get("/health/metrics")
-async def metrics_endpoint():
+async def metrics_endpoint(request: Request):
     """Prometheus-compatible metrics endpoint.
 
     Returns text/plain metrics for scraping by Prometheus or similar.
     Aggregates: task queue state, system resources, event-loop lag,
     DB pool, SSE connections, scheduler stats.
     """
+    _require_observability_access(request)
     from app.core.resource_guard import resource_guard
     from app.services.task_queue_service import queue_metrics
 

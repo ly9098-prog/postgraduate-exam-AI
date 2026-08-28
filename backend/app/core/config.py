@@ -11,6 +11,13 @@ class Settings(BaseSettings):
     # Fail closed: local development must opt in with APP_ENV=development.
     APP_ENV: str = "production"
     APP_SECRET: str = "change-me-in-production"
+    # Optional independent JWT roots. If blank, scoped keys are derived from
+    # APP_SECRET so user/admin JWTs still use different HMAC keys.
+    USER_JWT_SECRET: str = ""
+    ADMIN_JWT_SECRET: str = ""
+    # Bearer token for detailed operational metrics in restricted environments.
+    # Blank means /health/metrics is disabled outside local development.
+    OBSERVABILITY_TOKEN: str = ""
     PROCESS_ROLE: str = "web"  # "web" | "worker" | "scheduler" | "all"
     # Local FastAPI startup is web-only by default, even when an old .env still
     # contains PROCESS_ROLE=all.  Full in-process worker/scheduler startup must

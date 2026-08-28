@@ -1,4 +1,6 @@
 from datetime import UTC, datetime, timedelta
+import hashlib
+import hmac
 from typing import Any
 from uuid import uuid4
 
@@ -104,6 +106,18 @@ BCRYPT_MAX_BYTES = 72
 ADMIN_PASSWORD_MIN_LENGTH = 12
 
 
+def _admin_jwt_secret() -> str:
+    """Return an admin-token signing key isolated from the user token domain."""
+    configured = (getattr(settings, "ADMIN_JWT_SECRET", "") or "").strip()
+    if configured:
+        return configured
+    return hmac.new(
+        settings.APP_SECRET.encode("utf-8"),
+        b"memograd:admin-jwt:v1",
+        hashlib.sha256,
+    ).hexdigest()
+
+
 class PasswordPolicyError(ValueError):
     """Raised when an admin password does not meet the strength policy."""
 
@@ -192,7 +206,7 @@ def create_admin_token(admin_user: AdminUser, *, issued_at: int | None = None) -
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(hours=2)).timestamp()),
     }
-    return jwt.encode(payload, settings.APP_SECRET, algorithm="HS256")
+    return jwt.encode(payload, _admin_jwt_secret(), algorithm="HS256")
 
 
 def create_admin_refresh_token(admin_user: AdminUser, *, issued_at: int | None = None) -> str:
@@ -208,14 +222,14 @@ def create_admin_refresh_token(admin_user: AdminUser, *, issued_at: int | None =
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(days=7)).timestamp()),
     }
-    return jwt.encode(payload, settings.APP_SECRET, algorithm="HS256")
+    return jwt.encode(payload, _admin_jwt_secret(), algorithm="HS256")
 
 
 def _decode_admin_jwt(token: str, expected_type: str) -> dict[str, Any]:
     try:
         payload = jwt.decode(
             token,
-            settings.APP_SECRET,
+            _admin_jwt_secret(),
             algorithms=["HS256"],
             audience=settings.ADMIN_JWT_AUDIENCE,
             issuer=settings.JWT_ISSUER,
