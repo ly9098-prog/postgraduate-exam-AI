@@ -302,7 +302,10 @@ async def postgres_backup_history(
     _=Depends(require_permissions("system:backup")),
 ):
     """List recent PostgreSQL backup artifacts visible to the admin service."""
-    from app.services.database_backup_service import inspect_database_backup, list_backup_artifacts
+    from app.services.database_backup_service import (
+        inspect_database_backup,
+        list_backup_artifacts,
+    )
 
     info = await inspect_database_backup()
     items = list_backup_artifacts(limit)

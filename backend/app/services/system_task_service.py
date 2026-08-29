@@ -16,7 +16,12 @@ from typing import Awaitable, Callable, Literal
 import redis.asyncio as redis_async
 
 from app.core.config import settings
-from app.core.time_utils import normalize_to_naive_utc, serialize_utc_datetime, shanghai_today, utcnow
+from app.core.time_utils import (
+    normalize_to_naive_utc,
+    serialize_utc_datetime,
+    shanghai_today,
+    utcnow,
+)
 
 RunStatus = Literal["success", "failed", "skipped"]
 TaskStatus = Literal["idle", "running", "failed", "disabled"]
@@ -398,8 +403,12 @@ async def _run_audit_cleanup() -> TaskRunOutcome:
 async def _run_recommendation_metrics() -> TaskRunOutcome:
     async def work():
         from app.core.database import async_session
-        from app.services.recommendation_log_service import cleanup_expired_recommendation_logs
-        from app.services.recommendation_metrics_service import aggregate_recommendation_metrics_daily
+        from app.services.recommendation_log_service import (
+            cleanup_expired_recommendation_logs,
+        )
+        from app.services.recommendation_metrics_service import (
+            aggregate_recommendation_metrics_daily,
+        )
 
         target_date = shanghai_today() - timedelta(days=1)
         retention_days = max(7, settings.RECOMMENDATION_LOG_RETENTION_DAYS)
