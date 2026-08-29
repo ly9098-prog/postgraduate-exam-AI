@@ -186,5 +186,8 @@ jobs:
           CIEOF
 
       - name: Build app Docker image
+        # A cold production build installs the OCR stack (including the ~195 MB
+        # PaddlePaddle wheel). On GitHub-hosted runners this can legitimately
+        # exceed 35 minutes when the configured package mirror is slow.
         run: docker compose --progress=plain -f deploy/docker-compose.prod.yml --env-file backend/.env.ci build app
-        timeout-minutes: 35
+        timeout-minutes: 90
