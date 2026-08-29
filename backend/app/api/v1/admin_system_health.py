@@ -13,8 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
-from app.services.health_check_service import check_system_health
 from app.schemas.observability import SystemHealthResponse
+from app.services.health_check_service import check_system_health
 
 logger = logging.getLogger(__name__)
 
