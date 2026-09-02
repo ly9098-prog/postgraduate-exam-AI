@@ -14,6 +14,42 @@ function hasDelimiter(latex: string): boolean {
   return /^\$[^$]/.test(latex) || /^\$\$/.test(latex) || /^\\\(/.test(latex) || /^\\\[/.test(latex);
 }
 
+
+/**
+ * KaTeX warns for enclosed Unicode glyphs such as ② because its math fonts do
+ * not have metrics for those code points. Render the common circled
+ * alphanumerics with KaTeX's supported \textcircled command instead of
+ * passing the raw Unicode symbol through to the parser.
+ */
+function normalizeEnclosedUnicode(source: string): string {
+  return Array.from(source, (char) => {
+    const codePoint = char.codePointAt(0);
+    if (codePoint === undefined) return char;
+
+    // ①..⑳
+    if (codePoint >= 0x2460 && codePoint <= 0x2473) {
+      return `\\textcircled{${codePoint - 0x2460 + 1}}`;
+    }
+
+    // ⓪
+    if (codePoint === 0x24ea) {
+      return "\\textcircled{0}";
+    }
+
+    // Ⓐ..Ⓩ
+    if (codePoint >= 0x24b6 && codePoint <= 0x24cf) {
+      return `\\textcircled{${String.fromCharCode(65 + codePoint - 0x24b6)}}`;
+    }
+
+    // ⓐ..ⓩ
+    if (codePoint >= 0x24d0 && codePoint <= 0x24e9) {
+      return `\\textcircled{${String.fromCharCode(97 + codePoint - 0x24d0)}}`;
+    }
+
+    return char;
+  }).join("");
+}
+
 function stripDelimiters(latex: string): string {
   return latex
     .replace(/^\$\$([\s\S]*?)\$\$$/, "$1")
@@ -31,7 +67,8 @@ export function LatexRenderer({
   const html = useMemo(() => {
     if (!latex?.trim()) return "";
     try {
-      const source = hasDelimiter(latex) ? stripDelimiters(latex) : latex;
+      const rawSource = hasDelimiter(latex) ? stripDelimiters(latex) : latex;
+      const source = normalizeEnclosedUnicode(rawSource);
       return katex.renderToString(source, {
         displayMode,
         throwOnError: false,

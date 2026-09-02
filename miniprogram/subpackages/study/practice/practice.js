@@ -3,6 +3,7 @@ const config = require('../../../config')
 const { debugLog, saveDebugSnapshot, shouldDebugQuestion } = require('../../../utils/debug')
 const { buildRenderModel, setRenderGuardPage, resetRenderGuard } = require('../utils/stem-render')
 const adapter = require('../utils/question-runner-adapter')
+const questionImageCache = require('../utils/question-image-cache')
 
 const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
@@ -953,6 +954,11 @@ Page({
       // 交卷幂等 key，否则推荐链路与提交重试语义被耦合。
       this._practiceSession.recommendationRequestId = res.request_id || ''
 
+      // Start image decoding before the first question enters the view. The
+      // current question gets highest priority; adjacent questions warm in the
+      // background so swiping does not wait on the network.
+      if (questions.length > 0) this._warmQuestionImages(questions, 0)
+
       // Build first question's render model synchronously, with error fallback
       var firstQuestion = null
       var firstIndex = 0
@@ -1119,6 +1125,47 @@ Page({
     }
   },
 
+  _warmQuestionImages(questions, index) {
+    if (!Array.isArray(questions) || !questions.length) return
+    const current = questions[index]
+    if (!current || typeof adapter.getQuestionPrefetchUrls !== 'function') return
+
+    const currentId = String(current.id == null ? '' : current.id)
+    const currentUrls = adapter.getQuestionPrefetchUrls(current)
+    if (currentUrls.length) {
+      questionImageCache.preloadMany(currentUrls, 3).then(() => {
+        // Once decoded, refresh only if the user is still on the same question.
+        // forceRebuild makes stem/option URLs re-resolve to wx local temp paths.
+        if (!this._pageAlive || this.data.currentIndex !== index) return
+        const visible = this.data.questions[index]
+        if (!visible || String(visible.id == null ? '' : visible.id) !== currentId) return
+        try {
+          const refreshed = this._buildQuestionViewModel(visible, true)
+          if (!refreshed) return
+          this._practiceSession.optionKeys = refreshed.optionKeys
+          this.setData({
+            currentQuestion: refreshed.question,
+            currentAnswerState: refreshed.answerState,
+          })
+        } catch (err) {
+          if (config.DEV) console.warn('[practice] image cache refresh failed', err)
+        }
+      })
+    }
+
+    // Warm the next two questions first (normal forward navigation), plus the
+    // previous question for back-swipes. Pending/cache entries deduplicate work.
+    const neighborIndexes = [index + 1, index + 2, index - 1]
+    const neighborUrls = []
+    for (let i = 0; i < neighborIndexes.length; i++) {
+      const q = questions[neighborIndexes[i]]
+      if (!q) continue
+      const urls = adapter.getQuestionPrefetchUrls(q)
+      for (let j = 0; j < urls.length; j++) neighborUrls.push(urls[j])
+    }
+    if (neighborUrls.length) questionImageCache.preloadMany(neighborUrls, 2)
+  },
+
   _settleQuestionTime(pause) {
     const { currentIndex, questions } = this.data
     const { currentQuestionStartedAt, questionTimeMap } = this._practiceSession
@@ -1139,6 +1186,7 @@ Page({
 
     const q = this.data.questions[index]
     if (!q) return
+    this._warmQuestionImages(this.data.questions, index)
     var viewModelResult
     try {
       viewModelResult = this._buildQuestionViewModel(q)

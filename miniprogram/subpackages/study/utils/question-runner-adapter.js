@@ -699,7 +699,8 @@ function getEmbeddedImageUrls(content) {
     for (var ui = 0; ui < candidateUrls.length; ui++) {
       var url = candidateUrls[ui]
       if (url && typeof url === 'string') {
-        var normalized = _normalizeUrl(url)
+        var resolved = stemRender.resolveAssetUrl(url)
+        var normalized = _normalizeUrl(resolved)
         if (normalized && !seen[normalized]) {
           seen[normalized] = true
           urls.push(normalized)
@@ -745,6 +746,66 @@ function computeExtraImages(q) {
   return extra
 }
 
+
+/**
+ * Collect every question image that may be needed while navigating practice.
+ * Returned URLs are resolved through stem-render so relative static paths are
+ * converted to absolute URLs and already-preloaded images become local paths.
+ */
+function getQuestionPrefetchUrls(q) {
+  if (!q) return []
+  var seen = {}
+  var urls = []
+
+  function add(url) {
+    if (!url || typeof url !== 'string') return
+    var resolved = stemRender.resolveAssetUrl(url)
+    var normalized = _normalizeUrl(resolved)
+    if (!normalized || seen[normalized]) return
+    seen[normalized] = true
+    urls.push(normalized)
+  }
+
+  function collectSegments(segments) {
+    if (!Array.isArray(segments)) return
+    for (var i = 0; i < segments.length; i++) {
+      var seg = segments[i]
+      if (!seg || typeof seg !== 'object') continue
+      var type = String(seg.type || '').toLowerCase()
+      if (type === 'image' || type === 'math_image' || type === 'table_image' || type === 'code_image') {
+        add(seg.url)
+      }
+      if (type === 'table' || type === 'table_markdown') {
+        add(seg.source_image_url)
+        add(seg.fallback_image_url)
+      }
+      if (Array.isArray(seg.segments)) collectSegments(seg.segments)
+      if (Array.isArray(seg.blocks)) collectSegments(seg.blocks)
+      if (Array.isArray(seg.cells)) {
+        for (var ci = 0; ci < seg.cells.length; ci++) {
+          var cell = seg.cells[ci]
+          if (cell && Array.isArray(cell.blocks)) collectSegments(cell.blocks)
+          if (cell && Array.isArray(cell.segments)) collectSegments(cell.segments)
+        }
+      }
+    }
+  }
+
+  getQuestionImages(q).forEach(add)
+  if (q.content) collectSegments(q.content.segments)
+
+  var options = q.options
+  if (options && typeof options === 'object') {
+    Object.keys(options).forEach(function (key) {
+      var option = options[key]
+      if (!option || typeof option !== 'object') return
+      add(option.image_url || option.imageUrl)
+      collectSegments(option.segments)
+    })
+  }
+  return urls
+}
+
 /* ==================== Exports ==================== */
 
 module.exports = {
@@ -778,4 +839,5 @@ module.exports = {
   getQuestionImages: getQuestionImages,
   getEmbeddedImageUrls: getEmbeddedImageUrls,
   computeExtraImages: computeExtraImages,
+  getQuestionPrefetchUrls: getQuestionPrefetchUrls,
 }
