@@ -53,6 +53,7 @@ import { apiRequest, apiRequestBlob, toQuery } from "@/lib/api/client";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, getQuestionTypeLabel, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import { isTableSegment, normalizeStructuredTableSegment } from "@/lib/structured-table";
+import { looksLikeProgrammingCode } from "@/lib/math-text";
 import type {
   AdminQuestion,
   AdminQuestionDetail,
@@ -176,11 +177,21 @@ function textFromContent(
 }
 
 function normalizeStemEditorText(value: string) {
-  return String(value ?? "")
-    .replace(/\r\n?/g, "\n")
-    // Imported/OCR stems occasionally contain hard wraps that are only layout
+  const normalized = String(value ?? "").replace(/\r\n?/g, "\n");
+
+  // Source-code questions depend on line breaks for readability. Do not run
+  // them through the prose-only hard-wrap flattener when opening/saving edits.
+  if (looksLikeProgrammingCode(normalized)) {
+    return normalized
+      .replace(/[ \t]+$/gm, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  return normalized
+    // Imported/OCR prose occasionally contains hard wraps that are only layout
     // artifacts. Keep intentional blank-line paragraphs, but flatten single
-    // hard wraps so the editor does not preserve accidental line breaks.
+    // hard wraps for ordinary prose.
     .replace(/([^\n])\n(?=[^\n])/g, "$1 ")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
@@ -205,6 +216,7 @@ function renderVersionValue(label: string, value: unknown, emphasized = false) {
         <QuestionContentRenderer
           content={content}
           fallbackText={textFromContent(content)}
+          preserveCodeText
         />
       </div>
     );
@@ -487,7 +499,9 @@ export default function QuestionsPage() {
   const permissions = useAuthStore((state) => state.permissions);
   const [filters, setFilters] = useState({
     subject_id: "",
-    is_active: "",
+    // /questions is the active question bank. Soft-deleted rows use
+    // is_active=false and must not reappear in the default list.
+    is_active: "true",
     question_type: "",
     keyword: "",
     year: "",
@@ -754,7 +768,7 @@ export default function QuestionsPage() {
     filters.subject_id ||
       filters.question_type ||
       filters.year ||
-      filters.is_active ||
+      filters.is_active !== "true" ||
       filters.keyword ||
       filters.difficulty ||
       filters.import_batch_id,
@@ -919,7 +933,7 @@ export default function QuestionsPage() {
     setImportBatchInput("");
     setFilters({
       subject_id: "",
-      is_active: "",
+      is_active: "true",
       question_type: "",
       keyword: "",
       year: "",
@@ -943,7 +957,7 @@ export default function QuestionsPage() {
     if (importBatchTimer.current) clearTimeout(importBatchTimer.current);
     const next = {
       subject_id: "",
-      is_active: "",
+      is_active: "true",
       question_type: "",
       keyword: "",
       year: "",
@@ -982,7 +996,12 @@ export default function QuestionsPage() {
         return;
       }
       const parsed = JSON.parse(raw) as Partial<typeof filters>;
-      applyFilterPreset(parsed);
+      applyFilterPreset({
+        ...parsed,
+        // Older saved presets used an empty is_active value to mean “all”.
+        // Treat that legacy value as active-only so soft-deleted questions stay hidden.
+        is_active: parsed.is_active === "false" ? "false" : "true",
+      });
     } catch {
       setMessage("已保存的筛选条件无法读取。 ");
       setIsCommonFilterMenuOpen(false);
@@ -1307,7 +1326,7 @@ export default function QuestionsPage() {
                         onClick={() => applyFilterPreset({})}
                         className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--ink)] transition hover:bg-[var(--porcelain)]"
                       >
-                        全部题目
+                        全部有效题目
                       </button>
                       <button
                         type="button"
@@ -1649,7 +1668,7 @@ export default function QuestionsPage() {
                           </div>
 
                           <div className="mt-2 line-clamp-2 text-sm font-medium leading-6 text-[var(--ink)]">
-                            <MathFormula text={stemText} />
+                            {looksLikeProgrammingCode(stemText) ? stemText : <MathFormula text={stemText} />}
                           </div>
 
                           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--color-text-hint)]">
@@ -1838,6 +1857,7 @@ export default function QuestionsPage() {
                         <QuestionContentRenderer
                           content={selectedQuestion.content}
                           fallbackText={textFromContent(selectedQuestion.content)}
+                          preserveCodeText
                         />
                       </div>
                     </section>
@@ -2371,6 +2391,7 @@ export default function QuestionsPage() {
                         content={selectedQuestion.content}
                         fallbackText={textFromContent(selectedQuestion.content)}
                         showTableMetadata
+                        preserveCodeText
                       />
                     </div>
                   </section>
