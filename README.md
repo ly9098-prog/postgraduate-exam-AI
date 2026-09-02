@@ -221,6 +221,43 @@ flowchart LR
 
 ### 5.2 启动后端
 
+#### 推荐：使用项目启动脚本
+
+先完成一次本地配置（脚本不会替你生成后端 `.env`）：
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Linux / WSL 在项目根目录执行：
+
+```bash
+./run.sh
+```
+
+`run.sh` 会检查 Python、创建或复用 `backend/.venv`、安装 `backend/requirements.txt`，然后启动 FastAPI。默认 `PROCESS_ROLE=all`，适合本地同时运行 API 和本地后台任务；只启动 Web API 时执行：
+
+```bash
+PROCESS_ROLE=web ./run.sh
+```
+
+如果依赖已经安装，也可以直接执行后端目录内的轻量脚本：
+
+```bash
+cd backend
+./run.sh
+```
+
+脚本检测到缺少 OCR 依赖时可能会安装 `requirements-ocr.txt`，首次执行耗时较长；不需要本地 OCR 时可先确认现有环境或改用下方手动安装方式。Windows 可从项目根目录运行 `run.bat`，它会进入 `backend/` 并启动开发 API。
+
+脚本启动后可在另一个终端启动管理后台：
+
+```bash
+./run-admin-linux.sh
+```
+
+该脚本会检查 Node.js/npm，必要时在 `admin-frontend/` 执行 `npm ci`，并启动 Next.js 开发服务器。Windows 管理后台脚本当前未提供，请使用 [手动方式](#53-启动管理后台)。
+
 #### 1）创建虚拟环境
 
 ```bash
@@ -303,9 +340,21 @@ http://localhost:8000/openapi.json
 
 ### 5.3 启动管理后台
 
+#### 推荐：使用项目启动脚本
+
+后端已启动时，在项目根目录另开一个 Linux / WSL 终端执行：
+
+```bash
+./run-admin-linux.sh
+```
+
+默认地址为 `http://localhost:3000`。脚本会在 `.env.local` 不存在且 `.env.example` 存在时创建本地前端配置，并在依赖目录不存在时执行 `npm ci`。
+
+#### 手动启动
+
 ```bash
 cd admin-frontend
-npm install
+npm ci
 npm run dev
 ```
 
