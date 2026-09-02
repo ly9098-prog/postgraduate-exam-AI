@@ -5,6 +5,8 @@
 
     <view wx:elif="{{item.type === 'math_image' && item.display}}" class="seg-math-display-wrap">
       <image
+        fade-in="{{false}}"
+        webp="{{true}}"
         wx:if="{{!item._error}}"
         src="{{item.url}}"
         mode="widthFix"
@@ -18,6 +20,8 @@
 
     <view wx:elif="{{item.type === 'math_image' && !item.display}}" class="seg-math-inline-wrap">
       <image
+        fade-in="{{false}}"
+        webp="{{true}}"
         wx:if="{{!item._error}}"
         src="{{item.url}}"
         mode="heightFix"
@@ -47,6 +51,8 @@
             <block wx:for="{{cell._blocks}}" wx:for-item="block" wx:for-index="blockIndex" wx:key="blockIndex">
               <view wx:if="{{block.type === 'newline'}}" class="seg-table-cell-newline" />
               <image
+                fade-in="{{false}}"
+                webp="{{true}}"
                 wx:elif="{{block.type === 'image' && block.url && !block._error}}"
                 src="{{block.url}}"
                 mode="widthFix"
@@ -75,6 +81,8 @@
       <view wx:if="{{item.requires_review && item._sourceImageUrl && !item._sourceImageError}}" class="seg-table-source">
         <text class="seg-table-source-label">原始表格截图</text>
         <image
+          fade-in="{{false}}"
+          webp="{{true}}"
           src="{{item._sourceImageUrl}}"
           mode="widthFix"
           class="seg-table-source-image"
@@ -88,6 +96,8 @@
 
     <view wx:elif="{{item.type === 'image' || item.type === 'table_image' || item.type === 'code_image'}}" class="seg-image-wrap">
       <image
+        fade-in="{{false}}"
+        webp="{{true}}"
         wx:if="{{!item._error}}"
         src="{{item.url}}"
         mode="widthFix"

@@ -210,6 +210,8 @@
       <!-- ===== 题目图片 ===== -->
       <view class="runner-question-images" wx:if="{{_questionImages && _questionImages.length > 0}}" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">
         <image
+          fade-in="{{false}}"
+          webp="{{true}}"
           wx:for="{{_questionImages}}"
           wx:key="*this"
           class="runner-question-image"
@@ -249,6 +251,8 @@
                 <text class="runner-option-key" data-swipe-block="{{swipeThroughOptions ? '0' : '1'}}">{{opt.key}}.</text>
                 <block wx:if="{{opt._segments && opt._segments.length > 0}}">
                   <image
+                    fade-in="{{false}}"
+                    webp="{{true}}"
                     wx:for="{{opt._segments}}"
                     wx:for-item="seg"
                     wx:key="index"
@@ -292,6 +296,8 @@
             <!-- Option image segments -->
             <block wx:if="{{item._segments && item._segments.length > 0}}">
               <image
+                fade-in="{{false}}"
+                webp="{{true}}"
                 wx:for="{{item._segments}}"
                 wx:for-item="seg"
                 wx:key="index"

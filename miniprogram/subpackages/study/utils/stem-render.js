@@ -35,6 +35,7 @@ var appConfig = require('../../../config')
 var { formatInlineMathText, replaceSimpleLatexCommands } = require('./math-format')
 var { containsCode, shouldReconstructCode, reconstructCode, sanitizeImportedCodeArtifacts } = require('./code-reconstructor')
 var tableStructure = require('./table-structure')
+var questionImageCache = require('./question-image-cache')
 
 // Derive static asset origin from API base URL
 var _assetOrigin = (function () {
@@ -45,9 +46,11 @@ var _assetOrigin = (function () {
 })()
 function _resolveAssetUrl(url) {
   if (!url || typeof url !== 'string') return ''
-  if (/^https?:\/\//i.test(url)) return url
-  if (url.charAt(0) === '/' && _assetOrigin) return _assetOrigin + url
-  return url
+  var resolved = url
+  if (!/^https?:\/\//i.test(resolved) && resolved.charAt(0) === '/' && _assetOrigin) {
+    resolved = _assetOrigin + resolved
+  }
+  return questionImageCache.resolve(resolved)
 }
 
 var RENDER_MODE = {
