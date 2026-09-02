@@ -63,6 +63,34 @@ export function decodeApiText(value: unknown): string {
   return text;
 }
 
+/**
+ * Detect source-code snippets before the generic math tokenizer sees them.
+ *
+ * Programming exercises often contain C/C++-style expressions such as
+ * `return ((x > 0) ? x * f(x - 1) : 2);`.  The math tokenizer would otherwise
+ * classify large ASCII runs containing `>`, `=`, braces, etc. as LaTeX, which
+ * can make code render in KaTeX error markup and even appear visually reordered.
+ */
+export function looksLikeProgrammingCode(value: unknown): boolean {
+  const text = decodeApiText(value).trim();
+  if (!text) return false;
+
+  const hasStatementPunctuation = /[;{}]/.test(text);
+  const hasProgrammingKeyword = new RegExp(
+    "\\b(?:auto|bool|break|case|char|class|const|continue|default|do|double|else|enum|" +
+    "float|for|if|int|long|main|namespace|private|protected|public|return|short|" +
+    "signed|sizeof|static|struct|switch|typedef|union|unsigned|void|while|printf|scanf|cout|cin)\\b",
+  ).test(text);
+  const hasFunctionBlock = /\b[A-Za-z_]\w*\s*\([^\n{};]*\)\s*\{/.test(text);
+  const hasTernaryStatement = /\?[^\n;{}]*:[^\n;{}]*;/.test(text);
+  const hasPreprocessorDirective = /^\s*#\s*(?:include|define|if|ifdef|ifndef)\b/m.test(text);
+
+  return (hasProgrammingKeyword && hasStatementPunctuation) ||
+    hasFunctionBlock ||
+    hasTernaryStatement ||
+    hasPreprocessorDirective;
+}
+
 export function stripMathDelimiters(value: string): string {
   const text = value.trim();
   const pairs: Array<[string, string]> = [

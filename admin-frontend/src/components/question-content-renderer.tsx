@@ -4,6 +4,7 @@ import { MathFormula } from "@/components/ui/math-formula";
 import { StructuredTable } from "@/components/structured-table";
 import { resolveAssetUrl } from "@/lib/asset-url";
 import { isTableSegment } from "@/lib/structured-table";
+import { looksLikeProgrammingCode } from "@/lib/math-text";
 
 type SegmentRecord = Record<string, unknown>;
 type RenderBlock =
@@ -20,6 +21,161 @@ function contentText(content: unknown, fallbackText: string): string {
   if (typeof content === "string") return content;
   const record = asContentRecord(content);
   return String(record?.stem ?? record?.text ?? record?.question ?? record?.title ?? fallbackText ?? "");
+}
+
+
+function splitProgrammingText(value: string): { prose: string; code: string } {
+  const text = String(value ?? "").replace(/\r\n?/g, "\n").trim();
+  if (!text) return { prose: "", code: "" };
+
+  const codeStartPatterns = [
+    /#\s*(?:include|define|if|ifdef|ifndef)\b/m,
+    /(?:const\s+)?(?:(?:unsigned|signed)\s+)?(?:void|int|char|short|long|float|double|bool|auto)\s+[A-Za-z_]\w*\s*(?:\([^)]*\)|(?=[=;,\[]))/m,
+    /\b(?:for|while|switch|if)\s*\(/m,
+    /\b(?:return|printf|scanf|cout|cin)\b/m,
+  ];
+
+  let start = -1;
+  for (const pattern of codeStartPatterns) {
+    const match = pattern.exec(text);
+    if (match && (start < 0 || match.index < start)) start = match.index;
+  }
+
+  if (start < 0) return { prose: "", code: text };
+  return {
+    prose: text.slice(0, start).trimEnd(),
+    code: text.slice(start).trim(),
+  };
+}
+
+/**
+ * Reconstruct readable C/C++-style line breaks when imported stem text has
+ * been flattened into one line. The formatter only breaks at braces and
+ * statement semicolons outside parentheses, so `for (;;)` stays intact.
+ */
+function formatProgrammingCode(value: string, supportingText = ""): string {
+  let source = String(value ?? "").replace(/\r\n?/g, "\n").trim();
+  if (!source) return "";
+
+  // Some legacy records lost a closing brace in content.stem while the OCR
+  // segment stream still contains it. Only restore that delimiter when the
+  // segment text proves it existed, and place it at the common boundary
+  // between a function's return statement and following top-level statements.
+  const sourceClosingBraces = (source.match(/}/g) ?? []).length;
+  const supportingClosingBraces = (supportingText.match(/}/g) ?? []).length;
+  if (supportingClosingBraces > sourceClosingBraces) {
+    source = source.replace(
+      /^(.*?\{[\s\S]*?\breturn\b[\s\S]*?;)\s*((?:(?:const\s+)?(?:(?:unsigned|signed)\s+)?(?:int|char|short|long|float|double|bool|auto)\s+[A-Za-z_]\w*\s*;)[\s\S]*)$/,
+      "$1 } $2",
+    );
+  }
+
+  const lines: string[] = [];
+  let buffer = "";
+  let indent = 0;
+  let parenDepth = 0;
+  let quote: '"' | "'" | null = null;
+  let escaped = false;
+
+  const emit = (forcedIndent?: number) => {
+    const text = buffer.trim();
+    buffer = "";
+    if (!text) return;
+    const level = Math.max(0, forcedIndent ?? indent);
+    lines.push(`${"  ".repeat(level)}${text}`);
+  };
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+
+    if (quote) {
+      buffer += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      buffer += char;
+      continue;
+    }
+
+    if (char === "(") {
+      parenDepth += 1;
+      buffer += char;
+      continue;
+    }
+    if (char === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      buffer += char;
+      continue;
+    }
+
+    if (char === "{") {
+      buffer = `${buffer.trimEnd()} {`;
+      emit();
+      indent += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      emit();
+      indent = Math.max(0, indent - 1);
+      let cursor = index + 1;
+      while (cursor < source.length && /[ \t]/.test(source[cursor])) cursor += 1;
+      if (source[cursor] === ";") {
+        lines.push(`${"  ".repeat(indent)}};`);
+        index = cursor;
+      } else {
+        lines.push(`${"  ".repeat(indent)}}`);
+      }
+      continue;
+    }
+
+    if (char === ";" && parenDepth === 0) {
+      buffer = `${buffer.trimEnd()};`;
+      emit();
+      continue;
+    }
+
+    if (char === "\n") {
+      emit();
+      continue;
+    }
+
+    // Collapse layout-only whitespace without altering punctuation or strings.
+    if (/\s/.test(char)) {
+      if (buffer && !/\s$/.test(buffer)) buffer += " ";
+      continue;
+    }
+
+    buffer += char;
+  }
+
+  emit();
+  return lines.join("\n");
+}
+
+function ProgrammingStem({ text, supportingText = "" }: { text: string; supportingText?: string }) {
+  const { prose, code } = splitProgrammingText(text);
+  const formattedCode = formatProgrammingCode(code, supportingText);
+
+  return (
+    <div className="min-w-0 space-y-3">
+      {prose ? <div className="whitespace-pre-wrap">{prose}</div> : null}
+      {formattedCode ? (
+        <pre className="max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-mono text-[0.92em] leading-7 text-slate-800 [tab-size:2]">
+          <code>{formattedCode}</code>
+        </pre>
+      ) : null}
+    </div>
+  );
 }
 
 function stableSegmentId(segment: SegmentRecord, index: number): string {
@@ -99,26 +255,65 @@ export function QuestionContentRenderer({
   showTableMetadata = false,
   skipOptionSegments = true,
   ignoredSegmentIds = [],
+  preserveCodeText = false,
 }: {
   content: unknown;
   fallbackText?: string;
   showTableMetadata?: boolean;
   skipOptionSegments?: boolean;
   ignoredSegmentIds?: string[];
+  preserveCodeText?: boolean;
 }) {
   const record = asContentRecord(content);
   const segments = record && Array.isArray(record.segments) ? record.segments : [];
-  const directText = contentText(content, fallbackText);
+  const canonicalText = contentText(content, "");
+  const directText = canonicalText || fallbackText;
+  const ignoredIds = new Set(ignoredSegmentIds);
+  const renderStemAsCode = preserveCodeText && looksLikeProgrammingCode(directText);
+
+  // For text-only programming questions, the canonical stem is authoritative.
+  // OCR/import text segments may be stored in region order instead of reading
+  // order; rendering those segments is what caused code lines on /questions to
+  // jump around.  When no stem visual/table segment needs interleaving, render
+  // the canonical stem directly and keep the code out of the math renderer.
+  const visibleStemSegments = segments.filter((rawSegment, index) => {
+    if (!rawSegment || typeof rawSegment !== "object" || Array.isArray(rawSegment)) return false;
+    const segment = rawSegment as SegmentRecord;
+    if (ignoredIds.has(stableSegmentId(segment, index))) return false;
+    if (skipOptionSegments && segment.option_key) return false;
+    return true;
+  });
+  const hasOnlyTextStemSegments =
+    visibleStemSegments.length > 0 &&
+    visibleStemSegments.every((segment) => {
+      const type = String((segment as SegmentRecord).type ?? "").toLowerCase();
+      return type === "text" || type === "newline";
+    });
+  const supportingSegmentText = visibleStemSegments
+    .map((segment) => {
+      const record = segment as SegmentRecord;
+      return String(record.type ?? "").toLowerCase() === "newline"
+        ? "\n"
+        : String(record.text ?? "");
+    })
+    .join("");
+
+  if (canonicalText && hasOnlyTextStemSegments && renderStemAsCode) {
+    return <ProgrammingStem text={canonicalText} supportingText={supportingSegmentText} />;
+  }
+
   const blocks = buildRenderBlocks(
     segments,
     directText,
     skipOptionSegments,
-    new Set(ignoredSegmentIds),
+    ignoredIds,
   );
 
   if (blocks.length === 0) {
     return directText
-      ? <MathFormula text={directText} />
+      ? (renderStemAsCode
+          ? <ProgrammingStem text={directText} />
+          : <MathFormula text={directText} />)
       : <span className="italic text-[var(--color-text-hint)]">（空）</span>;
   }
 
@@ -128,7 +323,7 @@ export function QuestionContentRenderer({
         if (block.kind === "text") {
           return block.text ? (
             <div key={block.key} className="whitespace-pre-wrap">
-              <MathFormula text={block.text} />
+              {renderStemAsCode ? <ProgrammingStem text={block.text} /> : <MathFormula text={block.text} />}
             </div>
           ) : null;
         }
