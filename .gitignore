@@ -91,6 +91,10 @@ backend/exports/
 /tools/
 /utils/
 /fix/
+
+# 项目文档属于源码，应持续纳入 Git 跟踪
+!docs/
+!docs/**
 backend/scripts/
 backend/reports/
 backend/tools/
