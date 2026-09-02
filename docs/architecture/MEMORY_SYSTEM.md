@@ -1,81 +1,70 @@
 # Memory System
 
-> 本项目没有向量库，没有知识图谱，没有独立的"记忆模块"。记忆能力分散在三个地方：**错题缓存**、**SM-2 调度字段**、**行为记录表**。
-
----
+> 基于当前代码整理。系统的“记忆”不是单一模块，而是由错题分析缓存、复习调度、行为记录、知识状态、向量检索和推荐数据共同组成。最后更新：2026-09-02。
 
 ## 当前实现
 
-### 记忆存储分布
-
-| 存储位置 | 存储内容 | 用途 | 查询方式 |
+| 记忆域 | 主要存储 | 当前用途 | 代码入口 |
 |---|---|---|---|
-| `WrongQuestion.ai_analysis` (JSON) | 每道错题的 AI 分析结果 | 错题分析缓存 | `ai_service.analyze_error` 检索引擎 |
-| `WrongQuestion.efactor / interval / repetitions / next_review_date` (标量) | SM-2 间隔重复参数 | 复习调度 | `review_service.get_due_reviews` |
-| `AnswerBehavior` 表 | 每题答题行为（耗时、首答正确、最终正确、switch 次数） | 行为统计 | `behavior_service.get_behavior_stats` |
-| `AiChat` 表 | AI 对话记录（messages + response + context_snapshot） | 成本审计 / 调用追溯 | 直接查表 |
-| `PracticeRecord` 表 | 每次练习记录（题目列表、答案、正确/错误数） | 练习历史 | `practice_service.list_records` |
+| 错题与 AI 分析 | `wrong_questions.ai_analysis`、AI 生成/反馈日志 | 缓存错因分析、记录模型结果与失败状态 | `wrong_question_service.py`、`ai_service.py` |
+| 复习调度 | `review_schedules` | SM-2 interval/ease/repetitions/next_review_at/mastered 的唯一数据源 | `review_scheduler.py` |
+| 复习历史 | `review_records` | 保存每次 rating 与算法前后快照 | `review_scheduler.py` |
+| 答题行为 | `answer_behaviors`、`practice_records`、`practice_sessions` | 记录耗时、正确性、会话时长和学习统计 | `behavior_service.py`、`practice_service.py` |
+| 知识状态 | `user_knowledge_states`、`user_knowledge_adaptive_states`、`user_adaptive_profiles` | 按知识点维护掌握度、置信度和自适应学习状态 | `adaptive_learning_service.py`、`knowledge_mastery` API |
+| 知识图谱 | `knowledge_points`、`knowledge_edges`、`question_knowledge_points` | 知识点、题目关联和图关系查询 | `knowledge_*` API、`admin_knowledge.py` |
+| 向量记忆 | 题目/知识点 embedding 与向量配置 | 相似题、语义检索和后台回填；部署未启用时可降级 | `rag/`、vector API、`admin_vector_config.py` |
+| 推荐记忆 | 策略、实验、分配、曝光日志、日指标 | 推荐策略实验与效果评估 | recommendation services/API |
+| AI 对话 | `ai_chats` | 保存对话上下文和响应，用于追溯与成本审计 | `ai_service.py` |
 
-### 各模块记忆能力
+## 数据职责
 
-**AI 模块**
-- 有缓无忆：错题分析结果缓存（`WrongQuestion.ai_analysis`），但没有跨对话的用户知识状态
-- 每次 `study_advice` 调用独立，不记忆上次推荐了什么
+### 复习调度
 
-**复习模块**
-- SM-2 字段直接挂在 `WrongQuestion` 表上，每道错题独立调度
-- `get_review_stats` 汇总统计（待复习数、已掌握数、平均 EF、各科目分布）
+- `ReviewSchedule` 是 SM-2 的唯一数据源；`WrongQuestion` 不再保存旧版 efactor、interval、repetitions、next_review_date、quality 字段。
+- `ReviewRecord` 只追加，不作为当前调度状态使用。
+- 评分范围为 0-5；未提供自评时，自动批改使用正确=4、错误=1 的映射。
+- 复习时间使用 UTC 计算，面向学习日的 API 在服务层统一处理日期边界。
 
-**练习模块**
-- `AnswerBehavior` 记录每题全量行为数据，支持正确率 / 平均耗时 / 按科目统计
-- `get_behavior_stats` 提供整体学习画像
+### 知识状态
 
-### 当前"记忆"的局限
+- 题目与知识点通过 `question_knowledge_points` 关联表连接，该表是题目知识点关系的唯一事实源；不要读取已移除的 `questions.knowledge_points` 列。
+- 用户知识状态与题目错题记录分离：错题回答“哪道题错过”，知识状态回答“该知识点掌握程度如何”。
+- 自适应学习服务根据答题与复习数据更新状态，并为学习路径和推荐接口提供输入。
 
-- **没有用户知识状态模型** — 系统不知道用户"掌握了什么知识点"，只知道"哪些题做错了"
-- **没有语义检索** — `WrongQuestion.ai_analysis` 只能按 primary key 查，不能按知识点内容查
-- **缓存在错题行上** — 如果 `WrongQuestion` 行被删除，关联的 AI 分析也丢失
-- **AiChat 表只写不读** — 数据有积累，但没有接口消费
+### AI 分析缓存
 
----
+- AI 分析结果必须关联输入签名和模型签名；缓存状态可能为 ready、stale 或生成中。
+- 只有 ready 结果直接展示给小程序；stale 结果触发重新生成或预热，不作为新鲜结果返回。
+- 题目声明需要视觉证据但缺少题图时，服务快速失败并返回结构化错误，不伪造视觉结论。
 
-## 存在问题
+### 向量与图谱
 
-1. **知识点掌握度不可计算** — 无法回答"用户的极限掌握到什么程度了"，因为 `knowledge_points` 挂在 `Question` 表而非 `WrongQuestion`，没有聚合统计
-2. **重复错题归并缺失** — 同一道题错多次会 upsert，但 `error_type` 未保留历史变化轨迹
-3. **无遗忘曲线可视化数据** — `AnswerBehavior` 有每题记录，但缺少按知识点聚合的准确率趋势
-4. **缓存无时效标记** — `WrongQuestion.ai_analysis` 没有 `cached_at`，无法判断缓存是否过期
+- RAG 和 embedding 能力已存在，但是否可用取决于向量配置、模型和部署环境；业务必须保留关键词/非向量降级路径。
+- 知识图谱用于知识点关系和后台质量治理，不替代复习调度或用户知识状态表。
 
----
+## 典型链路
 
-## 下一阶段扩展方案
+```text
+答题 → practice_records / answer_behaviors
+     ├─ 答错 → wrong_questions + AI 分析缓存
+     ├─ 复习 → review_schedules + review_records
+     └─ 知识状态更新 → user_knowledge_states / adaptive states
 
-### Phase 1 — 知识点聚合统计（1 天）
+检索/推荐 → 题目知识点关联 + 用户知识状态
+          ├─ 向量可用：embedding / RAG
+          └─ 向量不可用：关键词和规则降级
+```
 
-- **wrong_question_service.py** 新增 `get_knowledge_stats(db, user_id)`：
-  - 读取用户所有错题的 `Question.knowledge_points`，合并统计各知识点出现次数
-  - 计算各知识点掌握率 = 最近 N 次正确 / 总练习次数（关联 `AnswerBehavior`）
-  - 返回 `[{knowledge_point, wrong_count, accuracy, last_practiced_at}]`
-- 新增路由 `GET /api/v1/wrong-questions/knowledge-stats`
+## 当前边界
 
-### Phase 2 — 简单推荐（1 天）
+- AI 分析缓存仍以题目/错题为主要粒度，不等同于跨会话自然语言记忆。
+- 向量检索、知识图谱和推荐实验是独立能力，不能假设所有部署 profile 都已启用。
+- 删除或重建题目时必须同步考虑知识点关联、embedding、错题和审计数据的引用关系。
 
-- 基于 `get_knowledge_stats` 输出薄弱知识点列表
-- practice_service 扩充 `get_batch_questions`，支持按知识点筛选
-- 新增 `GET /api/v1/practice/recommend?count=10&focus_weak=true`
-  - 从薄弱知识点关联的题目中随机选取
+## 相关文档
 
-### Phase 3 — 复习优先级排序（1 天）
-
-- `review_service.get_due_reviews` 增加优先级排序：
-  - 优先级因子 = 错题次数 × (1 - 最近正确率) × EF 倒数
-  - 同天待复习题目按优先级排序返回
-
-### 明确不做的
-
-- ❌ 向量嵌入 / 语义检索（关键词匹配够用）
-- ❌ 知识图谱
-- ❌ 个性化 ML 推荐
-- ❌ 跨用户记忆共享
-- ❌ 用户知识状态持久化框架（直接在现有表上加字段和查询即可）
-- ❌ 主动遗忘模型 / 预测遗忘曲线
+- [复习系统设计](./REVIEW_SYSTEM_DESIGN.md)
+- [复习算法](./REVIEW_ALGORITHM.md)
+- [数据库 schema](../backend/DB_SCHEMA.md)
+- [AI 管线](../ai/AI_PIPELINE.md)
+- [Admin API](../admin/ADMIN_API_SPEC.md)

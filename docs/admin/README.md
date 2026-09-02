@@ -1,11 +1,11 @@
 # Admin 文档体系索引
 
 > 本目录包含 2240AI 后台管理系统（Admin Dashboard）的所有设计文档。
-> 当前文档版本：**v2.4（Phase 7+ AI 模型与配置接口同步版，2026-06-10）**
-> **当前状态：Admin Backend 已确认并入现有 FastAPI 后端，在 `/api/admin/v1` 命名空间实现；ORM 使用 SQLAlchemy，迁移使用 Alembic，不再采用独立 NestJS + Prisma + BullMQ 后端方案。Phase 6 `admin-frontend` 已完成 Next.js Admin Dashboard 主要前端实现；Phase 7 已实现后台 AI 解析设置与全局月度额度控制；Phase 7+ 扩展已实现 AI 模型配置与 AI 配置键值表。**
+> 当前文档版本：**v2.5（运维 RBAC 与安全边界同步版，2026-09-02）**
+> **当前状态：Admin Backend 已并入现有 FastAPI 后端，在 `/api/admin/v1` 命名空间实现；实际 route 文件位于 `backend/app/api/v1/admin_*.py`，由 `backend/app/api/admin/router.py` 聚合。ORM 使用 SQLAlchemy，迁移使用 Alembic，不采用独立 NestJS + Prisma + BullMQ 后端。Admin Frontend 使用 Next.js 16.2 + React 19.2；AI 配置、题目图片/公式卡、导入审核、系统任务与备份管理均已有对应实现。**
 >
-> - **更新时间**：2026-06-10
-> - **变更原因**：同步 Phase 7+ 扩展 AI 模型配置表、AI 配置键值表、模型列表/更新接口、配置读取/更新接口实现。
+> - **更新时间**：2026-09-02
+> - **变更原因**：同步 2026-08/09 的系统运维权限、JWT 隔离签名域、部署档案校验、任务/备份端点，以及当前 Admin 路由聚合结构。
 
 ---
 
@@ -47,15 +47,15 @@
 | 文档 | 版本 | 状态 |
 |------|------|------|
 | AUDIT_REPORT.md | v1.0 | 审计输出，永久参考 |
-| ADMIN_ARCHITECTURE.md | v2.3 | Phase 7+ AI 模型与配置接口同步 |
-| PHASE_PLAN.md | v2.5 | Phase 7+ AI 模型与配置接口扩展同步 |
+| ADMIN_ARCHITECTURE.md | v2.4 | 运维 RBAC 与安全边界同步 |
+| PHASE_PLAN.md | v2.6 | 已完成能力与后续计划分离 |
 | RBAC_RULES.md | v2.2 | Phase 7 AI 设置权限同步（未变化） |
 | DB_SCHEMA_ADMIN.md | v2.4 | Phase 7+ AI 模型配置表与配置键值表同步 |
 | REDIS_PLAN.md | v2.1 | FastAPI 方案确认，可启动 |
-| ADMIN_API_SPEC.md | v2.5 | Phase 7+ AI 模型与配置接口同步 |
+| ADMIN_API_SPEC.md | v2.7 | 运维 API、安全边界与题目管理同步 |
 | ADMIN_UI_RULES.md | v1.3 | Phase 7+ AI 模型与配置 UI 同步 |
 | REVIEW_FLOW.md | v2.0 | 已修订，可启动 |
-| AUDIT_LOG.md | v2.2 | Phase 7+ AI 模型与配置审计 Action 同步 |
+| AUDIT_LOG.md | v2.3 | 运维操作与安全审计同步 |
 | DEEPSEEK_DEV_RULES.md | v2.1 | FastAPI 方案确认，可启动 |
 
 ---

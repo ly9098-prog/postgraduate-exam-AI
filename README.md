@@ -6,6 +6,8 @@ MemoGrad 是一个面向考研学习场景的智能刷题与题库治理系统�
 
 > 本 README 面向「首次运行项目、日常开发、CI 排错和部署维护」。API 的完整字段与协议应以运行时 OpenAPI 和 `docs/` 中的专项文档为准。
 
+> 当前实现快照（2026-09-02）：后端已完成 Public/Admin 路由分层、Redis 任务队列与运维诊断；Admin 使用 Next.js 16.2 + React 19.2；生产部署必须使用 `APP_ENV=production` + `DEPLOYMENT_PROFILE=cloud_api`；用户与 Admin JWT 签名域隔离。近期前端变更包括编程题专用渲染和小程序题目图片预加载。
+
 ## 目录
 
 - [1. 系统架构](#1-系统架构)
@@ -114,8 +116,8 @@ flowchart LR
 │   ├── app/
 │   │   ├── main.py              # 应用入口 / lifespan / health
 │   │   ├── api/
-│   │   │   ├── v1/              # 小程序 / Public API
-│   │   │   ├── admin/           # Admin router
+│   │   │   ├── v1/              # Public 与 Admin route modules
+│   │   │   ├── admin/           # Admin router 聚合入口
 │   │   │   └── internal/        # 内部 worker API
 │   │   ├── ai/                  # AI Prompt、上下文与模型调用辅助
 │   │   ├── core/                # 配置、数据库、安全、部署画像、日志
@@ -177,8 +179,8 @@ flowchart LR
 - Gunicorn + Uvicorn worker
 - APScheduler / 异步任务体系
 - PyMuPDF / Pillow / PaddleOCR（按部署画像启用）
-- PaddleX / PaddleOCR-VL HTTP OCR
-- OpenAI-compatible AI API / DeepSeek 模型配置
+- PaddleX / PaddleOCR-VL HTTP OCR（本地进程或远程 HTTP）
+- OpenAI-compatible AI Gateway / DeepSeek 等模型配置
 - pgvector（可选）
 - Sentry（可选）
 
@@ -382,6 +384,8 @@ WECHAT_APP_SECRET=...
 |---|---|---|
 | `APP_ENV` | `production` | 运行环境；本地建议显式设为 `development` |
 | `APP_SECRET` | `change-me-in-production` | JWT/应用密钥，生产必须替换 |
+| `USER_JWT_SECRET` | 空（由 `APP_SECRET` 派生） | 可选的用户 JWT 独立签名密钥，生产建议显式配置 |
+| `ADMIN_JWT_SECRET` | 空（由 `APP_SECRET` 派生） | 可选的 Admin JWT 独立签名密钥，必须与用户密钥不同 |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./postgraduate.db` | 数据库连接 |
 | `PROCESS_ROLE` | `web` | `web` / `worker` / `scheduler` / `all` |
 | `LOCAL_ASYNC_RUNTIME_ENABLED` | `false` | 是否在本地 web 进程显式启用完整异步 runtime |
@@ -389,6 +393,7 @@ WECHAT_APP_SECRET=...
 | `CORS_ORIGINS` | localhost / 127.0.0.1:3000 | 管理后台 CORS 白名单 |
 | `ALLOWED_HOSTS` | localhost / 127.0.0.1 / testserver | Host header 白名单 |
 | `LOG_LEVEL` | `INFO` | 日志级别 |
+| `OBSERVABILITY_TOKEN` | 空 | 生产访问 `/health/metrics` 所需 Bearer Token |
 
 ### 6.2 部署画像
 
@@ -672,15 +677,18 @@ bash deploy/scripts/deploy.sh update
 
 ### 10.3 架构
 
-生产环境使用 Docker Compose 部署，包含 5 个服务：
+生产环境使用 `deploy/docker-compose.prod.yml` 部署，当前包含 8 个服务：
 
 | 服务       | 说明                              |
 | ---------- | --------------------------------- |
-| `app`      | FastAPI + Gunicorn，源码构建      |
-| `nginx`    | nginx:1.25-alpine，HTTPS 反向代理 |
-| `postgres` | PostgreSQL 15，持久卷             |
-| `redis`    | Redis 7，持久卷                   |
+| `app`      | FastAPI + Gunicorn Web 进程       |
+| `worker`   | OCR/AI/导入等异步任务 worker      |
+| `scheduler`| 定时任务、导出与清理 scheduler    |
+| `nginx`    | nginx HTTPS 反向代理              |
+| `postgres` | pgvector/PostgreSQL 15 持久卷     |
+| `redis`    | Redis 7 任务队列与缓存             |
 | `admin`    | Next.js 管理前端（仅内网 3000）   |
+| `backup`   | PostgreSQL 备份任务                |
 
 网络拓扑：
 

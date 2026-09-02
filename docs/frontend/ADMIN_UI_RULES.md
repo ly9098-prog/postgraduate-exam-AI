@@ -1,6 +1,6 @@
 # Admin UI Rules
 
-> 版本：v1.3（AI 解析设置配置接口同步版） | 状态：Phase 7+ 扩展已实施 | 更新：2026-06-10
+> 版本：v1.4（当前 Admin 页面与运维权限同步版） | 状态：核心页面已实施 | 更新：2026-09-02
 > 变更原因：同步 `admin-frontend` 新增 `/ai-settings` 独立页面、侧边栏入口、权限门禁、AI 解析开关/月度额度/月度用量展示，以及 build 网络阻塞验证结果。
 
 ---
@@ -15,7 +15,7 @@
 
 ## 2. 技术与数据流约束
 
-- Admin UI 使用 Next.js 16、React 19、TypeScript、Tailwind CSS 4；数据请求使用统一 API client + React Query；列表能力可使用 TanStack Table；图表可使用 Recharts；全局会话状态使用 Zustand。
+ - Admin UI 使用 Next.js 16.2、React 19.2、TypeScript、Tailwind CSS 4；数据请求使用统一 API client + React Query；列表能力可使用 TanStack Table；图表可使用 Recharts；全局会话状态使用 Zustand。
 - API base URL 默认指向 `/api/admin/v1` 对应服务，可通过 `NEXT_PUBLIC_ADMIN_API_BASE_URL` 覆盖。
 - access token 只保存在内存态；refresh token 依赖 HttpOnly cookie；前端不得持久化 access token 到 localStorage/sessionStorage。
 - 所有 API 请求统一走 API client 封装，自动携带 `Authorization: Bearer <access>` 与 `credentials: include`。
