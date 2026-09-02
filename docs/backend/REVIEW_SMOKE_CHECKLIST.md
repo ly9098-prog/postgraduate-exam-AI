@@ -1,6 +1,6 @@
 # 复习系统 Smoke Test 检查清单
 
-> 开发者手工验证步骤。每次修改复习调度相关逻辑后执行，确保核心流程不退化。
+> 开发者手工验证步骤。每次修改复习调度相关逻辑后执行，确保核心流程不退化。最后更新：2026-09-02。
 
 ---
 
@@ -29,7 +29,7 @@ POST /api/v1/practice/submit
 - [ ] Response 中 `is_wrong_added` = `true`
 - [ ] `WrongQuestion` 表新增记录，`user_id`、`question_id` 正确
 - [ ] `ReviewSchedule` 表新增记录（可通过 `auto_schedule_wrong_question` 触发结果查看）
-- [ ] WrongQuestion 兼容字段（efactor/interval/repetitions）与 ReviewSchedule 一致
+- [ ] `WrongQuestion` 仅保存错题分析数据，复习参数只从 `ReviewSchedule` 读取
 
 ### 2. 今日待复习可查到
 
@@ -137,17 +137,15 @@ POST /api/v1/review/{schedule_id}/unmaster
 - [ ] WrongQuestion.mastered = False（同步一致）
 - [ ] `/review/today` 重新出现该题
 
-### 9. 旧接口与新接口不矛盾
+### 9. 当前复习接口
 
 ```
-GET /api/v1/review/due
 GET /api/v1/review/today
 ```
 
 **验证：**
-- [ ] 两个接口返回的题目均属于待复习范围
-- [ ] 对同一用户，两个接口的统计趋势无明显矛盾
-- [ ] （已知技术债：`/review/due` 基于 WrongQuestion，`/review/today` 基于 ReviewSchedule，完全一致不保证）
+- [ ] 返回题目均属于 `ReviewSchedule` 待复习范围
+- [ ] 已确认旧 `/review/due`、`/review/submit`、`/review/stats` 不再作为当前接口调用
 
 ### 10. 复习统计合理
 

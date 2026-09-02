@@ -1,9 +1,10 @@
 # RBAC 权限系统设计规范
 
-> 版本：v2.2（Phase 7 AI 设置权限同步版） | 状态：Phase 7 已完成 | 更新：2026-05-30
+> 版本：v2.3（系统运维权限与 JWT 隔离同步版） | 状态：已实施 | 更新：2026-09-02
 > 修订自审计报告 C1（移除 normal_user）、C3（super_admin 走 role_permissions）、C4（删除方案 B）、I5（双维度限流）、I6（role-version）、I9（用户级 nbf）
 >
 > - **变更原因**：2026-05-30 同步 Phase 7 新增 `ai_setting:read` / `ai_setting:write` 权限、seed 覆盖与 AI 解析额度绕过语义。
+> - **变更原因**：2026-08-29 新增 `system:read` / `system:write` / `system:backup`，并将用户/Admin JWT 签名域隔离。
 
 ---
 
@@ -14,9 +15,9 @@
 | 超级管理员 | `super_admin` | 拥有所有权限（**通过 role_permissions 表绑定，非硬编码**），不可被删除或降权 |
 | 普通管理员 | `admin` | 拥有题库管理、用户查看等运营权限 |
 
-**重要说明（C1 修订）**：
-- ❌ 旧设计中的 `normal_user` 角色**已移除**
-- 小程序用户（AppUser）**不进入 RBAC 体系**，不持有任何 permission
+**重要说明（当前实现）**：
+- 小程序用户（AppUser）不通过 Admin JWT 访问后台，不进入 AdminUser 的 RBAC 授权链
+- `roles` 表仍由 bootstrap 保留一个 `user` 系统角色，用于应用侧兼容权限集合；它不是后台管理员角色
 - AppUser 与 AdminUser 是两个完全独立的身份系统，详见 [ADMIN_ARCHITECTURE.md](./ADMIN_ARCHITECTURE.md) §二
 
 **扩展预留（后期按需启用）**：
@@ -32,19 +33,22 @@
 
 ## 二、权限清单
 
-### 小程序用户管理（AppUser，非 RBAC 主体）
+### 小程序用户管理（AppUser，后台 RBAC 资源）
 | 权限标识 | 说明 |
 |---------|------|
-| `app_user:read` | 查看小程序用户列表和详情 |
-| `app_user:write` | 编辑运营备注/状态类字段（白名单待确认；默认不改 nickname/avatar_url 等微信来源资料） |
-| `app_user:ban` | 封禁/解封小程序用户 |
+| `app-user:read` | 查看小程序用户列表和详情 |
+| `app-user:write` | 编辑小程序用户 |
+| `app-user:ban` | 封禁/解封小程序用户 |
 
 ### 后台管理员管理（AdminUser）
 | 权限标识 | 说明 |
 |---------|------|
-| `admin_user:read` | 查看后台管理员列表 |
-| `admin_user:write` | 创建/编辑后台管理员 |
-| `admin_user:delete` | 删除后台管理员 |
+| `admin-user:read` | 查看后台管理员列表 |
+| `admin-user:create` | 创建后台管理员 |
+| `admin-user:update` | 编辑后台管理员 |
+| `admin-user:delete` | 停用后台管理员 |
+| `admin-user:force-logout` | 强制后台管理员下线 |
+| `admin-user:reset-password` | 重置后台管理员密码 |
 
 ### 题目管理
 | 权限标识 | 说明 |
@@ -82,11 +86,31 @@
 | `audit:read` | 查看审计日志 |
 | `dashboard:read` | 查看统计概览 |
 
+### 系统运维
+| 权限标识 | 说明 |
+|---------|------|
+| `system:read` | 查看系统健康、任务、队列和 trace 诊断 |
+| `system:write` | 重试/取消任务，执行允许的定时维护任务 |
+| `system:backup` | 查看与执行 PostgreSQL 备份；备份操作需额外校验 |
+
 ### AI 设置
 | 权限标识 | 说明 |
 |---------|------|
 | `ai_setting:read` | 查看后台 AI 解析设置与月度用量 |
 | `ai_setting:write` | 更新全局 AI 解析开关或月度调用额度 |
+
+### 其他已注册能力
+| 权限标识 | 说明 |
+|---------|------|
+| `sync:write` | 执行本地到云端的数据同步 |
+| `knowledge:read` | 查看知识图谱与知识状态数据 |
+| `recommendation:read` | 查看推荐策略、实验、指标与报表 |
+| `formula:read` / `formula:create` / `formula:update` | 查看、创建、编辑公式 |
+| `formula:review` / `formula:publish` / `formula:delete` / `formula:import` | 审核、发布、删除、导入公式 |
+| `formula:ai-generate` | 使用 AI 生成公式 |
+| `formula-category:read` / `formula-category:write` | 查看与管理公式分类 |
+
+> 权限名称以 `backend/app/services/admin_bootstrap_service.py` 的 `ADMIN_PERMISSION_DEFINITIONS` 为准。本文早期版本中的下划线写法（如 `app_user:read`、`admin_user:write`）已废弃。
 
 ---
 
@@ -111,31 +135,38 @@ def seed_roles_and_permissions(session):
 
 ### CI 强制校验
 
-每次 `seed-permissions.ts` 添加新权限后，CI 必须执行：
+每次权限定义变更后，CI/迁移校验必须确认 `super_admin` 在 `role_permissions` 中拥有全部权限。当前仓库没有 `seed-permissions.ts` 或 `check:super-admin-coverage` 这类 Node CLI；初始化由 FastAPI bootstrap 与 Alembic 迁移负责，校验应通过 Python 测试或数据库查询完成。
 
-```bash
-npm run check:super-admin-coverage
-# 校验 super_admin 是否拥有 permissions 表的全部权限
-# 不通过则阻止合并
+```sql
+SELECT COUNT(*) = (SELECT COUNT(*) FROM permissions)
+FROM role_permissions rp
+JOIN roles r ON r.id = rp.role_id
+WHERE r.name = 'super_admin';
 ```
 
 ### admin 角色初始权限
 
 ```
 admin = [
-  app_user:read, app_user:write, app_user:ban,
+  app-user:read, app-user:write, app-user:ban,
   question:read, question:write, question:review, question:batch_review,
   subject:read, subject:write,
   import:read, import:write,
-  ai_setting:read,
+  system:read,
   audit:read,
   dashboard:read,
+  sync:write, knowledge:read, recommendation:read,
+  formula:read, formula:create, formula:update, formula:review,
+  formula:publish, formula:delete, formula:import, formula:ai-generate,
+  formula-category:read, formula-category:write,
 ]
 ```
 
 ---
 
 ## 四、三层权限控制实现
+
+> 本节及后续 JWT/缓存代码块中的 TypeScript/NestJS 片段均为历史伪代码，用于表达授权不变式，不能直接复制运行。当前实现使用 `backend/app/core/admin_security.py` 的 FastAPI dependencies、PyJWT 与可选 Redis cache。
 
 ### 4.1 接口级（FastAPI dependencies）
 
@@ -168,13 +199,13 @@ async def create_import_enrich_task(
 // (admin)/layout.tsx — 无对应权限跳转 /403
 
 // withPermission HOC
-export default withPermission('app_user:read')(AppUsersPage)
+export default withPermission('app-user:read')(AppUsersPage)
 ```
 
 ### 4.3 按钮级（React 组件）
 
 ```tsx
-<PermissionGuard permission="app_user:ban">
+<PermissionGuard permission="app-user:ban">
   <Button>封禁用户</Button>
 </PermissionGuard>
 
@@ -198,11 +229,9 @@ if (hasPermission('question:delete')) { ... }
 ### 5.2 本地开发环境初始化
 
 ```bash
-cd admin-backend
-npx ts-node src/scripts/init-super-admin.ts --username=admin
-# 脚本提示：Enter password: (从 stdin 读取，不回显)
-# 脚本提示：Confirm password:
-# 写入 audit_log
+cd backend
+# 开发环境管理员由应用 bootstrap 创建；生产环境不得依赖默认账号。
+# 生产管理员应通过受控的服务器运维流程创建，并保留审计记录。
 ```
 
 脚本内部逻辑：
@@ -215,18 +244,14 @@ npx ts-node src/scripts/init-super-admin.ts --username=admin
 
 ### 5.3 生产环境推荐方案
 
-**方案 A（首选）：SSH + docker exec CLI**
+**方案 A（首选）：SSH + 容器内 Python CLI**
 
 ```bash
 # SSH 进入生产服务器
 ssh production-server
 
-# 通过 docker exec 执行（不暴露任何 HTTP endpoint）
-docker exec -it admin-backend \
-  npx ts-node src/scripts/init-super-admin.ts --username=<username>
-# stdin 输入密码
-
-# 该脚本本身不提供任何 HTTP endpoint
+# 通过受控的服务器运维流程执行（不暴露任何 HTTP endpoint）
+# 具体命令以当前部署脚本与管理员 bootstrap 实现为准。
 # 脚本会自动检测已存在则退出，幂等
 ```
 
@@ -235,9 +260,8 @@ docker exec -it admin-backend \
 **方案 C（备用）：直连 DB 手动写入**
 
 ```bash
-# 1. 在本地生成密码 hash
-npm run hash-password
-# 输入密码 → 输出 bcrypt hash
+# 1. 通过受控的服务器端 Python 运维流程生成密码 hash
+# 密码从 stdin 读取，禁止放入命令行参数或 shell history
 
 # 2. 连接生产 DB
 psql $PRODUCTION_DATABASE_URL
@@ -264,7 +288,7 @@ COMMIT;
 ### 5.4 安全约束（代码层强制）
 
 ```typescript
-// admin-users.service.ts
+// 历史伪代码，仅表达约束；实际实现位于 backend/app/services/admin_*.py。
 
 // 1. 任何 API 不得创建/变更为 super_admin
 async createAdminUser(dto: CreateAdminUserDto, operator: AdminUser) {
@@ -308,7 +332,9 @@ async updateAdminUserRole(id: number, newRoleId: number) {
 ```typescript
 {
   sub: number,         // adminUserId
-  type: "admin",       // 严格区分小程序 JWT（type=app）
+  type: "admin" | "admin_refresh", // access 与 refresh token 分型
+  iss: string,          // settings.JWT_ISSUER
+  aud: "memograd-admin", // settings.ADMIN_JWT_AUDIENCE
   roleId: number,      // 仅 ID，不放 name
   jti: string,         // UUID，用于黑名单
   iat: number,
@@ -323,8 +349,8 @@ async updateAdminUserRole(id: number, newRoleId: number) {
 
 ### 6.2 Token 生命周期
 
-- Access Token：`2h`
-- Refresh Token：`7d`（存储在 HttpOnly + Secure + SameSite=Strict Cookie）
+- Access Token：`2h`，`type=admin`
+- Refresh Token：`7d`，`type=admin_refresh`（存储在 HttpOnly + Secure + SameSite=Strict Cookie）
 - 登出：将 access token 的 jti 写入 `admin:jwt:blacklist:{jti}`（TTL = 剩余有效期）
 - 密码修改：立即更新 `admin:user:nbf:{userId} = now()`，所有签发于此前的 token 失效
 
@@ -349,15 +375,14 @@ if (nbf && jwt.iat < parseInt(nbf)) {
 ### 6.4 登录失败限流（I5 修订：双维度）
 
 ```
-admin:login:fail:ip:{ip}        TTL=10min, threshold=10
-admin:login:fail:user:{username} TTL=30min, threshold=5
+admin:login:fail:ip:{ip}        默认 TTL=15min, threshold=5
+admin:login:fail:user:{username} 默认 TTL=15min, threshold=5
 ```
 
 规则：
-- 任一维度达到阈值即锁定
-- 用户名锁定（30min）优先于 IP 锁定（10min），防止 NAT 出口同事相互锁定
-- 登录响应**统一返回**"用户名或密码错误"（防用户名枚举）
-- 登录成功清除 `fail:user:{username}`（保留 IP 计数以防撞库）
+- 任一维度达到阈值即返回 429，并带 `Retry-After`
+- 登录失败详情不泄露密码校验过程；成功后清除 IP、用户名失败计数
+- 具体阈值由 `ADMIN_LOGIN_MAX_FAILURES`、`ADMIN_LOGIN_WINDOW_SEC` 配置控制
 
 ```typescript
 async login(dto: LoginDto, ip: string) {

@@ -1,10 +1,13 @@
 # 分阶段开发计划
 
-> 版本：v2.5（Phase 7+ AI 模型与配置接口同步版） | 状态：Phase 7 后端与前端主要实现已完成，Phase 7+ 扩展已实施 | 更新：2026-06-10
+> 版本：v2.6（已完成能力与后续计划分离） | 状态：Phase 0-7+ 核心能力已实施 | 更新：2026-09-02
 > 修订自审计报告 I1（subjects）、I2（明确不实现 question_banks）、C6（question_versions）、C5（audit_log 分级）；2026-05-29 根据维护者确认收敛为现有 FastAPI 后端内实现。
 >
 > - **变更原因**：同步 Phase 7 后台 AI 解析设置、全局月度额度、权限拦截、前端入口与验证结果。
 > - **技术结论**：Admin Backend 位于现有 FastAPI 后端 `/api/admin/v1`；ORM 使用 SQLAlchemy；迁移使用 Alembic；Redis 可选降级；不创建 NestJS/Prisma/BullMQ 独立后端；Phase 1 审计日志同步写入，队列延后；Phase 6 前端位于 `admin-frontend`；Phase 7 AI 设置由后端与 Admin UI 共同实现。
+> - **2026-09-02 状态校正**：系统健康、任务/队列/trace、PostgreSQL 备份已落地，使用 `system:read` / `system:write` / `system:backup`；用户/Admin JWT 签名域隔离，部署档案冲突会在启动时拒绝。下文早期“待实现”条目仅保留为历史计划，不代表当前缺失。
+
+> **阅读口径**：本文件保留了各 Phase 的原始验收清单，`DeepSeek 应完成`、`禁止修改` 和部分验收命令属于当时的实施计划。当前实现以 `backend/app/api/v1/admin_*.py`、`backend/app/api/admin/router.py`、`backend/app/services/admin_*.py`、`backend/app/schemas/admin_*.py`、`backend/app/models/` 及 `backend/alembic/versions/` 为准。
 
 ---
 
@@ -32,7 +35,7 @@
 ### DeepSeek 应完成
 
 1. **创建 Admin Backend 项目（并入现有 FastAPI）**
-   - Admin 代码位于现有 `backend/app/api/admin/v1`、`backend/app/services/admin`、`backend/app/schemas/admin`、`backend/app/models` 等目录，不创建独立 NestJS 项目。
+   - Admin route 文件位于现有 `backend/app/api/v1/admin_*.py`，由 `backend/app/api/admin/router.py` 聚合；业务服务与 schema 分别位于 `backend/app/services/admin_*.py`、`backend/app/schemas/admin_*.py`，不创建独立 NestJS 项目。
    - 不安装新框架依赖，不创建 Prisma schema。
    - 如需继续拆分模块，必须保持在现有 FastAPI 代码库内完成。
 
@@ -45,9 +48,10 @@
 3. **目录结构**
    ```
    backend/app/
-   ├── api/admin/v1/          # Admin routes，统一 /api/admin/v1
-   ├── schemas/admin/         # Pydantic 请求/响应模型
-   ├── services/admin/        # 业务逻辑与事务边界
+   ├── api/v1/admin_*.py      # Admin routes，URL 统一 /api/admin/v1
+   ├── api/admin/router.py    # Admin router 聚合入口
+   ├── schemas/admin_*.py     # Pydantic 请求/响应模型
+   ├── services/admin_*.py    # 业务逻辑与事务边界
    ├── models/                # SQLAlchemy Admin 模型
    ├── core/                  # JWT / 安全 / DB / Redis 可选封装
    └── main.py                # 挂载 admin router
@@ -72,16 +76,15 @@
 
 8. **环境变量**
    ```env
-   DATABASE_URL=
-   REDIS_URL=
-   JWT_ACCESS_SECRET=
-   JWT_REFRESH_SECRET=
-   JWT_ACCESS_EXPIRES=2h
-   JWT_REFRESH_EXPIRES=7d
-   BCRYPT_ROUNDS=12
-   NODE_ENV=development
-   PORT=4000
-   CORS_ORIGINS=http://localhost:3001
+   APP_ENV=development
+   DEPLOYMENT_PROFILE=local_import
+   PROCESS_ROLE=web
+   DATABASE_URL=sqlite+aiosqlite:///./postgraduate.db
+   REDIS_URL=redis://localhost:6379/0
+   APP_SECRET=change-me-in-development
+   CORS_ORIGINS=["http://localhost:3000"]
+   # 生产环境必须同时使用 APP_ENV=production 与 DEPLOYMENT_PROFILE=cloud_api，
+   # 并配置 APP_SECRET；USER_JWT_SECRET / ADMIN_JWT_SECRET 可进一步隔离签名根。
    ```
 
 9. **健康检查（I10）**
@@ -90,10 +93,11 @@
    - `GET /health`
 
 10. **Seed 入口**
-    - 使用 `backend/scripts/seed_admin_permissions.py`、`backend/scripts/seed_admin_roles.py`、`backend/scripts/seed_admin_subjects.py` 等 Python 脚本，复用现有 FastAPI 配置与 SQLAlchemy session
+    - 当前由应用 bootstrap（`backend/app/services/admin_bootstrap_service.py`）在本地导入档案初始化角色、权限和开发管理员；Alembic revisions 负责表结构
+    - 文档早期规划中的 `backend/scripts/seed_admin_*.py` 路径未在当前仓库实现，不应作为现行命令执行
 
 ### 验收标准
-- `prisma migrate deploy` 在干净 DB 上一次性成功（仅在 Prisma 技术栈确认后适用）
+- `alembic upgrade head` 在干净 DB 上一次性成功；生产启动前 revision 与 Alembic head 一致
 - `GET /health/ready`：DB OK 时返回 200；Redis OK 返回 `{ status: "ok", db: "ok", redis: "ok" }`；Redis 不可用但 DB OK 时仍返回 200 且 `redis: "degraded"`
 - DB 失败或关键 migration 未完成时，`GET /health/ready` 返回 503
 - `GET /health/live` 在 DB/Redis 挂掉时仍返回 200
@@ -151,19 +155,16 @@
    - `GET /permissions` / `GET /permissions/by-category`
 
 7. **Seed 脚本**
-   - `seed_admin_permissions.py`：写入完整权限清单（见 RBAC_RULES.md §二）
-   - `seed_admin_roles.py`：创建 super_admin（绑定全部 permissions） + admin（绑定运营权限）
-   - `init_super_admin.py`：从 stdin 读密码 → bcrypt(12) → 创建 → 写 audit critical
-   - `hash_admin_password.py`：CLI 工具，stdin 输入密码 → 输出 bcrypt hash
+   - 历史计划中的 `seed_admin_permissions.py`、`seed_admin_roles.py`、`init_super_admin.py`、`hash_admin_password.py` 尚未作为独立脚本保留
+   - 当前角色/权限 bootstrap 由 `backend/app/services/admin_bootstrap_service.py` 执行；管理员密码由 `backend/app/core/admin_security.py` 的 bcrypt 工具处理
 
 8. **CI 校验**
-   - `python backend/scripts/check_super_admin_coverage.py`：校验 super_admin 拥有全部权限
+   - 通过 Python 测试或数据库查询校验 `super_admin` 在 `role_permissions` 中覆盖全部 `permissions`；仓库当前未提供独立 Node CLI
 
 9. **AuditLogService**（同步事务内 + 同步重试 + 异步队列 + fire-forget）
 
 ### 验收标准
-- 登录失败 5 次（同用户名）→ 锁定，但响应仍为"用户名或密码错误"
-- 登录失败 10 次（同 IP）→ 锁定
+- 登录失败达到 `ADMIN_LOGIN_MAX_FAILURES`（默认 5；用户名与 IP 维度）→ 返回 429，并带 `Retry-After`
 - token 携带 type=app 访问 → 401
 - 登出后立即失效
 - super_admin 拥有所有权限（DB 查询验证，非代码硬编码）

@@ -1,7 +1,7 @@
 # SM-2 复习调度系统设计
 
 > 基于代码真实状态的架构设计文档。描述当前系统边界、数据职责、同步策略与技术债。
-> 最后更新：2026-06-26（P0、P1 已修复，P2 已完成）
+> 最后更新：2026-09-02（ReviewSchedule 唯一数据源；旧 SM-2 字段与旧端点已移除）
 
 ---
 
@@ -310,7 +310,7 @@ efactor' = max(1.3, efactor')
 
 ### 审计方法
 
-基于 2026-06-26 代码快照，逐条检查以下风险点。**只分析，不改代码。**
+基于 2026-06-26 的历史审计快照并结合 2026-09-02 当前代码复核，逐条检查以下风险点。标注为“已修复”的代码块仅用于说明历史风险，不能作为当前实现示例。
 
 ### 6.1 ReviewSchedule → WrongQuestion 已移除字段
 
@@ -328,6 +328,8 @@ P2-2 后 WQ 不持有 SM-2 字段（efactor/interval/repetitions/next_review_dat
 **结论**：无残留风险。
 
 ### 6.2 WrongQuestion 被用于计算 SM-2 的路径
+
+> 以下调用链是 P0-1 修复前的历史示例，当前代码不再执行；保留它仅为审计追溯。
 
 **确认存在**：`wrong_question_service.update_quality()` (wrong_question_service.py:158-187)
 
@@ -402,7 +404,7 @@ async def update_quality(db, user_id, wq_id, quality):
 | P1-2 | **WQ.last_review_at 未同步** | `_sync_schedule_to_wq()` | 新增 `wq.last_review_at = schedule.last_reviewed_at` 同步 | ✅ 已修复 |
 | P1-3 | **`_sync_schedule_to_wq()` 中 `date.today()`** | `review_scheduler.py:35` | fallback 替换为 `utcnow().date()` | ✅ 已修复 |
 | P1-4 | **`record_wrong()` 中 `date.today()`** | `wrong_question_service.py:23,47` | 替换为 `utcnow().date()` | ✅ 已修复 |
-| P1-5 | **`quality` 字段废弃计划** | `wrong_question.py` | WQ.quality 仅由旧路径写入；待 P2 废弃 | 📋 待处理 |
+| P1-5 | **`quality` 字段废弃计划** | `wrong_question.py` | WQ.quality 已随 P2-2 移除 | ✅ 已完成 |
 
 ### P2 — 已完成
 

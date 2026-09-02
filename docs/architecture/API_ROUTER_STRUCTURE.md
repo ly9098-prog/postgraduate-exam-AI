@@ -1,6 +1,6 @@
 # API Router 架构说明
 
-> 重构后的 API Router 三层结构。
+> 当前 API Router 三层结构。最后核对：2026-09-02（Codebase Memory 索引含 326 个 Route 节点）。
 
 ---
 
@@ -31,7 +31,9 @@ app/main.py
               │           ├── knowledge_mastery_router
               │           ├── knowledge_path_router
               │           ├── study_report_router
-              │           └── adaptive_learning_router
+              │           ├── adaptive_learning_router
+              │           ├── exports_router
+              │           └── formulas_router
               │
               ├── include_router(admin_api_router)
               │     └── app/api/admin/router.py
@@ -51,7 +53,12 @@ app/main.py
               │           ├── admin_vector_config_router
               │           ├── admin_system_health_router
               │           ├── admin_knowledge_router
-              │           └── admin_recommendation_router
+              │           ├── admin_recommendation_router
+              │           ├── admin_formulas_router
+              │           └── admin_metadata_router
+              │
+              └── include_router(ocr_worker_router)
+                    └── app/api/internal/ocr_worker.py
 ```
 
 ---
@@ -131,8 +138,8 @@ app/main.py
 
 | 分类 | 数量 |
 |------|------|
-| 总路由数 | 234 |
-| App (public) 路由 | ~120 |
-| Admin 路由 | ~110 |
+| Route 节点（索引快照） | 326 |
+| App (public) 路由 | 以运行时 OpenAPI 为准 |
+| Admin 路由 | 以运行时 OpenAPI 为准 |
 | Legacy 410 路由 | ~10 |
 | 健康检查/文档 | 5 |

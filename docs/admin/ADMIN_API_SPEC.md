@@ -1,12 +1,13 @@
 # Admin API 规范
 
-> 版本：v2.6（题目图片/选项、公式卡、知识点别名搜索同步版） | 状态：Phase 7+ 扩展已实施 | 更新：2026-08-10
+> 版本：v2.7（运维 API、安全边界与题目管理同步版） | 状态：核心 Admin API 已实施 | 更新：2026-09-02
 > 修订自审计报告 I8（统一 Stripe 风格）、I10（liveness/readiness）、C1（拆分 app-users 与 admin-users）
 >
 > - **变更原因**：2026-05-30 同步 Phase 7 新增 AI 解析设置与月度用量接口、权限要求和导入 enrich 前置拦截语义。
 > - **变更原因**：2026-05-30 同步题库 Level 1 完全重复检测在导入批次详情 / 审核队列返回的重复字段，以及发布阶段拦截语义。
 > - **变更原因**：2026-06-10 同步 AI 解析设置页面配置接口（`/ai-models`、`/ai-configs`）。
 > - **变更原因**：2026-08-10 同步题目图片上传/替换/删除、快捷添加选项、keyword 匹配知识点名与别名，以及公式卡 API 与 PUT 版本号推导（行锁 + max 版本）。
+> - **变更原因**：2026-08-29 同步系统运维细粒度权限、备份响应脱敏、用户/Admin JWT 签名域隔离与生产健康端点收敛。
 
 ---
 
@@ -108,27 +109,47 @@ POST   /v1/auth/refresh
 { "status": "fail", "db": "fail", "redis": "ok" }
 ```
 
+### 3.2.1 系统运维 `/system` 与任务 `/tasks`
+
+这些接口属于 Admin API，不能使用 `import:*` 权限替代：
+
+| 方法 | 路径 | 描述 | 权限 |
+|------|------|------|------|
+| GET | `/system/health` | DB、Redis、AI 等系统健康聚合 | `system:read` |
+| GET | `/tasks` | 查询任务及队列位置 | `system:read` |
+| GET | `/tasks/{task_id}` | 查看任务详情 | `system:read` |
+| GET | `/tasks/diagnostics` | 任务/Outbox/投影诊断 | `system:read` |
+| GET | `/tasks/trace/{trace_id}` | 查询任务生命周期 | `system:read` |
+| GET | `/tasks/queue-status` | 队列计数 | `system:read` |
+| GET | `/tasks/scheduled` | 查看 scheduler 任务 | `system:read` |
+| POST | `/tasks/{task_id}/retry` | 重试失败任务 | `system:write` |
+| POST | `/tasks/{task_id}/cancel` | 取消任务 | `system:write` |
+| POST | `/tasks/scheduled/{task_id}/run` | 手动执行维护任务 | `system:write` |
+| GET | `/tasks/system/postgres-backup/history` | 查看 PostgreSQL 备份历史 | `system:backup` |
+
+执行 `postgres_backup` 时除 `system:write` 外还必须具备 `system:backup`。备份响应只返回文件名、大小、时间、方法和数据库名，不返回服务器目录或绝对路径。
+
 ### 3.3 小程序用户管理 `/app-users`（C1：与 admin-users 严格区分）
 
 | 方法 | 路径 | 描述 | 权限 |
 |------|------|------|------|
-| GET | `/app-users` | 列表 | app_user:read |
-| GET | `/app-users/{id}` | 详情（含练题数 / 错题数 / 最近活跃） | app_user:read |
-| PATCH | `/app-users/{id}` | 编辑运营备注/状态类字段（白名单待确认；默认不改微信来源资料） | app_user:write |
-| POST | `/app-users/{id}/ban` | 封禁（Body: `{ reason }`） | app_user:ban |
-| POST | `/app-users/{id}/unban` | 解封 | app_user:ban |
+| GET | `/app-users` | 列表 | app-user:read |
+| GET | `/app-users/{id}` | 详情（含练题数 / 错题数 / 最近活跃） | app-user:read |
+| PATCH | `/app-users/{id}` | 编辑运营备注/状态类字段 | app-user:write |
+| POST | `/app-users/{id}/ban` | 封禁（Body: `{ reason }`） | app-user:ban |
+| POST | `/app-users/{id}/unban` | 解封 | app-user:ban |
 
 ### 3.4 后台管理员管理 `/admin-users`（C1）
 
 | 方法 | 路径 | 描述 | 权限 |
 |------|------|------|------|
-| GET | `/admin-users` | 管理员列表 | admin_user:read |
-| GET | `/admin-users/{id}` | 详情 | admin_user:read |
-| POST | `/admin-users` | 创建（roleId 不能为 super_admin） | admin_user:write |
-| PATCH | `/admin-users/{id}` | 更新（不可改自己的 role） | admin_user:write |
-| DELETE | `/admin-users/{id}` | 删除（禁删 super_admin / 自己） | admin_user:delete |
-| POST | `/admin-users/{id}/force-logout` | 强制下线（更新 nbf） | admin_user:write |
-| POST | `/admin-users/{id}/reset-password` | 重置密码 | admin_user:write |
+| GET | `/admin-users` | 管理员列表 | admin-user:read |
+| GET | `/admin-users/{id}` | 详情 | admin-user:read |
+| POST | `/admin-users` | 创建（roleId 不能为 super_admin） | admin-user:create |
+| PATCH | `/admin-users/{id}` | 更新（不可改自己的 role） | admin-user:update |
+| DELETE | `/admin-users/{id}` | 停用（禁停用 super_admin / 自己） | admin-user:delete |
+| POST | `/admin-users/{id}/force-logout` | 强制下线（更新 nbf） | admin-user:force-logout |
+| POST | `/admin-users/{id}/reset-password` | 重置密码 | admin-user:reset-password |
 
 ### 3.5 角色管理 `/roles`
 

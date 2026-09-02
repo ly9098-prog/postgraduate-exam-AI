@@ -1,25 +1,27 @@
 # 2240AI 系统架构
 
-> 基于代码真实状态，不含未来设计。最后更新：2026-06-26
+> 基于当前代码与运行时索引（Codebase Memory）整理，不含未来设计。最后更新：2026-09-02
 
 ---
 
 ## 总体架构
 
 ```
-管理端 (Next.js) ─┐
-小程序 ───────────┼→ Nginx → FastAPI 单体后端 → PostgreSQL
-                  │              ├─ AI 模块 (DeepSeek httpx)
-                  │              ├─ OCR (可选/PaddleOCR)
-                  │              └─ RAG (关键词检索)
+管理端 (Next.js 16 / React 19) ─┐
+微信小程序 ────────────────────┼→ Nginx → FastAPI 单体后端 → PostgreSQL
+                               │              ├─ AI Gateway / 配置解析
+                               │              ├─ OCR Gateway + Pipeline
+                               │              ├─ Redis 任务队列 / 缓存
+                               │              └─ 本地 / 云端存储
 ```
 
 ### 核心设计原则
 
 - **单体后端**，不分微服务，3 层：Route → Service → Model
 - **暂存区模式**：所有导入/AI 生成数据先入 `question_imports`，人工审核后才进 `questions`
-- **AI 降级**：DeepSeek 不可用时返回预置模板，不阻塞刷题
-- **微信 openid 唯一身份**，无 email/password 体系
+- **AI 降级**：统一 Gateway 负责并发、限流、熔断、Token 预算和 fallback
+- **双身份隔离**：小程序用户使用微信 openid；Admin 使用独立用户名/密码与 JWT 域
+- **导入暂存**：OCR/AI 结果先进入 `question_imports`，人工审核后才发布到 `questions`
 
 ---
 
@@ -31,12 +33,12 @@
 | ORM | SQLAlchemy 2.0 | async 模式 |
 | 数据库(开发) | SQLite | aiosqlite |
 | 数据库(生产) | PostgreSQL 15+ | asyncpg |
-| AI | DeepSeek API | httpx 直连, 无 SDK |
-| OCR | PaddleOCR | 可选依赖(~500MB) |
+| AI | OpenAI-compatible Gateway | 模型配置由 Admin API 管理 |
+| OCR | PaddleOCR / PaddleOCR-VL | 本地进程或远程 HTTP，按部署画像选择 |
 | PDF | PyMuPDF | 1.24.9 (fitz) |
 | Excel | openpyxl | 3.1.5 |
 | 前端（学员） | 微信小程序 | 原生框架 |
-| 管理端 | Next.js 14 | Turbopack, shadcn/ui, TanStack Query |
+| 管理端 | Next.js 16.2 + React 19.2 | TypeScript, React Query, Zustand, Tailwind 4 |
 | 容器 | Docker Compose | 多阶段构建 |
 | 反向代理 | Nginx | 1.25-alpine, HTTPS |
 
@@ -47,16 +49,16 @@
 ```
 postgraduate-ai/
 ├── backend/app/
-│   ├── api/v1/       # 路由层 (47个端点)
+│   ├── api/v1/       # Public/Admin router 实现与聚合
 │   ├── core/         # 基础设施 (config/database/security)
-│   ├── models/       # ORM 模型 (9表)
+│   ├── models/       # SQLAlchemy ORM 模型
 │   ├── schemas/      # Pydantic 模型
 │   ├── services/     # 业务逻辑 (16文件)
 │   ├── features/     # 导入管线 (ImportTextNormalizer 等)
 │   ├── ai/           # DeepSeek 集成
 │   └── main.py
 ├── admin-frontend/   # 管理端 (Next.js, shadcn/ui)
-├── miniprogram/      # 微信小程序 (10页面)
+├── miniprogram/      # 微信小程序主包与 study/formulas/export 等分包
 ├── deploy/           # 生产部署
 ├── docs/             # 文档 (按类别分目录)
 ├── prompts/          # AI Prompt 工程文件
@@ -78,13 +80,16 @@ postgraduate-ai/
 | AI 学习建议 | ✅ 完成 | (同上) |
 | 题库导入 | ✅ 完成 | imports.py, import_service.py |
 | AI 辅助导题 | ✅ 完成 | ai_import.py, ai_import_service.py |
-| OCR 扫描 PDF | ✅ 代码就绪 | ocr_service.py, pdf_classifier.py |
+| OCR 扫描 PDF | ✅ 已接入 | `features/ocr_*`, `ocr_worker/`, PDF 页面流 |
 | 批量图片导入 | ✅ 完成 | batch_image_import_service.py |
 | 批量图片 SSE 流式追踪 | ✅ 完成 | sse.ts, admin_imports.py |
 | 学习统计 | ✅ 完成 | stats.py, stats_service.py |
 | 答题行为记录 | ✅ 完成 | behavior.py, behavior_service.py |
 | 知识点标签 | ✅ 完成 | knowledge_points.py, knowledge_service.py |
-| RAG 检索 | ✅ 未接入业务 | rag/retriever.py |
+| RAG 检索 | 🟡 API/模块可用，业务接入范围有限 | `app/api/v1/rag.py`, `rag/` |
+| 编程题渲染 | ✅ 已接入 | Admin 专用代码渲染；小程序 CODE 渲染路径 |
+| 题目图片预加载 | ✅ 已接入 | `question-image-cache.js` 会话级预解码缓存 |
+| Admin 运维中心 | ✅ 已接入 | 系统健康、任务、队列、追踪、备份权限隔离 |
 
 ---
 
@@ -119,13 +124,10 @@ PDF → pdf_classifier (逐页判断)
 
 ```
 做错题 → auto_schedule_wrong_question()
-  ├─ 创建/更新 ReviewSchedule（主调度数据源）
-  │   ├─ interval / ease_factor / repetitions
-  │   ├─ next_review_at (datetime, utcnow 校准)
-  │   └─ mastered
-  └─ _sync_schedule_to_wq()
-      └─ 回写 WrongQuestion 兼容字段
-          (efactor / interval / repetitions / next_review_date / mastered)
+  └─ 创建/更新 ReviewSchedule（唯一调度数据源）
+      ├─ interval / ease_factor / repetitions
+      ├─ next_review_at (UTC)
+      └─ mastered
 
 复习 → review_scheduler.submit_review()
   ├─ 校验 rating 0-5（0=完全不会，5=完美回忆）
@@ -143,8 +145,7 @@ PDF → pdf_classifier (逐页判断)
 
 **关键设计决策**：
 
-- **ReviewSchedule 是主数据源**。WrongQuestion 上的 SM-2 字段（efactor/interval/repetitions/next_review_date/mastered）仅为历史兼容字段，不参与新版复习调度。
-- **同步机制**：每次 ReviewSchedule 更新后，`_sync_schedule_to_wq()` 自动回写 WrongQuestion 对应字段，确保两表一致。
+- **ReviewSchedule 是唯一数据源**。`WrongQuestion` 不再维护旧版 SM-2 字段；复习历史写入 `ReviewRecord`。
 - **时区统一**：复习日期统一使用 `utcnow().date()`，避免服务器本地时区导致日期偏移。
 - **Rating 0 是合法值**：SM-2 quality 评分范围 0-5，0 表示完全不会，会重置连续正确计数（repetitions=0）并缩短间隔。
 
@@ -154,7 +155,7 @@ PDF → pdf_classifier (逐页判断)
 |------|------|
 | 旧接口未迁移 | ✅ P1-1 已修复（数据源切换 RS） → P2-1 已移除旧接口 |
 | 旧 SM-2 路径残留 | ✅ P0-1 已修复（`update_quality()` 路由到 RS） |
-| 双表维护 | ✅ P2-2 已移除 WQ SM-2 兼容字段（efactor/interval/repetitions/next_review_date/quality） |
+| 双表维护 | ✅ 已移除 WrongQuestion 上的旧 SM-2 字段，调度统一使用 ReviewSchedule |
 | 时区混用 | ✅ P1-3/4 已修复（全部路径统一为 `utcnow()`） |
 
 > 完整设计与技术债清单详见 [REVIEW_SYSTEM_DESIGN.md](REVIEW_SYSTEM_DESIGN.md)。

@@ -39,7 +39,7 @@
 | `docs/achieve/` | 已完成阶段归档 | 阶段完成后归档 |
 | 根目录兼容入口 | 历史兼容入口，仅保留短入口，不重复维护正文 | 仅在仍被引用或用户要求时同步 |
 
-> 2026-06-28 更新原因：docs/ 目录整理，将散落根目录的文档移入对应子目录并统一为兼容入口。
+> 2026-09-02 更新原因：按当前代码同步安全边界、Admin 运维权限、路由聚合结构、题目渲染与图片预加载状态；历史阶段文档不改写为未来承诺。
 
 ---
 
@@ -56,9 +56,7 @@
 | `docs/project/BUGS.md` | Bug 完整记录 |
 | `docs/project/BUGS_HISTORY.md` | Bug 历史归档 |
 | `docs/project/DEPLOY_PLAN.md` | 部署方案与计划 |
-| `docs/project/TESTING_POLICY.md` | 测试分级策略 |
-| `docs/project/SMOKE_TEST_CHECKLIST.md` | 冒烟测试清单 |
-| `docs/project/RC_RELEASE_CHECKLIST.md` | 发布检查清单 |
+| `docs/backend/REVIEW_SMOKE_CHECKLIST.md` | 复习模块冒烟测试清单 |
 | `docs/project/FILE_CHANGE_MAP.json` | 文件变更映射 |
 | `docs/achieve/README.md` | 历史阶段归档入口 |
 
@@ -110,6 +108,16 @@
 | `docs/admin/AUDIT_LOG.md` | Admin 审计日志 |
 | `docs/admin/REVIEW_FLOW.md` | 题目审核流程 |
 | `docs/admin/DEEPSEEK_DEV_RULES.md` | DeepSeek 开发强制约束 |
+
+### 当前实现补充
+
+| 文档 / 入口 | 当前事实 |
+|------|------|
+| `docs/architecture/SYSTEM_ARCHITECTURE.md` | 2026-09-02 总体架构与运行时状态 |
+| `docs/admin/ADMIN_API_SPEC.md` | Admin API v2.7，包含 system/tasks/backup 端点 |
+| `docs/admin/RBAC_RULES.md` | JWT 隔离签名域与 `system:*` 权限 |
+| `docs/project/ROLE_DEPLOYMENT.md` | `local_import` / `cloud_api` 角色拆分与生产约束 |
+| `docs/frontend/render-invariant.md` | 小程序 CODE / LaTeX / 图片渲染路径 |
 
 ### 调试 / 审计 / 规划
 

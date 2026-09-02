@@ -27,12 +27,12 @@ Introduce `DeploymentProfile` enum (`LOCAL_IMPORT`, `CLOUD_API`) frozen at pipel
 
 ## Compatibility
 
-- No breaking changes. Existing pipelines that don't specify a profile default to `LOCAL_IMPORT`.
+- Existing pipelines that don't specify a profile follow the environment default: `LOCAL_IMPORT` outside production and `CLOUD_API` when `APP_ENV=production`.
 - `DEPLOYMENT_PROFILE` env var sets the global default; per-request override via API parameter.
 
 ## Rollout
 
-`DEPLOYMENT_PROFILE=local_import` (default on both environments). Set to `cloud_api` on the production server.
+`DEPLOYMENT_PROFILE=local_import` is used for local/import workloads. Production must use `APP_ENV=production` together with `DEPLOYMENT_PROFILE=cloud_api`; the application rejects conflicting combinations.
 
 ## Rollback
 
@@ -46,9 +46,9 @@ Set `DEPLOYMENT_PROFILE=local_import` or remove the env var.
 
 ## Failure modes
 
-- Unknown profile value: default to `LOCAL_IMPORT` with a warning
+- Unknown or conflicting profile value: startup fails closed with a configuration error
 - Missing `RuntimeCapabilities`: profile falls back to conservative assumptions (CLOUD_API-like)
-- Profile mismatch between env var and actual hardware: log a warning, proceed with requested profile
+- Profile mismatch with the environment is treated as a deployment/configuration error, not silently downgraded
 
 ## Removal criteria
 

@@ -1424,12 +1424,11 @@ class AppUserAdminBinding(Base):
 - Level 1 题库去重使用 `question_hash`：导入阶段只标记 `question_imports.duplicate_status`，发布/审核通过阶段按 `subject + question_hash` 完全匹配拦截，不自动删除历史题目
 - AI 辅助导题/补全只写入 `question_imports` 的 AI 元数据字段，仍必须经过人工审核，不直接进入 `questions`
 - `raw_content` 保留导入原始文本
-- SM-2 复习调度以 `review_schedules` 为主数据源，WrongQuestion 上的 efactor/interval/repetitions/next_review_date/mastered 字段仅为历史兼容字段，不参与新版调度计算
-- 每次 ReviewSchedule 更新后通过 `_sync_schedule_to_wq()` 自动回写 WrongQuestion 兼容字段
+- SM-2 复习调度以 `review_schedules` 为唯一数据源；`WrongQuestion` 不再持有 efactor/interval/repetitions/next_review_date/quality 等旧字段，仅保留错题分析相关状态
 - SM-2 rating 合法范围是 0-5，其中 0 是合法评分（完全不会，重置 repetitions=0），不应抛出异常
 - 自动批改未提供用户自评 rating 时默认映射：is_correct=True → rating=4，is_correct=False → rating=1
 - 复习日期统一使用 `utcnow().date()`，避免服务器本地时区导致日期偏移
-- 当前技术债：/review/due、/review/submit、/review/stats 等旧接口仍基于 WrongQuestion 兼容字段；后续建议迁移为统一读取 ReviewSchedule
+- 复习 API 使用 `/review/today`、`/review/schedule-submit`、`/review/schedule-stats` 等当前端点；旧 `/review/due`、`/review/submit`、`/review/stats` 已移除
 - 每次答题一条记录（`practice_records`），每题一条，支持多次作答
 - `session_type` 区分 AI 对话场景
 - **RBAC 权限系统**：`admin_users` → `roles` ↔ `permissions`（多对多），所有管理操作记入 `audit_logs`

@@ -1,6 +1,6 @@
 # 审计日志规范（Audit Log）
 
-> 版本：v2.3（题目图片/选项、公式卡审计动作同步版） | 状态：已同步 | 更新：2026-08-10
+> 版本：v2.4（运维权限与安全审计同步版） | 状态：已同步 | 更新：2026-09-02
 > 修订自审计报告 C5（分级写入策略）、I7（分区与归档）
 > **取代旧文档 OPERATION_LOG.md**
 
@@ -30,6 +30,8 @@
 | `low` | 登录 / 登出 / token 刷新 | Phase 1 同步或轻量 fire-and-forget（按接口确认） | 仅 error log |
 
 健康检查接口不写 audit_log，仅通过 `X-Request-Id` 响应头保留排障入口。
+
+> 本节 2.2-2.4 的 TypeScript/NestJS 代码块是历史设计示例，仅用于说明审计事务不变式，不能直接复制执行。当前实现使用 `backend/app/services/admin_audit_service.py`、SQLAlchemy `AsyncSession` 与 FastAPI Admin services；实际 action 名称和 severity 以代码调用为准。
 
 ### 2.2 Critical 实现示例（必须事务内）
 
@@ -220,6 +222,9 @@ ai_config.update          # normal（更新 AI 配置键值对）
 system.init_super_admin             # critical
 system.manual_super_admin_init       # critical
 system.seed_permissions             # normal
+
+# 系统运维（操作者为当前 Admin）
+# 任务重试/取消/手动执行与备份操作必须关联 requestId；具体 action 以实现写入值为准。
 ```
 
 ---
@@ -270,8 +275,8 @@ type AuditDetail = {
 
 ```json
 {
-  "before": { "permissions": ["app_user:read", "question:read"] },
-  "after": { "permissions": ["app_user:read", "question:read", "question:write", "question:review"] },
+  "before": { "permissions": ["app-user:read", "question:read"] },
+  "after": { "permissions": ["app-user:read", "question:read", "question:write", "question:review"] },
   "extra": {
     "roleId": 2,
     "roleName": "admin",
