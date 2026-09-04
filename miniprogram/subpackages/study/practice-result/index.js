@@ -162,6 +162,42 @@ function formatReviewAnalysisText(value) {
     .trim();
 }
 
+function buildReadableReviewParagraphs(value) {
+  const text = String(value || '').trim();
+  if (!text) return [];
+
+  const explicitParagraphs = text
+    .split(/\n+/)
+    .map(part => part.trim())
+    .filter(Boolean);
+
+  const result = [];
+  explicitParagraphs.forEach(part => {
+    // 模型经常把整段内容压成一个超长段落。仅在没有显式换行且文本较长时，
+    // 按完整句号边界分组，不拆英文缩写、数字或公式内部内容。
+    if (part.length < 72) {
+      result.push(part);
+      return;
+    }
+
+    const sentences = part.match(/[^。！？!?；]+[。！？!?；]?/g) || [part];
+    let bucket = '';
+    sentences.forEach(sentence => {
+      const piece = String(sentence || '').trim();
+      if (!piece) return;
+      if (bucket && (bucket.length + piece.length > 76)) {
+        result.push(bucket);
+        bucket = piece;
+      } else {
+        bucket += piece;
+      }
+    });
+    if (bucket) result.push(bucket);
+  });
+
+  return result.length ? result : [text];
+}
+
 function extractGenericReviewAnalysis(value, depth = 0) {
   if (depth > 4 || value === undefined || value === null) return '';
   let current = value;
@@ -256,7 +292,13 @@ function buildReviewAnalysisView(value) {
   // 结构化内容解析失败时只展示友好状态，绝不回退到原始字符串，
   // 从根源上避免 {"knowledge_patch": ...} 之类后端 JSON 暴露给用户。
   return {
-    sections,
+    sections: sections.map(section => ({
+      ...section,
+      paragraphs: buildReadableReviewParagraphs(section.text).map((text, index) => ({
+        key: `${section.key || 'section'}-${index}`,
+        text
+      }))
+    })),
     formatError: structured && (sections.length === 0 || !!(normalized && normalized.formatError))
   };
 }
@@ -440,6 +482,7 @@ Page({
     trendSummary: '近 7 天',
     trendLoading: true,
     trendAvailable: false,
+    chartCanvasMounted: true,
 
     growthGain: 0,
     growth: DEFAULT_GROWTH,
@@ -465,7 +508,10 @@ Page({
 
   onLoad(options) {
     this._pageAlive = true;
+    this._pageVisible = true;
     this._pageReady = false;
+    this._chartRedrawTimer = null;
+    this._navigationLocked = false;
     this._sessionPayload = null;
     this._dashboardLoadId = 0;
 
@@ -491,19 +537,43 @@ Page({
     this.loadDashboardData();
   },
 
+  onHide() {
+    this._pageVisible = false;
+    if (this._chartRedrawTimer) {
+      clearTimeout(this._chartRedrawTimer);
+      this._chartRedrawTimer = null;
+    }
+    // 2D canvas 跨页面隐藏/恢复时在部分基础库会丢失 backing store。
+    // 两张图统一卸载；onShow 再创建全新节点并按原绘制参数重画，
+    // 既保留原环形图 UI，也避免从错题详情返回后出现空圆盘。
+    if (this.data.chartCanvasMounted) this.setData({ chartCanvasMounted: false });
+  },
+
   onUnload() {
     this._pageAlive = false;
+    this._pageVisible = false;
     this._pageReady = false;
     this._dashboardLoadId++;
+    if (this._chartRedrawTimer) {
+      clearTimeout(this._chartRedrawTimer);
+      this._chartRedrawTimer = null;
+    }
   },
 
   onReady() {
     this._pageReady = true;
-    this.drawVisibleCharts();
+    this.scheduleVisibleChartDraw();
   },
 
   onShow() {
-    if (this._pageReady) this.drawVisibleCharts();
+    this._pageVisible = true;
+    this._navigationLocked = false;
+    if (!this._pageReady) return;
+    if (this.data.chartCanvasMounted) {
+      this.scheduleVisibleChartDraw();
+      return;
+    }
+    this.setData({ chartCanvasMounted: true }, () => this.scheduleVisibleChartDraw());
   },
 
   measureSafeNavigation() {
@@ -907,7 +977,7 @@ Page({
       wrongReviewItems,
       errorDistribution: localErrorDistribution,
     }, () => {
-      if (this._pageReady) this.drawVisibleCharts();
+      if (this._pageReady) this.scheduleVisibleChartDraw();
     });
   },
 
@@ -1023,7 +1093,7 @@ Page({
       this.loadGrowth(loadId)
     ]);
 
-    if (this._isDashboardLoadCurrent(loadId) && this._pageReady) this.drawVisibleCharts();
+    if (this._isDashboardLoadCurrent(loadId) && this._pageReady) this.scheduleVisibleChartDraw();
   },
 
   _isDashboardLoadCurrent(loadId) {
@@ -1074,7 +1144,7 @@ Page({
     } finally {
       if (!this._isDashboardLoadCurrent(loadId)) return;
       this.setData({ trendLoading: false }, () => {
-        if (this._pageReady && this.data.activeTab === 'overview') this.drawTrendChart();
+        if (this._pageReady && this.data.activeTab === 'overview') this.scheduleVisibleChartDraw();
       });
     }
   },
@@ -1157,7 +1227,7 @@ Page({
 
       if (errorDistribution.length) {
         this.setData({ errorDistribution }, () => {
-          if (this._pageReady && this.data.activeTab === 'overview') this.drawErrorChart();
+          if (this._pageReady && this.data.activeTab === 'overview') this.scheduleVisibleChartDraw();
         });
       }
     } catch (e) {}
@@ -1188,9 +1258,7 @@ Page({
     const key = e.currentTarget.dataset.key;
     if (!key || key === this.data.activeTab) return;
     this.setData({ activeTab: key }, () => {
-      if (key === 'overview') {
-        wx.nextTick(() => this.drawVisibleCharts());
-      }
+      if (key === 'overview') this.scheduleVisibleChartDraw();
     });
   },
 
@@ -1218,9 +1286,7 @@ Page({
 
     if (target.status === 'wrong') {
       if (target.wrongQuestionId) {
-        wx.navigateTo({
-          url: `/subpackages/study/wrong-detail/wrong-detail?id=${encodeURIComponent(target.wrongQuestionId)}`
-        });
+        this.navigateToWrongDetail(target.wrongQuestionId);
       } else {
         this.setData({ activeTab: 'wrong' });
         wx.showToast({ title: '该题暂无错题详情', icon: 'none' });
@@ -1236,6 +1302,7 @@ Page({
 
       this.setData({
         reviewDialogVisible: true,
+        chartCanvasMounted: false,
         reviewDialog: {
           title,
           questionTitle: target.title || '',
@@ -1252,10 +1319,29 @@ Page({
 
   closeReviewDialog() {
     if (!this.data.reviewDialogVisible) return;
-    this.setData({ reviewDialogVisible: false });
+    this.setData({
+      reviewDialogVisible: false,
+      chartCanvasMounted: true
+    }, () => this.scheduleVisibleChartDraw());
   },
 
   stopPropagation() {},
+  noop() {},
+
+  navigateToWrongDetail(wrongQuestionId) {
+    if (!wrongQuestionId || this._navigationLocked) return;
+    this._navigationLocked = true;
+    wx.navigateTo({
+      url: `/subpackages/study/wrong-detail/wrong-detail?id=${encodeURIComponent(wrongQuestionId)}`,
+      fail: () => {
+        this._navigationLocked = false;
+        if (this._pageAlive) {
+          wx.showToast({ title: '暂时无法打开题目详情', icon: 'none' });
+          this.scheduleVisibleChartDraw();
+        }
+      }
+    });
+  },
 
   openWrongDetail(e) {
     const wrongQuestionId = e.currentTarget.dataset.wqid;
@@ -1267,9 +1353,7 @@ Page({
       return;
     }
 
-    wx.navigateTo({
-      url: `/subpackages/study/wrong-detail/wrong-detail?id=${encodeURIComponent(wrongQuestionId)}`
-    });
+    this.navigateToWrongDetail(wrongQuestionId);
   },
 
 
@@ -1282,20 +1366,36 @@ Page({
     }
   },
 
+  scheduleVisibleChartDraw() {
+    if (this._chartRedrawTimer) {
+      clearTimeout(this._chartRedrawTimer);
+      this._chartRedrawTimer = null;
+    }
+    if (!this._pageAlive || !this._pageVisible || !this._pageReady) return;
+    if (this.data.activeTab !== 'overview' || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
+
+    // onShow / setData 后立即 query 2D canvas 在部分 Android 基础库上偶发拿不到
+    // 完整尺寸。nextTick 先画一次，再做一次很短的恢复重绘；趋势图与环形图
+    // 使用同一生命周期，避免从详情页返回时只恢复其中一张。
+    wx.nextTick(() => this.drawVisibleCharts());
+    this._chartRedrawTimer = setTimeout(() => {
+      this._chartRedrawTimer = null;
+      this.drawVisibleCharts();
+    }, 120);
+  },
+
   drawVisibleCharts() {
-    if (!this._pageAlive || !this._pageReady || this.data.activeTab !== 'overview') return;
-    wx.nextTick(() => {
-      if (!this._pageAlive) return;
-      this.drawTrendChart();
-      this.drawErrorChart();
-    });
+    if (!this._pageAlive || !this._pageVisible || !this._pageReady) return;
+    if (this.data.activeTab !== 'overview' || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
+    this.drawTrendChart();
+    this.drawErrorChart();
   },
 
   drawTrendChart() {
-    if (!this._pageAlive) return;
+    if (!this._pageAlive || !this._pageVisible || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
     const query = wx.createSelectorQuery().in(this);
     query.select('#trendCanvas').fields({ node: true, size: true }).exec(res => {
-      if (!this._pageAlive) return;
+      if (!this._pageAlive || !this._pageVisible || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
       const target = res && res[0];
       if (!target || !target.node || !target.width || !target.height) return;
 
@@ -1410,10 +1510,10 @@ Page({
   },
 
   drawErrorChart() {
-    if (!this._pageAlive) return;
+    if (!this._pageAlive || !this._pageVisible || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
     const query = wx.createSelectorQuery().in(this);
     query.select('#errorCanvas').fields({ node: true, size: true }).exec(res => {
-      if (!this._pageAlive) return;
+      if (!this._pageAlive || !this._pageVisible || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
       const target = res && res[0];
       if (!target || !target.node || !target.width || !target.height) return;
 
@@ -1467,4 +1567,5 @@ Page({
       });
     });
   }
+
 });
