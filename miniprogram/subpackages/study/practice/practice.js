@@ -504,9 +504,11 @@ Page({
     wx.redirectTo({
       url: resultUrl,
       success: () => {
-        if (!submission || !submission.keepPendingUntilResult) {
-          this._clearPendingSubmission(submission && submission.requestId)
-        }
+        // redirectTo success only means the navigation request was accepted.
+        // Keep the idempotent submission snapshot until the result page has
+        // actually loaded a detailed payload; otherwise a cache eviction/race
+        // between these two callbacks leaves only URL summary data and no way
+        // to restore the per-question review.
         if (this._practiceSession && this._practiceSession.submissionSnapshot === submission) {
           this._practiceSession.submissionSnapshot = null
         }

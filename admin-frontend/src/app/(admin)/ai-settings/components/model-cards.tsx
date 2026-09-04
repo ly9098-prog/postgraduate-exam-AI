@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Brain, Cpu, Globe, Key,
   CheckCircle2, X, Trash2, Plus, Tag, ScanEye,
-  Loader2, AlertTriangle, Wifi, ChevronDown, Eye, EyeOff, Link2,
+  Loader2, AlertTriangle, Wifi, ChevronDown, Eye, EyeOff, Link2, MoreHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/api/client";
@@ -49,7 +49,7 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
   { value: "minimax", label: "MiniMax", description: "MiniMax OpenAI-compatible API" },
   { value: "moonshot", label: "Moonshot / Kimi", description: "Moonshot OpenAI-compatible API" },
   { value: "openrouter", label: "OpenRouter", description: "OpenRouter 多模型聚合接口" },
-  { value: "relay", label: "中转站 / Relay", description: "第三方 OpenAI-compatible 中转站，支持 /v1 Base URL 或完整 chat/completions 地址" },
+  { value: "relay", label: "第三方 / Relay", description: "第三方 OpenAI-compatible API，支持 /v1 Base URL 或完整 chat/completions 地址" },
   { value: "vllm", label: "vLLM", description: "自部署 vLLM OpenAI-compatible Server" },
   { value: "custom", label: "Custom", description: "其他兼容 /v1/chat/completions 的服务" },
   { value: "paddleocr-vl", label: "PaddleOCR-VL", description: "PaddleOCR 专用视觉 OCR Job API" },
@@ -134,7 +134,7 @@ function isPaddleOcrProvider(provider: string) {
 function adapterLabel(provider: string) {
   if (isPaddleOcrProvider(provider)) return "PaddleOCR 专用";
   const normalized = provider.trim().toLowerCase();
-  if (normalized === "relay" || normalized === "custom") return "OpenAI-compatible / 中转站";
+  if (normalized === "relay" || normalized === "custom") return "OpenAI-compatible / 第三方";
   return "OpenAI 兼容";
 }
 
@@ -196,19 +196,34 @@ function CompatibleEndpointHint({ apiBaseUrl, kind }: { apiBaseUrl: string; kind
   );
 }
 
+const COMPATIBLE_EXAMPLE_PLACEHOLDER = `curl https://8stoken.com/v1/chat/completions \\
+  -H "Authorization: Bearer $NEW_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "gpt-5.6-sol",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Explain quantum entanglement in one paragraph."
+      }
+    ],
+    "temperature": 0.7
+  }'`;
+
 type CompatibleExampleImporterProps = {
   disabled?: boolean;
   onApply: (parsed: ParsedCompatibleExample) => void;
 };
 
 function CompatibleExampleImporter({ disabled = false, onApply }: CompatibleExampleImporterProps) {
+  const [expanded, setExpanded] = useState(false);
   const [example, setExample] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
   const apply = () => {
     const parsed = parseOpenAICompatibleExample(example);
     if (!parsed.apiBaseUrl && !parsed.modelName) {
-      setMessage("未识别到 Base URL / chat/completions 地址或 model，请检查示例内容");
+      setMessage("未识别到 API 地址或 model，请检查示例内容");
       return;
     }
     onApply(parsed);
@@ -217,38 +232,58 @@ function CompatibleExampleImporter({ disabled = false, onApply }: CompatibleExam
   };
 
   return (
-    <details className="rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary-light)]/25 px-3 py-2.5">
-      <summary className="cursor-pointer select-none text-xs font-semibold text-[var(--color-primary-dark)]">
-        中转站 / OpenAI-compatible 快速配置
-      </summary>
-      <div className="mt-2.5 space-y-2">
-        <p className="text-[10px] leading-4 text-[var(--color-text-secondary)]">
-          可直接粘贴中转站文档里的 cURL 或 Python OpenAI 调用示例。系统会识别 <span className="font-mono">base_url</span> / <span className="font-mono">/chat/completions</span> 与 <span className="font-mono">model</span>，API Key 不会从示例中读取。
-        </p>
-        <textarea
-          value={example}
-          onChange={(event) => { setExample(event.target.value); setMessage(null); }}
-          disabled={disabled}
-          rows={4}
-          spellCheck={false}
-          placeholder={'例如：curl https://8stoken.com/v1/chat/completions ... "model": "deepseek-v4-flash"\n或：base_url="https://8stoken.com/v1", model="gpt-5.6-luna"'}
-          className="w-full resize-y rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 font-mono text-[11px] leading-5 outline-none transition-colors focus:border-[var(--color-primary)] disabled:opacity-50"
-        />
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className={cn("text-[10px]", message?.startsWith("已识别") ? "text-[var(--color-success)]" : "text-[var(--color-text-hint)]")}>
-            {message ?? "兼容 Base URL 形式与完整 /v1/chat/completions 地址"}
-          </span>
-          <button
-            type="button"
-            onClick={apply}
-            disabled={disabled || !example.trim()}
-            className="rounded-lg border border-[var(--color-primary)]/35 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary-light)] disabled:opacity-40"
-          >
-            识别并填入
-          </button>
+    <div className="border-t border-slate-200/90 pt-2">
+      <button
+        type="button"
+        onClick={() => setExpanded((previous) => !previous)}
+        disabled={disabled}
+        aria-expanded={expanded}
+        className="group flex w-full items-center justify-between gap-4 rounded-md py-2 text-left transition-[background-color,color] duration-150 hover:bg-slate-50/70 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span className="min-w-0 pl-1">
+          <span className="block text-[12px] font-semibold text-slate-700 transition-colors group-hover:text-slate-900">第三方API快速填入</span>
+          <span className="mt-0.5 block text-[10px] leading-4 text-slate-400">粘贴第三方 API 文档中的 cURL / Python 调用示例，自动识别 Base URL 与模型标识。</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2 pr-1">
+          <span className="hidden text-[10px] font-medium text-slate-400 sm:inline">cURL / Python</span>
+          <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform duration-200 ease-out", expanded && "rotate-180")} />
+        </span>
+      </button>
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
+          expanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="pb-3 pt-1.5">
+            <textarea
+              value={example}
+              onChange={(event) => { setExample(event.target.value); setMessage(null); }}
+              disabled={disabled}
+              rows={11}
+              spellCheck={false}
+              aria-label="第三方 API 调用示例"
+              placeholder={COMPATIBLE_EXAMPLE_PLACEHOLDER}
+              className="min-h-[220px] w-full resize-y rounded-lg border border-slate-200 bg-slate-50/35 px-3.5 py-3 font-mono text-[11px] leading-[1.65] text-slate-700 outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:whitespace-pre-wrap placeholder:text-slate-400 focus:border-[var(--color-primary)] focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/10 disabled:opacity-50"
+            />
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <span className={cn("min-w-0 flex-1 text-[10px] leading-4", message?.startsWith("已识别") ? "text-[var(--color-success)]" : "text-slate-400")}>
+                {message ?? "支持 Base URL、完整 /chat/completions 地址与 model 参数；示例中的 API Key 不会被读取。"}
+              </span>
+              <button
+                type="button"
+                onClick={apply}
+                disabled={disabled || !example.trim()}
+                className="h-8 shrink-0 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition-[border-color,background-color,color,transform,box-shadow] duration-150 hover:border-[var(--color-primary)]/35 hover:bg-[var(--color-primary-light)]/25 hover:text-[var(--color-primary)] hover:shadow-sm active:scale-[0.98] disabled:opacity-40"
+              >
+                识别并填入
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -429,46 +464,159 @@ function ProviderSelect({
 }
 
 // ---------------------------------------------------------------------------
-// Add Model Dialog (unchanged logic, tightened UI)
+// Add model inspector drawer
 // ---------------------------------------------------------------------------
 
-function AddModelDialog({
-  open, onClose, onSave, loading, existingModels,
+type AddDrawerTab = "basic" | "api" | "features";
+
+type NewModelDraft = {
+  version: 1;
+  name: string;
+  displayName: string;
+  provider: string;
+  modelKind: ModelKind;
+  apiBaseUrl: string;
+  features: string[];
+  savedAt: number;
+};
+
+const NEW_MODEL_DRAFT_STORAGE_KEY = "ai-settings:new-model-draft";
+const ADD_DRAWER_TABS: { key: AddDrawerTab; label: string }[] = [
+  { key: "basic", label: "基础配置" },
+  { key: "api", label: "API 配置" },
+  { key: "features", label: "功能映射" },
+];
+
+function AddModelDrawer({
+  onClose, onSave, loading, existingModels,
 }: {
-  open: boolean;
   onClose: () => void;
   onSave: (data: AdminAiModelConfigCreateRequest) => Promise<AdminAiModelConfig>;
   loading: boolean;
   existingModels: AdminAiModelConfig[];
 }) {
+  const [visible, setVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState<AddDrawerTab>("basic");
   const [name, setName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [provider, setProvider] = useState("openai");
   const [modelKind, setModelKind] = useState<ModelKind>("chat");
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
   const [features, setFeatures] = useState<string[]>([]);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ModelTestConnectionResponse | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  if (!open) return null;
+  const [draftReady, setDraftReady] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const basicSectionRef = useRef<HTMLElement>(null);
+  const apiSectionRef = useRef<HTMLElement>(null);
+  const featuresSectionRef = useRef<HTMLElement>(null);
 
   const effectiveFeatures = featuresForKind(modelKind, features);
   const featureConflicts = findEnabledFeatureConflicts(effectiveFeatures, existingModels);
+  const normalizedApiBaseUrl = apiBaseUrl.trim().replace(/\/$/, "");
+  const valid = Boolean(name.trim() && displayName.trim() && provider.trim() && normalizedApiBaseUrl);
+  const persistentDirty = Boolean(
+    name.trim()
+    || displayName.trim()
+    || normalizedApiBaseUrl
+    || features.length
+    || provider !== "openai"
+    || modelKind !== "chat",
+  );
+  const dirty = persistentDirty || Boolean(apiKey.trim());
+
+  const requestClose = useCallback(() => {
+    if (loading) return;
+    setVisible(false);
+    window.setTimeout(onClose, 220);
+  }, [loading, onClose]);
+
+  useEffect(() => {
+    const enterFrame = window.requestAnimationFrame(() => setVisible(true));
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") requestClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(enterFrame);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [requestClose]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(NEW_MODEL_DRAFT_STORAGE_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as NewModelDraft;
+        if (draft.version === 1) {
+          setName(draft.name ?? "");
+          setDisplayName(draft.displayName ?? "");
+          setProvider(draft.provider ?? "openai");
+          setModelKind(draft.modelKind ?? "chat");
+          setApiBaseUrl(draft.apiBaseUrl ?? "");
+          setFeatures(Array.isArray(draft.features) ? draft.features : []);
+        } else {
+          window.localStorage.removeItem(NEW_MODEL_DRAFT_STORAGE_KEY);
+        }
+      }
+    } catch {
+      // Local draft persistence is best-effort.
+    } finally {
+      setDraftReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    try {
+      if (!persistentDirty) {
+        window.localStorage.removeItem(NEW_MODEL_DRAFT_STORAGE_KEY);
+        return;
+      }
+      const draft: NewModelDraft = {
+        version: 1,
+        name,
+        displayName,
+        provider,
+        modelKind,
+        apiBaseUrl,
+        features: effectiveFeatures,
+        savedAt: Date.now(),
+      };
+      window.localStorage.setItem(NEW_MODEL_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    } catch {
+      // The drawer remains usable even if localStorage is unavailable.
+    }
+  }, [apiBaseUrl, displayName, draftReady, effectiveFeatures, modelKind, name, persistentDirty, provider]);
+
+  const scrollToTab = useCallback((tab: AddDrawerTab) => {
+    setActiveTab(tab);
+    const container = bodyRef.current;
+    const section = tab === "basic"
+      ? basicSectionRef.current
+      : tab === "features"
+        ? featuresSectionRef.current
+        : apiSectionRef.current;
+    if (!container || !section) return;
+    const top = section.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 8;
+    container.scrollTo({ top: Math.max(top, 0), behavior: "smooth" });
+  }, []);
 
   const handleTestConnection = async () => {
-    if (!apiBaseUrl.trim() || !apiKey.trim() || !name.trim()) return;
+    if (!normalizedApiBaseUrl || !apiKey.trim() || !name.trim()) return;
     setTesting(true);
     setTestResult(null);
     try {
       const result = await apiRequest<ModelTestConnectionResponse>("/ai-models/test-connection", {
         method: "POST",
         body: JSON.stringify({
-          api_base_url: apiBaseUrl.trim(),
+          api_base_url: normalizedApiBaseUrl,
           api_key: apiKey.trim(),
           model_name: name.trim(),
-          provider,
+          provider: provider.trim(),
           features: effectiveFeatures,
         } satisfies ModelTestConnectionRequest),
       });
@@ -480,27 +628,29 @@ function AddModelDialog({
     }
   };
 
-  const reset = () => {
-    setName(""); setDisplayName(""); setProvider("openai"); setModelKind("chat");
-    setApiBaseUrl(""); setApiKey(""); setFeatures([]); setTestResult(null); setSubmitError(null);
-  };
-
   const handleSave = async () => {
-    if (!name.trim() || !displayName.trim() || !provider.trim() || !apiBaseUrl.trim() || featureConflicts.length > 0) return;
+    if (!valid || loading || featureConflicts.length > 0) return;
     setSubmitError(null);
     try {
       await onSave({
-        name: name.trim(), display_name: displayName.trim(), provider: provider.trim(),
-        api_base_url: apiBaseUrl.trim(),
+        name: name.trim(),
+        display_name: displayName.trim(),
+        provider: provider.trim(),
+        api_base_url: normalizedApiBaseUrl,
         api_key: apiKey.trim() || undefined,
         features: effectiveFeatures.length > 0 ? effectiveFeatures : null,
       });
-      reset();
-      onClose();
+      try {
+        window.localStorage.removeItem(NEW_MODEL_DRAFT_STORAGE_KEY);
+      } catch {
+        // Creation succeeded; draft cleanup is best-effort.
+      }
+      setVisible(false);
+      window.setTimeout(onClose, 220);
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
         setSubmitError(
-          "添加失败：模型配置未通过校验。若所选功能已由其他启用模型使用，请先在模型列表禁用旧模型，再重新添加；同时请检查模型标识、Provider 与 API Base URL。",
+          "模型配置未通过校验。若所选功能已由其他启用模型使用，请先禁用旧模型，并检查模型标识、Provider 与 API 地址。",
         );
       } else {
         setSubmitError(getErrorMessage(err));
@@ -508,268 +658,555 @@ function AddModelDialog({
     }
   };
 
-  const handleClose = () => { reset(); onClose(); };
-
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(16,24,40,0.42)] px-4">
-      <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-card)]">
-        <div className="mb-5 flex items-center justify-between">
-          <h3 className="font-display text-xl font-bold text-[var(--ink)]">添加模型</h3>
-          <button onClick={handleClose} className="text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-[11px] font-medium text-[var(--color-text-hint)]">模型标识 *</span>
-              <input value={name} onChange={(e) => { setName(e.target.value); setTestResult(null); }} className={cn(inputCls, "mt-1")} placeholder="deepseek-v4-flash / gpt-5.6-luna" />
-            </label>
-            <label className="block">
-              <span className="text-[11px] font-medium text-[var(--color-text-hint)]">显示名称 *</span>
-              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className={cn(inputCls, "mt-1")} placeholder="GPT-4o" />
-            </label>
-          </div>
-          <div>
-            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">模型类型 *</span>
-            <div className="mt-1.5 grid grid-cols-3 gap-2">
-              {(Object.keys(MODEL_KIND_META) as ModelKind[]).map((kind) => {
-                const selected = modelKind === kind;
-                return (
-                  <button
-                    key={kind}
-                    type="button"
-                    onClick={() => {
-                      setModelKind(kind);
-                      setFeatures((prev) => featuresForKind(kind, prev));
-                      setTestResult(null);
-                      if (kind === "ocr_job" && provider === "openai") setProvider("paddleocr-vl");
-                    }}
-                    className={cn(
-                      "rounded-lg border px-2 py-2 text-left transition-colors",
-                      selected
-                        ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]"
-                        : "border-[var(--color-border)] bg-white hover:border-[var(--color-primary)]/40",
-                    )}
-                  >
-                    <span className={cn("block text-xs font-semibold", selected ? "text-[var(--color-primary)]" : "text-[var(--ink)]")}>
-                      {MODEL_KIND_META[kind].label}
-                    </span>
-                    <span className="mt-0.5 block text-[9px] leading-3 text-[var(--color-text-hint)]">{MODEL_KIND_META[kind].desc}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          {modelKind === "chat" && (
-            <CompatibleExampleImporter
-              onApply={(parsed) => {
-                if (parsed.apiBaseUrl) setApiBaseUrl(parsed.apiBaseUrl);
-                if (parsed.modelName) {
-                  setName(parsed.modelName);
-                  setDisplayName((current) => current.trim() ? current : parsed.modelName ?? current);
-                }
-                setProvider("relay");
-                setTestResult(null);
-              }}
-            />
-          )}
-          <label className="block">
-            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">提供商 / 接入方式 *</span>
-            <ProviderSelect value={provider} onChange={(value) => { setProvider(value); setTestResult(null); }} placeholder="relay / openai / deepseek / custom" />
-            <span className="mt-1 block text-[10px] text-[var(--color-text-hint)]">{adapterLabel(provider)}；接第三方中转站建议选择「中转站 / Relay」，模型标识仍填写中转站实际要求的 model。</span>
-          </label>
-          <label className="block">
-            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API 地址（Base URL / Endpoint）*</span>
-            <input
-              value={apiBaseUrl}
-              onChange={(e) => { setApiBaseUrl(e.target.value); setTestResult(null); }}
-              className={cn(inputCls, "mt-1")}
-              placeholder="https://8stoken.com/v1 或 https://8stoken.com/v1/chat/completions"
-            />
-            <span className="mt-1 block text-[10px] leading-4 text-[var(--color-text-hint)]">
-              {modelKind === "embedding"
-                ? "填写 OpenAI-compatible SDK 的 base_url；阿里云百炼应以 /compatible-mode/v1 结尾，文本向量 Model ID 例如 text-embedding-v4；不要手动追加 /embeddings。"
-                : modelKind === "ocr_job"
-                  ? "填写厂商 OCR 服务根地址；PaddleOCR-VL 将按专用 Job API 调用。"
-                  : "中转站可直接填写文档中的 base_url（如 https://8stoken.com/v1），也兼容完整 /chat/completions 地址。"}
-            </span>
-            <CompatibleEndpointHint apiBaseUrl={apiBaseUrl} kind={modelKind} />
-          </label>
-          <label className="block">
-            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Key</span>
-            <div className="mt-1 flex gap-2">
-              <input type="password" value={apiKey} onChange={(e) => { setApiKey(e.target.value); setTestResult(null); }} className={cn(inputCls, "flex-1")} placeholder="sk-... / 中转站令牌" autoComplete="new-password" />
-              <button type="button" onClick={handleTestConnection}
-                disabled={testing || !apiKey.trim() || !apiBaseUrl.trim() || !name.trim()}
-                className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40">
-                {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
-                测试连接
-              </button>
-            </div>
-          </label>
-          {modelKind === "chat" ? (
-            <div>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] font-medium text-[var(--color-text-hint)]">功能映射（可多选）</span>
-                <span className="text-[10px] text-[var(--color-text-hint)]">同一功能仅允许 1 个启用模型</span>
+    <div
+      className={cn(
+        "fixed inset-0 z-40 flex justify-end backdrop-blur-[0.5px] transition-[background-color] duration-200",
+        visible ? "bg-slate-950/[0.10]" : "bg-slate-950/0",
+      )}
+      onMouseDown={requestClose}
+    >
+      <aside
+        aria-label="添加模型"
+        onMouseDown={(event) => event.stopPropagation()}
+        className={cn(
+          "flex h-full w-[clamp(720px,46vw,820px)] max-w-[calc(100vw-24px)] flex-col border-l border-slate-200/80 bg-white shadow-[-18px_0_52px_rgba(15,23,42,0.12)] will-change-transform transition-transform duration-200 ease-out",
+          visible ? "translate-x-0" : "translate-x-full",
+        )}
+      >
+        <header className="shrink-0 border-b border-slate-200/80 bg-white/95 px-7 pt-3 backdrop-blur-xl">
+          <div className="flex min-h-14 items-center justify-between gap-4 pb-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5">
+                <h3 className="truncate text-[17px] font-semibold tracking-[-0.01em] text-slate-950">添加模型</h3>
+                {dirty ? <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">草稿</span> : null}
               </div>
-              <div className="mt-1.5 flex flex-wrap gap-2">
-                {CHAT_FEATURE_OPTIONS.map((opt) => {
-                  const selected = features.includes(opt.value);
+              <p className="mt-0.5 text-[11px] text-slate-400">新建模型配置，普通字段会自动保存为本地草稿。</p>
+            </div>
+            <button
+              type="button"
+              onClick={requestClose}
+              disabled={loading}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-400 transition-[background-color,color,transform] hover:bg-slate-100 hover:text-slate-900 active:scale-95 disabled:opacity-40"
+              aria-label="关闭添加模型抽屉"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <nav className="flex gap-6" aria-label="添加模型配置分区">
+            {ADD_DRAWER_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => scrollToTab(tab.key)}
+                className={cn(
+                  "relative pb-3 text-[13px] font-semibold transition-colors",
+                  activeTab === tab.key ? "text-[var(--color-primary)]" : "text-slate-400 hover:text-slate-700",
+                )}
+              >
+                {tab.label}
+                <span
+                  className={cn(
+                    "absolute inset-x-0 -bottom-px h-0.5 origin-center rounded-full bg-[var(--color-primary)] transition-transform duration-200",
+                    activeTab === tab.key ? "scale-x-100" : "scale-x-0",
+                  )}
+                />
+              </button>
+            ))}
+          </nav>
+        </header>
+
+        <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto scroll-smooth bg-white px-7 pb-24 pt-1">
+          <section ref={basicSectionRef} className="scroll-mt-3 border-b border-slate-200 py-5">
+            <div className="mb-4">
+              <h4 className="text-[13px] font-semibold text-slate-950">模型信息</h4>
+              <p className="mt-0.5 text-[11px] text-slate-400">用于识别模型并确定调用接口类型。</p>
+            </div>
+
+            <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
+              <label className="block">
+                <span className="text-[11px] font-medium text-slate-500">模型标识 *</span>
+                <input
+                  value={name}
+                  onChange={(event) => { setName(event.target.value); setTestResult(null); setSubmitError(null); }}
+                  className={cn(inputCls, "mt-1.5 h-10 bg-slate-50/45 transition-[border-color,background-color,box-shadow] focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/10")}
+                  placeholder="deepseek-v4-flash"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium text-slate-500">显示名称 *</span>
+                <input
+                  value={displayName}
+                  onChange={(event) => { setDisplayName(event.target.value); setSubmitError(null); }}
+                  className={cn(inputCls, "mt-1.5 h-10 bg-slate-50/45 transition-[border-color,background-color,box-shadow] focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/10")}
+                  placeholder="DeepSeek V4 Flash"
+                />
+              </label>
+              <div className="md:col-span-2 grid gap-2 sm:grid-cols-[92px_minmax(0,1fr)] sm:items-start">
+                <span className="pt-2.5 text-[11px] font-medium text-slate-500">模型类型 *</span>
+                <div className="min-w-0">
+                  <div className="grid w-full max-w-[460px] grid-cols-3 rounded-[10px] border border-slate-200 bg-slate-50/70 p-0.5">
+                    {(Object.keys(MODEL_KIND_META) as ModelKind[]).map((kind) => (
+                      <button
+                        key={kind}
+                        type="button"
+                        disabled={loading}
+                        onClick={() => {
+                          setModelKind(kind);
+                          setFeatures((previous) => featuresForKind(kind, previous));
+                          setTestResult(null);
+                          setSubmitError(null);
+                          if (kind === "ocr_job" && provider === "openai") setProvider("paddleocr-vl");
+                        }}
+                        className={cn(
+                          "h-9 rounded-[8px] px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.985] disabled:opacity-50",
+                          modelKind === kind
+                            ? "bg-white text-[var(--color-primary)] shadow-[0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80"
+                            : "text-slate-500 hover:bg-white/60 hover:text-slate-700",
+                        )}
+                      >
+                        {MODEL_KIND_META[kind].label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 max-w-[560px] text-[10px] leading-4 text-slate-400">{MODEL_KIND_META[modelKind].desc}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section ref={apiSectionRef} className="scroll-mt-3 border-b border-slate-200 py-5">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h4 className="flex items-center gap-2 text-[13px] font-semibold text-slate-950"><Key className="h-3.5 w-3.5 text-[var(--color-primary)]" />API 接入</h4>
+                <p className="mt-0.5 text-[11px] text-slate-400">配置 Provider、接口地址与访问凭证。</p>
+              </div>
+              <span className="rounded-md border border-slate-200/90 bg-slate-50/70 px-2 py-1 text-[10px] font-medium text-slate-500">{adapterLabel(provider)}</span>
+            </div>
+
+            <div className="max-w-[680px] space-y-4">
+              {modelKind === "chat" ? (
+                <CompatibleExampleImporter
+                  disabled={loading}
+                  onApply={(parsed) => {
+                    if (parsed.apiBaseUrl) setApiBaseUrl(parsed.apiBaseUrl);
+                    if (parsed.modelName) {
+                      setName(parsed.modelName);
+                      setDisplayName((current) => current.trim() ? current : parsed.modelName ?? current);
+                    }
+                    setProvider("relay");
+                    setTestResult(null);
+                    setSubmitError(null);
+                  }}
+                />
+              ) : null}
+
+              <label className="block">
+                <span className="text-[11px] font-medium text-slate-500">Provider / 接入方式 *</span>
+                <ProviderSelect
+                  value={provider}
+                  onChange={(value) => { setProvider(value); setTestResult(null); setSubmitError(null); }}
+                  disabled={loading}
+                  placeholder="relay / openai / deepseek / custom"
+                />
+                <span className="mt-1 block text-[10px] leading-4 text-slate-400">接第三方 API 服务建议选择「第三方 / Relay」，模型标识仍填写服务商实际要求的 model。</span>
+              </label>
+
+              <label className="block">
+                <span className="text-[11px] font-medium text-slate-500">API 地址 *</span>
+                <div className="relative mt-1.5">
+                  <input
+                    value={apiBaseUrl}
+                    onChange={(event) => { setApiBaseUrl(event.target.value); setTestResult(null); setSubmitError(null); }}
+                    className={cn(inputCls, "h-10 bg-slate-50/45 pr-9 transition-[border-color,background-color,box-shadow] focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/10")}
+                    placeholder="https://8stoken.com/v1"
+                  />
+                  <Link2 className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300" />
+                </div>
+                <CompatibleEndpointHint apiBaseUrl={apiBaseUrl} kind={modelKind} />
+              </label>
+
+              <label className="block">
+                <span className="text-[11px] font-medium text-slate-500">API Key</span>
+                <div className="relative mt-1.5">
+                  <input
+                    type={showApiKey ? "text" : "password"}
+                    value={apiKey}
+                    onChange={(event) => { setApiKey(event.target.value); setTestResult(null); }}
+                    className={cn(inputCls, "h-10 bg-slate-50/45 pr-10 transition-[border-color,background-color,box-shadow] focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/10")}
+                    placeholder="sk-... / 第三方 API 令牌"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey((previous) => !previous)}
+                    disabled={!apiKey}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 transition-colors hover:text-[var(--color-primary)] disabled:cursor-default disabled:opacity-45"
+                    aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                  >
+                    {showApiKey && apiKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+                <p className="mt-1 text-[10px] leading-4 text-slate-400">API Key 不写入浏览器本地草稿；关闭抽屉后需重新输入。</p>
+              </label>
+
+              <div className="flex flex-wrap items-center gap-3 pt-0.5">
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={testing || !apiKey.trim() || !normalizedApiBaseUrl || !name.trim()}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-600 transition-[border-color,background-color,color,transform] duration-150 hover:border-[var(--color-primary)]/35 hover:bg-[var(--color-primary-light)]/35 hover:text-[var(--color-primary)] active:scale-[0.98] disabled:opacity-40"
+                >
+                  {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                  测试连接
+                </button>
+                <span className="text-[10px] text-slate-400">建议保存前先测试接口连通性与模型标识。</span>
+              </div>
+
+              {testResult ? (
+                <div className={cn("border-l-2 px-3 py-2 text-xs", testResult.success ? "border-emerald-400 bg-emerald-50/60 text-emerald-800" : "border-red-400 bg-red-50/60 text-red-700")}>
+                  <div className="flex items-start gap-2">
+                    {testResult.success ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
+                    <div>
+                      <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
+                      {testResult.success ? (
+                        <p className="mt-0.5">{testResult.latency_ms != null ? `响应时间 ${testResult.latency_ms}ms · ` : ""}模型接口可正常使用</p>
+                      ) : (
+                        <p className="mt-0.5 break-words leading-5">{testResult.message}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section ref={featuresSectionRef} className="scroll-mt-3 py-5">
+            <div className="mb-3 flex items-start justify-between gap-4">
+              <div>
+                <h4 className="text-[13px] font-semibold text-slate-950">能力映射</h4>
+                <p className="mt-0.5 text-[11px] text-slate-400">同一功能仅允许一个启用模型。</p>
+              </div>
+            </div>
+
+            {modelKind === "chat" ? (
+              <div className="max-w-[680px] divide-y divide-slate-200 border-y border-slate-200">
+                {DRAWER_FEATURE_OPTIONS.map((option) => {
+                  const selected = features.includes(option.value);
                   const owners = existingModels.filter(
-                    (model) => model.is_enabled && configuredFeatures(model).includes(opt.value),
+                    (item) => item.is_enabled && configuredFeatures(item).includes(option.value),
                   );
-                  const occupied = owners.length > 0;
+                  const conflict = owners[0];
                   return (
-                    <label key={opt.value}
-                      title={occupied
-                        ? `${opt.desc}；当前启用模型：${owners.map((model) => model.display_name).join("、")}`
-                        : opt.desc}
+                    <label
+                      key={option.value}
                       className={cn(
-                        "flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                        selected && occupied
-                          ? "border-[var(--color-danger)]/55 bg-[var(--color-danger-light)] text-[var(--color-danger)]"
-                          : selected
-                            ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]"
-                            : occupied
-                              ? "border-amber-300 bg-amber-50/70 text-amber-800 hover:border-amber-400"
-                              : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/40",
-                      )}>
-                      <input type="checkbox" className="sr-only" checked={selected}
+                        "flex cursor-pointer items-start gap-3 px-2 py-3 transition-colors",
+                        selected ? "bg-[var(--color-primary-light)]/32" : "hover:bg-slate-50/80",
+                        conflict && selected && "bg-amber-50/65",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={selected}
                         onChange={() => {
                           setSubmitError(null);
-                          setFeatures((prev) => prev.includes(opt.value) ? prev.filter((f) => f !== opt.value) : [...prev, opt.value]);
-                        }} />
-                      <div className={cn("flex h-3.5 w-3.5 items-center justify-center rounded border transition-colors",
-                        selected && occupied
-                          ? "border-[var(--color-danger)] bg-[var(--color-danger)] text-white"
-                          : selected
-                            ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                            : occupied ? "border-amber-400" : "border-[var(--color-border)]")}>
-                        {selected && <CheckCircle2 className="h-2.5 w-2.5" />}
-                      </div>
-                      <span>{opt.label}</span>
-                      {occupied && (
-                        <span className="rounded bg-white/70 px-1 py-0.5 text-[9px] font-semibold">
-                          已占用
+                          setFeatures((previous) => previous.includes(option.value) ? previous.filter((feature) => feature !== option.value) : [...previous, option.value]);
+                        }}
+                      />
+                      <span className={cn("mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors", selected ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-slate-300 bg-white")}>
+                        {selected ? <CheckCircle2 className="h-2.5 w-2.5" /> : null}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold text-slate-800">{option.label}</span>
+                          {conflict ? <span className="text-[10px] font-medium text-amber-700">已由「{conflict.display_name}」占用</span> : null}
                         </span>
-                      )}
+                        <span className="mt-0.5 block text-[11px] leading-4 text-slate-400">{option.desc}</span>
+                      </span>
                     </label>
                   );
                 })}
               </div>
-              <p className="mt-1.5 text-[10px] leading-4 text-[var(--color-text-hint)]">
-                切换模型时请先在列表中禁用旧模型，再添加并绑定新模型；Embedding 模型不受此限制。
-              </p>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/40 px-3 py-2.5">
-              <p className="text-xs font-semibold text-[var(--ink)]">能力：{modelKind === "embedding" ? "Vector Embedding" : "视觉 OCR Job"}</p>
-              <p className="mt-0.5 text-[10px] leading-4 text-[var(--color-text-hint)]">
-                {modelKind === "embedding"
-                  ? "Embedding 模型只负责向量生成；在“向量”页选择当前检索使用的模型。"
-                  : "OCR Job 模型用于 PaddleOCR-VL 等厂商专用视觉识别，不参与 Chat 功能映射。"}
-              </p>
-            </div>
-          )}
+            ) : (
+              <div className="max-w-[680px] border-y border-slate-200 py-3">
+                <p className="text-xs font-semibold text-slate-800">{modelKind === "embedding" ? "Vector Embedding" : "视觉 OCR Job"}</p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-400">{MODEL_KIND_META[modelKind].desc}</p>
+              </div>
+            )}
 
-          {featureConflicts.length > 0 && (
-            <div role="alert" className="rounded-xl border border-[var(--color-danger)]/35 bg-[var(--color-danger-light)] px-3 py-2.5 text-xs text-[var(--color-danger)]">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <div className="min-w-0">
-                  <p className="font-semibold">存在功能占用冲突，当前无法添加</p>
-                  <div className="mt-1 space-y-0.5 leading-5">
-                    {featureConflicts.map(({ feature, model }) => (
-                      <p key={`${feature}-${model.id}`}>
-                        「{FEATURE_LABELS[feature]?.label ?? feature}」已由启用模型「{model.display_name}」使用
-                        {model.is_default ? "（默认模型）" : ""}
-                      </p>
-                    ))}
-                  </div>
-                  <p className="mt-1.5 leading-5">
-                    新模型创建后默认启用。请先关闭弹窗，在模型列表禁用上述旧模型，再重新添加；否则后端会拒绝重复功能映射。
-                  </p>
+            {featureConflicts.length > 0 ? (
+              <div role="alert" className="mt-4 max-w-[680px] border-l-2 border-amber-400 bg-amber-50/60 px-3 py-2.5 text-xs text-amber-800">
+                <p className="font-semibold">存在功能占用冲突，当前无法创建</p>
+                <div className="mt-1 space-y-0.5 leading-5">
+                  {featureConflicts.map(({ feature, model }) => (
+                    <p key={`${feature}-${model.id}`}>「{FEATURE_LABELS[feature]?.label ?? feature}」已由启用模型「{model.display_name}」使用</p>
+                  ))}
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            ) : null}
 
-        {testResult && (
-          <div className={cn("mt-3 rounded-lg px-3 py-2 text-xs",
-            testResult.success ? "border border-[var(--color-success)] bg-[var(--color-success-light)] text-[var(--color-success)]"
-              : "border border-[var(--color-danger)] bg-[var(--color-danger-light)] text-[var(--color-danger)]")}>
-            <div className="flex items-start gap-1.5">
-              {testResult.success ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
-              <div className="min-w-0">
-                <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
-                <p className="mt-0.5 break-words">{testResult.message}</p>
+            {submitError ? (
+              <div role="alert" aria-live="polite" className="mt-4 max-w-[680px] border-l-2 border-red-400 bg-red-50/60 px-3 py-2.5 text-xs leading-5 text-red-700">
+                创建失败：{submitError}
               </div>
+            ) : null}
+          </section>
+        </div>
+
+        <footer className="shrink-0 border-t border-slate-200 bg-white/96 px-7 py-4 shadow-[0_-12px_30px_rgba(15,23,42,0.04)] backdrop-blur-xl">
+          <div className="flex items-center justify-between gap-5">
+            <div className="min-w-0 text-[11px]">
+              {dirty ? (
+                <span className="inline-flex items-center gap-2 font-medium text-amber-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                  {apiKey.trim() ? "有未保存内容 · 普通字段草稿已自动保存，API Key 不落本地" : "有未保存内容 · 草稿已自动保存"}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-2 text-slate-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+                  等待填写模型配置
+                </span>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-2.5">
+              <Button variant="secondary" onClick={requestClose} disabled={loading} className="border-slate-200 bg-white shadow-none">取消</Button>
+              <Button
+                onClick={handleSave}
+                disabled={loading || !valid || featureConflicts.length > 0}
+                className="min-w-[112px] shadow-none"
+              >
+                {loading ? "创建中..." : featureConflicts.length > 0 ? "映射冲突" : "创建模型"}
+              </Button>
             </div>
           </div>
-        )}
-
-        {submitError && (
-          <div role="alert" aria-live="polite" className="mt-3 rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger-light)] px-3 py-2 text-xs leading-5 text-[var(--color-danger)]">
-            <span className="font-semibold">添加失败：</span>{submitError.replace(/^添加失败[：:]?\s*/, "")}
-          </div>
-        )}
-
-        <div className="mt-4 flex justify-end gap-3">
-          <Button variant="secondary" onClick={handleClose} disabled={loading}>取消</Button>
-          <Button
-            onClick={handleSave}
-            disabled={loading || featureConflicts.length > 0 || !name.trim() || !displayName.trim() || !provider.trim() || !apiBaseUrl.trim()}
-          >
-            {loading ? "添加中..." : featureConflicts.length > 0 ? "请先禁用冲突模型" : "添加"}
-          </Button>
-        </div>
-      </div>
+        </footer>
+      </aside>
     </div>,
     document.body,
   );
 }
 
 // ---------------------------------------------------------------------------
-// Detail Panel (expanded below table on row click)
+// Model configuration inspector drawer
 // ---------------------------------------------------------------------------
 
-function DetailPanel({
-  model, onSaveApiConfig, onSetDefault, onDelete, disabled,
+type DrawerTab = "basic" | "api" | "features";
+
+type ModelDrawerDraft = {
+  version: 1;
+  sourceUpdatedAt: string | null;
+  name: string;
+  displayName: string;
+  provider: string;
+  modelKind: ModelKind;
+  apiBaseUrl: string;
+  features: string[];
+  savedAt: number;
+};
+
+const DRAWER_TABS: { key: DrawerTab; label: string }[] = [
+  { key: "basic", label: "基础配置" },
+  { key: "api", label: "API 配置" },
+  { key: "features", label: "功能映射" },
+];
+
+const DRAWER_FEATURE_OPTIONS = CHAT_FEATURE_OPTIONS.map((option) => {
+  if (option.value === "analysis") return { ...option, desc: "用于题目解析与错题分析生成" };
+  if (option.value === "completion") return { ...option, desc: "用于缺失题干或答案内容补全" };
+  if (option.value === "ai_repair") return { ...option, label: "题目审核", desc: "用于内容审核和质量检查" };
+  return option;
+});
+
+function modelDraftStorageKey(modelId: number) {
+  return `ai-settings:model-draft:${modelId}`;
+}
+
+function normalizedModelFeatures(model: AdminAiModelConfig) {
+  return featuresForKind(getModelKind(model), configuredFeatures(model));
+}
+
+function ModelConfigDrawer({
+  model,
+  models,
+  onClose,
+  onSave,
+  onSetDefault,
+  onToggle,
+  onDelete,
+  disabled,
 }: {
   model: AdminAiModelConfig;
-  onSaveApiConfig: (id: number, data: AdminAiModelConfigPatchRequest) => void;
+  models: AdminAiModelConfig[];
+  onClose: () => void;
+  onSave: (id: number, data: AdminAiModelConfigPatchRequest) => Promise<AdminAiModelConfig>;
   onSetDefault: () => void;
+  onToggle: () => void;
   onDelete: () => void;
   disabled: boolean;
 }) {
+  const [visible, setVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState<DrawerTab>("api");
   const [nameInput, setNameInput] = useState(model.name);
   const [displayNameInput, setDisplayNameInput] = useState(model.display_name);
   const [providerInput, setProviderInput] = useState(model.provider);
   const [modelKind, setModelKind] = useState<ModelKind>(() => getModelKind(model));
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiBaseUrlInput, setApiBaseUrlInput] = useState(model.api_base_url ?? "");
-  const [featuresInput, setFeaturesInput] = useState<string[]>(model.features ?? []);
+  const [featuresInput, setFeaturesInput] = useState<string[]>(() => normalizedModelFeatures(model));
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ModelTestConnectionResponse | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const basicSectionRef = useRef<HTMLElement>(null);
+  const apiSectionRef = useRef<HTMLElement>(null);
+  const featuresSectionRef = useRef<HTMLElement>(null);
+
   const effectiveFeaturesInput = featuresForKind(modelKind, featuresInput);
+  const baselineFeatures = normalizedModelFeatures(model);
+  const normalizedApiBaseUrl = apiBaseUrlInput.trim().replace(/\/$/, "");
+  const baselineApiBaseUrl = (model.api_base_url ?? "").trim().replace(/\/$/, "");
+  const persistentDirty =
+    nameInput.trim() !== model.name ||
+    displayNameInput.trim() !== model.display_name ||
+    providerInput.trim() !== model.provider ||
+    modelKind !== getModelKind(model) ||
+    normalizedApiBaseUrl !== baselineApiBaseUrl ||
+    JSON.stringify(effectiveFeaturesInput) !== JSON.stringify(baselineFeatures);
+  const dirty = persistentDirty || Boolean(apiKeyInput.trim());
+  const featureConflicts = model.is_enabled
+    ? findEnabledFeatureConflicts(effectiveFeaturesInput, models.filter((item) => item.id !== model.id))
+    : [];
+  const valid = Boolean(nameInput.trim() && displayNameInput.trim() && providerInput.trim() && normalizedApiBaseUrl);
+
+  const requestClose = useCallback(() => {
+    setVisible(false);
+    window.setTimeout(onClose, 220);
+  }, [onClose]);
+
+  const resetToServer = useCallback(() => {
+    setNameInput(model.name);
+    setDisplayNameInput(model.display_name);
+    setProviderInput(model.provider);
+    setModelKind(getModelKind(model));
+    setApiBaseUrlInput(model.api_base_url ?? "");
+    setFeaturesInput(normalizedModelFeatures(model));
+    setApiKeyInput("");
+    setShowApiKey(false);
+    setTestResult(null);
+    setSaveError(null);
+    try {
+      window.localStorage.removeItem(modelDraftStorageKey(model.id));
+    } catch {
+      // Ignore storage failures; the server-backed form remains usable.
+    }
+  }, [model]);
+
+  useEffect(() => {
+    const enterFrame = window.requestAnimationFrame(() => setVisible(true));
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") requestClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(enterFrame);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [requestClose]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(modelDraftStorageKey(model.id));
+      if (raw) {
+        const draft = JSON.parse(raw) as ModelDrawerDraft;
+        const sourceMatches = !draft.sourceUpdatedAt || !model.updated_at || draft.sourceUpdatedAt === model.updated_at;
+        if (draft.version === 1 && sourceMatches) {
+          setNameInput(draft.name ?? model.name);
+          setDisplayNameInput(draft.displayName ?? model.display_name);
+          setProviderInput(draft.provider ?? model.provider);
+          setModelKind(draft.modelKind ?? getModelKind(model));
+          setApiBaseUrlInput(draft.apiBaseUrl ?? (model.api_base_url ?? ""));
+          setFeaturesInput(Array.isArray(draft.features) ? draft.features : normalizedModelFeatures(model));
+        } else {
+          window.localStorage.removeItem(modelDraftStorageKey(model.id));
+        }
+      }
+    } catch {
+      // Ignore malformed or unavailable local storage and continue with server values.
+    } finally {
+      setDraftReady(true);
+    }
+  }, [model]);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    try {
+      if (!persistentDirty) {
+        window.localStorage.removeItem(modelDraftStorageKey(model.id));
+        return;
+      }
+      const draft: ModelDrawerDraft = {
+        version: 1,
+        sourceUpdatedAt: model.updated_at ?? null,
+        name: nameInput,
+        displayName: displayNameInput,
+        provider: providerInput,
+        modelKind,
+        apiBaseUrl: apiBaseUrlInput,
+        features: effectiveFeaturesInput,
+        savedAt: Date.now(),
+      };
+      window.localStorage.setItem(modelDraftStorageKey(model.id), JSON.stringify(draft));
+    } catch {
+      // Local draft persistence is best-effort and must not block editing.
+    }
+  }, [
+    apiBaseUrlInput,
+    displayNameInput,
+    draftReady,
+    effectiveFeaturesInput,
+    model.id,
+    model.updated_at,
+    modelKind,
+    nameInput,
+    persistentDirty,
+    providerInput,
+  ]);
+
+  const scrollToTab = useCallback((tab: DrawerTab, behavior: ScrollBehavior = "smooth") => {
+    setActiveTab(tab);
+    const container = bodyRef.current;
+    const section = tab === "basic"
+      ? basicSectionRef.current
+      : tab === "features"
+        ? featuresSectionRef.current
+        : apiSectionRef.current;
+    if (!container || !section) return;
+    const top = section.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - 12;
+    container.scrollTo({ top: Math.max(top, 0), behavior });
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => scrollToTab("api", "auto"));
+    return () => window.cancelAnimationFrame(frame);
+  }, [scrollToTab]);
 
   const handleTestConnection = async () => {
-    if (!apiBaseUrlInput.trim() || !nameInput.trim()) return;
+    if (!normalizedApiBaseUrl || !nameInput.trim()) return;
     setTesting(true);
     setTestResult(null);
     try {
       const result = await apiRequest<ModelTestConnectionResponse>("/ai-models/test-connection", {
         method: "POST",
         body: JSON.stringify({
-          api_base_url: apiBaseUrlInput.trim(),
+          api_base_url: normalizedApiBaseUrl,
           api_key: apiKeyInput.trim() || undefined,
           model_name: nameInput.trim(),
           model_id: model.id,
-          provider: providerInput,
+          provider: providerInput.trim(),
           features: effectiveFeaturesInput,
         } satisfies ModelTestConnectionRequest),
       });
@@ -781,38 +1218,155 @@ function DetailPanel({
     }
   };
 
-  const save = () => {
+  const save = async () => {
+    if (!dirty || !valid || featureConflicts.length > 0 || disabled) return;
     const payload: AdminAiModelConfigPatchRequest = {};
-    if (nameInput.trim() && nameInput.trim() !== model.name) payload.name = nameInput.trim();
-    if (displayNameInput.trim() && displayNameInput.trim() !== model.display_name) payload.display_name = displayNameInput.trim();
-    if (providerInput.trim() && providerInput.trim() !== model.provider) payload.provider = providerInput.trim();
-    const normalizedApiKey = apiKeyInput.trim();
-    const normalizedApiBaseUrl = apiBaseUrlInput.trim().replace(/\/$/, "");
-    if (normalizedApiKey) payload.api_key = normalizedApiKey;
-    if (normalizedApiBaseUrl !== (model.api_base_url ?? "").replace(/\/$/, "")) payload.api_base_url = normalizedApiBaseUrl;
-    if (JSON.stringify(effectiveFeaturesInput) !== JSON.stringify(model.features ?? [])) {
+    if (nameInput.trim() !== model.name) payload.name = nameInput.trim();
+    if (displayNameInput.trim() !== model.display_name) payload.display_name = displayNameInput.trim();
+    if (providerInput.trim() !== model.provider) payload.provider = providerInput.trim();
+    if (apiKeyInput.trim()) payload.api_key = apiKeyInput.trim();
+    if (normalizedApiBaseUrl !== baselineApiBaseUrl) payload.api_base_url = normalizedApiBaseUrl;
+    if (JSON.stringify(effectiveFeaturesInput) !== JSON.stringify(baselineFeatures)) {
       payload.features = effectiveFeaturesInput.length > 0 ? effectiveFeaturesInput : null;
     }
-    onSaveApiConfig(model.id, payload);
-    setApiKeyInput("");
-    showToast("API 配置已保存");
+
+    setSaveError(null);
+    try {
+      const result = await onSave(model.id, payload);
+      setNameInput(result.name);
+      setDisplayNameInput(result.display_name);
+      setProviderInput(result.provider);
+      setModelKind(getModelKind(result));
+      setApiBaseUrlInput(result.api_base_url ?? "");
+      setFeaturesInput(normalizedModelFeatures(result));
+      setApiKeyInput("");
+      setShowApiKey(false);
+      try {
+        window.localStorage.removeItem(modelDraftStorageKey(model.id));
+      } catch {
+        // Saving to the server succeeded; local storage cleanup is best-effort.
+      }
+    } catch (error) {
+      setSaveError(getErrorMessage(error));
+    }
   };
 
-  return (
-    <tr>
-      <td colSpan={5} className="border-b border-[var(--color-border)]/60 bg-[var(--color-bg-input)]/20 p-0">
-        <div className="px-5 pb-5 pt-4">
-          <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]/80 bg-white shadow-[0_8px_24px_rgba(40,57,73,0.06)]">
-            <div className="px-5 pb-5 pt-4">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <h4 className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]">
-                  <Key className="h-4 w-4 text-[var(--color-primary)]" />
-                  API 配置
-                </h4>
+  const statusText = model.is_enabled ? "运行中" : "已禁用";
 
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-medium text-[var(--color-text-hint)]">模型类型</span>
-                  <div className="inline-flex rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-input)]/45 p-0.5">
+  return createPortal(
+    <div
+      className={cn(
+        "fixed inset-0 z-40 flex justify-end backdrop-blur-[0.5px] transition-[background-color] duration-200",
+        visible ? "bg-slate-950/[0.10]" : "bg-slate-950/0",
+      )}
+      onMouseDown={requestClose}
+    >
+      <aside
+        aria-label={`${model.display_name} 模型配置`}
+        onMouseDown={(event) => event.stopPropagation()}
+        className={cn(
+          "flex h-full w-[clamp(720px,46vw,820px)] max-w-[calc(100vw-24px)] flex-col border-l border-slate-200/80 bg-white shadow-[-18px_0_52px_rgba(15,23,42,0.12)] will-change-transform transition-transform duration-200 ease-out",
+          visible ? "translate-x-0" : "translate-x-full",
+        )}
+      >
+        <header className="shrink-0 border-b border-slate-200/80 bg-white/95 px-7 pt-3 backdrop-blur-xl">
+          <div className="flex min-h-14 items-center justify-between gap-4 pb-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5">
+                <h3 className="truncate text-[17px] font-semibold tracking-[-0.01em] text-slate-950">{displayNameInput || model.display_name}</h3>
+                {persistentDirty ? <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">草稿</span> : null}
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                <span className="font-mono text-slate-400">{nameInput || model.name}</span>
+                <span className="inline-flex items-center gap-1.5 font-medium text-slate-500">
+                  <span className={cn("h-1.5 w-1.5 rounded-full", model.is_enabled ? "bg-emerald-500" : "bg-slate-300")} />
+                  {statusText}
+                </span>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              <details className="relative">
+                <summary className="grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg text-slate-400 transition-[background-color,color,transform] hover:bg-slate-100 hover:text-slate-800 active:scale-95 [&::-webkit-details-marker]:hidden" aria-label="更多模型操作">
+                  <MoreHorizontal className="h-4 w-4" />
+                </summary>
+                <div className="absolute right-0 top-10 z-20 min-w-[168px] overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 text-xs shadow-[0_12px_34px_rgba(15,23,42,0.14)]">
+                  {model.is_enabled && !model.is_default ? (
+                    <button type="button" onClick={onSetDefault} disabled={disabled} className="w-full rounded-lg px-3 py-2 text-left font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-950 disabled:opacity-50">设为默认模型</button>
+                  ) : null}
+                  <button type="button" onClick={onToggle} disabled={disabled} className="w-full rounded-lg px-3 py-2 text-left font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-950 disabled:opacity-50">
+                    {model.is_enabled ? "禁用模型" : "启用模型"}
+                  </button>
+                  {persistentDirty ? (
+                    <button type="button" onClick={resetToServer} disabled={disabled} className="w-full rounded-lg px-3 py-2 text-left font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-950 disabled:opacity-50">丢弃本地草稿</button>
+                  ) : null}
+                  <div className="my-1 h-px bg-slate-100" />
+                  <button type="button" onClick={onDelete} disabled={disabled} className="w-full rounded-lg px-3 py-2 text-left font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50">删除配置</button>
+                </div>
+              </details>
+              <button
+                type="button"
+                onClick={requestClose}
+                className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 transition-[background-color,color,transform] hover:bg-slate-100 hover:text-slate-900 active:scale-95"
+                aria-label="关闭模型配置"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <nav className="flex gap-6" aria-label="模型配置分区">
+            {DRAWER_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => scrollToTab(tab.key)}
+                className={cn(
+                  "relative pb-3 text-[13px] font-semibold transition-colors",
+                  activeTab === tab.key ? "text-[var(--color-primary)]" : "text-slate-400 hover:text-slate-700",
+                )}
+              >
+                {tab.label}
+                <span
+                  className={cn(
+                    "absolute inset-x-0 -bottom-px h-0.5 origin-center rounded-full bg-[var(--color-primary)] transition-transform duration-200",
+                    activeTab === tab.key ? "scale-x-100" : "scale-x-0",
+                  )}
+                />
+              </button>
+            ))}
+          </nav>
+        </header>
+
+        <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto scroll-smooth bg-white px-7 pb-24 pt-1">
+          <section ref={basicSectionRef} className="scroll-mt-3 border-b border-slate-200 py-5">
+            <div className="mb-4">
+              <h4 className="text-[13px] font-semibold text-slate-950">模型信息</h4>
+              <p className="mt-0.5 text-[11px] text-slate-400">用于识别模型并确定调用接口类型。</p>
+            </div>
+
+            <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
+              <label className="block">
+                <span className="text-[11px] font-medium text-slate-500">模型标识</span>
+                <input
+                  value={nameInput}
+                  onChange={(event) => { setNameInput(event.target.value); setTestResult(null); }}
+                  disabled={disabled}
+                  className={cn(inputCls, "mt-1.5 h-10 bg-slate-50/45 transition-[border-color,background-color,box-shadow] focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/10 disabled:opacity-50")}
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium text-slate-500">显示名称</span>
+                <input
+                  value={displayNameInput}
+                  onChange={(event) => setDisplayNameInput(event.target.value)}
+                  disabled={disabled}
+                  className={cn(inputCls, "mt-1.5 h-10 bg-slate-50/45 transition-[border-color,background-color,box-shadow] focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/10 disabled:opacity-50")}
+                />
+              </label>
+              <div className="md:col-span-2 grid gap-2 sm:grid-cols-[92px_minmax(0,1fr)] sm:items-start">
+                <span className="pt-2.5 text-[11px] font-medium text-slate-500">模型类型</span>
+                <div className="min-w-0">
+                  <div className="grid w-full max-w-[460px] grid-cols-3 rounded-[10px] border border-slate-200 bg-slate-50/70 p-0.5">
                     {(Object.keys(MODEL_KIND_META) as ModelKind[]).map((kind) => (
                       <button
                         key={kind}
@@ -820,247 +1374,228 @@ function DetailPanel({
                         disabled={disabled}
                         onClick={() => {
                           setModelKind(kind);
-                          setFeaturesInput((prev) => featuresForKind(kind, prev));
+                          setFeaturesInput((previous) => featuresForKind(kind, previous));
                           setTestResult(null);
+                          if (kind === "ocr_job" && providerInput === "openai") setProviderInput("paddleocr-vl");
                         }}
                         className={cn(
-                          "rounded-md px-2.5 py-1.5 text-[10px] font-semibold transition-all disabled:opacity-50",
+                          "h-9 rounded-[8px] px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.985] disabled:opacity-50",
                           modelKind === kind
-                            ? "bg-white text-[var(--color-primary)] shadow-sm"
-                            : "text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]",
+                            ? "bg-white text-[var(--color-primary)] shadow-[0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80"
+                            : "text-slate-500 hover:bg-white/60 hover:text-slate-700",
                         )}
                       >
                         {MODEL_KIND_META[kind].label}
                       </button>
                     ))}
                   </div>
+                  <p className="mt-1.5 max-w-[560px] text-[10px] leading-4 text-slate-400">{MODEL_KIND_META[modelKind].desc}</p>
                 </div>
               </div>
+            </div>
+          </section>
 
-              {modelKind === "chat" && (
-                <div className="mb-4">
-                  <CompatibleExampleImporter
-                    disabled={disabled}
-                    onApply={(parsed) => {
-                      if (parsed.apiBaseUrl) setApiBaseUrlInput(parsed.apiBaseUrl);
-                      if (parsed.modelName) setNameInput(parsed.modelName);
-                      setProviderInput("relay");
-                      setTestResult(null);
-                    }}
-                  />
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-2">
-                <label className="block">
-                  <span className="text-[11px] font-medium text-[var(--color-text-hint)]">模型标识</span>
-                  <input
-                    type="text"
-                    value={nameInput}
-                    onChange={(e) => { setNameInput(e.target.value); setTestResult(null); }}
-                    className={cn(inputCls, "mt-1 h-10")}
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="text-[11px] font-medium text-[var(--color-text-hint)]">显示名称</span>
-                  <input
-                    type="text"
-                    value={displayNameInput}
-                    onChange={(e) => setDisplayNameInput(e.target.value)}
-                    className={cn(inputCls, "mt-1 h-10")}
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="text-[11px] font-medium text-[var(--color-text-hint)]">Provider / 接入方式</span>
-                  <ProviderSelect
-                    value={providerInput}
-                    onChange={(value) => { setProviderInput(value); setTestResult(null); }}
-                    disabled={disabled}
-                    placeholder="relay / openai / deepseek / custom"
-                  />
-                  <span className="mt-1 block text-[10px] text-[var(--color-text-hint)]">{adapterLabel(providerInput)}；第三方中转站建议使用 relay。</span>
-                </label>
-
-                <label className="block">
-                  <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API 地址（Base URL / Endpoint）</span>
-                  <div className="relative mt-1">
-                    <input
-                      type="text"
-                      value={apiBaseUrlInput}
-                      onChange={(e) => { setApiBaseUrlInput(e.target.value); setTestResult(null); }}
-                      className={cn(inputCls, "h-10 pr-9")}
-                      placeholder="https://8stoken.com/v1 或 .../v1/chat/completions"
-                    />
-                    <Link2 className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-hint)]" />
-                  </div>
-                  <span className="mt-1 block text-[10px] leading-4 text-[var(--color-text-hint)]">
-                    {modelKind === "embedding"
-                      ? "按 SDK base_url 填写；阿里云百炼建议以 /compatible-mode/v1 结尾，不追加 /embeddings"
-                      : modelKind === "ocr_job"
-                        ? "填写厂商 OCR 服务根地址"
-                        : "支持 SDK base_url 或完整 chat/completions Endpoint；中转站示例 https://8stoken.com/v1"}
-                  </span>
-                  <CompatibleEndpointHint apiBaseUrl={apiBaseUrlInput} kind={modelKind} />
-                </label>
+          <section ref={apiSectionRef} className="scroll-mt-3 border-b border-slate-200 py-5">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h4 className="flex items-center gap-2 text-[13px] font-semibold text-slate-950"><Key className="h-3.5 w-3.5 text-[var(--color-primary)]" />API 接入</h4>
+                <p className="mt-0.5 text-[11px] text-slate-400">配置 Provider、接口地址与访问凭证。</p>
               </div>
+              <span className="rounded-md border border-slate-200/90 bg-slate-50/70 px-2 py-1 text-[10px] font-medium text-slate-500">{adapterLabel(providerInput)}</span>
+            </div>
 
-              <label className="mt-4 block">
-                <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Key</span>
-                <div className="mt-1 flex gap-2">
-                  <div className="relative min-w-0 flex-1">
-                    <input
-                      type={showApiKey ? "text" : "password"}
-                      value={apiKeyInput}
-                      onChange={(e) => { setApiKeyInput(e.target.value); setTestResult(null); }}
-                      className={cn(inputCls, "h-10 pr-10")}
-                      placeholder={model.api_configured ? "" : "sk-..."}
-                      autoComplete="new-password"
-                      aria-label={model.api_configured ? "API Key（已保存，输入新值可替换）" : "API Key"}
-                    />
-                    {model.api_configured && !apiKeyInput && (
-                      <span
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-y-0 left-3 flex items-center select-none text-sm tracking-[0.16em] text-[var(--color-text-secondary)]"
-                      >
-                        ••••••••••••••••••••
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setShowApiKey((prev) => !prev)}
-                      disabled={!apiKeyInput}
-                      title={apiKeyInput ? (showApiKey ? "隐藏新输入的 API Key" : "显示新输入的 API Key") : "已保存的 API Key 不可回显"}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--color-text-hint)] transition-colors hover:text-[var(--color-primary)] disabled:cursor-default disabled:opacity-45"
-                    >
-                      {showApiKey && apiKeyInput ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleTestConnection}
-                    disabled={testing || !apiBaseUrlInput.trim() || !nameInput.trim() || (!model.api_configured && !apiKeyInput.trim())}
-                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--color-primary)]/35 bg-white px-3.5 text-xs font-semibold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary-light)] disabled:opacity-40"
-                  >
-                    {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
-                    测试连接
-                  </button>
-                </div>
-                {model.api_configured && (
-                  <span className="mt-1 block text-[10px] leading-4 text-[var(--color-text-hint)]">
-                    已保存 API Key；留空测试会自动使用已有密钥，输入新值时优先测试新密钥。
-                  </span>
-                )}
+            <div className="max-w-[680px] space-y-4">
+              {modelKind === "chat" ? (
+                <CompatibleExampleImporter
+                  disabled={disabled}
+                  onApply={(parsed) => {
+                    if (parsed.apiBaseUrl) setApiBaseUrlInput(parsed.apiBaseUrl);
+                    if (parsed.modelName) setNameInput(parsed.modelName);
+                    setProviderInput("relay");
+                    setTestResult(null);
+                  }}
+                />
+              ) : null}
+
+              <label className="block">
+                <span className="text-[11px] font-medium text-slate-500">Provider / 接入方式</span>
+                <ProviderSelect
+                  value={providerInput}
+                  onChange={(value) => { setProviderInput(value); setTestResult(null); }}
+                  disabled={disabled}
+                  placeholder="relay / openai / deepseek / custom"
+                />
+                <span className="mt-1 block text-[10px] leading-4 text-slate-400">接第三方 API 服务建议选择「第三方 / Relay」，模型标识仍填写服务商实际要求的 model。</span>
               </label>
 
-              <div className="mt-5 border-t border-[var(--color-border)]/60 pt-4">
-                {modelKind === "chat" ? (
-                  <div>
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <span className="text-[11px] font-medium text-[var(--color-text-hint)]">用途（可多选）</span>
-                      <span className="text-[10px] text-[var(--color-text-hint)]">决定各 AI 功能优先使用的模型</span>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                      {CHAT_FEATURE_OPTIONS.map((opt) => {
-                        const selected = featuresInput.includes(opt.value);
-                        return (
-                          <label
-                            key={opt.value}
-                            title={opt.desc}
-                            className={cn(
-                              "flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-[11px] font-medium transition-all",
-                              selected
-                                ? "border-[var(--color-primary)]/70 bg-[var(--color-primary-light)]/70 text-[var(--color-primary-dark)]"
-                                : "border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]/35 hover:bg-[var(--color-bg-input)]/45",
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              className="sr-only"
-                              checked={selected}
-                              onChange={() => setFeaturesInput((prev) => prev.includes(opt.value) ? prev.filter((f) => f !== opt.value) : [...prev, opt.value])}
-                            />
-                            <span
-                              className={cn(
-                                "grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors",
-                                selected
-                                  ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white"
-                                  : "border-[var(--color-border)] bg-white",
-                              )}
-                            >
-                              {selected && <CheckCircle2 className="h-2.5 w-2.5" />}
-                            </span>
-                            <span className="truncate">{opt.label}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-xl border border-[var(--color-border)]/70 bg-[var(--color-bg-input)]/35 px-4 py-3">
-                    <p className="text-xs font-semibold text-[var(--ink)]">
-                      能力：{modelKind === "embedding" ? "Vector Embedding" : "视觉 OCR Job"}
-                    </p>
-                    <p className="mt-1 text-[10px] leading-4 text-[var(--color-text-hint)]">{MODEL_KIND_META[modelKind].desc}</p>
-                  </div>
-                )}
+              <label className="block">
+                <span className="text-[11px] font-medium text-slate-500">API 地址</span>
+                <div className="relative mt-1.5">
+                  <input
+                    value={apiBaseUrlInput}
+                    onChange={(event) => { setApiBaseUrlInput(event.target.value); setTestResult(null); }}
+                    disabled={disabled}
+                    className={cn(inputCls, "h-10 bg-slate-50/45 pr-9 transition-[border-color,background-color,box-shadow] focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/10 disabled:opacity-50")}
+                    placeholder="https://8stoken.com/v1"
+                  />
+                  <Link2 className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300" />
+                </div>
+                <CompatibleEndpointHint apiBaseUrl={apiBaseUrlInput} kind={modelKind} />
+              </label>
+
+              <label className="block">
+                <span className="text-[11px] font-medium text-slate-500">API Key</span>
+                <div className="relative mt-1.5">
+                  <input
+                    type={showApiKey ? "text" : "password"}
+                    value={apiKeyInput}
+                    onChange={(event) => { setApiKeyInput(event.target.value); setTestResult(null); }}
+                    disabled={disabled}
+                    className={cn(inputCls, "h-10 bg-slate-50/45 pr-10 transition-[border-color,background-color,box-shadow] focus:bg-white focus:ring-2 focus:ring-[var(--color-primary)]/10 disabled:opacity-50")}
+                    placeholder={model.api_configured ? "" : "sk-..."}
+                    autoComplete="new-password"
+                    aria-label={model.api_configured ? "API Key（已保存，输入新值可替换）" : "API Key"}
+                  />
+                  {model.api_configured && !apiKeyInput ? (
+                    <span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-3 flex items-center select-none text-sm tracking-[0.16em] text-slate-500">••••••••••••••••••••••</span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey((previous) => !previous)}
+                    disabled={!apiKeyInput}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 transition-colors hover:text-[var(--color-primary)] disabled:cursor-default disabled:opacity-45"
+                    aria-label={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                  >
+                    {showApiKey && apiKeyInput ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+                <p className="mt-1 text-[10px] leading-4 text-slate-400">已保存的密钥不会回显；API Key 不写入浏览器本地草稿。</p>
+              </label>
+
+              <div className="flex flex-wrap items-center gap-3 pt-0.5">
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={testing || !normalizedApiBaseUrl || !nameInput.trim() || (!model.api_configured && !apiKeyInput.trim())}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-600 transition-[border-color,background-color,color,transform] duration-150 hover:border-[var(--color-primary)]/35 hover:bg-[var(--color-primary-light)]/35 hover:text-[var(--color-primary)] active:scale-[0.98] disabled:opacity-40"
+                >
+                  {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                  测试连接
+                </button>
+                <span className="text-[10px] text-slate-400">修改接口或模型标识后建议重新测试。</span>
               </div>
 
-              {testResult && (
-                <div
-                  className={cn(
-                    "mt-4 rounded-xl px-3.5 py-2.5 text-xs",
-                    testResult.success
-                      ? "border border-[var(--color-success)]/45 bg-[var(--color-success-light)] text-[var(--color-success)]"
-                      : "border border-[var(--color-danger)]/45 bg-[var(--color-danger-light)] text-[var(--color-danger)]",
-                  )}
-                >
+              {testResult ? (
+                <div className={cn("border-l-2 px-3 py-2 text-xs", testResult.success ? "border-emerald-400 bg-emerald-50/60 text-emerald-800" : "border-red-400 bg-red-50/60 text-red-700")}>
                   <div className="flex items-start gap-2">
-                    {testResult.success
-                      ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                    {testResult.success ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
                     <div className="min-w-0">
                       <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
-                      <p className="mt-0.5 break-words">{testResult.message}</p>
-                      {testResult.latency_ms != null && <p className="mt-0.5 opacity-70">耗时 {testResult.latency_ms}ms</p>}
+                      {testResult.success ? (
+                        <p className="mt-0.5">{testResult.latency_ms != null ? `响应时间 ${testResult.latency_ms}ms · ` : ""}模型接口可正常使用</p>
+                      ) : (
+                        <p className="mt-0.5 break-words leading-5">{testResult.message}</p>
+                      )}
                     </div>
                   </div>
                 </div>
+              ) : null}
+            </div>
+          </section>
+
+          <section ref={featuresSectionRef} className="scroll-mt-3 py-5">
+            <div className="mb-3">
+              <h4 className="text-[13px] font-semibold text-slate-950">能力映射</h4>
+              <p className="mt-0.5 text-[11px] text-slate-400">决定各 AI 功能优先使用的模型。</p>
+            </div>
+
+            {modelKind === "chat" ? (
+              <div className="max-w-[680px] divide-y divide-slate-200 border-y border-slate-200">
+                {DRAWER_FEATURE_OPTIONS.map((option) => {
+                  const selected = featuresInput.includes(option.value);
+                  const conflict = featureConflicts.find((item) => item.feature === option.value);
+                  return (
+                    <label
+                      key={option.value}
+                      className={cn(
+                        "flex cursor-pointer items-start gap-3 px-2 py-3 transition-colors",
+                        selected ? "bg-[var(--color-primary-light)]/32" : "hover:bg-slate-50/80",
+                        conflict && "bg-amber-50/65",
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={selected}
+                        disabled={disabled}
+                        onChange={() => setFeaturesInput((previous) => previous.includes(option.value) ? previous.filter((feature) => feature !== option.value) : [...previous, option.value])}
+                      />
+                      <span className={cn("mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors", selected ? "border-[var(--color-primary)] bg-[var(--color-primary)] text-white" : "border-slate-300 bg-white")}>
+                        {selected ? <CheckCircle2 className="h-2.5 w-2.5" /> : null}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold text-slate-800">{option.label}</span>
+                          {conflict ? <span className="text-[10px] font-medium text-amber-700">当前由「{conflict.model.display_name}」占用</span> : null}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] leading-4 text-slate-400">{option.desc}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="max-w-[680px] border-y border-slate-200 py-3">
+                <p className="text-xs font-semibold text-slate-800">{modelKind === "embedding" ? "Vector Embedding" : "视觉 OCR Job"}</p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-400">{MODEL_KIND_META[modelKind].desc}</p>
+              </div>
+            )}
+
+            {featureConflicts.length > 0 ? (
+              <div className="mt-4 max-w-[680px] border-l-2 border-amber-400 bg-amber-50/60 px-3 py-2.5 text-xs text-amber-800">
+                <p className="font-semibold">存在功能映射冲突</p>
+                <p className="mt-0.5 leading-5">请先禁用占用该功能的模型，或取消当前映射后再保存。</p>
+              </div>
+            ) : null}
+
+            {saveError ? (
+              <div role="alert" className="mt-4 max-w-[680px] border-l-2 border-red-400 bg-red-50/60 px-3 py-2.5 text-xs leading-5 text-red-700">
+                保存失败：{saveError}
+              </div>
+            ) : null}
+          </section>
+        </div>
+
+        <footer className="shrink-0 border-t border-slate-200 bg-white/96 px-7 py-4 shadow-[0_-12px_30px_rgba(15,23,42,0.04)] backdrop-blur-xl">
+          <div className="flex items-center justify-between gap-5">
+            <div className="min-w-0 text-[11px]">
+              {dirty ? (
+                <span className="inline-flex items-center gap-2 font-medium text-amber-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                  {apiKeyInput.trim() ? "有未保存的修改 · 普通字段草稿已自动保存，API Key 不落本地" : "有未保存的修改 · 草稿已自动保存"}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-2 text-slate-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  配置已同步
+                </span>
               )}
             </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)]/70 bg-[var(--color-bg-input)]/20 px-5 py-3.5">
-              <button
-                onClick={onDelete}
-                disabled={disabled}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--color-danger)]/35 bg-white px-3 text-xs font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger-light)] disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                删除配置
-              </button>
-
-              <div className="ml-auto flex items-center gap-2">
-                {model.is_enabled && !model.is_default && (
-                  <button
-                    onClick={onSetDefault}
-                    disabled={disabled}
-                    className="h-9 rounded-lg border border-[var(--color-border)] bg-white px-3 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)]/45 hover:bg-[var(--color-primary-light)]/55 hover:text-[var(--color-primary-dark)] disabled:opacity-50"
-                  >
-                    设为默认
-                  </button>
-                )}
-                <Button onClick={save} disabled={disabled} className="min-w-[112px]">
-                  保存配置
-                </Button>
-              </div>
+            <div className="flex shrink-0 items-center gap-2.5">
+              <Button variant="secondary" onClick={requestClose} disabled={disabled} className="border-slate-200 bg-white shadow-none">取消</Button>
+              <Button onClick={save} disabled={disabled || !dirty || !valid || featureConflicts.length > 0} className="min-w-[112px] shadow-none">
+                {disabled ? "保存中..." : featureConflicts.length > 0 ? "映射冲突" : "保存配置"}
+              </Button>
             </div>
           </div>
-        </div>
-      </td>
-    </tr>
+        </footer>
+      </aside>
+    </div>,
+    document.body,
   );
+
 }
+
 
 // ---------------------------------------------------------------------------
 // Main Export
@@ -1076,7 +1611,7 @@ function showToast(msg: string) {
 
 export function ModelCards() {
   const queryClient = useQueryClient();
-  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showAddDrawer, setShowAddDrawer] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AdminAiModelConfig | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -1117,9 +1652,8 @@ export function ModelCards() {
     patchMutation.mutate({ id: model.id, data: { is_enabled: !model.is_enabled } });
   };
 
-  const handleSaveApiConfig = (id: number, data: AdminAiModelConfigPatchRequest) => {
-    patchMutation.mutate({ id, data });
-  };
+  const handleSaveApiConfig = (id: number, data: AdminAiModelConfigPatchRequest) =>
+    patchMutation.mutateAsync({ id, data });
 
   const setDefault = (model: AdminAiModelConfig) => {
     patchMutation.mutate({ id: model.id, data: { is_default: true } });
@@ -1132,16 +1666,14 @@ export function ModelCards() {
   };
 
   const modelList = models.data ?? [];
+  const selectedModel = modelList.find((model) => model.id === selectedId) ?? null;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-[var(--color-border)]/80 bg-white/80 shadow-[var(--shadow-card)]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--color-border)]/60 px-5 py-4">
-        <div>
-          <h3 className="font-display text-xl font-bold text-[var(--ink)]">模型配置</h3>
-          <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">管理官方 API、OpenAI-compatible 中转站及模型功能映射</p>
-        </div>
-        <Button onClick={() => setShowAddDialog(true)}>
+        <h3 className="font-display text-xl font-bold text-[var(--ink)]">模型配置</h3>
+        <Button onClick={() => setShowAddDrawer(true)}>
           <Plus className="h-4 w-4" />
           添加模型
         </Button>
@@ -1198,7 +1730,7 @@ export function ModelCards() {
                   return (
                     <React.Fragment key={model.id}>
                       <tr
-                        onClick={() => setSelectedId(isSelected ? null : model.id)}
+                        onClick={() => setSelectedId(model.id)}
                         className={cn(
                           "cursor-pointer border-b border-[var(--color-border)]/40 transition-colors",
                           isSelected
@@ -1300,24 +1832,14 @@ export function ModelCards() {
                             </button>
                             <ChevronDown
                               className={cn(
-                                "h-4 w-4 text-[var(--color-text-hint)] transition-transform",
-                                isSelected && "rotate-180",
+                                "h-4 w-4 -rotate-90 text-[var(--color-text-hint)] transition-colors",
+                                isSelected && "text-[var(--color-primary)]",
                               )}
                             />
                           </div>
                         </td>
                       </tr>
 
-                      {/* Detail panel */}
-                      {isSelected && (
-                        <DetailPanel
-                          model={model}
-                          onSaveApiConfig={handleSaveApiConfig}
-                          onSetDefault={() => setDefault(model)}
-                          onDelete={() => setDeleteTarget(model)}
-                          disabled={patchMutation.isPending}
-                        />
-                      )}
                     </React.Fragment>
                   );
                 })}
@@ -1325,13 +1847,29 @@ export function ModelCards() {
         </table>
       </div>
 
-      <AddModelDialog
-        open={showAddDialog}
-        onClose={() => setShowAddDialog(false)}
-        onSave={(data) => createMutation.mutateAsync(data)}
-        loading={createMutation.isPending}
-        existingModels={modelList}
-      />
+
+      {selectedModel ? (
+        <ModelConfigDrawer
+          key={selectedModel.id}
+          model={selectedModel}
+          models={modelList}
+          onClose={() => setSelectedId((current) => current === selectedModel.id ? null : current)}
+          onSave={handleSaveApiConfig}
+          onSetDefault={() => setDefault(selectedModel)}
+          onToggle={() => toggleModel(selectedModel)}
+          onDelete={() => setDeleteTarget(selectedModel)}
+          disabled={patchMutation.isPending}
+        />
+      ) : null}
+
+      {showAddDrawer ? (
+        <AddModelDrawer
+          onClose={() => setShowAddDrawer(false)}
+          onSave={(data) => createMutation.mutateAsync(data)}
+          loading={createMutation.isPending}
+          existingModels={modelList}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={deleteTarget !== null}

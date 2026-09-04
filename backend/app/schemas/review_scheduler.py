@@ -83,6 +83,12 @@ class BatchGradeResult(BaseModel):
     request_id: str
     success: bool = True
     error: str | None = None
+    # Per-item failures are business-state rejections, not transport failures.
+    # The mini program can use these fields to decide whether the exact task can
+    # be retried locally or must be discarded and fetched again from the server.
+    error_code: str | None = None
+    retryable: bool = False
+    refresh_required: bool = False
     is_correct: bool
     correct_answer: str
     rating: int

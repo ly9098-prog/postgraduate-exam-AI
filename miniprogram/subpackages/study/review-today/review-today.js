@@ -11,7 +11,7 @@ const {
 } = require('../utils/answer')
 const adapter = require('../utils/question-runner-adapter')
 const { getSubjectName } = require('../../../utils/subject-meta')
-const { getChinaWallParts } = require('../../../utils/china-time')
+const { getChinaWallParts, getChinaDate } = require('../../../utils/china-time')
 
 var KF = 'schedule_id'
 
@@ -76,6 +76,18 @@ function _mergeResultsByScheduleId(oldResults, newResults) {
   return order.map(function(sid) {
     return map[sid]
   })
+}
+
+function _reviewFailureNeedsRefresh(result) {
+  if (!result || result.success !== false) return false
+  if (result.refresh_required === true) return true
+  if (result.retryable === false && result.retryable !== undefined && result.retryable !== null) return true
+
+  // Backward compatibility with an older backend that returned only `error`.
+  // These messages all mean the local schedule/version/occurrence snapshot is
+  // stale; replaying the exact same request would fail forever.
+  var text = String(result.error || '')
+  return /刷新|已失效|已经提交|已标记掌握|复习记录不存在|版本.*(?:更新|不存在)|不匹配|request_id.*不同提交/.test(text)
 }
 
 /**
@@ -210,6 +222,10 @@ Page({
       reviewOverview: null,
       overviewLoading: false,
       reviewRequestIds: {},
+      // Business-day key for progress accounting. Active pages can stay alive
+      // across midnight; answers remain valid, but yesterday's completed count
+      // must never be carried into today's progress.
+      taskDate: getChinaDate(0),
       // Timer state (non-observable, kept in session object)
       timerStartedAt: 0,
       timerLastTickAt: 0,
@@ -239,6 +255,8 @@ Page({
   },
 
   onShow() {
+    // 页面可能在微信后台跨过零点；日期标题必须按重新可见时的北京时间刷新。
+    this._setDateStr()
     // 仅 overview / empty 阶段刷新，reviewing/group-result 不打断答题
     const phase = this.data.phase
     if (phase === 'overview' || phase === 'empty') {
@@ -295,6 +313,7 @@ Page({
       if (!this._alive || requestSeq !== this._overviewRequestSeq) return
       const vm = this.buildReviewOverviewVM(overview)
       this._reviewSession.reviewOverview = overview
+      this._reviewSession.taskDate = String(overview.date || getChinaDate(0))
       this._reviewSession.allTodayQuestionIds = overview.all_question_ids || []
       this._reviewSession.completedQuestionIds = overview.completed_question_ids || []
       this._reviewSession.remainingQuestionIds = overview.remaining_question_ids || []
@@ -356,6 +375,46 @@ Page({
     } catch (e) {
       if (!this._alive || requestSeq !== this._overviewRequestSeq) return
       console.error('刷新复习概览失败', e)
+    }
+  },
+
+  async _syncReviewSessionDayIfNeeded() {
+    const session = this._reviewSession
+    const currentDate = getChinaDate(0)
+    if (!session || !session.taskDate || String(session.taskDate) === currentDate) return true
+
+    try {
+      const overview = await api.get('/review/today/overview')
+      if (!this._alive) return false
+      const vm = this.buildReviewOverviewVM(overview || {})
+
+      session.taskDate = String((overview && overview.date) || currentDate)
+      session.reviewOverview = overview || {}
+      session.allTodayQuestionIds = (overview && overview.all_question_ids) || []
+      session.completedQuestionIds = (overview && overview.completed_question_ids) || []
+      session.remainingQuestionIds = (overview && overview.remaining_question_ids) || []
+
+      // Previous-day result rows may remain visible, but they must not contribute
+      // to the new day's counters. Keep the current questions/answers intact and
+      // restart only the accounting baseline from today's authoritative overview.
+      session.allGroupResults = []
+      session.totalCorrect = 0
+      session.totalWrong = 0
+      session.totalCompleted = 0
+      session.todayTaskTotalCount = Math.max(0, Number(vm.todayDueCount || 0))
+      session.completedBeforeSession = Math.max(0, Number(vm.todayCompletedCount || 0))
+
+      this._setDateStr()
+      this.setData({
+        ...vm,
+      })
+      wx.showToast({ title: '日期已切换，已同步今日复习进度', icon: 'none' })
+      return true
+    } catch (e) {
+      if (!this._alive) return false
+      console.error('跨天同步复习进度失败', e)
+      wx.showToast({ title: '日期已切换，请联网同步后继续', icon: 'none' })
+      return false
     }
   },
 
@@ -848,6 +907,7 @@ Page({
     const originalGroupIdx = this.data.currentGroupIdx
     this.setData({ masterConfirmId: null })
     if (!scheduleId || !question) return
+    if (!await this._syncReviewSessionDayIfNeeded()) return
 
     try {
       await api.post(`/review/${scheduleId}/master`)
@@ -925,6 +985,7 @@ Page({
     this._masterUndoInFlight = true
 
     try {
+      if (!await this._syncReviewSessionDayIfNeeded()) return
       const unmasterResult = await api.post(`/review/${pending.scheduleId}/unmaster`)
       if (!this._alive) return
 
@@ -1047,6 +1108,10 @@ Page({
     }
 
     this.setData({ submittingGroup: true })
+    if (!await this._syncReviewSessionDayIfNeeded()) {
+      if (this._alive) this.setData({ submittingGroup: false })
+      return
+    }
 
     const reviews = []
     for (const q of groupQuestions) {
@@ -1078,6 +1143,7 @@ Page({
       const res = await api.post('/review/grade-batch', { reviews })
       if (!this._alive) return
       const results = Array.isArray(res && res.results) ? res.results : []
+      const submittedScheduleIds = new Set(reviews.map(item => String(item.schedule_id)))
 
       if (results.length < reviews.length) {
         wx.showToast({
@@ -1105,8 +1171,15 @@ Page({
           return String(rr.question_id) === String(q.question_id)
         })
         const isAnswered = adapter.isQuestionAnswered(q, answers, KF)
-        const submitFailed = !!(r && r.success === false)
+        const expectedResult = submittedScheduleIds.has(String(q.schedule_id))
+        const resultMissing = expectedResult && !r
+        const submitFailed = resultMissing || !!(r && r.success === false)
         const wasSubmitted = !!r && !submitFailed
+        const refreshRequired = !!(r && _reviewFailureNeedsRefresh(r))
+        // Missing rows from a 200 response are treated as transient/incomplete:
+        // replaying the same request_id is safe because review submission is
+        // idempotent. Deterministic stale-task failures must instead be refetched.
+        const retryable = resultMissing || !!(r && r.success === false && !refreshRequired && r.retryable !== false)
         return {
           ...resultQuestion,
           isCorrect: wasSubmitted ? !!r.is_correct : false,
@@ -1115,8 +1188,11 @@ Page({
           wasAnswered: isAnswered,
           wasSubmitted,
           submitFailed,
-          submitError: submitFailed ? (r.error || '提交失败，请重试') : '',
-          wasSkipped: !isAnswered && !wasSubmitted && !submitFailed,
+          submitError: submitFailed ? ((r && r.error) || (resultMissing ? '批改结果缺失，已保留待重试' : '提交失败，请重试')) : '',
+          submitErrorCode: r && r.error_code ? String(r.error_code) : '',
+          refreshRequired,
+          retryable,
+          wasSkipped: !expectedResult && !isAnswered && !wasSubmitted && !submitFailed,
           masteryPercent: wasSubmitted && Number.isFinite(Number(r.mastery_percent)) ? Number(r.mastery_percent) : null,
           mastered: !!(wasSubmitted && r.mastered),
         }
@@ -1125,8 +1201,15 @@ Page({
       const groupWrong = groupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
       const groupSkipped = groupResults.filter(r => !r.wasSubmitted).length
       const groupFailed = groupResults.filter(r => r.submitFailed).length
+      const groupRefreshRequired = groupResults.filter(r => r.submitFailed && r.refreshRequired).length
+      const groupRetryableFailed = groupResults.filter(r => r.submitFailed && !r.refreshRequired).length
       if (groupFailed > 0) {
-        wx.showToast({ title: `${groupFailed} 题提交失败，已保留待重试`, icon: 'none' })
+        const title = groupRefreshRequired > 0 && groupRetryableFailed > 0
+          ? `${groupRefreshRequired} 题需刷新，${groupRetryableFailed} 题待重试`
+          : (groupRefreshRequired > 0
+              ? `${groupRefreshRequired} 题任务已更新，将重新获取`
+              : `${groupRetryableFailed} 题提交失败，已保留待重试`)
+        wx.showToast({ title, icon: 'none' })
       }
 
       const allGroupResults = _mergeResultsByScheduleId(this._reviewSession.allGroupResults, groupResults)
@@ -1134,10 +1217,13 @@ Page({
       const totalWrong = allGroupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
       const totalCompleted = allGroupResults.filter(r => r.wasSubmitted).length
 
-      // 未成功提交的题（主动跳过或单题提交失败）统一重新入队。
-      // 失败项不能伪装成“答错”，也不能提前增加今日完成数。
+      // 主动跳过、结果缺失或明确可重试的失败项进入本地重试队列。
+      // 版本/任务序号/掌握状态已变化的失败项不能使用旧快照反复提交，
+      // 留在服务端 remaining 中，下一步重新拉取最新任务即可。
       const pendingQuestionIds = new Set(
-        groupResults.filter(r => !r.wasSubmitted).map(r => String(r.schedule_id))
+        groupResults
+          .filter(r => !r.wasSubmitted && (!r.submitFailed || !r.refreshRequired))
+          .map(r => String(r.schedule_id))
       )
       const pendingQuestions = groupQuestions.filter(q => pendingQuestionIds.has(String(q.schedule_id)))
       const newGroups = pendingQuestions.length > 0
@@ -1202,19 +1288,32 @@ Page({
     if (this.data.resultTransitioning) return
     const flowSeq = ++this._flowRequestSeq
     this.setData({ resultTransitioning: true })
+    if (!await this._syncReviewSessionDayIfNeeded()) {
+      if (this._alive && flowSeq === this._flowRequestSeq) this.setData({ resultTransitioning: false })
+      return
+    }
 
     // 检查是否还有跳过的题在当前组的余量中
     const currentGroups = this.data.groups
     const nextGroupIdx = this.data.currentGroupIdx + 1
 
     if (nextGroupIdx < currentGroups.length && currentGroups[nextGroupIdx] && currentGroups[nextGroupIdx].length > 0) {
-      // 有本地缓存的下一组（跳过题重排的情况）
-      this._reviewSession.answers = {}
-      this._reviewSession.allQuestions = currentGroups[nextGroupIdx].slice()
+      // 有本地缓存的下一组（跳过题 / 可重试失败题重排）。保留已经填写的
+      // 答案，否则用户看到“已保留待重试”，进入下一组后答案却会被清空。
+      const retryQuestions = currentGroups[nextGroupIdx]
+      const previousAnswers = this._reviewSession.answers || {}
+      const retryAnswers = {}
+      retryQuestions.forEach(q => {
+        const sid = String(q.schedule_id)
+        if (Object.prototype.hasOwnProperty.call(previousAnswers, sid)) retryAnswers[sid] = previousAnswers[sid]
+        else if (Object.prototype.hasOwnProperty.call(previousAnswers, q.schedule_id)) retryAnswers[q.schedule_id] = previousAnswers[q.schedule_id]
+      })
+      this._reviewSession.answers = retryAnswers
+      this._reviewSession.allQuestions = retryQuestions.slice()
       this.setData({
         phase: 'reviewing',
         currentGroupIdx: nextGroupIdx,
-        groupQuestions: currentGroups[nextGroupIdx],
+        groupQuestions: retryQuestions,
         currentIndex: 0,
         groupResults: [],
         groupWrongResults: [],

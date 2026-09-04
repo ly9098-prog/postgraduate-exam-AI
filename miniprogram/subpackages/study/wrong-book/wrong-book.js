@@ -106,6 +106,32 @@ Page({
     this.setData({ filterCount: count })
   },
 
+  _beginFilterReload(patch) {
+    // Invalidate both requests immediately. loadTaskFlow() is started only after
+    // the new first page arrives, so without this guard an older task-flow
+    // response can briefly overwrite the UI under the newly selected filter.
+    this._listRequestSeq++
+    this._taskFlowRequestSeq++
+    this.setData(Object.assign({
+      list: [],
+      listTotal: 0,
+      page: 1,
+      hasMore: false,
+      loading: true,
+      taskGroups: [],
+      ungroupedCount: 0,
+      // Selections belong to the old filtered result set. Keeping them while
+      // the list is empty lets users batch-operate invisible records.
+      selectedIds: [],
+      selectedIdMap: {},
+      selectedCount: 0,
+      allVisibleSelected: false,
+      batchMoreVisible: false,
+    }, patch || {}))
+    this._updateFilterCount()
+    this.loadList(true)
+  },
+
   _ready: false,
   _alive: false,
   _aiDiagnosisPromise: null,
@@ -118,6 +144,7 @@ Page({
   _batchCapsuleIdleTimer: null,
   _batchMasterUndoIds: [],
   _batchMasterUndoTimer: null,
+  _batchMasterUndoInFlight: false,
   _aiAutoSwitchTimer: null,
   _exportCapabilityRequestId: 0,
   _statsRequestSeq: 0,
@@ -132,6 +159,7 @@ Page({
     this._reviewOverviewRequestSeq = 0
     this._subjectsRequestSeq = 0
     this._taskFlowRequestSeq = 0
+    this._batchMasterUndoInFlight = false
     this.setData({ enableMathImage: config.enableMathImage || false })
     // 从 dashboard 跳转携带 subject_id 或 topic 参数
     const subjectId = options && options.subject_id != null ? Number(options.subject_id) : null
@@ -194,6 +222,7 @@ Page({
       clearTimeout(this._aiAutoSwitchTimer)
       this._aiAutoSwitchTimer = null
     }
+    this._batchMasterUndoInFlight = false
     this._clearBatchMasterUndo(true)
   },
 
@@ -605,25 +634,16 @@ Page({
   selectSubject(e) {
     const val = e.currentTarget.dataset.value
     const subjectId = (val === '' || val === null || val === undefined) ? null : Number(val)
-    this._listRequestSeq++
-    this.setData({ selectedSubjectId: subjectId, list: [], page: 1, loading: true })
-    this._updateFilterCount()
-    this.loadList(true)
+    this._beginFilterReload({ selectedSubjectId: subjectId })
   },
 
   selectErrorType(e) {
     const val = e.currentTarget.dataset.value
-    this._listRequestSeq++
-    this.setData({ selectedErrorType: val, list: [], page: 1, loading: true })
-    this._updateFilterCount()
-    this.loadList(true)
+    this._beginFilterReload({ selectedErrorType: val })
   },
 
   clearTopic() {
-    this._listRequestSeq++
-    this.setData({ selectedTopic: '', list: [], page: 1, loading: true })
-    this._updateFilterCount()
-    this.loadList(true)
+    this._beginFilterReload({ selectedTopic: '' })
   },
 
   loadMore() {
@@ -632,17 +652,12 @@ Page({
   },
 
   resetFilters() {
-    this._listRequestSeq++
-    this.setData({
+    this._beginFilterReload({
       selectedSubjectId: null,
       selectedErrorType: '',
       selectedTopic: '',
       filterCount: 0,
-      list: [],
-      page: 1,
-      loading: true,
     })
-    this.loadList(true)
   },
 
   switchView(e) {
@@ -868,7 +883,7 @@ Page({
   noop() {},
 
   async onBatchAction(e) {
-    if (this.data.batchSubmitting) return
+    if (this.data.batchSubmitting || this._batchMasterUndoInFlight) return
     const action = e.currentTarget.dataset.action
     if (this.data.batchMoreVisible) this.setData({ batchMoreVisible: false })
     const ids = (this.data.selectedIds || []).map(id => {
@@ -1010,13 +1025,22 @@ Page({
   },
 
   undoBatchMaster() {
-    const ids = this._batchMasterUndoIds
-    if (!ids || !ids.length) return
-    this._clearBatchMasterUndo()
+    const ids = (this._batchMasterUndoIds || []).slice()
+    if (!ids.length || this._batchMasterUndoInFlight) return
+    this._batchMasterUndoInFlight = true
+    // Stop the expiry timer while the request is in flight, but keep the ids and
+    // toast visible. Clearing first makes a transient network failure impossible
+    // to retry because the client no longer knows which records to unmaster.
+    if (this._batchMasterUndoTimer) {
+      clearTimeout(this._batchMasterUndoTimer)
+      this._batchMasterUndoTimer = null
+    }
     wx.showLoading({ title: '正在撤销', mask: true })
     api.post('/wrong-questions/batch', { action: 'unmark_mastered', ids }).then(result => {
       wx.hideLoading()
+      this._batchMasterUndoInFlight = false
       if (this._destroyed) return
+      this._clearBatchMasterUndo()
       wx.showToast({
         title: `已撤销掌握 ${result.updated_count != null ? result.updated_count : ids.length} 项`,
         icon: 'success',
@@ -1024,8 +1048,13 @@ Page({
       this._reloadAfterBatch()
     }).catch(err => {
       wx.hideLoading()
+      this._batchMasterUndoInFlight = false
       if (this._destroyed) return
-      wx.showToast({ title: (err && err.message) || '撤销失败', icon: 'none' })
+      wx.showToast({ title: (err && err.message) || '撤销失败，可再次尝试', icon: 'none' })
+      // Give the user another full undo window after a transient failure.
+      this._batchMasterUndoTimer = setTimeout(() => {
+        this._clearBatchMasterUndo()
+      }, 5000)
     })
   },
 
