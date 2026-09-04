@@ -446,14 +446,16 @@ async def _collect_subjects(db: AsyncSession, wq_ids: list[int]) -> list[dict]:
     if not wq_ids:
         return []
 
-    from app.models.admin import Subject
-    from app.models.question import Question
+    from app.models.admin import QuestionVersion, Subject
     from app.models.wrong_question import WrongQuestion
 
-    # Get distinct subject IDs from questions linked to these wrong-question IDs
+    # Subject attribution follows the immutable revision bound to the wrong row.
     sq = (
-        select(Question.subject_id)
-        .join(WrongQuestion, WrongQuestion.question_id == Question.id)
+        select(QuestionVersion.subject_id)
+        .join(
+            WrongQuestion,
+            WrongQuestion.question_version_id == QuestionVersion.id,
+        )
         .where(WrongQuestion.id.in_(wq_ids))
         .distinct()
         .subquery()

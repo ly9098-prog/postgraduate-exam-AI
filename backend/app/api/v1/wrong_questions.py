@@ -3,30 +3,25 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.features.text_normalizer import _split_inline_roman_subitems
-from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.user import User
-from app.models.user_question_state import UserQuestionState
 from app.models.wrong_question import WrongQuestion
 from app.schemas.common import RawPaginatedResponse, paginated_response
 from app.schemas.wrong_question import (
     TaskFlowResponse,
     WrongQuestionBatchRequest,
     WrongQuestionBatchResponse,
-    WrongQuestionQualityUpdate,
     WrongQuestionResponse,
     WrongQuestionStats,
     WrongQuestionUpdate,
 )
-from app.services import question_review_service
 from app.services import wrong_question_service as svc
-from app.services.knowledge_point_service import load_question_kps
+from app.services.question_revision_service import load_revision_kp_names, load_revision_views
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 
 # Regex: lines ending with a trailing operator (OCR-split code expressions)
@@ -146,49 +141,44 @@ def enrich_wq(wq, question, knowledge_points=None, **extra):
     )
 
 
+async def _load_wrong_revision_view(db: AsyncSession, wq: WrongQuestion):
+    if not wq.question_version_id:
+        return None, []
+    views = await load_revision_views(db, [int(wq.question_version_id)])
+    view = views.get(int(wq.question_version_id))
+    kp_map = await load_revision_kp_names(db, [int(wq.question_version_id)])
+    return view, kp_map.get(int(wq.question_version_id), [])
+
+
 async def _enrich_single_wq_extra(
     db: AsyncSession, user_id: int, wq: WrongQuestion
 ) -> dict:
     """Compute enrichment fields for a single WrongQuestion (detail endpoints)."""
-    review_record_count = (
-        await db.execute(
+    review_record_count = int((
+        await db.scalar(
             select(func.count(ReviewRecord.id)).where(
                 ReviewRecord.question_id == wq.question_id,
+                ReviewRecord.question_version_id == wq.question_version_id,
                 ReviewRecord.user_id == user_id,
             )
         )
-    ).scalar() or 0
+    ) or 0)
 
-    next_review = await db.execute(
-        select(ReviewSchedule.next_review_at).where(
+    schedule = await db.scalar(
+        select(ReviewSchedule).where(
             ReviewSchedule.question_id == wq.question_id,
+            ReviewSchedule.question_version_id == wq.question_version_id,
             ReviewSchedule.user_id == user_id,
-            ~ReviewSchedule.mastered,
-        ).order_by(ReviewSchedule.next_review_at.asc().nulls_last()).limit(1)
-    )
-
-    last_reviewed = await db.execute(
-        select(ReviewSchedule.last_reviewed_at).where(
-            ReviewSchedule.question_id == wq.question_id,
-            ReviewSchedule.user_id == user_id,
-        ).order_by(ReviewSchedule.last_reviewed_at.desc().nulls_last()).limit(1)
-    )
-
-    box_level = (
-        await db.execute(
-            select(UserQuestionState.box_level).where(
-                UserQuestionState.question_id == wq.question_id,
-                UserQuestionState.user_id == user_id,
-            )
+            ReviewSchedule.is_active,
         )
-    ).scalar_one_or_none()
-    mastery_pct = question_review_service.mastery_ratio_for_box(box_level)
+    )
+    from app.services.review_scheduler import review_mastery_percent
 
     return {
         "review_record_count": review_record_count,
-        "next_review_at": next_review.scalar_one_or_none(),
-        "last_reviewed_at": last_reviewed.scalar_one_or_none(),
-        "mastery_percent": round(float(mastery_pct), 4),
+        "next_review_at": schedule.next_review_at if schedule and not schedule.mastered else None,
+        "last_reviewed_at": schedule.last_reviewed_at if schedule else None,
+        "mastery_percent": round(review_mastery_percent(schedule.repetitions if schedule else 0) / 100, 4),
     }
 
 
@@ -255,13 +245,8 @@ async def get_wrong(
     if not wq:
         raise HTTPException(status_code=404, detail="错题记录不存在")
 
-    result = await db.execute(
-        select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
-    )
-    question = result.scalar_one_or_none()
-    kp_map = await load_question_kps(db, [wq.question_id])
+    question, knowledge_points = await _load_wrong_revision_view(db, wq)
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
-    knowledge_points = kp_map.get(wq.question_id, [])
     if question is not None:
         from app.services import ai_service
 
@@ -289,46 +274,10 @@ async def update_wrong(
     if not wq:
         raise HTTPException(status_code=404, detail="错题记录不存在")
 
-    result = await db.execute(
-        select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
-    )
-    question = result.scalar_one_or_none()
-    kp_map = await load_question_kps(db, [wq.question_id])
+    question, knowledge_points = await _load_wrong_revision_view(db, wq)
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
-    return enrich_wq(wq, question, knowledge_points=kp_map.get(wq.question_id, []), **extra)
+    return enrich_wq(wq, question, knowledge_points=knowledge_points, **extra)
 
-
-@router.put("/{wq_id}/quality", response_model=WrongQuestionResponse)
-async def rate_quality(
-    wq_id: int,
-    data: WrongQuestionQualityUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    try:
-        wq = await svc.update_quality(db, current_user.id, wq_id, data.quality)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if not wq:
-        raise HTTPException(status_code=404, detail="错题记录不存在")
-
-    # quality 会实际推进复习计划并可能改变自动掌握状态，与 grade-submit
-    # 一样必须同步清理 review / stats / wrong-book 缓存。
-    uid = current_user.id
-    for pattern in (
-        f"wrong_questions:*:{uid}*",
-        f"review:*:{uid}*",
-        f"stats:*:{uid}*",
-    ):
-        await cache.delete(pattern)
-
-    result = await db.execute(
-        select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
-    )
-    question = result.scalar_one_or_none()
-    kp_map = await load_question_kps(db, [wq.question_id])
-    extra = await _enrich_single_wq_extra(db, current_user.id, wq)
-    return enrich_wq(wq, question, knowledge_points=kp_map.get(wq.question_id, []), **extra)
 
 
 @router.post("/batch", response_model=WrongQuestionBatchResponse)

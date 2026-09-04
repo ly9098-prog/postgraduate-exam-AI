@@ -11,12 +11,13 @@ from app.core.time_utils import (
     shanghai_today_boundaries,
     utcnow,
 )
+from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Subject
 from app.models.answer_behavior import AnswerBehavior
 from app.models.practice_record import PracticeRecord
+from app.models.knowledge_point import KnowledgePoint
 from app.models.question import Question
 from app.models.review_scheduler import ReviewSchedule
 from app.models.wrong_question import WrongQuestion
-from app.services.knowledge_point_service import load_question_kps
 
 
 def _today_utc() -> datetime:
@@ -92,13 +93,14 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
             func.coalesce(
                 func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0
             ),
-        ).where(WrongQuestion.user_id == user_id)
+        ).where(WrongQuestion.user_id == user_id, WrongQuestion.is_active)
     )
     total_wq, mastered_count = wq_result.one()
 
     due_count = await db.execute(
         select(func.count(func.distinct(ReviewSchedule.question_id))).where(
             ReviewSchedule.user_id == user_id,
+            ReviewSchedule.is_active,
             ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= utcnow(),
         )
@@ -324,11 +326,14 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
         .join(
             ReviewSchedule,
             (ReviewSchedule.user_id == WrongQuestion.user_id)
-            & (ReviewSchedule.question_id == WrongQuestion.question_id),
+            & (ReviewSchedule.question_id == WrongQuestion.question_id)
+            & (ReviewSchedule.question_version_id == WrongQuestion.question_version_id),
         )
         .where(
             WrongQuestion.user_id == user_id,
+            WrongQuestion.is_active,
             WrongQuestion.mastered,
+            ReviewSchedule.is_active,
             WrongQuestion.review_count >= 1,
             ReviewSchedule.next_review_at <= shanghai_date_utc_range(
                 today + timedelta(days=3)
@@ -353,6 +358,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     long_unmastered = await db.execute(
         select(func.count(func.distinct(ReviewSchedule.question_id))).where(
             ReviewSchedule.user_id == user_id,
+            ReviewSchedule.is_active,
             ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= shanghai_date_utc_range(
                 today - timedelta(days=7)
@@ -360,24 +366,33 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
         )
     )
 
-    # Aggregate forgotten topics from unmastered wrong questions
+    # Aggregate forgotten topics from the immutable revision the user actually
+    # got wrong.  Historical attribution must not move when Question's current
+    # knowledge-point mapping is later edited.
     kp_result = await db.execute(
-        select(Question.id)
-        .join(WrongQuestion, WrongQuestion.question_id == Question.id)
+        select(KnowledgePoint.name, func.count(func.distinct(WrongQuestion.id)))
+        .join(
+            QuestionVersionKnowledgePoint,
+            QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+        )
+        .join(
+            WrongQuestion,
+            WrongQuestion.question_version_id
+            == QuestionVersionKnowledgePoint.question_version_id,
+        )
         .where(
             WrongQuestion.user_id == user_id,
+            WrongQuestion.is_active,
             ~WrongQuestion.mastered,
         )
+        .group_by(KnowledgePoint.id, KnowledgePoint.name)
+        .order_by(func.count(func.distinct(WrongQuestion.id)).desc(), KnowledgePoint.id.asc())
+        .limit(8)
     )
-    forgotten_qids = [row[0] for row in kp_result.all()]
-    kp_map = await load_question_kps(db, forgotten_qids)
-    kp_counter: dict[str, int] = {}
-    for qid in forgotten_qids:
-        for kp in kp_map.get(qid, []):
-            if isinstance(kp, str):
-                kp_counter[kp] = kp_counter.get(kp, 0) + 1
-    top_forgotten = sorted(kp_counter.items(), key=lambda x: x[1], reverse=True)[:8]
-    top_forgotten_topics = [{"topic": k, "count": v} for k, v in top_forgotten]
+    top_forgotten_topics = [
+        {"topic": str(name), "count": int(count or 0)}
+        for name, count in kp_result.all()
+    ]
 
     return {
         "high_forget_count": stuck.scalar() or 0,
@@ -750,7 +765,6 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
     today = shanghai_today()
     since = shanghai_date_utc_range(today - timedelta(days=60))[0]
 
-    from app.models.admin import Subject
     result = await db.execute(
         select(
             Subject.code,
@@ -759,8 +773,8 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
                 func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0
             ),
         )
-        .join(Question, WrongQuestion.question_id == Question.id)
-        .join(Subject, Question.subject_id == Subject.id)
+        .join(QuestionVersion, WrongQuestion.question_version_id == QuestionVersion.id)
+        .join(Subject, QuestionVersion.subject_id == Subject.id)
         .where(
             WrongQuestion.user_id == user_id,
             WrongQuestion.created_at >= since,

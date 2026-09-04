@@ -17,6 +17,20 @@ var KF = 'schedule_id'
 
 var REVIEW_BATCH_SIZE_OPTIONS = [5, 10, 20, 30]
 
+var _reviewPerformanceClock = null
+function _reviewMonotonicNow() {
+  try {
+    if (!_reviewPerformanceClock && typeof wx !== 'undefined' && typeof wx.getPerformance === 'function') {
+      _reviewPerformanceClock = wx.getPerformance()
+    }
+    if (_reviewPerformanceClock && typeof _reviewPerformanceClock.now === 'function') {
+      return _reviewPerformanceClock.now()
+    }
+  } catch (_) {}
+  // Compatibility fallback only; modern WeChat runtimes expose getPerformance().
+  return Date.now()
+}
+
 /**
  * Normalize review batch size to one of the allowed values.
  * Falls back to 10 for invalid or out-of-range inputs.
@@ -84,6 +98,8 @@ function normalizeReviewQuestion(raw) {
   return {
     schedule_id: raw.schedule_id,
     question_id: raw.question_id,
+    question_version_id: raw.question_version_id,
+    occurrence_seq: raw.occurrence_seq,
     id: raw.id || raw.question_id,
     subject_id: raw.subject_id != null ? raw.subject_id : null,
     subject_code: raw.subject_code || '',
@@ -193,6 +209,7 @@ Page({
       optionKeys: [],
       reviewOverview: null,
       overviewLoading: false,
+      reviewRequestIds: {},
       // Timer state (non-observable, kept in session object)
       timerStartedAt: 0,
       timerLastTickAt: 0,
@@ -861,7 +878,7 @@ Page({
         currentGroupIdx,
         groupQuestions,
         masterUndoVisible: true,
-        masterUndoText: '已标记掌握；以后再次答错会重新加入复习',
+        masterUndoText: '已标记掌握，不再进入复习计划',
       })
 
       this._masterUndoTimer = setTimeout(() => {
@@ -956,6 +973,22 @@ Page({
 
   /* ==================== 提交本组 ==================== */
 
+  _getReviewRequestId(question) {
+    const session = this._reviewSession || (this._reviewSession = this._createReviewSession())
+    const key = [
+      String(question.schedule_id || ''),
+      String(question.question_version_id || ''),
+      String(question.occurrence_seq != null ? question.occurrence_seq : ''),
+    ].join(':')
+    if (!key || key === '::') return ''
+    if (!session.reviewRequestIds) session.reviewRequestIds = {}
+    if (!session.reviewRequestIds[key]) {
+      const randomPart = Math.random().toString(36).slice(2, 10)
+      session.reviewRequestIds[key] = `review_${Date.now().toString(36)}_${randomPart}_${question.schedule_id}`
+    }
+    return session.reviewRequestIds[key]
+  },
+
   async submitGroup() {
     this._clearMasterUndo()
     const { groupQuestions, submittingGroup } = this.data
@@ -1001,9 +1034,18 @@ Page({
     for (const q of groupQuestions) {
       const isAnswered = adapter.isQuestionAnswered(q, answers, KF)
       if (!isAnswered && !treatUnansweredAsWrong) continue
+      const requestId = this._getReviewRequestId(q)
+      if (!q.question_version_id || q.occurrence_seq === undefined || q.occurrence_seq === null || !requestId) {
+        wx.showToast({ title: '复习任务版本信息缺失，请刷新后重试', icon: 'none' })
+        this.setData({ submittingGroup: false })
+        return
+      }
       reviews.push({
         schedule_id: q.schedule_id,
         question_id: q.question_id,
+        question_version_id: q.question_version_id,
+        occurrence_seq: q.occurrence_seq,
+        request_id: requestId,
         user_answer: isAnswered ? (answers[q.schedule_id] || '') : '',
       })
     }
@@ -1037,7 +1079,10 @@ Page({
         const resultQuestion = this._enrichForResult(q)
         const r = results.find(rr => {
           if (rr.schedule_id !== undefined && rr.schedule_id !== null) {
-            return String(rr.schedule_id) === String(q.schedule_id)
+            if (String(rr.schedule_id) !== String(q.schedule_id)) return false
+            if (rr.question_version_id != null && String(rr.question_version_id) !== String(q.question_version_id)) return false
+            if (rr.occurrence_seq != null && String(rr.occurrence_seq) !== String(q.occurrence_seq)) return false
+            return true
           }
           return String(rr.question_id) === String(q.question_id)
         })
@@ -1329,19 +1374,19 @@ Page({
 
   /**
    * 开始新组计时（重置为 00:00）。
-   * 按相邻 tick 的 Date.now() 差值累计，既避免后台时间混入，也能限制系统时钟异常跳变。
+   * 按相邻单调时钟 tick 的差值累计，后台时间不计入，系统校时也不会改变耗时。
    */
   _startReviewTimer() {
     if (this._timerInterval) return
     this._reviewSession.timerElapsedMs = 0
-    this._reviewSession.timerStartedAt = Date.now()
+    this._reviewSession.timerStartedAt = _reviewMonotonicNow()
     this._reviewSession.timerLastTickAt = this._reviewSession.timerStartedAt
     this._reviewSession.timerRunning = true
     var self = this
     this._timerInterval = setInterval(function () {
       if (!self._alive) return
       var session = self._reviewSession
-      var now = Date.now()
+      var now = _reviewMonotonicNow()
       var lastTickAt = session.timerLastTickAt || session.timerStartedAt || now
       session.timerElapsedMs += self._safeTickDelta(now - lastTickAt)
       session.timerLastTickAt = now
@@ -1355,7 +1400,7 @@ Page({
    */
   _pauseReviewTimer() {
     if (!this._timerInterval) return
-    var now = Date.now()
+    var now = _reviewMonotonicNow()
     var lastTickAt = this._reviewSession.timerLastTickAt || this._reviewSession.timerStartedAt || now
     this._reviewSession.timerElapsedMs += this._safeTickDelta(now - lastTickAt)
     this._reviewSession.timerLastTickAt = 0
@@ -1370,14 +1415,14 @@ Page({
    */
   _resumeReviewTimer() {
     if (this._timerInterval || this._reviewSession.timerRunning) return
-    this._reviewSession.timerStartedAt = Date.now()
+    this._reviewSession.timerStartedAt = _reviewMonotonicNow()
     this._reviewSession.timerLastTickAt = this._reviewSession.timerStartedAt
     this._reviewSession.timerRunning = true
     var self = this
     this._timerInterval = setInterval(function () {
       if (!self._alive) return
       var session = self._reviewSession
-      var now = Date.now()
+      var now = _reviewMonotonicNow()
       var lastTickAt = session.timerLastTickAt || session.timerStartedAt || now
       session.timerElapsedMs += self._safeTickDelta(now - lastTickAt)
       session.timerLastTickAt = now

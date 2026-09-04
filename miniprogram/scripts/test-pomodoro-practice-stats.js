@@ -199,13 +199,21 @@ t('duration 在发请求之前锁定（不包含提交接口网络耗时）', ()
   const doSubmit = extractMethod(js, 'doSubmit')
   // duration 用 finishedAt 冻结，并扣除切后台/跳转他页的 backgroundMs（仅前台计时）
   const durIdx = doSubmit.indexOf('const duration = Math.max(0, Math.floor(')
-  const bgIdx = doSubmit.indexOf('(finishedAt - startTime - (this._practiceSession.backgroundMs || 0)) / 1000')
+  const bgIdx = doSubmit.indexOf('(finishedMonoMs - activeStartedMonoMs - (this._practiceSession.backgroundMs || 0)) / 1000')
   const postIdx = doSubmit.indexOf("api.post('/practice/batch-submit'")
-  const finishedAtIdx = doSubmit.indexOf('const finishedAt = Date.now()')
-  assert.ok(durIdx >= 0, '必须用 finishedAt 冻结时长')
-  assert.ok(finishedAtIdx >= 0 && durIdx > finishedAtIdx, 'finishedAt 在 duration 之前')
+  const finishedAtIdx = doSubmit.indexOf('const finishedMonoMs = _monotonicNow()')
+  assert.ok(durIdx >= 0, '必须用单调时钟冻结时长')
+  assert.ok(finishedAtIdx >= 0 && durIdx > finishedAtIdx, 'finishedMonoMs 在 duration 之前')
   assert.ok(bgIdx > durIdx, 'duration 需扣除后台挂起时间（只统计前台学习时长）')
   assert.ok(durIdx >= 0 && postIdx >= 0 && durIdx < postIdx, 'duration 必须早于 api.post（网络耗时不计入）')
+})
+
+t('练习耗时使用单调时钟，设备校时不改变 duration', () => {
+  assert.ok(js.indexOf('wx.getPerformance') >= 0, '应优先使用微信单调 performance 时钟')
+  const timer = extractMethod(js, '_startTimer')
+  assert.ok(timer.indexOf('_monotonicNow()') >= 0, '总时长计时必须使用单调时钟')
+  const settle = extractMethod(js, '_settleQuestionTime')
+  assert.ok(settle.indexOf('_monotonicNow()') >= 0, '单题计时必须使用单调时钟')
 })
 
 t('不再在提交成功后用 Date.now() 重算 duration', () => {
@@ -228,11 +236,11 @@ t('提交失败冻结 submission snapshot + requestId 复用', () => {
 t('切后台/跳转他页的时长不计入刷题时长（onHide/onShow 前台计时）', () => {
   const onHide = extractMethod(js, 'onHide')
   const onShow = extractMethod(js, 'onShow')
-  assert.ok(onHide.indexOf('_bgStartAt = Date.now()') >= 0, 'onHide 记录离开时间点')
+  assert.ok(onHide.indexOf('_backgroundStartedMonoMs = _monotonicNow()') >= 0, 'onHide 用单调时钟记录离开时间点')
   assert.ok(onShow.indexOf('s.backgroundMs') >= 0, 'onShow 结算 backgroundMs')
-  assert.ok(onShow.indexOf('_bgStartAt = null') >= 0, '结算后清空离开标记')
+  assert.ok(onShow.indexOf('_backgroundStartedMonoMs = null') >= 0, '结算后清空离开标记')
   // 只统计前台：startTime 未开始（0）时不记录离开，避免首帧误扣
-  assert.ok(onHide.indexOf('s.startTime') >= 0 && onShow.indexOf('s.startTime') >= 0, '未开始时忽略，避免误扣')
+  assert.ok(onHide.indexOf('s.activeStartedMonoMs') >= 0 && onShow.indexOf('s.activeStartedMonoMs') >= 0, '未开始时忽略，避免误扣')
 })
 
 t('待确认交卷持久化，支持进程重启后恢复同一 requestId', () => {

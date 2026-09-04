@@ -27,7 +27,7 @@ from app.schemas.practice import (
     SequentialPracticeResetResponse,
 )
 from app.services import practice_service as svc
-from app.services.knowledge_point_service import load_question_kps
+from app.services.question_revision_service import load_revision_kp_names, load_revision_views
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 
 # Regex: lines ending with a trailing operator (OCR-split code expressions)
@@ -366,48 +366,59 @@ async def get_practice_questions(
         has_enabled_children, scope_desc, scope_subject_ids,
         mode, count, len(questions), subject_distribution,
     )
-    # ── Layer 1 诊断：API 响应 stem 数据 ──
-    kp_map = await load_question_kps(db, [q.id for q in questions])
-    for q in questions:
-        content = _sanitize_question_content(q.content)
-        stem = (content or {}).get("text") or (content or {}).get("stem") or ""
-        logger.info(
-            "[API_LAYER] qid=%s textLen=%d textHash=%s stemKeys=%s",
-            q.id,
-            len(stem),
-            hashlib.sha256(stem.encode()).hexdigest()[:8],
-            [k for k in (content or {}) if k in ("text", "stem", "segments")],
-        )
-    batch_token, question_versions, submission_request_id = svc.create_practice_batch_token(
+    # Freeze the response from the exact immutable revisions signed into the
+    # batch. A mutable Question/KP edit committed between candidate selection and
+    # response serialization can therefore never create a mixed-version payload.
+    batch_token, issued_revisions, submission_request_id = svc.create_practice_batch_token(
         user_id=current_user.id,
         subject_id=subject_id,
         mode=mode,
         questions=questions,
         recommendation_request_id=request_id,
     )
+    revision_views = await load_revision_views(db, issued_revisions.values())
+    revision_kps = await load_revision_kp_names(db, issued_revisions.values())
+    issued_rows = []
+    for selected in questions:
+        revision_id = issued_revisions.get(int(selected.id))
+        revision = revision_views.get(int(revision_id or 0))
+        if revision is None or int(revision.question_id) != int(selected.id):
+            raise HTTPException(status_code=500, detail="题目版本数据不完整，请稍后重试")
+        issued_rows.append((selected, revision))
+
+        content = _sanitize_question_content(revision.content)
+        stem = (content or {}).get("text") or (content or {}).get("stem") or ""
+        logger.info(
+            "[API_LAYER] qid=%s revision_id=%s textLen=%d textHash=%s stemKeys=%s",
+            selected.id,
+            revision_id,
+            len(stem),
+            hashlib.sha256(stem.encode()).hexdigest()[:8],
+            [k for k in (content or {}) if k in ("text", "stem", "segments")],
+        )
+
     response = PracticeQuestionsResponse(
         questions=[
             PracticeQuestion(
-                id=q.id,
-                subject_id=q.subject_id,
-                subject_code=q.subject_ref.code if q.subject_ref else "",
-                subject_name=q.subject_ref.name if q.subject_ref else "",
-                question_type=q.question_type,
-                content=_sanitize_question_content(q.content),
+                id=revision.question_id,
+                subject_id=revision.subject_id,
+                subject_code=revision.subject_ref.code if revision.subject_ref else "",
+                subject_name=revision.subject_ref.name if revision.subject_ref else "",
+                question_type=revision.question_type,
+                content=_sanitize_question_content(revision.content),
                 options=_sanitize_question_options(
-                    _ensure_true_false_options(q.question_type, q.options)
+                    _ensure_true_false_options(revision.question_type, revision.options)
                 ),
-                knowledge_points=kp_map.get(q.id, []),
-                difficulty=q.difficulty,
-                image_url=q.image_url,
+                knowledge_points=revision_kps.get(revision.question_version_id, []),
+                difficulty=revision.difficulty,
+                image_url=revision.image_url,
                 trace_id=trace_id,
-                recommend_reason=(question_metadata.get(q.id) or {}).get("recommend_reason"),
-                recommend_score=(question_metadata.get(q.id) or {}).get("recommend_score"),
-                strategy=(question_metadata.get(q.id) or {}).get("strategy"),
-                similarity=(question_metadata.get(q.id) or {}).get("similarity"),
-                question_version=question_versions.get(q.id),
+                recommend_reason=(question_metadata.get(selected.id) or {}).get("recommend_reason"),
+                recommend_score=(question_metadata.get(selected.id) or {}).get("recommend_score"),
+                strategy=(question_metadata.get(selected.id) or {}).get("strategy"),
+                similarity=(question_metadata.get(selected.id) or {}).get("similarity"),
             )
-            for q in questions
+            for selected, revision in issued_rows
         ],
         total=len(questions),
         mode=mode,
@@ -466,24 +477,6 @@ async def reset_sequential_practice(
     return SequentialPracticeResetResponse(subject_id=data.subject_id, reset=True)
 
 
-@router.post("/submit", response_model=AnswerResult, deprecated=True)
-async def submit_answer(
-    current_user: User = Depends(get_current_user),
-):
-    # Legacy per-question submit cannot prove that the question was actually
-    # issued to this user and has no batch-level idempotency boundary. Keeping
-    # it writable would bypass the signed batch contract and expose answers by
-    # question-id enumeration. The mini-program no longer uses this endpoint.
-    raise HTTPException(
-        status_code=410,
-        detail={
-            "error_code": "PRACTICE_SINGLE_SUBMIT_RETIRED",
-            "retryable": False,
-            "message": "单题提交接口已停用，请重新获取题目后使用 batch-submit",
-        },
-    )
-
-
 @router.post("/batch-submit", response_model=BatchSubmitResponse)
 async def batch_submit(
     data: BatchSubmitRequest,
@@ -510,20 +503,6 @@ async def batch_submit(
             session_meta=data.session.model_dump() if data.session is not None else None,
             skipped_question_ids=data.skipped_question_ids,
             batch_token=data.batch_token,
-        )
-    except svc.PracticeQuestionVersionConflictError as e:
-        logger.warning(
-            "practice submit question version conflict uid=%s trace_id=%s: %s",
-            current_user.id,
-            trace_id,
-            e,
-        )
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error_code": "PRACTICE_QUESTION_VERSION_CONFLICT",
-                "retryable": False,
-            },
         )
     except svc.PracticeBatchTokenError as e:
         logger.warning(

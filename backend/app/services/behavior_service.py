@@ -8,6 +8,7 @@ async def record_answer_behavior(
     db: AsyncSession,
     user_id: int,
     question_id: int,
+    question_version_id: int,
     practice_record_id: int | None = None,
     time_spent_sec: int = 0,
     is_first_correct: bool | None = None,
@@ -34,6 +35,7 @@ async def record_answer_behavior(
         existing = result.scalar_one_or_none()
         if existing:
             # 更新已有记录
+            existing.question_version_id = question_version_id
             existing.time_spent_sec = time_spent_sec
             existing.is_first_correct = is_first_correct if is_first_correct is not None else existing.is_first_correct
             existing.is_final_correct = is_final_correct
@@ -54,6 +56,7 @@ async def record_answer_behavior(
         user_id=user_id,
         question_id=question_id,
         practice_record_id=practice_record_id,
+        question_version_id=question_version_id,
         time_spent_sec=time_spent_sec,
         is_first_correct=is_first_correct,
         is_final_correct=is_final_correct,

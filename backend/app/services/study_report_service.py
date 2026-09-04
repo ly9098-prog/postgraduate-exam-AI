@@ -153,9 +153,7 @@ async def get_overview(db: AsyncSession, user_id: int, subject_id: int | None = 
     ).where(PracticeRecord.user_id == user_id)
 
     if subject_id is not None:
-        pr_q = pr_q.join(Question, PracticeRecord.question_id == Question.id).where(
-            Question.subject_id == subject_id
-        )
+        pr_q = pr_q.where(PracticeRecord.subject_id == subject_id)
 
     pr_row = (await db.execute(pr_q)).one()
     today_count = int(pr_row.today_count or 0)
@@ -653,9 +651,7 @@ async def get_study_trend(db: AsyncSession, user_id: int, subject_id: int | None
         PracticeRecord.answered_at >= since,
     )
     if subject_id is not None:
-        q = q.join(Question, PracticeRecord.question_id == Question.id).where(
-            Question.subject_id == subject_id
-        )
+        q = q.where(PracticeRecord.subject_id == subject_id)
 
     q = q.group_by(day_expr).order_by(day_expr)
     rows = (await db.execute(q)).all()

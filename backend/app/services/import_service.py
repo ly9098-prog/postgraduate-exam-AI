@@ -559,6 +559,9 @@ async def approve_question(db: AsyncSession, import_id: int, data: dict) -> Ques
         )
 
         await sync_question_knowledge_points(db, q, knowledge_points, source="imported")
+    from app.services.question_revision_service import ensure_question_revision
+
+    await ensure_question_revision(db, q, change_source="import_service", edit_reason="initial publish")
     await db.refresh(q)
 
     qi.status = "approved"
@@ -647,6 +650,9 @@ async def batch_approve(db: AsyncSession, batch_id: str) -> tuple[int, int]:
             )
 
             await sync_question_knowledge_points(db, q, kp_names, source="imported")
+        from app.services.question_revision_service import ensure_question_revision
+
+        await ensure_question_revision(db, q, change_source="import_service", edit_reason="initial publish")
         await db.refresh(q)
 
         qi.status = "approved"

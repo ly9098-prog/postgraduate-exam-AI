@@ -148,6 +148,7 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
 
     # --- Questions ---
     pending_syncs: list[tuple[Question, list]] = []
+    revision_questions: list[Question] = []
     for q_data in questions_data:
         sync_uuid = q_data.get("sync_uuid")
         if not sync_uuid:
@@ -166,6 +167,7 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
                     continue
             q, kp_names = _build_question(q_data)
             db.add(q)
+            revision_questions.append(q)
             report.questions_new += 1
             if kp_names is not None:
                 pending_syncs.append((q, kp_names))
@@ -180,6 +182,7 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
             if local_updated and cloud_updated and local_updated > cloud_updated:
                 prev_subject_id = existing.subject_id
                 kp_names = _update_question(existing, q_data)
+                revision_questions.append(existing)
                 if kp_names is not None:
                     pending_syncs.append((existing, kp_names))
                 elif "subject_id" in q_data and q_data["subject_id"] != prev_subject_id:
@@ -219,6 +222,18 @@ async def merge_sync_package(db: AsyncSession, package: dict) -> SyncReport:
                     db, q, kp_names, source="sync", replace=True
                 )
             await db.flush()
+
+        if revision_questions:
+            from app.services.question_revision_service import ensure_question_revision
+
+            seen: set[int] = set()
+            for question in revision_questions:
+                if question.id in seen:
+                    continue
+                seen.add(int(question.id))
+                await ensure_question_revision(
+                    db, question, change_source="sync", edit_reason="sync merge"
+                )
     except IntegrityError as e:
         await db.rollback()
         report.errors.append(f"数据库约束冲突（可能重复 sync_uuid）: {e}")

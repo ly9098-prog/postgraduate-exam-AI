@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.wrong_question import WrongQuestion
 from app.schemas.export_task import ExportRangeType
-from app.services.knowledge_point_service import kp_fuzzy_condition
+from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint
+from app.models.knowledge_point import KnowledgePoint
+from app.services.knowledge_point_service import normalize_knowledge_name
 
 logger = logging.getLogger(__name__)
 
@@ -42,31 +44,35 @@ async def _apply_filters(db: AsyncSession, query: select, filters: dict | None) 
         return query
 
     if subject := filters.get("subject"):
-        from app.models.question import Question
         from app.services.admin_subject_service import resolve_subject_ids
 
         subject_ids = await resolve_subject_ids(db, subject)
         if subject_ids:
-            query = query.join(Question, WrongQuestion.question_id == Question.id).where(
-                Question.subject_id.in_(subject_ids)
-            )
+            query = query.join(
+                QuestionVersion, WrongQuestion.question_version_id == QuestionVersion.id
+            ).where(QuestionVersion.subject_id.in_(subject_ids))
         else:
             query = query.where(False)
 
     if error_type := filters.get("error_type"):
         query = query.where(WrongQuestion.error_type == error_type)
     if topic := filters.get("topic"):
-        import sqlalchemy as sa
-
-        from app.models.question import Question
-        if not any(
-            isinstance(f, sa.sql.Join) or str(f).startswith("JOIN")
-            for f in query.froms  # type: ignore[union-attr]
-        ):
-            query = query.join(Question, WrongQuestion.question_id == Question.id)
-        topic_filter = kp_fuzzy_condition(topic)
-        if topic_filter is not None:
-            query = query.where(topic_filter)
+        t = str(topic).strip()
+        if t:
+            matching_versions = (
+                select(QuestionVersionKnowledgePoint.question_version_id)
+                .join(
+                    KnowledgePoint,
+                    KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
+                )
+                .where(
+                    or_(
+                        KnowledgePoint.name.contains(t),
+                        KnowledgePoint.normalized_name.contains(normalize_knowledge_name(t)),
+                    )
+                )
+            )
+            query = query.where(WrongQuestion.question_version_id.in_(matching_versions))
 
     return query
 

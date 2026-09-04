@@ -276,76 +276,6 @@ async def get_admin_question_detail(db: AsyncSession, question_id: int) -> dict[
     return data
 
 
-async def _next_question_version(db: AsyncSession, question_id: int) -> int:
-    version = await db.scalar(select(func.max(QuestionVersion.version)).where(QuestionVersion.question_id == question_id))
-    return int(version or 0) + 1
-
-
-def _question_snapshot(question: Question) -> dict[str, Any]:
-    """版本历史中的标量/JSON 快照；知识点改由关联表单独保存。"""
-    return {
-        "subject_id": question.subject_id,
-        "question_type": question.question_type,
-        "image_url": question.image_url,
-        "is_active": question.is_active,
-        "content": question.content,
-        "options": question.options,
-        "answer": question.answer,
-        "analysis": question.analysis,
-        "difficulty": question.difficulty,
-    }
-
-
-async def _question_kp_link_snapshot(
-    db: AsyncSession, question_id: int
-) -> list[tuple[int, int]]:
-    """读取当前题目的知识点主键和顺序，用于创建不可变的版本关联快照。"""
-    result = await db.execute(
-        select(
-            QuestionKnowledgePoint.knowledge_point_id,
-            QuestionKnowledgePoint.position,
-        )
-        .where(QuestionKnowledgePoint.question_id == question_id)
-        .order_by(QuestionKnowledgePoint.position, QuestionKnowledgePoint.id)
-    )
-    return [(int(kp_id), int(position)) for kp_id, position in result.all()]
-
-
-async def _create_question_version_snapshot(
-    db: AsyncSession,
-    question: Question,
-    *,
-    edited_by: int,
-    edit_reason: str | None = None,
-) -> QuestionVersion:
-    """Persist the exact pre-change question view used by in-flight practice.
-
-    Besides the existing content/answer fields, new snapshots include subject,
-    question type, image list and active state so a signed practice fingerprint
-    can later resolve back to this immutable row.
-    """
-    before_kp_links = await _question_kp_link_snapshot(db, question.id)
-    version_snapshot = QuestionVersion(
-        question_id=question.id,
-        version=await _next_question_version(db, question.id),
-        edited_by=edited_by,
-        edit_reason=edit_reason,
-        **_question_snapshot(question),
-    )
-    db.add(version_snapshot)
-    await db.flush()
-    if before_kp_links:
-        db.add_all([
-            QuestionVersionKnowledgePoint(
-                question_version_id=version_snapshot.id,
-                knowledge_point_id=knowledge_point_id,
-                position=position,
-            )
-            for knowledge_point_id, position in before_kp_links
-        ])
-    return version_snapshot
-
-
 async def update_admin_question(
     db: AsyncSession,
     question_id: int,
@@ -376,12 +306,9 @@ async def update_admin_question(
     if not changed_fields:
         return question
 
-    # Create version snapshot (only when real changes exist) — 用操作前值。
-    # knowledge_points 不再复制名称 JSON，而是复制当前 question_knowledge_points 的主键关联。
+    # Audit keeps the pre-change values; immutable question revisions are
+    # created *after* the mutation reaches its final scalar + KP state.
     before_changed = {f: _edit_field_value(question, f, before_kps) for f in changed_fields}
-    await _create_question_version_snapshot(
-        db, question, edited_by=operator.id, edit_reason=edit_reason
-    )
 
     # subject_id 优先应用，使后续 KP sync 使用新科目（subject 不变量）
     if "subject_id" in changed_fields:
@@ -418,6 +345,16 @@ async def update_admin_question(
     after_kp_map = await load_question_kps(db, [question.id])
     after_kps = after_kp_map.get(question.id, [])
     after_changed = {f: _edit_field_value(question, f, after_kps) for f in changed_fields}
+
+    from app.services.question_revision_service import ensure_question_revision
+
+    await ensure_question_revision(
+        db,
+        question,
+        editor_id=operator.id,
+        change_source="admin",
+        edit_reason=edit_reason,
+    )
 
     await write_admin_audit(
         db,
@@ -615,11 +552,13 @@ async def soft_delete_admin_question(
     full_snapshot = build_question_audit_snapshot(question, kp_map.get(question.id, []))
 
     before = {"is_active": question.is_active}
-    if question.is_active:
-        await _create_question_version_snapshot(
-            db, question, edited_by=operator.id, edit_reason="soft delete"
-        )
     question.is_active = False
+    if before["is_active"]:
+        from app.services.question_revision_service import ensure_question_revision
+
+        await ensure_question_revision(
+            db, question, editor_id=operator.id, change_source="admin", edit_reason="soft delete"
+        )
 
     await write_admin_audit(
         db,
@@ -695,11 +634,14 @@ async def toggle_active_admin_question(
     if data.is_active and question.review_status != "approved":
         raise ValueError("非已审核题目不能激活")
     before = {"is_active": question.is_active}
-    if question.is_active != data.is_active:
-        await _create_question_version_snapshot(
-            db, question, edited_by=operator.id, edit_reason="toggle active"
-        )
+    changed = question.is_active != data.is_active
     question.is_active = data.is_active
+    if changed:
+        from app.services.question_revision_service import ensure_question_revision
+
+        await ensure_question_revision(
+            db, question, editor_id=operator.id, change_source="admin", edit_reason="toggle active"
+        )
 
     await write_admin_audit(
         db,
@@ -734,6 +676,7 @@ def _question_version_payload(
         for column in question_version.__mapper__.columns
     }
     data["edited_by_name"] = (editor_display_name or "").strip() or (editor_username or "").strip() or None
+    data["change_source"] = str(getattr(version, "change_source", "system") or "system")
     return data
 
 

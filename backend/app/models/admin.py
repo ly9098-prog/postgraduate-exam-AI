@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Float,
     Integer,
     SmallInteger,
     String,
@@ -183,16 +184,25 @@ class QuestionVersion(Base):
     question_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     image_url: Mapped[list | None] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Student-visible/import provenance needed to reproduce an old revision in
+    # exports and review even after the mutable Question row changes.
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    source_file: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    raw_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    year: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     content: Mapped[dict] = mapped_column(JSON, nullable=False)
     options: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     answer: Mapped[str] = mapped_column(Text, nullable=False)
     analysis: Mapped[str | None] = mapped_column(Text, nullable=True)
     difficulty: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    edited_by: Mapped[int] = mapped_column(ForeignKey("admin_users.id"), nullable=False, index=True)
+    edited_by: Mapped[int | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True, index=True)
+    change_source: Mapped[str] = mapped_column(String(32), nullable=False, default="system")
+    state_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     edit_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    editor: Mapped[AdminUser] = relationship(back_populates="question_versions")
+    editor: Mapped[AdminUser | None] = relationship(back_populates="question_versions")
     knowledge_point_links: Mapped[list["QuestionVersionKnowledgePoint"]] = relationship(
         back_populates="question_version",
         lazy="noload",
@@ -224,6 +234,9 @@ class QuestionVersionKnowledgePoint(Base):
         nullable=False,
         index=True,
     )
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="main")
+    weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="imported")
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

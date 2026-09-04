@@ -6,20 +6,16 @@ confidence 随 answer_count 增加，低置信度时不做过强判断。
 """
 import logging
 from datetime import datetime, timedelta
-from math import log1p
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import utcnow, serialize_utc_datetime
-from app.models.admin import Subject
+from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
-from app.models.question import Question
-from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.services.admin_subject_service import resolve_subject_ids
-from app.services.knowledge_point_service import load_question_kps
 
 logger = logging.getLogger(__name__)
 
@@ -129,42 +125,6 @@ def get_mastery_label(mastery_score: float, confidence: float) -> str:
     return "mastered"
 
 
-# ── 旧版兼容（保留供外部调用） ──
-
-
-def calculate_mastery_score(
-    attempt_count: int,
-    correct_count: int,
-    wrong_count: int,
-    last_wrong_at: datetime | None = None,
-    last_practiced_at: datetime | None = None,
-) -> float:
-    """计算掌握度分数 [0, 1]。旧版兼容接口。"""
-    if attempt_count == 0:
-        return 0.0
-
-    base_accuracy = correct_count / attempt_count
-    attempt_factor = min(1.0, log1p(attempt_count) / log1p(10))
-
-    penalty = 0.0
-    if last_wrong_at and last_practiced_at and last_wrong_at >= last_practiced_at:
-        penalty = 0.15
-
-    score = base_accuracy * 0.75 + attempt_factor * 0.25 - penalty
-    return max(0.0, min(1.0, round(score, 4)))
-
-
-def classify_weakness_level(mastery_score: float, attempt_count: int) -> str:
-    """根据掌握度和尝试次数分类薄弱程度。旧版兼容接口。"""
-    if attempt_count == 0:
-        return "unknown"
-    if mastery_score < 0.45:
-        return "weak"
-    if mastery_score < 0.75:
-        return "medium"
-    return "strong"
-
-
 # ── V3 核心：答题后更新知识点掌握度 ──
 
 
@@ -173,6 +133,7 @@ async def update_user_knowledge_state_after_answer(
     user_id: int,
     question_id: int,
     is_correct: bool,
+    question_version_id: int,
     used_time: int | None = None,
 ) -> dict:
     """答题后更新相关知识点掌握度（V3 增量模型）。
@@ -189,13 +150,24 @@ async def update_user_knowledge_state_after_answer(
     """
     now = utcnow()
 
-    # 1. 查找题目的知识点映射
+    # Knowledge evidence is always attributed to the immutable revision that was
+    # actually answered. Current Question mappings are never used for historical data.
     result = await db.execute(
-        select(QuestionKnowledgePoint, KnowledgePoint)
-        .join(KnowledgePoint, QuestionKnowledgePoint.knowledge_point_id == KnowledgePoint.id)
-        .where(QuestionKnowledgePoint.question_id == question_id)
+        select(QuestionVersionKnowledgePoint, KnowledgePoint)
+        .join(
+            KnowledgePoint,
+            QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+        )
+        .where(QuestionVersionKnowledgePoint.question_version_id == question_version_id)
+        .order_by(
+            QuestionVersionKnowledgePoint.position,
+            QuestionVersionKnowledgePoint.id,
+        )
     )
     mappings = result.all()
+    difficulty = await db.scalar(
+        select(QuestionVersion.difficulty).where(QuestionVersion.id == question_version_id)
+    )
 
     if not mappings:
         return {
@@ -203,11 +175,6 @@ async def update_user_knowledge_state_after_answer(
             "mastery_before": None, "mastery_after": None, "mastery_delta": None,
         }
 
-    # 获取题目 difficulty
-    difficulty_result = await db.execute(
-        select(Question.difficulty).where(Question.id == question_id)
-    )
-    difficulty = difficulty_result.scalar_one_or_none()
     if difficulty is None:
         return {
             "updated": 0, "created": 0,
@@ -397,8 +364,19 @@ async def _fallback_weak_kps(
     cutoff = utcnow() - timedelta(days=30)
 
     result = await db.execute(
-        select(PracticeRecord, Question.id)
-        .join(Question, PracticeRecord.question_id == Question.id)
+        select(
+            PracticeRecord,
+            QuestionVersionKnowledgePoint.knowledge_point_id,
+            KnowledgePoint.name,
+        )
+        .join(
+            QuestionVersionKnowledgePoint,
+            QuestionVersionKnowledgePoint.question_version_id == PracticeRecord.question_version_id,
+        )
+        .join(
+            KnowledgePoint,
+            KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
+        )
         .where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.answered_at >= cutoff,
@@ -410,27 +388,25 @@ async def _fallback_weak_kps(
     if not rows:
         return []
 
-    kp_map = await load_question_kps(db, [qid for _record, qid in rows])
-
-    kp_stats: dict[str, dict] = {}
-    for record, qid in rows:
-        kps = kp_map.get(qid, [])
-        for kp in kps:
-            if kp not in kp_stats:
-                kp_stats[kp] = {"total": 0, "correct": 0}
-            kp_stats[kp]["total"] += 1
-            if record.is_correct:
-                kp_stats[kp]["correct"] += 1
+    kp_stats: dict[int, dict] = {}
+    for record, kp_id, kp_name in rows:
+        stats = kp_stats.setdefault(
+            int(kp_id), {"name": str(kp_name), "total": 0, "correct": 0}
+        )
+        stats["total"] += 1
+        if record.is_correct:
+            stats["correct"] += 1
 
     weak = []
-    for kp_name, stats in kp_stats.items():
+    for kp_id, stats in kp_stats.items():
+        kp_name = stats["name"]
         total = stats["total"]
         correct = stats["correct"]
         if total >= 2:
             accuracy = correct / total
             if accuracy < 0.65:
                 weak.append({
-                    "knowledge_point_id": None,
+                    "knowledge_point_id": kp_id,
                     "name": kp_name,
                     "mastery_score": round(accuracy * 100, 2),
                     "confidence": round(min(1.0, total / 10.0), 2),

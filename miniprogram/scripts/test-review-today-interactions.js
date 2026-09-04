@@ -15,6 +15,7 @@ const path = require('path')
 global.wx = global.wx || {
   getWindowInfo() { return { windowWidth: 375, pixelRatio: 2 } },
   getDeviceInfo() { return { system: 'Node.js regression test' } },
+  getPerformance() { return { now: function () { return Date.now() } } },
   getStorageSync() { return null },
   setStorageSync() {},
   setNavigationBarColor() {},
@@ -275,7 +276,7 @@ if (!capturedPageConfig) {
   }
 
   var methodsToBind = [
-    '_safeTickDelta',
+    '_safeTickDelta', '_getReviewRequestId',
     '_startReviewTimer', '_pauseReviewTimer', '_resumeReviewTimer',
     '_resetReviewTimer', '_clearReviewTimer',
     'showBatchSizeSelector', 'closeBatchSizeSheet',
@@ -458,6 +459,17 @@ if (!capturedPageConfig) {
     assert.ok(src.indexOf('batch_size: this.data.reviewBatchSize') >= 0)
   })
 
+  t('review request id is stable for one immutable schedule occurrence', function () {
+    mockPage._reviewSession.reviewRequestIds = {}
+    var q = { schedule_id: 7, question_version_id: 33, occurrence_seq: 4 }
+    var first = mockPage._getReviewRequestId(q)
+    var second = mockPage._getReviewRequestId(q)
+    assert.ok(first)
+    assert.strictEqual(first, second)
+    var next = mockPage._getReviewRequestId({ schedule_id: 7, question_version_id: 33, occurrence_seq: 5 })
+    assert.notStrictEqual(first, next)
+  })
+
   t('onUnload clears timer interval', function () {
     if (typeof capturedPageConfig.onUnload !== 'function') { throw new Error('onUnload not found') }
     mockPage._timerInterval = 'mock-interval'
@@ -528,6 +540,18 @@ var reviewTodayJs = fs.readFileSync(path.join(__dirname, '../subpackages/study/r
 t('initial first question keeps enriched render data in groupQuestions', function () {
   assert.ok(reviewTodayJs.indexOf('preparedQuestions[0] = firstEnriched') >= 0)
   assert.ok(reviewTodayJs.indexOf('groupQuestions: preparedQuestions') >= 0)
+})
+
+t('review grading payload binds immutable revision, occurrence and request id', function () {
+  assert.ok(reviewTodayJs.indexOf('question_version_id: q.question_version_id') >= 0)
+  assert.ok(reviewTodayJs.indexOf('occurrence_seq: q.occurrence_seq') >= 0)
+  assert.ok(reviewTodayJs.indexOf('request_id: requestId') >= 0)
+  assert.ok(reviewTodayJs.indexOf("api.post('/review/grade-batch', { reviews })") >= 0)
+})
+
+t('review timer prefers wx.getPerformance monotonic clock', function () {
+  assert.ok(reviewTodayJs.indexOf('wx.getPerformance') >= 0)
+  assert.ok(reviewTodayJs.indexOf('_reviewMonotonicNow()') >= 0)
 })
 
 t('group result hydrates lazy questions before rendering details', function () {

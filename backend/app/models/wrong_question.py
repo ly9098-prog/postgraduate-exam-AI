@@ -4,11 +4,13 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    BigInteger,
     ForeignKey,
     Integer,
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -18,6 +20,9 @@ from app.core.database import Base
 
 class WrongQuestion(Base):
     __tablename__ = "wrong_questions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "question_id", name="uq_wrong_questions_user_question"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
@@ -25,6 +30,13 @@ class WrongQuestion(Base):
     )
     question_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("questions.id"), nullable=False, index=True
+    )
+    # Revision of the question that produced the latest active wrong answer.
+    question_version_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("question_versions.id"),
+        nullable=False,
+        index=True,
     )
     wrong_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_type: Mapped[str] = mapped_column(String(32), default="other")

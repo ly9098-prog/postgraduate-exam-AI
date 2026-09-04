@@ -14,12 +14,10 @@ from app.core.time_utils import serialize_utc_datetime, shanghai_date_utc_range,
 from app.models.admin import Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
-from app.models.question import Question
-from app.models.question_knowledge_point import QuestionKnowledgePoint
+from app.models.admin import QuestionVersionKnowledgePoint
 from app.models.review_scheduler import ReviewSchedule
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.models.wrong_question import WrongQuestion
-from app.services.knowledge_point_service import load_question_kps
 
 async def _china_date_expr(db: AsyncSession, column):
     bind = await db.connection()
@@ -241,31 +239,35 @@ async def compute_weak_topic_ranking(
             })
         return {"data_available": True, "items": items}
 
-    # Fallback: derive from WrongQuestion -> Question relation
-    rows = await db.execute(
+    # Fallback: derive from the immutable revision attached to each wrong row.
+    # Historical weak-topic attribution must not move when the mutable Question
+    # is later edited or remapped to different knowledge points.
+    kp_rows = await db.execute(
         select(
-            Question.id,
-            Question.subject_id,
+            KnowledgePoint.name,
+            func.count(WrongQuestion.id).label("wrong_count"),
         )
-        .join(WrongQuestion, WrongQuestion.question_id == Question.id)
+        .join(
+            QuestionVersionKnowledgePoint,
+            QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+        )
+        .join(
+            WrongQuestion,
+            WrongQuestion.question_version_id
+            == QuestionVersionKnowledgePoint.question_version_id,
+        )
         .where(
             WrongQuestion.user_id == user_id,
+            WrongQuestion.is_active,
             ~WrongQuestion.mastered,
         )
+        .group_by(KnowledgePoint.id, KnowledgePoint.name)
+        .order_by(func.count(WrongQuestion.id).desc(), KnowledgePoint.id.asc())
+        .limit(limit)
     )
-    qk = rows.all()
-    kp_map = await load_question_kps(db, [q_id for q_id, _subj in qk])
-    kp_counter: dict[str, int] = {}
-    for q_id, subj_id in qk:
-        kps = kp_map.get(q_id, [])
-        for kp in kps:
-            if isinstance(kp, str):
-                kp_counter[kp] = kp_counter.get(kp, 0) + 1
-
-    if not kp_counter:
+    sorted_kps = [(str(name), int(count or 0)) for name, count in kp_rows.all()]
+    if not sorted_kps:
         return None
-
-    sorted_kps = sorted(kp_counter.items(), key=lambda x: x[1], reverse=True)[:limit]
     items = [
         {
             "knowledge_point_id": 0,
@@ -290,17 +292,20 @@ async def _compute_kp_due_review_counts(db: AsyncSession, user_id: int) -> dict[
     now = utcnow()
     rows = await db.execute(
         select(
-            QuestionKnowledgePoint.knowledge_point_id,
-            func.count(func.distinct(ReviewSchedule.question_id)),
+            QuestionVersionKnowledgePoint.knowledge_point_id,
+            func.count(ReviewSchedule.id),
         )
-        .join(ReviewSchedule, ReviewSchedule.question_id == QuestionKnowledgePoint.question_id)
+        .join(
+            ReviewSchedule,
+            ReviewSchedule.question_version_id == QuestionVersionKnowledgePoint.question_version_id,
+        )
         .where(
             ReviewSchedule.user_id == user_id,
+            ReviewSchedule.is_active,
             ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= now,
-            QuestionKnowledgePoint.role == "main",
         )
-        .group_by(QuestionKnowledgePoint.knowledge_point_id)
+        .group_by(QuestionVersionKnowledgePoint.knowledge_point_id)
     )
     return {row[0]: row[1] for row in rows.all()}
 
@@ -333,26 +338,34 @@ async def compute_repeat_wrong_analysis(
     repeat_count = repeat.scalar() or 0
     rate = repeat_count / max(total_wq, 1)
 
-    # Top repeat topics
-    rows = await db.execute(
-        select(Question.id)
-        .join(WrongQuestion, WrongQuestion.question_id == Question.id)
+    # Top repeat topics are attributed to the revision that was actually wrong.
+    topic_rows = await db.execute(
+        select(
+            KnowledgePoint.name,
+            func.count(WrongQuestion.id).label("wrong_count"),
+        )
+        .join(
+            QuestionVersionKnowledgePoint,
+            QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+        )
+        .join(
+            WrongQuestion,
+            WrongQuestion.question_version_id
+            == QuestionVersionKnowledgePoint.question_version_id,
+        )
         .where(
             WrongQuestion.user_id == user_id,
+            WrongQuestion.is_active,
             ~WrongQuestion.mastered,
             WrongQuestion.review_count >= 1,
         )
+        .group_by(KnowledgePoint.id, KnowledgePoint.name)
+        .order_by(func.count(WrongQuestion.id).desc(), KnowledgePoint.id.asc())
+        .limit(5)
     )
-    repeat_qids = [row[0] for row in rows.all()]
-    kp_map = await load_question_kps(db, repeat_qids)
-    kp_counter: dict[str, int] = {}
-    for qid in repeat_qids:
-        for kp in kp_map.get(qid, []):
-            if isinstance(kp, str):
-                kp_counter[kp] = kp_counter.get(kp, 0) + 1
     top_topics = [
-        {"name": k, "count": v}
-        for k, v in sorted(kp_counter.items(), key=lambda x: x[1], reverse=True)[:5]
+        {"name": str(name), "count": int(count or 0)}
+        for name, count in topic_rows.all()
     ]
 
     is_high = rate > 0.3
