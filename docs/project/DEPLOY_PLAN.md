@@ -208,7 +208,22 @@ bash deploy/scripts/deploy.sh update-admin
 bash deploy/scripts/deploy.sh update-all
 ```
 
-### 2.7 admin-frontend 构建上下文污染防护（2026-08-07）
+### 2.7 生产后端镜像不安装本地 OCR 依赖
+
+生产使用 PaddleOCR-VL 外部 HTTP API，`app`、`scheduler` 和 `worker` 不在容器内运行本地 PaddleOCR。生产 compose 为后端 Dockerfile 传入 `INSTALL_OCR=false`，因此构建会跳过 `paddlepaddle`、`paddleocr` 及其 OCR 专用依赖安装，显著减少构建时间、镜像体积和内存占用。
+
+`python-docx`、Pillow 和 NumPy 虽被 OCR 流程复用，但也是导出、图片处理和公式渲染的运行时依赖，已放入 `requirements.txt`，不能随 OCR 依赖一起跳过。
+
+`backend/docker/Dockerfile` 的默认值仍为 `INSTALL_OCR=true`，供本地 OCR 开发环境使用；不要把本地 OCR 依赖重新加入生产构建参数。生产 OCR 相关环境变量保持：
+
+```yaml
+OCR_USE_GPU: "false"
+OCR_EXECUTION_BACKEND: "disabled"  # worker；web 使用外部 OCR 配置
+```
+
+生产更新 app、scheduler 或 worker 时，确认构建日志包含 `Skipping optional OCR dependencies`，并检查 app 启动日志无 `ModuleNotFoundError`。若服务器上已有旧 OCR 镜像，重建服务后旧镜像仍可能保留，按常规镜像清理流程处理，禁止影响运行中容器和数据卷。
+
+### 2.8 admin-frontend 构建上下文污染防护（2026-08-07）
 
 > 迁移到新服务器后实测：该问题曾 **4 次** 导致 admin 构建出损坏产物、全部业务路由丢失（只生成 /404）。
 
@@ -283,7 +298,7 @@ SLOW_QUERY_MS=500            # 慢查询阈值（毫秒）
 
 | 参数 | 值 | 说明 |
 |------|----|------|
-| `use_gpu` | `true` | GPU 加速（需服务器配置 GPU 驱动和 CUDA） |
+| `use_gpu` | `false` | 生产不加载本地 PaddleOCR；OCR 通过外部 HTTP API 完成 |
 | `max_workers` | `1` | OCR 并发线程数（与 Gunicorn workers 一致） |
 | `max_pdf_pages` | `30` | 单次 PDF 最大页数 |
 | `timeout_seconds` | `300` | 单次 OCR 超时 |
@@ -302,7 +317,7 @@ RUN pip install --no-cache-dir --user \
     -r requirements.txt
 ```
 
-服务器带宽有限（~20KB/s），不使用国内源时 PaddlePaddle（194MB）等大包下载需要数小时。阿里云源可将 build 时间从数小时缩短至 2-3 分钟。
+服务器带宽有限（~20KB/s），不使用国内源时运行时依赖下载可能需要较长时间。阿里云源可缩短后端镜像构建时间。
 
 如阿里云不可用，备选：
 - 清华：`https://pypi.tuna.tsinghua.edu.cn/simple/`
@@ -311,10 +326,10 @@ RUN pip install --no-cache-dir --user \
 ### Docker layer cache 保留
 
 - `requirements.txt` → `pip install` 在 builder 前一阶段
-- `requirements-ocr.txt` → `pip install` 在独立层（PaddleOCR ~500MB）
-- PaddleOCR 模型预下载到 `/root/.paddleocr/`，构建时打包到镜像
+- 生产构建传入 `INSTALL_OCR=false`，不会安装 `requirements-ocr.txt` 或 `paddleocr`
+- 本地 OCR 开发构建可保留默认 `INSTALL_OCR=true`，不作为生产镜像来源
 - 日常 `update` 不使用 `--no-cache` 或默认 `--pull`
-- 修改 `requirements.txt` 或 `requirements-ocr.txt` 会破坏对应 layer cache，触发完整重新下载
+- 修改 `requirements.txt` 会破坏运行时依赖 layer cache，触发重新下载
 
 ---
 

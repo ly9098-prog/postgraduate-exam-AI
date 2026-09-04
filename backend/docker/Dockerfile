@@ -6,12 +6,19 @@ COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     PIPOPT="pip install --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com" && \
     $PIPOPT -r requirements.txt
+
+# Local development keeps the optional OCR runtime available by default. Cloud
+# production sets INSTALL_OCR=false because OCR is provided by the remote API.
+ARG INSTALL_OCR=true
 COPY requirements-ocr.txt .
-# Install OCR deps + paddleocr without its opencv deps (replaced by headless)
 RUN --mount=type=cache,target=/root/.cache/pip \
-    PIPOPT="pip install --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com" && \
-    $PIPOPT -r requirements-ocr.txt && \
-    $PIPOPT --no-deps paddleocr
+    if [ "$INSTALL_OCR" = "true" ]; then \
+      PIPOPT="pip install --timeout=120 --retries=5 --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com" && \
+      $PIPOPT -r requirements-ocr.txt && \
+      $PIPOPT --no-deps paddleocr; \
+    else \
+      echo "Skipping optional OCR dependencies (INSTALL_OCR=$INSTALL_OCR)"; \
+    fi
 
 # Stage 2: Runtime
 FROM python:3.11-slim

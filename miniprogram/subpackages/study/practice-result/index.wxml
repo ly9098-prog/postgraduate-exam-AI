@@ -330,4 +330,69 @@
 
     <view class="bottom-space"></view>
   </view>
+
+  <!-- 题目复盘：使用自定义结构化弹层，避免 wx.showModal 直接暴露后端 JSON -->
+  <view wx:if="{{reviewDialogVisible}}" class="review-dialog-mask" bindtap="closeReviewDialog">
+    <view class="review-dialog-sheet" catchtap="stopPropagation">
+      <view class="review-dialog-handle"></view>
+
+      <view class="review-dialog-head">
+        <view class="review-dialog-title-wrap">
+          <text class="review-dialog-kicker">REVIEW</text>
+          <text class="review-dialog-title">{{reviewDialog.title}}</text>
+        </view>
+        <view class="review-status review-status-{{reviewDialog.status}}">{{reviewDialog.statusLabel}}</view>
+      </view>
+
+      <scroll-view class="review-dialog-scroll" scroll-y>
+        <view wx:if="{{reviewDialog.questionTitle}}" class="review-question-card">
+          <text class="review-question-label">题目摘要</text>
+          <text class="review-question-text">{{reviewDialog.questionTitle}}</text>
+        </view>
+
+        <view class="review-answer-grid">
+          <view class="review-answer-card">
+            <text class="review-answer-label">我的答案</text>
+            <text class="review-answer-value review-answer-user review-answer-user-{{reviewDialog.status}}">{{reviewDialog.userAnswer}}</text>
+          </view>
+          <view class="review-answer-card review-answer-card-correct">
+            <text class="review-answer-label">正确答案</text>
+            <text class="review-answer-value review-answer-correct">{{reviewDialog.correctAnswer}}</text>
+          </view>
+        </view>
+
+        <view class="review-analysis-wrap">
+          <view class="review-analysis-heading">
+            <text class="review-analysis-heading-title">解析与复盘</text>
+            <text class="review-analysis-heading-tip">已自动整理结构化内容</text>
+          </view>
+
+          <view
+            wx:for="{{reviewDialog.analysisSections}}"
+            wx:key="key"
+            class="review-analysis-card review-analysis-card-{{item.tone}}"
+          >
+            <view class="review-analysis-card-head">
+              <view class="review-analysis-dot"></view>
+              <text class="review-analysis-card-title">{{item.title}}</text>
+            </view>
+            <text class="review-analysis-text" selectable="true">{{item.text}}</text>
+          </view>
+
+          <view wx:if="{{reviewDialog.analysisFormatError}}" class="review-analysis-empty review-analysis-warning">
+            <text class="review-analysis-empty-title">解析内容暂无法正常展示</text>
+            <text class="review-analysis-empty-desc">检测到异常结构化数据，已隐藏原始 JSON，避免影响阅读。</text>
+          </view>
+          <view wx:elif="{{!reviewDialog.analysisSections.length}}" class="review-analysis-empty">
+            <text class="review-analysis-empty-title">暂无题目解析</text>
+            <text class="review-analysis-empty-desc">答案已保留，可根据正确答案继续复盘。</text>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view class="review-dialog-footer">
+        <view class="review-dialog-confirm" bindtap="closeReviewDialog">知道了</view>
+      </view>
+    </view>
+  </view>
 </view>

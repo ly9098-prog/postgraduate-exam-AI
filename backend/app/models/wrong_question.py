@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Index,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,6 +23,16 @@ class WrongQuestion(Base):
     __tablename__ = "wrong_questions"
     __table_args__ = (
         UniqueConstraint("user_id", "question_id", name="uq_wrong_questions_user_question"),
+        # Covers the hot dashboard/stats predicates:
+        # user_id + is_active + mastered, while review_count makes the
+        # high-frequency wrong-question aggregate index-only on SQLite.
+        Index(
+            "ix_wrong_questions_user_active_mastered_review",
+            "user_id",
+            "is_active",
+            "mastered",
+            "review_count",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
