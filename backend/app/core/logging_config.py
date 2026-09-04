@@ -17,6 +17,11 @@ import logging.config
 import os
 from datetime import UTC, datetime
 
+try:
+    import coloredlogs
+except ImportError:  # pragma: no cover - requirements install provides this dependency
+    coloredlogs = None
+
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
 _USE_JSON = os.environ.get("LOG_FORMAT", "").lower() == "json"
 
@@ -126,6 +131,45 @@ _TEXT_FORMAT = (
     "pipeline=%(pipeline_id)s stage=%(stage)s event=%(event)s | %(message)s"
 )
 
+_LEVEL_STYLES = {
+    "debug": {"color": "green"},
+    "info": {"color": "cyan", "faint": True},
+    "warning": {"color": "yellow", "bold": True},
+    "error": {"color": "red", "bold": True},
+    "critical": {"color": "red", "background": "white", "bold": True},
+}
+
+
+class _TerminalColoredFormatter(logging.Formatter):
+    """Color text logs only when the configured stream is an interactive TTY."""
+
+    def __init__(self, fmt=None, datefmt=None, stream=None):
+        super().__init__(fmt=fmt, datefmt=datefmt)
+        self._plain_formatter = logging.Formatter(fmt=fmt, datefmt=datefmt)
+        self._colored_formatter = None
+        if coloredlogs is not None:
+            self._colored_formatter = coloredlogs.ColoredFormatter(
+                fmt=fmt,
+                datefmt=datefmt,
+                level_styles=_LEVEL_STYLES,
+                field_styles={
+                    "asctime": {"color": "green"},
+                    "name": {"color": "blue"},
+                },
+            )
+        self._use_colors = bool(stream is not None and hasattr(stream, "isatty") and stream.isatty())
+
+    def format(self, record):
+        if self._use_colors and self._colored_formatter is not None:
+            rendered = self._colored_formatter.format(record)
+            style = _LEVEL_STYLES.get(record.levelname.lower())
+            if style:
+                level_text = f"{record.levelname:<7}"
+                colored_level = coloredlogs.ansi_wrap(level_text, **style)
+                rendered = rendered.replace(level_text, colored_level, 1)
+            return rendered
+        return self._plain_formatter.format(record)
+
 LOGGING_CONFIG: dict = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -134,8 +178,10 @@ LOGGING_CONFIG: dict = {
     },
     "formatters": {
         "default": {
+            "()": "app.core.logging_config._TerminalColoredFormatter",
             "format": _TEXT_FORMAT,
             "datefmt": "%Y-%m-%d %H:%M:%S",
+            "stream": "ext://sys.stdout",
         },
     },
     "handlers": {

@@ -10,6 +10,7 @@ from app.schemas.review_scheduler import (
     BatchGradeResponse,
     NextBatchRequest,
     NextBatchResponse,
+    MasterUnmasterResponse,
     ReviewHistoryResponse,
     ReviewStatsResponse as ScheduleStatsResponse,
     TodayReviewOverviewResponse,
@@ -125,3 +126,45 @@ async def grade_batch(
         return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/{schedule_id}/master", response_model=MasterUnmasterResponse)
+async def master_review_question(
+    schedule_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """手动标记当前复习任务为已掌握。"""
+    schedule = await review_scheduler.mark_mastered(db, current_user.id, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="复习记录不存在")
+    await cache.delete(f"review:*:{current_user.id}*")
+    await cache.delete(f"stats:*:{current_user.id}*")
+    return MasterUnmasterResponse(
+        schedule_id=schedule.id,
+        mastered=True,
+        occurrence_seq=int(schedule.occurrence_seq or 0),
+    )
+
+
+@router.post("/{schedule_id}/unmaster", response_model=MasterUnmasterResponse)
+async def unmaster_review_question(
+    schedule_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """撤销手动掌握，并恢复当前题目的复习资格。"""
+    try:
+        schedule = await review_scheduler.unmark_mastered(db, current_user.id, schedule_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="复习记录不存在")
+    await cache.delete(f"review:*:{current_user.id}*")
+    await cache.delete(f"stats:*:{current_user.id}*")
+    return MasterUnmasterResponse(
+        schedule_id=schedule.id,
+        mastered=False,
+        occurrence_seq=int(schedule.occurrence_seq or 0),
+    )
+

@@ -103,6 +103,7 @@ class BatchGradeResponse(BaseModel):
 class MasterUnmasterResponse(BaseModel):
     schedule_id: int
     mastered: bool
+    occurrence_seq: int
 
 
 # ── Today review task flow (overview / next-batch / result) ──

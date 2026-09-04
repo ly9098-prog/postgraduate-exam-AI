@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import hashlib
+import logging
+import re
 
 from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,11 +17,133 @@ from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.wrong_question import WrongQuestion
 from app.services.sm2_service import calc_sm2
+from app.features.text_normalizer import _split_inline_roman_subitems
+from app.services.pdf_text_normalizer import deduplicate_repeated_text
 from app.services.question_revision_service import load_revision_views
 from app.utils.answer_normalizer import is_answer_correct
 
 # Asia/Shanghai = UTC+8, no DST
 _SHANGHAI_TZ = timezone(timedelta(hours=8))
+logger = logging.getLogger(__name__)
+
+# Keep review payload rendering consistent with the practice/wrong-book APIs.
+# Review used to return raw immutable revision content, which meant OCR line
+# breaks/admin-only fields could reappear only in the review flow.
+_CODE_OP_SPLIT_RE = re.compile(
+    r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
+)
+_CODE_SIGNALS = [
+    'return', 'printf', 'scanf', 'malloc', 'free', 'NULL',
+    'struct', 'typedef', 'enum', 'union',
+    'int ', 'void ', 'char ', 'float ', 'double ',
+    'bool', 'const', 'static', 'sizeof',
+    '->', '::', '{', '}', ';',
+    '++', '--', '+=', '-=', '*=', '/=',
+    '#include', '#define',
+]
+_CONTROL_KW = [
+    'for', 'while', 'if', 'else if', 'else', 'switch',
+    'return', 'break', 'continue', 'case', 'do',
+]
+_DS_KW = [
+    'LNode', 'TNode', 'BiTNode', 'BiTree', 'BSTNode', 'LinkList',
+    'SqList', 'Stack', 'Queue', 'SqStack', 'ElemType', 'Status',
+]
+
+
+def _contains_code(text: str) -> bool:
+    if not isinstance(text, str) or not text:
+        return False
+    score = sum(1 for sig in _CODE_SIGNALS if sig in text)
+    score += sum(2 for kw in _DS_KW if kw in text)
+    score += sum(
+        1 for kw in _CONTROL_KW
+        if re.search(r'\b' + re.escape(kw) + r'\b', text)
+    )
+    return score >= 3
+
+
+def _fix_code_operator_splits(text: str) -> str:
+    if not isinstance(text, str) or '\n' not in text:
+        return text
+    lines = text.split('\n')
+    merged = [lines[0]]
+    for line in lines[1:]:
+        if _CODE_OP_SPLIT_RE.search(merged[-1]):
+            merged[-1] += line.lstrip()
+        else:
+            merged.append(line)
+    return '\n'.join(merged)
+
+
+def _sanitize_review_text(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return value
+    value = re.sub(r'\r\n?', '\n', value)
+    if _contains_code(value):
+        return _fix_code_operator_splits(value)
+    value = deduplicate_repeated_text(value)
+    value = _split_inline_roman_subitems(value)
+    return _fix_code_operator_splits(value)
+
+
+def _sanitize_review_content(content: dict | str | None) -> dict:
+    if isinstance(content, str):
+        content = {'text': content}
+    elif not isinstance(content, dict):
+        content = {}
+    sanitized = dict(content)
+    for field in ('text', 'stem'):
+        if field in sanitized:
+            sanitized[field] = _sanitize_review_text(sanitized[field])
+    if sanitized.get('stem'):
+        sanitized['text'] = sanitized['stem']
+    for field in ('source_snapshot_url', 'source_snapshot_full_page', 'visual_regions', 'visual_region_ids'):
+        sanitized.pop(field, None)
+    return sanitized
+
+
+def _sanitize_review_option_value(value):
+    if isinstance(value, str):
+        value = re.sub(r'\r\n?', '\n', value)
+        value = _fix_code_operator_splits(value)
+        return re.sub(r'\n+', ' ', value).strip()
+    if isinstance(value, dict):
+        result = dict(value)
+        text = result.get('text')
+        if text in (None, ''):
+            text = result.get('value')
+        if isinstance(text, str):
+            result['text'] = _sanitize_review_option_value(text)
+        return result
+    return value
+
+
+def _sanitize_review_options(options) -> dict:
+    if not isinstance(options, dict):
+        return {}
+    return {key: _sanitize_review_option_value(value) for key, value in options.items()}
+
+
+def _review_question_payload(schedule: ReviewSchedule, revision) -> dict:
+    content = _sanitize_review_content(revision.content)
+    return {
+        'schedule_id': schedule.id,
+        'question_id': schedule.question_id,
+        'question_version_id': schedule.question_version_id,
+        'occurrence_seq': schedule.occurrence_seq,
+        'subject_id': schedule.subject_id,
+        'subject_code': revision.subject_ref.code if revision.subject_ref else '',
+        'subject_name': revision.subject_ref.name if revision.subject_ref else '',
+        'question_type': revision.question_type,
+        'stem': content.get('text') or content.get('stem') or '',
+        'options': _sanitize_review_options(revision.options),
+        'content': content,
+        'image_url': revision.image_url,
+        'interval': schedule.interval,
+        'repetitions': schedule.repetitions,
+        'ease_factor': schedule.ease_factor,
+    }
 
 # Review mastery belongs to the immutable scheduled revision.  It must not be
 # inferred from UserQuestionState because that table represents the mutable
@@ -95,7 +219,7 @@ async def _sync_schedule_to_wq(
     db: AsyncSession,
     schedule: ReviewSchedule,
     latest_wrong_answer: str | None = None,
-) -> None:
+) -> WrongQuestion | None:
     """Persist schedule state back to the single wrong-book row for this question."""
     wq = await db.scalar(
         select(WrongQuestion).where(
@@ -104,13 +228,14 @@ async def _sync_schedule_to_wq(
         )
     )
     if wq is None:
-        return
+        return None
 
     # ReviewSchedule is always rebound when a newer wrong revision is produced.
     # Keep the wrong-book row and schedule on exactly the same immutable revision.
     wq.question_version_id = int(schedule.question_version_id)
-    if schedule.last_reviewed_at is not None:
-        wq.last_review_at = schedule.last_reviewed_at
+    # ``WrongQuestion.last_review_at`` is the legacy storage backing the public
+    # ``last_wrong_at`` field. A correct review must not make the UI claim the
+    # learner was wrong again just now; true review time lives on ReviewSchedule.
     wq.mastered = bool(schedule.mastered)
     if schedule.mastered:
         if wq.mastered_at is None:
@@ -119,10 +244,18 @@ async def _sync_schedule_to_wq(
         wq.mastered_at = None
 
     if latest_wrong_answer is not None:
+        # A wrong review attempt changes the exact AI-analysis input just like a
+        # wrong practice attempt. Drop the old embedded analysis immediately so
+        # wrong-detail can never show advice for the previous answer while a new
+        # prewarm is being generated.
+        wq.ai_analysis = None
         wq.wrong_answer = latest_wrong_answer
+        wq.last_review_at = schedule.last_reviewed_at or utcnow()
         wq.review_count = (wq.review_count or 0) + 1
         wq.mastered = False
         wq.mastered_at = None
+
+    return wq
 
 async def set_mastered_state(
     db: AsyncSession,
@@ -219,28 +352,7 @@ async def get_today_review(
         revision = views.get(int(schedule.question_version_id))
         if revision is None:
             continue
-        content = revision.content
-        if isinstance(content, str):
-            content = {"text": content}
-        elif not isinstance(content, dict):
-            content = {}
-        questions.append({
-            "schedule_id": schedule.id,
-            "question_id": schedule.question_id,
-            "question_version_id": schedule.question_version_id,
-            "occurrence_seq": schedule.occurrence_seq,
-            "subject_id": schedule.subject_id,
-            "subject_code": revision.subject_ref.code if revision.subject_ref else "",
-            "subject_name": revision.subject_ref.name if revision.subject_ref else "",
-            "question_type": revision.question_type,
-            "stem": content.get("text", ""),
-            "options": revision.options or {},
-            "content": content,
-            "image_url": revision.image_url,
-            "interval": schedule.interval,
-            "repetitions": schedule.repetitions,
-            "ease_factor": schedule.ease_factor,
-        })
+        questions.append(_review_question_payload(schedule, revision))
     return {"total_today": total, "questions": questions}
 
 async def _get_review_record_by_request(
@@ -355,7 +467,7 @@ async def submit_review(
             db, user_id, question_id, is_correct, answered_at=now
         )
 
-    await _sync_schedule_to_wq(
+    synced_wq = await _sync_schedule_to_wq(
         db,
         schedule,
         latest_wrong_answer=latest_wrong_answer if not is_correct else None,
@@ -401,6 +513,11 @@ async def submit_review(
         "mastery_percent": mastery_percent,
         "mastered": bool(schedule.mastered),
         "already_submitted": False,
+        # Internal fields used by grade_batch_review after the transaction commits.
+        # They are intentionally not copied into the public batch response.
+        "wrong_question_id": int(synced_wq.id) if synced_wq is not None and not is_correct else None,
+        "wrong_review_count": int(synced_wq.review_count or 0) if synced_wq is not None and not is_correct else None,
+        "wrong_answer": synced_wq.wrong_answer if synced_wq is not None and not is_correct else None,
     }
 
 
@@ -427,6 +544,7 @@ async def grade_batch_review(
     results_by_index: list[tuple[int, dict]] = []
     correct_count = 0
     wrong_count = 0
+    prewarm_candidates: list[tuple[int, int, str]] = []
 
     for original_index, item in ordered:
         version_id = int(item["question_version_id"])
@@ -468,7 +586,7 @@ async def grade_batch_review(
                 request_id=request_id,
                 auto_commit=False,
                 user_answer=answer,
-                latest_wrong_answer=answer.strip() or None if not is_correct else None,
+                latest_wrong_answer=answer.strip() if not is_correct else None,
             )
             payload = {
                 "schedule_id": result["schedule_id"],
@@ -491,6 +609,12 @@ async def grade_batch_review(
                 correct_count += 1
             else:
                 wrong_count += 1
+                if result.get("wrong_question_id"):
+                    prewarm_candidates.append((
+                        int(result["wrong_question_id"]),
+                        int(result.get("wrong_review_count") or 0),
+                        str(result.get("wrong_answer") or ""),
+                    ))
         except ValueError as exc:
             payload = {
                 "schedule_id": item["schedule_id"],
@@ -512,6 +636,27 @@ async def grade_batch_review(
         results_by_index.append((original_index, payload))
 
     await db.commit()
+
+    # Wrong review attempts invalidate the previous AI explanation. Warm the new
+    # answer-specific analysis only after the review transaction is durable; AI
+    # availability must never decide whether the review submission succeeds.
+    if prewarm_candidates:
+        try:
+            from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
+
+            for wq_id, review_count, wrong_answer in prewarm_candidates:
+                revision = build_prewarm_revision(
+                    review_count=review_count,
+                    wrong_answer=wrong_answer,
+                )
+                await enqueue_prewarm(wq_id, user_id, revision=revision)
+        except Exception:
+            logger.warning(
+                "AI prewarm enqueue failed after review batch uid=%s",
+                user_id,
+                exc_info=True,
+            )
+
     results = [payload for _, payload in sorted(results_by_index, key=lambda pair: pair[0])]
     # Counts describe successful submissions only.
     correct_count = sum(1 for item in results if item["success"] and item["is_correct"])
@@ -674,7 +819,7 @@ async def get_review_history(
     result = await db.execute(
         select(ReviewRecord)
         .where(ReviewRecord.user_id == user_id)
-        .order_by(ReviewRecord.reviewed_at.desc())
+        .order_by(ReviewRecord.reviewed_at.desc(), ReviewRecord.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
@@ -969,10 +1114,12 @@ async def get_today_review_overview(
         "current_batch_no": current_batch_no,
         "total_batch_count": total_batch_count,
         "remaining_batch_count": remaining_batch_count,
-        # all/remaining use schedule ids; completed uses question ids.
-        "all_question_ids": [s.id for s in task_schedules],
+        # These fields are named question_ids and must stay in one ID domain.
+        # Returning schedule ids for only all/remaining made equality/diff logic
+        # impossible for clients and was especially confusing after mastery undo.
+        "all_question_ids": [int(s.question_id) for s in task_schedules],
         "completed_question_ids": sorted(completed_set),
-        "remaining_question_ids": [s.id for s in pending_schedules],
+        "remaining_question_ids": [int(s.question_id) for s in pending_schedules],
         "has_due_review": today_due_count > 0,
         "is_completed": today_due_count > 0 and today_remaining_count == 0,
     }
@@ -997,28 +1144,7 @@ async def get_next_today_review_batch(
         revision = views.get(int(schedule.question_version_id))
         if revision is None:
             continue
-        content = revision.content
-        if isinstance(content, str):
-            content = {"text": content}
-        elif not isinstance(content, dict):
-            content = {}
-        questions.append({
-            "schedule_id": schedule.id,
-            "question_id": schedule.question_id,
-            "question_version_id": schedule.question_version_id,
-            "occurrence_seq": schedule.occurrence_seq,
-            "subject_id": schedule.subject_id,
-            "subject_code": revision.subject_ref.code if revision.subject_ref else "",
-            "subject_name": revision.subject_ref.name if revision.subject_ref else "",
-            "question_type": revision.question_type,
-            "stem": content.get("text", ""),
-            "options": revision.options or {},
-            "content": content,
-            "image_url": revision.image_url,
-            "interval": schedule.interval,
-            "repetitions": schedule.repetitions,
-            "ease_factor": schedule.ease_factor,
-        })
+        questions.append(_review_question_payload(schedule, revision))
 
     due_count = len(task_schedules)
     remaining_count = len(pending)

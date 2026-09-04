@@ -372,7 +372,7 @@
     <view class="section-title-row all-head">
       <view>
         <text class="section-title">全部错题</text>
-        <text class="section-subtitle">当前已加载 {{list.length}} / {{stats.total || list.length}} 道</text>
+        <text class="section-subtitle">当前已加载 {{list.length}} / {{listTotal || list.length}} 道</text>
       </view>
       <view class="select-all" wx:if="{{batchMode}}" bindtap="toggleSelectAll">
         <text class="select-all-box {{allVisibleSelected ? 'selected' : ''}}">{{allVisibleSelected ? '✓' : ''}}</text>

@@ -12,6 +12,7 @@ PyMuPDF>=1.26.7
 aiosqlite==0.20.0
 alembic==1.18.4
 gunicorn==22.0.0
+coloredlogs==15.0.1
 redis[hiredis]==5.0.1
 pytest-asyncio==1.3.0
 httpx>=0.27.0

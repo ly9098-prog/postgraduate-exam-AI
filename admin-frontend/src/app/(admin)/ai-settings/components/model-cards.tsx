@@ -24,13 +24,13 @@ import { Button } from "@/components/ui/button";
 const PROVIDER_ICONS: Record<string, React.ElementType> = {
   deepseek: Brain, openai: Globe, anthropic: Cpu,
   "qwen-vl": ScanEye, qwen: ScanEye, glm: Brain, minimax: Brain,
-  moonshot: Brain, openrouter: Globe, vllm: Cpu, custom: Cpu,
+  moonshot: Brain, openrouter: Globe, relay: Globe, vllm: Cpu, custom: Cpu,
 };
 
 const PROVIDER_COLORS: Record<string, string> = {
   deepseek: "#5b7b9a", openai: "#6b9b6b", anthropic: "#c49a6b",
   "qwen-vl": "#7c5ce7", qwen: "#7c5ce7", glm: "#4f72b8",
-  minimax: "#8b6bb1", moonshot: "#506c8f", openrouter: "#5d6b76",
+  minimax: "#8b6bb1", moonshot: "#506c8f", openrouter: "#5d6b76", relay: "#52758f",
   paddleocr: "#e67e22", paddleocr_vl: "#e67e22", "paddleocr-vl": "#e67e22",
 };
 
@@ -49,6 +49,7 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
   { value: "minimax", label: "MiniMax", description: "MiniMax OpenAI-compatible API" },
   { value: "moonshot", label: "Moonshot / Kimi", description: "Moonshot OpenAI-compatible API" },
   { value: "openrouter", label: "OpenRouter", description: "OpenRouter 多模型聚合接口" },
+  { value: "relay", label: "中转站 / Relay", description: "第三方 OpenAI-compatible 中转站，支持 /v1 Base URL 或完整 chat/completions 地址" },
   { value: "vllm", label: "vLLM", description: "自部署 vLLM OpenAI-compatible Server" },
   { value: "custom", label: "Custom", description: "其他兼容 /v1/chat/completions 的服务" },
   { value: "paddleocr-vl", label: "PaddleOCR-VL", description: "PaddleOCR 专用视觉 OCR Job API" },
@@ -131,7 +132,124 @@ function isPaddleOcrProvider(provider: string) {
 }
 
 function adapterLabel(provider: string) {
-  return isPaddleOcrProvider(provider) ? "PaddleOCR 专用" : "OpenAI 兼容";
+  if (isPaddleOcrProvider(provider)) return "PaddleOCR 专用";
+  const normalized = provider.trim().toLowerCase();
+  if (normalized === "relay" || normalized === "custom") return "OpenAI-compatible / 中转站";
+  return "OpenAI 兼容";
+}
+
+type ParsedCompatibleExample = {
+  apiBaseUrl?: string;
+  modelName?: string;
+};
+
+function stripChatCompletionsSuffix(value: string): string {
+  const normalized = value.trim().replace(/[\\,;]+$/, "").replace(/["'`]+$/, "").replace(/\/$/, "");
+  return normalized.replace(/\/chat\/completions$/i, "");
+}
+
+function parseOpenAICompatibleExample(raw: string): ParsedCompatibleExample {
+  const text = raw.trim();
+  if (!text) return {};
+
+  const baseUrlMatch = text.match(/base_url\s*=\s*["']([^"']+)["']/i);
+  const urls = text.match(/https?:\/\/[^\s"'`\\]+/gi) ?? [];
+  const endpointUrl = urls.find((url) => /\/chat\/completions(?:\/)?$/i.test(url.replace(/[),;]+$/, "")));
+  const fallbackUrl = urls[0];
+  const rawUrl = baseUrlMatch?.[1] ?? endpointUrl ?? fallbackUrl;
+
+  const jsonModelMatch = text.match(/["']model["']\s*:\s*["']([^"']+)["']/i);
+  const keywordModelMatch = text.match(/\bmodel\s*=\s*["']([^"']+)["']/i);
+  const modelName = (jsonModelMatch?.[1] ?? keywordModelMatch?.[1] ?? "").trim();
+
+  return {
+    apiBaseUrl: rawUrl ? stripChatCompletionsSuffix(rawUrl.replace(/[),;]+$/, "")) : undefined,
+    modelName: modelName || undefined,
+  };
+}
+
+function buildOpenAICompatibleEndpoint(apiBaseUrl: string): string | null {
+  const normalized = apiBaseUrl.trim().replace(/\/$/, "");
+  if (!normalized) return null;
+  try {
+    const parsed = new URL(normalized);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    const path = parsed.pathname.replace(/\/$/, "");
+    if (/\/chat\/completions$/i.test(path)) return normalized;
+    if (!path) return `${normalized}/v1/chat/completions`;
+    return `${normalized}/chat/completions`;
+  } catch {
+    return null;
+  }
+}
+
+function CompatibleEndpointHint({ apiBaseUrl, kind }: { apiBaseUrl: string; kind: ModelKind }) {
+  if (kind !== "chat" || !apiBaseUrl.trim()) return null;
+  const endpoint = buildOpenAICompatibleEndpoint(apiBaseUrl);
+  if (!endpoint) {
+    return <span className="mt-1 block text-[10px] text-[var(--color-danger)]">请输入完整的 http(s) API 地址</span>;
+  }
+  return (
+    <span className="mt-1 block break-all text-[10px] leading-4 text-[var(--color-text-hint)]">
+      实际请求：<span className="font-mono text-[var(--color-text-secondary)]">POST {endpoint}</span>
+    </span>
+  );
+}
+
+type CompatibleExampleImporterProps = {
+  disabled?: boolean;
+  onApply: (parsed: ParsedCompatibleExample) => void;
+};
+
+function CompatibleExampleImporter({ disabled = false, onApply }: CompatibleExampleImporterProps) {
+  const [example, setExample] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+
+  const apply = () => {
+    const parsed = parseOpenAICompatibleExample(example);
+    if (!parsed.apiBaseUrl && !parsed.modelName) {
+      setMessage("未识别到 Base URL / chat/completions 地址或 model，请检查示例内容");
+      return;
+    }
+    onApply(parsed);
+    const parts = [parsed.apiBaseUrl ? "API 地址" : null, parsed.modelName ? "模型标识" : null].filter(Boolean);
+    setMessage(`已识别并填入${parts.join("、")}`);
+  };
+
+  return (
+    <details className="rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary-light)]/25 px-3 py-2.5">
+      <summary className="cursor-pointer select-none text-xs font-semibold text-[var(--color-primary-dark)]">
+        中转站 / OpenAI-compatible 快速配置
+      </summary>
+      <div className="mt-2.5 space-y-2">
+        <p className="text-[10px] leading-4 text-[var(--color-text-secondary)]">
+          可直接粘贴中转站文档里的 cURL 或 Python OpenAI 调用示例。系统会识别 <span className="font-mono">base_url</span> / <span className="font-mono">/chat/completions</span> 与 <span className="font-mono">model</span>，API Key 不会从示例中读取。
+        </p>
+        <textarea
+          value={example}
+          onChange={(event) => { setExample(event.target.value); setMessage(null); }}
+          disabled={disabled}
+          rows={4}
+          spellCheck={false}
+          placeholder={'例如：curl https://8stoken.com/v1/chat/completions ... "model": "deepseek-v4-flash"\n或：base_url="https://8stoken.com/v1", model="gpt-5.6-luna"'}
+          className="w-full resize-y rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 font-mono text-[11px] leading-5 outline-none transition-colors focus:border-[var(--color-primary)] disabled:opacity-50"
+        />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className={cn("text-[10px]", message?.startsWith("已识别") ? "text-[var(--color-success)]" : "text-[var(--color-text-hint)]")}>
+            {message ?? "兼容 Base URL 形式与完整 /v1/chat/completions 地址"}
+          </span>
+          <button
+            type="button"
+            onClick={apply}
+            disabled={disabled || !example.trim()}
+            className="rounded-lg border border-[var(--color-primary)]/35 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary-light)] disabled:opacity-40"
+          >
+            识别并填入
+          </button>
+        </div>
+      </div>
+    </details>
+  );
 }
 
 function getProviderIcon(p: string) { return PROVIDER_ICONS[p] || Brain; }
@@ -405,7 +523,7 @@ function AddModelDialog({
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="text-[11px] font-medium text-[var(--color-text-hint)]">模型标识 *</span>
-              <input value={name} onChange={(e) => setName(e.target.value)} className={cn(inputCls, "mt-1")} placeholder="gpt-4o" />
+              <input value={name} onChange={(e) => { setName(e.target.value); setTestResult(null); }} className={cn(inputCls, "mt-1")} placeholder="deepseek-v4-flash / gpt-5.6-luna" />
             </label>
             <label className="block">
               <span className="text-[11px] font-medium text-[var(--color-text-hint)]">显示名称 *</span>
@@ -424,6 +542,7 @@ function AddModelDialog({
                     onClick={() => {
                       setModelKind(kind);
                       setFeatures((prev) => featuresForKind(kind, prev));
+                      setTestResult(null);
                       if (kind === "ocr_job" && provider === "openai") setProvider("paddleocr-vl");
                     }}
                     className={cn(
@@ -442,31 +561,50 @@ function AddModelDialog({
               })}
             </div>
           </div>
+          {modelKind === "chat" && (
+            <CompatibleExampleImporter
+              onApply={(parsed) => {
+                if (parsed.apiBaseUrl) setApiBaseUrl(parsed.apiBaseUrl);
+                if (parsed.modelName) {
+                  setName(parsed.modelName);
+                  setDisplayName((current) => current.trim() ? current : parsed.modelName ?? current);
+                }
+                setProvider("relay");
+                setTestResult(null);
+              }}
+            />
+          )}
           <label className="block">
-            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">提供商 *</span>
-            <ProviderSelect value={provider} onChange={setProvider} placeholder="openai / qwen / glm / custom" />
-            <span className="mt-1 block text-[10px] text-[var(--color-text-hint)]">{adapterLabel(provider)}；provider 仅用于路由标识与监控，不限制厂商名称。</span>
+            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">提供商 / 接入方式 *</span>
+            <ProviderSelect value={provider} onChange={(value) => { setProvider(value); setTestResult(null); }} placeholder="relay / openai / deepseek / custom" />
+            <span className="mt-1 block text-[10px] text-[var(--color-text-hint)]">{adapterLabel(provider)}；接第三方中转站建议选择「中转站 / Relay」，模型标识仍填写中转站实际要求的 model。</span>
           </label>
           <label className="block">
-            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Base URL *</span>
-            <input value={apiBaseUrl} onChange={(e) => setApiBaseUrl(e.target.value)} className={cn(inputCls, "mt-1")} placeholder="https://api.openai.com/v1" />
+            <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API 地址（Base URL / Endpoint）*</span>
+            <input
+              value={apiBaseUrl}
+              onChange={(e) => { setApiBaseUrl(e.target.value); setTestResult(null); }}
+              className={cn(inputCls, "mt-1")}
+              placeholder="https://8stoken.com/v1 或 https://8stoken.com/v1/chat/completions"
+            />
             <span className="mt-1 block text-[10px] leading-4 text-[var(--color-text-hint)]">
               {modelKind === "embedding"
                 ? "填写 OpenAI-compatible SDK 的 base_url；阿里云百炼应以 /compatible-mode/v1 结尾，文本向量 Model ID 例如 text-embedding-v4；不要手动追加 /embeddings。"
                 : modelKind === "ocr_job"
                   ? "填写厂商 OCR 服务根地址；PaddleOCR-VL 将按专用 Job API 调用。"
-                  : "填写 OpenAI SDK 的 base_url，不要手动追加 /chat/completions。"}
+                  : "中转站可直接填写文档中的 base_url（如 https://8stoken.com/v1），也兼容完整 /chat/completions 地址。"}
             </span>
+            <CompatibleEndpointHint apiBaseUrl={apiBaseUrl} kind={modelKind} />
           </label>
           <label className="block">
             <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Key</span>
             <div className="mt-1 flex gap-2">
-              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} className={cn(inputCls, "flex-1")} placeholder="sk-..." />
+              <input type="password" value={apiKey} onChange={(e) => { setApiKey(e.target.value); setTestResult(null); }} className={cn(inputCls, "flex-1")} placeholder="sk-... / 中转站令牌" autoComplete="new-password" />
               <button type="button" onClick={handleTestConnection}
                 disabled={testing || !apiKey.trim() || !apiBaseUrl.trim() || !name.trim()}
                 className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-40">
                 {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
-                测试
+                测试连接
               </button>
             </div>
           </label>
@@ -648,8 +786,10 @@ function DetailPanel({
     if (nameInput.trim() && nameInput.trim() !== model.name) payload.name = nameInput.trim();
     if (displayNameInput.trim() && displayNameInput.trim() !== model.display_name) payload.display_name = displayNameInput.trim();
     if (providerInput.trim() && providerInput.trim() !== model.provider) payload.provider = providerInput.trim();
-    if (apiKeyInput) payload.api_key = apiKeyInput;
-    if (apiBaseUrlInput !== model.api_base_url) payload.api_base_url = apiBaseUrlInput;
+    const normalizedApiKey = apiKeyInput.trim();
+    const normalizedApiBaseUrl = apiBaseUrlInput.trim().replace(/\/$/, "");
+    if (normalizedApiKey) payload.api_key = normalizedApiKey;
+    if (normalizedApiBaseUrl !== (model.api_base_url ?? "").replace(/\/$/, "")) payload.api_base_url = normalizedApiBaseUrl;
     if (JSON.stringify(effectiveFeaturesInput) !== JSON.stringify(model.features ?? [])) {
       payload.features = effectiveFeaturesInput.length > 0 ? effectiveFeaturesInput : null;
     }
@@ -681,6 +821,7 @@ function DetailPanel({
                         onClick={() => {
                           setModelKind(kind);
                           setFeaturesInput((prev) => featuresForKind(kind, prev));
+                          setTestResult(null);
                         }}
                         className={cn(
                           "rounded-md px-2.5 py-1.5 text-[10px] font-semibold transition-all disabled:opacity-50",
@@ -696,13 +837,27 @@ function DetailPanel({
                 </div>
               </div>
 
+              {modelKind === "chat" && (
+                <div className="mb-4">
+                  <CompatibleExampleImporter
+                    disabled={disabled}
+                    onApply={(parsed) => {
+                      if (parsed.apiBaseUrl) setApiBaseUrlInput(parsed.apiBaseUrl);
+                      if (parsed.modelName) setNameInput(parsed.modelName);
+                      setProviderInput("relay");
+                      setTestResult(null);
+                    }}
+                  />
+                </div>
+              )}
+
               <div className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-2">
                 <label className="block">
                   <span className="text-[11px] font-medium text-[var(--color-text-hint)]">模型标识</span>
                   <input
                     type="text"
                     value={nameInput}
-                    onChange={(e) => setNameInput(e.target.value)}
+                    onChange={(e) => { setNameInput(e.target.value); setTestResult(null); }}
                     className={cn(inputCls, "mt-1 h-10")}
                   />
                 </label>
@@ -718,25 +873,25 @@ function DetailPanel({
                 </label>
 
                 <label className="block">
-                  <span className="text-[11px] font-medium text-[var(--color-text-hint)]">Provider</span>
+                  <span className="text-[11px] font-medium text-[var(--color-text-hint)]">Provider / 接入方式</span>
                   <ProviderSelect
                     value={providerInput}
-                    onChange={setProviderInput}
+                    onChange={(value) => { setProviderInput(value); setTestResult(null); }}
                     disabled={disabled}
-                    placeholder="qwen / glm / custom"
+                    placeholder="relay / openai / deepseek / custom"
                   />
-                  <span className="mt-1 block text-[10px] text-[var(--color-text-hint)]">{adapterLabel(providerInput)}</span>
+                  <span className="mt-1 block text-[10px] text-[var(--color-text-hint)]">{adapterLabel(providerInput)}；第三方中转站建议使用 relay。</span>
                 </label>
 
                 <label className="block">
-                  <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API Base URL</span>
+                  <span className="text-[11px] font-medium text-[var(--color-text-hint)]">API 地址（Base URL / Endpoint）</span>
                   <div className="relative mt-1">
                     <input
                       type="text"
                       value={apiBaseUrlInput}
-                      onChange={(e) => setApiBaseUrlInput(e.target.value)}
+                      onChange={(e) => { setApiBaseUrlInput(e.target.value); setTestResult(null); }}
                       className={cn(inputCls, "h-10 pr-9")}
-                      placeholder="https://api.openai.com/v1"
+                      placeholder="https://8stoken.com/v1 或 .../v1/chat/completions"
                     />
                     <Link2 className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-hint)]" />
                   </div>
@@ -745,8 +900,9 @@ function DetailPanel({
                       ? "按 SDK base_url 填写；阿里云百炼建议以 /compatible-mode/v1 结尾，不追加 /embeddings"
                       : modelKind === "ocr_job"
                         ? "填写厂商 OCR 服务根地址"
-                        : "按 SDK base_url 填写，不追加 /chat/completions"}
+                        : "支持 SDK base_url 或完整 chat/completions Endpoint；中转站示例 https://8stoken.com/v1"}
                   </span>
+                  <CompatibleEndpointHint apiBaseUrl={apiBaseUrlInput} kind={modelKind} />
                 </label>
               </div>
 
@@ -757,7 +913,7 @@ function DetailPanel({
                     <input
                       type={showApiKey ? "text" : "password"}
                       value={apiKeyInput}
-                      onChange={(e) => setApiKeyInput(e.target.value)}
+                      onChange={(e) => { setApiKeyInput(e.target.value); setTestResult(null); }}
                       className={cn(inputCls, "h-10 pr-10")}
                       placeholder={model.api_configured ? "" : "sk-..."}
                       autoComplete="new-password"
@@ -983,7 +1139,7 @@ export function ModelCards() {
       <div className="flex items-center justify-between border-b border-[var(--color-border)]/60 px-5 py-4">
         <div>
           <h3 className="font-display text-xl font-bold text-[var(--ink)]">模型配置</h3>
-          <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">管理接入的 AI 模型及其功能映射</p>
+          <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">管理官方 API、OpenAI-compatible 中转站及模型功能映射</p>
         </div>
         <Button onClick={() => setShowAddDialog(true)}>
           <Plus className="h-4 w-4" />

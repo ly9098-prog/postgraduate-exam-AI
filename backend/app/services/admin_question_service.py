@@ -676,7 +676,7 @@ def _question_version_payload(
         for column in question_version.__mapper__.columns
     }
     data["edited_by_name"] = (editor_display_name or "").strip() or (editor_username or "").strip() or None
-    data["change_source"] = str(getattr(version, "change_source", "system") or "system")
+    data["change_source"] = str(getattr(question_version, "change_source", "system") or "system")
     return data
 
 
