@@ -6,9 +6,7 @@ import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 from app.services.export.analysis_content import resolve_preferred_analysis
 from app.services.export.question_content import (
@@ -17,7 +15,7 @@ from app.services.export.question_content import (
     has_visual_question_content,
     iter_question_image_urls,
 )
-from app.services.knowledge_point_service import load_question_kps
+from app.services.question_revision_service import load_revision_kp_names, load_revision_views
 
 logger = logging.getLogger(__name__)
 
@@ -40,22 +38,17 @@ async def build_snapshot_data(
         - ``user_id``: int
         - ``total_count``: int
     """
-    result = await db.execute(
-        select(WrongQuestion, Question)
-        .join(Question, WrongQuestion.question_id == Question.id)
-        .where(WrongQuestion.id.in_(wq_ids))
-        .options(selectinload(Question.subject_ref))
-    )
-    rows = result.fetchall()
+    rows = list((await db.scalars(
+        select(WrongQuestion).where(WrongQuestion.id.in_(wq_ids))
+    )).all())
+    revision_ids = [int(wq.question_version_id) for wq in rows]
+    views = await load_revision_views(db, revision_ids)
 
-    # Order by the sorted wq_ids. Keep the WrongQuestion row together with
-    # Question because wrong-detail prefers the per-user cached AI analysis and
-    # only falls back to the question-bank analysis when that cache is empty.
-    wq_map: dict[int, tuple[WrongQuestion, Question]] = {}
-    for wq, q in rows:
-        wq_map[wq.id] = (wq, q)
-
-    kp_map = await load_question_kps(db, [q.id for _, q in wq_map.values()])
+    # Order by the sorted wq_ids. Keep the WrongQuestion row together with the
+    # immutable revision because user AI analysis is per wrong row while the bank
+    # analysis/content must be reproduced from the revision the user actually saw.
+    wq_map = {wq.id: wq for wq in rows}
+    kp_map = await load_revision_kp_names(db, revision_ids)
 
     questions_data = []
     skip_count = 0
@@ -69,8 +62,14 @@ async def build_snapshot_data(
             skip_reasons["题目数据不存在"] += 1
             continue
 
-        wq, q = row
-        kps = kp_map.get(q.id, [])
+        wq = row
+        q = views.get(int(wq.question_version_id))
+        if q is None:
+            skip_count += 1
+            skip_reasons.setdefault("题目版本不存在", 0)
+            skip_reasons["题目版本不存在"] += 1
+            continue
+        kps = kp_map.get(int(wq.question_version_id), [])
 
         # Validate and normalize core content. Older imported questions can
         # store their visible stem in text segments or raw_content rather than
@@ -99,7 +98,8 @@ async def build_snapshot_data(
 
         q_data = {
             "wrong_question_id": wq_id,
-            "question_id": q.id,
+            "question_id": q.question_id,
+            "question_version_id": q.question_version_id,
             "question_type": q.question_type,
             "content": content,
             "raw_content": q.raw_content or "",

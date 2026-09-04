@@ -7,7 +7,6 @@ import random
 import time
 from datetime import date, datetime, timedelta
 from uuid import uuid4
-from types import SimpleNamespace
 
 from sqlalchemy import Date as SQLDate, and_, case, cast, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
@@ -16,6 +15,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.time_utils import normalize_to_naive_utc, shanghai_date_utc_range, shanghai_today, utcnow
+from app.models.admin import QuestionVersionKnowledgePoint
+from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.practice_session import PracticeSession
 from app.models.question import Question
@@ -51,10 +52,6 @@ class PracticeSubmissionConflictError(ValueError):
     """The idempotency key belongs to a different semantic submission."""
 
 
-class PracticeQuestionVersionConflictError(ValueError):
-    """A question changed after it was issued to the client."""
-
-
 class PracticeBatchTokenError(ValueError):
     """The signed practice batch token is invalid, expired, or mismatched."""
 
@@ -68,13 +65,13 @@ PRACTICE_BATCH_TOKEN_TTL_SEC = 24 * 60 * 60
 PRACTICE_ANSWER_DURATION_TOLERANCE_SEC = 5
 PRACTICE_BATCH_CLOCK_SKEW_SEC = 5 * 60
 PRACTICE_ALLOWED_MODES = {"random", "smart", "similar", "sequential"}
-_PRACTICE_BATCH_TOKEN_VERSION = 1
+_PRACTICE_BATCH_TOKEN_VERSION = 2
 
 
 def _practice_batch_signing_key() -> bytes:
     return hmac.new(
         settings.APP_SECRET.encode("utf-8"),
-        b"memograd:practice-batch:v1",
+        b"memograd:practice-batch:v2",
         hashlib.sha256,
     ).digest()
 
@@ -88,159 +85,6 @@ def _urlsafe_b64decode(text_value: str) -> bytes:
     return base64.urlsafe_b64decode((text_value + padding).encode("ascii"))
 
 
-def _practice_question_version_values(
-    *,
-    question_id: int,
-    subject_id: int,
-    question_type: str,
-    content,
-    options,
-    answer: str,
-    image_url,
-    is_active: bool,
-) -> str:
-    payload = {
-        "id": int(question_id),
-        "subject_id": int(subject_id),
-        "question_type": str(question_type or ""),
-        "content": content,
-        "options": options,
-        "answer": str(answer or ""),
-        "image_url": image_url,
-        "is_active": bool(is_active),
-    }
-    canonical = json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
-    )
-    version_key = hmac.new(
-        _practice_batch_signing_key(), b"question-version:v1", hashlib.sha256
-    ).digest()
-    return hmac.new(version_key, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
-
-
-def _practice_question_version(question: Question) -> str:
-    """Stable grading/view fingerprint for a question as issued to a client."""
-    return _practice_question_version_values(
-        question_id=question.id,
-        subject_id=question.subject_id,
-        question_type=question.question_type,
-        content=question.content,
-        options=question.options,
-        answer=question.answer,
-        image_url=question.image_url,
-        is_active=question.is_active,
-    )
-
-
-def _practice_question_version_snapshot(version) -> str | None:
-    """Fingerprint a QuestionVersion row when it has the full v5 snapshot."""
-    if version.subject_id is None or version.question_type is None or version.is_active is None:
-        return None
-    return _practice_question_version_values(
-        question_id=version.question_id,
-        subject_id=version.subject_id,
-        question_type=version.question_type,
-        content=version.content,
-        options=version.options,
-        answer=version.answer,
-        image_url=version.image_url,
-        is_active=version.is_active,
-    )
-
-
-
-async def _resolve_issued_question_views(
-    db: AsyncSession,
-    *,
-    current_questions: dict[int, Question],
-    issued_versions: dict[int, str],
-    question_ids: list[int],
-) -> dict[int, object]:
-    """Resolve every issued fingerprint to current or immutable historical data."""
-    resolved: dict[int, object] = {}
-    unresolved: list[int] = []
-    for qid in question_ids:
-        current = current_questions.get(qid)
-        if current is not None and _practice_question_version(current) == issued_versions.get(qid):
-            resolved[qid] = current
-        else:
-            unresolved.append(qid)
-
-    if not unresolved:
-        return resolved
-
-    from app.models.admin import QuestionVersion
-
-    rows = await db.execute(
-        select(QuestionVersion)
-        .where(QuestionVersion.question_id.in_(unresolved))
-        .order_by(QuestionVersion.question_id, QuestionVersion.version.desc())
-    )
-    for version in rows.scalars().all():
-        qid = int(version.question_id)
-        if qid in resolved:
-            continue
-        fingerprint = _practice_question_version_snapshot(version)
-        if fingerprint and fingerprint == issued_versions.get(qid):
-            resolved[qid] = SimpleNamespace(
-                id=qid,
-                subject_id=int(version.subject_id),
-                subject_ref=None,
-                question_type=str(version.question_type or ""),
-                content=version.content,
-                options=version.options,
-                answer=version.answer,
-                analysis=version.analysis,
-                difficulty=version.difficulty,
-                image_url=version.image_url,
-                is_active=bool(version.is_active),
-                _question_version_id=int(version.id),
-            )
-
-    missing = [qid for qid in question_ids if qid not in resolved]
-    if missing:
-        raise PracticeQuestionVersionConflictError(
-            f"练习中的题目版本无法恢复，请重新获取题目: {sorted(set(missing))}"
-        )
-    return resolved
-
-
-async def _load_practice_view_kps(db: AsyncSession, questions: list[object]) -> dict[int, list[str]]:
-    """Load KP names from the same current/history view used for grading."""
-    if not questions:
-        return {}
-    current_ids = [int(q.id) for q in questions if not getattr(q, "_question_version_id", None)]
-    result = await load_question_kps(db, current_ids) if current_ids else {}
-    historical = {
-        int(q.id): int(getattr(q, "_question_version_id"))
-        for q in questions
-        if getattr(q, "_question_version_id", None)
-    }
-    if historical:
-        from app.models.admin import QuestionVersionKnowledgePoint
-        from app.models.knowledge_point import KnowledgePoint
-
-        rows = await db.execute(
-            select(
-                QuestionVersionKnowledgePoint.question_version_id,
-                KnowledgePoint.name,
-            )
-            .join(
-                KnowledgePoint,
-                KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
-            )
-            .where(QuestionVersionKnowledgePoint.question_version_id.in_(historical.values()))
-            .order_by(
-                QuestionVersionKnowledgePoint.question_version_id,
-                QuestionVersionKnowledgePoint.position,
-                QuestionVersionKnowledgePoint.id,
-            )
-        )
-        version_to_qid = {version_id: qid for qid, version_id in historical.items()}
-        for version_id, name in rows.all():
-            result.setdefault(version_to_qid[int(version_id)], []).append(str(name))
-    return result
-
 def create_practice_batch_token(
     *,
     user_id: int,
@@ -248,19 +92,28 @@ def create_practice_batch_token(
     mode: str,
     questions: list[Question],
     recommendation_request_id: str | None = None,
-) -> tuple[str | None, dict[int, str], str | None]:
-    """Create a signed stateless token binding exactly the issued question batch.
+) -> tuple[str | None, dict[int, int], str | None]:
+    """Create a signed batch bound to immutable QuestionVersion ids.
 
-    The token intentionally contains only keyed fingerprints, never answers.
-    Question order is preserved so canonical review output can reproduce the
-    actual issued sequence.
+    ``Question.current_version_id`` is the only revision source.  The token does
+    not embed answers or mutable fingerprints, and submission never re-resolves
+    against the current ``questions`` row.
     """
     if not questions:
         return None, {}, None
     normalized_mode = str(mode or "random")
     if normalized_mode not in PRACTICE_ALLOWED_MODES:
         raise PracticeBatchTokenError("练习模式无效")
-    versions = {int(q.id): _practice_question_version(q) for q in questions}
+
+    revisions: dict[int, int] = {}
+    for question in questions:
+        version_id = getattr(question, "current_version_id", None)
+        if not version_id:
+            raise RuntimeError(
+                f"题目 {question.id} 缺少 current_version_id，题目版本数据不完整"
+            )
+        revisions[int(question.id)] = int(version_id)
+
     now = int(time.time())
     submission_request_id = f"practice_{uuid4().hex}"
     payload = {
@@ -272,7 +125,8 @@ def create_practice_batch_token(
         "mode": normalized_mode,
         "iat": now,
         "exp": now + PRACTICE_BATCH_TOKEN_TTL_SEC,
-        "questions": [[int(q.id), versions[int(q.id)]] for q in questions],
+        # Preserve issued order. Each pair is [question_id, immutable revision_id].
+        "questions": [[int(q.id), revisions[int(q.id)]] for q in questions],
     }
     body = _urlsafe_b64encode(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -280,7 +134,7 @@ def create_practice_batch_token(
     signature = _urlsafe_b64encode(
         hmac.new(_practice_batch_signing_key(), body.encode("ascii"), hashlib.sha256).digest()
     )
-    return f"{body}.{signature}", versions, submission_request_id
+    return f"{body}.{signature}", revisions, submission_request_id
 
 
 def _decode_practice_batch_token(token: str) -> dict:
@@ -308,53 +162,56 @@ def _validate_practice_batch_token(
     *,
     user_id: int,
     question_ids: list[int],
-    session_meta: dict | None,
-    answers: list[dict] | None = None,
-) -> tuple[dict[int, str], list[int], dict]:
+    session_meta: dict,
+    answers: list[dict],
+) -> tuple[dict[int, int], list[int], dict]:
     payload = _decode_practice_batch_token(token)
     if int(payload.get("uid") or 0) != int(user_id):
         raise PracticeBatchTokenError("练习批次不属于当前用户")
+
     raw_questions = payload.get("questions")
-    if not isinstance(raw_questions, list) or len(raw_questions) > PRACTICE_BATCH_MAX_QUESTIONS:
+    if not isinstance(raw_questions, list) or not raw_questions or len(raw_questions) > PRACTICE_BATCH_MAX_QUESTIONS:
         raise PracticeBatchTokenError("练习批次题目列表无效")
-    versions: dict[int, str] = {}
+    revisions: dict[int, int] = {}
     issued_order: list[int] = []
     try:
         for item in raw_questions:
             if not isinstance(item, list) or len(item) != 2:
                 raise ValueError
             qid = int(item[0])
-            version = str(item[1])
-            if not version or qid in versions:
+            revision_id = int(item[1])
+            if qid <= 0 or revision_id <= 0 or qid in revisions:
                 raise ValueError
-            versions[qid] = version
+            revisions[qid] = revision_id
             issued_order.append(qid)
     except (TypeError, ValueError) as exc:
         raise PracticeBatchTokenError("练习批次题目列表无效") from exc
-    if set(versions) != set(int(qid) for qid in question_ids):
+
+    submitted_ids = [int(qid) for qid in question_ids]
+    if len(submitted_ids) != len(issued_order) or set(submitted_ids) != set(issued_order):
         raise PracticeBatchTokenError("提交题目与服务器下发批次不一致")
-    if session_meta is None:
-        raise PracticeBatchTokenError("练习批次必须提交 session")
+
     try:
         subject_id = int(session_meta.get("subject_id"))
     except (TypeError, ValueError) as exc:
         raise PracticeBatchTokenError("练习批次缺少有效科目") from exc
     if int(payload.get("sid") or 0) != subject_id:
         raise PracticeBatchTokenError("提交科目与服务器下发批次不一致")
+
     mode = str(session_meta.get("mode") or "random")
     if mode not in PRACTICE_ALLOWED_MODES or str(payload.get("mode") or "") != mode:
         raise PracticeBatchTokenError("提交模式与服务器下发批次不一致")
+
     token_request_id = str(payload.get("rid") or "").strip()
     session_request_id = _normalize_practice_request_id(session_meta.get("request_id"))
     if not token_request_id or token_request_id != session_request_id:
         raise PracticeBatchTokenError("提交 request_id 与服务器下发批次不一致")
 
-    if "rec_rid" in payload:
-        expected_rec_rid = _normalize_practice_request_id(payload.get("rec_rid"))
-        for answer in answers or []:
-            actual_rec_rid = _normalize_practice_request_id(answer.get("request_id"))
-            if actual_rec_rid != expected_rec_rid:
-                raise PracticeBatchTokenError("推荐反馈 request_id 与服务器下发批次不一致")
+    expected_rec_rid = _normalize_practice_request_id(payload.get("rec_rid"))
+    for answer in answers:
+        actual_rec_rid = _normalize_practice_request_id(answer.get("request_id"))
+        if actual_rec_rid != expected_rec_rid:
+            raise PracticeBatchTokenError("推荐反馈 request_id 与服务器下发批次不一致")
 
     issued_at = int(payload.get("iat") or 0)
     started_at = _parse_session_datetime(session_meta.get("started_at"))
@@ -363,12 +220,11 @@ def _validate_practice_batch_token(
         issued_dt = datetime.utcfromtimestamp(issued_at)
         if started_at < issued_dt - timedelta(seconds=PRACTICE_BATCH_CLOCK_SKEW_SEC):
             raise PracticeBatchTokenError("练习开始时间早于题目下发时间")
-    if finished_at is not None:
-        server_now = utcnow()
-        if finished_at > server_now + timedelta(seconds=PRACTICE_BATCH_CLOCK_SKEW_SEC):
-            raise PracticeBatchTokenError("练习结束时间明显晚于服务器时间")
+    if finished_at is not None and finished_at > utcnow() + timedelta(seconds=PRACTICE_BATCH_CLOCK_SKEW_SEC):
+        raise PracticeBatchTokenError("练习结束时间明显晚于服务器时间")
 
-    return versions, issued_order, payload
+    return revisions, issued_order, payload
+
 
 def _normalize_answer_used_time(value) -> int | None:
     if value is None:
@@ -419,28 +275,22 @@ def _parse_session_datetime(value) -> "datetime | None":
 
 def _normalize_practice_request_id(value) -> str | None:
     request_id = str(value or "").strip() or None
-    if request_id is not None and len(request_id) > 255:
-        request_id = "h:" + hashlib.sha256(request_id.encode("utf-8")).hexdigest()
+    if request_id is not None and len(request_id) > 128:
+        raise ValueError("request_id 长度不得超过 128")
     return request_id
 
 
 def _normalize_practice_session(
-    session_meta: dict | None,
+    session_meta: dict,
     *,
     user_id: int,
     answered_count: int,
     total_correct: int,
     total_wrong: int,
-) -> dict | None:
-    """Validate & normalize a client-supplied practice session before insert.
-
-    Returns column values for a ``PracticeSession`` row, or ``None`` when
-    ``session_meta`` is absent (old clients never send a session — they must
-    still be able to answer).  Raises ``ValueError`` when ``session_meta`` is
-    present but structurally invalid (malformed timestamps / non-int duration).
-    """
+) -> dict:
+    """Validate the mandatory server-issued practice session metadata."""
     if not session_meta:
-        return None
+        raise ValueError("session 不能为空")
 
     started_at = _parse_session_datetime(session_meta.get("started_at"))
     finished_at = _parse_session_datetime(session_meta.get("finished_at"))
@@ -594,7 +444,7 @@ async def resolve_subject_id_to_code(db: AsyncSession, subject_id: int) -> tuple
     from app.models.admin import Subject
 
     subj = await db.get(Subject, subject_id)
-    if subj is None:
+    if subj is None or not subj.is_active:
         return None
     return (subj.code, subj.name)
 
@@ -662,7 +512,7 @@ async def resolve_practice_subject_scope(
     from app.models.admin import Subject
 
     subj = await db.get(Subject, subject_id)
-    if subj is None:
+    if subj is None or not subj.is_active:
         return False, []
 
     # 获取全部启用科目以构建树
@@ -2198,8 +2048,11 @@ async def get_smart_scored_questions(
 
     # ── 3. 最近练习知识点 (diversity) ──
     recent_kp_result = await db.execute(
-        select(QuestionKnowledgePoint.knowledge_point_id)
-        .join(PracticeRecord, PracticeRecord.question_id == QuestionKnowledgePoint.question_id)
+        select(QuestionVersionKnowledgePoint.knowledge_point_id)
+        .join(
+            PracticeRecord,
+            PracticeRecord.question_version_id == QuestionVersionKnowledgePoint.question_version_id,
+        )
         .where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.subject_id.in_(scope_ids),
@@ -2455,8 +2308,12 @@ async def _compute_weak_knowledge_points(
 
     # 获取最近 30 天的做题记录，带题目的知识点
     result = await db.execute(
-        select(PracticeRecord, Question.id)
-        .join(Question, PracticeRecord.question_id == Question.id)
+        select(PracticeRecord, KnowledgePoint.name)
+        .join(
+            QuestionVersionKnowledgePoint,
+            QuestionVersionKnowledgePoint.question_version_id == PracticeRecord.question_version_id,
+        )
+        .join(KnowledgePoint, KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id)
         .where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.answered_at >= cutoff,
@@ -2468,18 +2325,15 @@ async def _compute_weak_knowledge_points(
     if not rows:
         return []
 
-    kp_map = await load_question_kps(db, [qid for _record, qid in rows])
-
-    # 按知识点聚合
+    # 历史统计按作答时 immutable revision 的知识点归因。
     kp_stats: dict[str, dict] = {}
-    for record, qid in rows:
-        kps = kp_map.get(qid, [])
-        for kp in kps:
-            if kp not in kp_stats:
-                kp_stats[kp] = {"total": 0, "correct": 0}
-            kp_stats[kp]["total"] += 1
-            if record.is_correct:
-                kp_stats[kp]["correct"] += 1
+    for record, kp_name in rows:
+        kp = str(kp_name)
+        if kp not in kp_stats:
+            kp_stats[kp] = {"total": 0, "correct": 0}
+        kp_stats[kp]["total"] += 1
+        if record.is_correct:
+            kp_stats[kp]["correct"] += 1
 
     # 筛选薄弱知识点
     weak = []
@@ -2506,9 +2360,8 @@ async def _create_answer_projection_outbox(
     *,
     practice_record_id: int,
     request_id: str | None,
-    wrong_question_projected: bool = False,
 ) -> None:
-    """Persist the answer projection event in the same transaction as the answer."""
+    """Persist one immutable-revision projection event with the answer row."""
     from app.services.outbox_service import create_outbox
 
     await create_outbox(
@@ -2516,217 +2369,47 @@ async def _create_answer_projection_outbox(
         task_id=f"answer_projection:{practice_record_id}",
         task_type="answer_projection",
         payload={
-            "practice_record_id": practice_record_id,
-            "request_id": request_id,
-            # Wrong-book persistence is user-visible and is written
-            # synchronously with PracticeRecord.  The async projection worker
-            # must therefore skip recording the same wrong answer a second
-            # time (which would incorrectly increment review_count twice).
-            "wrong_question_projected": wrong_question_projected,
+            "practice_record_id": int(practice_record_id),
+            "request_id": _normalize_practice_request_id(request_id),
         },
     )
-
-
-async def submit_answer(
-    db: AsyncSession,
-    user_id: int,
-    question_id: int,
-    user_answer: str,
-    used_time: int | None = None,
-    request_id: str | None = None,
-) -> dict:
-    """Persist an answer, wrong-book state, and its projection event atomically.
-
-    Wrong-book state is user-visible and therefore written synchronously for a
-    wrong answer.  The remaining learning projections (behavior, mastery,
-    recommendation feedback, Leitner and adaptive state) stay behind the
-    transactional outbox and are applied by the durable worker.
-    """
-    result = await db.execute(
-        select(Question)
-        .options(selectinload(Question.subject_ref))
-        .where(Question.id == question_id, Question.is_active)
-    )
-    question = result.scalar_one_or_none()
-    if not question:
-        raise ValueError(f"题目不存在: {question_id}")
-
-    kp_map = await load_question_kps(db, [question_id])
-    normalized_answer = user_answer.strip()
-    used_time = _normalize_answer_used_time(used_time)
-    is_correct = is_answer_correct(
-        normalized_answer, question.answer or "", question.question_type or ""
-    )
-
-    record = PracticeRecord(
-        user_id=user_id,
-        question_id=question_id,
-        subject_id=question.subject_id,
-        question_type=question.question_type,
-        user_answer=normalized_answer,
-        is_correct=is_correct,
-        used_time=used_time,
-        answered_at=utcnow(),
-    )
-    db.add(record)
-    # The DB-generated record id is the stable event/idempotency key.
-    await db.flush()
-
-    # Wrong-book is a user-visible source of truth.  Persist it in the same
-    # transaction as the answer instead of waiting for the optional
-    # scheduler/worker runtime.  In web-only/local deployments the outbox can
-    # legitimately remain pending, but a wrong answer must still appear in the
-    # wrong-book immediately after submit returns.
-    wrong_for_prewarm = None
-    if not is_correct:
-        from app.services.wrong_question_service import record_wrong
-
-        wrong_for_prewarm = await record_wrong(
-            db,
-            user_id,
-            question_id,
-            normalized_answer,
-            commit=False,
-        )
-
-    await _create_answer_projection_outbox(
-        db,
-        practice_record_id=record.id,
-        request_id=request_id,
-        wrong_question_projected=not is_correct,
-    )
-    await db.commit()
-    await db.refresh(record)
-
-    # Queue AI analysis immediately after the wrong-book transaction is durable.
-    # Previously prewarm waited for the answer-projection worker, which added
-    # avoidable queue latency before the 4~16s model call even started.
-    if wrong_for_prewarm is not None:
-        try:
-            from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
-
-            revision = build_prewarm_revision(
-                review_count=wrong_for_prewarm.review_count,
-                wrong_answer=wrong_for_prewarm.wrong_answer,
-            )
-            await enqueue_prewarm(
-                wrong_for_prewarm.id,
-                user_id,
-                revision=revision,
-            )
-        except Exception:
-            # Prewarm is best effort and must never make answer submission fail.
-            logger.warning(
-                "AI prewarm enqueue failed after submit wq_id=%s uid=%s",
-                getattr(wrong_for_prewarm, "id", None),
-                user_id,
-                exc_info=True,
-            )
-
-    return {
-        "record_id": record.id,
-        "question_id": question_id,
-        "is_correct": is_correct,
-        "correct_answer": question.answer,
-        "status": "correct" if is_correct else "wrong",
-        "analysis": question.analysis,
-        "knowledge_points": kp_map.get(question_id, []),
-        # Wrong-book state is already persisted in this transaction, so expose
-        # the concrete row id. The mini-program result page can navigate directly
-        # to /wrong-detail without a second lookup by question_id.
-        "is_wrong_added": not is_correct,
-        "wrong_question_id": wrong_for_prewarm.id if wrong_for_prewarm is not None else None,
-    }
-
-
-async def _load_wrong_question_ids(
-    db: AsyncSession,
-    *,
-    user_id: int,
-    question_ids: list[int],
-) -> dict[int, int]:
-    """Return active wrong-book row ids without mutating review state."""
-    if not question_ids:
-        return {}
-    from app.models.wrong_question import WrongQuestion
-
-    result = await db.execute(
-        select(WrongQuestion.question_id, WrongQuestion.id).where(
-            WrongQuestion.user_id == user_id,
-            WrongQuestion.question_id.in_(question_ids),
-            WrongQuestion.is_active,
-        )
-    )
-    return {int(question_id): int(wrong_id) for question_id, wrong_id in result.all()}
-
-
-_PRACTICE_SUBMISSION_ANCHOR_PREFIX = "practice-submit-v2:"
-_PRACTICE_SUBMISSION_ANCHOR_VERSION = 2
-
-
-def _practice_submission_anchor(request_id: str) -> str:
-    """Marker used only to read idempotency data written by the prior release."""
-    return f"{_PRACTICE_SUBMISSION_ANCHOR_PREFIX}{request_id}"
 
 
 def _practice_submission_fingerprint(
     *,
     answers: list[dict],
-    skipped_question_ids: list[int] | None,
+    skipped_question_ids: list[int],
     session_meta: dict,
-    batch_token: str | None = None,
+    batch_token: str,
 ) -> str:
-    """Hash one logical submit.
-
-    Legacy clients did not freeze timing data, so retries without a signed batch
-    token keep the prior relaxed semantics. New clients freeze their submission
-    and carry ``batch_token``; for those we also bind per-question used time and
-    session timestamps/duration so accidental request-id reuse cannot merge two
-    separate practice attempts that happened to have the same answers.
-    """
-    strict_snapshot = bool(batch_token)
+    """Hash the exact immutable submission represented by one request_id."""
     normalized_answers = []
     for answer in answers:
-        item = {
-            "question_id": int(answer["question_id"]),
-            "user_answer": str(
-                answer.get("user_answer", answer.get("answer", "")) or ""
-            ).strip(),
-        }
-        if strict_snapshot:
-            item["used_time"] = _normalize_answer_used_time(answer.get("used_time"))
-        normalized_answers.append(item)
-
-    subject_id = session_meta.get("subject_id")
-    try:
-        subject_id = int(subject_id) if subject_id is not None else None
-    except (TypeError, ValueError):
-        subject_id = str(subject_id)
-
-    question_count = session_meta.get("question_count")
-    try:
-        question_count = int(question_count) if question_count is not None else None
-    except (TypeError, ValueError):
-        question_count = str(question_count)
-
+        normalized_answers.append({
+            "question_id": int(answer.get("question_id")),
+            "user_answer": str(answer.get("user_answer", answer.get("answer", "")) or "").strip(),
+            "used_time": (
+                None if answer.get("used_time") is None else int(answer.get("used_time"))
+            ),
+            "request_id": _normalize_practice_request_id(answer.get("request_id")),
+        })
+    normalized_answers.sort(key=lambda item: item["question_id"])
     payload = {
-        "answers": sorted(normalized_answers, key=lambda item: item["question_id"]),
-        "skipped_field_provided": skipped_question_ids is not None,
-        "skipped_question_ids": sorted(int(qid) for qid in (skipped_question_ids or [])),
+        "v": 3,
+        "answers": normalized_answers,
+        "skipped_question_ids": sorted(int(qid) for qid in skipped_question_ids),
         "session": {
-            "subject_id": subject_id,
-            "mode": str(session_meta.get("mode") or "random")[:16],
-            "question_count": question_count,
-        },
-        "batch_token": str(batch_token or "") if strict_snapshot else "",
-    }
-    if strict_snapshot:
-        payload["session"].update({
+            "request_id": _normalize_practice_request_id(session_meta.get("request_id")),
+            "subject_id": int(session_meta.get("subject_id")),
+            "mode": str(session_meta.get("mode") or "random"),
             "started_at": str(session_meta.get("started_at") or ""),
             "finished_at": str(session_meta.get("finished_at") or ""),
             "duration_sec": int(session_meta.get("duration_sec") or 0),
+            "question_count": int(session_meta.get("question_count") or 0),
             "answered_count": int(session_meta.get("answered_count") or 0),
-        })
+        },
+        "batch_token": str(batch_token),
+    }
     canonical = json.dumps(
         payload,
         ensure_ascii=False,
@@ -2736,308 +2419,85 @@ def _practice_submission_fingerprint(
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-async def _load_legacy_practice_submission_anchor(
-    db: AsyncSession,
-    *,
-    user_id: int,
-    request_id: str,
-) -> dict | None:
-    """Read the temporary PracticeRecord anchor written by the previous app."""
-    raw = await db.scalar(
-        select(PracticeRecord.answers)
-        .where(
-            PracticeRecord.user_id == user_id,
-            PracticeRecord.question_ids == _practice_submission_anchor(request_id),
-        )
-        .order_by(PracticeRecord.id.asc())
-        .limit(1)
-    )
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-    except (TypeError, ValueError):
-        logger.warning(
-            "invalid legacy practice submission anchor uid=%s request_id=%s",
-            user_id,
-            request_id,
-        )
-        return None
-    if not isinstance(data, dict) or data.get("version") != _PRACTICE_SUBMISSION_ANCHOR_VERSION:
-        return None
-    if not isinstance(data.get("response"), dict) or not data.get("payload_hash"):
-        return None
-    return data
-
-
 def _raise_practice_submission_conflict(message: str) -> None:
     raise PracticeSubmissionConflictError(message)
 
 
-async def _promote_legacy_practice_submission_anchor(
-    db: AsyncSession,
-    *,
-    existing: PracticeSession,
-    legacy_anchor: dict,
-) -> dict:
-    """Lazily move a v2 PracticeRecord anchor onto PracticeSession."""
-    response = dict(legacy_anchor["response"])
-    existing.submission_payload_hash = str(legacy_anchor["payload_hash"])
-    existing.submission_response = response
-    try:
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        logger.warning(
-            "promote legacy practice submission anchor failed session_id=%s",
-            existing.id,
-            exc_info=True,
-        )
-    return response
-
-
-def _validate_replayed_practice_session(
-    existing: PracticeSession,
-    expected: dict,
-) -> None:
-    """Reject accidental reuse of an idempotency key for a different batch.
-
-    Retry timestamps/duration are intentionally *not* compared: after a client
-    timeout the same logical submission may be retried a few seconds later.  The
-    stable batch shape and server-computed correctness counts must still match.
-    """
-    checks = (
-        ("subject_id", existing.subject_id, expected.get("subject_id")),
-        ("mode", existing.mode, expected.get("mode")),
-        ("question_count", existing.question_count, expected.get("question_count")),
-        ("answered_count", existing.answered_count, expected.get("answered_count")),
-        ("correct_count", existing.correct_count, expected.get("correct_count")),
-        ("wrong_count", existing.wrong_count, expected.get("wrong_count")),
-    )
-    mismatched = [name for name, old, new in checks if old != new]
-    if mismatched:
+def _replay_committed_submission(existing: PracticeSession, payload_hash: str) -> dict:
+    if existing.submission_payload_hash != payload_hash:
         _raise_practice_submission_conflict(
-            "session.request_id 已用于另一组提交，请重新生成 request_id"
-            f"（冲突字段: {', '.join(mismatched)}）"
+            "session.request_id 已用于另一组提交（答案或会话内容不一致）"
         )
-
-
-async def _replay_practice_submission(
-    db: AsyncSession,
-    *,
-    user_id: int,
-    request_id: str,
-    payload_hash: str,
-    existing: PracticeSession,
-    session_values: dict,
-    evaluated_answers: list[tuple[Question, bool, str, int | None]],
-    skipped_questions: list[Question],
-    total_correct: int,
-    total_wrong: int,
-    question_order: list[int] | None = None,
-) -> dict:
-    """Return the immutable first response for an idempotent retry."""
-    stored_hash = getattr(existing, "submission_payload_hash", None)
-    stored_response = getattr(existing, "submission_response", None)
-    if stored_hash:
-        if stored_hash != payload_hash:
-            _raise_practice_submission_conflict(
-                "session.request_id 已用于另一组提交（答案或会话内容不一致）"
-            )
-        if isinstance(stored_response, dict):
-            return dict(stored_response)
-        # A current-version row should never commit without its response because
-        # both values are written in one transaction. Treat a manually-corrupted
-        # row as a deterministic state conflict rather than rebuilding a response
-        # from potentially edited questions.
+    if not isinstance(existing.submission_response, dict):
         _raise_practice_submission_conflict(
-            "session.request_id 对应的提交结果不完整，请勿重复生成提交内容"
+            "session.request_id 对应的 canonical response 缺失，提交状态不可恢复"
         )
-
-    # Compatibility for the immediately previous release, which persisted the
-    # canonical response on one PracticeRecord.  Read it only; new submissions
-    # no longer write legacy record columns.
-    legacy_anchor = await _load_legacy_practice_submission_anchor(
-        db,
-        user_id=user_id,
-        request_id=request_id,
-    )
-    if legacy_anchor is not None:
-        if legacy_anchor.get("payload_hash") != payload_hash:
-            _raise_practice_submission_conflict(
-                "session.request_id 已用于另一组提交（答案或会话内容不一致）"
-            )
-        return await _promote_legacy_practice_submission_anchor(
-            db, existing=existing, legacy_anchor=legacy_anchor
-        )
-
-    # Older sessions predate canonical response persistence.  Preserve rolling
-    # upgrade compatibility by validating the old aggregate shape and rebuilding
-    # only those legacy rows.
-    _validate_replayed_practice_session(existing, session_values)
-    return await _build_batch_submit_response(
-        db,
-        user_id=user_id,
-        evaluated_answers=evaluated_answers,
-        skipped_questions=skipped_questions,
-        total_correct=total_correct,
-        total_wrong=total_wrong,
-        question_order=question_order,
-    )
-
-
-async def _build_batch_submit_response(
-    db: AsyncSession,
-    *,
-    user_id: int,
-    evaluated_answers: list[tuple[Question, bool, str, int | None]],
-    skipped_questions: list[Question],
-    total_correct: int,
-    total_wrong: int,
-    question_order: list[int] | None = None,
-) -> dict:
-    all_questions = [q for q, _c, _a, _t in evaluated_answers] + skipped_questions
-    kp_map = await _load_practice_view_kps(db, all_questions)
-    wrong_ids = await _load_wrong_question_ids(
-        db,
-        user_id=user_id,
-        question_ids=[q.id for q, is_correct, _a, _t in evaluated_answers if not is_correct],
-    )
-
-    results = []
-    for q, is_correct, _user_answer, _used_time in evaluated_answers:
-        results.append({
-            "question_id": q.id,
-            "is_correct": is_correct,
-            "correct_answer": q.answer,
-            "status": "correct" if is_correct else "wrong",
-            "analysis": q.analysis,
-            "knowledge_points": kp_map.get(q.id, []),
-            "is_wrong_added": not is_correct,
-            "wrong_question_id": wrong_ids.get(q.id),
-        })
-
-    # Skipped questions are review-only: expose the answer after the batch has
-    # been submitted, but do not create PracticeRecord/WrongQuestion rows.
-    for q in skipped_questions:
-        results.append({
-            "question_id": q.id,
-            "is_correct": False,
-            "correct_answer": q.answer,
-            "status": "skipped",
-            "analysis": q.analysis,
-            "knowledge_points": kp_map.get(q.id, []),
-            "is_wrong_added": False,
-            "wrong_question_id": None,
-        })
-
-    if question_order:
-        result_by_id = {int(item["question_id"]): item for item in results}
-        results = [result_by_id[qid] for qid in question_order if qid in result_by_id]
-
-    return {
-        "results": results,
-        "total_correct": total_correct,
-        "total_wrong": total_wrong,
-        "total_skipped": len(skipped_questions),
-    }
+    return dict(existing.submission_response)
 
 
 async def batch_submit_answers(
     db: AsyncSession,
     user_id: int,
     answers: list[dict],
-    session_meta: dict | None = None,
-    skipped_question_ids: list[int] | None = None,
-    batch_token: str | None = None,
+    session_meta: dict,
+    skipped_question_ids: list[int],
+    batch_token: str,
 ) -> dict:
-    """Batch-persist answers + wrong-book state + outbox events atomically.
+    """Atomically persist one signed practice batch against immutable revisions.
 
-    Idempotency is claimed *before* any PracticeRecord is written.  A retry with
-    the same ``(user_id, session.request_id)`` therefore returns the same logical
-    result without incrementing practice statistics, wrong-book review_count or
-    learning projections a second time.
-
-    ``skipped_question_ids`` are intentionally review-only.  Their answers and
-    analyses are returned after submit so the client can review skipped items,
-    but they are not persisted as wrong answers.
+    The signed batch binds every question to a concrete ``QuestionVersion.id``.
+    Grading, review payloads, wrong-book entries and asynchronous projections all
+    reference that revision; current Question rows are never consulted to decide
+    what the user saw.
     """
     if not batch_token:
         raise PracticeBatchTokenError("batch_token 不能为空，请重新获取题目")
-    if session_meta is None:
+    if not session_meta:
         raise PracticeBatchTokenError("session 不能为空，请重新获取题目")
     if skipped_question_ids is None:
         raise PracticeBatchTokenError("skipped_question_ids 必须显式提交")
-
     if len(answers) > PRACTICE_BATCH_MAX_QUESTIONS:
         raise ValueError(f"answers 最多允许 {PRACTICE_BATCH_MAX_QUESTIONS} 题")
-    if skipped_question_ids is not None and len(skipped_question_ids) > PRACTICE_BATCH_MAX_QUESTIONS:
+    if len(skipped_question_ids) > PRACTICE_BATCH_MAX_QUESTIONS:
         raise ValueError(f"skipped_question_ids 最多允许 {PRACTICE_BATCH_MAX_QUESTIONS} 题")
 
     answer_question_ids = [int(a["question_id"]) for a in answers]
     if len(answer_question_ids) != len(set(answer_question_ids)):
         raise ValueError("answers 中存在重复 question_id")
-
-    skipped_field_provided = True
     skipped_ids = [int(qid) for qid in skipped_question_ids]
     if len(skipped_ids) != len(set(skipped_ids)):
         raise ValueError("skipped_question_ids 中存在重复 question_id")
     overlap = set(answer_question_ids) & set(skipped_ids)
     if overlap:
         raise ValueError(f"题目不能同时提交答案并标记跳过: {sorted(overlap)}")
-    if len(answer_question_ids) + len(skipped_ids) > PRACTICE_BATCH_MAX_QUESTIONS:
+    all_question_ids = answer_question_ids + skipped_ids
+    if not all_question_ids:
+        raise ValueError("practice batch 至少需要包含 1 道题")
+    if len(all_question_ids) > PRACTICE_BATCH_MAX_QUESTIONS:
         raise ValueError(f"单次练习最多允许 {PRACTICE_BATCH_MAX_QUESTIONS} 题")
 
-    # Fast replay path: when the first submit is already committed, validate the
-    # payload against its stored fingerprint *before* reading current questions.
-    # This keeps retries valid even if a question was edited/deactivated after
-    # the original submit.
-    early_payload_hash: str | None = None
-    if session_meta is not None:
-        early_request_id = _normalize_practice_request_id(session_meta.get("request_id"))
-        if early_request_id:
-            early_existing = await db.scalar(
-                select(PracticeSession).where(
-                    PracticeSession.user_id == user_id,
-                    PracticeSession.request_id == early_request_id,
-                )
-            )
-            if early_existing is not None:
-                early_payload_hash = _practice_submission_fingerprint(
-                    answers=answers,
-                    skipped_question_ids=skipped_question_ids,
-                    session_meta=session_meta,
-                    batch_token=batch_token,
-                )
-                stored_hash = getattr(early_existing, "submission_payload_hash", None)
-                stored_response = getattr(early_existing, "submission_response", None)
-                if stored_hash:
-                    if stored_hash != early_payload_hash:
-                        _raise_practice_submission_conflict(
-                            "session.request_id 已用于另一组提交（答案或会话内容不一致）"
-                        )
-                    if isinstance(stored_response, dict):
-                        return dict(stored_response)
-                    _raise_practice_submission_conflict(
-                        "session.request_id 对应的提交结果不完整，请勿重复生成提交内容"
-                    )
+    payload_hash = _practice_submission_fingerprint(
+        answers=answers,
+        skipped_question_ids=skipped_ids,
+        session_meta=session_meta,
+        batch_token=batch_token,
+    )
+    request_id = _normalize_practice_request_id(session_meta.get("request_id"))
+    if not request_id:
+        raise ValueError("session.request_id 不能为空")
 
-                legacy_anchor = await _load_legacy_practice_submission_anchor(
-                    db,
-                    user_id=user_id,
-                    request_id=early_request_id,
-                )
-                if legacy_anchor is not None:
-                    if legacy_anchor.get("payload_hash") != early_payload_hash:
-                        _raise_practice_submission_conflict(
-                            "session.request_id 已用于另一组提交（答案或会话内容不一致）"
-                        )
-                    return await _promote_legacy_practice_submission_anchor(
-                        db, existing=early_existing, legacy_anchor=legacy_anchor
-                    )
+    # Fast idempotent replay does not depend on token expiry or current question
+    # state. Once a submission is committed, request_id + payload hash is enough.
+    existing = await db.scalar(
+        select(PracticeSession).where(
+            PracticeSession.user_id == user_id,
+            PracticeSession.request_id == request_id,
+        )
+    )
+    if existing is not None:
+        return _replay_committed_submission(existing, payload_hash)
 
-    all_question_ids = answer_question_ids + skipped_ids
-    issued_versions, issued_order, _batch_payload = _validate_practice_batch_token(
+    issued_revisions, issued_order, batch_payload = _validate_practice_batch_token(
         batch_token,
         user_id=user_id,
         question_ids=all_question_ids,
@@ -3045,323 +2505,185 @@ async def batch_submit_answers(
         answers=answers,
     )
 
-    if not all_question_ids:
-        if session_meta is not None:
-            raise ValueError("practice batch 至少需要包含 1 道题")
-        return {
-            "results": [],
-            "total_correct": 0,
-            "total_wrong": 0,
-            "total_skipped": 0,
-        }
-
-    question_query = (
-        select(Question)
-        .options(selectinload(Question.subject_ref))
-        .where(Question.id.in_(all_question_ids))
-    )
-    result = await db.execute(question_query)
-    questions = {q.id: q for q in result.scalars().all()}
-
-    questions = await _resolve_issued_question_views(
-        db,
-        current_questions=questions,
-        issued_versions=issued_versions,
-        question_ids=all_question_ids,
+    from app.services.question_revision_service import (
+        load_revision_kp_names,
+        load_revision_views,
     )
 
-    evaluated_answers: list[tuple[Question, bool, str, int | None]] = []
+    revision_views = await load_revision_views(db, issued_revisions.values())
+    if len(revision_views) != len(issued_revisions):
+        raise PracticeBatchTokenError("练习批次引用的题目 revision 不完整")
+
+    questions: dict[int, object] = {}
+    for qid, revision_id in issued_revisions.items():
+        view = revision_views.get(int(revision_id))
+        if view is None or int(view.question_id) != int(qid):
+            raise PracticeBatchTokenError("练习批次题目与 revision 绑定关系无效")
+        if not view.is_active:
+            # A valid issued practice batch can only originate from an active
+            # revision. This catches corrupted/manual token state, not later edits.
+            raise PracticeBatchTokenError("练习批次包含不可用题目 revision")
+        questions[int(qid)] = view
+
+    evaluated_answers: list[tuple[object, bool, str, int | None]] = []
     answer_request_ids: dict[int, str | None] = {}
     total_correct = 0
     total_wrong = 0
-
-    for a in answers:
-        q = questions[int(a["question_id"])]
-        user_answer = str(a.get("user_answer", a.get("answer", "")) or "").strip()
-        used_time = _normalize_answer_used_time(a.get("used_time"))
-        answer_request_ids[q.id] = a.get("request_id")
-        is_correct = is_answer_correct(
-            user_answer, q.answer or "", q.question_type or "",
-        )
+    for answer in answers:
+        q = questions[int(answer["question_id"])]
+        user_answer = str(answer.get("user_answer", answer.get("answer", "")) or "").strip()
+        used_time = _normalize_answer_used_time(answer.get("used_time"))
+        answer_request_ids[int(q.id)] = _normalize_practice_request_id(answer.get("request_id"))
+        is_correct = is_answer_correct(user_answer, q.answer or "", q.question_type or "")
         evaluated_answers.append((q, is_correct, user_answer, used_time))
         if is_correct:
             total_correct += 1
         else:
             total_wrong += 1
-
     skipped_questions = [questions[qid] for qid in skipped_ids]
 
-    # Claim the batch idempotency key before adding any PracticeRecord.  This is
-    # the critical ordering: a unique-key collision must happen while there are
-    # no pending per-question writes that could survive a savepoint rollback.
-    session_values = None
-    session_obj: PracticeSession | None = None
-    payload_hash: str | None = None
-    if session_meta is not None:
-        try:
-            session_values = _normalize_practice_session(
-                session_meta,
-                user_id=user_id,
-                answered_count=len(evaluated_answers),
-                total_correct=total_correct,
-                total_wrong=total_wrong,
+    session_values = _normalize_practice_session(
+        session_meta,
+        user_id=user_id,
+        answered_count=len(evaluated_answers),
+        total_correct=total_correct,
+        total_wrong=total_wrong,
+    )
+    if session_values.get("request_id") != request_id:
+        raise ValueError("session.request_id 归一化结果不一致")
+    if int(session_values.get("question_count") or 0) != len(all_question_ids):
+        raise ValueError("session.question_count 与本次批次题数不一致")
+
+    # The batch token snapshots subject/mode semantics at issue time. Do not
+    # re-resolve today's mutable subject tree during submit.
+    if int(session_values.get("subject_id") or 0) != int(batch_payload.get("sid") or 0):
+        raise PracticeBatchTokenError("session.subject_id 与练习批次不一致")
+    if str(session_values.get("mode")) != str(batch_payload.get("mode")):
+        raise PracticeBatchTokenError("session.mode 与练习批次不一致")
+
+    duration_sec = int(session_values.get("duration_sec") or 0)
+    answered_used_times = [
+        int(used_time)
+        for _q, _correct, _answer, used_time in evaluated_answers
+        if used_time is not None
+    ]
+    max_allowed_answer_time = duration_sec + PRACTICE_ANSWER_DURATION_TOLERANCE_SEC
+    if any(used_time > max_allowed_answer_time for used_time in answered_used_times):
+        raise ValueError("answers.used_time 不得明显超过本次练习总时长")
+    if sum(answered_used_times) > max_allowed_answer_time:
+        raise ValueError("answers.used_time 合计不得明显超过本次练习总时长")
+
+    session_obj = PracticeSession(
+        **session_values,
+        submission_payload_hash=payload_hash,
+    )
+    try:
+        async with db.begin_nested():
+            db.add(session_obj)
+            await db.flush()
+    except IntegrityError as exc:
+        if not _is_unique_violation(exc):
+            raise
+        winner = await db.scalar(
+            select(PracticeSession).where(
+                PracticeSession.user_id == user_id,
+                PracticeSession.request_id == request_id,
             )
-        except ValueError as e:
-            raise ValueError(f"practice session 结构非法: {e}") from e
-
-        if session_values is not None:
-            request_id = session_values.get("request_id")
-            if not request_id:
-                raise ValueError("session.request_id 不能为空")
-
-            duration_sec = int(session_values.get("duration_sec") or 0)
-            answered_used_times = [
-                int(used_time) for _q, _correct, _answer, used_time in evaluated_answers
-                if used_time is not None
-            ]
-            max_allowed_answer_time = duration_sec + PRACTICE_ANSWER_DURATION_TOLERANCE_SEC
-            if any(used_time > max_allowed_answer_time for used_time in answered_used_times):
-                raise ValueError("answers.used_time 不得明显超过本次练习总时长")
-            if sum(answered_used_times) > max_allowed_answer_time:
-                raise ValueError("answers.used_time 合计不得明显超过本次练习总时长")
-
-            fallback_subject_id = None
-            if evaluated_answers:
-                fallback_subject_id = evaluated_answers[0][0].subject_id
-            elif skipped_questions:
-                fallback_subject_id = skipped_questions[0].subject_id
-
-            subject_id = session_values.get("subject_id")
-            if subject_id is None:
-                session_values["subject_id"] = fallback_subject_id
-            else:
-                from app.models.admin import Subject
-
-                subj_exists = await db.scalar(
-                    select(Subject.id).where(Subject.id == subject_id)
-                )
-                if subj_exists is None:
-                    session_values["subject_id"] = fallback_subject_id
-
-            if session_values.get("subject_id") is None:
-                raise ValueError("session.subject_id 不能为空")
-
-            if all_question_ids:
-                has_children, allowed_subject_ids = await resolve_practice_subject_scope(
-                    db,
-                    int(session_values["subject_id"]),
-                    include_children=True,
-                )
-                if session_values.get("mode") == SEQUENTIAL_MODE and has_children:
-                    raise ValueError("顺序练习仅支持具体科目，不支持父级科目聚合提交")
-                allowed_subject_id_set = set(allowed_subject_ids)
-                out_of_scope = [
-                    q.id for q in questions.values()
-                    if q.subject_id not in allowed_subject_id_set
-                ]
-                if out_of_scope:
-                    raise ValueError(
-                        f"提交题目不属于当前练习科目范围: {sorted(out_of_scope)}"
-                    )
-
-            # New clients always send skipped_question_ids, including an empty
-            # list.  ``None`` means an old client omitted the field entirely.
-            if skipped_field_provided:
-                expected_total = len(evaluated_answers) + len(skipped_ids)
-                if int(session_values.get("question_count") or 0) != expected_total:
-                    raise ValueError(
-                        "session.question_count 与 answers + skipped_question_ids 不一致"
-                    )
-
-            payload_hash = early_payload_hash or _practice_submission_fingerprint(
-                answers=answers,
-                skipped_question_ids=skipped_question_ids,
-                session_meta=session_meta,
-                batch_token=batch_token,
-            )
-
-            existing = await db.scalar(
-                select(PracticeSession).where(
-                    PracticeSession.user_id == user_id,
-                    PracticeSession.request_id == request_id,
-                )
-            )
-            if existing is not None:
-                return await _replay_practice_submission(
-                    db,
-                    user_id=user_id,
-                    request_id=request_id,
-                    payload_hash=payload_hash,
-                    existing=existing,
-                    session_values=session_values,
-                    evaluated_answers=evaluated_answers,
-                    skipped_questions=skipped_questions,
-                    total_correct=total_correct,
-                    total_wrong=total_wrong,
-                    question_order=issued_order,
-                )
-
-            session_obj = PracticeSession(
-                **session_values,
-                submission_payload_hash=payload_hash,
-            )
-            try:
-                async with db.begin_nested():
-                    db.add(session_obj)
-                    await db.flush()
-            except IntegrityError as e:
-                if not _is_unique_violation(e):
-                    raise
-                # A concurrent retry won the unique-key race.  PostgreSQL waits
-                # for the winning transaction to resolve before reporting the
-                # violation, so the committed row is now safe to read.
-                existing = await db.scalar(
-                    select(PracticeSession).where(
-                        PracticeSession.user_id == user_id,
-                        PracticeSession.request_id == request_id,
-                    )
-                )
-                if existing is None:
-                    raise
-                return await _replay_practice_submission(
-                    db,
-                    user_id=user_id,
-                    request_id=request_id,
-                    payload_hash=payload_hash,
-                    existing=existing,
-                    session_values=session_values,
-                    evaluated_answers=evaluated_answers,
-                    skipped_questions=skipped_questions,
-                    total_correct=total_correct,
-                    total_wrong=total_wrong,
-                    question_order=issued_order,
-                )
+        )
+        if winner is None:
+            raise
+        return _replay_committed_submission(winner, payload_hash)
 
     now = utcnow()
-    records = []
-    record_mode = session_values["mode"] if session_values is not None else None
+    records: list[tuple[PracticeRecord, object, bool, str, int | None]] = []
     for q, is_correct, user_answer, used_time in evaluated_answers:
         record = PracticeRecord(
             user_id=user_id,
-            question_id=q.id,
-            subject_id=q.subject_id,
+            question_id=int(q.id),
+            question_version_id=int(q.question_version_id),
+            subject_id=int(q.subject_id),
             question_type=q.question_type,
             user_answer=user_answer,
             is_correct=is_correct,
             used_time=used_time,
             answered_at=now,
-            mode=record_mode,
+            mode=session_values["mode"],
+            projection_state="pending",
         )
         db.add(record)
         records.append((record, q, is_correct, user_answer, used_time))
-
-    # Allocate all record ids before writing wrong-book/outbox rows.  Wrong
-    # answers are added to the wrong-book synchronously so the result is visible
-    # immediately even when this API process is running in web-only mode.
     if records:
         await db.flush()
+
     from app.services.wrong_question_service import record_wrong
 
     prewarm_wrong_questions = []
     wrong_question_ids: dict[int, int] = {}
     for record, q, is_correct, user_answer, _used_time in records:
-        historical_view = bool(getattr(q, "_question_version_id", None))
-        if not is_correct and not historical_view:
+        if not is_correct:
             wrong = await record_wrong(
                 db,
                 user_id,
-                q.id,
+                int(q.id),
                 user_answer,
+                question_version_id=int(q.question_version_id),
                 commit=False,
             )
             prewarm_wrong_questions.append(wrong)
-            wrong_question_ids[q.id] = wrong.id
-        # Historical grading deliberately does not project into the current
-        # question's wrong-book/mastery/recommendation state. The current row
-        # may represent materially different content than the user answered.
-        if not historical_view:
-            await _create_answer_projection_outbox(
-                db,
-                practice_record_id=record.id,
-                request_id=answer_request_ids.get(q.id),
-                wrong_question_projected=not is_correct,
-            )
+            wrong_question_ids[int(q.id)] = int(wrong.id)
+        await _create_answer_projection_outbox(
+            db,
+            practice_record_id=int(record.id),
+            request_id=answer_request_ids.get(int(q.id)),
+        )
 
-    # Build the review payload before commit.  The exact first response is
-    # persisted on PracticeSession below, so later retries never depend on the
-    # current Question.answer/analysis values.
-    kp_map = await _load_practice_view_kps(
-        db,
-        [q for _r, q, _c, _x, _y in records] + list(skipped_questions),
-    )
-    response_results = [
-        {
-            "record_id": r.id,
-            "question_id": q.id,
-            "is_correct": c,
+    revision_kps = await load_revision_kp_names(db, issued_revisions.values())
+    response_by_question: dict[int, dict] = {}
+    for record, q, is_correct, _user_answer, _used_time in records:
+        response_by_question[int(q.id)] = {
+            "record_id": int(record.id),
+            "question_id": int(q.id),
+            "is_correct": bool(is_correct),
             "correct_answer": q.answer,
-            "status": "correct" if c else "wrong",
+            "status": "correct" if is_correct else "wrong",
             "analysis": q.analysis,
-            "knowledge_points": kp_map.get(q.id, []),
-            "is_wrong_added": q.id in wrong_question_ids,
-            "wrong_question_id": wrong_question_ids.get(q.id),
+            "knowledge_points": revision_kps.get(int(q.question_version_id), []),
+            "is_wrong_added": int(q.id) in wrong_question_ids,
+            "wrong_question_id": wrong_question_ids.get(int(q.id)),
         }
-        for r, q, c, _, _ in records
-    ]
-    response_results.extend({
-        "question_id": q.id,
-        "is_correct": False,
-        "correct_answer": q.answer,
-        "status": "skipped",
-        "analysis": q.analysis,
-        "knowledge_points": kp_map.get(q.id, []),
-        "is_wrong_added": False,
-        "wrong_question_id": None,
-    } for q in skipped_questions)
-    response_by_id = {int(item["question_id"]): item for item in response_results}
-    response_results = [response_by_id[qid] for qid in issued_order if qid in response_by_id]
+    for q in skipped_questions:
+        response_by_question[int(q.id)] = {
+            "question_id": int(q.id),
+            "is_correct": False,
+            "correct_answer": q.answer,
+            "status": "skipped",
+            "analysis": q.analysis,
+            "knowledge_points": revision_kps.get(int(q.question_version_id), []),
+            "is_wrong_added": False,
+            "wrong_question_id": None,
+        }
+
     response_payload = {
-        "results": response_results,
+        "results": [response_by_question[qid] for qid in issued_order],
         "total_correct": total_correct,
         "total_wrong": total_wrong,
         "total_skipped": len(skipped_questions),
     }
-
-    if session_obj is not None:
-        # Persist the exact first response on the batch entity itself.  This is
-        # part of the same transaction as PracticeRecord/WrongQuestion writes,
-        # so a committed session is always replayable, including all-skipped
-        # batches that create zero PracticeRecord rows.
-        session_obj.submission_response = response_payload
-
+    session_obj.submission_response = response_payload
     await db.commit()
 
     if prewarm_wrong_questions:
         try:
-            from app.services.ai_prewarm_worker import (
-                build_prewarm_revision,
-                enqueue_prewarm_batch,
-            )
+            from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
 
-            revisions = {
-                wrong.id: build_prewarm_revision(
+            for wrong in prewarm_wrong_questions:
+                revision = build_prewarm_revision(
                     review_count=wrong.review_count,
                     wrong_answer=wrong.wrong_answer,
                 )
-                for wrong in prewarm_wrong_questions
-            }
-            await enqueue_prewarm_batch(
-                [wrong.id for wrong in prewarm_wrong_questions],
-                user_id,
-                revisions=revisions,
-            )
+                await enqueue_prewarm(wrong.id, user_id, revision=revision)
         except Exception:
-            logger.warning(
-                "AI prewarm batch enqueue failed after submit uid=%s count=%s",
-                user_id,
-                len(prewarm_wrong_questions),
-                exc_info=True,
-            )
+            logger.warning("AI prewarm enqueue failed after practice batch", exc_info=True)
 
     return response_payload
 

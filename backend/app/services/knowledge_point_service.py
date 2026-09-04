@@ -146,6 +146,12 @@ async def sync_question_knowledge_points(
     if kp_names is None:
         return {"changed": False, "created": 0, "updated": 0, "deleted": 0, "total": 0}
 
+    # KP links are part of the immutable revision state. Serialize mutations on
+    # the parent Question row so concurrent scalar/KP edits cannot produce a
+    # revision assembled from two different transaction states.
+    from app.services.question_revision_service import lock_question_for_revision
+
+    question = await lock_question_for_revision(db, int(question.id))
     entries = normalize_kp_input(kp_names)
     subject_id = question.subject_id
     existing = await _load_mappings(db, question.id)

@@ -198,8 +198,9 @@ class AdminQuestionVersionListItem(BaseModel):
     id: int
     question_id: int
     version: int
-    edited_by: int
+    edited_by: int | None = None
     edited_by_name: str | None = None
+    change_source: str = "system"
     edit_reason: str | None = None
     created_at: datetime
 

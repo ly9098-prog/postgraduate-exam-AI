@@ -28,6 +28,7 @@ from app.models.ai_chat import AiChat
 from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 from app.services.knowledge_point_service import load_question_kps
+from app.services.question_revision_service import load_revision_kp_names, load_revision_views
 from app.services.safe_remote_fetch import request_remote_bytes
 from app.services.storage_backend import compress_image
 
@@ -743,6 +744,7 @@ def _analysis_input_signature(
     payload = {
         "prompt_version": AI_ANALYSIS_PROMPT_VERSION,
         "question_id": q.id,
+        "question_version_id": getattr(q, "question_version_id", None),
         "question_sync_version": getattr(q, "sync_version", None),
         "question_updated_at": getattr(q, "updated_at", None),
         "content": q.content,
@@ -912,8 +914,9 @@ async def evaluate_cached_error_analysis(
         return {"status": "stale", "analysis": None, "reason": "visual_input_missing"}
 
     if knowledge_points is None:
-        kp_map = await load_question_kps(db, [q.id])
-        knowledge_points = kp_map.get(q.id, [])
+        version_id = int(getattr(q, "question_version_id", 0) or wq.question_version_id or 0)
+        kp_map = await load_revision_kp_names(db, [version_id])
+        knowledge_points = kp_map.get(version_id, [])
     runtime = await resolve_llm_runtime_config(db, feature="analysis")
     input_signature = _analysis_input_signature(
         wq, q, knowledge_points, visual_sources=visual_sources
@@ -961,10 +964,10 @@ async def analyze_error(
     if not wq:
         raise ValueError("错题记录不存在")
 
-    q_result = await db.execute(select(Question).where(Question.id == wq.question_id))
-    q = q_result.scalar_one_or_none()
-    if not q:
-        raise ValueError("题目不存在")
+    revision_views = await load_revision_views(db, [int(wq.question_version_id)])
+    q = revision_views.get(int(wq.question_version_id))
+    if q is None or int(q.question_id) != int(wq.question_id):
+        raise ValueError("错题版本不存在")
 
     stored_visual_sources = _collect_question_visual_sources(q)
     requires_visual = bool(stored_visual_sources) or _question_has_unresolved_visual_slot(q)
@@ -990,8 +993,8 @@ async def analyze_error(
             "retryable": False,
         }
 
-    kp_map = await load_question_kps(db, [q.id])
-    knowledge_points = kp_map.get(q.id, [])
+    kp_map = await load_revision_kp_names(db, [int(wq.question_version_id)])
+    knowledge_points = kp_map.get(int(wq.question_version_id), [])
     # Resolve the currently selected analysis model before the cache decision.
     # This is a cheap DB lookup compared with an LLM call and lets a model
     # configuration change invalidate old advice deterministically.
@@ -1509,29 +1512,23 @@ async def generate_advice(db: AsyncSession, user_id: int, subject_id: int | None
         }
 
     # Collect user's wrong question stats
-    conditions = [WrongQuestion.user_id == user_id]
+    conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
     result = await db.execute(
         select(WrongQuestion).where(*conditions).limit(10)
     )
     wrong_list = result.scalars().all()
 
-    qids = [w.question_id for w in wrong_list]
-    questions = {}
-    if qids:
-        qr = await db.execute(
-            select(Question).where(Question.id.in_(qids))
-        )
-        questions = {q.id: q for q in qr.scalars().all()}
-    kp_map = await load_question_kps(db, qids)
+    revision_ids = [int(w.question_version_id) for w in wrong_list if w.question_version_id]
+    revision_views = await load_revision_views(db, revision_ids)
+    kp_map = await load_revision_kp_names(db, revision_ids)
 
     weak_points = set()
     subject_stats = {}
     recent_wrong = []
     for w in wrong_list:
-        q = questions.get(w.question_id)
+        q = revision_views.get(int(w.question_version_id or 0))
         if q:
-            weak_points.update(kp_map.get(q.id, []))
-            # Use subject_id as label (subject_ref is noload, always None without selectinload)
+            weak_points.update(kp_map.get(int(w.question_version_id), []))
             subj_label = str(q.subject_id)
             subject_stats[subj_label] = subject_stats.get(subj_label, 0) + 1
             recent_wrong.append({

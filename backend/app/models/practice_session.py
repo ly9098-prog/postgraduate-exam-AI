@@ -9,7 +9,6 @@ from sqlalchemy import (
     JSON,
     String,
     func,
-    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,24 +22,20 @@ class PracticeSession(Base):
       PracticeRecord.used_time     → 单题行为分析（平均答题时间 / mastery 等）
       PracticeSession.duration_sec → 学习统计（番茄钟统计页的 duration 指标）
 
-    一次刷题会话只对应一条记录；由 (user_id, request_id) 幂等去重，网络重试
-    不会插入重复 session 导致学习时长翻倍。session 元数据在 batch-submit 时
-    optional 上报（旧客户端不携带，仅不影响答题）。
+    一次刷题会话只对应一条记录；由 (user_id, request_id) 幂等去重。
+    batch-submit 必须携带服务器签发批次与完整 session 元数据。
     """
 
     __tablename__ = "practice_sessions"
     __table_args__ = (
         Index("ix_practice_sessions_user_started", "user_id", "started_at"),
         Index("ix_practice_sessions_user_finished", "user_id", "finished_at"),
-        # 幂等：同一用户同一 request_id 只允许一条 session。request_id 可空以兼容
-        # 旧客户端（不携带 session 时根本不写本表），故用部分唯一索引。
+        # 幂等：同一用户同一 request_id 只允许一条 session。
         Index(
             "ux_practice_sessions_user_request",
             "user_id",
             "request_id",
             unique=True,
-            sqlite_where=text("request_id IS NOT NULL"),
-            postgresql_where=text("request_id IS NOT NULL"),
         ),
         CheckConstraint(
             "duration_sec >= 0",
@@ -61,10 +56,8 @@ class PracticeSession(Base):
     )
     subject_ref = relationship("Subject", back_populates="practice_sessions", lazy="noload")
 
-    # 幂等 key。String(256) 上限内原样保存；超长由 service 层做稳定 hash，
-    # 保证两个不同的超长 id 绝不因截断而合并成同一个 key（见 practice_service
-    # _normalize_practice_session）。
-    request_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # 幂等 key；服务层强制非空并限制长度。
+    request_id: Mapped[str] = mapped_column(String(128), nullable=False)
 
     # Canonical idempotency state for batch-submit.  These fields belong to the
     # session rather than an arbitrary PracticeRecord so all-skipped batches and

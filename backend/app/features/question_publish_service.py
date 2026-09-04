@@ -280,9 +280,14 @@ async def _retain_latest_duplicate(
 
     obsolete_ids = [question.id for question in duplicates if question.id != retained.id]
     if obsolete_ids:
+        from app.services.question_revision_service import ensure_question_revision
+
         for question in duplicates:
             if question.id in obsolete_ids:
                 question.is_active = False
+                await ensure_question_revision(
+                    db, question, change_source="import_dedupe", edit_reason="duplicate superseded"
+                )
         await db.execute(
             update(QuestionImport)
             .where(QuestionImport.question_id.in_(obsolete_ids))
@@ -312,6 +317,11 @@ async def _retain_latest_duplicate(
             await sync_question_knowledge_points(
                 db, retained, kp_names, source="imported", replace=True
             )
+        from app.services.question_revision_service import ensure_question_revision
+
+        await ensure_question_revision(
+            db, retained, change_source="import_dedupe", edit_reason="retained duplicate updated"
+        )
 
     qi.status = "published"
     qi.question_id = retained.id
@@ -456,6 +466,9 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
         )
 
         await sync_question_knowledge_points(db, q, kp_names, source="imported")
+    from app.services.question_revision_service import ensure_question_revision
+
+    await ensure_question_revision(db, q, change_source="import_publish", edit_reason="initial publish")
     await db.refresh(q)
 
     qi.status = "published"

@@ -1082,25 +1082,6 @@ async def find_duplicate_question(
     return None
 
 
-def _refresh_duplicate_question_display_fields(
-    duplicate: Question, question_fields: dict | None
-) -> bool:
-    if not duplicate or not question_fields:
-        return False
-
-    changed = False
-    clean_content = question_fields.get("content")
-    clean_options = question_fields.get("options")
-
-    if clean_content and duplicate.content != clean_content:
-        duplicate.content = clean_content
-        changed = True
-    if clean_options and duplicate.options != clean_options:
-        duplicate.options = clean_options
-        changed = True
-
-    return changed
-
 
 # ============================================================
 # 三、Excel / PDF 解析

@@ -18,17 +18,15 @@ from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.time_utils import normalize_to_naive_utc
 from app.features.question_type import (
     QUESTION_TYPE_SORT_ORDER,
     QuestionType,
 )
-from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 from app.schemas.export_task import ExportSortBy
-from app.services.knowledge_point_service import load_question_kps
+from app.services.question_revision_service import load_revision_kp_names, load_revision_views
 
 logger = logging.getLogger(__name__)
 
@@ -50,22 +48,25 @@ async def sort_questions(
     if sort_by == ExportSortBy.RANDOM:
         return _sort_random(wq_ids)
 
-    # For other sort modes, load the join data
-    result = await db.execute(
-        select(WrongQuestion, Question)
-        .join(Question, WrongQuestion.question_id == Question.id)
-        .where(WrongQuestion.id.in_(wq_ids))
-        .options(selectinload(Question.subject_ref))
-    )
-    rows = result.fetchall()
+    # Sort from immutable wrong-question revisions.
+    rows = list((await db.scalars(
+        select(WrongQuestion).where(WrongQuestion.id.in_(wq_ids))
+    )).all())
+    revision_ids = [int(wq.question_version_id) for wq in rows]
+    views = await load_revision_views(db, revision_ids)
+    kp_map = await load_revision_kp_names(db, revision_ids)
 
     # Build sort key map: wq_id -> (primary_sort_key, tiebreaker)
-    kp_map = await load_question_kps(db, [q.id for _wq, q in rows])
     sort_keys: dict[int, tuple] = {}
 
-    for wq, q in rows:
+    for wq in rows:
+        q = views.get(int(wq.question_version_id))
+        if q is None:
+            continue
         tiebreaker = wq.id  # stable tiebreaker
-        key = _sort_key(sort_by, wq, q, kp_map.get(q.id, []))
+        key = _sort_key(
+            sort_by, wq, q, kp_map.get(int(wq.question_version_id), [])
+        )
         sort_keys[wq.id] = (key, tiebreaker)
 
     # Items not in sort_keys (shouldn't happen) sort last
@@ -78,7 +79,7 @@ async def sort_questions(
     return [i for i, _ in known] + missing
 
 
-def _sort_key(sort_by: ExportSortBy, wq: WrongQuestion, q: Question, kps: list[str] | None = None):
+def _sort_key(sort_by: ExportSortBy, wq: WrongQuestion, q, kps: list[str] | None = None):
     """Return a comparable sort key."""
     if sort_by == ExportSortBy.NEWEST:
         timestamp = _datetime_timestamp(wq.created_at)

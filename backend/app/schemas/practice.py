@@ -25,7 +25,6 @@ class PracticeQuestion(BaseModel):
     recommend_score: float | None = None
     strategy: str | None = None
     similarity: float | None = None
-    question_version: str | None = None
 
 
 class SequentialPracticeProgress(BaseModel):
@@ -57,8 +56,6 @@ class SequentialPracticeResetResponse(BaseModel):
     subject_id: int
     reset: bool = True
 
-
-# --- POST /practice/submit ---
 
 class AnswerSubmit(BaseModel):
     question_id: int = Field(gt=0)
@@ -100,9 +97,7 @@ class PracticeSessionMeta(BaseModel):
 class BatchSubmitRequest(BaseModel):
     answers: list[AnswerSubmit] = Field(default_factory=list, max_length=50)
     skipped_question_ids: list[int] = Field(default_factory=list, max_length=50)
-    # New batch submissions are always server-issued.  Requiring both fields at
-    # the API boundary prevents callers from silently falling back to an
-    # unbound legacy path that could enumerate question ids for answers.
+    # Every submission is bound to a server-issued immutable question batch.
     batch_token: str = Field(min_length=16, max_length=8192)
     session: PracticeSessionMeta
 

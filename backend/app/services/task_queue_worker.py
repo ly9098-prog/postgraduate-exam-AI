@@ -165,9 +165,6 @@ async def _process_answer_projection_task(task: Task) -> None:
             db,
             practice_record_id=practice_record_id,
             request_id=task.payload.get("request_id"),
-            wrong_question_projected=bool(
-                task.payload.get("wrong_question_projected", False)
-            ),
         )
     logger.info(
         "Answer projection task finished: task_id=%s record_id=%s processed=%s duplicate=%s",

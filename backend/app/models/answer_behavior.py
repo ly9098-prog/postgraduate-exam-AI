@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import (
     Boolean,
     DateTime,
+    BigInteger,
     ForeignKey,
     Integer,
     SmallInteger,
@@ -22,6 +23,12 @@ class AnswerBehavior(Base):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     question_id: Mapped[int] = mapped_column(Integer, ForeignKey("questions.id"), nullable=False)
     practice_record_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("practice_records.id"), nullable=True)
+    question_version_id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("question_versions.id"),
+        nullable=False,
+        index=True,
+    )
     subject_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("subjects.id", ondelete="SET NULL"), nullable=True, index=True
     )

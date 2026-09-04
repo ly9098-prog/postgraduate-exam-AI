@@ -7,6 +7,8 @@ from pydantic import Field
 class ReviewQuestion(BaseModel):
     schedule_id: int
     question_id: int
+    question_version_id: int
+    occurrence_seq: int = Field(..., ge=0)
     subject_id: int | None = None
     subject_code: str = ""
     subject_name: str = ""
@@ -20,53 +22,9 @@ class ReviewQuestion(BaseModel):
     ease_factor: float
 
 
-class GradeSubmit(BaseModel):
-    schedule_id: int
-    question_id: int
-    user_answer: str
-
-
 class TodayReviewResponse(BaseModel):
     total_today: int
     questions: list[ReviewQuestion]
-
-
-class ReviewSubmit(BaseModel):
-    schedule_id: int
-    question_id: int
-    rating: int = Field(..., ge=0, le=5)
-
-
-class ReviewSubmitResponse(BaseModel):
-    schedule_id: int
-    question_id: int
-    rating: int
-    interval_after: int
-    ease_factor_after: float
-    next_review_at: datetime
-    is_correct: bool
-    mastery_percent: int = 20
-    mastered: bool = False
-
-
-class BatchReviewRequest(BaseModel):
-    reviews: list[ReviewSubmit]
-
-
-class BatchReviewResult(BaseModel):
-    schedule_id: int
-    question_id: int
-    success: bool = True
-    error: str | None = None
-    next_review_at: datetime | None = None
-    is_correct: bool
-    mastery_percent: int = 20
-    mastered: bool = False
-
-
-class BatchReviewResponse(BaseModel):
-    results: list[BatchReviewResult]
-    total: int
 
 
 class SubjectReviewStats(BaseModel):
@@ -89,8 +47,11 @@ class ReviewStatsResponse(BaseModel):
 
 class ReviewHistoryItem(BaseModel):
     question_id: int
+    question_version_id: int
     rating: int
     interval_after: int
+    is_correct: bool | None = None
+    user_answer: str | None = None
     reviewed_at: datetime
 
 
@@ -104,16 +65,22 @@ class ReviewHistoryResponse(BaseModel):
 class BatchGradeItem(BaseModel):
     schedule_id: int
     question_id: int
-    user_answer: str = ""
+    question_version_id: int
+    occurrence_seq: int = Field(..., ge=0)
+    request_id: str = Field(..., min_length=8, max_length=128)
+    user_answer: str = Field(default="", max_length=4096)
 
 
 class BatchGradeRequest(BaseModel):
-    reviews: list[BatchGradeItem]
+    reviews: list[BatchGradeItem] = Field(..., min_length=1, max_length=40)
 
 
 class BatchGradeResult(BaseModel):
     schedule_id: int
     question_id: int
+    question_version_id: int
+    occurrence_seq: int
+    request_id: str
     success: bool = True
     error: str | None = None
     is_correct: bool

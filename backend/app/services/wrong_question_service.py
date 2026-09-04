@@ -3,68 +3,27 @@ from datetime import timedelta
 
 from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.time_utils import shanghai_today_boundaries, utcnow
-from app.models.admin import Subject
-from app.models.question import Question
+from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Subject
+from app.models.knowledge_point import KnowledgePoint
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
-from app.models.user_question_state import UserQuestionState
 from app.models.wrong_question import WrongQuestion
 from app.services.admin_subject_service import resolve_subject_ids
-from app.services.knowledge_point_service import kp_fuzzy_condition, load_question_kps
+from app.services.knowledge_point_service import normalize_knowledge_name
+from app.services.question_revision_service import load_revision_kp_names
 
 logger = logging.getLogger(__name__)
 
 
-def _canonical_active_wrong_rows(user_id: int):
-    """Return one logical active WrongQuestion row per question.
-
-    Historical concurrency bugs could leave multiple active rows for the same
-    ``(user_id, question_id)``.  New writes are serialized now, but list/stats
-    APIs still need to tolerate those old rows.  Pick the most recently updated
-    row (then highest id as a deterministic tie-breaker) before filtering,
-    pagination, or aggregation so one physical duplicate cannot become two
-    visible wrong questions.
-    """
-    ranked = (
-        select(
-            WrongQuestion.id.label("id"),
-            WrongQuestion.question_id.label("question_id"),
-            WrongQuestion.error_type.label("error_type"),
-            WrongQuestion.mastered.label("mastered"),
-            WrongQuestion.review_count.label("review_count"),
-            func.row_number()
-            .over(
-                partition_by=WrongQuestion.question_id,
-                order_by=(
-                    WrongQuestion.updated_at.desc(),
-                    WrongQuestion.id.desc(),
-                ),
-            )
-            .label("rn"),
-        )
-        .where(
-            WrongQuestion.user_id == user_id,
-            WrongQuestion.is_active,
-        )
-        .subquery("ranked_active_wrong_questions")
-    )
-    return (
-        select(
-            ranked.c.id,
-            ranked.c.question_id,
-            ranked.c.error_type,
-            ranked.c.mastered,
-            ranked.c.review_count,
-        )
-        .where(ranked.c.rn == 1)
-        .subquery("canonical_active_wrong_questions")
-    )
-
-
 async def record_wrong(
-    db: AsyncSession, user_id: int, question_id: int, wrong_answer: str, *, commit: bool = True
+    db: AsyncSession,
+    user_id: int,
+    question_id: int,
+    wrong_answer: str,
+    *,
+    question_version_id: int,
+    commit: bool = True,
 ) -> WrongQuestion:
     # 与 ReviewSchedule 共用 user+question 事务锁，阻止并发首次答错同时创建
     # 两条 WrongQuestion / ReviewSchedule。
@@ -93,6 +52,7 @@ async def record_wrong(
         # never renders advice for the previous attempt while prewarm refreshes.
         wq.ai_analysis = None
         wq.wrong_answer = wrong_answer
+        wq.question_version_id = int(question_version_id)
         wq.review_count = (wq.review_count or 0) + 1
         wq.last_review_at = utcnow()
         wq.mastered = False
@@ -101,6 +61,7 @@ async def record_wrong(
         wq = WrongQuestion(
             user_id=user_id,
             question_id=question_id,
+            question_version_id=question_version_id,
             wrong_answer=wrong_answer,
             review_count=1,
             last_review_at=utcnow(),
@@ -109,7 +70,7 @@ async def record_wrong(
 
     # 错题自动进入复习调度（SM-2 由 ReviewSchedule 管理）
     await review_scheduler.auto_schedule_wrong_question(
-        db, user_id, question_id, commit=commit,
+        db, user_id, question_id, int(question_version_id), commit=commit,
     )
 
     if not commit:
@@ -164,28 +125,29 @@ async def update_wrong(
 
 
 async def get_stats(db: AsyncSession, user_id: int) -> dict:
-    canonical = _canonical_active_wrong_rows(user_id)
-    total_q = select(func.count(canonical.c.id))
-    total = (await db.execute(total_q)).scalar() or 0
+    conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
+    total_q = select(func.count(WrongQuestion.id)).where(and_(*conditions))
+    total = (await db.execute(total_q)).scalar()
 
     type_result = await db.execute(
-        select(canonical.c.error_type, func.count(canonical.c.id).label("cnt"))
-        .group_by(canonical.c.error_type)
+        select(WrongQuestion.error_type, func.count(WrongQuestion.id).label("cnt"))
+        .where(and_(*conditions))
+        .group_by(WrongQuestion.error_type)
     )
     by_error_type = [{"type": r[0], "count": r[1]} for r in type_result.all()]
 
-    # Count by subject from joined questions
+    # Count by the immutable revision that produced the wrong answer.
     result3 = await db.execute(
         select(
-            Question.subject_id.label("subject_id"),
+            QuestionVersion.subject_id.label("subject_id"),
             Subject.code.label("subject_code"),
             Subject.name.label("subject_name"),
-            func.count(canonical.c.id).label("cnt"),
+            func.count(WrongQuestion.id).label("cnt"),
         )
-        .select_from(canonical)
-        .join(Question, canonical.c.question_id == Question.id)
-        .join(Subject, Question.subject_id == Subject.id)
-        .group_by(Question.subject_id, Subject.code, Subject.name)
+        .join(QuestionVersion, WrongQuestion.question_version_id == QuestionVersion.id)
+        .join(Subject, QuestionVersion.subject_id == Subject.id)
+        .where(and_(*conditions))
+        .group_by(QuestionVersion.subject_id, Subject.code, Subject.name)
     )
 
     by_subject = [
@@ -193,19 +155,25 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
         for r in result3.all()
     ]
 
-    unmastered_q = select(func.count(canonical.c.id)).where(
-        canonical.c.mastered.is_(False),
+    unmastered_q = select(func.count(WrongQuestion.id)).where(
+        WrongQuestion.user_id == user_id,
+        WrongQuestion.is_active,
+        ~WrongQuestion.mastered,
     )
     unmastered = (await db.execute(unmastered_q)).scalar() or 0
 
-    mastered_q = select(func.count(canonical.c.id)).where(
-        canonical.c.mastered.is_(True),
+    mastered_q = select(func.count(WrongQuestion.id)).where(
+        WrongQuestion.user_id == user_id,
+        WrongQuestion.is_active,
+        WrongQuestion.mastered,
     )
     mastered = (await db.execute(mastered_q)).scalar() or 0
 
-    hf_q = select(func.count(canonical.c.id)).where(
-        canonical.c.mastered.is_(False),
-        canonical.c.review_count >= 3,
+    hf_q = select(func.count(WrongQuestion.id)).where(
+        WrongQuestion.user_id == user_id,
+        WrongQuestion.is_active,
+        ~WrongQuestion.mastered,
+        WrongQuestion.review_count >= 3,
     )
     high_frequency_count = (await db.execute(hf_q)).scalar() or 0
 
@@ -214,10 +182,14 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
     today_due_q = await db.execute(
         select(func.count(func.distinct(ReviewSchedule.question_id))).where(
             ReviewSchedule.user_id == user_id,
+            ReviewSchedule.is_active,
             ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= today_end,
             ReviewSchedule.question_id.in_(
-                select(canonical.c.question_id)
+                select(WrongQuestion.question_id).where(
+                    WrongQuestion.user_id == user_id,
+                    WrongQuestion.is_active,
+                )
             ),
         )
     )
@@ -234,47 +206,6 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
     }
 
 
-async def update_quality(
-    db: AsyncSession, user_id: int, wq_id: int, quality: int
-) -> WrongQuestion | None:
-    """评分错题并触发 SM-2 更新（路由到 ReviewSchedule，不在 WQ 上独立计算）"""
-    wq = await get_by_id(db, user_id, wq_id)
-    if not wq:
-        return None
-
-    from app.services import review_scheduler
-
-    # 查或创建 ReviewSchedule
-    result = await db.execute(
-        select(ReviewSchedule)
-        .where(
-            ReviewSchedule.user_id == user_id,
-            ReviewSchedule.question_id == wq.question_id,
-        )
-        .order_by(ReviewSchedule.id.asc())
-        .limit(1)
-    )
-    # 历史上可能存在重复 schedule；质量评分使用稳定的首条作为 canonical，
-    # submit_review 会把 SM-2 状态同步到其余重复记录。
-    schedule = result.scalars().first()
-
-    if not schedule:
-        schedule = await review_scheduler.auto_schedule_wrong_question(
-            db, user_id, wq.question_id
-        )
-
-    # 通过 review_scheduler.submit_review 统一提交 SM-2 更新
-    await review_scheduler.submit_review(
-        db,
-        user_id=user_id,
-        schedule_id=schedule.id,
-        question_id=wq.question_id,
-        rating=quality,
-    )
-
-    await db.refresh(wq)
-    return wq
-
 
 # ── Enhanced list query with correlated subqueries ──
 
@@ -290,8 +221,7 @@ async def list_wrong_enriched(
 ) -> tuple[list[dict], int]:
     """Enhanced WQ list avoiding N+1 via correlated scalar subqueries."""
 
-    canonical = _canonical_active_wrong_rows(user_id)
-    conditions = []
+    conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
     if error_type:
         conditions.append(WrongQuestion.error_type == error_type)
 
@@ -299,6 +229,7 @@ async def list_wrong_enriched(
     review_record_sub = (
         select(func.count(ReviewRecord.id))
         .where(ReviewRecord.question_id == WrongQuestion.question_id)
+        .where(ReviewRecord.question_version_id == WrongQuestion.question_version_id)
         .where(ReviewRecord.user_id == WrongQuestion.user_id)
         .correlate(WrongQuestion)
         .scalar_subquery()
@@ -307,7 +238,9 @@ async def list_wrong_enriched(
     next_review_sub = (
         select(ReviewSchedule.next_review_at)
         .where(ReviewSchedule.question_id == WrongQuestion.question_id)
+        .where(ReviewSchedule.question_version_id == WrongQuestion.question_version_id)
         .where(ReviewSchedule.user_id == WrongQuestion.user_id)
+        .where(ReviewSchedule.is_active)
         .where(~ReviewSchedule.mastered)
         .correlate(WrongQuestion)
         .order_by(ReviewSchedule.next_review_at.asc().nulls_last())
@@ -318,6 +251,7 @@ async def list_wrong_enriched(
     last_reviewed_sub = (
         select(ReviewSchedule.last_reviewed_at)
         .where(ReviewSchedule.question_id == WrongQuestion.question_id)
+        .where(ReviewSchedule.question_version_id == WrongQuestion.question_version_id)
         .where(ReviewSchedule.user_id == WrongQuestion.user_id)
         .correlate(WrongQuestion)
         .order_by(ReviewSchedule.last_reviewed_at.desc().nulls_last())
@@ -325,21 +259,22 @@ async def list_wrong_enriched(
         .scalar_subquery()
     )
 
-    # 掌握度不再使用“历史正确率”。它表示当前复习记忆状态，并与
-    # question_review_service.REVIEW_MASTERY_BY_BOX 保持同一映射。
+    # Revision-local review mastery comes from the schedule's successful SM-2
+    # repetition count, never from mutable current-question adaptive state.
     mastery_pct_sub = (
         select(
             case(
-                (UserQuestionState.box_level >= 5, 1.00),
-                (UserQuestionState.box_level == 4, 0.90),
-                (UserQuestionState.box_level == 3, 0.80),
-                (UserQuestionState.box_level == 2, 0.65),
-                (UserQuestionState.box_level == 1, 0.45),
+                (ReviewSchedule.repetitions >= 5, 1.00),
+                (ReviewSchedule.repetitions == 4, 0.90),
+                (ReviewSchedule.repetitions == 3, 0.80),
+                (ReviewSchedule.repetitions == 2, 0.65),
+                (ReviewSchedule.repetitions == 1, 0.45),
                 else_=0.20,
             )
         )
-        .where(UserQuestionState.question_id == WrongQuestion.question_id)
-        .where(UserQuestionState.user_id == WrongQuestion.user_id)
+        .where(ReviewSchedule.question_id == WrongQuestion.question_id)
+        .where(ReviewSchedule.question_version_id == WrongQuestion.question_version_id)
+        .where(ReviewSchedule.user_id == WrongQuestion.user_id)
         .correlate(WrongQuestion)
         .scalar_subquery()
     )
@@ -347,31 +282,37 @@ async def list_wrong_enriched(
     base_query = (
         select(
             WrongQuestion,
-            Question,
+            QuestionVersion,
+            Subject,
             review_record_sub.label("review_record_count"),
             next_review_sub.label("next_review"),
             last_reviewed_sub.label("last_reviewed"),
             mastery_pct_sub.label("mastery_pct"),
         )
-        .join(canonical, canonical.c.id == WrongQuestion.id)
-        .outerjoin(Question, WrongQuestion.question_id == Question.id)
-        .options(selectinload(Question.subject_ref))
+        .outerjoin(QuestionVersion, WrongQuestion.question_version_id == QuestionVersion.id)
+        .outerjoin(Subject, QuestionVersion.subject_id == Subject.id)
+        .where(and_(*conditions))
     )
 
-    if conditions:
-        base_query = base_query.where(and_(*conditions))
-
     if subject_id:
-        # An unresolvable subject_id resolves to an empty list; applying the
-        # filter unconditionally (like list_wrong) makes that an empty result
-        # instead of leaking every subject's wrong questions.
         subject_ids = await resolve_subject_ids(db, subject_id)
-        base_query = base_query.where(Question.subject_id.in_(subject_ids))
+        base_query = base_query.where(QuestionVersion.subject_id.in_(subject_ids))
 
     if topic:
-        topic_filter = kp_fuzzy_condition(topic)
-        if topic_filter is not None:
-            base_query = base_query.where(topic_filter)
+        raw_topic = str(topic).strip()
+        normalized_topic = normalize_knowledge_name(raw_topic)
+        version_matches = (
+            select(QuestionVersionKnowledgePoint.question_version_id)
+            .join(
+                KnowledgePoint,
+                KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
+            )
+            .where(
+                (KnowledgePoint.name.contains(raw_topic))
+                | (KnowledgePoint.normalized_name.contains(normalized_topic))
+            )
+        )
+        base_query = base_query.where(WrongQuestion.question_version_id.in_(version_matches))
 
     base_query = base_query.order_by(WrongQuestion.updated_at.desc())
 
@@ -385,14 +326,16 @@ async def list_wrong_enriched(
     rows = result.all()
 
     items = []
-    kp_map = await load_question_kps(db, [row[1].id for row in rows if row[1]])
+    revision_ids = [int(row[1].id) for row in rows if row[1] is not None]
+    kp_map = await load_revision_kp_names(db, revision_ids)
     for row in rows:
         wq = row[0]
-        question = row[1]
-        review_count_val = row[2]
-        next_review_val = row[3]
-        last_reviewed = row[4]
-        mastery_pct = row[5]
+        revision = row[1]
+        subject = row[2]
+        review_count_val = row[3]
+        next_review_val = row[4]
+        last_reviewed = row[5]
+        mastery_pct = row[6]
 
         items.append({
             "id": wq.id,
@@ -403,22 +346,21 @@ async def list_wrong_enriched(
             "review_record_count": review_count_val or 0,
             "wrong_count": wq.review_count or 0,
             "mastery_percent": round(float(mastery_pct if mastery_pct is not None else 0.20), 4),
-            # mastered 是唯一状态源；百分比只展示进度，不能反向推导调度状态。
             "is_mastered": bool(wq.mastered),
             "next_review_at": next_review_val,
             "last_reviewed_at": last_reviewed,
             "last_wrong_at": wq.last_review_at,
             "created_at": wq.created_at,
             "updated_at": wq.updated_at,
-            "subject_id": question.subject_id if question else None,
-            "subject_code": question.subject_ref.code if question and question.subject_ref else None,
-            "subject_name": question.subject_ref.name if question and question.subject_ref else None,
-            "question_type": question.question_type if question else None,
-            "content": question.content if question else None,
-            "options": question.options if question else None,
-            "answer": question.answer if question else None,
-            "analysis": question.analysis if question else None,
-            "knowledge_points": kp_map.get(question.id, []) if question else None,
+            "subject_id": revision.subject_id if revision else None,
+            "subject_code": subject.code if subject else None,
+            "subject_name": subject.name if subject else None,
+            "question_type": revision.question_type if revision else None,
+            "content": revision.content if revision else None,
+            "options": revision.options if revision else None,
+            "answer": revision.answer if revision else None,
+            "analysis": revision.analysis if revision else None,
+            "knowledge_points": kp_map.get(int(revision.id), []) if revision else None,
             "ai_analysis": wq.ai_analysis,
             "ai_analysis_status": "ready" if isinstance(wq.ai_analysis, dict) and wq.ai_analysis else "empty",
         })
@@ -484,49 +426,48 @@ async def batch_operate(
                     db, user_id=user_id, question_id=wq.question_id
                 )
                 changed = False
-                # Reactivate if soft-deleted
                 if not wq.is_active:
                     wq.is_active = True
                     wq.removed_at = None
                     changed = True
+                if wq.mastered:
+                    wq.mastered = False
+                    wq.mastered_at = None
+                    changed = True
 
-                sch_result = await db.execute(
+                schedule = await db.scalar(
                     select(ReviewSchedule).where(
                         ReviewSchedule.user_id == user_id,
                         ReviewSchedule.question_id == wq.question_id,
                     )
                 )
-                schedules = list(sch_result.scalars().all())
-
-                if schedules:
-                    if any(schedule.mastered for schedule in schedules) or wq.mastered:
-                        changed = await review_scheduler.set_mastered_state(
-                            db,
-                            user_id=user_id,
-                            question_id=wq.question_id,
-                            mastered=False,
-                        ) or changed
-
-                    now = utcnow()
-                    # 所有历史重复 schedule 一并拉回当前复习队列，避免只更新一条
-                    # 后仍残留相互冲突的 mastered / next_review_at 状态。
-                    for schedule in schedules:
-                        if schedule.next_review_at is None or schedule.next_review_at > now:
-                            schedule.next_review_at = now
-                            changed = True
-
-                    if changed:
-                        updated_count += 1
-                    else:
-                        skipped_ids.append(wq_id)
-                else:
-                    await review_scheduler.auto_schedule_wrong_question(
-                        db, user_id, wq.question_id, commit=False,
+                rebound = False
+                if schedule is None or int(schedule.question_version_id) != int(wq.question_version_id):
+                    schedule = await review_scheduler.auto_schedule_wrong_question(
+                        db, user_id, wq.question_id, int(wq.question_version_id), commit=False,
                     )
-                    await review_scheduler.set_mastered_state(
-                        db, user_id=user_id, question_id=wq.question_id, mastered=False,
-                    )
+                    rebound = True
+                    changed = True
+
+                now = utcnow()
+                if not schedule.is_active:
+                    schedule.is_active = True
+                    changed = True
+                if schedule.mastered:
+                    schedule.mastered = False
+                    changed = True
+                if schedule.next_review_at is None or schedule.next_review_at > now:
+                    schedule.next_review_at = now
+                    if not rebound:
+                        # Forcing a future occurrence into the queue invalidates any
+                        # stale client task issued for the previous schedule state.
+                        schedule.occurrence_seq = int(schedule.occurrence_seq or 0) + 1
+                    changed = True
+
+                if changed:
                     updated_count += 1
+                else:
+                    skipped_ids.append(wq_id)
             except Exception:
                 skipped_ids.append(wq_id)
 
@@ -554,50 +495,28 @@ async def batch_operate(
                 skipped_ids.append(wq_id)
                 continue
 
-            # Historical duplicate WrongQuestion rows represent the same logical
-            # question.  Remove all active duplicates together; otherwise one stale
-            # row could keep the question visible after the user removed it.
-            related_result = await db.execute(
-                select(WrongQuestion).where(
-                    WrongQuestion.user_id == user_id,
-                    WrongQuestion.question_id == wq.question_id,
-                )
-            )
-            for related_wq in related_result.scalars().all():
-                related_wq.is_active = False
-                related_wq.removed_at = now
-
-            # Remove from review queue by marking every historical duplicate
-            # schedule mastered. 不调用 set_mastered_state，避免把“移出错题本”
-            # 错误解释成用户已经掌握并改写 WrongQuestion.mastered。
-            sch_result = await db.execute(
+            wq.is_active = False
+            wq.removed_at = now
+            schedule = await db.scalar(
                 select(ReviewSchedule).where(
                     ReviewSchedule.user_id == user_id,
                     ReviewSchedule.question_id == wq.question_id,
                 )
             )
-            for schedule in sch_result.scalars().all():
-                schedule.mastered = True
+            if schedule is not None:
+                schedule.is_active = False
+                schedule.occurrence_seq = int(schedule.occurrence_seq or 0) + 1
             updated_count += 1
 
     elif action == "delete":
         from app.services import review_scheduler
 
-        deleted_question_ids: set[int] = set()
         for wq_id, wq in ordered_wqs:
-            # If a malformed historical dataset contains two requested WQ ids for
-            # the same question, the first pass deletes the logical question and
-            # subsequent ids are already satisfied without issuing duplicate SQL.
-            if wq.question_id in deleted_question_ids:
-                updated_count += 1
-                continue
             await review_scheduler.lock_question_review_state(
                 db, user_id=user_id, question_id=wq.question_id
             )
-
-            # ReviewRecord.schedule_id has no ON DELETE CASCADE.  Delete history
-            # first, otherwise PostgreSQL/SQLite FK enforcement can reject removal
-            # of the associated ReviewSchedule.
+            # Review history belongs to the deleted wrong-book workflow and is
+            # removed before its schedule because schedule_id has no delete cascade.
             await db.execute(
                 delete(ReviewRecord).where(
                     ReviewRecord.user_id == user_id,
@@ -610,14 +529,9 @@ async def batch_operate(
                     ReviewSchedule.question_id == wq.question_id,
                 )
             )
-            # Delete all historical duplicate WQ rows for this logical question.
             await db.execute(
-                delete(WrongQuestion).where(
-                    WrongQuestion.user_id == user_id,
-                    WrongQuestion.question_id == wq.question_id,
-                )
+                delete(WrongQuestion).where(WrongQuestion.id == wq.id)
             )
-            deleted_question_ids.add(wq.question_id)
             updated_count += 1
 
     skipped_ids.extend(not_found_ids)

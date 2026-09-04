@@ -39,6 +39,9 @@ async def create(
         from app.services.knowledge_point_service import sync_question_knowledge_points
 
         await sync_question_knowledge_points(db, q, knowledge_points, source="manual")
+    from app.services.question_revision_service import ensure_question_revision
+
+    await ensure_question_revision(db, q, change_source="manual_create", edit_reason="initial create")
     await db.commit()
     await db.refresh(q)
     return q

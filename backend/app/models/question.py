@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    BigInteger,
     SmallInteger,
     String,
     Text,
@@ -55,6 +56,14 @@ class Question(Base):
         String(36), nullable=True, unique=True, index=True, default=lambda: str(uuid4())
     )
     sync_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Immutable revision currently backing this mutable projection row.
+    # Every published/active question must point at one QuestionVersion revision.
+    current_version_id: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("question_versions.id"),
+        nullable=True,
+        index=True,
+    )
 
     # 知识点关联（关联表为唯一事实源）。
     # knowledge_point_links 保留 association metadata（role/weight/source/position）。

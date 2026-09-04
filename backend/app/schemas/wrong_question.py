@@ -28,9 +28,6 @@ class WrongQuestionUpdate(BaseModel):
     error_type: str | None = None
 
 
-class WrongQuestionQualityUpdate(BaseModel):
-    quality: int = Field(..., ge=0, le=5)
-
 
 # ── 响应 ──
 

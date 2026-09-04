@@ -11,12 +11,10 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.models.question import Question
 from app.models.wrong_question import WrongQuestion
 from app.schemas.export_task import ExportGroupBy
-from app.services.knowledge_point_service import load_question_kps
+from app.services.question_revision_service import load_revision_kp_names, load_revision_views
 
 logger = logging.getLogger(__name__)
 
@@ -43,22 +41,24 @@ async def group_questions(
     if group_by == ExportGroupBy.NONE:
         return [GroupSection(title="", wq_ids=list(wq_ids))]
 
-    # Load question data for grouping
-    result = await db.execute(
-        select(WrongQuestion, Question)
-        .join(Question, WrongQuestion.question_id == Question.id)
-        .where(WrongQuestion.id.in_(wq_ids))
-        .options(selectinload(Question.subject_ref))
-    )
-    rows = result.fetchall()
-
-    kp_map = await load_question_kps(db, [q.id for _wq, q in rows])
+    # Group from immutable revisions so exports remain stable after later edits.
+    rows = list((await db.scalars(
+        select(WrongQuestion).where(WrongQuestion.id.in_(wq_ids))
+    )).all())
+    revision_ids = [int(wq.question_version_id) for wq in rows]
+    views = await load_revision_views(db, revision_ids)
+    kp_map = await load_revision_kp_names(db, revision_ids)
 
     groups_map: dict[str, list[int]] = {}
     _wq_order = {wq_id: idx for idx, wq_id in enumerate(wq_ids)}
 
-    for wq, q in rows:
-        group_key, group_title = _group_key_title(group_by, wq, q, kp_map.get(q.id, []))
+    for wq in rows:
+        q = views.get(int(wq.question_version_id))
+        if q is None:
+            continue
+        group_key, group_title = _group_key_title(
+            group_by, wq, q, kp_map.get(int(wq.question_version_id), [])
+        )
         if group_key not in groups_map:
             groups_map[group_key] = []
         groups_map[group_key].append(wq.id)
@@ -75,7 +75,7 @@ async def group_questions(
     ]
 
 
-def _group_key_title(group_by: ExportGroupBy, wq: WrongQuestion, q: Question, kps: list[str] | None = None) -> tuple[str, str]:
+def _group_key_title(group_by: ExportGroupBy, wq: WrongQuestion, q, kps: list[str] | None = None) -> tuple[str, str]:
     """Return (sort_key, display_title) for the question."""
     if group_by == ExportGroupBy.SUBJECT:
         subject = _get_subject_label(q)
@@ -96,7 +96,7 @@ def _group_key_title(group_by: ExportGroupBy, wq: WrongQuestion, q: Question, kp
     return ("", "")
 
 
-def _get_subject_label(q: Question) -> str | None:
+def _get_subject_label(q) -> str | None:
     """Get the subject display name from the question."""
     try:
         if q.subject_ref:
@@ -108,7 +108,7 @@ def _get_subject_label(q: Question) -> str | None:
     return None
 
 
-def _get_chapter(q: Question) -> str | None:
+def _get_chapter(q) -> str | None:
     """Extract chapter from question source or knowledge_points."""
     # The project may not have explicit chapters — fall back to source
     if q.source:
@@ -123,7 +123,7 @@ def _get_primary_knowledge_point(kps: list[str] | None) -> str | None:
     return None
 
 
-def _get_question_type_label(q: Question) -> str | None:
+def _get_question_type_label(q) -> str | None:
     """Return the Chinese label for the question type."""
     from app.features.question_type import QUESTION_TYPE_LABELS, QuestionType
     if q.question_type:

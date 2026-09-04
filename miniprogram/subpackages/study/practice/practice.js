@@ -10,6 +10,20 @@ const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
 
+let _practicePerformanceClock = null
+function _monotonicNow() {
+  try {
+    if (!_practicePerformanceClock && typeof wx !== 'undefined' && typeof wx.getPerformance === 'function') {
+      _practicePerformanceClock = wx.getPerformance()
+    }
+    if (_practicePerformanceClock && typeof _practicePerformanceClock.now === 'function') {
+      return _practicePerformanceClock.now()
+    }
+  } catch (_) {}
+  // Base-library fallback only. Modern WeChat runtimes expose getPerformance().
+  return Date.now()
+}
+
 function _deduplicateLines(text) {
   if (!text) return text
   const lines = text.split('\n')
@@ -305,17 +319,17 @@ Page({
       correctCount: 0,
       comboCount: 0,
       elapsedSec: 0,
-      startTime: 0,
+      activeStartedMonoMs: 0,
       startedAtMs: 0,
       questionTimeMap: {},
-      currentQuestionStartedAt: 0,
+      currentQuestionStartedMonoMs: 0,
       requestId: '',
       recommendationRequestId: '',
       batchToken: '',
       batchMode: '',
       submissionSnapshot: null,
       backgroundMs: 0,
-      _bgStartAt: null,
+      _backgroundStartedMonoMs: null,
       optionKeys: [],
       questionRenderCache: Object.create(null),
     }
@@ -518,25 +532,25 @@ Page({
   onShow() {
     // 切后台 / 跳转他页回来后，把离开期间从刷题时长中扣除。
     // 页面级 onHide 在微信切后台与本页被覆盖时都会触发，因此不需要额外的
-    // app 级监听；first onShow（onLoad 之后）时 startTime 仍为 0，不会误扣。
+    // app 级监听；first onShow（onLoad 之后）时 activeStartedMonoMs 仍为 0，不会误扣。
     const s = this._practiceSession
-    if (s && s.startTime && s._bgStartAt !== null) {
-      s.backgroundMs = (s.backgroundMs || 0) + (Date.now() - s._bgStartAt)
-      s._bgStartAt = null
+    if (s && s.activeStartedMonoMs && s._backgroundStartedMonoMs !== null) {
+      s.backgroundMs = (s.backgroundMs || 0) + (_monotonicNow() - s._backgroundStartedMonoMs)
+      s._backgroundStartedMonoMs = null
     }
-    if (s && s.startTime && this.data.started && !this.data.loading && !this.data.submitting && !s.submissionSnapshot) {
-      s.currentQuestionStartedAt = Date.now()
+    if (s && s.activeStartedMonoMs && this.data.started && !this.data.loading && !this.data.submitting && !s.submissionSnapshot) {
+      s.currentQuestionStartedMonoMs = _monotonicNow()
     }
   },
 
   onHide() {
     // 记录离开时间点；onShow 回来时结算 backgroundMs。
     const s = this._practiceSession
-    if (s && s.startTime && s._bgStartAt === null) {
+    if (s && s.activeStartedMonoMs && s._backgroundStartedMonoMs === null) {
       if (this.data.started && !this.data.loading && !this.data.submitting && !s.submissionSnapshot) {
         this._settleQuestionTime(true)
       }
-      s._bgStartAt = Date.now()
+      s._backgroundStartedMonoMs = _monotonicNow()
     }
   },
 
@@ -1045,14 +1059,14 @@ Page({
   _startTimer() {
     this._clearTimer()
     this._timer = setInterval(() => {
-      if (!this._pageAlive || !this._practiceSession.startTime) return
-      const now = Date.now()
+      if (!this._pageAlive || !this._practiceSession.activeStartedMonoMs) return
+      const now = _monotonicNow()
       const backgroundMs = (this._practiceSession.backgroundMs || 0) + (
-        this._practiceSession._bgStartAt !== null
-          ? Math.max(0, now - this._practiceSession._bgStartAt)
+        this._practiceSession._backgroundStartedMonoMs !== null
+          ? Math.max(0, now - this._practiceSession._backgroundStartedMonoMs)
           : 0
       )
-      const sec = Math.max(0, Math.floor((now - this._practiceSession.startTime - backgroundMs) / 1000))
+      const sec = Math.max(0, Math.floor((now - this._practiceSession.activeStartedMonoMs - backgroundMs) / 1000))
       this._practiceSession.elapsedSec = sec
       this.setData({ elapsedText: this._fmt(sec) })
     }, 1000)
@@ -1180,10 +1194,10 @@ Page({
         }
 
         // 新一轮等首题真正展示后再开始计时；题目接口等待不计入学习时长。
-        this._practiceSession.startTime = 0
+        this._practiceSession.activeStartedMonoMs = 0
         this._practiceSession.startedAtMs = 0
         this._practiceSession.backgroundMs = 0
-        this._practiceSession._bgStartAt = null
+        this._practiceSession._backgroundStartedMonoMs = null
         this.setData({
           started: true,
           errorText: '',
@@ -1251,15 +1265,15 @@ Page({
       })
       if (questions.length > 0 && firstQuestion) {
         // 首题已完成解析并进入页面后才开始计时，排除首次拉题/渲染等待。
-        if (!this._practiceSession.startTime) {
-          this._practiceSession.startTime = Date.now()
+        if (!this._practiceSession.activeStartedMonoMs) {
+          this._practiceSession.activeStartedMonoMs = _monotonicNow()
           this._practiceSession.startedAtMs = api.now()
           this._practiceSession.backgroundMs = 0
-          this._practiceSession._bgStartAt = null
+          this._practiceSession._backgroundStartedMonoMs = null
           this._practiceSession.elapsedSec = 0
         }
         this._practiceSession.optionKeys = viewModelResult.optionKeys
-        this._practiceSession.currentQuestionStartedAt = Date.now()
+        this._practiceSession.currentQuestionStartedMonoMs = _monotonicNow()
         this._setPracticeUnloadGuard(true)
         this._startTimer()
         this._updateComputedFields()
@@ -1436,16 +1450,16 @@ Page({
 
   _settleQuestionTime(pause) {
     const { currentIndex, questions } = this.data
-    const { currentQuestionStartedAt, questionTimeMap } = this._practiceSession
-    if (!currentQuestionStartedAt || !questions.length) return
+    const { currentQuestionStartedMonoMs, questionTimeMap } = this._practiceSession
+    if (!currentQuestionStartedMonoMs || !questions.length) return
     const q = questions[currentIndex]
     if (!q) return
-    const elapsed = Math.max(0, Math.floor((Date.now() - currentQuestionStartedAt) / 1000))
+    const elapsed = Math.max(0, Math.floor((_monotonicNow() - currentQuestionStartedMonoMs) / 1000))
     const key = String(q.id)
     const map = { ...questionTimeMap }
     map[key] = (map[key] || 0) + elapsed
     this._practiceSession.questionTimeMap = map
-    this._practiceSession.currentQuestionStartedAt = pause ? 0 : Date.now()
+    this._practiceSession.currentQuestionStartedMonoMs = pause ? 0 : _monotonicNow()
   },
 
   _showQuestion(index) {
@@ -1482,7 +1496,7 @@ Page({
       })
     }
     this._practiceSession.optionKeys = optionKeys
-    this._practiceSession.currentQuestionStartedAt = Date.now()
+    this._practiceSession.currentQuestionStartedMonoMs = _monotonicNow()
     this.setData({
       currentIndex: index,
       currentQuestion: currentQuestion,
@@ -1902,7 +1916,7 @@ Page({
       const selectedSubjectId = this.data.selectedSubjectId
       const selectedSubjectName = this.data.selectedSubjectName
       const answerMap = this._practiceSession.answerMap
-      const startTime = this._practiceSession.startTime
+      const activeStartedMonoMs = this._practiceSession.activeStartedMonoMs
       const comboCount = this._practiceSession.comboCount
       const total = questions.length || 0
       const answeredFlags = adapter.buildAnsweredFlags(questions, answerMap, 'id')
@@ -1951,10 +1965,10 @@ Page({
       this._clearTimer()
       this._settleQuestionTime(true)
 
-      const finishedAt = Date.now()
+      const finishedMonoMs = _monotonicNow()
       const finishedAtMs = api.now()
       const duration = Math.max(0, Math.floor(
-        (finishedAt - startTime - (this._practiceSession.backgroundMs || 0)) / 1000,
+        (finishedMonoMs - activeStartedMonoMs - (this._practiceSession.backgroundMs || 0)) / 1000,
       ))
       const requestId = this._practiceSession.requestId || ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
       this._practiceSession.requestId = requestId
@@ -2053,7 +2067,7 @@ Page({
     } catch (e) {
       if (!this._pageAlive) return
       console.error('提交失败', e)
-      this._practiceSession.currentQuestionStartedAt = 0
+      this._practiceSession.currentQuestionStartedMonoMs = 0
       this.setData({ submitting: false })
 
       const statusCode = Number(e && e.statusCode) || 0
