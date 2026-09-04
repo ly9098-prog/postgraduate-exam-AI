@@ -22,8 +22,6 @@
 # paddleocr 本身需要单独用 --no-deps 安装（避免与 opencv-python-headless 冲突）
 # 见 run.sh 中 OCR 安装逻辑
 paddlepaddle>=2.6.2
-Pillow>=10.3.0
-numpy>=1.26,<2.0
 stringzilla<4.6.2
 opencv-python-headless>=4.9.0.80
 shapely
@@ -33,7 +31,6 @@ lmdb
 tqdm
 rapidfuzz
 pyyaml
-python-docx
 beautifulsoup4
 fonttools>=4.24.0
 fire>=0.3.0

@@ -970,3 +970,305 @@ page {
 .bottom-space {
   height: calc(48rpx + env(safe-area-inset-bottom));
 }
+
+/* ── 结构化题目复盘弹层 ─────────────────────────────── */
+.review-dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(7, 18, 13, .58);
+  animation: review-mask-in 180ms ease-out both;
+}
+
+.review-dialog-sheet {
+  width: 100%;
+  max-height: 84vh;
+  box-sizing: border-box;
+  overflow: hidden;
+  border-radius: 38rpx 38rpx 0 0;
+  background: #F8FAF7;
+  box-shadow: 0 -24rpx 70rpx rgba(3, 16, 10, .22);
+  animation: review-sheet-in 240ms cubic-bezier(.22, .61, .36, 1) both;
+}
+
+.review-dialog-handle {
+  width: 76rpx;
+  height: 8rpx;
+  margin: 16rpx auto 4rpx;
+  border-radius: 999rpx;
+  background: #D9DEDA;
+}
+
+.review-dialog-head {
+  min-height: 112rpx;
+  box-sizing: border-box;
+  padding: 18rpx 34rpx 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24rpx;
+  border-bottom: 1rpx solid #E9EDE9;
+  background: #FFFFFF;
+}
+
+.review-dialog-title-wrap {
+  min-width: 0;
+}
+
+.review-dialog-kicker {
+  display: block;
+  color: #6A9878;
+  font-size: 16rpx;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 3rpx;
+}
+
+.review-dialog-title {
+  display: block;
+  margin-top: 9rpx;
+  color: #17211C;
+  font-size: 31rpx;
+  line-height: 1.2;
+  font-weight: 850;
+}
+
+.review-status {
+  flex: 0 0 auto;
+  padding: 9rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 18rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.review-status-correct {
+  color: #237D43;
+  background: #E8F7EB;
+}
+
+.review-status-skipped {
+  color: #97651E;
+  background: #FFF4DE;
+}
+
+.review-status-partial {
+  color: #646891;
+  background: #EFF0FA;
+}
+
+.review-dialog-scroll {
+  height: 58vh;
+  box-sizing: border-box;
+  padding: 26rpx 28rpx 34rpx;
+}
+
+.review-question-card {
+  padding: 22rpx 24rpx;
+  border-radius: 22rpx;
+  border: 1rpx solid #E7EBE7;
+  background: #FFFFFF;
+}
+
+.review-question-label,
+.review-answer-label {
+  display: block;
+  color: #98A09B;
+  font-size: 17rpx;
+  line-height: 1.3;
+  font-weight: 650;
+}
+
+.review-question-text {
+  display: -webkit-box;
+  margin-top: 10rpx;
+  overflow: hidden;
+  color: #303934;
+  font-size: 21rpx;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.review-answer-grid {
+  margin-top: 18rpx;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+}
+
+.review-answer-card {
+  min-width: 0;
+  padding: 20rpx 22rpx;
+  border-radius: 20rpx;
+  border: 1rpx solid #ECEFEC;
+  background: #FFFFFF;
+}
+
+.review-answer-card-correct {
+  border-color: #DDEDE1;
+  background: #F4FBF5;
+}
+
+.review-answer-value {
+  display: block;
+  margin-top: 9rpx;
+  overflow: hidden;
+  font-size: 23rpx;
+  line-height: 1.35;
+  font-weight: 800;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.review-answer-user {
+  color: #55615A;
+}
+
+.review-answer-user-skipped,
+.review-answer-user-partial {
+  color: #A17A3B;
+}
+
+.review-answer-correct {
+  color: #248147;
+}
+
+.review-analysis-wrap {
+  margin-top: 28rpx;
+  padding-bottom: 18rpx;
+}
+
+.review-analysis-heading {
+  margin-bottom: 14rpx;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.review-analysis-heading-title {
+  color: #26332C;
+  font-size: 23rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.review-analysis-heading-tip {
+  color: #A0A8A3;
+  font-size: 16rpx;
+  line-height: 1.3;
+}
+
+.review-analysis-card {
+  margin-top: 12rpx;
+  padding: 22rpx 24rpx 24rpx;
+  border-radius: 22rpx;
+  border: 1rpx solid #E7ECE8;
+  background: #FFFFFF;
+}
+
+.review-analysis-card-primary {
+  border-left: 6rpx solid #5CB875;
+}
+
+.review-analysis-card-knowledge {
+  border-left: 6rpx solid #A5C84B;
+  background: #FBFDF6;
+}
+
+.review-analysis-card-task {
+  border-left: 6rpx solid #81A6D8;
+  background: #F7FAFD;
+}
+
+.review-analysis-card-head {
+  display: flex;
+  align-items: center;
+}
+
+.review-analysis-dot {
+  width: 12rpx;
+  height: 12rpx;
+  margin-right: 11rpx;
+  border-radius: 50%;
+  background: #4CA668;
+  box-shadow: 0 0 0 6rpx rgba(76, 166, 104, .10);
+}
+
+.review-analysis-card-title {
+  color: #334039;
+  font-size: 20rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.review-analysis-text {
+  display: block;
+  margin-top: 14rpx;
+  color: #5E6862;
+  font-size: 21rpx;
+  line-height: 1.72;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.review-analysis-empty {
+  padding: 38rpx 26rpx;
+  border-radius: 22rpx;
+  text-align: center;
+  border: 1rpx dashed #DDE3DE;
+  background: #F5F7F5;
+}
+
+.review-analysis-warning {
+  border-color: #E7D7B8;
+  background: #FFF9EC;
+}
+
+.review-analysis-empty-title {
+  display: block;
+  color: #66706A;
+  font-size: 20rpx;
+  font-weight: 750;
+}
+
+.review-analysis-empty-desc {
+  display: block;
+  margin-top: 9rpx;
+  color: #9AA29D;
+  font-size: 17rpx;
+  line-height: 1.55;
+}
+
+.review-dialog-footer {
+  padding: 18rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
+  border-top: 1rpx solid #E6EAE6;
+  background: #FFFFFF;
+}
+
+.review-dialog-confirm {
+  height: 82rpx;
+  border-radius: 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #12351F;
+  font-size: 24rpx;
+  font-weight: 850;
+  background: linear-gradient(135deg, #C9F56A 0%, #9FDF4A 100%);
+  box-shadow: 0 10rpx 24rpx rgba(111, 168, 61, .18);
+}
+
+@keyframes review-mask-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes review-sheet-in {
+  from { opacity: .2; transform: translateY(54rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}

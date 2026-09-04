@@ -1,5 +1,6 @@
 const { toPlainInlineMathText } = require('../utils/stem-render');
 const { formatInlineMathText } = require('../utils/math-format');
+const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../utils/ai-analysis-normalizer');
 const api = require('../../../utils/api');
 const { getChinaDate } = require('../../../utils/china-time');
 
@@ -117,6 +118,147 @@ function formatAnswerPreview(value) {
     }).join('；');
   }
   return formatMathPreviewText(text);
+}
+
+function looksLikeStructuredReviewAnalysis(value) {
+  if (value && typeof value === 'object') return true;
+  if (typeof value !== 'string') return false;
+  const text = value.trim();
+  if (!text) return false;
+  if (/^```(?:json|javascript|js)?/i.test(text)) return true;
+
+  // 只有能被实际解析为对象/文本数组，或出现明确结构化字段时才按 JSON
+  // 处理，避免把“{x | x > 0}”“[1, 2] 区间”之类数学正文误判。
+  if (/^[\[{]/.test(text)) {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed === 'object') {
+        if (!Array.isArray(parsed)) return true;
+        if (parsed.some(item => typeof item === 'string' || (item && typeof item === 'object'))) return true;
+      }
+    } catch (_) {}
+  }
+
+  return /["'](?:mistake_diagnosis|mistakediagnosis|mistakeDiagnosis|error_analysis|diagnosis|knowledge_patch|knowledgePatch|knowledgepatch|knowledge_weakness|review_task|reviewTask|reviewtask|reviewask|suggestion|错因诊断|补漏重点|复练任务|analysis|explanation|solution|answer_analysis|answerAnalysis|解析|题目解析)["']\s*:/i.test(text);
+}
+
+function containsRawAnalysisJson(value) {
+  if (typeof value !== 'string') return false;
+  return /(?:["']?(?:mistake_diagnosis|mistakediagnosis|mistakeDiagnosis|error_analysis|knowledge_patch|knowledgePatch|knowledgepatch|knowledge_weakness|review_task|reviewTask|reviewtask|reviewask)["']?\s*:|["'](?:错因诊断|补漏重点|复练任务)["']\s*:)/i.test(value);
+}
+
+function formatReviewAnalysisText(value) {
+  if (value === undefined || value === null) return '';
+  const text = String(value).trim();
+  if (!text || containsRawAnalysisJson(text)) return '';
+
+  // 解析正文允许多行展示；逐行复用题干的数学文本转换，避免 LaTeX 源码
+  // 与 HTML 标签直接出现在复盘弹层中。
+  return text
+    .split(/\r?\n+/)
+    .map(line => formatMathPreviewText(line))
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+function extractGenericReviewAnalysis(value, depth = 0) {
+  if (depth > 4 || value === undefined || value === null) return '';
+  let current = value;
+
+  if (typeof current === 'string') {
+    let text = current.trim();
+    if (!text) return '';
+    text = text.replace(/^```(?:json|javascript|js)?\s*/i, '').replace(/\s*```$/, '').trim();
+    if (!/^[\[{]/.test(text)) return '';
+    try {
+      current = JSON.parse(text);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  if (Array.isArray(current)) {
+    const parts = current
+      .map(item => typeof item === 'string'
+        ? formatReviewAnalysisText(item)
+        : extractGenericReviewAnalysis(item, depth + 1))
+      .filter(Boolean);
+    return parts.join('\n');
+  }
+  if (!current || typeof current !== 'object') return '';
+
+  const keys = [
+    'analysis', 'explanation', 'solution', 'answer_analysis', 'answerAnalysis',
+    '解析', '题目解析', 'text', 'content', 'value', 'description'
+  ];
+  for (const key of keys) {
+    const raw = current[key];
+    if (raw === undefined || raw === null) continue;
+    if (typeof raw === 'string') {
+      const direct = formatReviewAnalysisText(raw);
+      if (direct) return direct;
+      const nested = extractGenericReviewAnalysis(raw, depth + 1);
+      if (nested) return nested;
+    } else {
+      const nested = extractGenericReviewAnalysis(raw, depth + 1);
+      if (nested) return nested;
+    }
+  }
+  return '';
+}
+
+function buildReviewAnalysisView(value) {
+  if (value === undefined || value === null || value === '') {
+    return { sections: [], formatError: false };
+  }
+
+  const normalized = normalizeAiAnalysisPayload(value);
+  const structured = looksLikeStructuredReviewAnalysis(value);
+  const sections = [];
+
+  const append = (key, title, tone) => {
+    const text = formatReviewAnalysisText(normalized && normalized[key]);
+    if (text) sections.push({ key, title, tone, text });
+  };
+
+  if (hasAiAnalysisContent(normalized)) {
+    if (structured) {
+      append('mistake_diagnosis', '解析要点', 'primary');
+      append('knowledge_patch', '知识补充', 'knowledge');
+      append('review_task', '复习建议', 'task');
+    } else {
+      const plain = formatReviewAnalysisText(normalized.mistake_diagnosis);
+      if (plain) sections.push({ key: 'analysis', title: '题目解析', tone: 'primary', text: plain });
+      append('knowledge_patch', '知识补充', 'knowledge');
+      append('review_task', '复习建议', 'task');
+    }
+  }
+
+  // 兼容题库接口把普通解析包装成 {analysis/explanation/solution: ...}
+  // 的 JSON。只提取白名单字段，未知结构仍不回显原始对象。
+  if (!sections.length && structured) {
+    const genericText = extractGenericReviewAnalysis(value);
+    if (genericText) {
+      sections.push({ key: 'analysis', title: '题目解析', tone: 'primary', text: genericText });
+    }
+  }
+
+  // normalizer 对以 { / [ 开头的普通数学文字会采取保守策略。若本地判断
+  // 它并非结构化响应，则恢复为普通解析文本，避免误伤集合/区间表达式。
+  if (!sections.length && !structured && typeof value === 'string') {
+    const plainFallback = formatReviewAnalysisText(value);
+    if (plainFallback) {
+      sections.push({ key: 'analysis', title: '题目解析', tone: 'primary', text: plainFallback });
+    }
+  }
+
+  // 结构化内容解析失败时只展示友好状态，绝不回退到原始字符串，
+  // 从根源上避免 {"knowledge_patch": ...} 之类后端 JSON 暴露给用户。
+  return {
+    sections,
+    formatError: structured && (sections.length === 0 || !!(normalized && normalized.formatError))
+  };
 }
 
 function getQuestionTitle(question) {
@@ -303,6 +445,18 @@ Page({
     growth: DEFAULT_GROWTH,
     growthAvailable: false,
     unlockedBadgeCount: 0,
+
+    reviewDialogVisible: false,
+    reviewDialog: {
+      title: '',
+      questionTitle: '',
+      status: '',
+      statusLabel: '',
+      userAnswer: '',
+      correctAnswer: '',
+      analysisSections: [],
+      analysisFormatError: false
+    },
 
     // 自定义导航栏不能只依赖 env(safe-area-inset-top)：部分 Android 真机
     // 会返回 0，导致返回按钮压到状态栏。这里使用微信运行时实测值。
@@ -1072,19 +1226,36 @@ Page({
         wx.showToast({ title: '该题暂无错题详情', icon: 'none' });
       }
     } else {
-      const lines = [];
-      lines.push(target.status === 'partial' ? '本题未完成' : (target.status === 'skipped' ? '本题已跳过' : '本题答对'));
-      if (target.userAnswer) lines.push(`我的答案：${target.userAnswer}`);
-      lines.push(`正确答案：${target.correctAnswer || '-'}`);
-      if (target.analysis) lines.push(`解析：${formatMathPreviewText(target.analysis)}`);
-      wx.showModal({
-        title: target.status === 'partial' ? '未完成题复盘' : (target.status === 'skipped' ? '跳过题复盘' : '题目复盘'),
-        content: lines.join('\n'),
-        showCancel: false,
-        confirmText: '知道了'
+      const statusLabel = target.status === 'partial'
+        ? '未完成'
+        : (target.status === 'skipped' ? '已跳过' : '已答对');
+      const title = target.status === 'partial'
+        ? '未完成题复盘'
+        : (target.status === 'skipped' ? '跳过题复盘' : '题目复盘');
+      const analysisView = buildReviewAnalysisView(target.analysis);
+
+      this.setData({
+        reviewDialogVisible: true,
+        reviewDialog: {
+          title,
+          questionTitle: target.title || '',
+          status: target.status,
+          statusLabel,
+          userAnswer: target.userAnswer || '未作答',
+          correctAnswer: target.correctAnswer || '-',
+          analysisSections: analysisView.sections,
+          analysisFormatError: analysisView.formatError
+        }
       });
     }
   },
+
+  closeReviewDialog() {
+    if (!this.data.reviewDialogVisible) return;
+    this.setData({ reviewDialogVisible: false });
+  },
+
+  stopPropagation() {},
 
   openWrongDetail(e) {
     const wrongQuestionId = e.currentTarget.dataset.wqid;

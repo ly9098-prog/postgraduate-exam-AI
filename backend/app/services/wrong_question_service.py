@@ -126,8 +126,43 @@ async def update_wrong(
 
 async def get_stats(db: AsyncSession, user_id: int) -> dict:
     conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
-    total_q = select(func.count(WrongQuestion.id)).where(and_(*conditions))
-    total = (await db.execute(total_q)).scalar()
+
+    # One covering-index-friendly aggregate replaces four separate COUNT
+    # queries (total/unmastered/mastered/high-frequency). On a large SQLite
+    # wrong-question table this avoids repeatedly scanning the same user's
+    # active rows and removes the observed 1s+ ``mastered = 0`` count hot spot.
+    summary_row = (
+        await db.execute(
+            select(
+                func.count().label("total"),
+                func.coalesce(
+                    func.sum(case((~WrongQuestion.mastered, 1), else_=0)), 0
+                ).label("unmastered"),
+                func.coalesce(
+                    func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0
+                ).label("mastered"),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                and_(
+                                    ~WrongQuestion.mastered,
+                                    WrongQuestion.review_count >= 3,
+                                ),
+                                1,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ).label("high_frequency_count"),
+            ).where(and_(*conditions))
+        )
+    ).one()
+    total = int(summary_row.total or 0)
+    unmastered = int(summary_row.unmastered or 0)
+    mastered = int(summary_row.mastered or 0)
+    high_frequency_count = int(summary_row.high_frequency_count or 0)
 
     type_result = await db.execute(
         select(WrongQuestion.error_type, func.count(WrongQuestion.id).label("cnt"))
@@ -154,28 +189,6 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
         {"subject_id": r[0], "subject_code": r[1], "subject_name": r[2], "count": r[3]}
         for r in result3.all()
     ]
-
-    unmastered_q = select(func.count(WrongQuestion.id)).where(
-        WrongQuestion.user_id == user_id,
-        WrongQuestion.is_active,
-        ~WrongQuestion.mastered,
-    )
-    unmastered = (await db.execute(unmastered_q)).scalar() or 0
-
-    mastered_q = select(func.count(WrongQuestion.id)).where(
-        WrongQuestion.user_id == user_id,
-        WrongQuestion.is_active,
-        WrongQuestion.mastered,
-    )
-    mastered = (await db.execute(mastered_q)).scalar() or 0
-
-    hf_q = select(func.count(WrongQuestion.id)).where(
-        WrongQuestion.user_id == user_id,
-        WrongQuestion.is_active,
-        ~WrongQuestion.mastered,
-        WrongQuestion.review_count >= 3,
-    )
-    high_frequency_count = (await db.execute(hf_q)).scalar() or 0
 
     # today_due_count: same definition as get_today_review_overview
     _, today_end = shanghai_today_boundaries()
