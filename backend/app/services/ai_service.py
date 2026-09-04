@@ -308,6 +308,27 @@ def _glm_error_analysis_direct_answer_path(model: str | None, base_url: str | No
     )
 
 
+def _gpt56_error_analysis_direct_answer_path(model: str | None) -> bool:
+    """Use GPT-5.6's no-reasoning mode for the short wrong-detail task.
+
+    GPT-5.6 reasoning models default to a non-zero reasoning effort.  That is a
+    poor fit for this endpoint: the requested JSON is only three short teaching
+    fields, while the synchronous mini-program request has a ~58 second budget.
+    On relays, leaving the model at its default effort can therefore spend the
+    whole 48/50 second server budget reasoning before any response headers are
+    returned.
+
+    ``reasoning_effort=none`` is the Chat Completions control for GPT-5.6 and
+    keeps the existing temperature/max-token settings valid.  Match both the
+    canonical IDs (``gpt-5.6-luna``) and common OpenAI-compatible namespaced IDs
+    (``openai/gpt-5.6-luna``).
+    """
+    model_key = str(model or "").strip().lower()
+    if model_key.startswith("openai/"):
+        model_key = model_key.split("/", 1)[1]
+    return model_key == "gpt-5.6" or model_key.startswith("gpt-5.6-")
+
+
 def _detect_image_mime(data: bytes, fallback: str = "") -> str:
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
@@ -1260,12 +1281,20 @@ async def analyze_error(
             glm_direct_answer = _glm_error_analysis_direct_answer_path(
                 selected_runtime.model_name, selected_runtime.base_url
             )
-            direct_answer_mode = qwen_fast_path or glm_direct_answer
+            gpt56_direct_answer = _gpt56_error_analysis_direct_answer_path(
+                selected_runtime.model_name
+            )
+            direct_answer_mode = qwen_fast_path or glm_direct_answer or gpt56_direct_answer
             image_max_pixels = _ERROR_ANALYSIS_QWEN_MAX_PIXELS if qwen_fast_path else None
             # Wrong-detail needs a short final JSON answer, not a long reasoning trace.
             # Some compatible endpoints default to thinking mode; disable it on
             # known direct-answer paths so the bounded response contains content.
-            llm_extra_body = {"enable_thinking": False} if direct_answer_mode else None
+            if gpt56_direct_answer:
+                llm_extra_body = {"reasoning_effort": "none"}
+            elif qwen_fast_path or glm_direct_answer:
+                llm_extra_body = {"enable_thinking": False}
+            else:
+                llm_extra_body = None
             messages = build_error_analysis(
                 context["question"],
                 wq.wrong_answer,

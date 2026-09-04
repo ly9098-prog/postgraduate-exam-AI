@@ -22,6 +22,16 @@ class UnsafeRemoteURLError(ValueError):
     """Raised when a remote URL is unsafe or cannot be fetched safely."""
 
 
+class RemoteFetchTimeoutError(UnsafeRemoteURLError, TimeoutError):
+    """Raised when a validated remote request exceeds its socket timeout.
+
+    Keep this as an ``UnsafeRemoteURLError`` subclass for compatibility with
+    existing callers that treat all bounded-fetch failures uniformly, while
+    also making it a ``TimeoutError`` so latency-sensitive AI callers can
+    distinguish an upstream timeout from SSRF/URL validation failures.
+    """
+
+
 @dataclass(frozen=True)
 class RemoteResponse:
     status: int
@@ -258,6 +268,14 @@ def request_remote_bytes(
                 content_type=response.getheader("Content-Type", ""),
                 final_url=current_url,
             )
+        # ``socket.timeout`` is an ``OSError`` subclass. Catch it first so an
+        # upstream model that simply takes longer than the configured budget is
+        # reported as a timeout instead of the misleading
+        # ``UnsafeRemoteURLError: remote resource fetch failed``.  This matters
+        # for the wrong-question analysis path, which has a strict mini-program
+        # request budget and already has dedicated timeout handling.
+        except (socket.timeout, TimeoutError) as exc:
+            raise RemoteFetchTimeoutError("remote resource fetch timed out") from exc
         except (OSError, http.client.HTTPException, ssl.SSLError) as exc:
             raise UnsafeRemoteURLError("remote resource fetch failed") from exc
         finally:
