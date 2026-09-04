@@ -96,6 +96,14 @@ function featuresForKind(kind: ModelKind, current: string[] = []): string[] {
   return current.filter((feature) => feature !== "embedding" && feature !== "vision");
 }
 
+function rememberedChatFeatures(current: string[] = []): string[] {
+  return current.filter((feature) => feature !== "embedding" && feature !== "vision");
+}
+
+function featureSignature(features: string[] = []): string {
+  return [...new Set(features)].sort().join("|");
+}
+
 function configuredFeatures(model: Pick<AdminAiModelConfig, "features" | "feature">): string[] {
   if (model.features?.length) return model.features;
   return model.feature ? [model.feature] : [];
@@ -232,21 +240,39 @@ function CompatibleExampleImporter({ disabled = false, onApply }: CompatibleExam
   };
 
   return (
-    <div className="border-t border-slate-200/90 pt-2">
+    <div
+      className={cn(
+        "overflow-hidden rounded-lg border transition-[border-color,background-color,box-shadow] duration-200",
+        expanded
+          ? "border-[var(--color-primary)]/25 bg-white shadow-[0_2px_10px_rgba(15,23,42,0.035)]"
+          : "border-slate-200 bg-slate-50/45 hover:border-[var(--color-primary)]/25 hover:bg-[var(--color-primary-light)]/25",
+      )}
+    >
       <button
         type="button"
         onClick={() => setExpanded((previous) => !previous)}
         disabled={disabled}
         aria-expanded={expanded}
-        className="group flex w-full items-center justify-between gap-4 rounded-md py-2 text-left transition-[background-color,color] duration-150 hover:bg-slate-50/70 disabled:cursor-not-allowed disabled:opacity-50"
+        className="group flex w-full cursor-pointer items-center justify-between gap-4 px-3 py-2.5 text-left disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <span className="min-w-0 pl-1">
-          <span className="block text-[12px] font-semibold text-slate-700 transition-colors group-hover:text-slate-900">第三方API快速填入</span>
-          <span className="mt-0.5 block text-[10px] leading-4 text-slate-400">粘贴第三方 API 文档中的 cURL / Python 调用示例，自动识别 Base URL 与模型标识。</span>
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span className={cn(
+            "grid h-7 w-7 shrink-0 place-items-center rounded-md border bg-white transition-[border-color,color] duration-150",
+            expanded ? "border-[var(--color-primary)]/30 text-[var(--color-primary)]" : "border-slate-200 text-slate-400 group-hover:border-[var(--color-primary)]/25 group-hover:text-[var(--color-primary)]",
+          )}>
+            <Globe className="h-3.5 w-3.5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[12px] font-semibold text-slate-700 transition-colors group-hover:text-slate-900">第三方API快速填入</span>
+            <span className="mt-0.5 block text-[10px] leading-4 text-slate-400">粘贴 cURL / Python 调用示例，自动识别 Base URL 与模型标识。</span>
+          </span>
         </span>
-        <span className="flex shrink-0 items-center gap-2 pr-1">
+        <span className="flex shrink-0 items-center gap-2">
           <span className="hidden text-[10px] font-medium text-slate-400 sm:inline">cURL / Python</span>
-          <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform duration-200 ease-out", expanded && "rotate-180")} />
+          <span className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-500 transition-[border-color,color,box-shadow] group-hover:border-[var(--color-primary)]/30 group-hover:text-[var(--color-primary)] group-hover:shadow-sm">
+            {expanded ? "收起" : "展开"}
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200 ease-out", expanded && "rotate-180")} />
+          </span>
         </span>
       </button>
       <div
@@ -256,7 +282,7 @@ function CompatibleExampleImporter({ disabled = false, onApply }: CompatibleExam
         )}
       >
         <div className="overflow-hidden">
-          <div className="pb-3 pt-1.5">
+          <div className="border-t border-slate-200/90 px-3 pb-3 pt-3">
             <textarea
               value={example}
               onChange={(event) => { setExample(event.target.value); setMessage(null); }}
@@ -557,7 +583,7 @@ function AddModelDrawer({
           setProvider(draft.provider ?? "openai");
           setModelKind(draft.modelKind ?? "chat");
           setApiBaseUrl(draft.apiBaseUrl ?? "");
-          setFeatures(Array.isArray(draft.features) ? draft.features : []);
+          setFeatures(Array.isArray(draft.features) ? rememberedChatFeatures(draft.features) : []);
         } else {
           window.localStorage.removeItem(NEW_MODEL_DRAFT_STORAGE_KEY);
         }
@@ -583,14 +609,14 @@ function AddModelDrawer({
         provider,
         modelKind,
         apiBaseUrl,
-        features: effectiveFeatures,
+        features,
         savedAt: Date.now(),
       };
       window.localStorage.setItem(NEW_MODEL_DRAFT_STORAGE_KEY, JSON.stringify(draft));
     } catch {
       // The drawer remains usable even if localStorage is unavailable.
     }
-  }, [apiBaseUrl, displayName, draftReady, effectiveFeatures, modelKind, name, persistentDirty, provider]);
+  }, [apiBaseUrl, displayName, draftReady, features, modelKind, name, persistentDirty, provider]);
 
   const scrollToTab = useCallback((tab: AddDrawerTab) => {
     setActiveTab(tab);
@@ -745,31 +771,33 @@ function AddModelDrawer({
               <div className="md:col-span-2 grid gap-2 sm:grid-cols-[92px_minmax(0,1fr)] sm:items-start">
                 <span className="pt-2.5 text-[11px] font-medium text-slate-500">模型类型 *</span>
                 <div className="min-w-0">
-                  <div className="grid w-full max-w-[460px] grid-cols-3 rounded-[10px] border border-slate-200 bg-slate-50/70 p-0.5">
-                    {(Object.keys(MODEL_KIND_META) as ModelKind[]).map((kind) => (
-                      <button
-                        key={kind}
-                        type="button"
-                        disabled={loading}
-                        onClick={() => {
-                          setModelKind(kind);
-                          setFeatures((previous) => featuresForKind(kind, previous));
-                          setTestResult(null);
-                          setSubmitError(null);
-                          if (kind === "ocr_job" && provider === "openai") setProvider("paddleocr-vl");
-                        }}
-                        className={cn(
-                          "h-9 rounded-[8px] px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.985] disabled:opacity-50",
-                          modelKind === kind
-                            ? "bg-white text-[var(--color-primary)] shadow-[0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80"
-                            : "text-slate-500 hover:bg-white/60 hover:text-slate-700",
-                        )}
-                      >
-                        {MODEL_KIND_META[kind].label}
-                      </button>
-                    ))}
+                  <div className="grid w-full max-w-[560px] grid-cols-3 gap-2">
+                    {(Object.keys(MODEL_KIND_META) as ModelKind[]).map((kind) => {
+                      const selected = modelKind === kind;
+                      return (
+                        <button
+                          key={kind}
+                          type="button"
+                          disabled={loading}
+                          onClick={() => {
+                            setModelKind(kind);
+                            setTestResult(null);
+                            setSubmitError(null);
+                            if (kind === "ocr_job" && provider === "openai") setProvider("paddleocr-vl");
+                          }}
+                          className={cn(
+                            "relative flex h-10 items-center justify-center rounded-md border-2 px-3 text-[12px] font-medium transition-[border-color,background-color,color,box-shadow,transform] duration-200 ease-out active:scale-[0.985] disabled:opacity-50",
+                            selected
+                              ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/25 text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.035)]"
+                              : "border-slate-200/90 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50/70 hover:text-slate-700",
+                          )}
+                        >
+                          {MODEL_KIND_META[kind].label}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <p className="mt-1.5 max-w-[560px] text-[10px] leading-4 text-slate-400">{MODEL_KIND_META[modelKind].desc}</p>
+                  <p className="mt-1.5 max-w-[560px] text-[10px] leading-4 text-slate-400 transition-colors duration-200">{MODEL_KIND_META[modelKind].desc}</p>
                 </div>
               </div>
             </div>
@@ -995,8 +1023,9 @@ function AddModelDrawer({
 type DrawerTab = "basic" | "api" | "features";
 
 type ModelDrawerDraft = {
-  version: 1;
+  version: 2;
   sourceUpdatedAt: string | null;
+  sourceFeaturesSignature: string;
   name: string;
   displayName: string;
   provider: string;
@@ -1013,10 +1042,11 @@ const DRAWER_TABS: { key: DrawerTab; label: string }[] = [
 ];
 
 const DRAWER_FEATURE_OPTIONS = CHAT_FEATURE_OPTIONS.map((option) => {
-  if (option.value === "analysis") return { ...option, desc: "用于题目解析与错题分析生成" };
-  if (option.value === "completion") return { ...option, desc: "用于缺失题干或答案内容补全" };
-  if (option.value === "ai_repair") return { ...option, label: "题目审核", desc: "用于内容审核和质量检查" };
-  return option;
+  const label = FEATURE_LABELS[option.value]?.label ?? option.label;
+  if (option.value === "analysis") return { ...option, label, desc: "用于题目解析与错题分析生成" };
+  if (option.value === "completion") return { ...option, label, desc: "用于缺失题干或答案内容补全" };
+  if (option.value === "ai_repair") return { ...option, label, desc: "用于内容审核和质量检查" };
+  return { ...option, label };
 });
 
 function modelDraftStorageKey(modelId: number) {
@@ -1054,7 +1084,7 @@ function ModelConfigDrawer({
   const [modelKind, setModelKind] = useState<ModelKind>(() => getModelKind(model));
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiBaseUrlInput, setApiBaseUrlInput] = useState(model.api_base_url ?? "");
-  const [featuresInput, setFeaturesInput] = useState<string[]>(() => normalizedModelFeatures(model));
+  const [featuresInput, setFeaturesInput] = useState<string[]>(() => rememberedChatFeatures(configuredFeatures(model)));
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ModelTestConnectionResponse | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -1067,6 +1097,7 @@ function ModelConfigDrawer({
 
   const effectiveFeaturesInput = featuresForKind(modelKind, featuresInput);
   const baselineFeatures = normalizedModelFeatures(model);
+  const baselineRememberedFeatures = rememberedChatFeatures(configuredFeatures(model));
   const normalizedApiBaseUrl = apiBaseUrlInput.trim().replace(/\/$/, "");
   const baselineApiBaseUrl = (model.api_base_url ?? "").trim().replace(/\/$/, "");
   const persistentDirty =
@@ -1076,6 +1107,8 @@ function ModelConfigDrawer({
     modelKind !== getModelKind(model) ||
     normalizedApiBaseUrl !== baselineApiBaseUrl ||
     JSON.stringify(effectiveFeaturesInput) !== JSON.stringify(baselineFeatures);
+  const rememberedFeaturesDirty = JSON.stringify(featuresInput) !== JSON.stringify(baselineRememberedFeatures);
+  const draftDirty = persistentDirty || rememberedFeaturesDirty;
   const dirty = persistentDirty || Boolean(apiKeyInput.trim());
   const featureConflicts = model.is_enabled
     ? findEnabledFeatureConflicts(effectiveFeaturesInput, models.filter((item) => item.id !== model.id))
@@ -1093,7 +1126,7 @@ function ModelConfigDrawer({
     setProviderInput(model.provider);
     setModelKind(getModelKind(model));
     setApiBaseUrlInput(model.api_base_url ?? "");
-    setFeaturesInput(normalizedModelFeatures(model));
+    setFeaturesInput(rememberedChatFeatures(configuredFeatures(model)));
     setApiKeyInput("");
     setShowApiKey(false);
     setTestResult(null);
@@ -1123,14 +1156,18 @@ function ModelConfigDrawer({
       if (raw) {
         const draft = JSON.parse(raw) as ModelDrawerDraft;
         const sourceMatches = !draft.sourceUpdatedAt || !model.updated_at || draft.sourceUpdatedAt === model.updated_at;
-        if (draft.version === 1 && sourceMatches) {
+        const sourceFeaturesMatch =
+          draft.version === 2
+          && draft.sourceFeaturesSignature === featureSignature(configuredFeatures(model));
+        if (draft.version === 2 && sourceMatches && sourceFeaturesMatch) {
           setNameInput(draft.name ?? model.name);
           setDisplayNameInput(draft.displayName ?? model.display_name);
           setProviderInput(draft.provider ?? model.provider);
           setModelKind(draft.modelKind ?? getModelKind(model));
           setApiBaseUrlInput(draft.apiBaseUrl ?? (model.api_base_url ?? ""));
-          setFeaturesInput(Array.isArray(draft.features) ? draft.features : normalizedModelFeatures(model));
+          setFeaturesInput(Array.isArray(draft.features) ? rememberedChatFeatures(draft.features) : rememberedChatFeatures(configuredFeatures(model)));
         } else {
+          // v1 草稿没有服务端能力映射基线，或服务端映射已变化；丢弃以避免列表与抽屉回显不一致。
           window.localStorage.removeItem(modelDraftStorageKey(model.id));
         }
       }
@@ -1144,19 +1181,20 @@ function ModelConfigDrawer({
   useEffect(() => {
     if (!draftReady) return;
     try {
-      if (!persistentDirty) {
+      if (!draftDirty) {
         window.localStorage.removeItem(modelDraftStorageKey(model.id));
         return;
       }
       const draft: ModelDrawerDraft = {
-        version: 1,
+        version: 2,
         sourceUpdatedAt: model.updated_at ?? null,
+        sourceFeaturesSignature: featureSignature(configuredFeatures(model)),
         name: nameInput,
         displayName: displayNameInput,
         provider: providerInput,
         modelKind,
         apiBaseUrl: apiBaseUrlInput,
-        features: effectiveFeaturesInput,
+        features: featuresInput,
         savedAt: Date.now(),
       };
       window.localStorage.setItem(modelDraftStorageKey(model.id), JSON.stringify(draft));
@@ -1167,12 +1205,12 @@ function ModelConfigDrawer({
     apiBaseUrlInput,
     displayNameInput,
     draftReady,
-    effectiveFeaturesInput,
+    featuresInput,
     model.id,
     model.updated_at,
     modelKind,
     nameInput,
-    persistentDirty,
+    draftDirty,
     providerInput,
   ]);
 
@@ -1238,7 +1276,7 @@ function ModelConfigDrawer({
       setProviderInput(result.provider);
       setModelKind(getModelKind(result));
       setApiBaseUrlInput(result.api_base_url ?? "");
-      setFeaturesInput(normalizedModelFeatures(result));
+      setFeaturesInput(rememberedChatFeatures(configuredFeatures(result)));
       setApiKeyInput("");
       setShowApiKey(false);
       try {
@@ -1366,30 +1404,32 @@ function ModelConfigDrawer({
               <div className="md:col-span-2 grid gap-2 sm:grid-cols-[92px_minmax(0,1fr)] sm:items-start">
                 <span className="pt-2.5 text-[11px] font-medium text-slate-500">模型类型</span>
                 <div className="min-w-0">
-                  <div className="grid w-full max-w-[460px] grid-cols-3 rounded-[10px] border border-slate-200 bg-slate-50/70 p-0.5">
-                    {(Object.keys(MODEL_KIND_META) as ModelKind[]).map((kind) => (
-                      <button
-                        key={kind}
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => {
-                          setModelKind(kind);
-                          setFeaturesInput((previous) => featuresForKind(kind, previous));
-                          setTestResult(null);
-                          if (kind === "ocr_job" && providerInput === "openai") setProviderInput("paddleocr-vl");
-                        }}
-                        className={cn(
-                          "h-9 rounded-[8px] px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.985] disabled:opacity-50",
-                          modelKind === kind
-                            ? "bg-white text-[var(--color-primary)] shadow-[0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/80"
-                            : "text-slate-500 hover:bg-white/60 hover:text-slate-700",
-                        )}
-                      >
-                        {MODEL_KIND_META[kind].label}
-                      </button>
-                    ))}
+                  <div className="grid w-full max-w-[560px] grid-cols-3 gap-2">
+                    {(Object.keys(MODEL_KIND_META) as ModelKind[]).map((kind) => {
+                      const selected = modelKind === kind;
+                      return (
+                        <button
+                          key={kind}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => {
+                            setModelKind(kind);
+                            setTestResult(null);
+                            if (kind === "ocr_job" && providerInput === "openai") setProviderInput("paddleocr-vl");
+                          }}
+                          className={cn(
+                            "relative flex h-10 items-center justify-center rounded-md border-2 px-3 text-[12px] font-medium transition-[border-color,background-color,color,box-shadow,transform] duration-200 ease-out active:scale-[0.985] disabled:opacity-50",
+                            selected
+                              ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]/25 text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,0.035)]"
+                              : "border-slate-200/90 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50/70 hover:text-slate-700",
+                          )}
+                        >
+                          {MODEL_KIND_META[kind].label}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <p className="mt-1.5 max-w-[560px] text-[10px] leading-4 text-slate-400">{MODEL_KIND_META[modelKind].desc}</p>
+                  <p className="mt-1.5 max-w-[560px] text-[10px] leading-4 text-slate-400 transition-colors duration-200">{MODEL_KIND_META[modelKind].desc}</p>
                 </div>
               </div>
             </div>
@@ -1722,9 +1762,9 @@ export function ModelCards() {
               : modelList.map((model) => {
                   const Icon = getProviderIcon(model.provider);
                   const color = getProviderColor(model.provider);
-                  const featureList = model.features?.length
-                    ? model.features.map((f) => FEATURE_LABELS[f]).filter(Boolean)
-                    : [];
+                  const featureList = configuredFeatures(model)
+                    .map((feature) => FEATURE_LABELS[feature])
+                    .filter(Boolean);
                   const isSelected = selectedId === model.id;
 
                   return (
