@@ -176,6 +176,13 @@ class QuestionVersion(Base):
     id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     question_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Full grading/view snapshot fields. They are nullable for historical rows
+    # created before the practice-version migration; all new snapshots populate
+    # them so an in-flight practice can be graded against exactly what was issued.
+    subject_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    question_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    image_url: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    is_active: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     content: Mapped[dict] = mapped_column(JSON, nullable=False)
     options: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     answer: Mapped[str] = mapped_column(Text, nullable=False)

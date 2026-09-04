@@ -861,7 +861,7 @@ Page({
         currentGroupIdx,
         groupQuestions,
         masterUndoVisible: true,
-        masterUndoText: '已标记掌握，不再进入复习计划',
+        masterUndoText: '已标记掌握；以后再次答错会重新加入复习',
       })
 
       this._masterUndoTimer = setTimeout(() => {
@@ -1042,30 +1042,43 @@ Page({
           return String(rr.question_id) === String(q.question_id)
         })
         const isAnswered = adapter.isQuestionAnswered(q, answers, KF)
-        const wasSubmitted = !!r
+        const submitFailed = !!(r && r.success === false)
+        const wasSubmitted = !!r && !submitFailed
         return {
           ...resultQuestion,
-          isCorrect: r ? !!r.is_correct : false,
-          correctAnswer: r ? (r.correct_answer || '') : '',
+          isCorrect: wasSubmitted ? !!r.is_correct : false,
+          correctAnswer: wasSubmitted ? (r.correct_answer || '') : '',
           userAnswer: answers[q.schedule_id] || '',
           wasAnswered: isAnswered,
           wasSubmitted,
-          wasSkipped: !isAnswered && !wasSubmitted,
+          submitFailed,
+          submitError: submitFailed ? (r.error || '提交失败，请重试') : '',
+          wasSkipped: !isAnswered && !wasSubmitted && !submitFailed,
+          masteryPercent: wasSubmitted && Number.isFinite(Number(r.mastery_percent)) ? Number(r.mastery_percent) : null,
+          mastered: !!(wasSubmitted && r.mastered),
         }
       })
       const groupCorrect = groupResults.filter(r => r.isCorrect && r.wasSubmitted).length
       const groupWrong = groupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
-      const groupSkipped = groupResults.filter(r => r.wasSkipped).length
+      const groupSkipped = groupResults.filter(r => !r.wasSubmitted).length
+      const groupFailed = groupResults.filter(r => r.submitFailed).length
+      if (groupFailed > 0) {
+        wx.showToast({ title: `${groupFailed} 题提交失败，已保留待重试`, icon: 'none' })
+      }
 
       const allGroupResults = _mergeResultsByScheduleId(this._reviewSession.allGroupResults, groupResults)
       const totalCorrect = allGroupResults.filter(r => r.isCorrect && r.wasSubmitted).length
       const totalWrong = allGroupResults.filter(r => r.wasSubmitted && !r.isCorrect).length
       const totalCompleted = allGroupResults.filter(r => r.wasSubmitted).length
 
-      // 被跳过的题重新入队
-      const skippedQuestions = groupQuestions.filter(q => !adapter.isQuestionAnswered(q, answers, KF) && !treatUnansweredAsWrong)
-      const newGroups = skippedQuestions.length > 0
-        ? [...this.data.groups, skippedQuestions]
+      // 未成功提交的题（主动跳过或单题提交失败）统一重新入队。
+      // 失败项不能伪装成“答错”，也不能提前增加今日完成数。
+      const pendingQuestionIds = new Set(
+        groupResults.filter(r => !r.wasSubmitted).map(r => String(r.schedule_id))
+      )
+      const pendingQuestions = groupQuestions.filter(q => pendingQuestionIds.has(String(q.schedule_id)))
+      const newGroups = pendingQuestions.length > 0
+        ? [...this.data.groups, pendingQuestions]
         : this.data.groups
 
       // 本地更新今日任务进度，避免接口中“实时待复习数”因已完成题被改期而缩小，
@@ -1098,7 +1111,7 @@ Page({
         groupCorrect,
         groupWrong,
         _groupSkipped: groupSkipped,
-        groupAccuracyPercent: Math.round(groupQuestions.length > 0 ? groupCorrect / groupQuestions.length * 100 : 0),
+        groupAccuracyPercent: Math.round((groupCorrect + groupWrong) > 0 ? groupCorrect / (groupCorrect + groupWrong) * 100 : 0),
         todayDueCount: todayTaskTotalCount,
         todayCompletedCount: todayCompletedCount,
         todayRemainingCount: todayRemainingCount,

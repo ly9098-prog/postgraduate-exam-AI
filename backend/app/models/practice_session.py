@@ -6,6 +6,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     func,
     text,
@@ -64,6 +65,13 @@ class PracticeSession(Base):
     # 保证两个不同的超长 id 绝不因截断而合并成同一个 key（见 practice_service
     # _normalize_practice_session）。
     request_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    # Canonical idempotency state for batch-submit.  These fields belong to the
+    # session rather than an arbitrary PracticeRecord so all-skipped batches and
+    # future answer-history cleanup remain recoverable.
+    submission_payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    submission_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     mode: Mapped[str] = mapped_column(String(16), nullable=False, default="random")
 
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

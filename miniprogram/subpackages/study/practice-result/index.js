@@ -5,6 +5,8 @@ const { getChinaDate } = require('../../../utils/china-time');
 
 const ERROR_COLORS = ['#B8FF13', '#78D74D', '#43B968', '#238E58', '#86A83E', '#C9DC73'];
 const RESULT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1';
+const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 const DEFAULT_GROWTH = {
   total_exp: 0,
@@ -31,6 +33,17 @@ function normalizePercent(value) {
   if (!Number.isFinite(n)) return 0;
   if (n >= 0 && n <= 1) return Math.round(n * 100);
   return Math.round(clamp(n, 0, 100));
+}
+
+function normalizeReviewStatus(source, isCorrectFallback) {
+  const raw = String(
+    source && (source.status ?? source.answer_status ?? source.answerStatus) || ''
+  ).trim().toLowerCase();
+  if (raw === 'partial' || raw === 'incomplete' || (source && source._local_partial)) return 'partial';
+  if (raw === 'skipped' || raw === 'skip' || (source && source._local_skipped)) return 'skipped';
+  if (raw === 'correct') return 'correct';
+  if (raw === 'wrong' || raw === 'incorrect') return 'wrong';
+  return isCorrectFallback ? 'correct' : 'wrong';
 }
 
 function pad2(n) {
@@ -89,7 +102,21 @@ function formatMathPreviewText(value) {
 }
 
 function formatAnswerPreview(value) {
-  return typeof value === 'string' ? formatMathPreviewText(value) : value;
+  if (typeof value !== 'string') return value;
+  const text = value.trim();
+  if (!text) return '';
+  const parts = text.split(';').map(item => item.trim()).filter(Boolean);
+  if (parts.length && parts.every(item => /^(?:[①-⑳]|\d+|[一二三四五六七八九十]+)[:：].+$/.test(item))) {
+    return parts.map(item => {
+      const match = item.match(/^([^:：;]+)[:：](.+)$/);
+      if (!match) return item;
+      const slot = match[1].trim();
+      const answer = match[2].trim();
+      const label = /^[①-⑳]$/.test(slot) ? slot : `第${slot}空`;
+      return `${label}：${answer}`;
+    }).join('；');
+  }
+  return formatMathPreviewText(text);
 }
 
 function getQuestionTitle(question) {
@@ -243,7 +270,9 @@ Page({
     questionFilters: [
       { key: 'all', label: '全部' },
       { key: 'correct', label: '答对' },
-      { key: 'wrong', label: '答错' }
+      { key: 'wrong', label: '答错' },
+      { key: 'skipped', label: '跳过' },
+      { key: 'partial', label: '未完成' }
     ],
     questionFilter: 'all',
     questionListHeightRpx: 96,
@@ -251,8 +280,11 @@ Page({
     subjectName: '',
     correctCount: 0,
     wrongCount: 0,
+    skippedCount: 0,
+    partialCount: 0,
     totalCount: 0,
     accuracyPct: 0,
+    completionPct: 0,
     accuracyDotDeg: -90,
     durationText: '00分00秒',
     resultTip: '完成练习后及时复盘，效果会更好。',
@@ -265,9 +297,11 @@ Page({
     trendData: [],
     trendSummary: '近 7 天',
     trendLoading: true,
+    trendAvailable: false,
 
     growthGain: 0,
     growth: DEFAULT_GROWTH,
+    growthAvailable: false,
     unlockedBadgeCount: 0,
 
     // 自定义导航栏不能只依赖 env(safe-area-inset-top)：部分 Android 真机
@@ -288,6 +322,9 @@ Page({
     const summaryPayload = optionPayload || cachePayload ? null : this.readSummaryFromOptions(options || {});
     this.applyPracticePayload(optionPayload || cachePayload || summaryPayload || {});
 
+    if (!optionPayload && !cachePayload && String((options || {})._recover || '') === '1' && (options || {})._rid) {
+      this.recoverSubmittedResult(options || {});
+    }
     this.loadDashboardData();
   },
 
@@ -359,7 +396,7 @@ Page({
   },
 
   readSummaryFromOptions(options) {
-    const keys = ['correct', 'wrong', 'total', 'duration', 'subject_id', 'subject_name'];
+    const keys = ['correct', 'wrong', 'skipped', 'partial', 'total', 'duration', 'subject_id', 'subject_name'];
     if (!keys.some(key => options[key] !== undefined && options[key] !== null && options[key] !== '')) return null;
 
     let subjectName = options.subject_name || '';
@@ -369,6 +406,8 @@ Page({
     return {
       total_correct: Number(options.correct) || 0,
       total_wrong: Number(options.wrong) || 0,
+      total_skipped: Number(options.skipped) || 0,
+      total_partial: Number(options.partial) || 0,
       total: Math.max(0, Number(options.total) || 0),
       duration: Math.max(0, Number(options.duration) || 0),
       subject_id: options.subject_id != null ? Number(options.subject_id) : null,
@@ -421,6 +460,121 @@ Page({
       } catch (e) {}
     }
     return null;
+  },
+
+  _pendingSubmissionStorageKey() {
+    const userId = this._getCurrentUserId();
+    return userId ? `${PRACTICE_PENDING_SUBMISSION_KEY_PREFIX}:${userId}` : '';
+  },
+
+  _readPendingSubmissionForRecovery(requestId) {
+    const key = this._pendingSubmissionStorageKey();
+    if (!key || !requestId) return null;
+    try {
+      const item = wx.getStorageSync(key);
+      if (!item || item.version !== 1 || !item.submission) return null;
+      if (String(item.submission.requestId || '') !== String(requestId)) return null;
+      const freshnessAt = Number(item.updatedAt) || Number(item.createdAt) || 0;
+      if (!freshnessAt || Date.now() - freshnessAt > PRACTICE_PENDING_SUBMISSION_TTL_MS) return null;
+      return item;
+    } catch (_) {
+      return null;
+    }
+  },
+
+  _clearPendingSubmission(requestId) {
+    const key = this._pendingSubmissionStorageKey();
+    if (!key) return;
+    try {
+      const item = wx.getStorageSync(key);
+      if (!item || !item.submission || String(item.submission.requestId || '') === String(requestId || '')) {
+        wx.removeStorageSync(key);
+      }
+    } catch (_) {}
+  },
+
+  _buildRecoveredResultPayload(submission, submitResult, options) {
+    const answerMap = submission.answerMap || {};
+    const partialSet = {};
+    ;(submission.partialQuestionIds || []).forEach(id => { partialSet[String(id)] = true; });
+    const results = (submitResult.results || []).map(item => {
+      const qid = String(item.question_id);
+      const isPartial = item.status === 'skipped' && !!partialSet[qid];
+      return {
+        ...item,
+        status: isPartial ? 'partial' : item.status,
+        _local_partial: isPartial,
+        _local_skipped: item.status === 'skipped' && !isPartial,
+        user_answer: answerMap[qid] || '',
+      };
+    });
+    const partialCount = (submission.partialQuestionIds || []).length;
+    const skippedCount = Math.max(0, (Number(submitResult.total_skipped) || 0) - partialCount);
+    const cacheKey = String((options || {})._ck || '');
+    return {
+      correct: Number(submitResult.total_correct) || 0,
+      wrong: Number(submitResult.total_wrong) || 0,
+      skipped: skippedCount,
+      partial: partialCount,
+      total: Number(submission.total) || results.length,
+      subject_id: submission.selectedSubjectId ?? (submission.session && submission.session.subject_id) ?? null,
+      subject_name: submission.selectedSubjectName || '',
+      duration: Number(submission.duration ?? (submission.session && submission.session.duration_sec)) || 0,
+      traceId: submitResult.trace_id || submission.traceId || '',
+      results,
+      questions: (submission.recoveryQuestions || []).map(q => ({
+        ...q,
+        id: q.id,
+        stem: q.stem || '',
+        question_type: q.question_type || '',
+        content: q.content || (q.stem ? { stem: q.stem } : {}),
+        options: q.options || null,
+        image_url: q.image_url || null,
+      })),
+      comboCount: Number(submission.comboCount) || 0,
+      _cacheKey: cacheKey,
+      _userId: this._getCurrentUserId(),
+      _createdAt: Date.now(),
+    };
+  },
+
+  async recoverSubmittedResult(options) {
+    const requestId = String((options || {})._rid || '');
+    const pending = this._readPendingSubmissionForRecovery(requestId);
+    if (!pending || !pending.submission || !this._pageAlive) {
+      wx.showToast({ title: '详细复盘数据暂无法恢复', icon: 'none' });
+      return;
+    }
+    const submission = pending.submission;
+    const payload = {
+      answers: submission.answers || [],
+      skipped_question_ids: submission.skippedQuestionIds || [],
+      session: submission.session || null,
+      _traceId: submission.traceId || '',
+    };
+    if (!submission.batchToken) {
+      wx.showToast({ title: '恢复凭据已失效，请重新进入练习', icon: 'none' });
+      return;
+    }
+    payload.batch_token = submission.batchToken;
+    try {
+      const submitResult = await api.post('/practice/batch-submit', payload);
+      if (!this._pageAlive) return;
+      const recovered = this._buildRecoveredResultPayload(submission, submitResult || {}, options || {});
+      let cached = false;
+      try {
+        wx.setStorageSync('lastPracticeResult', recovered);
+        cached = true;
+      } catch (storageError) {
+        console.warn('恢复结果后写入本地缓存失败', storageError);
+      }
+      this.applyPracticePayload(recovered);
+      if (cached) this._clearPendingSubmission(requestId);
+    } catch (e) {
+      if (!this._pageAlive) return;
+      console.error('恢复已提交练习结果失败', e);
+      wx.showToast({ title: '详细复盘恢复失败，可稍后重试', icon: 'none' });
+    }
   },
 
   applyPracticePayload(payload) {
@@ -480,30 +634,48 @@ Page({
 
     const explicitCorrect = source.total_correct ?? source.totalCorrect ?? source.correctCount ?? source.correct_count;
     const explicitWrong = source.total_wrong ?? source.totalWrong ?? source.wrongCount ?? source.wrong_count;
+    const explicitSkipped = source.total_skipped ?? source.totalSkipped ?? source.skippedCount ?? source.skipped_count ?? source.skipped;
+    const explicitPartial = source.total_partial ?? source.totalPartial ?? source.partialCount ?? source.partial_count ?? source.partial;
 
     let correctCount = Number.isFinite(Number(explicitCorrect))
       ? Number(explicitCorrect)
-      : reviewItems.filter(item => item.isCorrect).length;
+      : reviewItems.filter(item => item.status === 'correct').length;
 
     let wrongCount = Number.isFinite(Number(explicitWrong))
       ? Number(explicitWrong)
-      : reviewItems.filter(item => !item.isCorrect).length;
+      : reviewItems.filter(item => item.status === 'wrong').length;
+
+    let skippedCount = Number.isFinite(Number(explicitSkipped))
+      ? Number(explicitSkipped)
+      : reviewItems.filter(item => item.status === 'skipped').length;
+
+    let partialCount = Number.isFinite(Number(explicitPartial))
+      ? Number(explicitPartial)
+      : reviewItems.filter(item => item.status === 'partial').length;
 
     let totalCount =
       Number(source.totalCount ?? source.total_count ?? source.total) ||
-      (correctCount + wrongCount) ||
+      (correctCount + wrongCount + skippedCount + partialCount) ||
       reviewItems.length;
 
-    if (!correctCount && !wrongCount && reviewItems.length) {
-      correctCount = reviewItems.filter(item => item.isCorrect).length;
-      wrongCount = reviewItems.length - correctCount;
+    if (!correctCount && !wrongCount && !skippedCount && !partialCount && reviewItems.length) {
+      correctCount = reviewItems.filter(item => item.status === 'correct').length;
+      wrongCount = reviewItems.filter(item => item.status === 'wrong').length;
+      skippedCount = reviewItems.filter(item => item.status === 'skipped').length;
+      partialCount = reviewItems.filter(item => item.status === 'partial').length;
       totalCount = reviewItems.length;
     }
 
+    const answeredTotal = correctCount + wrongCount;
     const explicitAccuracy = source.accuracy ?? source.accuracyPct ?? source.correctRate ?? source.correct_rate;
+    // 与 PracticeRecord / 趋势接口统一：正确率只针对实际作答题。跳过题
+    // 影响完成率，不再同时拉低“正确率”，避免同页出现两套分母。
     const accuracyPct = explicitAccuracy !== undefined && explicitAccuracy !== null
       ? normalizePercent(explicitAccuracy)
-      : (totalCount ? Math.round(correctCount / totalCount * 100) : 0);
+      : (answeredTotal ? Math.round(correctCount / answeredTotal * 100) : 0);
+    const completionPct = totalCount
+      ? Math.round(answeredTotal / totalCount * 100)
+      : 0;
 
     const usedTime = (
       source.used_time ??
@@ -531,24 +703,28 @@ Page({
       null
     );
 
-    const wrongReviewItems = reviewItems.filter(item => !item.isCorrect);
+    const wrongReviewItems = reviewItems.filter(item => item.status === 'wrong');
     const localErrorDistribution = this.buildLocalErrorDistribution(wrongReviewItems);
 
-    const resultTip = this.getResultTip(accuracyPct, wrongCount, totalCount);
+    const resultTip = this.getResultTip(accuracyPct, wrongCount, skippedCount, partialCount, totalCount);
 
     if (!this._pageAlive) return;
     this.setData({
       subjectName,
       correctCount,
       wrongCount,
+      skippedCount,
+      partialCount,
       totalCount,
       accuracyPct,
+      completionPct,
       accuracyDotDeg: Math.round(accuracyPct * 3.6 - 90),
       durationText: formatDuration(usedTime),
       resultTip,
       growthGain,
       ...(embeddedGrowth ? {
         growth: embeddedGrowth,
+        growthAvailable: true,
         unlockedBadgeCount: embeddedGrowth.badges.filter(item => item && item.unlocked).length
       } : {}),
       reviewItems,
@@ -576,6 +752,10 @@ Page({
       answer.is_correct ??
       answer.isCorrect ??
       false;
+    const status = normalizeReviewStatus(
+      Object.assign({}, answer || {}, result || {}),
+      !!isCorrectRaw
+    );
 
     const kpList = normalizeKpList(
       result.knowledge_points ??
@@ -589,7 +769,10 @@ Page({
       wrongQuestionId: result.wrong_question_id ?? result.wrongQuestionId ?? null,
       displayIndex: pad2(index + 1),
       title: getQuestionTitle(question) || `第 ${index + 1} 题`,
-      isCorrect: !!isCorrectRaw,
+      status,
+      isCorrect: status === 'correct',
+      isSkipped: status === 'skipped',
+      isPartial: status === 'partial',
       userAnswer: formatAnswerPreview(answer.user_answer ?? answer.userAnswer ?? result.user_answer ?? result.userAnswer ?? ''),
       correctAnswer: formatAnswerPreview(result.correct_answer ?? result.correctAnswer ?? question.answer ?? ''),
       analysis: result.analysis ?? question.analysis ?? '',
@@ -600,13 +783,17 @@ Page({
 
   normalizeReviewItem(item, index) {
     const isCorrectRaw = item.is_correct ?? item.isCorrect ?? item.correct ?? false;
+    const status = normalizeReviewStatus(item, !!isCorrectRaw);
     const kpList = normalizeKpList(item.knowledge_points ?? item.knowledgePoints ?? item.knowledgePoint);
     return {
       questionId: item.questionId ?? item.question_id ?? item.id ?? index + 1,
       wrongQuestionId: item.wrongQuestionId ?? item.wrong_question_id ?? null,
       displayIndex: item.displayIndex || pad2(index + 1),
       title: formatMathPreviewText(item.title || getQuestionTitle(item)) || `第 ${index + 1} 题`,
-      isCorrect: !!isCorrectRaw,
+      status,
+      isCorrect: status === 'correct',
+      isSkipped: status === 'skipped',
+      isPartial: status === 'partial',
       userAnswer: formatAnswerPreview(item.userAnswer ?? item.user_answer ?? item.wrong_answer ?? ''),
       correctAnswer: formatAnswerPreview(item.correctAnswer ?? item.correct_answer ?? item.answer ?? ''),
       analysis: item.analysis ?? '',
@@ -641,8 +828,14 @@ Page({
     }));
   },
 
-  getResultTip(accuracy, wrongCount, totalCount) {
-    if (wrongCount === 0 && Number(totalCount) > 0) return '本组表现稳定，可以继续挑战更高难度。';
+  getResultTip(accuracy, wrongCount, skippedCount, partialCount, totalCount) {
+    if (wrongCount === 0 && skippedCount === 0 && partialCount === 0 && Number(totalCount) > 0) return '本组表现稳定，可以继续挑战更高难度。';
+    if (wrongCount === 0 && (skippedCount > 0 || partialCount > 0)) {
+      const parts = [];
+      if (partialCount > 0) parts.push(`${partialCount} 题未完成`);
+      if (skippedCount > 0) parts.push(`${skippedCount} 题跳过`);
+      return `本组有 ${parts.join('、')}，建议补看答案与解析后再继续。`;
+    }
     if (accuracy >= 80) return '整体掌握较好，建议快速复盘错题后继续练习。';
     if (accuracy >= 60) return '基础已掌握，优先复盘错题对应知识点。';
     return '本组错题较多，建议先定位错误原因，再进行同类题巩固。';
@@ -653,8 +846,7 @@ Page({
     const loadId = ++this._dashboardLoadId;
     await Promise.allSettled([
       this.loadTrends(loadId),
-      this.loadGrowth(loadId),
-      this.loadBehavior(loadId)
+      this.loadGrowth(loadId)
     ]);
 
     if (this._isDashboardLoadCurrent(loadId) && this._pageReady) this.drawVisibleCharts();
@@ -694,33 +886,23 @@ Page({
           trendSummary = diff > 0 ? `提升 ${diff}%` : diff < 0 ? `下降 ${Math.abs(diff)}%` : '表现稳定';
         } else if (nonEmpty.length === 1) {
           trendSummary = `当前 ${nonEmpty[0].accuracy}%`;
+        } else {
+          trendSummary = '暂无作答记录';
         }
 
-        this.setData({ trendData, trendSummary });
+        this.setData({ trendData, trendSummary, trendAvailable: true });
       } else {
-        this.setData({ trendData: this.buildFallbackTrend() });
+        this.setData({ trendData: [], trendSummary: '暂无历史数据', trendAvailable: false });
       }
     } catch (e) {
       if (!this._isDashboardLoadCurrent(loadId)) return;
-      this.setData({ trendData: this.buildFallbackTrend() });
+      this.setData({ trendData: [], trendSummary: '趋势暂不可用', trendAvailable: false });
     } finally {
       if (!this._isDashboardLoadCurrent(loadId)) return;
       this.setData({ trendLoading: false }, () => {
         if (this._pageReady && this.data.activeTab === 'overview') this.drawTrendChart();
       });
     }
-  },
-
-  buildFallbackTrend() {
-    const list = [];
-    for (let i = 6; i >= 0; i -= 1) {
-      list.push({
-        date: getChinaDate(-i),
-        accuracy: i === 0 ? this.data.accuracyPct : 0,
-        questions: i === 0 ? this.data.totalCount : 0
-      });
-    }
-    return list;
   },
 
   async loadGrowth(loadId = this._dashboardLoadId) {
@@ -761,34 +943,17 @@ Page({
       } catch (e) {}
     }
 
-    // 4. 成长接口仍为 0 时，用 overview 按后端 stats_service.py 的同一公式计算。
-    if (!resolved || (resolved.total_exp === 0 && this.data.totalCount > 0)) {
-      try {
-        const overview = await this.requestApi('/api/v1/stats/overview');
-        if (!this._isDashboardLoadCurrent(loadId)) return;
-        const growth = growthFromOverview(overview);
-        if (growth && (growth.total_exp > 0 || !resolved)) resolved = growth;
-      } catch (e) {}
+    // 不再用“本次题数 × 固定值”或本地公式伪造累计等级。权威成长接口
+    // 都不可用时，结果页明确显示暂不可用，避免用户看到错误的 Lv1/Lv2。
+    if (!resolved || !this._isDashboardLoadCurrent(loadId)) {
+      if (this._isDashboardLoadCurrent(loadId)) this.setData({ growthAvailable: false });
+      return;
     }
-
-    // 5. 最后才做本地兜底：当前页已有练习结果时不再展示 0 / 200。
-    if (!resolved || (resolved.total_exp === 0 && this.data.totalCount > 0)) {
-      const localQuestionCount = Math.max(
-        Number(this.data.totalCount) || 0,
-        Array.isArray(this.data.reviewItems) ? this.data.reviewItems.length : 0
-      );
-      const localExp = Math.max(
-        Number(this.data.growthGain) || 0,
-        localQuestionCount * 10
-      );
-      resolved = growthFromTotalExp(localExp, localQuestionCount > 0 ? 1 : 0);
-    }
-
-    if (!resolved || !this._isDashboardLoadCurrent(loadId)) return;
 
     const unlockedBadgeCount = (resolved.badges || []).filter(item => item && item.unlocked).length;
     this.setData({
       growth: resolved,
+      growthAvailable: true,
       unlockedBadgeCount
     });
   },
@@ -860,8 +1025,10 @@ Page({
     if (key === this.data.questionFilter) return;
 
     let filteredReviewItems = this.data.reviewItems;
-    if (key === 'correct') filteredReviewItems = filteredReviewItems.filter(item => item.isCorrect);
-    if (key === 'wrong') filteredReviewItems = filteredReviewItems.filter(item => !item.isCorrect);
+    if (key === 'correct') filteredReviewItems = filteredReviewItems.filter(item => item.status === 'correct');
+    if (key === 'wrong') filteredReviewItems = filteredReviewItems.filter(item => item.status === 'wrong');
+    if (key === 'skipped') filteredReviewItems = filteredReviewItems.filter(item => item.status === 'skipped');
+    if (key === 'partial') filteredReviewItems = filteredReviewItems.filter(item => item.status === 'partial');
 
     this.setData({
       questionFilter: key,
@@ -875,12 +1042,26 @@ Page({
     const target = this.data.reviewItems.find(item => String(item.questionId) === String(id));
     if (!target) return;
 
-    if (!target.isCorrect) {
-      this.setData({ activeTab: 'wrong' });
+    if (target.status === 'wrong') {
+      if (target.wrongQuestionId) {
+        wx.navigateTo({
+          url: `/subpackages/study/wrong-detail/wrong-detail?id=${encodeURIComponent(target.wrongQuestionId)}`
+        });
+      } else {
+        this.setData({ activeTab: 'wrong' });
+        wx.showToast({ title: '该题暂无错题详情', icon: 'none' });
+      }
     } else {
-      wx.showToast({
-        title: `本题答对：${target.correctAnswer || '正确'}`,
-        icon: 'none'
+      const lines = [];
+      lines.push(target.status === 'partial' ? '本题未完成' : (target.status === 'skipped' ? '本题已跳过' : '本题答对'));
+      if (target.userAnswer) lines.push(`我的答案：${target.userAnswer}`);
+      lines.push(`正确答案：${target.correctAnswer || '-'}`);
+      if (target.analysis) lines.push(`解析：${formatMathPreviewText(target.analysis)}`);
+      wx.showModal({
+        title: target.status === 'partial' ? '未完成题复盘' : (target.status === 'skipped' ? '跳过题复盘' : '题目复盘'),
+        content: lines.join('\n'),
+        showCancel: false,
+        confirmText: '知道了'
       });
     }
   },

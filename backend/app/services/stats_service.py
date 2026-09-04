@@ -97,7 +97,7 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
     total_wq, mastered_count = wq_result.one()
 
     due_count = await db.execute(
-        select(func.count(ReviewSchedule.id)).where(
+        select(func.count(func.distinct(ReviewSchedule.question_id))).where(
             ReviewSchedule.user_id == user_id,
             ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= utcnow(),
@@ -351,7 +351,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
         )
 
     long_unmastered = await db.execute(
-        select(func.count(ReviewSchedule.id)).where(
+        select(func.count(func.distinct(ReviewSchedule.question_id))).where(
             ReviewSchedule.user_id == user_id,
             ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= shanghai_date_utc_range(

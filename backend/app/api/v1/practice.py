@@ -16,9 +16,9 @@ from app.models.user import User
 from app.schemas.common import paginated_response
 from app.schemas.practice import (
     AnswerResult,
-    AnswerSubmit,
     BatchSubmitRequest,
     BatchSubmitResponse,
+    PracticeMode,
     PracticeQuestion,
     PracticeQuestionsResponse,
     PracticeRecordItem,
@@ -199,7 +199,7 @@ async def get_practice_questions(
     subject_id: int = Query(...),
     include_children: bool = Query(True),
     count: int = Query(20, ge=1, le=50),
-    mode: str = Query("random"),
+    mode: PracticeMode = Query("random"),
     knowledge_point: str | None = Query(None),
     exclude_answered: bool = Query(False),
     no_repeat_days: int | None = Query(None, ge=1, le=365),
@@ -378,6 +378,13 @@ async def get_practice_questions(
             hashlib.sha256(stem.encode()).hexdigest()[:8],
             [k for k in (content or {}) if k in ("text", "stem", "segments")],
         )
+    batch_token, question_versions, submission_request_id = svc.create_practice_batch_token(
+        user_id=current_user.id,
+        subject_id=subject_id,
+        mode=mode,
+        questions=questions,
+        recommendation_request_id=request_id,
+    )
     response = PracticeQuestionsResponse(
         questions=[
             PracticeQuestion(
@@ -398,6 +405,7 @@ async def get_practice_questions(
                 recommend_score=(question_metadata.get(q.id) or {}).get("recommend_score"),
                 strategy=(question_metadata.get(q.id) or {}).get("strategy"),
                 similarity=(question_metadata.get(q.id) or {}).get("similarity"),
+                question_version=question_versions.get(q.id),
             )
             for q in questions
         ],
@@ -406,6 +414,8 @@ async def get_practice_questions(
         trace_id=trace_id,
         request_id=request_id,
         sequential_progress=sequential_progress,
+        batch_token=batch_token,
+        submission_request_id=submission_request_id,
     )
     debug_log(
         trace_id,
@@ -456,31 +466,22 @@ async def reset_sequential_practice(
     return SequentialPracticeResetResponse(subject_id=data.subject_id, reset=True)
 
 
-@router.post("/submit", response_model=AnswerResult)
+@router.post("/submit", response_model=AnswerResult, deprecated=True)
 async def submit_answer(
-    data: AnswerSubmit,
-    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    try:
-        result = await svc.submit_answer(
-            db=db,
-            user_id=current_user.id,
-            question_id=data.question_id,
-            user_answer=data.user_answer,
-            used_time=data.used_time,
-            request_id=data.request_id,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    # 失效用户相关缓存。单题答错会更新 ReviewSchedule，需同步清理复习缓存，
-    # 与 batch-submit 的缓存失效策略保持一致。
-    await cache.delete(f"practice:stats:{current_user.id}:*")
-    await cache.delete(f"stats:*:{current_user.id}*")
-    await cache.delete(f"review:*:{current_user.id}*")
-
-    return AnswerResult(**result)
+    # Legacy per-question submit cannot prove that the question was actually
+    # issued to this user and has no batch-level idempotency boundary. Keeping
+    # it writable would bypass the signed batch contract and expose answers by
+    # question-id enumeration. The mini-program no longer uses this endpoint.
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "error_code": "PRACTICE_SINGLE_SUBMIT_RETIRED",
+            "retryable": False,
+            "message": "单题提交接口已停用，请重新获取题目后使用 batch-submit",
+        },
+    )
 
 
 @router.post("/batch-submit", response_model=BatchSubmitResponse)
@@ -507,9 +508,65 @@ async def batch_submit(
             user_id=current_user.id,
             answers=[a.model_dump() for a in data.answers],
             session_meta=data.session.model_dump() if data.session is not None else None,
+            skipped_question_ids=data.skipped_question_ids,
+            batch_token=data.batch_token,
+        )
+    except svc.PracticeQuestionVersionConflictError as e:
+        logger.warning(
+            "practice submit question version conflict uid=%s trace_id=%s: %s",
+            current_user.id,
+            trace_id,
+            e,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "PRACTICE_QUESTION_VERSION_CONFLICT",
+                "retryable": False,
+            },
+        )
+    except svc.PracticeBatchTokenError as e:
+        logger.warning(
+            "practice submit batch token rejected uid=%s trace_id=%s: %s",
+            current_user.id,
+            trace_id,
+            e,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_code": "PRACTICE_BATCH_INVALID",
+                "retryable": False,
+            },
+        )
+    except svc.PracticeSubmissionConflictError as e:
+        logger.warning(
+            "practice submit idempotency conflict uid=%s trace_id=%s: %s",
+            current_user.id,
+            trace_id,
+            e,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error_code": "PRACTICE_SUBMISSION_CONFLICT",
+                "retryable": False,
+            },
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.warning(
+            "practice submit payload rejected uid=%s trace_id=%s: %s",
+            current_user.id,
+            trace_id,
+            e,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error_code": "PRACTICE_PAYLOAD_INVALID",
+                "retryable": False,
+            },
+        )
 
     # 失效用户相关缓存
     await cache.delete(f"practice:stats:{current_user.id}:*")
@@ -522,6 +579,7 @@ async def batch_submit(
         {
             "total_correct": result["total_correct"],
             "total_wrong": result["total_wrong"],
+            "total_skipped": result.get("total_skipped", 0),
             "result_count": len(result["results"]),
         },
     )
@@ -529,6 +587,7 @@ async def batch_submit(
         results=[AnswerResult(**r) for r in result["results"]],
         total_correct=result["total_correct"],
         total_wrong=result["total_wrong"],
+        total_skipped=result.get("total_skipped", 0),
         trace_id=trace_id,
     )
 

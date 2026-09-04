@@ -180,6 +180,7 @@ Page({
     renderTraces: [],
 
     masterConfirmVisible: false,
+    unmasterConfirmVisible: false,
     masterSubmitting: false,
     isCurrentMastered: false,
     masterUndoVisible: false,
@@ -287,6 +288,7 @@ Page({
       aiFromCache: false,
       aiFromQuestionAnalysis: false,
       masterConfirmVisible: false,
+      unmasterConfirmVisible: false,
       moreMenuVisible: false,
       removeConfirmVisible: false,
       masterSubmitting: false,
@@ -674,6 +676,24 @@ Page({
     this.setData({ masterConfirmVisible: false })
   },
 
+  openUnmasterConfirm() {
+    if (this.data.masterSubmitting || !this.data.isCurrentMastered) return
+    this.setData({ unmasterConfirmVisible: true })
+  },
+
+  closeUnmasterConfirm() {
+    if (this.data.masterSubmitting) return
+    this.setData({ unmasterConfirmVisible: false })
+  },
+
+  onMasterAction() {
+    if (this.data.isCurrentMastered) {
+      this.openUnmasterConfirm()
+    } else {
+      this.openMasterConfirm()
+    }
+  },
+
   async confirmMastered() {
     const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
     if (!wqId || this.data.masterSubmitting) return
@@ -721,6 +741,40 @@ Page({
     } catch (e) {
       if (!this._alive) return
       console.error('标记已掌握失败', e)
+      this.setData({ masterSubmitting: false })
+      wx.showToast({ title: '操作失败，请重试', icon: 'none' })
+    }
+  },
+
+  async confirmUnmastered() {
+    const wqId = this._currentWqId || (this.data.wq && this.data.wq.id)
+    if (!wqId || this.data.masterSubmitting) return
+
+    this.setData({ masterSubmitting: true, unmasterConfirmVisible: false })
+    try {
+      await api.post('/wrong-questions/batch', {
+        action: 'unmark_mastered',
+        ids: [wqId],
+      })
+      if (!this._alive) return
+
+      this._clearMasterUndo()
+      if (this._wqCache && this._wqCache[wqId]) {
+        this._wqCache[wqId].data = Object.assign({}, this._wqCache[wqId].data, { is_mastered: false })
+      }
+      if (this.data.wq && String(this.data.wq.id) === String(wqId)) {
+        this.setData({
+          wq: Object.assign({}, this.data.wq, { is_mastered: false }),
+          isCurrentMastered: false,
+          masterSubmitting: false,
+        })
+      } else {
+        this.setData({ masterSubmitting: false })
+      }
+      wx.showToast({ title: '已重新加入复习', icon: 'none' })
+    } catch (e) {
+      if (!this._alive) return
+      console.error('重新加入复习失败', e)
       this.setData({ masterSubmitting: false })
       wx.showToast({ title: '操作失败，请重试', icon: 'none' })
     }

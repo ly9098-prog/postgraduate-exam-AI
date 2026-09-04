@@ -291,7 +291,7 @@ async def _compute_kp_due_review_counts(db: AsyncSession, user_id: int) -> dict[
     rows = await db.execute(
         select(
             QuestionKnowledgePoint.knowledge_point_id,
-            func.count(ReviewSchedule.id),
+            func.count(func.distinct(ReviewSchedule.question_id)),
         )
         .join(ReviewSchedule, ReviewSchedule.question_id == QuestionKnowledgePoint.question_id)
         .where(

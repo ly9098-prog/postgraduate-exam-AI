@@ -29,6 +29,28 @@ LEITNER_INTERVAL_DAYS: dict[int, int] = {
 
 LEITNER_MAX_BOX = 5
 
+# 复习掌握度与 Leitner 盒子统一：无需新增字段或迁移。
+# 0 级代表刚做错；达到 3 级（80%）即自动掌握。
+REVIEW_MASTERY_BY_BOX: dict[int, float] = {
+    0: 0.20,
+    1: 0.45,
+    2: 0.65,
+    3: 0.80,
+    4: 0.90,
+    5: 1.00,
+}
+AUTO_MASTERY_MIN_BOX = 3
+AUTO_MASTERY_THRESHOLD = REVIEW_MASTERY_BY_BOX[AUTO_MASTERY_MIN_BOX]
+
+
+def mastery_ratio_for_box(box_level: int | None) -> float:
+    level = max(0, min(LEITNER_MAX_BOX, int(box_level or 0)))
+    return REVIEW_MASTERY_BY_BOX[level]
+
+
+def mastery_percent_for_box(box_level: int | None) -> int:
+    return round(mastery_ratio_for_box(box_level) * 100)
+
 
 def compute_next_box_level(
     current_box_level: int | None,
@@ -44,7 +66,9 @@ def compute_next_box_level(
     if is_correct:
         return min(level + 1, LEITNER_MAX_BOX)
 
-    return max(level - 2, 0)
+    # 一次答错必须退出自动掌握区间。否则 5 级题按旧规则只降到 3 级，
+    # 仍会显示 80% 并再次被判为已掌握，与“答错即取消掌握”冲突。
+    return min(max(level - 2, 0), AUTO_MASTERY_MIN_BOX - 1)
 
 
 class ReviewTransition(NamedTuple):
@@ -189,3 +213,30 @@ async def get_due_question_ids(
         # else: 未到期，不加入
 
     return due_ids
+
+
+async def get_user_question_mastery(
+    db: AsyncSession,
+    user_id: int,
+    question_id: int,
+) -> dict:
+    """读取统一的题目复习掌握度。
+
+    没有状态记录时按“刚进入错题本”的 20% 处理，避免异步投影尚未完成时
+    错题本短暂显示 0%。
+    """
+    result = await db.execute(
+        select(UserQuestionState).where(
+            UserQuestionState.user_id == user_id,
+            UserQuestionState.question_id == question_id,
+        )
+    )
+    state = result.scalar_one_or_none()
+    box_level = state.box_level if state is not None else 0
+    ratio = mastery_ratio_for_box(box_level)
+    return {
+        "box_level": box_level,
+        "mastery_ratio": ratio,
+        "mastery_percent": round(ratio * 100),
+        "auto_mastered": ratio >= AUTO_MASTERY_THRESHOLD,
+    }

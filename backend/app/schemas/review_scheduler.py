@@ -45,6 +45,8 @@ class ReviewSubmitResponse(BaseModel):
     ease_factor_after: float
     next_review_at: datetime
     is_correct: bool
+    mastery_percent: int = 20
+    mastered: bool = False
 
 
 class BatchReviewRequest(BaseModel):
@@ -54,8 +56,12 @@ class BatchReviewRequest(BaseModel):
 class BatchReviewResult(BaseModel):
     schedule_id: int
     question_id: int
-    next_review_at: datetime
+    success: bool = True
+    error: str | None = None
+    next_review_at: datetime | None = None
     is_correct: bool
+    mastery_percent: int = 20
+    mastered: bool = False
 
 
 class BatchReviewResponse(BaseModel):
@@ -108,12 +114,16 @@ class BatchGradeRequest(BaseModel):
 class BatchGradeResult(BaseModel):
     schedule_id: int
     question_id: int
+    success: bool = True
+    error: str | None = None
     is_correct: bool
     correct_answer: str
     rating: int
     interval_after: int
     ease_factor_after: float
-    next_review_at: datetime
+    next_review_at: datetime | None = None
+    mastery_percent: int = 20
+    mastered: bool = False
 
 
 class BatchGradeResponse(BaseModel):

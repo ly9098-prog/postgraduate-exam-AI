@@ -6,6 +6,8 @@ const adapter = require('../utils/question-runner-adapter')
 const questionImageCache = require('../utils/question-image-cache')
 
 const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
+const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
+const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
 
 function _deduplicateLines(text) {
@@ -269,6 +271,7 @@ Page({
     this._lastSubjectOptionTap = null
     this._resetSession()
     this._pendingResultUrl = ''
+    this._submittedResultPayload = null
     setRenderGuardPage('practice')
     resetRenderGuard()
     this._initCustomNavigation()
@@ -276,6 +279,7 @@ Page({
   },
 
   onUnload() {
+    this._setPracticeUnloadGuard(false)
     this._pageAlive = false
     this._subjectsRequestSeq++
     this._questionsRequestSeq++
@@ -302,15 +306,213 @@ Page({
       comboCount: 0,
       elapsedSec: 0,
       startTime: 0,
+      startedAtMs: 0,
       questionTimeMap: {},
       currentQuestionStartedAt: 0,
       requestId: '',
       recommendationRequestId: '',
+      batchToken: '',
+      batchMode: '',
+      submissionSnapshot: null,
       backgroundMs: 0,
       _bgStartAt: null,
       optionKeys: [],
       questionRenderCache: Object.create(null),
     }
+  },
+
+
+  _getCurrentUserId() {
+    try {
+      const user = wx.getStorageSync('user')
+      return user && user.id ? String(user.id) : ''
+    } catch (_) {
+      return ''
+    }
+  },
+
+  _pendingSubmissionStorageKey() {
+    const userId = this._getCurrentUserId()
+    return userId ? `${PRACTICE_PENDING_SUBMISSION_KEY_PREFIX}:${userId}` : ''
+  },
+
+  _readPendingSubmission() {
+    const key = this._pendingSubmissionStorageKey()
+    if (!key) return null
+    try {
+      const item = wx.getStorageSync(key)
+      if (!item || item.version !== 1 || !item.submission) return null
+      const createdAt = Number(item.createdAt) || 0
+      const freshnessAt = Number(item.updatedAt) || createdAt
+      if (!freshnessAt || Date.now() - freshnessAt > PRACTICE_PENDING_SUBMISSION_TTL_MS) {
+        wx.removeStorageSync(key)
+        return null
+      }
+      return item
+    } catch (_) {
+      return null
+    }
+  },
+
+  _persistPendingSubmission(submission, status, resultUrl) {
+    const key = this._pendingSubmissionStorageKey()
+    if (!key || !submission) return false
+    const previousPersisted = !!submission.pendingPersisted
+    try {
+      const previous = wx.getStorageSync(key)
+      const createdAt = previous && previous.submission && previous.submission.requestId === submission.requestId
+        ? (Number(previous.createdAt) || Date.now())
+        : Date.now()
+      submission.pendingPersisted = true
+      wx.setStorageSync(key, {
+        version: 1,
+        createdAt,
+        updatedAt: Date.now(),
+        status: status || 'pending',
+        resultUrl: resultUrl || '',
+        submission,
+      })
+      return true
+    } catch (e) {
+      submission.pendingPersisted = previousPersisted
+      console.warn('保存待确认交卷失败', e)
+      return false
+    }
+  },
+
+  _clearPendingSubmission(requestId) {
+    const key = this._pendingSubmissionStorageKey()
+    if (!key) return
+    try {
+      const item = wx.getStorageSync(key)
+      if (!requestId || !item || !item.submission || item.submission.requestId === requestId) {
+        wx.removeStorageSync(key)
+      }
+    } catch (_) {}
+  },
+
+  async _offerPendingSubmissionRecovery() {
+    const pending = this._readPendingSubmission()
+    if (!pending || !this._pageAlive) return false
+
+    const submission = pending.submission
+    if (pending.status === 'submitted' && pending.resultUrl) {
+      const res = await new Promise(resolve => {
+        wx.showModal({
+          title: '上次练习已交卷',
+          content: '检测到上次练习已提交成功，但结果页尚未确认打开。是否继续查看结果？',
+          confirmText: '查看结果',
+          cancelText: '稍后处理',
+          success: resolve,
+          fail: () => resolve({ confirm: false }),
+        })
+      })
+      if (res && res.confirm && this._pageAlive) {
+        this._practiceSession.submissionSnapshot = submission
+        this._practiceSession.requestId = submission.requestId || ''
+        this._pendingResultUrl = pending.resultUrl
+        this.setData({ submitted: true, submitting: false })
+        this._setPracticeUnloadGuard(false)
+        this._openSubmittedResult(pending.resultUrl, submission)
+        return true
+      }
+      return false
+    }
+
+    if (pending.status === 'blocked' || submission.retryBlocked) {
+      const res = await new Promise(resolve => {
+        wx.showModal({
+          title: '上次交卷无法继续确认',
+          content: '服务器已明确拒绝该提交，继续重试不会成功。可清除本地待确认状态后重新开始练习。',
+          confirmText: '清除状态',
+          cancelText: '暂不处理',
+          success: resolve,
+          fail: () => resolve({ confirm: false }),
+        })
+      })
+      if (res && res.confirm) this._clearPendingSubmission(submission.requestId)
+      return false
+    }
+
+    const res = await new Promise(resolve => {
+      wx.showModal({
+        title: '发现待确认交卷',
+        content: '上次交卷可能已被服务器保存。继续确认会复用原答案和 request_id，不会重复计入记录。',
+        confirmText: '继续确认',
+        cancelText: '稍后处理',
+        success: resolve,
+        fail: () => resolve({ confirm: false }),
+      })
+    })
+    if (!res || !res.confirm || !this._pageAlive) return false
+
+    this._resetSession()
+    this._practiceSession.submissionSnapshot = submission
+    this._practiceSession.requestId = submission.requestId || ''
+    this._practiceSession.traceId = submission.traceId || ''
+    this.setData({ started: true, submitted: false, submitting: false })
+    await this.doSubmit(true)
+    if (!this.data.submitted && this._pageAlive) {
+      // A recovery request can still fail due to network/5xx. Return to the
+      // setup shell instead of leaving an empty started runner; startPractice
+      // will offer the same persisted snapshot again.
+      this.setData({ started: false })
+      return false
+    }
+    return true
+  },
+
+  _openSubmittedResult(resultUrl, submission) {
+    if (!resultUrl || !this._pageAlive) return
+
+    // If both result-cache and pending-submission persistence failed, redirecting
+    // would destroy the only in-memory copy that can render the full review. Try
+    // the compact result cache once more and stay on this page if storage is still
+    // unavailable.
+    if (submission && submission.keepPendingUntilResult && !submission.pendingPersisted) {
+      try {
+        if (!this._submittedResultPayload) throw new Error('missing in-memory result payload')
+        wx.setStorageSync('lastPracticeResult', this._submittedResultPayload)
+        submission.keepPendingUntilResult = false
+      } catch (storageError) {
+        console.warn('结果缓存与待确认快照均不可持久化', storageError)
+        wx.showModal({
+          title: '已交卷，但无法保存复盘数据',
+          content: '服务器已保存本次成绩，但当前设备存储异常。请先不要关闭小程序，清理可用存储后再次点击“交卷复盘”。',
+          showCancel: false,
+          confirmText: '知道了',
+        })
+        return
+      }
+    }
+
+    this._pendingResultUrl = resultUrl
+    wx.redirectTo({
+      url: resultUrl,
+      success: () => {
+        if (!submission || !submission.keepPendingUntilResult) {
+          this._clearPendingSubmission(submission && submission.requestId)
+        }
+        if (this._practiceSession && this._practiceSession.submissionSnapshot === submission) {
+          this._practiceSession.submissionSnapshot = null
+        }
+        this._pendingResultUrl = ''
+      },
+      fail: (err) => {
+        console.error('结果页打开失败', err)
+        if (!this._pageAlive) return
+        this.setData({ submitting: false, submitted: true })
+        this._setPracticeUnloadGuard(false)
+        wx.showModal({
+          title: '已交卷，结果页打开失败',
+          content: submission && submission.pendingPersisted
+            ? '本次练习已经提交成功，不会再次交卷。请再次点击底部“交卷复盘”按钮重新打开结果页；待确认状态已保存，可稍后恢复。'
+            : '本次练习已经提交成功，不会再次交卷。当前恢复快照未能写入设备，请保持本页并再次点击“交卷复盘”。',
+          showCancel: false,
+          confirmText: '知道了',
+        })
+      },
+    })
   },
 
   onShow() {
@@ -322,7 +524,7 @@ Page({
       s.backgroundMs = (s.backgroundMs || 0) + (Date.now() - s._bgStartAt)
       s._bgStartAt = null
     }
-    if (s && s.startTime && this.data.started && !this.data.loading && !this.data.submitting) {
+    if (s && s.startTime && this.data.started && !this.data.loading && !this.data.submitting && !s.submissionSnapshot) {
       s.currentQuestionStartedAt = Date.now()
     }
   },
@@ -331,17 +533,18 @@ Page({
     // 记录离开时间点；onShow 回来时结算 backgroundMs。
     const s = this._practiceSession
     if (s && s.startTime && s._bgStartAt === null) {
-      if (this.data.started && !this.data.loading && !this.data.submitting) {
+      if (this.data.started && !this.data.loading && !this.data.submitting && !s.submissionSnapshot) {
         this._settleQuestionTime(true)
       }
       s._bgStartAt = Date.now()
     }
   },
 
-  onReady() {
+  async onReady() {
     if (config.DEV) console.log('[LAYER6_ONREADY]', Date.now())
     this.setData({ enableMathImage: config.enableMathImage || false })
-    this.loadPracticeSubjects()
+    const recoveryHandled = await this._offerPendingSubmissionRecovery()
+    if (!recoveryHandled && this._pageAlive) this.loadPracticeSubjects()
   },
 
   /* ==================== 设置阶段 ==================== */
@@ -426,6 +629,33 @@ Page({
     })
 
     parentItems.sort(bySort)
+
+    // 小程序选择器采用“根科目 + 展开的后代列表”的两层视觉结构，但数据层
+    // 支持任意层级。把每个根节点的所有后代预先展平，保留 depth/has_children，
+    // 这样三级及更深科目也能被选择，同时中间节点仍可作为“全部范围”。
+    const flattenDescendants = (node, depth, out) => {
+      const children = Array.isArray(node.children) ? node.children : []
+      children.forEach((child) => {
+        const hasChildren = Array.isArray(child.children) && child.children.length > 0
+        out.push({
+          subject_id: Number(child.subject_id),
+          display_name: hasChildren ? `${child.display_name}（全部）` : child.display_name,
+          raw_display_name: child.display_name,
+          parent_id: child.parent_id,
+          level: child.level,
+          has_children: hasChildren,
+          depth,
+          indent_rpx: Math.max(0, depth - 1) * 28,
+        })
+        flattenDescendants(child, depth + 1, out)
+      })
+    }
+    parentItems.forEach((root) => {
+      const flatChildren = []
+      flattenDescendants(root, 1, flatChildren)
+      root.flat_children = flatChildren
+      root.descendant_count = flatChildren.length
+    })
     return parentItems
   },
 
@@ -501,25 +731,25 @@ Page({
 
   _flattenSelectableSubjects(subjectTree) {
     const result = []
-    ;(subjectTree || []).forEach((parent) => {
-      const parentId = Number(parent.subject_id)
-      const children = Array.isArray(parent.children) ? parent.children : []
-
-      // 保持原默认体验：优先使用第一个具体子科目作为首次进入的 fallback。
-      children.forEach((child) => {
+    ;(subjectTree || []).forEach((root) => {
+      const rootId = Number(root.subject_id)
+      const visit = (node) => {
+        const children = Array.isArray(node.children) ? node.children : []
+        // 叶子优先，保持首次进入时优先落到“具体可顺序刷”的科目。
+        children.forEach(visit)
         result.push({
-          subject_id: Number(child.subject_id),
-          display_name: child.display_name,
-          parent_subject_id: parentId,
-          has_children: false,
+          subject_id: Number(node.subject_id),
+          display_name: children.length > 0 ? `${node.display_name}（全部）` : node.display_name,
+          parent_subject_id: rootId,
+          has_children: children.length > 0,
         })
-      })
-
-      // 父级也可直接选择，表示“该科目（全部）”。
+      }
+      const children = Array.isArray(root.children) ? root.children : []
+      children.forEach(visit)
       result.push({
-        subject_id: parentId,
-        display_name: children.length > 0 ? `${parent.display_name}（全部）` : parent.display_name,
-        parent_subject_id: parentId,
+        subject_id: rootId,
+        display_name: children.length > 0 ? `${root.display_name}（全部）` : root.display_name,
+        parent_subject_id: rootId,
         has_children: children.length > 0,
       })
     })
@@ -593,11 +823,13 @@ Page({
     const id = Number(subjectId)
     const tree = this.data.subjectTree || []
     for (let i = 0; i < tree.length; i += 1) {
-      const parent = tree[i]
-      if (Number(parent.subject_id) === id) return Number(parent.subject_id)
-      const children = Array.isArray(parent.children) ? parent.children : []
-      if (children.some((child) => Number(child.subject_id) === id)) {
-        return Number(parent.subject_id)
+      const root = tree[i]
+      if (Number(root.subject_id) === id) return Number(root.subject_id)
+      const stack = (root.children || []).slice()
+      while (stack.length) {
+        const node = stack.pop()
+        if (Number(node.subject_id) === id) return Number(root.subject_id)
+        if (Array.isArray(node.children)) stack.push(...node.children)
       }
     }
     return null
@@ -606,11 +838,13 @@ Page({
   _subjectHasChildren(subjectId) {
     const id = Number(subjectId)
     const tree = this.data.subjectTree || []
-    for (let i = 0; i < tree.length; i += 1) {
-      const parent = tree[i]
-      if (Number(parent.subject_id) === id) {
-        return Array.isArray(parent.children) && parent.children.length > 0
+    const stack = tree.slice()
+    while (stack.length) {
+      const node = stack.pop()
+      if (Number(node.subject_id) === id) {
+        return Array.isArray(node.children) && node.children.length > 0
       }
+      if (Array.isArray(node.children)) stack.push(...node.children)
     }
     return false
   },
@@ -751,8 +985,9 @@ Page({
     const ds = e.currentTarget.dataset || {}
     const subjectId = Number(ds.subjectId)
     const subjectName = ds.subjectName
+    const hasChildren = ds.hasChildren === true || ds.hasChildren === 'true'
     if (!subjectId || !subjectName) return
-    this._selectSubject(subjectId, subjectName, this._findParentSubjectId(subjectId), false)
+    this._selectSubject(subjectId, subjectName, this._findParentSubjectId(subjectId), hasChildren)
     this._handleSubjectOptionTap(subjectId, 'child')
   },
 
@@ -770,6 +1005,10 @@ Page({
 
   async startPractice() {
     if (this.data.loading || this.data.submitting) return
+    if (this._readPendingSubmission()) {
+      await this._offerPendingSubmissionRecovery()
+      if (this._readPendingSubmission()) return
+    }
     if (!this.data.selectedSubjectId) {
       this.openSubjectSheet()
       return
@@ -779,9 +1018,9 @@ Page({
       return
     }
     const traceId = api.createTraceId()
+    this._submittedResultPayload = null
     this._resetSession()
     this._practiceSession.traceId = traceId
-    this._practiceSession.startTime = Date.now()
     this.setData({
       traceId,
       renderCount: 0,
@@ -800,7 +1039,6 @@ Page({
       feedbackComboText: '',
     })
     this._flushPendingRecentSubject()
-    this._startTimer()
     await this._loadQuestions()
   },
 
@@ -831,6 +1069,20 @@ Page({
     if (this._timer) {
       clearInterval(this._timer)
       this._timer = null
+    }
+  },
+
+  _setPracticeUnloadGuard(enabled, message) {
+    try {
+      if (enabled && wx.enableAlertBeforeUnload) {
+        wx.enableAlertBeforeUnload({
+          message: message || '当前练习尚未交卷，退出将丢失本组作答。',
+        })
+      } else if (!enabled && wx.disableAlertBeforeUnload) {
+        wx.disableAlertBeforeUnload()
+      }
+    } catch (e) {
+      // 低版本基础库不支持该能力时，仍保留页面内自定义退出确认。
     }
   },
 
@@ -927,8 +1179,9 @@ Page({
           return
         }
 
-        // 新一轮从确认重置时重新计时；Trace 保持同一用户动作链路。
-        this._practiceSession.startTime = Date.now()
+        // 新一轮等首题真正展示后再开始计时；题目接口等待不计入学习时长。
+        this._practiceSession.startTime = 0
+        this._practiceSession.startedAtMs = 0
         this._practiceSession.backgroundMs = 0
         this._practiceSession._bgStartAt = null
         this.setData({
@@ -936,7 +1189,6 @@ Page({
           errorText: '',
           sequentialProgress: null,
         })
-        this._startTimer()
         await this._loadQuestions()
         return
       }
@@ -953,6 +1205,12 @@ Page({
       // 推荐批次 request_id 只用于 recommendation_logs 归因；不要复用为
       // 交卷幂等 key，否则推荐链路与提交重试语义被耦合。
       this._practiceSession.recommendationRequestId = res.request_id || ''
+      this._practiceSession.batchToken = res.batch_token || ''
+      this._practiceSession.batchMode = res.mode || mode
+      if (res.submission_request_id) this._practiceSession.requestId = res.submission_request_id
+      if (questions.length > 0 && (!this._practiceSession.batchToken || !this._practiceSession.requestId)) {
+        throw new Error('服务器未返回可提交的练习批次凭据')
+      }
 
       // Start image decoding before the first question enters the view. The
       // current question gets highest priority; adjacent questions warm in the
@@ -992,8 +1250,18 @@ Page({
         loading: false,
       })
       if (questions.length > 0 && firstQuestion) {
+        // 首题已完成解析并进入页面后才开始计时，排除首次拉题/渲染等待。
+        if (!this._practiceSession.startTime) {
+          this._practiceSession.startTime = Date.now()
+          this._practiceSession.startedAtMs = api.now()
+          this._practiceSession.backgroundMs = 0
+          this._practiceSession._bgStartAt = null
+          this._practiceSession.elapsedSec = 0
+        }
         this._practiceSession.optionKeys = viewModelResult.optionKeys
         this._practiceSession.currentQuestionStartedAt = Date.now()
+        this._setPracticeUnloadGuard(true)
+        this._startTimer()
         this._updateComputedFields()
         this._checkRenderInvariant(firstQuestion._renderModel)
       } else if (questions.length === 0) {
@@ -1246,16 +1514,30 @@ Page({
 
   async requestExitPractice() {
     if (this.data.submitting) return
+
+    const submission = this._practiceSession && this._practiceSession.submissionSnapshot
+    if (this.data.submitted && this._pendingResultUrl && submission) {
+      this._openSubmittedResult(this._pendingResultUrl, submission)
+      return
+    }
+
+    const hasPendingSubmit = !!submission
+    const retryBlocked = !!(submission && submission.retryBlocked)
     const confirmed = await this._showSubmitConfirm({
       scenario: 'danger',
-      eyebrow: 'EXIT PRACTICE',
-      title: '退出本组练习？',
-      message: '退出后，本组练习不会计入结果。',
-      confirmText: '退出练习',
-      cancelText: '继续作答',
+      eyebrow: hasPendingSubmit ? 'SUBMISSION PENDING' : 'EXIT PRACTICE',
+      title: retryBlocked ? '退出本组练习？' : (hasPendingSubmit ? '退出待确认交卷？' : '退出本组练习？'),
+      message: retryBlocked
+        ? '服务器已明确拒绝本次提交，本地待确认状态会保留到你清除或重新进入处理。'
+        : (hasPendingSubmit
+          ? '本次交卷状态尚未确认。退出不会撤销服务器上可能已经保存的结果；待确认提交会保留，可下次继续确认。'
+          : '退出后，本组尚未提交的练习不会计入结果。'),
+      confirmText: hasPendingSubmit ? '退出页面' : '退出练习',
+      cancelText: retryBlocked ? '返回查看' : (hasPendingSubmit ? '继续确认' : '继续作答'),
     })
     if (!confirmed) return
     if (!this._pageAlive) return
+    this._setPracticeUnloadGuard(false)
     this._questionsRequestSeq++
     this._clearTimer()
     if (this._feedbackTimer) {
@@ -1281,8 +1563,20 @@ Page({
     })
   },
 
+  _isSubmissionLocked() {
+    if (!this._practiceSession || !this._practiceSession.submissionSnapshot) return false
+    const submission = this._practiceSession.submissionSnapshot
+    wx.showToast({
+      title: submission.serverAccepted
+        ? '本次已交卷，请查看结果'
+        : (submission.retryBlocked ? '提交已被拒绝，请退出后重试' : '交卷内容已锁定，请确认提交'),
+      icon: 'none',
+    })
+    return true
+  },
+
   selectOption(e) {
-    if (this.data.submitted) return
+    if (this.data.submitted || this._isSubmissionLocked()) return
     const opt = e.detail.option
     const q = this.data.currentQuestion
     if (!q) return
@@ -1313,7 +1607,7 @@ Page({
     const answeredCount = adapter.countAnswered(answeredFlags)
     // 使用精确数据路径更新，避免每次传输完整 questions 大对象
     const currentIdx = this.data.currentIndex
-    const answered = !!newAnswer
+    const answered = !!answeredFlags[key]
     if (shouldDebugQuestion(q.id)) {
       debugLog(this._practiceSession.traceId || q.trace_id, 'STATE_CHANGE', {
         questionId: q.id,
@@ -1342,7 +1636,7 @@ Page({
   },
 
   selectBlankOption(e) {
-    if (this.data.submitted) return
+    if (this.data.submitted || this._isSubmissionLocked()) return
     const blankId = String(e.detail.blankId || '').trim()
     const opt = String(e.detail.option || '').trim().toUpperCase()
     const q = this.data.currentQuestion
@@ -1390,7 +1684,7 @@ Page({
     // Selection state travels through its own component property. The
     // immutable currentQuestion/render model is deliberately untouched.
     const currentIdx = this.data.currentIndex
-    const answered = !!newAnswer
+    const answered = !!answeredFlags[key]
     const totalQuestions = this.data.totalQuestions || 0
     this.setData({
       [`questions[${currentIdx}]._answered`]: answered,
@@ -1584,152 +1878,279 @@ Page({
 
   async doSubmit(skipConfirm) {
     if (this.data.submitting) return
-    const { questions, selectedSubjectId, selectedSubjectName } = this.data
-    const { answerMap, startTime, comboCount } = this._practiceSession
-    const total = questions.length || 0
-    const answeredFlags = adapter.buildAnsweredFlags(questions, answerMap, 'id')
-    const answeredCount = adapter.countAnswered(answeredFlags)
-    const completedQuestions = questions.filter(function(q) {
-      return answeredFlags[String(q.id)]
-    })
-    const unanswered = total - answeredCount
 
-    if (answeredCount === 0) {
-      wx.showToast({ title: '请至少作答 1 题再提交', icon: 'none' })
+    let submission = this._practiceSession.submissionSnapshot
+    if (this.data.submitted && this._pendingResultUrl && submission) {
+      this._openSubmittedResult(this._pendingResultUrl, submission)
+      return
+    }
+    if (submission && submission.retryBlocked) {
+      wx.showModal({
+        title: '本次提交无法继续重试',
+        content: '服务器已明确拒绝该提交，继续使用相同内容重试不会成功。请退出本组练习后重新开始。',
+        showCancel: false,
+        confirmText: '知道了',
+      })
       return
     }
 
-    var confirmed = false
-    if (unanswered > 0) {
-      confirmed = await this._showSubmitConfirm({
-        scenario: 'unanswered',
-        title: `还有 ${unanswered} 题未作答`,
-        message: '现在交卷会将未答题记为跳过。',
-        confirmText: '仍然交卷',
-        cancelText: '继续答题',
-      })
-    } else if (skipConfirm !== true) {
-      confirmed = await this._showSubmitConfirm({
-        scenario: 'all-done',
-        title: '确认交卷？',
-        message: `已完成 ${answeredCount} / ${total} 题`,
-        confirmText: '确认交卷',
-        cancelText: '继续检查',
-      })
-    } else {
-      confirmed = true
-    }
-    if (!confirmed) return
+    const questions = this.data.questions || []
 
-    this._clearTimer()
-    // 结算最后一题的用时
-    this._settleQuestionTime(true)
+    // The first submit attempt freezes one immutable submission. Network/5xx
+    // retries and process-recovery retries must reuse the exact same payload.
+    if (!submission) {
+      const selectedSubjectId = this.data.selectedSubjectId
+      const selectedSubjectName = this.data.selectedSubjectName
+      const answerMap = this._practiceSession.answerMap
+      const startTime = this._practiceSession.startTime
+      const comboCount = this._practiceSession.comboCount
+      const total = questions.length || 0
+      const answeredFlags = adapter.buildAnsweredFlags(questions, answerMap, 'id')
+      const answeredCount = adapter.countAnswered(answeredFlags)
+      const completedQuestions = questions.filter(function(q) {
+        return answeredFlags[String(q.id)]
+      })
+      const partialQuestionIds = questions
+        .filter(function(q) {
+          const key = String(q.id)
+          return !answeredFlags[key] && adapter.isMultiBlankChoice(q) && !!answerMap[key]
+        })
+        .map(function(q) { return q.id })
+      const skippedQuestionIds = questions
+        .filter(function(q) { return !answeredFlags[String(q.id)] })
+        .map(function(q) { return q.id })
+      const unanswered = total - answeredCount
+
+      if (answeredCount === 0 && partialQuestionIds.length === 0) {
+        wx.showToast({ title: '请至少完成或填写 1 题再提交', icon: 'none' })
+        return
+      }
+
+      var confirmed = false
+      if (unanswered > 0) {
+        confirmed = await this._showSubmitConfirm({
+          scenario: 'unanswered',
+          title: `还有 ${unanswered} 题未完成`,
+          message: '现在交卷会将未完成题记为跳过。',
+          confirmText: '仍然交卷',
+          cancelText: '继续答题',
+        })
+      } else if (skipConfirm !== true) {
+        confirmed = await this._showSubmitConfirm({
+          scenario: 'all-done',
+          title: '确认交卷？',
+          message: `已完成 ${answeredCount} / ${total} 题`,
+          confirmText: '确认交卷',
+          cancelText: '继续检查',
+        })
+      } else {
+        confirmed = true
+      }
+      if (!confirmed) return
+
+      this._clearTimer()
+      this._settleQuestionTime(true)
+
+      const finishedAt = Date.now()
+      const finishedAtMs = api.now()
+      const duration = Math.max(0, Math.floor(
+        (finishedAt - startTime - (this._practiceSession.backgroundMs || 0)) / 1000,
+      ))
+      const requestId = this._practiceSession.requestId || ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
+      this._practiceSession.requestId = requestId
+      const recommendationRequestId = this._practiceSession.recommendationRequestId || null
+      const questionTimeMap = this._practiceSession.questionTimeMap
+      const answers = completedQuestions.map(q => ({
+        question_id: q.id,
+        user_answer: answerMap[String(q.id)] || '',
+        used_time: questionTimeMap[String(q.id)] || 0,
+        request_id: recommendationRequestId,
+      }))
+      const session = {
+        request_id: requestId,
+        subject_id: selectedSubjectId,
+        mode: this._practiceSession.batchMode || this.data.selectedMode || 'random',
+        started_at: new Date(this._practiceSession.startedAtMs || (finishedAtMs - duration * 1000)).toISOString(),
+        finished_at: new Date(finishedAtMs).toISOString(),
+        duration_sec: duration,
+        question_count: total,
+        answered_count: answeredCount,
+        status: 'completed',
+      }
+      const recoveryQuestions = questions.map(function(q) {
+        const stem = (q && q.content && (q.content.stem || q.content.text)) || (q && q.stem) || ''
+        return {
+          id: q && q.id,
+          subject_id: q && q.subject_id,
+          subject_code: (q && q.subject_code) || '',
+          subject_name: (q && q.subject_name) || '',
+          question_type: (q && q.question_type) || '',
+          content: (q && q.content) || {},
+          options: (q && q.options) || null,
+          image_url: (q && q.image_url) || null,
+          knowledge_points: (q && q.knowledge_points) || [],
+          difficulty: (q && q.difficulty) || 3,
+          stem: String(stem || ''),
+        }
+      }).filter(function(q) { return !!q.id })
+
+      if (!this._practiceSession.batchToken) {
+        wx.showModal({
+          title: '练习批次已失效',
+          content: '当前题目缺少服务器签发的提交凭据，请返回重新获取题目。',
+          showCancel: false,
+          confirmText: '知道了',
+        })
+        return
+      }
+
+      submission = {
+        requestId,
+        traceId: this._practiceSession.traceId || '',
+        answers,
+        skippedQuestionIds: skippedQuestionIds.slice(),
+        partialQuestionIds: partialQuestionIds.slice(),
+        session,
+        duration,
+        total,
+        unanswered,
+        selectedSubjectId,
+        selectedSubjectName,
+        comboCount,
+        answerMap: Object.assign({}, answerMap),
+        answeredFlags: Object.assign({}, answeredFlags),
+        recoveryQuestions,
+        batchToken: this._practiceSession.batchToken || '',
+        retryBlocked: false,
+        serverAccepted: false,
+        pendingPersisted: false,
+        keepPendingUntilResult: false,
+      }
+      this._practiceSession.submissionSnapshot = submission
+      submission.pendingPersisted = this._persistPendingSubmission(submission, 'pending', '')
+      this._setPracticeUnloadGuard(
+        true,
+        '本次交卷状态尚未确认。退出不会撤销服务器上可能已经保存的结果。',
+      )
+    } else {
+      this._clearTimer()
+      submission.pendingPersisted = this._persistPendingSubmission(submission, 'pending', '') || submission.pendingPersisted
+    }
+
     this.setData({ submitting: true })
 
-    // ── 交卷时间点锁定：finishedAt / duration 在发请求之前冻结 ──
-    // 不把提交接口的网络等待时间计入刷题时长（学习统计使用 session.duration_sec），
-    // 也扣除切后台/跳转他页的离开时长，避免把"没在刷题"的墙钟时间算成学习时间。
-    const finishedAt = Date.now()
-    const duration = Math.max(0, Math.floor(
-      (finishedAt - startTime - (this._practiceSession.backgroundMs || 0)) / 1000,
-    ))
-
-    const questionTimeMap = this._practiceSession.questionTimeMap
-
-    // ═══════════════════════════════════════════════════
-    // 阶段一：服务器提交 — 只有此步骤失败才提示"提交失败"
-    // ═══════════════════════════════════════════════════
-    var submitResult, storedResults
-    // submission requestId 仅负责本次交卷重试幂等；推荐归因使用后端在
-    // /practice/questions 返回的 recommendationRequestId，两种语义必须分开。
-    const requestId = this._practiceSession.requestId || ('req_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8))
-    // 持久化 requestId 供重试时复用
-    if (!this._practiceSession.requestId) {
-      this._practiceSession.requestId = requestId
-    }
-    const recommendationRequestId = this._practiceSession.recommendationRequestId || null
-    const answers = completedQuestions.map(q => ({
-      question_id: q.id,
-      user_answer: answerMap[String(q.id)] || '',
-      used_time: questionTimeMap[String(q.id)] || 0,
-      request_id: recommendationRequestId,
-    }))
-
-    // 刷题会话元数据：后端据此落库 PracticeSession（一次完整刷题会话），
-    // 进入番茄钟学习统计。request_id 保证网络重试不会重复记学习时长。
-    const session = {
-      request_id: requestId,
-      subject_id: selectedSubjectId,
-      mode: this.data.selectedMode || 'random',
-      started_at: new Date(startTime).toISOString(),
-      finished_at: new Date(finishedAt).toISOString(),
-      duration_sec: duration,
-      question_count: total,
-      answered_count: answeredCount,
-      status: 'completed',
-    }
-
-    const submitStartedAt = Date.now()
-    const submitBackgroundMsAtStart = this._practiceSession.backgroundMs || 0
+    let submitResult
     try {
-      submitResult = await api.post('/practice/batch-submit', {
-        answers,
-        session,
-        _traceId: this._practiceSession.traceId,
-      })
+      const submitPayload = {
+        answers: submission.answers,
+        skipped_question_ids: submission.skippedQuestionIds,
+        session: submission.session,
+        _traceId: submission.traceId || this._practiceSession.traceId,
+      }
+      submitPayload.batch_token = submission.batchToken
+      submitResult = await api.post('/practice/batch-submit', submitPayload)
       if (!this._pageAlive) return
     } catch (e) {
       if (!this._pageAlive) return
       console.error('提交失败', e)
-      // 失败请求的网络等待不属于学习时长；重试时继续沿用同一会话起点。
-      const failedAt = Date.now()
-      const submitWaitMs = Math.max(0, failedAt - submitStartedAt)
-      const settledBackgroundDuringSubmit = Math.max(
-        0,
-        (this._practiceSession.backgroundMs || 0) - submitBackgroundMsAtStart,
-      )
-      const ongoingBackgroundDuringSubmit = this._practiceSession._bgStartAt !== null
-        ? Math.max(0, failedAt - Math.max(this._practiceSession._bgStartAt, submitStartedAt))
-        : 0
-      const uncoveredSubmitWaitMs = Math.max(
-        0,
-        submitWaitMs - settledBackgroundDuringSubmit - ongoingBackgroundDuringSubmit,
-      )
-      this._practiceSession.backgroundMs = (this._practiceSession.backgroundMs || 0) + uncoveredSubmitWaitMs
-      this._practiceSession.currentQuestionStartedAt = Date.now()
-      // 恢复页面可操作状态和计时器
-      this._startTimer()
+      this._practiceSession.currentQuestionStartedAt = 0
       this.setData({ submitting: false })
-      wx.showToast({ title: '提交失败', icon: 'none' })
+
+      const statusCode = Number(e && e.statusCode) || 0
+      const errorCode = String((e && e.code) || '')
+      const deterministicReject = (
+        errorCode === 'PRACTICE_SUBMISSION_CONFLICT' ||
+        errorCode === 'PRACTICE_QUESTION_VERSION_CONFLICT' ||
+        errorCode === 'PRACTICE_BATCH_INVALID' ||
+        errorCode === 'PRACTICE_PAYLOAD_INVALID' ||
+        (statusCode >= 400 && statusCode < 500 && ![401, 408, 429].includes(statusCode))
+      )
+
+      if (deterministicReject) {
+        submission.retryBlocked = true
+        submission.pendingPersisted = this._persistPendingSubmission(submission, 'blocked', '') || submission.pendingPersisted
+        this._setPracticeUnloadGuard(false)
+        let rejectTitle = '交卷内容未通过校验'
+        let rejectContent = '服务器已明确拒绝本次提交，继续重试相同内容不会成功。请退出后重新开始。'
+        if (errorCode === 'PRACTICE_SUBMISSION_CONFLICT') {
+          rejectTitle = '交卷标识冲突'
+          rejectContent = '该 request_id 已对应另一份提交。为避免结果串单，本次内容不会继续重试，请退出后重新开始。'
+        } else if (errorCode === 'PRACTICE_QUESTION_VERSION_CONFLICT') {
+          rejectTitle = '题目版本无法恢复'
+          rejectContent = '本组练习中有题目的历史版本无法恢复。为避免使用错误版本判题，本次提交已停止，请返回重新获取题目。'
+        } else if (errorCode === 'PRACTICE_BATCH_INVALID') {
+          rejectTitle = '练习批次已失效'
+          rejectContent = '本次题目批次已过期或与提交内容不一致。为避免串题，请退出后重新获取题目。'
+        }
+        wx.showModal({
+          title: rejectTitle,
+          content: rejectContent,
+          showCancel: false,
+          confirmText: '知道了',
+        })
+      } else {
+        const persisted = this._persistPendingSubmission(submission, 'pending', '')
+        submission.pendingPersisted = persisted || submission.pendingPersisted
+        this._setPracticeUnloadGuard(
+          true,
+          '本次交卷状态尚未确认。退出不会撤销服务器上可能已经保存的结果。',
+        )
+        wx.showModal({
+          title: '交卷结果未确认',
+          content: submission.pendingPersisted
+            ? '已保存本次交卷快照。请重试确认；即使小程序被关闭，下次进入也可使用同一 request_id 恢复，不会重复计入答题记录。'
+            : '当前设备未能保存恢复快照。当前页面内仍可使用同一 request_id 重试，但请勿关闭小程序，否则无法保证恢复本次交卷状态。',
+          showCancel: false,
+          confirmText: '知道了',
+        })
+      }
       return
     }
 
+    submission.serverAccepted = true
+    submission.retryBlocked = false
+    const snapshotAnswerMap = submission.answerMap || {}
+    const snapshotAnsweredFlags = submission.answeredFlags || {}
+    const total = Number(submission.total) || 0
+    const unanswered = Number(submission.unanswered) || 0
+    const selectedSubjectId = submission.selectedSubjectId
+    const selectedSubjectName = submission.selectedSubjectName
+    const duration = Number(submission.duration) || 0
+    const comboCount = Number(submission.comboCount) || 0
+
     // ═══════════════════════════════════════════════════
-    // 阶段二：本地结果缓存 — 失败不阻断流程
+    // 阶段二：本地结果缓存 — 失败不阻断已完成的服务端提交
     // ═══════════════════════════════════════════════════
-    storedResults = (submitResult.results || []).map(function(rr) {
+    const partialQuestionIdSet = {}
+    ;(submission.partialQuestionIds || []).forEach(function(id) { partialQuestionIdSet[String(id)] = true })
+    let storedResults = (submitResult.results || []).map(function(rr) {
+      const questionId = String(rr.question_id)
+      const isPartial = rr.status === 'skipped' && partialQuestionIdSet[questionId]
       return Object.assign({}, rr, {
-        user_answer: answerMap[String(rr.question_id)] || '',
+        status: isPartial ? 'partial' : rr.status,
+        _local_partial: !!isPartial,
+        user_answer: snapshotAnswerMap[questionId] || '',
       })
     })
-    // 将未作答题也写入本地结果视图，结果页才能优先展示“错题 + 跳过题”。
     var submittedResultMap = {}
     storedResults.forEach(function(rr) { submittedResultMap[String(rr.question_id)] = true })
-    questions.forEach(function(q) {
-      if (!q || !q.id || submittedResultMap[String(q.id)] || answeredFlags[String(q.id)]) return
+    const questionSource = questions.length ? questions : (submission.recoveryQuestions || [])
+    questionSource.forEach(function(q) {
+      if (!q || !q.id || submittedResultMap[String(q.id)] || snapshotAnsweredFlags[String(q.id)]) return
+      const isPartial = !!partialQuestionIdSet[String(q.id)]
       storedResults.push({
         question_id: q.id,
-        user_answer: '',
-        correct_answer: q.correct_answer || q.answer || '',
+        user_answer: snapshotAnswerMap[String(q.id)] || '',
         is_correct: false,
-        _local_skipped: true,
+        status: isPartial ? 'partial' : 'skipped',
+        _local_partial: isPartial,
+        _local_skipped: !isPartial,
       })
     })
-    // 只保存结果页必需的最小数据，不缓存整套题目对象
-    // 但需要保留轻量题目数组（id + stem + options）供结果页渲染题干
+
     var lightQuestions = []
-    for (var qi = 0; qi < questions.length; qi++) {
-      var qq = questions[qi]
+    for (var qi = 0; qi < questionSource.length; qi++) {
+      var qq = questionSource[qi]
       if (qq && qq.id) {
         lightQuestions.push({
           id: qq.id,
@@ -1739,52 +2160,59 @@ Page({
         })
       }
     }
-    var userId = ''
-    try {
-      var userInfo = wx.getStorageSync('user')
-      if (userInfo && userInfo.id) userId = String(userInfo.id)
-    } catch (_) {}
-    // 生成唯一缓存键，用于结果页验证
+    const partialCount = (submission.partialQuestionIds || []).length
+    const serverSkippedCount = Number(submitResult.total_skipped ?? unanswered) || 0
+    const displaySkippedCount = Math.max(0, serverSkippedCount - partialCount)
+    var userId = this._getCurrentUserId()
     var cacheCreatedAt = Date.now()
     var cacheKey = 'pr_' + cacheCreatedAt + '_' + Math.random().toString(36).slice(2, 8)
+    const localResultPayload = {
+      correct: submitResult.total_correct || 0,
+      wrong: submitResult.total_wrong || 0,
+      skipped: displaySkippedCount,
+      partial: partialCount,
+      total,
+      subject_id: selectedSubjectId,
+      subject_name: selectedSubjectName,
+      duration,
+      traceId: submitResult.trace_id || submission.traceId || this._practiceSession.traceId,
+      results: storedResults,
+      questions: lightQuestions,
+      comboCount,
+      _cacheKey: cacheKey,
+      _userId: userId,
+      _createdAt: cacheCreatedAt,
+    }
+    this._submittedResultPayload = localResultPayload
+    var resultCacheStored = false
     try {
-      wx.setStorageSync('lastPracticeResult', {
-        correct: submitResult.total_correct || 0,
-        wrong: submitResult.total_wrong || 0,
-        skipped: unanswered,
-        total,
-        subject_id: selectedSubjectId,
-        subject_name: selectedSubjectName,
-        duration,
-        traceId: submitResult.trace_id || this._practiceSession.traceId,
-        results: storedResults,
-        questions: lightQuestions,
-        comboCount,
-        _cacheKey: cacheKey,
-        _userId: userId,
-        _createdAt: cacheCreatedAt,
-      })
+      wx.setStorageSync('lastPracticeResult', localResultPayload)
+      resultCacheStored = true
     } catch (storageError) {
       console.warn('答题已提交成功，但本地结果缓存失败', storageError)
     }
 
-    // ═══════════════════════════════════════════════════
-    // 阶段三：进入结果页
-    // ═══════════════════════════════════════════════════
     const resultUrl = [
       `/subpackages/study/practice-result/index`,
       `?correct=${submitResult.total_correct || 0}`,
       `&wrong=${submitResult.total_wrong || 0}`,
+      `&skipped=${displaySkippedCount}`,
+      `&partial=${partialCount}`,
       `&total=${total}`,
       `&subject_id=${selectedSubjectId}`,
       `&subject_name=${encodeURIComponent(selectedSubjectName || '')}`,
       `&duration=${duration}`,
       `&_ck=${cacheKey}`,
+      `&_rid=${encodeURIComponent(submission.requestId || '')}`,
+      `&_recover=${resultCacheStored ? '0' : '1'}`,
     ].join('')
 
-    // 常规完成直接进入结果页；全屏庆祝仅由结果页在真实升级/解锁时触发。
-    this.setData({ submitting: false })
-    wx.redirectTo({ url: resultUrl })
+    submission.keepPendingUntilResult = !resultCacheStored
+    this._pendingResultUrl = resultUrl
+    submission.pendingPersisted = this._persistPendingSubmission(submission, 'submitted', resultUrl) || submission.pendingPersisted
+    this._setPracticeUnloadGuard(false)
+    this.setData({ submitting: false, submitted: true })
+    this._openSubmittedResult(resultUrl, submission)
   },
 
 })

@@ -182,6 +182,8 @@ async def grade_submit(
             "interval_after": review_result["interval_after"],
             "ease_factor_after": review_result["ease_factor_after"],
             "next_review_at": serialize_utc_datetime(review_result["next_review_at"]),
+            "mastery_percent": review_result["mastery_percent"],
+            "mastered": review_result["mastered"],
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -243,6 +245,8 @@ async def grade_batch(
             results.append({
                 "schedule_id": item.schedule_id,
                 "question_id": item.question_id,
+                "success": False,
+                "error": "题目不存在",
                 "is_correct": False,
                 "correct_answer": "",
                 "rating": 0,
@@ -250,7 +254,6 @@ async def grade_batch(
                 "ease_factor_after": 0.0,
                 "next_review_at": None,
             })
-            wrong_count += 1
             continue
 
         # 判对错
@@ -274,21 +277,27 @@ async def grade_batch(
             results.append({
                 "schedule_id": review_result["schedule_id"],
                 "question_id": item.question_id,
+                "success": True,
+                "error": None,
                 "is_correct": is_correct,
                 "correct_answer": question.answer or "",
                 "rating": rating,
                 "interval_after": review_result["interval_after"],
                 "ease_factor_after": review_result["ease_factor_after"],
                 "next_review_at": review_result["next_review_at"],
+                "mastery_percent": review_result["mastery_percent"],
+                "mastered": review_result["mastered"],
             })
             if is_correct:
                 correct_count += 1
             else:
                 wrong_count += 1
-        except ValueError:
+        except ValueError as e:
             results.append({
                 "schedule_id": item.schedule_id,
                 "question_id": item.question_id,
+                "success": False,
+                "error": str(e),
                 "is_correct": False,
                 "correct_answer": "",
                 "rating": 0,
@@ -296,7 +305,6 @@ async def grade_batch(
                 "ease_factor_after": 0.0,
                 "next_review_at": None,
             })
-            wrong_count += 1
             continue
 
     await cache.delete(f"review:*:{current_user.id}*")
@@ -322,6 +330,7 @@ async def mark_mastered(
     if not schedule:
         raise HTTPException(status_code=404, detail="复习记录不存在")
     await cache.delete(f"review:*:{current_user.id}*")
+    await cache.delete(f"stats:*:{current_user.id}*")
     await cache.delete(f"review:today_overview:{current_user.id}")
     return {"schedule_id": schedule_id, "mastered": True}
 
@@ -337,5 +346,6 @@ async def unmark_mastered(
     if not schedule:
         raise HTTPException(status_code=404, detail="复习记录不存在")
     await cache.delete(f"review:*:{current_user.id}*")
+    await cache.delete(f"stats:*:{current_user.id}*")
     await cache.delete(f"review:today_overview:{current_user.id}")
     return {"schedule_id": schedule_id, "mastered": False}

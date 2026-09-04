@@ -72,6 +72,20 @@ async def project_practice_answer(
     used_time = record.used_time
     user_answer = (record.user_answer or "").strip()
 
+    # Serialize every learning-state transition for the same user/question with
+    # the exact same PostgreSQL advisory lock used by review submissions.  The
+    # record-level lock above only protects duplicate delivery of one task; it
+    # cannot prevent two different PracticeRecord tasks for the same question
+    # from reading the same UserQuestionState and overwriting each other's
+    # box-level transition.
+    from app.services import review_scheduler
+
+    await review_scheduler.lock_question_review_state(
+        db,
+        user_id=user_id,
+        question_id=question_id,
+    )
+
     wrong_question_id = None
     wrong_for_prewarm = None
     if not is_correct:
@@ -152,6 +166,14 @@ async def project_practice_answer(
         answered_at=record.answered_at,
     )
 
+    # 普通练习同样参与错题掌握状态：达到 80% 自动掌握；再次答错立即撤销。
+    await review_scheduler.sync_mastery_from_question_state(
+        db,
+        user_id=user_id,
+        question_id=question_id,
+        is_correct=is_correct,
+    )
+
     from app.services import adaptive_learning_service
 
     await adaptive_learning_service.update_adaptive_state_after_answer(
@@ -175,6 +197,27 @@ async def project_practice_answer(
         await invalidate_vector_cache(user_id)
     except Exception:
         logger.debug("vector cache invalidation failed uid=%d", user_id, exc_info=True)
+
+    # The HTTP submit endpoint invalidates these caches before the asynchronous
+    # projection has necessarily updated box_level/mastered.  A user can refill
+    # a stale cache in that window, so invalidate again after the durable
+    # projection commit.  Cache failure must never roll back learning state.
+    try:
+        from app.core.cache import cache
+
+        for pattern in (
+            f"practice:stats:{user_id}:*",
+            f"stats:*:{user_id}*",
+            f"review:*:{user_id}*",
+            f"wrong_questions:*:{user_id}*",
+        ):
+            await cache.delete(pattern)
+    except Exception:
+        logger.debug(
+            "answer projection cache invalidation failed uid=%d",
+            user_id,
+            exc_info=True,
+        )
 
     # AI prewarm is a second asynchronous optimization.  It is safe to enqueue
     # only after the wrong-question projection is durable.

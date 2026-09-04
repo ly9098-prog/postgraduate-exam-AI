@@ -8,6 +8,7 @@ const KEYS = {
 /** 业务缓存键列表 — 会话切换或注销时需清除 */
 const BUSINESS_CACHE_KEYS = [
   'lastPracticeResult',
+  'practice_recent_subjects_v1',
   'wrong_detail_nav',
   'pomodoro_running_state',
   'pomodoro_pause',
@@ -86,14 +87,19 @@ function clearSession(options) {
     remove(BUSINESS_CACHE_KEYS[bi])
   }
 
-  // 3. 清除 AI 诊断本地缓存（以 ai_ 或 aiCache 开头的键）
+  // 3. 清除动态会话缓存（AI 诊断 + 待确认刷题提交）
   try {
     var allKeys = wx.getStorageInfoSync().keys || []
     for (var ki = 0; ki < allKeys.length; ki++) {
       var key = allKeys[ki]
       // 跳过受保护的键
       if (preservePrivacy && PROTECTED_KEYS.indexOf(key) >= 0) continue
-      if (key.indexOf('ai_') === 0 || key.indexOf('aiCache') === 0 || key.indexOf('ai_diagnosis') === 0) {
+      if (
+        key.indexOf('ai_') === 0 ||
+        key.indexOf('aiCache') === 0 ||
+        key.indexOf('ai_diagnosis') === 0 ||
+        key.indexOf('practice_pending_submission_v1:') === 0
+      ) {
         remove(key)
       }
     }
