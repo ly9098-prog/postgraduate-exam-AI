@@ -201,6 +201,7 @@ Page({
   _aiRequestId: 0,
   _currentWqId: null,
   _switching: false,
+  _navigationSeq: 0,
   _aiResult: null,
   _errorTypeLabelText: '',
   _aiSwipeStart: null,
@@ -213,6 +214,7 @@ Page({
     this._aiRequestId = 0
     this._currentWqId = null
     this._switching = false
+    this._navigationSeq = 0
     this._aiSwipeStart = null
     this._contentTransitionStartedAt = 0
     this._contentTransitionDirection = ''
@@ -734,11 +736,7 @@ Page({
         this.setData({ masterSubmitting: false, masterUndoVisible: true })
       }
 
-      this._masterUndoTimer = setTimeout(() => {
-        this._pendingMasterUndo = null
-        this._masterUndoTimer = null
-        if (this._alive) this.setData({ masterUndoVisible: false })
-      }, 5000)
+      this._armMasterUndoExpiry(5000)
 
       if (this.data.currentIdx < this.data.questionIds.length - 1) {
         this._masterAdvanceTimer = setTimeout(() => {
@@ -792,6 +790,22 @@ Page({
     const pending = this._pendingMasterUndo
     if (!pending || this._masterUndoInFlight) return
     this._masterUndoInFlight = true
+    // Pause the 5s expiry while the undo request is in flight. On a weak
+    // network the old timer could expire first, erase the target id, and leave
+    // the user with a "retry" toast but no undo button to retry from.
+    if (this._masterUndoTimer) {
+      clearTimeout(this._masterUndoTimer)
+      this._masterUndoTimer = null
+    }
+    // confirmMastered schedules an automatic jump to the next wrong question.
+    // Cancel both the pending timer and an already-started navigation. The
+    // navigation sequence guard below prevents its late fetch response from
+    // overwriting the restored mastered state.
+    if (this._masterAdvanceTimer) {
+      clearTimeout(this._masterAdvanceTimer)
+      this._masterAdvanceTimer = null
+    }
+    if (this._switching) this._forceResetSwitchLock()
 
     try {
       await api.post('/wrong-questions/batch', {
@@ -821,10 +835,24 @@ Page({
     } catch (e) {
       if (!this._alive) return
       console.error('撤销已掌握失败', e)
+      if (this._pendingMasterUndo === pending) {
+        this.setData({ masterUndoVisible: true })
+        this._armMasterUndoExpiry(5000)
+      }
       wx.showToast({ title: '撤销失败，请重试', icon: 'none' })
     } finally {
       this._masterUndoInFlight = false
     }
+  },
+
+  _armMasterUndoExpiry(ms) {
+    if (this._masterUndoTimer) clearTimeout(this._masterUndoTimer)
+    var duration = Number(ms) > 0 ? Number(ms) : 5000
+    this._masterUndoTimer = setTimeout(() => {
+      this._pendingMasterUndo = null
+      this._masterUndoTimer = null
+      if (this._alive) this.setData({ masterUndoVisible: false })
+    }, duration)
   },
 
   _clearMasterUndo() {
@@ -1084,6 +1112,10 @@ Page({
   },
 
   _forceResetSwitchLock() {
+    // Invalidate the async continuation of the current navigation. A watchdog
+    // reset (or mastery undo) must not merely unlock the UI; otherwise the old
+    // fetch can return later and overwrite whichever question is now visible.
+    this._navigationSeq = Number(this._navigationSeq || 0) + 1
     this._switching = false
     if (this._contentTransitionTimer) {
       clearTimeout(this._contentTransitionTimer)
@@ -1146,6 +1178,8 @@ Page({
     this._aiRequestId++
     this._resetAiLoadingState()
     this._switching = true
+    var navigationSeq = Number(this._navigationSeq || 0) + 1
+    this._navigationSeq = navigationSeq
     this._armSwitchWatchdog()
     // 延迟显示轻量切换提示（>250ms 才展示）。
     // 注意：slide-out 不在此时触发——保持当前内容可见直到数据就绪，
@@ -1168,7 +1202,7 @@ Page({
         if (!this._alive) return
         this._wqCache[wqId] = { data: wq, ts: Date.now() }
       }
-      if (!this._alive) return
+      if (!this._alive || navigationSeq !== this._navigationSeq) return
       // 预取相邻题
       this._prefetchWrongQuestion(idx - 1)
       this._prefetchWrongQuestion(idx + 1)
@@ -1189,9 +1223,7 @@ Page({
         wrongQuestions.push({ _answered: true })
       }
 
-      this._currentWqId = wqId
-      this._errorTypeLabelText = raw.errorTypeLabelText
-      this._aiResult = null
+      var nextAiResult = null
 
       var nextData = {
         wq,
@@ -1217,8 +1249,8 @@ Page({
       // 切题时沿用相同优先级：AI 分析优先，否则回退题库解析。
       var preferredAnalysis = _resolvePreferredAnalysis(wq)
       if (preferredAnalysis) {
-        this._aiResult = preferredAnalysis.normalized
-        nextData.aiCards = _normalizeAiResult(this._aiResult)
+        nextAiResult = preferredAnalysis.normalized
+        nextData.aiCards = _normalizeAiResult(nextAiResult)
         nextData.aiRequested = true
         nextData.aiFromCache = preferredAnalysis.source === 'ai'
         nextData.aiFromQuestionAnalysis = preferredAnalysis.source === 'question'
@@ -1228,7 +1260,10 @@ Page({
       // 题目区域与 AI 学习建议由同一个父容器统一退出/进入，
       // quiz-runner 内部动画已关闭，避免两个区域各自计时造成不同步。
       await this._waitForContentSwitchOut(switchDirection, animMs)
-      if (!this._alive) return
+      if (!this._alive || navigationSeq !== this._navigationSeq) return
+      this._currentWqId = wqId
+      this._errorTypeLabelText = raw.errorTypeLabelText
+      this._aiResult = nextAiResult
       clearTimeout(this._switchMaskTimer)
       // fetch 已就绪，动画阶段改挂短看门狗：setData 回调丢失时 5s 内强制复位
       this._armSwitchWatchdog(QUESTION_SWITCH_ANIM_WATCHDOG_MS)
@@ -1237,7 +1272,7 @@ Page({
       })
       this._checkRenderInvariant(raw._renderModel)
     } catch (e) {
-      if (!this._alive) return
+      if (!this._alive || navigationSeq !== this._navigationSeq) return
       console.error('切换题目失败', e)
       wx.showToast({ title: '加载失败', icon: 'none' })
       clearTimeout(this._switchMaskTimer)
@@ -1261,9 +1296,16 @@ Page({
     if (!wqId) return
     var cached = this._wqCache[wqId]
     if (cached && Date.now() - cached.ts < 300000) return
+    var requestStartedAt = Date.now()
     var self = this
     api.get(`/wrong-questions/${wqId}`).then(function(wq) {
-      if (wq && self._alive && self._wqCache) self._wqCache[wqId] = { data: wq, ts: Date.now() }
+      if (!wq || !self._alive || !self._wqCache) return
+      var latest = self._wqCache[wqId]
+      // A foreground navigation/mutation may have produced a newer cache entry
+      // while this speculative prefetch was still in flight. Do not let the
+      // older response roll mastered/AI/detail state back.
+      if (latest && Number(latest.ts || 0) >= requestStartedAt) return
+      self._wqCache[wqId] = { data: wq, ts: Date.now() }
     }).catch(function() {})
   },
 })

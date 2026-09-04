@@ -20,7 +20,10 @@ from app.services.sm2_service import calc_sm2
 from app.features.text_normalizer import _split_inline_roman_subitems
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 from app.services.question_revision_service import load_revision_views
-from app.utils.answer_normalizer import is_answer_correct
+from app.utils.answer_normalizer import (
+    extract_multi_blank_slot_ids,
+    is_answer_correct,
+)
 
 # Asia/Shanghai = UTC+8, no DST
 _SHANGHAI_TZ = timezone(timedelta(hours=8))
@@ -335,11 +338,33 @@ async def get_today_review(
     if subject_id:
         conditions.append(ReviewSchedule.subject_id == subject_id)
 
-    total = int((await db.scalar(select(func.count(ReviewSchedule.id)).where(and_(*conditions)))) or 0)
+    valid_schedule_stmt = (
+        select(ReviewSchedule)
+        .join(QuestionVersion, QuestionVersion.id == ReviewSchedule.question_version_id)
+        .where(
+            and_(
+                *conditions,
+                QuestionVersion.question_id == ReviewSchedule.question_id,
+            )
+        )
+    )
+    total = int(
+        (await db.scalar(
+            select(func.count(ReviewSchedule.id))
+            .select_from(ReviewSchedule)
+            .join(QuestionVersion, QuestionVersion.id == ReviewSchedule.question_version_id)
+            .where(
+                and_(
+                    *conditions,
+                    QuestionVersion.question_id == ReviewSchedule.question_id,
+                )
+            )
+        ))
+        or 0
+    )
     schedules = list(
         (await db.scalars(
-            select(ReviewSchedule)
-            .where(and_(*conditions))
+            valid_schedule_stmt
             .order_by(ReviewSchedule.next_review_at.asc(), ReviewSchedule.id.asc())
             .limit(limit)
         )).all()
@@ -521,6 +546,33 @@ async def submit_review(
     }
 
 
+def _review_item_error_meta(message: str) -> tuple[str, bool, bool]:
+    """Classify deterministic per-item review rejections for clients.
+
+    Network/5xx failures never arrive here: those abort the HTTP request.  Every
+    ValueError below describes a task snapshot that cannot be fixed by replaying
+    the same schedule/version/occurrence tuple, so the client should fetch a
+    fresh task instead of creating an endless local retry loop.
+    """
+    text = str(message or "")
+    if "request_id 已用于不同提交" in text:
+        return "REVIEW_REQUEST_CONFLICT", False, True
+    if "复习记录不存在" in text:
+        return "REVIEW_SCHEDULE_MISSING", False, True
+    if "题目与复习记录不匹配" in text:
+        return "REVIEW_TASK_MISMATCH", False, True
+    if "版本" in text and ("更新" in text or "不存在" in text):
+        return "REVIEW_VERSION_STALE", False, True
+    if (
+        "已从复习队列移除" in text
+        or "已标记掌握" in text
+        or "已经提交" in text
+        or "已失效" in text
+    ):
+        return "REVIEW_TASK_STALE", False, True
+    return "REVIEW_ITEM_REJECTED", False, True
+
+
 async def grade_batch_review(
     db: AsyncSession,
     user_id: int,
@@ -560,6 +612,9 @@ async def grade_batch_review(
                 "request_id": request_id,
                 "success": False,
                 "error": "复习题版本不存在",
+                "error_code": "REVIEW_VERSION_MISSING",
+                "retryable": False,
+                "refresh_required": True,
                 "is_correct": False,
                 "correct_answer": "",
                 "rating": 0,
@@ -572,7 +627,16 @@ async def grade_batch_review(
             continue
 
         answer = str(item.get("user_answer") or "")
-        is_correct = is_answer_correct(answer, revision.answer or "", revision.question_type or "")
+        slot_ids = extract_multi_blank_slot_ids(
+            getattr(revision, "content", None),
+            getattr(revision, "options", None),
+        )
+        is_correct = is_answer_correct(
+            answer,
+            revision.answer or "",
+            revision.question_type or "",
+            slot_ids=slot_ids,
+        )
         rating = 4 if is_correct else 1
         try:
             result = await submit_review(
@@ -596,6 +660,9 @@ async def grade_batch_review(
                 "request_id": request_id,
                 "success": True,
                 "error": None,
+                "error_code": None,
+                "retryable": False,
+                "refresh_required": False,
                 "is_correct": bool(result["is_correct"]),
                 "correct_answer": revision.answer or "",
                 "rating": result["rating"],
@@ -616,6 +683,8 @@ async def grade_batch_review(
                         str(result.get("wrong_answer") or ""),
                     ))
         except ValueError as exc:
+            error_text = str(exc)
+            error_code, retryable, refresh_required = _review_item_error_meta(error_text)
             payload = {
                 "schedule_id": item["schedule_id"],
                 "question_id": item["question_id"],
@@ -623,7 +692,10 @@ async def grade_batch_review(
                 "occurrence_seq": occurrence_seq,
                 "request_id": request_id,
                 "success": False,
-                "error": str(exc),
+                "error": error_text,
+                "error_code": error_code,
+                "retryable": retryable,
+                "refresh_required": refresh_required,
                 "is_correct": False,
                 "correct_answer": revision.answer or "",
                 "rating": rating,
@@ -965,11 +1037,17 @@ async def _get_today_review_task_state(
     today_start, today_end = shanghai_today_boundaries()
 
     due_schedules = list((await db.scalars(
-        select(ReviewSchedule).where(
+        select(ReviewSchedule)
+        .join(QuestionVersion, QuestionVersion.id == ReviewSchedule.question_version_id)
+        .where(
             ReviewSchedule.user_id == user_id,
             ReviewSchedule.is_active,
             ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= today_end,
+            # Legacy/corrupt schedule rows must never surface another question's
+            # immutable revision. Excluding them here also prevents one broken
+            # schedule from keeping the "today remaining" counter non-zero.
+            QuestionVersion.question_id == ReviewSchedule.question_id,
         )
     )).all())
 
@@ -1142,7 +1220,14 @@ async def get_next_today_review_batch(
     questions = []
     for schedule in batch:
         revision = views.get(int(schedule.question_version_id))
-        if revision is None:
+        if revision is None or int(revision.question_id) != int(schedule.question_id):
+            logger.warning(
+                "review.next_batch.skip_invalid_revision uid=%s schedule_id=%s question_id=%s version_id=%s",
+                user_id,
+                schedule.id,
+                schedule.question_id,
+                schedule.question_version_id,
+            )
             continue
         questions.append(_review_question_payload(schedule, revision))
 

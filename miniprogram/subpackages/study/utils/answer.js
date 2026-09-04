@@ -61,6 +61,16 @@ function isMultiBlankType(questionType) {
   return questionType === 'multi_blank_choice'
 }
 
+function normalizeTrueFalseAnswer(answer) {
+  if (answer === undefined || answer === null) return ''
+  var value = String(answer).trim().toLowerCase()
+  var truthy = { a: true, 'true': true, '对': true, '是': true, '正确': true, t: true, yes: true, '1': true }
+  var falsy = { b: true, 'false': true, '错': true, '否': true, '错误': true, f: true, no: true, '0': true }
+  if (Object.prototype.hasOwnProperty.call(truthy, value)) return 'A'
+  if (Object.prototype.hasOwnProperty.call(falsy, value)) return 'B'
+  return value.toUpperCase()
+}
+
 /**
  * Normalize blank answer from serialized string to {slotId: value} map.
  * Supports:
@@ -71,7 +81,7 @@ function isMultiBlankType(questionType) {
  *   - Positional:  "B,D" (requires slot inference from context)
  *   - Object passthrough: { "①": "B", "②": "D" }
  */
-function normalizeBlankAnswer(answer) {
+function normalizeBlankAnswer(answer, slotIds) {
   if (!answer) return {}
   if (typeof answer === 'object') return answer
 
@@ -119,6 +129,24 @@ function normalizeBlankAnswer(answer) {
     if (Object.keys(result).length > 0) return result
   }
 
+  // 5. Legacy positional answer: "A,B" / "AB". Only accept it when
+  // trusted slot ids come from the question metadata/stem; never infer slot
+  // names from a submitted answer, otherwise arbitrary extra slots could pass.
+  var trustedIds = Array.isArray(slotIds)
+    ? slotIds.map(function(id) { return String(id || '').trim() }).filter(Boolean)
+    : []
+  if (trustedIds.length > 0 && text.indexOf(':') < 0 && text.indexOf('：') < 0) {
+    var positional = text.split(/[，,、\s]+/).map(function(v) { return v.trim().toUpperCase() }).filter(Boolean)
+    if (positional.length === 1 && trustedIds.length > 1) {
+      var compact = positional[0].match(/[A-H]/g) || []
+      if (compact.length === positional[0].length) positional = compact
+    }
+    if (positional.length === trustedIds.length && positional.every(function(v) { return /^[A-H]$/.test(v) })) {
+      trustedIds.forEach(function(id, index) { result[id] = positional[index] })
+      return result
+    }
+  }
+
   return result
 }
 
@@ -141,11 +169,11 @@ function serializeBlankAnswer(groups, blankAnswers) {
  * For single_choice/true_false: case-insensitive, whitespace-trimmed comparison.
  * For multi_blank_choice: slot-by-slot comparison.
  */
-function isAnswerCorrect(userAnswer, correctAnswer, questionType) {
+function isAnswerCorrect(userAnswer, correctAnswer, questionType, slotIds) {
   if (!userAnswer || !correctAnswer) return null
   if (isMultiBlankType(questionType)) {
-    var user = normalizeBlankAnswer(userAnswer)
-    var standard = normalizeBlankAnswer(correctAnswer)
+    var user = normalizeBlankAnswer(userAnswer, slotIds)
+    var standard = normalizeBlankAnswer(correctAnswer, slotIds)
     var userKeys = Object.keys(user)
     var standardKeys = Object.keys(standard)
     if (standardKeys.length === 0) return null
@@ -159,10 +187,13 @@ function isAnswerCorrect(userAnswer, correctAnswer, questionType) {
       return standardKeys.indexOf(k) >= 0
     })
   }
+  if (isTrueFalseType(questionType)) {
+    return normalizeTrueFalseAnswer(userAnswer) === normalizeTrueFalseAnswer(correctAnswer)
+  }
   if (isMultipleChoiceType(questionType)) {
     return serializeChoiceAnswer(userAnswer) === serializeChoiceAnswer(correctAnswer)
   }
-  // single_choice / true_false / judgement
+  // single_choice / fallback
   return String(userAnswer).trim().toUpperCase() === String(correctAnswer).trim().toUpperCase()
 }
 
@@ -173,6 +204,7 @@ module.exports = {
   isMultipleChoiceType: isMultipleChoiceType,
   isTrueFalseType: isTrueFalseType,
   isMultiBlankType: isMultiBlankType,
+  normalizeTrueFalseAnswer: normalizeTrueFalseAnswer,
   normalizeBlankAnswer: normalizeBlankAnswer,
   serializeBlankAnswer: serializeBlankAnswer,
   isAnswerCorrect: isAnswerCorrect,

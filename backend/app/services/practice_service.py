@@ -43,7 +43,10 @@ from app.services.knowledge_point_service import (
     kp_exact_conditions,
     load_question_kps,
 )
-from app.utils.answer_normalizer import is_answer_correct
+from app.utils.answer_normalizer import (
+    extract_multi_blank_slot_ids,
+    is_answer_correct,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2534,7 +2537,16 @@ async def batch_submit_answers(
         user_answer = str(answer.get("user_answer", answer.get("answer", "")) or "").strip()
         used_time = _normalize_answer_used_time(answer.get("used_time"))
         answer_request_ids[int(q.id)] = _normalize_practice_request_id(answer.get("request_id"))
-        is_correct = is_answer_correct(user_answer, q.answer or "", q.question_type or "")
+        slot_ids = extract_multi_blank_slot_ids(
+            getattr(q, "content", None),
+            getattr(q, "options", None),
+        )
+        is_correct = is_answer_correct(
+            user_answer,
+            q.answer or "",
+            q.question_type or "",
+            slot_ids=slot_ids,
+        )
         evaluated_answers.append((q, is_correct, user_answer, used_time))
         if is_correct:
             total_correct += 1

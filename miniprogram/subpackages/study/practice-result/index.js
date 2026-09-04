@@ -319,10 +319,19 @@ Page({
     this.bindEventChannel();
     const optionPayload = this.readPayloadFromOptions(options || {});
     const cachePayload = optionPayload ? null : this.readPayloadFromCache(options || {});
-    const summaryPayload = optionPayload || cachePayload ? null : this.readSummaryFromOptions(options || {});
-    this.applyPracticePayload(optionPayload || cachePayload || summaryPayload || {});
+    const primaryPayload = optionPayload || cachePayload;
+    const summaryPayload = primaryPayload ? null : this.readSummaryFromOptions(options || {});
+    this.applyPracticePayload(primaryPayload || summaryPayload || {});
 
-    if (!optionPayload && !cachePayload && String((options || {})._recover || '') === '1' && (options || {})._rid) {
+    const requestId = String((options || {})._rid || '');
+    if (primaryPayload && this._hasDetailedPracticePayload(primaryPayload)) {
+      // The result page is the acknowledgement boundary for the persisted
+      // idempotent submission snapshot. Navigation success alone is not enough.
+      if (requestId) this._clearPendingSubmission(requestId);
+    } else if (requestId) {
+      // Always try the idempotent replay when detailed data is absent. `_recover`
+      // is only a hint from the previous page and can be stale if local storage
+      // was evicted between cache-write success and this page's onLoad.
       this.recoverSubmittedResult(options || {});
     }
     this.loadDashboardData();
@@ -382,6 +391,17 @@ Page({
         });
       });
     } catch (e) {}
+  },
+
+  _hasDetailedPracticePayload(payload) {
+    const source = payload && payload.data && typeof payload.data === 'object'
+      ? payload.data
+      : payload;
+    if (!source || typeof source !== 'object') return false;
+    return (Array.isArray(source.results) && source.results.length > 0) ||
+      (Array.isArray(source.submitResults) && source.submitResults.length > 0) ||
+      (Array.isArray(source.resultList) && source.resultList.length > 0) ||
+      (Array.isArray(source.questions) && source.questions.length > 0);
   },
 
   readPayloadFromOptions(options) {

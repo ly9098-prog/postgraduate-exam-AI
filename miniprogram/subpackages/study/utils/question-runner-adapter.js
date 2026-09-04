@@ -11,8 +11,8 @@ var answerLib = require('./answer')
 
 /* ==================== Blank answer helpers ==================== */
 
-function normalizeBlankAnswer(answer) {
-  var parsed = answerLib.normalizeBlankAnswer(answer)
+function normalizeBlankAnswer(answer, slotIds) {
+  var parsed = answerLib.normalizeBlankAnswer(answer, slotIds)
   if (!parsed || typeof parsed !== 'object') return {}
   var normalized = {}
   Object.keys(parsed).forEach(function (key) {
@@ -440,8 +440,11 @@ function enrichBlankOptionGroups(groups, answer) {
  * @returns {Array} enriched groups with _isCorrect, _isUserAnswer, _isBoth
  */
 function enrichBlankOptionGroupsReadonly(groups, correctAnswer, userAnswer) {
-  var blankAnswers = normalizeBlankAnswer(correctAnswer)
-  var wrongAnswers = normalizeBlankAnswer(userAnswer)
+  var slotIds = (groups || []).map(function(group, index) {
+    return _groupId(group, String(index + 1))
+  }).filter(Boolean)
+  var blankAnswers = normalizeBlankAnswer(correctAnswer, slotIds)
+  var wrongAnswers = normalizeBlankAnswer(userAnswer, slotIds)
   return (groups || []).map(function (group) {
     var groupId = _groupId(group, '')
     return {
@@ -570,6 +573,10 @@ function buildOptionListReadonly(q, opts, optionKeys, correctAnswer, userAnswer)
     ? answerLib.normalizeAnswerSet(correctAnswer) : null
   var userSet = answerLib.isMultipleChoiceType(questionType)
     ? answerLib.normalizeAnswerSet(userAnswer) : null
+  var normalizedCorrect = answerLib.isTrueFalseType(questionType)
+    ? answerLib.normalizeTrueFalseAnswer(correctAnswer) : String(correctAnswer || '').trim().toUpperCase()
+  var normalizedUser = answerLib.isTrueFalseType(questionType)
+    ? answerLib.normalizeTrueFalseAnswer(userAnswer) : String(userAnswer || '').trim().toUpperCase()
 
   return (optionKeys || []).map(function (key) {
     // Handle rich option format: {"A": {"text": "...", "segments": [...]}}
@@ -598,8 +605,8 @@ function buildOptionListReadonly(q, opts, optionKeys, correctAnswer, userAnswer)
       })
     }
 
-    var isCorrect = correctSet ? !!correctSet[key] : key === (correctAnswer || '').trim().toUpperCase()
-    var isUserAnswer = userSet ? !!userSet[key] : key === (userAnswer || '').trim().toUpperCase()
+    var isCorrect = correctSet ? !!correctSet[key] : key === normalizedCorrect
+    var isUserAnswer = userSet ? !!userSet[key] : key === normalizedUser
 
     return {
       key: key,
@@ -634,7 +641,10 @@ function isAnswerCorrect(q, userAnswer) {
     !/[:：=;]/.test(String(correct))) {
     return answerLib.isAnswerCorrect(userAnswer, correct, 'single_choice')
   }
-  return answerLib.isAnswerCorrect(userAnswer, correct, q.question_type)
+  var slotIds = q && q.question_type === 'multi_blank_choice'
+    ? getBlankOptionGroups(q).map(function(group, index) { return _groupId(group, String(index + 1)) }).filter(Boolean)
+    : null
+  return answerLib.isAnswerCorrect(userAnswer, correct, q.question_type, slotIds)
 }
 
 /* ==================== Image helpers ==================== */
