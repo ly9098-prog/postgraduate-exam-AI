@@ -284,6 +284,10 @@ async def _next_question_version(db: AsyncSession, question_id: int) -> int:
 def _question_snapshot(question: Question) -> dict[str, Any]:
     """版本历史中的标量/JSON 快照；知识点改由关联表单独保存。"""
     return {
+        "subject_id": question.subject_id,
+        "question_type": question.question_type,
+        "image_url": question.image_url,
+        "is_active": question.is_active,
         "content": question.content,
         "options": question.options,
         "answer": question.answer,
@@ -305,6 +309,41 @@ async def _question_kp_link_snapshot(
         .order_by(QuestionKnowledgePoint.position, QuestionKnowledgePoint.id)
     )
     return [(int(kp_id), int(position)) for kp_id, position in result.all()]
+
+
+async def _create_question_version_snapshot(
+    db: AsyncSession,
+    question: Question,
+    *,
+    edited_by: int,
+    edit_reason: str | None = None,
+) -> QuestionVersion:
+    """Persist the exact pre-change question view used by in-flight practice.
+
+    Besides the existing content/answer fields, new snapshots include subject,
+    question type, image list and active state so a signed practice fingerprint
+    can later resolve back to this immutable row.
+    """
+    before_kp_links = await _question_kp_link_snapshot(db, question.id)
+    version_snapshot = QuestionVersion(
+        question_id=question.id,
+        version=await _next_question_version(db, question.id),
+        edited_by=edited_by,
+        edit_reason=edit_reason,
+        **_question_snapshot(question),
+    )
+    db.add(version_snapshot)
+    await db.flush()
+    if before_kp_links:
+        db.add_all([
+            QuestionVersionKnowledgePoint(
+                question_version_id=version_snapshot.id,
+                knowledge_point_id=knowledge_point_id,
+                position=position,
+            )
+            for knowledge_point_id, position in before_kp_links
+        ])
+    return version_snapshot
 
 
 async def update_admin_question(
@@ -340,27 +379,9 @@ async def update_admin_question(
     # Create version snapshot (only when real changes exist) — 用操作前值。
     # knowledge_points 不再复制名称 JSON，而是复制当前 question_knowledge_points 的主键关联。
     before_changed = {f: _edit_field_value(question, f, before_kps) for f in changed_fields}
-    before_kp_links = await _question_kp_link_snapshot(db, question.id)
-    version_snapshot = QuestionVersion(
-        question_id=question.id,
-        version=await _next_question_version(db, question.id),
-        edited_by=operator.id,
-        edit_reason=edit_reason,
-        **_question_snapshot(question),
+    await _create_question_version_snapshot(
+        db, question, edited_by=operator.id, edit_reason=edit_reason
     )
-    db.add(version_snapshot)
-    await db.flush()  # 先取得 question_versions.id，作为关联表外键
-    if before_kp_links:
-        db.add_all(
-            [
-                QuestionVersionKnowledgePoint(
-                    question_version_id=version_snapshot.id,
-                    knowledge_point_id=knowledge_point_id,
-                    position=position,
-                )
-                for knowledge_point_id, position in before_kp_links
-            ]
-        )
 
     # subject_id 优先应用，使后续 KP sync 使用新科目（subject 不变量）
     if "subject_id" in changed_fields:
@@ -594,6 +615,10 @@ async def soft_delete_admin_question(
     full_snapshot = build_question_audit_snapshot(question, kp_map.get(question.id, []))
 
     before = {"is_active": question.is_active}
+    if question.is_active:
+        await _create_question_version_snapshot(
+            db, question, edited_by=operator.id, edit_reason="soft delete"
+        )
     question.is_active = False
 
     await write_admin_audit(
@@ -670,6 +695,10 @@ async def toggle_active_admin_question(
     if data.is_active and question.review_status != "approved":
         raise ValueError("非已审核题目不能激活")
     before = {"is_active": question.is_active}
+    if question.is_active != data.is_active:
+        await _create_question_version_snapshot(
+            db, question, edited_by=operator.id, edit_reason="toggle active"
+        )
     question.is_active = data.is_active
 
     await write_admin_audit(

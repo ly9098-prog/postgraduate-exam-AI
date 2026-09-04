@@ -1,7 +1,10 @@
 from app.schemas.base import BaseModel
 from datetime import datetime
+from typing import Literal
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
+
+PracticeMode = Literal["random", "smart", "similar", "sequential"]
 
 # --- GET /practice/questions ---
 
@@ -22,6 +25,7 @@ class PracticeQuestion(BaseModel):
     recommend_score: float | None = None
     strategy: str | None = None
     similarity: float | None = None
+    question_version: str | None = None
 
 
 class SequentialPracticeProgress(BaseModel):
@@ -37,10 +41,12 @@ class SequentialPracticeProgress(BaseModel):
 class PracticeQuestionsResponse(BaseModel):
     questions: list[PracticeQuestion]
     total: int
-    mode: str
+    mode: PracticeMode
     trace_id: str | None = None
     request_id: str | None = None
     sequential_progress: SequentialPracticeProgress | None = None
+    batch_token: str | None = None
+    submission_request_id: str | None = None
 
 
 class SequentialPracticeResetRequest(BaseModel):
@@ -55,16 +61,17 @@ class SequentialPracticeResetResponse(BaseModel):
 # --- POST /practice/submit ---
 
 class AnswerSubmit(BaseModel):
-    question_id: int
-    user_answer: str
-    used_time: int | None = None
-    request_id: str | None = None
+    question_id: int = Field(gt=0)
+    user_answer: str = Field(max_length=4096)
+    used_time: int | None = Field(default=None, ge=0, le=6 * 60 * 60)
+    request_id: str | None = Field(default=None, max_length=128)
 
 
 class AnswerResult(BaseModel):
     question_id: int
     is_correct: bool
     correct_answer: str
+    status: str = "wrong"
     analysis: str | None = None
     knowledge_points: list | None = None
     is_wrong_added: bool = False
@@ -74,33 +81,37 @@ class AnswerResult(BaseModel):
 # --- POST /practice/batch-submit ---
 
 class PracticeSessionMeta(BaseModel):
-    """一次完整刷题会话的元数据（可选）。
+    """一次完整刷题会话的元数据。
 
-    session 保持 optional：旧客户端只发送 answers 时后端仍正常答题，不创建
-    PracticeSession。request_id 用于 (user_id, request_id) 幂等去重，防止网络
-    重试把同一组刷题重复记成两条学习记录 —— 因此一旦携带 session，request_id
-    必须提供，否则无法去重。
+    新版 batch-submit 必须携带 session，并与服务器签发的 batch_token 共同
+    绑定科目、模式、request_id、题目集合和提交时序。
     """
-    request_id: str
-    subject_id: int | None = None
-    mode: str = "random"
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    duration_sec: int | None = None
-    question_count: int | None = None
-    answered_count: int | None = None
-    status: str = "completed"
+    request_id: str = Field(min_length=1, max_length=128)
+    subject_id: int = Field(gt=0)
+    mode: PracticeMode = "random"
+    started_at: datetime
+    finished_at: datetime
+    duration_sec: int = Field(ge=0, le=6 * 60 * 60)
+    question_count: int = Field(ge=1, le=50)
+    answered_count: int = Field(ge=0, le=50)
+    status: Literal["completed"] = "completed"
 
 
 class BatchSubmitRequest(BaseModel):
-    answers: list[AnswerSubmit]
-    session: PracticeSessionMeta | None = None
+    answers: list[AnswerSubmit] = Field(default_factory=list, max_length=50)
+    skipped_question_ids: list[int] = Field(default_factory=list, max_length=50)
+    # New batch submissions are always server-issued.  Requiring both fields at
+    # the API boundary prevents callers from silently falling back to an
+    # unbound legacy path that could enumerate question ids for answers.
+    batch_token: str = Field(min_length=16, max_length=8192)
+    session: PracticeSessionMeta
 
 
 class BatchSubmitResponse(BaseModel):
     results: list[AnswerResult]
     total_correct: int
     total_wrong: int
+    total_skipped: int = 0
     trace_id: str | None = None
 
 

@@ -997,3 +997,20 @@ button::after { border: none; }
   .batch-size-num { font-size: 38rpx; }
   .batch-sheet { margin-left: 16rpx; margin-right: 16rpx; }
 }
+
+
+/* Review mastery status: backend is the single source of truth. */
+.detail-status-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6rpx;
+  flex-shrink: 0;
+}
+
+.detail-mastery-text {
+  font-size: 20rpx;
+  line-height: 1.35;
+  color: rgba(36, 56, 78, 0.58);
+  white-space: nowrap;
+}

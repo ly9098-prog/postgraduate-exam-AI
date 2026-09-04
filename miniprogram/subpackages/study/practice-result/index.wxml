@@ -31,7 +31,8 @@
             <text class="ring-value">{{accuracyPct}}</text>
             <text class="ring-unit">%</text>
           </view>
-          <text class="ring-label">正确率</text>
+          <text class="ring-label">作答正确率</text>
+          <text class="ring-sub">完成率 {{completionPct}}%</text>
         </view>
         <view
           wx:if="{{accuracyPct > 1 && accuracyPct < 99}}"
@@ -70,6 +71,16 @@
         </view>
         <view class="stat-divider"></view>
         <view class="stat-item">
+          <text class="stat-value skipped">{{skippedCount}}</text>
+          <text class="stat-label">跳过</text>
+        </view>
+        <view class="stat-divider"></view>
+        <view class="stat-item">
+          <text class="stat-value partial">{{partialCount}}</text>
+          <text class="stat-label">未完成</text>
+        </view>
+        <view class="stat-divider"></view>
+        <view class="stat-item">
           <text class="stat-value">{{totalCount}}</text>
           <text class="stat-label">总题</text>
         </view>
@@ -86,7 +97,7 @@
       <view class="section-card">
         <view class="section-head">
           <view>
-            <text class="section-title">正确率趋势</text>
+            <text class="section-title">作答正确率趋势</text>
             <text class="section-desc">近 7 天练习表现</text>
           </view>
           <view class="section-badge">
@@ -95,12 +106,13 @@
         </view>
 
         <view class="chart-wrap">
-          <canvas type="2d" id="trendCanvas" class="trend-canvas"></canvas>
+          <canvas wx:if="{{trendAvailable}}" type="2d" id="trendCanvas" class="trend-canvas"></canvas>
           <view wx:if="{{trendLoading}}" class="chart-loading">正在加载趋势…</view>
+          <view wx:elif="{{!trendAvailable}}" class="chart-loading">{{trendSummary}}</view>
         </view>
       </view>
 
-      <view class="growth-card">
+      <view class="growth-card" wx:if="{{growthAvailable}}">
         <view class="growth-head">
           <view>
             <text class="section-title">{{growthGain > 0 ? '成长值 +' + growthGain : '成长进度'}}</text>
@@ -116,12 +128,20 @@
           <view class="progress-fill" style="width: {{growth.level_progress_pct}}%;"></view>
         </view>
       </view>
+      <view class="growth-card" wx:else>
+        <view class="growth-head">
+          <view>
+            <text class="section-title">成长进度</text>
+            <text class="section-desc">成长数据暂不可用，请稍后刷新</text>
+          </view>
+        </view>
+      </view>
 
       <view class="section-card">
         <view class="section-head">
           <view>
-            <text class="section-title">错题分布</text>
-            <text class="section-desc">优先复盘高频错误类型</text>
+            <text class="section-title">错题知识点分布</text>
+            <text class="section-desc">优先复盘高频薄弱知识点</text>
           </view>
           <text class="wrong-total">{{wrongCount}} 错题</text>
         </view>
@@ -182,8 +202,8 @@
             >
               <text class="compact-index">{{item.displayIndex}}</text>
               <text class="compact-title">{{item.title}}</text>
-              <view class="compact-status {{item.isCorrect ? 'status-correct' : 'status-wrong'}}">
-                {{item.isCorrect ? '答对' : '答错'}}
+              <view class="compact-status {{item.status === 'correct' ? 'status-correct' : (item.status === 'skipped' ? 'status-skipped' : (item.status === 'partial' ? 'status-partial' : 'status-wrong'))}}">
+                {{item.status === 'correct' ? '答对' : (item.status === 'skipped' ? '跳过' : (item.status === 'partial' ? '未完成' : '答错'))}}
               </view>
             </view>
             <view wx:if="{{!filteredReviewItems.length}}" class="empty-state">
@@ -238,15 +258,15 @@
 
         <view wx:else class="success-empty">
           <view class="success-empty-icon">✓</view>
-          <text class="success-empty-title">本组全部答对</text>
-          <text class="success-empty-desc">继续保持当前节奏</text>
+          <text class="success-empty-title">{{(skippedCount > 0 || partialCount > 0) ? '本组没有答错题' : '本组全部答对'}}</text>
+          <text class="success-empty-desc">{{partialCount > 0 ? '还有未完成题，请在题目详情中补充复盘' : (skippedCount > 0 ? '跳过题可在题目详情中单独复盘' : '继续保持当前节奏')}}</text>
         </view>
       </view>
     </block>
 
     <!-- 成长记录 -->
     <block wx:else>
-      <view class="section-card growth-detail-card">
+      <view class="section-card growth-detail-card" wx:if="{{growthAvailable}}">
         <view class="growth-level-hero">
           <view class="level-orb">
             <text>Lv{{growth.level}}</text>
@@ -277,7 +297,14 @@
         </view>
       </view>
 
-      <view class="section-card">
+      <view class="section-card growth-detail-card" wx:else>
+        <view class="success-empty">
+          <text class="success-empty-title">成长数据暂不可用</text>
+          <text class="success-empty-desc">本次答题结果已保存，不影响刷题记录</text>
+        </view>
+      </view>
+
+      <view class="section-card" wx:if="{{growthAvailable}}">
         <view class="section-head">
           <view>
             <text class="section-title">成长徽章</text>

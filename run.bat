@@ -1,30 +1,48 @@
 @echo off
 chcp 65001 >nul
-setlocal
+setlocal EnableExtensions
 
 rem ============================================
-rem 2240AI 考研助手 — 一键启动脚本 (Windows)
-rem 用法: 双击 run.bat 或在终端运行
-rem 可覆盖: set APP_ENV=development / set PROCESS_ROLE=web / set PORT=8000
+rem 2240AI local backend launcher (Windows)
+rem Usage: double-click run.bat or run it from a terminal
+rem Overrides: set APP_ENV=development / set PROCESS_ROLE=web / set PORT=8000
+rem Skip dependency installation: set SKIP_DEP_INSTALL=1
 rem ============================================
 
-cd /d "%~dp0backend"
-
-echo ========================================
-echo   2240AI 考研助手 — 启动中...
-echo ========================================
-
-rem ---- 1. Python 检测 ----
-where python >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] 未找到 Python，请先安装 Python 3.11+
+set "PROJECT_ROOT=%~dp0"
+set "BACKEND_DIR=%PROJECT_ROOT%backend"
+if not exist "%BACKEND_DIR%\app\main.py" (
+    echo [ERROR] Backend directory or app\main.py not found: %BACKEND_DIR%
     pause
     exit /b 1
 )
-echo [INFO] Python:
-python --version
+cd /d "%BACKEND_DIR%"
+if errorlevel 1 (
+    echo [ERROR] Cannot enter backend directory: %BACKEND_DIR%
+    pause
+    exit /b 1
+)
 
-rem ---- 2. 运行环境 ----
+echo ========================================
+echo   2240AI backend is starting...
+echo ========================================
+
+rem ---- 1. Check Python ----
+where python >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Python was not found. Install Python 3.11 or newer.
+    pause
+    exit /b 1
+)
+python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Python 3.11 or newer is required.
+    python --version
+    pause
+    exit /b 1
+)
+
+rem ---- 2. Runtime settings ----
 if not defined APP_ENV set "APP_ENV=development"
 if not defined PROCESS_ROLE set "PROCESS_ROLE=all"
 if not defined PORT set "PORT=8000"
@@ -34,48 +52,109 @@ echo [INFO] PROCESS_ROLE=%PROCESS_ROLE%
 echo [INFO] PORT=%PORT%
 
 if not exist ".env" (
-    echo [WARN] backend\.env 不存在，请先根据 backend\.env.example 创建本地配置。
+    echo [WARN] backend\.env is missing. Create it from backend\.env.example first.
+)
+if not exist "requirements.txt" (
+    echo [ERROR] backend\requirements.txt was not found.
+    pause
+    exit /b 1
 )
 
-rem ---- 3. 虚拟环境 ----
+rem ---- 3. Virtual environment ----
 set "PYTHON_CMD=python"
-if not exist ".venv\Scripts\python.exe" (
-    echo [INFO] 创建 Python 虚拟环境...
-    python -m venv .venv
-    if errorlevel 1 (
-        echo [WARN] 虚拟环境创建失败，将使用系统 Python。
-    ) else (
-        set "PYTHON_CMD=.venv\Scripts\python.exe"
-        echo [INFO] 虚拟环境已创建。
-    )
-) else (
-    set "PYTHON_CMD=.venv\Scripts\python.exe"
-    echo [INFO] 使用已有虚拟环境。
-)
+if exist ".venv\Scripts\python.exe" goto :use_existing_venv
 
-rem ---- 4. 安装依赖 ----
-echo [INFO] 安装后端依赖...
+echo [INFO] Creating Python virtual environment...
+python -m venv .venv
+if errorlevel 1 goto :use_system_python
+set "PYTHON_CMD=%CD%\.venv\Scripts\python.exe"
+echo [INFO] Virtual environment created.
+goto :python_ready
+
+:use_existing_venv
+set "PYTHON_CMD=%CD%\.venv\Scripts\python.exe"
+"%PYTHON_CMD%" -c "import sys" >nul 2>&1
+if errorlevel 1 goto :use_system_python
+echo [INFO] Using existing virtual environment.
+goto :python_ready
+
+:use_system_python
+set "PYTHON_CMD=python"
+echo [WARN] Virtual environment is unavailable. Using system Python.
+
+:python_ready
+"%PYTHON_CMD%" -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Python 3.11 or newer is required.
+    "%PYTHON_CMD%" --version
+    pause
+    exit /b 1
+)
+echo [INFO] Python version:
+"%PYTHON_CMD%" --version
+
+rem ---- 4. Install dependencies ----
+if /i "%SKIP_DEP_INSTALL%"=="1" goto :skip_dependency_install
+echo [INFO] Installing backend dependencies...
 "%PYTHON_CMD%" -m pip install --quiet --upgrade pip
 if errorlevel 1 (
-    echo [ERROR] pip 更新失败，请检查网络或 Python 环境。
+    echo [ERROR] pip update failed. Check the network or Python environment.
     pause
     exit /b 1
 )
 
 "%PYTHON_CMD%" -m pip install --quiet -r requirements.txt
 if errorlevel 1 (
-    echo [ERROR] 后端依赖安装失败，未启动服务。
+    echo [ERROR] Backend dependency installation failed. Server not started.
     pause
     exit /b 1
 )
-echo [INFO] 依赖安装完成。
+echo [INFO] Backend dependencies installed.
+goto :ensure_docx
 
-rem ---- 5. 启动 FastAPI ----
+:skip_dependency_install
+echo [INFO] SKIP_DEP_INSTALL=1. Skipping dependency installation.
+goto :ensure_docx
+
+:ensure_docx
+"%PYTHON_CMD%" -c "import uvicorn" >nul 2>&1
+if not errorlevel 1 goto :check_docx
+if /i "%SKIP_DEP_INSTALL%"=="1" (
+    echo [ERROR] uvicorn is not installed. Cannot skip dependency installation.
+    echo         Remove SKIP_DEP_INSTALL or run: python -m pip install uvicorn
+    pause
+    exit /b 1
+)
+echo [ERROR] uvicorn is still unavailable after dependency installation.
+echo         Check the Python environment and retry.
+pause
+exit /b 1
+
+:check_docx
+"%PYTHON_CMD%" -c "import docx" >nul 2>&1
+if not errorlevel 1 goto :start_server
+if /i "%SKIP_DEP_INSTALL%"=="1" (
+    echo [ERROR] python-docx is not installed. Cannot skip dependency installation.
+    echo         Remove SKIP_DEP_INSTALL or run: python -m pip install python-docx
+    pause
+    exit /b 1
+)
+echo [INFO] Installing DOCX export dependency...
+"%PYTHON_CMD%" -m pip install --quiet "python-docx>=1.1.0"
+if errorlevel 1 (
+    echo [ERROR] python-docx installation failed. Server not started.
+    pause
+    exit /b 1
+)
+echo [INFO] DOCX export dependency is ready.
+
+rem ---- 5. Start FastAPI ----
+:start_server
 echo.
-echo [INFO] 启动 FastAPI...
+echo [INFO] Starting FastAPI...
 echo        API: http://127.0.0.1:%PORT%
-echo        文档: http://127.0.0.1:%PORT%/docs
-echo        停止: Ctrl+C
+echo        Docs: http://127.0.0.1:%PORT%/docs
+echo        Stop: Ctrl+C
 echo ========================================
 echo.
 

@@ -203,6 +203,13 @@ page {
   font-weight: 600;
 }
 
+.ring-sub {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+
 .ring-end-dot {
   position: absolute;
   z-index: 3;
@@ -309,6 +316,14 @@ page {
 .stat-value.danger,
 .danger-text {
   color: #E64B4B;
+}
+
+.stat-value.skipped {
+  color: #B27A22;
+}
+
+.stat-value.partial {
+  color: #6D6F9B;
 }
 
 .stat-label {
@@ -542,6 +557,8 @@ page {
 .filter-pills {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8rpx;
 }
 
@@ -584,6 +601,10 @@ page {
 }
 
 .compact-list-content-wrong {
+  animation: question-list-reveal-wrong 220ms cubic-bezier(.22, .61, .36, 1) both;
+}
+
+.compact-list-content-skipped {
   animation: question-list-reveal-wrong 220ms cubic-bezier(.22, .61, .36, 1) both;
 }
 
@@ -646,6 +667,16 @@ page {
 .status-wrong {
   color: #E24E4E;
   background: #FFF0F0;
+}
+
+.status-skipped {
+  color: #9A681D;
+  background: #FFF6E4;
+}
+
+.status-partial {
+  color: #666A96;
+  background: #F0F1FA;
 }
 
 

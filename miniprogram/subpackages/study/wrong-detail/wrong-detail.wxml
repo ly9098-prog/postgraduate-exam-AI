@@ -189,9 +189,9 @@
   <view class="page-bottom-space"></view>
 
   <view class="detail-bottom-actions">
-    <button class="master-action {{isCurrentMastered ? 'is-mastered' : ''}}" disabled="{{masterSubmitting || isCurrentMastered}}" bindtap="openMasterConfirm">
+    <button class="master-action {{isCurrentMastered ? 'is-mastered' : ''}}" disabled="{{masterSubmitting}}" bindtap="onMasterAction">
       <view class="master-action-icon">{{isCurrentMastered ? '✓' : ''}}</view>
-      <text class="master-action-label">{{isCurrentMastered ? '已经掌握' : '标记已掌握'}}</text>
+      <text class="master-action-label">{{isCurrentMastered ? '重新加入复习' : '标记已掌握'}}</text>
     </button>
     <button class="more-action" bindtap="openMoreMenu">
       <text class="more-action-label">更多</text>
@@ -205,8 +205,19 @@
     <view class="sheet-handle"></view>
     <text class="decision-kicker">MASTERED</text>
     <text class="decision-title">确认已经掌握？</text>
-    <text class="decision-desc">标记后，这道题将不再进入后续复习计划，但仍会保留在历史错题记录中。</text>
+    <text class="decision-desc">标记后，这道题将退出正常复习计划；如果之后再次答错，会自动重新加入复习。</text>
     <view class="decision-actions"><button class="decision-secondary" bindtap="closeMasterConfirm">继续看看</button><button class="decision-primary" bindtap="confirmMastered">确认掌握</button></view>
+  </view>
+</view>
+
+<!-- 重新加入复习确认 -->
+<view class="modal-overlay" wx:if="{{unmasterConfirmVisible}}" catchtap="closeUnmasterConfirm" catchtouchmove="noop">
+  <view class="decision-sheet" catchtap="noop">
+    <view class="sheet-handle"></view>
+    <text class="decision-kicker">REVIEW AGAIN</text>
+    <text class="decision-title">重新加入复习？</text>
+    <text class="decision-desc">掌握度保持当前数值不变，只恢复这道题的复习资格，后续会按复习计划再次出现。</text>
+    <view class="decision-actions"><button class="decision-secondary" bindtap="closeUnmasterConfirm">保持掌握</button><button class="decision-primary" loading="{{masterSubmitting}}" disabled="{{masterSubmitting}}" bindtap="confirmUnmastered">加入复习</button></view>
   </view>
 </view>
 

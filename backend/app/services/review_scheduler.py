@@ -19,6 +19,36 @@ from app.services.sm2_service import calc_sm2
 _SHANGHAI_TZ = timezone(timedelta(hours=8))
 
 
+async def lock_question_review_state(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    question_id: int,
+) -> None:
+    """Serialize one user's state transitions for a question on PostgreSQL.
+
+    ReviewSchedule/WrongQuestion historically have no database UNIQUE constraint on
+    ``(user_id, question_id)``.  Every creation/update entrypoint therefore takes
+    the same transaction-scoped advisory lock before checking or creating rows.
+    This prevents new duplicates and also makes review submission idempotency work
+    across historical duplicate schedule IDs.  SQLite is only a development
+    fallback and has no PostgreSQL advisory-lock equivalent, so it is a no-op there.
+    """
+    bind = db.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+
+    # Use PostgreSQL's two-int advisory-lock form so asyncpg never has to infer a
+    # 64-bit bind parameter from a Python int.  Masking only affects unrealistically
+    # large IDs; any collision merely serializes unrelated work and cannot corrupt
+    # state.
+    lock_user = int(user_id) & 0x7FFFFFFF
+    lock_question = int(question_id) & 0x7FFFFFFF
+    await db.execute(
+        select(func.pg_advisory_xact_lock(lock_user, lock_question))
+    )
+
+
 async def _sync_schedule_to_wq(
     db: AsyncSession,
     schedule: ReviewSchedule,
@@ -35,8 +65,8 @@ async def _sync_schedule_to_wq(
             WrongQuestion.question_id == schedule.question_id,
         )
     )
-    wq = result.scalar_one_or_none()
-    if wq:
+    wrong_questions = list(result.scalars().all())
+    for wq in wrong_questions:
         if schedule.last_reviewed_at is not None:
             wq.last_review_at = schedule.last_reviewed_at
         wq.mastered = schedule.mastered
@@ -60,17 +90,23 @@ async def set_mastered_state(
     这是 route 层和 batch 操作的唯一内部入口，调用方负责事务（commit）。
     返回是否实际发生了变更（用于 batch 区分 updated / skipped）。
     """
+    await lock_question_review_state(
+        db, user_id=user_id, question_id=question_id
+    )
     now = utcnow()
     changed = False
 
     # 加载 WrongQuestion（可能不存在）
     wq_result = await db.execute(
-        select(WrongQuestion).where(
+        select(WrongQuestion)
+        .where(
             WrongQuestion.user_id == user_id,
             WrongQuestion.question_id == question_id,
         )
+        .order_by(WrongQuestion.id.asc())
     )
-    wq = wq_result.scalar_one_or_none()
+    wrong_questions = list(wq_result.scalars().all())
+    wq = wrong_questions[0] if wrong_questions else None
 
     # 加载所有关联的 ReviewSchedule（不存在 UNIQUE 约束，全量更新）
     sch_result = await db.execute(
@@ -81,12 +117,15 @@ async def set_mastered_state(
     )
     schedules = list(sch_result.scalars().all())
 
+    # mastered 是“是否继续进入正常复习”的状态；复习掌握度由
+    # UserQuestionState 独立记录，只能由实际答题表现改变。手动标记/撤销掌握
+    # 不应抬高或降低 box_level，否则百分比会被按钮操作伪造。
     if mastered:
         # ── 收敛到已掌握 ──
-        if wq:
-            if not wq.mastered or wq.mastered_at is None:
-                wq.mastered = True
-                wq.mastered_at = now
+        for wrong_question in wrong_questions:
+            if not wrong_question.mastered or wrong_question.mastered_at is None:
+                wrong_question.mastered = True
+                wrong_question.mastered_at = now
                 changed = True
         for s in schedules:
             if not s.mastered:
@@ -94,10 +133,10 @@ async def set_mastered_state(
                 changed = True
     else:
         # ── 收敛到未掌握 ──
-        if wq:
-            if wq.mastered or wq.mastered_at is not None:
-                wq.mastered = False
-                wq.mastered_at = None
+        for wrong_question in wrong_questions:
+            if wrong_question.mastered or wrong_question.mastered_at is not None:
+                wrong_question.mastered = False
+                wrong_question.mastered_at = None
                 changed = True
         for s in schedules:
             if s.mastered:
@@ -129,6 +168,45 @@ async def set_mastered_state(
     return changed
 
 
+async def sync_mastery_from_question_state(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    question_id: int,
+    is_correct: bool,
+) -> dict:
+    """按 UserQuestionState 收敛 WrongQuestion/ReviewSchedule 的掌握状态。
+
+    答对达到 80% 自动掌握；任何一次答错都取消掌握。未达到阈值的答对
+    不会强制撤销已有手动掌握状态。
+    """
+    from app.services import question_review_service
+
+    mastery = await question_review_service.get_user_question_mastery(
+        db, user_id, question_id
+    )
+    if not is_correct:
+        await set_mastered_state(
+            db, user_id=user_id, question_id=question_id, mastered=False
+        )
+        mastered = False
+    elif mastery["auto_mastered"]:
+        await set_mastered_state(
+            db, user_id=user_id, question_id=question_id, mastered=True
+        )
+        mastered = True
+    else:
+        result = await db.execute(
+            select(WrongQuestion.mastered).where(
+                WrongQuestion.user_id == user_id,
+                WrongQuestion.question_id == question_id,
+            )
+        )
+        mastered = bool(result.scalars().first())
+
+    return {**mastery, "mastered": mastered}
+
+
 async def get_today_review(
     db: AsyncSession,
     user_id: int,
@@ -144,17 +222,28 @@ async def get_today_review(
     if subject_id:
         conditions.append(ReviewSchedule.subject_id == subject_id)
 
-    count_q = select(func.count(ReviewSchedule.id)).where(and_(*conditions))
-    total = (await db.execute(count_q)).scalar()
+    count_q = select(func.count(func.distinct(ReviewSchedule.question_id))).where(
+        and_(*conditions)
+    )
+    total = (await db.execute(count_q)).scalar() or 0
 
+    # 旧数据可能同题存在多个 schedule。先按到期时间稳定排序，再按 question_id
+    # 去重后应用 limit，避免重复记录挤占返回名额。
     q = (
         select(ReviewSchedule)
         .where(and_(*conditions))
-        .order_by(ReviewSchedule.next_review_at.asc())
-        .limit(limit)
+        .order_by(ReviewSchedule.next_review_at.asc(), ReviewSchedule.id.asc())
     )
     result = await db.execute(q)
-    schedules = list(result.scalars().all())
+    schedules = []
+    seen_question_ids: set[int] = set()
+    for candidate in result.scalars().all():
+        if candidate.question_id in seen_question_ids:
+            continue
+        seen_question_ids.add(candidate.question_id)
+        schedules.append(candidate)
+        if len(schedules) >= limit:
+            break
 
     question_ids = [s.question_id for s in schedules]
     questions_map = {}
@@ -197,6 +286,49 @@ async def get_today_review(
     }
 
 
+async def _get_today_record_for_question(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    question_id: int,
+) -> ReviewRecord | None:
+    """Return today's latest successful review record for this question.
+
+    Idempotency is intentionally keyed by ``(user_id, question_id, local day)``
+    rather than schedule_id because historical data may contain multiple schedules
+    for the same question.  A stale client submitting another duplicate schedule ID
+    must still resolve to the first real attempt instead of advancing mastery twice.
+    """
+    today_start, today_end = shanghai_today_boundaries()
+    result = await db.execute(
+        select(ReviewRecord)
+        .where(
+            ReviewRecord.user_id == user_id,
+            ReviewRecord.question_id == question_id,
+            ReviewRecord.reviewed_at >= today_start,
+            ReviewRecord.reviewed_at <= today_end,
+        )
+        .order_by(ReviewRecord.reviewed_at.desc(), ReviewRecord.id.desc())
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
+async def _current_mastered_state(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    question_id: int,
+) -> bool:
+    result = await db.execute(
+        select(WrongQuestion.mastered).where(
+            WrongQuestion.user_id == user_id,
+            WrongQuestion.question_id == question_id,
+        )
+    )
+    return bool(result.scalars().first())
+
+
 async def submit_review(
     db: AsyncSession,
     user_id: int,
@@ -210,17 +342,60 @@ async def submit_review(
     if rating < 0 or rating > 5:
         raise ValueError(f"评分必须在 0-5 之间，收到: {rating}")
 
+    # 先按 user + question 获取 PostgreSQL 事务级 advisory lock，再锁当前
+    # schedule。题目级锁可以把两个历史重复 schedule_id 的并发提交也串行化。
+    await lock_question_review_state(
+        db, user_id=user_id, question_id=question_id
+    )
     result = await db.execute(
-        select(ReviewSchedule).where(
+        select(ReviewSchedule)
+        .where(
             ReviewSchedule.id == schedule_id,
             ReviewSchedule.user_id == user_id,
         )
+        .with_for_update()
     )
-    schedule = result.scalar_one_or_none()
+    schedule = result.scalars().first()
     if not schedule:
         raise ValueError(f"复习记录不存在: {schedule_id}")
     if schedule.question_id != question_id:
         raise ValueError("题目与复习记录不匹配")
+
+    existing_record = await _get_today_record_for_question(
+        db,
+        user_id=user_id,
+        question_id=question_id,
+    )
+    if (
+        existing_record is not None
+        and schedule.next_review_at is not None
+        and schedule.next_review_at > utcnow()
+    ):
+        # schedule 已被上一次提交推进到未来时，相同评分视为网络重试，直接返回
+        # 第一次结果；不同评分则拒绝二次覆盖。若用户之后主动“重新加入复习”
+        # 把 next_review_at 拉回当前时间，则允许同日再次真实作答。
+        if existing_record.rating != rating:
+            raise ValueError("该题本轮复习结果已提交，请勿重复评分")
+
+        from app.services import question_review_service
+
+        mastery = await question_review_service.get_user_question_mastery(
+            db, user_id, question_id
+        )
+        return {
+            "schedule_id": existing_record.schedule_id or schedule.id,
+            "question_id": question_id,
+            "rating": existing_record.rating,
+            "interval_after": existing_record.interval_after or schedule.interval,
+            "ease_factor_after": existing_record.ease_factor_after or schedule.ease_factor,
+            "next_review_at": schedule.next_review_at,
+            "is_correct": existing_record.rating >= 3,
+            "mastery_percent": mastery["mastery_percent"],
+            "mastered": await _current_mastered_state(
+                db, user_id=user_id, question_id=question_id
+            ),
+            "already_submitted": True,
+        }
 
     sm2_result = calc_sm2(
         quality=rating,
@@ -241,11 +416,45 @@ async def submit_review(
     )[0]
     schedule.last_reviewed_at = utcnow()
 
+    # 历史数据可能存在同题多个 ReviewSchedule。一次真实复习后同步它们的
+    # SM-2 核心字段，防止未被选中的旧 schedule 仍停留在过去并于次日重复入队。
+    duplicate_result = await db.execute(
+        select(ReviewSchedule).where(
+            ReviewSchedule.user_id == user_id,
+            ReviewSchedule.question_id == question_id,
+            ReviewSchedule.id != schedule.id,
+        )
+    )
+    for duplicate in duplicate_result.scalars().all():
+        duplicate.ease_factor = schedule.ease_factor
+        duplicate.interval = schedule.interval
+        duplicate.repetitions = schedule.repetitions
+        duplicate.next_review_at = schedule.next_review_at
+        duplicate.last_reviewed_at = schedule.last_reviewed_at
+
+    # 复习作答必须和普通练习一样更新 UserQuestionState，否则错题掌握度会停滞。
+    from app.services import question_review_service
+
+    is_correct = rating >= 3
+    await question_review_service.update_user_question_state_after_answer(
+        db,
+        user_id,
+        question_id,
+        is_correct,
+        answered_at=schedule.last_reviewed_at,
+    )
+    mastery_state = await sync_mastery_from_question_state(
+        db,
+        user_id=user_id,
+        question_id=question_id,
+        is_correct=is_correct,
+    )
+
     # 同步复习状态；本次仍答错时，同时刷新错题详情中的“我的错题”。
     await _sync_schedule_to_wq(
         db,
         schedule,
-        latest_wrong_answer=latest_wrong_answer if rating < 3 else None,
+        latest_wrong_answer=latest_wrong_answer if not is_correct else None,
     )
 
     record = ReviewRecord(
@@ -272,7 +481,10 @@ async def submit_review(
         "interval_after": sm2_result["interval"],
         "ease_factor_after": sm2_result["efactor"],
         "next_review_at": schedule.next_review_at,
-        "is_correct": rating >= 3,
+        "is_correct": is_correct,
+        "mastery_percent": mastery_state["mastery_percent"],
+        "mastered": mastery_state["mastered"],
+        "already_submitted": False,
     }
 
 
@@ -281,8 +493,21 @@ async def batch_submit_review(
     user_id: int,
     reviews: list[dict],
 ) -> dict:
-    results = []
-    for item in reviews:
+    # auto_commit=False keeps one transaction open for the whole batch.  Acquire
+    # per-question locks in a stable order to avoid advisory-lock deadlocks when
+    # two clients submit overlapping batches concurrently, while preserving the
+    # caller's result order.
+    indexed_reviews = list(enumerate(reviews))
+    ordered_reviews = sorted(
+        indexed_reviews,
+        key=lambda pair: (
+            int(pair[1].get("question_id") or 0),
+            int(pair[1].get("schedule_id") or 0),
+            pair[0],
+        ),
+    )
+    indexed_results: list[tuple[int, dict]] = []
+    for original_index, item in ordered_reviews:
         try:
             r = await submit_review(
                 db=db,
@@ -292,23 +517,30 @@ async def batch_submit_review(
                 rating=item["rating"],
                 auto_commit=False,
             )
-            results.append({
+            payload = {
                 "schedule_id": r["schedule_id"],
                 "question_id": r["question_id"],
+                "success": True,
+                "error": None,
                 "next_review_at": r["next_review_at"],
                 "is_correct": r["is_correct"],
-            })
+                "mastery_percent": r["mastery_percent"],
+                "mastered": r["mastered"],
+            }
         except ValueError as e:
             # 单题失败不影响其他题目，记录错误并继续
-            results.append({
+            payload = {
                 "schedule_id": item.get("schedule_id"),
                 "question_id": item.get("question_id"),
+                "success": False,
+                "error": str(e),
                 "next_review_at": None,
                 "is_correct": False,
-                "error": str(e),
-            })
-    # 单事务批量提交
+            }
+        indexed_results.append((original_index, payload))
+
     await db.commit()
+    results = [payload for _, payload in sorted(indexed_results, key=lambda x: x[0])]
     return {"results": results, "total": len(results)}
 
 
@@ -322,7 +554,7 @@ async def get_review_stats(
     since = shanghai_date_utc_range(today - timedelta(days=days - 1))[0]
 
     # Total scheduled
-    total_q = select(func.count(ReviewSchedule.id)).where(
+    total_q = select(func.count(func.distinct(ReviewSchedule.question_id))).where(
         ReviewSchedule.user_id == user_id
     )
     total_scheduled = (await db.execute(total_q)).scalar()
@@ -336,7 +568,7 @@ async def get_review_stats(
     total_reviewed_today = (await db.execute(reviewed_today_q)).scalar()
 
     # Remaining today (exclude mastered)
-    remaining_q = select(func.count(ReviewSchedule.id)).where(
+    remaining_q = select(func.count(func.distinct(ReviewSchedule.question_id))).where(
         ReviewSchedule.user_id == user_id,
         ReviewSchedule.next_review_at <= today_end,
         ~ReviewSchedule.mastered,
@@ -344,7 +576,7 @@ async def get_review_stats(
     remaining_today = (await db.execute(remaining_q)).scalar()
 
     # Overdue (next_review_at < now, not reviewed today, exclude mastered)
-    overdue_q = select(func.count(ReviewSchedule.id)).where(
+    overdue_q = select(func.count(func.distinct(ReviewSchedule.question_id))).where(
         ReviewSchedule.user_id == user_id,
         ReviewSchedule.next_review_at < today_start,
         ~ReviewSchedule.mastered,
@@ -373,10 +605,19 @@ async def get_review_stats(
     subject_result = await db.execute(
         select(
             ReviewSchedule.subject_id,
-            func.count(ReviewSchedule.id).label("scheduled"),
-            func.sum(
-                case(
-                    (and_(ReviewSchedule.next_review_at <= today_end, ~ReviewSchedule.mastered), 1), else_=0
+            func.count(func.distinct(ReviewSchedule.question_id)).label("scheduled"),
+            func.count(
+                func.distinct(
+                    case(
+                        (
+                            and_(
+                                ReviewSchedule.next_review_at <= today_end,
+                                ~ReviewSchedule.mastered,
+                            ),
+                            ReviewSchedule.question_id,
+                        ),
+                        else_=None,
+                    )
                 )
             ).label("remaining"),
         )
@@ -488,24 +729,34 @@ async def auto_schedule_wrong_question(
     因此必须先按 Asia/Shanghai 确定次日，再转换成数据库使用的 naive UTC。
     这样当天新产生的错题只进入错题池，不会被当天的“今日复习”查询命中。
     """
+    await lock_question_review_state(
+        db, user_id=user_id, question_id=question_id
+    )
+
     first_review_date = shanghai_today() + timedelta(days=1)
     first_review_at = shanghai_date_utc_range(first_review_date)[0]
 
     result = await db.execute(
-        select(ReviewSchedule).where(
+        select(ReviewSchedule)
+        .where(
             ReviewSchedule.user_id == user_id,
             ReviewSchedule.question_id == question_id,
         )
+        .order_by(ReviewSchedule.id.asc())
     )
-    schedule = result.scalar_one_or_none()
+    schedules = list(result.scalars().all())
+    schedule = schedules[0] if schedules else None
 
     if schedule:
-        # 已有 schedule → 按新错题重新进入记忆周期，次日开始首次复习
-        schedule.interval = 1
-        schedule.ease_factor = 2.5
-        schedule.repetitions = 0
-        schedule.next_review_at = first_review_at
-        schedule.last_reviewed_at = None
+        # 历史数据可能存在重复 schedule。重新做错时应统一重置全部记录，
+        # 不能用 scalar_one_or_none() 因重复数据直接抛 MultipleResultsFound。
+        for existing_schedule in schedules:
+            existing_schedule.interval = 1
+            existing_schedule.ease_factor = 2.5
+            existing_schedule.repetitions = 0
+            existing_schedule.next_review_at = first_review_at
+            existing_schedule.last_reviewed_at = None
+            existing_schedule.mastered = False
     else:
         # 获取题目科目
         q_result = await db.execute(
@@ -639,12 +890,22 @@ async def _get_today_review_task_state(
     # 标记掌握不会产生 ReviewRecord，但该题仍属于今天原有任务，并应从剩余数
     # 中移除。master 操作不会改 next_review_at，因此仍可判断它原本是否今日到期。
     mastered_result = await db.execute(
-        select(ReviewSchedule).where(
+        select(ReviewSchedule)
+        .join(
+            WrongQuestion,
+            and_(
+                WrongQuestion.user_id == ReviewSchedule.user_id,
+                WrongQuestion.question_id == ReviewSchedule.question_id,
+            ),
+        )
+        .where(
             ReviewSchedule.user_id == user_id,
             ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= today_end,
             ReviewSchedule.updated_at >= today_start,
             ReviewSchedule.updated_at <= today_end,
+            WrongQuestion.is_active,
+            WrongQuestion.mastered,
         )
     )
     mastered_schedules = list(mastered_result.scalars().all())
@@ -681,11 +942,24 @@ async def _get_today_review_task_state(
         task_schedules.append(schedule)
 
     task_question_ids = {s.question_id for s in task_schedules}
-    mastered_question_ids = {
-        s.question_id
-        for s in mastered_schedules
-        if s.question_id in task_question_ids
-    }
+    # 自动掌握发生在 submit_review 内：schedule 会先推进到未来，再同步 mastered=True。
+    # 这类题虽然不会命中上面的“今日到期 mastered_schedules”查询，但会通过
+    # ReviewRecord 进入 task_schedules，因此应直接按今日任务集合中的当前状态统计。
+    # ReviewSchedule.mastered is also used internally to suppress inactive/removed
+    # wrong questions from the queue, so it cannot by itself mean "user mastered".
+    # Count mastery only when the active WrongQuestion carries the mastered state.
+    mastered_question_ids: set[int] = set()
+    if task_question_ids:
+        mastered_wq_result = await db.execute(
+            select(func.distinct(WrongQuestion.question_id)).where(
+                WrongQuestion.user_id == user_id,
+                WrongQuestion.question_id.in_(task_question_ids),
+                WrongQuestion.is_active,
+                WrongQuestion.mastered,
+            )
+        )
+        mastered_question_ids = {row[0] for row in mastered_wq_result.all()}
+
     completed_question_ids = (
         reviewed_question_ids | mastered_question_ids
     ) & task_question_ids
@@ -944,7 +1218,7 @@ async def get_today_review_result(
 
     tomorrow_end = tomorrow_start + timedelta(days=1) - timedelta(microseconds=1)
     tomorrow_q = await db.execute(
-        select(func.count(ReviewSchedule.id)).where(
+        select(func.count(func.distinct(ReviewSchedule.question_id))).where(
             ReviewSchedule.user_id == user_id,
             ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at >= tomorrow_start,

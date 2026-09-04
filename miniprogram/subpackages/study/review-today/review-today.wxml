@@ -195,7 +195,7 @@
       <view class="result-stat-strip">
         <view class="result-stat"><text class="result-stat-value success">{{groupCorrect}}</text><text>正确</text></view>
         <view class="result-stat"><text class="result-stat-value danger">{{groupWrong}}</text><text>需巩固</text></view>
-        <view class="result-stat"><text class="result-stat-value muted">{{_groupSkipped}}</text><text>跳过</text></view>
+        <view class="result-stat"><text class="result-stat-value muted">{{_groupSkipped}}</text><text>未提交</text></view>
       </view>
     </view>
 
@@ -207,7 +207,7 @@
       </view>
       <view>
         <text class="memory-update-title">记忆计划已更新</text>
-        <text class="memory-update-desc">本组错题会在更合适的时间再次出现。</text>
+        <text class="memory-update-desc">掌握度已更新；达到 80% 的题目将退出复习计划，未掌握题会在更合适的时间再次出现。</text>
       </view>
     </view>
 
@@ -250,7 +250,7 @@
       <view class="detail-list" wx:if="{{showGroupDetails}}">
         <view
           wx:for="{{groupResults}}" wx:key="schedule_id"
-          class="detail-item {{item.wasSkipped ? 'is-skipped' : (item.isCorrect ? 'is-correct' : 'is-wrong')}}"
+          class="detail-item {{!item.wasSubmitted ? 'is-skipped' : (item.isCorrect ? 'is-correct' : 'is-wrong')}}"
         >
           <view class="detail-status-dot"></view>
           <view class="detail-item-body">
@@ -259,10 +259,14 @@
               <rich-text wx:elif="{{item._renderModel.mode === 'RICH_TEXT'}}" nodes="{{item._renderModel.richTextNodes}}"></rich-text>
               <text wx:else>{{item._stemPreview}}</text>
             </view>
-            <text class="detail-answer" wx:if="{{!item.wasSkipped && !item.isCorrect}}">你的 {{item.userAnswer || '未作答'}} · 正确 {{item.correctAnswer}}</text>
+            <text class="detail-answer" wx:if="{{item.submitFailed}}">{{item.submitError || '本题提交失败，已保留待重试'}}</text>
+            <text class="detail-answer" wx:elif="{{item.wasSubmitted && !item.isCorrect}}">你的 {{item.userAnswer || '未作答'}} · 正确 {{item.correctAnswer}}</text>
             <text class="detail-answer" wx:elif="{{item.wasSkipped}}">本题未提交</text>
           </view>
-          <text class="detail-status-text">{{item.wasSkipped ? '跳过' : (item.isCorrect ? '正确' : '错误')}}</text>
+          <view class="detail-status-stack">
+            <text class="detail-status-text">{{item.submitFailed ? '提交失败' : (item.wasSkipped ? '未提交' : (item.isCorrect ? '正确' : '错误'))}}</text>
+            <text wx:if="{{item.wasSubmitted && item.masteryPercent !== null}}" class="detail-mastery-text">掌握 {{item.masteryPercent}}%{{item.mastered ? ' · 已掌握' : ''}}</text>
+          </view>
         </view>
       </view>
     </view>
@@ -333,7 +337,7 @@
     <view class="sheet-handle"></view>
     <text class="decision-kicker">MASTERED</text>
     <text class="decision-title">确认已经掌握？</text>
-    <text class="decision-desc">标记后，这道题将不再进入后续复习计划，但仍会保留在历史错题记录中。</text>
+    <text class="decision-desc">标记后，这道题会退出当前复习计划并保留在历史错题记录中；以后再次答错时会自动重新加入复习。</text>
     <view class="decision-actions">
       <button class="decision-secondary" bindtap="cancelMaster">继续看看</button>
       <button class="decision-primary" bindtap="confirmMaster">确认掌握</button>

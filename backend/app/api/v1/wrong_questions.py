@@ -1,7 +1,7 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Float, case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -24,6 +24,7 @@ from app.schemas.wrong_question import (
     WrongQuestionStats,
     WrongQuestionUpdate,
 )
+from app.services import question_review_service
 from app.services import wrong_question_service as svc
 from app.services.knowledge_point_service import load_question_kps
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
@@ -173,21 +174,15 @@ async def _enrich_single_wq_extra(
         ).order_by(ReviewSchedule.last_reviewed_at.desc().nulls_last()).limit(1)
     )
 
-    mastery_pct = (
+    box_level = (
         await db.execute(
-            select(
-                case(
-                    (UserQuestionState.answer_count > 0,
-                     func.cast(UserQuestionState.correct_count, Float) /
-                     func.cast(UserQuestionState.answer_count, Float)),
-                    else_=0.0,
-                )
-            ).where(
+            select(UserQuestionState.box_level).where(
                 UserQuestionState.question_id == wq.question_id,
                 UserQuestionState.user_id == user_id,
             )
         )
-    ).scalar() or 0.0
+    ).scalar_one_or_none()
+    mastery_pct = question_review_service.mastery_ratio_for_box(box_level)
 
     return {
         "review_record_count": review_record_count,
@@ -310,9 +305,22 @@ async def rate_quality(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    wq = await svc.update_quality(db, current_user.id, wq_id, data.quality)
+    try:
+        wq = await svc.update_quality(db, current_user.id, wq_id, data.quality)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not wq:
         raise HTTPException(status_code=404, detail="错题记录不存在")
+
+    # quality 会实际推进复习计划并可能改变自动掌握状态，与 grade-submit
+    # 一样必须同步清理 review / stats / wrong-book 缓存。
+    uid = current_user.id
+    for pattern in (
+        f"wrong_questions:*:{uid}*",
+        f"review:*:{uid}*",
+        f"stats:*:{uid}*",
+    ):
+        await cache.delete(pattern)
 
     result = await db.execute(
         select(Question).options(selectinload(Question.subject_ref)).where(Question.id == wq.question_id)
@@ -340,7 +348,10 @@ async def batch_operate(
     patterns = [
         f"wrong_questions:*:{uid}*",
         f"stats:*:{uid}*",
-        f"review:today:*:{uid}*",
+        # review 缓存键实际形态包括 review:today:{uid}:...、
+        # review:today_overview:{uid}、review:schedule_stats:{uid}:...。
+        # 旧 pattern 的 uid 位置写反，导致掌握/重新加入后入口页短暂显示旧数量。
+        f"review:*:{uid}*",
         f"stats:dashboard*:{uid}*",
     ]
     for p in patterns:

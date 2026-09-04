@@ -12,6 +12,7 @@ from app.models.user import User
 from app.models.question import Question
 from app.models.question_import import QuestionImport
 from app.models.practice_record import PracticeRecord
+from app.models.practice_session import PracticeSession
 from app.models.wrong_question import WrongQuestion
 from app.models.answer_behavior import AnswerBehavior
 from app.models.ai_chat import AiChat

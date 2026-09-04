@@ -1378,7 +1378,8 @@ Page({
     const lastErrorAt = item.last_wrong_at || item.last_error_at || item.updated_at || item.created_at
     const mastery = this._masteryProgress(item, reviewCount)
     const explicitMastered = item.is_mastered === true || item.status === 'mastered' || item.mastered === true
-    const isMastered = explicitMastered || mastery.percent >= 80
+    // mastered 以服务端统一状态为准；百分比只负责展示，避免前端显示已掌握但后端仍调度。
+    const isMastered = explicitMastered
     const dueInfo = this._reviewDueInfo(item, isMastered)
     const isRecent = this._isRecentDate(item.created_at || item.last_wrong_at || item.updated_at, 14)
 
@@ -1477,7 +1478,7 @@ Page({
       { key: 'high', title: '高频错题', desc: '重复出错次数较多，建议集中攻克', icon: '频', tone: 'orange', rows: high },
       { key: 'recent', title: '最近新增', desc: '近 14 天新加入错题本的题目', icon: '新', tone: 'blue', rows: recent },
       { key: 'waiting', title: '待巩固', desc: '尚未到复习日，但仍未完全掌握', icon: '固', tone: 'neutral', rows: waiting },
-      { key: 'mastered', title: '已经掌握', desc: '已达到掌握标准，后续按计划抽查', icon: '✓', tone: 'green', rows: mastered },
+      { key: 'mastered', title: '已经掌握', desc: '已达到掌握标准，不再进入正常复习；再次答错会重新加入', icon: '✓', tone: 'green', rows: mastered },
     ]
 
     const groups = configs
@@ -1653,7 +1654,8 @@ Page({
     const raw = item.mastery_progress || item.mastery_percent || item.mastery
     if (raw !== undefined && raw !== null && raw !== '') {
       const percent = Math.max(0, Math.min(100, Number(raw) > 1 ? Number(raw) : Number(raw) * 100))
-      return { percent: Math.round(percent), label: percent >= 80 ? '接近掌握' : percent >= 40 ? '巩固中' : '待攻克' }
+      const mastered = item.is_mastered === true || item.status === 'mastered' || item.mastered === true
+      return { percent: Math.round(percent), label: mastered ? '已掌握' : percent >= 40 ? '巩固中' : '待攻克' }
     }
 
     const percent = Math.min(90, reviewCount * 20)

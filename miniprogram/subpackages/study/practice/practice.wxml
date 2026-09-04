@@ -180,7 +180,7 @@
         <view class="reward-strip-items">
           <view class="reward-strip-item">
             <text class="reward-strip-label">成长值</text>
-            <text class="reward-strip-value">+{{count * 6}}</text>
+            <text class="reward-strip-value reward-strip-text">完成后结算</text>
           </view>
           <view class="reward-strip-divider"></view>
           <view class="reward-strip-item reward-strip-output">
@@ -258,7 +258,7 @@
                   <view class="parent-folder">□</view>
                   <view class="parent-copy">
                     <text class="parent-name">{{item.display_name}}</text>
-                    <text class="parent-meta" wx:if="{{item.children && item.children.length > 0}}">{{item.children.length}} 个子科目 · 可选择全部</text>
+                    <text class="parent-meta" wx:if="{{item.children && item.children.length > 0}}">{{item.descendant_count || item.children.length}} 个下级科目 · 可选择全部</text>
                     <text class="parent-meta" wx:else>可直接选择</text>
                   </view>
                 </view>
@@ -275,17 +275,18 @@
                   </view>
                 </view>
               </view>
-              <view class="child-subject-wrap" wx:if="{{expandedSubjectId === item.subject_id && item.children && item.children.length > 0}}">
+              <view class="child-subject-wrap" wx:if="{{expandedSubjectId === item.subject_id && item.flat_children && item.flat_children.length > 0}}">
                 <view
-                  wx:for="{{item.children}}"
+                  wx:for="{{item.flat_children}}"
                   wx:key="subject_id"
                   class="child-subject-row {{selectedSubjectId === item.subject_id ? 'active' : ''}}"
                   hover-class="soft-pressed"
                   catchtap="chooseChildSubject"
                   data-subject-id="{{item.subject_id}}"
                   data-subject-name="{{item.display_name}}"
+                  data-has-children="{{item.has_children}}"
                 >
-                  <text class="child-subject-name">{{item.display_name}}</text>
+                  <text class="child-subject-name" style="margin-left: {{item.indent_rpx || 0}}rpx;">{{item.display_name}}</text>
                   <view class="child-select-mark" wx:if="{{selectedSubjectId === item.subject_id}}">✓</view>
                 </view>
               </view>

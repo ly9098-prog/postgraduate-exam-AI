@@ -354,7 +354,7 @@
           </view>
           <view class="question-end" wx:if="{{!batchMode}}">
             <text class="question-end-value">{{question._masteryPercent}}%</text>
-            <text class="question-end-label">{{question._masteryPercent >= 80 ? '已掌握' : question._masteryPercent >= 40 ? '巩固中' : '待攻克'}}</text>
+            <text class="question-end-label">{{question._isMastered ? '已掌握' : question._masteryPercent >= 40 ? '巩固中' : '待攻克'}}</text>
             <text class="question-chevron">›</text>
           </view>
         </view>
@@ -415,7 +415,7 @@
         </view>
         <view class="question-end" wx:if="{{!batchMode}}">
           <text class="question-end-value">{{question._masteryPercent}}%</text>
-          <text class="question-end-label">{{question._masteryPercent >= 80 ? '已掌握' : question._masteryPercent >= 40 ? '巩固中' : '待攻克'}}</text>
+          <text class="question-end-label">{{question._isMastered ? '已掌握' : question._masteryPercent >= 40 ? '巩固中' : '待攻克'}}</text>
           <text class="question-chevron">›</text>
         </view>
       </view>

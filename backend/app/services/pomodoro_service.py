@@ -922,27 +922,39 @@ async def _load_overlapping_practice_sessions(
         PracticeSession.finished_at > period_start,
     )
     if with_subject:
+        # Select only attribution columns. PracticeSession now carries a potentially
+        # large submission_response JSON used for idempotent result replay; loading
+        # full ORM rows here would deserialize that payload for every stats query
+        # even though attribution never reads it.
         result = await db.execute(
-            select(PracticeSession)
-            .options(joinedload(PracticeSession.subject_ref))
+            select(
+                PracticeSession.started_at,
+                PracticeSession.finished_at,
+                PracticeSession.duration_sec,
+                PracticeSession.subject_id,
+                Subject.code,
+                Subject.name,
+                Subject.is_active,
+            )
+            .outerjoin(Subject, Subject.id == PracticeSession.subject_id)
             .where(*overlap)
         )
         out: list[_LiteSession] = []
-        for s in result.scalars().all():
-            ref = s.subject_ref
+        for row in result.all():
+            has_subject = row.code is not None or row.name is not None or row.is_active is not None
             out.append(
                 _LiteSession(
-                    start_time=s.started_at,
-                    end_time=s.finished_at,
-                    actual_duration=s.duration_sec,
-                    subject_id=s.subject_id,
+                    start_time=row.started_at,
+                    end_time=row.finished_at,
+                    actual_duration=row.duration_sec,
+                    subject_id=row.subject_id,
                     subject_ref=(
                         SimpleNamespace(
-                            code=ref.code or "",
-                            name=ref.name or "",
-                            is_active=ref.is_active,
+                            code=row.code or "",
+                            name=row.name or "",
+                            is_active=bool(row.is_active),
                         )
-                        if ref is not None
+                        if has_subject
                         else None
                     ),
                     pause_intervals=[],
