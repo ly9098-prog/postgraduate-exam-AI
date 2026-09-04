@@ -235,6 +235,7 @@ class AIModelConfigResolver:
         *,
         requested_config_id: int | str | None = None,
         deployment_profile: str | None = None,
+        excluded_config_ids: set[int] | frozenset[int] | None = None,
     ) -> ResolvedAIModelConfig:
         """Resolve the best model config for a given capability.
 
@@ -258,8 +259,12 @@ class AIModelConfigResolver:
         """
         capability = capability.value if isinstance(capability, AICapability) else str(capability)
 
-        # Check cache
-        cache_key = f"{capability}:{requested_config_id or ''}"
+        excluded_ids = frozenset(int(item) for item in (excluded_config_ids or set()))
+
+        # Check cache. Exclusions are part of the key because failover may ask
+        # the same resolver instance for the next eligible model.
+        excluded_key = ",".join(str(item) for item in sorted(excluded_ids))
+        cache_key = f"{capability}:{requested_config_id or ''}:{excluded_key}"
         if cache_key in self._cache:
             cached = self._cache[cache_key]
             if cached is None:
@@ -270,7 +275,11 @@ class AIModelConfigResolver:
             return cached
 
         try:
-            result = await self._resolve(capability, requested_config_id=requested_config_id)
+            result = await self._resolve(
+                capability,
+                requested_config_id=requested_config_id,
+                excluded_config_ids=excluded_ids,
+            )
             self._cache[cache_key] = result
             return result
         except (ValueError, TypeError):
@@ -305,11 +314,17 @@ class AIModelConfigResolver:
         capability: str,
         *,
         requested_config_id: int | str | None = None,
+        excluded_config_ids: frozenset[int] = frozenset(),
     ) -> ResolvedAIModelConfig:
         """Internal resolution logic."""
         db_features = self._capability_to_db_features(capability)
 
         if requested_config_id is not None:
+            if int(requested_config_id) in excluded_config_ids:
+                raise ValueError(
+                    AIConfigErrorCode.AI_MODEL_DISABLED.value,
+                    f"Model config id={requested_config_id} is excluded for this resolution",
+                )
             return await self._resolve_by_id(requested_config_id, db_features, capability=capability)
 
         # Query all enabled models
@@ -321,7 +336,10 @@ class AIModelConfigResolver:
                 AdminAiModelConfig.sort_order.asc(),
             )
         )
-        all_enabled = result.scalars().all()
+        all_enabled = [
+            model for model in result.scalars().all()
+            if int(model.id) not in excluded_config_ids
+        ]
 
         if not all_enabled:
             raise ValueError(
@@ -412,6 +430,12 @@ class AIModelConfigResolver:
     ) -> ResolvedAIModelConfig:
         """Convert an ORM model to a ResolvedAIModelConfig (no secrets)."""
         model_features = _get_model_features(model)
+        # Include a one-way revision of the encrypted credential so changing an
+        # API key invalidates runtime health/quarantine state without exposing the
+        # secret itself in snapshots or logs.
+        secret_revision = hashlib.sha256(
+            str(model.api_key_encrypted or "").encode("utf-8")
+        ).hexdigest()[:16]
         fp = hashlib.sha256(
             json.dumps({
                 "id": model.id,
@@ -421,6 +445,7 @@ class AIModelConfigResolver:
                 "features": sorted(str(f) for f in model_features),
                 "is_enabled": model.is_enabled,
                 "is_default": model.is_default,
+                "secret_revision": secret_revision,
             }, sort_keys=True).encode()
         ).hexdigest()[:16]
 

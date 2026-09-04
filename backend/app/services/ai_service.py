@@ -45,6 +45,74 @@ ERROR_ANALYSIS_LOCK_GRACE_SECONDS = 15
 # 同进程内生成中锁，防止并发重复调用大模型
 _generating: set[int] = set()
 
+# A bad credential is a configuration failure, not a transient provider outage.
+# Quarantine the exact model-config revision briefly so one invalid key does not
+# make every newly-created wrong question hit the provider and emit another 401.
+# The fingerprint changes when the encrypted credential changes, so an admin key
+# update becomes eligible immediately instead of waiting for this TTL.
+_ANALYSIS_AUTH_QUARANTINE_SECONDS = 15 * 60
+_ANALYSIS_RUNTIME_RESOLUTION_LIMIT = 16
+
+
+def _analysis_auth_quarantine_key(runtime) -> str | None:
+    if runtime is None or runtime.model_config_id is None:
+        return None
+    fingerprint = str(getattr(runtime, "config_fingerprint", "") or "legacy")
+    return f"ai:analysis:auth_failed:{runtime.model_config_id}:{fingerprint}"
+
+
+async def _is_analysis_runtime_auth_quarantined(runtime) -> bool:
+    key = _analysis_auth_quarantine_key(runtime)
+    if not key:
+        return False
+    from app.core.cache import cache
+
+    return bool(await cache.get(key))
+
+
+async def _quarantine_analysis_runtime_auth(runtime) -> None:
+    key = _analysis_auth_quarantine_key(runtime)
+    if not key:
+        return
+    from app.core.cache import cache
+
+    await cache.set(
+        key,
+        {
+            "model_config_id": runtime.model_config_id,
+            "provider": runtime.provider,
+            "model_name": runtime.model_name,
+        },
+        ttl=_ANALYSIS_AUTH_QUARANTINE_SECONDS,
+    )
+
+
+async def _resolve_healthy_analysis_runtime(
+    db: AsyncSession,
+    *,
+    excluded_model_config_ids: set[int] | None = None,
+):
+    excluded = {int(item) for item in (excluded_model_config_ids or set())}
+    for _ in range(_ANALYSIS_RUNTIME_RESOLUTION_LIMIT):
+        runtime = await resolve_llm_runtime_config(
+            db,
+            feature="analysis",
+            exclude_model_config_ids=excluded,
+        )
+        if runtime is None:
+            return None
+        model_id = runtime.model_config_id
+        if model_id is None:
+            return runtime
+        if not await _is_analysis_runtime_auth_quarantined(runtime):
+            return runtime
+        excluded.add(int(model_id))
+        logger.info(
+            "ai.error_analysis.model_skipped model_config_id=%s provider=%s model=%s reason=auth_quarantined",
+            model_id, runtime.provider, runtime.model_name,
+        )
+    return None
+
 
 def _pick_field(d: dict, candidates: list[str]) -> str:
     """Return the first non-empty normalized value from candidate keys."""
@@ -120,8 +188,14 @@ def _classify_ai_provider_exception(exc: Exception, *, visual: bool) -> tuple[st
     conservative and does not expose provider response bodies to clients.
     """
     text = str(exc or "").lower()
-    status_match = re.search(r"(?:api error:|status(?:_code)?[=: ]+)\s*(\d{3})", text)
-    status = int(status_match.group(1)) if status_match else None
+    typed_status = getattr(exc, "status_code", None)
+    try:
+        status = int(typed_status) if typed_status is not None else None
+    except (TypeError, ValueError):
+        status = None
+    if status is None:
+        status_match = re.search(r"(?:api error:|status(?:_code)?[=: ]+)\s*(\d{3})", text)
+        status = int(status_match.group(1)) if status_match else None
 
     if status in {401, 403} or any(
         token in text
@@ -917,7 +991,7 @@ async def evaluate_cached_error_analysis(
         version_id = int(getattr(q, "question_version_id", 0) or wq.question_version_id or 0)
         kp_map = await load_revision_kp_names(db, [version_id])
         knowledge_points = kp_map.get(version_id, [])
-    runtime = await resolve_llm_runtime_config(db, feature="analysis")
+    runtime = await _resolve_healthy_analysis_runtime(db)
     input_signature = _analysis_input_signature(
         wq, q, knowledge_points, visual_sources=visual_sources
     )
@@ -998,7 +1072,7 @@ async def analyze_error(
     # Resolve the currently selected analysis model before the cache decision.
     # This is a cheap DB lookup compared with an LLM call and lets a model
     # configuration change invalidate old advice deterministically.
-    runtime = await resolve_llm_runtime_config(db, feature="analysis")
+    runtime = await _resolve_healthy_analysis_runtime(db)
     input_signature = _analysis_input_signature(
         wq, q, knowledge_points, visual_sources=stored_visual_sources
     )
@@ -1145,87 +1219,174 @@ async def analyze_error(
 
         context = build_error_context(wq, q, knowledge_points)
         context["question"]["structured_visual"] = structured_visual
-        qwen_fast_path = _qwen_error_analysis_fast_path(
-            runtime.provider, runtime.model_name, runtime.base_url
-        )
-        glm_direct_answer = _glm_error_analysis_direct_answer_path(
-            runtime.model_name, runtime.base_url
-        )
-        direct_answer_mode = qwen_fast_path or glm_direct_answer
-        image_max_pixels = _ERROR_ANALYSIS_QWEN_MAX_PIXELS if qwen_fast_path else None
-        # Wrong-detail needs a short final JSON answer, not a long reasoning trace.
-        # In Alibaba Model Studio GLM-5.2 defaults to thinking mode; with the
-        # bounded 800-token response budget that can yield reasoning_content only
-        # and an empty message.content, which then appears as parse_failed.
-        llm_extra_body = {"enable_thinking": False} if direct_answer_mode else None
-        messages = build_error_analysis(
-            context["question"],
-            wq.wrong_answer,
-            q.answer,
-            image_data_urls=image_data_urls,
-            image_max_pixels=image_max_pixels,
-        )
 
         # The mini-program request has a ~58s client budget. Resolving the
         # persisted question image may consume a few seconds, so keep response
         # headroom instead of spending the full timeout in the LLM call.
         model_timeout_sec = min(timeout_sec, 46) if image_data_urls else timeout_sec
-        try:
-            async with asyncio.timeout(model_timeout_sec + ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS):
-                result = await llm.chat(
-                    messages,
-                    temperature=0.2,
-                    model=runtime.model_name,
-                    api_key=runtime.api_key,
-                    base_url=runtime.base_url,
-                    provider=runtime.provider,
-                    timeout=model_timeout_sec,
-                    max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
-                    extra_body=llm_extra_body,
-                )
-        except TimeoutError:
+
+        def _failure_response(
+            *,
+            error_code: str,
+            retryable: bool,
+            failure_model: str,
+            duration_ms: int = 0,
+        ) -> dict:
             old_cache = build_any_cached_error_analysis_response(wq)
-            logger.warning(
-                "ai.error_analysis.timeout wq_id=%s force=%s visual=%s timeout_sec=%s has_old_cache=%s",
-                wq.id, effective_force, bool(image_data_urls), model_timeout_sec, bool(old_cache),
-            )
-            return {
-                "content": get_fallback_analysis(),
-                "from_cache": False,
-                "from_fallback": True,
-                "tokens_used": 0,
-                "model": "timeout",
-                "duration_ms": model_timeout_sec * 1000,
-                "force_regenerated": False,
-                "cache_preserved": False,
-                "visual_input_count": len(image_data_urls),
-                "error_code": "ai_provider_timeout",
-                "retryable": True,
-            }
-        except Exception as exc:
-            old_cache = build_any_cached_error_analysis_response(wq)
-            error_code, retryable, failure_model = _classify_ai_provider_exception(
-                exc, visual=bool(image_data_urls)
-            )
-            logger.exception(
-                "ai.error_analysis.exception wq_id=%s force=%s visual=%s error_code=%s "
-                "retryable=%s err=%s has_old_cache=%s",
-                wq.id, effective_force, bool(image_data_urls), error_code, retryable,
-                repr(exc), bool(old_cache),
-            )
+            if effective_force and old_cache is not None:
+                old_cache["error_code"] = error_code
+                old_cache["retryable"] = retryable
+                return old_cache
             return {
                 "content": get_fallback_analysis(),
                 "from_cache": False,
                 "from_fallback": True,
                 "tokens_used": 0,
                 "model": failure_model,
-                "duration_ms": 0,
+                "duration_ms": duration_ms,
                 "force_regenerated": False,
                 "cache_preserved": False,
                 "visual_input_count": len(image_data_urls),
                 "error_code": error_code,
                 "retryable": retryable,
             }
+
+        async def _invoke_runtime(selected_runtime):
+            qwen_fast_path = _qwen_error_analysis_fast_path(
+                selected_runtime.provider,
+                selected_runtime.model_name,
+                selected_runtime.base_url,
+            )
+            glm_direct_answer = _glm_error_analysis_direct_answer_path(
+                selected_runtime.model_name, selected_runtime.base_url
+            )
+            direct_answer_mode = qwen_fast_path or glm_direct_answer
+            image_max_pixels = _ERROR_ANALYSIS_QWEN_MAX_PIXELS if qwen_fast_path else None
+            # Wrong-detail needs a short final JSON answer, not a long reasoning trace.
+            # Some compatible endpoints default to thinking mode; disable it on
+            # known direct-answer paths so the bounded response contains content.
+            llm_extra_body = {"enable_thinking": False} if direct_answer_mode else None
+            messages = build_error_analysis(
+                context["question"],
+                wq.wrong_answer,
+                q.answer,
+                image_data_urls=image_data_urls,
+                image_max_pixels=image_max_pixels,
+            )
+            async with asyncio.timeout(
+                model_timeout_sec + ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS
+            ):
+                result = await llm.chat(
+                    messages,
+                    temperature=0.2,
+                    model=selected_runtime.model_name,
+                    api_key=selected_runtime.api_key,
+                    base_url=selected_runtime.base_url,
+                    provider=selected_runtime.provider,
+                    timeout=model_timeout_sec,
+                    max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
+                    extra_body=llm_extra_body,
+                )
+            return result, direct_answer_mode, image_max_pixels, llm_extra_body
+
+        attempted_model_ids: set[int] = set()
+        if runtime.model_config_id is not None:
+            attempted_model_ids.add(int(runtime.model_config_id))
+
+        try:
+            result, direct_answer_mode, image_max_pixels, llm_extra_body = await _invoke_runtime(runtime)
+        except TimeoutError:
+            logger.warning(
+                "ai.error_analysis.timeout wq_id=%s force=%s visual=%s timeout_sec=%s",
+                wq.id, effective_force, bool(image_data_urls), model_timeout_sec,
+            )
+            return _failure_response(
+                error_code="ai_provider_timeout",
+                retryable=True,
+                failure_model="timeout",
+                duration_ms=model_timeout_sec * 1000,
+            )
+        except Exception as exc:
+            error_code, retryable, failure_model = _classify_ai_provider_exception(
+                exc, visual=bool(image_data_urls)
+            )
+
+            # Authentication failures are deterministic for one saved model
+            # revision. Quarantine it, then try the next configured analysis model
+            # once. This prevents an invalid DeepSeek key from generating a 401
+            # for every wrong-question prewarm while still allowing a healthy
+            # fallback model to serve the user.
+            if error_code == "ai_provider_auth_failed":
+                await _quarantine_analysis_runtime_auth(runtime)
+                fallback_runtime = await _resolve_healthy_analysis_runtime(
+                    db,
+                    excluded_model_config_ids=attempted_model_ids,
+                )
+                if fallback_runtime is not None:
+                    logger.warning(
+                        "ai.error_analysis.auth_failover wq_id=%s from_model_config_id=%s "
+                        "to_model_config_id=%s from_model=%s to_model=%s",
+                        wq.id, runtime.model_config_id, fallback_runtime.model_config_id,
+                        runtime.model_name, fallback_runtime.model_name,
+                    )
+                    runtime = fallback_runtime
+                    model_signature = _analysis_model_signature(runtime)
+                    if runtime.model_config_id is not None:
+                        attempted_model_ids.add(int(runtime.model_config_id))
+                    try:
+                        result, direct_answer_mode, image_max_pixels, llm_extra_body = await _invoke_runtime(runtime)
+                    except TimeoutError:
+                        logger.warning(
+                            "ai.error_analysis.failover_timeout wq_id=%s model_config_id=%s timeout_sec=%s",
+                            wq.id, runtime.model_config_id, model_timeout_sec,
+                        )
+                        return _failure_response(
+                            error_code="ai_provider_timeout",
+                            retryable=True,
+                            failure_model="timeout",
+                            duration_ms=model_timeout_sec * 1000,
+                        )
+                    except Exception as fallback_exc:
+                        error_code, retryable, failure_model = _classify_ai_provider_exception(
+                            fallback_exc, visual=bool(image_data_urls)
+                        )
+                        if error_code == "ai_provider_auth_failed":
+                            await _quarantine_analysis_runtime_auth(runtime)
+                        logger.warning(
+                            "ai.error_analysis.failover_failed wq_id=%s force=%s visual=%s "
+                            "model_config_id=%s error_code=%s retryable=%s err_type=%s",
+                            wq.id, effective_force, bool(image_data_urls), runtime.model_config_id,
+                            error_code, retryable, type(fallback_exc).__name__,
+                        )
+                        return _failure_response(
+                            error_code=error_code,
+                            retryable=retryable,
+                            failure_model=failure_model,
+                        )
+                else:
+                    logger.warning(
+                        "ai.error_analysis.auth_failed wq_id=%s force=%s visual=%s "
+                        "model_config_id=%s provider=%s model=%s fallback_model=none",
+                        wq.id, effective_force, bool(image_data_urls), runtime.model_config_id,
+                        runtime.provider, runtime.model_name,
+                    )
+                    return _failure_response(
+                        error_code=error_code,
+                        retryable=retryable,
+                        failure_model=failure_model,
+                    )
+            else:
+                logger.warning(
+                    "ai.error_analysis.provider_failed wq_id=%s force=%s visual=%s "
+                    "model_config_id=%s error_code=%s retryable=%s err_type=%s",
+                    wq.id, effective_force, bool(image_data_urls), runtime.model_config_id,
+                    error_code, retryable, type(exc).__name__,
+                )
+                return _failure_response(
+                    error_code=error_code,
+                    retryable=retryable,
+                    failure_model=failure_model,
+                )
 
         raw_content = result.get("content", "")
         parsed = parse_error_analysis_content(raw_content)

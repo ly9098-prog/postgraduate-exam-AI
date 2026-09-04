@@ -23,6 +23,7 @@ class LLMRuntimeConfig:
     provider: str
     model_config_id: int | str | None = None
     capabilities: frozenset[str] = frozenset()
+    config_fingerprint: str = ""
 
 
 def _is_non_chat_provider(provider: str | None, model_name: str | None = None) -> bool:
@@ -47,6 +48,7 @@ async def resolve_llm_runtime_config(
     *,
     feature: str | None = None,
     capability: str | AICapability | None = None,
+    exclude_model_config_ids: set[int] | frozenset[int] | None = None,
 ) -> LLMRuntimeConfig | None:
     """Resolve model, endpoint, provider and secret once for an LLM call."""
     capability_value = (
@@ -61,11 +63,29 @@ async def resolve_llm_runtime_config(
 
     if capability_value is not None:
         resolver = AIModelConfigResolver(db)
-        try:
-            resolved = await resolver.resolve_for_capability(capability_value)
-            if _is_non_chat_provider(resolved.provider, resolved.model_name) or not resolved.endpoint:
+        excluded = {int(item) for item in (exclude_model_config_ids or set())}
+        # A model row can be enabled yet temporarily unusable (missing secret,
+        # proprietary endpoint, or explicitly excluded after an auth failure).
+        # Keep resolving the next eligible row instead of letting one bad config
+        # block every fallback model.
+        while True:
+            try:
+                resolved = await resolver.resolve_for_capability(
+                    capability_value,
+                    excluded_config_ids=excluded,
+                )
+            except (ValueError, TypeError):
                 return None
-            secret = await resolver.resolve_secret(resolved)
+
+            model_id = int(resolved.model_config_id)
+            if _is_non_chat_provider(resolved.provider, resolved.model_name) or not resolved.endpoint:
+                excluded.add(model_id)
+                continue
+            try:
+                secret = await resolver.resolve_secret(resolved)
+            except (ValueError, TypeError):
+                excluded.add(model_id)
+                continue
             return LLMRuntimeConfig(
                 api_key=secret,
                 base_url=resolved.endpoint,
@@ -73,9 +93,8 @@ async def resolve_llm_runtime_config(
                 provider=resolved.provider,
                 model_config_id=resolved.model_config_id,
                 capabilities=frozenset(resolved.capabilities),
+                config_fingerprint=resolved.config_fingerprint,
             )
-        except (ValueError, TypeError):
-            return None
 
     config = await resolve_active_model(db, feature=feature)
     if not config:
@@ -92,6 +111,7 @@ async def resolve_llm_runtime_config(
         provider=str(config.get("provider") or "openai_compatible"),
         model_config_id=config.get("id"),
         capabilities=frozenset(str(item) for item in (config.get("features") or []) if item),
+        config_fingerprint="",
     )
 
 

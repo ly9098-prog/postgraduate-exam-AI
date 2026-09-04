@@ -857,6 +857,7 @@ Page({
       this._pendingMasterUndo = {
         scheduleId,
         question,
+        originalAnswer: this._reviewSession.answers[scheduleId],
         originalIndex: Math.max(0, originalIndex),
         originalGroupIdx,
       }
@@ -891,7 +892,8 @@ Page({
       if (!this._alive) return
 
       if (groupQuestions.length === 0) {
-        this._clearMasterUndo()
+        // Keep the 5-second undo affordance even when this was the last visible
+        // question. The toast is rendered outside the phase container.
         this._clearReviewTimer()
         const nextPhase = this.data.todayRemainingCount > 0 ? 'overview' : 'empty'
         this.setData({
@@ -923,15 +925,30 @@ Page({
     this._masterUndoInFlight = true
 
     try {
-      await api.post(`/review/${pending.scheduleId}/unmaster`)
+      const unmasterResult = await api.post(`/review/${pending.scheduleId}/unmaster`)
       if (!this._alive) return
 
+      // Master/unmaster transitions intentionally invalidate already-issued
+      // tasks by advancing occurrence_seq. Restore the question with the fresh
+      // occurrence returned by the server, otherwise the next grade submission
+      // is guaranteed to be rejected as stale.
+      const restoredQuestion = {
+        ...pending.question,
+        occurrence_seq: unmasterResult && unmasterResult.occurrence_seq != null
+          ? unmasterResult.occurrence_seq
+          : pending.question.occurrence_seq,
+      }
       const allQuestions = (this._reviewSession.allQuestions || []).slice()
       const insertAt = Math.min(Math.max(0, pending.originalIndex), allQuestions.length)
-      allQuestions.splice(insertAt, 0, pending.question)
+      allQuestions.splice(insertAt, 0, restoredQuestion)
       const groupQuestions = allQuestions.slice()
 
       this._reviewSession.allQuestions = allQuestions
+      const restoredAnswers = { ...this._reviewSession.answers }
+      if (pending.originalAnswer !== undefined) {
+        restoredAnswers[pending.scheduleId] = pending.originalAnswer
+      }
+      this._reviewSession.answers = restoredAnswers
       this._masteredCount = Math.max(0, (this._masteredCount || 1) - 1)
       this._clearMasterUndo()
 
@@ -946,6 +963,7 @@ Page({
       this._syncAnsweredFlags()
       if (groupQuestions.length > 0) {
         this._showQuestion(Math.min(insertAt, groupQuestions.length - 1))
+        this._startReviewTimer()
       }
       await this.refreshOverviewStatsSilently()
       if (!this._alive) return

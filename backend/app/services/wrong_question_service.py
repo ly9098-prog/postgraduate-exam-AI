@@ -314,7 +314,9 @@ async def list_wrong_enriched(
         )
         base_query = base_query.where(WrongQuestion.question_version_id.in_(version_matches))
 
-    base_query = base_query.order_by(WrongQuestion.updated_at.desc())
+    # Stable pagination: many imported/updated rows can share the same DB
+    # timestamp. Without an id tie-breaker, OFFSET pages may duplicate/skip rows.
+    base_query = base_query.order_by(WrongQuestion.updated_at.desc(), WrongQuestion.id.desc())
 
     # Count after filters
     total_q = select(func.count()).select_from(base_query.subquery())
@@ -361,6 +363,7 @@ async def list_wrong_enriched(
             "answer": revision.answer if revision else None,
             "analysis": revision.analysis if revision else None,
             "knowledge_points": kp_map.get(int(revision.id), []) if revision else None,
+            "image_url": revision.image_url if revision else None,
             "ai_analysis": wq.ai_analysis,
             "ai_analysis_status": "ready" if isinstance(wq.ai_analysis, dict) and wq.ai_analysis else "empty",
         })
@@ -422,49 +425,58 @@ async def batch_operate(
 
         for wq_id, wq in ordered_wqs:
             try:
-                await review_scheduler.lock_question_review_state(
-                    db, user_id=user_id, question_id=wq.question_id
-                )
-                changed = False
-                if not wq.is_active:
-                    wq.is_active = True
-                    wq.removed_at = None
-                    changed = True
-                if wq.mastered:
-                    wq.mastered = False
-                    wq.mastered_at = None
-                    changed = True
-
-                schedule = await db.scalar(
-                    select(ReviewSchedule).where(
-                        ReviewSchedule.user_id == user_id,
-                        ReviewSchedule.question_id == wq.question_id,
+                # One bad/corrupt row must not partially reactivate the wrong-book
+                # record while the API reports it as skipped. Keep each item in a
+                # savepoint because this branch intentionally continues on errors.
+                item_changed = False
+                async with db.begin_nested():
+                    await review_scheduler.lock_question_review_state(
+                        db, user_id=user_id, question_id=wq.question_id
                     )
-                )
-                rebound = False
-                if schedule is None or int(schedule.question_version_id) != int(wq.question_version_id):
-                    schedule = await review_scheduler.auto_schedule_wrong_question(
-                        db, user_id, wq.question_id, int(wq.question_version_id), commit=False,
+                    changed = False
+                    if not wq.is_active:
+                        wq.is_active = True
+                        wq.removed_at = None
+                        changed = True
+                    if wq.mastered:
+                        wq.mastered = False
+                        wq.mastered_at = None
+                        changed = True
+
+                    schedule = await db.scalar(
+                        select(ReviewSchedule).where(
+                            ReviewSchedule.user_id == user_id,
+                            ReviewSchedule.question_id == wq.question_id,
+                        )
                     )
-                    rebound = True
-                    changed = True
+                    rebound = False
+                    if (
+                        schedule is None
+                        or int(schedule.question_version_id) != int(wq.question_version_id)
+                    ):
+                        schedule = await review_scheduler.auto_schedule_wrong_question(
+                            db, user_id, wq.question_id, int(wq.question_version_id), commit=False,
+                        )
+                        rebound = True
+                        changed = True
 
-                now = utcnow()
-                if not schedule.is_active:
-                    schedule.is_active = True
-                    changed = True
-                if schedule.mastered:
-                    schedule.mastered = False
-                    changed = True
-                if schedule.next_review_at is None or schedule.next_review_at > now:
-                    schedule.next_review_at = now
-                    if not rebound:
-                        # Forcing a future occurrence into the queue invalidates any
-                        # stale client task issued for the previous schedule state.
-                        schedule.occurrence_seq = int(schedule.occurrence_seq or 0) + 1
-                    changed = True
+                    now = utcnow()
+                    if not schedule.is_active:
+                        schedule.is_active = True
+                        changed = True
+                    if schedule.mastered:
+                        schedule.mastered = False
+                        changed = True
+                    if schedule.next_review_at is None or schedule.next_review_at > now:
+                        schedule.next_review_at = now
+                        if not rebound:
+                            # Forcing a future occurrence into the queue invalidates any
+                            # stale client task issued for the previous schedule state.
+                            schedule.occurrence_seq = int(schedule.occurrence_seq or 0) + 1
+                        changed = True
+                    item_changed = changed
 
-                if changed:
+                if item_changed:
                     updated_count += 1
                 else:
                     skipped_ids.append(wq_id)
@@ -564,10 +576,22 @@ async def get_task_flow(
     _, today_end = shanghai_today_boundaries()
     fourteen_days_ago = utcnow() - timedelta(days=14)
 
-    all_items, total_count = await list_wrong_enriched(
-        db, user_id, subject_id=subject_id, error_type=error_type, topic=topic,
-        page=1, page_size=500,
-    )
+    # Task-flow totals must describe the whole filtered wrong book, not only the
+    # first page.  The previous hard 500-row cap silently dropped older rows for
+    # heavy users and made group totals/summary disagree with the list view.
+    all_items: list[dict] = []
+    total_count = 0
+    page = 1
+    page_size = 500
+    while True:
+        page_items, total_count = await list_wrong_enriched(
+            db, user_id, subject_id=subject_id, error_type=error_type, topic=topic,
+            page=page, page_size=page_size,
+        )
+        all_items.extend(page_items)
+        if not page_items or len(all_items) >= total_count:
+            break
+        page += 1
 
     today_due: list[dict] = []
     high_freq: list[dict] = []
@@ -595,10 +619,16 @@ async def get_task_flow(
         {"key": "mastered", "title": "已经掌握", "total": len(mastered), "items": mastered[:preview_size]},
     ]
 
+    # Summary counters are non-exclusive headline metrics.  Group buckets below
+    # are priority-deduplicated, so using len(high_freq) would exclude high-
+    # frequency questions that also happen to be due today.
     summary = {
         "total_count": total_count,
-        "mastered_count": len(mastered),
-        "high_frequency_count": len(high_freq),
+        "mastered_count": sum(1 for item in all_items if item["is_mastered"]),
+        "high_frequency_count": sum(
+            1 for item in all_items
+            if item["wrong_count"] >= 3 and not item["is_mastered"]
+        ),
         "today_due_count": len(today_due),
     }
 

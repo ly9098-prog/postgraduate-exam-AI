@@ -166,7 +166,7 @@
       <view class="fallback-mark">!</view>
       <text class="fallback-title">AI 复盘暂时不可用</text>
       <text class="fallback-desc">{{aiErrorText || '先查看题目与答案，稍后再试。'}}</text>
-      <button class="ai-action-btn" bindtap="regenerateAiAnalysis">重新生成</button>
+      <button wx:if="{{aiRetryable}}" class="ai-action-btn" bindtap="regenerateAiAnalysis">重新生成</button>
     </view>
 
     <!-- 未请求 -->

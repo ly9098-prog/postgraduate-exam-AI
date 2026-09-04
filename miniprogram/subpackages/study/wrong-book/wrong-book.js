@@ -23,6 +23,7 @@ const ERROR_TYPES = [
 Page({
   data: {
     list: [],
+    listTotal: 0,
     stats: { total: 0 },
     primaryStatCount: 0,
     masteredCount: 0,
@@ -122,6 +123,7 @@ Page({
   _statsRequestSeq: 0,
   _reviewOverviewRequestSeq: 0,
   _subjectsRequestSeq: 0,
+  _taskFlowRequestSeq: 0,
   _destroyed: false,
 
   onLoad(options) {
@@ -129,6 +131,7 @@ Page({
     this._statsRequestSeq = 0
     this._reviewOverviewRequestSeq = 0
     this._subjectsRequestSeq = 0
+    this._taskFlowRequestSeq = 0
     this.setData({ enableMathImage: config.enableMathImage || false })
     // 从 dashboard 跳转携带 subject_id 或 topic 参数
     const subjectId = options && options.subject_id != null ? Number(options.subject_id) : null
@@ -179,6 +182,7 @@ Page({
     this._statsRequestSeq++
     this._reviewOverviewRequestSeq++
     this._subjectsRequestSeq++
+    this._taskFlowRequestSeq++
     this._listRequestSeq++
     this._aiDiagnosisRequestId++
     this._clearBatchCapsuleIdleTimer()
@@ -347,6 +351,10 @@ Page({
         stats,
         primaryStatCount,
         masteredCount,
+        highFrequencyCount: this._positiveNumber(
+          stats.high_frequency_count,
+          this.data.highFrequencyCount || 0
+        ),
       }
 
       // 旧后端没有今日复习概览时，Hero 至少仍能展示“待复习错题”数量，
@@ -450,6 +458,7 @@ Page({
 
       this.setData({
         list: nextList,
+        listTotal: Math.max(0, Number(data.total) || 0),
         analysis,
         taskGroups: taskVm.groups,
         ungroupedCount: taskVm.ungroupedCount,
@@ -462,11 +471,70 @@ Page({
         loading: false,
       })
       this._syncSelectionState()
+      if (reset) this.loadTaskFlow()
     } catch (e) {
       console.error('加载错题列表失败', e)
       if (seq === this._listRequestSeq && this._alive) {
         this.setData({ loading: false })
       }
+    }
+  },
+
+  async loadTaskFlow() {
+    const requestSeq = ++this._taskFlowRequestSeq
+    const params = { preview_size: 3 }
+    if (this.data.selectedSubjectId) params.subject_id = this.data.selectedSubjectId
+    if (this.data.selectedErrorType) params.error_type = this.data.selectedErrorType
+    if (this.data.selectedTopic) params.topic = this.data.selectedTopic
+
+    try {
+      const data = await api.get('/wrong-questions/task-flow', params)
+      if (this._destroyed || !this._alive || requestSeq !== this._taskFlowRequestSeq) return
+
+      const meta = {
+        today_due: { desc: '基于复习计划，今天最值得先做的题', icon: '今', tone: 'lime' },
+        high_frequency: { desc: '重复出错次数较多，建议集中攻克', icon: '频', tone: 'orange' },
+        recent_added: { desc: '近 14 天新加入错题本的题目', icon: '新', tone: 'blue' },
+        to_consolidate: { desc: '尚未到复习日，但仍未完全掌握', icon: '固', tone: 'neutral' },
+        mastered: { desc: '已达到掌握标准，不再进入正常复习；再次答错会重新加入', icon: '✓', tone: 'green' },
+      }
+      const groups = (data.groups || []).map(group => {
+        const cfg = meta[group.key] || { desc: '', icon: '·', tone: 'neutral' }
+        return {
+          key: group.key,
+          title: group.title || '',
+          total: Math.max(0, Number(group.total) || 0),
+          items: (group.items || []).map(item => this._decorateItem(item)),
+          desc: cfg.desc,
+          icon: cfg.icon,
+          tone: cfg.tone,
+        }
+      }).filter(group => group.total > 0 || group.items.length > 0)
+
+      const summary = data.summary || {}
+      const totalCount = Math.max(0, Number(summary.total_count) || 0)
+      const previewCount = groups.reduce((sum, group) => sum + group.items.length, 0)
+      const hasFilter = !!(this.data.selectedSubjectId || this.data.selectedErrorType || this.data.selectedTopic)
+      const globalHighFrequency = Number((this.data.stats || {}).high_frequency_count)
+      const highFrequencyCount = Number.isFinite(globalHighFrequency)
+        ? Math.max(0, Math.round(globalHighFrequency))
+        : (!hasFilter
+            ? Math.max(0, Number(summary.high_frequency_count) || 0)
+            : this._positiveNumber(this.data.highFrequencyCount, 0))
+      this.setData({
+        taskGroups: groups,
+        ungroupedCount: Math.max(0, totalCount - previewCount),
+        // The overview card is intentionally global (stats/masteredCount are
+        // also global); filters only affect the list/task-flow below it.
+        highFrequencyCount,
+      })
+      this._syncSelectionState()
+    } catch (e) {
+      if (this._destroyed || requestSeq !== this._taskFlowRequestSeq) return
+      // The paginated list remains a functional fallback.  Do not blank the
+      // task view merely because the aggregate task-flow endpoint is transiently
+      // unavailable.
+      console.warn('加载错题任务流失败，保留当前列表分组兜底', e)
     }
   },
 
@@ -686,7 +754,10 @@ Page({
   },
 
   _navigateToDetail(id) {
-    const ids = this.data.list.map(item => item.id)
+    const ids = this.data.activeView === 'task'
+      ? this._getVisibleIds()
+      : (this.data.list || []).map(item => item.id)
+    if (!ids.some(itemId => String(itemId) === String(id))) ids.unshift(id)
     const idx = ids.findIndex(itemId => String(itemId) === String(id))
     try {
       wx.setStorageSync('wrong_detail_nav', { ids, ts: Date.now() })
@@ -756,7 +827,12 @@ Page({
   },
 
   _syncSelectionState() {
+    // Task-flow previews are aggregated by the backend and may contain records
+    // outside the first paginated list page. Keep them selectable as well.
     const validIds = new Set((this.data.list || []).map(item => String(item.id)))
+    ;(this.data.taskGroups || []).forEach(group => {
+      ;(group.items || []).forEach(item => validIds.add(String(item.id)))
+    })
     const nextMap = {}
     Object.keys(this.data.selectedIdMap || {}).forEach(id => {
       if (validIds.has(String(id))) nextMap[String(id)] = true
@@ -1374,7 +1450,10 @@ Page({
       item.wrong_count || item.error_count || item.mistake_count || item.incorrect_count,
       1
     )
-    const reviewCount = this._positiveNumber(item.review_count, 0)
+    const reviewCountRaw = item.review_record_count !== undefined && item.review_record_count !== null
+      ? item.review_record_count
+      : item.review_count
+    const reviewCount = this._positiveNumber(reviewCountRaw, 0)
     const lastErrorAt = item.last_wrong_at || item.last_error_at || item.updated_at || item.created_at
     const mastery = this._masteryProgress(item, reviewCount)
     const explicitMastered = item.is_mastered === true || item.status === 'mastered' || item.mastered === true
@@ -1401,6 +1480,9 @@ Page({
       taskStatusLabel = this._shortDateLabel(dueInfo.date) + '复习'
     }
 
+    const cleanText = item.content ? this._toCleanText(item.content.text || item.content) : ''
+    const hasImage = Array.isArray(item.image_url) ? item.image_url.length > 0 : !!item.image_url
+
     return {
       ...item,
       _subjectLabel: this._subjectLabel(item.subject_code, item.subject_name),
@@ -1411,7 +1493,7 @@ Page({
       _reviewCount: reviewCount,
       _masteryPercent: mastery.percent,
       _masteryLabel: mastery.label,
-      _cleanText: item.content ? this._toCleanText(item.content.text || item.content) : '',
+      _cleanText: cleanText || (hasImage ? '图片题 · 点击查看完整题目' : ''),
       _isMastered: isMastered,
       _isTodayDue: dueInfo.today,
       _isOverdue: dueInfo.overdue,

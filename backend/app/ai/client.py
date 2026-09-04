@@ -28,6 +28,21 @@ from app.utils.sentry_utils import capture_exception, set_tag, start_span
 
 _ai_logger = logging.getLogger("app.ai")
 
+
+class OpenAICompatibleAPIError(RuntimeError):
+    """Typed upstream HTTP failure without embedding provider response bodies.
+
+    Provider error payloads may contain credential fragments or other sensitive
+    diagnostics.  Callers only need the HTTP status and retryability to choose a
+    safe fallback, so keep the exception message deliberately compact.
+    """
+
+    def __init__(self, status_code: int, *, retryable: bool) -> None:
+        self.status_code = int(status_code)
+        self.retryable = bool(retryable)
+        super().__init__(f"OpenAI-compatible API error: {self.status_code}")
+
+
 def build_chat_completions_url(base_url: str) -> str:
     """Build a chat-completions URL using OpenAI SDK base-url semantics.
 
@@ -259,7 +274,6 @@ class OpenAICompatibleClient:
                 elapsed = int((time.time() - start) * 1000)
 
                 if remote.status < 200 or remote.status >= 300:
-                    error_body = response_text[:300]
                     retryable_status = remote.status == 429 or remote.status == 408 or remote.status >= 500
                     ai_runtime_guard.record_provider_failure(
                         endpoint_key, retryable=retryable_status
@@ -269,16 +283,15 @@ class OpenAICompatibleClient:
                     log_event(
                         _ai_logger,
                         "ai.chat.error",
-                        level="error",
+                        level="error" if retryable_status else "warning",
                         provider=effective_provider,
                         model=model,
                         duration_ms=elapsed,
                         status_code=remote.status,
                         error_type="HTTPError",
-                        error_message=error_body,
                     )
-                    raise RuntimeError(
-                        f"OpenAI-compatible API error: {remote.status} {error_body}"
+                    raise OpenAICompatibleAPIError(
+                        remote.status, retryable=retryable_status
                     )
 
                 data = json.loads(response_text)
@@ -337,10 +350,7 @@ class OpenAICompatibleClient:
                     ai_runtime_guard.record_provider_failure(endpoint_key, retryable=True)
                     ai_runtime_guard.record_failure()
                     provider_outcome_recorded = True
-                if not (
-                    isinstance(exc, RuntimeError)
-                    and "OpenAI-compatible API error" in str(exc)
-                ):
+                if not isinstance(exc, OpenAICompatibleAPIError):
                     log_event(
                         _ai_logger,
                         "ai.chat.error",

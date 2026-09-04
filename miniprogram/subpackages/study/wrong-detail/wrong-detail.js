@@ -21,8 +21,8 @@ function _sleep(ms) {
 }
 
 function _fallbackMessage(model, errorCode, retryable) {
-  if (errorCode === 'ai_provider_auth_failed') return 'AI 服务配置异常，请稍后再试'
-  if (errorCode === 'ai_model_unconfigured') return 'AI 分析模型尚未正确配置，请稍后再试'
+  if (errorCode === 'ai_provider_auth_failed') return 'AI 分析服务鉴权失败，请联系管理员检查模型 API Key'
+  if (errorCode === 'ai_model_unconfigured') return 'AI 分析模型尚未正确配置，请联系管理员检查模型设置'
   if (errorCode === 'ai_provider_rate_limited') return 'AI 服务当前繁忙，请稍后重试'
   if (errorCode === 'ai_provider_timeout') return 'AI 分析生成超时，请稍后重试'
   if (errorCode === 'ai_provider_transient') return 'AI 服务暂时不可用，请稍后重试'
@@ -32,7 +32,7 @@ function _fallbackMessage(model, errorCode, retryable) {
   if (model === 'vision_input_missing') return '题目图片缺失或无法读取，AI 解析失败'
   if (model === 'vision_unavailable') return '当前 AI 分析模型暂不支持图片理解，请稍后重试或联系管理员检查分析模型配置'
   if (model === 'vision_parse_failed') return 'AI 未能正确读取题目图片，解析失败，请稍后重试'
-  if (retryable === false) return 'AI 服务配置异常，请稍后再试'
+  if (retryable === false) return 'AI 服务配置异常，请联系管理员检查模型设置'
   return 'AI 服务暂时不可用，请稍后重试'
 }
 
@@ -162,6 +162,7 @@ Page({
     aiLoading: false,
     aiFallback: false,
     aiErrorText: '',
+    aiRetryable: true,
     aiRequested: false,
     aiFromCache: false,
     loading: true,
@@ -284,6 +285,7 @@ Page({
       errorText: '',
       aiFallback: false,
       aiErrorText: '',
+      aiRetryable: true,
       aiRequested: false,
       aiFromCache: false,
       aiFromQuestionAnalysis: false,
@@ -335,6 +337,7 @@ Page({
         aiFromQuestionAnalysis: false,
         aiFallback: false,
         aiErrorText: '',
+        aiRetryable: true,
         isCurrentMastered: _isWqMastered(wq),
         masterSubmitting: false,
         removeSubmitting: false,
@@ -424,7 +427,8 @@ Page({
         model,
         result && result.error_code,
         result && result.retryable
-      )
+      ),
+      aiRetryable: !(result && result.retryable === false),
     }
   },
 
@@ -493,6 +497,7 @@ Page({
       aiRequested: true,
       aiFallback: false,
       aiErrorText: '',
+      aiRetryable: true,
       aiInlineNotice: '',
       })
     try {
@@ -535,6 +540,7 @@ Page({
         aiFromCache: !!(result && result.from_cache),
         aiFromQuestionAnalysis: false,
         aiErrorText: '',
+        aiRetryable: true,
       })
     } catch (e) {
       console.error('加载 AI 分析失败', e)
@@ -564,6 +570,7 @@ Page({
       aiRegenerating: true,
       aiSkeletonVisible: true,
       aiErrorText: '',
+      aiRetryable: true,
       aiFallback: false,
       aiInlineNotice: '',
       })
@@ -645,6 +652,7 @@ Page({
         aiFromCache: !!(result && result.from_cache),
         aiFromQuestionAnalysis: false,
         aiErrorText: '',
+        aiRetryable: true,
       })
       wx.showToast({ title: '已重新生成', icon: 'success' })
     } catch (e) {
@@ -1200,6 +1208,7 @@ Page({
         aiFromQuestionAnalysis: false,
         aiFallback: false,
         aiErrorText: '',
+        aiRetryable: true,
         isCurrentMastered: _isWqMastered(wq),
         masterSubmitting: false,
         removeSubmitting: false,

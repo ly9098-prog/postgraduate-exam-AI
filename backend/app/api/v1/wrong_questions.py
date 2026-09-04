@@ -29,6 +29,36 @@ _CODE_OP_SPLIT_RE = re.compile(
     r'(?:<=|>=|==|!=|&&|\|\||<<|>>|[<>=!+\-*/%&|^])\s*$'
 )
 
+_CODE_SIGNALS = [
+    'return', 'printf', 'scanf', 'malloc', 'free', 'NULL',
+    'struct', 'typedef', 'enum', 'union',
+    'int ', 'void ', 'char ', 'float ', 'double ',
+    'bool', 'const', 'static', 'sizeof',
+    '->', '::', '{', '}', ';',
+    '++', '--', '+=', '-=', '*=', '/=',
+    '#include', '#define',
+]
+_CONTROL_KW = [
+    'for', 'while', 'if', 'else if', 'else', 'switch',
+    'return', 'break', 'continue', 'case', 'do',
+]
+_DS_KW = [
+    'LNode', 'TNode', 'BiTNode', 'BiTree', 'BSTNode', 'LinkList',
+    'SqList', 'Stack', 'Queue', 'SqStack', 'ElemType', 'Status',
+]
+
+
+def _contains_code(text: str) -> bool:
+    if not isinstance(text, str) or not text:
+        return False
+    score = sum(1 for sig in _CODE_SIGNALS if sig in text)
+    score += sum(2 for kw in _DS_KW if kw in text)
+    score += sum(
+        1 for kw in _CONTROL_KW
+        if re.search(r'\b' + re.escape(kw) + r'\b', text)
+    )
+    return score >= 3
+
 router = APIRouter(prefix="/api/v1/wrong-questions")
 
 
@@ -49,15 +79,21 @@ def _fix_code_operator_splits(text: str) -> str:
 def _sanitize_text_field(value: str | None) -> str | None:
     if not isinstance(value, str):
         return value
+    value = re.sub(r"\r\n?", "\n", value)
+    # Preserve code indentation/repeated statements. Applying ordinary OCR
+    # dedup/roman splitting to code can silently change the question itself.
+    if _contains_code(value):
+        return _fix_code_operator_splits(value)
     value = deduplicate_repeated_text(value)
     value = _split_inline_roman_subitems(value)
-    value = _fix_code_operator_splits(value)
-    return value
+    return _fix_code_operator_splits(value)
 
 
-def _sanitize_content(content: dict | None) -> dict | None:
+def _sanitize_content(content: dict | str | None) -> dict | None:
+    if isinstance(content, str):
+        content = {"text": content}
     if not isinstance(content, dict):
-        return content
+        return None
     sanitized = dict(content)
     for field in ("text", "stem"):
         if field in sanitized:
@@ -77,17 +113,12 @@ def _sanitize_content(content: dict | None) -> dict | None:
 
 
 def _sanitize_option_value(value: str | None) -> str | None:
-    """Sanitize a single option value — skip roman-subitem splitting.
-
-    Option values are short display text (e.g. \"I、II、III\", \"O(n)\").
-    Applying _split_inline_roman_subitems here corrupts enumeration values
-    by inserting newlines inside short option text. Only apply code-operator
-    split (for code options) and skip dedup/roman-split entirely.
-    """
+    """Sanitize an option without roman-subitem splitting or deduplication."""
     if not isinstance(value, str):
         return value
+    value = re.sub(r"\r\n?", "\n", value)
     value = _fix_code_operator_splits(value)
-    return value
+    return re.sub(r"\n+", " ", value).strip()
 
 
 def _sanitize_options(options: dict | None) -> dict | None:
@@ -95,7 +126,16 @@ def _sanitize_options(options: dict | None) -> dict | None:
         return options
     sanitized = dict(options)
     for key, value in sanitized.items():
-        sanitized[key] = _sanitize_option_value(value)
+        if isinstance(value, dict):
+            rich = dict(value)
+            text = rich.get("text")
+            if text in (None, ""):
+                text = rich.get("value")
+            if isinstance(text, str):
+                rich["text"] = _sanitize_option_value(text)
+            sanitized[key] = rich
+        else:
+            sanitized[key] = _sanitize_option_value(value)
     return sanitized
 
 
@@ -231,6 +271,13 @@ async def get_task_flow(
     result = await svc.get_task_flow(
         db, current_user.id, subject_id, error_type, topic, preview_size
     )
+    # Keep task-flow preview rows byte-for-byte compatible with the ordinary
+    # wrong-question list rendering contract.  Without this, switching views
+    # could reintroduce raw OCR newlines/admin-only content for the same item.
+    for group in result.get("groups", []):
+        for item in group.get("items", []):
+            item["content"] = _sanitize_content(item.get("content"))
+            item["options"] = _sanitize_options(item.get("options"))
     return result
 
 
