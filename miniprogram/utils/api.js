@@ -377,7 +377,7 @@ async function request(method, url, data = {}, options = {}) {
     responseReceivedAt = Date.now()
   } catch (err) {
     debugLog(traceId, 'API_ERROR', { method, url, requestId, message: err?.errMsg || '网络异常' })
-    wx.showToast({ title: '网络异常', icon: 'none' })
+    if (!options.suppressNetworkToast) wx.showToast({ title: '网络异常', icon: 'none' })
     throw new ApiError(_safeHttpMessage(0), { code: 'NETWORK_ERROR', statusCode: 0, traceId, requestId, raw: err })
   }
 
@@ -403,7 +403,7 @@ async function request(method, url, data = {}, options = {}) {
       responseReceivedAt = Date.now()
     } catch (err) {
       debugLog(traceId, 'API_ERROR', { method, url, requestId, message: err?.errMsg || '网络异常' })
-      wx.showToast({ title: '网络异常', icon: 'none' })
+      if (!options.suppressNetworkToast) wx.showToast({ title: '网络异常', icon: 'none' })
       throw new ApiError(_safeHttpMessage(0), { code: 'NETWORK_ERROR', statusCode: 0, traceId, requestId, raw: err })
     }
   }

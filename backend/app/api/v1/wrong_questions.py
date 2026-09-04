@@ -141,6 +141,13 @@ def _sanitize_options(options: dict | None) -> dict | None:
 
 def enrich_wq(wq, question, knowledge_points=None, **extra):
     ai_analysis = extra["ai_analysis_override"] if "ai_analysis_override" in extra else wq.ai_analysis
+    raw_ai_analysis = wq.ai_analysis if isinstance(wq.ai_analysis, dict) else {}
+    raw_ai_meta = raw_ai_analysis.get("_meta") if isinstance(raw_ai_analysis, dict) else None
+    raw_generated_at = (
+        str(raw_ai_meta.get("generated_at") or "").strip()
+        if isinstance(raw_ai_meta, dict)
+        else ""
+    )
     ai_status = extra.get("ai_analysis_status_override")
     if ai_status is None:
         ai_status = "ready" if isinstance(ai_analysis, dict) and ai_analysis else "empty"
@@ -170,6 +177,7 @@ def enrich_wq(wq, question, knowledge_points=None, **extra):
         image_url=question.image_url if question else None,
         ai_analysis=ai_analysis,
         ai_analysis_status=ai_status,
+        ai_analysis_generated_at=raw_generated_at or None,
         # New enriched fields
         wrong_count=extra.get("wrong_count", wq.review_count or 0),
         review_record_count=extra.get("review_record_count", 0),

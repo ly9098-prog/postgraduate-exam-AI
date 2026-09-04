@@ -24,6 +24,23 @@ class AiResponse(BaseModel):
     visual_evidence: str | None = None
     error_code: str | None = None
     retryable: bool | None = None
+    generated_at: str | None = None
+
+
+class AiRecoveryRequest(BaseModel):
+    wrong_question_id: int
+    force_regenerate: bool = False
+    baseline_generated_at: str | None = None
+
+
+class AiRecoveryResponse(BaseModel):
+    queued: bool
+
+
+class AiAnalysisStatusResponse(BaseModel):
+    ready: bool
+    content: dict | None = None
+    generated_at: str | None = None
 
 
 class AiPrewarmRequest(BaseModel):

@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +8,10 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.ai import (
+    AiAnalysisStatusResponse,
     AiFeedbackRequest,
+    AiRecoveryRequest,
+    AiRecoveryResponse,
     AiPrewarmRequest,
     AiPrewarmResponse,
     AiResponse,
@@ -55,6 +59,102 @@ async def error_analysis(
         session_type="error_analysis",
         **result,
     )
+
+
+
+
+@router.get("/error-analysis/status/{wrong_question_id}", response_model=AiAnalysisStatusResponse)
+async def error_analysis_status(
+    wrong_question_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lightweight persisted-result status for long-running Mini Program calls.
+
+    This intentionally avoids the full wrong-question enrichment/freshness path
+    on every poll. The caller compares ``generated_at`` with the marker captured
+    before generation, so an old/stale cache cannot be mistaken for the new
+    result it is waiting for.
+    """
+    from sqlalchemy import select
+
+    from app.models.wrong_question import WrongQuestion
+
+    result = await db.execute(
+        select(WrongQuestion).where(
+            WrongQuestion.id == wrong_question_id,
+            WrongQuestion.user_id == current_user.id,
+        )
+    )
+    wq = result.scalar_one_or_none()
+    if wq is None:
+        raise HTTPException(status_code=404, detail="错题记录不存在")
+
+    cached = svc.build_any_cached_error_analysis_response(wq)
+    if cached is None:
+        return AiAnalysisStatusResponse(
+            ready=False,
+            generated_at=svc.ai_analysis_generated_at(wq.ai_analysis),
+        )
+    return AiAnalysisStatusResponse(
+        ready=True,
+        content=cached.get("content"),
+        generated_at=cached.get("generated_at"),
+    )
+
+
+@router.post("/error-analysis/recover", response_model=AiRecoveryResponse)
+async def recover_error_analysis(
+    data: AiRecoveryRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Queue a backup generation after the mini-program transport times out.
+
+    wx.request cannot remain open for the full provider budget used by slow
+    compatible models. The original HTTP handler normally keeps running, so this
+    backup is revision-aware and force-regeneration-aware: the worker skips the
+    backup when the original request has already committed a newer generation.
+    """
+    from sqlalchemy import select
+
+    from app.models.wrong_question import WrongQuestion
+    from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
+
+    result = await db.execute(
+        select(WrongQuestion).where(
+            WrongQuestion.id == data.wrong_question_id,
+            WrongQuestion.user_id == current_user.id,
+        )
+    )
+    wq = result.scalar_one_or_none()
+    if wq is None:
+        raise HTTPException(status_code=404, detail="错题记录不存在")
+
+    revision = build_prewarm_revision(
+        review_count=wq.review_count,
+        wrong_answer=wq.wrong_answer,
+    )
+    # Trust the persisted server marker over the client for the initial baseline
+    # when the client does not have one (e.g. older cached page data).
+    baseline = data.baseline_generated_at
+    if data.force_regenerate and baseline is None:
+        baseline = svc.ai_analysis_generated_at(wq.ai_analysis) or ""
+
+    queued = await enqueue_prewarm(
+        wq.id,
+        current_user.id,
+        revision=revision,
+        recovery_mode=True,
+        force_regenerate=bool(data.force_regenerate),
+        baseline_generated_at=baseline if data.force_regenerate else None,
+        task_id_override=f"prewarm-recovery:{wq.id}:{uuid.uuid4().hex}",
+        # A recovery task may initially observe the original request's lock.
+        # Give durable retries enough time to outlive that request instead of
+        # exhausting the normal short prewarm retry budget.
+        max_retries_override=6,
+    )
+    return AiRecoveryResponse(queued=queued)
 
 
 @router.post("/error-analysis/prewarm", response_model=AiPrewarmResponse)

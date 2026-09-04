@@ -22,11 +22,12 @@ from app.services.task_queue_service import Task, TaskQueueUnavailableError, tas
 logger = logging.getLogger(__name__)
 
 TASK_TYPE_PREWARM = "prewarm_analysis"
-_DEFAULT_LEASE_SEC = 120  # 2 minutes — AI analysis is usually fast
+_DEFAULT_LEASE_SEC = 240  # comfortably above the 150s wrong-analysis provider budget
 _HEARTBEAT_INTERVAL = 30
 _LOCAL_FALLBACK_MAX_TASKS = 100
 _LOCAL_FALLBACK_CONCURRENCY = 2
 _LOCAL_FALLBACK_MAX_RETRIES = 2
+_LOCAL_FALLBACK_RECOVERY_MAX_RETRIES = 7
 _PREWARM_INPUT_FAILURE_CODES = {
     "vision_input_missing",
     "vision_parse_failed",
@@ -70,6 +71,9 @@ def _schedule_local_fallback(
     user_id: int,
     revision: str | None,
     delay_seconds: int = 0,
+    recovery_mode: bool = False,
+    force_regenerate: bool = False,
+    baseline_generated_at: str | None = None,
 ) -> bool:
     """Best-effort in-process prewarm when Redis is unavailable.
 
@@ -106,6 +110,11 @@ def _schedule_local_fallback(
             async with _get_local_fallback_semaphore():
                 started = time.monotonic()
                 attempt = 0
+                max_local_retries = (
+                    _LOCAL_FALLBACK_RECOVERY_MAX_RETRIES
+                    if recovery_mode
+                    else _LOCAL_FALLBACK_MAX_RETRIES
+                )
                 while True:
                     logger.info(
                         "[prewarm] local start wq_id=%d uid=%d revision=%s attempt=%d",
@@ -113,7 +122,11 @@ def _schedule_local_fallback(
                     )
                     try:
                         outcome = await prewarm_wrong_question_analysis(
-                            wq_id, user_id, expected_revision=revision
+                            wq_id,
+                            user_id,
+                            expected_revision=revision,
+                            force_regenerate=force_regenerate,
+                            baseline_generated_at=baseline_generated_at,
                         )
                         status = str(outcome.get("status") or "success")
                         logger.info(
@@ -122,14 +135,14 @@ def _schedule_local_fallback(
                         )
                         break
                     except PrewarmAnalysisError as exc:
-                        if exc.retryable and attempt < _LOCAL_FALLBACK_MAX_RETRIES:
+                        if exc.retryable and attempt < max_local_retries:
                             attempt += 1
                             backoff = min(2 ** attempt, 30)
                             logger.warning(
                                 "[prewarm] local retry wq_id=%d uid=%d attempt=%d/%d "
-                                "delay_sec=%d error_code=%s",
-                                wq_id, user_id, attempt, _LOCAL_FALLBACK_MAX_RETRIES,
-                                backoff, exc.error_code,
+                                "delay_sec=%d error_code=%s recovery=%s",
+                                wq_id, user_id, attempt, max_local_retries,
+                                backoff, exc.error_code, recovery_mode,
                             )
                             await asyncio.sleep(backoff)
                             continue
@@ -176,6 +189,12 @@ async def enqueue_prewarm(
     retries: int = 0,
     delay_seconds: int = 0,
     revision: str | None = None,
+    *,
+    recovery_mode: bool = False,
+    force_regenerate: bool = False,
+    baseline_generated_at: str | None = None,
+    task_id_override: str | None = None,
+    max_retries_override: int | None = None,
 ) -> bool:
     """Enqueue a prewarm analysis task via the durable task queue.
 
@@ -190,11 +209,23 @@ async def enqueue_prewarm(
     }
     if revision:
         payload["revision"] = revision
-    # A revisioned id deduplicates the same answer event across direct submit +
-    # projection fallback, while still allowing a later wrong attempt to prewarm.
-    task_id = f"prewarm:{wq_id}:{revision or 'legacy'}"
+    if recovery_mode:
+        payload["recovery_mode"] = True
+    if force_regenerate:
+        payload["force_regenerate"] = True
+    if baseline_generated_at is not None:
+        payload["baseline_generated_at"] = str(baseline_generated_at)[:128]
+    # A normal revisioned id deduplicates the same answer event across direct
+    # submit + projection fallback. Recovery calls use a caller-supplied unique
+    # id so repeated manual regenerations are never suppressed by the 7-day
+    # idempotency tombstone.
+    task_id = task_id_override or f"prewarm:{wq_id}:{revision or 'legacy'}"
 
-    max_retries = max(0, 3 - retries)  # remaining retries from current count
+    max_retries = (
+        max(1, int(max_retries_override))
+        if max_retries_override is not None
+        else max(0, 3 - retries)
+    )
     # If delay > 0, don't use idempotent key (it may be a retry)
     result = await task_queue.enqueue_v2(
         TASK_TYPE_PREWARM,
@@ -212,6 +243,9 @@ async def enqueue_prewarm(
                 user_id=user_id,
                 revision=revision,
                 delay_seconds=delay_seconds,
+                recovery_mode=recovery_mode,
+                force_regenerate=force_regenerate,
+                baseline_generated_at=baseline_generated_at,
             )
             logger.warning(
                 "[prewarm] Redis unavailable; local_fallback=%s wq_id=%d uid=%d retries=%d",
@@ -476,7 +510,11 @@ async def _process_task(task: Task) -> dict:
         queue_wait_ms,
     )
     return await prewarm_wrong_question_analysis(
-        wq_id, user_id, expected_revision=task.payload.get("revision")
+        wq_id,
+        user_id,
+        expected_revision=task.payload.get("revision"),
+        force_regenerate=bool(task.payload.get("force_regenerate")),
+        baseline_generated_at=task.payload.get("baseline_generated_at"),
     )
 
 

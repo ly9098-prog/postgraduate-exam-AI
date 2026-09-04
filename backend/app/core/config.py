@@ -57,6 +57,11 @@ class Settings(BaseSettings):
 
     # DeepSeek (model-specific configs like api_base_url are managed per-model in admin_ai_model_configs)
     AI_TIMEOUT: int = 150
+    # Wrong-question analysis often runs through third-party relays/reasoning
+    # models whose healthy latency is much higher than lightweight chat probes.
+    # Keep a feature-level budget so operators can tune it independently from
+    # other AI calls. Set to 0 to fall back to AI_TIMEOUT.
+    AI_ERROR_ANALYSIS_TIMEOUT_SEC: int = 150
     AI_DAILY_TOKEN_LIMIT: int = 50000
     AI_MONTHLY_TOKEN_LIMIT: int = 500000
     AI_SINGLE_MAX_TOKENS: int = 2000

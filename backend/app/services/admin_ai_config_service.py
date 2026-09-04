@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlsplit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.client import build_chat_completions_url
+from app.ai.client import OpenAICompatibleAPIError, llm
 
 from app.core.admin_security import AdminPrincipal
 from app.core.config import settings
@@ -725,123 +725,119 @@ async def test_model_connection(
         return await _test_paddleocr_vl_connection(api_base_url, effective_api_key)
 
     # 通用 Chat 模型测试
-    return await _test_chat_connection(api_base_url, effective_api_key, model_name)
+    return await _test_chat_connection(
+        api_base_url, effective_api_key, model_name, provider=effective_provider
+    )
 
 
 async def _test_chat_connection(
     api_base_url: str,
     api_key: str,
     model_name: str,
+    *,
+    provider: str | None = None,
 ) -> dict:
-    """对 Chat 模型发起一次最小 chat/completions 调用。"""
+    """Use the same adaptive OpenAI-compatible client as production traffic.
+
+    The previous test path sent a fixed ``max_tokens + temperature`` payload, so
+    a model could pass/fail differently from the real wrong-question request.
+    Reusing ``llm.chat`` makes the admin "测试连接" exercise URL construction,
+    token-field translation and optional reasoning/temperature negotiation too.
+    """
     base = _validated_api_base_url(api_base_url) or ""
-    url = build_chat_completions_url(base)
-
-    payload = {
-        "model": model_name,
-        "messages": [{"role": "user", "content": "Hi"}],
-        "max_tokens": 5,
-        "temperature": 0,
-    }
-
     start = time.time()
     try:
-        body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        remote = await asyncio.to_thread(
-            request_remote_bytes,
-            url,
-            method="POST",
-            body=body,
-            max_bytes=10 * 1024 * 1024,
-            timeout=15.0,
-            allow_http=settings.AI_ALLOW_HTTP_BASE_URLS,
-            follow_redirects=False,
-            headers={
-                **get_trace_headers(),
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
+        result = await llm.chat(
+            [{"role": "user", "content": "Reply with OK only."}],
+            temperature=0.0,
+            model=model_name,
+            api_key=api_key,
+            base_url=base,
+            provider=provider or "openai_compatible",
+            # A connection probe should not reject a healthy slow relay merely
+            # because it cannot answer inside the old 15-second diagnostic cap.
+            # Keep it below common front-proxy/browser request ceilings while
+            # giving reasoning/relay models enough time to return a tiny reply.
+            timeout=55.0,
+            max_tokens=8,
+            prefer_direct_answer=True,
+            connection_probe=True,
         )
+        elapsed = int(result.get("duration_ms") or ((time.time() - start) * 1000))
+        returned_model = str(result.get("model") or model_name)
+        message = f"连接成功，模型「{returned_model}」响应正常"
+        if int(result.get("compatibility_retries") or 0) > 0:
+            message += "；已自动适配该接口的 OpenAI-compatible 参数格式"
+        return {
+            "success": True,
+            "status": "ok",
+            "message": message,
+            "latency_ms": elapsed,
+            "model_returned": returned_model or None,
+        }
+    except TimeoutError:
+        return {
+            "success": False,
+            "status": "timeout",
+            "message": "连接模型超时，请检查第三方接口可用性或模型响应速度",
+            "latency_ms": int((time.time() - start) * 1000),
+        }
+    except OpenAICompatibleAPIError as exc:
         elapsed = int((time.time() - start) * 1000)
-        response_text = remote.data.decode("utf-8", errors="replace")
-
-        if remote.status in (401, 403):
+        if exc.status_code in (401, 403):
             return {
                 "success": False,
                 "status": "auth_error",
-                "message": f"API Key 无效或无权限访问 (HTTP {remote.status})",
+                "message": f"API Key 无效或无权限访问 (HTTP {exc.status_code})",
                 "latency_ms": elapsed,
             }
-
-        if remote.status == 404:
+        if exc.status_code == 404 or exc.error_kind == "model_not_found":
             return {
                 "success": False,
                 "status": "model_not_found",
                 "message": f"模型「{model_name}」不存在，请检查模型名称是否正确",
                 "latency_ms": elapsed,
             }
-
-        if remote.status == 400:
-            body_lower = response_text.lower()
-            if any(kw in body_lower for kw in ("model", "does not exist", "not found", "not_found", "invalid model")):
-                return {
-                    "success": False,
-                    "status": "model_not_found",
-                    "message": f"模型「{model_name}」不存在，请检查模型名称是否正确",
-                    "latency_ms": elapsed,
-                }
-
-        if remote.status != 200:
-            return {
-                "success": False,
-                "status": "unknown_error",
-                "message": f"接口返回异常状态码 {remote.status}",
-                "latency_ms": elapsed,
-            }
-
-        try:
-            data = json.loads(response_text)
-        except Exception:
-            return {
-                "success": False,
-                "status": "format_error",
-                "message": "接口返回的不是合法 JSON，请检查 API Base URL 是否正确",
-                "latency_ms": elapsed,
-            }
-
-        if "choices" not in data or not isinstance(data["choices"], list) or not data["choices"]:
-            return {
-                "success": False,
-                "status": "format_error",
-                "message": "接口返回格式不符合预期（缺少 choices 字段），请检查 API Base URL",
-                "latency_ms": elapsed,
-            }
-
-        choice = data["choices"][0]
-        if "message" not in choice or "content" not in choice["message"]:
-            return {
-                "success": False,
-                "status": "format_error",
-                "message": "接口返回格式不符合预期（缺少 message.content），请检查 API Base URL",
-                "latency_ms": elapsed,
-            }
-
-        returned_model = data.get("model", "")
         return {
-            "success": True,
-            "status": "ok",
-            "message": f"连接成功，模型「{returned_model or model_name}」响应正常",
+            "success": False,
+            "status": "unknown_error",
+            "message": f"接口返回异常状态码 {exc.status_code}",
             "latency_ms": elapsed,
-            "model_returned": returned_model or None,
         }
-    except Exception as exc:
-        elapsed = int((time.time() - start) * 1000)
+    except UnsafeRemoteURLError as exc:
         return {
             "success": False,
             "status": "network_error",
             "message": f"请求失败: {str(exc)[:160]}",
-            "latency_ms": elapsed,
+            "latency_ms": int((time.time() - start) * 1000),
+        }
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        return {
+            "success": False,
+            "status": "format_error",
+            "message": f"接口返回格式不符合 OpenAI Chat Completions 规范: {str(exc)[:120]}",
+            "latency_ms": int((time.time() - start) * 1000),
+        }
+    except RuntimeError as exc:
+        message = str(exc)
+        if "OpenAI-compatible API response" in message:
+            status = "format_error"
+            detail = "接口返回格式不符合 OpenAI Chat Completions 规范"
+        else:
+            status = "network_error"
+            detail = f"请求失败: {message[:160]}"
+        return {
+            "success": False,
+            "status": status,
+            "message": detail,
+            "latency_ms": int((time.time() - start) * 1000),
+        }
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "network_error",
+            "message": f"请求失败: {str(exc)[:160]}",
+            "latency_ms": int((time.time() - start) * 1000),
         }
 
 
