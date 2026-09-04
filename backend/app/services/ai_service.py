@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,12 +35,20 @@ from app.services.storage_backend import compress_image
 
 logger = logging.getLogger(__name__)
 
-# 微信小程序请求链路通常只有约 60 秒可用。模型调用必须在该预算内结束，
-# 同时不能继续沿用原来的 25 秒硬截断，否则大量本可成功的请求会被误判超时。
-_CONFIGURED_AI_TIMEOUT_SECONDS = max(10, int(settings.AI_TIMEOUT or 50))
-ERROR_ANALYSIS_TIMEOUT_SECONDS = min(_CONFIGURED_AI_TIMEOUT_SECONDS, 48)
-ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS = min(_CONFIGURED_AI_TIMEOUT_SECONDS, 50)
-ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS = 2
+# 第三方 Relay / reasoning 模型可能健康地超过 50 秒，因此服务端不能继续
+# 使用旧的 48/50 秒硬截断。微信小程序 wx.request 本身最多约 60 秒，所以
+# 客户端仍保持 <60 秒的单次请求，并在超时后轮询持久化结果；同时会补投一个
+# 后台 recovery 任务，防止反向代理/客户端断连真的中止原始生成。
+# Keep the provider budget independent from the mini-program transport budget:
+# the backend may wait longer for a healthy compatible model, while the client
+# switches to persistence polling/recovery before the platform request ceiling.
+_CONFIGURED_AI_TIMEOUT_SECONDS = max(
+    10,
+    int(getattr(settings, "AI_ERROR_ANALYSIS_TIMEOUT_SEC", 0) or settings.AI_TIMEOUT or 150),
+)
+ERROR_ANALYSIS_TIMEOUT_SECONDS = _CONFIGURED_AI_TIMEOUT_SECONDS
+ERROR_ANALYSIS_FORCE_TIMEOUT_SECONDS = _CONFIGURED_AI_TIMEOUT_SECONDS
+ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS = 3
 ERROR_ANALYSIS_LOCK_GRACE_SECONDS = 15
 
 # 同进程内生成中锁，防止并发重复调用大模型
@@ -132,20 +141,18 @@ _KNOWLEDGE_KEYS = ("knowledge_patch", "knowledge_weakness", "knowledge", "knowle
 _TASK_KEYS = ("review_task", "suggestion", "task", "reviewTask", "reviewtask", "reviewask", "复练任务")
 _EMPTY_ANALYSIS = {"mistake_diagnosis": "", "knowledge_patch": "", "review_task": ""}
 
-# Vision context is deliberately bounded. A wrong-detail request should stay well
-# below the mini-program's ~60s request budget and avoid sending full-resolution
-# camera photos to a multimodal model.
+# Vision context is deliberately bounded to control upload/token cost. The model
+# call itself may legitimately outlive one mini-program HTTP request; client-side
+# recovery/polling handles that transport limit.
 _MAX_VISUAL_IMAGES = 4
 _MAX_VISUAL_SOURCE_BYTES = 6 * 1024 * 1024
 _VISUAL_FETCH_TIMEOUT_SECONDS = 6.0
 
-# wrong-detail is a short, structured response task. Keep its output bounded and,
-# for Qwen hybrid-thinking multimodal models, prefer direct answer mode. The
-# persisted question images are already resized to <=1200px by compress_image;
-# max_pixels further bounds the model-side visual token budget without adding an
-# OCR/model hop.
+# wrong-detail is a short, structured response task. Keep its output bounded.
+# Persisted question images are already resized to <=1200px by compress_image,
+# so the OpenAI-compatible message can stay vendor-neutral without model-specific
+# image extensions such as max_pixels/detail tuning.
 _ERROR_ANALYSIS_MAX_TOKENS = 800
-_ERROR_ANALYSIS_QWEN_MAX_PIXELS = 1024 * 1024
 # The primary visual analysis can occasionally return all three pedagogical
 # fields correctly while omitting only ``visual_evidence``.  A tiny same-model
 # probe repairs that protocol-level omission without re-running the full answer.
@@ -183,11 +190,12 @@ class PrewarmAnalysisError(RuntimeError):
 def _classify_ai_provider_exception(exc: Exception, *, visual: bool) -> tuple[str, bool, str]:
     """Map provider/client failures to stable API + prewarm semantics.
 
-    The OpenAI-compatible client currently raises ``RuntimeError`` with the
-    upstream HTTP status embedded in the text, so classification is deliberately
-    conservative and does not expose provider response bodies to clients.
+    The OpenAI-compatible client exposes only a typed status plus a small safe
+    error category; provider response bodies are never propagated to clients.
     """
     text = str(exc or "").lower()
+    error_kind = str(getattr(exc, "error_kind", "") or "")
+    typed_retryable = getattr(exc, "retryable", None)
     typed_status = getattr(exc, "status_code", None)
     try:
         status = int(typed_status) if typed_status is not None else None
@@ -197,33 +205,44 @@ def _classify_ai_provider_exception(exc: Exception, *, visual: bool) -> tuple[st
         status_match = re.search(r"(?:api error:|status(?:_code)?[=: ]+)\s*(\d{3})", text)
         status = int(status_match.group(1)) if status_match else None
 
-    if status in {401, 403} or any(
+    if error_kind == "auth" or status in {401, 403} or any(
         token in text
         for token in ("invalid_api_key", "invalid api-key", "authentication", "unauthorized", "forbidden")
     ):
         return "ai_provider_auth_failed", False, "fallback"
 
-    if status == 429 or any(
+    if error_kind == "rate_limit" or status == 429 or any(
         token in text for token in ("rate limit", "rate_limit", "too many requests", "quota")
     ):
         return "ai_provider_rate_limited", True, "fallback"
 
-    if status in {408, 425, 500, 502, 503, 504} or any(
+    if error_kind == "transient" or status in {408, 425, 500, 502, 503, 504} or any(
         token in text
         for token in ("timeout", "timed out", "temporarily unavailable", "connection reset", "connection error")
     ):
         return "ai_provider_transient", True, "fallback"
 
-    looks_like_vision_rejection = visual and any(
-        token in text
-        for token in ("image", "vision", "multimodal", "image_url", "content type")
+    if error_kind == "model_not_found":
+        return "ai_provider_model_not_found", False, "fallback"
+
+    if error_kind in {"parameter_unsupported", "invalid_request"}:
+        return "ai_provider_request_incompatible", False, "fallback"
+
+    looks_like_vision_rejection = visual and (
+        error_kind == "vision_unsupported"
+        or any(
+            token in text
+            for token in ("image", "vision", "multimodal", "image_url", "content type")
+        )
     )
     if looks_like_vision_rejection:
         return "vision_unavailable", False, "vision_unavailable"
 
-    # Unknown provider/client failures may be transient; allow the durable
-    # queue's bounded retry policy to absorb short-lived upstream issues.
-    return "ai_provider_error", True, "fallback"
+    # Unknown transport/provider failures may still be transient. Preserve a
+    # typed client's retryability decision when available instead of retrying a
+    # deterministic 4xx forever.
+    retryable = True if typed_retryable is None else bool(typed_retryable)
+    return "ai_provider_error", retryable, "fallback"
 
 
 def _prewarm_failure_from_result(result: dict) -> PrewarmAnalysisError:
@@ -250,83 +269,6 @@ def _prewarm_failure_from_result(result: dict) -> PrewarmAnalysisError:
         retryable=bool(retryable),
         model=model,
     )
-
-
-def _is_aliyun_model_studio_endpoint(base_url: str | None) -> bool:
-    """Return whether ``base_url`` is an Alibaba Cloud Model Studio endpoint.
-
-    The admin UI intentionally treats ``provider`` as a routing/monitoring label,
-    so users may legitimately save an Alibaba-hosted GLM/Qwen model with provider
-    set to ``openai``. Runtime feature detection therefore must also inspect the
-    configured endpoint instead of relying on the provider label alone.
-    """
-    try:
-        host = (urlsplit(str(base_url or "").strip()).hostname or "").lower()
-    except ValueError:
-        return False
-    return host.endswith(".aliyuncs.com") and ("maas" in host or "dashscope" in host)
-
-
-def _qwen_error_analysis_fast_path(
-    provider: str | None,
-    model: str | None,
-    base_url: str | None = None,
-) -> bool:
-    """Whether the configured analysis model supports our Qwen fast path.
-
-    Avoid sending Alibaba-specific parameters to arbitrary OpenAI-compatible
-    endpoints. A matching provider label *or* an Alibaba Model Studio endpoint is
-    enough because the admin UI allows provider to stay as the generic ``openai``.
-    """
-    provider_key = str(provider or "").strip().lower()
-    model_key = str(model or "").strip().lower()
-    if not model_key:
-        return False
-    qwen_hybrid_prefixes = ("qwen3.8", "qwen3.7", "qwen3.6", "qwen3.5", "qwen3-vl")
-    provider_matches = provider_key in {
-        "qwen", "aliyun", "dashscope", "alibaba", "alibaba-cloud",
-    }
-    return model_key.startswith(qwen_hybrid_prefixes) and (
-        provider_matches or _is_aliyun_model_studio_endpoint(base_url)
-    )
-
-
-def _glm_error_analysis_direct_answer_path(model: str | None, base_url: str | None) -> bool:
-    """Use non-thinking mode for Alibaba-hosted GLM hybrid reasoning models.
-
-    Alibaba Model Studio enables thinking by default for GLM-5.x and GLM-4.5+
-    hybrid models. Wrong-detail analysis has a deliberately small output budget
-    (800 tokens); leaving thinking enabled can spend that budget on
-    ``reasoning_content`` and return an empty final ``message.content``.
-    """
-    if not _is_aliyun_model_studio_endpoint(base_url):
-        return False
-    model_key = str(model or "").strip().lower()
-    return (
-        model_key == "glm-5"
-        or model_key.startswith(("glm-5.", "glm-4.7", "glm-4.6", "glm-4.5"))
-    )
-
-
-def _gpt56_error_analysis_direct_answer_path(model: str | None) -> bool:
-    """Use GPT-5.6's no-reasoning mode for the short wrong-detail task.
-
-    GPT-5.6 reasoning models default to a non-zero reasoning effort.  That is a
-    poor fit for this endpoint: the requested JSON is only three short teaching
-    fields, while the synchronous mini-program request has a ~58 second budget.
-    On relays, leaving the model at its default effort can therefore spend the
-    whole 48/50 second server budget reasoning before any response headers are
-    returned.
-
-    ``reasoning_effort=none`` is the Chat Completions control for GPT-5.6 and
-    keeps the existing temperature/max-token settings valid.  Match both the
-    canonical IDs (``gpt-5.6-luna``) and common OpenAI-compatible namespaced IDs
-    (``openai/gpt-5.6-luna``).
-    """
-    model_key = str(model or "").strip().lower()
-    if model_key.startswith("openai/"):
-        model_key = model_key.split("/", 1)[1]
-    return model_key == "gpt-5.6" or model_key.startswith("gpt-5.6-")
 
 
 def _detect_image_mime(data: bytes, fallback: str = "") -> str:
@@ -932,6 +874,23 @@ def is_ai_analysis_fresh(
     ) is None
 
 
+def ai_analysis_generated_at(ai_analysis: dict | None) -> str | None:
+    """Return the persisted generation marker used by timeout recovery.
+
+    The public wrong-question payload intentionally exposes only this marker, not
+    the full internal ``_meta`` object. A force-regeneration poll can therefore
+    distinguish the old preserved analysis from a newly committed result even if
+    the model happens to produce byte-identical pedagogical text.
+    """
+    if not isinstance(ai_analysis, dict):
+        return None
+    meta = ai_analysis.get("_meta")
+    if not isinstance(meta, dict):
+        return None
+    value = str(meta.get("generated_at") or "").strip()
+    return value or None
+
+
 def build_cached_error_analysis_response(
     wq,
     *,
@@ -957,6 +916,7 @@ def build_cached_error_analysis_response(
         "duration_ms": 0,
         "visual_input_count": int(meta.get("visual_input_count") or 0),
         "visual_evidence": meta.get("visual_evidence") or None,
+        "generated_at": ai_analysis_generated_at(wq.ai_analysis),
     }
 
 
@@ -983,6 +943,7 @@ def build_any_cached_error_analysis_response(wq) -> dict | None:
         "cache_preserved": True,
         "visual_input_count": int(meta.get("visual_input_count") or 0),
         "visual_evidence": meta.get("visual_evidence") or None,
+        "generated_at": ai_analysis_generated_at(wq.ai_analysis),
     }
 
 
@@ -1241,10 +1202,10 @@ async def analyze_error(
         context = build_error_context(wq, q, knowledge_points)
         context["question"]["structured_visual"] = structured_visual
 
-        # The mini-program request has a ~58s client budget. Resolving the
-        # persisted question image may consume a few seconds, so keep response
-        # headroom instead of spending the full timeout in the LLM call.
-        model_timeout_sec = min(timeout_sec, 46) if image_data_urls else timeout_sec
+        # Text and multimodal calls get the same provider budget. The mini-program
+        # cannot hold one wx.request open for this entire duration; it times out
+        # earlier and recovers the committed result through polling/recovery.
+        model_timeout_sec = timeout_sec
 
         def _failure_response(
             *,
@@ -1273,34 +1234,15 @@ async def analyze_error(
             }
 
         async def _invoke_runtime(selected_runtime):
-            qwen_fast_path = _qwen_error_analysis_fast_path(
-                selected_runtime.provider,
-                selected_runtime.model_name,
-                selected_runtime.base_url,
-            )
-            glm_direct_answer = _glm_error_analysis_direct_answer_path(
-                selected_runtime.model_name, selected_runtime.base_url
-            )
-            gpt56_direct_answer = _gpt56_error_analysis_direct_answer_path(
-                selected_runtime.model_name
-            )
-            direct_answer_mode = qwen_fast_path or glm_direct_answer or gpt56_direct_answer
-            image_max_pixels = _ERROR_ANALYSIS_QWEN_MAX_PIXELS if qwen_fast_path else None
-            # Wrong-detail needs a short final JSON answer, not a long reasoning trace.
-            # Some compatible endpoints default to thinking mode; disable it on
-            # known direct-answer paths so the bounded response contains content.
-            if gpt56_direct_answer:
-                llm_extra_body = {"reasoning_effort": "none"}
-            elif qwen_fast_path or glm_direct_answer:
-                llm_extra_body = {"enable_thinking": False}
-            else:
-                llm_extra_body = None
+            # Keep the multimodal message itself vendor-neutral. Reasoning,
+            # token-limit and temperature dialects are negotiated generically by
+            # the OpenAI-compatible client from protocol rejections, never from
+            # provider/model-name checks.
             messages = build_error_analysis(
                 context["question"],
                 wq.wrong_answer,
                 q.answer,
                 image_data_urls=image_data_urls,
-                image_max_pixels=image_max_pixels,
             )
             async with asyncio.timeout(
                 model_timeout_sec + ERROR_ANALYSIS_TIMEOUT_GUARD_SECONDS
@@ -1314,26 +1256,29 @@ async def analyze_error(
                     provider=selected_runtime.provider,
                     timeout=model_timeout_sec,
                     max_tokens=_ERROR_ANALYSIS_MAX_TOKENS,
-                    extra_body=llm_extra_body,
+                    prefer_direct_answer=True,
                 )
-            return result, direct_answer_mode, image_max_pixels, llm_extra_body
+            return result
 
         attempted_model_ids: set[int] = set()
         if runtime.model_config_id is not None:
             attempted_model_ids.add(int(runtime.model_config_id))
 
+        invoke_started = time.monotonic()
         try:
-            result, direct_answer_mode, image_max_pixels, llm_extra_body = await _invoke_runtime(runtime)
+            result = await _invoke_runtime(runtime)
         except TimeoutError:
+            elapsed_timeout_ms = int((time.monotonic() - invoke_started) * 1000)
             logger.warning(
-                "ai.error_analysis.timeout wq_id=%s force=%s visual=%s timeout_sec=%s",
+                "ai.error_analysis.timeout wq_id=%s force=%s visual=%s timeout_sec=%s elapsed_ms=%s",
                 wq.id, effective_force, bool(image_data_urls), model_timeout_sec,
+                elapsed_timeout_ms,
             )
             return _failure_response(
                 error_code="ai_provider_timeout",
                 retryable=True,
                 failure_model="timeout",
-                duration_ms=model_timeout_sec * 1000,
+                duration_ms=elapsed_timeout_ms,
             )
         except Exception as exc:
             error_code, retryable, failure_model = _classify_ai_provider_exception(
@@ -1342,8 +1287,8 @@ async def analyze_error(
 
             # Authentication failures are deterministic for one saved model
             # revision. Quarantine it, then try the next configured analysis model
-            # once. This prevents an invalid DeepSeek key from generating a 401
-            # for every wrong-question prewarm while still allowing a healthy
+            # once. This prevents one invalid saved credential from generating
+            # a 401 for every wrong-question prewarm while still allowing a healthy
             # fallback model to serve the user.
             if error_code == "ai_provider_auth_failed":
                 await _quarantine_analysis_runtime_auth(runtime)
@@ -1362,18 +1307,21 @@ async def analyze_error(
                     model_signature = _analysis_model_signature(runtime)
                     if runtime.model_config_id is not None:
                         attempted_model_ids.add(int(runtime.model_config_id))
+                    failover_started = time.monotonic()
                     try:
-                        result, direct_answer_mode, image_max_pixels, llm_extra_body = await _invoke_runtime(runtime)
+                        result = await _invoke_runtime(runtime)
                     except TimeoutError:
+                        elapsed_timeout_ms = int((time.monotonic() - failover_started) * 1000)
                         logger.warning(
-                            "ai.error_analysis.failover_timeout wq_id=%s model_config_id=%s timeout_sec=%s",
-                            wq.id, runtime.model_config_id, model_timeout_sec,
+                            "ai.error_analysis.failover_timeout wq_id=%s model_config_id=%s "
+                            "timeout_sec=%s elapsed_ms=%s",
+                            wq.id, runtime.model_config_id, model_timeout_sec, elapsed_timeout_ms,
                         )
                         return _failure_response(
                             error_code="ai_provider_timeout",
                             retryable=True,
                             failure_model="timeout",
-                            duration_ms=model_timeout_sec * 1000,
+                            duration_ms=elapsed_timeout_ms,
                         )
                     except Exception as fallback_exc:
                         error_code, retryable, failure_model = _classify_ai_provider_exception(
@@ -1438,9 +1386,7 @@ async def analyze_error(
             )
             if can_probe:
                 visual_ack_retried = True
-                probe_messages = build_visual_evidence_probe(
-                    image_data_urls, image_max_pixels=image_max_pixels
-                )
+                probe_messages = build_visual_evidence_probe(image_data_urls)
                 try:
                     async with asyncio.timeout(_ERROR_ANALYSIS_VISUAL_ACK_TIMEOUT_SECONDS + 1):
                         probe = await llm.chat(
@@ -1452,7 +1398,7 @@ async def analyze_error(
                             provider=runtime.provider,
                             timeout=_ERROR_ANALYSIS_VISUAL_ACK_TIMEOUT_SECONDS,
                             max_tokens=_ERROR_ANALYSIS_VISUAL_ACK_MAX_TOKENS,
-                            extra_body=llm_extra_body,
+                            prefer_direct_answer=True,
                         )
                     visual_ack_retry_ms = int(probe.get("duration_ms") or 0)
                     total_duration_ms += visual_ack_retry_ms
@@ -1563,15 +1509,14 @@ async def analyze_error(
 
         logger.info(
             "ai.error_analysis.result wq_id=%s force=%s model=%s input_mode=%s visual_count=%s "
-            "visual_evidence_valid=%s parsed_valid=%s thinking=%s max_tokens=%s "
-            "image_max_pixels=%s visual_ack_retried=%s visual_ack_retry_ms=%s "
+            "visual_evidence_valid=%s parsed_valid=%s compatibility=%s max_tokens=%s "
+            "visual_ack_retried=%s visual_ack_retry_ms=%s "
             "fields=%s duration_ms=%s",
             wq.id, effective_force, result.get("model"),
             "vision" if image_data_urls else "text", len(image_data_urls),
             _visual_evidence_is_valid(visual_evidence) if image_data_urls else None,
-            parsed_valid, False if direct_answer_mode else "default",
-            _ERROR_ANALYSIS_MAX_TOKENS, image_max_pixels,
-            visual_ack_retried, visual_ack_retry_ms,
+            parsed_valid, result.get("compatibility_profile") or "default",
+            _ERROR_ANALYSIS_MAX_TOKENS, visual_ack_retried, visual_ack_retry_ms,
             {k: bool(parsed.get(k)) for k in ["mistake_diagnosis", "knowledge_patch", "review_task"]},
             total_duration_ms,
         )
@@ -1587,6 +1532,7 @@ async def analyze_error(
             "visual_input_count": len(image_data_urls),
             "visual_evidence": visual_evidence or None,
             "input_mode": "vision" if image_data_urls else "text",
+            "generated_at": parsed["_meta"]["generated_at"],
         }
     finally:
         _generating.discard(wq_pk)
@@ -1602,6 +1548,8 @@ async def prewarm_wrong_question_analysis(
     user_id: int,
     *,
     expected_revision: str | None = None,
+    force_regenerate: bool = False,
+    baseline_generated_at: str | None = None,
 ) -> dict:
     """Pre-generate one wrong-question analysis using queue-friendly semantics.
 
@@ -1653,9 +1601,39 @@ async def prewarm_wrong_question_analysis(
                     "from_cache": False,
                 }
 
-        result = await analyze_error(bg_db, user_id, wrong_question_id)
+        # A recovery task is queued only after the mini-program transport times
+        # out. The original HTTP handler may still finish successfully. For force
+        # regeneration, skip the backup call when a new persisted generation has
+        # already replaced the baseline; otherwise the recovery task would cause a
+        # second paid regeneration after the first one eventually completed.
+        if force_regenerate and baseline_generated_at is not None:
+            current_generated_at = ai_analysis_generated_at(wq.ai_analysis) or ""
+            if current_generated_at != str(baseline_generated_at or ""):
+                logger.info(
+                    "[prewarm] recovery_superseded id=%d uid=%d baseline=%s current=%s",
+                    wrong_question_id, user_id, baseline_generated_at or "empty",
+                    current_generated_at or "empty",
+                )
+                return {
+                    "status": "superseded",
+                    "reason": "analysis_already_regenerated",
+                    "from_cache": True,
+                }
 
-        if result.get("from_fallback"):
+        result = await analyze_error(
+            bg_db,
+            user_id,
+            wrong_question_id,
+            force_regenerate=force_regenerate,
+        )
+
+        # Force-regeneration failures intentionally return the old cache to the
+        # synchronous caller with ``cache_preserved=True``. A background recovery
+        # must still treat that as a failure so the durable queue can retry instead
+        # of marking the old cache as a newly generated success.
+        if result.get("from_fallback") or (
+            result.get("cache_preserved") and result.get("error_code")
+        ):
             failure = _prewarm_failure_from_result(result)
             category = (
                 "failed_input"

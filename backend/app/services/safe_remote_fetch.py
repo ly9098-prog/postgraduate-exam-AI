@@ -12,10 +12,12 @@ import http.client
 import ipaddress
 import socket
 import ssl
+import time
 from dataclasses import dataclass
 from urllib.parse import SplitResult, urljoin, urlsplit
 
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+_CONNECT_ATTEMPT_TIMEOUT_SECONDS = 5.0
 
 
 class UnsafeRemoteURLError(ValueError):
@@ -101,20 +103,41 @@ def is_safe_remote_url(url: str, *, allow_http: bool = False) -> bool:
 
 
 class _PinnedHTTPConnection(http.client.HTTPConnection):
-    def __init__(self, hostname: str, resolved_ip: str, port: int, timeout: float):
+    def __init__(
+        self,
+        hostname: str,
+        resolved_ip: str,
+        port: int,
+        timeout: float,
+        *,
+        connect_timeout: float | None = None,
+    ):
+        # ``timeout`` is the post-connect socket/read budget. Keep the TCP
+        # connect budget separate so a dead first DNS address (commonly an
+        # unreachable IPv6 record) cannot consume the entire AI request budget.
         super().__init__(hostname, port=port, timeout=timeout)
         self._resolved_ip = resolved_ip
+        self._connect_timeout = float(connect_timeout or timeout)
 
     def connect(self) -> None:
         self.sock = socket.create_connection(
             (self._resolved_ip, self.port),
-            self.timeout,
+            self._connect_timeout,
             self.source_address,
         )
+        self.sock.settimeout(self.timeout)
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
-    def __init__(self, hostname: str, resolved_ip: str, port: int, timeout: float):
+    def __init__(
+        self,
+        hostname: str,
+        resolved_ip: str,
+        port: int,
+        timeout: float,
+        *,
+        connect_timeout: float | None = None,
+    ):
         super().__init__(
             hostname,
             port=port,
@@ -122,14 +145,20 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
             context=ssl.create_default_context(),
         )
         self._resolved_ip = resolved_ip
+        self._connect_timeout = float(connect_timeout or timeout)
 
     def connect(self) -> None:
         raw_sock = socket.create_connection(
             (self._resolved_ip, self.port),
-            self.timeout,
+            self._connect_timeout,
             self.source_address,
         )
-        self.sock = self._context.wrap_socket(raw_sock, server_hostname=self.host)
+        try:
+            self.sock = self._context.wrap_socket(raw_sock, server_hostname=self.host)
+            self.sock.settimeout(self.timeout)
+        except Exception:
+            raw_sock.close()
+            raise
 
 
 def _host_header(parsed: SplitResult, port: int) -> str:
@@ -169,9 +198,18 @@ def request_remote_bytes(
     Redirect following is disabled by default, which is important for requests
     carrying API credentials. Callers that enable redirects should not include
     sensitive headers.
+
+    All resolved public addresses are eligible at *connect time*. A failed first
+    address is retried with the next address under one shared deadline, but once
+    TCP/TLS connects we never replay the request on another address. This avoids
+    duplicate POST/model calls if a timeout happens after the request body may
+    already have been sent.
     """
     if max_bytes < 1:
         raise ValueError("max_bytes must be positive")
+    timeout = float(timeout)
+    if timeout <= 0:
+        raise ValueError("timeout must be positive")
     method = method.strip().upper()
     if method not in {"GET", "HEAD", "POST"}:
         raise ValueError("unsupported HTTP method")
@@ -182,18 +220,17 @@ def request_remote_bytes(
     current_url = str(url).strip()
     current_method = method
     current_body = body
+    deadline = time.monotonic() + timeout
 
     for redirect_count in range(max_redirects + 1):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RemoteFetchTimeoutError("remote resource fetch timed out")
+
         parsed, addresses = validate_remote_url(current_url, allow_http=allow_http)
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
         connection_cls = (
             _PinnedHTTPSConnection if parsed.scheme == "https" else _PinnedHTTPConnection
-        )
-        connection = connection_cls(
-            parsed.hostname or "",
-            addresses[0],
-            port,
-            timeout,
         )
         path = parsed.path or "/"
         if parsed.query:
@@ -204,82 +241,125 @@ def request_remote_bytes(
             **request_headers,
         }
 
-        try:
-            connection.request(
-                current_method,
-                path,
-                body=current_body,
-                headers=outgoing_headers,
+        redirected = False
+        last_connect_exc: Exception | None = None
+        for address_index, resolved_ip in enumerate(addresses):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RemoteFetchTimeoutError("remote resource fetch timed out")
+            connect_timeout = min(_CONNECT_ATTEMPT_TIMEOUT_SECONDS, remaining)
+            connection = connection_cls(
+                parsed.hostname or "",
+                resolved_ip,
+                port,
+                timeout=remaining,
+                connect_timeout=connect_timeout,
             )
-            response = connection.getresponse()
 
-            if response.status in _REDIRECT_STATUSES:
-                if not follow_redirects:
-                    return RemoteResponse(
-                        status=response.status,
-                        data=response.read(min(max_bytes, 64 * 1024)),
-                        content_type=response.getheader("Content-Type", ""),
-                        final_url=current_url,
-                    )
-                location = response.getheader("Location")
-                response.read(1024)
-                if not location:
-                    raise UnsafeRemoteURLError("redirect has no Location header")
-                if redirect_count >= max_redirects:
-                    raise UnsafeRemoteURLError("too many redirects")
-                current_url = urljoin(current_url, location)
-                if response.status == 303 or (
-                    response.status in {301, 302} and current_method == "POST"
-                ):
-                    current_method = "GET"
-                    current_body = None
-                continue
+            # Only transport failures before a TCP/TLS connection is established
+            # are safe to retry on another DNS address. After connect(), a POST
+            # body may be partially/fully sent, so replaying could double-bill an
+            # AI request or duplicate another side effect.
+            try:
+                connection.connect()
+            except (socket.timeout, TimeoutError, OSError, http.client.HTTPException, ssl.SSLError) as exc:
+                last_connect_exc = exc
+                connection.close()
+                if address_index + 1 < len(addresses):
+                    continue
+                if isinstance(exc, (socket.timeout, TimeoutError)):
+                    raise RemoteFetchTimeoutError("remote resource fetch timed out") from exc
+                raise UnsafeRemoteURLError("remote resource fetch failed") from exc
 
-            if require_2xx and not 200 <= response.status < 300:
-                raise UnsafeRemoteURLError(
-                    f"remote server returned HTTP {response.status}"
-                )
-
-            content_length = response.getheader("Content-Length")
-            if content_length:
-                try:
-                    if int(content_length) > max_bytes:
-                        raise UnsafeRemoteURLError("remote resource is too large")
-                except ValueError as exc:
-                    raise UnsafeRemoteURLError("invalid Content-Length header") from exc
-
-            chunks: list[bytes] = []
-            total = 0
-            while current_method != "HEAD":
-                remaining = max_bytes + 1 - total
+            try:
+                # Recompute the read/write timeout after connect/TLS so DNS and a
+                # slow/dead address do not extend the logical request deadline.
+                remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise UnsafeRemoteURLError("remote resource is too large")
-                chunk = response.read(min(64 * 1024, remaining))
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                total += len(chunk)
-                if total > max_bytes:
-                    raise UnsafeRemoteURLError("remote resource is too large")
+                    raise RemoteFetchTimeoutError("remote resource fetch timed out")
+                if connection.sock is not None:
+                    connection.sock.settimeout(remaining)
 
-            return RemoteResponse(
-                status=response.status,
-                data=b"".join(chunks),
-                content_type=response.getheader("Content-Type", ""),
-                final_url=current_url,
-            )
-        # ``socket.timeout`` is an ``OSError`` subclass. Catch it first so an
-        # upstream model that simply takes longer than the configured budget is
-        # reported as a timeout instead of the misleading
-        # ``UnsafeRemoteURLError: remote resource fetch failed``.  This matters
-        # for the wrong-question analysis path, which has a strict mini-program
-        # request budget and already has dedicated timeout handling.
-        except (socket.timeout, TimeoutError) as exc:
-            raise RemoteFetchTimeoutError("remote resource fetch timed out") from exc
-        except (OSError, http.client.HTTPException, ssl.SSLError) as exc:
-            raise UnsafeRemoteURLError("remote resource fetch failed") from exc
-        finally:
-            connection.close()
+                connection.request(
+                    current_method,
+                    path,
+                    body=current_body,
+                    headers=outgoing_headers,
+                )
+                response = connection.getresponse()
+
+                if response.status in _REDIRECT_STATUSES:
+                    if not follow_redirects:
+                        return RemoteResponse(
+                            status=response.status,
+                            data=response.read(min(max_bytes, 64 * 1024)),
+                            content_type=response.getheader("Content-Type", ""),
+                            final_url=current_url,
+                        )
+                    location = response.getheader("Location")
+                    response.read(1024)
+                    if not location:
+                        raise UnsafeRemoteURLError("redirect has no Location header")
+                    if redirect_count >= max_redirects:
+                        raise UnsafeRemoteURLError("too many redirects")
+                    current_url = urljoin(current_url, location)
+                    if response.status == 303 or (
+                        response.status in {301, 302} and current_method == "POST"
+                    ):
+                        current_method = "GET"
+                        current_body = None
+                    redirected = True
+                    break
+
+                if require_2xx and not 200 <= response.status < 300:
+                    raise UnsafeRemoteURLError(
+                        f"remote server returned HTTP {response.status}"
+                    )
+
+                content_length = response.getheader("Content-Length")
+                if content_length:
+                    try:
+                        if int(content_length) > max_bytes:
+                            raise UnsafeRemoteURLError("remote resource is too large")
+                    except ValueError as exc:
+                        raise UnsafeRemoteURLError("invalid Content-Length header") from exc
+
+                chunks: list[bytes] = []
+                total = 0
+                while current_method != "HEAD":
+                    remaining_bytes = max_bytes + 1 - total
+                    if remaining_bytes <= 0:
+                        raise UnsafeRemoteURLError("remote resource is too large")
+                    chunk = response.read(min(64 * 1024, remaining_bytes))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise UnsafeRemoteURLError("remote resource is too large")
+
+                return RemoteResponse(
+                    status=response.status,
+                    data=b"".join(chunks),
+                    content_type=response.getheader("Content-Type", ""),
+                    final_url=current_url,
+                )
+            except RemoteFetchTimeoutError:
+                raise
+            except (socket.timeout, TimeoutError) as exc:
+                raise RemoteFetchTimeoutError("remote resource fetch timed out") from exc
+            except (OSError, http.client.HTTPException, ssl.SSLError) as exc:
+                raise UnsafeRemoteURLError("remote resource fetch failed") from exc
+            finally:
+                connection.close()
+
+        if redirected:
+            continue
+        if last_connect_exc is not None:
+            # Defensive fallback; the final address branch above normally raises.
+            if isinstance(last_connect_exc, (socket.timeout, TimeoutError)):
+                raise RemoteFetchTimeoutError("remote resource fetch timed out") from last_connect_exc
+            raise UnsafeRemoteURLError("remote resource fetch failed") from last_connect_exc
 
     raise UnsafeRemoteURLError("too many redirects")
 

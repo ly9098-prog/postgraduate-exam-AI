@@ -21,11 +21,12 @@ SYSTEM_PROMPTS = {
         "帮助用户明确为什么错、需要补什么、接下来怎么练。\n"
         "要求：\n"
         "1. 输出必须具体、简洁、可执行，不要重复题目原解析，不要输出空泛建议。\n"
-        "2. 每个字段控制在 120 字以内，适合移动端阅读。\n"
-        "3. 不同学科适配不同表达：数学侧重公式、条件和步骤；英语侧重词汇、语法、"
+        "2. 不要输出思考过程、推理草稿或 reasoning 内容，直接返回最终 JSON。\n"
+        "3. 每个字段控制在 120 字以内，适合移动端阅读。\n"
+        "4. 不同学科适配不同表达：数学侧重公式、条件和步骤；英语侧重词汇、语法、"
         "句子结构和选项干扰；政治侧重概念辨析、关键词和材料逻辑；408 侧重概念、"
         "原理、模型和典型考法。\n"
-        "4. 数学公式约束：\n"
+        "5. 数学公式约束：\n"
         "   - 所有数学内容必须使用 LaTeX\n"
         "   - 行内公式用 $...$，块级公式用 $$...$$\n"
         "   - 禁止输出 Unicode 上下标和根号，例如不要写 x²、√x，应写 $x^2$、$\\sqrt{x}$\n"
@@ -381,13 +382,11 @@ def build_error_analysis(
             "image_url": {"url": data_url},
         }
         if image_max_pixels is not None and image_max_pixels > 0:
-            # Qwen OpenAI-compatible multimodal API accepts max_pixels as a
-            # sibling of image_url. Keep it out of generic requests so other
-            # OpenAI-compatible providers are not exposed to Qwen extensions.
+            # Optional vendor extension retained only for explicit callers.
+            # Generic wrong-question analysis does not set it.
             image_item["max_pixels"] = int(image_max_pixels)
-        else:
-            # Preserve the existing high-detail hint for generic providers.
-            image_item["image_url"]["detail"] = "high"
+        # Do not inject image_url.detail by default. Although OpenAI supports
+        # it, many otherwise-compatible multimodal gateways accept only {url}.
         content.append(image_item)
     return [
         {"role": "system", "content": system_prompt},
@@ -425,8 +424,7 @@ def build_visual_evidence_probe(
         }
         if image_max_pixels is not None and image_max_pixels > 0:
             image_item["max_pixels"] = int(image_max_pixels)
-        else:
-            image_item["image_url"]["detail"] = "high"
+        # Keep the default multimodal shape to type + image_url.url only.
         content.append(image_item)
 
     return [

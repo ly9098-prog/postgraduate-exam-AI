@@ -126,6 +126,7 @@ async def chat_with_db_model(
     max_tokens: int | None = None,
     response_format: dict[str, Any] | None = None,
     extra_body: dict[str, Any] | None = None,
+    prefer_direct_answer: bool = False,
 ) -> dict[str, Any] | None:
     """Resolve a configured compatible model and invoke it.
 
@@ -151,4 +152,5 @@ async def chat_with_db_model(
         max_tokens=max_tokens,
         response_format=response_format,
         extra_body=extra_body,
+        prefer_direct_answer=prefer_direct_answer,
     )

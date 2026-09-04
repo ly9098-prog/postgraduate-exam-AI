@@ -8,9 +8,13 @@ const adapter = require('../utils/question-runner-adapter')
 const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../utils/ai-analysis-normalizer')
 const { buildAiRichText } = require('../utils/ai-math-render')
 
-const AI_REQUEST_TIMEOUT_MS = 58000
-const AI_CACHE_POLL_INTERVAL_MS = 1500
-const AI_CACHE_POLL_ATTEMPTS = 6
+// wx.request cannot hold one request open for the backend's full 150s AI
+// provider budget. Keep each transport attempt safely below the platform's
+// ~60s ceiling, then recover through persisted-result polling. The backend may
+// continue the original generation and a recovery task is queued as a backup.
+const AI_REQUEST_TIMEOUT_MS = 55000
+const AI_CACHE_POLL_INTERVAL_MS = 3000
+const AI_CACHE_POLL_ATTEMPTS = 60
 const QUESTION_SWITCH_OUT_MS = 150
 const QUESTION_SWITCH_IN_MS = 170
 const QUESTION_SWITCH_WATCHDOG_MS = 35000
@@ -18,6 +22,18 @@ const QUESTION_SWITCH_ANIM_WATCHDOG_MS = 5000
 
 function _sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function _isTimeoutError(err) {
+  const message = [
+    err && err.message,
+    err && err.raw && err.raw.errMsg,
+  ].filter(Boolean).join(' ').toLowerCase()
+  return message.includes('timeout') || message.includes('timed out')
+}
+
+function _generationMarker(wq) {
+  return String((wq && wq.ai_analysis_generated_at) || '')
 }
 
 function _fallbackMessage(model, errorCode, retryable) {
@@ -213,6 +229,7 @@ Page({
     this._alive = true
     this._aiRequestId = 0
     this._currentWqId = null
+    this._aiGenerationMarker = ''
     this._switching = false
     this._navigationSeq = 0
     this._aiSwipeStart = null
@@ -275,6 +292,7 @@ Page({
     this._clearMasterUndo()
     // 清空页面实例缓存，防止跨页面串用
     this._wqCache = null
+    this._aiGenerationMarker = ''
     resetRenderGuard()
   },
 
@@ -322,6 +340,7 @@ Page({
 
       this._currentWqId = wqId
       this._errorTypeLabelText = raw.errorTypeLabelText
+      this._aiGenerationMarker = _generationMarker(wq)
       this._aiResult = null
 
       var data = {
@@ -409,18 +428,41 @@ Page({
   },
 
   /** 将最新 AI 结果回写页面实例缓存，避免切题回来后旧缓存丢弃刚生成的分析 */
-  _syncWqCacheAi(wqId, normalized) {
+  _syncWqCacheAi(wqId, normalized, generatedAt) {
     if (!this._wqCache || !wqId || !normalized) return
     const entry = this._wqCache[wqId]
     if (!entry) return
-    entry.data = Object.assign({}, entry.data, { ai_analysis: normalized })
+    const patch = { ai_analysis: normalized }
+    if (generatedAt !== undefined) patch.ai_analysis_generated_at = String(generatedAt || '')
+    entry.data = Object.assign({}, entry.data, patch)
   },
 
   async _requestAiAnalysis(wqId, forceRegenerate) {
     return api.post('/ai/error-analysis', {
       wrong_question_id: wqId,
       force_regenerate: !!forceRegenerate,
-    }, { timeout: AI_REQUEST_TIMEOUT_MS })
+    }, {
+      timeout: AI_REQUEST_TIMEOUT_MS,
+      suppressNetworkToast: true,
+    })
+  },
+
+  async _enqueueAiRecovery(wqId, forceRegenerate, baselineGeneratedAt) {
+    try {
+      const payload = {
+        wrong_question_id: wqId,
+        force_regenerate: !!forceRegenerate,
+      }
+      if (forceRegenerate) payload.baseline_generated_at = String(baselineGeneratedAt || '')
+      const result = await api.post('/ai/error-analysis/recover', payload, {
+        timeout: 10000,
+        suppressNetworkToast: true,
+      })
+      return !!(result && result.queued)
+    } catch (e) {
+      console.warn('AI 恢复任务入队失败，将继续轮询原请求结果', e)
+      return false
+    }
   },
 
   _analysisFailureState(model, result) {
@@ -451,40 +493,65 @@ Page({
       String(this.data.wq.id) === String(wqId)
   },
 
-  async _pollPersistedAiAnalysis(wqId, requestId) {
+  async _pollPersistedAiAnalysis(wqId, requestId, options) {
+    const pollOptions = options || {}
+    const baselineGeneratedAt = String(pollOptions.baselineGeneratedAt || '')
+    const requireNewGeneration = !!pollOptions.requireNewGeneration
     for (var attempt = 0; attempt < AI_CACHE_POLL_ATTEMPTS; attempt++) {
       if (!this._isCurrentAiRequest(requestId, wqId)) return null
       if (attempt > 0) await _sleep(AI_CACHE_POLL_INTERVAL_MS)
       if (!this._isCurrentAiRequest(requestId, wqId)) return null
 
       try {
-        const latestWq = await api.get(`/wrong-questions/${wqId}`, {}, { timeout: 10000 })
+        const status = await api.get(`/ai/error-analysis/status/${wqId}`, {}, {
+          timeout: 10000,
+          suppressNetworkToast: true,
+        })
         if (!this._isCurrentAiRequest(requestId, wqId)) return null
-        if (!_detectAiCache(latestWq)) continue
-        const normalized = _normalizeAiPayload(latestWq.ai_analysis)
+        if (!status || !status.ready) continue
+        const generatedAt = String(status.generated_at || '')
+        // A timed-out request must not mistake the old preserved/stale cache for
+        // the new result it is waiting for.
+        if (requireNewGeneration && generatedAt === baselineGeneratedAt) continue
+        const normalized = _normalizeAiPayload(status.content)
         if (_hasAiContent(normalized)) {
-          return { normalized, latestWq }
+          const latestWq = Object.assign({}, this.data.wq || {}, {
+            ai_analysis: normalized,
+            ai_analysis_status: 'ready',
+            ai_analysis_generated_at: generatedAt,
+          })
+          return { normalized, latestWq, generatedAt }
         }
       } catch (_) {
-        // 轮询是恢复手段，单次网络失败继续下一次，不覆盖主请求错误。
+        // Polling is a recovery path; one transient network failure must not
+        // replace the original request error or stop later checks.
       }
     }
     return null
   },
 
-  _applyRecoveredAiResult(recovered) {
+  _applyRecoveredAiResult(recovered, options) {
     if (!recovered) return false
+    const applyOptions = options || {}
     this._resetAiLoadingState()
     this._aiResult = recovered.normalized
-    if (recovered.latestWq) this._syncWqCacheAi(recovered.latestWq.id, recovered.normalized)
+    this._aiGenerationMarker = String(recovered.generatedAt || _generationMarker(recovered.latestWq) || '')
+    if (recovered.latestWq) {
+      this._syncWqCacheAi(
+        recovered.latestWq.id,
+        recovered.normalized,
+        this._aiGenerationMarker
+      )
+    }
     const latestWq = recovered.latestWq || this.data.wq
     this.setData({
       wq: latestWq,
       aiCards: _normalizeAiResult(recovered.normalized),
       aiFallback: false,
-      aiFromCache: true,
+      aiFromCache: !applyOptions.fromRegeneration,
       aiFromQuestionAnalysis: false,
       aiErrorText: '',
+      aiRetryable: true,
       aiInlineNotice: '',
       })
     return true
@@ -493,6 +560,7 @@ Page({
   async loadAiAnalysis(wqId) {
     if (!wqId) return
     if (this.data.aiLoading) return
+    const baselineGeneratedAt = String(this._aiGenerationMarker || _generationMarker(this.data.wq) || '')
     const requestId = ++this._aiRequestId
     this.setData({
       aiLoading: true,
@@ -515,7 +583,10 @@ Page({
       const fromFallback = !!(result && result.from_fallback)
 
       if (model === 'generating') {
-        const recovered = await this._pollPersistedAiAnalysis(wqId, requestId)
+        const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
+          requireNewGeneration: true,
+          baselineGeneratedAt,
+        })
         if (this._applyRecoveredAiResult(recovered)) return
         if (!this._isCurrentAiRequest(requestId, wqId)) return
         this._resetAiLoadingState()
@@ -535,7 +606,8 @@ Page({
       }
       this._resetAiLoadingState()
       this._aiResult = normalized
-      this._syncWqCacheAi(wqId, normalized)
+      this._aiGenerationMarker = String((result && result.generated_at) || this._aiGenerationMarker || '')
+      this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
       this.setData({
         aiCards: _normalizeAiResult(normalized),
         aiFallback: false,
@@ -547,12 +619,19 @@ Page({
     } catch (e) {
       console.error('加载 AI 分析失败', e)
       if (this._isCurrentAiRequest(requestId, wqId)) {
-        // 客户端超时/断网时，服务端可能已经完成并持久化；先短轮询恢复结果。
-        const recovered = await this._pollPersistedAiAnalysis(wqId, requestId)
+        // wx.request usually reaches its transport ceiling before the backend's
+        // provider budget. Queue a best-effort backup, then watch the persisted
+        // result from either the original request or the recovery worker.
+        this.setData({ aiInlineNotice: 'AI 正在继续生成，完成后会自动显示' })
+        this._enqueueAiRecovery(wqId, false, '')
+        const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
+          requireNewGeneration: true,
+          baselineGeneratedAt,
+        })
         if (this._applyRecoveredAiResult(recovered)) return
       }
       if (this._isCurrentAiRequest(requestId, wqId)) {
-        const msg = e && e.message && String(e.message).includes('timeout')
+        const msg = _isTimeoutError(e)
           ? 'AI 分析生成超时，请稍后重试'
           : 'AI 分析生成失败，请稍后重试'
         this._resetAiLoadingState()
@@ -567,6 +646,7 @@ Page({
     // 保存旧内容，失败时恢复
     const oldCards = this.data.aiCards
     const oldResult = this._aiResult
+    const baselineGeneratedAt = String(this._aiGenerationMarker || _generationMarker(this.data.wq) || '')
     const requestId = ++this._aiRequestId
     this.setData({
       aiRegenerating: true,
@@ -589,8 +669,19 @@ Page({
       const fromFallback = !!(result && result.from_fallback)
       const cachePreserved = !!(result && result.cache_preserved)
 
-      // generating 中
+      // Another request is already generating. For a manual regeneration, wait
+      // specifically for a generation marker newer than the old displayed cache.
       if (model === 'generating') {
+        this.setData({ aiInlineNotice: 'AI 正在生成中，完成后会自动更新' })
+        const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
+          requireNewGeneration: true,
+          baselineGeneratedAt,
+        })
+        if (this._applyRecoveredAiResult(recovered, { fromRegeneration: true })) {
+          wx.showToast({ title: '已重新生成', icon: 'success' })
+          return
+        }
+        if (!this._isCurrentAiRequest(requestId, wqId)) return
         this._resetAiLoadingState()
         this.setData({ aiInlineNotice: 'AI 正在生成中，请稍后重试' })
         return
@@ -600,7 +691,8 @@ Page({
       if (cachePreserved && hasContent) {
         this._resetAiLoadingState()
         this._aiResult = normalized
-        this._syncWqCacheAi(wqId, normalized)
+        this._aiGenerationMarker = String((result && result.generated_at) || baselineGeneratedAt || '')
+        this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
         this.setData({
           aiCards: _normalizeAiResult(normalized),
           aiFallback: false,
@@ -647,7 +739,8 @@ Page({
       // 成功 — 更新为新内容
       this._resetAiLoadingState()
       this._aiResult = normalized
-      this._syncWqCacheAi(wqId, normalized)
+      this._aiGenerationMarker = String((result && result.generated_at) || this._aiGenerationMarker || '')
+      this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
       this.setData({
         aiCards: _normalizeAiResult(normalized),
         aiFallback: false,
@@ -660,17 +753,32 @@ Page({
     } catch (e) {
       console.error('重新生成 AI 分析失败', e)
       if (this._isCurrentAiRequest(requestId, wqId)) {
+        this.setData({ aiInlineNotice: 'AI 正在继续重新生成，完成后会自动更新' })
+        this._enqueueAiRecovery(wqId, true, baselineGeneratedAt)
+        const recovered = await this._pollPersistedAiAnalysis(wqId, requestId, {
+          requireNewGeneration: true,
+          baselineGeneratedAt,
+        })
+        if (this._applyRecoveredAiResult(recovered, { fromRegeneration: true })) {
+          wx.showToast({ title: '已重新生成', icon: 'success' })
+          return
+        }
+      }
+      if (this._isCurrentAiRequest(requestId, wqId)) {
+        const timeoutText = _isTimeoutError(e) ? '重新生成超时' : '重新生成失败'
         if (oldCards) {
           this._resetAiLoadingState()
+          this._aiResult = oldResult
           this.setData({
+            aiCards: oldCards,
             aiFallback: false,
-            aiInlineNotice: '重新生成失败，已保留历史解析',
+            aiInlineNotice: `${timeoutText}，已保留历史解析`,
           })
-          wx.showToast({ title: '重新生成失败，已保留历史解析', icon: 'none' })
+          wx.showToast({ title: `${timeoutText}，已保留历史解析`, icon: 'none' })
         } else {
           this._resetAiLoadingState()
-          this.setData({ aiErrorText: '重新生成失败，请稍后重试' })
-          wx.showToast({ title: '重新生成失败', icon: 'none' })
+          this.setData({ aiErrorText: `${timeoutText}，请稍后重试` })
+          wx.showToast({ title: timeoutText, icon: 'none' })
         }
       }
     }
