@@ -892,15 +892,26 @@ function AddModelDrawer({
               </div>
 
               {testResult ? (
-                <div className={cn("border-l-2 px-3 py-2 text-xs", testResult.success ? "border-emerald-400 bg-emerald-50/60 text-emerald-800" : "border-red-400 bg-red-50/60 text-red-700")}>
-                  <div className="flex items-start gap-2">
-                    {testResult.success ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
-                    <div>
-                      <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
+                <div className="max-w-[680px] border-t border-slate-200 pt-2.5 text-[11px] leading-5">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <span
+                      className={cn(
+                        "mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full",
+                        testResult.success ? "bg-emerald-500" : "bg-rose-500",
+                      )}
+                    />
+                    <div className="min-w-0 flex-1">
                       {testResult.success ? (
-                        <p className="mt-0.5">{testResult.latency_ms != null ? `响应时间 ${testResult.latency_ms}ms · ` : ""}模型接口可正常使用</p>
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                          <span className="font-medium text-slate-700">连接成功</span>
+                          {testResult.latency_ms != null ? <span className="text-slate-400">响应时间 {testResult.latency_ms}ms</span> : null}
+                          <span className="text-slate-400">模型接口可正常使用</span>
+                        </div>
                       ) : (
-                        <p className="mt-0.5 break-words leading-5">{testResult.message}</p>
+                        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                          <span className="shrink-0 font-medium text-rose-700">连接失败</span>
+                          <span className="min-w-0 break-words text-slate-500">{testResult.message}</span>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1023,9 +1034,9 @@ function AddModelDrawer({
 type DrawerTab = "basic" | "api" | "features";
 
 type ModelDrawerDraft = {
-  version: 2;
+  version: 3;
   sourceUpdatedAt: string | null;
-  sourceFeaturesSignature: string;
+  sourceFingerprint: string;
   name: string;
   displayName: string;
   provider: string;
@@ -1034,6 +1045,13 @@ type ModelDrawerDraft = {
   features: string[];
   savedAt: number;
 };
+
+type LegacyModelDrawerDraft = Omit<ModelDrawerDraft, "version" | "sourceFingerprint"> & {
+  version: 2;
+  sourceFeaturesSignature: string;
+};
+
+type StoredModelDrawerDraft = ModelDrawerDraft | LegacyModelDrawerDraft;
 
 const DRAWER_TABS: { key: DrawerTab; label: string }[] = [
   { key: "basic", label: "基础配置" },
@@ -1055,6 +1073,29 @@ function modelDraftStorageKey(modelId: number) {
 
 function normalizedModelFeatures(model: AdminAiModelConfig) {
   return featuresForKind(getModelKind(model), configuredFeatures(model));
+}
+
+function modelServerFingerprint(model: AdminAiModelConfig): string {
+  return JSON.stringify({
+    name: model.name,
+    displayName: model.display_name,
+    provider: model.provider,
+    modelKind: getModelKind(model),
+    apiBaseUrl: (model.api_base_url ?? "").trim().replace(/\/$/, ""),
+    features: [...normalizedModelFeatures(model)].sort(),
+  });
+}
+
+function draftDiffersFromServer(draft: StoredModelDrawerDraft, model: AdminAiModelConfig): boolean {
+  const draftFeatures = rememberedChatFeatures(Array.isArray(draft.features) ? draft.features : []);
+  return (
+    (draft.name ?? model.name).trim() !== model.name
+    || (draft.displayName ?? model.display_name).trim() !== model.display_name
+    || (draft.provider ?? model.provider).trim() !== model.provider
+    || (draft.modelKind ?? getModelKind(model)) !== getModelKind(model)
+    || (draft.apiBaseUrl ?? "").trim().replace(/\/$/, "") !== (model.api_base_url ?? "").trim().replace(/\/$/, "")
+    || featureSignature(draftFeatures) !== featureSignature(rememberedChatFeatures(configuredFeatures(model)))
+  );
 }
 
 function ModelConfigDrawer({
@@ -1089,6 +1130,7 @@ function ModelConfigDrawer({
   const [testResult, setTestResult] = useState<ModelTestConnectionResponse | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
+  const [recoverableDraft, setRecoverableDraft] = useState<StoredModelDrawerDraft | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const basicSectionRef = useRef<HTMLElement>(null);
@@ -1131,6 +1173,7 @@ function ModelConfigDrawer({
     setShowApiKey(false);
     setTestResult(null);
     setSaveError(null);
+    setRecoverableDraft(null);
     try {
       window.localStorage.removeItem(modelDraftStorageKey(model.id));
     } catch {
@@ -1151,44 +1194,94 @@ function ModelConfigDrawer({
   }, [requestClose]);
 
   useEffect(() => {
+    // 数据库始终是打开 Drawer 时的回显来源。本地草稿只作为“可恢复版本”保留，
+    // 不再自动写回表单，避免旧草稿覆盖服务端最新能力映射或其他配置。
+    setNameInput(model.name);
+    setDisplayNameInput(model.display_name);
+    setProviderInput(model.provider);
+    setModelKind(getModelKind(model));
+    setApiBaseUrlInput(model.api_base_url ?? "");
+    setFeaturesInput(rememberedChatFeatures(configuredFeatures(model)));
+    setApiKeyInput("");
+    setShowApiKey(false);
+    setTestResult(null);
+    setSaveError(null);
+    setRecoverableDraft(null);
+    setDraftReady(false);
+
     try {
       const raw = window.localStorage.getItem(modelDraftStorageKey(model.id));
       if (raw) {
-        const draft = JSON.parse(raw) as ModelDrawerDraft;
-        const sourceMatches = !draft.sourceUpdatedAt || !model.updated_at || draft.sourceUpdatedAt === model.updated_at;
-        const sourceFeaturesMatch =
-          draft.version === 2
-          && draft.sourceFeaturesSignature === featureSignature(configuredFeatures(model));
-        if (draft.version === 2 && sourceMatches && sourceFeaturesMatch) {
-          setNameInput(draft.name ?? model.name);
-          setDisplayNameInput(draft.displayName ?? model.display_name);
-          setProviderInput(draft.provider ?? model.provider);
-          setModelKind(draft.modelKind ?? getModelKind(model));
-          setApiBaseUrlInput(draft.apiBaseUrl ?? (model.api_base_url ?? ""));
-          setFeaturesInput(Array.isArray(draft.features) ? rememberedChatFeatures(draft.features) : rememberedChatFeatures(configuredFeatures(model)));
+        const draft = JSON.parse(raw) as StoredModelDrawerDraft;
+        const sourceUpdatedAtMatches =
+          !draft.sourceUpdatedAt || !model.updated_at || draft.sourceUpdatedAt === model.updated_at;
+        const sourceMatches = draft.version === 3
+          ? draft.sourceFingerprint === modelServerFingerprint(model)
+          : draft.version === 2
+            && sourceUpdatedAtMatches
+            && draft.sourceFeaturesSignature === featureSignature(configuredFeatures(model));
+
+        if (sourceMatches && draftDiffersFromServer(draft, model)) {
+          setRecoverableDraft(draft);
         } else {
-          // v1 草稿没有服务端能力映射基线，或服务端映射已变化；丢弃以避免列表与抽屉回显不一致。
+          // 服务端配置已变化、草稿已与服务端一致，或草稿版本无效时直接清理。
           window.localStorage.removeItem(modelDraftStorageKey(model.id));
         }
       }
     } catch {
-      // Ignore malformed or unavailable local storage and continue with server values.
+      try {
+        window.localStorage.removeItem(modelDraftStorageKey(model.id));
+      } catch {
+        // Ignore storage failures; server-backed values remain authoritative.
+      }
     } finally {
       setDraftReady(true);
     }
   }, [model]);
 
+  const restoreDraft = useCallback(() => {
+    if (!recoverableDraft) return;
+    setNameInput(recoverableDraft.name ?? model.name);
+    setDisplayNameInput(recoverableDraft.displayName ?? model.display_name);
+    setProviderInput(recoverableDraft.provider ?? model.provider);
+    setModelKind(recoverableDraft.modelKind ?? getModelKind(model));
+    setApiBaseUrlInput(recoverableDraft.apiBaseUrl ?? (model.api_base_url ?? ""));
+    setFeaturesInput(
+      Array.isArray(recoverableDraft.features)
+        ? rememberedChatFeatures(recoverableDraft.features)
+        : rememberedChatFeatures(configuredFeatures(model)),
+    );
+    setRecoverableDraft(null);
+    setTestResult(null);
+    setSaveError(null);
+  }, [model, recoverableDraft]);
+
+  const discardRecoverableDraft = useCallback(() => {
+    setRecoverableDraft(null);
+    try {
+      window.localStorage.removeItem(modelDraftStorageKey(model.id));
+    } catch {
+      // Ignore storage failures; the server-backed form remains usable.
+    }
+  }, [model.id]);
+
   useEffect(() => {
     if (!draftReady) return;
+
+    // 如果用户在“恢复草稿”提示未处理时直接开始编辑，视为以数据库版本为基线新建草稿，
+    // 自动替换旧草稿，而不是让旧草稿重新覆盖当前表单。
+    if (recoverableDraft && !draftDirty) return;
+    if (recoverableDraft && draftDirty) setRecoverableDraft(null);
+
     try {
       if (!draftDirty) {
         window.localStorage.removeItem(modelDraftStorageKey(model.id));
         return;
       }
       const draft: ModelDrawerDraft = {
-        version: 2,
+        version: 3,
         sourceUpdatedAt: model.updated_at ?? null,
-        sourceFeaturesSignature: featureSignature(configuredFeatures(model)),
+        sourceFingerprint: modelServerFingerprint(model),
         name: nameInput,
         displayName: displayNameInput,
         provider: providerInput,
@@ -1206,12 +1299,12 @@ function ModelConfigDrawer({
     displayNameInput,
     draftReady,
     featuresInput,
-    model.id,
-    model.updated_at,
+    model,
     modelKind,
     nameInput,
     draftDirty,
     providerInput,
+    recoverableDraft,
   ]);
 
   const scrollToTab = useCallback((tab: DrawerTab, behavior: ScrollBehavior = "smooth") => {
@@ -1334,7 +1427,7 @@ function ModelConfigDrawer({
                   <button type="button" onClick={onToggle} disabled={disabled} className="w-full rounded-lg px-3 py-2 text-left font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-950 disabled:opacity-50">
                     {model.is_enabled ? "禁用模型" : "启用模型"}
                   </button>
-                  {persistentDirty ? (
+                  {persistentDirty || recoverableDraft ? (
                     <button type="button" onClick={resetToServer} disabled={disabled} className="w-full rounded-lg px-3 py-2 text-left font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-950 disabled:opacity-50">丢弃本地草稿</button>
                   ) : null}
                   <div className="my-1 h-px bg-slate-100" />
@@ -1376,6 +1469,34 @@ function ModelConfigDrawer({
         </header>
 
         <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto scroll-smooth bg-white px-7 pb-24 pt-1">
+          {recoverableDraft ? (
+            <div className="mt-3 flex items-center justify-between gap-4 border-y border-amber-200/80 bg-amber-50/55 px-3 py-2.5 text-[11px]">
+              <div className="flex min-w-0 items-start gap-2.5 text-amber-800">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-semibold">检测到未保存的本地草稿</p>
+                  <p className="mt-0.5 text-amber-700/80">当前优先显示数据库配置；仅在你主动恢复后才会应用草稿。</p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={discardRecoverableDraft}
+                  className="rounded-md px-2.5 py-1.5 font-medium text-amber-700 transition-colors hover:bg-amber-100/70"
+                >
+                  丢弃
+                </button>
+                <button
+                  type="button"
+                  onClick={restoreDraft}
+                  className="rounded-md border border-amber-300 bg-white px-2.5 py-1.5 font-semibold text-amber-800 transition-[border-color,background-color,transform] hover:border-amber-400 hover:bg-amber-50 active:scale-[0.98]"
+                >
+                  恢复草稿
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <section ref={basicSectionRef} className="scroll-mt-3 border-b border-slate-200 py-5">
             <div className="mb-4">
               <h4 className="text-[13px] font-semibold text-slate-950">模型信息</h4>
@@ -1526,15 +1647,26 @@ function ModelConfigDrawer({
               </div>
 
               {testResult ? (
-                <div className={cn("border-l-2 px-3 py-2 text-xs", testResult.success ? "border-emerald-400 bg-emerald-50/60 text-emerald-800" : "border-red-400 bg-red-50/60 text-red-700")}>
-                  <div className="flex items-start gap-2">
-                    {testResult.success ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
-                    <div className="min-w-0">
-                      <p className="font-semibold">{testResult.success ? "连接成功" : "连接失败"}</p>
+                <div className="max-w-[680px] border-t border-slate-200 pt-2.5 text-[11px] leading-5">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <span
+                      className={cn(
+                        "mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full",
+                        testResult.success ? "bg-emerald-500" : "bg-rose-500",
+                      )}
+                    />
+                    <div className="min-w-0 flex-1">
                       {testResult.success ? (
-                        <p className="mt-0.5">{testResult.latency_ms != null ? `响应时间 ${testResult.latency_ms}ms · ` : ""}模型接口可正常使用</p>
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                          <span className="font-medium text-slate-700">连接成功</span>
+                          {testResult.latency_ms != null ? <span className="text-slate-400">响应时间 {testResult.latency_ms}ms</span> : null}
+                          <span className="text-slate-400">模型接口可正常使用</span>
+                        </div>
                       ) : (
-                        <p className="mt-0.5 break-words leading-5">{testResult.message}</p>
+                        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                          <span className="shrink-0 font-medium text-rose-700">连接失败</span>
+                          <span className="min-w-0 break-words text-slate-500">{testResult.message}</span>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1592,15 +1724,26 @@ function ModelConfigDrawer({
             )}
 
             {featureConflicts.length > 0 ? (
-              <div className="mt-4 max-w-[680px] border-l-2 border-amber-400 bg-amber-50/60 px-3 py-2.5 text-xs text-amber-800">
-                <p className="font-semibold">存在功能映射冲突</p>
-                <p className="mt-0.5 leading-5">请先禁用占用该功能的模型，或取消当前映射后再保存。</p>
+              <div className="mt-3 max-w-[680px] border-t border-slate-200 pt-3 text-[11px] leading-5">
+                <div className="flex items-start gap-2">
+                  <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                  <p className="min-w-0 text-slate-500">
+                    <span className="mr-2 font-medium text-slate-700">功能映射冲突</span>
+                    请先禁用占用该功能的模型，或取消当前映射后再保存。
+                  </p>
+                </div>
               </div>
             ) : null}
 
             {saveError ? (
-              <div role="alert" className="mt-4 max-w-[680px] border-l-2 border-red-400 bg-red-50/60 px-3 py-2.5 text-xs leading-5 text-red-700">
-                保存失败：{saveError}
+              <div role="alert" className="mt-3 max-w-[680px] border-t border-slate-200 pt-3 text-[11px] leading-5">
+                <div className="flex items-start gap-2">
+                  <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" />
+                  <p className="min-w-0 break-words text-slate-500">
+                    <span className="mr-2 font-medium text-rose-700">保存失败</span>
+                    {saveError}
+                  </p>
+                </div>
               </div>
             ) : null}
           </section>
@@ -1613,6 +1756,11 @@ function ModelConfigDrawer({
                 <span className="inline-flex items-center gap-2 font-medium text-amber-700">
                   <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                   {apiKeyInput.trim() ? "有未保存的修改 · 普通字段草稿已自动保存，API Key 不落本地" : "有未保存的修改 · 草稿已自动保存"}
+                </span>
+              ) : recoverableDraft ? (
+                <span className="inline-flex items-center gap-2 font-medium text-amber-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                  当前显示数据库配置 · 有本地草稿可恢复
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-2 text-slate-400">
