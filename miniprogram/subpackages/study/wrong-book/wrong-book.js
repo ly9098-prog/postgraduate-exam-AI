@@ -920,23 +920,41 @@ Page({
       if (this._destroyed) return
 
       if (action === 'mark_mastered') {
-        // 标记已掌握 → 显示撤销条，不清除选中、不退出批量模式
-        const updatedCount = result.updated_count != null ? result.updated_count : ids.length
+        // Undo must target only rows that THIS request actually changed. A mixed
+        // selection can contain questions that were already mastered. Sending
+        // all selected ids to unmark_mastered would incorrectly unmaster those
+        // pre-existing rows when the user taps Undo.
+        const hasSkippedIds = Array.isArray(result && result.skipped_ids)
+        const skippedSet = new Set(hasSkippedIds ? result.skipped_ids.map(id => String(id)) : [])
+        const reportedUpdatedCount = result && result.updated_count != null ? Number(result.updated_count) : ids.length
+        const undoIds = hasSkippedIds
+          ? ids.filter(id => !skippedSet.has(String(id)))
+          : (reportedUpdatedCount === ids.length ? ids.slice() : [])
+        const updatedCount = Math.max(0, Number.isFinite(reportedUpdatedCount) ? reportedUpdatedCount : undoIds.length)
+
         this._clearBatchMasterUndo()
-        this._batchMasterUndoIds = ids.slice()
+        this._batchMasterUndoIds = undoIds.slice()
+        const canUndo = undoIds.length > 0
         this.setData({
           batchSubmitting: false,
-          batchMasterUndoVisible: true,
-          _batchMasterUndoCount: updatedCount,
+          batchMasterUndoVisible: canUndo,
+          _batchMasterUndoCount: canUndo ? undoIds.length : 0,
           selectionPulse: false,
           selectedIds: [],
           selectedIdMap: {},
           selectedCount: 0,
           allVisibleSelected: false,
         })
-        this._batchMasterUndoTimer = setTimeout(() => {
-          this._clearBatchMasterUndo()
-        }, 5000)
+        if (canUndo) {
+          this._batchMasterUndoTimer = setTimeout(() => {
+            this._clearBatchMasterUndo()
+          }, 5000)
+        } else {
+          wx.showToast({
+            title: updatedCount > 0 ? `已标记掌握 ${updatedCount} 项` : '所选题目状态未变化',
+            icon: 'none',
+          })
+        }
         await this._reloadAfterBatch()
         return
       }

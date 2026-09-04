@@ -487,6 +487,15 @@ async def batch_operate(
         from app.services import review_scheduler
         mastered = (action == "mark_mastered")
         for wq_id, wq in ordered_wqs:
+            # Mastery actions are wrong-book actions and must only apply to rows
+            # that are still active in the book. A stale page can race a remove
+            # from another page/device; mutating that now-inactive row would make
+            # the stale client believe it changed visible state and could later
+            # offer a destructive undo. `add_to_review` is the explicit path for
+            # reactivating an inactive wrong question.
+            if not wq.is_active:
+                skipped_ids.append(wq_id)
+                continue
             changed = await review_scheduler.set_mastered_state(
                 db, user_id=user_id, question_id=wq.question_id, mastered=mastered,
             )

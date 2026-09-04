@@ -160,6 +160,7 @@ Page({
     currentIndex: 0,
     currentQuestion: null,
     masterConfirmId: null,
+    masterSubmitting: false,
 
     runnerProgressPercent: 0,
     runnerSubtitle: '',
@@ -890,6 +891,7 @@ Page({
   /* ==================== 已掌握 ==================== */
 
   tapMaster(e) {
+    if (this.data.masterSubmitting || this.data.submittingGroup || this._masterUndoInFlight) return
     var q = e.detail && e.detail.question
     var scheduleId = q && q.schedule_id
     if (!scheduleId) return
@@ -897,68 +899,100 @@ Page({
   },
 
   cancelMaster() {
+    // Keep the confirmation sheet mounted while the mutation is in flight. This
+    // blocks answer/navigation taps behind the modal and, together with the
+    // masterSubmitting guard, prevents a double POST from applying the local
+    // removal twice.
+    if (this.data.masterSubmitting) return
     this.setData({ masterConfirmId: null })
   },
 
   async confirmMaster() {
+    if (this.data.masterSubmitting || this.data.submittingGroup) return
+
     const scheduleId = this.data.masterConfirmId
-    const question = (this.data.groupQuestions || []).find(q => String(q.schedule_id) === String(scheduleId))
-    const originalIndex = (this.data.groupQuestions || []).findIndex(q => String(q.schedule_id) === String(scheduleId))
-    const originalGroupIdx = this.data.currentGroupIdx
-    this.setData({ masterConfirmId: null })
-    if (!scheduleId || !question) return
-    if (!await this._syncReviewSessionDayIfNeeded()) return
+    const currentGroupSnapshot = (this.data.groupQuestions || []).slice()
+    const question = currentGroupSnapshot.find(q => String(q.schedule_id) === String(scheduleId))
+    const originalIndex = currentGroupSnapshot.findIndex(q => String(q.schedule_id) === String(scheduleId))
+    const originalGroupIdx = Number(this.data.currentGroupIdx || 0)
+    const groupsBeforeMaster = (this.data.groups || []).map(group => Array.isArray(group) ? group.slice() : [])
+    if (!scheduleId || !question || originalIndex < 0) return
+
+    // Do not dismiss the modal yet. It is the interaction lock while the server
+    // mutation + authoritative overview refresh are in flight.
+    this.setData({ masterSubmitting: true })
+    if (!await this._syncReviewSessionDayIfNeeded()) {
+      if (this._alive) this.setData({ masterSubmitting: false, masterConfirmId: null })
+      return
+    }
 
     try {
-      await api.post(`/review/${scheduleId}/master`)
+      const masterResult = await api.post(`/review/${scheduleId}/master`)
       if (!this._alive) return
+      const serverTaskActive = !(masterResult && masterResult.active === false)
+      const changedByThisRequest = serverTaskActive && !(masterResult && masterResult.changed === false)
 
-      this._clearMasterUndo()
-      this._pendingMasterUndo = {
-        scheduleId,
-        question,
-        originalAnswer: this._reviewSession.answers[scheduleId],
-        originalIndex: Math.max(0, originalIndex),
-        originalGroupIdx,
-      }
-
-      const allQuestions = this._reviewSession.allQuestions.filter(q => String(q.schedule_id) !== String(scheduleId))
-      const groupQuestions = allQuestions.slice()
-
-      let currentGroupIdx = this.data.currentGroupIdx
-      let currentIndex = this.data.currentIndex
-
-      const answers = { ...this._reviewSession.answers }
-      delete answers[scheduleId]
-      this._reviewSession.answers = answers
-      this._masteredCount = (this._masteredCount || 0) + 1
-      this._reviewSession.allQuestions = allQuestions
-
-      this.setData({
-        groups: [allQuestions],
-        currentGroupIdx,
-        groupQuestions,
-        masterUndoVisible: true,
-        masterUndoText: '已标记掌握，不再进入复习计划',
-      })
-
-      this._masterUndoTimer = setTimeout(() => {
-        this._pendingMasterUndo = null
-        this._masterUndoTimer = null
-        if (this._alive) this.setData({ masterUndoVisible: false })
-      }, 5000)
-
+      // Refresh counts before exposing the undo affordance. Previously undo
+      // could race this refresh and the late master continuation would overwrite
+      // the just-restored question/phase.
       await this.refreshOverviewStatsSilently()
       if (!this._alive) return
 
+      this._clearMasterUndo()
+      if (changedByThisRequest) {
+        this._pendingMasterUndo = {
+          scheduleId,
+          question,
+          originalAnswer: this._reviewSession.answers[scheduleId],
+          originalIndex: Math.max(0, originalIndex),
+          originalGroupIdx,
+          groupsBeforeMaster,
+        }
+      }
+
+      const groupQuestions = currentGroupSnapshot.filter(q => String(q.schedule_id) !== String(scheduleId))
+      const groups = groupsBeforeMaster.length > 0 ? groupsBeforeMaster.map(group => group.slice()) : [currentGroupSnapshot.slice()]
+      let safeGroupIdx = originalGroupIdx
+      if (safeGroupIdx < 0 || safeGroupIdx >= groups.length) safeGroupIdx = 0
+      if (!groups.length) groups.push(groupQuestions.slice())
+      else groups[safeGroupIdx] = groupQuestions.slice()
+
+      let currentIndex = Number(this.data.currentIndex || 0)
+      const answers = { ...this._reviewSession.answers }
+      delete answers[scheduleId]
+      this._reviewSession.answers = answers
+      if (changedByThisRequest) this._masteredCount = (this._masteredCount || 0) + 1
+      this._reviewSession.allQuestions = groupQuestions.slice()
+
+      this.setData({
+        masterConfirmId: null,
+        masterSubmitting: false,
+        groups,
+        currentGroupIdx: safeGroupIdx,
+        groupQuestions,
+        masterUndoVisible: changedByThisRequest,
+        masterUndoText: changedByThisRequest ? '已标记掌握，不再进入复习计划' : '',
+      })
+
+      if (changedByThisRequest) {
+        this._armMasterUndoExpiry(5000)
+      } else {
+        // A stale page/device may submit "master" after another surface already
+        // mastered the question. Remove the stale local task, but never offer an
+        // undo that would revert the other surface's pre-existing state.
+        wx.showToast({
+          title: serverTaskActive ? '题目状态已同步' : '该题已移出复习计划',
+          icon: 'none',
+        })
+      }
+
       if (groupQuestions.length === 0) {
-        // Keep the 5-second undo affordance even when this was the last visible
-        // question. The toast is rendered outside the phase container.
+        // Keep the exact pre-master groups in _pendingMasterUndo for undo, while
+        // the visible page returns to the authoritative overview/empty state.
         this._clearReviewTimer()
         const nextPhase = this.data.todayRemainingCount > 0 ? 'overview' : 'empty'
         this.setData({
           phase: nextPhase,
-          groups: [],
           groupQuestions: [],
           currentQuestion: null,
           currentIndex: 0,
@@ -975,19 +1009,42 @@ Page({
     } catch (e) {
       if (!this._alive) return
       console.error('标记掌握失败', e)
+      this.setData({ masterSubmitting: false, masterConfirmId: null })
       wx.showToast({ title: '操作失败，请重试', icon: 'none' })
     }
   },
 
   async undoMaster() {
     const pending = this._pendingMasterUndo
-    if (!pending || this._masterUndoInFlight) return
+    if (!pending || this._masterUndoInFlight || this.data.masterSubmitting) return
     this._masterUndoInFlight = true
+    // Pause expiry while the network request is in flight. Otherwise a weak
+    // network can erase the pending id before the request fails, leaving a
+    // "retry" toast with no actual undo state to retry.
+    if (this._masterUndoTimer) {
+      clearTimeout(this._masterUndoTimer)
+      this._masterUndoTimer = null
+    }
 
     try {
-      if (!await this._syncReviewSessionDayIfNeeded()) return
+      if (!await this._syncReviewSessionDayIfNeeded()) {
+        if (this._alive && this._pendingMasterUndo === pending) {
+          this.setData({ masterUndoVisible: true })
+          this._armMasterUndoExpiry(5000)
+        }
+        return
+      }
       const unmasterResult = await api.post(`/review/${pending.scheduleId}/unmaster`)
       if (!this._alive) return
+
+      if (unmasterResult && unmasterResult.active === false) {
+        // Another surface removed the wrong question/review schedule while the
+        // 5-second undo was visible. Do not resurrect that stale task locally.
+        this._clearMasterUndo()
+        await this.refreshOverviewStatsSilently()
+        if (this._alive) wx.showToast({ title: '该题已移出复习计划，无法撤销', icon: 'none' })
+        return
+      }
 
       // Master/unmaster transitions intentionally invalidate already-issued
       // tasks by advancing occurrence_seq. Restore the question with the fresh
@@ -999,12 +1056,32 @@ Page({
           ? unmasterResult.occurrence_seq
           : pending.question.occurrence_seq,
       }
-      const allQuestions = (this._reviewSession.allQuestions || []).slice()
-      const insertAt = Math.min(Math.max(0, pending.originalIndex), allQuestions.length)
-      allQuestions.splice(insertAt, 0, restoredQuestion)
-      const groupQuestions = allQuestions.slice()
 
-      this._reviewSession.allQuestions = allQuestions
+      // Preserve every local group exactly as it was before mastery. This is
+      // essential for the retry flow where groups may be [completed, retry]. The
+      // old implementation collapsed it to [currentGroup], making currentGroupIdx
+      // point outside the array and silently dropping the retry history.
+      let restoredGroups = Array.isArray(pending.groupsBeforeMaster)
+        ? pending.groupsBeforeMaster.map(group => Array.isArray(group) ? group.slice() : [])
+        : []
+      let restoredGroupIdx = Number(pending.originalGroupIdx || 0)
+      if (!restoredGroups.length) {
+        restoredGroups = [(this._reviewSession.allQuestions || []).slice()]
+        restoredGroupIdx = 0
+      }
+      if (restoredGroupIdx < 0 || restoredGroupIdx >= restoredGroups.length) restoredGroupIdx = 0
+
+      let restoredGroup = restoredGroups[restoredGroupIdx].slice()
+      let targetIndex = restoredGroup.findIndex(q => String(q.schedule_id) === String(pending.scheduleId))
+      if (targetIndex >= 0) {
+        restoredGroup[targetIndex] = restoredQuestion
+      } else {
+        targetIndex = Math.min(Math.max(0, Number(pending.originalIndex || 0)), restoredGroup.length)
+        restoredGroup.splice(targetIndex, 0, restoredQuestion)
+      }
+      restoredGroups[restoredGroupIdx] = restoredGroup
+
+      this._reviewSession.allQuestions = restoredGroup.slice()
       const restoredAnswers = { ...this._reviewSession.answers }
       if (pending.originalAnswer !== undefined) {
         restoredAnswers[pending.scheduleId] = pending.originalAnswer
@@ -1013,17 +1090,18 @@ Page({
       this._masteredCount = Math.max(0, (this._masteredCount || 1) - 1)
       this._clearMasterUndo()
 
+      const restoredIndex = Math.min(targetIndex, Math.max(0, restoredGroup.length - 1))
       this.setData({
         phase: 'reviewing',
-        groups: [groupQuestions],
-        currentGroupIdx: 0,
-        groupQuestions,
-        currentIndex: Math.min(insertAt, Math.max(0, groupQuestions.length - 1)),
+        groups: restoredGroups,
+        currentGroupIdx: restoredGroupIdx,
+        groupQuestions: restoredGroup,
+        currentIndex: restoredIndex,
         masterUndoVisible: false,
       })
       this._syncAnsweredFlags()
-      if (groupQuestions.length > 0) {
-        this._showQuestion(Math.min(insertAt, groupQuestions.length - 1))
+      if (restoredGroup.length > 0) {
+        this._showQuestion(restoredIndex)
         this._startReviewTimer()
       }
       await this.refreshOverviewStatsSilently()
@@ -1032,10 +1110,24 @@ Page({
     } catch (e) {
       if (!this._alive) return
       console.error('撤销掌握失败', e)
+      if (this._pendingMasterUndo === pending) {
+        this.setData({ masterUndoVisible: true })
+        this._armMasterUndoExpiry(5000)
+      }
       wx.showToast({ title: '撤销失败，请重试', icon: 'none' })
     } finally {
       this._masterUndoInFlight = false
     }
+  },
+
+  _armMasterUndoExpiry(ms) {
+    if (this._masterUndoTimer) clearTimeout(this._masterUndoTimer)
+    const duration = Number(ms) > 0 ? Number(ms) : 5000
+    this._masterUndoTimer = setTimeout(() => {
+      this._pendingMasterUndo = null
+      this._masterUndoTimer = null
+      if (this._alive) this.setData({ masterUndoVisible: false })
+    }, duration)
   },
 
   _clearMasterUndo() {

@@ -710,11 +710,29 @@ Page({
 
     this.setData({ masterSubmitting: true, masterConfirmVisible: false })
     try {
-      await api.post('/wrong-questions/batch', {
+      const masterResult = await api.post('/wrong-questions/batch', {
         action: 'mark_mastered',
         ids: [wqId],
       })
       if (!this._alive) return
+
+      const masterSkipped = !!(
+        masterResult && Array.isArray(masterResult.skipped_ids) &&
+        masterResult.skipped_ids.some(id => String(id) === String(wqId))
+      )
+      const masterChanged = !masterSkipped && !(
+        masterResult && masterResult.updated_count != null && Number(masterResult.updated_count) <= 0
+      )
+      if (!masterChanged) {
+        // The detail can be stale when another page/device already changed this
+        // row. Never create an undo for a mutation this request did not perform,
+        // otherwise Undo could revert the other surface's pre-existing mastery.
+        this._clearMasterUndo()
+        this.setData({ masterSubmitting: false })
+        await this.loadData(wqId)
+        if (this._alive) wx.showToast({ title: '题目状态已同步', icon: 'none' })
+        return
+      }
 
       this._clearMasterUndo()
       this._pendingMasterUndo = {
@@ -758,11 +776,23 @@ Page({
 
     this.setData({ masterSubmitting: true, unmasterConfirmVisible: false })
     try {
-      await api.post('/wrong-questions/batch', {
+      const unmasterResult = await api.post('/wrong-questions/batch', {
         action: 'unmark_mastered',
         ids: [wqId],
       })
       if (!this._alive) return
+
+      const unmasterSkipped = !!(
+        unmasterResult && Array.isArray(unmasterResult.skipped_ids) &&
+        unmasterResult.skipped_ids.some(id => String(id) === String(wqId))
+      )
+      if (unmasterSkipped || (unmasterResult && unmasterResult.updated_count != null && Number(unmasterResult.updated_count) <= 0)) {
+        this._clearMasterUndo()
+        this.setData({ masterSubmitting: false })
+        await this.loadData(wqId)
+        if (this._alive) wx.showToast({ title: '题目状态已同步', icon: 'none' })
+        return
+      }
 
       this._clearMasterUndo()
       if (this._wqCache && this._wqCache[wqId]) {
@@ -808,11 +838,47 @@ Page({
     if (this._switching) this._forceResetSwitchLock()
 
     try {
-      await api.post('/wrong-questions/batch', {
+      const undoResult = await api.post('/wrong-questions/batch', {
         action: 'unmark_mastered',
         ids: [pending.wqId],
       })
       if (!this._alive) return
+
+      const undoSkipped = !!(
+        undoResult && Array.isArray(undoResult.skipped_ids) &&
+        undoResult.skipped_ids.some(id => String(id) === String(pending.wqId))
+      ) || !!(
+        undoResult && undoResult.updated_count != null && Number(undoResult.updated_count) <= 0
+      )
+      if (undoSkipped) {
+        // A skipped undo is ambiguous: the row may already be unmastered (safe),
+        // or it may have been removed from the wrong book while the toast was
+        // visible. Re-read the row before restoring anything locally.
+        try {
+          const fresh = await api.get(`/wrong-questions/${pending.wqId}`)
+          if (!this._alive) return
+          if (!fresh) throw Object.assign(new Error('not found'), { statusCode: 404 })
+          if (this._wqCache) this._wqCache[pending.wqId] = { data: fresh, ts: Date.now() }
+          const targetIdx = (this.data.questionIds || []).findIndex(id => String(id) === String(pending.wqId))
+          this._clearMasterUndo()
+          if (targetIdx >= 0 && targetIdx !== this.data.currentIdx) {
+            await this._navigateTo(targetIdx, 150)
+          } else if (targetIdx >= 0) {
+            await this.loadData(pending.wqId)
+          }
+          if (this._alive) wx.showToast({ title: '题目状态已同步', icon: 'none' })
+          return
+        } catch (freshError) {
+          const freshStatus = Number(freshError && (freshError.statusCode || freshError.status)) || 0
+          if (freshStatus === 404 || freshStatus === 410) {
+            this._clearMasterUndo()
+            this._dropQuestionFromNavigation(pending.wqId)
+            if (this._alive) wx.showToast({ title: '该错题已被移除，无法撤销', icon: 'none' })
+            return
+          }
+          throw freshError
+        }
+      }
 
       if (this._wqCache && this._wqCache[pending.wqId]) {
         this._wqCache[pending.wqId].data = Object.assign({}, this._wqCache[pending.wqId].data, { is_mastered: false })
@@ -1162,6 +1228,32 @@ Page({
     else wx.redirectTo({ url: '/subpackages/study/wrong-book/wrong-book' })
   },
 
+  _dropQuestionFromNavigation(wqId) {
+    const currentId = this._currentWqId || (this.data.wq && this.data.wq.id)
+    const oldIds = this.data.questionIds || []
+    const nextIds = oldIds.filter(id => String(id) !== String(wqId))
+    if (nextIds.length === oldIds.length) return false
+
+    if (this._wqCache) delete this._wqCache[wqId]
+    try {
+      wx.setStorageSync('wrong_detail_nav', { ids: nextIds, ts: Date.now() })
+    } catch (_) {}
+
+    let nextCurrentIdx = nextIds.findIndex(id => String(id) === String(currentId))
+    if (nextCurrentIdx < 0) nextCurrentIdx = 0
+    const wrongQuestions = nextIds.map(() => ({ _answered: true }))
+    this.setData({
+      questionIds: nextIds,
+      totalQuestions: nextIds.length,
+      currentIdx: nextCurrentIdx,
+      wrongQuestions,
+      runnerProgressPercent: nextIds.length > 0
+        ? Math.round((nextCurrentIdx + 1) / nextIds.length * 100)
+        : 0,
+    })
+    return true
+  },
+
   async _navigateTo(idx, animMs, direction) {
     const wqId = this.data.questionIds[idx]
     if (!wqId) return
@@ -1274,13 +1366,26 @@ Page({
     } catch (e) {
       if (!this._alive || navigationSeq !== this._navigationSeq) return
       console.error('切换题目失败', e)
-      wx.showToast({ title: '加载失败', icon: 'none' })
       clearTimeout(this._switchMaskTimer)
       // 切换失败时保持当前题不变，同时复位 AI 状态防止永久卡住
       this._switching = false
       this._clearSwitchWatchdog()
-      this.setData({ showSwitchMask: false, aiRegenerating: false })
       this._cancelContentSwitchTransition()
+
+      const statusCode = Number(e && (e.statusCode || e.status)) || 0
+      if (statusCode === 404 || statusCode === 410) {
+        // The navigation context can outlive the wrong-book row (another page,
+        // device, or batch action may remove it). Drop the dead id immediately;
+        // otherwise every "next/previous" tap hits the same 404 forever and the
+        // answer-sheet progress still counts a question that no longer exists.
+        this._dropQuestionFromNavigation(wqId)
+        this.setData({ showSwitchMask: false, aiRegenerating: false })
+        wx.showToast({ title: '该错题已被移除，已更新题目列表', icon: 'none' })
+        return
+      }
+
+      wx.showToast({ title: '加载失败', icon: 'none' })
+      this.setData({ showSwitchMask: false, aiRegenerating: false })
     }
   },
 

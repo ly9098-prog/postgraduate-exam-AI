@@ -286,10 +286,17 @@ async def set_mastered_state(
     )
 
     if wq is not None:
-        if bool(wq.mastered) != bool(mastered) or (mastered and wq.mastered_at is None):
+        # `changed` is the semantic mastery transition, not metadata repair. A
+        # stale client must not gain an Undo right merely because this request
+        # touched a row that was already mastered by another page/device.
+        if bool(wq.mastered) != bool(mastered):
             wq.mastered = bool(mastered)
-            wq.mastered_at = now if mastered else None
             changed = True
+        if not mastered and wq.mastered_at is not None:
+            # Repair legacy/inconsistent rows even when the boolean state was
+            # already unmastered; this metadata cleanup is intentionally not a
+            # user-visible state transition.
+            wq.mastered_at = None
 
     if schedule is not None:
         if bool(schedule.mastered) != bool(mastered):
@@ -318,6 +325,13 @@ async def set_mastered_state(
         )
         db.add(schedule)
         changed = True
+
+    # mastered_at is an event timestamp. Only stamp "now" when this request
+    # actually caused a canonical mastery transition; repairing an already-
+    # mastered legacy row here would invent a fake "mastered today" event and
+    # pollute today's review-task accounting.
+    if mastered and changed and wq is not None and wq.mastered_at is None:
+        wq.mastered_at = now
 
     await db.flush()
     return changed
@@ -979,8 +993,8 @@ async def auto_schedule_wrong_question(
 
 async def mark_mastered(
     db: AsyncSession, user_id: int, schedule_id: int
-) -> ReviewSchedule | None:
-    """标记复习题目为已掌握，从复习池移除。"""
+) -> tuple[ReviewSchedule | None, bool]:
+    """标记复习题目为已掌握，从复习池移除，并返回本次是否实际改动。"""
     result = await db.execute(
         select(ReviewSchedule).where(
             ReviewSchedule.id == schedule_id,
@@ -989,19 +1003,24 @@ async def mark_mastered(
     )
     schedule = result.scalar_one_or_none()
     if not schedule:
-        return None
-    await set_mastered_state(
+        return None, False
+    if not schedule.is_active:
+        # A stale review page may race "remove from wrong book" on another
+        # surface. Mastering an inactive schedule must be a no-op; otherwise the
+        # stale client can create an undo for state it no longer owns.
+        return schedule, False
+    changed = await set_mastered_state(
         db, user_id=user_id, question_id=schedule.question_id, mastered=True,
     )
     await db.commit()
     await db.refresh(schedule)
-    return schedule
+    return schedule, bool(changed)
 
 
 async def unmark_mastered(
     db: AsyncSession, user_id: int, schedule_id: int
-) -> ReviewSchedule | None:
-    """取消已掌握标记，恢复到复习池。"""
+) -> tuple[ReviewSchedule | None, bool]:
+    """取消已掌握标记，恢复到复习池，并返回本次是否实际改动。"""
     result = await db.execute(
         select(ReviewSchedule).where(
             ReviewSchedule.id == schedule_id,
@@ -1010,13 +1029,18 @@ async def unmark_mastered(
     )
     schedule = result.scalar_one_or_none()
     if not schedule:
-        return None
-    await set_mastered_state(
+        return None, False
+    if not schedule.is_active:
+        # Do not resurrect an occurrence that was explicitly removed from the
+        # review pool by another page/device. `add_to_review` is the only
+        # operation allowed to reactivate that workflow.
+        return schedule, False
+    changed = await set_mastered_state(
         db, user_id=user_id, question_id=schedule.question_id, mastered=False,
     )
     await db.commit()
     await db.refresh(schedule)
-    return schedule
+    return schedule, bool(changed)
 
 
 # ── Today review task flow ──

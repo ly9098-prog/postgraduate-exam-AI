@@ -110,6 +110,11 @@ class MasterUnmasterResponse(BaseModel):
     schedule_id: int
     mastered: bool
     occurrence_seq: int
+    active: bool = True
+    # Whether this request actually changed the canonical mastery state. Clients
+    # use this to avoid offering an "undo" that would revert a state created by
+    # another page/device before this stale request arrived.
+    changed: bool = True
 
 
 # ── Today review task flow (overview / next-batch / result) ──
