@@ -10,6 +10,7 @@ const { parseServerUtc, getChinaDayRangeUtcMs, chinaCalendarDayDiff, formatChina
 
 const AI_AUTO_SETTING_PREFIX = 'ai_wrong_book_auto_v1_'
 const BATCH_CAPSULE_IDLE_MS = 5000
+const AI_DIAGNOSIS_HTTP_TIMEOUT_MS = 55000
 
 const ERROR_TYPES = [
   { value: '', label: '全部类型' },
@@ -1227,7 +1228,7 @@ Page({
     for (let attempt = 0; attempt < 4 && this._isAiDiagnosisPending(current); attempt++) {
       await this._delay(1200 + attempt * 350)
       if (requestId !== this._aiDiagnosisRequestId || !this._alive) return null
-      current = await api.get('/stats/ai-diagnosis', {}, { timeout: 60000 })
+      current = await api.get('/stats/ai-diagnosis', {}, { timeout: AI_DIAGNOSIS_HTTP_TIMEOUT_MS })
     }
     return current
   },
@@ -1270,8 +1271,9 @@ Page({
     if (!hasData) {
       needRefresh = true
     } else {
-      var isStale = this.data.aiDiagnosisCacheStale
       var cachedAt = this._aiDiagnosisCachedAt
+      // fallback 结果使用更短 TTL；即使页面一直停留也会按实时钟判断过期。
+      var isStale = this.data.aiDiagnosisCacheStale || aiCache.isExpired(cachedAt, this.data.aiDiagnosis)
       // 过期 → 刷新
       if (isStale) {
         needRefresh = true
@@ -1314,7 +1316,7 @@ Page({
     this._aiDiagnosisPromise = (async function() {
       try {
         var params = (opts.force || opts.refresh) ? { refresh: 'true' } : {}
-        var diagnosis = await api.get('/stats/ai-diagnosis', params, { timeout: 60000 })
+        var diagnosis = await api.get('/stats/ai-diagnosis', params, { timeout: AI_DIAGNOSIS_HTTP_TIMEOUT_MS })
         if (self._isAiDiagnosisPending(diagnosis)) {
           diagnosis = await self._pollAiDiagnosis(diagnosis, requestId)
         }
@@ -1377,7 +1379,7 @@ Page({
           })
           // 手动刷新才弹 Toast
           if (opts.force) {
-            wx.showToast({ title: (e && (e.detail || e.message)) || '更新失败，请稍后重试', icon: 'none' })
+            wx.showToast({ title: (e && typeof e.message === 'string' && e.message) || '更新失败，请稍后重试', icon: 'none' })
           }
           return self.data.aiDiagnosis
         }
@@ -1780,11 +1782,15 @@ Page({
   },
 
   _masteryProgress(item, reviewCount) {
+    const mastered = item.is_mastered === true || item.status === 'mastered' || item.mastered === true
+    // “确认掌握”是明确的最终状态。即使灰度期间旧后端仍返回基于
+    // repetitions 的 20%/45%，卡片也不能出现“已掌握 20%”的冲突展示。
+    if (mastered) return { percent: 100, label: '已掌握' }
+
     const raw = item.mastery_progress || item.mastery_percent || item.mastery
     if (raw !== undefined && raw !== null && raw !== '') {
       const percent = Math.max(0, Math.min(100, Number(raw) > 1 ? Number(raw) : Number(raw) * 100))
-      const mastered = item.is_mastered === true || item.status === 'mastered' || item.mastered === true
-      return { percent: Math.round(percent), label: mastered ? '已掌握' : percent >= 40 ? '巩固中' : '待攻克' }
+      return { percent: Math.round(percent), label: percent >= 40 ? '巩固中' : '待攻克' }
     }
 
     const percent = Math.min(90, reviewCount * 20)

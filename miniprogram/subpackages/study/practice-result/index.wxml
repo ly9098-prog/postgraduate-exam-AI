@@ -1,4 +1,11 @@
 <view class="page">
+  <scroll-view
+    class="page-scroll"
+    scroll-y="{{!reviewDialogVisible}}"
+    enhanced
+    bounces="{{false}}"
+    show-scrollbar="{{false}}"
+  >
   <!-- 顶部成绩区 -->
   <view class="hero" style="padding-top: {{heroTopPaddingPx}}px;">
     <view class="hero-grid"></view>
@@ -32,7 +39,6 @@
             <text class="ring-unit">%</text>
           </view>
           <text class="ring-label">作答正确率</text>
-          <text class="ring-sub">完成率 {{completionPct}}%</text>
         </view>
         <view
           wx:if="{{accuracyPct > 1 && accuracyPct < 99}}"
@@ -334,6 +340,7 @@
 
     <view class="bottom-space"></view>
   </view>
+  </scroll-view>
 
   <!-- 题目复盘：使用自定义结构化弹层，避免 wx.showModal 直接暴露后端 JSON -->
   <view wx:if="{{reviewDialogVisible}}" class="review-dialog-mask">

@@ -542,16 +542,19 @@ page {
 .ai-block .deep-block-title { color: #FFFFFF; }
 .ai-block .deep-block-subtitle { color: rgba(228, 235, 246, .55); }
 .ai-badge { width: 52rpx; height: 52rpx; border-radius: 18rpx; display: flex; align-items: center; justify-content: center; background: #66844F; color: #FFFFFF; font-size: 20rpx; font-weight: 950; }
+.ai-badge.data { width: auto; min-width: 52rpx; padding: 0 12rpx; background: rgba(255, 255, 255, .12); color: rgba(235, 240, 247, .78); }
 .ai-empty { color: rgba(229, 235, 245, .67); font-size: 22rpx; line-height: 1.6; }
 .ai-button { width: 100%; height: 76rpx; margin-top: 20rpx; line-height: 76rpx; border-radius: 23rpx; font-size: 24rpx; }
 .ai-loading,
 .ai-error { padding: 25rpx 0; text-align: center; color: rgba(229, 235, 245, .67); font-size: 21rpx; }
 .ai-error { display: flex; flex-direction: column; gap: 12rpx; }
+.ai-fallback-note { margin-bottom: 14rpx; padding: 14rpx 16rpx; border: 1rpx solid rgba(255, 255, 255, .10); border-radius: 16rpx; color: rgba(229, 235, 245, .62); font-size: 19rpx; line-height: 1.5; }
 .ai-summary { display: block; padding: 20rpx; border-radius: 20rpx; background: rgba(255, 255, 255, .07); color: #FFFFFF; font-size: 22rpx; line-height: 1.6; }
 .ai-result-group { margin-top: 20rpx; }
 .ai-result-title { display: block; color: rgba(231, 237, 247, .56); font-size: 19rpx; font-weight: 850; letter-spacing: 1rpx; }
 .ai-result-row { display: flex; align-items: flex-start; gap: 12rpx; margin-top: 14rpx; color: #E8EDF5; font-size: 21rpx; line-height: 1.55; }
 .ai-result-dot { width: 9rpx; height: 9rpx; border-radius: 50%; margin-top: 11rpx; flex-shrink: 0; background: #86CFA9; }
+.ai-risk-dot { background: #E1AA69; }
 .ai-action-row { display: flex; align-items: center; justify-content: space-between; gap: 13rpx; margin-top: 11rpx; padding: 17rpx; border-radius: 18rpx; background: rgba(255, 255, 255, .07); }
 .ai-action-title { display: block; color: #FFFFFF; font-size: 22rpx; font-weight: 850; }
 .ai-action-desc { display: block; margin-top: 4rpx; color: rgba(229, 235, 245, .55); font-size: 19rpx; }

@@ -468,7 +468,6 @@ Page({
     partialCount: 0,
     totalCount: 0,
     accuracyPct: 0,
-    completionPct: 0,
     accuracyDotDeg: -90,
     durationText: '00分00秒',
     resultTip: '完成练习后及时复盘，效果会更好。',
@@ -912,15 +911,10 @@ Page({
 
     const answeredTotal = correctCount + wrongCount;
     const explicitAccuracy = source.accuracy ?? source.accuracyPct ?? source.correctRate ?? source.correct_rate;
-    // 与 PracticeRecord / 趋势接口统一：正确率只针对实际作答题。跳过题
-    // 影响完成率，不再同时拉低“正确率”，避免同页出现两套分母。
+    // 与 PracticeRecord / 趋势接口统一：正确率只针对实际作答题。
     const accuracyPct = explicitAccuracy !== undefined && explicitAccuracy !== null
       ? normalizePercent(explicitAccuracy)
       : (answeredTotal ? Math.round(correctCount / answeredTotal * 100) : 0);
-    const completionPct = totalCount
-      ? Math.round(answeredTotal / totalCount * 100)
-      : 0;
-
     const usedTime = (
       source.used_time ??
       source.usedTime ??
@@ -961,7 +955,6 @@ Page({
       partialCount,
       totalCount,
       accuracyPct,
-      completionPct,
       accuracyDotDeg: Math.round(accuracyPct * 3.6 - 90),
       durationText: formatDuration(usedTime),
       resultTip,

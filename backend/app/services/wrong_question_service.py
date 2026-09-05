@@ -277,6 +277,10 @@ async def list_wrong_enriched(
     mastery_pct_sub = (
         select(
             case(
+                # Manual/automatic mastery is the canonical final state. Showing
+                # a mastered card at 20% (because repetitions stayed at 0) is
+                # contradictory to the action the learner just confirmed.
+                (ReviewSchedule.mastered, 1.00),
                 (ReviewSchedule.repetitions >= 5, 1.00),
                 (ReviewSchedule.repetitions == 4, 0.90),
                 (ReviewSchedule.repetitions == 3, 0.80),
@@ -360,7 +364,13 @@ async def list_wrong_enriched(
             "review_count": wq.review_count or 0,
             "review_record_count": review_count_val or 0,
             "wrong_count": wq.review_count or 0,
-            "mastery_percent": round(float(mastery_pct if mastery_pct is not None else 0.20), 4),
+            # WrongQuestion.mastered is the canonical wrong-book state.  Keep
+            # the API contract consistent even when a legacy/incomplete row has
+            # no matching ReviewSchedule: a mastered item must never serialize
+            # as 20% and rely on one specific client to repair the display.
+            "mastery_percent": 1.0 if wq.mastered else round(
+                float(mastery_pct if mastery_pct is not None else 0.20), 4
+            ),
             "is_mastered": bool(wq.mastered),
             "next_review_at": next_review_val,
             "last_reviewed_at": last_reviewed,

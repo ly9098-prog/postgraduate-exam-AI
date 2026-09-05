@@ -1,15 +1,23 @@
 """Project committed practice answers from immutable question revisions.
 
-``PracticeRecord.question_version_id`` is the durable grading boundary.  A
-projection must never re-interpret an answer through the mutable ``Question``
-row.  ``PracticeRecord.projection_state`` is the durable processing receipt;
+The projection worker treats ``practice_records`` as an explicit event contract,
+not as a fully-hydrated ORM aggregate.  Only the columns required by the current
+projection protocol are selected, and the terminal projection state is written
+with an explicit UPDATE.  This keeps the worker decoupled from unrelated model
+columns and makes schema changes fail at the contract boundary instead of being
+silently pulled into a hot-path ``SELECT *``.
+
+``PracticeRecord.question_version_id`` is the durable grading boundary.
+``PracticeRecord.projection_state`` is the durable processing receipt;
 reconciliation only repairs records explicitly left in ``pending``.
 """
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from datetime import datetime
 
-from sqlalchemy import select, text
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin import QuestionVersion
@@ -21,6 +29,144 @@ logger = logging.getLogger(__name__)
 PROJECTION_PENDING = "pending"
 PROJECTION_COMPLETED = "completed"
 PROJECTION_REVISION_ONLY = "revision_only"
+
+
+@dataclass(frozen=True, slots=True)
+class _ProjectionSource:
+    id: int
+    user_id: int
+    question_id: int
+    question_version_id: int | None
+    subject_id: int
+    user_answer: str
+    is_correct: bool
+    used_time: int | None
+    answered_at: datetime
+    mode: str | None
+    projection_state: str
+
+
+@dataclass(frozen=True, slots=True)
+class _RevisionSource:
+    id: int
+    question_id: int
+    subject_id: int | None
+    answer: str | None
+
+
+async def _lock_projection_source(
+    db: AsyncSession,
+    practice_record_id: int,
+) -> _ProjectionSource | None:
+    """Lock and load only the stable projection-event contract.
+
+    A row lock is the single concurrency primitive for exactly-once projection.
+    No advisory lock is needed: all projection work for an existing record is
+    serialized by the same ``practice_records`` row until commit/rollback.
+    """
+    stmt = select(
+        PracticeRecord.id,
+        PracticeRecord.user_id,
+        PracticeRecord.question_id,
+        PracticeRecord.question_version_id,
+        PracticeRecord.subject_id,
+        PracticeRecord.user_answer,
+        PracticeRecord.is_correct,
+        PracticeRecord.used_time,
+        PracticeRecord.answered_at,
+        PracticeRecord.mode,
+        PracticeRecord.projection_state,
+    ).where(PracticeRecord.id == practice_record_id)
+
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name == "postgresql":
+        stmt = stmt.with_for_update(of=PracticeRecord)
+
+    row = (await db.execute(stmt)).mappings().one_or_none()
+    if row is None:
+        return None
+
+    return _ProjectionSource(
+        id=int(row["id"]),
+        user_id=int(row["user_id"]),
+        question_id=int(row["question_id"]),
+        question_version_id=(
+            int(row["question_version_id"])
+            if row["question_version_id"] is not None
+            else None
+        ),
+        subject_id=int(row["subject_id"]),
+        user_answer=str(row["user_answer"] or ""),
+        is_correct=bool(row["is_correct"]),
+        used_time=int(row["used_time"]) if row["used_time"] is not None else None,
+        answered_at=row["answered_at"],
+        mode=str(row["mode"]) if row["mode"] is not None else None,
+        projection_state=str(row["projection_state"]),
+    )
+
+
+async def _load_revision_source(
+    db: AsyncSession,
+    question_version_id: int,
+) -> _RevisionSource | None:
+    """Load the immutable revision fields consumed by projection."""
+    row = (
+        await db.execute(
+            select(
+                QuestionVersion.id,
+                QuestionVersion.question_id,
+                QuestionVersion.subject_id,
+                QuestionVersion.answer,
+            ).where(QuestionVersion.id == question_version_id)
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        return None
+    return _RevisionSource(
+        id=int(row["id"]),
+        question_id=int(row["question_id"]),
+        subject_id=int(row["subject_id"]) if row["subject_id"] is not None else None,
+        answer=str(row["answer"]) if row["answer"] is not None else None,
+    )
+
+
+async def _load_current_question_version(
+    db: AsyncSession,
+    question_id: int,
+) -> int | None:
+    """Read the mutable question's current revision id.
+
+    Do not lock the question row here: projections for different users commonly
+    target the same question and must remain parallel.  Immutable grading still
+    comes exclusively from ``question_version_id``; this value only decides
+    whether mutable review/adaptive state may be advanced.
+    """
+    value = await db.scalar(
+        select(Question.current_version_id).where(Question.id == question_id)
+    )
+    return int(value) if value is not None else None
+
+
+async def _finish_projection(
+    db: AsyncSession,
+    *,
+    practice_record_id: int,
+    target_state: str,
+) -> None:
+    """Move a locked pending record to its terminal projection state."""
+    result = await db.execute(
+        update(PracticeRecord)
+        .where(
+            PracticeRecord.id == practice_record_id,
+            PracticeRecord.projection_state == PROJECTION_PENDING,
+        )
+        .values(projection_state=target_state)
+    )
+    if result.rowcount != 1:
+        raise RuntimeError(
+            "practice projection state transition lost ownership: "
+            f"record_id={practice_record_id} target={target_state} rowcount={result.rowcount}"
+        )
 
 
 async def project_practice_answer(
@@ -36,20 +182,7 @@ async def project_practice_answer(
     Mutable question-state projections (Leitner/adaptive state) are only applied
     when that revision is still the question's current revision.
     """
-    bind = db.get_bind()
-    if bind is not None and bind.dialect.name == "postgresql":
-        await db.execute(
-            text("SELECT pg_advisory_xact_lock(:lock_key)"),
-            {"lock_key": int(practice_record_id)},
-        )
-
-    query = (
-        select(PracticeRecord)
-        .where(PracticeRecord.id == practice_record_id)
-    )
-    if bind is not None and bind.dialect.name == "postgresql":
-        query = query.with_for_update()
-    record = await db.scalar(query)
+    record = await _lock_projection_source(db, practice_record_id)
     if record is None:
         logger.warning("answer projection record missing: record_id=%s", practice_record_id)
         return {"processed": False, "missing": True}
@@ -61,34 +194,24 @@ async def project_practice_answer(
             "projection_state": record.projection_state,
         }
     if record.question_version_id is None:
-        # Post-migration records must always bind an immutable revision.  Keep
-        # the row pending so observability/reconciliation exposes the data issue
-        # instead of silently projecting against mutable question state.
         raise RuntimeError(
             f"practice record {practice_record_id} has no question_version_id"
         )
 
-    revision = await db.scalar(
-        select(QuestionVersion).where(QuestionVersion.id == record.question_version_id)
-    )
-    if revision is None or int(revision.question_id) != int(record.question_id):
+    revision = await _load_revision_source(db, record.question_version_id)
+    if revision is None or revision.question_id != record.question_id:
         raise RuntimeError(
             f"practice record {practice_record_id} references invalid question revision"
         )
 
-    current_version_id = await db.scalar(
-        select(Question.current_version_id).where(Question.id == record.question_id)
-    )
-    is_current_revision = (
-        current_version_id is not None
-        and int(current_version_id) == int(record.question_version_id)
-    )
+    current_version_id = await _load_current_question_version(db, record.question_id)
+    is_current_revision = current_version_id == record.question_version_id
 
-    user_id = int(record.user_id)
-    question_id = int(record.question_id)
-    is_correct = bool(record.is_correct)
+    user_id = record.user_id
+    question_id = record.question_id
+    is_correct = record.is_correct
     used_time = record.used_time
-    user_answer = (record.user_answer or "").strip()
+    user_answer = record.user_answer.strip()
 
     from app.services.behavior_service import record_answer_behavior
 
@@ -97,7 +220,7 @@ async def project_practice_answer(
         user_id=user_id,
         question_id=question_id,
         practice_record_id=record.id,
-        question_version_id=int(record.question_version_id),
+        question_version_id=record.question_version_id,
         time_spent_sec=used_time or 0,
         is_first_correct=is_correct,
         is_final_correct=is_correct,
@@ -116,7 +239,7 @@ async def project_practice_answer(
         question_id,
         is_correct,
         used_time=used_time,
-        question_version_id=int(record.question_version_id),
+        question_version_id=record.question_version_id,
     )
 
     from app.services import recommendation_log_service
@@ -155,12 +278,17 @@ async def project_practice_answer(
             is_due_review=review_transition.is_due_review,
             is_overdue_review=review_transition.is_overdue_review,
         )
-        record.projection_state = PROJECTION_COMPLETED
+        target_state = PROJECTION_COMPLETED
     else:
-        # The answer still updates revision-scoped knowledge evidence, but it
-        # must not mutate the scheduling/state machine of a different revision.
-        record.projection_state = PROJECTION_REVISION_ONLY
+        # Revision-scoped evidence is still valid, but mutable question state
+        # belongs to the newer revision and must not be changed by this answer.
+        target_state = PROJECTION_REVISION_ONLY
 
+    await _finish_projection(
+        db,
+        practice_record_id=record.id,
+        target_state=target_state,
+    )
     await db.commit()
 
     try:
@@ -173,6 +301,6 @@ async def project_practice_answer(
     return {
         "processed": True,
         "duplicate": False,
-        "projection_state": record.projection_state,
-        "question_version_id": int(record.question_version_id),
+        "projection_state": target_state,
+        "question_version_id": record.question_version_id,
     }

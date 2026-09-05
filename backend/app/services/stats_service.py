@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import Date as SQLDate, Integer, case, cast, func, select, text
@@ -18,6 +19,88 @@ from app.models.knowledge_point import KnowledgePoint
 from app.models.question import Question
 from app.models.review_scheduler import ReviewSchedule
 from app.models.wrong_question import WrongQuestion
+
+
+logger = logging.getLogger(__name__)
+
+# Synchronous AI endpoints are called directly from the mini-program. Keep the
+# provider budget below the client transport timeout so a slow reasoning model
+# can degrade to a deterministic local diagnosis instead of failing at wx.request.
+_SYNC_AI_PROVIDER_TIMEOUT_SEC = 42.0
+_AI_DIAGNOSIS_MAX_TOKENS = 900
+_DASHBOARD_AI_MAX_TOKENS = 1000
+_DASHBOARD_ACTION_TYPES = frozenset({"review", "wrong", "practice", "subject"})
+
+
+def _extract_json_object(content: object) -> dict | None:
+    """Parse a provider response that is expected to contain one JSON object.
+
+    Compatible providers occasionally wrap JSON in markdown or prepend a short
+    explanation.  Extract the outer object but never attempt lossy repair: a
+    malformed response must fall back to deterministic local analysis.
+    """
+    text_value = str(content or "").strip()
+    if not text_value:
+        return None
+    if text_value.startswith("```"):
+        first_newline = text_value.find("\n")
+        if first_newline >= 0:
+            text_value = text_value[first_newline + 1:]
+        if text_value.endswith("```"):
+            text_value = text_value[:-3].rstrip()
+    left = text_value.find("{")
+    right = text_value.rfind("}")
+    if left >= 0 and right > left:
+        text_value = text_value[left:right + 1]
+    try:
+        parsed = json.loads(text_value)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _normalize_text_list(value: object, *, limit: int, max_chars: int = 240) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        # Provider JSON occasionally returns objects/numbers inside text arrays.
+        # Ignore malformed items instead of leaking Python reprs to the API/UI.
+        if not isinstance(item, str):
+            continue
+        text_value = item.strip()
+        if not text_value:
+            continue
+        result.append(text_value[:max_chars])
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _normalize_dashboard_actions(value: object, *, limit: int = 4) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    result: list[dict] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        action_type = str(item.get("type") or "").strip().lower()
+        if action_type not in _DASHBOARD_ACTION_TYPES:
+            continue
+        raw_title = item.get("title")
+        raw_desc = item.get("desc")
+        title = raw_title.strip() if isinstance(raw_title, str) else ""
+        desc = raw_desc.strip() if isinstance(raw_desc, str) else ""
+        if not title:
+            continue
+        result.append({
+            "type": action_type,
+            "title": title[:80],
+            "desc": desc[:220],
+        })
+        if len(result) >= limit:
+            break
+    return result
 
 
 def _today_utc() -> datetime:
@@ -758,8 +841,9 @@ def _adaptive_summary(status: str, recall_rate: float, target: float) -> str:
 
 
 async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
-    """AI 错题诊断：基于真实错题数据调用后台配置的兼容模型。"""
-    from app.ai.gateway import chat_with_db_model, resolve_llm_runtime_config
+    """AI 错题诊断：优先使用后台模型，超时/异常时快速降级为数据诊断。"""
+    from app.ai.client import llm
+    from app.ai.gateway import resolve_llm_runtime_config
     from app.ai.prompts_learning import build_report_prompt
 
     today = shanghai_today()
@@ -783,9 +867,14 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
     )
     subject_rows = result.all()
     if not subject_rows:
-        return {"weak_points": [], "strong_points": [], "learning_suggestions": [], "summary": "暂无足够错题数据生成诊断。继续练习后会自动触发分析。", "generated": False}
+        return {
+            "weak_points": [],
+            "strong_points": [],
+            "learning_suggestions": [],
+            "summary": "暂无足够错题数据生成诊断。继续练习后会自动触发分析。",
+            "generated": False,
+        }
 
-    # 获取各科正确率
     overview = await get_overview(db, user_id)
     total_q = overview["total_questions"]
     accuracy = overview["accuracy"]
@@ -793,8 +882,8 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
     knowledge_point_stats = []
     for row in subject_rows:
         subj = row[0]
-        total = row[1]
-        mastered = row[2]
+        total = int(row[1] or 0)
+        mastered = int(row[2] or 0)
         mastery_rate = round(mastered / total, 2) if total > 0 else 0.0
         knowledge_point_stats.append({
             "knowledge_point": subj,
@@ -803,24 +892,54 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
             "total_wrong": total,
         })
 
-    runtime = await resolve_llm_runtime_config(db, feature="analysis")
-    if runtime is None:
-        # 本地降级：基于错题掌握率生成诊断
-        weak = [kp for kp in knowledge_point_stats if kp["mastery_rate"] < 0.5]
-        strong = [kp for kp in knowledge_point_stats if kp["mastery_rate"] >= 0.7]
-        suggestions = []
+    def local_diagnosis(*, provider_failed: bool = False) -> dict:
+        weak = sorted(
+            (kp for kp in knowledge_point_stats if kp["mastery_rate"] < 0.5),
+            key=lambda item: (item["mastery_rate"], -item["total_wrong"]),
+        )
+        strong = sorted(
+            (kp for kp in knowledge_point_stats if kp["mastery_rate"] >= 0.7),
+            key=lambda item: (-item["mastery_rate"], -item["total_wrong"]),
+        )
+        suggestions: list[str] = []
         if weak:
-            suggestions.append(f"优先复盘{weak[0]['knowledge_point']}错题，当前掌握率仅{int(weak[0]['mastery_rate'] * 100)}%")
+            suggestions.append(
+                f"优先复盘{weak[0]['knowledge_point']}错题，当前错题掌握率约{int(weak[0]['mastery_rate'] * 100)}%"
+            )
+        if len(weak) > 1:
+            suggestions.append(f"其次巩固{weak[1]['knowledge_point']}，建议集中完成一轮错题复盘")
         if total_q < 50:
-            suggestions.append("题量较少，建议达到50题后诊断会更准确")
-        suggestions.append("每天保持10题以上练习，有利于形成稳定记忆")
+            suggestions.append("当前练习样本较少，累计到 50 题以上后洞察会更稳定")
+        suggestions.append("优先处理重复出错且尚未掌握的题目，并按复习计划回看")
         return {
-            "weak_points": [{"knowledge_point": w["knowledge_point"], "accuracy": w["mastery_rate"], "suggestion": "建议针对性复盘练习"} for w in weak[:3]],
-            "strong_points": [{"knowledge_point": s["knowledge_point"], "accuracy": s["mastery_rate"], "suggestion": "已较好地掌握错题，保持节奏"} for s in strong[:2]],
-            "learning_suggestions": suggestions,
-            "summary": f"基于最近60天{len(subject_rows)}个科目的错题数据分析（本地降级模式）。",
+            "weak_points": [
+                {
+                    "knowledge_point": item["knowledge_point"],
+                    "accuracy": item["mastery_rate"],
+                    "suggestion": "建议针对性复盘并完成一次间隔复习",
+                }
+                for item in weak[:3]
+            ],
+            "strong_points": [
+                {
+                    "knowledge_point": item["knowledge_point"],
+                    "accuracy": item["mastery_rate"],
+                    "suggestion": "已较好掌握错题，保持当前复习节奏",
+                }
+                for item in strong[:2]
+            ],
+            "learning_suggestions": suggestions[:5],
+            "summary": (
+                "AI 模型响应较慢，本次先基于最近 60 天错题数据生成即时洞察；可稍后刷新获取 AI 增强分析。"
+                if provider_failed
+                else f"基于最近60天{len(subject_rows)}个科目的错题数据生成诊断。"
+            ),
             "generated": False,
         }
+
+    runtime = await resolve_llm_runtime_config(db, feature="analysis")
+    if runtime is None:
+        return local_diagnosis()
 
     try:
         subj_label = subject_rows[0][0] if subject_rows else "全科"
@@ -832,39 +951,83 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
             knowledge_point_stats=knowledge_point_stats,
         )
 
-        ai_resp = await chat_with_db_model(db, messages, feature="analysis", temperature=0.3)
-        if ai_resp is None:
-            raise RuntimeError("AI分析模型未配置")
-        content = ai_resp["content"]
-        import json
-        try:
-            content = content.strip()
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1].rsplit("\n```", 1)[0]
-            parsed = json.loads(content)
-        except (json.JSONDecodeError, ValueError, IndexError):
-            return {
-                "weak_points": [],
-                "strong_points": [],
-                "learning_suggestions": ["AI 诊断暂时不可用，请稍后重试"],
-                "summary": "AI 返回格式异常，已记录。",
-                "generated": False,
-            }
+        # This endpoint is user-facing and synchronous. Prefer a direct answer
+        # and cap the output so reasoning-heavy compatible models do not occupy
+        # the whole wx.request timeout window.
+        ai_resp = await llm.chat(
+            messages,
+            temperature=0.2,
+            model=runtime.model_name,
+            api_key=runtime.api_key,
+            base_url=runtime.base_url,
+            provider=runtime.provider,
+            timeout=_SYNC_AI_PROVIDER_TIMEOUT_SEC,
+            max_tokens=_AI_DIAGNOSIS_MAX_TOKENS,
+            response_format={"type": "json_object"},
+            prefer_direct_answer=True,
+        )
+
+        parsed = _extract_json_object(ai_resp.get("content"))
+        if parsed is None:
+            logger.warning(
+                "stats.ai_diagnosis.invalid_json user_id=%s model=%s",
+                user_id,
+                runtime.model_name,
+            )
+            return local_diagnosis(provider_failed=True)
+
+        def normalize_points(value, limit: int) -> list[dict]:
+            if not isinstance(value, list):
+                return []
+            normalized: list[dict] = []
+            for item in value:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("knowledge_point") or "").strip()
+                suggestion = str(item.get("suggestion") or "").strip()
+                if not name:
+                    continue
+                try:
+                    score = float(item.get("accuracy", 0) or 0)
+                except (TypeError, ValueError):
+                    score = 0.0
+                if score > 1:
+                    score = score / 100.0
+                score = max(0.0, min(1.0, score))
+                normalized.append({
+                    "knowledge_point": name[:80],
+                    "accuracy": round(score, 4),
+                    "suggestion": suggestion[:240],
+                })
+                if len(normalized) >= limit:
+                    break
+            return normalized
+
+        weak_points = normalize_points(parsed.get("weak_points"), 5)
+        strong_points = normalize_points(parsed.get("strong_points"), 3)
+        raw_suggestions = parsed.get("learning_suggestions")
+        suggestions = (
+            [str(item).strip()[:240] for item in raw_suggestions if str(item).strip()][:5]
+            if isinstance(raw_suggestions, list)
+            else []
+        )
+        if not weak_points and not strong_points and not suggestions:
+            return local_diagnosis(provider_failed=True)
         return {
-            "weak_points": parsed.get("weak_points", [])[:5],
-            "strong_points": parsed.get("strong_points", [])[:3],
-            "learning_suggestions": parsed.get("learning_suggestions", [])[:5],
+            "weak_points": weak_points,
+            "strong_points": strong_points,
+            "learning_suggestions": suggestions,
             "summary": f"基于最近60天{len(subject_rows)}个科目的真实错题数据进行AI诊断。",
             "generated": True,
         }
-    except Exception:
-        return {
-            "weak_points": [],
-            "strong_points": [],
-            "learning_suggestions": ["AI 服务暂不可用，请检查 API Key 配置"],
-            "summary": "AI 服务连接失败。",
-            "generated": False,
-        }
+    except Exception as exc:
+        logger.warning(
+            "stats.ai_diagnosis.provider_failed user_id=%s model=%s error_type=%s",
+            user_id,
+            runtime.model_name,
+            type(exc).__name__,
+        )
+        return local_diagnosis(provider_failed=True)
 
 
 # ──────────────────────────────────────────────
@@ -875,12 +1038,14 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
 async def get_dashboard_llm_analysis(
     db: AsyncSession, user_id: int, *, trend_days: int = 7
 ) -> dict:
-    """Dashboard LLM 手动分析 — 聚合学习数据，调用后台配置的兼容模型。"""
-    from app.core.time_utils import utcnow
+    """Generate a bounded dashboard diagnosis with deterministic fallback.
 
-    now = utcnow()
-
-    # Build reduced data payload (no full questions, no privacy info)
+    The endpoint is intentionally synchronous because it is user-triggered.
+    Provider work therefore has a strict budget, JSON output is normalized
+    before it reaches the response model, and any provider/configuration issue
+    returns a useful rule-based diagnosis rather than a transport failure.
+    """
+    # Build a reduced payload only from aggregate learning data.
     overview = await get_overview(db, user_id)
     subjects_raw = await get_subject_stats(db, user_id)
     trends = await get_trends(db, user_id, trend_days)
@@ -897,7 +1062,9 @@ async def get_dashboard_llm_analysis(
     data_payload = {
         "overview": {
             "today_questions": overview["today_questions"],
-            "today_accuracy": round(overview["today_correct"] / max(1, overview["today_questions"]), 4) if overview["today_questions"] > 0 else 0.0,
+            "today_accuracy": round(
+                overview["today_correct"] / max(1, overview["today_questions"]), 4
+            ) if overview["today_questions"] > 0 else 0.0,
             "due_review_count": overview["due_review_count"],
             "consecutive_days": overview["consecutive_days"],
             "total_questions": overview["total_questions"],
@@ -913,8 +1080,12 @@ async def get_dashboard_llm_analysis(
             "strongest": strong_subj["label"] if strong_subj else None,
             "weakest": weak_subj["label"] if weak_subj else None,
             "items": [
-                {"label": s["label"], "accuracy": s["accuracy"], "total_questions": s["total_questions"]}
-                for s in subj_items
+                {
+                    "label": item["label"],
+                    "accuracy": item["accuracy"],
+                    "total_questions": item["total_questions"],
+                }
+                for item in subj_items[:12]
             ],
         },
         "review_risk": {
@@ -924,36 +1095,68 @@ async def get_dashboard_llm_analysis(
         },
     }
 
-    from app.ai.gateway import chat_with_db_model, resolve_llm_runtime_config
-    runtime = await resolve_llm_runtime_config(db, feature="analysis")
-    if runtime is None:
-        return _rule_based_dashboard_analysis(data_payload, now, trend_days)
+    from app.ai.gateway import chat_with_db_model
 
     prompt_messages = _build_dashboard_llm_prompt(data_payload, trend_days)
     try:
-        ai_resp = await chat_with_db_model(db, prompt_messages, feature="analysis", temperature=0.3)
+        # Resolve and invoke only once.  The previous implementation resolved a
+        # model separately and then let the gateway resolve it again, adding DB
+        # work and allowing the selected model to change between the two calls.
+        ai_resp = await chat_with_db_model(
+            db,
+            prompt_messages,
+            feature="analysis",
+            temperature=0.2,
+            timeout=_SYNC_AI_PROVIDER_TIMEOUT_SEC,
+            max_tokens=_DASHBOARD_AI_MAX_TOKENS,
+            response_format={"type": "json_object"},
+            prefer_direct_answer=True,
+        )
         if ai_resp is None:
-            return _rule_based_dashboard_analysis(data_payload, now, trend_days)
-        content = ai_resp["content"]
-        try:
-            content = content.strip()
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1].rsplit("\n```", 1)[0]
-            parsed = json.loads(content)
-        except (json.JSONDecodeError, ValueError, IndexError):
-            return _rule_based_dashboard_analysis(data_payload, now, trend_days)
+            return _rule_based_dashboard_analysis(data_payload, trend_days)
 
-        model_used = ai_resp.get("model", runtime.model_name)
+        parsed = _extract_json_object(ai_resp.get("content"))
+        if parsed is None:
+            logger.warning(
+                "stats.dashboard_ai.invalid_json user_id=%s model=%s",
+                user_id,
+                ai_resp.get("model") or "-",
+            )
+            return _rule_based_dashboard_analysis(data_payload, trend_days)
+
+        raw_summary = parsed.get("summary")
+        summary = raw_summary.strip()[:320] if isinstance(raw_summary, str) else ""
+        findings = _normalize_text_list(parsed.get("findings"), limit=6)
+        risks = _normalize_text_list(parsed.get("risks"), limit=4)
+        actions = _normalize_dashboard_actions(parsed.get("actions"), limit=4)
+
+        # Never pass provider-shaped values directly into Pydantic.  A model can
+        # return the right JSON syntax with the wrong field types; without this
+        # guard that becomes an avoidable 500 response.
+        if not summary and not findings and not risks and not actions:
+            logger.warning(
+                "stats.dashboard_ai.empty_payload user_id=%s model=%s",
+                user_id,
+                ai_resp.get("model") or "-",
+            )
+            return _rule_based_dashboard_analysis(data_payload, trend_days)
+
         return {
-            "summary": parsed.get("summary", ""),
-            "findings": parsed.get("findings", [])[:6],
-            "risks": parsed.get("risks", [])[:4],
-            "actions": parsed.get("actions", [])[:4],
-            "generated_at": serialize_utc_datetime(now),
-            "model": model_used,
+            "summary": summary or "已根据当前学习数据生成诊断。",
+            "findings": findings,
+            "risks": risks,
+            "actions": actions,
+            "generated_at": serialize_utc_datetime(utcnow()),
+            "model": str(ai_resp.get("model") or "") or None,
+            "generated": True,
         }
-    except Exception:
-        return _rule_based_dashboard_analysis(data_payload, now, trend_days)
+    except Exception as exc:
+        logger.warning(
+            "stats.dashboard_ai.provider_failed user_id=%s error_type=%s",
+            user_id,
+            type(exc).__name__,
+        )
+        return _rule_based_dashboard_analysis(data_payload, trend_days)
 
 
 def _build_dashboard_llm_prompt(payload: dict, trend_days: int) -> list[dict]:
@@ -962,7 +1165,7 @@ def _build_dashboard_llm_prompt(payload: dict, trend_days: int) -> list[dict]:
         "不要编造输入中不存在的数据。不要输出泛泛鸡汤。"
         "请用 JSON 返回，格式为："
         '{"summary": "一句话总结", "findings": ["发现1", "发现2"], "risks": ["风险1"], '
-        '"actions": [{"type": "review|wrong|practice|subject|none", "title": "行动标题", "desc": "行动描述"}]}'
+        '"actions": [{"type": "review|wrong|practice|subject", "title": "行动标题", "desc": "行动描述"}]}'
     )
     user_prompt = (
         f"以下是一位考研学生近 {trend_days} 天的学习统计数据，请生成诊断。\n"
@@ -974,7 +1177,7 @@ def _build_dashboard_llm_prompt(payload: dict, trend_days: int) -> list[dict]:
     ]
 
 
-def _rule_based_dashboard_analysis(payload: dict, now, trend_days: int) -> dict:
+def _rule_based_dashboard_analysis(payload: dict, trend_days: int) -> dict:
     """Rule-based analysis when LLM is unavailable (labeled as 学习建议, not AI)."""
     ov = payload.get("overview", {})
     tr = payload.get("trends", {})
@@ -993,8 +1196,9 @@ def _rule_based_dashboard_analysis(payload: dict, now, trend_days: int) -> dict:
             "findings": findings,
             "risks": [],
             "actions": [{"type": "practice", "title": "开始第一次练习", "desc": "完成练习后回来查看分析。"}],
-            "generated_at": serialize_utc_datetime(now),
+            "generated_at": serialize_utc_datetime(utcnow()),
             "model": "rule-based",
+            "generated": False,
         }
 
     today_q = ov.get("today_questions", 0)
@@ -1004,8 +1208,18 @@ def _rule_based_dashboard_analysis(payload: dict, now, trend_days: int) -> dict:
     active_days = tr.get("active_days", 0)
     avg_acc = tr.get("avg_accuracy", 0)
     hf = rr.get("high_forget_count", 0)
-    rr.get("stuck_questions", 0)
-    weak_label = sb.get("weakest")
+    stuck = rr.get("stuck_questions", 0)
+    subject_items = sb.get("items") or []
+    weak_item = min(
+        (item for item in subject_items if isinstance(item, dict)),
+        key=lambda item: float(item.get("accuracy") or 0),
+        default=None,
+    )
+    weak_label = (
+        weak_item.get("label")
+        if weak_item and float(weak_item.get("accuracy") or 0) < 0.70
+        else None
+    )
     top_topics = rr.get("top_topics", [])
 
     findings.append(f"近{trend_days}天完成{trend_total}题，活跃{active_days}天，平均正确率{round(avg_acc * 100)}%。")
@@ -1018,8 +1232,12 @@ def _rule_based_dashboard_analysis(payload: dict, now, trend_days: int) -> dict:
         findings.append(f"当前有{due}道到期复习。")
         actions.append({"type": "review", "title": f"先完成{due}道到期复习", "desc": "建议优先处理复习任务。"})
     if hf > 0:
-        risks.append(f"高频遗忘知识点{hf}个，建议集中复盘。")
+        risks.append(f"反复出错题目{hf}道，建议集中复盘。")
         actions.append({"type": "wrong", "title": f"复盘{hf}道高频遗忘错题", "desc": "针对高频遗忘点做专项巩固。"})
+    if stuck > 0:
+        risks.append(f"长期未掌握题目{stuck}道，建议优先突破反复卡住的内容。")
+        if not any(action.get("type") == "wrong" for action in actions):
+            actions.append({"type": "wrong", "title": f"处理{stuck}道长期未掌握题", "desc": "先复盘长期未掌握内容，再继续扩展新题。"})
     if weak_label:
         findings.append(f"薄弱学科：{weak_label}。")
         actions.append({"type": "subject", "title": f"重点看{weak_label}错题", "desc": "该学科正确率偏低，建议优先复盘。"})
@@ -1030,10 +1248,12 @@ def _rule_based_dashboard_analysis(payload: dict, now, trend_days: int) -> dict:
     if not actions:
         actions.append({"type": "practice", "title": "保持练习节奏", "desc": "当前状态良好，继续每日练习。"})
 
-    if due == 0 and hf == 0 and not weak_label:
+    if due == 0 and hf == 0 and stuck == 0 and not weak_label:
         summary = f"学习节奏稳定，累计{total_q}题，连续{streak}天。继续保持！"
     elif due > 0:
         summary = f"学习数据良好，但到期复习{due}道需尽快处理。"
+    elif stuck > 0:
+        summary = f"当前有{stuck}道长期未掌握题目，建议先集中突破再扩展新题。"
     else:
         summary = f"近{trend_days}天平均正确率{round(avg_acc * 100)}%，建议关注薄弱环节。"
 
@@ -1042,6 +1262,7 @@ def _rule_based_dashboard_analysis(payload: dict, now, trend_days: int) -> dict:
         "findings": findings[:4],
         "risks": risks[:3],
         "actions": actions[:3],
-        "generated_at": serialize_utc_datetime(now),
+        "generated_at": serialize_utc_datetime(utcnow()),
         "model": "rule-based",
+        "generated": False,
     }

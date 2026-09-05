@@ -3,6 +3,10 @@ const model = require('./dashboard.model')
 const charts = require('./dashboard.charts')
 const { getChinaDate, parseServerUtc } = require('../../utils/china-time')
 
+const DASHBOARD_AI_HTTP_TIMEOUT_MS = 55000
+const DASHBOARD_AI_SUCCESS_COOLDOWN_MS = 60000
+const DASHBOARD_AI_FALLBACK_COOLDOWN_MS = 15000
+
 function clampPct(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)))
 }
@@ -723,11 +727,17 @@ Page({
   onGenerateLlmAnalysis() {
     if (this.data.llmAnalysisLoading) return
 
-    // 60s cooldown
+    // 正常 AI 结果限制一分钟重复生成；本地降级结果允许更快重试模型。
     if (this.data.llmAnalysisGeneratedAt) {
-      const elapsed = Date.now() - parseServerUtc(this.data.llmAnalysisGeneratedAt)
-      if (elapsed < 60000) {
-        wx.showToast({ title: '刚刚已生成分析，可稍后再试', icon: 'none' })
+      const generatedAt = parseServerUtc(this.data.llmAnalysisGeneratedAt)
+      const elapsed = Number.isFinite(generatedAt) ? Date.now() - generatedAt : Infinity
+      const isFallback = this.data.llmAnalysis && this.data.llmAnalysis.generated === false
+      const cooldown = isFallback ? DASHBOARD_AI_FALLBACK_COOLDOWN_MS : DASHBOARD_AI_SUCCESS_COOLDOWN_MS
+      if (elapsed >= 0 && elapsed < cooldown) {
+        wx.showToast({
+          title: isFallback ? '刚刚已生成数据诊断，请稍后重试 AI' : '刚刚已生成分析，可稍后再试',
+          icon: 'none',
+        })
         return
       }
     }
@@ -740,7 +750,7 @@ Page({
     try {
       const res = await api.post('/stats/dashboard-llm-analysis', {
         trend_days: this.data.trendDays,
-      })
+      }, { timeout: DASHBOARD_AI_HTTP_TIMEOUT_MS })
       if (!this._alive) return
       this.setData({
         llmAnalysis: res,
@@ -751,17 +761,28 @@ Page({
     } catch (e) {
       console.error('[dashboard] LLM analysis failed', e)
       if (!this._alive) return
-      if (e.code === 'LLM_NOT_CONFIGURED' || (typeof e.detail === 'string' && e.detail.includes('LLM_NOT_CONFIGURED'))) {
-        this.setData({ llmAnalysisLoading: false, llmAnalysisError: 'AI 分析暂不可用（未配置服务）' })
-      } else {
-        this.setData({ llmAnalysisLoading: false, llmAnalysisError: 'AI 分析生成失败' })
-      }
+      const message = e && typeof e.message === 'string' && e.message.trim()
+        ? e.message.trim()
+        : 'AI 分析生成失败，请稍后重试'
+      this.setData({ llmAnalysisLoading: false, llmAnalysisError: message })
     }
   },
 
   onRetryLlmAnalysis() {
-    this.setData({ llmAnalysis: null, llmAnalysisError: null })
-    this.onGenerateLlmAnalysis()
+    if (this.data.llmAnalysisLoading) return
+
+    const isFallback = this.data.llmAnalysis && this.data.llmAnalysis.generated === false
+    if (isFallback && this.data.llmAnalysisGeneratedAt) {
+      const generatedAt = parseServerUtc(this.data.llmAnalysisGeneratedAt)
+      const elapsed = Number.isFinite(generatedAt) ? Date.now() - generatedAt : Infinity
+      if (elapsed >= 0 && elapsed < DASHBOARD_AI_FALLBACK_COOLDOWN_MS) {
+        wx.showToast({ title: '刚刚已尝试 AI，请稍后再试', icon: 'none' })
+        return
+      }
+    }
+
+    this.setData({ llmAnalysis: null, llmAnalysisError: null, llmAnalysisLoading: true })
+    this._doLlmAnalysis()
   },
 
   onClearLlmAnalysis() {

@@ -1,5 +1,22 @@
 <view class="page">
   <submit-confirm id="submitConfirm" />
+
+  <!--
+    真机返回守卫：page-container 是微信提供的“假页”容器，显示时会优先消费
+    iOS 右滑、Android Back（含系统悬浮返回）以及 navigateBack。容器本身为
+    透明 1px、无蒙层，不改变刷题页视觉和触摸；关闭后由 JS 立即重新挂载并
+    拉起本页已有 submit-confirm，自定义退出 UI 因而不会被系统返回绕过。
+  -->
+  <page-container
+    show="{{practiceExitGuardVisible}}"
+    position="bottom"
+    duration="0"
+    overlay="{{false}}"
+    round="{{false}}"
+    close-on-slide-down="{{false}}"
+    custom-style="width:1px;height:1px;min-height:0;padding:0;margin:0;background:transparent;overflow:hidden;pointer-events:none;"
+    bind:afterleave="onPracticeExitGuardLeave"
+  />
   <view class="submit-loading-mask" wx:if="{{submitting}}" catchtap="noop">
     <view class="submit-loading-card">
       <text class="submit-loading-kicker">SMART REVIEW</text>

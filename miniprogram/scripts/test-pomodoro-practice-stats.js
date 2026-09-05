@@ -15,7 +15,8 @@
  *   9. 提交失败后冻结首次交卷快照，requestId / 答案 / 时长原样复用
  *  10. 待确认交卷持久化到本地，进程重启后可恢复同一 requestId
  *  11. 400/409 确定性拒绝停止无意义重试，结果页跳转失败不重新交卷
- *  12. 结果页正确率按已作答题计算，并单独展示完成率/未完成题
+ *  12. 结果页正确率按已作答题计算，完成率冗余展示已移除，未完成题仍可识别
+ *  13. 刷题页使用 page-container 消费真机侧滑/Android Back，并复用自定义退出确认
  *
  * Usage: node scripts/test-pomodoro-practice-stats.js
  * Exit code: 0 = pass, 1 = fail
@@ -283,13 +284,23 @@ t('批次凭据强制且登出清理待确认提交', () => {
 
 const resultJs = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice-result/index.js'), 'utf8')
 const resultWxml = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice-result/index.wxml'), 'utf8')
-t('结果页正确率与完成率分母分离，部分多空题显示未完成', () => {
+t('结果页正确率仅按实际作答题计算，冗余完成率已移除，部分多空题显示未完成', () => {
   assert.ok(resultJs.indexOf('const answeredTotal = correctCount + wrongCount') >= 0, '正确率应以实际作答题为分母')
   assert.ok(resultJs.indexOf('correctCount / answeredTotal * 100') >= 0, '正确率不应把跳过题计入分母')
-  assert.ok(resultJs.indexOf('answeredTotal / totalCount * 100') >= 0, '必须单独计算完成率')
+  assert.strictEqual(resultJs.indexOf('completionPct'), -1, '结果数据模型不应继续维护完成率字段')
+  assert.strictEqual(resultWxml.indexOf('完成率 {{completionPct}}%'), -1, '圆环内不应继续展示完成率')
   assert.ok(resultJs.indexOf("return 'partial'") >= 0, '多空题部分作答需有 partial 状态')
-  assert.ok(resultWxml.indexOf('完成率 {{completionPct}}%') >= 0, '结果页需显示完成率')
   assert.ok(resultWxml.indexOf('未完成') >= 0, '结果页需区分未完成与跳过')
+})
+
+t('刷题页真机返回由透明 page-container 守卫并复用自定义退出确认', () => {
+  const practiceWxml = fs.readFileSync(path.join(__dirname, '../subpackages/study/practice/practice.wxml'), 'utf8')
+  assert.ok(practiceWxml.indexOf('<page-container') >= 0, '刷题页必须挂载 page-container 返回守卫')
+  assert.ok(practiceWxml.indexOf('show="{{practiceExitGuardVisible}}"') >= 0, '返回守卫必须由页面状态控制')
+  assert.ok(practiceWxml.indexOf('bind:afterleave="onPracticeExitGuardLeave"') >= 0, '系统返回必须进入统一处理函数')
+  assert.ok(js.indexOf('_rearmPracticeExitGuard') >= 0, '系统返回后必须重新挂载守卫，避免第二次返回穿透')
+  assert.ok(js.indexOf("await this.requestExitPractice({ source: 'system-back' })") >= 0, '系统返回必须复用已有退出确认流程')
+  assert.strictEqual(js.indexOf('wx.enableAlertBeforeUnload('), -1, '不得重新启用不可定制的原生退出询问框')
 })
 
 t('部分多空题可提交但完全未作答仍阻止交卷', () => {

@@ -222,11 +222,15 @@ async def _enrich_single_wq_extra(
     )
     from app.services.review_scheduler import review_mastery_percent
 
+    is_mastered = bool(wq.mastered or (schedule and schedule.mastered))
+    mastery_percent = 1.0 if is_mastered else round(
+        review_mastery_percent(schedule.repetitions if schedule else 0) / 100, 4
+    )
     return {
         "review_record_count": review_record_count,
         "next_review_at": schedule.next_review_at if schedule and not schedule.mastered else None,
         "last_reviewed_at": schedule.last_reviewed_at if schedule else None,
-        "mastery_percent": round(review_mastery_percent(schedule.repetitions if schedule else 0) / 100, 4),
+        "mastery_percent": mastery_percent,
     }
 
 

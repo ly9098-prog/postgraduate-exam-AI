@@ -10,7 +10,18 @@ var chinaTime = require('../../../utils/china-time')
 var CACHE_VERSION = 1
 var CACHE_PREFIX = 'wrong_book_ai_diagnosis'
 var CACHE_TTL = 6 * 60 * 60 * 1000      // 6 小时
+var FALLBACK_CACHE_TTL = 2 * 60 * 1000    // 模型超时/本地降级只短暂缓存
 var MIN_REFRESH_INTERVAL = 5 * 60 * 1000 // 5 分钟
+
+function ttlFor(diagnosis) {
+  return diagnosis && diagnosis.generated === false ? FALLBACK_CACHE_TTL : CACHE_TTL
+}
+
+function isExpired(cachedAt, diagnosis) {
+  var timestamp = Number(cachedAt)
+  if (!timestamp || !isFinite(timestamp)) return true
+  return Date.now() >= timestamp + ttlFor(diagnosis)
+}
 
 /**
  * 构造当前用户的缓存 Key
@@ -84,7 +95,7 @@ function restore(userId) {
 
   var now = Date.now()
   var cachedAt = raw.cachedAt || 0
-  var expiresAt = raw.expiresAt || (cachedAt + CACHE_TTL)
+  var expiresAt = raw.expiresAt || (cachedAt + ttlFor(data))
 
   if (now < expiresAt) {
     return { status: 'fresh', data: data, cachedAt: cachedAt, signature: raw.sourceSignature || '' }
@@ -121,7 +132,7 @@ function save(userId, diagnosis, signature) {
     userKey: String(userId),
     data: diagnosis,
     cachedAt: now,
-    expiresAt: now + CACHE_TTL,
+    expiresAt: now + ttlFor(diagnosis),
     sourceSignature: signature || '',
   }
 
@@ -169,7 +180,9 @@ function formatCacheTime(timestamp) {
 
 module.exports = {
   CACHE_TTL: CACHE_TTL,
+  FALLBACK_CACHE_TTL: FALLBACK_CACHE_TTL,
   MIN_REFRESH_INTERVAL: MIN_REFRESH_INTERVAL,
+  isExpired: isExpired,
   buildCacheKey: buildCacheKey,
   buildSignature: buildSignature,
   restore: restore,

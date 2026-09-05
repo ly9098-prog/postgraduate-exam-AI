@@ -168,7 +168,9 @@ async def get_ai_diagnosis(
         if cached_data is not None:
             return cached_data
     data = await svc.get_ai_diagnosis(db, current_user.id)
-    await cache.set(cache_key, data, ttl=600)
+    # Successful AI output can be cached longer. Local/timeout fallback is kept
+    # only briefly so a recovered provider can be retried without waiting 10 min.
+    await cache.set(cache_key, data, ttl=600 if data.get("generated") else 30)
     return AiDiagnosis(**data)
 
 

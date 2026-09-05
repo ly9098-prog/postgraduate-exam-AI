@@ -105,8 +105,11 @@ async def reconcile_answer_projections(
     current = normalize_to_naive_utc(now) if now is not None else utcnow()
     cutoff = current - timedelta(seconds=effective_grace)
 
+    # Reconciliation only needs the durable record id.  Do not hydrate the
+    # PracticeRecord ORM entity here: unrelated model columns must never become
+    # an implicit dependency of the repair scheduler.
     query = (
-        select(PracticeRecord)
+        select(PracticeRecord.id)
         .where(
             PracticeRecord.projection_state == _PROJECTION_PENDING,
             PracticeRecord.answered_at <= cutoff,
@@ -118,9 +121,9 @@ async def reconcile_answer_projections(
     if bind is not None and bind.dialect.name == "postgresql":
         query = query.with_for_update(of=PracticeRecord, skip_locked=True)
 
-    records = list((await db.execute(query)).scalars().all())
+    record_ids = [int(value) for value in (await db.execute(query)).scalars().all()]
     stats = {
-        "checked": len(records),
+        "checked": len(record_ids),
         "scheduled": 0,
         "active_original": 0,
         "repair_already_scheduled": 0,
@@ -128,21 +131,21 @@ async def reconcile_answer_projections(
         "errors": 0,
     }
 
-    for record in records:
-        original_task_id = f"{_ORIGINAL_TASK_PREFIX}:{record.id}"
+    for record_id in record_ids:
+        original_task_id = f"{_ORIGINAL_TASK_PREFIX}:{record_id}"
         original = await db.scalar(select(TaskOutbox).where(TaskOutbox.task_id == original_task_id))
         if original is not None and original.status in {"pending", "leased"}:
             stats["active_original"] += 1
             continue
 
-        repair_task_id = _repair_task_id(record.id, current)
+        repair_task_id = _repair_task_id(record_id, current)
         existing_repair = await db.scalar(select(TaskOutbox.id).where(TaskOutbox.task_id == repair_task_id))
         if existing_repair is not None:
             stats["repair_already_scheduled"] += 1
             continue
 
         payload: dict[str, Any] = {
-            "practice_record_id": int(record.id),
+            "practice_record_id": record_id,
             "request_id": _payload_request_id(original),
             "reconciliation": {
                 "source": "practice_record_projection_pending",
@@ -163,12 +166,12 @@ async def reconcile_answer_projections(
             stats["scheduled"] += 1
         except IntegrityError:
             stats["races"] += 1
-            logger.debug("answer projection repair raced: record_id=%s task_id=%s", record.id, repair_task_id)
+            logger.debug("answer projection repair raced: record_id=%s task_id=%s", record_id, repair_task_id)
         except Exception:
             stats["errors"] += 1
-            logger.exception("answer projection repair scheduling failed: record_id=%s", record.id)
+            logger.exception("answer projection repair scheduling failed: record_id=%s", record_id)
 
-    if records:
+    if record_ids:
         await db.commit()
     else:
         await db.rollback()

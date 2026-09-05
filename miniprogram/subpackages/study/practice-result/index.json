@@ -8,5 +8,6 @@
     "animated-view": "/components/AnimatedView/AnimatedView",
     "mp-html": "/subpackages/study/components/mp-html/index",
     "premium-nav": "/components/premium-nav/premium-nav"
-  }
+  },
+  "disableScroll": true
 }

@@ -245,6 +245,11 @@ Page({
     loading: false,
     submitting: false,
 
+    // 系统返回手势/Android Back 的“假页”守卫。page-container 会先消费
+    // 系统返回，再由本页展示已有的自定义退出确认层，避免真机侧滑/悬浮返回
+    // 直接销毁刷题页。
+    practiceExitGuardVisible: false,
+
     // computed
     progressPercent: 0,
     errorText: '',
@@ -283,6 +288,10 @@ Page({
     this._subjectsRequestSeq = 0
     this._questionsRequestSeq = 0
     this._lastSubjectOptionTap = null
+    this._exitConfirmInFlight = false
+    this._systemBackPromptQueued = false
+    this._systemBackRearming = false
+    this._systemBackRearmTimer = null
     this._resetSession()
     this._pendingResultUrl = ''
     this._submittedResultPayload = null
@@ -293,8 +302,17 @@ Page({
   },
 
   onUnload() {
-    this._setPracticeUnloadGuard(false)
+    // onUnload 已无法阻止真实页面销毁；这里只清理守卫内部状态，避免在销毁
+    // 阶段继续 setData/re-arm page-container。
     this._pageAlive = false
+    if (this._practiceSession) this._practiceSession.exitGuardActive = false
+    this._exitConfirmInFlight = false
+    this._systemBackPromptQueued = false
+    this._systemBackRearming = false
+    if (this._systemBackRearmTimer) {
+      clearTimeout(this._systemBackRearmTimer)
+      this._systemBackRearmTimer = null
+    }
     this._subjectsRequestSeq++
     this._questionsRequestSeq++
     this._lastSubjectOptionTap = null
@@ -332,6 +350,8 @@ Page({
       _backgroundStartedMonoMs: null,
       optionKeys: [],
       questionRenderCache: Object.create(null),
+      exitGuardActive: false,
+      exitGuardMessage: '',
     }
   },
 
@@ -465,11 +485,13 @@ Page({
     this._practiceSession.requestId = submission.requestId || ''
     this._practiceSession.traceId = submission.traceId || ''
     this.setData({ started: true, submitted: false, submitting: false })
+    this._setPracticeUnloadGuard(true, '本次交卷状态尚未确认。退出不会撤销服务器上可能已经保存的结果。')
     await this.doSubmit(true)
     if (!this.data.submitted && this._pageAlive) {
       // A recovery request can still fail due to network/5xx. Return to the
       // setup shell instead of leaving an empty started runner; startPractice
       // will offer the same persisted snapshot again.
+      this._setPracticeUnloadGuard(false)
       this.setData({ started: false })
       return false
     }
@@ -1054,6 +1076,8 @@ Page({
       feedbackDetail: '',
       feedbackComboText: '',
     })
+    // 从进入刷题态开始就拦截系统返回，覆盖首屏拉题期间的侧滑/Android Back。
+    this._setPracticeUnloadGuard(true)
     this._flushPendingRecentSubject()
     await this._loadQuestions()
   },
@@ -1089,17 +1113,93 @@ Page({
   },
 
   _setPracticeUnloadGuard(enabled, message) {
-    try {
-      if (enabled && wx.enableAlertBeforeUnload) {
-        wx.enableAlertBeforeUnload({
-          message: message || '当前练习尚未交卷，退出将丢失本组作答。',
-        })
-      } else if (!enabled && wx.disableAlertBeforeUnload) {
-        wx.disableAlertBeforeUnload()
-      }
-    } catch (e) {
-      // 低版本基础库不支持该能力时，仍保留页面内自定义退出确认。
+    // wx.enableAlertBeforeUnload 无法使用本页设计语言，而且微信侧滑返回场景本身
+    // 也不会稳定经过该原生询问框。因此统一使用 page-container 作为“假页”来
+    // 消费返回动作，再复用 submit-confirm 展示退出确认。
+    if (this._practiceSession) {
+      this._practiceSession.exitGuardActive = !!enabled
+      this._practiceSession.exitGuardMessage = message || ''
     }
+
+    try {
+      // 防止历史代码/热更新残留的原生 guard 与自定义确认层叠加。
+      if (wx.disableAlertBeforeUnload) wx.disableAlertBeforeUnload()
+    } catch (_) {}
+
+    if (!enabled) {
+      this._systemBackRearming = false
+      if (this._systemBackRearmTimer) {
+        clearTimeout(this._systemBackRearmTimer)
+        this._systemBackRearmTimer = null
+      }
+    }
+    if (!this._pageAlive) return
+    const visible = !!enabled
+    if (this.data.practiceExitGuardVisible !== visible) {
+      this.setData({ practiceExitGuardVisible: visible })
+    }
+  },
+
+  _shouldInterceptSystemBack() {
+    const session = this._practiceSession
+    return !!(
+      this._pageAlive &&
+      session &&
+      session.exitGuardActive &&
+      this.data.started &&
+      !this.data.submitted
+    )
+  },
+
+  _rearmPracticeExitGuard() {
+    if (!this._shouldInterceptSystemBack() || this._systemBackRearming) return
+    this._systemBackRearming = true
+
+    // 系统返回会在组件内部把 page-container 关掉，但 show 的业务数据仍可能
+    // 保持 true。显式 false -> true 形成一次属性边沿，确保下一次返回仍会被消费。
+    const rearm = () => {
+      if (!this._shouldInterceptSystemBack()) {
+        this._systemBackRearming = false
+        return
+      }
+      this.setData({ practiceExitGuardVisible: true }, () => {
+        this._systemBackRearming = false
+      })
+    }
+
+    this.setData({ practiceExitGuardVisible: false }, () => {
+      if (!this._shouldInterceptSystemBack()) {
+        this._systemBackRearming = false
+        return
+      }
+      if (typeof wx.nextTick === 'function') {
+        wx.nextTick(rearm)
+        return
+      }
+      this._systemBackRearmTimer = setTimeout(() => {
+        this._systemBackRearmTimer = null
+        rearm()
+      }, 0)
+    })
+  },
+
+  onPracticeExitGuardLeave() {
+    if (!this._shouldInterceptSystemBack()) return
+
+    this._rearmPracticeExitGuard()
+
+    // beforeleave/afterleave 在不同基础库上可能出现时序差异；本处理函数只绑定
+    // afterleave，并额外用布尔锁避免一次手势重复拉起两个确认层。
+    if (this._systemBackPromptQueued || this._exitConfirmInFlight) return
+    this._systemBackPromptQueued = true
+    Promise.resolve().then(async () => {
+      this._systemBackPromptQueued = false
+      if (!this._shouldInterceptSystemBack()) return
+      await this.requestExitPractice({ source: 'system-back' })
+    }).catch((err) => {
+      this._systemBackPromptQueued = false
+      console.warn('系统返回退出确认处理失败', err)
+    })
   },
 
   async _loadQuestions() {
@@ -1109,6 +1209,7 @@ Page({
       const subjectId = this.data.selectedSubjectId
       if (!subjectId) {
         this._clearTimer()
+        this._setPracticeUnloadGuard(false)
         this.setData({
           loading: false,
           started: false,
@@ -1161,6 +1262,7 @@ Page({
         const total = Number(sequentialProgress.total_questions || 0)
         const name = this.data.selectedSubjectName || String(subjectId)
         this._clearTimer()
+        this._setPracticeUnloadGuard(false)
         this.setData({
           loading: false,
           started: false,
@@ -1205,6 +1307,7 @@ Page({
           errorText: '',
           sequentialProgress: null,
         })
+        this._setPracticeUnloadGuard(true)
         await this._loadQuestions()
         return
       }
@@ -1244,6 +1347,7 @@ Page({
         } catch (renderErr) {
           console.error('首题渲染失败', renderErr)
           this._clearTimer()
+          this._setPracticeUnloadGuard(false)
           this.setData({
             loading: false,
             started: false,
@@ -1283,6 +1387,7 @@ Page({
       } else if (questions.length === 0) {
         const name = this.data.selectedSubjectName || String(subjectId)
         this._clearTimer()
+        this._setPracticeUnloadGuard(false)
         this.setData({ started: false, loading: false, questions: [], totalQuestions: 0, currentQuestion: null, currentAnswerState: null })
         await this._showSubmitConfirm({
           scenario: 'info',
@@ -1297,6 +1402,7 @@ Page({
       if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
       console.error('加载题目失败', e)
       this._clearTimer()
+      this._setPracticeUnloadGuard(false)
       this.setData({
         loading: false,
         started: false,
@@ -1529,7 +1635,26 @@ Page({
   },
 
   async requestExitPractice() {
-    if (this.data.submitting) return
+    if (this._exitConfirmInFlight) return
+
+    // 交卷请求进行中不能安全终止：系统返回已经由 page-container 消费，这里用
+    // 同一套自定义 UI 给出明确反馈，避免用户看到“按了返回但没有反应”。
+    if (this.data.submitting) {
+      this._exitConfirmInFlight = true
+      try {
+        await this._showSubmitConfirm({
+          scenario: 'info',
+          eyebrow: 'SUBMITTING',
+          title: '正在确认交卷',
+          message: '成绩正在提交并生成复盘结果，完成前请保持当前页面。',
+          confirmText: '知道了',
+          hideCancel: true,
+        })
+      } finally {
+        this._exitConfirmInFlight = false
+      }
+      return
+    }
 
     const submission = this._practiceSession && this._practiceSession.submissionSnapshot
     if (this.data.submitted && this._pendingResultUrl && submission) {
@@ -1539,18 +1664,24 @@ Page({
 
     const hasPendingSubmit = !!submission
     const retryBlocked = !!(submission && submission.retryBlocked)
-    const confirmed = await this._showSubmitConfirm({
-      scenario: 'danger',
-      eyebrow: hasPendingSubmit ? 'SUBMISSION PENDING' : 'EXIT PRACTICE',
-      title: retryBlocked ? '退出本组练习？' : (hasPendingSubmit ? '退出待确认交卷？' : '退出本组练习？'),
-      message: retryBlocked
-        ? '服务器已明确拒绝本次提交，本地待确认状态会保留到你清除或重新进入处理。'
-        : (hasPendingSubmit
-          ? '本次交卷状态尚未确认。退出不会撤销服务器上可能已经保存的结果；待确认提交会保留，可下次继续确认。'
-          : '退出后，本组尚未提交的练习不会计入结果。'),
-      confirmText: hasPendingSubmit ? '退出页面' : '退出练习',
-      cancelText: retryBlocked ? '返回查看' : (hasPendingSubmit ? '继续确认' : '继续作答'),
-    })
+    this._exitConfirmInFlight = true
+    let confirmed = false
+    try {
+      confirmed = await this._showSubmitConfirm({
+        scenario: 'danger',
+        eyebrow: hasPendingSubmit ? 'SUBMISSION PENDING' : 'EXIT PRACTICE',
+        title: retryBlocked ? '退出本组练习？' : (hasPendingSubmit ? '退出待确认交卷？' : '退出本组练习？'),
+        message: retryBlocked
+          ? '服务器已明确拒绝本次提交，本地待确认状态会保留到你清除或重新进入处理。'
+          : (hasPendingSubmit
+            ? '本次交卷状态尚未确认。退出不会撤销服务器上可能已经保存的结果；待确认提交会保留，可下次继续确认。'
+            : '退出后，本组尚未提交的练习不会计入结果。'),
+        confirmText: hasPendingSubmit ? '退出页面' : '退出练习',
+        cancelText: retryBlocked ? '返回查看' : (hasPendingSubmit ? '继续确认' : '继续作答'),
+      })
+    } finally {
+      this._exitConfirmInFlight = false
+    }
     if (!confirmed) return
     if (!this._pageAlive) return
     this._setPracticeUnloadGuard(false)
@@ -2085,7 +2216,9 @@ Page({
       if (deterministicReject) {
         submission.retryBlocked = true
         submission.pendingPersisted = this._persistPendingSubmission(submission, 'blocked', '') || submission.pendingPersisted
-        this._setPracticeUnloadGuard(false)
+        // 仍处于刷题页且用户需要显式确认退出；不能因服务端确定性拒绝而让
+        // 系统侧滑/Back 绕过自定义退出提示。
+        this._setPracticeUnloadGuard(true, '本次提交已被服务器拒绝，请确认退出后重新开始。')
         let rejectTitle = '交卷内容未通过校验'
         let rejectContent = '服务器已明确拒绝本次提交，继续重试相同内容不会成功。请退出后重新开始。'
         if (errorCode === 'PRACTICE_SUBMISSION_CONFLICT') {

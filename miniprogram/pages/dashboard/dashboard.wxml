@@ -506,7 +506,7 @@
                   <text class="ai-panel-title">AI 学习诊断</text>
                   <text class="ai-panel-desc">将当前数据整理成下一步最值得执行的方向</text>
                 </view>
-                <view class="ai-badge">AI</view>
+                <view class="ai-badge {{llmAnalysis && llmAnalysis.generated == false ? 'data' : ''}}">{{llmAnalysis && llmAnalysis.generated == false ? '数据' : 'AI'}}</view>
               </view>
 
               <view class="ai-empty" wx:if="{{!llmAnalysis && !llmAnalysisLoading && !llmAnalysisError}}">
@@ -519,10 +519,15 @@
                 <text class="inline-action" bindtap="onRetryLlmAnalysis">重试</text>
               </view>
               <view class="ai-result" wx:if="{{llmAnalysis}}">
+                <view class="ai-fallback-note" wx:if="{{llmAnalysis.generated == false}}">AI 服务本次未返回可用结果，先展示基于当前学习数据的诊断。</view>
                 <text class="ai-summary" wx:if="{{llmAnalysis.summary}}">{{llmAnalysis.summary}}</text>
                 <view class="ai-result-group" wx:if="{{llmAnalysis.findings && llmAnalysis.findings.length}}">
                   <text class="ai-result-title">主要发现</text>
                   <view class="ai-result-row" wx:for="{{llmAnalysis.findings}}" wx:key="*this"><view class="ai-result-dot"></view><text>{{item}}</text></view>
+                </view>
+                <view class="ai-result-group" wx:if="{{llmAnalysis.risks && llmAnalysis.risks.length}}">
+                  <text class="ai-result-title">风险提醒</text>
+                  <view class="ai-result-row" wx:for="{{llmAnalysis.risks}}" wx:key="*this"><view class="ai-result-dot ai-risk-dot"></view><text>{{item}}</text></view>
                 </view>
                 <view class="ai-result-group" wx:if="{{llmAnalysis.actions && llmAnalysis.actions.length}}">
                   <text class="ai-result-title">下一步建议</text>
@@ -531,7 +536,7 @@
                     <text class="line-icon icon-chevron-right"></text>
                   </view>
                 </view>
-                <view class="ai-footer"><text bindtap="onClearLlmAnalysis">清除结果</text><text bindtap="onLlmFeedback">结果有误</text></view>
+                <view class="ai-footer"><text bindtap="onClearLlmAnalysis">清除结果</text><text wx:if="{{llmAnalysis.generated == false}}" bindtap="onRetryLlmAnalysis">重试 AI</text><text wx:else bindtap="onLlmFeedback">结果有误</text></view>
               </view>
             </view>
           </view>

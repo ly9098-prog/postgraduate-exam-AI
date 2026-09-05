@@ -216,7 +216,7 @@
     <view class="sheet-handle"></view>
     <text class="decision-kicker">REVIEW AGAIN</text>
     <text class="decision-title">重新加入复习？</text>
-    <text class="decision-desc">掌握度保持当前数值不变，只恢复这道题的复习资格，后续会按复习计划再次出现。</text>
+    <text class="decision-desc">恢复这道题的复习资格后，掌握度会按已有复习记录重新计算，后续会按复习计划再次出现。</text>
     <view class="decision-actions"><button class="decision-secondary" bindtap="closeUnmasterConfirm">保持掌握</button><button class="decision-primary" loading="{{masterSubmitting}}" disabled="{{masterSubmitting}}" bindtap="confirmUnmastered">加入复习</button></view>
   </view>
 </view>
