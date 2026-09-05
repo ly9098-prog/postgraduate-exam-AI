@@ -244,6 +244,7 @@ function canonicalStemAfterSegmentUpdate(
 function isStemTextSegment(
   segment: Record<string, unknown> | null | undefined,
 ): boolean {
+  if (!segment || segment.option_key) return false;
   const type = segmentType(segment);
   return type === "text" || type === "newline";
 }
@@ -258,17 +259,58 @@ function stemTextToSegments(text: string): Array<Record<string, unknown>> {
   return segments;
 }
 
+function isMathWrapBoundary(left: string, right: string): boolean {
+  const leftChar = left.match(/\S(?=\s*$)/)?.[0] ?? "";
+  const rightChar = right.match(/^\s*(\S)/)?.[1] ?? "";
+  // MathFormula/KaTeX treats whitespace inside an expression as layout
+  // whitespace, but textarea renders the same OCR newline as a hard break.
+  // Only collapse boundaries that clearly continue an expression so ordinary
+  // prose/paragraph line breaks remain editable and persistable.
+  const mathContinuationLeft = /[=<>≤≥≠≈→←±×÷+\-*/^_,:([{\\]/;
+  const mathContinuationRight = /[=<>≤≥≠≈→←±×÷+\-*/^_,:)\]}]/;
+  return mathContinuationLeft.test(leftChar) || mathContinuationRight.test(rightChar);
+}
+
+function normalizeStemForEditing(value: string): string {
+  const text = String(value ?? "").replace(/\r\n?/g, "\n");
+  if (!text.includes("\n") || looksLikeProgrammingCode(text)) return text;
+
+  const lines = text.split("\n");
+  let result = lines[0] ?? "";
+  for (let index = 1; index < lines.length; index += 1) {
+    const right = lines[index] ?? "";
+    // Empty adjacent lines are semantic paragraph breaks, never OCR row wraps.
+    if (!result || result.endsWith("\n") || !right.trim()) {
+      result += `\n${right}`;
+      continue;
+    }
+    if (isMathWrapBoundary(result, right)) {
+      result = `${result.replace(/[ \t]+$/, "")}${right.replace(/^[ \t]+/, "")}`;
+    } else {
+      result += `\n${right}`;
+    }
+  }
+  return result;
+}
+
 function updateStemInContent(
   content: unknown,
   newStem: string,
 ): Record<string, unknown> {
   const record = contentRecord(content);
   const next: Record<string, unknown> = { ...record, stem: newStem, text: newStem };
-  if (record.render_mode === "segments" && Array.isArray(record.segments)) {
-    const nonText = (record.segments as Array<Record<string, unknown>>).filter(
-      (segment) => !isStemTextSegment(segment),
-    );
-    next.segments = [...stemTextToSegments(newStem), ...nonText];
+  if (Array.isArray(record.segments)) {
+    const segments = record.segments as Array<Record<string, unknown>>;
+    const firstStemIndex = segments.findIndex(isStemTextSegment);
+    const insertAt = firstStemIndex < 0
+      ? 0
+      : segments.slice(0, firstStemIndex).filter((segment) => !isStemTextSegment(segment)).length;
+    const nonText = segments.filter((segment) => !isStemTextSegment(segment));
+    next.segments = [
+      ...nonText.slice(0, insertAt),
+      ...stemTextToSegments(newStem),
+      ...nonText.slice(insertAt),
+    ];
   }
   return next;
 }
@@ -316,26 +358,92 @@ function textForStemEditor(
     return textFromContent(content);
   }
 
+  const canonicalText = textFromContent(content);
+  const visibleStemSegments = contentSegments(content).filter(
+    (segment) => !segment.option_key,
+  );
+  const hasOnlyTextStemSegments =
+    visibleStemSegments.length > 0 && visibleStemSegments.every(isStemTextSegment);
+
+  // Keep the editor aligned with QuestionContentRenderer: text-only programming
+  // questions intentionally render the canonical stem because OCR segment order
+  // can be region-order rather than reading-order.
+  if (
+    canonicalText &&
+    hasOnlyTextStemSegments &&
+    looksLikeProgrammingCode(canonicalText)
+  ) {
+    return canonicalText;
+  }
+
   let hasStemTextSegment = false;
   const segmentText = content.segments
     .map((rawSegment) => {
       if (!rawSegment || typeof rawSegment !== "object" || Array.isArray(rawSegment)) return "";
       const segment = rawSegment as Record<string, unknown>;
-      if (segment.option_key) return "";
+      if (!isStemTextSegment(segment)) return "";
       const type = segmentType(segment);
-      if (type === "text") {
-        hasStemTextSegment = true;
-        return String(segment.text ?? "");
-      }
-      if (type === "newline") {
-        hasStemTextSegment = true;
-        return "\n";
-      }
-      return "";
+      hasStemTextSegment = true;
+      return type === "newline" ? "\n" : String(segment.text ?? "");
     })
     .join("");
 
-  return hasStemTextSegment ? segmentText : textFromContent(content);
+  return hasStemTextSegment ? segmentText : canonicalText;
+}
+
+function nonStemContentSegments(content: unknown): Array<Record<string, unknown>> {
+  return contentSegments(content).filter((segment) => !isStemTextSegment(segment));
+}
+
+/** Build a minimal PATCH payload from what is actually editable/visible.
+ * This avoids persisting legacy normalization side effects (for example an
+ * OCR-only content.stem differing from the structured text) when the user only
+ * changes an unrelated field. */
+function buildQuestionEditPatch(
+  form: QuestionEditRequest,
+  question: AdminQuestion,
+  currentStemText?: string,
+): QuestionEditRequest {
+  const patch: QuestionEditRequest = {};
+
+  if ((form.answer ?? "") !== (question.answer ?? "")) patch.answer = form.answer ?? "";
+  if ((form.analysis ?? "") !== (question.analysis ?? "")) patch.analysis = form.analysis ?? "";
+  if ((form.difficulty ?? null) !== (question.difficulty ?? null) && form.difficulty !== undefined) {
+    patch.difficulty = form.difficulty;
+  }
+  if ((form.question_type ?? "") !== (question.question_type ?? "")) {
+    patch.question_type = form.question_type ?? "";
+  }
+  if ((form.subject_id ?? null) !== (question.subject_id ?? null)) {
+    patch.subject_id = form.subject_id ?? null;
+  }
+
+  const baselineStem = normalizeStemForEditing(textForStemEditor(question.content));
+  const editorStem = currentStemText ?? textForStemEditor(form.content);
+  const stemChanged = editorStem !== baselineStem;
+  const structuredContentChanged =
+    JSON.stringify(nonStemContentSegments(form.content)) !==
+    JSON.stringify(nonStemContentSegments(question.content));
+  if (stemChanged || structuredContentChanged) {
+    patch.content = stemChanged
+      ? updateStemInContent(form.content, editorStem)
+      : contentRecord(form.content);
+  }
+
+  if (
+    comparableOptionState(form.options) !==
+    comparableOptionState(resolveQuestionOptions(question) ?? undefined)
+  ) {
+    patch.options = form.options ?? null;
+  }
+  if (
+    JSON.stringify(form.knowledge_points ?? null) !==
+    JSON.stringify(question.knowledge_points ?? null)
+  ) {
+    patch.knowledge_points = form.knowledge_points ?? [];
+  }
+
+  return patch;
 }
 
 function renderJson(value: unknown) {
@@ -709,6 +817,7 @@ export default function QuestionsPage() {
   const [exportingFormat, setExportingFormat] = useState<"csv" | "docx" | null>(null);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<QuestionEditRequest>({});
+  const [editStemText, setEditStemText] = useState("");
 
   useEffect(() => {
     setVersionHistoryOpen(false);
@@ -898,9 +1007,13 @@ export default function QuestionsPage() {
   const updateMutation = useMutation({
     mutationFn: async () => {
       if (!selectedQuestionId) throw new Error("未选中题目");
+      const baseline = detail.data;
+      if (!baseline) throw new Error("题目详情尚未加载完成");
+      const patch = buildQuestionEditPatch(editForm, baseline, editStemText);
+      if (Object.keys(patch).length === 0) throw new Error("没有需要保存的修改");
       return apiRequest<AdminQuestion>(`/questions/${selectedQuestionId}`, {
         method: "PATCH",
-        body: JSON.stringify(editForm),
+        body: JSON.stringify(patch),
       });
     },
     onSuccess: () => {
@@ -1048,18 +1161,8 @@ export default function QuestionsPage() {
 
   const dirty = useMemo(() => {
     if (!selectedQuestion) return false;
-    const q = selectedQuestion;
-    if ((editForm.answer ?? "") !== (q.answer ?? "")) return true;
-    if ((editForm.analysis ?? "") !== (q.analysis ?? "")) return true;
-    if ((editForm.difficulty ?? null) !== (q.difficulty ?? null)) return true;
-    if ((editForm.question_type ?? "") !== (q.question_type ?? "")) return true;
-    if ((editForm.subject_id ?? null) !== (q.subject_id ?? null)) return true;
-    if (textFromContent(editForm.content) !== textFromContent(q.content)) return true;
-    if (JSON.stringify(contentSegments(editForm.content)) !== JSON.stringify(contentSegments(q.content))) return true;
-    if (comparableOptionState(editForm.options) !== comparableOptionState(resolveQuestionOptions(q) ?? undefined)) return true;
-    if (JSON.stringify(editForm.knowledge_points ?? null) !== JSON.stringify(q.knowledge_points ?? null)) return true;
-    return false;
-  }, [editForm, selectedQuestion]);
+    return Object.keys(buildQuestionEditPatch(editForm, selectedQuestion, editStemText)).length > 0;
+  }, [editForm, editStemText, selectedQuestion]);
 
   const mergeQuestionIntoDetailCache = useCallback(
     (question: AdminQuestion) => {
@@ -1112,11 +1215,17 @@ export default function QuestionsPage() {
 
     const task = (async () => {
       try {
+        if (!selectedQuestion) {
+          setMessage("题目详情尚未加载完成，无法保存当前修改。");
+          return false;
+        }
+        const patch = buildQuestionEditPatch(editForm, selectedQuestion, editStemText);
+        if (Object.keys(patch).length === 0) return true;
         const question = await apiRequest<AdminQuestion>(
           `/questions/${selectedQuestionId}`,
           {
             method: "PATCH",
-            body: JSON.stringify(editForm),
+            body: JSON.stringify(patch),
           },
         );
         mergeQuestionIntoDetailCache(question);
@@ -1130,6 +1239,7 @@ export default function QuestionsPage() {
           content: contentRecord(question.content),
           knowledge_points: question.knowledge_points ?? undefined,
         });
+        setEditStemText(normalizeStemForEditing(textForStemEditor(question.content)));
         queryClient.invalidateQueries({ queryKey: ["questions"] });
         queryClient.invalidateQueries({ queryKey: ["questions", selectedQuestionId] });
         setMessage("已先保存当前修改，将继续执行该操作。");
@@ -1153,9 +1263,11 @@ export default function QuestionsPage() {
   }, [
     dirty,
     editForm,
+    editStemText,
     emptyEditingCodeCount,
     mergeQuestionIntoDetailCache,
     queryClient,
+    selectedQuestion,
     selectedQuestionId,
     unresolvedEditingTableCount,
   ]);
@@ -1485,12 +1597,13 @@ export default function QuestionsPage() {
     // corrupt otherwise valid content.
     const clonedRaw = JSON.parse(JSON.stringify(content ?? {})) as unknown;
     const clonedContent = contentRecord(clonedRaw);
-    // Opening the editor must be a read-only operation. Do not normalize OCR
-    // line breaks/whitespace here: that previously made untouched questions
-    // dirty and could rewrite content simply by opening and saving the drawer.
+    // Keep the persisted content snapshot untouched. The textarea has its own
+    // display/edit state so OCR layout-only newlines can be hidden without
+    // making the form dirty or rewriting content on unrelated edits.
     const editableContent = typeof clonedRaw === "string"
       ? { stem: clonedRaw, text: clonedRaw }
       : clonedContent;
+    setEditStemText(normalizeStemForEditing(textForStemEditor(editableContent)));
     const rawOpts = resolveQuestionOptions(selectedQuestion);
     let editOpts: Record<string, unknown> | undefined;
     if (rawOpts && typeof rawOpts === "object" && !Array.isArray(rawOpts)) {
@@ -1524,12 +1637,14 @@ export default function QuestionsPage() {
   const finishCancelEditing = useCallback(() => {
     setEditing(false);
     setEditForm({});
+    setEditStemText("");
     setUnsavedIntent(null);
   }, []);
 
   const finishCloseDetailDrawer = useCallback(() => {
     setEditing(false);
     setEditForm({});
+    setEditStemText("");
     setUnsavedIntent(null);
     setIsDetailDrawerOpen(false);
   }, []);
@@ -1992,7 +2107,7 @@ export default function QuestionsPage() {
               >
               {items.map((question) => {
                 const stemText =
-                  textFromContent(question.content) || `题目 #${question.id}`;
+                  textForStemEditor(question.content) || `题目 #${question.id}`;
                 const isSelected = selectedQuestionId === question.id;
                 return (
                   <article
@@ -2476,16 +2591,8 @@ export default function QuestionsPage() {
                       wrap="soft"
                       spellCheck={false}
                       className="min-h-36 w-full resize-y overflow-x-hidden whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm leading-7 text-slate-800 outline-none transition [overflow-wrap:anywhere] placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
-                      value={textForStemEditor(editForm.content) ?? ""}
-                      onChange={(e) => {
-                        setEditForm({
-                          ...editForm,
-                          content: updateStemInContent(
-                            editForm.content,
-                            e.target.value,
-                          ),
-                        });
-                      }}
+                      value={editStemText}
+                      onChange={(e) => setEditStemText(e.target.value)}
                     />
                     <div className="mt-4">
                       <p className="mb-2 text-xs font-medium text-slate-500">题干图片</p>

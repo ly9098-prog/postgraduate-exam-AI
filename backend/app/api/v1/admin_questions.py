@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 
 from fastapi import (
@@ -54,7 +55,7 @@ from app.services.admin_question_export_service import build_admin_question_expo
 from app.services.knowledge_point_service import load_question_kps
 from app.services.storage_backend import compress_image, get_question_assets_storage
 from app.services.streaming_upload_handler import stream_to_temp
-from app.utils.question_content import extract_image_urls_from_content
+from app.utils.question_content import extract_image_urls_from_content, normalize_segment_type
 
 router = APIRouter(prefix="/api/admin/v1/questions", tags=["admin-questions"])
 
@@ -119,6 +120,128 @@ def _remove_legacy_image_url(values, url: str):
         if _image_url_from_legacy_entry(value) != normalized_url
     ]
     return updated if len(updated) != len(values) else None
+
+
+def _rendered_content_image_urls(content) -> set[str]:
+    if not isinstance(content, dict):
+        return set()
+    segments = content.get("segments")
+    if not isinstance(segments, list):
+        return set()
+    urls: set[str] = set()
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        if normalize_segment_type(segment) not in {"image", "math_image", "table_image", "code_image"}:
+            continue
+        url = segment.get("url")
+        if isinstance(url, str) and url.strip():
+            urls.add(url.strip())
+    return urls
+
+
+def _merge_content_image_urls_with_legacy(question, new_content):
+    """Refresh the structured-image mirror without dropping legacy-only images.
+
+    ``image_url`` is a mirror of plain image segments on newer rows, but older
+    rows can also contain additional images that do not exist in ``content``.
+    Mutating one structured image must not silently discard those legacy-only
+    references.
+    """
+    result = list(extract_image_urls_from_content(new_content) or [])
+    seen = {url.strip() for url in result if isinstance(url, str) and url.strip()}
+    old_rendered_urls = _rendered_content_image_urls(question.content)
+    if isinstance(question.image_url, list):
+        for value in question.image_url:
+            raw = _image_url_from_legacy_entry(value)
+            if not raw or raw in old_rendered_urls or raw in seen:
+                continue
+            result.append(value)
+            seen.add(raw)
+    return result or None
+
+
+_LEGACY_OPTION_CONTENT_FIELDS = ("options", "parsed_options", "option_list")
+_OPTION_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _coerce_legacy_option_mapping(value):
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        result = {}
+        for index, item in enumerate(value):
+            if item is None:
+                continue
+            fallback_key = _OPTION_LABELS[index] if index < len(_OPTION_LABELS) else str(index + 1)
+            key = fallback_key
+            if isinstance(item, dict):
+                for field in ("key", "label", "name"):
+                    candidate = item.get(field)
+                    if isinstance(candidate, str) and candidate.strip():
+                        key = candidate.strip().upper()
+                        break
+                result[key] = dict(item)
+            else:
+                result[key] = str(item)
+        return result
+    if isinstance(value, str):
+        lines = [line.strip() for line in value.splitlines() if line.strip()]
+        result = {}
+        for line in lines:
+            match = re.match(
+                r"^([A-Za-z0-9一二三四五六七八九十]+)\s*[.、，,]\s*(.*)$",
+                line,
+            )
+            if match:
+                key = match.group(1).upper()
+                text = match.group(2).strip()
+            else:
+                key = str(len(result) + 1)
+                text = line
+            if key in result:
+                continue
+            result[key] = text
+        return result
+    return None
+
+
+def _effective_question_options(question):
+    """Resolve the same legacy option fallback that the admin UI displays.
+
+    Current rows use ``question.options``. Historical imports may keep the only
+    editable option mapping under ``content.options`` / ``parsed_options`` /
+    ``option_list``; immediate option mutations should work for those rows too.
+    """
+    if isinstance(question.options, dict) and question.options:
+        return question.options
+    content = question.content if isinstance(question.content, dict) else {}
+    for field in _LEGACY_OPTION_CONTENT_FIELDS:
+        value = _coerce_legacy_option_mapping(content.get(field))
+        if value:
+            return value
+    return question.options
+
+
+def _option_mutation_patch(question, options, edit_reason: str | None) -> AdminQuestionPatchRequest:
+    """Keep legacy content-level option mirrors synchronized when present.
+
+    Without this, an image removed from the top-level options can remain hidden
+    in ``content.options`` and continue counting as a live asset reference.
+    """
+    content = question.content if isinstance(question.content, dict) else None
+    if not content or not any(field in content for field in _LEGACY_OPTION_CONTENT_FIELDS):
+        return AdminQuestionPatchRequest(options=options, edit_reason=edit_reason)
+
+    next_content = dict(content)
+    for field in _LEGACY_OPTION_CONTENT_FIELDS:
+        if field in next_content:
+            next_content[field] = options
+    return AdminQuestionPatchRequest(
+        content=next_content,
+        options=options,
+        edit_reason=edit_reason,
+    )
 
 
 @router.get("")
@@ -376,11 +499,11 @@ async def add_question_options(
         question = await get_admin_question(db, question_id)
         if question.question_type not in ("single_choice", "multiple_choice"):
             raise ValueError("该题型不支持添加选项")
-        merged = merge_options(question.options, data.options)
+        merged = merge_options(_effective_question_options(question), data.options)
         question = await update_admin_question(
             db,
             question_id,
-            AdminQuestionPatchRequest(options=merged, edit_reason=data.edit_reason),
+            _option_mutation_patch(question, merged, data.edit_reason),
             current_admin,
             request,
         )
@@ -435,7 +558,7 @@ async def upload_question_image(
                     edit_reason="替换题干图片",
                 )
             else:
-                new_image_url = extract_image_urls_from_content(new_content)
+                new_image_url = _merge_content_image_urls_with_legacy(question, new_content)
                 patch = AdminQuestionPatchRequest(
                     content=new_content,
                     image_url=new_image_url,
@@ -443,10 +566,11 @@ async def upload_question_image(
                 )
         else:
             key = target.split(":", 1)[1]
-            new_options = upsert_option_image(question.options, key, url, replace_url)
-            patch = AdminQuestionPatchRequest(
-                options=new_options,
-                edit_reason=f"插入/替换选项 {key} 图片",
+            new_options = upsert_option_image(_effective_question_options(question), key, url, replace_url)
+            patch = _option_mutation_patch(
+                question,
+                new_options,
+                f"插入/替换选项 {key} 图片",
             )
         question = await update_admin_question(db, question_id, patch, current_admin, request)
         await db.commit()
@@ -491,7 +615,7 @@ async def delete_question_image(
                     edit_reason=data.edit_reason or "删除题干图片",
                 )
             else:
-                new_image_url = extract_image_urls_from_content(new_content)
+                new_image_url = _merge_content_image_urls_with_legacy(question, new_content)
                 patch = AdminQuestionPatchRequest(
                     content=new_content,
                     image_url=new_image_url,
@@ -499,10 +623,11 @@ async def delete_question_image(
                 )
         else:
             key = data.target.split(":", 1)[1]
-            new_options = remove_option_image(question.options, key, data.url)
-            patch = AdminQuestionPatchRequest(
-                options=new_options,
-                edit_reason=data.edit_reason or f"删除选项 {key} 图片",
+            new_options = remove_option_image(_effective_question_options(question), key, data.url)
+            patch = _option_mutation_patch(
+                question,
+                new_options,
+                data.edit_reason or f"删除选项 {key} 图片",
             )
         question = await update_admin_question(db, question_id, patch, current_admin, request)
         await db.commit()

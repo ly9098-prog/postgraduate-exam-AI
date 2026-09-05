@@ -480,81 +480,121 @@ def _resolve_option_storage_key(options: dict[str, Any], key: str) -> str | None
     return None
 
 
+_OPTION_DIRECT_IMAGE_KEYS = ("url", "image_url", "imageUrl", "src")
+
+
+def _option_direct_image_key(value: dict[str, Any], url: str | None = None) -> str | None:
+    normalized_url = url.strip() if isinstance(url, str) else None
+    for key in _OPTION_DIRECT_IMAGE_KEYS:
+        candidate = value.get(key)
+        if not isinstance(candidate, str) or not candidate.strip():
+            continue
+        if normalized_url is None or candidate.strip() == normalized_url:
+            return key
+    return None
+
+
 def upsert_option_image(
     options: dict[str, Any] | None,
     key: str,
     url: str,
     replace_url: str | None = None,
 ) -> dict[str, Any]:
-    """Set an option image: append an image segment to ``options[key]``, or
-    replace the segment whose url == replace_url. Preserves the option text."""
+    """Add or replace an option image while preserving historical value shapes.
+
+    Newer options store images in ``segments``. Older rows can store a direct
+    ``url``/``image_url``/``imageUrl``/``src`` beside text under keys such as
+    ``content`` or ``value``. Do not canonicalize those rows just to mutate the
+    image, otherwise their text/metadata can be lost.
+    """
     requested_key = key.strip().upper()
     result = dict(options or {})
     storage_key = _resolve_option_storage_key(result, requested_key)
     if storage_key is None:
         raise ValueError(f"选项 {requested_key} 不存在")
     cur = result.get(storage_key)
-    extra: dict[str, Any] = {}
+
     if isinstance(cur, str):
-        text, segments = cur, []
+        current_value: dict[str, Any] = {"text": cur}
     elif isinstance(cur, dict):
-        text = str(cur.get("text") or "")
-        segments = [s for s in (cur.get("segments") or []) if isinstance(s, dict)]
-        # 保留其他富键（如 semantic_role、is_question_image），避免重写时丢失。
-        extra = {k: v for k, v in cur.items() if k not in ("text", "segments")}
+        current_value = dict(cur)
     else:
-        text, segments = "", []
+        current_value = {}
+
+    raw_segments = current_value.get("segments")
+    segments = [s for s in raw_segments if isinstance(s, dict)] if isinstance(raw_segments, list) else []
+
     if replace_url:
         normalized_replace_url = replace_url.strip()
         for i, seg in enumerate(segments):
-            if (
-                isinstance(seg, dict)
-                and str(seg.get("url") or "").strip() == normalized_replace_url
-            ):
+            if str(seg.get("url") or "").strip() == normalized_replace_url:
                 updated = [*segments]
                 updated[i] = {**seg, "url": url}
-                result[storage_key] = {"text": text, "segments": updated, **extra}
+                current_value["segments"] = updated
+                result[storage_key] = current_value
                 return result
+
+        direct_key = _option_direct_image_key(current_value, normalized_replace_url)
+        if direct_key is not None:
+            current_value[direct_key] = url
+            result[storage_key] = current_value
+            return result
         raise ValueError("待替换图片不存在")
-    result[storage_key] = {
-        "text": text,
-        "segments": [*segments, {"type": "image", "url": url, "semantic_role": "option_image"}],
-        **extra,
-    }
+
+    current_value["segments"] = [
+        *segments,
+        {"type": "image", "url": url, "semantic_role": "option_image"},
+    ]
+    result[storage_key] = current_value
     return result
 
 
 def remove_option_image(options: dict[str, Any] | None, key: str, url: str) -> dict[str, Any]:
-    """Remove the image segment matching url from ``options[key]``; degrade the
-    rich value back to flat text when no image segments remain."""
+    """Remove a segment-based or legacy direct option image reference."""
     requested_key = key.strip().upper()
     result = dict(options or {})
     storage_key = _resolve_option_storage_key(result, requested_key)
     if storage_key is None:
         raise ValueError(f"选项 {requested_key} 不存在")
     cur = result[storage_key]
-    if not isinstance(cur, dict) or not isinstance(cur.get("segments"), list):
+    if not isinstance(cur, dict):
         raise ValueError("待删除图片不存在")
+
     normalized_url = url.strip()
-    kept = [
-        s
-        for s in cur["segments"]
-        if not (
-            isinstance(s, dict)
-            and str(s.get("url") or "").strip() == normalized_url
-        )
-    ]
-    if len(kept) == len(cur["segments"]):
+    current_value = dict(cur)
+    removed = False
+
+    raw_segments = current_value.get("segments")
+    if isinstance(raw_segments, list):
+        kept = [
+            segment
+            for segment in raw_segments
+            if not (
+                isinstance(segment, dict)
+                and str(segment.get("url") or "").strip() == normalized_url
+            )
+        ]
+        if len(kept) != len(raw_segments):
+            removed = True
+            if kept:
+                current_value["segments"] = kept
+            else:
+                current_value.pop("segments", None)
+
+    direct_key = _option_direct_image_key(current_value, normalized_url)
+    if direct_key is not None:
+        removed = True
+        current_value.pop(direct_key, None)
+
+    if not removed:
         raise ValueError("待删除图片不存在")
-    text = str(cur.get("text") or "")
-    extra = {k: v for k, v in cur.items() if k not in ("text", "segments")}
-    if kept:
-        result[storage_key] = {"text": text, "segments": kept, **extra}
-    elif extra:
-        # 仍有富键（如 semantic_role）时保持 dict 形态，避免丢元数据
-        result[storage_key] = {"text": text, "segments": [], **extra}
+
+    # A plain-text option promoted to {text, segments} by upload should return
+    # to its original compact string shape after the last image is removed.
+    if set(current_value) == {"text"} and isinstance(current_value.get("text"), str):
+        result[storage_key] = current_value["text"]
     else:
-        result[storage_key] = text
+        result[storage_key] = current_value
     return result
 
 
