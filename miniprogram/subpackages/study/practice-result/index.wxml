@@ -112,9 +112,51 @@
         </view>
 
         <view class="chart-wrap">
-          <canvas wx:if="{{trendAvailable && chartCanvasMounted && !reviewDialogVisible}}" type="2d" id="trendCanvas" class="trend-canvas"></canvas>
           <view wx:if="{{trendLoading}}" class="chart-loading">正在加载趋势…</view>
-          <view wx:elif="{{!trendAvailable}}" class="chart-loading">{{trendSummary}}</view>
+          <view wx:elif="{{trendAvailable}}" class="trend-chart">
+            <view class="trend-y-axis">
+              <text class="trend-y-label trend-y-label-top">100%</text>
+              <text class="trend-y-label trend-y-label-mid">50%</text>
+              <text class="trend-y-label trend-y-label-bottom">0%</text>
+            </view>
+
+            <view class="trend-plot">
+              <view class="trend-grid-line trend-grid-line-top"></view>
+              <view class="trend-grid-line trend-grid-line-mid"></view>
+              <view class="trend-grid-line trend-grid-line-bottom"></view>
+              <view wx:if="{{trendAreaStyle}}" class="trend-area" style="{{trendAreaStyle}}"></view>
+
+              <view
+                wx:for="{{trendSegments}}"
+                wx:key="key"
+                class="trend-segment"
+                style="left: {{item.leftPct}}%; top: {{item.topPct}}%; width: {{item.widthPct}}%; transform: rotate({{item.angleDeg}}deg);"
+              ></view>
+
+              <view
+                wx:for="{{trendPoints}}"
+                wx:key="key"
+                class="trend-point {{item.isLast ? 'trend-point-last' : ''}}"
+                style="left: {{item.leftPct}}%; top: {{item.topPct}}%;"
+              ></view>
+
+              <view
+                wx:if="{{trendLastPoint}}"
+                class="trend-last-badge"
+                style="left: {{trendLastPoint.leftPct}}%; top: {{trendLastPoint.badgeTopPct}}%;"
+              >{{trendLastPoint.accuracy}}%</view>
+            </view>
+
+            <view class="trend-x-axis">
+              <text
+                wx:for="{{trendPoints}}"
+                wx:key="key"
+                class="trend-x-label"
+                style="left: {{item.leftPct}}%;"
+              >{{item.dateLabel}}</text>
+            </view>
+          </view>
+          <view wx:else class="chart-loading">{{trendSummary}}</view>
         </view>
       </view>
 
@@ -154,7 +196,12 @@
 
         <view class="distribution">
           <view class="donut-wrap">
-            <canvas wx:if="{{chartCanvasMounted && !reviewDialogVisible}}" type="2d" id="errorCanvas" class="error-canvas"></canvas>
+            <view class="error-donut">
+              <image wx:if="{{errorDonutSvg}}" class="error-donut-svg" src="{{errorDonutSvg}}" mode="scaleToFill"></image>
+              <view wx:else class="error-donut-fallback" style="background: {{errorDonutGradient}};">
+                <view class="error-donut-hole"></view>
+              </view>
+            </view>
             <view class="donut-center">
               <text class="donut-num">{{wrongCount}}</text>
               <text class="donut-label">错题</text>

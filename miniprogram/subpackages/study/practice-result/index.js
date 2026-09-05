@@ -56,6 +56,154 @@ function getQuestionListHeightRpx(count) {
   return total > 0 ? total * 86 : 96;
 }
 
+// 图表放在 scroll-view 内时，部分微信 Android 基础库会让 2D canvas
+// 使用独立原生层，滚动后出现“画布留在原位、图形漂到其它卡片”的错位。
+// 结果页图表数据量很小，改用普通 view 绘制可彻底避开原生 canvas 层。
+function buildTrendPlot(data) {
+  const list = Array.isArray(data) ? data : [];
+  if (!list.length) return { points: [], segments: [], lastPoint: null };
+
+  const plotWidthRpx = 580;
+  const plotHeightRpx = 206;
+  const aspect = plotHeightRpx / plotWidthRpx;
+  const denominator = Math.max(1, list.length - 1);
+
+  const points = list.map((item, index) => {
+    const accuracy = clamp(item && item.accuracy, 0, 100);
+    const leftPct = list.length === 1 ? 50 : (index / denominator) * 100;
+    const topPct = 100 - accuracy;
+    const rawDate = String((item && item.date) || '');
+    const dateLabel = rawDate.slice(5).replace('-', '/') || String(index + 1);
+    return {
+      key: `${rawDate || 'day'}-${index}`,
+      accuracy,
+      leftPct: Number(leftPct.toFixed(3)),
+      topPct: Number(topPct.toFixed(3)),
+      badgeTopPct: Number(Math.max(0, topPct).toFixed(3)),
+      dateLabel,
+      isLast: index === list.length - 1
+    };
+  });
+
+  const segments = [];
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const from = points[index];
+    const to = points[index + 1];
+    const dxPct = to.leftPct - from.leftPct;
+    const dyPct = to.topPct - from.topPct;
+    const scaledDy = dyPct * aspect;
+    const widthPct = Math.sqrt(dxPct * dxPct + scaledDy * scaledDy);
+    const angleDeg = Math.atan2(scaledDy, dxPct) * 180 / Math.PI;
+    segments.push({
+      key: `segment-${index}`,
+      leftPct: from.leftPct,
+      topPct: from.topPct,
+      widthPct: Number(widthPct.toFixed(3)),
+      angleDeg: Number(angleDeg.toFixed(3))
+    });
+  }
+
+  const areaPolygon = points.length > 1
+    ? ['0% 100%', ...points.map(point => `${point.leftPct}% ${point.topPct}%`), '100% 100%']
+    : [];
+
+  return {
+    points,
+    segments,
+    lastPoint: points[points.length - 1] || null,
+    areaStyle: areaPolygon.length
+      ? `clip-path: polygon(${areaPolygon.join(', ')});`
+      : ''
+  };
+}
+
+function buildErrorDonutGradient(distribution) {
+  const list = Array.isArray(distribution)
+    ? distribution.filter(item => Number(item && item.count) > 0)
+    : [];
+  const total = list.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  if (!total) return '#EEF2EF';
+
+  let cursor = 0;
+  const stops = [];
+  list.forEach((item, index) => {
+    const ratio = Number(item.count || 0) / total * 100;
+    const start = cursor;
+    const end = index === list.length - 1 ? 100 : cursor + ratio;
+    stops.push(`${item.color || ERROR_COLORS[index % ERROR_COLORS.length]} ${start.toFixed(3)}% ${end.toFixed(3)}%`);
+    cursor = end;
+  });
+  return `conic-gradient(${stops.join(', ')})`;
+}
+
+function getErrorDonutMetrics() {
+  // 原 Canvas 的 210rpx 只是容器尺寸；实际绘制尺寸由 selectorQuery 返回的
+  // CSS px 决定，且圆环固定向内缩 8px。SVG 如果直接按 210x210 绘制会明显偏大。
+  // 这里把 210rpx 换算回当前设备的 CSS px，逐项复刻原 drawErrorChart 的参数。
+  let windowWidth = 375;
+  try {
+    if (typeof wx !== 'undefined') {
+      const info = wx.getWindowInfo
+        ? wx.getWindowInfo()
+        : (wx.getSystemInfoSync ? wx.getSystemInfoSync() : null);
+      if (info && Number(info.windowWidth) > 0) windowWidth = Number(info.windowWidth);
+    }
+  } catch (e) {}
+
+  const size = Math.max(1, windowWidth * 210 / 750);
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = Math.max(1, size / 2 - 8);
+  const lineWidth = Math.max(13, radius * .25);
+  const pathRadius = Math.max(1, radius - lineWidth / 2);
+
+  return { size, cx, cy, radius, lineWidth, pathRadius };
+}
+
+function buildErrorDonutSvg(distribution) {
+  const list = Array.isArray(distribution)
+    ? distribution.filter(item => Number(item && item.count) > 0)
+    : [];
+  const total = list.reduce((sum, item) => sum + Number(item.count || 0), 0);
+  if (!total) return '';
+
+  // 复刻原生 Canvas 圆环，而不是做“近似的甜甜圈”。关键细节：
+  // 1. 210rpx 容器内固定向内缩 8 CSS px；
+  // 2. stroke 宽度为 max(13px, radius * .25)；
+  // 3. 每段按原公式留 gap，并使用 round lineCap；
+  // 4. 后画的分段覆盖前一段圆帽，保留原 UI 的圆润交界形态。
+  // SVG 由普通 image 承载，因此不会重新触发 scroll-view 中 2D canvas 的原生层漂移。
+  const { size, cx, cy, lineWidth, pathRadius } = getErrorDonutMetrics();
+
+  const pointOnCircle = angle => ({
+    x: cx + pathRadius * Math.cos(angle),
+    y: cy + pathRadius * Math.sin(angle)
+  });
+
+  let start = -Math.PI / 2;
+  const paths = list.map((item, index) => {
+    const ratio = Number(item.count || 0) / total;
+    const gap = Math.min(.035, ratio * .12);
+    const segmentEnd = start + Math.PI * 2 * ratio;
+    const drawStart = start + gap;
+    const drawEnd = segmentEnd - gap;
+    start = segmentEnd;
+
+    if (drawEnd <= drawStart) return '';
+
+    const p1 = pointOnCircle(drawStart);
+    const p2 = pointOnCircle(drawEnd);
+    const sweep = drawEnd - drawStart;
+    const largeArc = sweep > Math.PI ? 1 : 0;
+    const color = String(item.color || ERROR_COLORS[index % ERROR_COLORS.length]);
+
+    return `<path d="M ${p1.x.toFixed(3)} ${p1.y.toFixed(3)} A ${pathRadius.toFixed(3)} ${pathRadius.toFixed(3)} 0 ${largeArc} 1 ${p2.x.toFixed(3)} ${p2.y.toFixed(3)}" fill="none" stroke="${color}" stroke-width="${lineWidth.toFixed(3)}" stroke-linecap="round"/>`;
+  }).join('');
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size.toFixed(3)} ${size.toFixed(3)}" shape-rendering="geometricPrecision"><circle cx="${cx.toFixed(3)}" cy="${cy.toFixed(3)}" r="${pathRadius.toFixed(3)}" fill="none" stroke="#EEF2EF" stroke-width="${lineWidth.toFixed(3)}"/>${paths}</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 function formatDuration(seconds) {
   const total = Math.max(0, Math.round(Number(seconds) || 0));
   const h = Math.floor(total / 3600);
@@ -478,10 +626,15 @@ Page({
     errorDistribution: [],
 
     trendData: [],
+    trendPoints: [],
+    trendSegments: [],
+    trendLastPoint: null,
+    trendAreaStyle: '',
     trendSummary: '近 7 天',
     trendLoading: true,
     trendAvailable: false,
-    chartCanvasMounted: true,
+    errorDonutGradient: '#EEF2EF',
+    errorDonutSvg: '',
 
     growthGain: 0,
     growth: DEFAULT_GROWTH,
@@ -507,9 +660,6 @@ Page({
 
   onLoad(options) {
     this._pageAlive = true;
-    this._pageVisible = true;
-    this._pageReady = false;
-    this._chartRedrawTimer = null;
     this._navigationLocked = false;
     this._sessionPayload = null;
     this._dashboardLoadId = 0;
@@ -536,43 +686,13 @@ Page({
     this.loadDashboardData();
   },
 
-  onHide() {
-    this._pageVisible = false;
-    if (this._chartRedrawTimer) {
-      clearTimeout(this._chartRedrawTimer);
-      this._chartRedrawTimer = null;
-    }
-    // 2D canvas 跨页面隐藏/恢复时在部分基础库会丢失 backing store。
-    // 两张图统一卸载；onShow 再创建全新节点并按原绘制参数重画，
-    // 既保留原环形图 UI，也避免从错题详情返回后出现空圆盘。
-    if (this.data.chartCanvasMounted) this.setData({ chartCanvasMounted: false });
-  },
-
   onUnload() {
     this._pageAlive = false;
-    this._pageVisible = false;
-    this._pageReady = false;
     this._dashboardLoadId++;
-    if (this._chartRedrawTimer) {
-      clearTimeout(this._chartRedrawTimer);
-      this._chartRedrawTimer = null;
-    }
-  },
-
-  onReady() {
-    this._pageReady = true;
-    this.scheduleVisibleChartDraw();
   },
 
   onShow() {
-    this._pageVisible = true;
     this._navigationLocked = false;
-    if (!this._pageReady) return;
-    if (this.data.chartCanvasMounted) {
-      this.scheduleVisibleChartDraw();
-      return;
-    }
-    this.setData({ chartCanvasMounted: true }, () => this.scheduleVisibleChartDraw());
   },
 
   measureSafeNavigation() {
@@ -969,8 +1089,8 @@ Page({
       questionListHeightRpx: getQuestionListHeightRpx(reviewItems.length),
       wrongReviewItems,
       errorDistribution: localErrorDistribution,
-    }, () => {
-      if (this._pageReady) this.scheduleVisibleChartDraw();
+      errorDonutGradient: buildErrorDonutGradient(localErrorDistribution),
+      errorDonutSvg: buildErrorDonutSvg(localErrorDistribution)
     });
   },
 
@@ -1086,7 +1206,6 @@ Page({
       this.loadGrowth(loadId)
     ]);
 
-    if (this._isDashboardLoadCurrent(loadId) && this._pageReady) this.scheduleVisibleChartDraw();
   },
 
   _isDashboardLoadCurrent(loadId) {
@@ -1127,18 +1246,41 @@ Page({
           trendSummary = '暂无作答记录';
         }
 
-        this.setData({ trendData, trendSummary, trendAvailable: true });
+        const plot = buildTrendPlot(trendData);
+        this.setData({
+          trendData,
+          trendPoints: plot.points,
+          trendSegments: plot.segments,
+          trendLastPoint: plot.lastPoint,
+          trendAreaStyle: plot.areaStyle,
+          trendSummary,
+          trendAvailable: true
+        });
       } else {
-        this.setData({ trendData: [], trendSummary: '暂无历史数据', trendAvailable: false });
+        this.setData({
+          trendData: [],
+          trendPoints: [],
+          trendSegments: [],
+          trendLastPoint: null,
+          trendAreaStyle: '',
+          trendSummary: '暂无历史数据',
+          trendAvailable: false
+        });
       }
     } catch (e) {
       if (!this._isDashboardLoadCurrent(loadId)) return;
-      this.setData({ trendData: [], trendSummary: '趋势暂不可用', trendAvailable: false });
+      this.setData({
+        trendData: [],
+        trendPoints: [],
+        trendSegments: [],
+        trendLastPoint: null,
+        trendAreaStyle: '',
+        trendSummary: '趋势暂不可用',
+        trendAvailable: false
+      });
     } finally {
       if (!this._isDashboardLoadCurrent(loadId)) return;
-      this.setData({ trendLoading: false }, () => {
-        if (this._pageReady && this.data.activeTab === 'overview') this.scheduleVisibleChartDraw();
-      });
+      this.setData({ trendLoading: false });
     }
   },
 
@@ -1219,8 +1361,10 @@ Page({
       }));
 
       if (errorDistribution.length) {
-        this.setData({ errorDistribution }, () => {
-          if (this._pageReady && this.data.activeTab === 'overview') this.scheduleVisibleChartDraw();
+        this.setData({
+          errorDistribution,
+          errorDonutGradient: buildErrorDonutGradient(errorDistribution),
+          errorDonutSvg: buildErrorDonutSvg(errorDistribution)
         });
       }
     } catch (e) {}
@@ -1250,9 +1394,7 @@ Page({
   switchTab(e) {
     const key = e.currentTarget.dataset.key;
     if (!key || key === this.data.activeTab) return;
-    this.setData({ activeTab: key }, () => {
-      if (key === 'overview') this.scheduleVisibleChartDraw();
-    });
+    this.setData({ activeTab: key });
   },
 
   switchQuestionFilter(e) {
@@ -1295,7 +1437,6 @@ Page({
 
       this.setData({
         reviewDialogVisible: true,
-        chartCanvasMounted: false,
         reviewDialog: {
           title,
           questionTitle: target.title || '',
@@ -1312,10 +1453,7 @@ Page({
 
   closeReviewDialog() {
     if (!this.data.reviewDialogVisible) return;
-    this.setData({
-      reviewDialogVisible: false,
-      chartCanvasMounted: true
-    }, () => this.scheduleVisibleChartDraw());
+    this.setData({ reviewDialogVisible: false });
   },
 
   stopPropagation() {},
@@ -1330,7 +1468,6 @@ Page({
         this._navigationLocked = false;
         if (this._pageAlive) {
           wx.showToast({ title: '暂时无法打开题目详情', icon: 'none' });
-          this.scheduleVisibleChartDraw();
         }
       }
     });
@@ -1359,206 +1496,6 @@ Page({
     }
   },
 
-  scheduleVisibleChartDraw() {
-    if (this._chartRedrawTimer) {
-      clearTimeout(this._chartRedrawTimer);
-      this._chartRedrawTimer = null;
-    }
-    if (!this._pageAlive || !this._pageVisible || !this._pageReady) return;
-    if (this.data.activeTab !== 'overview' || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
 
-    // onShow / setData 后立即 query 2D canvas 在部分 Android 基础库上偶发拿不到
-    // 完整尺寸。nextTick 先画一次，再做一次很短的恢复重绘；趋势图与环形图
-    // 使用同一生命周期，避免从详情页返回时只恢复其中一张。
-    wx.nextTick(() => this.drawVisibleCharts());
-    this._chartRedrawTimer = setTimeout(() => {
-      this._chartRedrawTimer = null;
-      this.drawVisibleCharts();
-    }, 120);
-  },
-
-  drawVisibleCharts() {
-    if (!this._pageAlive || !this._pageVisible || !this._pageReady) return;
-    if (this.data.activeTab !== 'overview' || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
-    this.drawTrendChart();
-    this.drawErrorChart();
-  },
-
-  drawTrendChart() {
-    if (!this._pageAlive || !this._pageVisible || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
-    const query = wx.createSelectorQuery().in(this);
-    query.select('#trendCanvas').fields({ node: true, size: true }).exec(res => {
-      if (!this._pageAlive || !this._pageVisible || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
-      const target = res && res[0];
-      if (!target || !target.node || !target.width || !target.height) return;
-
-      const canvas = target.node;
-      const ctx = canvas.getContext('2d');
-      const dpr = wx.getWindowInfo ? (wx.getWindowInfo().pixelRatio || 1) : (wx.getSystemInfoSync().pixelRatio || 1);
-
-      canvas.width = target.width * dpr;
-      canvas.height = target.height * dpr;
-      ctx.scale(dpr, dpr);
-
-      const width = target.width;
-      const height = target.height;
-      ctx.clearRect(0, 0, width, height);
-
-      const data = (this.data.trendData || []).slice(-7);
-      if (!data.length) return;
-
-      const left = 34;
-      const right = 18;
-      const top = 18;
-      const bottom = 42;
-      const chartW = width - left - right;
-      const chartH = height - top - bottom;
-
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = '#E9EEEA';
-      ctx.fillStyle = '#99A19C';
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-
-      [0, 50, 100].forEach(value => {
-        const y = top + chartH * (1 - value / 100);
-        ctx.beginPath();
-        ctx.moveTo(left, y);
-        ctx.lineTo(left + chartW, y);
-        ctx.stroke();
-        ctx.fillText(`${value}%`, left - 8, y);
-      });
-
-      const step = data.length > 1 ? chartW / (data.length - 1) : chartW;
-      const points = data.map((item, index) => {
-        const x = left + step * index;
-        const y = top + chartH * (1 - clamp(item.accuracy, 0, 100) / 100);
-        return { x, y, item };
-      });
-
-      const gradient = ctx.createLinearGradient(0, top, 0, top + chartH);
-      gradient.addColorStop(0, 'rgba(53, 166, 87, .20)');
-      gradient.addColorStop(1, 'rgba(53, 166, 87, 0)');
-
-      if (points.length > 1) {
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, top + chartH);
-        points.forEach(point => ctx.lineTo(point.x, point.y));
-        ctx.lineTo(points[points.length - 1].x, top + chartH);
-        ctx.closePath();
-        ctx.fillStyle = gradient;
-        ctx.fill();
-
-        ctx.beginPath();
-        points.forEach((point, index) => {
-          if (index === 0) ctx.moveTo(point.x, point.y);
-          else ctx.lineTo(point.x, point.y);
-        });
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#319D54';
-        ctx.stroke();
-      }
-
-      points.forEach((point, index) => {
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, index === points.length - 1 ? 4 : 3, 0, Math.PI * 2);
-        ctx.fillStyle = index === points.length - 1 ? '#2F9E54' : '#FFFFFF';
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#2F9E54';
-        ctx.stroke();
-
-        const dateText = String(point.item.date || '').slice(5).replace('-', '/');
-        ctx.fillStyle = '#9AA29D';
-        ctx.font = '9px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillText(dateText || `${index + 1}`, point.x, top + chartH + 13);
-      });
-
-      const last = points[points.length - 1];
-      if (last) {
-        const label = `${last.item.accuracy}%`;
-        ctx.font = 'bold 10px sans-serif';
-        const labelWidth = ctx.measureText(label).width + 12;
-        const bx = Math.min(width - labelWidth - 4, Math.max(4, last.x - labelWidth / 2));
-        const by = Math.max(2, last.y - 28);
-
-        ctx.fillStyle = '#2E9250';
-        ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(bx, by, labelWidth, 20, 6);
-        } else {
-          ctx.rect(bx, by, labelWidth, 20);
-        }
-        ctx.fill();
-
-        ctx.fillStyle = '#FFFFFF';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(label, bx + labelWidth / 2, by + 10);
-      }
-    });
-  },
-
-  drawErrorChart() {
-    if (!this._pageAlive || !this._pageVisible || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
-    const query = wx.createSelectorQuery().in(this);
-    query.select('#errorCanvas').fields({ node: true, size: true }).exec(res => {
-      if (!this._pageAlive || !this._pageVisible || this.data.reviewDialogVisible || !this.data.chartCanvasMounted) return;
-      const target = res && res[0];
-      if (!target || !target.node || !target.width || !target.height) return;
-
-      const canvas = target.node;
-      const ctx = canvas.getContext('2d');
-      const dpr = wx.getWindowInfo ? (wx.getWindowInfo().pixelRatio || 1) : (wx.getSystemInfoSync().pixelRatio || 1);
-
-      canvas.width = target.width * dpr;
-      canvas.height = target.height * dpr;
-      ctx.scale(dpr, dpr);
-
-      const width = target.width;
-      const height = target.height;
-      ctx.clearRect(0, 0, width, height);
-
-      const cx = width / 2;
-      const cy = height / 2;
-      const radius = Math.min(width, height) / 2 - 8;
-      const lineWidth = Math.max(13, radius * .25);
-
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius - lineWidth / 2, 0, Math.PI * 2);
-      ctx.strokeStyle = '#EEF2EF';
-      ctx.lineWidth = lineWidth;
-      ctx.stroke();
-
-      const data = this.data.errorDistribution || [];
-      const total = data.reduce((sum, item) => sum + Number(item.count || 0), 0);
-      if (!total) return;
-
-      let start = -Math.PI / 2;
-      data.forEach(item => {
-        const ratio = Number(item.count || 0) / total;
-        const gap = Math.min(.035, ratio * .12);
-        const end = start + Math.PI * 2 * ratio;
-
-        ctx.beginPath();
-        ctx.arc(
-          cx,
-          cy,
-          radius - lineWidth / 2,
-          start + gap,
-          end - gap
-        );
-        ctx.strokeStyle = item.color || '#37A7D8';
-        ctx.lineWidth = lineWidth;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-
-        start = end;
-      });
-    });
-  }
 
 });

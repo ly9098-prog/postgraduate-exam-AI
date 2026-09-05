@@ -9,6 +9,7 @@ const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
 const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
+const PRACTICE_ANSWERABLE_TYPES = new Set(['single_choice', 'multiple_choice', 'true_false', 'multi_blank_choice'])
 
 let _practicePerformanceClock = null
 function _monotonicNow() {
@@ -878,6 +879,37 @@ Page({
     return false
   },
 
+  _getPracticeSubjectScopeIds(subjectId, includeChildren) {
+    const id = Number(subjectId)
+    if (!id) return []
+    if (!includeChildren) return [id]
+
+    const tree = this.data.subjectTree || []
+    const stack = tree.slice()
+    let target = null
+    while (stack.length) {
+      const node = stack.pop()
+      if (Number(node.subject_id) === id) {
+        target = node
+        break
+      }
+      if (Array.isArray(node.children)) stack.push(...node.children)
+    }
+    // 科目树尚未加载/缓存过旧时无法可靠推导父级作用域；返回空集合表示
+    // “客户端不做范围判定”，避免把服务端返回的合法子科目误判成越界。
+    if (!target) return []
+
+    const scope = []
+    const descendants = [target]
+    while (descendants.length) {
+      const node = descendants.pop()
+      const nodeId = Number(node && node.subject_id)
+      if (nodeId) scope.push(nodeId)
+      if (node && Array.isArray(node.children)) descendants.push(...node.children)
+    }
+    return Array.from(new Set(scope.length ? scope : [id]))
+  },
+
   toggleSettings() {
     this.setData({ settingsExpanded: !this.data.settingsExpanded })
   },
@@ -1232,11 +1264,121 @@ Page({
         params.no_repeat_days = 30
         params.use_leitner = true
       }
-      // smart 策略由后端统一解析（默认 weakness_vector，并可被实验配置覆盖）。
-      // 小程序不再强制 scored，避免绕过 pgvector 召回链路。
+      // smart 策略由后端统一解析（默认 scored，并可被实验配置覆盖）。
+      // 小程序不强制具体策略，避免绕过后端实验与降级链路。
       const res = await api.get('/practice/questions', params)
       if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
-      const questions = adapter.applyAnsweredFlags(res.questions || [], {}, 'id')
+
+      // 服务端 batch 最终按不可变 QuestionVersion 下发。历史修复或并发编辑若造成
+      // Question.subject_id 与 current revision.subject_id 短暂不一致，旧版本服务端可能
+      // 会返回所选科目之外的题目。客户端在接受 batch_token 前做最后一道范围校验；
+      // 一旦发现异常，整批拒绝而不是只过滤单题（否则提交时题目集合会与签名不一致）。
+      const rawQuestions = Array.isArray(res.questions) ? res.questions : []
+      // Signed batches must contain a unique positive question id for every item.
+      // Reject the whole response before accepting batch_token so an older/stale
+      // backend cannot leave the user with a batch that will inevitably fail submit.
+      const seenQuestionIds = new Set()
+      const invalidQuestionIds = []
+      const duplicateQuestionIds = []
+      rawQuestions.forEach((q) => {
+        const questionId = Number(q && q.id)
+        if (!Number.isInteger(questionId) || questionId <= 0) {
+          invalidQuestionIds.push(q && q.id)
+          return
+        }
+        if (seenQuestionIds.has(questionId)) {
+          duplicateQuestionIds.push(questionId)
+          return
+        }
+        seenQuestionIds.add(questionId)
+      })
+      if (invalidQuestionIds.length > 0 || duplicateQuestionIds.length > 0) {
+        console.error('[PRACTICE_INVALID_BATCH_QUESTION_IDS]', {
+          selectedSubjectId: Number(subjectId),
+          invalidQuestionIds,
+          duplicateQuestionIds,
+          traceId: res.trace_id || this._practiceSession.traceId,
+        })
+        this._clearTimer()
+        this._setPracticeUnloadGuard(false)
+        this.setData({
+          loading: false,
+          started: false,
+          questions: [],
+          totalQuestions: 0,
+          currentQuestion: null,
+          currentAnswerState: null,
+          errorText: '检测到练习批次题目异常，请重试。若持续出现，请更新后端服务。',
+        })
+        wx.showToast({ title: '练习批次异常，请重试', icon: 'none' })
+        return
+      }
+      const unsupportedQuestions = rawQuestions.filter((q) => {
+        const questionType = String((q && q.question_type) || '')
+        return !PRACTICE_ANSWERABLE_TYPES.has(questionType)
+      })
+      if (unsupportedQuestions.length > 0) {
+        console.error('[PRACTICE_UNSUPPORTED_QUESTION_TYPE]', {
+          selectedSubjectId: Number(subjectId),
+          rejected: unsupportedQuestions.map((q) => ({
+            id: q && q.id,
+            question_type: q && q.question_type,
+            subject_id: q && q.subject_id,
+          })),
+          traceId: res.trace_id || this._practiceSession.traceId,
+        })
+        this._clearTimer()
+        this._setPracticeUnloadGuard(false)
+        this.setData({
+          loading: false,
+          started: false,
+          questions: [],
+          totalQuestions: 0,
+          currentQuestion: null,
+          currentAnswerState: null,
+          errorText: '检测到当前版本暂不支持作答的题型，请重试或更新后端服务。',
+        })
+        wx.showToast({ title: '题型暂不支持，请重试', icon: 'none' })
+        return
+      }
+      const allowedScopeIds = new Set(
+        this._getPracticeSubjectScopeIds(subjectId, params.include_children).map(Number)
+      )
+      const canValidateSubjectScope = allowedScopeIds.size > 0
+      const outOfScopeQuestions = canValidateSubjectScope
+        ? rawQuestions.filter((q) => {
+            const questionSubjectId = Number(q && q.subject_id)
+            return !questionSubjectId || !allowedScopeIds.has(questionSubjectId)
+          })
+        : []
+      if (outOfScopeQuestions.length > 0) {
+        console.error('[PRACTICE_SUBJECT_SCOPE_MISMATCH]', {
+          selectedSubjectId: Number(subjectId),
+          includeChildren: Boolean(params.include_children),
+          allowedScopeIds: Array.from(allowedScopeIds),
+          rejected: outOfScopeQuestions.map((q) => ({
+            id: q && q.id,
+            subject_id: q && q.subject_id,
+            subject_code: q && q.subject_code,
+          })),
+          traceId: res.trace_id || this._practiceSession.traceId,
+        })
+        this._clearTimer()
+        this._setPracticeUnloadGuard(false)
+        this.setData({
+          loading: false,
+          started: false,
+          questions: [],
+          totalQuestions: 0,
+          currentQuestion: null,
+          currentAnswerState: null,
+          errorText: '检测到题目科目异常，请重试。若持续出现，请更新后端服务。',
+        })
+        wx.showToast({ title: '题目科目异常，请重试', icon: 'none' })
+        return
+      }
+
+      const questions = adapter.applyAnsweredFlags(rawQuestions, {}, 'id')
       const sequentialProgress = mode === 'sequential'
         ? (res.sequential_progress || null)
         : null
@@ -1383,8 +1525,8 @@ Page({
         await this._showSubmitConfirm({
           scenario: 'info',
           eyebrow: 'NO QUESTIONS',
-          title: '该科目暂无题目',
-          message: `「${name}」目前没有已发布的题目。\n可检查导入审核状态、题目分类，或选择其他科目。`,
+          title: '该科目暂无可练题目',
+          message: `「${name}」目前没有可在本页作答的已发布题目。\n可检查导入审核状态、题型与科目分类，或选择其他科目。`,
           confirmText: '返回选择科目',
           hideCancel: true,
         })
@@ -2014,6 +2156,29 @@ Page({
     return comp.show(opts)
   },
 
+  async _showSubmitConfirmPaused(opts) {
+    // Confirmation/review time is not learning time.  Pause both the per-question
+    // timer and the session clock while the user is reading the submit dialog.
+    // If they cancel, resume from a fresh monotonic timestamp so the dialog itself
+    // is never charged to the current question or duration_sec.
+    const session = this._practiceSession
+    const pauseStartedMonoMs = _monotonicNow()
+    this._settleQuestionTime(true)
+    this._clearTimer()
+    let confirmed = false
+    try {
+      confirmed = await this._showSubmitConfirm(opts)
+    } finally {
+      const pausedMs = Math.max(0, _monotonicNow() - pauseStartedMonoMs)
+      if (session) session.backgroundMs = (session.backgroundMs || 0) + pausedMs
+    }
+    if (!confirmed && this._pageAlive && this.data.started && !this.data.submitted) {
+      session.currentQuestionStartedMonoMs = _monotonicNow()
+      this._startTimer()
+    }
+    return !!confirmed
+  },
+
   async doSubmit(skipConfirm) {
     if (this.data.submitting) return
 
@@ -2066,7 +2231,7 @@ Page({
 
       var confirmed = false
       if (unanswered > 0) {
-        confirmed = await this._showSubmitConfirm({
+        confirmed = await this._showSubmitConfirmPaused({
           scenario: 'unanswered',
           title: `还有 ${unanswered} 题未完成`,
           message: '现在交卷会将未完成题记为跳过。',
@@ -2074,7 +2239,7 @@ Page({
           cancelText: '继续答题',
         })
       } else if (skipConfirm !== true) {
-        confirmed = await this._showSubmitConfirm({
+        confirmed = await this._showSubmitConfirmPaused({
           scenario: 'all-done',
           title: '确认交卷？',
           message: `已完成 ${answeredCount} / ${total} 题`,

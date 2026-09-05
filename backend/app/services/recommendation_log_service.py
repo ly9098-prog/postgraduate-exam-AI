@@ -6,6 +6,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import async_session
 from app.core.time_utils import utcnow
 from app.models.question import Question
 from app.models.recommendation_log import RecommendationLog
@@ -107,6 +108,62 @@ async def create_recommendation_logs(
 
     await db.commit()
     return [log.id for log in logs]
+
+
+async def create_recommendation_logs_isolated(**kwargs) -> list[int]:
+    """Write optional recommendation analytics outside the practice DB session.
+
+    Practice question delivery must not fail because an analytics insert/commit
+    failed.  PostgreSQL marks the current transaction aborted after a statement
+    error, so merely catching an exception around ``create_recommendation_logs``
+    is insufficient when it shares the request's AsyncSession.  Use an isolated
+    short-lived session for this best-effort side effect.
+    """
+    kwargs.pop("db", None)
+    async with async_session() as isolated_db:
+        return await create_recommendation_logs(db=isolated_db, **kwargs)
+
+
+async def retain_recommendation_logs_for_questions(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    request_id: str | None,
+    question_ids: set[int] | list[int],
+) -> int:
+    """Remove exposure rows that were created for candidates not actually issued.
+
+    Smart/similar strategies may write recommendation logs before the API's final
+    immutable-revision/subject guard runs.  If that guard drops a stale or invalid
+    candidate, keeping its ``shown_at`` row makes exposure and conversion metrics
+    claim the user saw a question that never reached the signed batch.
+    """
+    normalized_request_id = str(request_id or "").strip()
+    if not normalized_request_id:
+        return 0
+
+    keep_ids = {int(qid) for qid in question_ids if qid is not None}
+    conditions = [
+        RecommendationLog.user_id == int(user_id),
+        RecommendationLog.request_id == normalized_request_id,
+    ]
+    if keep_ids:
+        conditions.append(RecommendationLog.question_id.notin_(keep_ids))
+
+    # This is analytics cleanup, not part of question delivery.  Keep it on an
+    # independent transaction for the same reason as isolated log creation: a
+    # failed DELETE/COMMIT must never poison the request session used to load the
+    # immutable revisions and issue the signed practice batch.
+    async with async_session() as isolated_db:
+        result = await isolated_db.execute(sa_delete(RecommendationLog).where(*conditions))
+        await isolated_db.commit()
+    deleted = int(getattr(result, "rowcount", 0) or 0)
+    if deleted:
+        logger.info(
+            "pruned %d unissued recommendation logs user_id=%s request_id=%s",
+            deleted, user_id, normalized_request_id,
+        )
+    return deleted
 
 
 async def mark_recommendation_clicked(

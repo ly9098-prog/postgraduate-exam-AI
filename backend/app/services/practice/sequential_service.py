@@ -15,6 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.time_utils import utcnow
+from app.features.question_type import (
+    QT_MULTI_BLANK_CHOICE,
+    QT_MULTIPLE_CHOICE,
+    QT_SINGLE_CHOICE,
+    QT_TRUE_FALSE,
+)
+from app.models.admin import QuestionVersion
 from app.models.practice_record import PracticeRecord
 from app.models.practice_session import PracticeSession
 from app.models.question import Question
@@ -25,6 +32,15 @@ logger = logging.getLogger(__name__)
 SEQUENTIAL_MODE = "sequential"
 SEQUENTIAL_RESET_MODE = "sequential_reset"
 SEQUENTIAL_RESET_STATUS = "marker"
+
+# Keep sequential mode aligned with the controls provided by quiz-runner.
+# Free-text/subjective revisions remain in the bank but are not issuable here.
+SEQUENTIAL_ANSWERABLE_QUESTION_TYPES = frozenset({
+    QT_SINGLE_CHOICE,
+    QT_MULTIPLE_CHOICE,
+    QT_TRUE_FALSE,
+    QT_MULTI_BLANK_CHOICE,
+})
 
 
 async def _get_reset_at(
@@ -64,7 +80,21 @@ async def get_sequential_practice_questions(
     if len(subject_ids) != 1 or subject_ids[0] != subject_id:
         raise ValueError("顺序练习仅支持单一具体科目")
 
-    conditions = [Question.is_active, Question.subject_id == subject_id]
+    current_revision_matches_subject = select(QuestionVersion.id).where(
+        QuestionVersion.id == Question.current_version_id,
+        QuestionVersion.question_id == Question.id,
+        QuestionVersion.subject_id == Question.subject_id,
+        QuestionVersion.subject_id == subject_id,
+        QuestionVersion.question_type == Question.question_type,
+        QuestionVersion.question_type.in_(SEQUENTIAL_ANSWERABLE_QUESTION_TYPES),
+        QuestionVersion.is_active.is_(True),
+    ).exists()
+    conditions = [
+        Question.is_active,
+        Question.review_status == "approved",
+        Question.subject_id == subject_id,
+        current_revision_matches_subject,
+    ]
     if knowledge_points:
         conditions.extend(kp_exact_conditions(knowledge_points))
 

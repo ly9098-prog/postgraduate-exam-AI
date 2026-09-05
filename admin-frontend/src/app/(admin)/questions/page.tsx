@@ -168,6 +168,22 @@ function contentRenderedImageKeys(content: unknown): Set<string> {
   return keys;
 }
 
+function fallbackQuestionImageUrls(
+  content: unknown,
+  imageUrlField: unknown,
+): string[] {
+  if (!Array.isArray(imageUrlField)) return [];
+  const renderedKeys = contentRenderedImageKeys(content);
+  const fallbackUrls = new Map<string, string>();
+  imageUrlField.forEach((value: unknown) => {
+    const raw = imageUrlFromUnknown(value);
+    const key = comparableAssetUrl(raw);
+    if (!raw || !key || renderedKeys.has(key)) return;
+    fallbackUrls.set(key, raw);
+  });
+  return Array.from(fallbackUrls.values());
+}
+
 function codeSegmentText(segment: Record<string, unknown>): string {
   return String(segment.code ?? segment.text ?? "");
 }
@@ -284,6 +300,42 @@ function textFromContent(
       .join("");
   }
   return "";
+}
+
+/**
+ * The detail renderer treats structured text/newline segments as the visible
+ * stem. Some imported records keep an older OCR snapshot in content.stem,
+ * including layout-only line breaks, so using content.stem in the textarea can
+ * show breaks that are not present in the detail drawer. Prefer the same
+ * structured stem text for editing whenever it exists.
+ */
+function textForStemEditor(
+  content: Record<string, unknown> | string | null | undefined,
+): string {
+  if (!content || typeof content === "string" || !Array.isArray(content.segments)) {
+    return textFromContent(content);
+  }
+
+  let hasStemTextSegment = false;
+  const segmentText = content.segments
+    .map((rawSegment) => {
+      if (!rawSegment || typeof rawSegment !== "object" || Array.isArray(rawSegment)) return "";
+      const segment = rawSegment as Record<string, unknown>;
+      if (segment.option_key) return "";
+      const type = segmentType(segment);
+      if (type === "text") {
+        hasStemTextSegment = true;
+        return String(segment.text ?? "");
+      }
+      if (type === "newline") {
+        hasStemTextSegment = true;
+        return "\n";
+      }
+      return "";
+    })
+    .join("");
+
+  return hasStemTextSegment ? segmentText : textFromContent(content);
 }
 
 function renderJson(value: unknown) {
@@ -914,6 +966,14 @@ export default function QuestionsPage() {
   const editingSegments = useMemo(
     () => contentSegments(editForm.content),
     [editForm.content],
+  );
+  const editingFallbackStemImageUrls = useMemo(
+    () =>
+      fallbackQuestionImageUrls(
+        selectedQuestion?.content,
+        selectedQuestion?.image_url,
+      ),
+    [selectedQuestion?.content, selectedQuestion?.image_url],
   );
   const unresolvedEditingTableCount = useMemo(
     () => editingSegments.reduce((count, segment) => {
@@ -2416,7 +2476,7 @@ export default function QuestionsPage() {
                       wrap="soft"
                       spellCheck={false}
                       className="min-h-36 w-full resize-y overflow-x-hidden whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3 text-sm leading-7 text-slate-800 outline-none transition [overflow-wrap:anywhere] placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
-                      value={textFromContent(editForm.content) ?? ""}
+                      value={textForStemEditor(editForm.content) ?? ""}
                       onChange={(e) => {
                         setEditForm({
                           ...editForm,
@@ -2429,7 +2489,8 @@ export default function QuestionsPage() {
                     />
                     <div className="mt-4">
                       <p className="mb-2 text-xs font-medium text-slate-500">题干图片</p>
-                    {editingSegments.some(isPlainImageSegment) ? (
+                    {editingSegments.some(isPlainImageSegment) ||
+                    editingFallbackStemImageUrls.length > 0 ? (
                       /* 已有图：大图直接占据插入区，hover 替换/删除；无插入按钮 */
                       <div className="space-y-3">
                         {editingSegments.map((seg, index) =>
@@ -2448,6 +2509,20 @@ export default function QuestionsPage() {
                             </div>
                           ) : null,
                         )}
+                        {editingFallbackStemImageUrls.map((url, index) => (
+                          <div key={`legacy-${url}-${index}`} className="w-full max-w-xl">
+                            <QuestionImageField
+                              questionId={selectedQuestionId!}
+                              target="stem"
+                              valueUrl={url}
+                              canDelete
+                              dirty={dirty}
+                              beforeDirtyMutation={prepareImmediateQuestionMutation}
+                              addLabel="更换图片"
+                              onMutated={handleQuestionMutated}
+                            />
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       <QuestionImageField
@@ -2851,46 +2926,41 @@ export default function QuestionsPage() {
                     // Structured content already renders image segments above.
                     // `image_url` is a legacy mirror on many records; rendering
                     // both produced duplicate images in the detail drawer.
-                    const renderedKeys = contentRenderedImageKeys(selectedQuestion.content);
-                    const fallbackUrls = new Map<string, string>();
-                    const imageUrlField = selectedQuestion.image_url;
-                    if (Array.isArray(imageUrlField)) {
-                      imageUrlField.forEach((value: unknown) => {
-                        const raw = imageUrlFromUnknown(value);
-                        const key = comparableAssetUrl(raw);
-                        if (!raw || !key || renderedKeys.has(key)) return;
-                        fallbackUrls.set(key, resolveAssetUrl(raw) || raw);
-                      });
-                    }
-                    if (fallbackUrls.size === 0) return null;
-                    const entries = Array.from(fallbackUrls.entries());
+                    const fallbackUrls = fallbackQuestionImageUrls(
+                      selectedQuestion.content,
+                      selectedQuestion.image_url,
+                    );
+                    if (fallbackUrls.length === 0) return null;
                     return (
                       <section className="border-b border-slate-200 py-6">
                         <p className="mb-3 text-sm font-semibold text-slate-950">其他题目图片</p>
                         <div className="grid gap-3">
-                          {entries.map(([key, src], idx) => (
-                            <a
-                              key={key}
-                              href={src}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="group/img relative block overflow-hidden rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/30 focus:outline-none focus:ring-2 focus:ring-slate-300"
-                              aria-label={`在新窗口查看题目图片 ${idx + 1}`}
-                            >
-                              <img
-                                src={src}
-                                alt={`题目图片 ${idx + 1}`}
-                                className="max-w-full cursor-zoom-in rounded-lg transition-transform duration-300 group-hover/img:scale-[1.02]"
-                                style={{ maxHeight: "400px", width: "auto", objectFit: "contain" }}
-                                onError={(e) => {
-                                  const target = e.currentTarget;
-                                  target.style.display = "none";
-                                  target.closest("a")?.classList.add("hidden");
-                                }}
-                              />
-                              <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-black/5" />
-                            </a>
-                          ))}
+                          {fallbackUrls.map((raw, idx) => {
+                            const src = resolveAssetUrl(raw) || raw;
+                            return (
+                              <a
+                                key={`${comparableAssetUrl(raw)}-${idx}`}
+                                href={src}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group/img relative block overflow-hidden rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/30 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                                aria-label={`在新窗口查看题目图片 ${idx + 1}`}
+                              >
+                                <img
+                                  src={src}
+                                  alt={`题目图片 ${idx + 1}`}
+                                  className="max-w-full cursor-zoom-in rounded-lg transition-transform duration-300 group-hover/img:scale-[1.02]"
+                                  style={{ maxHeight: "400px", width: "auto", objectFit: "contain" }}
+                                  onError={(e) => {
+                                    const target = e.currentTarget;
+                                    target.style.display = "none";
+                                    target.closest("a")?.classList.add("hidden");
+                                  }}
+                                />
+                                <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-black/5" />
+                              </a>
+                            );
+                          })}
                         </div>
                       </section>
                     );

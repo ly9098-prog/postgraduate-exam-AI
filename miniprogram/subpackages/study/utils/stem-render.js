@@ -148,6 +148,23 @@ function _toCanonicalForm(text) {
   return s
 }
 
+function _repairFalseNumberMarkerBreaks(text) {
+  if (!text) return text
+  var source = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+  // Compatibility repair for already-imported questions produced by the legacy
+  // number-marker normalizer.  It could mistake the numeric suffix of an ASCII
+  // identifier for a list marker and persist a newline, for example:
+  //   (v1,v2)10  ->  (v1,v\n2)10
+  // Only join the lines when `2)` is immediately followed by another compact
+  // identifier/number token.  A real list item normally looks like `2) text`
+  // (space after the marker), so it is intentionally left untouched.
+  return source.replace(
+    /([A-Za-z_][A-Za-z0-9_]*)[ \t]*\n[ \t]*(\d+[)）])(?=[A-Za-z0-9_])/g,
+    '$1$2'
+  )
+}
+
 function _trimEmptyLines(lines) {
   var start = 0
   var end = lines.length
@@ -982,6 +999,7 @@ function buildRenderModel(q, options, cfg) {
     ? content
     : ((content && (content.stem || content.text)) || '')
   var sourceStemText = stemText || (content && _segmentsToText(content.segments)) || ''
+  sourceStemText = _repairFalseNumberMarkerBreaks(sourceStemText)
   var cleanedStem = _cleanStemText(sourceStemText, options, optionKeys)
   var stemHash = _hashStem(cleanedStem)
 

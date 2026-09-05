@@ -226,6 +226,11 @@ async def get_practice_questions(
     has_enabled_children, scope_subject_ids = await svc.resolve_practice_subject_scope(
         db, subject_id, include_children,
     )
+    if not scope_subject_ids:
+        # The subject may have been disabled after the client cached the subject
+        # tree.  Treat that as an unavailable subject instead of continuing with
+        # an empty SQL scope and presenting a misleading “暂无题目” state.
+        raise HTTPException(status_code=404, detail="科目不可用或已停用，请重新选择科目")
 
     # 父级科目 + sequential → 400
     if has_enabled_children and mode == "sequential":
@@ -246,6 +251,10 @@ async def get_practice_questions(
     request_id: str | None = None
     sequential_progress: dict | None = None
 
+    # Random 模式多取一小段候选。最终版本/学科一致性守卫可能隔离历史误分类题；
+    # 预留候选可以在不改变客户端请求 count 的情况下尽量补足题量。
+    random_candidate_count = min(100, count + max(5, count // 2))
+
     if mode == "similar":
         if not source_question_id:
             # 缺少 source_question_id，回退到 random
@@ -253,10 +262,11 @@ async def get_practice_questions(
             mode = "random"
             questions = await svc.get_practice_questions(
                 db=db, user_id=current_user.id, subject_code=subject_for_query,
-                count=count, mode="random", knowledge_points=kps,
+                count=random_candidate_count, mode="random", knowledge_points=kps,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
+                subject_ids=scope_subject_ids,
             )
         else:
             import uuid
@@ -267,6 +277,7 @@ async def get_practice_questions(
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
+                subject_ids=scope_subject_ids,
             )
             # 记录推荐日志
             try:
@@ -282,7 +293,7 @@ async def get_practice_questions(
                     for qid, meta in question_metadata.items()
                 ]
                 if recs:
-                    await recommendation_log_service.create_recommendation_logs(
+                    await recommendation_log_service.create_recommendation_logs_isolated(
                         db=db, user_id=current_user.id, recommendations=recs,
                         scene="similar", strategy="vector_plus_rule",
                         request_id=request_id, source_question_id=source_question_id,
@@ -334,7 +345,7 @@ async def get_practice_questions(
             # 父级科目聚合随机
             questions = await svc.get_aggregated_random_questions(
                 db=db, user_id=current_user.id, subject_code=subject_for_query,
-                subject_ids=scope_subject_ids, count=count,
+                subject_ids=scope_subject_ids, count=random_candidate_count,
                 knowledge_points=kps,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
@@ -346,15 +357,62 @@ async def get_practice_questions(
             questions = await svc.get_practice_questions(
                 db=db, user_id=current_user.id, subject_code=subject_for_query,
                 subject_ids=scope_subject_ids,
-                count=count, mode=mode, knowledge_points=kps,
+                count=random_candidate_count, mode=mode, knowledge_points=kps,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
             )
-    # ── 作用域强制过滤：确保任何模式都不会返回超出 scope 的后代题目 ──
+    # ── 作用域强制过滤：同时校验 mutable Question 与将实际下发的 current revision。
+    # 候选查询大多按 questions.subject_id 过滤，但响应内容来自 QuestionVersion。
+    # 两者若因历史修复/并发编辑短暂不一致，旧逻辑仍可能把其他学科的 revision
+    # 发给客户端。签发 batch token 前做最后一次不可变版本校验。
+    questions = await svc.filter_questions_to_revision_scope(
+        db, questions, scope_subject_ids,
+    )
     scope_set = set(scope_subject_ids)
-    questions = [q for q in questions if q.subject_id in scope_set]
-    question_metadata = {k: v for k, v in question_metadata.items() if k in {q.id for q in questions}}
+    # Preserve ranking/order while guaranteeing a qid appears at most once.  A
+    # duplicate can surface when multiple recommendation/fallback sources merge;
+    # signing it would create a batch that the stricter submit validator rejects.
+    deduped_questions = []
+    seen_question_ids: set[int] = set()
+    duplicate_question_ids: list[int] = []
+    for question in questions:
+        question_id = int(question.id)
+        if question_id in seen_question_ids:
+            duplicate_question_ids.append(question_id)
+            continue
+        seen_question_ids.add(question_id)
+        if question.subject_id in scope_set:
+            deduped_questions.append(question)
+    if duplicate_question_ids:
+        logger.warning(
+            "[PRACTICE_DUPLICATE_CANDIDATE] subject_id=%s mode=%s duplicate_ids=%s",
+            subject_id, mode, sorted(set(duplicate_question_ids)),
+        )
+    questions = deduped_questions[:count]
+    final_question_ids = {int(q.id) for q in questions}
+    question_metadata = {
+        k: v for k, v in question_metadata.items() if int(k) in final_question_ids
+    }
+    # Recommendation services can log their candidate list before this final
+    # revision/scope guard.  Retain only exposure rows for questions that are
+    # actually present in the signed batch so analytics never records phantom
+    # "shown" questions.  request_id is per-practice-request, so pruning is local.
+    if request_id and mode in {"smart", "similar"}:
+        try:
+            from app.services import recommendation_log_service
+            await recommendation_log_service.retain_recommendation_logs_for_questions(
+                db,
+                user_id=current_user.id,
+                request_id=request_id,
+                question_ids=final_question_ids,
+            )
+        except Exception:
+            logger.warning(
+                "推荐日志最终题目集合对齐失败 request_id=%s",
+                request_id,
+                exc_info=True,
+            )
     # ── 结构化日志：刷题请求范围与分布 ──
     scope_desc = "聚合" if len(scope_subject_ids) > 1 else "精确"
     from collections import Counter

@@ -74,6 +74,53 @@ def _to_admin_item(question, kps=None) -> AdminQuestionListItem:
     return item
 
 
+def _image_url_from_legacy_entry(value) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if not isinstance(value, dict):
+        return ""
+    for key in ("url", "src", "image_url", "imageUrl"):
+        candidate = value.get(key)
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return ""
+
+
+def _replace_legacy_image_url(values, old_url: str, new_url: str):
+    if not isinstance(values, list):
+        return None
+    normalized_old = old_url.strip()
+    replaced = False
+    updated = []
+    for value in values:
+        if _image_url_from_legacy_entry(value) == normalized_old:
+            replaced = True
+            if isinstance(value, str):
+                updated.append(new_url)
+            else:
+                next_value = dict(value)
+                for key in ("url", "src", "image_url", "imageUrl"):
+                    candidate = next_value.get(key)
+                    if isinstance(candidate, str) and candidate.strip() == normalized_old:
+                        next_value[key] = new_url
+                        break
+                updated.append(next_value)
+        else:
+            updated.append(value)
+    return updated if replaced else None
+
+
+def _remove_legacy_image_url(values, url: str):
+    if not isinstance(values, list):
+        return None
+    normalized_url = url.strip()
+    updated = [
+        value for value in values
+        if _image_url_from_legacy_entry(value) != normalized_url
+    ]
+    return updated if len(updated) != len(values) else None
+
+
 @router.get("")
 async def list_questions(
     page: int = Query(1, ge=1),
@@ -373,13 +420,27 @@ async def upload_question_image(
     url = await _upload_question_asset(file, question_id)
     try:
         if target == "stem":
-            new_content = upsert_stem_image(question.content, url, replace_url)
-            new_image_url = extract_image_urls_from_content(new_content)
-            patch = AdminQuestionPatchRequest(
-                content=new_content,
-                image_url=new_image_url,
-                edit_reason="插入/替换题干图片",
-            )
+            try:
+                new_content = upsert_stem_image(question.content, url, replace_url)
+            except ValueError:
+                legacy_image_url = (
+                    _replace_legacy_image_url(question.image_url, replace_url, url)
+                    if replace_url
+                    else None
+                )
+                if legacy_image_url is None:
+                    raise
+                patch = AdminQuestionPatchRequest(
+                    image_url=legacy_image_url,
+                    edit_reason="替换题干图片",
+                )
+            else:
+                new_image_url = extract_image_urls_from_content(new_content)
+                patch = AdminQuestionPatchRequest(
+                    content=new_content,
+                    image_url=new_image_url,
+                    edit_reason="插入/替换题干图片",
+                )
         else:
             key = target.split(":", 1)[1]
             new_options = upsert_option_image(question.options, key, url, replace_url)
@@ -419,13 +480,23 @@ async def delete_question_image(
     try:
         question = await get_admin_question(db, question_id)
         if data.target == "stem":
-            new_content = remove_stem_image(question.content, data.url)
-            new_image_url = extract_image_urls_from_content(new_content)
-            patch = AdminQuestionPatchRequest(
-                content=new_content,
-                image_url=new_image_url,
-                edit_reason=data.edit_reason or "删除题干图片",
-            )
+            try:
+                new_content = remove_stem_image(question.content, data.url)
+            except ValueError:
+                legacy_image_url = _remove_legacy_image_url(question.image_url, data.url)
+                if legacy_image_url is None:
+                    raise
+                patch = AdminQuestionPatchRequest(
+                    image_url=legacy_image_url or None,
+                    edit_reason=data.edit_reason or "删除题干图片",
+                )
+            else:
+                new_image_url = extract_image_urls_from_content(new_content)
+                patch = AdminQuestionPatchRequest(
+                    content=new_content,
+                    image_url=new_image_url,
+                    edit_reason=data.edit_reason or "删除题干图片",
+                )
         else:
             key = data.target.split(":", 1)[1]
             new_options = remove_option_image(question.options, key, data.url)
