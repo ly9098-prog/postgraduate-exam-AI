@@ -12,6 +12,7 @@ from app.schemas.question import (
 )
 from app.services import question_service as svc
 from app.services.knowledge_point_service import load_question_kps
+from app.utils.question_content import strip_student_segment_metadata
 
 router = APIRouter(prefix="/api/v1/questions")
 
@@ -25,7 +26,7 @@ def _sanitize_content(content: dict | None) -> dict | None:
     sanitized.pop("source_snapshot_full_page", None)
     sanitized.pop("visual_regions", None)
     sanitized.pop("visual_region_ids", None)
-    return sanitized
+    return strip_student_segment_metadata(sanitized)
 
 
 def _public_question(question, kps=None) -> QuestionPublicResponse:

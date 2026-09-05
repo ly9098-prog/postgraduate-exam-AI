@@ -24,6 +24,7 @@ from app.utils.answer_normalizer import (
     extract_multi_blank_slot_ids,
     is_answer_correct,
 )
+from app.utils.question_content import strip_student_segment_metadata
 
 # Asia/Shanghai = UTC+8, no DST
 _SHANGHAI_TZ = timezone(timedelta(hours=8))
@@ -103,7 +104,7 @@ def _sanitize_review_content(content: dict | str | None) -> dict:
         sanitized['text'] = sanitized['stem']
     for field in ('source_snapshot_url', 'source_snapshot_full_page', 'visual_regions', 'visual_region_ids'):
         sanitized.pop(field, None)
-    return sanitized
+    return strip_student_segment_metadata(sanitized)
 
 
 def _sanitize_review_option_value(value):

@@ -10,9 +10,8 @@ import { resolveAssetUrl } from "@/lib/asset-url";
 import { cn } from "@/lib/utils";
 
 const ACCEPT = "image/png,image/jpeg,image/webp";
+const ACCEPTED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const MAX_SIZE = 10 * 1024 * 1024;
-
-const DIRTY_WARNING = "表单有未保存的修改，继续将立即保存该操作并刷新表单，未保存的修改将被丢弃。";
 
 type QuestionImageFieldProps = {
   questionId: number;
@@ -24,6 +23,8 @@ type QuestionImageFieldProps = {
   addLabel?: string;
   /** Set when the parent edit form has unsaved changes → confirm before writing. */
   dirty?: boolean;
+  /** Persist the parent edit form before an immediate image mutation. */
+  beforeDirtyMutation?: () => Promise<boolean>;
   /** "hero" (default): large stem image that fills the insert area; "row": compact square for option rows. */
   variant?: "hero" | "row";
   onMutated: (question: AdminQuestion) => void;
@@ -44,11 +45,13 @@ export function QuestionImageField({
   canDelete = true,
   addLabel = "添加图片",
   dirty = false,
+  beforeDirtyMutation,
   variant = "hero",
   onMutated,
 }: QuestionImageFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   // pending confirm action: "upload" keeps a picked file; "delete" removes valueUrl
@@ -65,12 +68,14 @@ export function QuestionImageField({
   const handleFilePicked = (file: File | null | undefined) => {
     setError(null);
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setError("仅支持图片文件（PNG/JPEG/WebP）");
+    if (!ACCEPTED_MIME_TYPES.has(file.type)) {
+      setError("仅支持 PNG、JPEG 或 WebP 图片");
+      if (inputRef.current) inputRef.current.value = "";
       return;
     }
     if (file.size > MAX_SIZE) {
       setError("图片不能超过 10MB");
+      if (inputRef.current) inputRef.current.value = "";
       return;
     }
     if (dirty) {
@@ -105,38 +110,73 @@ export function QuestionImageField({
     }
   };
 
-  const confirmUpload = () => {
-    setPendingConfirm(null);
-    if (pendingFile) void upload(pendingFile);
-    setPendingFile(null);
+  const prepareParentIfNeeded = async (): Promise<boolean> => {
+    if (!dirty) return true;
+    if (!beforeDirtyMutation) {
+      setError("请先保存当前题目修改，再执行图片操作。");
+      return false;
+    }
+    setPreparing(true);
+    try {
+      return await beforeDirtyMutation();
+    } catch (err) {
+      setError(getErrorMessage(err));
+      return false;
+    } finally {
+      setPreparing(false);
+    }
   };
 
-  const confirmDelete = () => {
+  const confirmUpload = async () => {
+    const file = pendingFile;
+    if (!file) {
+      setPendingConfirm(null);
+      return;
+    }
+    const ready = await prepareParentIfNeeded();
+    if (!ready) {
+      setPendingConfirm(null);
+      setPendingFile(null);
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     setPendingConfirm(null);
-    if (!valueUrl) return;
+    setPendingFile(null);
+    await upload(file);
+  };
+
+  const confirmDelete = async () => {
+    if (!valueUrl) {
+      setPendingConfirm(null);
+      return;
+    }
+    const ready = await prepareParentIfNeeded();
+    if (!ready) {
+      setPendingConfirm(null);
+      return;
+    }
+    setPendingConfirm(null);
     setBusy(true);
     setError(null);
-    void (async () => {
-      try {
-        const question = await apiRequest<AdminQuestion>(`/questions/${questionId}/images`, {
-          method: "DELETE",
-          body: JSON.stringify({ target, url: valueUrl }),
-          headers: { "Content-Type": "application/json" },
-        });
-        onMutated(question);
-      } catch (err) {
-        setError(getErrorMessage(err));
-      } finally {
-        setBusy(false);
-      }
-    })();
+    try {
+      const question = await apiRequest<AdminQuestion>(`/questions/${questionId}/images`, {
+        method: "DELETE",
+        body: JSON.stringify({ target, url: valueUrl }),
+        headers: { "Content-Type": "application/json" },
+      });
+      onMutated(question);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const confirmMessage =
     pendingConfirm === "delete"
-      ? `${dirty ? `${DIRTY_WARNING}\n` : ""}将移除该图片引用；若无其他题目引用，图片文件也会一并删除。`
+      ? `${dirty ? "当前表单有未保存修改。继续后会先保存这些修改，再删除图片；保存失败则不会删除。\n" : ""}将移除该图片引用；若无其他题目引用，图片文件也会一并删除。`
       : dirty
-        ? DIRTY_WARNING
+        ? "当前表单有未保存修改。继续后会先保存这些修改，再上传图片；保存失败则不会上传。"
         : null;
 
   const overlayButtons = (
@@ -242,8 +282,12 @@ export function QuestionImageField({
         title={pendingConfirm === "delete" ? "删除图片" : "确认上传图片"}
         description={confirmMessage ?? undefined}
         danger={pendingConfirm === "delete"}
-        confirmText={pendingConfirm === "delete" ? "删除" : "继续上传"}
-        loading={busy}
+        confirmText={
+          pendingConfirm === "delete"
+            ? (dirty ? "保存并删除" : "删除")
+            : (dirty ? "保存并上传" : "继续上传")
+        }
+        loading={busy || preparing}
         onConfirm={pendingConfirm === "delete" ? confirmDelete : confirmUpload}
         onCancel={() => {
           setPendingConfirm(null);

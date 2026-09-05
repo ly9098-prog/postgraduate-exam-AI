@@ -95,8 +95,8 @@
     </view>
 
     <view wx:elif="{{item.type === 'code'}}" class="seg-code-wrap">
-      <view wx:if="{{item.alt || item.language}}" class="seg-code-header">
-        <text class="seg-code-caption">{{item.alt || '代码块'}}</text>
+      <view wx:if="{{item.caption || item.language}}" class="seg-code-header">
+        <text wx:if="{{item.caption}}" class="seg-code-caption">{{item.caption}}</text>
         <text wx:if="{{item.language}}" class="seg-code-language">{{item.language}}</text>
       </view>
       <scroll-view scroll-x class="seg-code-scroll">
@@ -125,7 +125,7 @@
     <view wx:elif="{{item.type === 'newline'}}" class="seg-newline" />
 
     <view wx:else class="seg-unknown">
-      <text class="seg-unknown-text">{{item.alt || ''}}</text>
+      <text class="seg-unknown-text">{{item.text || ''}}</text>
     </view>
 
   </block>

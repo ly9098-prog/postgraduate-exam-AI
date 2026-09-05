@@ -80,6 +80,7 @@
 }
 .seg-code-language {
   flex-shrink: 0;
+  margin-left: auto;
   padding: 2rpx 10rpx;
   border-radius: 6rpx;
   background: #eef3f6;

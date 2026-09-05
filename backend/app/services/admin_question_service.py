@@ -20,6 +20,7 @@ from app.schemas.admin_questions import (
 )
 from app.services.admin_audit_service import write_admin_audit
 from app.services.knowledge_point_service import load_question_kps
+from app.utils.question_content import normalize_segment_type
 
 logger = logging.getLogger(__name__)
 
@@ -429,8 +430,10 @@ def upsert_stem_image(content: dict[str, Any], url: str, replace_url: str | None
     content = ensure_content_segments(content)
     segments = content["segments"]
     if replace_url:
+        normalized_replace_url = replace_url.strip()
         for i, seg in enumerate(segments):
-            if isinstance(seg, dict) and seg.get("type") == "image" and seg.get("url") == replace_url:
+            segment_url = str(seg.get("url") or "").strip() if isinstance(seg, dict) else ""
+            if isinstance(seg, dict) and normalize_segment_type(seg) == "image" and segment_url == normalized_replace_url:
                 updated = [*segments]
                 updated[i] = {**seg, "url": url}
                 out = dict(content)
@@ -447,12 +450,34 @@ def remove_stem_image(content: dict[str, Any], url: str) -> dict[str, Any]:
     segments = content.get("segments")
     if not isinstance(segments, list):
         raise ValueError("待删除图片不存在")
-    kept = [s for s in segments if not (isinstance(s, dict) and s.get("type") == "image" and s.get("url") == url)]
+    normalized_url = url.strip()
+    kept = [
+        s for s in segments
+        if not (
+            isinstance(s, dict)
+            and normalize_segment_type(s) == "image"
+            and str(s.get("url") or "").strip() == normalized_url
+        )
+    ]
     if len(kept) == len(segments):
         raise ValueError("待删除图片不存在")
     out = dict(content)
     out["segments"] = kept
     return out
+
+
+def _resolve_option_storage_key(options: dict[str, Any], key: str) -> str | None:
+    """Resolve an option key case-insensitively while preserving stored casing.
+
+    Historical imports may contain ``a``/``b`` keys. Admin endpoints expose
+    canonical upper-case targets (``option:A``), so image mutations must not
+    fail just because the stored key predates that normalization rule.
+    """
+    normalized = key.strip().upper()
+    for candidate in options:
+        if str(candidate).strip().upper() == normalized:
+            return candidate
+    return None
 
 
 def upsert_option_image(
@@ -463,11 +488,12 @@ def upsert_option_image(
 ) -> dict[str, Any]:
     """Set an option image: append an image segment to ``options[key]``, or
     replace the segment whose url == replace_url. Preserves the option text."""
-    key = key.upper()
+    requested_key = key.strip().upper()
     result = dict(options or {})
-    if key not in result:
-        raise ValueError(f"选项 {key} 不存在")
-    cur = result.get(key)
+    storage_key = _resolve_option_storage_key(result, requested_key)
+    if storage_key is None:
+        raise ValueError(f"选项 {requested_key} 不存在")
+    cur = result.get(storage_key)
     extra: dict[str, Any] = {}
     if isinstance(cur, str):
         text, segments = cur, []
@@ -479,14 +505,18 @@ def upsert_option_image(
     else:
         text, segments = "", []
     if replace_url:
+        normalized_replace_url = replace_url.strip()
         for i, seg in enumerate(segments):
-            if isinstance(seg, dict) and seg.get("url") == replace_url:
+            if (
+                isinstance(seg, dict)
+                and str(seg.get("url") or "").strip() == normalized_replace_url
+            ):
                 updated = [*segments]
                 updated[i] = {**seg, "url": url}
-                result[key] = {"text": text, "segments": updated, **extra}
+                result[storage_key] = {"text": text, "segments": updated, **extra}
                 return result
         raise ValueError("待替换图片不存在")
-    result[key] = {
+    result[storage_key] = {
         "text": text,
         "segments": [*segments, {"type": "image", "url": url, "semantic_role": "option_image"}],
         **extra,
@@ -497,25 +527,34 @@ def upsert_option_image(
 def remove_option_image(options: dict[str, Any] | None, key: str, url: str) -> dict[str, Any]:
     """Remove the image segment matching url from ``options[key]``; degrade the
     rich value back to flat text when no image segments remain."""
-    key = key.upper()
+    requested_key = key.strip().upper()
     result = dict(options or {})
-    if key not in result:
-        raise ValueError(f"选项 {key} 不存在")
-    cur = result[key]
+    storage_key = _resolve_option_storage_key(result, requested_key)
+    if storage_key is None:
+        raise ValueError(f"选项 {requested_key} 不存在")
+    cur = result[storage_key]
     if not isinstance(cur, dict) or not isinstance(cur.get("segments"), list):
         raise ValueError("待删除图片不存在")
-    kept = [s for s in cur["segments"] if not (isinstance(s, dict) and s.get("url") == url)]
+    normalized_url = url.strip()
+    kept = [
+        s
+        for s in cur["segments"]
+        if not (
+            isinstance(s, dict)
+            and str(s.get("url") or "").strip() == normalized_url
+        )
+    ]
     if len(kept) == len(cur["segments"]):
         raise ValueError("待删除图片不存在")
     text = str(cur.get("text") or "")
     extra = {k: v for k, v in cur.items() if k not in ("text", "segments")}
     if kept:
-        result[key] = {"text": text, "segments": kept, **extra}
+        result[storage_key] = {"text": text, "segments": kept, **extra}
     elif extra:
         # 仍有富键（如 semantic_role）时保持 dict 形态，避免丢元数据
-        result[key] = {"text": text, "segments": [], **extra}
+        result[storage_key] = {"text": text, "segments": [], **extra}
     else:
-        result[key] = text
+        result[storage_key] = text
     return result
 
 

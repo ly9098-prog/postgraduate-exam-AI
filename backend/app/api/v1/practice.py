@@ -29,6 +29,7 @@ from app.schemas.practice import (
 from app.services import practice_service as svc
 from app.services.question_revision_service import load_revision_kp_names, load_revision_views
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
+from app.utils.question_content import strip_student_segment_metadata
 
 # Regex: lines ending with a trailing operator (OCR-split code expressions)
 _CODE_OP_SPLIT_RE = re.compile(
@@ -141,7 +142,7 @@ def _sanitize_question_content(content: dict | None) -> dict | None:
     sanitized.pop("visual_regions", None)
     sanitized.pop("visual_region_ids", None)
 
-    return sanitized
+    return strip_student_segment_metadata(sanitized)
 
 
 def _sanitize_option_value(value: str | None) -> str | None:

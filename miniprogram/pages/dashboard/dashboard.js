@@ -764,7 +764,14 @@ Page({
       const message = e && typeof e.message === 'string' && e.message.trim()
         ? e.message.trim()
         : 'AI 分析生成失败，请稍后重试'
-      this.setData({ llmAnalysisLoading: false, llmAnalysisError: message })
+      if (this.data.llmAnalysis) {
+        // A retry must not discard an already usable data diagnosis / previous
+        // analysis merely because the provider is temporarily unavailable.
+        this.setData({ llmAnalysisLoading: false, llmAnalysisError: null })
+        wx.showToast({ title: 'AI 重试失败，已保留当前诊断', icon: 'none' })
+      } else {
+        this.setData({ llmAnalysisLoading: false, llmAnalysisError: message })
+      }
     }
   },
 
@@ -781,7 +788,7 @@ Page({
       }
     }
 
-    this.setData({ llmAnalysis: null, llmAnalysisError: null, llmAnalysisLoading: true })
+    this.setData({ llmAnalysisError: null, llmAnalysisLoading: true })
     this._doLlmAnalysis()
   },
 

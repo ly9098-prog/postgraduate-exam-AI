@@ -25,6 +25,7 @@ import {
   Star,
   ArrowLeft,
   ArrowLeftRight,
+  Plus,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -50,6 +51,7 @@ import {
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, apiRequestBlob, toQuery } from "@/lib/api/client";
+import { resolveAssetUrl } from "@/lib/asset-url";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { QUESTION_TYPE_OPTIONS, getQuestionTypeLabel, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 import { isTableSegment, normalizeStructuredTableSegment } from "@/lib/structured-table";
@@ -96,6 +98,8 @@ type ConfirmState =
   | { action: "delete"; id: number }
   | null;
 
+type UnsavedIntent = "cancel-edit" | "close-drawer" | null;
+
 type BatchDeleteResult = {
   success_ids?: number[];
   successIds?: number[];
@@ -135,8 +139,86 @@ function isCodeSegment(segment: Record<string, unknown>): boolean {
   return segmentType(segment) === "code";
 }
 
+function imageUrlFromUnknown(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  const record = value as Record<string, unknown>;
+  for (const key of ["url", "src", "image_url", "imageUrl"]) {
+    const candidate = record[key];
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+  return "";
+}
+
+function comparableAssetUrl(value: unknown): string {
+  const raw = imageUrlFromUnknown(value);
+  if (!raw) return "";
+  const resolved = resolveAssetUrl(raw) || raw;
+  return resolved.replace(/\/+$/, "");
+}
+
+function contentRenderedImageKeys(content: unknown): Set<string> {
+  const keys = new Set<string>();
+  contentSegments(content).forEach((segment) => {
+    const type = segmentType(segment);
+    if (!["image", "math_image", "table_image", "code_image"].includes(type)) return;
+    const key = comparableAssetUrl(segment.url);
+    if (key) keys.add(key);
+  });
+  return keys;
+}
+
 function codeSegmentText(segment: Record<string, unknown>): string {
   return String(segment.code ?? segment.text ?? "");
+}
+
+function comparableText(value: unknown): string {
+  return String(value ?? "").replace(/\r\n?/g, "\n").trim();
+}
+
+function visibleCodeSegmentText(segment: Record<string, unknown>): string {
+  const code = comparableText(codeSegmentText(segment));
+  const caption = comparableText(segment.caption);
+  return caption && code ? `${caption}\n${code}` : (caption || code);
+}
+
+function canonicalStemAfterSegmentUpdate(
+  content: Record<string, unknown>,
+  nextSegments: Array<Record<string, unknown>>,
+): string {
+  const currentStem = textFromContent(content);
+  const normalizedStem = comparableText(currentStem);
+  if (!normalizedStem) return currentStem;
+
+  const currentSegments = contentSegments(content);
+  const matchedIndex = currentSegments.findIndex(
+    (segment) => isCodeSegment(segment) && (
+      normalizedStem === comparableText(codeSegmentText(segment)) ||
+      normalizedStem === comparableText(visibleCodeSegmentText(segment))
+    ),
+  );
+  if (matchedIndex < 0) return currentStem;
+
+  const matchedSegment = currentSegments[matchedIndex];
+  // Prefer object identity for insert/delete operations because unchanged
+  // segments are carried into the next array by reference. For an in-place
+  // editor change, the segment object itself is replaced but the array length
+  // and index stay stable, so the index is the safe fallback.
+  let nextSegment = nextSegments.find((segment) => segment === matchedSegment);
+  if (!nextSegment && nextSegments.length === currentSegments.length) {
+    const sameIndexSegment = nextSegments[matchedIndex];
+    if (sameIndexSegment && isCodeSegment(sameIndexSegment)) {
+      nextSegment = sameIndexSegment;
+    }
+  }
+
+  // Legacy code-only records sometimes duplicated the code into content.stem.
+  // Keep that fallback synchronized when the structured code segment changes.
+  // If that exact code segment is deleted, clear the duplicated fallback too;
+  // otherwise the deleted code would continue to render from stale stem text.
+  return nextSegment && isCodeSegment(nextSegment)
+    ? visibleCodeSegmentText(nextSegment)
+    : "";
 }
 
 /** text/newline segments carry the stem text. The edit form edits the stem as a
@@ -180,31 +262,28 @@ function textFromContent(
 ) {
   if (!content) return "";
   if (typeof content === "string") return content;
-  const candidate =
-    content.stem ?? content.text ?? content.question ?? content.title;
+  const candidate = [content.stem, content.text, content.question, content.title]
+    .find((value) => typeof value === "string" && value.length > 0);
   if (typeof candidate === "string") return candidate;
-  return JSON.stringify(content, null, 2);
-}
 
-function normalizeStemEditorText(value: string) {
-  const normalized = String(value ?? "").replace(/\r\n?/g, "\n");
-
-  // Source-code questions depend on line breaks for readability. Do not run
-  // them through the prose-only hard-wrap flattener when opening/saving edits.
-  if (looksLikeProgrammingCode(normalized)) {
-    return normalized
-      .replace(/[ \t]+$/gm, "")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
+  // Segment-only records are valid. Derive only their literal stem text here;
+  // code/table/image segments are rendered by their dedicated editors/renderers.
+  // Falling back to JSON.stringify(content) made raw JSON appear as the stem
+  // and could duplicate code-only questions in the detail view.
+  if (Array.isArray(content.segments)) {
+    return content.segments
+      .map((rawSegment) => {
+        if (!rawSegment || typeof rawSegment !== "object" || Array.isArray(rawSegment)) return "";
+        const segment = rawSegment as Record<string, unknown>;
+        if (segment.option_key) return "";
+        const type = segmentType(segment);
+        if (type === "text") return String(segment.text ?? "");
+        if (type === "newline") return "\n";
+        return "";
+      })
+      .join("");
   }
-
-  return normalized
-    // Imported/OCR prose occasionally contains hard wraps that are only layout
-    // artifacts. Keep intentional blank-line paragraphs, but flatten single
-    // hard wraps for ordinary prose.
-    .replace(/([^\n])\n(?=[^\n])/g, "$1 ")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+  return "";
 }
 
 function renderJson(value: unknown) {
@@ -323,34 +402,48 @@ function isMultiChoice(questionType: string): boolean {
   return canonicalizeQuestionType(questionType) === "multiple_choice";
 }
 
+function normalizedChoiceAnswerKeys(answer: string | null | undefined): string[] {
+  const seen = new Set<string>();
+  return String(answer ?? "")
+    .split(/[,，\s]+/)
+    .map((key) => key.trim().toUpperCase())
+    .filter((key) => {
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function comparableOptionState(options: QuestionOptionsValue | undefined): string {
+  return JSON.stringify(
+    normalizeQuestionOptions(options).map((option) => ({
+      key: option.key,
+      text: option.text ?? "",
+      imageUrl: option.imageUrl ?? "",
+    })),
+  );
+}
+
 function optionsToKeyValueList(
   options: QuestionOptionsValue | undefined,
 ): Array<{ key: string; text: string }> {
-  if (!options) return [];
-  if (typeof options === "string") {
-    return normalizeQuestionOptions(options).map((o) => ({
-      key: o.key,
-      text: o.text ?? "",
-    }));
-  }
-  if (Array.isArray(options)) {
-    return normalizeQuestionOptions(options).map((o) => ({
-      key: o.key,
-      text: o.text ?? "",
-    }));
-  }
-  return Object.entries(options).map(([key, value]) => ({
-    key,
-    text: typeof value === "string" ? value : richOptionText(value),
+  return normalizeQuestionOptions(options).map((option) => ({
+    key: option.key,
+    text: option.text ?? "",
   }));
 }
 
-function richOptionText(value: unknown): string {
-  if (value && typeof value === "object") {
-    const text = (value as { text?: unknown }).text;
-    if (typeof text === "string") return text;
-  }
-  return JSON.stringify(value);
+function optionStorageKey(
+  options: QuestionOptionsValue | undefined,
+  key: string,
+): string {
+  if (!options || typeof options !== "object" || Array.isArray(options)) return key;
+  const normalizedKey = key.trim().toUpperCase();
+  return (
+    Object.keys(options).find(
+      (candidate) => candidate.trim().toUpperCase() === normalizedKey,
+    ) ?? key
+  );
 }
 
 function optionImageUrl(
@@ -358,9 +451,10 @@ function optionImageUrl(
   key: string,
 ): string | null {
   if (!options || typeof options !== "object" || Array.isArray(options)) return null;
-  const value = (options as Record<string, unknown>)[key];
+  const storageKey = optionStorageKey(options, key);
+  const value = (options as Record<string, unknown>)[storageKey];
   if (!value || typeof value !== "object") return null;
-  const norm = normalizeQuestionOptions({ [key]: value });
+  const norm = normalizeQuestionOptions({ [storageKey]: value });
   return norm[0]?.imageUrl ?? null;
 }
 
@@ -555,6 +649,7 @@ export default function QuestionsPage() {
   const [compareVersion, setCompareVersion] = useState<QuestionVersionSelection | null>(null);
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<ConfirmState>(null);
+  const [unsavedIntent, setUnsavedIntent] = useState<UnsavedIntent>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isCommonFilterMenuOpen, setIsCommonFilterMenuOpen] = useState(false);
@@ -572,6 +667,7 @@ export default function QuestionsPage() {
   const commonFilterMenuRef = useRef<HTMLDivElement | null>(null);
   const moreFilterRef = useRef<HTMLDivElement | null>(null);
   const detailScrollRef = useRef<HTMLDivElement | null>(null);
+  const draftSavePromiseRef = useRef<Promise<boolean> | null>(null);
 
   const canWrite = hasPermission(permissions, "question:write");
   const canDelete = hasPermission(permissions, "question:delete");
@@ -826,12 +922,19 @@ export default function QuestionsPage() {
     }, 0),
     [editingSegments],
   );
+  const emptyEditingCodeCount = useMemo(
+    () => editingSegments.reduce((count, segment) => {
+      if (!isCodeSegment(segment)) return count;
+      return count + (comparableText(codeSegmentText(segment)) ? 0 : 1);
+    }, 0),
+    [editingSegments],
+  );
 
   const replaceEditingSegments = useCallback(
     (segments: Array<Record<string, unknown>>) => {
       setEditForm((current) => {
         const currentContent = contentRecord(current.content);
-        const stem = textFromContent(currentContent);
+        const stem = canonicalStemAfterSegmentUpdate(currentContent, segments);
         return {
           ...current,
           content: {
@@ -847,6 +950,42 @@ export default function QuestionsPage() {
     [],
   );
 
+  const addEditingCodeSegment = useCallback(() => {
+    setEditForm((current) => {
+      const currentContent = contentRecord(current.content);
+      const segments = contentSegments(current.content);
+      // Keep manually added code adjacent to the stem. If code blocks already
+      // exist, append after the last one; otherwise insert before image/table
+      // regions so a newly added code sample does not unexpectedly render below
+      // a stem illustration that was imported earlier.
+      let insertAt = segments.reduce(
+        (lastCodeIndex, segment, index) => isCodeSegment(segment) ? index + 1 : lastCodeIndex,
+        -1,
+      );
+      if (insertAt < 0) {
+        insertAt = segments.findIndex((segment) => !isStemTextSegment(segment));
+        if (insertAt < 0) insertAt = segments.length;
+      }
+      const nextSegments = [...segments];
+      nextSegments.splice(insertAt, 0, {
+        type: "code",
+        code: "",
+        language: "",
+      });
+      const stem = canonicalStemAfterSegmentUpdate(currentContent, nextSegments);
+      return {
+        ...current,
+        content: {
+          ...currentContent,
+          stem,
+          text: stem,
+          render_mode: "segments",
+          segments: nextSegments,
+        },
+      };
+    });
+  }, []);
+
   const dirty = useMemo(() => {
     if (!selectedQuestion) return false;
     const q = selectedQuestion;
@@ -857,10 +996,24 @@ export default function QuestionsPage() {
     if ((editForm.subject_id ?? null) !== (q.subject_id ?? null)) return true;
     if (textFromContent(editForm.content) !== textFromContent(q.content)) return true;
     if (JSON.stringify(contentSegments(editForm.content)) !== JSON.stringify(contentSegments(q.content))) return true;
-    if (JSON.stringify(editForm.options ?? null) !== JSON.stringify(q.options ?? null)) return true;
+    if (comparableOptionState(editForm.options) !== comparableOptionState(resolveQuestionOptions(q) ?? undefined)) return true;
     if (JSON.stringify(editForm.knowledge_points ?? null) !== JSON.stringify(q.knowledge_points ?? null)) return true;
     return false;
   }, [editForm, selectedQuestion]);
+
+  const mergeQuestionIntoDetailCache = useCallback(
+    (question: AdminQuestion) => {
+      if (selectedQuestionId === null) return;
+      queryClient.setQueryData<AdminQuestionDetail>(
+        ["questions", selectedQuestionId, "detail"],
+        (current) =>
+          current
+            ? { ...current, ...question, import_record: current.import_record ?? null }
+            : (question as AdminQuestionDetail),
+      );
+    },
+    [queryClient, selectedQuestionId],
+  );
 
   // Called after an immediate-write image/option mutation: adopt the fresh
   // content/options so the next "保存" does not overwrite the just-written change.
@@ -871,17 +1024,81 @@ export default function QuestionsPage() {
         content: contentRecord(question.content),
         options: question.options ?? undefined,
       }));
-      // Seed the detail cache immediately so `dirty` compares against the
-      // fresh state instead of false-positiving during the refetch window.
-      queryClient.setQueryData(
-        ["questions", selectedQuestionId, "detail"],
-        question,
-      );
+      // Keep detail-only fields (notably import_record) while adopting the
+      // mutation response. Replacing the detail cache with a list-item response
+      // temporarily erased that metadata until the refetch completed.
+      mergeQuestionIntoDetailCache(question);
       queryClient.invalidateQueries({ queryKey: ["questions", selectedQuestionId] });
       queryClient.invalidateQueries({ queryKey: ["questions"] });
     },
-    [queryClient, selectedQuestionId],
+    [mergeQuestionIntoDetailCache, queryClient, selectedQuestionId],
   );
+
+  const prepareImmediateQuestionMutation = useCallback(async (): Promise<boolean> => {
+    if (!dirty) return true;
+    if (selectedQuestionId === null) {
+      setMessage("未选中题目，无法保存当前修改。");
+      return false;
+    }
+    if (unresolvedEditingTableCount > 0) {
+      setMessage("请先完成结构化表格核验，再继续图片或选项操作。");
+      return false;
+    }
+    if (emptyEditingCodeCount > 0) {
+      setMessage("请先填写或删除空代码块，再继续图片或选项操作。");
+      return false;
+    }
+    if (draftSavePromiseRef.current) return draftSavePromiseRef.current;
+
+    const task = (async () => {
+      try {
+        const question = await apiRequest<AdminQuestion>(
+          `/questions/${selectedQuestionId}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify(editForm),
+          },
+        );
+        mergeQuestionIntoDetailCache(question);
+        setEditForm({
+          subject_id: question.subject_id ?? null,
+          question_type: question.question_type || "",
+          difficulty: question.difficulty,
+          answer: question.answer || "",
+          analysis: question.analysis || "",
+          options: question.options ?? undefined,
+          content: contentRecord(question.content),
+          knowledge_points: question.knowledge_points ?? undefined,
+        });
+        queryClient.invalidateQueries({ queryKey: ["questions"] });
+        queryClient.invalidateQueries({ queryKey: ["questions", selectedQuestionId] });
+        setMessage("已先保存当前修改，将继续执行该操作。");
+        return true;
+      } catch (error) {
+        setMessage(
+          error instanceof Error
+            ? `当前修改保存失败：${error.message}`
+            : "当前修改保存失败，请稍后重试。",
+        );
+        return false;
+      }
+    })();
+
+    draftSavePromiseRef.current = task;
+    try {
+      return await task;
+    } finally {
+      draftSavePromiseRef.current = null;
+    }
+  }, [
+    dirty,
+    editForm,
+    emptyEditingCodeCount,
+    mergeQuestionIntoDetailCache,
+    queryClient,
+    selectedQuestionId,
+    unresolvedEditingTableCount,
+  ]);
 
   const updateFilter = (key: keyof typeof filters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -1102,12 +1319,12 @@ export default function QuestionsPage() {
               ? undefined
               : filters.is_active === "true",
           question_type: filters.question_type || undefined,
-          keyword: keywordInput.trim() || undefined,
+          keyword: filters.keyword || undefined,
           year: filters.year ? Number(filters.year) : undefined,
           difficulty: filters.difficulty
             ? Number(filters.difficulty)
             : undefined,
-          import_batch_id: importBatchInput.trim() || undefined,
+          import_batch_id: filters.import_batch_id || undefined,
         }),
       });
       const url = URL.createObjectURL(response.blob);
@@ -1208,7 +1425,12 @@ export default function QuestionsPage() {
     // corrupt otherwise valid content.
     const clonedRaw = JSON.parse(JSON.stringify(content ?? {})) as unknown;
     const clonedContent = contentRecord(clonedRaw);
-    const stem = normalizeStemEditorText(textFromContent(content));
+    // Opening the editor must be a read-only operation. Do not normalize OCR
+    // line breaks/whitespace here: that previously made untouched questions
+    // dirty and could rewrite content simply by opening and saving the drawer.
+    const editableContent = typeof clonedRaw === "string"
+      ? { stem: clonedRaw, text: clonedRaw }
+      : clonedContent;
     const rawOpts = resolveQuestionOptions(selectedQuestion);
     let editOpts: Record<string, unknown> | undefined;
     if (rawOpts && typeof rawOpts === "object" && !Array.isArray(rawOpts)) {
@@ -1217,7 +1439,10 @@ export default function QuestionsPage() {
       // Convert array/string to Record for editing compatibility
       const norm = normalizeQuestionOptions(rawOpts);
       editOpts = Object.fromEntries(
-        norm.map((o) => [o.key, o.text ?? ""]),
+        norm.map((o) => [
+          o.key,
+          o.imageUrl ? { text: o.text ?? "", url: o.imageUrl } : (o.text ?? ""),
+        ]),
       );
     }
     setEditForm({
@@ -1227,7 +1452,7 @@ export default function QuestionsPage() {
       answer: selectedQuestion.answer || "",
       analysis: selectedQuestion.analysis || "",
       options: editOpts,
-      content: { ...clonedContent, stem, text: stem },
+      content: editableContent,
       knowledge_points: selectedQuestion.knowledge_points ?? undefined,
     });
     setEditing(true);
@@ -1236,18 +1461,83 @@ export default function QuestionsPage() {
     });
   };
 
-  const cancelEditing = () => {
-    if (dirty && !window.confirm("当前修改尚未保存，确定放弃修改吗？")) return;
+  const finishCancelEditing = useCallback(() => {
     setEditing(false);
     setEditForm({});
+    setUnsavedIntent(null);
+  }, []);
+
+  const finishCloseDetailDrawer = useCallback(() => {
+    setEditing(false);
+    setEditForm({});
+    setUnsavedIntent(null);
+    setIsDetailDrawerOpen(false);
+  }, []);
+
+  const cancelEditing = () => {
+    if (dirty) {
+      setUnsavedIntent("cancel-edit");
+      return;
+    }
+    finishCancelEditing();
   };
 
   const closeDetailDrawer = () => {
-    if (editing && dirty && !window.confirm("当前修改尚未保存，确定关闭详情抽屉吗？")) return;
-    setEditing(false);
-    setEditForm({});
-    setIsDetailDrawerOpen(false);
+    if (editing && dirty) {
+      setUnsavedIntent("close-drawer");
+      return;
+    }
+    finishCloseDetailDrawer();
   };
+
+  useEffect(() => {
+    if (!isDetailDrawerOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isDetailDrawerOpen]);
+
+  useEffect(() => {
+    if (!(editing && dirty)) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [dirty, editing]);
+
+  useEffect(() => {
+    if (!isDetailDrawerOpen) return;
+    const handleDrawerEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      // CustomSelect portals handle Escape themselves. Do not let the same key
+      // press also exit edit mode or close the drawer.
+      if (document.querySelector('[role="combobox"][aria-expanded="true"]')) return;
+      if (document.querySelector('[data-confirm-dialog="true"]')) return;
+      if (confirmState !== null || unsavedIntent !== null) return;
+
+      event.preventDefault();
+      if (editing) {
+        if (dirty) setUnsavedIntent("cancel-edit");
+        else finishCancelEditing();
+      } else {
+        finishCloseDetailDrawer();
+      }
+    };
+    document.addEventListener("keydown", handleDrawerEscape);
+    return () => document.removeEventListener("keydown", handleDrawerEscape);
+  }, [
+    confirmState,
+    dirty,
+    editing,
+    finishCancelEditing,
+    finishCloseDetailDrawer,
+    isDetailDrawerOpen,
+    unsavedIntent,
+  ]);
 
   const confirmDescription =
     confirmState?.action === "batch-delete"
@@ -1990,7 +2280,10 @@ export default function QuestionsPage() {
           onClick={closeDetailDrawer}
         >
           <aside
-            className="question-detail-drawer h-full w-full max-w-[880px] overflow-y-auto border-l border-slate-200/80 bg-white shadow-[-18px_0_52px_rgba(15,23,42,0.12)] animate-drop-in"
+            role="dialog"
+            aria-modal="true"
+            aria-label={editing ? "编辑题目" : "题目详情"}
+            className="question-detail-drawer h-full w-full max-w-[880px] overflow-y-auto overscroll-contain border-l border-slate-200/80 bg-white shadow-[-18px_0_52px_rgba(15,23,42,0.12)] animate-drop-in"
             onClick={(event) => event.stopPropagation()}
           >
             <header className="sticky top-0 z-20 flex min-h-16 items-center justify-between gap-4 border-b border-slate-200/80 bg-white/95 px-7 py-3 backdrop-blur-xl">
@@ -2148,6 +2441,7 @@ export default function QuestionsPage() {
                                 valueUrl={typeof seg.url === "string" ? seg.url : null}
                                 canDelete
                                 dirty={dirty}
+                                beforeDirtyMutation={prepareImmediateQuestionMutation}
                                 addLabel="更换图片"
                                 onMutated={handleQuestionMutated}
                               />
@@ -2160,6 +2454,7 @@ export default function QuestionsPage() {
                         questionId={selectedQuestionId!}
                         target="stem"
                         dirty={dirty}
+                        beforeDirtyMutation={prepareImmediateQuestionMutation}
                         addLabel="插入题干图片"
                         onMutated={handleQuestionMutated}
                       />
@@ -2192,68 +2487,103 @@ export default function QuestionsPage() {
                     </div>
                   ) : null}
 
-                  {editingSegments.some(isCodeSegment) ? (
-                    <section className="border-b border-slate-200 py-5">
-                      <div className="mb-4 flex items-end justify-between gap-4">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-950">代码块</p>
-                          <p className="mt-1 text-[11px] text-slate-400">
-                            代码说明来自 segment.alt，代码正文来自 segment.code；两者都会随题目一起保存。
-                          </p>
-                        </div>
+                  <section className="border-b border-slate-200 py-5">
+                    <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-950">代码块</p>
+                        <p className="mt-1 text-[11px] text-slate-400">
+                          可手动插入代码内容；只有显式 caption 才作为可见标题，segment.alt 仅保留为辅助描述。
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
                         <span className="text-[11px] tabular-nums text-slate-400">
                           {editingSegments.filter(isCodeSegment).length} 个代码块
                         </span>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="h-8 border-slate-200 bg-white px-3 text-xs shadow-none"
+                          onClick={addEditingCodeSegment}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          添加代码块
+                        </Button>
                       </div>
+                    </div>
+
+                    {editingSegments.some(isCodeSegment) ? (
                       <div className="space-y-4">
                         {editingSegments.map((segment, segmentIndex) => {
                           if (!isCodeSegment(segment)) return null;
-                          const caption = String(segment.alt ?? segment.caption ?? "");
+                          const caption = String(segment.caption ?? "");
                           const language = String(segment.language ?? "");
+                          const code = codeSegmentText(segment);
                           return (
                             <div
                               key={String(segment.region_id ?? `code-${segmentIndex}`)}
-                              className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/50"
+                              className={`overflow-hidden rounded-xl border bg-slate-50/50 ${
+                                comparableText(code) ? "border-slate-200" : "border-amber-300"
+                              }`}
                             >
-                              <div className="grid gap-3 border-b border-slate-200 bg-white px-4 py-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                              <div className="grid gap-3 border-b border-slate-200 bg-white px-4 py-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
                                 <label className="space-y-1">
-                                  <span className="text-[11px] font-medium text-slate-500">代码说明 / 标题</span>
+                                  <span className="text-[11px] font-medium text-slate-500">显示标题（可选）</span>
                                   <input
                                     className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
                                     value={caption}
-                                    placeholder="例如：P1加1和P2减1的机器指令序列"
+                                    placeholder="留空则不在题干中显示标题"
                                     onChange={(e) => {
                                       const next = [...editingSegments];
-                                      next[segmentIndex] = {
+                                      const nextSegment: Record<string, unknown> = {
                                         ...segment,
-                                        alt: e.target.value,
                                       };
+                                      const nextCaption = e.target.value;
+                                      if (nextCaption) nextSegment.caption = nextCaption;
+                                      else delete nextSegment.caption;
+                                      next[segmentIndex] = nextSegment;
                                       replaceEditingSegments(next);
                                     }}
                                   />
                                 </label>
                                 <label className="space-y-1">
-                                  <span className="text-[11px] font-medium text-slate-500">语言</span>
+                                  <span className="text-[11px] font-medium text-slate-500">语言（可选）</span>
                                   <input
                                     className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 font-mono text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
                                     value={language}
                                     placeholder="assembly / c / cpp"
                                     onChange={(e) => {
                                       const next = [...editingSegments];
-                                      next[segmentIndex] = {
-                                        ...segment,
-                                        language: e.target.value,
-                                      };
+                                      const nextSegment: Record<string, unknown> = { ...segment };
+                                      const nextLanguage = e.target.value;
+                                      if (nextLanguage) nextSegment.language = nextLanguage;
+                                      else delete nextSegment.language;
+                                      next[segmentIndex] = nextSegment;
                                       replaceEditingSegments(next);
                                     }}
                                   />
                                 </label>
+                                <div className="flex items-end">
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    className="h-9 border-red-100 bg-white px-3 text-xs text-red-600 shadow-none hover:border-red-200 hover:bg-red-50"
+                                    onClick={() => {
+                                      replaceEditingSegments(
+                                        editingSegments.filter((_, index) => index !== segmentIndex),
+                                      );
+                                    }}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    删除
+                                  </Button>
+                                </div>
                               </div>
                               <textarea
                                 wrap="off"
                                 spellCheck={false}
                                 className="min-h-48 w-full resize-y overflow-auto whitespace-pre border-0 bg-slate-950 px-4 py-4 font-mono text-[13px] leading-6 text-slate-100 outline-none [tab-size:2]"
-                                value={codeSegmentText(segment)}
+                                value={code}
+                                placeholder="在这里输入代码内容……"
                                 onChange={(e) => {
                                   const next = [...editingSegments];
                                   const nextSegment: Record<string, unknown> = {
@@ -2270,12 +2600,28 @@ export default function QuestionsPage() {
                                   replaceEditingSegments(next);
                                 }}
                               />
+                              {!comparableText(code) ? (
+                                <div className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-[11px] text-amber-800">
+                                  代码正文不能为空。输入内容后即可保存，或删除该空代码块。
+                                </div>
+                              ) : null}
                             </div>
                           );
                         })}
                       </div>
-                    </section>
-                  ) : null}
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={addEditingCodeSegment}
+                        className="flex min-h-24 w-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/40 px-4 text-sm text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Plus className="h-4 w-4" />
+                          插入代码块
+                        </span>
+                      </button>
+                    )}
+                  </section>
 
                   {/* Options inline editor */}
                   {(() => {
@@ -2309,14 +2655,15 @@ export default function QuestionsPage() {
                                     value={opt.text}
                                     onChange={(e) => {
                                       const currentOptions = (editForm.options ?? {}) as Record<string, unknown>;
-                                      const prevValue = currentOptions[opt.key];
+                                      const storageKey = optionStorageKey(editForm.options, opt.key);
+                                      const prevValue = currentOptions[storageKey];
                                       const nextValue =
                                         prevValue && typeof prevValue === "object" && !Array.isArray(prevValue)
                                           ? { ...(prevValue as Record<string, unknown>), text: e.target.value }
                                           : e.target.value;
                                       setEditForm({
                                         ...editForm,
-                                        options: { ...currentOptions, [opt.key]: nextValue },
+                                        options: { ...currentOptions, [storageKey]: nextValue },
                                       });
                                     }}
                                   />
@@ -2327,6 +2674,7 @@ export default function QuestionsPage() {
                                     canDelete={!!imgUrl}
                                     addLabel="上传图片"
                                     dirty={dirty}
+                                    beforeDirtyMutation={prepareImmediateQuestionMutation}
                                     variant="row"
                                     onMutated={handleQuestionMutated}
                                   />
@@ -2340,6 +2688,7 @@ export default function QuestionsPage() {
                           existingKeys={optList.map((o) => o.key)}
                           disabled={!isChoiceType}
                           dirty={dirty}
+                          beforeDirtyMutation={prepareImmediateQuestionMutation}
                           onMutated={handleQuestionMutated}
                         />
                       </section>
@@ -2362,13 +2711,12 @@ export default function QuestionsPage() {
                       ) : null}
                       <div className="mb-3 flex flex-wrap gap-2">
                         {optionsToKeyValueList(editForm.options).map((opt) => {
+                          const normalizedKey = opt.key.trim().toUpperCase();
                           const selected = isMultiChoice(
                             editForm.question_type ?? "",
                           )
-                            ? (editForm.answer ?? "")
-                                .split(/[,，\s]+/)
-                                .includes(opt.key)
-                            : editForm.answer === opt.key;
+                            ? normalizedChoiceAnswerKeys(editForm.answer).includes(normalizedKey)
+                            : String(editForm.answer ?? "").trim().toUpperCase() === normalizedKey;
                           return (
                             <button
                               key={opt.key}
@@ -2382,12 +2730,10 @@ export default function QuestionsPage() {
                                 if (
                                   isMultiChoice(editForm.question_type ?? "")
                                 ) {
-                                  const keys = (editForm.answer ?? "")
-                                    .split(/[,，\s]+/)
-                                    .filter(Boolean);
-                                  const next = keys.includes(opt.key)
-                                    ? keys.filter((k) => k !== opt.key)
-                                    : [...keys, opt.key];
+                                  const keys = normalizedChoiceAnswerKeys(editForm.answer);
+                                  const next = keys.includes(normalizedKey)
+                                    ? keys.filter((key) => key !== normalizedKey)
+                                    : [...keys, normalizedKey];
                                   setEditForm({
                                     ...editForm,
                                     answer: next.join(","),
@@ -2395,10 +2741,7 @@ export default function QuestionsPage() {
                                 } else {
                                   setEditForm({
                                     ...editForm,
-                                    answer:
-                                      editForm.answer === opt.key
-                                        ? ""
-                                        : opt.key,
+                                    answer: selected ? "" : normalizedKey,
                                   });
                                 }
                               }}
@@ -2456,6 +2799,11 @@ export default function QuestionsPage() {
                       仍有 {unresolvedEditingTableCount} 个结构化表格需要人工核验。请检查单元格和合并关系，并点击“标记人工已核验”后再保存。
                     </div>
                   ) : null}
+                  {emptyEditingCodeCount > 0 ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      仍有 {emptyEditingCodeCount} 个代码块正文为空。请输入代码内容，或删除空代码块后再保存。
+                    </div>
+                  ) : null}
 
                   <div className="sticky bottom-0 z-10 -mx-7 -mb-24 mt-8 flex justify-end gap-2 border-t border-slate-200 bg-white/96 px-7 py-4 shadow-[0_-12px_30px_rgba(15,23,42,0.04)] backdrop-blur-xl">
                     <Button variant="secondary" className="min-w-24 border-slate-200 bg-white shadow-none" onClick={cancelEditing}>
@@ -2466,7 +2814,7 @@ export default function QuestionsPage() {
                       variant="primary"
                       className="min-w-28 shadow-none"
                       onClick={() => updateMutation.mutate()}
-                      disabled={updateMutation.isPending || unresolvedEditingTableCount > 0}
+                      disabled={!dirty || updateMutation.isPending || unresolvedEditingTableCount > 0 || emptyEditingCodeCount > 0}
                     >
                       <Save className="h-4 w-4" />
                       {updateMutation.isPending ? "保存中..." : "保存修改"}
@@ -2498,45 +2846,51 @@ export default function QuestionsPage() {
                     </div>
                   </section>
 
-                  {/* ── Question Images ── */}
+                  {/* ── Legacy/fallback question images ── */}
                   {(() => {
-                    const allUrls = new Map<string, string>();
+                    // Structured content already renders image segments above.
+                    // `image_url` is a legacy mirror on many records; rendering
+                    // both produced duplicate images in the detail drawer.
+                    const renderedKeys = contentRenderedImageKeys(selectedQuestion.content);
+                    const fallbackUrls = new Map<string, string>();
                     const imageUrlField = selectedQuestion.image_url;
                     if (Array.isArray(imageUrlField)) {
-                      imageUrlField.forEach((url: unknown) => {
-                        const src = String(url ?? "").trim();
-                        if (src) {
-                          const key = src.length > 8 && src.endsWith("/") ? src.slice(0, -1) : src;
-                          allUrls.set(key, src);
-                        }
+                      imageUrlField.forEach((value: unknown) => {
+                        const raw = imageUrlFromUnknown(value);
+                        const key = comparableAssetUrl(raw);
+                        if (!raw || !key || renderedKeys.has(key)) return;
+                        fallbackUrls.set(key, resolveAssetUrl(raw) || raw);
                       });
                     }
-                    if (allUrls.size === 0) return null;
-                    const entries = Array.from(allUrls.values());
+                    if (fallbackUrls.size === 0) return null;
+                    const entries = Array.from(fallbackUrls.entries());
                     return (
                       <section className="border-b border-slate-200 py-6">
-                        <p className="mb-3 text-sm font-semibold text-slate-950">题目图片</p>
+                        <p className="mb-3 text-sm font-semibold text-slate-950">其他题目图片</p>
                         <div className="grid gap-3">
-                          {entries.map((src: string, idx: number) => {
-                            if (!src) return null;
-                            return (
-                              <div key={idx} className="relative group/img overflow-hidden rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/30">
-                                <img
-                                  src={src}
-                                  alt={`题目图片 ${idx + 1}`}
-                                  className="max-w-full cursor-zoom-in rounded-lg transition-transform duration-300 group-hover/img:scale-[1.02]"
-                                  style={{ maxHeight: "400px", width: "auto", objectFit: "contain" }}
-                                  onClick={() => window.open(src, "_blank")}
-                                  onError={(e) => {
-                                    const target = e.currentTarget;
-                                    target.style.display = "none";
-                                    if (target.parentElement) target.parentElement.classList.add("hidden");
-                                  }}
-                                />
-                                <div className="absolute inset-0 rounded-xl ring-1 ring-inset ring-black/5 pointer-events-none" />
-                              </div>
-                            );
-                          })}
+                          {entries.map(([key, src], idx) => (
+                            <a
+                              key={key}
+                              href={src}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="group/img relative block overflow-hidden rounded-xl border border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/30 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                              aria-label={`在新窗口查看题目图片 ${idx + 1}`}
+                            >
+                              <img
+                                src={src}
+                                alt={`题目图片 ${idx + 1}`}
+                                className="max-w-full cursor-zoom-in rounded-lg transition-transform duration-300 group-hover/img:scale-[1.02]"
+                                style={{ maxHeight: "400px", width: "auto", objectFit: "contain" }}
+                                onError={(e) => {
+                                  const target = e.currentTarget;
+                                  target.style.display = "none";
+                                  target.closest("a")?.classList.add("hidden");
+                                }}
+                              />
+                              <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-black/5" />
+                            </a>
+                          ))}
                         </div>
                       </section>
                     );
@@ -2747,14 +3101,51 @@ export default function QuestionsPage() {
                   {renderSecondaryQuestionInfo(selectedQuestion)}
                 </div>
               )
+            ) : detail.isError ? (
+              <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 px-7 text-center">
+                <AlertCircle className="h-8 w-8 text-red-400" />
+                <div>
+                  <p className="text-sm font-semibold text-red-700">题目详情加载失败</p>
+                  <p className="mt-1 text-xs text-slate-400">请检查网络连接后重试。</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="border-slate-200 bg-white shadow-none"
+                  onClick={() => detail.refetch()}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  重新加载
+                </Button>
+              </div>
             ) : (
-              <p className="mt-6 text-sm text-[var(--color-text-secondary)]">
-                正在加载详情...
-              </p>
+              <div className="space-y-3 px-7 py-6">
+                <div className="h-16 animate-pulse rounded-xl bg-slate-100" />
+                <div className="h-32 animate-pulse rounded-xl bg-slate-100/80" />
+                <div className="h-24 animate-pulse rounded-xl bg-slate-100/60" />
+              </div>
             )}
           </aside>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        open={unsavedIntent !== null}
+        title={unsavedIntent === "close-drawer" ? "关闭题目编辑？" : "放弃当前修改？"}
+        description={
+          unsavedIntent === "close-drawer"
+            ? "当前题目还有未保存修改。关闭后这些修改不会保留。"
+            : "当前题目还有未保存修改。返回详情后这些修改不会保留。"
+        }
+        confirmText="放弃修改"
+        danger
+        onCancel={() => setUnsavedIntent(null)}
+        onConfirm={() => {
+          if (unsavedIntent === "close-drawer") finishCloseDetailDrawer();
+          else if (unsavedIntent === "cancel-edit") finishCancelEditing();
+        }}
+      />
 
       <ConfirmDialog
         open={confirmState !== null}

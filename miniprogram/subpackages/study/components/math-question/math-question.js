@@ -33,7 +33,7 @@ Component({
           this._devWarn('segment[' + i + '] is not an object, skipped')
           continue
         }
-        var type = String(s.type || '').toLowerCase()
+        var type = String(s.type || '').trim().toLowerCase()
         if (type === 'table' || type === 'table_markdown') {
           var prepared = tableStructure.prepareTableForRender(s, {
             needsRichRender: stemRender.needsRichRender,
@@ -47,7 +47,9 @@ Component({
         var copy = Object.assign({}, s, { type: type, _error: false })
         if (type === 'code') {
           copy.code = String(s.code != null ? s.code : (s.text != null ? s.text : ''))
-          copy.alt = String(s.alt != null ? s.alt : (s.caption != null ? s.caption : ''))
+          // alt is accessibility/import metadata; caption is the only visible title.
+          copy.alt = String(s.alt != null ? s.alt : '')
+          copy.caption = String(s.caption != null ? s.caption : '')
           copy.language = String(s.language || '')
           result.push(copy)
           continue

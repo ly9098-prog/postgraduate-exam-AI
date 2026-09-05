@@ -360,27 +360,51 @@ function _segmentsToText(segments) {
   if (!Array.isArray(segments)) return ''
   return segments.map(function (seg) {
     if (!seg) return ''
-    if (seg.type === 'text') return seg.text || ''
-    if (seg.type === 'newline') return '\n'
-    if (seg.type === 'table' || seg.type === 'table_markdown') return tableStructure.tableToText(seg)
-    if (seg.type === 'code') {
-      var code = String(seg.code != null ? seg.code : (seg.text != null ? seg.text : ''))
-      var caption = String(seg.alt != null ? seg.alt : (seg.caption != null ? seg.caption : '')).trim()
-      if (!caption) return code
-      if (!code) return caption
-      return caption + '\n' + code
+    var type = String(seg.type || '').trim().toLowerCase()
+    if (type === 'text') return seg.text || ''
+    if (type === 'newline') return '\n'
+    if (type === 'table' || type === 'table_markdown') return tableStructure.tableToText(seg)
+    if (type === 'code') {
+      var code = String(seg.code != null ? seg.code : (seg.text != null ? seg.text : '')).trimEnd()
+      // segment.alt describes the region for accessibility/import diagnostics;
+      // it must not be injected into the visible stem. Only explicit caption is content.
+      var caption = String(seg.caption != null ? seg.caption : '').trim()
+      var body = caption && code ? caption + '\n' + code : (caption || code)
+      return body ? '\n' + body + '\n' : ''
     }
-    if (seg.type === 'image' || seg.type === 'math_image' || seg.type === 'table_image' || seg.type === 'code_image') {
+    if (type === 'math_image') {
       return seg.alt ? '$' + seg.alt + '$' : ''
     }
-    return seg.alt ? '$' + seg.alt + '$' : ''
+    if (type === 'image' || type === 'table_image' || type === 'code_image') {
+      return seg.alt ? String(seg.alt) : ''
+    }
+    // Unknown segment `alt` values are import/accessibility metadata. Only
+    // explicit text is allowed to participate in a plain-text fallback.
+    return seg.text != null ? String(seg.text) : ''
   }).join('')
+}
+
+function _normalizeComparableText(value) {
+  return String(value == null ? '' : value).replace(/\r\n?/g, '\n').trim()
+}
+
+function _stemIsRepresentedByCodeSegment(segments, stemText) {
+  var normalizedStem = _normalizeComparableText(stemText)
+  if (!normalizedStem || !Array.isArray(segments)) return false
+  return segments.some(function (segment) {
+    if (!segment || typeof segment !== 'object') return false
+    if (String(segment.type || '').trim().toLowerCase() !== 'code') return false
+    var code = _normalizeComparableText(segment.code != null ? segment.code : segment.text)
+    var caption = _normalizeComparableText(segment.caption)
+    var withCaption = caption && code ? caption + '\n' + code : (caption || code)
+    return normalizedStem === code || normalizedStem === _normalizeComparableText(withCaption)
+  })
 }
 
 function _hasCodeSegments(segments) {
   if (!Array.isArray(segments)) return false
   return segments.some(function (segment) {
-    return segment && typeof segment === 'object' && String(segment.type || '').toLowerCase() === 'code'
+    return segment && typeof segment === 'object' && String(segment.type || '').trim().toLowerCase() === 'code'
   })
 }
 
@@ -954,7 +978,9 @@ function buildRenderModel(q, options, cfg) {
   var optionKeys = options ? Object.keys(options) : []
 
   // Extract raw stem text — prefer stem over text (stem has better code formatting)
-  var stemText = (content && (content.stem || content.text)) || ''
+  var stemText = typeof content === 'string'
+    ? content
+    : ((content && (content.stem || content.text)) || '')
   var sourceStemText = stemText || (content && _segmentsToText(content.segments)) || ''
   var cleanedStem = _cleanStemText(sourceStemText, options, optionKeys)
   var stemHash = _hashStem(cleanedStem)
@@ -969,10 +995,13 @@ function buildRenderModel(q, options, cfg) {
       ? content.segments.map(function (s) { return Object.assign({}, s) })
       : _textToSegments(cleanedStem)
     var hasTextualSegment = segments.some(function (segment) {
-      var type = segment && typeof segment === 'object' ? String(segment.type || '').toLowerCase() : ''
+      var type = segment && typeof segment === 'object' ? String(segment.type || '').trim().toLowerCase() : ''
       return type === 'text' || type === 'newline'
     })
-    if (!hasTextualSegment && cleanedStem) {
+    if (!hasTextualSegment && stemText && cleanedStem && !_stemIsRepresentedByCodeSegment(segments, cleanedStem)) {
+      // Only a canonical stem may be prepended. A segment-derived fallback
+      // (for example a code-only question) is already represented by the
+      // segment itself and must not be duplicated as a text block.
       segments = _textToSegments(cleanedStem).concat(segments)
     }
     richTextNodes = []

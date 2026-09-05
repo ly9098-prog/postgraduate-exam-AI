@@ -20,7 +20,12 @@ function asContentRecord(content: unknown): Record<string, unknown> | null {
 function contentText(content: unknown, fallbackText: string): string {
   if (typeof content === "string") return content;
   const record = asContentRecord(content);
-  return String(record?.stem ?? record?.text ?? record?.question ?? record?.title ?? fallbackText ?? "");
+  if (record) {
+    const candidate = [record.stem, record.text, record.question, record.title]
+      .find((value) => typeof value === "string" && value.length > 0);
+    if (typeof candidate === "string") return candidate;
+  }
+  return String(fallbackText ?? "");
 }
 
 
@@ -197,6 +202,23 @@ function stableSegmentId(segment: SegmentRecord, index: number): string {
   return `idx:${index}`;
 }
 
+function normalizeComparableText(value: unknown): string {
+  return String(value ?? "").replace(/\r\n?/g, "\n").trim();
+}
+
+function fallbackIsRepresentedByCodeSegment(segments: unknown[], fallbackText: string): boolean {
+  const normalizedFallback = normalizeComparableText(fallbackText);
+  if (!normalizedFallback) return false;
+  return segments.some((rawSegment) => {
+    if (!rawSegment || typeof rawSegment !== "object" || Array.isArray(rawSegment)) return false;
+    const segment = rawSegment as SegmentRecord;
+    if (String(segment.type ?? "").trim().toLowerCase() !== "code") return false;
+    const code = normalizeComparableText(segment.code ?? segment.text ?? "");
+    const caption = normalizeComparableText(segment.caption ?? "");
+    return normalizedFallback === code || normalizedFallback === normalizeComparableText(caption && code ? `${caption}\n${code}` : (caption || code));
+  });
+}
+
 function buildRenderBlocks(
   segments: unknown[],
   fallbackText: string,
@@ -207,6 +229,7 @@ function buildRenderBlocks(
   let textBuffer = "";
   let textStart = 0;
   let hasTextSegment = false;
+  const visibleSegments: SegmentRecord[] = [];
 
   const flushText = () => {
     if (!textBuffer) return;
@@ -219,7 +242,8 @@ function buildRenderBlocks(
     const segment = rawSegment as SegmentRecord;
     if (ignoredSegmentIds.has(stableSegmentId(segment, index))) return;
     if (skipOptionSegments && segment.option_key) return;
-    const type = String(segment.type ?? "").toLowerCase();
+    visibleSegments.push(segment);
+    const type = String(segment.type ?? "").trim().toLowerCase();
 
     if (type === "text") {
       if (!textBuffer) textStart = index;
@@ -243,7 +267,7 @@ function buildRenderBlocks(
   });
   flushText();
 
-  if (!hasTextSegment && fallbackText.trim()) {
+  if (!hasTextSegment && fallbackText.trim() && !fallbackIsRepresentedByCodeSegment(visibleSegments, fallbackText)) {
     blocks.unshift({ kind: "text", text: fallbackText, key: "fallback-stem" });
   }
   return blocks;
@@ -286,13 +310,13 @@ export function QuestionContentRenderer({
   const hasOnlyTextStemSegments =
     visibleStemSegments.length > 0 &&
     visibleStemSegments.every((segment) => {
-      const type = String((segment as SegmentRecord).type ?? "").toLowerCase();
+      const type = String((segment as SegmentRecord).type ?? "").trim().toLowerCase();
       return type === "text" || type === "newline";
     });
   const supportingSegmentText = visibleStemSegments
     .map((segment) => {
       const record = segment as SegmentRecord;
-      return String(record.type ?? "").toLowerCase() === "newline"
+      return String(record.type ?? "").trim().toLowerCase() === "newline"
         ? "\n"
         : String(record.text ?? "");
     })
@@ -329,13 +353,16 @@ export function QuestionContentRenderer({
         }
 
         const segment = block.segment;
-        const type = String(segment.type ?? "").toLowerCase();
+        const type = String(segment.type ?? "").trim().toLowerCase();
         if (isTableSegment(segment)) {
           return <StructuredTable key={block.key} segment={segment} showMetadata={showTableMetadata} />;
         }
         if (type === "code") {
           const code = String(segment.code ?? segment.text ?? "");
-          const caption = String(segment.alt ?? segment.caption ?? "").trim();
+          // `alt` is alternative/accessibility metadata imported with the code
+          // region. It is not user-facing stem content. Only an explicit
+          // `caption` may be rendered as a visible code-block title.
+          const caption = String(segment.caption ?? "").trim();
           const language = String(segment.language ?? "").trim();
           return (
             <figure
@@ -344,7 +371,7 @@ export function QuestionContentRenderer({
             >
               {caption || language ? (
                 <figcaption className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2 text-xs text-slate-500">
-                  <span className="min-w-0 break-words">{caption || "代码块"}</span>
+                  {caption ? <span className="min-w-0 break-words">{caption}</span> : <span />}
                   {language ? (
                     <span className="shrink-0 rounded bg-white px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-slate-400">
                       {language}
@@ -370,19 +397,28 @@ export function QuestionContentRenderer({
           }
           return (
             <figure key={block.key} className="overflow-hidden rounded-xl border border-[var(--color-border)]/60 bg-white p-2">
-              <img
-                src={url}
-                alt={String(segment.alt ?? "题目图片")}
-                className="max-h-[420px] max-w-full cursor-zoom-in object-contain"
-                onClick={() => window.open(url, "_blank")}
-              />
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block max-w-full rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-300"
+                aria-label="在新窗口查看题目图片"
+              >
+                <img
+                  src={url}
+                  alt={String(segment.alt ?? "题目图片")}
+                  className="max-h-[420px] max-w-full cursor-zoom-in object-contain"
+                />
+              </a>
               {showTableMetadata && segment.requires_review ? (
                 <figcaption className="mt-1 text-[10px] text-amber-700">该视觉片段需要人工核对</figcaption>
               ) : null}
             </figure>
           );
         }
-        const text = String(segment.text ?? segment.alt ?? "");
+        // Unknown segment metadata must stay non-visible. `alt` is import /
+        // accessibility metadata, not generic stem content.
+        const text = String(segment.text ?? "");
         return text ? (
           <div key={block.key} className="whitespace-pre-wrap"><MathFormula text={text} /></div>
         ) : null;

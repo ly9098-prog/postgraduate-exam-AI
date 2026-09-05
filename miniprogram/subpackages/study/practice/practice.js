@@ -176,15 +176,6 @@ function _shortText(text) {
   return normalized.length > 80 ? normalized.slice(0, 80) + '...' : normalized
 }
 
-function _segmentsToText(segments) {
-  if (!Array.isArray(segments)) return ''
-  return segments.map((seg) => {
-    if (!seg) return ''
-    if (seg.type === 'text' || seg.type === 'newline') return seg.text || ''
-    return seg.alt ? `$${seg.alt}$` : ''
-  }).join('')
-}
-
 function _textToSegments(text) {
   if (!text) return []
   const lines = String(text).split('\n')
