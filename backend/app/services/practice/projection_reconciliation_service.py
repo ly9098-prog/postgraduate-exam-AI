@@ -117,10 +117,12 @@ async def reconcile_answer_projections(
         .order_by(PracticeRecord.answered_at.asc(), PracticeRecord.id.asc())
         .limit(effective_batch)
     )
-    bind = db.get_bind()
-    if bind is not None and bind.dialect.name == "postgresql":
-        query = query.with_for_update(of=PracticeRecord, skip_locked=True)
-
+    # Do not lock practice_records while deciding whether to enqueue a repair.
+    # The projection worker deliberately owns that row lock for exactly-once
+    # processing. Holding the same rows here while we inspect/create outbox
+    # records can delay healthy workers and turn a repair scan into contention.
+    # Races are already safe: the terminal projection state is checked again by
+    # the worker and task_id uniqueness below deduplicates concurrent schedulers.
     record_ids = [int(value) for value in (await db.execute(query)).scalars().all()]
     stats = {
         "checked": len(record_ids),

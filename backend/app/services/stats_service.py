@@ -937,7 +937,20 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
             "generated": False,
         }
 
-    runtime = await resolve_llm_runtime_config(db, feature="analysis")
+    try:
+        # Model configuration is part of the remote-AI dependency boundary too.
+        # Credential decryption/provider configuration can fail before the actual
+        # chat request; keep those failures on the same deterministic fallback
+        # path instead of turning a recoverable AI outage into an HTTP 500.
+        runtime = await resolve_llm_runtime_config(db, feature="analysis")
+    except Exception as exc:
+        logger.warning(
+            "stats.ai_diagnosis.runtime_config_failed user_id=%s error_type=%s",
+            user_id,
+            type(exc).__name__,
+        )
+        return local_diagnosis(provider_failed=True)
+
     if runtime is None:
         return local_diagnosis()
 
@@ -983,8 +996,15 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
             for item in value:
                 if not isinstance(item, dict):
                     continue
-                name = str(item.get("knowledge_point") or "").strip()
-                suggestion = str(item.get("suggestion") or "").strip()
+                raw_name = item.get("knowledge_point")
+                raw_suggestion = item.get("suggestion")
+                # Do not stringify arbitrary provider JSON. A malformed object
+                # here would otherwise leak Python/JSON-looking repr text into
+                # the student UI even though the request technically succeeded.
+                if not isinstance(raw_name, str):
+                    continue
+                name = raw_name.strip()
+                suggestion = raw_suggestion.strip() if isinstance(raw_suggestion, str) else ""
                 if not name:
                     continue
                 try:
@@ -1005,11 +1025,10 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
 
         weak_points = normalize_points(parsed.get("weak_points"), 5)
         strong_points = normalize_points(parsed.get("strong_points"), 3)
-        raw_suggestions = parsed.get("learning_suggestions")
-        suggestions = (
-            [str(item).strip()[:240] for item in raw_suggestions if str(item).strip()][:5]
-            if isinstance(raw_suggestions, list)
-            else []
+        suggestions = _normalize_text_list(
+            parsed.get("learning_suggestions"),
+            limit=5,
+            max_chars=240,
         )
         if not weak_points and not strong_points and not suggestions:
             return local_diagnosis(provider_failed=True)

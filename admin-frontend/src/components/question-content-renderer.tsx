@@ -333,6 +333,35 @@ export function QuestionContentRenderer({
         if (isTableSegment(segment)) {
           return <StructuredTable key={block.key} segment={segment} showMetadata={showTableMetadata} />;
         }
+        if (type === "code") {
+          const code = String(segment.code ?? segment.text ?? "");
+          const caption = String(segment.alt ?? segment.caption ?? "").trim();
+          const language = String(segment.language ?? "").trim();
+          return (
+            <figure
+              key={block.key}
+              className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70"
+            >
+              {caption || language ? (
+                <figcaption className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2 text-xs text-slate-500">
+                  <span className="min-w-0 break-words">{caption || "代码块"}</span>
+                  {language ? (
+                    <span className="shrink-0 rounded bg-white px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-slate-400">
+                      {language}
+                    </span>
+                  ) : null}
+                </figcaption>
+              ) : null}
+              {code ? (
+                <pre className="max-w-full overflow-x-auto px-3 py-3 font-mono text-[0.92em] leading-7 text-slate-800 [tab-size:2]">
+                  <code>{code}</code>
+                </pre>
+              ) : (
+                <div className="px-3 py-3 text-xs text-amber-700">代码块内容为空</div>
+              )}
+            </figure>
+          );
+        }
         if (["image", "math_image", "table_image", "code_image"].includes(type)) {
           const url = resolveAssetUrl(String(segment.url ?? ""));
           if (!url) {

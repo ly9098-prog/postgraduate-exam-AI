@@ -363,11 +363,25 @@ function _segmentsToText(segments) {
     if (seg.type === 'text') return seg.text || ''
     if (seg.type === 'newline') return '\n'
     if (seg.type === 'table' || seg.type === 'table_markdown') return tableStructure.tableToText(seg)
+    if (seg.type === 'code') {
+      var code = String(seg.code != null ? seg.code : (seg.text != null ? seg.text : ''))
+      var caption = String(seg.alt != null ? seg.alt : (seg.caption != null ? seg.caption : '')).trim()
+      if (!caption) return code
+      if (!code) return caption
+      return caption + '\n' + code
+    }
     if (seg.type === 'image' || seg.type === 'math_image' || seg.type === 'table_image' || seg.type === 'code_image') {
       return seg.alt ? '$' + seg.alt + '$' : ''
     }
     return seg.alt ? '$' + seg.alt + '$' : ''
   }).join('')
+}
+
+function _hasCodeSegments(segments) {
+  if (!Array.isArray(segments)) return false
+  return segments.some(function (segment) {
+    return segment && typeof segment === 'object' && String(segment.type || '').toLowerCase() === 'code'
+  })
 }
 
 function _textToSegments(text) {
@@ -948,7 +962,7 @@ function buildRenderModel(q, options, cfg) {
   var mode, richTextNodes, html, segments, rawText, blocks
 
   // Priority 1: SEGMENTS (math-question with pre-rendered formula images)
-  if (content && content.render_mode === 'segments' && (effectiveConfig.enableMathImage || tableStructure.hasTableSegments(content.segments))) {
+  if (content && content.render_mode === 'segments' && (effectiveConfig.enableMathImage || tableStructure.hasTableSegments(content.segments) || _hasCodeSegments(content.segments))) {
     mode = RENDER_MODE.SEGMENTS
     // Use API segments if available (includes text, image, math_image, table_image, code_image)
     segments = (content.segments && content.segments.length > 0)

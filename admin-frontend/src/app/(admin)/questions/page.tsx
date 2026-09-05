@@ -121,8 +121,22 @@ function contentSegments(content: unknown): Array<Record<string, unknown>> {
 /** Only literal "image" segments are editable here; formula/table/code image
  * segments (math_image/table_image/code_image) are generated content the
  * backend upsert/remove helpers do not touch. */
+function segmentType(segment: Record<string, unknown> | null | undefined): string {
+  return segment && typeof segment === "object" && !Array.isArray(segment)
+    ? String(segment.type ?? "").trim().toLowerCase()
+    : "";
+}
+
 function isPlainImageSegment(segment: Record<string, unknown>): boolean {
-  return segment.type === "image";
+  return segmentType(segment) === "image";
+}
+
+function isCodeSegment(segment: Record<string, unknown>): boolean {
+  return segmentType(segment) === "code";
+}
+
+function codeSegmentText(segment: Record<string, unknown>): string {
+  return String(segment.code ?? segment.text ?? "");
 }
 
 /** text/newline segments carry the stem text. The edit form edits the stem as a
@@ -132,12 +146,8 @@ function isPlainImageSegment(segment: Record<string, unknown>): boolean {
 function isStemTextSegment(
   segment: Record<string, unknown> | null | undefined,
 ): boolean {
-  return (
-    !!segment &&
-    typeof segment === "object" &&
-    !Array.isArray(segment) &&
-    (segment.type === "text" || segment.type === "newline")
-  );
+  const type = segmentType(segment);
+  return type === "text" || type === "newline";
 }
 
 function stemTextToSegments(text: string): Array<Record<string, unknown>> {
@@ -846,6 +856,7 @@ export default function QuestionsPage() {
     if ((editForm.question_type ?? "") !== (q.question_type ?? "")) return true;
     if ((editForm.subject_id ?? null) !== (q.subject_id ?? null)) return true;
     if (textFromContent(editForm.content) !== textFromContent(q.content)) return true;
+    if (JSON.stringify(contentSegments(editForm.content)) !== JSON.stringify(contentSegments(q.content))) return true;
     if (JSON.stringify(editForm.options ?? null) !== JSON.stringify(q.options ?? null)) return true;
     if (JSON.stringify(editForm.knowledge_points ?? null) !== JSON.stringify(q.knowledge_points ?? null)) return true;
     return false;
@@ -1190,8 +1201,14 @@ export default function QuestionsPage() {
     if (!selectedQuestion) return;
     // Pre-fill form from current question data
     const content = selectedQuestion.content;
-    const clonedContent = JSON.parse(JSON.stringify(content ?? {})) as Record<string, unknown>;
-    const stem = normalizeStemEditorText(textFromContent(clonedContent));
+    // Legacy questions can still store content as a plain string. Spreading a
+    // cloned string into an object produces numeric character keys ("0",
+    // "1", ...), which are then persisted on save. Normalize that legacy
+    // shape before constructing the edit form so opening the editor can never
+    // corrupt otherwise valid content.
+    const clonedRaw = JSON.parse(JSON.stringify(content ?? {})) as unknown;
+    const clonedContent = contentRecord(clonedRaw);
+    const stem = normalizeStemEditorText(textFromContent(content));
     const rawOpts = resolveQuestionOptions(selectedQuestion);
     let editOpts: Record<string, unknown> | undefined;
     if (rawOpts && typeof rawOpts === "object" && !Array.isArray(rawOpts)) {
@@ -2099,7 +2116,7 @@ export default function QuestionsPage() {
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-950">题干</p>
-                        <p className="mt-1 text-[11px] text-slate-400">编辑题目正文与题干图片</p>
+                        <p className="mt-1 text-[11px] text-slate-400">编辑题目正文、代码块与题干图片</p>
                       </div>
                     </div>
                     <textarea
@@ -2173,6 +2190,91 @@ export default function QuestionsPage() {
                         );
                       })}
                     </div>
+                  ) : null}
+
+                  {editingSegments.some(isCodeSegment) ? (
+                    <section className="border-b border-slate-200 py-5">
+                      <div className="mb-4 flex items-end justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950">代码块</p>
+                          <p className="mt-1 text-[11px] text-slate-400">
+                            代码说明来自 segment.alt，代码正文来自 segment.code；两者都会随题目一起保存。
+                          </p>
+                        </div>
+                        <span className="text-[11px] tabular-nums text-slate-400">
+                          {editingSegments.filter(isCodeSegment).length} 个代码块
+                        </span>
+                      </div>
+                      <div className="space-y-4">
+                        {editingSegments.map((segment, segmentIndex) => {
+                          if (!isCodeSegment(segment)) return null;
+                          const caption = String(segment.alt ?? segment.caption ?? "");
+                          const language = String(segment.language ?? "");
+                          return (
+                            <div
+                              key={String(segment.region_id ?? `code-${segmentIndex}`)}
+                              className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50/50"
+                            >
+                              <div className="grid gap-3 border-b border-slate-200 bg-white px-4 py-3 md:grid-cols-[minmax(0,1fr)_180px]">
+                                <label className="space-y-1">
+                                  <span className="text-[11px] font-medium text-slate-500">代码说明 / 标题</span>
+                                  <input
+                                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
+                                    value={caption}
+                                    placeholder="例如：P1加1和P2减1的机器指令序列"
+                                    onChange={(e) => {
+                                      const next = [...editingSegments];
+                                      next[segmentIndex] = {
+                                        ...segment,
+                                        alt: e.target.value,
+                                      };
+                                      replaceEditingSegments(next);
+                                    }}
+                                  />
+                                </label>
+                                <label className="space-y-1">
+                                  <span className="text-[11px] font-medium text-slate-500">语言</span>
+                                  <input
+                                    className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50/60 px-3 font-mono text-sm text-slate-800 outline-none transition placeholder:text-slate-300 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
+                                    value={language}
+                                    placeholder="assembly / c / cpp"
+                                    onChange={(e) => {
+                                      const next = [...editingSegments];
+                                      next[segmentIndex] = {
+                                        ...segment,
+                                        language: e.target.value,
+                                      };
+                                      replaceEditingSegments(next);
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                              <textarea
+                                wrap="off"
+                                spellCheck={false}
+                                className="min-h-48 w-full resize-y overflow-auto whitespace-pre border-0 bg-slate-950 px-4 py-4 font-mono text-[13px] leading-6 text-slate-100 outline-none [tab-size:2]"
+                                value={codeSegmentText(segment)}
+                                onChange={(e) => {
+                                  const next = [...editingSegments];
+                                  const nextSegment: Record<string, unknown> = {
+                                    ...segment,
+                                    code: e.target.value,
+                                  };
+                                  // `code` is the canonical field for textual code segments.
+                                  // Remove a legacy duplicate `text` field so future reads cannot
+                                  // accidentally prefer stale code from another property.
+                                  if (Object.prototype.hasOwnProperty.call(nextSegment, "text")) {
+                                    delete nextSegment.text;
+                                  }
+                                  next[segmentIndex] = nextSegment;
+                                  replaceEditingSegments(next);
+                                }}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
                   ) : null}
 
                   {/* Options inline editor */}

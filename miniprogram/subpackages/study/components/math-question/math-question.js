@@ -44,7 +44,14 @@ Component({
           else this._devWarn('table segment[' + i + '] could not be normalized')
           continue
         }
-        var copy = Object.assign({}, s, { _error: false })
+        var copy = Object.assign({}, s, { type: type, _error: false })
+        if (type === 'code') {
+          copy.code = String(s.code != null ? s.code : (s.text != null ? s.text : ''))
+          copy.alt = String(s.alt != null ? s.alt : (s.caption != null ? s.caption : ''))
+          copy.language = String(s.language || '')
+          result.push(copy)
+          continue
+        }
         if (copy.url) copy.url = stemRender.resolveAssetUrl(copy.url)
         result.push(copy)
       }

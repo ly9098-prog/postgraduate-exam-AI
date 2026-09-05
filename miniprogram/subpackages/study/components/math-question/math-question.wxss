@@ -55,6 +55,59 @@
   color: #999;
   font-size: 24rpx;
 }
+.seg-code-wrap {
+  display: block;
+  margin: 20rpx 0;
+  overflow: hidden;
+  border: 2rpx solid #dfe6ec;
+  border-radius: 14rpx;
+  background: #f8fafb;
+}
+.seg-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 12rpx 16rpx;
+  border-bottom: 2rpx solid #e7edf2;
+  background: #ffffff;
+}
+.seg-code-caption {
+  min-width: 0;
+  color: #526575;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+.seg-code-language {
+  flex-shrink: 0;
+  padding: 2rpx 10rpx;
+  border-radius: 6rpx;
+  background: #eef3f6;
+  color: #7a8a97;
+  font-family: monospace;
+  font-size: 18rpx;
+  text-transform: uppercase;
+}
+.seg-code-scroll {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16rpx 18rpx;
+  background: #f8fafb;
+}
+.seg-code-text {
+  display: inline-block;
+  min-width: 100%;
+  box-sizing: border-box;
+  color: #233444;
+  font-family: monospace;
+  font-size: 23rpx;
+  line-height: 1.7;
+  white-space: pre;
+}
+.seg-code-empty {
+  color: #a66b22;
+  font-size: 22rpx;
+}
 .seg-unknown {
   display: none;
 }
