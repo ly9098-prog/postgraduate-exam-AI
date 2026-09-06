@@ -1461,9 +1461,36 @@ Page({
 
   navigateToWrongDetail(wrongQuestionId) {
     if (!wrongQuestionId || this._navigationLocked) return;
+
+    // Preserve the current result group's wrong-question order so the detail
+    // page can swipe left/right directly across this practice session instead
+    // of forcing the user back to the result list for every question.
+    const normalizedCurrentId = Number(wrongQuestionId);
+    const ids = [];
+    const seen = new Set();
+    (this.data.wrongReviewItems || []).forEach(item => {
+      const id = Number(item && item.wrongQuestionId);
+      if (!Number.isFinite(id) || id <= 0 || seen.has(id)) return;
+      seen.add(id);
+      ids.push(id);
+    });
+    if (Number.isFinite(normalizedCurrentId) && normalizedCurrentId > 0 && !seen.has(normalizedCurrentId)) {
+      ids.unshift(normalizedCurrentId);
+    }
+    const currentIdx = Math.max(0, ids.indexOf(normalizedCurrentId));
+    try {
+      wx.setStorageSync('wrong_detail_nav', {
+        ids,
+        ts: Date.now(),
+        source: 'practice-result'
+      });
+    } catch (e) {
+      console.warn('保存答题结果错题导航上下文失败', e);
+    }
+
     this._navigationLocked = true;
     wx.navigateTo({
-      url: `/subpackages/study/wrong-detail/wrong-detail?id=${encodeURIComponent(wrongQuestionId)}`,
+      url: `/subpackages/study/wrong-detail/wrong-detail?id=${encodeURIComponent(wrongQuestionId)}&idx=${currentIdx}&source=practice-result`,
       fail: () => {
         this._navigationLocked = false;
         if (this._pageAlive) {

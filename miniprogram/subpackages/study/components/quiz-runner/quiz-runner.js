@@ -158,7 +158,7 @@ Component({
         var fallbackText = ''
         if (unknownMode) {
           // Fall back to plain text
-          fallbackText = q.content && (q.content.text || q.content.stem) || ''
+          fallbackText = q.content && (q.content.stem || q.content.text) || ''
           if (!fallbackText) fallbackText = '该题内容暂时无法显示'
         }
 

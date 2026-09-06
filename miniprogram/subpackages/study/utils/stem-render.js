@@ -152,6 +152,15 @@ function _repairFalseNumberMarkerBreaks(text) {
   if (!text) return text
   var source = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 
+  // OCR / import can persist a visual wrap inside a compact numeric interval.
+  // Native rich-text then treats that wrap as authored content, so `(0~9)` can
+  // become `(0~\n9)` even when the current device has enough horizontal space.
+  // Keep the repair deliberately narrow to digit-to-digit ranges around ~ / ～.
+  source = source
+    .replace(/(\d)[ \t]*([~～])[ \t]*\n[ \t]*(\d)/g, '$1$2$3')
+    .replace(/(\d)[ \t]*\n[ \t]*([~～])[ \t]*(\d)/g, '$1$2$3')
+    .replace(/(\d)[ \t]*([~～])[ \t]*<br\s*\/?>[ \t]*(\d)/gi, '$1$2$3')
+
   // Compatibility repair for already-imported questions produced by the legacy
   // number-marker normalizer.  It could mistake the numeric suffix of an ASCII
   // identifier for a list marker and persist a newline, for example:
@@ -238,7 +247,7 @@ function _escapeRegExp(text) {
 
 function _toPlainInlineMathText(text) {
   if (!text) return ''
-  var source = String(text)
+  var source = _repairFalseNumberMarkerBreaks(String(text))
   if (/\$\$[\s\S]*?\$\$/.test(source) || /<\/?[a-z][\s\S]*>/i.test(source)) return null
   // OCR may insert a visual newline beside a simple command such as \geq.
   // Convert it first; _buildRichTextNodes preserves any remaining line breaks.
@@ -434,6 +443,45 @@ function _textToSegments(text) {
     if (index < lines.length - 1) segments.push({ type: 'newline' })
   })
   return segments
+}
+
+function _repairFalseRangeBreaksInSegments(segments) {
+  if (!Array.isArray(segments) || !segments.length) return []
+  var repaired = segments.map(function (segment) {
+    if (!segment || typeof segment !== 'object') return segment
+    var copy = Object.assign({}, segment)
+    if (String(copy.type || '').trim().toLowerCase() === 'text' && copy.text != null) {
+      copy.text = _repairFalseNumberMarkerBreaks(String(copy.text))
+    }
+    return copy
+  })
+
+  var out = []
+  for (var i = 0; i < repaired.length; i++) {
+    var current = repaired[i]
+    var type = current && typeof current === 'object'
+      ? String(current.type || '').trim().toLowerCase()
+      : ''
+    if (type === 'newline' && out.length > 0 && i + 1 < repaired.length) {
+      var prev = out[out.length - 1]
+      var next = repaired[i + 1]
+      var prevType = prev && typeof prev === 'object' ? String(prev.type || '').trim().toLowerCase() : ''
+      var nextType = next && typeof next === 'object' ? String(next.type || '').trim().toLowerCase() : ''
+      if (prevType === 'text' && nextType === 'text') {
+        var prevText = String(prev.text || '')
+        var nextText = String(next.text || '')
+        var joinsAfterTilde = /\d[ \t]*[~～][ \t]*$/.test(prevText) && /^[ \t]*\d/.test(nextText)
+        var joinsBeforeTilde = /\d[ \t]*$/.test(prevText) && /^[ \t]*[~～][ \t]*\d/.test(nextText)
+        if (joinsAfterTilde || joinsBeforeTilde) {
+          prev.text = prevText.replace(/[ \t]+$/, '')
+          next.text = nextText.replace(/^[ \t]+/, '')
+          continue
+        }
+      }
+    }
+    out.push(current)
+  }
+  return out
 }
 
 // ---- rich-text node builder ----
@@ -1010,7 +1058,7 @@ function buildRenderModel(q, options, cfg) {
     mode = RENDER_MODE.SEGMENTS
     // Use API segments if available (includes text, image, math_image, table_image, code_image)
     segments = (content.segments && content.segments.length > 0)
-      ? content.segments.map(function (s) { return Object.assign({}, s) })
+      ? _repairFalseRangeBreaksInSegments(content.segments)
       : _textToSegments(cleanedStem)
     var hasTextualSegment = segments.some(function (segment) {
       var type = segment && typeof segment === 'object' ? String(segment.type || '').trim().toLowerCase() : ''

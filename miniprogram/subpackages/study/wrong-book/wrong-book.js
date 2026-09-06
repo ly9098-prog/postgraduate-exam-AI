@@ -1529,7 +1529,11 @@ Page({
       taskStatusLabel = this._shortDateLabel(dueInfo.date) + '复习'
     }
 
-    const cleanText = item.content ? this._toCleanText(item.content.text || item.content) : ''
+    const rawContent = item.content
+    const contentText = typeof rawContent === 'string'
+      ? rawContent
+      : (rawContent && (rawContent.stem || rawContent.text)) || ''
+    const cleanText = this._toCleanText(contentText)
     const hasImage = Array.isArray(item.image_url) ? item.image_url.length > 0 : !!item.image_url
 
     return {

@@ -552,7 +552,11 @@ def _question_stem_for_subject_guard(content: dict | None) -> str:
     # Do not use analysis/knowledge-point text here: those fields can themselves
     # be wrong after a historical subject misclassification and would hide the
     # very mismatch this guard is meant to catch.
-    value = content.get("text") or content.get("stem") or ""
+    # Student clients render ``stem`` before the legacy ``text`` alias. Some
+    # historical revisions contain both keys while only ``stem`` was corrected,
+    # so inspecting ``text`` first can falsely reject the exact question the
+    # client would actually display.
+    value = content.get("stem") or content.get("text") or ""
     return str(value).strip().lower()
 
 
@@ -730,6 +734,7 @@ async def filter_questions_to_revision_scope(
             kept.append(question)
         else:
             rejected.append({
+                "rejection_reason": "semantic" if structural_valid else "structural",
                 "question_id": qid,
                 "question_subject_id": q_subject_id,
                 "current_version_id": version_id,
@@ -745,10 +750,22 @@ async def filter_questions_to_revision_scope(
             })
 
     if rejected:
-        logger.error(
-            "[PRACTICE_REVISION_SCOPE] rejected=%d scope_ids=%s rows=%s",
-            len(rejected), sorted(scope), rejected,
-        )
+        # Structural mismatches indicate a real persistence/version invariant
+        # violation and remain errors. Semantic mismatches are heuristic
+        # defense-in-depth drops, so report them as warnings rather than turning
+        # a successfully recovered practice request into a production error.
+        structural_rejected = [row for row in rejected if row["rejection_reason"] == "structural"]
+        semantic_rejected = [row for row in rejected if row["rejection_reason"] == "semantic"]
+        if structural_rejected:
+            logger.error(
+                "[PRACTICE_REVISION_SCOPE] structural_rejected=%d scope_ids=%s rows=%s",
+                len(structural_rejected), sorted(scope), structural_rejected,
+            )
+        if semantic_rejected:
+            logger.warning(
+                "[PRACTICE_REVISION_SCOPE] semantic_rejected=%d scope_ids=%s rows=%s",
+                len(semantic_rejected), sorted(scope), semantic_rejected,
+            )
     return kept
 
 

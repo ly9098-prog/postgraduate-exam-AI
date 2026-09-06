@@ -252,11 +252,15 @@ Page({
     }
     let questionIds = []
     try {
-      if (options.source === 'wrong-book') {
+      if (options.source === 'wrong-book' || options.source === 'practice-result') {
         const nav = wx.getStorageSync('wrong_detail_nav')
         if (nav && Array.isArray(nav.ids) && Date.now() - Number(nav.ts || 0) < 30 * 60 * 1000) {
           const normalized = nav.ids.map(Number).filter(Number.isFinite)
-          if (normalized.includes(currentId)) questionIds = normalized
+          // New navigation contexts carry their source to avoid accidentally
+          // reusing a stale group from another entry point. Legacy wrong-book
+          // contexts have no source and remain backward compatible.
+          const sourceMatches = !nav.source || nav.source === options.source
+          if (sourceMatches && normalized.includes(currentId)) questionIds = normalized
         }
       }
     } catch (_) {}

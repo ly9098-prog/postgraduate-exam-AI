@@ -446,7 +446,9 @@ async def get_practice_questions(
         issued_rows.append((selected, revision))
 
         content = _sanitize_question_content(revision.content)
-        stem = (content or {}).get("text") or (content or {}).get("stem") or ""
+        # Keep diagnostics aligned with the student render path, which treats
+        # ``stem`` as canonical and ``text`` as a legacy fallback.
+        stem = (content or {}).get("stem") or (content or {}).get("text") or ""
         logger.info(
             "[API_LAYER] qid=%s revision_id=%s textLen=%d textHash=%s stemKeys=%s",
             selected.id,

@@ -222,7 +222,7 @@ function _questionContent(q) {
 function _questionStem(q, content) {
   content = content || _questionContent(q)
   return String(
-    (content && (content.text || content.stem)) ||
+    (content && (content.stem || content.text)) ||
     (q && (q.stem || q.question || q.title)) ||
     ''
   )
