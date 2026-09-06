@@ -146,8 +146,15 @@ Page({
     return !!this._getProfileNickname(user) && !!this._getProfileAvatar(user)
   },
 
-  openProfileSheet() {
+  async openProfileSheet() {
     if (!this._authed) return
+
+    // 头像和 nickname input 都属于微信隐私能力。项目自己的协议勾选只记录
+    // 业务侧同意状态，并不会自动完成微信宿主侧的隐私授权。尤其是
+    // input[type=nickname] 本身不会可靠触发隐私授权弹窗，因此必须在
+    // 用户主动进入资料设置时先完成一次宿主授权预检。
+    const privacyReady = await this._ensureWechatProfilePrivacyAuthorized()
+    if (!privacyReady || !this._alive) return
 
     const currentUser = this.data.user || {}
     const user = Object.keys(currentUser).length ? currentUser : (auth.getUser() || {})
@@ -162,6 +169,66 @@ Page({
       profileAvatarPreview: this._getProfileAvatar(user),
       profileAvatarPath: '',
       profileSaveState: '',
+    })
+  },
+
+  _ensureWechatProfilePrivacyAuthorized() {
+    if (this.data.isDevtools || typeof wx.requirePrivacyAuthorize !== 'function') {
+      return Promise.resolve(true)
+    }
+
+    return new Promise((resolve) => {
+      let settled = false
+      const finish = (value) => {
+        if (settled) return
+        settled = true
+        resolve(!!value)
+      }
+
+      const requireAuthorization = () => {
+        try {
+          wx.requirePrivacyAuthorize({
+            success: () => finish(true),
+            fail: (error) => {
+              const message = String((error && (error.errMsg || error.message)) || '')
+              if (!/cancel|deny|refuse|disagree/i.test(message)) {
+                console.warn('[PROFILE_PRIVACY] requirePrivacyAuthorize failed', error)
+              }
+              wx.showToast({
+                title: /scope is not declared|privacy agreement/i.test(message)
+                  ? '请先在小程序隐私保护指引中声明头像昵称用途'
+                  : '同意隐私保护指引后才能设置头像昵称',
+                icon: 'none',
+                duration: 2600,
+              })
+              finish(false)
+            },
+          })
+        } catch (error) {
+          console.warn('[PROFILE_PRIVACY] requirePrivacyAuthorize unavailable', error)
+          finish(true)
+        }
+      }
+
+      if (typeof wx.getPrivacySetting !== 'function') {
+        requireAuthorization()
+        return
+      }
+
+      try {
+        wx.getPrivacySetting({
+          success: (result) => {
+            if (result && result.needAuthorization) {
+              requireAuthorization()
+            } else {
+              finish(true)
+            }
+          },
+          fail: () => requireAuthorization(),
+        })
+      } catch (_) {
+        requireAuthorization()
+      }
     })
   },
 
@@ -241,40 +308,89 @@ Page({
     }, () => this._scheduleProfileSaveIfReady('avatar'))
   },
 
-  onChooseAvatar(e) {
-    const detail = (e && e.detail) || {}
-    const avatarPath = detail.avatarUrl || ''
-    if (!avatarPath) {
-      const errMsg = String(detail.errMsg || '')
-      if (errMsg && !/cancel/i.test(errMsg)) {
-        console.warn('chooseAvatar 未返回头像路径', detail)
-        if (/privacy agreement|scope is not declared/i.test(errMsg)) {
-          wx.showToast({ title: '头像能力未在隐私保护指引中声明', icon: 'none' })
-        } else {
-          wx.showToast({ title: '微信头像选择失败，请重试', icon: 'none' })
-        }
+  _chooseMediaFromAlbum() {
+    return new Promise((resolve, reject) => {
+      if (typeof wx.chooseMedia !== 'function') {
+        reject(new Error('wx.chooseMedia unavailable'))
+        return
       }
-      return
-    }
-    this._applyProfileAvatar(avatarPath)
-  },
-
-  async chooseAvatarInDevtools() {
-    try {
-      const res = await wx.chooseMedia({
+      wx.chooseMedia({
         count: 1,
         mediaType: ['image'],
         sourceType: ['album'],
         sizeType: ['compressed'],
+        success: (res) => {
+          const file = res && Array.isArray(res.tempFiles) ? res.tempFiles[0] : null
+          const path = file && (file.tempFilePath || file.path)
+          path ? resolve(path) : reject(new Error('chooseMedia returned no image path'))
+        },
+        fail: reject,
       })
-      if (!this._alive) return
-      const file = res && Array.isArray(res.tempFiles) ? res.tempFiles[0] : null
-      const avatarPath = file && (file.tempFilePath || file.path)
-      if (avatarPath) this._applyProfileAvatar(avatarPath)
+    })
+  },
+
+  _chooseImageFromAlbum() {
+    return new Promise((resolve, reject) => {
+      if (typeof wx.chooseImage !== 'function') {
+        reject(new Error('wx.chooseImage unavailable'))
+        return
+      }
+      wx.chooseImage({
+        count: 1,
+        sourceType: ['album'],
+        sizeType: ['compressed'],
+        success: (res) => {
+          const paths = res && Array.isArray(res.tempFilePaths) ? res.tempFilePaths : []
+          paths[0] ? resolve(paths[0]) : reject(new Error('chooseImage returned no image path'))
+        },
+        fail: reject,
+      })
+    })
+  },
+
+  async chooseProfileAvatar() {
+    // chooseAvatar 是“微信头像选择”开放能力，并不等价于系统相册。
+    // 这里的交互目标是点击头像后直接进入真机相册，因此改用 chooseMedia，
+    // 并用 chooseImage 兼容旧客户端。整个原生选择过程中不 setData，避免打断手势链。
+    if (this._profileAvatarPickerActive || !this._alive) return
+    this._profileAvatarPickerActive = true
+
+    try {
+      let avatarPath = ''
+      let firstError = null
+
+      try {
+        avatarPath = await this._chooseMediaFromAlbum()
+      } catch (error) {
+        if (this._isNativeCancel(error)) return
+        firstError = error
+        console.warn('[PROFILE_AVATAR] chooseMedia failed, fallback to chooseImage', error)
+      }
+
+      if (!avatarPath) {
+        try {
+          avatarPath = await this._chooseImageFromAlbum()
+        } catch (error) {
+          if (this._isNativeCancel(error)) return
+          console.warn('[PROFILE_AVATAR] chooseImage failed', error)
+          throw firstError || error
+        }
+      }
+
+      if (!this._alive || !avatarPath) return
+      this._applyProfileAvatar(avatarPath)
     } catch (error) {
-      if (this._isNativeCancel(error)) return
-      console.warn('开发者工具头像选择失败', error)
-      wx.showToast({ title: '头像选择失败，请重试', icon: 'none' })
+      const message = String((error && (error.errMsg || error.message)) || '')
+      console.warn('[PROFILE_AVATAR] album picker failed', error)
+      wx.showToast({
+        title: /auth|authorize|permission|privacy|scope/i.test(message)
+          ? '请允许访问相册后再试'
+          : '无法打开相册，请稍后重试',
+        icon: 'none',
+        duration: 2200,
+      })
+    } finally {
+      this._profileAvatarPickerActive = false
     }
   },
 

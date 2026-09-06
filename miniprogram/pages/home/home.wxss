@@ -984,31 +984,10 @@ page {
   background: rgba(92, 112, 100, .14);
 }
 
-.profile-native-avatar-tap {
-  width: 118rpx;
-  height: 118rpx;
-  min-height: 118rpx;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: -10rpx 0 3rpx;
-  padding: 12rpx;
-  border: 0;
-  border-radius: 36rpx;
-  background: transparent;
-  color: inherit;
-  line-height: 1;
-  overflow: visible;
-}
 
-.profile-native-avatar-tap::after {
-  border: 0;
-}
-
-.profile-native-avatar-tap-pressed {
-  opacity: .78;
-  transform: scale(.96);
+.profile-native-card-pressed {
+  opacity: .82;
+  transform: scale(.985);
 }
 
 .profile-native-icon {
@@ -1025,13 +1004,11 @@ page {
   background: #edf3ee;
 }
 
-.profile-native-avatar-tap .profile-native-icon {
-  margin: 0;
-}
-
 .profile-native-avatar-icon {
   position: relative;
   overflow: visible;
+  margin: 0 auto 14rpx;
+  transform: translate3d(0, 0, 0);
 }
 
 .profile-native-avatar-image,
@@ -1043,6 +1020,9 @@ page {
 
 .profile-native-avatar-image {
   display: block;
+  flex: 0 0 90rpx;
+  object-fit: cover;
+  vertical-align: top;
 }
 
 .profile-native-avatar-placeholder {
@@ -1117,19 +1097,19 @@ page {
 
 .profile-native-nickname-input {
   display: block;
-  width: 178rpx;
-  height: 38rpx;
-  min-height: 38rpx;
+  width: 196rpx;
+  height: 46rpx;
+  min-height: 46rpx;
   box-sizing: border-box;
   margin: 8rpx auto 0;
   padding: 0 10rpx;
   border: 0;
-  border-radius: 19rpx;
+  border-radius: 23rpx;
   background: #eaf3ec;
   color: #496657;
   font-size: 16rpx;
   font-weight: 750;
-  line-height: 38rpx;
+  line-height: 46rpx;
   text-align: center;
 }
 
@@ -1225,14 +1205,6 @@ page {
     height: 108rpx;
     margin-left: 14rpx;
     margin-right: 14rpx;
-  }
-
-  .profile-native-avatar-tap {
-    width: 104rpx;
-    height: 104rpx;
-    min-height: 104rpx;
-    margin-top: -7rpx;
-    padding: 10rpx;
   }
 
   .profile-native-icon,
