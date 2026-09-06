@@ -312,9 +312,14 @@ async def backfill_metrics(
     current = date_from
     while current <= date_to:
         try:
-            await aggregate_recommendation_metrics_daily(
-                db, target_date=current, subject_id=subject_id,
-            )
+            # Isolate each day in a SAVEPOINT.  PostgreSQL marks the whole
+            # transaction aborted after a statement error; without a nested
+            # transaction the documented "单天失败不影响其他天" behavior is
+            # false and every later day fails as well.
+            async with db.begin_nested():
+                await aggregate_recommendation_metrics_daily(
+                    db, target_date=current, subject_id=subject_id,
+                )
             success_dates.append(str(current))
         except Exception as e:
             logger.warning("补跑 %s 失败: %s", current, e, exc_info=True)

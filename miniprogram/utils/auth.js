@@ -36,11 +36,19 @@ async function updateProfile({ nickname, avatarPath } = {}) {
   const normalizedNickname = typeof nickname === 'string' ? nickname.trim().replace(/\s+/g, ' ') : ''
   if (!normalizedNickname) throw new Error('请输入昵称')
 
+  // 头像接口本身会返回最新 UserResponse。保留该响应中的 avatar_url，
+  // 避免随后更新昵称时遇到缓存/并发响应而把刚换的新头像又覆盖成旧地址。
+  let avatarUser = null
   if (avatarPath) {
-    await api.uploadFile('/users/me/avatar', avatarPath, { name: 'file', timeout: 30000 })
+    avatarUser = normalizeUser(await api.uploadFile('/users/me/avatar', avatarPath, { name: 'file', timeout: 30000 }))
   }
 
-  const user = normalizeUser(await api.put('/users/me', { nickname: normalizedNickname }))
+  const nicknameUser = normalizeUser(await api.put('/users/me', { nickname: normalizedNickname }))
+  const user = normalizeUser({
+    ...(avatarUser || {}),
+    ...(nicknameUser || {}),
+    avatar_url: (avatarUser && avatarUser.avatar_url) || (nicknameUser && nicknameUser.avatar_url) || null,
+  })
   storage.setStrict(KEYS.USER, user)
   return user
 }

@@ -108,4 +108,4 @@ async def cleanup_expired_tokens(db: AsyncSession) -> int:
         )
     )
     await db.commit()
-    return result.rowcount
+    return max(0, int(getattr(result, "rowcount", 0) or 0))

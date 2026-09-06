@@ -59,6 +59,12 @@ def _configured_backup_dir() -> Path:
     return (_repo_root() / "backups" / "postgres").resolve()
 
 
+def _backup_location_label() -> str:
+    """Return a non-sensitive label suitable for admin API responses."""
+    path = _configured_backup_dir()
+    return path.name or "configured-backup-directory"
+
+
 def _script_candidates() -> list[Path]:
     candidates: list[Path] = []
     configured = (settings.POSTGRES_BACKUP_SCRIPT or "").strip()
@@ -93,7 +99,67 @@ def _is_backup_artifact(path: Path) -> bool:
     if not path.is_file() or path.name.endswith(".meta.json"):
         return False
     lower = path.name.lower()
-    return any(lower.endswith(ext) for ext in _BACKUP_EXTENSIONS)
+    if not any(lower.endswith(ext) for ext in _BACKUP_EXTENSIONS):
+        return False
+    try:
+        # A zero-byte dump must never be treated as a successful backup.
+        return path.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _artifact_fingerprint() -> dict[str, tuple[int, int]]:
+    """Snapshot visible non-empty backup artifacts as path -> (mtime_ns, size)."""
+    result: dict[str, tuple[int, int]] = {}
+    backup_dir = _configured_backup_dir()
+    if not backup_dir.is_dir():
+        return result
+    try:
+        for path in backup_dir.iterdir():
+            if not _is_backup_artifact(path):
+                continue
+            stat = path.stat()
+            result[str(path.resolve())] = (int(stat.st_mtime_ns), int(stat.st_size))
+    except OSError:
+        return result
+    return result
+
+
+def _new_or_changed_artifact(before: dict[str, tuple[int, int]]) -> dict[str, Any] | None:
+    """Return the newest artifact created or materially changed since ``before``."""
+    candidates: list[Path] = []
+    backup_dir = _configured_backup_dir()
+    if not backup_dir.is_dir():
+        return None
+    try:
+        for path in backup_dir.iterdir():
+            if not _is_backup_artifact(path):
+                continue
+            stat = path.stat()
+            key = str(path.resolve())
+            current = (int(stat.st_mtime_ns), int(stat.st_size))
+            if before.get(key) != current:
+                candidates.append(path)
+        candidates.sort(key=lambda item: item.stat().st_mtime_ns, reverse=True)
+    except OSError:
+        return None
+    for path in candidates:
+        try:
+            return _artifact_row(path)
+        except OSError:
+            continue
+    return None
+
+
+def _inspect_backup_directory() -> tuple[bool, str | None]:
+    """Check that this process can observe and verify backup artifacts."""
+    backup_dir = _configured_backup_dir()
+    if not backup_dir.is_dir():
+        return False, "配置的备份目录不存在或当前进程不可见"
+    required = os.R_OK | os.W_OK | os.X_OK
+    if not os.access(backup_dir, required):
+        return False, "配置的备份目录当前进程不可读写"
+    return True, None
 
 
 def _artifact_row(path: Path) -> dict[str, Any]:
@@ -114,6 +180,17 @@ def _artifact_row(path: Path) -> dict[str, Any]:
         "method": metadata.get("method") or "external",
         "database": metadata.get("database"),
     }
+
+
+def count_backup_artifacts() -> int:
+    """Count visible non-empty backup artifacts without history truncation."""
+    backup_dir = _configured_backup_dir()
+    if not backup_dir.is_dir():
+        return 0
+    try:
+        return sum(1 for path in backup_dir.iterdir() if _is_backup_artifact(path))
+    except OSError:
+        return 0
 
 
 def list_backup_artifacts(limit: int | None = None) -> list[dict[str, Any]]:
@@ -178,43 +255,69 @@ async def _systemctl_show(unit: str, properties: tuple[str, ...]) -> dict[str, s
 
 
 async def inspect_database_backup() -> dict[str, Any]:
-    """Return environment, systemd and artifact information for the task center."""
+    """Return environment, executor and artifact health for the task center."""
     artifacts = list_backup_artifacts(settings.POSTGRES_BACKUP_HISTORY_LIMIT)
+    artifact_count = count_backup_artifacts()
     latest = artifacts[0] if artifacts else None
 
-    timer = await _systemctl_show(
-        settings.POSTGRES_BACKUP_TIMER_UNIT,
-        ("LoadState", "ActiveState", "SubState", "NextElapseUSecRealtime", "LastTriggerUSec"),
+    timer, service = await asyncio.gather(
+        _systemctl_show(
+            settings.POSTGRES_BACKUP_TIMER_UNIT,
+            ("LoadState", "ActiveState", "SubState", "NextElapseUSecRealtime", "LastTriggerUSec"),
+        ),
+        _systemctl_show(
+            settings.POSTGRES_BACKUP_SERVICE_UNIT,
+            ("LoadState", "ActiveState", "SubState", "Result", "ExecMainStatus"),
+        ),
     )
-    service = await _systemctl_show(
-        settings.POSTGRES_BACKUP_SERVICE_UNIT,
-        ("LoadState", "ActiveState", "SubState", "Result", "ExecMainStatus"),
-    )
-    timer_visible = bool(timer)
+    timer_observable = bool(timer)
+    systemd_observable = bool(timer or service)
+    timer_loaded = bool(timer and timer.get("LoadState") == "loaded")
+    service_loaded = bool(service and service.get("LoadState") == "loaded")
+    timer_active: bool | None
+    if not timer_observable:
+        timer_active = None
+    else:
+        timer_active = bool(timer_loaded and timer.get("ActiveState") == "active")
+
     script = resolve_backup_script()
     pg_dump = shutil.which("pg_dump")
-    enabled = bool(settings.POSTGRES_BACKUP_ENABLED and is_postgresql_database())
+    postgres = is_postgresql_database()
+    enabled = bool(settings.POSTGRES_BACKUP_ENABLED and postgres)
+    backup_dir_ok, backup_dir_note = _inspect_backup_directory()
 
-    note: str | None = None
-    if not is_postgresql_database():
-        note = "当前 DATABASE_URL 不是 PostgreSQL；任务保留展示但不会执行备份。"
-    elif not timer_visible:
-        note = "当前进程无法读取宿主机 systemd；生产 timer 仍可独立运行。"
-    elif timer.get("ActiveState") != "active":
-        note = f"systemd timer 当前状态：{timer.get('ActiveState') or 'unknown'}"
+    notes: list[str] = []
+    if not postgres:
+        notes.append("当前 DATABASE_URL 不是 PostgreSQL；任务不会执行备份")
+    if backup_dir_note:
+        notes.append(backup_dir_note)
+    if timer_active is None:
+        notes.append("当前进程无法观测宿主机 systemd timer")
+    elif timer_active is False:
+        notes.append(
+            f"systemd timer 未激活（{timer.get('LoadState') or 'unknown'}/{timer.get('ActiveState') or 'unknown'}）"
+        )
 
-    service_loaded = bool(service and service.get("LoadState") == "loaded")
+    # Manual execution can use the deployment-owned oneshot service even when
+    # the timer itself is inactive.  Every path still requires a visible,
+    # writable backup directory so success can be verified by a real artifact.
+    execution_path_available = bool(service_loaded or script or pg_dump)
+    can_run_now = bool(enabled and backup_dir_ok and execution_path_available)
+    if enabled and backup_dir_ok and not execution_path_available:
+        notes.append("未检测到可执行的 systemd service、仓库备份脚本或 pg_dump")
 
     return {
         "enabled": enabled,
-        "database_engine": "postgresql" if is_postgresql_database() else "non-postgresql",
-        "backup_dir": str(_configured_backup_dir()),
-        "backup_count": len(artifacts),
+        "database_engine": "postgresql" if postgres else "non-postgresql",
+        "backup_dir": _backup_location_label(),
+        "backup_dir_available": backup_dir_ok,
+        "backup_count": artifact_count,
         "latest_artifact": latest,
         "script_available": bool(script),
-        "script_path": str(script) if script else None,
         "pg_dump_available": bool(pg_dump),
-        "systemd_observable": timer_visible,
+        "systemd_observable": systemd_observable,
+        "timer_observable": timer_observable,
+        "timer_active": timer_active,
         "timer_unit": settings.POSTGRES_BACKUP_TIMER_UNIT,
         "service_unit": settings.POSTGRES_BACKUP_SERVICE_UNIT,
         "timer_state": timer.get("ActiveState") if timer else None,
@@ -224,8 +327,8 @@ async def inspect_database_backup() -> dict[str, Any]:
         "service_loaded": service_loaded,
         "next_run_label": timer.get("NextElapseUSecRealtime") or None,
         "last_trigger_label": timer.get("LastTriggerUSec") or None,
-        "can_run_now": enabled and bool(script or pg_dump or (timer_visible and service_loaded)),
-        "note": note,
+        "can_run_now": can_run_now,
+        "note": "；".join(dict.fromkeys(notes)) or None,
     }
 
 
@@ -254,7 +357,7 @@ async def _run_systemd_service() -> BackupRunResult:
     systemctl = shutil.which("systemctl")
     if not systemctl:
         raise RuntimeError("systemctl 不可用")
-    before = {row["path"] for row in list_backup_artifacts(100)}
+    before = _artifact_fingerprint()
     code, stdout, stderr = await _run_command(
         systemctl,
         "start",
@@ -264,41 +367,63 @@ async def _run_systemd_service() -> BackupRunResult:
     if code != 0:
         detail = stderr or stdout or f"exit code {code}"
         raise RuntimeError(f"systemd 备份服务启动失败：{detail[:500]}")
-    after = list_backup_artifacts(100)
-    new_artifact = next((row for row in after if row["path"] not in before), after[0] if after else None)
-    if new_artifact:
-        return BackupRunResult(
-            message=f"systemd 备份完成：{new_artifact['name']}（{new_artifact['size_bytes']} bytes）",
-            artifact_name=new_artifact["name"],
-            artifact_path=new_artifact["path"],
-            artifact_size_bytes=new_artifact["size_bytes"],
+
+    service = await _systemctl_show(
+        settings.POSTGRES_BACKUP_SERVICE_UNIT,
+        ("LoadState", "ActiveState", "SubState", "Result", "ExecMainStatus"),
+    )
+    result = (service.get("Result") or "").lower()
+    status = service.get("ExecMainStatus")
+    if result not in ("", "success") or status not in (None, "", "0"):
+        raise RuntimeError(
+            "systemd 备份服务执行失败："
+            f"Result={result or 'unknown'}, ExecMainStatus={status or 'unknown'}"
         )
-    return BackupRunResult(message="systemd 备份服务执行完成")
+
+    artifact = _new_or_changed_artifact(before)
+    if artifact is None:
+        raise RuntimeError(
+            "systemd service 已返回，但未发现本次新建或更新的非空备份文件；拒绝标记为成功"
+        )
+    return BackupRunResult(
+        message=f"systemd 备份完成：{artifact['name']}（{artifact['size_bytes']} bytes）",
+        artifact_name=artifact["name"],
+        artifact_path=artifact["path"],
+        artifact_size_bytes=artifact["size_bytes"],
+    )
 
 
 async def _run_repository_script(script: Path) -> BackupRunResult:
-    before = {row["path"] for row in list_backup_artifacts(100)}
+    before = _artifact_fingerprint()
+    env = os.environ.copy()
+    # The service may load configuration from a settings file rather than the
+    # parent process environment. Pass the resolved values explicitly so the
+    # repository script writes into the same directory that this service
+    # observes and verifies, instead of silently succeeding elsewhere.
+    env["BACKUP_DIR"] = str(_configured_backup_dir())
+    env["DATABASE_URL"] = settings.DATABASE_URL
     code, stdout, stderr = await _run_command(
         sys.executable,
         str(script),
         timeout=max(60, settings.POSTGRES_BACKUP_TIMEOUT_SEC),
         cwd=_repo_root(),
-        env=os.environ.copy(),
+        env=env,
     )
     if code != 0:
         detail = stderr or stdout or f"exit code {code}"
         raise RuntimeError(f"PostgreSQL 备份脚本失败：{detail[:500]}")
-    after = list_backup_artifacts(100)
-    new_artifact = next((row for row in after if row["path"] not in before), after[0] if after else None)
-    detail = stdout or "备份脚本执行成功"
-    if new_artifact:
-        return BackupRunResult(
-            message=f"备份完成：{new_artifact['name']}（{new_artifact['size_bytes']} bytes）",
-            artifact_name=new_artifact["name"],
-            artifact_path=new_artifact["path"],
-            artifact_size_bytes=new_artifact["size_bytes"],
+    artifact = _new_or_changed_artifact(before)
+    if artifact is None:
+        detail = (stdout or stderr or "脚本无输出")[:260]
+        raise RuntimeError(
+            f"备份脚本退出成功但未产生新的非空备份文件：{detail}"
         )
-    return BackupRunResult(message=detail[:500])
+    return BackupRunResult(
+        message=f"备份完成：{artifact['name']}（{artifact['size_bytes']} bytes）",
+        artifact_name=artifact["name"],
+        artifact_path=artifact["path"],
+        artifact_size_bytes=artifact["size_bytes"],
+    )
 
 
 async def _run_pg_dump_fallback() -> BackupRunResult:
@@ -308,7 +433,7 @@ async def _run_pg_dump_fallback() -> BackupRunResult:
     backup_dir = _configured_backup_dir()
     backup_dir.mkdir(parents=True, exist_ok=True)
     env, database = _pg_env_and_database()
-    timestamp = utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = utcnow().strftime("%Y%m%d_%H%M%S_%f")
     artifact = backup_dir / f"{database}_{timestamp}.dump"
     code, stdout, stderr = await _run_command(
         pg_dump,
@@ -328,7 +453,16 @@ async def _run_pg_dump_fallback() -> BackupRunResult:
         detail = stderr or stdout or f"exit code {code}"
         raise RuntimeError(f"pg_dump 备份失败：{detail[:500]}")
 
-    stat = artifact.stat()
+    try:
+        stat = artifact.stat()
+    except OSError as exc:
+        raise RuntimeError(f"pg_dump 返回成功但备份文件不可读取：{exc}") from exc
+    if stat.st_size <= 0:
+        try:
+            artifact.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise RuntimeError("pg_dump 返回成功但生成了空备份文件，拒绝标记为成功")
     sidecar = artifact.with_name(f"{artifact.name}.meta.json")
     metadata = {
         "created_at": serialize_utc_datetime(utcnow()),

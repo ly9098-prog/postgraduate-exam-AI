@@ -38,59 +38,21 @@ init_sentry()
 logger = logging.getLogger("postgraduate-ai")
 
 
-_INTERVAL_SEC = 6 * 3600  # 6 hours
+async def _run_registered_periodic_task(task_id: str, label: str) -> None:
+    """Delegate periodic scheduling to the shared system-task runtime."""
+    from app.services.system_task_service import run_registered_periodic_task
+
+    await run_registered_periodic_task(task_id, label)
 
 
-async def _periodic_token_cleanup():
-    """Background task: clean up expired refresh tokens every 6 hours.
-
-    Uses DistributedLock to prevent concurrent execution across scheduler
-    instances. If lock is held by another instance, skip this cycle.
-    """
-    try:
-        from app.core.distributed_lock import DistributedLock
-        _token_cleanup_lock = DistributedLock("token:cleanup")
-    except Exception:
-        _token_cleanup_lock = None
-
-    while True:
-        await asyncio.sleep(_INTERVAL_SEC)
-        # Try to acquire the distributed lock; skip if another instance is cleaning
-        if _token_cleanup_lock is not None:
-            async with _token_cleanup_lock.acquire_and_renew(ttl=300, renew_interval=60) as handle:
-                if not handle.is_still_held():
-                    logger.debug("Token cleanup lock held by another instance, skipping")
-                    continue
-                await _do_token_cleanup()
-        else:
-            await _do_token_cleanup()
+async def _periodic_token_cleanup() -> None:
+    """Clean up expired refresh tokens on deterministic 6-hour UTC slots."""
+    await _run_registered_periodic_task("refresh_token_cleanup", "Refresh token cleanup")
 
 
-async def _do_token_cleanup():
-    """Execute the actual token cleanup query."""
-    try:
-        from app.core.database import async_session
-        from app.services import token_service
-
-        async with async_session() as db:
-            deleted = await token_service.cleanup_expired_tokens(db)
-            if deleted:
-                logger.info("Cleaned up %d expired refresh tokens", deleted)
-    except Exception as e:
-        logger.warning("Refresh token cleanup failed (non-fatal): %s", e)
-
-
-async def _periodic_staging_cleanup():
-    """Background task: clean up expired staging files hourly."""
-    while True:
-        await asyncio.sleep(3600)
-        try:
-            from app.services.staging_storage import async_cleanup_orphans
-            removed = await async_cleanup_orphans()
-            if removed:
-                logger.info("Staging cleanup removed %d expired objects", removed)
-        except Exception as e:
-            logger.warning("Staging cleanup failed (non-fatal): %s", e)
+async def _periodic_staging_cleanup() -> None:
+    """Clean up expired staging files at minute 00 of every UTC hour."""
+    await _run_registered_periodic_task("staging_cleanup", "Staging cleanup")
 
 
 async def _periodic_export_processor():
@@ -102,20 +64,9 @@ async def _periodic_export_processor():
         logger.warning("Export processor exited: %s", e)
 
 
-async def _periodic_export_cleanup():
-    """Background task: clean up expired export tasks hourly."""
-    while True:
-        await asyncio.sleep(3600)
-        try:
-            from app.core.database import async_session
-            from app.services.export.cleanup import cleanup_expired
-
-            async with async_session() as db:
-                stats = await cleanup_expired(db)
-                if stats["tasks_expired"] > 0:
-                    logger.info("Export cleanup: %s", stats)
-        except Exception as e:
-            logger.warning("Export cleanup failed (non-fatal): %s", e)
+async def _periodic_export_cleanup() -> None:
+    """Clean up expired export tasks at minute 02 of every UTC hour."""
+    await _run_registered_periodic_task("export_cleanup", "Export cleanup")
 
 
 def _report_startup_failure(component: str, exc: Exception) -> None:
@@ -172,6 +123,7 @@ async def lifespan(app: FastAPI):
     _reaper_task = None
     _export_processor_task = None
     _export_cleanup_task = None
+    _scheduler_heartbeat_task = None
     _outbox_dispatcher_task = None
     _outbox_reconciler_task = None
 
@@ -231,21 +183,23 @@ async def lifespan(app: FastAPI):
         settings.APP_ENV, role, profile.name, profile.use_gpu,
         profile.max_workers, profile.max_pdf_pages,
     )
-    # Explicitly log which components are active per role
+    # Explicitly log which components are active per role. Keep ``all`` as a
+    # separate branch so diagnostics never claim that its worker/scheduler are
+    # disabled when they are actually running.
     if role == "web":
         logger.info("Role=%s: API serving, OCR gateway active (no worker/dispatcher)", role)
     elif role == "worker":
         logger.info("Role=%s: pipeline dispatcher, reaper, AI prewarm active (no API)", role)
     elif role == "scheduler":
         logger.info(
-            "Role=%s: periodic tasks (token cleanup, staging cleanup, pomodoro, "
-            "audit cleanup, export) active (no API, no worker)",
+            "Role=%s: periodic tasks (token, staging, audit, recommendation metrics, "
+            "export cleanup) active (no API, no worker)",
             role,
         )
     elif role == "all":
         logger.warning(
-            "Role=%s: ALL components in one process (development mode). "
-            "In production, use web/worker/scheduler split.",
+            "Role=%s: API + worker + scheduler components active in one process "
+            "(development mode). In production, use web/worker/scheduler split.",
             role,
         )
 
@@ -429,9 +383,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("AI model config self-check failed (non-fatal, DB may not be ready): %s", e)
 
-    # ── Resource references (initialized to None, populated by role) ──
-    cleanup_task: asyncio.Task | None = None
-    _staging_cleanup_task: asyncio.Task | None = None
+    # ── Resource references populated by role ──
     _ocr_gateway = None
 
     # ── Role-aware BoundedExecutors ──
@@ -551,11 +503,19 @@ async def lifespan(app: FastAPI):
     # ── Role: scheduler — periodic background tasks ──
     if role in ("scheduler", "all"):
         try:
+            from app.services.system_task_service import run_scheduler_heartbeat
+            _scheduler_heartbeat_task = asyncio.create_task(
+                run_scheduler_heartbeat(), name="scheduler-heartbeat"
+            )
+        except Exception as e:
+            _report_startup_failure("Scheduler heartbeat", e)
+
+        try:
             from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
             await audit_log_cleanup_scheduler.start()
             logger.info("Audit log cleanup scheduler started")
         except Exception as e:
-            logger.warning("Audit log cleanup scheduler start failed (non-fatal): %s", e)
+            _report_startup_failure("Audit log cleanup scheduler", e)
 
         try:
             from app.services.recommendation_metrics_scheduler import (
@@ -564,7 +524,7 @@ async def lifespan(app: FastAPI):
             await recommendation_metrics_scheduler.start()
             logger.info("Recommendation metrics scheduler started")
         except Exception as e:
-            logger.warning("Recommendation metrics scheduler start failed (non-fatal): %s", e)
+            _report_startup_failure("Recommendation metrics scheduler", e)
 
         # Periodic cleanup tasks belong in the scheduler role only
         cleanup_task = asyncio.create_task(_periodic_token_cleanup(), name="token-cleanup")
@@ -686,6 +646,9 @@ async def lifespan(app: FastAPI):
         if _export_cleanup_task and not _export_cleanup_task.done():
             _export_cleanup_task.cancel()
             _shutdown_tasks.append(("export-cleanup", _export_cleanup_task))
+        if _scheduler_heartbeat_task and not _scheduler_heartbeat_task.done():
+            _scheduler_heartbeat_task.cancel()
+            _shutdown_tasks.append(("scheduler-heartbeat", _scheduler_heartbeat_task))
         if _outbox_dispatcher_task and not _outbox_dispatcher_task.done():
             _outbox_dispatcher_task.cancel()
             _shutdown_tasks.append(("outbox-dispatcher", _outbox_dispatcher_task))
@@ -1570,7 +1533,7 @@ async def _check_role_deps() -> bool:
             return False
         return True
 
-    if role == "worker":
+    if role in {"worker", "all"}:
         # Draining check
         try:
             from app.services.task_queue_worker import is_draining_v2
@@ -1587,11 +1550,10 @@ async def _check_role_deps() -> bool:
                 logger.warning("role_deps: cloud worker with local_process OCR backend")
                 return False
 
-        return True
+        if role != "all":
+            return True
 
-    if role == "scheduler":
-
-
+    if role in {"scheduler", "all"}:
         # Check audit log cleanup scheduler running (if enabled)
         try:
             from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
@@ -1603,6 +1565,23 @@ async def _check_role_deps() -> bool:
             return False
         except Exception as e:
             logger.warning("role_deps: audit cleanup scheduler check error: %s", e)
+            return False
+
+        try:
+            from app.services.recommendation_metrics_scheduler import (
+                recommendation_metrics_scheduler,
+            )
+            if (
+                settings.RECOMMENDATION_METRICS_AGG_ENABLED
+                and not recommendation_metrics_scheduler._running
+            ):
+                logger.warning("role_deps: recommendation metrics scheduler not running")
+                return False
+        except ImportError:
+            logger.warning("role_deps: recommendation_metrics_scheduler import failed")
+            return False
+        except Exception as e:
+            logger.warning("role_deps: recommendation metrics scheduler check error: %s", e)
             return False
 
         return True
@@ -1910,26 +1889,22 @@ async def metrics_endpoint(request: Request):
     except Exception:
         _append("worker_draining 0")
 
-    try:
-        from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
-        _lock = getattr(audit_log_cleanup_scheduler, "_lock", None)
-        if _lock is not None:
-            _append(f'distlock_acquired_total{{name="audit:cleanup"}} {_lock.acquired}')
-            _append(f'distlock_skipped_total{{name="audit:cleanup"}} {_lock.skipped}')
-            _append(f'distlock_failed_total{{name="audit:cleanup"}} {_lock.failed}')
-            _append(f'distlock_duration_ms_total{{name="audit:cleanup"}} {_lock.duration_ms:.0f}')
-    except Exception:
-        _append('distlock_acquired_total{name="audit:cleanup"} 0')
-        _append('distlock_skipped_total{name="audit:cleanup"} 0')
-        _append('distlock_failed_total{name="audit:cleanup"} 0')
-        _append('distlock_duration_ms_total{name="audit:cleanup"} 0')
-
     # ── Scheduler running state ──
     try:
         from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
         _append(f'scheduler_running{{name="audit_cleanup"}} {1 if audit_log_cleanup_scheduler._running else 0}')
     except Exception:
         _append('scheduler_running{name="audit_cleanup"} 0')
+    try:
+        from app.services.recommendation_metrics_scheduler import (
+            recommendation_metrics_scheduler,
+        )
+        _append(
+            f'scheduler_running{{name="recommendation_metrics"}} '
+            f'{1 if recommendation_metrics_scheduler._running else 0}'
+        )
+    except Exception:
+        _append('scheduler_running{name="recommendation_metrics"} 0')
 
     # ── Staging cleanup stats ──
     try:

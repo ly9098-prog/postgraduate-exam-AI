@@ -32,6 +32,7 @@ from app.services.practice.answer_projection_contract import (
     ANSWER_PROJECTION_MINIMUM_WORKER_VERSION,
     ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
     ANSWER_PROJECTION_TASK_TYPE,
+    parse_answer_projection_payload,
 )
 
 logger = logging.getLogger("postgraduate-ai.task-queue")
@@ -144,9 +145,14 @@ _MINIMUM_WORKER_VERSION: int = 1
 
 
 def _normalize_task_schema_version(task_type: str, schema_version: int) -> int:
-    """Raise task schemas to the minimum currently supported for their type."""
+    """Validate task schema versions; never silently upgrade incompatible work."""
     if task_type == ANSWER_PROJECTION_TASK_TYPE:
-        return max(schema_version, ANSWER_PROJECTION_TASK_SCHEMA_VERSION)
+        if schema_version != ANSWER_PROJECTION_TASK_SCHEMA_VERSION:
+            raise ValueError(
+                "unsupported answer_projection schema_version="
+                f"{schema_version}; required={ANSWER_PROJECTION_TASK_SCHEMA_VERSION}"
+            )
+        return ANSWER_PROJECTION_TASK_SCHEMA_VERSION
     return schema_version
 
 
@@ -2116,6 +2122,11 @@ class DurableTaskQueue:
         effective_schema_version = _normalize_task_schema_version(
             task_type, effective_schema_version
         )
+        if task_type == ANSWER_PROJECTION_TASK_TYPE:
+            # Reject retired batch-shaped payloads at the producer boundary.
+            # Do not enqueue an incompatible task and hope a newer worker can
+            # reinterpret it later.
+            parse_answer_projection_payload(payload)
         effective_minimum_worker_version = int(
             _minimum_worker_version_for_task(task_type, effective_schema_version)
             if minimum_worker_version is None
@@ -3017,10 +3028,13 @@ class DurableTaskQueue:
                 return False
 
             now = time.time()
+            raw_schema_version = int(task_data.get("schema_version", 1) or 1)
             schema_version = _normalize_task_schema_version(
                 task_type,
-                int(task_data.get("schema_version", 1) or 1),
+                raw_schema_version,
             )
+            if task_type == ANSWER_PROJECTION_TASK_TYPE:
+                parse_answer_projection_payload(task_data.get("payload"))
             required_worker = _minimum_worker_version_for_task(task_type, schema_version)
             task_data.update({
                 "status": TaskStatus.PENDING.value,
@@ -3029,10 +3043,8 @@ class DurableTaskQueue:
                 "updated_at": now,
                 "lease_expires_at": 0.0,
                 "owner_token": "",
-                # Re-evaluate the worker floor when an operator starts a fresh
-                # retry cycle. This upgrades older answer_projection dead tasks
-                # to the strict per-answer worker contract without rewriting
-                # their business payload.
+                # Re-evaluate the worker floor for a fresh retry cycle. The
+                # schema itself was validated above and is never auto-upgraded.
                 "schema_version": schema_version,
                 "minimum_worker_version": max(
                     int(task_data.get("minimum_worker_version", 1) or 1),

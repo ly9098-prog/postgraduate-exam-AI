@@ -98,6 +98,7 @@ class ScheduledTaskSummary(BaseModel):
     artifact_size_bytes: int | None = None
     artifact_created_at: str | None = None
     backup_count: int | None = None
+    backup_dir: str | None = None
     script_available: bool | None = None
     pg_dump_available: bool | None = None
     timer_unit: str | None = None
@@ -119,6 +120,7 @@ class DatabaseBackupArtifact(BaseModel):
 
 
 class DatabaseBackupHistoryResponse(BaseModel):
+    backup_dir: str
     items: list[DatabaseBackupArtifact]
     total: int
 
@@ -143,7 +145,11 @@ async def _get_redis_client():
     from app.services.task_queue_service import task_queue
 
     try:
-        client = await task_queue._get_client()
+        # Admin endpoints are short non-blocking Redis operations. Use the
+        # shared connection pool rather than the queue's persistent
+        # single-connection client (reserved for blocking dequeue). Closing a
+        # pooled client below only returns its connection to the pool.
+        client = await task_queue._get_script_client()
     except Exception as e:
         raise ApiError(ErrorCode.QUEUE_UNAVAILABLE, str(e), retryable=True) from e
 
@@ -211,6 +217,52 @@ def _format_task_timestamp(value) -> str | None:
         return datetime.fromtimestamp(float(value), UTC).isoformat().replace("+00:00", "Z")
     except (TypeError, ValueError, OSError):
         return str(value)[:64]
+
+
+def _safe_int(value, default: int = 0) -> int:
+    """Parse queue metadata defensively so one corrupt hash cannot break the admin page."""
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+_SENSITIVE_PAYLOAD_KEY_PARTS = (
+    "password", "passwd", "secret", "token", "authorization", "cookie",
+    "api_key", "apikey", "file_content", "credential",
+)
+
+
+def _sanitize_payload_summary(value, *, depth: int = 0):
+    """Return a bounded, recursively redacted representation of a task payload."""
+    if depth >= 5:
+        return "<max-depth>"
+    if isinstance(value, dict):
+        result: dict = {}
+        for index, (key, item) in enumerate(value.items()):
+            if index >= 50:
+                result["_truncated"] = f"{len(value) - 50} more keys"
+                break
+            key_str = str(key)[:128]
+            key_lower = key_str.lower()
+            if any(part in key_lower for part in _SENSITIVE_PAYLOAD_KEY_PARTS):
+                result[key_str] = "<redacted>"
+            else:
+                result[key_str] = _sanitize_payload_summary(item, depth=depth + 1)
+        return result
+    if isinstance(value, (list, tuple)):
+        items = [
+            _sanitize_payload_summary(item, depth=depth + 1)
+            for item in value[:20]
+        ]
+        if len(value) > 20:
+            items.append(f"<{len(value) - 20} more items>")
+        return items
+    if isinstance(value, str):
+        return value if len(value) <= 500 else value[:500] + "…"
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    return str(value)[:500]
 
 
 # ── Routes ──
@@ -310,6 +362,7 @@ async def postgres_backup_history(
     info = await inspect_database_backup()
     items = list_backup_artifacts(limit)
     return DatabaseBackupHistoryResponse(
+        backup_dir=str(info.get("backup_dir") or ""),
         items=[
             DatabaseBackupArtifact(
                 name=str(item.get("name") or ""),
@@ -379,55 +432,58 @@ async def list_tasks(
     )
 
     client = await _get_redis_client()
-    types_to_search = [task_type] if task_type else TASK_TYPES
-    result_tasks: list[TaskSummary] = []
-    seen: set[str] = set()
+    try:
+        types_to_search = [task_type] if task_type else TASK_TYPES
+        result_tasks: list[TaskSummary] = []
+        seen: set[str] = set()
 
-    async def append_tasks(tt: str, location: str, task_ids: list[str]) -> None:
-        for task_id in task_ids:
-            if task_id in seen:
-                continue
-            seen.add(task_id)
-            data = await client.hgetall(_v2_task_hash_key(task_id))
-            if not data:
-                continue
-            parsed = _parse_task_data(data)
-            task_status = data.get("status") or location
-            if status and status not in (task_status, location):
-                continue
-            result_tasks.append(TaskSummary(
-                task_id=task_id,
-                task_type=parsed.get("task_type", tt),
-                status=task_status,
-                queue_location=location,
-                retry_count=int(data.get("retry_count", 0)),
-                max_retries=int(parsed.get("max_retries", 0)),
-                generation=int(data.get("generation", 0)),
-                trace_id=str(parsed.get("trace_id") or "") or None,
-                request_id=str(parsed.get("request_id") or "") or None,
-                last_error=data.get("error", "")[:200] if data.get("error") else None,
-                created_at=_format_task_timestamp(parsed.get("created_at")),
-                updated_at=_format_task_timestamp(parsed.get("updated_at")),
-            ))
+        async def append_tasks(tt: str, location: str, task_ids: list[str]) -> None:
+            for task_id in task_ids:
+                if task_id in seen:
+                    continue
+                seen.add(task_id)
+                data = await client.hgetall(_v2_task_hash_key(task_id))
+                if not data:
+                    continue
+                parsed = _parse_task_data(data)
+                task_status = data.get("status") or location
+                if status and status not in (task_status, location):
+                    continue
+                result_tasks.append(TaskSummary(
+                    task_id=task_id,
+                    task_type=parsed.get("task_type", tt),
+                    status=task_status,
+                    queue_location=location,
+                    retry_count=_safe_int(data.get("retry_count", 0)),
+                    max_retries=_safe_int(parsed.get("max_retries", 0)),
+                    generation=_safe_int(data.get("generation", 0)),
+                    trace_id=str(parsed.get("trace_id") or "") or None,
+                    request_id=str(parsed.get("request_id") or "") or None,
+                    last_error=data.get("error", "")[:200] if data.get("error") else None,
+                    created_at=_format_task_timestamp(parsed.get("created_at")),
+                    updated_at=_format_task_timestamp(parsed.get("updated_at")),
+                ))
 
-    for tt in types_to_search:
-        ready_ids = await client.lrange(_v2_q_key(tt), 0, -1)
-        processing_ids = await client.zrange(_v2_p_key(tt), 0, -1)
-        retry_ids = await client.zrange(_v2_retry_key(tt), 0, -1)
-        dead_ids = await client.lrange(_v2_dead_key(tt), 0, -1)
-        corrupt_ids = await client.zrange(_v2_corrupt_key(tt), 0, -1)
-        await append_tasks(tt, "ready", ready_ids)
-        await append_tasks(tt, "processing", processing_ids)
-        await append_tasks(tt, "retry", retry_ids)
-        await append_tasks(tt, "dead", dead_ids)
-        await append_tasks(tt, "corrupt", corrupt_ids)
+        for tt in types_to_search:
+            ready_ids = await client.lrange(_v2_q_key(tt), 0, -1)
+            processing_ids = await client.zrange(_v2_p_key(tt), 0, -1)
+            retry_ids = await client.zrange(_v2_retry_key(tt), 0, -1)
+            dead_ids = await client.lrange(_v2_dead_key(tt), 0, -1)
+            corrupt_ids = await client.zrange(_v2_corrupt_key(tt), 0, -1)
+            await append_tasks(tt, "ready", ready_ids)
+            await append_tasks(tt, "processing", processing_ids)
+            await append_tasks(tt, "retry", retry_ids)
+            await append_tasks(tt, "dead", dead_ids)
+            await append_tasks(tt, "corrupt", corrupt_ids)
 
-    def sort_key(item: TaskSummary):
-        return item.updated_at or item.created_at or ""
+        def sort_key(item: TaskSummary):
+            return item.updated_at or item.created_at or ""
 
-    result_tasks.sort(key=sort_key, reverse=True)
-    total = len(result_tasks)
-    return TaskListResponse(tasks=result_tasks[offset:offset + limit], total=total)
+        result_tasks.sort(key=sort_key, reverse=True)
+        total = len(result_tasks)
+        return TaskListResponse(tasks=result_tasks[offset:offset + limit], total=total)
+    finally:
+        await client.aclose()
 
 
 @router.get("/{task_id}", response_model=TaskDetail)
@@ -447,77 +503,75 @@ async def inspect_task(
     )
 
     client = await _get_redis_client()
+    try:
 
-    hash_key = _v2_task_hash_key(task_id)
-    data = await client.hgetall(hash_key)
+        hash_key = _v2_task_hash_key(task_id)
+        data = await client.hgetall(hash_key)
 
-    if not data:
-        raise task_not_found(task_id)
+        if not data:
+            raise task_not_found(task_id)
 
-    parsed = _parse_task_data(data)
-    task_type = parsed.get("task_type", "")
-    status = data.get("status", "unknown")
+        parsed = _parse_task_data(data)
+        task_type = parsed.get("task_type", "")
+        status = data.get("status", "unknown")
 
-    # Determine queue location
-    queue_location = None
-    if task_type:
-        if await client.lpos(_v2_q_key(task_type), task_id) is not None:
-            queue_location = "ready"
-        elif await client.zscore(_v2_p_key(task_type), task_id) is not None:
-            queue_location = "processing"
-        elif await client.zscore(_v2_retry_key(task_type), task_id) is not None:
-            queue_location = "retry"
-        elif await client.lpos(_v2_dead_key(task_type), task_id) is not None:
-            queue_location = "dead"
-        elif await client.zscore(_v2_corrupt_key(task_type), task_id) is not None:
-            queue_location = "corrupt"
+        # Determine queue location
+        queue_location = None
+        if task_type:
+            if await client.lpos(_v2_q_key(task_type), task_id) is not None:
+                queue_location = "ready"
+            elif await client.zscore(_v2_p_key(task_type), task_id) is not None:
+                queue_location = "processing"
+            elif await client.zscore(_v2_retry_key(task_type), task_id) is not None:
+                queue_location = "retry"
+            elif await client.lpos(_v2_dead_key(task_type), task_id) is not None:
+                queue_location = "dead"
+            elif await client.zscore(_v2_corrupt_key(task_type), task_id) is not None:
+                queue_location = "corrupt"
 
-    # Safe payload summary
-    payload_summary = None
-    payload_raw = parsed.get("payload", "")
-    if isinstance(payload_raw, dict):
-        payload_summary = {
-            k: v for k, v in payload_raw.items()
-            if k not in ("file_content", "token", "secret", "password")
-        }
-    elif isinstance(payload_raw, str) and payload_raw:
-        try:
-            payload = json.loads(payload_raw)
-            payload_summary = {
-                k: v for k, v in payload.items()
-                if k not in ("file_content", "token", "secret", "password")
-            }
-        except json.JSONDecodeError:
-            payload_summary = {"_raw_str": payload_raw[:200]}
+        # Safe payload summary. Redaction is recursive because task options can
+        # contain nested provider credentials or authorization material.
+        payload_summary = None
+        payload_raw = parsed.get("payload", "")
+        if isinstance(payload_raw, dict):
+            payload_summary = _sanitize_payload_summary(payload_raw)
+        elif isinstance(payload_raw, str) and payload_raw:
+            try:
+                payload = json.loads(payload_raw)
+                payload_summary = _sanitize_payload_summary(payload)
+            except (json.JSONDecodeError, TypeError):
+                payload_summary = {"_raw_str": payload_raw[:200]}
 
-    # Heartbeat check
-    hb = await client.get(_v2_heartbeat_key(task_id))
-    has_heartbeat = hb is not None
+        # Heartbeat check
+        hb = await client.get(_v2_heartbeat_key(task_id))
+        has_heartbeat = hb is not None
 
-    owner_prefix = None
-    owner_token = data.get("owner_token", "")
-    if owner_token:
-        owner_prefix = owner_token[:16]
+        owner_prefix = None
+        owner_token = data.get("owner_token", "")
+        if owner_token:
+            owner_prefix = owner_token[:16]
 
-    return TaskDetail(
-        task_id=task_id,
-        task_type=task_type,
-        status=status,
-        retry_count=int(data.get("retry_count", 0)),
-        max_retries=int(parsed.get("max_retries", 0)),
-        generation=int(data.get("generation", 0)),
-        trace_id=str(parsed.get("trace_id") or "") or None,
-        request_id=str(parsed.get("request_id") or "") or None,
-        # Detail view keeps the full queue-side diagnostic (worker currently
-        # caps it at 500 chars); list responses remain intentionally concise.
-        last_error=data.get("error", "")[:1000] if data.get("error") else None,
-        created_at=_format_task_timestamp(parsed.get("created_at")),
-        updated_at=_format_task_timestamp(parsed.get("updated_at")),
-        payload_summary=payload_summary,
-        queue_location=queue_location,
-        has_heartbeat=has_heartbeat,
-        owner_token_prefix=owner_prefix,
-    )
+        return TaskDetail(
+            task_id=task_id,
+            task_type=task_type,
+            status=status,
+            retry_count=_safe_int(data.get("retry_count", 0)),
+            max_retries=_safe_int(parsed.get("max_retries", 0)),
+            generation=_safe_int(data.get("generation", 0)),
+            trace_id=str(parsed.get("trace_id") or "") or None,
+            request_id=str(parsed.get("request_id") or "") or None,
+            # Detail view keeps the full queue-side diagnostic (worker currently
+            # caps it at 500 chars); list responses remain intentionally concise.
+            last_error=data.get("error", "")[:1000] if data.get("error") else None,
+            created_at=_format_task_timestamp(parsed.get("created_at")),
+            updated_at=_format_task_timestamp(parsed.get("updated_at")),
+            payload_summary=payload_summary,
+            queue_location=queue_location,
+            has_heartbeat=has_heartbeat,
+            owner_token_prefix=owner_prefix,
+        )
+    finally:
+        await client.aclose()
 
 
 @router.post("/outbox/{outbox_id}/retry", response_model=TaskOperationResult)
@@ -549,39 +603,65 @@ async def retry_task(
     from app.services.task_queue_service import _v2_task_hash_key, task_queue
 
     client = await _get_redis_client()
+    try:
 
-    hash_key = _v2_task_hash_key(task_id)
-    data = await client.hgetall(hash_key)
+        hash_key = _v2_task_hash_key(task_id)
+        data = await client.hgetall(hash_key)
 
-    if not data:
-        raise task_not_found(task_id)
+        if not data:
+            raise task_not_found(task_id)
 
-    parsed = _parse_task_data(data)
-    task_type = parsed.get("task_type", "")
-    status = data.get("status", "")
+        parsed = _parse_task_data(data)
+        task_type = parsed.get("task_type", "")
+        status = data.get("status", "")
 
-    if status not in ("failed", "dead", "review_required"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Task status '{status}' is not retryable. Only failed/dead/review_required tasks can be retried.",
-        )
+        if status not in ("failed", "dead", "review_required"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Task status '{status}' is not retryable. Only failed/dead/review_required tasks can be retried.",
+            )
 
-    ok = await task_queue.retry_from_dead_v2(task_type, task_id)
-    if ok:
-        logger.info("Admin retry: task_id=%s type=%s", task_id, task_type)
-        return TaskOperationResult(
-            task_id=task_id,
-            operation="retry",
-            success=True,
-            message=f"Task {task_id} re-queued from dead-letter.",
-        )
-    else:
-        return TaskOperationResult(
-            task_id=task_id,
-            operation="retry",
-            success=False,
-            message=f"Failed to re-queue task {task_id}. It may not be in dead-letter.",
-        )
+        if task_type == "answer_projection":
+            from app.services.practice.answer_projection_contract import (
+                ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
+                parse_answer_projection_payload,
+            )
+
+            schema_version = _safe_int(parsed.get("schema_version", 1) or 1, 1)
+            if schema_version != ANSWER_PROJECTION_TASK_SCHEMA_VERSION:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "该 answer_projection 任务属于已废弃协议，不能兼容重试；"
+                        "请通过 projection reconciliation 重新生成当前 per-answer 投影任务。"
+                    ),
+                )
+            try:
+                parse_answer_projection_payload(parsed.get("payload"))
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"该 answer_projection payload 已废弃，不能兼容重试：{exc}",
+                ) from exc
+
+        ok = await task_queue.retry_from_dead_v2(task_type, task_id)
+        if ok:
+            logger.info("Admin retry: task_id=%s type=%s", task_id, task_type)
+            return TaskOperationResult(
+                task_id=task_id,
+                operation="retry",
+                success=True,
+                message=f"Task {task_id} re-queued from dead-letter.",
+            )
+        else:
+            return TaskOperationResult(
+                task_id=task_id,
+                operation="retry",
+                success=False,
+                message=f"Failed to re-queue task {task_id}. It may not be in dead-letter.",
+            )
+    finally:
+        await client.aclose()
 
 
 @router.post("/{task_id}/cancel", response_model=TaskOperationResult)

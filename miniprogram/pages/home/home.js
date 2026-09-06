@@ -16,8 +16,8 @@ Page({
     profileNickname: '',
     profileAvatarPreview: '',
     profileAvatarPath: '',
-    profileNicknameRejected: false,
     profileSaving: false,
+    profileSaveState: '',
     isDevtools: false,
     greeting: '',
     dateStr: '',
@@ -64,9 +64,10 @@ Page({
   _hasGrowthSnapshot: false,
   _growthTargets: { streakDays: 0, todayGoalDone: 0, levelProgress: 0 },
   _animTimer: null,
-  _profilePromptTimer: null,
   _profileAutoSaveTimer: null,
-  _profilePrompted: false,
+  _profileSavedHintTimer: null,
+  _profileDraftVersion: 0,
+  _profileNicknameDraftRaw: '',
 
   onLoad() {
     this._alive = true
@@ -77,6 +78,12 @@ Page({
   async onShow() {
     this._alive = true
     this._visible = true
+
+    // chooseAvatar 会打开微信原生选择界面，返回页面时会再次触发 onShow。
+    // 资料弹层打开期间绝不做 setData / 用户同步，避免在原生开放能力完成回调前
+    // 重建 button/input 节点，导致头像回调丢失或 nickname 快捷填入条被卸载。
+    if (this.data.showProfileSheet) return
+
     const showSeq = ++this._showSeq
     this._authed = auth.isLoggedIn()
     this._isAdmin = this._authed ? auth.isAdmin() : false
@@ -100,12 +107,10 @@ Page({
     this.setData(basePatch)
     if (!this._authed) return
 
-    let profileUser = localUser
     try {
       const syncedUser = await auth.syncCurrentUser()
       if (!this._alive || !this._visible || showSeq !== this._showSeq) return
       if (syncedUser) {
-        profileUser = syncedUser
         this._isAdmin = auth.isAdmin()
         this.setData({
           user: syncedUser,
@@ -122,49 +127,55 @@ Page({
       if (!this._authed) return
     }
 
-    this._maybePromptProfile(profileUser)
+    // 个人资料仅在用户主动点击首页头像入口时打开，不在首页自动弹出。
     await this.loadGrowthSnapshot(showSeq)
   },
 
-  _isProfileSetupComplete(user) {
+  _getProfileNickname(user) {
     const profile = user || {}
-    return !!String(profile.nickname || '').trim() && !!String(profile.avatar_url || '').trim()
+    const value = profile.nickname || profile.nickName || profile.name || ''
+    return this._normalizeProfileNickname(value)
   },
 
-  _maybePromptProfile(user) {
-    if (this._profilePrompted || this._isProfileSetupComplete(user)) return
-    this._profilePrompted = true
-    clearTimeout(this._profilePromptTimer)
-    this._profilePromptTimer = setTimeout(() => {
-      this._profilePromptTimer = null
-      if (!this._alive || !this._visible) {
-        // The prompt never became visible; allow the next onShow to schedule it.
-        this._profilePrompted = false
-        return
-      }
-      if (!this.data.showProfileSheet && this._authed) this.openProfileSheet()
-    }, 260)
+  _getProfileAvatar(user) {
+    const profile = user || {}
+    return String(profile.avatar_url || profile.avatarUrl || profile.avatar || '').trim()
+  },
+
+  _isProfileSetupComplete(user) {
+    return !!this._getProfileNickname(user) && !!this._getProfileAvatar(user)
   },
 
   openProfileSheet() {
     if (!this._authed) return
-    const user = this.data.user || auth.getUser() || {}
+
+    const currentUser = this.data.user || {}
+    const user = Object.keys(currentUser).length ? currentUser : (auth.getUser() || {})
+    clearTimeout(this._profileAutoSaveTimer)
+    clearTimeout(this._profileSavedHintTimer)
+    this._profileAutoSaveTimer = null
+    this._profileSavedHintTimer = null
+    this._profileNicknameDraftRaw = ''
     this.setData({
       showProfileSheet: true,
-      profileNickname: user.nickname || '',
-      profileAvatarPreview: user.avatar_url || '',
+      profileNickname: this._getProfileNickname(user),
+      profileAvatarPreview: this._getProfileAvatar(user),
       profileAvatarPath: '',
-      profileNicknameRejected: false,
+      profileSaveState: '',
     })
   },
 
   closeProfileSheet() {
     if (this.data.profileSaving) return
     clearTimeout(this._profileAutoSaveTimer)
+    clearTimeout(this._profileSavedHintTimer)
     this._profileAutoSaveTimer = null
+    this._profileSavedHintTimer = null
+    try { wx.hideKeyboard && wx.hideKeyboard() } catch (_) {}
     this.setData({
       showProfileSheet: false,
       profileAvatarPath: '',
+      profileSaveState: '',
     })
   },
 
@@ -176,11 +187,6 @@ Page({
       const info = wx.getSystemInfoSync ? wx.getSystemInfoSync() : {}
       platform = String(info.platform || '').toLowerCase()
     } catch (_) {}
-    try {
-      this._nicknameReviewSupported = !!(wx.canIUse && wx.canIUse('input.bindnicknamereview'))
-    } catch (_) {
-      this._nicknameReviewSupported = false
-    }
     this.setData({ isDevtools: platform === 'devtools' })
   },
 
@@ -189,41 +195,71 @@ Page({
     return /cancel/i.test(message)
   },
 
-  _scheduleProfileSaveIfReady(field = '') {
-    if (this.data.profileSaving || !this._alive) return
-    const nickname = String(this.data.profileNickname || '').trim().replace(/\s+/g, ' ')
-    const storedAvatar = String((this.data.user && this.data.user.avatar_url) || '')
-    const hasAvatar = !!(this.data.profileAvatarPath || this.data.profileAvatarPreview || storedAvatar)
-    if (!nickname || !hasAvatar || this.data.profileNicknameRejected) return
+  _normalizeProfileNickname(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ')
+  },
 
-    const profileAlreadyCompleted = this._isProfileSetupComplete(this.data.user)
-    const canSave = !profileAlreadyCompleted || field === 'avatar' || field === 'nickname'
-    if (!canSave) return
+  _scheduleProfileSaveIfReady(field = '') {
+    if (this.data.profileSaving || !this._alive || !this.data.showProfileSheet) return
+    const nickname = this._normalizeProfileNickname(this.data.profileNickname)
+    const currentNickname = this._getProfileNickname(this.data.user)
+    const storedAvatar = this._getProfileAvatar(this.data.user)
+    const hasAvatar = !!(this.data.profileAvatarPath || this.data.profileAvatarPreview || storedAvatar)
+    const nicknameChanged = nickname !== currentNickname
+    const avatarChanged = !!this.data.profileAvatarPath
+
+    if (!nickname || !hasAvatar) {
+      if (this.data.profileSaveState !== 'editing') this.setData({ profileSaveState: '' })
+      return
+    }
+    // 已有完整资料时，只有真正发生字段变化才提交。避免点击已有昵称后
+    // native nickname picker 触发 blur，导致用旧值自动保存并关闭/打断编辑。
+    if (field === 'nickname' && !nicknameChanged) {
+      this.setData({ profileSaveState: '' })
+      return
+    }
+    if (field === 'avatar' && !avatarChanged) return
+    if (!nicknameChanged && !avatarChanged) return
 
     clearTimeout(this._profileAutoSaveTimer)
+    this.setData({ profileSaveState: 'pending' })
     this._profileAutoSaveTimer = setTimeout(() => {
       this._profileAutoSaveTimer = null
       if (this._alive && this.data.showProfileSheet) this.saveProfile()
-    }, 180)
+    }, 260)
   },
 
   _applyProfileAvatar(avatarPath) {
     if (!avatarPath) return
+    clearTimeout(this._profileSavedHintTimer)
+    this._profileSavedHintTimer = null
+    this._profileDraftVersion++
     this.setData({
       profileAvatarPreview: avatarPath,
       profileAvatarPath: avatarPath,
+      profileSaveState: 'pending',
     }, () => this._scheduleProfileSaveIfReady('avatar'))
   },
 
   onChooseAvatar(e) {
-    if (this.data.profileSaving) return
-    const avatarPath = e && e.detail && e.detail.avatarUrl
-    if (!avatarPath) return
+    const detail = (e && e.detail) || {}
+    const avatarPath = detail.avatarUrl || ''
+    if (!avatarPath) {
+      const errMsg = String(detail.errMsg || '')
+      if (errMsg && !/cancel/i.test(errMsg)) {
+        console.warn('chooseAvatar 未返回头像路径', detail)
+        if (/privacy agreement|scope is not declared/i.test(errMsg)) {
+          wx.showToast({ title: '头像能力未在隐私保护指引中声明', icon: 'none' })
+        } else {
+          wx.showToast({ title: '微信头像选择失败，请重试', icon: 'none' })
+        }
+      }
+      return
+    }
     this._applyProfileAvatar(avatarPath)
   },
 
   async chooseAvatarInDevtools() {
-    if (this.data.profileSaving) return
     try {
       const res = await wx.chooseMedia({
         count: 1,
@@ -236,93 +272,138 @@ Page({
       const avatarPath = file && (file.tempFilePath || file.path)
       if (avatarPath) this._applyProfileAvatar(avatarPath)
     } catch (error) {
-      // 开发者工具取消选择属于正常用户操作，不记录为错误。
       if (this._isNativeCancel(error)) return
       console.warn('开发者工具头像选择失败', error)
       wx.showToast({ title: '头像选择失败，请重试', icon: 'none' })
     }
   },
 
+  // Native nickname input must stay as close as possible to WeChat's documented
+  // implementation. Do not setData on focus/keyboard/input; rebuilding a controlled
+  // nickname input while the IME is attaching can make the host-app nickname chip
+  // disappear on some real devices.
   onProfileNicknameInput(e) {
+    const detail = (e && e.detail) || {}
+    this._profileNicknameDraftRaw = typeof detail.value === 'string' ? detail.value : ''
+  },
+
+  _commitProfileNicknameCandidate(rawValue, { scheduleSave = true } = {}) {
+    const value = this._normalizeProfileNickname(rawValue)
+    if (!value) return false
+
+    const previousDraft = this._normalizeProfileNickname(this.data.profileNickname)
+    if (value !== previousDraft) this._profileDraftVersion++
+
+    clearTimeout(this._profileSavedHintTimer)
+    this._profileSavedHintTimer = null
+    this._profileNicknameDraftRaw = ''
     this.setData({
-      profileNickname: (e && e.detail && e.detail.value) || '',
-      profileNicknameRejected: false,
+      profileNickname: value,
+      profileSaveState: value !== this._getProfileNickname(this.data.user) ? 'pending' : '',
+    }, () => {
+      if (scheduleSave) this._scheduleProfileSaveIfReady('nickname')
     })
+    return true
+  },
+
+  onProfileNicknameChange(e) {
+    const detail = (e && e.detail) || {}
+    if (typeof detail.value !== 'string') return
+    this._commitProfileNicknameCandidate(detail.value)
+  },
+
+  onProfileNicknameConfirm(e) {
+    const detail = (e && e.detail) || {}
+    const rawValue = typeof detail.value === 'string' && detail.value
+      ? detail.value
+      : this._profileNicknameDraftRaw
+    this._commitProfileNicknameCandidate(rawValue)
+    try { wx.hideKeyboard && wx.hideKeyboard() } catch (_) {}
   },
 
   onProfileNicknameBlur(e) {
-    if (this.data.profileSaving) return
-    const value = String(
-      (e && e.detail && e.detail.value) || this.data.profileNickname || ''
-    ).trim().replace(/\s+/g, ' ')
-    this.setData({
-      profileNickname: value,
-      profileNicknameRejected: false,
-    }, () => {
-      // 真机支持昵称审核事件时，等待审核结果后再保存；开发者工具直接提交。
-      if (!this._nicknameReviewSupported || this.data.isDevtools) {
-        this._scheduleProfileSaveIfReady('nickname')
-      }
-    })
-  },
-
-  onProfileNicknameReview(e) {
-    if (this.data.profileSaving) return
     const detail = (e && e.detail) || {}
-    const rejected = detail.pass === false
-    const value = String(detail.nickname || this.data.profileNickname || '').trim().replace(/\s+/g, ' ')
-    this.setData({
-      profileNickname: value,
-      profileNicknameRejected: rejected,
-    }, () => {
-      if (rejected) {
-        wx.showToast({ title: '该昵称暂不可使用，请修改后重试', icon: 'none' })
-        return
-      }
-      this._scheduleProfileSaveIfReady('nickname')
-    })
+    const rawValue = typeof detail.value === 'string' && detail.value
+      ? detail.value
+      : this._profileNicknameDraftRaw
+    this._commitProfileNicknameCandidate(rawValue)
+    this._profileNicknameDraftRaw = ''
   },
 
   async saveProfile() {
-    if (this.data.profileSaving || !this._alive) return
+    if (!this._alive) return
+    if (this.data.profileSaving) return
     clearTimeout(this._profileAutoSaveTimer)
+    clearTimeout(this._profileSavedHintTimer)
     this._profileAutoSaveTimer = null
-    const nickname = String(this.data.profileNickname || '').trim().replace(/\s+/g, ' ')
+    this._profileSavedHintTimer = null
+
+    const nickname = this._normalizeProfileNickname(this.data.profileNickname)
+    const avatarPath = this.data.profileAvatarPath || ''
+    const currentNickname = this._getProfileNickname(this.data.user)
+    const nicknameChanged = nickname !== currentNickname
+    const avatarChanged = !!avatarPath
     if (!nickname) {
       wx.showToast({ title: '请填写昵称', icon: 'none' })
       return
     }
-    if (this.data.profileNicknameRejected) {
-      wx.showToast({ title: '请修改昵称后再保存', icon: 'none' })
+    if (!nicknameChanged && !avatarChanged) {
+      this.setData({ profileSaveState: '' })
       return
     }
 
     const saveSeq = ++this._profileSaveSeq
-    this.setData({ profileSaving: true })
+    const draftVersionAtStart = this._profileDraftVersion
+    this.setData({ profileSaving: true, profileSaveState: 'saving' })
     try {
-      const updatedUser = await auth.updateProfile({
-        nickname,
-        avatarPath: this.data.profileAvatarPath || '',
-      })
+      const updatedUser = await auth.updateProfile({ nickname, avatarPath })
       if (!this._alive || saveSeq !== this._profileSaveSeq) return
+
+      // 保存期间用户仍可重新选头像/改昵称。只清掉本次真正提交的草稿；
+      // 若期间已有更新，则保留最新本地草稿并在 finally 后自动续传。
+      const latestAvatarPath = this.data.profileAvatarPath || ''
+      const latestNickname = this._normalizeProfileNickname(this.data.profileNickname)
+      const avatarChangedDuringSave = latestAvatarPath && latestAvatarPath !== avatarPath
+      const nicknameChangedDuringSave = latestNickname !== nickname
+      const hasNewerDraft = this._profileDraftVersion !== draftVersionAtStart && (avatarChangedDuringSave || nicknameChangedDuringSave)
+      const serverAvatar = this._getProfileAvatar(updatedUser)
+      const serverNickname = this._getProfileNickname(updatedUser) || nickname
+
       this.setData({
         user: updatedUser,
         displayName: this.getDisplayName(updatedUser),
         userInitial: this.getUserInitial(updatedUser),
-        showProfileSheet: false,
-        profileNickname: updatedUser.nickname || '',
-        profileAvatarPreview: updatedUser.avatar_url || '',
-        profileAvatarPath: '',
-        profileNicknameRejected: false,
+        profileNickname: nicknameChangedDuringSave ? this.data.profileNickname : serverNickname,
+        profileAvatarPreview: avatarChangedDuringSave ? this.data.profileAvatarPreview : (serverAvatar || this.data.profileAvatarPreview || ''),
+        profileAvatarPath: avatarChangedDuringSave ? latestAvatarPath : '',
+        profileSaveState: hasNewerDraft ? 'pending' : 'saved',
       })
-      wx.showToast({ title: '资料已保存', icon: 'success' })
+
+      if (!hasNewerDraft) {
+        this._profileSavedHintTimer = setTimeout(() => {
+          this._profileSavedHintTimer = null
+          if (this._alive && this.data.showProfileSheet && !this.data.profileSaving) {
+            this.setData({ profileSaveState: '' })
+          }
+        }, 1500)
+      }
     } catch (e) {
       if (!this._alive || saveSeq !== this._profileSaveSeq) return
+      this.setData({ profileSaveState: 'error' })
       const message = e && e.message ? e.message : '保存失败，请稍后重试'
       wx.showToast({ title: message, icon: 'none' })
     } finally {
       if (this._alive && saveSeq === this._profileSaveSeq) {
-        this.setData({ profileSaving: false })
+        this.setData({ profileSaving: false }, () => {
+          if (!this._alive || !this.data.showProfileSheet) return
+          if (this._profileDraftVersion !== draftVersionAtStart) {
+            clearTimeout(this._profileAutoSaveTimer)
+            this._profileAutoSaveTimer = setTimeout(() => {
+              this._profileAutoSaveTimer = null
+              this._scheduleProfileSaveIfReady()
+            }, 120)
+          }
+        })
       }
     }
   },
@@ -745,12 +826,10 @@ Page({
     this._showSeq++
     this._growthSeq++
     this._clearAnimTimer()
-    if (this._profilePromptTimer) {
-      clearTimeout(this._profilePromptTimer)
-      this._profilePromptTimer = null
-      // It was scheduled but never displayed. Allow scheduling again on return.
-      this._profilePrompted = false
-    }
+
+    // 系统头像面板、相册或其他原生 UI 都可能触发页面 hide。
+    // 这里不能 setData 清理资料弹层，否则会在开放能力回调前重建节点。
+    this._profileNicknameDraftRaw = ''
   },
 
   onUnload() {
@@ -760,9 +839,9 @@ Page({
     this._growthSeq++
     this._profileSaveSeq++
     this._clearAnimTimer()
-    clearTimeout(this._profilePromptTimer)
-    this._profilePromptTimer = null
     clearTimeout(this._profileAutoSaveTimer)
+    clearTimeout(this._profileSavedHintTimer)
     this._profileAutoSaveTimer = null
+    this._profileSavedHintTimer = null
   },
 })

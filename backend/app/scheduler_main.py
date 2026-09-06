@@ -4,9 +4,10 @@ Usage::
 
     python -m app.scheduler_main
 
-Sets PROCESS_ROLE=scheduler and runs only periodic tasks:
-token cleanup, staging cleanup, pomodoro scheduler, audit cleanup,
-export processor. Does NOT start an HTTP server.
+Sets PROCESS_ROLE=scheduler and runs only background scheduling/runtime work:
+refresh-token cleanup, staging cleanup, audit-log cleanup, recommendation-metrics
+aggregation, export processing/cleanup, outbox reconciliation and async-task
+health monitoring. Does NOT start an HTTP server or pipeline worker.
 
 All scheduled tasks acquire a distributed Redis lock before execution.
 If the lock cannot be acquired, the task is skipped (another instance

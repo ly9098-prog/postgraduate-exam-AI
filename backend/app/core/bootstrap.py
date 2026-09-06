@@ -263,6 +263,15 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
     profile = detect_deployment_profile()
     _report = _startup_failure_reporter(profile)
 
+    # Cross-process heartbeat used by /system/tasks to distinguish a healthy
+    # recurring executor from a web process that can only run tasks manually.
+    try:
+        from app.services.system_task_service import run_scheduler_heartbeat
+
+        registry.create(run_scheduler_heartbeat(), "scheduler-heartbeat")
+    except Exception as e:
+        _report("Scheduler heartbeat", e)
+
     # Audit log cleanup scheduler
     try:
         from app.services.audit_cleanup_scheduler import audit_log_cleanup_scheduler
@@ -351,55 +360,21 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
 # ── Periodic task implementations (shared between roles) ──
 
 
+async def _run_registered_periodic_task(task_id: str, label: str) -> None:
+    """Delegate periodic scheduling to the shared system-task runtime."""
+    from app.services.system_task_service import run_registered_periodic_task
+
+    await run_registered_periodic_task(task_id, label)
+
+
 async def _periodic_token_cleanup() -> None:
-    """Clean up expired refresh tokens every 6 hours with distributed lock."""
-    await asyncio.sleep(300)  # Initial delay for startup settling
-    interval_sec = 6 * 3600
-    from app.core.distributed_lock import DistributedLock
-
-    lock = DistributedLock("token:cleanup")
-
-    while True:
-        await asyncio.sleep(interval_sec)
-        try:
-            from app.services.system_task_service import TaskRunOutcome, record_system_task_execution
-
-            async def _run_once():
-                async with lock.acquire_and_renew(ttl=300, renew_interval=60) as handle:
-                    if not handle.is_still_held():
-                        logger.debug("Token cleanup lock held by another instance, skipping")
-                        return TaskRunOutcome(status="skipped", message="锁被其他实例持有，本轮跳过")
-                    from app.core.database import async_session
-                    from app.services import token_service
-
-                    async with async_session() as db:
-                        deleted = await token_service.cleanup_expired_tokens(db)
-                    if deleted:
-                        logger.info("Cleaned up %d expired refresh tokens", deleted)
-                    return f"清理 {deleted} 条过期 refresh token"
-
-            await record_system_task_execution("refresh_token_cleanup", _run_once, source="scheduler")
-        except Exception as e:
-            logger.warning("Token cleanup failed (non-fatal): %s", e)
+    """Clean up expired refresh tokens on deterministic 6-hour UTC slots."""
+    await _run_registered_periodic_task("refresh_token_cleanup", "Refresh token cleanup")
 
 
 async def _periodic_staging_cleanup() -> None:
-    """Clean up expired staging files hourly."""
-    while True:
-        await asyncio.sleep(3600)
-        try:
-            from app.services.staging_storage import async_cleanup_orphans
-            from app.services.system_task_service import record_system_task_execution
-
-            async def _run_once():
-                removed = await async_cleanup_orphans()
-                if removed:
-                    logger.info("Staging cleanup removed %d expired objects", removed)
-                return f"清理 {removed} 个过期 staging 对象"
-
-            await record_system_task_execution("staging_cleanup", _run_once, source="scheduler")
-        except Exception as e:
-            logger.warning("Staging cleanup failed (non-fatal): %s", e)
+    """Clean up expired staging files at minute 00 of every UTC hour."""
+    await _run_registered_periodic_task("staging_cleanup", "Staging cleanup")
 
 
 async def _periodic_export_processor() -> None:
@@ -413,25 +388,8 @@ async def _periodic_export_processor() -> None:
 
 
 async def _periodic_export_cleanup() -> None:
-    """Clean up expired export tasks hourly."""
-    await asyncio.sleep(3700)  # Stagger after staging cleanup
-    while True:
-        await asyncio.sleep(3600)
-        try:
-            from app.core.database import async_session
-            from app.services.export.cleanup import cleanup_expired
-            from app.services.system_task_service import record_system_task_execution
-
-            async def _run_once():
-                async with async_session() as db:
-                    stats = await cleanup_expired(db)
-                if stats["tasks_expired"] > 0:
-                    logger.info("Export cleanup: %s", stats)
-                return f"过期任务 {stats['tasks_expired']}，删除文件 {stats['files_deleted']}"
-
-            await record_system_task_execution("export_cleanup", _run_once, source="scheduler")
-        except Exception as e:
-            logger.warning("Export cleanup failed (non-fatal): %s", e)
+    """Clean up expired export tasks at minute 02 of every UTC hour."""
+    await _run_registered_periodic_task("export_cleanup", "Export cleanup")
 
 
 # ── Startup helpers ──

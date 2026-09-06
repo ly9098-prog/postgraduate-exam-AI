@@ -334,21 +334,22 @@ class COSStorage(StorageBackend):
             raise
 
     async def delete(self, url_or_key: str) -> bool:
-        """删除 COS 对象。
+        """Delete the COS object and any explicit local-fallback copy.
 
-        安全限制：
-        - 只能删除 self._cos_prefix 命名空间下的对象
-        - 删除失败时记录错误
-        - 对象不存在时视为成功（幂等）
+        Export uploads may fall back to local storage when
+        ``COS_ALLOW_LOCAL_FALLBACK`` is enabled.  The database stores a stable
+        object key rather than the physical backend, so successful cleanup must
+        remove both possible copies.  We still fail closed when the COS client
+        is unavailable: deleting only the local copy could orphan an unknown
+        remote object while allowing the owning DB row to disappear.
         """
         client = self._get_client()
         if client is None:
-            logger.warning("COS delete skipped: backend not configured")
+            logger.warning("COS delete skipped: backend not configured/observable")
             return False
 
         key = self._normalize_key(url_or_key)
 
-        # 验证命名空间
         prefix = self._cos_prefix.rstrip("/")
         if not key.startswith(prefix + "/"):
             logger.warning("COS delete rejected: key %s outside prefix %s", key, prefix)
@@ -360,15 +361,29 @@ class COSStorage(StorageBackend):
                 _storage_executor,
                 lambda: client.delete_object(Bucket=self._bucket, Key=key),
             )
-            return True
         except Exception as e:
             logger.error("COS delete failed for %s: %s", key, e)
             return False
 
-    async def get_download_url(self, url_or_key: str, expiry_sec: int = 3600) -> str | None:
-        """Generate a short-lived signed URL for secure download.
+        if settings.COS_ALLOW_LOCAL_FALLBACK:
+            local_storage = LocalFileStorage(self._prefix)
+            if await local_storage.exists(url_or_key):
+                local_deleted = await local_storage.delete(url_or_key)
+                if not local_deleted:
+                    logger.error(
+                        "COS object deleted but local fallback cleanup failed for %s",
+                        url_or_key,
+                    )
+                    return False
+        return True
 
-        Returns None if the backend is not configured or the key is invalid.
+    async def get_download_url(self, url_or_key: str, expiry_sec: int = 3600) -> str | None:
+        """Generate a short-lived signed URL for a real COS object.
+
+        Presigning alone does not prove that an object exists.  When local
+        fallback is enabled we first check COS so a file that was actually
+        written locally is not handed out as a guaranteed-404 COS URL.  ``None``
+        lets the authenticated export API select its local streaming fallback.
         """
         client = self._get_client()
         if client is None:
@@ -378,6 +393,14 @@ class COSStorage(StorageBackend):
 
         try:
             loop = asyncio.get_running_loop()
+            if settings.COS_ALLOW_LOCAL_FALLBACK:
+                remote_exists = await loop.run_in_executor(
+                    _storage_executor,
+                    lambda: client.object_exists(Bucket=self._bucket, Key=key),
+                )
+                if not remote_exists:
+                    return None
+
             signed_url = await loop.run_in_executor(
                 _storage_executor,
                 lambda: client.get_presigned_url(
@@ -393,23 +416,25 @@ class COSStorage(StorageBackend):
             return None
 
     async def exists(self, url_or_key: str) -> bool:
-        """Check if a COS object exists."""
+        """Check COS first, then the explicitly-enabled local fallback."""
         client = self._get_client()
-        if client is None:
-            return False
-
         key = self._normalize_key(url_or_key)
 
-        try:
-            loop = asyncio.get_running_loop()
-            response = await loop.run_in_executor(
-                _storage_executor,
-                lambda: client.object_exists(Bucket=self._bucket, Key=key),
-            )
-            return bool(response)
-        except Exception as e:
-            logger.error("COS exists check failed for %s: %s", key, e)
-            return False
+        if client is not None:
+            try:
+                loop = asyncio.get_running_loop()
+                response = await loop.run_in_executor(
+                    _storage_executor,
+                    lambda: client.object_exists(Bucket=self._bucket, Key=key),
+                )
+                if bool(response):
+                    return True
+            except Exception as e:
+                logger.error("COS exists check failed for %s: %s", key, e)
+
+        if settings.COS_ALLOW_LOCAL_FALLBACK:
+            return await LocalFileStorage(self._prefix).exists(url_or_key)
+        return False
 
 
 def get_storage() -> StorageBackend:
@@ -487,13 +512,14 @@ def get_export_storage() -> StorageBackend:
     return _export_storage_instance
 
 
-def get_export_storage_root() -> str:
+def get_export_storage_root(*, create: bool = True) -> str:
     """Return the absolute filesystem root directory for export files.
 
-    Used by both the storage backend and API layer to resolve file paths
-    consistently. Prevents directory traversal and symlink attacks.
+    ``create=True`` preserves the historical behavior used by upload/download
+    paths.  Read-only capability probes pass ``create=False`` so merely opening
+    ``/system/tasks`` never mutates the filesystem.
     """
     root = os.path.realpath(os.path.join(_BACKEND_ROOT, settings.EXPORT_DIR))
-    # Ensure directory exists
-    os.makedirs(root, exist_ok=True)
+    if create:
+        os.makedirs(root, exist_ok=True)
     return root

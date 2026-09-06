@@ -49,6 +49,10 @@ def _queue_rejection_message(reason: str) -> str:
         return "任务队列不可用：Redis 未连接或不可达"
     if reason == "queue_full":
         return "任务队列已满，请稍后重试"
+    if reason == "staging_unavailable":
+        return "暂存文件协调服务不可用，请稍后重试"
+    if reason == "staging_object_missing":
+        return "暂存文件已不存在或元数据损坏，请重新上传"
     return f"任务提交失败: {reason or 'unknown'}"
 
 

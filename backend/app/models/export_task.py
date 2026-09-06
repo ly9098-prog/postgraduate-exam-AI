@@ -13,11 +13,12 @@ class ExportTask(Base):
     """An export task for generating a PDF (future: DOCX) from wrong questions.
 
     State machine:
-        pending → processing → completed
-          ↓           ↓
-        expired     failed → pending (retry creates new task)
-          ↓
-        completed → expired (via cleanup scheduler)
+        pending → processing → completed → expired
+                       └────→ failed ─────→ expired
+        completed / failed / expired → pending (in-place re-export)
+
+    The retry endpoint creates a new task row; it does not mutate the failed
+    source row back to pending.
 
     Zombie recovery: tasks stuck in ``processing`` for longer than
     ``EXPORT_PROCESSING_TIMEOUT_SEC`` without heartbeat can be reclaimed

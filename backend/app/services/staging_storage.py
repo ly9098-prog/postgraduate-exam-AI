@@ -22,7 +22,10 @@ import re
 import shutil
 import stat
 import time
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
+from threading import Lock
 from pathlib import Path
 
 from app.core.config import settings
@@ -55,6 +58,7 @@ _DEFAULT_MAX_AGE_SEC = 86400 * 7  # 7 days
 _CLEANUP_INTERVAL_SEC = 3600  # 1 hour
 _METADATA_SUFFIX = ".meta.json"
 _LEASE_SUFFIX = ".lease"
+_ORPHAN_GRACE_SEC = 3600  # never delete a partial write younger than one hour
 
 # Default lease TTL for objects referenced by active tasks
 _DEFAULT_LEASE_SEC = 86400 * 7  # 7 days — covers terminal retention
@@ -89,31 +93,14 @@ def _lease_path(object_id: str) -> Path:
     return _staging_object_dir() / f"{object_id}{_LEASE_SUFFIX}"
 
 
-def lease_object(
+def _write_lease_unlocked(
     object_id: str,
     owner_token: str = "",
     generation: int = 0,
     ttl_sec: int = _DEFAULT_LEASE_SEC,
 ) -> None:
-    """Mark a staging object as in-use (leased) by an active task.
-
-    The lease is tied to a specific task attempt via *owner_token* and
-    *generation*. Only the owning worker can release or extend the lease.
-
-    The cleanup function will skip leased objects even if they are past
-    the default max age.
-
-    Creates a lease file with an absolute expires_at timestamp and
-    ownership metadata (JSON), which is more robust than mtime-based
-    expiry — the lease is preserved across filesystem operations and
-    clock drift is bounded to the worker's own clock.
-
-    When *owner_token* is empty (legacy callers), ownership verification
-    is skipped and any worker can release the lease.
-    """
     import json
 
-    validate_object_id(object_id)
     lp = _lease_path(object_id)
     _ensure_dir(lp.parent)
     expires_at = time.time() + ttl_sec
@@ -124,57 +111,74 @@ def lease_object(
     if owner_token:
         data["owner_token"] = owner_token
         data["generation"] = generation
-    tmp = lp.with_suffix(".lease.tmp")
-    with open(tmp, "w") as f:
-        json.dump(data, f)
-        f.flush()
-        os.fsync(f.fileno())
-    tmp.replace(lp)
+    tmp = lp.with_name(f".{lp.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(lp)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def lease_object(
+    object_id: str,
+    owner_token: str = "",
+    generation: int = 0,
+    ttl_sec: int = _DEFAULT_LEASE_SEC,
+) -> None:
+    """Mark a staging object as in-use by an active task.
+
+    Lease creation is serialized with cleanup/touch so cleanup cannot observe
+    "unleased" and delete the object while a worker is claiming it.
+    """
+    validate_object_id(object_id)
+    with _object_lifecycle_guard(object_id):
+        if not _object_path(object_id).is_file():
+            raise FileNotFoundError(f"Staging object {object_id} not found")
+        _write_lease_unlocked(object_id, owner_token, generation, ttl_sec)
 
 
 def release_object(object_id: str, owner_token: str = "", generation: int = 0) -> bool:
-    """Remove the lease marker for a staging object.
-
-    Only succeeds if *owner_token* and *generation* match the lease data
-    (when ownership info is present). When the lease has no owner_token
-    (legacy), any caller can release it.
-
-    Returns True if the lease was removed, False if it wasn't found or
-    ownership verification failed.
-    """
+    """Remove the lease marker when ownership fencing permits it."""
     import json
 
     validate_object_id(object_id)
-    lp = _lease_path(object_id)
-    if not lp.exists():
-        return False
+    with _object_lifecycle_guard(object_id):
+        lp = _lease_path(object_id)
+        if not lp.exists():
+            return False
 
-    if owner_token:
+        if owner_token:
+            try:
+                with open(lp) as f:
+                    data = json.load(f)
+                stored_owner = data.get("owner_token", "")
+                if stored_owner and stored_owner != owner_token:
+                    logger.warning(
+                        "Lease owner mismatch for %s (expected=%s, got=%s)",
+                        object_id, stored_owner, owner_token,
+                    )
+                    return False
+                stored_gen = data.get("generation", -1)
+                if stored_owner and stored_gen != -1 and stored_gen != generation:
+                    logger.warning(
+                        "Lease generation mismatch for %s (expected=%d, got=%d)",
+                        object_id, stored_gen, generation,
+                    )
+                    return False
+            except (json.JSONDecodeError, OSError):
+                pass
+
         try:
-            with open(lp) as f:
-                data = json.load(f)
-            stored_owner = data.get("owner_token", "")
-            if stored_owner and stored_owner != owner_token:
-                logger.warning(
-                    "Lease owner mismatch for %s (expected=%s, got=%s)",
-                    object_id, stored_owner, owner_token,
-                )
-                return False
-            stored_gen = data.get("generation", -1)
-            if stored_owner and stored_gen != -1 and stored_gen != generation:
-                logger.warning(
-                    "Lease generation mismatch for %s (expected=%d, got=%d)",
-                    object_id, stored_gen, generation,
-                )
-                return False
-        except (json.JSONDecodeError, OSError):
-            pass  # Legacy lease without owner info — proceed
-
-    try:
-        lp.unlink(missing_ok=True)
-        return True
-    except OSError:
-        return False
+            lp.unlink(missing_ok=True)
+            return True
+        except OSError:
+            return False
 
 
 def extend_lease(
@@ -183,44 +187,47 @@ def extend_lease(
     generation: int = 0,
     ttl_sec: int = _DEFAULT_LEASE_SEC,
 ) -> bool:
-    """Extend the lease on a staging object.
-
-    Only succeeds if *owner_token* matches the lease data (when ownership
-    info is present). Returns True on success, False if the lease doesn't
-    exist or ownership verification failed.
-    """
+    """Extend an existing lease without opening a cleanup race."""
     import json
 
     validate_object_id(object_id)
-    lp = _lease_path(object_id)
-    if not lp.exists():
-        return False
-
-    if owner_token:
-        try:
-            with open(lp) as f:
-                data = json.load(f)
-            stored_owner = data.get("owner_token", "")
-            if stored_owner and stored_owner != owner_token:
-                logger.warning(
-                    "Extend lease owner mismatch for %s (expected=%s, got=%s)",
-                    object_id, stored_owner, owner_token,
-                )
-                return False
-        except (json.JSONDecodeError, OSError):
+    with _object_lifecycle_guard(object_id):
+        lp = _lease_path(object_id)
+        if not lp.exists() or not _object_path(object_id).is_file():
             return False
 
-    # Re-write lease with new TTL (preserving existing fields)
-    lease_object(object_id, owner_token=owner_token, generation=generation, ttl_sec=ttl_sec)
-    return True
+        if owner_token:
+            try:
+                with open(lp) as f:
+                    data = json.load(f)
+                stored_owner = data.get("owner_token", "")
+                if stored_owner and stored_owner != owner_token:
+                    logger.warning(
+                        "Extend lease owner mismatch for %s (expected=%s, got=%s)",
+                        object_id, stored_owner, owner_token,
+                    )
+                    return False
+                stored_gen = data.get("generation", -1)
+                if stored_owner and stored_gen != -1 and stored_gen != generation:
+                    logger.warning(
+                        "Extend lease generation mismatch for %s (expected=%d, got=%d)",
+                        object_id, stored_gen, generation,
+                    )
+                    return False
+            except (json.JSONDecodeError, OSError):
+                return False
+
+        _write_lease_unlocked(object_id, owner_token, generation, ttl_sec)
+        return True
 
 
 def create_work_copy(object_id: str, scratch_dir: str | Path) -> Path:
     """Create a writable copy of a staging object in the scratch directory.
 
-    Attempts a hard link first (same filesystem, zero-copy), falling back
-    to a file copy. The returned path is the work copy — the caller may
-    read, modify, or delete it. The staging original is NEVER modified.
+    Always copies bytes into a unique scratch path. Hard links are deliberately
+    avoided because a writable hard link would mutate the content-addressed
+    staging inode. The caller may read, modify, or delete the returned copy;
+    the staging original is NEVER modified.
 
     Raises FileNotFoundError if the staging object does not exist.
     """
@@ -230,7 +237,11 @@ def create_work_copy(object_id: str, scratch_dir: str | Path) -> Path:
         raise FileNotFoundError(f"Staging object {object_id} not found at {src}")
 
     _ensure_dir(Path(scratch_dir))
-    work_path = Path(scratch_dir) / f"{object_id}.work"
+    # Content-addressed staging objects can be referenced by multiple durable
+    # tasks at the same time.  A deterministic ``{object_id}.work`` path makes
+    # those workers overwrite and mutate the same scratch file.  Give every
+    # claim an independent work copy instead.
+    work_path = Path(scratch_dir) / f"{object_id}.{uuid.uuid4().hex}.work"
 
     # Copy file data without preserving permissions (staging original is 0o400 read-only).
     # The work copy gets default write permissions so the pipeline can modify it.
@@ -268,176 +279,230 @@ def set_object_retention(object_id: str, ttl_sec: int, owner_token: str = "", ge
 # ── Refcount for content-addressed staging objects ──
 
 _REFCOUNT_STORE: dict[str, int] = {}
-"""In-memory refcount fallback when Redis is unavailable.
+"""In-memory refcount fallback used only in development/local environments."""
 
-Used only in development/local environments.
+# Object lifecycle coordination -------------------------------------------------
+#
+# Staging objects are content-addressed and may be reused by a new task at the
+# same moment the hourly cleanup decides an old object is expired.  Metadata
+# timestamps alone cannot close that TOCTOU window.  Serialize lifecycle
+# mutations (touch/lease/refcount/delete) with a short Redis guard in deployed
+# environments.  Local development without Redis uses an in-process lock.
+_OBJECT_GUARD_PREFIX = "staging:v2:guard"
+_OBJECT_GUARD_TTL_SEC = 30
+_OBJECT_GUARD_WAIT_SEC = 3.0
+_OBJECT_GUARD_RELEASE_LUA = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+"""
+_LOCAL_OBJECT_GUARDS: tuple[Lock, ...] = tuple(Lock() for _ in range(64))
+
+
+def _local_object_guard(object_id: str) -> Lock:
+    # Fixed lock striping avoids an unbounded per-object lock registry in long
+    # running development processes while preserving lifecycle serialization.
+    return _LOCAL_OBJECT_GUARDS[hash(object_id) % len(_LOCAL_OBJECT_GUARDS)]
+
+
+# Synchronous staging cleanup runs in ``asyncio.to_thread``.  It must not reuse
+# the application's ``redis.asyncio`` client through ``asyncio.run`` because
+# that client belongs to the main event loop.  Keep a dedicated synchronous
+# redis-py client for the synchronous cleanup/refcount path.
+_REFCOUNT_SYNC_CLIENT = None
+
+# Atomic decrement prevents a DECR -> concurrent INCR -> DEL race from deleting
+# a newly-live reference count.
+_REFCOUNT_DECR_LUA = """
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+if current <= 1 then
+  redis.call('DEL', KEYS[1])
+  return 0
+end
+return redis.call('DECR', KEYS[1])
 """
 
 
-def _get_redis_client():
-    """Get the shared async Redis client from the app cache module.
-
-    Returns None if Redis is not configured or not available.
-    Uses the same connection pool as the rest of the application.
-    """
-    try:
-        from app.core.cache import cache
-        # cache._client is the underlying redis.asyncio.Redis instance
-        client = getattr(cache, "_client", None)
-        if client is not None:
-            return client
-        # Lazy-init: trigger _ensure_client which creates the connection
+def _ensure_refcount_redis_sync():
+    global _REFCOUNT_SYNC_CLIENT
+    if not settings.REDIS_URL:
         return None
+    if _REFCOUNT_SYNC_CLIENT is not None:
+        return _REFCOUNT_SYNC_CLIENT
+    try:
+        import redis as redis_sync
+
+        _REFCOUNT_SYNC_CLIENT = redis_sync.from_url(
+            settings.REDIS_URL,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+            decode_responses=True,
+        )
+        return _REFCOUNT_SYNC_CLIENT
     except Exception:
+        _REFCOUNT_SYNC_CLIENT = None
         return None
 
 
-async def _ensure_refcount_redis():
-    """Get or create the shared async Redis client for refcount operations.
+def _reset_refcount_redis_sync() -> None:
+    global _REFCOUNT_SYNC_CLIENT
+    client = _REFCOUNT_SYNC_CLIENT
+    _REFCOUNT_SYNC_CLIENT = None
+    if client is not None:
+        try:
+            client.close()
+        except Exception:
+            pass
 
-    Uses the application-wide Redis connection pool from the cache module.
-    Returns None if Redis is unavailable.
+
+@contextmanager
+def _object_lifecycle_guard(object_id: str):
+    """Serialize lifecycle mutation for one staging object.
+
+    Production uses Redis so cleanup, web enqueue and workers running in
+    different processes cannot delete/reuse the same object concurrently.
+    Failure to acquire/read the coordination backend is fail-closed.
     """
+    validate_object_id(object_id)
+    if not settings.REDIS_URL:
+        lock = _local_object_guard(object_id)
+        acquired = lock.acquire(timeout=_OBJECT_GUARD_WAIT_SEC)
+        if not acquired:
+            raise RuntimeError(f"Timed out acquiring staging guard: {object_id}")
+        try:
+            yield
+        finally:
+            lock.release()
+        return
+
+    client = _ensure_refcount_redis_sync()
+    if client is None:
+        if _is_production:
+            raise RuntimeError("Redis unavailable for staging lifecycle guard")
+        lock = _local_object_guard(object_id)
+        acquired = lock.acquire(timeout=_OBJECT_GUARD_WAIT_SEC)
+        if not acquired:
+            raise RuntimeError(f"Timed out acquiring staging guard: {object_id}")
+        try:
+            yield
+        finally:
+            lock.release()
+        return
+
+    key = f"{_OBJECT_GUARD_PREFIX}:{object_id}"
+    token = uuid.uuid4().hex
+    deadline = time.monotonic() + _OBJECT_GUARD_WAIT_SEC
+    acquired = False
     try:
-        from app.core.cache import cache
-
-        if not cache.is_enabled:
-            return None
-        # Trigger lazy connection via cache's internal _ensure_client
-        client = await cache._ensure_client()
-        return client
-    except Exception:
-        return None
-
-
-def _redis_sync(coro):
-    """Run an async Redis coroutine synchronously via a temporary event loop.
-
-    Only used from sync functions (incr_refcount, decr_refcount, get_refcount)
-    called via asyncio.to_thread — they run in a thread pool where they can
-    create their own event loop. Safe for the limited cases where sync staging
-    functions need Redis access.
-    """
-    import asyncio
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop is not None:
-        # We're in an async context — use asyncio.run_coroutine_threadsafe
-        # but this is complex. Instead, return None and let the caller
-        # use in-memory fallback.
-        return None
-    try:
-        return asyncio.run(coro)
-    except Exception:
-        return None
+        while time.monotonic() < deadline:
+            try:
+                if client.set(key, token, nx=True, ex=_OBJECT_GUARD_TTL_SEC):
+                    acquired = True
+                    break
+            except Exception as exc:
+                _reset_refcount_redis_sync()
+                raise RuntimeError("Redis unavailable for staging lifecycle guard") from exc
+            time.sleep(0.025)
+        if not acquired:
+            raise RuntimeError(f"Timed out acquiring staging guard: {object_id}")
+        yield
+    finally:
+        if acquired:
+            try:
+                client.eval(_OBJECT_GUARD_RELEASE_LUA, 1, key, token)
+            except Exception:
+                # TTL guarantees eventual release.  Do not mask the operation
+                # result solely because guard cleanup failed.
+                logger.warning("Failed to release staging lifecycle guard: %s", object_id)
 
 
 def _refcount_key(object_id: str) -> str:
+    validate_object_id(object_id)
     return f"staging:v2:refcount:{object_id}"
 
 
-async def _refcount_redis_async(op: str, object_id: str) -> int | None:
-    """Execute a refcount Redis operation using the shared async Redis client.
-
-    Uses the application-wide Redis connection pool — no per-call connection
-    creation. Returns int or None on failure (caller falls back to in-memory).
-    """
+def _refcount_redis_op(op: str, object_id: str) -> int | None:
+    """Execute a synchronous refcount operation without crossing event loops."""
+    client = _ensure_refcount_redis_sync()
+    if client is None:
+        return None
+    key = _refcount_key(object_id)
     try:
-        client = await _ensure_refcount_redis()
-        if client is None:
-            return None
-        key = _refcount_key(object_id)
         if op == "incr":
-            return await client.incr(key)
-        elif op == "decr":
-            val = await client.decr(key)
-            if val <= 0:
-                await client.delete(key)
-            return max(0, val)
-        elif op == "get":
-            val = await client.get(key)
-            return int(val) if val else 0
+            return int(client.incr(key))
+        if op == "decr":
+            return int(client.eval(_REFCOUNT_DECR_LUA, 1, key))
+        if op == "get":
+            value = client.get(key)
+            return int(value) if value else 0
         return None
     except Exception:
+        _reset_refcount_redis_sync()
         return None
 
 
-def _refcount_redis_op(op: str, object_id: str) -> int | None:
-    """Sync wrapper for _refcount_redis_async. Uses _redis_sync to bridge.
+def get_refcounts(object_ids: list[str]) -> dict[str, int]:
+    """Fetch many refcounts in one Redis round trip.
 
-    Only used from sync callers (via asyncio.to_thread). Returns None on
-    failure so callers fall back to in-memory store.
+    Cleanup may inspect thousands of objects.  MGET keeps the hourly job cheap
+    and gives production a single fail-closed decision before any deletion.
     """
-    return _redis_sync(_refcount_redis_async(op, object_id))
+    unique_ids = list(dict.fromkeys(object_ids))
+    if not unique_ids:
+        return {}
+    if settings.REDIS_URL:
+        client = _ensure_refcount_redis_sync()
+        if client is not None:
+            try:
+                values = client.mget([_refcount_key(object_id) for object_id in unique_ids])
+                return {
+                    object_id: int(value) if value else 0
+                    for object_id, value in zip(unique_ids, values, strict=True)
+                }
+            except Exception:
+                _reset_refcount_redis_sync()
+        if _is_production:
+            raise RuntimeError("Redis unavailable for staging refcount batch read")
+    return {object_id: _REFCOUNT_STORE.get(object_id, 0) for object_id in unique_ids}
 
 
 def incr_refcount(object_id: str) -> int:
-    """Increment the reference count for a content-addressed staging object.
-
-    Content-addressed objects (same SHA-256 = same object_id) may be
-    referenced by multiple tasks. The refcount ensures the object is not
-    deleted until all referencing tasks have completed and their leases
-    have expired.
-
-    Uses Redis when available. In production, Redis failure raises
-    RuntimeError. In development, falls back to in-memory store.
-
-    Raises:
-        RuntimeError: In production when Redis is unavailable.
-    """
-    if settings.REDIS_URL:
-        val = _refcount_redis_op("incr", object_id)
-        if val is not None:
-            return val
-        if _is_production:
-            raise RuntimeError(
-                f"Redis unavailable for refcount incr (object_id={object_id})"
-            )
-    # In-memory fallback (development only)
-    count = _REFCOUNT_STORE.get(object_id, 0) + 1
-    _REFCOUNT_STORE[object_id] = count
-    return count
+    """Increment the staging reference count under the lifecycle guard."""
+    validate_object_id(object_id)
+    with _object_lifecycle_guard(object_id):
+        if settings.REDIS_URL:
+            value = _refcount_redis_op("incr", object_id)
+            if value is not None:
+                return value
+            if _is_production:
+                raise RuntimeError(f"Redis unavailable for refcount incr (object_id={object_id})")
+        count = _REFCOUNT_STORE.get(object_id, 0) + 1
+        _REFCOUNT_STORE[object_id] = count
+        return count
 
 
 def decr_refcount(object_id: str) -> int:
-    """Decrement the reference count. Returns new count (0 = no more references).
-
-    Raises:
-        RuntimeError: In production when Redis is unavailable.
-    """
-    if settings.REDIS_URL:
-        val = _refcount_redis_op("decr", object_id)
-        if val is not None:
-            return val
-        if _is_production:
-            raise RuntimeError(
-                f"Redis unavailable for refcount decr (object_id={object_id})"
-            )
-    count = _REFCOUNT_STORE.get(object_id, 0) - 1
-    if count <= 0:
-        _REFCOUNT_STORE.pop(object_id, None)
-    else:
-        _REFCOUNT_STORE[object_id] = count
-    return max(0, count)
+    """Atomically decrement a staging reference count, never below zero."""
+    validate_object_id(object_id)
+    with _object_lifecycle_guard(object_id):
+        if settings.REDIS_URL:
+            value = _refcount_redis_op("decr", object_id)
+            if value is not None:
+                return value
+            if _is_production:
+                raise RuntimeError(f"Redis unavailable for refcount decr (object_id={object_id})")
+        count = _REFCOUNT_STORE.get(object_id, 0) - 1
+        if count <= 0:
+            _REFCOUNT_STORE.pop(object_id, None)
+        else:
+            _REFCOUNT_STORE[object_id] = count
+        return max(0, count)
 
 
 def get_refcount(object_id: str) -> int:
-    """Return the current reference count (0 if unknown).
-
-    Raises:
-        RuntimeError: In production when Redis is unavailable.
-    """
-    if settings.REDIS_URL:
-        val = _refcount_redis_op("get", object_id)
-        if val is not None:
-            return val
-        if _is_production:
-            raise RuntimeError(
-                f"Redis unavailable for refcount get (object_id={object_id})"
-            )
-    return _REFCOUNT_STORE.get(object_id, 0)
+    """Return the current reference count (0 if unknown)."""
+    return get_refcounts([object_id]).get(object_id, 0)
 
 
 def is_object_leased(object_id: str, max_lease_sec: int = _DEFAULT_LEASE_SEC) -> bool:
@@ -479,6 +544,10 @@ class StagingObject:
     original_name: str
     created_at: float
     staging_path: str
+    # Refreshed whenever a durable task references this content-addressed
+    # object. Cleanup uses it in addition to created_at, so reusing an older
+    # object cannot race the hourly retention sweep before a worker claims it.
+    last_referenced_at: float | None = None
 
 
 def _ensure_dir(path: Path) -> None:
@@ -557,22 +626,34 @@ def store_file(
     dest = _object_path(object_id)
 
     if dest.exists():
+        touch_object(object_id)
         return _load_metadata(object_id)
 
     src_size = os.path.getsize(source_path)
     _check_disk_quota(_staging_object_dir(), src_size)
     _ensure_dir(dest.parent)
 
-    # Atomic write: .data.tmp → fsync → rename
-    tmp_dest = dest.with_suffix(".data.tmp")
-    with open(source_path, "rb") as src_f:
-        with open(tmp_dest, "wb") as dst_f:
-            import shutil
-            shutil.copyfileobj(src_f, dst_f)
-            dst_f.flush()
-            os.fsync(dst_f.fileno())
-    tmp_dest.chmod(0o400)
-    tmp_dest.replace(dest)
+    # Atomic write with a unique sibling temp file.  A deterministic
+    # ``.data.tmp`` name lets concurrent uploads of identical content truncate
+    # each other's temporary file before the atomic rename.
+    tmp_dest = dest.with_name(f".{dest.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with open(source_path, "rb") as src_f:
+            with open(tmp_dest, "wb") as dst_f:
+                shutil.copyfileobj(src_f, dst_f)
+                dst_f.flush()
+                os.fsync(dst_f.fileno())
+        tmp_dest.chmod(0o400)
+        # Replacing an already-created content-addressed target is harmless
+        # (the bytes have the same SHA-256), but avoid needless churn when a
+        # concurrent writer won the race.
+        if not dest.exists():
+            tmp_dest.replace(dest)
+    finally:
+        try:
+            tmp_dest.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     meta = {
         "object_id": object_id,
@@ -582,6 +663,7 @@ def store_file(
         "original_name": original_name,
         "created_at": time.time(),
         "staging_path": str(dest),
+        "last_referenced_at": time.time(),
     }
     _write_metadata(object_id, meta)
     logger.info(
@@ -589,6 +671,28 @@ def store_file(
         object_id, sha256[:16], src_size, mime,
     )
     return StagingObject(**meta)
+
+
+def touch_object(object_id: str) -> bool:
+    """Refresh retention without racing the cleanup decision/delete window."""
+    import json
+
+    validate_object_id(object_id)
+    with _object_lifecycle_guard(object_id):
+        if not _object_path(object_id).is_file():
+            return False
+        metadata_path = _metadata_path(object_id)
+        if not metadata_path.is_file():
+            return False
+        try:
+            data = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                return False
+            data["last_referenced_at"] = time.time()
+            _write_metadata(object_id, data)
+            return True
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return False
 
 
 def retrieve_file(object_id: str) -> str | None:
@@ -614,17 +718,22 @@ def get_metadata(object_id: str) -> StagingObject | None:
         return None
 
 
-def delete_object(object_id: str) -> bool:
-    """Delete a staging object and its metadata. Returns True if deleted."""
-    validate_object_id(object_id)
+def _delete_object_unlocked(object_id: str) -> bool:
     removed = False
-    for p in (_object_path(object_id), _metadata_path(object_id)):
+    for p in (_object_path(object_id), _metadata_path(object_id), _lease_path(object_id)):
         if p.exists():
             p.unlink()
             removed = True
     if removed:
         logger.info("Deleted staging object: object_id=%s", object_id)
     return removed
+
+
+def delete_object(object_id: str) -> bool:
+    """Delete a staging object while excluding concurrent reuse/lease."""
+    validate_object_id(object_id)
+    with _object_lifecycle_guard(object_id):
+        return _delete_object_unlocked(object_id)
 
 
 def _load_metadata(object_id: str) -> StagingObject:
@@ -645,78 +754,184 @@ def _write_metadata(object_id: str, data: dict) -> None:
     """
     import json
     mp = _metadata_path(object_id)
-    tmp = mp.with_suffix(".meta.tmp")
-    with open(tmp, "w") as f:
-        json.dump(data, f, ensure_ascii=False)
-        f.flush()
-        os.fsync(f.fileno())
-    tmp.replace(mp)
-    mp.chmod(0o400)
+    tmp = mp.with_name(f".{mp.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with open(tmp, "w") as f:
+            json.dump(data, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.chmod(0o400)
+        tmp.replace(mp)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def cleanup_orphans(max_age_sec: int | None = None) -> int:
-    """Remove staging objects older than *max_age_sec*.
+    """Remove expired/orphan staging entries without racing active writers.
 
-    Removes:
-    - Expired objects (created_at < cutoff) that are not leased and have no refcount
-    - Orphan ``.data`` files without matching ``.meta.json`` (crash during atomic write)
-    - Orphan ``.meta.json`` files without matching ``.data``
-    - Stale ``.data.tmp`` / ``.meta.tmp`` files (crash during atomic write)
-
-    Objects that are currently leased OR have a refcount > 0 are SKIPPED.
-    This prevents cleanup from deleting data still needed by queued,
-    processing, or retry tasks, or shared by multiple tasks.
-
-    Returns the number of objects removed.
+    Normal retention follows ``STAGING_RETENTION_SEC``.  Partial files and
+    malformed/legacy markers are only reclaimed after a separate one-hour
+    grace period.  In production Redis refcount lookup fails closed: if the
+    shared reference state cannot be read, this function raises before
+    deleting any staged object.
     """
-    age = max_age_sec or _DEFAULT_MAX_AGE_SEC
-    cutoff = time.time() - age
-    removed = 0
+    import json
+
+    configured_age = int(
+        getattr(settings, "STAGING_RETENTION_SEC", _DEFAULT_MAX_AGE_SEC)
+        or _DEFAULT_MAX_AGE_SEC
+    )
+    age = int(max_age_sec) if max_age_sec is not None else configured_age
+    age = max(_ORPHAN_GRACE_SEC, age)
+    now = time.time()
+    cutoff = now - age
+    orphan_cutoff = now - _ORPHAN_GRACE_SEC
     obj_dir = _staging_object_dir()
+    removed = 0
 
-    # Clean stale .tmp files from crashed atomic writes
-    if obj_dir.is_dir():
-        for entry in list(obj_dir.iterdir()):
-            if entry.suffix in (".tmp", ".tmp") and "tmp" in entry.name:
-                try:
-                    entry.unlink()
-                    removed += 1
-                except OSError:
-                    pass
+    def older_than(path: Path, threshold: float) -> bool:
+        try:
+            return path.stat().st_mtime < threshold
+        except OSError:
+            return False
 
-    # Collect all object_ids from .data and .meta files
+    def unlink(path: Path) -> bool:
+        try:
+            path.unlink(missing_ok=True)
+            return True
+        except OSError as exc:
+            logger.warning("Failed to remove staging entry %s: %s", path.name, exc)
+            return False
+
+    entries = list(obj_dir.iterdir()) if obj_dir.is_dir() else []
+
+    # Atomic-write leftovers must never be deleted while a writer may still be
+    # fsyncing/renaming them.
+    for entry in entries:
+        if entry.is_file() and entry.name.endswith(".tmp") and older_than(entry, orphan_cutoff):
+            removed += int(unlink(entry))
+
+    # Expired/corrupt leases should not protect an object forever.  Valid live
+    # leases are left untouched and checked again below via is_object_leased().
+    for entry in entries:
+        if not entry.is_file() or not entry.name.endswith(_LEASE_SUFFIX):
+            continue
+        oid = entry.name[:-len(_LEASE_SUFFIX)]
+        try:
+            validate_object_id(oid)
+        except ValueError:
+            if older_than(entry, orphan_cutoff):
+                removed += int(unlink(entry))
+            continue
+        with _object_lifecycle_guard(oid):
+            # The path may have been replaced by an extend/claim while cleanup
+            # waited for the guard, so inspect the current lease, not the old
+            # directory-entry snapshot.
+            current = _lease_path(oid)
+            if not current.exists():
+                continue
+            stale = False
+            try:
+                data = json.loads(current.read_text(encoding="utf-8"))
+                expires_at = data.get("expires_at")
+                if expires_at is not None:
+                    stale = float(expires_at) <= time.time()
+                else:
+                    stale = older_than(current, time.time() - max(_DEFAULT_LEASE_SEC, _ORPHAN_GRACE_SEC))
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                stale = older_than(current, orphan_cutoff)
+            if stale:
+                removed += int(unlink(current))
+
     data_ids: set[str] = set()
     meta_ids: set[str] = set()
-    if obj_dir.is_dir():
-        for entry in obj_dir.iterdir():
-            if entry.suffix == ".data":
-                data_ids.add(entry.stem)
-            elif entry.name.endswith(_METADATA_SUFFIX):
-                meta_ids.add(entry.stem)
-
-    all_ids = data_ids | meta_ids
-    for oid in sorted(all_ids):
-        # Skip objects that are leased or still referenced
-        if is_object_leased(oid):
+    invalid_files: list[Path] = []
+    for entry in list(obj_dir.iterdir()) if obj_dir.is_dir() else []:
+        if not entry.is_file():
             continue
-        if get_refcount(oid) > 0:
-            continue
+        if entry.name.endswith(".data"):
+            oid = entry.name[:-len(".data")]
+            try:
+                validate_object_id(oid)
+            except ValueError:
+                invalid_files.append(entry)
+            else:
+                data_ids.add(oid)
+        elif entry.name.endswith(_METADATA_SUFFIX):
+            oid = entry.name[:-len(_METADATA_SUFFIX)]
+            try:
+                validate_object_id(oid)
+            except ValueError:
+                invalid_files.append(entry)
+            else:
+                meta_ids.add(oid)
 
-        meta = get_metadata(oid)
-        if meta and meta.created_at < cutoff:
-            delete_object(oid)
-            removed += 1
-        elif meta is None:
-            # Orphan — remove leftover files (data without meta or vice versa)
-            for p in (_object_path(oid), _metadata_path(oid)):
-                if p.exists():
-                    p.unlink()
+    # Unknown files are never touched immediately; allow an operator or an
+    # interrupted deployment a grace period first.
+    for entry in invalid_files:
+        if older_than(entry, orphan_cutoff):
+            removed += int(unlink(entry))
+
+    all_ids = sorted(data_ids | meta_ids)
+    refcounts = get_refcounts(all_ids)  # fail closed before object deletion
+
+    for oid in all_ids:
+        # Re-check every lifecycle signal while holding the same guard used by
+        # enqueue touches, worker leases and refcount mutations.  This closes
+        # the classic check-old-metadata -> concurrent reuse -> delete race.
+        with _object_lifecycle_guard(oid):
+            if is_object_leased(oid):
+                continue
+            if get_refcount(oid) > 0:
+                continue
+
+            data_path = _object_path(oid)
+            meta_path = _metadata_path(oid)
+            has_data = data_path.exists()
+            has_meta = meta_path.exists()
+
+            # A data/meta half-pair can be the tiny crash window between the two
+            # atomic renames.  Only reclaim it after the orphan grace period.
+            if not (has_data and has_meta):
+                existing = [path for path in (data_path, meta_path) if path.exists()]
+                if existing and all(older_than(path, orphan_cutoff) for path in existing):
+                    for path in existing:
+                        removed += int(unlink(path))
+                continue
+
+            try:
+                meta = _load_metadata(oid)
+            except Exception:
+                # Corrupt metadata plus data is also protected by the grace window.
+                if older_than(data_path, orphan_cutoff) and older_than(meta_path, orphan_cutoff):
+                    removed += int(unlink(data_path))
+                    removed += int(unlink(meta_path))
+                continue
+
+            reference_at = float(meta.last_referenced_at or meta.created_at)
+            if reference_at < cutoff:
+                if _delete_object_unlocked(oid):
                     removed += 1
 
     if removed:
-        logger.info("Cleanup removed %d expired/orphaned staging objects", removed)
+        logger.info("Cleanup removed %d expired/orphaned staging entries", removed)
     return removed
 
+
+def inspect_staging_cleanup_capability() -> tuple[bool, str | None]:
+    """Return whether the staging cleanup can safely read and mutate storage."""
+    try:
+        obj_dir = _staging_object_dir()
+    except Exception as exc:
+        return False, f"staging 目录不可创建：{type(exc).__name__}: {str(exc)[:160]}"
+    if not obj_dir.is_dir():
+        return False, "staging objects 路径不是目录"
+    if not os.access(obj_dir, os.R_OK | os.W_OK | os.X_OK):
+        return False, "staging objects 目录缺少读/写/遍历权限"
+    return True, None
 
 def sweep_temp_files() -> int:
     """Clean up legacy temp files from previous runs.
@@ -750,6 +965,11 @@ async def async_store_file(
 ) -> StagingObject:
     """Async wrapper for store_file — runs in executor to avoid blocking."""
     return await asyncio.to_thread(store_file, source_path, original_name, mime)
+
+
+async def async_touch_object(object_id: str) -> bool:
+    """Async wrapper for touch_object."""
+    return await asyncio.to_thread(touch_object, object_id)
 
 
 async def async_retrieve_file(object_id: str) -> str | None:
@@ -822,33 +1042,17 @@ async def async_set_object_retention(
 
 
 async def async_incr_refcount(object_id: str) -> int:
-    """Async: increment refcount using the shared Redis client."""
-    if settings.REDIS_URL:
-        val = await _refcount_redis_async("incr", object_id)
-        if val is not None:
-            return val
-    # In-memory fallback (development only)
-    count = _REFCOUNT_STORE.get(object_id, 0) + 1
-    _REFCOUNT_STORE[object_id] = count
-    return count
+    """Async wrapper preserving the same lifecycle guard as sync callers."""
+    return await asyncio.to_thread(incr_refcount, object_id)
 
 
 async def async_decr_refcount(object_id: str) -> int:
-    """Async: decrement refcount using the shared Redis client."""
-    if settings.REDIS_URL:
-        val = await _refcount_redis_async("decr", object_id)
-        if val is not None:
-            return val
-    count = _REFCOUNT_STORE.get(object_id, 0) - 1
-    if count <= 0:
-        _REFCOUNT_STORE.pop(object_id, None)
-    else:
-        _REFCOUNT_STORE[object_id] = count
-    return max(0, count)
+    """Async wrapper preserving the same lifecycle guard as sync callers."""
+    return await asyncio.to_thread(decr_refcount, object_id)
 
 
 def get_metrics() -> dict:
-    """Return staging storage metrics: disk usage, object count, lease count."""
+    """Return staging storage metrics: disk usage, object count, leases, orphans."""
     obj_dir = _staging_object_dir()
     disk_usage = 0
     object_count = 0
@@ -857,16 +1061,22 @@ def get_metrics() -> dict:
     if obj_dir.is_dir():
         has_meta: set[str] = set()
         for entry in obj_dir.iterdir():
-            if entry.suffix == ".meta.json":
-                has_meta.add(entry.stem)
+            if entry.is_file() and entry.name.endswith(_METADATA_SUFFIX):
+                has_meta.add(entry.name[:-len(_METADATA_SUFFIX)])
         for entry in obj_dir.iterdir():
-            if entry.suffix == ".data":
+            if not entry.is_file():
+                continue
+            if entry.name.endswith(".data"):
+                oid = entry.name[:-len(".data")]
                 object_count += 1
-                disk_usage += entry.stat().st_size
-                if entry.stem not in has_meta:
+                try:
+                    disk_usage += entry.stat().st_size
+                except OSError:
+                    pass
+                if oid not in has_meta:
                     orphan_count += 1
-            elif entry.suffix == _LEASE_SUFFIX:
-                oid = entry.stem
+            elif entry.name.endswith(_LEASE_SUFFIX):
+                oid = entry.name[:-len(_LEASE_SUFFIX)]
                 try:
                     validate_object_id(oid)
                     if is_object_leased(oid):

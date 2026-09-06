@@ -30,6 +30,7 @@ from app.services.staging_storage import (
     async_create_work_copy,
     async_lease_object,
     async_retrieve_file,
+    async_touch_object,
 )
 from app.services.task_queue_service import (
     EnqueueResult,
@@ -103,13 +104,14 @@ async def _resolve_staging_path(staging_object_id: str, owner_token: str = "", g
     if not staging_object_id:
         raise FileNotFoundError("staging_object_id is empty")
 
-    # Verify the staging object exists
+    # Claim the lifecycle guard-backed lease *before* retrieving/copying.
+    # Otherwise cleanup can delete the object in the gap between an existence
+    # check and lease creation. lease_object itself verifies the data file.
+    await async_lease_object(staging_object_id, owner_token=owner_token, generation=generation)
+
     staged_path = await async_retrieve_file(staging_object_id)
     if not staged_path:
-        raise FileNotFoundError(f"Staging object {staging_object_id} not found")
-
-    # Acquire lease with owner+generation to prevent cleanup during processing
-    await async_lease_object(staging_object_id, owner_token=owner_token, generation=generation)
+        raise FileNotFoundError(f"Staging object {staging_object_id} not found after lease")
 
     # Create a writable work copy so the pipeline can mutate it
     scratch_dir = _get_scratch_dir()
@@ -117,7 +119,7 @@ async def _resolve_staging_path(staging_object_id: str, owner_token: str = "", g
     return str(work_path)
 
 
-async def _resolve_file_path(store: dict | None) -> EnqueueResult:
+async def _resolve_file_path(store: dict | None) -> str:
     """Resolve file path from pipeline store, preferring staging storage.
 
     Legacy fallback from ``_file_path`` has been removed — all production
@@ -320,7 +322,45 @@ async def _enqueue_v2_with_local_fallback(
     task_id: str | None = None,
     max_retries: int = 2,
 ) -> EnqueueResult:
-    """Use Redis v2 normally; fall back to detached local execution only in dev."""
+    """Use Redis v2 normally; fall back to detached local execution only in dev.
+
+    Refresh staging retention before enqueueing. This is deliberately separate
+    from worker ownership leases: touching metadata cannot overwrite an active
+    worker's fenced lease when the same content-addressed object is reused.
+    """
+    staging_ids: list[str] = []
+    single = payload.get("staging_object_id")
+    if isinstance(single, str) and single:
+        staging_ids.append(single)
+    many = payload.get("staging_object_ids")
+    if isinstance(many, list):
+        staging_ids.extend(item for item in many if isinstance(item, str) and item)
+    for object_id in dict.fromkeys(staging_ids):
+        try:
+            touched = await async_touch_object(object_id)
+        except Exception as exc:
+            logger.error(
+                "Staging lifecycle coordination unavailable before enqueue: task=%s object=%s error=%s",
+                task_id or "<generated>", object_id, exc,
+            )
+            return EnqueueResult(
+                accepted=False,
+                task_id=None,
+                reason="staging_unavailable",
+                retry_after=30,
+            )
+        if not touched:
+            logger.warning(
+                "Staging object missing/corrupt before enqueue: task=%s object=%s",
+                task_id or "<generated>", object_id,
+            )
+            return EnqueueResult(
+                accepted=False,
+                task_id=None,
+                reason="staging_object_missing",
+                retry_after=0,
+            )
+
     result = await task_queue.enqueue_v2(
         task_type,
         payload,
@@ -555,176 +595,187 @@ async def _process_task(task: Task) -> None:
         task_type, task.task_id, pipeline_id,
     )
 
-    if task_type == TASK_TYPE_IMPORT_PIPELINE:
-        from app.services.import_pipeline_service import _run_pipeline_with_db
+    legacy_staging_work_copies: list[str] = []
 
-        staging_id = payload.get("staging_object_id", "")
-        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
-        await _run_pipeline_with_db(
-            pipeline_id=pipeline_id,
-            file_path=file_path,
-            source_type=payload.get("source_type", "pdf"),
-            source_file=payload.get("source_file", ""),
-            subject=payload.get("subject"),
-            subject_id=payload.get("subject_id"),
-            options=payload.get("options", {}),
-            created_by=payload.get("created_by"),
-        )
+    async def _resolve_legacy_staging(staging_id: str) -> str:
+        if not staging_id:
+            return ""
+        work_path = await _resolve_staging_path(staging_id)
+        legacy_staging_work_copies.append(work_path)
+        return work_path
 
-    elif task_type == TASK_TYPE_IMAGE_PIPELINE:
-        from app.services.import_pipeline_service import _run_image_pipeline_with_db
+    try:
+        if task_type == TASK_TYPE_IMPORT_PIPELINE:
+            from app.services.import_pipeline_service import _run_pipeline_with_db
 
-        staging_id = payload.get("staging_object_id", "")
-        image_path = await _resolve_staging_path(staging_id) if staging_id else ""
-        if not image_path:
-            raise FileNotFoundError(f"Staging object {staging_id} not found for image pipeline")
-        await _run_image_pipeline_with_db(
-            pipeline_id=pipeline_id,
-            image_path=image_path,
-            source_file=payload.get("source_file", ""),
-            subject=payload.get("subject"),
-            subject_id=payload.get("subject_id"),
-            options=payload.get("options", {}),
-        )
-
-    elif task_type == TASK_TYPE_EXCEL_PIPELINE:
-        from app.features.pipeline_orchestrator import run_excel_pipeline_background
-
-        staging_id = payload.get("staging_object_id", "")
-        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
-        file_content = b""
-        if file_path:
-            with open(file_path, "rb") as _fh:
-                file_content = _fh.read()
-        from app.features import question_pipeline as pipeline_svc
-
-        await run_excel_pipeline_background(
-            pipeline_id=pipeline_id,
-            file_content=file_content,
-            source_file=payload.get("source_file", ""),
-            import_excel_fn=pipeline_svc.import_excel,
-        )
-
-    elif task_type == TASK_TYPE_RESUME_PIPELINE:
-        from app.services.import_pipeline_service import run_resume_background
-
-        staging_id = payload.get("staging_object_id", "")
-        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
-        await run_resume_background(
-            pipeline_id=pipeline_id,
-            file_path=file_path,
-            subject=payload.get("subject"),
-            subject_id=payload.get("subject_id"),
-            options=payload.get("options", {}),
-        )
-
-    elif task_type == TASK_TYPE_ADMIN_RESUME:
-        from app.core.database import async_session
-        from app.features.pipeline_coordinator_entry import run_pipeline
-        from app.features.pipeline_orchestrator import (
-            _get_stage_checkpoint,
-            _set_pipeline_store,
-        )
-
-        staging_id = payload.get("staging_object_id", "")
-        file_path = await _resolve_staging_path(staging_id) if staging_id else ""
-        source_type = payload.get("source_type", "pdf")
-        source_file = payload.get("source_file", "")
-        subject = payload.get("subject")
-        subject_id = payload.get("subject_id")
-        opts = payload.get("options", {})
-
-        # Re-read checkpoint from shared Redis (cross-process accessible)
-        ckpt = await _get_stage_checkpoint(pipeline_id)
-
-        async with async_session() as resume_db:
-            result = await run_pipeline(
+            staging_id = payload.get("staging_object_id", "")
+            file_path = await _resolve_legacy_staging(staging_id)
+            await _run_pipeline_with_db(
+                pipeline_id=pipeline_id,
                 file_path=file_path,
-                source_type=source_type,
-                source_file=source_file,
+                source_type=payload.get("source_type", "pdf"),
+                source_file=payload.get("source_file", ""),
+                subject=payload.get("subject"),
+                subject_id=payload.get("subject_id"),
+                options=payload.get("options", {}),
+                created_by=payload.get("created_by"),
+            )
+
+        elif task_type == TASK_TYPE_IMAGE_PIPELINE:
+            from app.services.import_pipeline_service import _run_image_pipeline_with_db
+
+            staging_id = payload.get("staging_object_id", "")
+            image_path = await _resolve_legacy_staging(staging_id)
+            if not image_path:
+                raise FileNotFoundError(f"Staging object {staging_id} not found for image pipeline")
+            await _run_image_pipeline_with_db(
+                pipeline_id=pipeline_id,
+                image_path=image_path,
+                source_file=payload.get("source_file", ""),
+                subject=payload.get("subject"),
+                subject_id=payload.get("subject_id"),
+                options=payload.get("options", {}),
+            )
+
+        elif task_type == TASK_TYPE_EXCEL_PIPELINE:
+            from app.features.pipeline_orchestrator import run_excel_pipeline_background
+
+            staging_id = payload.get("staging_object_id", "")
+            file_path = await _resolve_legacy_staging(staging_id)
+            file_content = b""
+            if file_path:
+                with open(file_path, "rb") as _fh:
+                    file_content = _fh.read()
+            from app.features import question_pipeline as pipeline_svc
+
+            await run_excel_pipeline_background(
+                pipeline_id=pipeline_id,
+                file_content=file_content,
+                source_file=payload.get("source_file", ""),
+                import_excel_fn=pipeline_svc.import_excel,
+            )
+
+        elif task_type == TASK_TYPE_RESUME_PIPELINE:
+            from app.services.import_pipeline_service import run_resume_background
+
+            staging_id = payload.get("staging_object_id", "")
+            file_path = await _resolve_legacy_staging(staging_id)
+            await run_resume_background(
+                pipeline_id=pipeline_id,
+                file_path=file_path,
+                subject=payload.get("subject"),
+                subject_id=payload.get("subject_id"),
+                options=payload.get("options", {}),
+            )
+
+        elif task_type == TASK_TYPE_ADMIN_RESUME:
+            from app.core.database import async_session
+            from app.features.pipeline_coordinator_entry import run_pipeline
+            from app.features.pipeline_orchestrator import (
+                _get_stage_checkpoint,
+                _set_pipeline_store,
+            )
+
+            staging_id = payload.get("staging_object_id", "")
+            file_path = await _resolve_legacy_staging(staging_id)
+            source_type = payload.get("source_type", "pdf")
+            source_file = payload.get("source_file", "")
+            subject = payload.get("subject")
+            subject_id = payload.get("subject_id")
+            opts = payload.get("options", {})
+
+            # Re-read checkpoint from shared Redis (cross-process accessible)
+            ckpt = await _get_stage_checkpoint(pipeline_id)
+
+            async with async_session() as resume_db:
+                result = await run_pipeline(
+                    file_path=file_path,
+                    source_type=source_type,
+                    source_file=source_file,
+                    subject=subject,
+                    subject_id=subject_id,
+                    options=opts,
+                    db=resume_db,
+                    pipeline_id=pipeline_id,
+                    resume_from_checkpoint=ckpt,
+                )
+            # Store result in pipeline store for status polling
+            try:
+                await _set_pipeline_store(pipeline_id, result)
+            except Exception:
+                logger.warning("Failed to store admin resume result for %s", pipeline_id)
+
+        elif task_type == TASK_TYPE_ANSWER_PROJECTION:
+            await _process_answer_projection_task(task)
+
+        elif task_type == TASK_TYPE_FORMULA_BATCH:
+            from sqlalchemy import select
+
+            from app.core.database import async_session
+            from app.models.formula import FormulaCard
+            from app.services.formula_graph_spec_service import _process_batch
+
+            card_ids = payload.get("card_ids", [])
+            admin_id = payload.get("admin_id", 0)
+            job_id = payload.get("job_id", "")
+
+            async with async_session() as db:
+                result = await db.execute(
+                    select(FormulaCard).where(FormulaCard.id.in_(card_ids))
+                )
+                cards = list(result.scalars().all())
+
+            await _process_batch(job_id, cards, admin_id)
+
+        elif task_type == TASK_TYPE_BATCH_IMAGE:
+            from app.features import batch_image_import_service as batch_svc
+
+            job_id = payload.get("job_id", "")
+            staging_ids: list[str] = payload.get("staging_object_ids", [])
+            subject = payload.get("subject")
+            subject_id = payload.get("subject_id")
+            options = payload.get("options", {})
+            concurrency = payload.get("concurrency", 2)
+
+            # Even the legacy runner must preserve staging immutability: acquire
+            # a cleanup lease and hand the pipeline a private writable work copy.
+            sources: list[batch_svc.BatchImageSource] = []
+            for idx, staging_id in enumerate(staging_ids):
+                if not staging_id:
+                    logger.warning(
+                        "Empty staging_object_id for batch image seq=%d job=%s",
+                        idx + 1, job_id,
+                    )
+                    continue
+                work_path = await _resolve_legacy_staging(staging_id)
+                sources.append(batch_svc.BatchImageSource(
+                    seq=idx + 1,
+                    source_file=f"image_{idx + 1}.png",
+                    temp_path=work_path,
+                ))
+
+            if not sources:
+                raise FileNotFoundError(
+                    f"No valid staging sources for batch image job {job_id}"
+                )
+
+            await batch_svc.run_batch_job(
+                job_id=job_id,
+                sources=sources,
                 subject=subject,
                 subject_id=subject_id,
-                options=opts,
-                db=resume_db,
-                pipeline_id=pipeline_id,
-                resume_from_checkpoint=ckpt,
+                options=options,
+                concurrency=concurrency,
             )
-        # Store result in pipeline store for status polling
-        try:
-            await _set_pipeline_store(pipeline_id, result)
-        except Exception:
-            logger.warning("Failed to store admin resume result for %s", pipeline_id)
 
-    elif task_type == TASK_TYPE_ANSWER_PROJECTION:
-        await _process_answer_projection_task(task)
-
-    elif task_type == TASK_TYPE_FORMULA_BATCH:
-        from sqlalchemy import select
-
-        from app.core.database import async_session
-        from app.models.formula import FormulaCard
-        from app.services.formula_graph_spec_service import _process_batch
-
-        card_ids = payload.get("card_ids", [])
-        admin_id = payload.get("admin_id", 0)
-        job_id = payload.get("job_id", "")
-
-        async with async_session() as db:
-            result = await db.execute(
-                select(FormulaCard).where(FormulaCard.id.in_(card_ids))
-            )
-            cards = list(result.scalars().all())
-
-        await _process_batch(job_id, cards, admin_id)
-
-    elif task_type == TASK_TYPE_BATCH_IMAGE:
-        from app.features import batch_image_import_service as batch_svc
-        from app.services.staging_storage import retrieve_file
-
-        job_id = payload.get("job_id", "")
-        staging_ids: list[str] = payload.get("staging_object_ids", [])
-        subject = payload.get("subject")
-        subject_id = payload.get("subject_id")
-        options = payload.get("options", {})
-        concurrency = payload.get("concurrency", 2)
-
-        # Reconstruct BatchImageSource from staging object IDs
-        sources: list[batch_svc.BatchImageSource] = []
-        for idx, staging_id in enumerate(staging_ids):
-            if not staging_id:
-                logger.warning(
-                    "Empty staging_object_id for batch image seq=%d job=%s",
-                    idx + 1, job_id,
-                )
-                continue
-            file_path = retrieve_file(staging_id)
-            if not file_path:
-                logger.warning(
-                    "Staging object %s not found for batch image seq=%d job=%s",
-                    staging_id, idx + 1, job_id,
-                )
-                continue
-            sources.append(batch_svc.BatchImageSource(
-                seq=idx + 1,
-                source_file=f"image_{idx + 1}.png",
-                temp_path=file_path,
-            ))
-
-        if not sources:
-            logger.error("No valid sources found for batch image job %s", job_id)
-            return
-
-        await batch_svc.run_batch_job(
-            job_id=job_id,
-            sources=sources,
-            subject=subject,
-            subject_id=subject_id,
-            options=options,
-            concurrency=concurrency,
-        )
-
-    else:
-        logger.warning("Unknown task type: %s", task_type)
+        else:
+            # Never acknowledge an unknown task as successful. The legacy/local
+            # runner should fail it just like v2 so queue corruption or a rolling
+            # deployment mismatch remains visible and retry/dead-letter policy can act.
+            raise ValueError(f"unknown_task_type: {task_type}")
+    finally:
+        for work_path in legacy_staging_work_copies:
+            await async_cleanup_work_copy(work_path)
 
 
 async def run_pipeline_worker(
@@ -968,6 +1019,17 @@ async def _process_task_v2(task: Task) -> None:
             generation=task.generation,
         )
 
+    staging_work_copies: list[str] = []
+
+    async def _resolve_owned_staging(staging_id: str) -> str:
+        if not staging_id:
+            return ""
+        work_path = await _resolve_staging_path(
+            staging_id, task.owner_token, task.generation
+        )
+        staging_work_copies.append(work_path)
+        return work_path
+
     try:
         if task_type == TASK_TYPE_IMPORT_PIPELINE:
             from app.services.import_pipeline_service import _run_pipeline_with_db
@@ -975,7 +1037,7 @@ async def _process_task_v2(task: Task) -> None:
             if _fence_record_id:
                 await _verify_fencing_or_cancel(task, _fence_record_id, task_type)
             staging_id = payload.get("staging_object_id", "")
-            file_path = await _resolve_staging_path(staging_id, task.owner_token, task.generation) if staging_id else ""
+            file_path = await _resolve_owned_staging(staging_id)
             await _run_pipeline_with_db(
                 pipeline_id=pipeline_id,
                 file_path=file_path,
@@ -991,7 +1053,7 @@ async def _process_task_v2(task: Task) -> None:
             from app.services.import_pipeline_service import _run_image_pipeline_with_db
 
             staging_id = payload.get("staging_object_id", "")
-            image_path = await _resolve_staging_path(staging_id, task.owner_token, task.generation) if staging_id else ""
+            image_path = await _resolve_owned_staging(staging_id)
             if not image_path:
                 raise FileNotFoundError(f"Staging object {staging_id} not found for image pipeline")
 
@@ -1010,7 +1072,7 @@ async def _process_task_v2(task: Task) -> None:
             from app.features.pipeline_orchestrator import run_excel_pipeline_background
 
             staging_id = payload.get("staging_object_id", "")
-            file_path = await _resolve_staging_path(staging_id, task.owner_token, task.generation) if staging_id else ""
+            file_path = await _resolve_owned_staging(staging_id)
             file_content = b""
             if file_path:
                 with open(file_path, "rb") as _fh:
@@ -1030,7 +1092,7 @@ async def _process_task_v2(task: Task) -> None:
             from app.services.import_pipeline_service import run_resume_background
 
             staging_id = payload.get("staging_object_id", "")
-            file_path = await _resolve_staging_path(staging_id, task.owner_token, task.generation) if staging_id else ""
+            file_path = await _resolve_owned_staging(staging_id)
             if _fence_record_id:
                 await _verify_fencing_or_cancel(task, _fence_record_id, task_type)
             await run_resume_background(
@@ -1050,7 +1112,7 @@ async def _process_task_v2(task: Task) -> None:
             )
 
             staging_id = payload.get("staging_object_id", "")
-            file_path = await _resolve_staging_path(staging_id, task.owner_token, task.generation) if staging_id else ""
+            file_path = await _resolve_owned_staging(staging_id)
             source_type = payload.get("source_type", "pdf")
             source_file = payload.get("source_file", "")
             subject = payload.get("subject")
@@ -1102,7 +1164,6 @@ async def _process_task_v2(task: Task) -> None:
 
         elif task_type == TASK_TYPE_BATCH_IMAGE:
             from app.features import batch_image_import_service as batch_svc
-            from app.services.staging_storage import retrieve_file
 
             job_id = payload.get("job_id", "")
             staging_ids: list[str] = payload.get("staging_object_ids", [])
@@ -1114,25 +1175,14 @@ async def _process_task_v2(task: Task) -> None:
             if _fence_record_id:
                 await _verify_fencing_or_cancel(task, _fence_record_id, task_type)
 
-            scratch_dir = _get_scratch_dir()
-            work_copies: list[str] = []
-
             sources: list[batch_svc.BatchImageSource] = []
             for idx, staging_id in enumerate(staging_ids):
                 if not staging_id:
                     continue
-                file_path = retrieve_file(staging_id)
-                if not file_path:
-                    continue
-                try:
-                    work_path = str(await async_create_work_copy(staging_id, scratch_dir))
-                    work_copies.append(work_path)
-                except Exception as e:
-                    logger.warning(
-                        "Failed to create work copy for %s: %s, using original",
-                        staging_id, e,
-                    )
-                    work_path = file_path
+                # Use the same lease + private-work-copy path as every other
+                # staging-backed task. Never fall back to the immutable source
+                # object when scratch-copy creation fails.
+                work_path = await _resolve_owned_staging(staging_id)
                 sources.append(batch_svc.BatchImageSource(
                     seq=idx + 1,
                     source_file=f"image_{idx + 1}.png",
@@ -1140,21 +1190,18 @@ async def _process_task_v2(task: Task) -> None:
                 ))
 
             if not sources:
-                logger.error("No valid sources for batch image job %s", job_id)
-                return
-
-            try:
-                await batch_svc.run_batch_job(
-                    job_id=job_id,
-                    sources=sources,
-                    subject=subject,
-                    subject_id=subject_id,
-                    options=options,
-                    concurrency=concurrency,
+                raise FileNotFoundError(
+                    f"No valid staging sources for batch image job {job_id}"
                 )
-            finally:
-                for wp in work_copies:
-                    await async_cleanup_work_copy(wp)
+
+            await batch_svc.run_batch_job(
+                job_id=job_id,
+                sources=sources,
+                subject=subject,
+                subject_id=subject_id,
+                options=options,
+                concurrency=concurrency,
+            )
 
         else:
             # Unknown task type — dead-letter immediately, don't retry or complete
@@ -1164,6 +1211,8 @@ async def _process_task_v2(task: Task) -> None:
             raise ValueError(f"unknown_task_type: {task_type}")
 
     finally:
+        for work_path in staging_work_copies:
+            await async_cleanup_work_copy(work_path)
         if _fence_token is not None:
             clear_fencing_context(_fence_token)
 

@@ -28,11 +28,8 @@ class ExportTaskStatus(StrEnum):
     #   pending     → processing  (processor claims)
     #   processing  → completed   (success)
     #   processing  → failed      (error / timeout)
+    #   completed / failed → expired (cleanup scheduler)
     #   completed / failed / expired → pending (in-place re-export)
-    #   pending     → failed      (processor gives up)
-    #   completed   → expired     (cleanup scheduler)
-    #   pending     → expired     (cleanup scheduler)
-    #   failed      → expired     (cleanup scheduler)
 
 
 class ExportFileFormat(StrEnum):

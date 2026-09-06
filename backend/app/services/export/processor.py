@@ -21,8 +21,9 @@ State machine:
 - pending → processing (via atomic claim)
 - processing → completed (normal)
 - processing → failed (error / timeout)
-- completed → expired (via cleanup)
-- failed → pending (via retry — creates new task)
+- completed / failed → expired (via cleanup)
+- completed / failed / expired → pending (in-place re-export)
+- API retry creates a new task row from a failed source
 
 Per-user limits:
 - A user can have at most ``EXPORT_MAX_PER_USER`` tasks in ``pending`` or
@@ -86,7 +87,7 @@ _VALID_TRANSITIONS: dict[str, set[str]] = {
     ExportTaskStatus.PENDING: {ExportTaskStatus.PROCESSING},
     ExportTaskStatus.PROCESSING: {ExportTaskStatus.COMPLETED, ExportTaskStatus.FAILED},
     ExportTaskStatus.COMPLETED: {ExportTaskStatus.EXPIRED, ExportTaskStatus.PENDING},
-    ExportTaskStatus.FAILED: {ExportTaskStatus.PENDING},
+    ExportTaskStatus.FAILED: {ExportTaskStatus.PENDING, ExportTaskStatus.EXPIRED},
     ExportTaskStatus.EXPIRED: {ExportTaskStatus.PENDING},
 }
 
@@ -580,9 +581,7 @@ async def _execute_task_with_heartbeat(slot: _TaskSlot) -> None:
                 t = result.scalar_one_or_none()
                 if t and t.status == ExportTaskStatus.PROCESSING:
                     validate_transition(t.status, ExportTaskStatus.FAILED, slot.task_id)
-                    t.status = ExportTaskStatus.FAILED
-                    t.error_message = "ERR_PROCESSING_FAILED"
-                    t.completed_at = utcnow()
+                    _apply_export_failure(t, "导出处理异常终止", "generation_failed")
                     await db.commit()
                     await _publish_task_event(slot.task_id, t)
         except Exception as e2:

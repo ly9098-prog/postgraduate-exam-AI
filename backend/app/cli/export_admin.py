@@ -118,20 +118,33 @@ async def _do_cleanup(dry_run: bool, confirmed: bool):
         print("ERROR: --confirm required for --execute")
         sys.exit(1)
 
-    from sqlalchemy import select
+    from sqlalchemy import and_, func, or_, select
 
+    from app.core.config import settings
     from app.core.database import async_session
     from app.models.export_task import ExportTask
+    from app.schemas.export_task import ExportTaskStatus
     from app.services.export.cleanup import cleanup_expired
 
     if dry_run:
         print("[DRY RUN] Would clean up expired tasks")
         async with async_session() as db:
             now = datetime.now(UTC).replace(tzinfo=None)
+            retention_cutoff = now - timedelta(days=max(1, int(settings.EXPORT_RETENTION_DAYS)))
             result = await db.execute(
                 select(ExportTask).where(
-                    ExportTask.expires_at.isnot(None),
-                    ExportTask.expires_at < now,
+                    ExportTask.status.in_([ExportTaskStatus.COMPLETED, ExportTaskStatus.FAILED]),
+                    or_(
+                        and_(ExportTask.expires_at.isnot(None), ExportTask.expires_at < now),
+                        and_(
+                            ExportTask.expires_at.is_(None),
+                            func.coalesce(
+                                ExportTask.completed_at,
+                                ExportTask.updated_at,
+                                ExportTask.created_at,
+                            ) < retention_cutoff,
+                        ),
+                    ),
                 ).limit(50)
             )
             expired = result.scalars().all()
@@ -217,7 +230,8 @@ async def _retry_task(task_id: int):
         }
         new_task = await create_export_task(db, t.user_id, config)
         new_task.source_task_id = task_id
-        await db.flush()
+        await db.commit()
+        await db.refresh(new_task)
         print(f"Created retry task {new_task.id} from source {task_id}")
 
 
@@ -238,9 +252,9 @@ async def _recover_zombie(task_id: int):
             print(f"Task {task_id} is not processing (status={t.status}), not a zombie")
             return
 
-        t.status = ExportTaskStatus.FAILED
-        t.error_message = "ERR_ZOMBIE_RECOVERED"
-        t.completed_at = datetime.now(UTC).replace(tzinfo=None)
+        from app.services.export.service import _apply_export_failure
+
+        _apply_export_failure(t, "管理员恢复僵尸导出任务", "generation_failed")
         await db.commit()
         print(f"Task {task_id} recovered (processing → failed)")
 

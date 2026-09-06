@@ -79,6 +79,15 @@ def _wake_local_export_processor() -> None:
         logger.debug("Local export processor wakeup failed", exc_info=True)
 
 
+# ── Health check ──
+
+
+@router.get("/health")
+async def export_health():
+    """Minimal public probe; detailed diagnostics live under admin APIs."""
+    return {"status": "ok"}
+
+
 @router.get("/capabilities", response_model=ExportCapabilityResponse)
 async def export_capabilities(
     current_user: User = Depends(get_current_user),
@@ -296,8 +305,20 @@ async def download_export(
             content_type=_mime_for_format(task.file_format),
         )
     else:
-        # COS — generate a short-lived signed URL (never return a permanent URL)
+        # COS — generate a short-lived signed URL (never return a permanent URL).
+        # If this object was written through the explicitly enabled COS→local
+        # fallback, serve it through the authenticated /file endpoint instead.
         signed_url = await storage.get_download_url(task.file_key, expiry_sec=3600)
+        if not signed_url and settings.COS_ALLOW_LOCAL_FALLBACK:
+            file_path = _resolve_local_path(task.file_key)
+            if file_path and os.path.exists(file_path):
+                return DownloadInfoResponse(
+                    url=None,
+                    method="stream",
+                    file_name=task.file_name,
+                    file_size=task.file_size or os.path.getsize(file_path),
+                    content_type=_mime_for_format(task.file_format),
+                )
         if not signed_url:
             raise_export_error(500, ExportErrorCode.STORAGE_FAILED, "无法生成下载地址")
         return DownloadInfoResponse(
@@ -358,19 +379,15 @@ async def delete_export(
     current_user: User = Depends(get_current_user),
 ):
     """Delete an export task, its file, and its snapshot."""
-    task = await _get_user_task(db, task_id, current_user.id)
+    task = await _get_user_task(db, task_id, current_user.id, for_update=True)
 
-    # Delete stored file — check return value
-    if task.file_key:
-        try:
-            storage = get_export_storage()
-            deleted = await storage.delete(task.file_key)
-            if not deleted:
-                logger.warning("File delete returned false for task %d, key %s — DB record still retained", task.id, task.file_key)
-        except Exception as e:
-            logger.warning("File delete failed for task %d: %s — DB record retained", task.id, e)
+    if task.status in (ExportTaskStatus.PENDING, ExportTaskStatus.PROCESSING):
+        raise_export_error(400, ExportErrorCode.ACCESS_DENIED, "导出任务仍在处理中，不能删除")
 
-    # Delete snapshot — only if no other task references it
+    # Resolve the snapshot mutation first while everything is still inside the
+    # database transaction. ``delete_snapshot`` only stages the DELETE; if the
+    # external file removal later fails, rollback restores the snapshot. This
+    # avoids deleting the file and then discovering a DB-side cleanup error.
     if task.snapshot_id:
         try:
             other_refs = await db.execute(
@@ -378,6 +395,7 @@ async def delete_export(
                 .where(
                     ExportTask.snapshot_id == task.snapshot_id,
                     ExportTask.id != task.id,
+                    ExportTask.status != ExportTaskStatus.EXPIRED,
                 )
                 .limit(1)
             )
@@ -385,8 +403,28 @@ async def delete_export(
                 await delete_snapshot(db, task.snapshot_id)
             else:
                 logger.debug("Snapshot %s still referenced by other tasks — skipping delete", task.snapshot_id)
-        except Exception as e:
-            logger.warning("Snapshot delete check failed for task %d: %s", task.id, e)
+        except Exception as exc:
+            await db.rollback()
+            logger.warning("Snapshot delete check failed for task %d: %s", task.id, exc)
+            raise_export_error(503, ExportErrorCode.SERVICE_UNAVAILABLE, "导出记录清理失败，请稍后重试")
+
+    # Delete stored file before committing the DB row deletion. A false/exception
+    # is a hard stop: rollback keeps both task and snapshot ownership records.
+    if task.file_key:
+        try:
+            storage = get_export_storage()
+            deleted = await storage.delete(task.file_key)
+        except Exception as exc:
+            await db.rollback()
+            logger.warning("File delete failed for task %d: %s — DB record retained", task.id, exc)
+            raise_export_error(503, ExportErrorCode.STORAGE_FAILED, "导出文件删除失败，请稍后重试")
+        if not deleted:
+            await db.rollback()
+            logger.warning(
+                "File delete returned false for task %d, key %s — DB record retained",
+                task.id, task.file_key,
+            )
+            raise_export_error(503, ExportErrorCode.STORAGE_FAILED, "导出文件删除失败，请稍后重试")
 
     await db.delete(task)
     await db.commit()
@@ -405,7 +443,7 @@ async def retry_export(
     current_user: User = Depends(get_current_user),
 ):
     """Retry a failed export task — creates a new task from the original config."""
-    task = await _get_user_task(db, task_id, current_user.id)
+    task = await _get_user_task(db, task_id, current_user.id, for_update=True)
 
     if task.status != ExportTaskStatus.FAILED:
         raise_export_error(400, ExportErrorCode.ACCESS_DENIED, "只有失败的任务可以重试")
@@ -463,7 +501,7 @@ async def re_export(
     LocalFileStorage atomically replaces it. No new export-task directory is
     created and the records page continues to show a single card.
     """
-    task = await _get_user_task(db, task_id, current_user.id)
+    task = await _get_user_task(db, task_id, current_user.id, for_update=True)
 
     if task.file_format == "docx":
         ensure_format_allowed("docx")
@@ -546,15 +584,6 @@ async def re_export(
         },
     )
     return _task_to_response(task)
-
-
-# ── Health check ──
-
-
-@router.get("/health")
-async def export_health():
-    """Minimal public probe; detailed diagnostics live under admin APIs."""
-    return {"status": "ok"}
 
 
 # ── WebSocket: real-time export status push ──
@@ -651,11 +680,21 @@ async def export_status_ws(ws: WebSocket):
 # ── Internal helpers ──
 
 
-async def _get_user_task(db: AsyncSession, task_id: int, user_id: int) -> ExportTask:
-    """Get a task and verify ownership."""
-    result = await db.execute(
-        select(ExportTask).where(ExportTask.id == task_id, ExportTask.user_id == user_id)
+async def _get_user_task(
+    db: AsyncSession,
+    task_id: int,
+    user_id: int,
+    *,
+    for_update: bool = False,
+) -> ExportTask:
+    """Get a task and verify ownership, optionally serialising mutations."""
+    stmt = select(ExportTask).where(
+        ExportTask.id == task_id,
+        ExportTask.user_id == user_id,
     )
+    if for_update:
+        stmt = stmt.with_for_update()
+    result = await db.execute(stmt)
     task = result.scalar_one_or_none()
     if task is None:
         raise_export_error(404, ExportErrorCode.TASK_NOT_FOUND, "导出任务不存在")

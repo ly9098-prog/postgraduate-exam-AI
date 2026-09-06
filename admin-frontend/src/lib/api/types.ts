@@ -1314,7 +1314,6 @@ export type ScheduledSystemTaskListResponse = {
 
 export type DatabaseBackupArtifact = {
   name: string;
-  path: string;
   size_bytes: number;
   created_at: string;
   method?: string | null;

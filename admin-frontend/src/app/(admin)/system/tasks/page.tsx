@@ -110,6 +110,15 @@ const STATUS_LABELS_ZH: Record<string, string> = {
   running: "运行中",
   idle: "空闲",
   disabled: "已停用",
+  unavailable: "不可用",
+  unobservable: "不可观测",
+  prerequisite_failed: "运行条件异常",
+  database_unavailable: "数据库不可用",
+  database_unobservable: "数据库不可观测",
+  loop_unavailable: "执行循环未启动",
+  stopped: "未启动",
+  stale: "心跳过期",
+  redis_unavailable: "Redis 不可用",
   cancel_requested: "取消中",
   review_required: "待人工处理",
   active: "运行中",
@@ -347,6 +356,7 @@ function taskStatusMeta(status: string, location?: string | null) {
   }
   if (["processing", "running"].includes(value)) return { label: "运行中", tone: "success" as const };
   if (value === "retry") return { label: "等待重试", tone: "warning" as const };
+  if (["unavailable", "unobservable"].includes(value)) return { label: statusLabelZh(value), tone: "warning" as const };
   if (["ready", "pending", "idle"].includes(value)) return { label: "等待中", tone: "neutral" as const };
   if (value === "disabled") return { label: "已停用", tone: "neutral" as const };
   if (["completed", "published", "success"].includes(value)) return { label: "成功", tone: "success" as const };
@@ -620,6 +630,7 @@ export default function SystemTasksPage() {
     if (taskStatus === "running") return ["running", "processing"].includes(value);
     if (taskStatus === "waiting") return ["idle", "ready", "pending", "retry"].includes(value);
     if (taskStatus === "failed") return ["failed", "dead", "corrupt"].includes(value);
+    if (taskStatus === "unavailable") return ["unavailable", "unobservable"].includes(value);
     if (taskStatus === "disabled") return value === "disabled";
     return true;
   };
@@ -1018,6 +1029,7 @@ export default function SystemTasksPage() {
                         { value: "running", label: "运行中" },
                         { value: "waiting", label: "等待中" },
                         { value: "failed", label: "失败/异常" },
+                        { value: "unavailable", label: "不可用" },
                         { value: "disabled", label: "已停用" },
                       ]}
                     />
@@ -1072,7 +1084,11 @@ export default function SystemTasksPage() {
                               <p className="whitespace-nowrap text-[10px] font-medium text-[var(--color-text-primary)]">
                                 {task.next_run_at ? formatTime(task.next_run_at) : task.next_run_label || (task.task_type === "system" ? "宿主机 timer" : "—")}
                               </p>
-                              <p className="mt-0.5 text-[9px] text-[var(--color-text-hint)]">{task.enabled ? task.schedule : task.note || "配置已停用"}</p>
+                              <p className="mt-0.5 truncate text-[9px] text-[var(--color-text-hint)]">
+                                {task.note && ["unavailable", "unobservable"].includes(task.status)
+                                  ? task.note
+                                  : task.enabled ? task.schedule : task.note || "配置已停用"}
+                              </p>
                             </td>
                             <td className="px-3 py-2.5 align-middle">
                               <div className="flex items-center gap-1.5"><StatusBadge tone={resultMeta.tone}>{resultMeta.label}</StatusBadge>{task.last_run_at ? <span className="text-[9px] text-[var(--color-text-hint)]">{formatTime(task.last_run_at)}</span> : null}</div>
@@ -1367,7 +1383,7 @@ export default function SystemTasksPage() {
                 ["执行计划", selectedScheduledTask.schedule],
                 ["下次执行", selectedScheduledTask.next_run_at ? formatTime(selectedScheduledTask.next_run_at) : selectedScheduledTask.next_run_label || (selectedScheduledTask.task_type === "system" ? "由宿主机 timer 调度" : "—")],
                 ["最近执行", formatTime(selectedScheduledTask.last_run_at)],
-                ["执行来源", selectedScheduledTask.last_source === "manual" ? "管理员手动" : selectedScheduledTask.last_source === "scheduler" ? "应用调度器" : selectedScheduledTask.last_source === "systemd" ? "systemd 系统调度" : selectedScheduledTask.executor],
+                ["执行来源", selectedScheduledTask.last_source === "manual" ? "管理员手动" : selectedScheduledTask.last_source === "scheduler" ? "应用调度器" : selectedScheduledTask.last_source === "systemd" ? "systemd 系统调度" : selectedScheduledTask.last_source === "external_artifact" ? "外部备份产物" : selectedScheduledTask.last_source || "—"],
                 ["最近耗时", selectedScheduledTask.last_duration_ms != null ? `${selectedScheduledTask.last_duration_ms} ms` : "—"],
                 ["是否启用", selectedScheduledTask.enabled ? "已启用" : "已停用"],
               ].map(([label, value]) => (
@@ -1394,8 +1410,12 @@ export default function SystemTasksPage() {
                 <div className="rounded-xl border border-[var(--color-border-light)] px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-[10px] font-semibold text-[var(--color-text-hint)]">PostgreSQL 备份状态</p>
-                    <StatusBadge tone={selectedScheduledTask.executor_available === false ? "warning" : selectedScheduledTask.executor_state === "active" ? "success" : "neutral"}>
-                      {selectedScheduledTask.executor_available === false ? "systemd 不可观测" : statusLabelZh(selectedScheduledTask.executor_state)}
+                    <StatusBadge tone={selectedScheduledTask.executor_available === true ? "success" : "warning"}>
+                      {selectedScheduledTask.executor_available === true
+                        ? "定时器正常"
+                        : selectedScheduledTask.executor_available === false
+                          ? "定时器未激活"
+                          : "systemd 不可观测"}
                     </StatusBadge>
                   </div>
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -1405,7 +1425,7 @@ export default function SystemTasksPage() {
                       ["最近文件", selectedScheduledTask.artifact_name || "—"],
                       ["最近大小", selectedScheduledTask.artifact_name ? formatBytes(selectedScheduledTask.artifact_size_bytes) : "—"],
                       ["定时器", selectedScheduledTask.timer_unit || "postgres-backup.timer"],
-                      ["执行能力", selectedScheduledTask.executor_available && selectedScheduledTask.service_loaded ? "systemd 服务" : selectedScheduledTask.script_available ? "项目备份脚本" : selectedScheduledTask.pg_dump_available ? "pg_dump 兜底" : "当前不可执行"],
+                      ["执行能力", selectedScheduledTask.can_run_now ? (selectedScheduledTask.service_loaded ? "systemd 服务" : selectedScheduledTask.script_available ? "项目备份脚本" : selectedScheduledTask.pg_dump_available ? "pg_dump 兜底" : "当前不可执行") : "当前不可执行"],
                     ].map(([label, value]) => (
                       <div key={label} className="min-w-0 rounded-lg bg-[var(--color-bg-input)]/65 px-2.5 py-2">
                         <p className="text-[9px] text-[var(--color-text-hint)]">{label}</p>
@@ -1425,7 +1445,7 @@ export default function SystemTasksPage() {
                     {backupHistory.isFetching ? (
                       <p className="py-3 text-[10px] text-[var(--color-text-hint)]">正在读取备份目录…</p>
                     ) : backupHistory.data?.items.length ? backupHistory.data.items.map((item) => (
-                      <div key={item.path} className="flex items-center justify-between gap-3 py-2">
+                      <div key={`${item.name}:${item.created_at}`} className="flex items-center justify-between gap-3 py-2">
                         <div className="min-w-0">
                           <p className="truncate font-mono text-[10px] font-medium text-[var(--ink)]">{item.name}</p>
                           <p className="mt-0.5 text-[9px] text-[var(--color-text-hint)]">{formatTime(item.created_at)} · {item.method || "external"}</p>

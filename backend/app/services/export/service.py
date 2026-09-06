@@ -79,7 +79,12 @@ def _apply_export_failure(
         task.status = ExportTaskStatus.FAILED
         task.error_code = error_code
         task.error_message = safe_message[:500]
-        task.completed_at = utcnow()
+        now = utcnow()
+        task.completed_at = now
+        # Failed exports still own a snapshot. Give them the same bounded
+        # retention window as completed artifacts so snapshots cannot leak
+        # forever when users never retry the failed task.
+        task.expires_at = now + dt.timedelta(days=settings.EXPORT_RETENTION_DAYS)
     task.processing_started_at = None
     task.heartbeat_at = None
 
