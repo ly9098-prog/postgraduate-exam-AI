@@ -1,7 +1,6 @@
 {
   "navigationBarTitleText": "公式库",
   "usingComponents": {
-    "formula-card": "/subpackages/formulas/components/formula-card/index",
     "premium-nav": "/components/premium-nav/premium-nav"
   },
   "enablePullDownRefresh": true,

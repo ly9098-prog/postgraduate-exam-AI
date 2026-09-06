@@ -146,8 +146,14 @@
           </view>
           <view wx:elif="{{history.length === 0}}" class="empty-hint">
             <view class="empty-icon"></view>
-            <text class="empty-text" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">今日暂无当日开始的学习记录<br/>但存在跨统计日的学习时长</text>
-            <text class="empty-text" wx:elif="{{selectedDate === _todayDate}}">今天还没有学习记录<br/>开始专注或刷一组题吧</text>
+            <view class="empty-text" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">
+              <text class="empty-text-line">今日暂无当日开始的学习记录</text>
+              <text class="empty-text-line">但存在跨统计日的学习时长</text>
+            </view>
+            <view class="empty-text" wx:elif="{{selectedDate === _todayDate}}">
+              <text class="empty-text-line">今天还没有学习记录</text>
+              <text class="empty-text-line">开始专注或刷一组题吧</text>
+            </view>
             <text class="empty-text" wx:else>{{selectedDate}} 暂无学习记录</text>
           </view>
           <view class="history-list" wx:elif="{{history.length > 0}}">

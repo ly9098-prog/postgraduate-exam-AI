@@ -176,6 +176,11 @@ Page({
       const info = wx.getSystemInfoSync ? wx.getSystemInfoSync() : {}
       platform = String(info.platform || '').toLowerCase()
     } catch (_) {}
+    try {
+      this._nicknameReviewSupported = !!(wx.canIUse && wx.canIUse('input.bindnicknamereview'))
+    } catch (_) {
+      this._nicknameReviewSupported = false
+    }
     this.setData({ isDevtools: platform === 'devtools' })
   },
 
@@ -184,15 +189,34 @@ Page({
     return /cancel/i.test(message)
   },
 
+  _scheduleProfileSaveIfReady(field = '') {
+    if (this.data.profileSaving || !this._alive) return
+    const nickname = String(this.data.profileNickname || '').trim().replace(/\s+/g, ' ')
+    const storedAvatar = String((this.data.user && this.data.user.avatar_url) || '')
+    const hasAvatar = !!(this.data.profileAvatarPath || this.data.profileAvatarPreview || storedAvatar)
+    if (!nickname || !hasAvatar || this.data.profileNicknameRejected) return
+
+    const profileAlreadyCompleted = this._isProfileSetupComplete(this.data.user)
+    const canSave = !profileAlreadyCompleted || field === 'avatar' || field === 'nickname'
+    if (!canSave) return
+
+    clearTimeout(this._profileAutoSaveTimer)
+    this._profileAutoSaveTimer = setTimeout(() => {
+      this._profileAutoSaveTimer = null
+      if (this._alive && this.data.showProfileSheet) this.saveProfile()
+    }, 180)
+  },
+
   _applyProfileAvatar(avatarPath) {
     if (!avatarPath) return
     this.setData({
       profileAvatarPreview: avatarPath,
       profileAvatarPath: avatarPath,
-    })
+    }, () => this._scheduleProfileSaveIfReady('avatar'))
   },
 
   onChooseAvatar(e) {
+    if (this.data.profileSaving) return
     const avatarPath = e && e.detail && e.detail.avatarUrl
     if (!avatarPath) return
     this._applyProfileAvatar(avatarPath)
@@ -226,53 +250,37 @@ Page({
     })
   },
 
+  onProfileNicknameBlur(e) {
+    if (this.data.profileSaving) return
+    const value = String(
+      (e && e.detail && e.detail.value) || this.data.profileNickname || ''
+    ).trim().replace(/\s+/g, ' ')
+    this.setData({
+      profileNickname: value,
+      profileNicknameRejected: false,
+    }, () => {
+      // 真机支持昵称审核事件时，等待审核结果后再保存；开发者工具直接提交。
+      if (!this._nicknameReviewSupported || this.data.isDevtools) {
+        this._scheduleProfileSaveIfReady('nickname')
+      }
+    })
+  },
 
   onProfileNicknameReview(e) {
-    const rejected = !!(e && e.detail && e.detail.pass === false)
-    this.setData({ profileNicknameRejected: rejected })
-    if (rejected) wx.showToast({ title: '该昵称暂不可使用，请修改后重试', icon: 'none' })
-  },
-
-  onNativeProfileChange(e) {
     if (this.data.profileSaving) return
     const detail = (e && e.detail) || {}
-    const userInfo = detail.userInfo || {}
-    const field = String(detail.field || '')
-    const nickname = String(userInfo.nickname || '').trim().replace(/\s+/g, ' ')
-    const avatar = String(userInfo.avatar || '')
-    const storedAvatar = String((this.data.user && this.data.user.avatar_url) || '')
-    const nextAvatarPath = avatar && avatar !== storedAvatar ? avatar : this.data.profileAvatarPath
-
+    const rejected = detail.pass === false
+    const value = String(detail.nickname || this.data.profileNickname || '').trim().replace(/\s+/g, ' ')
     this.setData({
-      profileNickname: nickname,
-      profileAvatarPreview: avatar || this.data.profileAvatarPreview,
-      profileAvatarPath: nextAvatarPath || '',
-      profileNicknameRejected: false,
+      profileNickname: value,
+      profileNicknameRejected: rejected,
+    }, () => {
+      if (rejected) {
+        wx.showToast({ title: '该昵称暂不可使用，请修改后重试', icon: 'none' })
+        return
+      }
+      this._scheduleProfileSaveIfReady('nickname')
     })
-
-    // 首次资料需要头像 + 昵称两步都完成，随后自动保存并关闭弹层。
-    // 已经完整保存过资料的用户，修改任一项时直接自动保存。
-    const profileAlreadyCompleted = this._isProfileSetupComplete(this.data.user)
-    const hasAvatar = !!(nextAvatarPath || storedAvatar || this.data.profileAvatarPreview)
-    const firstProfileHasBoth = !profileAlreadyCompleted && !!nickname && hasAvatar
-    const existingProfileChanged = profileAlreadyCompleted && !!nickname && (field === 'nickname' || field === 'avatar')
-    if (firstProfileHasBoth || existingProfileChanged) {
-      clearTimeout(this._profileAutoSaveTimer)
-      this._profileAutoSaveTimer = setTimeout(() => {
-        this._profileAutoSaveTimer = null
-        if (this._alive) this.saveProfile()
-      }, 120)
-    }
-  },
-
-  onNativeProfileError(e) {
-    const detail = (e && e.detail) || {}
-    const code = String(detail.code || '')
-    const message = String(detail.message || '微信资料选择失败，请重试')
-    if (code === 'NICKNAME_REVIEW_REJECTED') {
-      this.setData({ profileNicknameRejected: true })
-    }
-    wx.showToast({ title: message, icon: 'none' })
   },
 
   async saveProfile() {

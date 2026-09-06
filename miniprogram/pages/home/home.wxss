@@ -1419,12 +1419,6 @@ page {
   box-shadow: 0 12rpx 34rpx rgba(21, 49, 35, .045);
 }
 
-.profile-avatar-editor {
-  display: block;
-  width: 100%;
-  min-width: 0;
-}
-
 .profile-flow-tip {
   display: flex;
   align-items: center;
@@ -1469,4 +1463,227 @@ page {
 .profile-later-only[disabled] {
   color: #9aa49e;
   background: #f1f2ef;
+}
+
+
+/* Home profile editor: use native controls directly instead of a nested custom component.
+   This avoids the zero-height/blank component rendering seen in some base-library/devtools combinations. */
+.profile-consent-sheet {
+  max-height: calc(100vh - 24rpx);
+  overflow-y: auto;
+}
+
+.profile-consent-card-compact {
+  padding: 0 20rpx;
+  overflow: hidden;
+}
+
+.profile-native-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.profile-native-avatar-row {
+  min-height: 112rpx;
+  padding: 16rpx 0;
+}
+
+.profile-native-nickname-row {
+  min-height: 102rpx;
+  padding: 13rpx 0 16rpx;
+}
+
+.profile-native-divider {
+  height: 1rpx;
+  margin-left: 104rpx;
+  background: #e7ebe7;
+}
+
+.profile-native-avatar-button {
+  position: relative;
+  width: 82rpx;
+  height: 82rpx;
+  min-width: 82rpx;
+  margin: 0 20rpx 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 25rpx;
+  background: #edf2ec;
+  line-height: 0;
+  overflow: visible;
+}
+
+.profile-native-avatar-button::after {
+  border: 0;
+}
+
+.profile-native-avatar-button[disabled] {
+  opacity: .62;
+}
+
+.profile-native-avatar-image,
+.profile-native-avatar-placeholder {
+  width: 82rpx;
+  height: 82rpx;
+  border-radius: 25rpx;
+}
+
+.profile-native-avatar-image {
+  display: block;
+  overflow: hidden;
+}
+
+.profile-native-avatar-placeholder {
+  position: relative;
+  overflow: hidden;
+  border: 1rpx solid #d9e1da;
+  background: linear-gradient(145deg, #f1f5ef 0%, #e6eee7 100%);
+}
+
+.profile-native-person-head {
+  position: absolute;
+  left: 27rpx;
+  top: 18rpx;
+  width: 28rpx;
+  height: 28rpx;
+  border-radius: 50%;
+  background: #829188;
+}
+
+.profile-native-person-body {
+  position: absolute;
+  left: 17rpx;
+  bottom: -9rpx;
+  width: 48rpx;
+  height: 37rpx;
+  border-radius: 26rpx 26rpx 8rpx 8rpx;
+  background: #829188;
+}
+
+.profile-native-avatar-badge {
+  position: absolute;
+  right: -7rpx;
+  bottom: -5rpx;
+  width: 31rpx;
+  height: 31rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 4rpx solid #fff;
+  border-radius: 50%;
+  background: #173e2b;
+  color: #d7f16b;
+  font-size: 24rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.profile-native-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.profile-native-title {
+  display: block;
+  color: #24362c;
+  font-size: 25rpx;
+  line-height: 34rpx;
+  font-weight: 800;
+}
+
+.profile-native-desc {
+  display: block;
+  margin-top: 3rpx;
+  color: #87928b;
+  font-size: 19rpx;
+  line-height: 28rpx;
+  white-space: normal;
+}
+
+.profile-native-state {
+  width: 38rpx;
+  height: 38rpx;
+  min-width: 38rpx;
+  margin-left: 12rpx;
+  border-radius: 50%;
+  background: #f0f2ef;
+  color: #89948e;
+  font-size: 26rpx;
+  font-weight: 750;
+  line-height: 38rpx;
+  text-align: center;
+}
+
+.profile-native-state.is-ready {
+  background: #e7f5ec;
+  color: #13824a;
+}
+
+.profile-native-nickname-icon {
+  width: 82rpx;
+  height: 82rpx;
+  min-width: 82rpx;
+  margin-right: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #dce4dd;
+  border-radius: 25rpx;
+  background: #f2f5f1;
+  color: #496157;
+  font-size: 24rpx;
+  font-weight: 850;
+  letter-spacing: -1rpx;
+}
+
+.profile-native-nickname-copy {
+  padding: 3rpx 0;
+}
+
+.profile-native-nickname-input {
+  width: 100%;
+  height: 40rpx;
+  min-width: 0;
+  padding: 0;
+  color: #203128;
+  font-size: 25rpx;
+  font-weight: 800;
+  line-height: 40rpx;
+  text-align: left;
+}
+
+.profile-native-nickname-placeholder {
+  color: #839087;
+  font-size: 24rpx;
+  font-weight: 650;
+}
+
+@media (max-height: 620px) {
+  .profile-consent-sheet {
+    padding-top: 12rpx;
+  }
+
+  .profile-sheet-handle {
+    margin-bottom: 14rpx;
+  }
+
+  .profile-step-guide {
+    margin-top: 18rpx;
+  }
+
+  .profile-consent-card-compact {
+    margin-top: 16rpx;
+  }
+
+  .profile-flow-tip {
+    padding-top: 12rpx;
+  }
+
+  .profile-consent-actions-single {
+    margin-top: 14rpx;
+  }
 }

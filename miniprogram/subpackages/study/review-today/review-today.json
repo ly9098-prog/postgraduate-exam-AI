@@ -4,7 +4,6 @@
   "backgroundColorTop": "#F4F4EE",
   "backgroundColorBottom": "#F4F4EE",
   "usingComponents": {
-    "mp-html": "/subpackages/study/components/mp-html/index",
     "math-question": "/subpackages/study/components/math-question/math-question",
     "quiz-runner": "/subpackages/study/components/quiz-runner/quiz-runner",
     "submit-confirm": "/subpackages/study/components/submit-confirm/submit-confirm",

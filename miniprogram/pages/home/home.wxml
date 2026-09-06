@@ -223,16 +223,78 @@
       </view>
 
       <view class="profile-consent-card profile-consent-card-compact">
-        <mp-user-avatar
-          class="profile-avatar-editor"
-          avatar="{{profileAvatarPreview}}"
-          nickname="{{profileNickname}}"
-          default-nickname="点击选择微信昵称"
-          editable="{{!profileSaving}}"
-          is-devtools="{{isDevtools}}"
-          bind:change="onNativeProfileChange"
-          bind:error="onNativeProfileError"
-        />
+        <view class="profile-native-row profile-native-avatar-row">
+          <button
+            wx:if="{{!isDevtools}}"
+            class="profile-native-avatar-button"
+            open-type="chooseAvatar"
+            bindchooseavatar="onChooseAvatar"
+            disabled="{{profileSaving}}"
+            aria-label="选择微信头像"
+          >
+            <image
+              wx:if="{{profileAvatarPreview}}"
+              class="profile-native-avatar-image"
+              src="{{profileAvatarPreview}}"
+              mode="aspectFill"
+            />
+            <view wx:else class="profile-native-avatar-placeholder">
+              <view class="profile-native-person-head"></view>
+              <view class="profile-native-person-body"></view>
+            </view>
+            <view class="profile-native-avatar-badge">+</view>
+          </button>
+
+          <button
+            wx:else
+            class="profile-native-avatar-button"
+            bindtap="chooseAvatarInDevtools"
+            disabled="{{profileSaving}}"
+            aria-label="选择测试头像"
+          >
+            <image
+              wx:if="{{profileAvatarPreview}}"
+              class="profile-native-avatar-image"
+              src="{{profileAvatarPreview}}"
+              mode="aspectFill"
+            />
+            <view wx:else class="profile-native-avatar-placeholder">
+              <view class="profile-native-person-head"></view>
+              <view class="profile-native-person-body"></view>
+            </view>
+            <view class="profile-native-avatar-badge">+</view>
+          </button>
+
+          <view class="profile-native-copy">
+            <text class="profile-native-title">选择头像</text>
+            <text class="profile-native-desc">{{profileAvatarPreview ? '已选择，点击可更换' : '点击使用微信头像或相册图片'}}</text>
+          </view>
+          <view class="profile-native-state {{profileAvatarPreview ? 'is-ready' : ''}}">{{profileAvatarPreview ? '✓' : '›'}}</view>
+        </view>
+
+        <view class="profile-native-divider"></view>
+
+        <view class="profile-native-row profile-native-nickname-row">
+          <view class="profile-native-nickname-icon">Aa</view>
+          <view class="profile-native-copy profile-native-nickname-copy">
+            <input
+              class="profile-native-nickname-input"
+              type="{{isDevtools ? 'text' : 'nickname'}}"
+              value="{{profileNickname}}"
+              placeholder="点击选择微信昵称"
+              placeholder-class="profile-native-nickname-placeholder"
+              maxlength="32"
+              disabled="{{profileSaving}}"
+              bindinput="onProfileNicknameInput"
+              bindblur="onProfileNicknameBlur"
+              bindconfirm="onProfileNicknameBlur"
+              bindnicknamereview="onProfileNicknameReview"
+              confirm-type="done"
+            />
+            <text class="profile-native-desc">{{profileNickname ? '已选择昵称，失焦后自动保存' : '支持微信昵称，也可手动输入'}}</text>
+          </view>
+          <view class="profile-native-state {{profileNickname && !profileNicknameRejected ? 'is-ready' : ''}}">{{profileNickname && !profileNicknameRejected ? '✓' : '›'}}</view>
+        </view>
       </view>
 
       <view class="profile-flow-tip {{profileAvatarPreview && profileNickname ? 'is-ready' : ''}}">
