@@ -876,7 +876,7 @@ def cleanup_orphans(max_age_sec: int | None = None) -> int:
             removed += int(unlink(entry))
 
     all_ids = sorted(data_ids | meta_ids)
-    refcounts = get_refcounts(all_ids)  # fail closed before object deletion
+    get_refcounts(all_ids)  # fail closed before object deletion
 
     for oid in all_ids:
         # Re-check every lifecycle signal while holding the same guard used by
