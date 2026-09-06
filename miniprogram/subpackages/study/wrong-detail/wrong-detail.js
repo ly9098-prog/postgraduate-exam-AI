@@ -235,7 +235,7 @@ Page({
     this._aiSwipeStart = null
     this._contentTransitionStartedAt = 0
     this._contentTransitionDirection = ''
-    // 页面实例级别的缓存（含 TTL），避免模块全局变量跨用户串用
+    // 页面实例级缓存仅用于状态同步/弱网兜底；前台切题始终向服务端校验最新题库内容
     this._wqCache = {}
     this._switchMaskTimer = null
     this._contentTransitionTimer = null
@@ -324,6 +324,7 @@ Page({
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (loadSeq !== this._aiRequestId || !this._alive) return
       if (!wq) throw new Error('not found')
+      if (this._wqCache) this._wqCache[wqId] = { data: wq, ts: Date.now() }
       const raw = _processWqData(wq, this.data.safeModeActive)
 
       // Build quiz-runner compatible currentQuestion
@@ -1394,17 +1395,23 @@ Page({
     }, 250)
 
     try {
-      // 优先读缓存（含 TTL 保护）
+      // 错题内容可能被后台修订。相邻题预取缓存不能作为前台展示的
+      // 权威数据源，否则用户在页面内来回切题时会继续看到旧版本。
+      // 每次前台切题都重新向服务端校验；仅在非 404/410 的短暂网络
+      // 故障时，允许使用 30 秒内缓存作为弱网兜底。
       var wq = null
-      var cached = this._wqCache[wqId]
-      if (cached && Date.now() - cached.ts < 300000) {
-        wq = cached.data
-      }
-      if (!wq) {
+      var cached = this._wqCache && this._wqCache[wqId]
+      try {
         wq = await api.get(`/wrong-questions/${wqId}`)
         if (!wq) throw new Error('not found')
         if (!this._alive) return
-        this._wqCache[wqId] = { data: wq, ts: Date.now() }
+        if (this._wqCache) this._wqCache[wqId] = { data: wq, ts: Date.now() }
+      } catch (fetchError) {
+        var fetchStatus = Number(fetchError && (fetchError.statusCode || fetchError.status)) || 0
+        var canFallback = fetchStatus !== 404 && fetchStatus !== 410 &&
+          cached && Date.now() - Number(cached.ts || 0) < 30000
+        if (!canFallback) throw fetchError
+        wq = cached.data
       }
       if (!this._alive || navigationSeq !== this._navigationSeq) return
       // 预取相邻题

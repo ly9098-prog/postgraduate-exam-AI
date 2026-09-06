@@ -12,7 +12,7 @@ from app.core.time_utils import (
     shanghai_today_boundaries,
     utcnow,
 )
-from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Subject
+from app.models.admin import QuestionVersionKnowledgePoint, Subject
 from app.models.answer_behavior import AnswerBehavior
 from app.models.practice_record import PracticeRecord
 from app.models.knowledge_point import KnowledgePoint
@@ -857,8 +857,8 @@ async def get_ai_diagnosis(db: AsyncSession, user_id: int) -> dict:
                 func.sum(case((WrongQuestion.mastered, 1), else_=0)), 0
             ),
         )
-        .join(QuestionVersion, WrongQuestion.question_version_id == QuestionVersion.id)
-        .join(Subject, QuestionVersion.subject_id == Subject.id)
+        .join(Question, WrongQuestion.question_id == Question.id)
+        .join(Subject, Question.subject_id == Subject.id)
         .where(
             WrongQuestion.user_id == user_id,
             WrongQuestion.created_at >= since,

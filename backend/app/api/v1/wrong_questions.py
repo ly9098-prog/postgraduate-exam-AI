@@ -3,11 +3,13 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.features.text_normalizer import _split_inline_roman_subitems
+from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.user import User
 from app.models.wrong_question import WrongQuestion
@@ -21,7 +23,7 @@ from app.schemas.wrong_question import (
     WrongQuestionUpdate,
 )
 from app.services import wrong_question_service as svc
-from app.services.question_revision_service import load_revision_kp_names, load_revision_views
+from app.services.knowledge_point_service import load_question_kps
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 from app.utils.question_content import strip_student_segment_metadata
 
@@ -190,13 +192,24 @@ def enrich_wq(wq, question, knowledge_points=None, **extra):
     )
 
 
-async def _load_wrong_revision_view(db: AsyncSession, wq: WrongQuestion):
-    if not wq.question_version_id:
+async def _load_current_question_view(db: AsyncSession, wq: WrongQuestion):
+    """Load the current question-bank projection for wrong-book display.
+
+    ``WrongQuestion.question_version_id`` intentionally remains the immutable
+    revision that produced the learner's latest wrong answer.  It is still used
+    by review records/schedules for historical grading, but the wrong-book UI
+    must follow the latest published question content after an admin correction.
+    """
+    result = await db.execute(
+        select(Question)
+        .options(joinedload(Question.subject_ref))
+        .where(Question.id == wq.question_id)
+    )
+    question = result.scalar_one_or_none()
+    if question is None:
         return None, []
-    views = await load_revision_views(db, [int(wq.question_version_id)])
-    view = views.get(int(wq.question_version_id))
-    kp_map = await load_revision_kp_names(db, [int(wq.question_version_id)])
-    return view, kp_map.get(int(wq.question_version_id), [])
+    kp_map = await load_question_kps(db, [int(question.id)])
+    return question, kp_map.get(int(question.id), [])
 
 
 async def _enrich_single_wq_extra(
@@ -305,7 +318,7 @@ async def get_wrong(
     if not wq:
         raise HTTPException(status_code=404, detail="错题记录不存在")
 
-    question, knowledge_points = await _load_wrong_revision_view(db, wq)
+    question, knowledge_points = await _load_current_question_view(db, wq)
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
     if question is not None:
         from app.services import ai_service
@@ -334,7 +347,7 @@ async def update_wrong(
     if not wq:
         raise HTTPException(status_code=404, detail="错题记录不存在")
 
-    question, knowledge_points = await _load_wrong_revision_view(db, wq)
+    question, knowledge_points = await _load_current_question_view(db, wq)
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
     return enrich_wq(wq, question, knowledge_points=knowledge_points, **extra)
 

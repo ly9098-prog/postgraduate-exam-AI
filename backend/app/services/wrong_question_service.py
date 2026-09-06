@@ -5,13 +5,14 @@ from sqlalchemy import and_, case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.time_utils import shanghai_today_boundaries, utcnow
-from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Subject
+from app.models.admin import Subject
 from app.models.knowledge_point import KnowledgePoint
+from app.models.question import Question
+from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.wrong_question import WrongQuestion
 from app.services.admin_subject_service import resolve_subject_ids
-from app.services.knowledge_point_service import normalize_knowledge_name
-from app.services.question_revision_service import load_revision_kp_names
+from app.services.knowledge_point_service import load_question_kps, normalize_knowledge_name
 
 logger = logging.getLogger(__name__)
 
@@ -171,18 +172,19 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
     )
     by_error_type = [{"type": r[0], "count": r[1]} for r in type_result.all()]
 
-    # Count by the immutable revision that produced the wrong answer.
+    # Wrong-book grouping follows the current question-bank projection.  The
+    # immutable ``question_version_id`` remains reserved for review/history.
     result3 = await db.execute(
         select(
-            QuestionVersion.subject_id.label("subject_id"),
+            Question.subject_id.label("subject_id"),
             Subject.code.label("subject_code"),
             Subject.name.label("subject_name"),
             func.count(WrongQuestion.id).label("cnt"),
         )
-        .join(QuestionVersion, WrongQuestion.question_version_id == QuestionVersion.id)
-        .join(Subject, QuestionVersion.subject_id == Subject.id)
+        .join(Question, WrongQuestion.question_id == Question.id)
+        .join(Subject, Question.subject_id == Subject.id)
         .where(and_(*conditions))
-        .group_by(QuestionVersion.subject_id, Subject.code, Subject.name)
+        .group_by(Question.subject_id, Subject.code, Subject.name)
     )
 
     by_subject = [
@@ -296,40 +298,44 @@ async def list_wrong_enriched(
         .scalar_subquery()
     )
 
+    # Display/filter wrong-book rows against the mutable current Question row so
+    # admin corrections immediately propagate to the mini-program. Review and
+    # mastery subqueries above deliberately stay bound to the historical
+    # ``WrongQuestion.question_version_id`` that produced the wrong attempt.
     base_query = (
         select(
             WrongQuestion,
-            QuestionVersion,
+            Question,
             Subject,
             review_record_sub.label("review_record_count"),
             next_review_sub.label("next_review"),
             last_reviewed_sub.label("last_reviewed"),
             mastery_pct_sub.label("mastery_pct"),
         )
-        .outerjoin(QuestionVersion, WrongQuestion.question_version_id == QuestionVersion.id)
-        .outerjoin(Subject, QuestionVersion.subject_id == Subject.id)
+        .outerjoin(Question, WrongQuestion.question_id == Question.id)
+        .outerjoin(Subject, Question.subject_id == Subject.id)
         .where(and_(*conditions))
     )
 
     if subject_id:
         subject_ids = await resolve_subject_ids(db, subject_id)
-        base_query = base_query.where(QuestionVersion.subject_id.in_(subject_ids))
+        base_query = base_query.where(Question.subject_id.in_(subject_ids))
 
     if topic:
         raw_topic = str(topic).strip()
         normalized_topic = normalize_knowledge_name(raw_topic)
-        version_matches = (
-            select(QuestionVersionKnowledgePoint.question_version_id)
+        question_matches = (
+            select(QuestionKnowledgePoint.question_id)
             .join(
                 KnowledgePoint,
-                KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
+                KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id,
             )
             .where(
                 (KnowledgePoint.name.contains(raw_topic))
                 | (KnowledgePoint.normalized_name.contains(normalized_topic))
             )
         )
-        base_query = base_query.where(WrongQuestion.question_version_id.in_(version_matches))
+        base_query = base_query.where(WrongQuestion.question_id.in_(question_matches))
 
     # Stable pagination: many imported/updated rows can share the same DB
     # timestamp. Without an id tie-breaker, OFFSET pages may duplicate/skip rows.
@@ -345,11 +351,11 @@ async def list_wrong_enriched(
     rows = result.all()
 
     items = []
-    revision_ids = [int(row[1].id) for row in rows if row[1] is not None]
-    kp_map = await load_revision_kp_names(db, revision_ids)
+    question_ids = [int(row[1].id) for row in rows if row[1] is not None]
+    kp_map = await load_question_kps(db, question_ids)
     for row in rows:
         wq = row[0]
-        revision = row[1]
+        question = row[1]
         subject = row[2]
         review_count_val = row[3]
         next_review_val = row[4]
@@ -377,16 +383,16 @@ async def list_wrong_enriched(
             "last_wrong_at": wq.last_review_at,
             "created_at": wq.created_at,
             "updated_at": wq.updated_at,
-            "subject_id": revision.subject_id if revision else None,
+            "subject_id": question.subject_id if question else None,
             "subject_code": subject.code if subject else None,
             "subject_name": subject.name if subject else None,
-            "question_type": revision.question_type if revision else None,
-            "content": revision.content if revision else None,
-            "options": revision.options if revision else None,
-            "answer": revision.answer if revision else None,
-            "analysis": revision.analysis if revision else None,
-            "knowledge_points": kp_map.get(int(revision.id), []) if revision else None,
-            "image_url": revision.image_url if revision else None,
+            "question_type": question.question_type if question else None,
+            "content": question.content if question else None,
+            "options": question.options if question else None,
+            "answer": question.answer if question else None,
+            "analysis": question.analysis if question else None,
+            "knowledge_points": kp_map.get(int(question.id), []) if question else None,
+            "image_url": question.image_url if question else None,
             "ai_analysis": wq.ai_analysis,
             "ai_analysis_status": "ready" if isinstance(wq.ai_analysis, dict) and wq.ai_analysis else "empty",
         })
