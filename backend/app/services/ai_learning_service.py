@@ -442,13 +442,19 @@ async def generate_learning_report(
 
     # 查询该时间段内用户的做题记录
     records_result = await db.execute(
-        select(PracticeRecord).where(
+        select(
+            PracticeRecord.question_id,
+            PracticeRecord.is_correct,
+        ).where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.subject_id == subject_id,
             PracticeRecord.answered_at >= since,
         ).order_by(PracticeRecord.answered_at.desc())
     )
-    records = records_result.scalars().all()
+    # Read only the per-answer fields used by the report.  Full ORM hydration is
+    # intentionally avoided so retired PracticeRecord batch columns can never
+    # become an implicit dependency of this path.
+    records = records_result.all()
 
     total = len(records)
     if total == 0:

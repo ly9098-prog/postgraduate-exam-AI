@@ -560,7 +560,7 @@ _outbox_dispatcher_draining = False
 
 
 async def run_outbox_dispatcher(
-    enqueue_fn: Callable[[str, str, dict], Any],
+    enqueue_fn: Callable[[str, str, dict, int], Any],
     poll_interval: float = 5.0,
     batch_size: int = _OUTBOX_BATCH_SIZE,
     lease_sec: int = _OUTBOX_LEASE_SEC,
@@ -603,7 +603,10 @@ async def run_outbox_dispatcher(
                     try:
                         async with async_session() as publish_db:
                             result = await enqueue_fn(
-                                outbox.task_id, outbox.task_type, outbox.payload,
+                                outbox.task_id,
+                                outbox.task_type,
+                                outbox.payload,
+                                int(outbox.schema_version or 1),
                             )
                             if result and result.accepted:
                                 await mark_published(publish_db, outbox.id, outbox.task_id)

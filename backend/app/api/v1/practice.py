@@ -446,9 +446,7 @@ async def get_practice_questions(
         issued_rows.append((selected, revision))
 
         content = _sanitize_question_content(revision.content)
-        # Keep diagnostics aligned with the student render path, which treats
-        # ``stem`` as canonical and ``text`` as a legacy fallback.
-        stem = (content or {}).get("stem") or (content or {}).get("text") or ""
+        stem = (content or {}).get("text") or (content or {}).get("stem") or ""
         logger.info(
             "[API_LAYER] qid=%s revision_id=%s textLen=%d textHash=%s stemKeys=%s",
             selected.id,
@@ -657,8 +655,8 @@ async def list_records(
     current_user: User = Depends(get_current_user),
 ):
     from sqlalchemy import and_, func, select
-    from sqlalchemy.orm import selectinload
 
+    from app.models.admin import Subject
     from app.models.practice_record import PracticeRecord as PR
 
     conds = [PR.user_id == current_user.id]
@@ -670,14 +668,25 @@ async def list_records(
     ).scalar()
 
     rows = await db.execute(
-        select(PR)
-        .options(selectinload(PR.subject_ref))
+        select(
+            PR.id,
+            PR.question_id,
+            PR.subject_id,
+            Subject.code.label("subject_code"),
+            Subject.name.label("subject_name"),
+            PR.question_type,
+            PR.user_answer,
+            PR.is_correct,
+            PR.used_time,
+            PR.answered_at,
+        )
+        .outerjoin(Subject, Subject.id == PR.subject_id)
         .where(and_(*conds))
         .order_by(PR.answered_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
-    items = rows.scalars().all()
+    items = rows.all()
 
     return paginated_response(
         items=[
@@ -685,8 +694,8 @@ async def list_records(
                 id=r.id,
                 question_id=r.question_id,
                 subject_id=r.subject_id,
-                subject_code=r.subject_ref.code if r.subject_ref else "",
-                subject_name=r.subject_ref.name if r.subject_ref else "",
+                subject_code=r.subject_code or "",
+                subject_name=r.subject_name or "",
                 question_type=r.question_type,
                 user_answer=r.user_answer,
                 is_correct=r.is_correct,

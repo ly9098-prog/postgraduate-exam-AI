@@ -589,9 +589,17 @@ async def lifespan(app: FastAPI):
             )
             from app.services.task_queue_service import task_queue
 
-            async def _enqueue_from_outbox(task_id: str, task_type: str, payload: dict) -> object:
+            async def _enqueue_from_outbox(
+                task_id: str,
+                task_type: str,
+                payload: dict,
+                schema_version: int,
+            ) -> object:
                 return await task_queue.enqueue_v2(
-                    task_type, payload, task_id=task_id,
+                    task_type,
+                    payload,
+                    task_id=task_id,
+                    schema_version=schema_version,
                 )
 
             _outbox_dispatcher_task = asyncio.create_task(

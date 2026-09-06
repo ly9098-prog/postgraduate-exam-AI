@@ -535,7 +535,13 @@ export default function SystemTasksPage() {
         scheduledTasks.refetch(),
       ];
       if (selectedScheduledId === "postgres_backup") requests.push(backupHistory.refetch());
-      if (data?.redis.available) requests.push(asyncTasks.refetch());
+      if (data?.redis.available) {
+        requests.push(asyncTasks.refetch());
+        // Keep an open async-task drawer in sync after retry/cancel operations.
+        // Previously the list refreshed while the drawer kept showing the old
+        // dead status, retry count and error until it was closed and reopened.
+        if (selectedAsyncId) requests.push(taskDetail.refetch());
+      }
       await Promise.allSettled(requests);
     } finally {
       if (showLoading) {

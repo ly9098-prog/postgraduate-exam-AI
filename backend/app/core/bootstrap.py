@@ -301,8 +301,18 @@ async def _init_scheduler_dependencies(registry: TaskRegistry) -> None:
         )
         from app.services.task_queue_service import task_queue
 
-        async def _enqueue_from_outbox(task_id: str, task_type: str, payload: dict) -> object:
-            return await task_queue.enqueue_v2(task_type, payload, task_id=task_id)
+        async def _enqueue_from_outbox(
+            task_id: str,
+            task_type: str,
+            payload: dict,
+            schema_version: int,
+        ) -> object:
+            return await task_queue.enqueue_v2(
+                task_type,
+                payload,
+                task_id=task_id,
+                schema_version=schema_version,
+            )
 
         registry.create(run_outbox_dispatcher(_enqueue_from_outbox), "outbox-dispatcher")
         registry.create(run_outbox_reconciler(), "outbox-reconciler")

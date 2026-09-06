@@ -365,7 +365,7 @@ async def _fallback_weak_kps(
 
     result = await db.execute(
         select(
-            PracticeRecord,
+            PracticeRecord.is_correct,
             QuestionVersionKnowledgePoint.knowledge_point_id,
             KnowledgePoint.name,
         )
@@ -389,12 +389,12 @@ async def _fallback_weak_kps(
         return []
 
     kp_stats: dict[int, dict] = {}
-    for record, kp_id, kp_name in rows:
+    for is_correct, kp_id, kp_name in rows:
         stats = kp_stats.setdefault(
             int(kp_id), {"name": str(kp_name), "total": 0, "correct": 0}
         )
         stats["total"] += 1
-        if record.is_correct:
+        if bool(is_correct):
             stats["correct"] += 1
 
     weak = []

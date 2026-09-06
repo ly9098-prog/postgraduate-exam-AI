@@ -508,7 +508,9 @@ async def inspect_task(
         generation=int(data.get("generation", 0)),
         trace_id=str(parsed.get("trace_id") or "") or None,
         request_id=str(parsed.get("request_id") or "") or None,
-        last_error=data.get("error", "")[:200] if data.get("error") else None,
+        # Detail view keeps the full queue-side diagnostic (worker currently
+        # caps it at 500 chars); list responses remain intentionally concise.
+        last_error=data.get("error", "")[:1000] if data.get("error") else None,
         created_at=_format_task_timestamp(parsed.get("created_at")),
         updated_at=_format_task_timestamp(parsed.get("updated_at")),
         payload_summary=payload_summary,

@@ -21,10 +21,14 @@ from app.core.time_utils import normalize_to_naive_utc, serialize_utc_datetime, 
 from app.models.practice_record import PracticeRecord
 from app.models.task_outbox import TaskOutbox
 from app.services.outbox_service import create_outbox
+from app.services.practice.answer_projection_contract import (
+    ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
+    ANSWER_PROJECTION_TASK_TYPE,
+)
 
 logger = logging.getLogger("postgraduate-ai.answer-projection-reconciler")
 
-_TASK_TYPE = "answer_projection"
+_TASK_TYPE = ANSWER_PROJECTION_TASK_TYPE
 _ORIGINAL_TASK_PREFIX = "answer_projection"
 _REPAIR_TASK_PREFIX = "answer_projection_repair"
 _REPAIR_BUCKET_SEC = 3600
@@ -164,6 +168,7 @@ async def reconcile_answer_projections(
                     task_id=repair_task_id,
                     task_type=_TASK_TYPE,
                     payload=payload,
+                    schema_version=ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
                 )
             stats["scheduled"] += 1
         except IntegrityError:

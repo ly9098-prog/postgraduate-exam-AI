@@ -152,19 +152,21 @@ async def _cleanup_work_copy(work_path: str | None) -> None:
 
 
 async def _process_answer_projection_task(task: Task) -> None:
-    """Project one committed PracticeRecord into all derived learning state."""
+    """Project one committed per-answer PracticeRecord into derived state."""
     from app.core.database import async_session
+    from app.services.practice.answer_projection_contract import (
+        parse_answer_projection_payload,
+    )
     from app.services.practice.answer_projection_service import project_practice_answer
 
-    practice_record_id = int(task.payload.get("practice_record_id") or 0)
-    if practice_record_id <= 0:
-        raise ValueError(f"invalid practice_record_id for task_id={task.task_id}")
+    payload = parse_answer_projection_payload(task.payload)
+    practice_record_id = payload.practice_record_id
 
     async with async_session() as db:
         result = await project_practice_answer(
             db,
             practice_record_id=practice_record_id,
-            request_id=task.payload.get("request_id"),
+            request_id=payload.request_id,
         )
     logger.info(
         "Answer projection task finished: task_id=%s record_id=%s processed=%s duplicate=%s",
@@ -189,7 +191,7 @@ TASK_TYPE_ANSWER_PROJECTION = "answer_projection"
 
 # Current worker version for rolling deployment compatibility.
 # Must be incremented when backward-incompatible task processing changes are made.
-_WORKER_VERSION: int = 1
+_WORKER_VERSION: int = 2
 
 # Task types that support DB fencing (have execution_generation columns)
 _FENCING_TASK_TYPES = frozenset({

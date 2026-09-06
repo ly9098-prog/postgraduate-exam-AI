@@ -24,6 +24,9 @@ from app.models.question_import import (
     QuestionImport,  # noqa: F401 — ensures Subject mapper resolves
 )
 from app.services.admin_subject_service import resolve_subject_ids
+from app.services.practice.answer_projection_contract import (
+    ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
+)
 from app.services.practice.recommendation_pipeline import (
     merge_recommendation_results,
     normalize_smart_strategy,
@@ -552,11 +555,7 @@ def _question_stem_for_subject_guard(content: dict | None) -> str:
     # Do not use analysis/knowledge-point text here: those fields can themselves
     # be wrong after a historical subject misclassification and would hide the
     # very mismatch this guard is meant to catch.
-    # Student clients render ``stem`` before the legacy ``text`` alias. Some
-    # historical revisions contain both keys while only ``stem`` was corrected,
-    # so inspecting ``text`` first can falsely reject the exact question the
-    # client would actually display.
-    value = content.get("stem") or content.get("text") or ""
+    value = content.get("text") or content.get("stem") or ""
     return str(value).strip().lower()
 
 
@@ -734,7 +733,6 @@ async def filter_questions_to_revision_scope(
             kept.append(question)
         else:
             rejected.append({
-                "rejection_reason": "semantic" if structural_valid else "structural",
                 "question_id": qid,
                 "question_subject_id": q_subject_id,
                 "current_version_id": version_id,
@@ -750,22 +748,10 @@ async def filter_questions_to_revision_scope(
             })
 
     if rejected:
-        # Structural mismatches indicate a real persistence/version invariant
-        # violation and remain errors. Semantic mismatches are heuristic
-        # defense-in-depth drops, so report them as warnings rather than turning
-        # a successfully recovered practice request into a production error.
-        structural_rejected = [row for row in rejected if row["rejection_reason"] == "structural"]
-        semantic_rejected = [row for row in rejected if row["rejection_reason"] == "semantic"]
-        if structural_rejected:
-            logger.error(
-                "[PRACTICE_REVISION_SCOPE] structural_rejected=%d scope_ids=%s rows=%s",
-                len(structural_rejected), sorted(scope), structural_rejected,
-            )
-        if semantic_rejected:
-            logger.warning(
-                "[PRACTICE_REVISION_SCOPE] semantic_rejected=%d scope_ids=%s rows=%s",
-                len(semantic_rejected), sorted(scope), semantic_rejected,
-            )
+        logger.error(
+            "[PRACTICE_REVISION_SCOPE] rejected=%d scope_ids=%s rows=%s",
+            len(rejected), sorted(scope), rejected,
+        )
     return kept
 
 
@@ -2765,7 +2751,7 @@ async def _compute_weak_knowledge_points(
 
     # 获取最近 30 天的做题记录，带题目的知识点
     result = await db.execute(
-        select(PracticeRecord, KnowledgePoint.name)
+        select(PracticeRecord.is_correct, KnowledgePoint.name)
         .join(
             QuestionVersionKnowledgePoint,
             QuestionVersionKnowledgePoint.question_version_id == PracticeRecord.question_version_id,
@@ -2782,14 +2768,15 @@ async def _compute_weak_knowledge_points(
     if not rows:
         return []
 
-    # 历史统计按作答时 immutable revision 的知识点归因。
+    # 历史统计按作答时 immutable revision 的知识点归因。这里只读取真正
+    # 需要的列，避免任何 PracticeRecord ORM 全量加载重新引入已废弃批次字段。
     kp_stats: dict[str, dict] = {}
-    for record, kp_name in rows:
+    for is_correct, kp_name in rows:
         kp = str(kp_name)
         if kp not in kp_stats:
             kp_stats[kp] = {"total": 0, "correct": 0}
         kp_stats[kp]["total"] += 1
-        if record.is_correct:
+        if bool(is_correct):
             kp_stats[kp]["correct"] += 1
 
     # 筛选薄弱知识点
@@ -2829,6 +2816,7 @@ async def _create_answer_projection_outbox(
             "practice_record_id": int(practice_record_id),
             "request_id": _normalize_practice_request_id(request_id),
         },
+        schema_version=ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
     )
 
 

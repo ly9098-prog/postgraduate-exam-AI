@@ -28,6 +28,11 @@ import redis.exceptions as redis_exc
 
 from app.core.config import settings
 from app.core.deployment_profile import DeploymentProfile, detect_deployment_profile
+from app.services.practice.answer_projection_contract import (
+    ANSWER_PROJECTION_MINIMUM_WORKER_VERSION,
+    ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
+    ANSWER_PROJECTION_TASK_TYPE,
+)
 
 logger = logging.getLogger("postgraduate-ai.task-queue")
 
@@ -133,9 +138,32 @@ class EnqueueResult:
 # Current task schema version for rolling deployment compatibility.
 # Increment when making backward-incompatible changes to task payload structure.
 _CURRENT_TASK_SCHEMA_VERSION: int = 2
-# Minimum worker version required to process this schema version.
-# Semver-like integer — v2 requires worker version >= 2.
+# Default minimum worker for generic task types. Task-specific schemas may
+# require a newer worker via ``_minimum_worker_version_for_task``.
 _MINIMUM_WORKER_VERSION: int = 1
+
+
+def _normalize_task_schema_version(task_type: str, schema_version: int) -> int:
+    """Raise task schemas to the minimum currently supported for their type."""
+    if task_type == ANSWER_PROJECTION_TASK_TYPE:
+        return max(schema_version, ANSWER_PROJECTION_TASK_SCHEMA_VERSION)
+    return schema_version
+
+
+def _minimum_worker_version_for_task(task_type: str, schema_version: int) -> int:
+    """Return the oldest worker allowed to execute one task schema.
+
+    Most task types still use the generic v1 worker contract. Answer
+    projection schema v2 is deliberately stricter because it assumes the
+    per-answer ``practice_records`` model and must never be executed by a
+    worker that still hydrates the retired batch-shaped columns.
+    """
+    if (
+        task_type == ANSWER_PROJECTION_TASK_TYPE
+        and schema_version >= ANSWER_PROJECTION_TASK_SCHEMA_VERSION
+    ):
+        return ANSWER_PROJECTION_MINIMUM_WORKER_VERSION
+    return _MINIMUM_WORKER_VERSION
 
 
 @dataclass
@@ -709,7 +737,7 @@ return 1
 
 # COMPLETE_V2 — verify owner_token AND generation
 # KEYS: [processing_key, retry_key, task_hash_prefix, heartbeat_prefix, fencing_prefix]
-# ARGS: [task_id, owner_token, completed_ttl, fencing_tombstone_ttl]
+# ARGS: [task_id, owner_token, task_json, completed_ttl, fencing_tombstone_ttl]
 # Returns: 1 on success, 0 on owner mismatch, -1 on generation mismatch
 _LUA_COMPLETE_V2 = """
 local task_id = ARGV[1]
@@ -730,7 +758,7 @@ redis.call("ZREM", KEYS[1], task_id)
 redis.call("ZREM", KEYS[2], task_id)
 redis.call("HSET", KEYS[3] .. ":" .. task_id,
     "data", task_json, "status", "completed",
-    "owner_token", "", "lease_expires_at", 0)
+    "owner_token", "", "lease_expires_at", 0, "error", "")
 redis.call("HDEL", KEYS[3] .. ":" .. task_id, "cancel_requested", "cancel_reason")
 redis.call("EXPIRE", KEYS[3] .. ":" .. task_id, ttl)
 redis.call("DEL", KEYS[4] .. ":" .. task_id)
@@ -804,12 +832,20 @@ if not stored or stored ~= owner_token then return 0 end
 local stored_gen = redis.call("HGET", KEYS[3] .. ":" .. task_id, "generation")
 local fencing_gen = redis.call("HGET", KEYS[5] .. ":" .. task_id, "gen")
 if not fencing_gen or not stored_gen or tostring(stored_gen) ~= tostring(fencing_gen) then return -1 end
+local retry_count = 0
+local last_error = ""
+local decoded_ok, decoded = pcall(cjson.decode, task_json)
+if decoded_ok and type(decoded) == "table" then
+    retry_count = tonumber(decoded["retry_count"]) or 0
+    last_error = tostring(decoded["error"] or "")
+end
 redis.call("ZREM", KEYS[1], task_id)
 redis.call("LPUSH", KEYS[2], task_id)
 redis.call("LTRIM", KEYS[2], 0, dead_max - 1)
 redis.call("EXPIRE", KEYS[2], fence_ttl)
 redis.call("HSET", KEYS[3] .. ":" .. task_id,
-    "data", task_json, "status", "dead", "owner_token", "", "lease_expires_at", 0)
+    "data", task_json, "status", "dead", "owner_token", "", "lease_expires_at", 0,
+    "retry_count", retry_count, "error", string.sub(last_error, 1, 500))
 redis.call("EXPIRE", KEYS[3] .. ":" .. task_id, fence_ttl)
 redis.call("DEL", KEYS[4] .. ":" .. task_id)
 redis.call("EXPIRE", KEYS[5] .. ":" .. task_id, fence_ttl)
@@ -2062,6 +2098,8 @@ class DurableTaskQueue:
         task_id: str | None = None,
         max_retries: int = _DEFAULT_MAX_RETRIES,
         idempotent: bool = True,
+        schema_version: int | None = None,
+        minimum_worker_version: int | None = None,
     ) -> EnqueueResult:
         """Enqueue a task into the v2 key namespace.
 
@@ -2070,6 +2108,21 @@ class DurableTaskQueue:
         """
         tid = task_id or f"task_{uuid.uuid4().hex}"
         trace_id, request_id = _task_correlation(payload)
+        effective_schema_version = int(
+            _CURRENT_TASK_SCHEMA_VERSION if schema_version is None else schema_version
+        )
+        if effective_schema_version <= 0:
+            raise ValueError("schema_version must be positive")
+        effective_schema_version = _normalize_task_schema_version(
+            task_type, effective_schema_version
+        )
+        effective_minimum_worker_version = int(
+            _minimum_worker_version_for_task(task_type, effective_schema_version)
+            if minimum_worker_version is None
+            else minimum_worker_version
+        )
+        if effective_minimum_worker_version <= 0:
+            raise ValueError("minimum_worker_version must be positive")
         task = Task(
             task_id=tid,
             task_type=task_type,
@@ -2077,6 +2130,8 @@ class DurableTaskQueue:
             max_retries=max_retries,
             trace_id=trace_id,
             request_id=request_id,
+            schema_version=effective_schema_version,
+            minimum_worker_version=effective_minimum_worker_version,
         )
         task_json = json.dumps(task.to_dict(), default=str)
         max_ready = _get_max_ready(task_type)
@@ -2331,12 +2386,19 @@ class DurableTaskQueue:
                     "updated_at": time.time(),
                     "lease_expires_at": 0.0,
                     "owner_token": "",
+                    "error": "",
                 })
                 task_json = json.dumps(task_data, default=str)
             else:
                 current = await client.hget(_v2_task_hash_key(task_id), "data")
                 data = json.loads(current) if current else {"task_id": task_id, "task_type": tt, "payload": {}}
-                data.update({"status": "completed", "updated_at": time.time(), "lease_expires_at": 0.0, "owner_token": ""})
+                data.update({
+                    "status": "completed",
+                    "updated_at": time.time(),
+                    "lease_expires_at": 0.0,
+                    "owner_token": "",
+                    "error": "",
+                })
                 task_json = json.dumps(data, default=str)
 
             result = await self._evalsha_or_reload(
@@ -2366,6 +2428,7 @@ class DurableTaskQueue:
                     task_or_id.status = TaskStatus.COMPLETED
                     task_or_id.updated_at = time.time()
                     task_or_id.lease_expires_at = 0.0
+                    task_or_id.error = ""
                 logger.info("v2 Task completed: task_id=%s", task_id)
 
             return result
@@ -2911,39 +2974,102 @@ class DurableTaskQueue:
     async def retry_from_dead_v2(self, task_type: str, task_id: str) -> bool:
         """Re-enqueue a dead-letter task to the v2 ready queue.
 
-        Returns True on success. The task's fencing key is NOT reset —
-        the generation counter continues monotonically.
+        An administrator retry is a *new retry cycle*: reset the exhausted retry
+        budget and stale error fields while preserving the fencing generation.
+        Previously only the Redis hash status was changed, leaving the JSON task
+        payload at ``dead`` with its old ``retry_count``/``error``.  The next
+        claim therefore inherited the exhausted retry budget and the admin UI
+        continued to display the previous failure even after re-queueing.
+
+        Returns True on success. The task's fencing key is NOT reset — the
+        generation counter continues monotonically.
         """
         if not self._redis_enabled:
             return False
+        client = None
         try:
             client = await self._get_script_client()
             if client is None:
                 return False
 
-            # Read the task hash
-            raw = await client.hget(_v2_task_hash_key(task_id), "data")
-
-            # Remove from dead list
-            await client.lrem(_v2_dead_key(task_type), 1, task_id)
-
-            if raw:
-                # Reset status to pending but keep generation unchanged
-                await client.hset(_v2_task_hash_key(task_id), "status", "pending")
-                await client.hset(_v2_task_hash_key(task_id), "owner_token", "")
-                await client.rpush(_v2_q_key(task_type), task_id)
-                await client.aclose()
-                logger.info("v2 Retried from dead: task_id=%s", task_id)
-                return True
-            else:
-                # Hash already expired — clean up
-                await client.aclose()
+            hash_key = _v2_task_hash_key(task_id)
+            raw = await client.hget(hash_key, "data")
+            if not raw:
+                # The dead-list entry can outlive the task hash TTL. Remove all
+                # duplicate stale entries so diagnostics do not keep surfacing it.
+                await client.lrem(_v2_dead_key(task_type), 0, task_id)
                 logger.warning("v2 Dead task hash expired: task_id=%s", task_id)
                 return False
+
+            try:
+                task_data = json.loads(raw)
+            except (TypeError, json.JSONDecodeError) as exc:
+                logger.warning("v2 Dead task payload is corrupt: task_id=%s error=%s", task_id, exc)
+                return False
+            if not isinstance(task_data, dict):
+                logger.warning("v2 Dead task payload is not an object: task_id=%s", task_id)
+                return False
+            if task_data.get("task_id") != task_id or task_data.get("task_type") != task_type:
+                logger.warning(
+                    "v2 Dead task identity mismatch: expected=%s/%s actual=%s/%s",
+                    task_id, task_type, task_data.get("task_id"), task_data.get("task_type"),
+                )
+                return False
+
+            now = time.time()
+            schema_version = _normalize_task_schema_version(
+                task_type,
+                int(task_data.get("schema_version", 1) or 1),
+            )
+            required_worker = _minimum_worker_version_for_task(task_type, schema_version)
+            task_data.update({
+                "status": TaskStatus.PENDING.value,
+                "retry_count": 0,
+                "error": "",
+                "updated_at": now,
+                "lease_expires_at": 0.0,
+                "owner_token": "",
+                # Re-evaluate the worker floor when an operator starts a fresh
+                # retry cycle. This upgrades older answer_projection dead tasks
+                # to the strict per-answer worker contract without rewriting
+                # their business payload.
+                "schema_version": schema_version,
+                "minimum_worker_version": max(
+                    int(task_data.get("minimum_worker_version", 1) or 1),
+                    required_worker,
+                ),
+            })
+            task_json = json.dumps(task_data, default=str)
+
+            # Keep the hash and embedded JSON metadata consistent.  LREM count=0
+            # also heals duplicate dead-list entries left by older queue code.
+            pipe = client.pipeline(transaction=True)
+            pipe.lrem(_v2_dead_key(task_type), 0, task_id)
+            pipe.hset(
+                hash_key,
+                mapping={
+                    "data": task_json,
+                    "status": TaskStatus.PENDING.value,
+                    "retry_count": 0,
+                    "error": "",
+                    "owner_token": "",
+                    "lease_expires_at": 0,
+                },
+            )
+            pipe.rpush(_v2_q_key(task_type), task_id)
+            await pipe.execute()
+            logger.info("v2 Retried from dead with fresh retry budget: task_id=%s", task_id)
+            return True
 
         except Exception as e:
             logger.warning("v2 Retry from dead failed: %s", e)
             return False
+        finally:
+            if client is not None:
+                try:
+                    await client.aclose()
+                except Exception:
+                    pass
 
     async def delete_from_corrupt_v2(self, task_type: str, task_id: str) -> bool:
         """Remove a specific task from v2 corrupt ZSET."""

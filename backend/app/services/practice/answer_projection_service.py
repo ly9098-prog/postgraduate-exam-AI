@@ -13,22 +13,83 @@ reconciliation only repairs records explicitly left in ``pending``.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.admin import QuestionVersion
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
+from app.services.practice.answer_projection_contract import (
+    REQUIRED_PROJECTION_COLUMNS,
+    RETIRED_PRACTICE_BATCH_COLUMNS,
+)
 
 logger = logging.getLogger(__name__)
 
 PROJECTION_PENDING = "pending"
 PROJECTION_COMPLETED = "completed"
 PROJECTION_REVISION_ONLY = "revision_only"
+
+_schema_contract_verified = False
+_schema_contract_lock = asyncio.Lock()
+
+
+async def _verify_projection_schema_contract(db: AsyncSession) -> None:
+    """Fail fast unless ``practice_records`` is the strict per-answer schema.
+
+    The emergency compatibility approach of re-adding batch columns is
+    intentionally unsupported.  A worker must run only against the migrated
+    per-answer schema; otherwise it stops this projection with a clear invariant
+    error instead of allowing ORM/schema drift to survive unnoticed.
+    """
+    global _schema_contract_verified
+    if _schema_contract_verified:
+        return
+
+    async with _schema_contract_lock:
+        if _schema_contract_verified:
+            return
+
+        mapped_columns = set(PracticeRecord.__table__.columns.keys())
+        mapped_legacy = sorted(mapped_columns & RETIRED_PRACTICE_BATCH_COLUMNS)
+        if mapped_legacy:
+            raise RuntimeError(
+                "PracticeRecord ORM maps retired batch columns: "
+                + ", ".join(mapped_legacy)
+            )
+
+        connection = await db.connection()
+
+        def _load_columns(sync_connection) -> set[str]:
+            inspector = inspect(sync_connection)
+            if "practice_records" not in inspector.get_table_names():
+                raise RuntimeError("practice_records table does not exist")
+            return {
+                str(column["name"])
+                for column in inspector.get_columns("practice_records")
+            }
+
+        database_columns = await connection.run_sync(_load_columns)
+        missing = sorted(REQUIRED_PROJECTION_COLUMNS - database_columns)
+        legacy = sorted(RETIRED_PRACTICE_BATCH_COLUMNS & database_columns)
+        if missing or legacy:
+            details: list[str] = []
+            if missing:
+                details.append("missing=" + ",".join(missing))
+            if legacy:
+                details.append("retired_present=" + ",".join(legacy))
+            raise RuntimeError(
+                "practice_records per-answer schema invariant failed ("
+                + "; ".join(details)
+                + "). Apply Alembic upgrade to head before running answer_projection workers."
+            )
+
+        _schema_contract_verified = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +243,7 @@ async def project_practice_answer(
     Mutable question-state projections (Leitner/adaptive state) are only applied
     when that revision is still the question's current revision.
     """
+    await _verify_projection_schema_contract(db)
     record = await _lock_projection_source(db, practice_record_id)
     if record is None:
         logger.warning("answer projection record missing: record_id=%s", practice_record_id)
