@@ -52,8 +52,11 @@ from app.services.export.latex_render import find_latex_segments, has_latex
 from app.services.export.omml_converter import render_latex_as_omml_or_fallback
 from app.services.export.question_content import (
     clean_printable_text,
+    extract_blank_option_groups,
     extract_option_text,
     extract_question_text,
+    format_question_answer,
+    get_shared_blank_options,
 )
 from app.services.export.space_allocator import get_answer_space_mm
 from app.services.export.table_parser import parse_table
@@ -273,8 +276,12 @@ class DocxExporter(Exporter):
                     self._embed_image_in_doc(stem_p, str(url), ctx)
 
             options = q.get("options") or {}
+            blank_option_groups = extract_blank_option_groups(q)
             options_table = None
-            if options:
+            if blank_option_groups:
+                options_table = self._add_blank_option_groups(doc, blank_option_groups)
+                stem_p.paragraph_format.keep_with_next = True
+            elif options:
                 options_table = self._add_options_table(doc, options)
                 stem_p.paragraph_format.keep_with_next = True
             space_mm = get_answer_space_mm(
@@ -287,7 +294,7 @@ class DocxExporter(Exporter):
                 )
 
             if config.get("answer_position") == "after_question":
-                ans = self._sanitize_text(q.get("answer", ""))
+                ans = self._sanitize_text(format_question_answer(q))
                 if ans:
                     ans_p = doc.add_paragraph()
                     ans_p.paragraph_format.space_before = Pt(2)
@@ -304,7 +311,7 @@ class DocxExporter(Exporter):
             if config.get("answer_position") == "at_end":
                 answer_section.append({
                     "num": question_num,
-                    "answer": self._sanitize_text(q.get("answer", "")),
+                    "answer": self._sanitize_text(format_question_answer(q)),
                 })
             if config.get("analysis_position") == "at_end":
                 analysis_section.append({
@@ -718,6 +725,33 @@ class DocxExporter(Exporter):
                     self._set_east_asian_font(run, _BODY_FONT_EA)
         return table
 
+    def _add_blank_option_groups(self, doc: Document, groups: list[dict]):
+        """Render multi-blank option groups without duplicating shared choices."""
+        shared = get_shared_blank_options(groups)
+        if shared:
+            return self._add_options_table(doc, shared)
+
+        first_table = None
+        for group in groups:
+            options = group.get("options") or {}
+            if not options:
+                continue
+            label = str(group.get("id") or "").strip()
+            if label:
+                p = doc.add_paragraph()
+                p.paragraph_format.left_indent = Cm(0.55)
+                p.paragraph_format.space_before = Pt(1.5)
+                p.paragraph_format.space_after = Pt(0)
+                p.paragraph_format.keep_with_next = True
+                run = p.add_run(f"{label}：")
+                run.font.size = Pt(9.5)
+                run.font.name = _BODY_FONT
+                self._set_east_asian_font(run, _BODY_FONT_EA)
+            table = self._add_options_table(doc, options)
+            if first_table is None:
+                first_table = table
+        return first_table
+
     def _choose_answer_columns(self, items: list[dict]) -> int:
         answers = [self._sanitize_text(item.get("answer")) or "—" for item in items]
         max_units = max((self._display_units(answer) for answer in answers), default=1)
@@ -741,7 +775,13 @@ class DocxExporter(Exporter):
         self._set_table_borders_all(table)
         self._set_table_indent(table, 0)
 
-        max_cell_cm = 1.5 if columns >= 4 else 2.4 if columns == 2 else 5.6
+        max_units = max(
+            (self._display_units(self._sanitize_text(item.get("answer")) or "—") for item in items),
+            default=1,
+        )
+        base_cell_cm = 1.5 if columns >= 4 else 2.4 if columns == 2 else 5.6
+        content_cell_cm = 0.60 + max_units * 0.24
+        max_cell_cm = min(BODY_W_CM / columns, max(base_cell_cm, content_cell_cm))
         table_width_cm = min(BODY_W_CM, max_cell_cm * columns)
         cell_width = Cm(table_width_cm / columns)
 
@@ -754,7 +794,7 @@ class DocxExporter(Exporter):
             self._set_row_cant_split(number_row)
             self._set_row_cant_split(answer_row)
             self._set_row_height_exact(number_row, 0.52)
-            self._set_row_height_exact(answer_row, 0.78)
+            self._set_row_height_at_least(answer_row, 0.78)
             start = block_index * columns
             row_items = items[start:start + columns]
 
@@ -805,6 +845,16 @@ class DocxExporter(Exporter):
             tr_pr.append(tr_height)
         tr_height.set(qn("w:val"), str(int(Cm(height_cm).twips)))
         tr_height.set(qn("w:hRule"), "exact")
+
+    @staticmethod
+    def _set_row_height_at_least(row, height_cm: float) -> None:
+        tr_pr = row._tr.get_or_add_trPr()
+        tr_height = tr_pr.find(qn("w:trHeight"))
+        if tr_height is None:
+            tr_height = OxmlElement("w:trHeight")
+            tr_pr.append(tr_height)
+        tr_height.set(qn("w:val"), str(int(Cm(height_cm).twips)))
+        tr_height.set(qn("w:hRule"), "atLeast")
 
     @staticmethod
     def _set_table_borders_all(table) -> None:

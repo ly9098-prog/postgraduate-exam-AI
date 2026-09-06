@@ -1465,225 +1465,429 @@ page {
   background: #f1f2ef;
 }
 
-
-/* Home profile editor: use native controls directly instead of a nested custom component.
-   This avoids the zero-height/blank component rendering seen in some base-library/devtools combinations. */
-.profile-consent-sheet {
-  max-height: calc(100vh - 24rpx);
+/* Home profile editor v5: option 3 / minimal split layout. */
+.profile-minimal-sheet {
+  max-height: calc(100vh - 20rpx);
+  box-sizing: border-box;
   overflow-y: auto;
+  padding: 16rpx 30rpx calc(34rpx + env(safe-area-inset-bottom));
+  background: #fafbf7;
 }
 
-.profile-consent-card-compact {
-  padding: 0 20rpx;
-  overflow: hidden;
+.profile-minimal-sheet .profile-sheet-handle {
+  width: 70rpx;
+  height: 7rpx;
+  margin-bottom: 24rpx;
+  background: #d6dcd5;
 }
 
-.profile-native-row {
+.profile-minimal-head {
+  align-items: flex-start;
+}
+
+.profile-minimal-heading {
   min-width: 0;
-  display: flex;
-  align-items: center;
+  flex: 1;
 }
 
-.profile-native-avatar-row {
-  min-height: 112rpx;
-  padding: 16rpx 0;
+.profile-minimal-sheet .profile-sheet-kicker {
+  color: #7b8980;
+  font-size: 17rpx;
+  letter-spacing: 2.4rpx;
 }
 
-.profile-native-nickname-row {
-  min-height: 102rpx;
-  padding: 13rpx 0 16rpx;
+.profile-minimal-sheet .profile-sheet-title {
+  margin-top: 9rpx;
+  color: #112219;
+  font-size: 39rpx;
+  line-height: 1.16;
+  font-weight: 950;
+  letter-spacing: -.6rpx;
 }
 
-.profile-native-divider {
-  height: 1rpx;
-  margin-left: 104rpx;
-  background: #e7ebe7;
+.profile-minimal-sheet .profile-sheet-desc {
+  margin-top: 9rpx;
+  color: #77837b;
+  font-size: 22rpx;
+  line-height: 1.45;
 }
 
-.profile-native-avatar-button {
+.profile-minimal-sheet .profile-sheet-close {
+  width: 58rpx;
+  height: 58rpx;
+  margin-top: 0;
+  background: #eef1ec;
+  color: #526158;
+  font-size: 38rpx;
+  transition: transform .16s ease, background-color .16s ease, opacity .16s ease;
+}
+
+.profile-sheet-close-pressed {
+  transform: scale(.92) rotate(5deg);
+  background: #e4e9e2 !important;
+  opacity: .82;
+}
+
+.profile-minimal-grid {
   position: relative;
-  width: 82rpx;
-  height: 82rpx;
-  min-width: 82rpx;
-  margin: 0 20rpx 0 0;
-  padding: 0;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-height: 300rpx;
+  margin-top: 46rpx;
+}
+
+.profile-minimal-card {
+  position: relative;
+  min-width: 0;
+  flex: 1 1 0;
+  min-height: 300rpx;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 38rpx 18rpx 32rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1rpx solid transparent;
+  border-radius: 30rpx;
+  background: rgba(247, 249, 245, .72);
+  color: #17281f;
+  line-height: 1;
+  text-align: center;
+  transition:
+    transform .18s cubic-bezier(.22, .75, .3, 1),
+    border-color .24s ease,
+    background-color .24s ease,
+    box-shadow .24s ease,
+    opacity .24s ease;
+  animation: profile-minimal-card-in .34s cubic-bezier(.2, .8, .3, 1) both;
+}
+
+.profile-minimal-nickname-card {
+  animation-delay: .045s;
+}
+
+button.profile-minimal-card::after {
   border: 0;
-  border-radius: 25rpx;
-  background: #edf2ec;
-  line-height: 0;
+}
+
+button.profile-minimal-card[disabled] {
+  opacity: .68;
+}
+
+.profile-minimal-card.is-active {
+  z-index: 1;
+  border-color: rgba(52, 107, 79, .22);
+  background: linear-gradient(145deg, #f4faf6 0%, #edf6f0 100%);
+  box-shadow: 0 16rpx 44rpx rgba(31, 73, 51, .07);
+}
+
+.profile-minimal-card.is-done {
+  border-color: rgba(70, 132, 97, .14);
+  background: #f8fbf8;
+}
+
+.profile-minimal-card.is-waiting {
+  opacity: .78;
+  background: rgba(247, 248, 245, .5);
+}
+
+.profile-minimal-card-pressed {
+  transform: scale(.975);
+}
+
+.profile-minimal-divider {
+  align-self: center;
+  width: 1rpx;
+  height: 176rpx;
+  flex: 0 0 1rpx;
+  margin: 62rpx 22rpx;
+  background: linear-gradient(180deg, transparent 0%, #dfe4df 14%, #dfe4df 86%, transparent 100%);
+}
+
+.profile-minimal-icon {
+  width: 104rpx;
+  height: 104rpx;
+  flex: 0 0 104rpx;
+  box-sizing: border-box;
+  margin-bottom: 28rpx;
+  transition: transform .22s ease, background-color .22s ease, border-color .22s ease;
+}
+
+.profile-minimal-card.is-active .profile-minimal-icon {
+  transform: translateY(-3rpx);
+}
+
+.profile-minimal-avatar-icon {
+  position: relative;
   overflow: visible;
 }
 
-.profile-native-avatar-button::after {
-  border: 0;
-}
-
-.profile-native-avatar-button[disabled] {
-  opacity: .62;
-}
-
-.profile-native-avatar-image,
-.profile-native-avatar-placeholder {
-  width: 82rpx;
-  height: 82rpx;
-  border-radius: 25rpx;
-}
-
-.profile-native-avatar-image {
+.profile-minimal-avatar-image,
+.profile-minimal-avatar-placeholder {
   display: block;
+  width: 104rpx;
+  height: 104rpx;
+  box-sizing: border-box;
   overflow: hidden;
+  border: 1rpx solid #d7e0d8;
+  border-radius: 30rpx;
+  background: linear-gradient(145deg, #eff4ef 0%, #e4ece5 100%);
 }
 
-.profile-native-avatar-placeholder {
+.profile-minimal-avatar-image {
+  animation: profile-minimal-avatar-in .28s ease-out both;
+}
+
+.profile-minimal-avatar-placeholder {
   position: relative;
-  overflow: hidden;
-  border: 1rpx solid #d9e1da;
-  background: linear-gradient(145deg, #f1f5ef 0%, #e6eee7 100%);
 }
 
-.profile-native-person-head {
+.profile-minimal-person-head {
   position: absolute;
-  left: 27rpx;
-  top: 18rpx;
-  width: 28rpx;
-  height: 28rpx;
+  left: 35rpx;
+  top: 22rpx;
+  width: 34rpx;
+  height: 34rpx;
   border-radius: 50%;
-  background: #829188;
+  background: #819087;
 }
 
-.profile-native-person-body {
+.profile-minimal-person-body {
   position: absolute;
-  left: 17rpx;
-  bottom: -9rpx;
-  width: 48rpx;
-  height: 37rpx;
-  border-radius: 26rpx 26rpx 8rpx 8rpx;
-  background: #829188;
+  left: 22rpx;
+  bottom: -10rpx;
+  width: 60rpx;
+  height: 49rpx;
+  border-radius: 34rpx 34rpx 10rpx 10rpx;
+  background: #819087;
 }
 
-.profile-native-avatar-badge {
+.profile-minimal-avatar-badge {
   position: absolute;
-  right: -7rpx;
-  bottom: -5rpx;
-  width: 31rpx;
-  height: 31rpx;
+  right: -10rpx;
+  bottom: -8rpx;
+  width: 34rpx;
+  height: 34rpx;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 4rpx solid #fff;
+  border: 4rpx solid #f7faf7;
   border-radius: 50%;
-  background: #173e2b;
-  color: #d7f16b;
-  font-size: 24rpx;
-  font-weight: 800;
+  background: #163e2a;
+  color: #d8f56c;
+  font-size: 22rpx;
+  font-weight: 950;
   line-height: 1;
+  box-shadow: 0 5rpx 12rpx rgba(18, 55, 37, .14);
+  transition: transform .2s ease, background-color .2s ease;
 }
 
-.profile-native-copy {
-  min-width: 0;
-  flex: 1;
+.profile-minimal-card.is-done .profile-minimal-avatar-badge {
+  background: #17834d;
+  animation: profile-minimal-check-in .28s cubic-bezier(.2, .9, .3, 1.3) both;
+}
+
+.profile-minimal-nickname-icon {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  border: 1rpx solid #dbe2dc;
+  border-radius: 30rpx;
+  background: linear-gradient(145deg, #f4f6f2 0%, #edf1ed 100%);
+  color: #53665b;
+  font-size: 34rpx;
+  font-weight: 900;
+  letter-spacing: -1.5rpx;
 }
 
-.profile-native-title {
+.profile-minimal-card.is-active .profile-minimal-nickname-icon {
+  border-color: #cfdfd3;
+  background: #edf5ef;
+  color: #405e4d;
+}
+
+.profile-minimal-card-title,
+.profile-minimal-nickname-input {
   display: block;
-  color: #24362c;
-  font-size: 25rpx;
-  line-height: 34rpx;
-  font-weight: 800;
-}
-
-.profile-native-desc {
-  display: block;
-  margin-top: 3rpx;
-  color: #87928b;
-  font-size: 19rpx;
-  line-height: 28rpx;
-  white-space: normal;
-}
-
-.profile-native-state {
-  width: 38rpx;
-  height: 38rpx;
-  min-width: 38rpx;
-  margin-left: 12rpx;
-  border-radius: 50%;
-  background: #f0f2ef;
-  color: #89948e;
-  font-size: 26rpx;
-  font-weight: 750;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  color: #14251c;
+  font-size: 27rpx;
+  font-weight: 900;
   line-height: 38rpx;
   text-align: center;
 }
 
-.profile-native-state.is-ready {
-  background: #e7f5ec;
-  color: #13824a;
+.profile-minimal-nickname-input {
+  height: 42rpx;
+  padding: 0 4rpx;
 }
 
-.profile-native-nickname-icon {
-  width: 82rpx;
-  height: 82rpx;
-  min-width: 82rpx;
-  margin-right: 20rpx;
+.profile-minimal-nickname-placeholder {
+  color: #14251c;
+  font-size: 27rpx;
+  font-weight: 900;
+  text-align: center;
+}
+
+.profile-minimal-card-desc {
+  display: block;
+  width: 100%;
+  min-height: 32rpx;
+  box-sizing: border-box;
+  margin-top: 9rpx;
+  padding: 0 6rpx;
+  color: #8a958e;
+  font-size: 19rpx;
+  line-height: 30rpx;
+  text-align: center;
+}
+
+.profile-minimal-card-desc.is-error {
+  color: #a66058;
+}
+
+.profile-minimal-done-mark {
+  position: absolute;
+  top: 18rpx;
+  right: 18rpx;
+  width: 30rpx;
+  height: 30rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1rpx solid #dce4dd;
-  border-radius: 25rpx;
-  background: #f2f5f1;
-  color: #496157;
-  font-size: 24rpx;
-  font-weight: 850;
-  letter-spacing: -1rpx;
+  border-radius: 50%;
+  background: #e1f3e7;
+  color: #13824a;
+  font-size: 18rpx;
+  font-weight: 950;
+  line-height: 1;
+  animation: profile-minimal-check-in .28s cubic-bezier(.2, .9, .3, 1.3) both;
 }
 
-.profile-native-nickname-copy {
-  padding: 3rpx 0;
+.profile-minimal-status {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  min-height: 40rpx;
+  margin-top: 44rpx;
+  padding: 0 4rpx;
+  color: #75817a;
+  font-size: 21rpx;
+  line-height: 32rpx;
+  transition: color .22s ease;
 }
 
-.profile-native-nickname-input {
-  width: 100%;
-  height: 40rpx;
-  min-width: 0;
-  padding: 0;
-  color: #203128;
-  font-size: 25rpx;
-  font-weight: 800;
-  line-height: 40rpx;
-  text-align: left;
+.profile-minimal-status.is-ready,
+.profile-minimal-status.is-saving {
+  color: #4a715d;
 }
 
-.profile-native-nickname-placeholder {
-  color: #839087;
-  font-size: 24rpx;
-  font-weight: 650;
+.profile-minimal-status.is-error {
+  color: #a66058;
+}
+
+.profile-minimal-status .profile-auto-save-dot {
+  width: 13rpx;
+  height: 13rpx;
+}
+
+.profile-minimal-status .profile-auto-save-dot.is-ready {
+  background: #16864f;
+  box-shadow: 0 0 0 7rpx rgba(22, 134, 79, .08);
+}
+
+.profile-minimal-status .profile-auto-save-dot.is-saving {
+  background: #16864f;
+  box-shadow: 0 0 0 7rpx rgba(22, 134, 79, .08);
+  animation: profile-minimal-save-pulse .7s ease-in-out infinite alternate;
+}
+
+@keyframes profile-minimal-card-in {
+  from { opacity: 0; transform: translateY(12rpx) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes profile-minimal-avatar-in {
+  from { opacity: .2; transform: scale(.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes profile-minimal-check-in {
+  0% { opacity: 0; transform: scale(.65); }
+  70% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes profile-minimal-save-pulse {
+  from { opacity: .5; transform: scale(.82); }
+  to { opacity: 1; transform: scale(1.12); }
 }
 
 @media (max-height: 620px) {
-  .profile-consent-sheet {
+  .profile-minimal-sheet {
     padding-top: 12rpx;
+    padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
   }
 
-  .profile-sheet-handle {
-    margin-bottom: 14rpx;
+  .profile-minimal-sheet .profile-sheet-handle {
+    margin-bottom: 15rpx;
   }
 
-  .profile-step-guide {
-    margin-top: 18rpx;
+  .profile-minimal-sheet .profile-sheet-title {
+    font-size: 35rpx;
   }
 
-  .profile-consent-card-compact {
-    margin-top: 16rpx;
+  .profile-minimal-grid {
+    min-height: 252rpx;
+    margin-top: 28rpx;
   }
 
-  .profile-flow-tip {
-    padding-top: 12rpx;
+  .profile-minimal-card {
+    min-height: 252rpx;
+    padding-top: 28rpx;
+    padding-bottom: 24rpx;
   }
 
-  .profile-consent-actions-single {
-    margin-top: 14rpx;
+  .profile-minimal-divider {
+    height: 150rpx;
+    margin-top: 50rpx;
+    margin-bottom: 50rpx;
+  }
+
+  .profile-minimal-icon {
+    width: 88rpx;
+    height: 88rpx;
+    flex-basis: 88rpx;
+    margin-bottom: 20rpx;
+  }
+
+  .profile-minimal-avatar-image,
+  .profile-minimal-avatar-placeholder {
+    width: 88rpx;
+    height: 88rpx;
+    border-radius: 26rpx;
+  }
+
+  .profile-minimal-person-head {
+    left: 30rpx;
+    top: 19rpx;
+    width: 29rpx;
+    height: 29rpx;
+  }
+
+  .profile-minimal-person-body {
+    left: 19rpx;
+    width: 50rpx;
+    height: 41rpx;
+  }
+
+  .profile-minimal-status {
+    margin-top: 28rpx;
   }
 }

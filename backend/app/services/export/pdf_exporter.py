@@ -39,8 +39,11 @@ from app.services.export.latex_render import (
 )
 from app.services.export.question_content import (
     clean_printable_text,
+    extract_blank_option_groups,
     extract_option_text,
     extract_question_text,
+    format_question_answer,
+    get_shared_blank_options,
 )
 from app.services.export.space_allocator import get_answer_space_mm
 from app.services.export.table_parser import parse_table
@@ -220,7 +223,11 @@ class PdfExporter(Exporter):
             )
 
             options = q.get("options") or {}
-            if options:
+            blank_option_groups = extract_blank_option_groups(q)
+            if blank_option_groups:
+                pdf.ln(0.8)
+                self._write_blank_option_groups(pdf, blank_option_groups)
+            elif options:
                 pdf.ln(0.8)
                 self._write_options(pdf, options)
 
@@ -232,7 +239,7 @@ class PdfExporter(Exporter):
                 self._write_answer_space(pdf, space_mm)
 
             if config.get("answer_position") == "after_question":
-                ans = latex_to_plain_text(self._sanitize_text(q.get("answer", "")))
+                ans = latex_to_plain_text(self._sanitize_text(format_question_answer(q)))
                 if ans:
                     self._write_labeled_paragraph(pdf, "答案", ans)
 
@@ -244,7 +251,7 @@ class PdfExporter(Exporter):
             if config.get("answer_position") == "at_end":
                 answer_section.append({
                     "num": question_num,
-                    "answer": latex_to_plain_text(self._sanitize_text(q.get("answer", ""))),
+                    "answer": latex_to_plain_text(self._sanitize_text(format_question_answer(q))),
                 })
             if config.get("analysis_position") == "at_end":
                 analysis_section.append({
@@ -432,6 +439,27 @@ class PdfExporter(Exporter):
                 )
             pdf.set_xy(MARGIN_L, y + row_h + 0.7)
 
+    def _write_blank_option_groups(self, pdf, groups: list[dict]) -> None:
+        """Render grouped multi-blank choices, collapsing shared option sets."""
+        shared = get_shared_blank_options(groups)
+        if shared:
+            self._write_options(pdf, shared)
+            return
+
+        for group in groups:
+            options = group.get("options") or {}
+            if not options:
+                continue
+            label = self._sanitize_text(group.get("id", "")).strip()
+            if label:
+                self._check_page_break(pdf, 8)
+                pdf.set_text_color(*_COLOR_TEXT)
+                pdf.set_font(_BODY_FONT_NAME, "", 9.5)
+                pdf.set_x(MARGIN_L + 7.0)
+                pdf.cell(BODY_W - 7.0, 5.2, text=f"{label}：", new_x="LMARGIN", new_y="NEXT")
+            self._write_options(pdf, options)
+            pdf.ln(0.8)
+
     def _write_answer_space(self, pdf, space_mm: float) -> None:
         # Blank writing area only; no decorative guide lines.
         space_mm = max(5, float(space_mm))
@@ -555,7 +583,13 @@ class PdfExporter(Exporter):
         # Keep the answer key visually compact: short answers use a fixed,
         # narrow cell width and the whole table is centered instead of
         # stretching across the full printable page width.
-        max_cell_w = 15.0 if columns >= 4 else 24.0 if columns == 2 else 56.0
+        max_units = max(
+            (self._display_units(self._sanitize_text(item.get("answer")) or "—") for item in items),
+            default=1,
+        )
+        base_cell_w = 15.0 if columns >= 4 else 24.0 if columns == 2 else 56.0
+        content_cell_w = 6.0 + max_units * 2.4
+        max_cell_w = min(BODY_W / columns, max(base_cell_w, content_cell_w))
         table_w = min(BODY_W, max_cell_w * columns)
         cell_w = table_w / columns
         table_x = MARGIN_L + (BODY_W - table_w) / 2
@@ -638,6 +672,27 @@ class PdfExporter(Exporter):
                 current += char_w
         return lines * line_height
 
+    def _estimate_options_height(self, pdf, options: dict) -> float:
+        items = [(str(key), extract_option_text(options[key])) for key in sorted(options.keys())]
+        if not items:
+            return 0.0
+        columns = self._choose_option_columns(pdf, items)
+        gap = 4.0
+        cell_w = (BODY_W - 7.0 - gap * (columns - 1)) / columns
+        height = 1.5
+        for row_start in range(0, len(items), columns):
+            row = items[row_start:row_start + columns]
+            height += max(
+                self._estimate_wrapped_height(
+                    pdf,
+                    f"{key}．{latex_to_plain_text(self._sanitize_text(text))}",
+                    cell_w,
+                    5.8,
+                )
+                for key, text in row
+            ) + 0.7
+        return height
+
     def _estimate_question_height(self, pdf, q: dict, config: dict, group_by: str) -> float:
         qt_label = self._get_question_type_label(q.get("question_type", ""))
         prefix = "1．" + (f"[{self._formal_group_title(qt_label)}]" if group_by != "question_type" and qt_label else "")
@@ -658,23 +713,18 @@ class PdfExporter(Exporter):
                 height += 25
 
         options = q.get("options") or {}
-        if options:
-            items = [(str(key), str(options[key])) for key in sorted(options.keys())]
-            columns = self._choose_option_columns(pdf, items)
-            gap = 4.0
-            cell_w = (BODY_W - 7.0 - gap * (columns - 1)) / columns
-            height += 1.5
-            for row_start in range(0, len(items), columns):
-                row = items[row_start:row_start + columns]
-                height += max(
-                    self._estimate_wrapped_height(
-                        pdf,
-                        f"{key}．{latex_to_plain_text(self._sanitize_text(text))}",
-                        cell_w,
-                        5.8,
-                    )
-                    for key, text in row
-                ) + 0.7
+        blank_option_groups = extract_blank_option_groups(q)
+        if blank_option_groups:
+            shared = get_shared_blank_options(blank_option_groups)
+            if shared:
+                height += self._estimate_options_height(pdf, shared)
+            else:
+                for group in blank_option_groups:
+                    group_options = group.get("options") or {}
+                    if group_options:
+                        height += 5.2 + self._estimate_options_height(pdf, group_options) + 0.8
+        elif options:
+            height += self._estimate_options_height(pdf, options)
 
         height += max(0, float(get_answer_space_mm(
             config.get("space_style", "standard"), q.get("question_type"),
@@ -682,7 +732,7 @@ class PdfExporter(Exporter):
         if config.get("answer_position") == "after_question" and q.get("answer"):
             height += self._estimate_wrapped_height(
                 pdf,
-                f"答案：{latex_to_plain_text(self._sanitize_text(q.get('answer')))}",
+                f"答案：{latex_to_plain_text(self._sanitize_text(format_question_answer(q)))}",
                 BODY_W,
                 6,
             ) + 2

@@ -198,116 +198,110 @@
     bindtap="closeProfileSheet"
     catchtouchmove="noop"
   >
-    <view class="profile-sheet profile-consent-sheet" catchtap="noop">
+    <view class="profile-sheet profile-consent-sheet profile-minimal-sheet" catchtap="noop">
       <view class="profile-sheet-handle"></view>
 
-      <view class="profile-sheet-head profile-sheet-head-compact">
-        <view>
+      <view class="profile-sheet-head profile-minimal-head">
+        <view class="profile-minimal-heading">
           <text class="profile-sheet-kicker">WECHAT PROFILE</text>
-          <text class="profile-sheet-title">头像和昵称</text>
-          <text class="profile-sheet-desc">两步完成，资料会自动保存。</text>
+          <text class="profile-sheet-title">设置头像和昵称</text>
+          <text class="profile-sheet-desc">简单两步，自动保存。</text>
         </view>
-        <view class="profile-sheet-close" bindtap="closeProfileSheet" aria-label="关闭">×</view>
+        <view class="profile-sheet-close" bindtap="closeProfileSheet" hover-class="profile-sheet-close-pressed" aria-label="关闭">×</view>
       </view>
 
-      <view class="profile-step-guide">
-        <view class="profile-step {{profileAvatarPreview ? 'is-done' : 'is-active'}}">
-          <view class="profile-step-index">{{profileAvatarPreview ? '✓' : '1'}}</view>
-          <text>选择头像</text>
-        </view>
-        <view class="profile-step-line {{profileAvatarPreview ? 'is-done' : ''}}"></view>
-        <view class="profile-step {{profileNickname ? 'is-done' : (profileAvatarPreview ? 'is-active' : '')}}">
-          <view class="profile-step-index">{{profileNickname ? '✓' : '2'}}</view>
-          <text>选择昵称</text>
-        </view>
-      </view>
-
-      <view class="profile-consent-card profile-consent-card-compact">
-        <view class="profile-native-row profile-native-avatar-row">
-          <button
-            wx:if="{{!isDevtools}}"
-            class="profile-native-avatar-button"
-            open-type="chooseAvatar"
-            bindchooseavatar="onChooseAvatar"
-            disabled="{{profileSaving}}"
-            aria-label="选择微信头像"
-          >
+      <view class="profile-minimal-grid">
+        <button
+          wx:if="{{!isDevtools}}"
+          class="profile-minimal-card profile-minimal-avatar-card {{profileAvatarPreview ? 'is-done' : 'is-active'}}"
+          open-type="chooseAvatar"
+          bindchooseavatar="onChooseAvatar"
+          disabled="{{profileSaving}}"
+          hover-class="profile-minimal-card-pressed"
+          aria-label="选择微信头像"
+        >
+          <view class="profile-minimal-icon profile-minimal-avatar-icon">
             <image
               wx:if="{{profileAvatarPreview}}"
-              class="profile-native-avatar-image"
+              class="profile-minimal-avatar-image"
               src="{{profileAvatarPreview}}"
               mode="aspectFill"
             />
-            <view wx:else class="profile-native-avatar-placeholder">
-              <view class="profile-native-person-head"></view>
-              <view class="profile-native-person-body"></view>
+            <view wx:else class="profile-minimal-avatar-placeholder">
+              <view class="profile-minimal-person-head"></view>
+              <view class="profile-minimal-person-body"></view>
             </view>
-            <view class="profile-native-avatar-badge">+</view>
-          </button>
+            <view class="profile-minimal-avatar-badge">{{profileAvatarPreview ? '✓' : '+'}}</view>
+          </view>
+          <text class="profile-minimal-card-title">选择头像</text>
+          <text class="profile-minimal-card-desc">{{profileAvatarPreview ? '已选择 · 点击更换' : '点击选择'}}</text>
+          <view wx:if="{{profileAvatarPreview}}" class="profile-minimal-done-mark">✓</view>
+        </button>
 
-          <button
-            wx:else
-            class="profile-native-avatar-button"
-            bindtap="chooseAvatarInDevtools"
-            disabled="{{profileSaving}}"
-            aria-label="选择测试头像"
-          >
+        <button
+          wx:else
+          class="profile-minimal-card profile-minimal-avatar-card {{profileAvatarPreview ? 'is-done' : 'is-active'}}"
+          bindtap="chooseAvatarInDevtools"
+          disabled="{{profileSaving}}"
+          hover-class="profile-minimal-card-pressed"
+          aria-label="选择测试头像"
+        >
+          <view class="profile-minimal-icon profile-minimal-avatar-icon">
             <image
               wx:if="{{profileAvatarPreview}}"
-              class="profile-native-avatar-image"
+              class="profile-minimal-avatar-image"
               src="{{profileAvatarPreview}}"
               mode="aspectFill"
             />
-            <view wx:else class="profile-native-avatar-placeholder">
-              <view class="profile-native-person-head"></view>
-              <view class="profile-native-person-body"></view>
+            <view wx:else class="profile-minimal-avatar-placeholder">
+              <view class="profile-minimal-person-head"></view>
+              <view class="profile-minimal-person-body"></view>
             </view>
-            <view class="profile-native-avatar-badge">+</view>
-          </button>
-
-          <view class="profile-native-copy">
-            <text class="profile-native-title">选择头像</text>
-            <text class="profile-native-desc">{{profileAvatarPreview ? '已选择，点击可更换' : '点击使用微信头像或相册图片'}}</text>
+            <view class="profile-minimal-avatar-badge">{{profileAvatarPreview ? '✓' : '+'}}</view>
           </view>
-          <view class="profile-native-state {{profileAvatarPreview ? 'is-ready' : ''}}">{{profileAvatarPreview ? '✓' : '›'}}</view>
-        </view>
+          <text class="profile-minimal-card-title">选择头像</text>
+          <text class="profile-minimal-card-desc">{{profileAvatarPreview ? '已选择 · 点击更换' : '点击选择'}}</text>
+          <view wx:if="{{profileAvatarPreview}}" class="profile-minimal-done-mark">✓</view>
+        </button>
 
-        <view class="profile-native-divider"></view>
+        <view class="profile-minimal-divider" aria-hidden="true"></view>
 
-        <view class="profile-native-row profile-native-nickname-row">
-          <view class="profile-native-nickname-icon">Aa</view>
-          <view class="profile-native-copy profile-native-nickname-copy">
-            <input
-              class="profile-native-nickname-input"
-              type="{{isDevtools ? 'text' : 'nickname'}}"
-              value="{{profileNickname}}"
-              placeholder="点击选择微信昵称"
-              placeholder-class="profile-native-nickname-placeholder"
-              maxlength="32"
-              disabled="{{profileSaving}}"
-              bindinput="onProfileNicknameInput"
-              bindblur="onProfileNicknameBlur"
-              bindconfirm="onProfileNicknameBlur"
-              bindnicknamereview="onProfileNicknameReview"
-              confirm-type="done"
-            />
-            <text class="profile-native-desc">{{profileNickname ? '已选择昵称，失焦后自动保存' : '支持微信昵称，也可手动输入'}}</text>
-          </view>
-          <view class="profile-native-state {{profileNickname && !profileNicknameRejected ? 'is-ready' : ''}}">{{profileNickname && !profileNicknameRejected ? '✓' : '›'}}</view>
-        </view>
+        <label
+          for="profileNicknameInput"
+          class="profile-minimal-card profile-minimal-nickname-card {{profileNickname && !profileNicknameRejected ? 'is-done' : (profileAvatarPreview ? 'is-active' : 'is-waiting')}}"
+          hover-class="profile-minimal-card-pressed"
+        >
+          <view class="profile-minimal-icon profile-minimal-nickname-icon">Aa</view>
+          <input
+            id="profileNicknameInput"
+            class="profile-minimal-nickname-input"
+            type="{{isDevtools ? 'text' : 'nickname'}}"
+            value="{{profileNickname}}"
+            placeholder="{{profileNicknameRejected ? '重新选择昵称' : '选择昵称'}}"
+            placeholder-class="profile-minimal-nickname-placeholder"
+            maxlength="32"
+            disabled="{{profileSaving}}"
+            bindinput="onProfileNicknameInput"
+            bindblur="onProfileNicknameBlur"
+            bindconfirm="onProfileNicknameBlur"
+            bindnicknamereview="onProfileNicknameReview"
+            confirm-type="done"
+          />
+          <text class="profile-minimal-card-desc {{profileNicknameRejected ? 'is-error' : ''}}">
+            {{profileNicknameRejected ? '昵称未通过，请重新输入' : (profileNickname ? '已选择 · 点击修改' : '点击输入')}}
+          </text>
+          <view wx:if="{{profileNickname && !profileNicknameRejected}}" class="profile-minimal-done-mark">✓</view>
+        </label>
       </view>
 
-      <view class="profile-flow-tip {{profileAvatarPreview && profileNickname ? 'is-ready' : ''}}">
-        <view class="profile-auto-save-dot {{profileAvatarPreview && profileNickname ? 'is-ready' : ''}}"></view>
-        <text wx:if="{{profileSaving}}">正在保存…</text>
+      <view class="profile-minimal-status {{profileSaving ? 'is-saving' : (profileAvatarPreview && profileNickname && !profileNicknameRejected ? 'is-ready' : (profileNicknameRejected ? 'is-error' : ''))}}">
+        <view class="profile-auto-save-dot {{profileSaving ? 'is-saving' : (profileAvatarPreview && profileNickname && !profileNicknameRejected ? 'is-ready' : '')}}"></view>
+        <text wx:if="{{profileSaving}}">正在保存资料…</text>
+        <text wx:elif="{{profileNicknameRejected}}">昵称未通过审核，请重新选择</text>
         <text wx:elif="{{profileAvatarPreview && profileNickname}}">资料已完成，正在自动保存</text>
-        <text wx:elif="{{profileAvatarPreview}}">头像已选，再点昵称即可完成</text>
-        <text wx:elif="{{profileNickname}}">昵称已选，再选择头像即可完成</text>
-        <text wx:else>先点头像，再点昵称；完成后自动保存</text>
-      </view>
-
-      <view class="profile-consent-actions profile-consent-actions-single">
-        <button class="profile-consent-cancel profile-later-only" bindtap="closeProfileSheet" disabled="{{profileSaving}}">稍后</button>
+        <text wx:elif="{{profileAvatarPreview}}">头像已完成，下一步选择昵称</text>
+        <text wx:elif="{{profileNickname}}">昵称已完成，再选择头像即可保存</text>
+        <text wx:else>完成后将自动保存</text>
       </view>
     </view>
   </view>

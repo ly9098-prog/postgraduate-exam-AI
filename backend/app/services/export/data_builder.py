@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.wrong_question import WrongQuestion
 from app.services.export.analysis_content import resolve_preferred_analysis
 from app.services.export.question_content import (
+    extract_blank_option_groups,
     extract_option_text,
     extract_question_text,
     has_visual_question_content,
@@ -84,14 +85,27 @@ async def build_snapshot_data(
         if stem and not (content.get("stem") or content.get("text")):
             content["stem"] = stem
 
-        # For choice questions, validate options
-        is_choice = q.question_type in ("single_choice", "multiple_choice")
+        # For choice questions, validate options. Multi-blank choices use
+        # content.blank_option_groups by design and normally leave top-level
+        # q.options empty, so they need a dedicated extraction path.
+        is_standard_choice = q.question_type in ("single_choice", "multiple_choice")
+        is_multi_blank_choice = q.question_type == "multi_blank_choice"
         options = _normalize_options(q.options)
-        if is_choice and not options:
+        blank_option_groups = extract_blank_option_groups(q) if is_multi_blank_choice else []
+        if is_standard_choice and not options:
             skip_count += 1
             skip_reasons.setdefault("选择题缺少选项", 0)
             skip_reasons["选择题缺少选项"] += 1
             continue
+        if is_multi_blank_choice and not blank_option_groups:
+            skip_count += 1
+            skip_reasons.setdefault("多空选择题缺少选项", 0)
+            skip_reasons["多空选择题缺少选项"] += 1
+            continue
+        if blank_option_groups and not (content.get("blank_option_groups") or content.get("blank_groups")):
+            # Freeze the recovered legacy shape into the export snapshot so
+            # later re-export does not depend on mutable compatibility logic.
+            content["blank_option_groups"] = blank_option_groups
 
         # Extract subject info
         subject_label = _get_subject_label(q)
@@ -104,6 +118,7 @@ async def build_snapshot_data(
             "content": content,
             "raw_content": q.raw_content or "",
             "options": options,
+            "blank_option_groups": blank_option_groups,
             "answer": q.answer or "",
             # Match wrong-detail: prefer wrong_questions.ai_analysis, then
             # questions.analysis, and turn structured JSON into readable
