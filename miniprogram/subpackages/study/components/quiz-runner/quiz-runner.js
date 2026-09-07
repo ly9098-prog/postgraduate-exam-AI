@@ -52,6 +52,8 @@ Component({
     nextDisabled: { type: Boolean, value: false },
 
     showMasterButton: { type: Boolean, value: false },
+    showMarkButton: { type: Boolean, value: false },
+    markedForReview: { type: Boolean, value: false },
     showSubmitButton: { type: Boolean, value: true },
     showBackButton: { type: Boolean, value: false },
     customNavigation: { type: Boolean, value: false },
@@ -478,6 +480,15 @@ Component({
     },
 
     /* ==================== Submit ==================== */
+
+    toggleMark: function () {
+      if (this.data.readonly || this.data.submitted) return
+      this.triggerEvent('togglemark', {
+        marked: !this.data.markedForReview,
+        question: this.data.currentQuestion,
+        index: this.data.currentIndex,
+      })
+    },
 
     onMaster: function () {
       if (this.data.readonly) return

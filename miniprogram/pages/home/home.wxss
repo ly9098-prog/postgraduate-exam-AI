@@ -604,6 +604,7 @@ page {
 .route-review { background: linear-gradient(90deg, rgba(231, 235, 221, .68), rgba(255, 255, 255, 0) 66%); }
 .route-practice { background: rgba(255, 255, 255, .38); }
 .route-wrong { background: linear-gradient(90deg, rgba(246, 239, 227, .54), rgba(255, 255, 255, 0) 66%); }
+.route-exam { background: linear-gradient(90deg, rgba(227, 236, 238, .58), rgba(255, 255, 255, 0) 66%); }
 
 .card-pressed {
   opacity: .72;
@@ -634,6 +635,11 @@ page {
 .route-wrong .route-index {
   background: #F0E1D5;
   color: #A45D34;
+}
+
+.route-exam .route-index {
+  background: #DCEAEC;
+  color: #2C6370;
 }
 
 .route-copy {

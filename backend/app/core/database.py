@@ -498,6 +498,12 @@ async def init_db():
     from app.models.answer_behavior import (
         AnswerBehavior,  # noqa: F401 — Subject relationship target
     )
+    from app.models.exam import (  # noqa: F401 — registered for create_all
+        ExamAnswer,
+        ExamAttempt,
+        ExamPaper,
+        ExamPaperQuestion,
+    )
     from app.models.formula import (  # noqa: F401
         FormulaCard,
         FormulaCardTag,

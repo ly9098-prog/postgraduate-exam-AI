@@ -1,0 +1,45 @@
+<view class="page">
+  <premium-nav title="408 选择题套卷" variant="light" bind:back="goBack" />
+
+  <view class="hero">
+    <text class="hero-kicker">408 EXAM · CHOICE ONLY</text>
+    <text class="hero-title">真题与模拟，只做适合手机作答的选择题。</text>
+    <text class="hero-desc">试卷成绩统一标记为“选择题部分得分”，不代表完整 408 总成绩。</text>
+    <view class="history-link" bindtap="goHistory" hover-class="soft-pressed">
+      <text>查看历史考试</text><text>→</text>
+    </view>
+  </view>
+
+  <view class="state-card" wx:if="{{loading}}"><text>正在读取试卷…</text></view>
+  <view class="state-card error" wx:elif="{{errorText}}" bindtap="loadPapers">
+    <text>{{errorText}}</text><text class="retry">点击重试</text>
+  </view>
+  <view class="state-card" wx:elif="{{papers.length === 0}}">
+    <text>暂时没有已发布的 408 选择题套卷</text>
+    <text class="state-sub">请先在管理后台组卷并发布。</text>
+  </view>
+
+  <view class="paper-list" wx:else>
+    <view class="paper-card" wx:for="{{papers}}" wx:key="id" data-id="{{item.id}}" bindtap="openPaper" hover-class="card-pressed">
+      <view class="paper-head">
+        <view>
+          <text class="paper-type">{{item.typeLabel}}</text>
+          <text class="paper-title">{{item.title}}</text>
+        </view>
+        <view class="paper-year" wx:if="{{item.year}}">{{item.year}}</view>
+      </view>
+      <view class="paper-meta">
+        <text>{{item.question_count}} 题</text>
+        <text>{{item.scoreText}} 分（选择题）</text>
+        <text wx:if="{{item.durationMinutes}}">{{item.durationMinutes}} 分钟</text>
+      </view>
+      <view class="paper-foot">
+        <text class="paper-source">{{item.source || 'MemoGrad 408'}}</text>
+        <text class="paper-action" wx:if="{{item.canResume}}">继续作答 →</text>
+        <text class="paper-action" wx:elif="{{item.bestScoreText}}">最高 {{item.bestScoreText}} 分 · 再做一次 →</text>
+        <text class="paper-action" wx:else>{{startingId === item.id ? '正在创建…' : '开始作答 →'}}</text>
+      </view>
+    </view>
+  </view>
+  <view class="safe-bottom"></view>
+</view>

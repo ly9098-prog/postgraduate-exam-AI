@@ -1,0 +1,55 @@
+<view class="page">
+  <premium-nav title="选择题考试结果" variant="light" bind:back="goBack" />
+  <view class="state" wx:if="{{loading}}">正在生成选择题复盘…</view>
+  <view class="state error" wx:elif="{{errorText}}" bindtap="loadResult">{{errorText}} · 点击重试</view>
+
+  <block wx:elif="{{result}}">
+    <view class="score-hero">
+      <text class="kicker">CHOICE SECTION SCORE</text>
+      <view class="score-line"><text class="score-main">{{result.scoreText}}</text><text class="score-total">/ {{result.totalScoreText}}</text></view>
+      <text class="score-label">选择题部分得分</text>
+      <text class="score-note">该成绩仅统计本套选择题，不代表完整 408 总成绩。</text>
+      <view class="hero-metrics">
+        <view><text class="metric-value">{{result.correct_count}}</text><text class="metric-label">答对</text></view>
+        <view><text class="metric-value">{{result.wrong_count}}</text><text class="metric-label">答错</text></view>
+        <view><text class="metric-value">{{result.unanswered_count}}</text><text class="metric-label">未答</text></view>
+        <view><text class="metric-value">{{result.accuracyText}}</text><text class="metric-label">正确率</text></view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-head"><text>四科表现</text><text>{{result.durationText}}</text></view>
+      <view class="subject-grid">
+        <view class="subject-card" wx:for="{{subjectRows}}" wx:key="subject_id">
+          <view class="subject-top"><text class="subject-name">{{item.subject_name}}</text><text class="subject-acc">{{item.accuracyText}}</text></view>
+          <text class="subject-score">{{item.scoreText}} / {{item.totalText}} 分</text>
+          <text class="subject-meta">{{item.correct_count}} / {{item.question_count}} 正确</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="section" wx:if="{{weakPoints.length}}">
+      <view class="section-head"><text>本次薄弱知识点</text><text>按错题聚合</text></view>
+      <view class="tag-row"><view class="tag" wx:for="{{weakPoints}}" wx:key="name">{{item.name}}{{item.wrongCount ? ' · ' + item.wrongCount : ''}}</view></view>
+    </view>
+
+    <view class="section">
+      <view class="section-head"><text>错题与未答</text><text>{{reviewRows.length}} 题</text></view>
+      <view class="empty-review" wx:if="{{reviewRows.length === 0}}">本套选择题全部答对</view>
+      <view class="review-card" wx:for="{{reviewRows}}" wx:key="item_id">
+        <view class="review-top"><text class="review-index">第 {{item.position}} 题 · {{item.subject_name}}</text><text class="status {{item.status}}">{{item.status === 'wrong' ? '答错' : '未答'}}</text></view>
+        <text class="stem">{{item.stemPreview}}</text>
+        <view class="answers"><text>你的答案：{{item.userAnswerText}}</text><text>正确答案：{{item.correct_answer}}</text></view>
+        <text class="kp" wx:if="{{item.knowledgeText}}">{{item.knowledgeText}}</text>
+        <text class="analysis" wx:if="{{item.analysisPreview}}">{{item.analysisPreview}}</text>
+      </view>
+      <button class="wrong-btn" wx:if="{{reviewRows.length}}" bindtap="goWrongBook">进入错题本继续复习</button>
+    </view>
+
+    <view class="actions">
+      <button class="secondary" bindtap="goHistory">考试历史</button>
+      <button class="primary" bindtap="goPaperList">返回套卷列表</button>
+    </view>
+  </block>
+  <view class="safe-bottom"></view>
+</view>

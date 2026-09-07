@@ -8,6 +8,7 @@ from app.api.v1.ai_import import router as ai_import_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.behavior import router as behavior_router
 from app.api.v1.cache import router as cache_router
+from app.api.v1.exams import router as exams_router
 from app.api.v1.exports import router as exports_router
 from app.api.v1.formulas import router as formulas_router
 from app.api.v1.health import router as health_router
@@ -50,6 +51,7 @@ public_api_router.include_router(study_report_router)
 public_api_router.include_router(study_hub_router)
 public_api_router.include_router(adaptive_learning_router)
 public_api_router.include_router(exports_router)
+public_api_router.include_router(exams_router)
 public_api_router.include_router(formulas_router)
 
 __all__ = ["public_api_router"]

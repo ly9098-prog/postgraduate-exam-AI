@@ -16,7 +16,7 @@
         >
           <text class="runner-back-symbol">‹</text>
         </view>
-        <text class="runner-eyebrow">{{mode === 'review' ? 'REVIEW' : 'PRACTICE'}} {{currentIndex + 1 < 10 ? '0' : ''}}{{currentIndex + 1}}</text>
+        <text class="runner-eyebrow">{{mode === 'exam' ? 'EXAM' : (mode === 'review' ? 'REVIEW' : 'PRACTICE')}} {{currentIndex + 1 < 10 ? '0' : ''}}{{currentIndex + 1}}</text>
         <view class="runner-collapsed-copy">
           <text class="runner-collapsed-subject">{{subjectName || title || '练习'}}</text>
           <text class="runner-collapsed-meta">{{currentIndex + 1}} / {{totalCount || 0}} · {{elapsedText}}</text>
@@ -49,7 +49,12 @@
 
     <view class="runner-hero-meta">
       <text class="runner-subject">{{subjectName || title || '练习'}}</text>
-      <text class="runner-timer">{{elapsedText}}</text>
+      <view class="runner-hero-meta-actions">
+        <view wx:if="{{showMarkButton}}" class="runner-mark-btn {{markedForReview ? 'runner-marked' : ''}}" bindtap="toggleMark" hover-class="runner-control-pressed">
+          <text>{{markedForReview ? '已标记' : '待检查'}}</text>
+        </view>
+        <text class="runner-timer">{{elapsedText}}</text>
+      </view>
     </view>
 
     <view class="runner-number-row">
@@ -64,7 +69,7 @@
       <view
         wx:for="{{questions}}"
         wx:key="index"
-        class="runner-segment {{index < currentIndex ? 'past' : ''}} {{index === currentIndex ? 'current' : ''}} {{item._answered ? 'answered' : ''}} {{item._isCorrect || item._correct ? 'correct' : ''}} {{item._isWrong || item._wrong ? 'wrong' : ''}}"
+        class="runner-segment {{index < currentIndex ? 'past' : ''}} {{index === currentIndex ? 'current' : ''}} {{item._answered ? 'answered' : ''}} {{item._marked ? 'marked' : ''}} {{item._isCorrect || item._correct ? 'correct' : ''}} {{item._isWrong || item._wrong ? 'wrong' : ''}}"
       ></view>
     </view>
   </view>
@@ -374,6 +379,7 @@
       <view class="runner-sheet-legend">
         <view class="runner-legend-item"><view class="runner-legend-dot current"></view><text>当前题</text></view>
         <view class="runner-legend-item"><view class="runner-legend-dot answered"></view><text>已作答</text></view>
+        <view class="runner-legend-item" wx:if="{{mode === 'exam'}}"><view class="runner-legend-dot marked"></view><text>待检查</text></view>
         <view class="runner-legend-item" wx:if="{{readonly}}"><view class="runner-legend-dot correct"></view><text>正确</text></view>
         <view class="runner-legend-item" wx:if="{{readonly}}"><view class="runner-legend-dot wrong"></view><text>错误</text></view>
         <view class="runner-legend-item"><view class="runner-legend-dot empty"></view><text>未作答</text></view>
@@ -383,7 +389,7 @@
         <view
           wx:for="{{questions}}"
           wx:key="index"
-          class="runner-sheet-cell {{item._answered ? 'runner-done' : ''}} {{item._isCorrect || item._correct ? 'runner-correct-cell' : ''}} {{item._isWrong || item._wrong ? 'runner-wrong-cell' : ''}} {{index === currentIndex ? 'runner-current' : ''}}"
+          class="runner-sheet-cell {{item._answered ? 'runner-done' : ''}} {{item._marked ? 'runner-marked-cell' : ''}} {{item._isCorrect || item._correct ? 'runner-correct-cell' : ''}} {{item._isWrong || item._wrong ? 'runner-wrong-cell' : ''}} {{index === currentIndex ? 'runner-current' : ''}}"
           hover-class="runner-sheet-cell-pressed"
           hover-start-time="20"
           hover-stay-time="80"

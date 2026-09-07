@@ -19,7 +19,9 @@
       "root": "subpackages/animation",
       "name": "animation",
       "independent": false,
-      "pages": ["animation-index/animation-index"]
+      "pages": [
+        "animation-index/animation-index"
+      ]
     },
     {
       "root": "subpackages/formulas",
@@ -51,6 +53,17 @@
       ]
     },
     {
+      "root": "subpackages/exam",
+      "name": "exam",
+      "independent": false,
+      "pages": [
+        "paper-list/index",
+        "exam-runner/index",
+        "result/index",
+        "history/index"
+      ]
+    },
+    {
       "root": "subpackages/export",
       "name": "export",
       "independent": false,
@@ -63,15 +76,22 @@
   "preloadRule": {
     "pages/home/home": {
       "network": "all",
-      "packages": ["study"]
+      "packages": [
+        "study",
+        "exam"
+      ]
     },
     "pages/dashboard/dashboard": {
       "network": "all",
-      "packages": ["study"]
+      "packages": [
+        "study"
+      ]
     },
     "pages/pomodoro/pomodoro": {
       "network": "all",
-      "packages": ["productivity"]
+      "packages": [
+        "productivity"
+      ]
     }
   },
   "style": "v2",

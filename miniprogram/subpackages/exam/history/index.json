@@ -1,0 +1,6 @@
+{
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "考试历史",
+  "backgroundColor": "#F3F4F1",
+  "usingComponents": { "premium-nav": "/components/premium-nav/premium-nav" }
+}

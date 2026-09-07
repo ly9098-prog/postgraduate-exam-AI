@@ -3,6 +3,12 @@
 # (Subject.question_imports references "QuestionImport" by string name).
 from app.models.admin import AdminAISettings, AdminUser, Subject  # noqa: F401
 from app.models.answer_behavior import AnswerBehavior  # noqa: F401
+from app.models.exam import (  # noqa: F401
+    ExamAnswer,
+    ExamAttempt,
+    ExamPaper,
+    ExamPaperQuestion,
+)
 from app.models.formula import (  # noqa: F401
     FormulaCard,
     FormulaCardTag,

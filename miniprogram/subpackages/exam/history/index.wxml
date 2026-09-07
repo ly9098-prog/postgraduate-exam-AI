@@ -1,0 +1,18 @@
+<view class="page">
+  <premium-nav title="考试历史" variant="light" bind:back="goBack" />
+  <view class="header">
+    <text class="kicker">408 EXAM HISTORY</text>
+    <text class="title">每一次成绩都只统计选择题部分</text>
+  </view>
+  <view class="state" wx:if="{{loading}}">正在读取考试记录…</view>
+  <view class="state error" wx:elif="{{errorText}}" bindtap="loadHistory">{{errorText}} · 点击重试</view>
+  <view class="state" wx:elif="{{rows.length === 0}}">还没有已完成的选择题考试</view>
+  <view class="list" wx:else>
+    <view class="item" wx:for="{{rows}}" wx:key="attempt_id" data-id="{{item.attempt_id}}" bindtap="openResult" hover-class="pressed">
+      <view class="item-head"><text class="item-title">{{item.paper_title}}</text><text class="score">{{item.scoreText}} / {{item.totalScoreText}}</text></view>
+      <view class="meta"><text>{{item.startedText}}</text><text>{{item.correct_count}} / {{item.question_count}} 正确</text><text>{{item.accuracyText}}</text><text>{{item.durationText}}</text></view>
+      <view class="foot"><text>选择题部分得分</text><text>查看复盘 →</text></view>
+    </view>
+  </view>
+  <view class="safe-bottom"></view>
+</view>

@@ -1386,3 +1386,50 @@ export type AdminSubjectUpdateRequest = {
   is_active?: boolean;
   confirm_core_disable?: boolean;
 };
+
+export type AdminExamPaperType = "past_exam_choice" | "mock_choice";
+export type AdminExamPaperStatus = "draft" | "published" | "archived";
+
+export type AdminExamPaperListItem = {
+  id: number;
+  title: string;
+  paper_type: AdminExamPaperType;
+  year?: number | null;
+  source?: string | null;
+  duration_sec?: number | null;
+  version: number;
+  status: AdminExamPaperStatus;
+  is_active: boolean;
+  question_count: number;
+  total_choice_score: number;
+  attempt_count: number;
+  published_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminExamPaperQuestionItem = {
+  id: number;
+  question_id: number;
+  question_version_id: number;
+  position: number;
+  score: number;
+  subject_id: number;
+  subject_code: string;
+  subject_name: string;
+  question_type: string;
+  content: Record<string, unknown>;
+  options?: QuestionOptionsValue;
+  year?: number | null;
+  source?: string | null;
+  difficulty: number;
+  review_status: string;
+  is_active: boolean;
+  current_version_id?: number | null;
+  version_is_current: boolean;
+};
+
+export type AdminExamPaperDetail = AdminExamPaperListItem & {
+  items: AdminExamPaperQuestionItem[];
+  validation_errors: string[];
+};

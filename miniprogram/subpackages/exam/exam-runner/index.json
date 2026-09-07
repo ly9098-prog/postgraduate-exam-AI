@@ -1,0 +1,8 @@
+{
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "选择题考试",
+  "backgroundColor": "#F3F4F1",
+  "usingComponents": {
+    "quiz-runner": "/subpackages/study/components/quiz-runner/quiz-runner"
+  }
+}

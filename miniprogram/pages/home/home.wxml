@@ -168,6 +168,16 @@
         </view>
         <view class="route-arrow">→</view>
       </view>
+
+      <view class="route-card route-exam" bindtap="goExams" hover-class="card-pressed">
+        <view class="route-index">04</view>
+        <view class="route-copy">
+          <text class="route-eyebrow">套卷训练</text>
+          <text class="route-title">408 选择题真题 / 模拟</text>
+          <text class="route-desc">仅练适合手机作答的选择题，自动判分并生成四科复盘</text>
+        </view>
+        <view class="route-arrow">→</view>
+      </view>
     </view>
 
     <view class="hub-quick-row" wx:if="{{studyHubAvailable}}">
@@ -176,6 +186,8 @@
       <view class="hub-quick-item" bindtap="goWrongBook" hover-class="soft-pressed">错题本</view>
       <view class="hub-quick-divider"></view>
       <view class="hub-quick-item" bindtap="startRandom" hover-class="soft-pressed">自由练习</view>
+      <view class="hub-quick-divider"></view>
+      <view class="hub-quick-item" bindtap="goExams" hover-class="soft-pressed">选择题套卷</view>
     </view>
   </view>
 

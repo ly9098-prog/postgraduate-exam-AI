@@ -15,6 +15,7 @@ import {
   FileSearch,
   Network,
   Activity,
+  ClipboardCheck,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PermissionKey } from "@/lib/permissions/permissions";
@@ -132,6 +133,14 @@ const questionsRoute: AdminRoute = {
   icon: FileQuestion,
 };
 
+const examsRoute: AdminRoute = {
+  href: "/exams",
+  label: "408 试卷",
+  description: "真题选择题与模拟卷",
+  permission: "question:read",
+  icon: ClipboardCheck,
+};
+
 const importsRoute: AdminRoute = {
   href: "/imports/tasks",
   label: "题目导入管理",
@@ -239,6 +248,7 @@ export const adminRoutes: AdminRoute[] = [
   adminUsersRoute,
   subjectsRoute,
   questionsRoute,
+  examsRoute,
   importsRoute,
   rolesRoute,
   aiSettingsRoute,
@@ -280,7 +290,7 @@ export const adminNavigation: AdminNavigationItem[] = [
     label: "题目管理",
     description: "科目、题库、导入与知识图谱",
     icon: FileQuestion,
-    children: [subjectsRoute, questionsRoute, importsRoute, knowledgeGraphRoute],
+    children: [subjectsRoute, questionsRoute, examsRoute, importsRoute, knowledgeGraphRoute],
   },
   {
     type: "group",

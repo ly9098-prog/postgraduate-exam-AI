@@ -1089,6 +1089,7 @@ Page({
   goDashboard() { wx.navigateTo({ url: '/pages/dashboard/dashboard' }) },
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
   goFormulas() { wx.navigateTo({ url: '/subpackages/formulas/library/index' }) },
+  goExams() { wx.navigateTo({ url: '/subpackages/exam/paper-list/index' }) },
 
   _clearAnimTimer() {
     if (this._animTimer) {
