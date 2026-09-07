@@ -115,6 +115,15 @@ const adminUsersRoute: AdminRoute = {
   icon: UserCog,
 };
 
+
+const subjectsRoute: AdminRoute = {
+  href: "/subjects",
+  label: "科目治理",
+  description: "408 范围与启停",
+  permission: "subject:read",
+  icon: ListTree,
+};
+
 const questionsRoute: AdminRoute = {
   href: "/questions",
   label: "题库",
@@ -228,6 +237,7 @@ export const adminRoutes: AdminRoute[] = [
   dashboardRoute,
   appUsersRoute,
   adminUsersRoute,
+  subjectsRoute,
   questionsRoute,
   importsRoute,
   rolesRoute,
@@ -268,9 +278,9 @@ export const adminNavigation: AdminNavigationItem[] = [
     type: "group",
     key: "question-management",
     label: "题目管理",
-    description: "题库、导入与知识图谱",
+    description: "科目、题库、导入与知识图谱",
     icon: FileQuestion,
-    children: [questionsRoute, importsRoute, knowledgeGraphRoute],
+    children: [subjectsRoute, questionsRoute, importsRoute, knowledgeGraphRoute],
   },
   {
     type: "group",

@@ -2,9 +2,11 @@ import json
 import logging
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import Date as SQLDate, Integer, case, cast, func, select, text
+from sqlalchemy import Date as SQLDate
+from sqlalchemy import Integer, case, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.subject_scope import selected_408_subject_ids
 from app.core.time_utils import (
     serialize_utc_datetime,
     shanghai_date_utc_range,
@@ -12,14 +14,13 @@ from app.core.time_utils import (
     shanghai_today_boundaries,
     utcnow,
 )
-from app.models.admin import QuestionVersionKnowledgePoint, Subject
+from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Subject
 from app.models.answer_behavior import AnswerBehavior
-from app.models.practice_record import PracticeRecord
 from app.models.knowledge_point import KnowledgePoint
+from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.review_scheduler import ReviewSchedule
 from app.models.wrong_question import WrongQuestion
-
 
 logger = logging.getLogger(__name__)
 
@@ -180,12 +181,22 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
     )
     total_wq, mastered_count = wq_result.one()
 
+    subject_result = await db.execute(select(Subject))
+    active_408_ids = selected_408_subject_ids(subject_result.scalars().all())
     due_count = await db.execute(
-        select(func.count(func.distinct(ReviewSchedule.question_id))).where(
+        select(func.count(func.distinct(ReviewSchedule.question_id)))
+        .join(QuestionVersion, QuestionVersion.id == ReviewSchedule.question_version_id)
+        .where(
             ReviewSchedule.user_id == user_id,
             ReviewSchedule.is_active,
             ~ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= utcnow(),
+            QuestionVersion.question_id == ReviewSchedule.question_id,
+            (QuestionVersion.subject_id.in_(active_408_ids))
+            | (
+                QuestionVersion.subject_id.is_(None)
+                & ReviewSchedule.subject_id.in_(active_408_ids)
+            ),
         )
     )
 

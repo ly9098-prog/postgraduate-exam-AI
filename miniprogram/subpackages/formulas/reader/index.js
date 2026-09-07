@@ -7,6 +7,7 @@ const READER_SEQUENCE_KEY = 'formula_reader_sequence_v2'
 const SEQUENCE_TTL = 30 * 60 * 1000
 const TRANSITION_OUT_MS = 150
 const TRANSITION_IN_DELAY_MS = 36
+const PRODUCT_EXAM_SCOPE = '408'
 
 function normalizeId(value) {
   if (value === undefined || value === null || value === '') return null
@@ -72,7 +73,7 @@ Page({
     this.setData({ formulaId, isRandom, sequenceIds, sequenceIndex }, () => this.syncNavigationState())
 
     if (isRandom) {
-      const params = {}
+      const params = { exam_scope: PRODUCT_EXAM_SCOPE }
       if (options.subject_code) params.subject_code = options.subject_code
       if (options.chapter_id) params.chapter_id = options.chapter_id
       if (options.tags) params.tags = options.tags
@@ -121,7 +122,7 @@ Page({
   },
 
   async fetchCard(formulaId) {
-    const data = await api.request('GET', `/formulas/${formulaId}`)
+    const data = await api.request('GET', `/formulas/${formulaId}`, { exam_scope: PRODUCT_EXAM_SCOPE })
     return this.enrichCard(data || {})
   },
 
@@ -226,7 +227,7 @@ Page({
       return
     }
 
-    const params = { page: 1, page_size: 100 }
+    const params = { page: 1, page_size: 100, exam_scope: PRODUCT_EXAM_SCOPE }
     const subjectCode = card.subject_code || card.subjectCode || (card.subject && card.subject.code)
     const chapterId = card.chapter_id || card.chapterId || (card.chapter && card.chapter.id)
     if (subjectCode) params.subject_code = subjectCode
@@ -248,7 +249,7 @@ Page({
     this.setData({ [loadingKey]: true, loadError: false, errorText: '' })
 
     try {
-      const params = { ...this.data.randomParams }
+      const params = { exam_scope: PRODUCT_EXAM_SCOPE, ...this.data.randomParams }
       if (this._excludeIds && this._excludeIds.length > 0) {
         params.exclude_ids = this._excludeIds.slice(-50).join(',')
       }
@@ -302,7 +303,7 @@ Page({
     if (Array.isArray(this._favoriteIds)) return this._favoriteIds
 
     try {
-      const data = await api.request('GET', '/formulas/favorites/list', { page: 1, page_size: 200 })
+      const data = await api.request('GET', '/formulas/favorites/list', { page: 1, page_size: 200, exam_scope: PRODUCT_EXAM_SCOPE })
       this._favoriteIds = (data && data.items ? data.items : [])
         .map((item) => normalizeId(item.id))
         .filter((id) => id !== null)

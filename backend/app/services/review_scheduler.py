@@ -1,25 +1,26 @@
-from datetime import datetime, timedelta, timezone
 import hashlib
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.subject_scope import selected_408_subject_ids
 from app.core.time_utils import (
     shanghai_date_utc_range,
     shanghai_today,
     shanghai_today_boundaries,
     utcnow,
 )
+from app.features.text_normalizer import _split_inline_roman_subitems
 from app.models.admin import QuestionVersion, Subject
 from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.wrong_question import WrongQuestion
-from app.services.sm2_service import calc_sm2
-from app.features.text_normalizer import _split_inline_roman_subitems
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
 from app.services.question_revision_service import load_revision_views
+from app.services.sm2_service import calc_sm2
 from app.utils.answer_normalizer import (
     extract_multi_blank_slot_ids,
     is_answer_correct,
@@ -29,6 +30,23 @@ from app.utils.question_content import strip_student_segment_metadata
 # Asia/Shanghai = UTC+8, no DST
 _SHANGHAI_TZ = timezone(timedelta(hours=8))
 logger = logging.getLogger(__name__)
+
+
+async def _active_408_subject_ids(db: AsyncSession) -> set[int]:
+    result = await db.execute(select(Subject))
+    return selected_408_subject_ids(result.scalars().all())
+
+
+def _review_408_scope_condition(subject_ids: set[int]):
+    # Prefer immutable revision subject identity; legacy revisions may have a
+    # null subject_id, so fall back to the schedule snapshot in that case.
+    return or_(
+        QuestionVersion.subject_id.in_(subject_ids),
+        and_(
+            QuestionVersion.subject_id.is_(None),
+            ReviewSchedule.subject_id.in_(subject_ids),
+        ),
+    )
 
 # Keep review payload rendering consistent with the practice/wrong-book APIs.
 # Review used to return raw immutable revision content, which meant OCR line
@@ -344,13 +362,17 @@ async def get_today_review(
     limit: int = 20,
 ) -> dict:
     _, today_end = shanghai_today_boundaries()
+    allowed_subject_ids = await _active_408_subject_ids(db)
     conditions = [
         ReviewSchedule.user_id == user_id,
         ReviewSchedule.is_active,
         ReviewSchedule.next_review_at <= today_end,
         ~ReviewSchedule.mastered,
+        _review_408_scope_condition(allowed_subject_ids),
     ]
     if subject_id:
+        if subject_id not in allowed_subject_ids:
+            return {"total_today": 0, "questions": []}
         conditions.append(ReviewSchedule.subject_id == subject_id)
 
     valid_schedule_stmt = (
@@ -729,7 +751,10 @@ async def grade_batch_review(
     # availability must never decide whether the review submission succeeds.
     if prewarm_candidates:
         try:
-            from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
+            from app.services.ai_prewarm_worker import (
+                build_prewarm_revision,
+                enqueue_prewarm,
+            )
 
             for wq_id, review_count, wrong_answer in prewarm_candidates:
                 revision = build_prewarm_revision(
@@ -1060,6 +1085,7 @@ async def _get_today_review_task_state(
     in runtime code.
     """
     today_start, today_end = shanghai_today_boundaries()
+    allowed_subject_ids = await _active_408_subject_ids(db)
 
     due_schedules = list((await db.scalars(
         select(ReviewSchedule)
@@ -1073,6 +1099,7 @@ async def _get_today_review_task_state(
             # immutable revision. Excluding them here also prevents one broken
             # schedule from keeping the "today remaining" counter non-zero.
             QuestionVersion.question_id == ReviewSchedule.question_id,
+            _review_408_scope_condition(allowed_subject_ids),
         )
     )).all())
 
@@ -1089,9 +1116,13 @@ async def _get_today_review_task_state(
     reviewed_schedules: list[ReviewSchedule] = []
     if reviewed_schedule_ids:
         reviewed_schedules = list((await db.scalars(
-            select(ReviewSchedule).where(
+            select(ReviewSchedule)
+            .join(QuestionVersion, QuestionVersion.id == ReviewSchedule.question_version_id)
+            .where(
                 ReviewSchedule.user_id == user_id,
                 ReviewSchedule.id.in_(reviewed_schedule_ids),
+                QuestionVersion.question_id == ReviewSchedule.question_id,
+                _review_408_scope_condition(allowed_subject_ids),
             )
         )).all())
 
@@ -1100,6 +1131,7 @@ async def _get_today_review_task_state(
     # is intentionally not used because unrelated state changes may touch it.
     mastered_schedules = list((await db.scalars(
         select(ReviewSchedule)
+        .join(QuestionVersion, QuestionVersion.id == ReviewSchedule.question_version_id)
         .join(
             WrongQuestion,
             and_(
@@ -1110,6 +1142,8 @@ async def _get_today_review_task_state(
         )
         .where(
             ReviewSchedule.user_id == user_id,
+            QuestionVersion.question_id == ReviewSchedule.question_id,
+            _review_408_scope_condition(allowed_subject_ids),
             ReviewSchedule.is_active,
             ReviewSchedule.mastered,
             ReviewSchedule.next_review_at <= today_end,

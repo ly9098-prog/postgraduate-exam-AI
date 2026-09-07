@@ -1358,3 +1358,31 @@ export type TaskOperationResult = {
   success: boolean;
   message: string;
 };
+
+
+export type AdminSubjectNode = {
+  id: number;
+  parent_id: number | null;
+  code: string;
+  name: string;
+  level: number;
+  path: string;
+  sort_order: number;
+  is_active: boolean;
+  product_code?: string | null;
+  product_scope?: string | null;
+  is_product_core?: boolean;
+  is_product_root?: boolean;
+  created_at: string;
+  updated_at: string;
+  children: AdminSubjectNode[];
+};
+
+export type AdminSubjectListResponse = {
+  items: AdminSubjectNode[];
+};
+
+export type AdminSubjectUpdateRequest = {
+  is_active?: boolean;
+  confirm_core_disable?: boolean;
+};

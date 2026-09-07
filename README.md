@@ -6,7 +6,7 @@ MemoGrad 是一个面向考研学习场景的智能刷题与题库治理系统�
 
 > 本 README 面向「首次运行项目、日常开发、CI 排错和部署维护」。API 的完整字段与协议应以运行时 OpenAPI 和 `docs/` 中的专项文档为准。
 
-> 当前实现快照（2026-09-02）：后端已完成 Public/Admin 路由分层、Redis 任务队列与运维诊断；Admin 使用 Next.js 16.2 + React 19.2；生产部署必须使用 `APP_ENV=production` + `DEPLOYMENT_PROFILE=cloud_api`；用户与 Admin JWT 签名域隔离。近期前端变更包括编程题专用渲染和小程序题目图片预加载。
+> 当前实现快照（2026-09-07）：后端已完成 Public/Admin 路由分层、Redis 任务队列与运维诊断；Admin 使用 Next.js 16.2 + React 19.2；生产部署必须使用 `APP_ENV=production` + `DEPLOYMENT_PROFILE=cloud_api`；用户与 Admin JWT 签名域隔离。错题展示、统计和 AI 分析会跟随当前题库内容，同时保留错题产生时的历史版本供复习记录使用；小程序错题详情会在前台切题时校验最新数据，并提供短时缓存弱网兜底；番茄钟统计页已完善历史记录占位和图标展示，并规避部分微信开发者工具运行时辅助模块兼容问题。
 
 ## 目录
 
@@ -687,7 +687,14 @@ cd admin-frontend
 npm run build
 ```
 
-微信小程序没有统一测试命令时，可运行 `scripts/test-*.js` 中与当前改动相关的测试脚本，并通过微信开发者工具进行编译、真机/模拟器验证。
+微信小程序没有统一测试命令时，可运行 `miniprogram/tests/` 中与当前改动相关的独立 Node 测试脚本，并通过微信开发者工具进行编译、真机/模拟器验证。例如：
+
+```bash
+cd miniprogram
+node tests/test-render-invariant.js
+node tests/test-config-resolution.js
+node tests/render_regression/run.js
+```
 
 ---
 
@@ -770,22 +777,42 @@ bash deploy/scripts/deploy.sh update
 **日常更新：**
 
 ```bash
+# 先备份 PostgreSQL
+ssh -i Linux_connect.pem root@101.33.231.186 \
+  "cd /opt/22408-ai && bash deploy/scripts/deploy.sh backup"
+
 # 同步代码
 rsync -az --exclude-from=".deployignore" \
   -e "ssh -i Linux_connect.pem -o BatchMode=yes" \
   ./ root@101.33.231.186:/opt/22408-ai/
 
-# 构建镜像并替换 app（含健康检查）
-ssh root@101.33.231.186 "cd /opt/22408-ai && bash deploy/scripts/deploy.sh update"
+# 构建镜像并替换 app + scheduler（含健康检查和 nginx reload）
+ssh -i Linux_connect.pem root@101.33.231.186 \
+  "cd /opt/22408-ai && bash deploy/scripts/deploy.sh update"
 
-# 如包含新 migration，app 启动会因"迁移落后"检查失败，
-# 需先停 app → 迁移 → 重启：
-ssh root@101.33.231.186 "cd /opt/22408-ai && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml stop app"
-ssh root@101.33.231.186 "cd /opt/22408-ai && bash deploy/scripts/deploy.sh migrate"
-ssh root@101.33.231.186 "cd /opt/22408-ai && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml start app"
+# 后端 worker 需单独重建；deploy.sh update 不会替换 worker
+ssh -i Linux_connect.pem root@101.33.231.186 \
+  "cd /opt/22408-ai && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml build worker && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml up -d --no-deps worker"
 
-# 或仅执行显式迁移（无新 migration 时）
-ssh root@101.33.231.186 "cd /opt/22408-ai && bash deploy/scripts/deploy.sh migrate"
+# 仅在确认包含新 migration 时执行显式迁移
+ssh -i Linux_connect.pem root@101.33.231.186 \
+  "cd /opt/22408-ai && bash deploy/scripts/deploy.sh migrate"
+```
+
+如果 app 因迁移版本落后而无法保持运行，改用一次性容器执行迁移，再重新替换 app：
+
+```bash
+ssh -i Linux_connect.pem root@101.33.231.186 \
+  "cd /opt/22408-ai && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml run --rm --no-deps app alembic upgrade head"
+ssh -i Linux_connect.pem root@101.33.231.186 \
+  "cd /opt/22408-ai && docker compose --env-file backend/.env -f deploy/docker-compose.prod.yml up -d --no-deps app"
+```
+
+`deploy.sh update` 不执行数据库迁移；app、scheduler 或 worker 重建后不要重启数据库、Redis 或 nginx。脚本会在 app/scheduler 更新后 reload nginx；若手动重建 app，应执行：
+
+```bash
+ssh -i Linux_connect.pem root@101.33.231.186 \
+  "docker exec deploy-nginx-1 nginx -s reload"
 ```
 
 **禁止的日常操作：**

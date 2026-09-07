@@ -5,8 +5,9 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.time_utils import serialize_utc_datetime
 from app.core.security import get_current_user
+from app.core.subject_scope import EXAM408_FORMULA_SCOPE_ALIASES
+from app.core.time_utils import serialize_utc_datetime
 from app.models.formula import (
     FormulaCard,
     FormulaCardTag,
@@ -60,12 +61,23 @@ def _build_category_tree(categories: list[FormulaCategory]) -> list[dict]:
     return _sort_tree(roots)
 
 
-async def _get_active_categories(db: AsyncSession) -> list[FormulaCategory]:
-    result = await db.execute(
-        select(FormulaCategory)
-        .where(FormulaCategory.is_active)
-        .order_by(FormulaCategory.sort_order.asc())
-    )
+def _exam_scope_values(exam_scope: str | None) -> tuple[str, ...] | None:
+    raw = str(exam_scope or "").strip()
+    if not raw:
+        return None
+    if raw.lower() in {value.lower() for value in EXAM408_FORMULA_SCOPE_ALIASES}:
+        return EXAM408_FORMULA_SCOPE_ALIASES
+    return (raw,)
+
+
+async def _get_active_categories(
+    db: AsyncSession, exam_scope: str | None = None
+) -> list[FormulaCategory]:
+    query = select(FormulaCategory).where(FormulaCategory.is_active)
+    scope_values = _exam_scope_values(exam_scope)
+    if scope_values:
+        query = query.where(FormulaCategory.exam_scope.in_(scope_values))
+    result = await db.execute(query.order_by(FormulaCategory.sort_order.asc()))
     return list(result.scalars().all())
 
 
@@ -210,6 +222,7 @@ def _apply_library_type_filter(query, library_type: str | None):
 async def get_formula_catalog(
     library_type: str | None = Query(None),
     favorite_only: bool = Query(False, alias="favorite_only"),
+    exam_scope: str | None = Query(None, alias="exam_scope"),
     current_user: User | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -218,7 +231,7 @@ async def get_formula_catalog(
     Only includes chapters that have at least one published, non-deleted card
     matching the optional library_type and favorite_only filters.
     """
-    categories = await _get_active_categories(db)
+    categories = await _get_active_categories(db, exam_scope)
     tree = _build_category_tree(categories)
 
     # Count published + non-deleted cards per category_id
@@ -232,6 +245,10 @@ async def get_formula_catalog(
             FormulaCard.deleted_at.is_(None),
         )
     )
+
+    scope_values = _exam_scope_values(exam_scope)
+    if scope_values:
+        count_query = count_query.where(FormulaCard.exam_scope.in_(scope_values))
 
     if library_type:
         count_query = _apply_library_type_filter(count_query, library_type)
@@ -444,6 +461,7 @@ async def list_formulas(
     q: str | None = Query(None),
     favorite_only: bool = Query(False, alias="favorite_only"),
     library_type: str | None = Query(None),
+    exam_scope: str | None = Query(None, alias="exam_scope"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     current_user: User | None = Depends(get_current_user),
@@ -458,6 +476,9 @@ async def list_formulas(
         FormulaCard.status == "published",
         FormulaCard.deleted_at.is_(None),
     )
+    scope_values = _exam_scope_values(exam_scope)
+    if scope_values:
+        base_query = base_query.where(FormulaCard.exam_scope.in_(scope_values))
 
     base_query = _apply_library_type_filter(base_query, library_type)
     base_query = _apply_list_filters(base_query, subject_code, chapter_id, category_id, tags, q)
@@ -502,16 +523,19 @@ async def list_formulas(
 @router.get("/{formula_id}")
 async def get_formula_detail(
     formula_id: int,
+    exam_scope: str | None = Query(None, alias="exam_scope"),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single published formula card."""
-    result = await db.execute(
-        select(FormulaCard).where(
-            FormulaCard.id == formula_id,
-            FormulaCard.status == "published",
-            FormulaCard.deleted_at.is_(None),
-        )
+    query = select(FormulaCard).where(
+        FormulaCard.id == formula_id,
+        FormulaCard.status == "published",
+        FormulaCard.deleted_at.is_(None),
     )
+    scope_values = _exam_scope_values(exam_scope)
+    if scope_values:
+        query = query.where(FormulaCard.exam_scope.in_(scope_values))
+    result = await db.execute(query)
     card = result.scalar_one_or_none()
     if not card:
         raise HTTPException(status_code=404, detail="Formula not found")
@@ -529,6 +553,7 @@ async def list_favorite_formulas(
     tags: str | None = Query(None),
     q: str | None = Query(None),
     library_type: str | None = Query(None),
+    exam_scope: str | None = Query(None, alias="exam_scope"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     current_user: User = Depends(get_current_user),
@@ -548,6 +573,9 @@ async def list_favorite_formulas(
         FormulaCard.status == "published",
         FormulaCard.deleted_at.is_(None),
     )
+    scope_values = _exam_scope_values(exam_scope)
+    if scope_values:
+        base_query = base_query.where(FormulaCard.exam_scope.in_(scope_values))
 
     base_query = _apply_library_type_filter(base_query, library_type)
 
@@ -591,6 +619,7 @@ async def get_random_formula(
     tags: str | None = Query(None),
     exclude_ids: str | None = Query(None, alias="exclude_ids"),
     library_type: str | None = Query(None),
+    exam_scope: str | None = Query(None, alias="exam_scope"),
     current_user: User | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -602,6 +631,9 @@ async def get_random_formula(
         FormulaCard.status == "published",
         FormulaCard.deleted_at.is_(None),
     )
+    scope_values = _exam_scope_values(exam_scope)
+    if scope_values:
+        base_query = base_query.where(FormulaCard.exam_scope.in_(scope_values))
 
     base_query = _apply_library_type_filter(base_query, library_type)
 
@@ -679,6 +711,7 @@ async def get_random_formula(
             category_id=category_id,
             tags=tags if tags else None,
             library_type=library_type,
+            exam_scope=exam_scope,
             exclude_ids=None,
             current_user=current_user,
             db=db,

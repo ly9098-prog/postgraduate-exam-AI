@@ -33,6 +33,7 @@ const LIBRARY_TYPE_FUNCTION_GRAPH = 'function_graph'
 const MAX_GRAPH_FALLBACK_PAGES = 10
 const MAX_FAVORITE_PAGES = 50
 const FAVORITE_PAGE_SIZE = 200
+const PRODUCT_EXAM_SCOPE = '408'
 
 function normalizeCardType(item) {
   return String(
@@ -66,12 +67,9 @@ function filterFormulaItemsByLibraryType(items, libraryType) {
 Page({
   data: {
     // Subject tabs
-    subjects: [
-      { code: 'math2_high_math', name: '高等数学', active: true },
-      { code: 'math2_linear_algebra', name: '线性代数', active: false },
-    ],
-    activeSubject: 'math2_high_math',
-    activeSubjectName: '高等数学',
+    subjects: [],
+    activeSubject: '',
+    activeSubjectName: '408',
 
     // Content type tabs
     libraryTabs: [
@@ -184,7 +182,7 @@ Page({
     if (!this._pageAlive) return
     const requestVersion = ++this._catalogRequestVersion
     try {
-      var params = {}
+      var params = { exam_scope: PRODUCT_EXAM_SCOPE }
       // Pass library_type so the catalog can show accurate available_count
       if (this.data.activeLibraryType && this.data.activeLibraryType !== LIBRARY_TYPE_FORMULA) {
         params.library_type = this.data.activeLibraryType
@@ -199,8 +197,25 @@ Page({
       const data = await api.request('GET', url)
       if (!this._pageAlive || requestVersion !== this._catalogRequestVersion) return
       const catalog = this.normalizeCatalog(data?.items || [])
-      this.setData({ catalog })
-      this.updateChapters()
+      const currentCode = this.data.activeSubject
+      const currentSubject = catalog.find((subject) => subject.code === currentCode)
+      const activeCatalogSubject = currentSubject || catalog[0] || null
+      const activeSubject = activeCatalogSubject ? activeCatalogSubject.code : ''
+      const subjects = catalog.map((subject) => ({
+        code: subject.code,
+        name: subject.name,
+        active: subject.code === activeSubject,
+      }))
+      const subjectChanged = activeSubject !== currentCode
+      this.setData({
+        catalog,
+        subjects,
+        activeSubject,
+        activeSubjectName: activeCatalogSubject ? activeCatalogSubject.name : '408',
+      }, () => {
+        this.updateChapters()
+        if (subjectChanged) this.loadFormulas(true)
+      })
     } catch (e) {
       if (!this._pageAlive || requestVersion !== this._catalogRequestVersion) return
       console.error('Failed to load formula catalog', e)
@@ -540,6 +555,7 @@ Page({
 
     try {
       const baseParams = {
+        exam_scope: PRODUCT_EXAM_SCOPE,
         subject_code: activeSubject,
         page_size: pageSize,
         library_type: activeLibraryType || LIBRARY_TYPE_FORMULA,
@@ -672,6 +688,7 @@ Page({
         const data = await api.request('GET', '/formulas/favorites/list', {
           page,
           page_size: FAVORITE_PAGE_SIZE,
+          exam_scope: PRODUCT_EXAM_SCOPE,
         })
         if (!this._pageAlive || requestVersion !== this._favoriteRequestVersion) return
 

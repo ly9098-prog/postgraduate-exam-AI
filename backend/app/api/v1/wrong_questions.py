@@ -8,7 +8,9 @@ from sqlalchemy.orm import joinedload
 from app.core.cache import cache
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.subject_scope import selected_408_subject_ids
 from app.features.text_normalizer import _split_inline_roman_subitems
+from app.models.admin import Subject
 from app.models.question import Question
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.user import User
@@ -63,6 +65,18 @@ def _contains_code(text: str) -> bool:
     return score >= 3
 
 router = APIRouter(prefix="/api/v1/wrong-questions")
+
+
+async def _resolve_product_subject_ids(
+    db: AsyncSession, product_scope: str | None
+) -> set[int] | None:
+    raw = str(product_scope or "").strip().lower()
+    if not raw:
+        return None
+    if raw not in {"408", "exam408", "computer"}:
+        raise HTTPException(status_code=400, detail="Unsupported product_scope")
+    result = await db.execute(select(Subject))
+    return selected_408_subject_ids(result.scalars().all())
 
 
 def _fix_code_operator_splits(text: str) -> str:
@@ -255,11 +269,14 @@ async def list_wrong(
     topic: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    product_scope: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    allowed_subject_ids = await _resolve_product_subject_ids(db, product_scope)
     items, total = await svc.list_wrong_enriched(
-        db, current_user.id, subject_id, error_type, topic, page, page_size
+        db, current_user.id, subject_id, error_type, topic, page, page_size,
+        allowed_subject_ids=allowed_subject_ids,
     )
 
     # Apply text sanitization
@@ -277,10 +294,12 @@ async def list_wrong(
 
 @router.get("/stats", response_model=WrongQuestionStats)
 async def get_stats(
+    product_scope: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    stats = await svc.get_stats(db, current_user.id)
+    allowed_subject_ids = await _resolve_product_subject_ids(db, product_scope)
+    stats = await svc.get_stats(db, current_user.id, allowed_subject_ids=allowed_subject_ids)
     return WrongQuestionStats(**stats)
 
 
@@ -290,12 +309,15 @@ async def get_task_flow(
     error_type: str | None = Query(None),
     topic: str | None = Query(None),
     preview_size: int = Query(3, ge=1, le=10),
+    product_scope: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """错题任务流分组：今日应复习 → 高频错题 → 最近新增 → 待巩固 → 已掌握."""
+    allowed_subject_ids = await _resolve_product_subject_ids(db, product_scope)
     result = await svc.get_task_flow(
-        db, current_user.id, subject_id, error_type, topic, preview_size
+        db, current_user.id, subject_id, error_type, topic, preview_size,
+        allowed_subject_ids=allowed_subject_ids,
     )
     # Keep task-flow preview rows byte-for-byte compatible with the ordinary
     # wrong-question list rendering contract.  Without this, switching views

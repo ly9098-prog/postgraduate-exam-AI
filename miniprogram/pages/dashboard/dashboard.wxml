@@ -28,7 +28,7 @@
     </view>
     <text class="state-kicker">MEMOGRAD REPORT</text>
     <text class="state-title">从第一组练习开始</text>
-    <text class="state-desc">完成练习后，这里会生成趋势、薄弱点与今日建议。</text>
+    <text class="state-desc">完成 408 练习后，这里会生成趋势、薄弱点与今日建议。</text>
     <button class="state-button" bindtap="goPractice">开始练习</button>
     <text class="state-link" bindtap="goWrongBook">查看错题本</text>
   </view>
@@ -214,7 +214,7 @@
         <view class="focus-card-top">
           <view class="focus-index">01</view>
           <view class="focus-title-wrap">
-            <text class="focus-subject">最需加强的科目</text>
+            <text class="focus-subject">408 最需加强</text>
             <text class="focus-title">{{subjects.focusItem.label}}</text>
           </view>
           <text class="focus-percent">{{subjects.focusItem.accuracyPct}}%</text>
@@ -324,7 +324,7 @@
       <view class="deep-analysis-toggle" bindtap="onToggleDeepAnalysis" hover-class="surface-pressed">
         <view>
           <text class="deep-analysis-title no-kicker">深入分析</text>
-          <text class="deep-analysis-desc">从诊断结论进入学科、记忆效率、成长与 AI</text>
+          <text class="deep-analysis-desc">从诊断结论进入 408 四科、记忆效率、成长与 AI</text>
         </view>
         <view class="deep-analysis-icon {{showDeepAnalysis ? 'expanded' : ''}}">
           <text class="line-icon icon-chevron-down"></text>
@@ -352,7 +352,7 @@
         <!-- Analysis tabs -->
         <scroll-view class="analysis-tabs-scroll" scroll-x enhanced show-scrollbar="false">
           <view class="analysis-tabs">
-            <text class="analysis-tab {{analysisActiveTab == 'subjects' ? 'active' : ''}}" data-tab="subjects" bindtap="onAnalysisTab">学科</text>
+            <text class="analysis-tab {{analysisActiveTab == 'subjects' ? 'active' : ''}}" data-tab="subjects" bindtap="onAnalysisTab">408四科</text>
             <text class="analysis-tab {{analysisActiveTab == 'memory' ? 'active' : ''}}" data-tab="memory" bindtap="onAnalysisTab">记忆效率</text>
             <text class="analysis-tab {{analysisActiveTab == 'growth' ? 'active' : ''}}" data-tab="growth" bindtap="onAnalysisTab">成长</text>
             <text class="analysis-tab {{analysisActiveTab == 'ai' ? 'active' : ''}}" data-tab="ai" bindtap="onAnalysisTab">AI 诊断</text>
@@ -380,10 +380,10 @@
               </view>
               <view class="subject-chart-note">
                 <text class="subject-chart-note-dot"></text>
-                <text>暖橙色表示当前最薄弱科目</text>
+                <text>暖橙色表示当前最薄弱的 408 科目</text>
               </view>
             </view>
-            <view class="analysis-empty" wx:else>完成更多科目练习后显示排名。</view>
+            <view class="analysis-empty" wx:else>完成更多 408 练习后显示四科排名。</view>
           </view>
 
           <!-- Memory and efficiency comparisons -->

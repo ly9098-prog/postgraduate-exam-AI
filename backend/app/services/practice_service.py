@@ -8,13 +8,31 @@ import time
 from datetime import date, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import Date as SQLDate, and_, case, cast, func, or_, select, text
+from sqlalchemy import Date as SQLDate
+from sqlalchemy import and_, case, cast, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.core.time_utils import normalize_to_naive_utc, shanghai_date_utc_range, shanghai_today, utcnow
+from app.core.subject_scope import (
+    EXAM408_DISPLAY_ORDER,
+    canonical_408_code,
+    select_408_subject_records,
+    selected_408_subject_ids,
+)
+from app.core.time_utils import (
+    normalize_to_naive_utc,
+    shanghai_date_utc_range,
+    shanghai_today,
+    utcnow,
+)
+from app.features.question_type import (
+    QT_MULTI_BLANK_CHOICE,
+    QT_MULTIPLE_CHOICE,
+    QT_SINGLE_CHOICE,
+    QT_TRUE_FALSE,
+)
 from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
@@ -24,6 +42,11 @@ from app.models.question_import import (
     QuestionImport,  # noqa: F401 — ensures Subject mapper resolves
 )
 from app.services.admin_subject_service import resolve_subject_ids
+from app.services.knowledge_point_service import (
+    kp_any_condition,
+    kp_exact_conditions,
+    load_question_kps,
+)
 from app.services.practice.answer_projection_contract import (
     ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
 )
@@ -34,27 +57,15 @@ from app.services.practice.recommendation_pipeline import (
 from app.services.practice.sequential_service import (
     SEQUENTIAL_MODE,
     get_sequential_practice_questions,
-    reset_sequential_progress,
 )
 from app.services.practice.smart_scoring import (
     _build_smart_recommendation_reason,
     _pick_graph_target_kps,
     calculate_smart_score,
 )
-from app.services.knowledge_point_service import (
-    kp_any_condition,
-    kp_exact_conditions,
-    load_question_kps,
-)
 from app.utils.answer_normalizer import (
     extract_multi_blank_slot_ids,
     is_answer_correct,
-)
-from app.features.question_type import (
-    QT_MULTI_BLANK_CHOICE,
-    QT_MULTIPLE_CHOICE,
-    QT_SINGLE_CHOICE,
-    QT_TRUE_FALSE,
 )
 
 logger = logging.getLogger(__name__)
@@ -434,27 +445,29 @@ def _random_sample_query(query, total_count: int, need: int, id_col=None):
 
 
 async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
-    """返回刷题页可用科目树。
+    """返回当前产品可练习的 408 科目树。
 
-    数据来源：subjects 表中 is_active=true 的记录。
-    使用 parent_id 构建树，按 sort_order, id 排序。
-    不硬编码任何 subject_id。
+    ``subjects.id`` 仍是唯一业务 ID；这里仅做产品范围过滤，不删除或迁移
+    数学/英语/政治等历史科目。若 408 根科目存在但被停用，整个 408 公共
+    入口都会关闭；若是没有根节点的旧库，则仅回退展示可识别的四个 408
+    核心子科目。
     """
     from app.models.admin import Subject
 
     result = await db.execute(
-        select(Subject)
-        .where(Subject.is_active.is_(True))
-        .order_by(Subject.sort_order.asc(), Subject.id.asc())
+        select(Subject).order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
     )
-    subjects = list(result.scalars().all())
+    all_subjects = list(result.scalars().all())
+    subjects = select_408_subject_records(all_subjects)
 
     def _to_node(s: Subject) -> dict:
+        product_code = canonical_408_code(s.code, s.name)
         return {
             "subject_id": s.id,
             "subject_code": s.code,
             "subject_name": s.name,
             "display_name": s.name,
+            "product_code": product_code,
             "parent_id": s.parent_id,
             "level": s.level,
             "path": s.path,
@@ -471,14 +484,33 @@ async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
             parent["children"].append(node)
         else:
             roots.append(node)
+
+    def _node_sort_key(node: dict) -> tuple[int, int, int]:
+        return (
+            EXAM408_DISPLAY_ORDER.get(node.get("product_code") or "", 999),
+            int(node.get("sort_order") or 0),
+            int(node.get("subject_id") or 0),
+        )
+
+    def _sort_tree(items: list[dict]) -> None:
+        items.sort(key=_node_sort_key)
+        for item in items:
+            _sort_tree(item["children"])
+
+    _sort_tree(roots)
     return roots
 
 
 async def resolve_subject_id_to_code(db: AsyncSession, subject_id: int) -> tuple[str, str] | None:
-    """将 subject_id 解析为 (subject_code, subject_name)。不存在返回 None。"""
+    """将可练习的 408 subject_id 解析为 (subject_code, subject_name)。"""
     from app.models.admin import Subject
 
-    subj = await db.get(Subject, subject_id)
+    all_result = await db.execute(select(Subject))
+    all_subjects = list(all_result.scalars().all())
+    allowed_ids = selected_408_subject_ids(all_subjects)
+    if subject_id not in allowed_ids:
+        return None
+    subj = next((item for item in all_subjects if item.id == subject_id), None)
     if subj is None or not subj.is_active:
         return None
     return (subj.code, subj.name)
@@ -3135,7 +3167,10 @@ async def batch_submit_answers(
 
     if prewarm_wrong_questions:
         try:
-            from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
+            from app.services.ai_prewarm_worker import (
+                build_prewarm_revision,
+                enqueue_prewarm,
+            )
 
             for wrong in prewarm_wrong_questions:
                 revision = build_prewarm_revision(

@@ -1,4 +1,5 @@
 const api = require('../../utils/api')
+const { filter408SubjectTree } = require('../../utils/subject-scope')
 const config = require('../../config')
 const { safeDecodeURIComponent } = require('../../utils/route-params')
 const pomodoroTheme = require('../../utils/pomodoro-theme')
@@ -700,7 +701,8 @@ Page({
   async _loadSubjects() {
     this.setData({ subjectsLoading: true, subjectsError: '' })
     try {
-      const tree = await api.get('/practice/subjects')
+      const rawTree = await api.get('/practice/subjects')
+      const tree = filter408SubjectTree(rawTree)
       if (!tree || !Array.isArray(tree)) {
         throw new Error('科目数据格式错误')
       }

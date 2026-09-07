@@ -3,6 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
+from app.core.subject_scope import EXAM408_ROOT_CODE, canonical_408_code
 from app.models.admin import Subject
 from app.models.question import Question
 from app.schemas.admin_subjects import (
@@ -54,6 +55,13 @@ async def create_subject(
 ) -> Subject:
     await _ensure_unique_code(db, data.code)
     parent = await _get_parent(db, data.parent_id)
+    product_code = canonical_408_code(data.code, data.name)
+    if product_code == EXAM408_ROOT_CODE and parent is not None:
+        raise SubjectBusinessRuleError("408 根科目必须保持为一级科目")
+    if product_code and product_code != EXAM408_ROOT_CODE:
+        if parent is None or canonical_408_code(parent.code, parent.name) != EXAM408_ROOT_CODE:
+            raise SubjectBusinessRuleError("408 四个核心子科目必须直属 408 根科目")
+
     level = parent.level + 1 if parent else 1
     if level > 3:
         raise SubjectBusinessRuleError("科目层级不能超过3级")
@@ -91,7 +99,22 @@ async def update_subject(
     subject = await get_subject(db, subject_id)
     before = _subject_state(subject)
     update_data = data.model_dump(exclude_unset=True)
+    confirm_core_disable = bool(update_data.pop("confirm_core_disable", False))
     new_code = update_data.get("code", subject.code)
+    new_name = update_data.get("name", subject.name)
+
+    current_product_code = canonical_408_code(subject.code, subject.name)
+    next_product_code = canonical_408_code(new_code, new_name)
+    if current_product_code and next_product_code != current_product_code:
+        raise SubjectBusinessRuleError("408 核心科目的产品身份不能改为其他科目")
+
+    if (
+        current_product_code == EXAM408_ROOT_CODE
+        and update_data.get("is_active") is False
+        and subject.is_active
+        and not confirm_core_disable
+    ):
+        raise SubjectBusinessRuleError("停用 408 根科目会隐藏全部 408 学习入口，请确认后重试")
 
     if new_code != subject.code:
         await _ensure_unique_code(db, new_code, subject.id)
@@ -111,6 +134,12 @@ async def update_subject(
         parent = await _get_parent(db, new_parent_id)
     else:
         parent = await _get_parent(db, subject.parent_id)
+
+    if current_product_code == EXAM408_ROOT_CODE and parent is not None:
+        raise SubjectBusinessRuleError("408 根科目必须保持为一级科目")
+    if current_product_code and current_product_code != EXAM408_ROOT_CODE:
+        if parent is None or canonical_408_code(parent.code, parent.name) != EXAM408_ROOT_CODE:
+            raise SubjectBusinessRuleError("408 四个核心子科目必须直属 408 根科目")
 
     new_level = parent.level + 1 if parent else 1
     subtree_depth = _subtree_depth(all_subjects, subject.id)
@@ -148,6 +177,8 @@ async def delete_subject(
     request: Request | None = None,
 ) -> None:
     subject = await get_subject(db, subject_id)
+    if canonical_408_code(subject.code, subject.name):
+        raise SubjectBusinessRuleError("408 核心科目不能删除；如需临时隐藏，请使用停用")
     child_count = await db.scalar(select(func.count()).select_from(Subject).where(Subject.parent_id == subject.id))
     if child_count:
         raise SubjectBusinessRuleError("存在子科目，不能删除")

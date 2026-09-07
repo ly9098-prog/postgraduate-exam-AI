@@ -110,10 +110,10 @@
   <view class="content-section page-enter delay-two">
     <view class="section-heading">
       <view>
-        <text class="section-kicker">LEARNING PATH</text>
-        <text class="section-title">继续学习</text>
+        <text class="section-kicker">408 LEARNING PATH</text>
+        <text class="section-title">408 今日学习</text>
       </view>
-      <text class="section-note">按你的节奏来</text>
+      <text class="section-note">四科专项</text>
     </view>
 
     <view class="route-stack">
@@ -121,8 +121,8 @@
         <view class="route-index">01</view>
         <view class="route-copy">
           <text class="route-eyebrow">记忆复习</text>
-          <text class="route-title">今日复习计划</text>
-          <text class="route-desc">{{dueReviewCount > 0 ? dueReviewCount + ' 道题正处于最佳复习窗口' : '暂无到期任务，也可以提前巩固'}}</text>
+          <text class="route-title">408 今日复习</text>
+          <text class="route-desc">{{dueReviewCount > 0 ? dueReviewCount + ' 道 408 错题正处于最佳复习窗口' : '暂无到期任务，也可以提前巩固'}}</text>
         </view>
         <view class="route-arrow">→</view>
       </view>
@@ -131,8 +131,8 @@
         <view class="route-index">02</view>
         <view class="route-copy">
           <text class="route-eyebrow">新题训练</text>
-          <text class="route-title">随机练习</text>
-          <text class="route-desc">用一组新题检查知识边界与即时状态</text>
+          <text class="route-title">408 随机练习</text>
+          <text class="route-desc">从数据结构、计组、操作系统、计网中检查知识边界</text>
         </view>
         <view class="route-arrow">→</view>
       </view>
@@ -142,7 +142,7 @@
         <view class="route-copy">
           <text class="route-eyebrow">薄弱项管理</text>
           <text class="route-title">错题本</text>
-          <text class="route-desc">筛选、复盘并集中处理反复出错的问题</text>
+          <text class="route-desc">聚焦 408 错题，复盘反复出错的知识点</text>
         </view>
         <view class="route-arrow">→</view>
       </view>
@@ -154,7 +154,7 @@
     <view class="section-heading compact-heading">
       <view>
         <text class="section-kicker">TOOLS</text>
-        <text class="section-title">学习工作台</text>
+        <text class="section-title">408 学习工作台</text>
       </view>
       <text class="section-note">数据与效率</text>
     </view>
@@ -164,7 +164,7 @@
         <view class="tool-icon chart-icon">
           <view class="bar bar-a"></view><view class="bar bar-b"></view><view class="bar bar-c"></view>
         </view>
-        <text class="tool-title">学习报告</text>
+        <text class="tool-title">408 学习报告</text>
         <text class="tool-desc">趋势与薄弱项</text>
       </view>
       <view class="tool-divider"></view>
@@ -176,8 +176,8 @@
       <view class="tool-divider"></view>
       <view class="tool-item" bindtap="goFormulas" hover-class="tool-pressed">
         <view class="tool-icon formula-icon">∑</view>
-        <text class="tool-title">公式库</text>
-        <text class="tool-desc">快速查阅背诵</text>
+        <text class="tool-title">408 速记</text>
+        <text class="tool-desc">只展示 408 有效内容</text>
       </view>
     </view>
   </view>

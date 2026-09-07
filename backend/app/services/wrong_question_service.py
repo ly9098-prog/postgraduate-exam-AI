@@ -131,8 +131,14 @@ async def update_wrong(
     return wq
 
 
-async def get_stats(db: AsyncSession, user_id: int) -> dict:
+async def get_stats(db: AsyncSession, user_id: int, allowed_subject_ids: set[int] | None = None) -> dict:
     conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
+    if allowed_subject_ids is not None:
+        conditions.append(
+            WrongQuestion.question_id.in_(
+                select(Question.id).where(Question.subject_id.in_(allowed_subject_ids))
+            )
+        )
 
     # One covering-index-friendly aggregate replaces four separate COUNT
     # queries (total/unmastered/mastered/high-frequency). On a large SQLite
@@ -200,18 +206,27 @@ async def get_stats(db: AsyncSession, user_id: int) -> dict:
 
     # today_due_count: same definition as get_today_review_overview
     _, today_end = shanghai_today_boundaries()
+    due_conditions = [
+        ReviewSchedule.user_id == user_id,
+        ReviewSchedule.is_active,
+        ~ReviewSchedule.mastered,
+        ReviewSchedule.next_review_at <= today_end,
+        ReviewSchedule.question_id.in_(
+            select(WrongQuestion.question_id).where(
+                WrongQuestion.user_id == user_id,
+                WrongQuestion.is_active,
+            )
+        ),
+    ]
+    if allowed_subject_ids is not None:
+        due_conditions.append(
+            ReviewSchedule.question_id.in_(
+                select(Question.id).where(Question.subject_id.in_(allowed_subject_ids))
+            )
+        )
     today_due_q = await db.execute(
         select(func.count(func.distinct(ReviewSchedule.question_id))).where(
-            ReviewSchedule.user_id == user_id,
-            ReviewSchedule.is_active,
-            ~ReviewSchedule.mastered,
-            ReviewSchedule.next_review_at <= today_end,
-            ReviewSchedule.question_id.in_(
-                select(WrongQuestion.question_id).where(
-                    WrongQuestion.user_id == user_id,
-                    WrongQuestion.is_active,
-                )
-            ),
+            and_(*due_conditions)
         )
     )
     today_due_count = today_due_q.scalar() or 0
@@ -239,10 +254,17 @@ async def list_wrong_enriched(
     topic: str | None = None,
     page: int = 1,
     page_size: int = 20,
+    allowed_subject_ids: set[int] | None = None,
 ) -> tuple[list[dict], int]:
     """Enhanced WQ list avoiding N+1 via correlated scalar subqueries."""
 
     conditions = [WrongQuestion.user_id == user_id, WrongQuestion.is_active]
+    if allowed_subject_ids is not None:
+        conditions.append(
+            WrongQuestion.question_id.in_(
+                select(Question.id).where(Question.subject_id.in_(allowed_subject_ids))
+            )
+        )
     if error_type:
         conditions.append(WrongQuestion.error_type == error_type)
 
@@ -614,6 +636,7 @@ async def get_task_flow(
     error_type: str | None = None,
     topic: str | None = None,
     preview_size: int = 3,
+    allowed_subject_ids: set[int] | None = None,
 ) -> dict:
     """Group wrong questions into priority-deduplicated buckets."""
 
@@ -630,7 +653,7 @@ async def get_task_flow(
     while True:
         page_items, total_count = await list_wrong_enriched(
             db, user_id, subject_id=subject_id, error_type=error_type, topic=topic,
-            page=page, page_size=page_size,
+            page=page, page_size=page_size, allowed_subject_ids=allowed_subject_ids,
         )
         all_items.extend(page_items)
         if not page_items or len(all_items) >= total_count:

@@ -4,6 +4,7 @@ const { debugLog, saveDebugSnapshot, shouldDebugQuestion } = require('../../../u
 const { buildRenderModel, setRenderGuardPage, resetRenderGuard } = require('../utils/stem-render')
 const adapter = require('../utils/question-runner-adapter')
 const questionImageCache = require('../utils/question-image-cache')
+const { filter408SubjectTree } = require('../../../utils/subject-scope')
 
 const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
@@ -584,7 +585,7 @@ Page({
     try {
       const res = await api.get('/practice/subjects')
       if (!this._pageAlive || requestSeq !== this._subjectsRequestSeq) return
-      const subjectTree = this.normalizeSubjectTree(res || [])
+      const subjectTree = this.normalizeSubjectTree(filter408SubjectTree(res || []))
       this.setData({ subjectTree })
       this.initDefaultSubject(subjectTree)
     } catch (e) {
