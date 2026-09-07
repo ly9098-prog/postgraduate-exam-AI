@@ -8,6 +8,7 @@ const adapter = require('../utils/question-runner-adapter')
 const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../utils/ai-analysis-normalizer')
 const { buildAiRichText } = require('../utils/ai-math-render')
 const errorDiagnosis = require('../../../utils/error-diagnosis')
+const aiTeacher408 = require('../../../utils/ai-teacher-408')
 
 // wx.request cannot hold one request open for the backend's full 150s AI
 // provider budget. Keep each transport attempt safely below the platform's
@@ -214,6 +215,13 @@ Page({
     diagnosisSaving: false,
     diagnosisAiQueuing: false,
 
+    teacherActions: aiTeacher408.ACTIONS,
+    teacherLoadingAction: '',
+    teacherResult: null,
+    teacherSheetVisible: false,
+    teacherErrorText: '',
+    teacherFeedbackSent: '',
+
     // quiz-runner data
     currentQuestion: null,
     wrongQuestions: [],
@@ -380,6 +388,11 @@ Page({
         masterSubmitting: false,
         removeSubmitting: false,
         errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
+        teacherLoadingAction: '',
+        teacherResult: null,
+        teacherSheetVisible: false,
+        teacherErrorText: '',
+        teacherFeedbackSent: '',
       }
 
       // 仅使用一个“AI 学习建议”区域：AI 分析优先，否则回退题库解析。
@@ -502,6 +515,70 @@ Page({
       return
     }
     this.loadAiAnalysis(wqId)
+  },
+
+  async run408TeacherAction(e) {
+    const action = String(e.currentTarget.dataset.action || '')
+    if (!action || this.data.teacherLoadingAction) return
+    const wq = this.data.wq || {}
+    const diagnosis = this.data.errorDiagnosis || {}
+    const questionId = Number(wq.question_id || wq.questionId || 0)
+    if (!questionId) {
+      wx.showToast({ title: '缺少题目ID', icon: 'none' })
+      return
+    }
+    const versionId = Number(
+      diagnosis.question_version_id || diagnosis.questionVersionId || wq.question_version_id || wq.questionVersionId || 0
+    )
+    const diagnosisId = Number(diagnosis.id || 0)
+    this.setData({
+      teacherLoadingAction: action,
+      teacherErrorText: '',
+      teacherResult: null,
+      teacherSheetVisible: true,
+      teacherFeedbackSent: '',
+    })
+    try {
+      const payload = { question_id: questionId, action: action }
+      if (versionId > 0) payload.question_version_id = versionId
+      if (diagnosisId > 0) payload.diagnosis_id = diagnosisId
+      if (wq.wrong_answer) payload.user_answer = String(wq.wrong_answer)
+      const raw = await api.post('/ai/408-teacher', payload, { timeout: AI_REQUEST_TIMEOUT_MS })
+      const normalized = aiTeacher408.normalizeResult(raw)
+      if (!normalized) throw new Error('AI 返回格式异常')
+      if (!this._alive || String((this.data.wq && this.data.wq.id) || '') !== String(wq.id || '')) return
+      this.setData({ teacherLoadingAction: '', teacherResult: normalized })
+    } catch (error) {
+      if (!this._alive) return
+      this.setData({
+        teacherLoadingAction: '',
+        teacherErrorText: aiTeacher408.errorMessage(error, api),
+      })
+    }
+  },
+
+  close408TeacherSheet() {
+    if (this.data.teacherLoadingAction) return
+    this.setData({ teacherSheetVisible: false, teacherErrorText: '', teacherResult: null })
+  },
+
+  async feedback408Teacher(e) {
+    if (this.data.teacherFeedbackSent || !this.data.teacherResult) return
+    const type = String(e.currentTarget.dataset.type || '')
+    const wq = this.data.wq || {}
+    const questionId = Number(wq.question_id || wq.questionId || 0)
+    if (!type || !questionId) return
+    try {
+      await aiTeacher408.submitFeedback(api, {
+        questionId,
+        feedbackType: type,
+        result: this.data.teacherResult,
+      })
+      this.setData({ teacherFeedbackSent: type })
+      wx.showToast({ title: '反馈已记录', icon: 'success' })
+    } catch (error) {
+      wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
+    }
   },
 
   _isCurrentAiRequest(requestId, wqId) {
@@ -1472,6 +1549,11 @@ Page({
         diagnosisSheetVisible: false,
         diagnosisSaving: false,
         diagnosisAiQueuing: false,
+        teacherLoadingAction: '',
+        teacherResult: null,
+        teacherSheetVisible: false,
+        teacherErrorText: '',
+        teacherFeedbackSent: '',
       }
 
       // 切题时沿用相同优先级：AI 分析优先，否则回退题库解析。

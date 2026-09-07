@@ -2,18 +2,20 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.models.wrong_question import WrongQuestion
 from app.schemas.ai import (
     AiAnalysisStatusResponse,
     AiFeedbackRequest,
-    AiRecoveryRequest,
-    AiRecoveryResponse,
     AiPrewarmRequest,
     AiPrewarmResponse,
+    AiRecoveryRequest,
+    AiRecoveryResponse,
     AiResponse,
     ErrorAnalysisRequest,
     StudyAdviceRequest,
@@ -31,12 +33,45 @@ from app.schemas.ai_learning import (
     StrongPoint,
     WeakPoint,
 )
-from app.services import ai_learning_service
+from app.schemas.ai_teacher_408 import (
+    AITeacher408ActionsResponse,
+    AITeacher408Request,
+    AITeacher408Response,
+)
+from app.services import ai_learning_service, ai_teacher_408_service
 from app.services import ai_service as svc
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/ai")
+
+
+async def _get_wrong_question_for_answer_ai(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    wrong_question_id: int,
+) -> WrongQuestion:
+    wq = await db.scalar(
+        select(WrongQuestion).where(
+            WrongQuestion.id == wrong_question_id,
+            WrongQuestion.user_id == user_id,
+        )
+    )
+    if wq is None:
+        raise HTTPException(status_code=404, detail="错题记录不存在")
+    try:
+        await ai_teacher_408_service.assert_ai_answer_access_allowed(
+            db,
+            user_id=user_id,
+            question_id=int(wq.question_id),
+        )
+    except ai_teacher_408_service.AIExamInProgressError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "exam_in_progress_ai_blocked", "message": str(e)},
+        )
+    return wq
 
 
 # ============================================================
@@ -50,6 +85,11 @@ async def error_analysis(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    await _get_wrong_question_for_answer_ai(
+        db,
+        user_id=current_user.id,
+        wrong_question_id=data.wrong_question_id,
+    )
     try:
         result = await svc.analyze_error(db, current_user.id, data.wrong_question_id, force_regenerate=data.force_regenerate)
     except ValueError as e:
@@ -76,19 +116,11 @@ async def error_analysis_status(
     before generation, so an old/stale cache cannot be mistaken for the new
     result it is waiting for.
     """
-    from sqlalchemy import select
-
-    from app.models.wrong_question import WrongQuestion
-
-    result = await db.execute(
-        select(WrongQuestion).where(
-            WrongQuestion.id == wrong_question_id,
-            WrongQuestion.user_id == current_user.id,
-        )
+    wq = await _get_wrong_question_for_answer_ai(
+        db,
+        user_id=current_user.id,
+        wrong_question_id=wrong_question_id,
     )
-    wq = result.scalar_one_or_none()
-    if wq is None:
-        raise HTTPException(status_code=404, detail="错题记录不存在")
 
     cached = svc.build_any_cached_error_analysis_response(wq)
     if cached is None:
@@ -116,20 +148,13 @@ async def recover_error_analysis(
     backup is revision-aware and force-regeneration-aware: the worker skips the
     backup when the original request has already committed a newer generation.
     """
-    from sqlalchemy import select
-
-    from app.models.wrong_question import WrongQuestion
     from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
 
-    result = await db.execute(
-        select(WrongQuestion).where(
-            WrongQuestion.id == data.wrong_question_id,
-            WrongQuestion.user_id == current_user.id,
-        )
+    wq = await _get_wrong_question_for_answer_ai(
+        db,
+        user_id=current_user.id,
+        wrong_question_id=data.wrong_question_id,
     )
-    wq = result.scalar_one_or_none()
-    if wq is None:
-        raise HTTPException(status_code=404, detail="错题记录不存在")
 
     revision = build_prewarm_revision(
         review_count=wq.review_count,
@@ -164,9 +189,6 @@ async def prewarm_analysis(
     current_user: User = Depends(get_current_user),
 ):
     """批量预生成错题 AI 分析。后台任务统一校验缓存新鲜度并按需生成。"""
-    from sqlalchemy import select
-
-    from app.models.wrong_question import WrongQuestion
     from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
 
     queued: list[int] = []
@@ -180,10 +202,18 @@ async def prewarm_analysis(
         )
     )
     wq_map = {wq.id: wq for wq in result.scalars().all()}
+    blocked_question_ids = await ai_teacher_408_service.active_exam_blocked_question_ids(
+        db,
+        user_id=current_user.id,
+        question_ids=[int(wq.question_id) for wq in wq_map.values()],
+    )
 
     for wq_id in data.wrong_question_ids:
         wq = wq_map.get(wq_id)
         if not wq:
+            skipped.append(wq_id)
+            continue
+        if int(wq.question_id) in blocked_question_ids:
             skipped.append(wq_id)
             continue
         # The worker is the authoritative freshness checker. Do not skip merely
@@ -234,6 +264,9 @@ async def ai_explain(
 ):
     """AI 题目讲解。"""
     try:
+        await ai_teacher_408_service.assert_ai_answer_access_allowed(
+            db, user_id=current_user.id, question_id=data.question_id
+        )
         result = await ai_learning_service.ai_explain(
             db=db,
             user_id=current_user.id,
@@ -241,6 +274,11 @@ async def ai_explain(
             user_answer=data.user_answer,
             is_correct=data.is_correct,
             focus=data.focus,
+        )
+    except ai_teacher_408_service.AIExamInProgressError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "exam_in_progress_ai_blocked", "message": str(e)},
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -310,6 +348,9 @@ async def ai_analyze_mistake(
 ):
     """AI 错因分析。"""
     try:
+        await ai_teacher_408_service.assert_ai_answer_access_allowed(
+            db, user_id=current_user.id, question_id=data.question_id
+        )
         result = await ai_learning_service.ai_analyze_mistake(
             db=db,
             user_id=current_user.id,
@@ -317,10 +358,52 @@ async def ai_analyze_mistake(
             user_answer=data.user_answer,
             correct_answer=data.correct_answer,
         )
+    except ai_teacher_408_service.AIExamInProgressError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "exam_in_progress_ai_blocked", "message": str(e)},
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
     return AIMistakeAnalysisResponse(**result)
+
+
+@router.get("/408-teacher/actions", response_model=AITeacher408ActionsResponse)
+async def ai_teacher_408_actions(
+    current_user: User = Depends(get_current_user),
+):
+    """返回服务端冻结的 408 AI 老师固定动作，不接受自由 prompt。"""
+    _ = current_user
+    return AITeacher408ActionsResponse(**ai_teacher_408_service.get_actions())
+
+
+@router.post("/408-teacher", response_model=AITeacher408Response)
+async def ai_teacher_408(
+    data: AITeacher408Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """执行一个固定 408 教学动作。考试进行中 fail-closed。"""
+    try:
+        result = await ai_teacher_408_service.run_teacher_action(
+            db,
+            user_id=current_user.id,
+            question_id=data.question_id,
+            action=data.action,
+            question_version_id=data.question_version_id,
+            diagnosis_id=data.diagnosis_id,
+            exam_attempt_id=data.exam_attempt_id,
+            user_answer=data.user_answer,
+        )
+    except ai_teacher_408_service.AIExamInProgressError as e:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "exam_in_progress_ai_blocked", "message": str(e)},
+        )
+    except ai_teacher_408_service.AITeacher408AccessError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return AITeacher408Response(**result)
 
 
 @router.post("/feedback")

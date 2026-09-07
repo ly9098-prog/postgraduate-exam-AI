@@ -10,12 +10,12 @@ logger = logging.getLogger(__name__)
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.gateway import chat_with_db_model
 from app.ai.fallback import (
     get_fallback_explain,
     get_fallback_mistake_analysis,
     get_fallback_report,
 )
+from app.ai.gateway import chat_with_db_model
 from app.ai.prompts_learning import (
     build_explain_prompt,
     build_mistake_analysis_prompt,
@@ -34,7 +34,7 @@ from app.services.knowledge_point_service import load_question_kps
 # ============================================================
 
 
-async def _check_token_limit(db: AsyncSession, user_id: int, tokens_needed: int = 0) -> bool:
+async def check_token_limit(db: AsyncSession, user_id: int, tokens_needed: int = 0) -> bool:
     """检查用户是否超出 token 限额（日 + 月）。返回 True 表示可以继续调用。"""
     daily_limit = settings.AI_DAILY_TOKEN_LIMIT
     monthly_limit = settings.AI_MONTHLY_TOKEN_LIMIT
@@ -71,7 +71,7 @@ async def _check_token_limit(db: AsyncSession, user_id: int, tokens_needed: int 
     return True
 
 
-async def _record_token_usage(
+async def record_token_usage(
     db: AsyncSession,
     user_id: int,
     session_type: str,
@@ -169,7 +169,7 @@ async def ai_explain(
     )
 
     # 检查 token 限额
-    if not await _check_token_limit(db, user_id, 500):
+    if not await check_token_limit(db, user_id, 500):
         return {
             "question_id": question_id,
             "explanation": "今日 AI 调用额度已用尽，请明天再试。",
@@ -198,7 +198,7 @@ async def ai_explain(
     if parsed is None:
         parsed = {"explanation": result["content"], "solution_steps": [], "key_knowledge_points": [], "common_mistakes": []}
 
-    await _record_token_usage(
+    await record_token_usage(
         db, user_id, "ai_explain",
         f"question_id={question_id} focus={focus}",
         result["content"], result,
@@ -246,7 +246,7 @@ async def ai_analyze_mistake(
         analysis=q.analysis,
     )
 
-    if not await _check_token_limit(db, user_id, 300):
+    if not await check_token_limit(db, user_id, 300):
         return {
             "error_type": "limit_exceeded",
             "error_type_label": "额度用尽",
@@ -285,7 +285,7 @@ async def ai_analyze_mistake(
         "approach_error": "思路错误",
     }
 
-    await _record_token_usage(
+    await record_token_usage(
         db, user_id, "mistake_analysis",
         f"question_id={question_id}",
         result["content"], result,
@@ -527,7 +527,7 @@ async def generate_learning_report(
     # 调用 AI 生成报告
     messages = build_report_prompt(subject_code, days, total, accuracy, kp_list)
 
-    if not await _check_token_limit(db, user_id, 1000):
+    if not await check_token_limit(db, user_id, 1000):
         # 限额内用规则生成
         weak = [{
             "knowledge_point": kp["knowledge_point"],
@@ -578,7 +578,7 @@ async def generate_learning_report(
     if parsed is None:
         parsed = {"weak_points": [], "strong_points": [], "learning_suggestions": [result["content"]]}
 
-    await _record_token_usage(
+    await record_token_usage(
         db, user_id, "learning_report",
         f"subject_id={subject_id} days={days}",
         result["content"], result,

@@ -1,6 +1,7 @@
 const api = require('../../../utils/api')
 const stemRender = require('../../study/utils/stem-render')
 const errorDiagnosis = require('../../../utils/error-diagnosis')
+const aiTeacher408 = require('../../../utils/ai-teacher-408')
 
 function percent(value) { return `${Math.round(Number(value || 0) * 100)}%` }
 function durationText(sec) {
@@ -27,6 +28,13 @@ Page({
     subjectRows: [],
     weakPoints: [],
     reviewRows: [],
+    teacherActions: aiTeacher408.ACTIONS,
+    teacherLoading: false,
+    teacherResult: null,
+    teacherErrorText: '',
+    teacherSheetVisible: false,
+    teacherTarget: null,
+    teacherFeedbackSent: '',
   },
 
   onLoad(options) {
@@ -77,6 +85,77 @@ Page({
     }
   },
 
+  open408Teacher(e) {
+    const itemId = Number(e.currentTarget.dataset.itemid || 0)
+    const target = (this.data.reviewRows || []).find(item => Number(item.item_id || 0) === itemId)
+    if (!target) return
+    this.setData({
+      teacherSheetVisible: true,
+      teacherResult: null,
+      teacherErrorText: '',
+      teacherLoading: false,
+      teacherTarget: target,
+    })
+  },
+
+  select408TeacherAction(e) {
+    const action = String(e.currentTarget.dataset.action || '')
+    const target = this.data.teacherTarget
+    if (action && target) this.run408Teacher(target, action)
+  },
+
+  async run408Teacher(target, action) {
+    if (this.data.teacherLoading || !target) return
+    this.setData({
+      teacherLoading: true,
+      teacherResult: null,
+      teacherErrorText: '',
+      teacherSheetVisible: true,
+      teacherTarget: target,
+      teacherFeedbackSent: '',
+    })
+    try {
+      const payload = {
+        question_id: Number(target.question_id),
+        question_version_id: Number(target.question_version_id),
+        exam_attempt_id: Number(this.data.attemptId),
+        action: action,
+      }
+      const diagnosis = target.errorDiagnosis || {}
+      const diagnosisId = Number(diagnosis.id || 0)
+      if (diagnosisId > 0) payload.diagnosis_id = diagnosisId
+      const raw = await api.post('/ai/408-teacher', payload, { timeout: 55000 })
+      const normalized = aiTeacher408.normalizeResult(raw)
+      if (!normalized) throw new Error('AI 返回格式异常')
+      this.setData({ teacherLoading: false, teacherResult: normalized })
+    } catch (error) {
+      this.setData({
+        teacherLoading: false,
+        teacherErrorText: aiTeacher408.errorMessage(error, api),
+      })
+    }
+  },
+
+  close408Teacher() {
+    if (this.data.teacherLoading) return
+    this.setData({ teacherSheetVisible: false, teacherResult: null, teacherErrorText: '', teacherTarget: null })
+  },
+
+  async feedback408Teacher(e) {
+    if (this.data.teacherFeedbackSent || !this.data.teacherResult) return
+    const type = String(e.currentTarget.dataset.type || '')
+    const target = this.data.teacherTarget || {}
+    const questionId = Number(target.question_id || 0)
+    if (!type || !questionId) return
+    try {
+      await aiTeacher408.submitFeedback(api, { questionId, feedbackType: type, result: this.data.teacherResult })
+      this.setData({ teacherFeedbackSent: type })
+      wx.showToast({ title: '反馈已记录', icon: 'success' })
+    } catch (error) {
+      wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
+    }
+  },
+
   quickClassifyWrong(e) {
     const wqId = Number(e.currentTarget.dataset.wqid || 0)
     if (!wqId) {
@@ -114,6 +193,8 @@ Page({
     if (!wqId) return
     wx.navigateTo({ url: `/subpackages/study/wrong-detail/wrong-detail?id=${wqId}&source=practice-result` })
   },
+
+  noop() {},
 
   goWrongBook() { wx.navigateTo({ url: '/subpackages/study/wrong-book/wrong-book' }) },
   goPaperList() { wx.redirectTo({ url: '/subpackages/exam/paper-list/index' }) },

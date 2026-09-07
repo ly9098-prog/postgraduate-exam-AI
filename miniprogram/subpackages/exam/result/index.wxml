@@ -50,6 +50,7 @@
         </view>
         <text class="kp" wx:if="{{item.knowledgeText}}">{{item.knowledgeText}}</text>
         <text class="analysis" wx:if="{{item.analysisPreview}}">{{item.analysisPreview}}</text>
+        <button class="exam-teacher-btn" data-itemid="{{item.item_id}}" catchtap="open408Teacher">问 408 AI 老师</button>
       </view>
       <button class="wrong-btn" wx:if="{{reviewRows.length}}" bindtap="goWrongBook">进入错题本继续复习</button>
     </view>
@@ -60,4 +61,50 @@
     </view>
   </block>
   <view class="safe-bottom"></view>
+</view>
+
+<!-- 交卷后 408 专项 AI 老师 -->
+<view class="teacher-modal-mask" wx:if="{{teacherSheetVisible}}" catchtouchmove="noop">
+  <view class="teacher-modal-backdrop" bindtap="close408Teacher"></view>
+  <view class="teacher-sheet" catchtap="noop">
+    <view class="teacher-sheet-head">
+      <view><text class="teacher-kicker">408 AI TEACHER</text><text class="teacher-sheet-title">{{teacherResult ? teacherResult.title : '408 专项 AI 老师'}}</text></view>
+      <text class="teacher-sheet-close" bindtap="close408Teacher">×</text>
+    </view>
+    <view wx:if="{{!teacherLoading && !teacherErrorText && !teacherResult}}" class="teacher-action-panel">
+      <text class="teacher-action-title">选择一个固定教学动作</text>
+      <button wx:for="{{teacherActions}}" wx:key="action" class="teacher-action-choice" data-action="{{item.action}}" bindtap="select408TeacherAction">{{item.label}}</button>
+    </view>
+    <view wx:elif="{{teacherLoading}}" class="teacher-sheet-loading"><view class="teacher-spinner"></view><text>正在结合本次考试结果与学习状态生成…</text></view>
+    <view wx:elif="{{teacherErrorText}}" class="teacher-sheet-error">{{teacherErrorText}}</view>
+    <scroll-view wx:elif="{{teacherResult}}" class="teacher-sheet-scroll" scroll-y enhanced show-scrollbar="{{false}}">
+      <text wx:if="{{teacherResult.summary}}" class="teacher-summary">{{teacherResult.summary}}</text>
+      <view wx:for="{{teacherResult.sections}}" wx:key="key" class="teacher-result-section">
+        <text class="teacher-result-heading">{{item.heading}}</text>
+        <text wx:for="{{item.points}}" wx:for-item="point" wx:key="*this" class="teacher-result-point">• {{point}}</text>
+      </view>
+      <view wx:if="{{teacherResult.knowledgePoints.length}}" class="teacher-result-section">
+        <text class="teacher-result-heading">知识点串联</text>
+        <view wx:for="{{teacherResult.knowledgePoints}}" wx:key="key" class="teacher-kp-row">
+          <text class="teacher-kp-name">{{item.name}}</text>
+          <text wx:if="{{item.relation}}" class="teacher-kp-note">{{item.relation}}</text>
+          <text wx:if="{{item.masteryHint}}" class="teacher-kp-note">{{item.masteryHint}}</text>
+        </view>
+      </view>
+      <view wx:if="{{teacherResult.practiceQuestion}}" class="teacher-result-section">
+        <text class="teacher-result-heading">练一题</text>
+        <text class="teacher-practice-stem">{{teacherResult.practiceQuestion.stem}}</text>
+        <view wx:for="{{teacherResult.practiceQuestion.options}}" wx:key="key" class="teacher-practice-option"><text class="teacher-practice-key">{{item.key}}</text><text>{{item.text}}</text></view>
+        <text class="teacher-practice-answer">答案：{{teacherResult.practiceQuestion.answer}}</text>
+        <text wx:if="{{teacherResult.practiceQuestion.analysis}}" class="teacher-practice-analysis">{{teacherResult.practiceQuestion.analysis}}</text>
+      </view>
+      <text class="teacher-footnote">{{teacherResult.fromFallback ? '当前使用题库解析兜底；AI 生成暂不可用。' : '考试已结束，当前 AI 讲解使用本次试卷固定题目版本。'}}</text>
+      <view class="teacher-feedback-row">
+        <text class="teacher-feedback-label">这次讲解有帮助吗？</text>
+        <button class="teacher-feedback-btn {{teacherFeedbackSent === 'helpful' ? 'selected' : ''}}" data-type="helpful" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">有帮助</button>
+        <button class="teacher-feedback-btn {{teacherFeedbackSent === 'inaccurate' ? 'selected' : ''}}" data-type="inaccurate" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">不准确</button>
+      </view>
+      <view class="teacher-scroll-space"></view>
+    </scroll-view>
+  </view>
 </view>

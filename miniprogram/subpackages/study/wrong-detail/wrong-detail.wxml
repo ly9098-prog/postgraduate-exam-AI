@@ -211,6 +211,28 @@
       </button>
     </view>
   </view>
+
+  <view class="teacher-card">
+    <view class="teacher-head">
+      <view>
+        <text class="teacher-kicker">408 AI TEACHER</text>
+        <text class="teacher-title">408 专项 AI 老师</text>
+        <text class="teacher-desc">固定动作，不自由拼接提示词；结合本题版本、掌握度、近期错因和知识图谱。</text>
+      </view>
+      <view class="teacher-badge">408</view>
+    </view>
+    <view class="teacher-actions">
+      <button
+        wx:for="{{teacherActions}}"
+        wx:key="action"
+        class="teacher-action {{teacherLoadingAction === item.action ? 'loading' : ''}}"
+        data-action="{{item.action}}"
+        loading="{{teacherLoadingAction === item.action}}"
+        disabled="{{teacherLoadingAction}}"
+        bindtap="run408TeacherAction"
+      >{{item.shortLabel}}</button>
+    </view>
+  </view>
   </view>
 
   <view class="page-bottom-space"></view>
@@ -223,6 +245,59 @@
     <button class="more-action" bindtap="openMoreMenu">
       <text class="more-action-label">更多</text>
     </button>
+  </view>
+</view>
+
+<!-- 408 专项 AI 老师结果 -->
+<view class="teacher-modal-mask" wx:if="{{teacherSheetVisible}}" catchtouchmove="noop">
+  <view class="teacher-modal-backdrop" bindtap="close408TeacherSheet"></view>
+  <view class="teacher-sheet" catchtap="noop">
+    <view class="sheet-handle"></view>
+    <view class="teacher-sheet-head">
+      <view>
+        <text class="teacher-kicker">408 AI TEACHER</text>
+        <text class="teacher-sheet-title">{{teacherResult ? teacherResult.title : '408 专项 AI 老师'}}</text>
+      </view>
+      <text class="teacher-sheet-close" bindtap="close408TeacherSheet">×</text>
+    </view>
+    <view wx:if="{{teacherLoadingAction}}" class="teacher-sheet-loading">
+      <view class="loading-spinner"></view>
+      <text>正在结合你的 408 学习上下文生成…</text>
+    </view>
+    <view wx:elif="{{teacherErrorText}}" class="teacher-sheet-error">
+      <text>{{teacherErrorText}}</text>
+    </view>
+    <scroll-view wx:elif="{{teacherResult}}" class="teacher-sheet-scroll" scroll-y enhanced show-scrollbar="{{false}}">
+      <text wx:if="{{teacherResult.summary}}" class="teacher-summary">{{teacherResult.summary}}</text>
+      <view wx:for="{{teacherResult.sections}}" wx:key="key" class="teacher-result-section">
+        <text class="teacher-result-heading">{{item.heading}}</text>
+        <text wx:for="{{item.points}}" wx:for-item="point" wx:key="*this" class="teacher-result-point">• {{point}}</text>
+      </view>
+      <view wx:if="{{teacherResult.knowledgePoints.length}}" class="teacher-kp-wrap">
+        <text class="teacher-result-heading">知识点串联</text>
+        <view wx:for="{{teacherResult.knowledgePoints}}" wx:key="key" class="teacher-kp-row">
+          <text class="teacher-kp-name">{{item.name}}</text>
+          <text wx:if="{{item.relation}}" class="teacher-kp-relation">{{item.relation}}</text>
+          <text wx:if="{{item.masteryHint}}" class="teacher-kp-hint">{{item.masteryHint}}</text>
+        </view>
+      </view>
+      <view wx:if="{{teacherResult.practiceQuestion}}" class="teacher-practice-card">
+        <text class="teacher-result-heading">练一题</text>
+        <text class="teacher-practice-stem">{{teacherResult.practiceQuestion.stem}}</text>
+        <view wx:for="{{teacherResult.practiceQuestion.options}}" wx:key="key" class="teacher-practice-option">
+          <text class="teacher-practice-key">{{item.key}}</text><text>{{item.text}}</text>
+        </view>
+        <text class="teacher-practice-answer">答案：{{teacherResult.practiceQuestion.answer}}</text>
+        <text wx:if="{{teacherResult.practiceQuestion.analysis}}" class="teacher-practice-analysis">{{teacherResult.practiceQuestion.analysis}}</text>
+      </view>
+      <text class="teacher-footnote">{{teacherResult.fromFallback ? '当前使用题库解析兜底；AI 生成暂不可用。' : '内容由 408 专项 AI 老师生成，仅用于学习复盘。'}}</text>
+      <view class="teacher-feedback-row">
+        <text class="teacher-feedback-label">这次讲解有帮助吗？</text>
+        <button class="teacher-feedback-btn {{teacherFeedbackSent === 'helpful' ? 'selected' : ''}}" data-type="helpful" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">有帮助</button>
+        <button class="teacher-feedback-btn {{teacherFeedbackSent === 'inaccurate' ? 'selected' : ''}}" data-type="inaccurate" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">不准确</button>
+      </view>
+      <view class="teacher-scroll-space"></view>
+    </scroll-view>
   </view>
 </view>
 

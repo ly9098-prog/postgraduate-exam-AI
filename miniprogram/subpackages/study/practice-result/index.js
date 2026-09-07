@@ -4,6 +4,7 @@ const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../utils/a
 const api = require('../../../utils/api');
 const { getChinaDate } = require('../../../utils/china-time');
 const errorDiagnosis = require('../../../utils/error-diagnosis');
+const aiTeacher408 = require('../../../utils/ai-teacher-408');
 
 const ERROR_COLORS = ['#B8FF13', '#78D74D', '#43B968', '#238E58', '#86A83E', '#C9DC73'];
 const RESULT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -651,8 +652,17 @@ Page({
       userAnswer: '',
       correctAnswer: '',
       analysisSections: [],
-      analysisFormatError: false
+      analysisFormatError: false,
+      questionId: 0,
+      questionVersionId: 0,
+      diagnosisId: 0
     },
+    teacherActions: aiTeacher408.ACTIONS,
+    teacherLoading: false,
+    teacherResult: null,
+    teacherErrorText: '',
+    teacherSheetVisible: false,
+    teacherFeedbackSent: '',
 
     // 自定义导航栏不能只依赖 env(safe-area-inset-top)：部分 Android 真机
     // 会返回 0，导致返回按钮压到状态栏。这里使用微信运行时实测值。
@@ -1124,6 +1134,7 @@ Page({
 
     return {
       questionId,
+      questionVersionId: result.question_version_id ?? result.questionVersionId ?? question.question_version_id ?? question.questionVersionId ?? null,
       wrongQuestionId: result.wrong_question_id ?? result.wrongQuestionId ?? null,
       displayIndex: pad2(index + 1),
       title: getQuestionTitle(question) || `第 ${index + 1} 题`,
@@ -1151,6 +1162,7 @@ Page({
     const kpList = normalizeKpList(item.knowledge_points ?? item.knowledgePoints ?? item.knowledgePoint);
     return {
       questionId: item.questionId ?? item.question_id ?? item.id ?? index + 1,
+      questionVersionId: item.questionVersionId ?? item.question_version_id ?? null,
       wrongQuestionId: item.wrongQuestionId ?? item.wrong_question_id ?? null,
       displayIndex: item.displayIndex || pad2(index + 1),
       title: formatMathPreviewText(item.title || getQuestionTitle(item)) || `第 ${index + 1} 题`,
@@ -1495,9 +1507,81 @@ Page({
           userAnswer: target.userAnswer || '未作答',
           correctAnswer: target.correctAnswer || '-',
           analysisSections: analysisView.sections,
-          analysisFormatError: analysisView.formatError
+          analysisFormatError: analysisView.formatError,
+          questionId: Number(target.questionId || 0),
+          questionVersionId: Number(target.questionVersionId || 0),
+          diagnosisId: target.errorDiagnosis ? Number(target.errorDiagnosis.id || 0) : 0
         }
       });
+    }
+  },
+
+  open408TeacherFromReview() {
+    const dialog = this.data.reviewDialog || {};
+    if (!dialog.questionId) return;
+    this.setData({
+      teacherSheetVisible: true,
+      teacherResult: null,
+      teacherErrorText: '',
+      teacherLoading: false
+    });
+  },
+
+  select408TeacherAction(e) {
+    const action = String(e.currentTarget.dataset.action || '');
+    if (action) this.run408TeacherFromReview(action);
+  },
+
+  async run408TeacherFromReview(action) {
+    if (this.data.teacherLoading) return;
+    const dialog = this.data.reviewDialog || {};
+    if (!dialog.questionId) return;
+    this.setData({
+      teacherLoading: true,
+      teacherResult: null,
+      teacherErrorText: '',
+      teacherSheetVisible: true,
+      teacherFeedbackSent: ''
+    });
+    try {
+      const payload = {
+        question_id: Number(dialog.questionId),
+        action: action
+      };
+      if (Number(dialog.questionVersionId) > 0) payload.question_version_id = Number(dialog.questionVersionId);
+      if (Number(dialog.diagnosisId) > 0) payload.diagnosis_id = Number(dialog.diagnosisId);
+      if (dialog.userAnswer && dialog.userAnswer !== '未作答') payload.user_answer = String(dialog.userAnswer);
+      const raw = await api.post('/ai/408-teacher', payload, { timeout: 55000 });
+      const normalized = aiTeacher408.normalizeResult(raw);
+      if (!normalized) throw new Error('AI 返回格式异常');
+      if (!this._pageAlive) return;
+      this.setData({ teacherLoading: false, teacherResult: normalized });
+    } catch (error) {
+      if (!this._pageAlive) return;
+      this.setData({
+        teacherLoading: false,
+        teacherErrorText: aiTeacher408.errorMessage(error, api)
+      });
+    }
+  },
+
+  close408Teacher() {
+    if (this.data.teacherLoading) return;
+    this.setData({ teacherSheetVisible: false, teacherResult: null, teacherErrorText: '' });
+  },
+
+  async feedback408Teacher(e) {
+    if (this.data.teacherFeedbackSent || !this.data.teacherResult) return;
+    const type = String(e.currentTarget.dataset.type || '');
+    const dialog = this.data.reviewDialog || {};
+    const questionId = Number(dialog.questionId || 0);
+    if (!type || !questionId) return;
+    try {
+      await aiTeacher408.submitFeedback(api, { questionId, feedbackType: type, result: this.data.teacherResult });
+      this.setData({ teacherFeedbackSent: type });
+      wx.showToast({ title: '反馈已记录', icon: 'success' });
+    } catch (error) {
+      wx.showToast({ title: api.getErrorMessage(error), icon: 'none' });
     }
   },
 
