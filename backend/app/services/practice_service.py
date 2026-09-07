@@ -58,6 +58,7 @@ from app.services.practice.recommendation_pipeline import (
 from app.services.practice.sequential_service import (
     SEQUENTIAL_MODE,
     get_sequential_practice_questions,
+    reset_sequential_progress,  # noqa: F401 — re-exported for the practice API
 )
 from app.services.practice.smart_scoring import (
     _build_smart_recommendation_reason,
@@ -1117,6 +1118,37 @@ async def get_aggregated_smart_questions(
         merged_qs, merged_meta, db, user_id, subject_code,
         request_id=request_id,
     )
+
+
+async def get_targeted_practice_questions(
+    db: AsyncSession,
+    *,
+    question_ids: list[int],
+    subject_ids: list[int],
+) -> list[Question]:
+    """按调用方给定顺序加载一组严格受科目/当前版本约束的题目。
+
+    该入口用于 Study Hub 的“个人难题重练”等定向任务。它不建立新的
+    practice mode：最终仍由普通 batch token 签发与 batch-submit 判题。
+    任一 ID 不存在、停用、越出请求科目范围、版本不一致或题型不可作答时，
+    调用方都应拒绝整批，而不是静默替换成其他题。
+    """
+    ordered_ids = [int(qid) for qid in question_ids if int(qid) > 0]
+    if not ordered_ids or not subject_ids:
+        return []
+
+    rows = await db.execute(
+        select(Question)
+        .where(
+            Question.id.in_(ordered_ids),
+            Question.subject_id.in_(subject_ids),
+            Question.is_active.is_(True),
+            _practice_revision_scope_condition(subject_ids),
+        )
+        .options(selectinload(Question.subject_ref))
+    )
+    by_id = {int(question.id): question for question in rows.scalars().all()}
+    return [by_id[qid] for qid in ordered_ids if qid in by_id]
 
 
 async def get_practice_questions(

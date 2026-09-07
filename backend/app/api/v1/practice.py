@@ -27,8 +27,11 @@ from app.schemas.practice import (
     SequentialPracticeResetResponse,
 )
 from app.services import practice_service as svc
-from app.services.question_revision_service import load_revision_kp_names, load_revision_views
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
+from app.services.question_revision_service import (
+    load_revision_kp_names,
+    load_revision_views,
+)
 from app.utils.question_content import strip_student_segment_metadata
 
 # Regex: lines ending with a trailing operator (OCR-split code expressions)
@@ -206,6 +209,7 @@ async def get_practice_questions(
     no_repeat_days: int | None = Query(None, ge=1, le=365),
     use_leitner: bool = Query(True),
     source_question_id: int | None = Query(None),
+    question_ids: str | None = Query(None, max_length=1024),
     # smart 默认走综合 scored；客户端仍只需要传 mode=smart。
     # weakness_vector 保留为显式 fallback / A/B control。
     smart_strategy: str = Query("scored"),
@@ -246,6 +250,24 @@ async def get_practice_questions(
         else None
     )
 
+    targeted_question_ids: list[int] = []
+    if question_ids:
+        try:
+            raw_ids = [part.strip() for part in str(question_ids).split(",") if part.strip()]
+            targeted_question_ids = [int(part) for part in raw_ids]
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="question_ids 格式无效") from exc
+        if not targeted_question_ids or len(targeted_question_ids) > 50:
+            raise HTTPException(status_code=400, detail="question_ids 数量必须为 1-50")
+        if any(qid <= 0 for qid in targeted_question_ids):
+            raise HTTPException(status_code=400, detail="question_ids 必须为正整数")
+        if len(set(targeted_question_ids)) != len(targeted_question_ids):
+            raise HTTPException(status_code=400, detail="question_ids 不允许重复")
+        if source_question_id or kps:
+            raise HTTPException(status_code=400, detail="定向题目不可与 source_question_id/knowledge_point 混用")
+        if mode != "random":
+            raise HTTPException(status_code=400, detail="定向题目仅支持 random runner")
+
     # metadata: 题目推荐元数据（仅 smart/similar 模式使用）
     question_metadata: dict[int, dict] = {}
     request_id: str | None = None
@@ -255,7 +277,22 @@ async def get_practice_questions(
     # 预留候选可以在不改变客户端请求 count 的情况下尽量补足题量。
     random_candidate_count = min(100, count + max(5, count // 2))
 
-    if mode == "similar":
+    if targeted_question_ids:
+        questions = await svc.get_targeted_practice_questions(
+            db,
+            question_ids=targeted_question_ids[:count],
+            subject_ids=scope_subject_ids,
+        )
+        returned_ids = [int(question.id) for question in questions]
+        expected_ids = targeted_question_ids[:count]
+        if returned_ids != expected_ids:
+            missing_ids = [qid for qid in expected_ids if qid not in set(returned_ids)]
+            raise HTTPException(
+                status_code=400,
+                detail=f"定向题目已失效或超出当前科目范围: {missing_ids}",
+            )
+
+    elif mode == "similar":
         if not source_question_id:
             # 缺少 source_question_id，回退到 random
             logger.warning("similar 模式缺少 source_question_id，回退到 random")

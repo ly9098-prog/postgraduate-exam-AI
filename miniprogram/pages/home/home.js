@@ -45,6 +45,12 @@ Page({
     primaryTaskDesc: '先完成一组 408 练习建立节奏，之后再根据结果安排复习。',
     primaryTaskAction: '开始 408 练习',
     secondaryTaskAction: '查看复习计划',
+    studyHubAvailable: false,
+    studyHubFallback: false,
+    hubPrimaryTask: null,
+    hubSecondaryTask: null,
+    hubTasks: [],
+    subjectMastery: [],
 
     expText: '0 / 50 EXP',
     nextLevelText: '距离 Lv2 还差 50 题',
@@ -565,9 +571,14 @@ Page({
       const growthResponses = await Promise.all([
         api.get('/stats/dashboard'),
         api.get('/stats/growth').catch(() => null),
+        api.get('/study-hub/overview').catch((error) => {
+          console.warn('加载 408 智能学习中心失败，回退基础首页', error)
+          return null
+        }),
       ])
       const dashRes = growthResponses[0]
       const growthRes = growthResponses[1]
+      const hubRes = growthResponses[2]
       if (
         !this._alive ||
         !this._visible ||
@@ -578,7 +589,7 @@ Page({
       const overview = (dashRes && dashRes.overview) || {}
       const growth = growthRes || null
       this._lastGrowth = growth
-      const snapshot = this.buildGrowthSnapshot(overview, growth)
+      const snapshot = this.buildGrowthSnapshot(overview, growth, hubRes)
       this._hasGrowthSnapshot = true
       this.setData(snapshot, () => {
         if (this._alive && this._visible && requestSeq === this._growthSeq) {
@@ -662,6 +673,7 @@ Page({
       levelProgress: 0,
       todayGoalTotal,
       ...this.getPrimaryTaskSnapshot(0, todayGoalTotal, 0),
+      ...this.getHubDisplaySnapshot(null),
       expText: levelMeta.expText,
       nextLevelText: levelMeta.nextLevelText,
       dailyBoostText: this.getDailyBoostText(0, todayGoalTotal, 0),
@@ -671,15 +683,21 @@ Page({
     }
   },
 
-  buildGrowthSnapshot(overview, growth) {
+  buildGrowthSnapshot(overview, growth, hub) {
     this._lastOverview = overview || {}
+    this._lastHub = hub || null
     const streakDays = this.toNonNegativeInt(overview.consecutive_days)
-    const todayGoalDone = this.toNonNegativeInt(overview.today_questions)
+    const hubTodayQuestions = hub && hub.scope_ready !== false ? hub.today_question_count : null
+    const todayGoalDone = this.toNonNegativeInt(hubTodayQuestions != null ? hubTodayQuestions : overview.today_questions)
     const totalQuestions = this.toNonNegativeInt(overview.total_questions)
-    const dueReviewCount = this.toNonNegativeInt(overview.due_review_count)
+    const hubReviewRemaining = hub && hub.review ? hub.review.remaining_count : null
+    const dueReviewCount = this.toNonNegativeInt(hubReviewRemaining != null ? hubReviewRemaining : overview.due_review_count)
     const todayGoalTotal = this.getStoredTodayGoal()
     const levelProgress = Math.min(100, Math.round((todayGoalDone / todayGoalTotal) * 100))
-    const taskSnapshot = this.getPrimaryTaskSnapshot(todayGoalDone, todayGoalTotal, dueReviewCount)
+    const hubDisplay = this.getHubDisplaySnapshot(hub)
+    const taskSnapshot = hubDisplay.studyHubAvailable
+      ? this.getHubPrimaryTaskSnapshot(hub, todayGoalDone, todayGoalTotal)
+      : this.getPrimaryTaskSnapshot(todayGoalDone, todayGoalTotal, dueReviewCount)
 
     this._growthTargets = { streakDays, todayGoalDone, levelProgress }
 
@@ -690,6 +708,7 @@ Page({
         levelProgress,
         todayGoalTotal,
         ...taskSnapshot,
+        ...hubDisplay,
         expText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
         nextLevelText: growth.level_progress_pct >= 100
           ? '已满级，继续保持题感'
@@ -709,12 +728,105 @@ Page({
       levelProgress,
       todayGoalTotal,
       ...taskSnapshot,
+      ...hubDisplay,
       expText: levelMeta.expText,
       nextLevelText: levelMeta.nextLevelText,
       dailyBoostText: this.getDailyBoostText(todayGoalDone, todayGoalTotal, streakDays),
       badgeList: this.getBadgeList(streakDays, totalQuestions, levelProgress),
       badgeTitle: this.getBadgeTitle(streakDays, levelProgress),
       missionText: this.getMissionText(todayGoalDone, todayGoalTotal, dueReviewCount),
+    }
+  },
+
+  getHubDisplaySnapshot(hub) {
+    const available = !!(hub && hub.scope_ready !== false && hub.primary_task)
+    if (!available) {
+      return {
+        studyHubAvailable: false,
+        studyHubFallback: false,
+        hubPrimaryTask: null,
+        hubSecondaryTask: null,
+        hubTasks: [],
+        subjectMastery: [],
+      }
+    }
+
+    const allTasks = Array.isArray(hub.tasks) ? hub.tasks : []
+    const primaryKey = hub.primary_task && hub.primary_task.key
+    const secondaryRaw = allTasks.find(task => task && task.key !== primaryKey) || null
+    const taskTypeMeta = {
+      review: { eyebrow: '记忆优先', icon: 'R' },
+      weakness: { eyebrow: '弱项强化', icon: 'W' },
+      hard_questions: { eyebrow: '困难题重练', icon: 'H' },
+      knowledge_path: { eyebrow: '知识路径', icon: 'P' },
+      smart_practice: { eyebrow: '智能新题', icon: 'S' },
+    }
+    const displayTasks = allTasks
+      .filter(task => task && task.key !== primaryKey)
+      .slice(0, 4)
+      .map((task, index) => {
+        const meta = taskTypeMeta[task.task_type] || { eyebrow: '今日任务', icon: 'T' }
+        const q = this.toNonNegativeInt(task.estimated_question_count)
+        const m = this.toNonNegativeInt(task.estimated_minutes)
+        return {
+          key: task.key,
+          taskType: task.task_type,
+          priorityText: String(index + 2).padStart(2, '0'),
+          eyebrow: meta.eyebrow,
+          icon: meta.icon,
+          title: task.title || '继续 408 学习',
+          reason: task.reason || '',
+          actionLabel: task.action_label || '开始',
+          metaText: q > 0 ? `约 ${q} 题 · ${m || 1} 分钟` : '按当前学习状态推荐',
+          route: task.route || '',
+          routeParams: task.route_params || {},
+        }
+      })
+
+    const subjectMastery = (Array.isArray(hub.subject_mastery) ? hub.subject_mastery : []).map(item => {
+      const hasData = !!(item && item.data_available && item.mastery_score != null)
+      const score = hasData ? Math.max(0, Math.min(100, Math.round(Number(item.mastery_score) || 0))) : 0
+      return {
+        subjectId: Number(item.subject_id),
+        subjectCode: String(item.subject_code || ''),
+        subjectName: String(item.subject_name || ''),
+        hasData,
+        score,
+        scoreText: hasData ? `${score}%` : '--',
+        barWidth: hasData ? score : 0,
+        attemptCount: this.toNonNegativeInt(item.attempt_count),
+        statusText: hasData ? '综合掌握' : '数据不足',
+      }
+    })
+
+    return {
+      studyHubAvailable: true,
+      studyHubFallback: !!hub.fallback_used,
+      hubPrimaryTask: hub.primary_task,
+      hubSecondaryTask: secondaryRaw,
+      hubTasks: displayTasks,
+      subjectMastery,
+    }
+  },
+
+  getHubPrimaryTaskSnapshot(hub, todayGoalDone, todayGoalTotal) {
+    const task = hub && hub.primary_task ? hub.primary_task : null
+    if (!task) return this.getPrimaryTaskSnapshot(todayGoalDone, todayGoalTotal, 0)
+    const remainingCount = Math.max(0, todayGoalTotal - todayGoalDone)
+    const dueReviewCount = this.toNonNegativeInt(hub && hub.review && hub.review.remaining_count)
+    const priority = this.toNonNegativeInt(task.priority) || 1
+    const secondary = Array.isArray(hub.tasks)
+      ? hub.tasks.find(item => item && item.key !== task.key)
+      : null
+    return {
+      dueReviewCount,
+      remainingCount,
+      primaryTaskType: task.task_type || 'practice',
+      primaryTaskKicker: `SMART STUDY · 优先级 ${String(priority).padStart(2, '0')}`,
+      primaryTaskTitle: task.title || '继续 408 今日学习',
+      primaryTaskDesc: task.reason || '根据当前学习状态安排下一项任务。',
+      primaryTaskAction: task.action_label || '开始学习',
+      secondaryTaskAction: secondary ? (secondary.action_label || '下一项任务') : '查看学习报告',
     }
   },
 
@@ -776,7 +888,7 @@ Page({
       _animStreakDays: 0,
       _animGoalDone: 0,
       _animLevelProgress: 0,
-      ...this.buildGrowthSnapshot(this._lastOverview || {}, this._lastGrowth),
+      ...this.buildGrowthSnapshot(this._lastOverview || {}, this._lastGrowth, this._lastHub),
       showGoalPicker: false,
     })
     this._animateNumbers()
@@ -888,6 +1000,10 @@ Page({
   },
 
   startPrimaryTask() {
+    if (this.data.studyHubAvailable && this.data.hubPrimaryTask) {
+      this.openHubTaskByData(this.data.hubPrimaryTask)
+      return
+    }
     if (this.data.primaryTaskType === 'review') {
       this.goReview()
       return
@@ -896,11 +1012,50 @@ Page({
   },
 
   startSecondaryTask() {
+    if (this.data.studyHubAvailable && this.data.hubSecondaryTask) {
+      this.openHubTaskByData(this.data.hubSecondaryTask)
+      return
+    }
+    if (this.data.studyHubAvailable) {
+      this.goDashboard()
+      return
+    }
     if (this.data.primaryTaskType === 'review') {
       this.startRandom()
       return
     }
     this.goReview()
+  },
+
+  openHubTask(e) {
+    const key = e && e.currentTarget && e.currentTarget.dataset
+      ? String(e.currentTarget.dataset.taskKey || '')
+      : ''
+    if (!key) return
+    const candidates = []
+    if (this.data.hubPrimaryTask) candidates.push(this.data.hubPrimaryTask)
+    if (this.data.hubSecondaryTask) candidates.push(this.data.hubSecondaryTask)
+    const rawTasks = Array.isArray(this._lastHub && this._lastHub.tasks) ? this._lastHub.tasks : []
+    candidates.push(...rawTasks)
+    const task = candidates.find(item => item && item.key === key)
+    if (task) this.openHubTaskByData(task)
+  },
+
+  openHubTaskByData(task) {
+    if (!task) return
+    if (task.route === 'review_today') {
+      this.goReview()
+      return
+    }
+    if (task.route !== 'practice') return
+    const params = task.route_params && typeof task.route_params === 'object' ? task.route_params : {}
+    const query = Object.keys(params)
+      .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
+      .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)
+      .join('&')
+    wx.navigateTo({
+      url: `/subpackages/study/practice/practice${query ? '?' + query : ''}`,
+    })
   },
 
   drawSubjectPie() {

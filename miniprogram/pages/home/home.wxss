@@ -1245,3 +1245,149 @@ page {
   from { opacity: .5; transform: scale(.84); }
   to { opacity: 1; transform: scale(1.1); }
 }
+
+/* 408 Smart Study Hub */
+.hub-task-card {
+  align-items: flex-start;
+  min-height: 174rpx;
+  padding-top: 24rpx;
+  padding-bottom: 24rpx;
+}
+
+.hub-task-review {
+  background: linear-gradient(90deg, rgba(231, 235, 221, .72), rgba(255, 255, 255, 0) 68%);
+}
+
+.hub-task-weakness {
+  background: linear-gradient(90deg, rgba(246, 239, 227, .62), rgba(255, 255, 255, 0) 68%);
+}
+
+.hub-task-hard_questions {
+  background: linear-gradient(90deg, rgba(238, 230, 226, .62), rgba(255, 255, 255, 0) 68%);
+}
+
+.hub-task-knowledge_path {
+  background: linear-gradient(90deg, rgba(227, 236, 233, .62), rgba(255, 255, 255, 0) 68%);
+}
+
+.hub-task-smart_practice {
+  background: rgba(255, 255, 255, .38);
+}
+
+.hub-task-index {
+  margin-top: 3rpx;
+}
+
+.hub-task-eyebrow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.hub-task-meta {
+  flex-shrink: 0;
+  color: #7C887F;
+  font-size: 18rpx;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.hub-quick-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16rpx;
+  min-height: 66rpx;
+  border: 1rpx solid #E0E4DD;
+  border-radius: 22rpx;
+  background: rgba(255, 255, 255, .52);
+}
+
+.hub-quick-item {
+  flex: 1;
+  padding: 18rpx 8rpx;
+  text-align: center;
+  color: #526057;
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.hub-quick-divider {
+  width: 1rpx;
+  height: 28rpx;
+  background: #DDE2DA;
+}
+
+.mastery-section {
+  margin-top: 44rpx;
+}
+
+.mastery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.mastery-card {
+  min-width: 0;
+  padding: 22rpx;
+  border: 1rpx solid #E0E4DD;
+  border-radius: 26rpx;
+  background: rgba(255, 255, 255, .7);
+  box-shadow: 0 10rpx 30rpx rgba(23, 52, 38, .045);
+}
+
+.mastery-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.mastery-subject {
+  min-width: 0;
+  color: #1B2A20;
+  font-size: 24rpx;
+  line-height: 1.35;
+  font-weight: 900;
+}
+
+.mastery-score {
+  flex-shrink: 0;
+  color: #234A34;
+  font-size: 26rpx;
+  line-height: 1.2;
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+}
+
+.mastery-score.is-empty {
+  color: #98A099;
+}
+
+.mastery-track {
+  height: 8rpx;
+  margin-top: 20rpx;
+  overflow: hidden;
+  border-radius: 999rpx;
+  background: #E8ECE5;
+}
+
+.mastery-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #6E8E30;
+  transition: width .2s ease;
+}
+
+.mastery-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10rpx;
+  margin-top: 12rpx;
+  color: #808A82;
+  font-size: 17rpx;
+  line-height: 1.35;
+}

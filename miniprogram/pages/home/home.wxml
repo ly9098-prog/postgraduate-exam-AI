@@ -106,17 +106,39 @@
     </view>
   </view>
 
-  <!-- Primary study routes -->
+  <!-- Smart Study Hub tasks -->
   <view class="content-section page-enter delay-two">
     <view class="section-heading">
       <view>
-        <text class="section-kicker">408 LEARNING PATH</text>
+        <text class="section-kicker">408 SMART STUDY HUB</text>
         <text class="section-title">408 今日学习</text>
       </view>
-      <text class="section-note">四科专项</text>
+      <text class="section-note">{{studyHubAvailable ? '按优先级安排' : '四科专项'}}</text>
     </view>
 
-    <view class="route-stack">
+    <view class="route-stack hub-task-stack" wx:if="{{studyHubAvailable && hubTasks.length > 0}}">
+      <view
+        wx:for="{{hubTasks}}"
+        wx:key="key"
+        class="route-card hub-task-card hub-task-{{item.taskType}}"
+        data-task-key="{{item.key}}"
+        bindtap="openHubTask"
+        hover-class="card-pressed"
+      >
+        <view class="route-index hub-task-index">{{item.priorityText}}</view>
+        <view class="route-copy">
+          <view class="hub-task-eyebrow-row">
+            <text class="route-eyebrow">{{item.eyebrow}}</text>
+            <text class="hub-task-meta">{{item.metaText}}</text>
+          </view>
+          <text class="route-title">{{item.title}}</text>
+          <text class="route-desc">{{item.reason}}</text>
+        </view>
+        <view class="route-arrow">→</view>
+      </view>
+    </view>
+
+    <view class="route-stack" wx:else>
       <view class="route-card route-review" bindtap="goReview" hover-class="card-pressed">
         <view class="route-index">01</view>
         <view class="route-copy">
@@ -145,6 +167,40 @@
           <text class="route-desc">聚焦 408 错题，复盘反复出错的知识点</text>
         </view>
         <view class="route-arrow">→</view>
+      </view>
+    </view>
+
+    <view class="hub-quick-row" wx:if="{{studyHubAvailable}}">
+      <view class="hub-quick-item" bindtap="goReview" hover-class="soft-pressed">今日复习</view>
+      <view class="hub-quick-divider"></view>
+      <view class="hub-quick-item" bindtap="goWrongBook" hover-class="soft-pressed">错题本</view>
+      <view class="hub-quick-divider"></view>
+      <view class="hub-quick-item" bindtap="startRandom" hover-class="soft-pressed">自由练习</view>
+    </view>
+  </view>
+
+  <!-- Four-subject mastery snapshot -->
+  <view class="content-section mastery-section page-enter delay-three" wx:if="{{studyHubAvailable && subjectMastery.length > 0}}">
+    <view class="section-heading compact-heading">
+      <view>
+        <text class="section-kicker">408 MASTERY SNAPSHOT</text>
+        <text class="section-title">四科掌握概览</text>
+      </view>
+      <text class="section-note">基于已练知识点</text>
+    </view>
+    <view class="mastery-grid">
+      <view wx:for="{{subjectMastery}}" wx:key="subjectId" class="mastery-card">
+        <view class="mastery-card-head">
+          <text class="mastery-subject">{{item.subjectName}}</text>
+          <text class="mastery-score {{item.hasData ? '' : 'is-empty'}}">{{item.scoreText}}</text>
+        </view>
+        <view class="mastery-track">
+          <view class="mastery-fill" style="width: {{item.barWidth}}%;"></view>
+        </view>
+        <view class="mastery-foot">
+          <text>{{item.statusText}}</text>
+          <text>{{item.attemptCount > 0 ? '累计 ' + item.attemptCount + ' 次练习' : '完成练习后生成'}}</text>
+        </view>
       </view>
     </view>
   </view>

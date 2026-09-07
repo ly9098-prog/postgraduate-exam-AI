@@ -5,6 +5,7 @@ const { buildRenderModel, setRenderGuardPage, resetRenderGuard } = require('../u
 const adapter = require('../utils/question-runner-adapter')
 const questionImageCache = require('../utils/question-image-cache')
 const { filter408SubjectTree } = require('../../../utils/subject-scope')
+const { safeDecodeURIComponent } = require('../../../utils/route-params')
 
 const PRACTICE_RECENT_SUBJECTS_KEY = 'practice_recent_subjects_v1'
 const PRACTICE_PENDING_SUBMISSION_KEY_PREFIX = 'practice_pending_submission_v1'
@@ -276,7 +277,7 @@ Page({
 
   },
 
-  onLoad() {
+  onLoad(options) {
     this._pageAlive = true
     this._subjectsRequestSeq = 0
     this._questionsRequestSeq = 0
@@ -285,6 +286,11 @@ Page({
     this._systemBackPromptQueued = false
     this._systemBackRearming = false
     this._systemBackRearmTimer = null
+    this._launchPreset = this._parseLaunchPreset(options || {})
+    this._launchKnowledgePoint = ''
+    this._launchQuestionIds = ''
+    this._launchAllowRepeat = false
+    this._launchSource = ''
     this._resetSession()
     this._pendingResultUrl = ''
     this._submittedResultPayload = null
@@ -588,11 +594,88 @@ Page({
       const subjectTree = this.normalizeSubjectTree(filter408SubjectTree(res || []))
       this.setData({ subjectTree })
       this.initDefaultSubject(subjectTree)
+      const presetApplied = await this._applyLaunchPreset(subjectTree)
+      if (presetApplied && this._launchPreset && this._launchPreset.autostart && this._pageAlive) {
+        await this.startPractice()
+      }
     } catch (e) {
       if (!this._pageAlive || requestSeq !== this._subjectsRequestSeq) return
       console.error('加载科目树失败', e)
       wx.showToast({ title: '加载科目失败', icon: 'none' })
     }
+  },
+
+  _parseLaunchPreset(options) {
+    const subjectId = Number(options && options.subject_id)
+    const modeValue = String((options && options.mode) || '').trim()
+    const allowedModes = new Set(['random', 'smart', 'sequential'])
+    const rawCount = Number(options && options.count)
+    const count = Number.isFinite(rawCount) ? Math.max(1, Math.min(50, Math.round(rawCount))) : null
+    const knowledgePoint = safeDecodeURIComponent(options && options.knowledge_point, '').trim()
+    const rawQuestionIds = String((options && options.question_ids) || '').trim()
+    let questionIds = ''
+    if (rawQuestionIds) {
+      const parsed = rawQuestionIds
+        .split(',')
+        .map(value => Number(String(value || '').trim()))
+        .filter(value => Number.isInteger(value) && value > 0)
+      const unique = Array.from(new Set(parsed)).slice(0, 50)
+      if (unique.length === parsed.length && unique.length > 0) questionIds = unique.join(',')
+    }
+    return {
+      subjectId: Number.isInteger(subjectId) && subjectId > 0 ? subjectId : null,
+      mode: allowedModes.has(modeValue) ? modeValue : null,
+      count,
+      knowledgePoint,
+      questionIds,
+      allowRepeat: String((options && options.allow_repeat) || '') === '1',
+      autostart: String((options && options.autostart) || '') === '1',
+      source: String((options && options.source) || '').trim().slice(0, 32),
+    }
+  },
+
+  async _applyLaunchPreset(subjectTree) {
+    const preset = this._launchPreset
+    if (!preset || !preset.subjectId) return false
+
+    const available = this._flattenSelectableSubjects(subjectTree || [])
+    const target = available.find(item => Number(item.subject_id) === Number(preset.subjectId))
+    if (!target) {
+      console.warn('[PRACTICE_LAUNCH_PRESET] subject unavailable', preset.subjectId)
+      if (preset.autostart) wx.showToast({ title: '推荐科目已不可用，请重新选择', icon: 'none' })
+      return false
+    }
+
+    if (preset.questionIds && preset.mode && preset.mode !== 'random') {
+      console.warn('[PRACTICE_LAUNCH_PRESET] targeted questions require random mode')
+      return false
+    }
+
+    const mode = preset.questionIds ? 'random' : (preset.mode || this.data.selectedMode || 'random')
+    const count = preset.questionIds
+      ? preset.questionIds.split(',').length
+      : (preset.count || this.data.count || 5)
+
+    this._launchKnowledgePoint = preset.questionIds ? '' : preset.knowledgePoint
+    this._launchQuestionIds = preset.questionIds
+    this._launchAllowRepeat = Boolean(preset.allowRepeat || preset.questionIds)
+    this._launchSource = preset.source
+
+    await new Promise((resolve) => {
+      this.setData({
+        expandedSubjectId: target.parent_subject_id || target.subject_id,
+        selectedSubjectId: Number(target.subject_id),
+        selectedSubjectName: target.display_name,
+        selectedSubjectHasChildren: Boolean(target.has_children),
+        selectedMode: mode,
+        count,
+      }, () => {
+        this._updateComputedFields()
+        resolve()
+      })
+    })
+    this._queueRememberSubject(Number(target.subject_id), target.display_name)
+    return true
   },
 
   /**
@@ -1260,11 +1343,18 @@ Page({
         // 即使未来公共接口默认值变化，也明确告诉后端这里要严格顺序取题。
         params.exclude_answered = false
         params.use_leitner = false
+      } else if (this._launchQuestionIds) {
+        // Study Hub 的个人难题重练按服务器给定题目集合严格取题；不让
+        // no-repeat/Leitner 在客户端重新改写这组任务。
+        params.question_ids = this._launchQuestionIds
+        params.exclude_answered = false
+        params.use_leitner = false
       } else {
-        params.exclude_answered = true
-        params.no_repeat_days = 30
+        params.exclude_answered = !this._launchAllowRepeat
+        if (!this._launchAllowRepeat) params.no_repeat_days = 30
         params.use_leitner = true
       }
+      if (this._launchKnowledgePoint) params.knowledge_point = this._launchKnowledgePoint
       // smart 策略由后端统一解析（默认 scored，并可被实验配置覆盖）。
       // 小程序不强制具体策略，避免绕过后端实验与降级链路。
       const res = await api.get('/practice/questions', params)

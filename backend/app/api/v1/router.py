@@ -21,6 +21,7 @@ from app.api.v1.questions import router as questions_router
 from app.api.v1.rag import router as rag_router
 from app.api.v1.review import router as review_router
 from app.api.v1.stats import router as stats_router
+from app.api.v1.study_hub import router as study_hub_router
 from app.api.v1.study_report import router as study_report_router
 from app.api.v1.sync import router as sync_router
 from app.api.v1.wrong_questions import router as wrong_questions_router
@@ -46,6 +47,7 @@ public_api_router.include_router(sync_router)
 public_api_router.include_router(knowledge_mastery_router)
 public_api_router.include_router(knowledge_path_router)
 public_api_router.include_router(study_report_router)
+public_api_router.include_router(study_hub_router)
 public_api_router.include_router(adaptive_learning_router)
 public_api_router.include_router(exports_router)
 public_api_router.include_router(formulas_router)
