@@ -3144,8 +3144,23 @@ async def batch_submit_answers(
                 question_version_id=int(q.question_version_id),
                 commit=False,
             )
+            from app.services import error_diagnosis_service
+
+            diagnosis = await error_diagnosis_service.record_error_event(
+                db,
+                user_id=user_id,
+                wrong_question_id=int(wrong.id),
+                question_id=int(q.id),
+                question_version_id=int(q.question_version_id),
+                practice_record_id=int(record.id),
+                source_context="practice",
+                user_answer=record.user_answer,
+                occurred_at=record.answered_at or now,
+                queue_ai=True,
+            )
             prewarm_wrong_questions.append(wrong)
             wrong_question_ids[int(q.id)] = int(wrong.id)
+            setattr(record, "_error_diagnosis_payload", error_diagnosis_service.serialize_diagnosis(diagnosis))
         await _create_answer_projection_outbox(
             db,
             practice_record_id=int(record.id),
@@ -3165,6 +3180,7 @@ async def batch_submit_answers(
             "knowledge_points": revision_kps.get(int(q.question_version_id), []),
             "is_wrong_added": int(q.id) in wrong_question_ids,
             "wrong_question_id": wrong_question_ids.get(int(q.id)),
+            "error_diagnosis": getattr(record, "_error_diagnosis_payload", None),
         }
     for q in skipped_questions:
         response_by_question[int(q.id)] = {

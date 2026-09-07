@@ -129,6 +129,8 @@ class ExamResultQuestion(BaseModel):
     analysis: str | None = None
     image_url: list | None = None
     knowledge_points: list[str] = Field(default_factory=list)
+    wrong_question_id: int | None = None
+    error_diagnosis: dict | None = None
 
 
 class ExamResult(BaseModel):

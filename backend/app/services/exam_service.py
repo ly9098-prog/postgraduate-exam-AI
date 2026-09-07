@@ -535,6 +535,8 @@ async def _finalize_attempt(
                 kp_losses[str(name)] += 1
                 kp_lost_score[str(name)] += float(item_score)
 
+        wrong_question_id = None
+        error_diagnosis_payload = None
         if selected and answer.practice_record_id is None:
             record = PracticeRecord(
                 user_id=attempt.user_id,
@@ -564,6 +566,23 @@ async def _finalize_attempt(
                     commit=False,
                 )
                 wrong_for_prewarm.append(wrong)
+                wrong_question_id = int(wrong.id)
+                from app.services import error_diagnosis_service
+
+                diagnosis = await error_diagnosis_service.record_error_event(
+                    db,
+                    user_id=int(attempt.user_id),
+                    wrong_question_id=int(wrong.id),
+                    question_id=int(answer.question_id),
+                    question_version_id=int(answer.question_version_id),
+                    practice_record_id=int(record.id),
+                    exam_answer_id=int(answer.id),
+                    source_context="exam",
+                    user_answer=selected,
+                    occurred_at=answer.answered_at or now,
+                    queue_ai=True,
+                )
+                error_diagnosis_payload = error_diagnosis_service.serialize_diagnosis(diagnosis)
             await _create_projection_event(
                 db,
                 int(record.id),
@@ -591,6 +610,8 @@ async def _finalize_attempt(
             "analysis": revision.analysis,
             "image_url": revision.image_url,
             "knowledge_points": list(names),
+            "wrong_question_id": wrong_question_id,
+            "error_diagnosis": error_diagnosis_payload,
         })
 
     subject_breakdown = []

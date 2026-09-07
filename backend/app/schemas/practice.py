@@ -1,8 +1,9 @@
-from app.schemas.base import BaseModel
 from datetime import datetime
 from typing import Literal
 
 from pydantic import ConfigDict, Field
+
+from app.schemas.base import BaseModel
 
 PracticeMode = Literal["random", "smart", "similar", "sequential"]
 
@@ -73,6 +74,7 @@ class AnswerResult(BaseModel):
     knowledge_points: list | None = None
     is_wrong_added: bool = False
     wrong_question_id: int | None = None
+    error_diagnosis: dict | None = None
 
 
 # --- POST /practice/batch-submit ---

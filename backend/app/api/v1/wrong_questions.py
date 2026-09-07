@@ -16,6 +16,13 @@ from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.user import User
 from app.models.wrong_question import WrongQuestion
 from app.schemas.common import RawPaginatedResponse, paginated_response
+from app.schemas.error_diagnosis import (
+    ErrorDiagnosisConfirmRequest,
+    ErrorDiagnosisResponse,
+    ErrorDiagnosisStatsResponse,
+    ErrorDiagnosisSuggestResponse,
+    ErrorTaxonomyItem,
+)
 from app.schemas.wrong_question import (
     TaskFlowResponse,
     WrongQuestionBatchRequest,
@@ -24,6 +31,7 @@ from app.schemas.wrong_question import (
     WrongQuestionStats,
     WrongQuestionUpdate,
 )
+from app.services import error_diagnosis_service
 from app.services import wrong_question_service as svc
 from app.services.knowledge_point_service import load_question_kps
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
@@ -203,6 +211,7 @@ def enrich_wq(wq, question, knowledge_points=None, **extra):
         next_review_at=extra.get("next_review_at", None),
         last_reviewed_at=extra.get("last_reviewed_at", None),
         last_wrong_at=extra.get("last_wrong_at", wq.last_review_at),
+        error_diagnosis=extra.get("error_diagnosis"),
     )
 
 
@@ -329,6 +338,33 @@ async def get_task_flow(
     return result
 
 
+@router.get("/diagnosis/taxonomy", response_model=list[ErrorTaxonomyItem])
+async def get_error_diagnosis_taxonomy(
+    current_user: User = Depends(get_current_user),
+):
+    return error_diagnosis_service.taxonomy_items()
+
+
+@router.get("/diagnosis/stats", response_model=ErrorDiagnosisStatsResponse)
+async def get_error_diagnosis_stats(
+    window_days: int = Query(30, ge=7, le=365),
+    subject_id: int | None = Query(None),
+    knowledge_point_id: int | None = Query(None),
+    product_scope: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    allowed_subject_ids = await _resolve_product_subject_ids(db, product_scope)
+    return await error_diagnosis_service.get_stats(
+        db,
+        user_id=current_user.id,
+        window_days=window_days,
+        subject_id=subject_id,
+        knowledge_point_id=knowledge_point_id,
+        allowed_subject_ids=allowed_subject_ids,
+    )
+
+
 @router.get("/{wq_id}", response_model=WrongQuestionResponse)
 async def get_wrong(
     wq_id: int,
@@ -342,6 +378,11 @@ async def get_wrong(
 
     question, knowledge_points = await _load_current_question_view(db, wq)
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
+    diagnosis = await error_diagnosis_service.get_latest_diagnosis(
+        db, current_user.id, wq.id
+    )
+    if diagnosis is not None:
+        extra["error_diagnosis"] = error_diagnosis_service.serialize_diagnosis(diagnosis)
     if question is not None:
         from app.services import ai_service
 
@@ -354,6 +395,59 @@ async def get_wrong(
         extra["ai_analysis_override"] = cache_state.get("analysis")
         extra["ai_analysis_status_override"] = cache_state.get("status")
     return enrich_wq(wq, question, knowledge_points=knowledge_points, **extra)
+
+
+@router.get("/{wq_id}/diagnosis", response_model=ErrorDiagnosisResponse)
+async def get_wrong_error_diagnosis(
+    wq_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    wq = await svc.get_by_id(db, current_user.id, wq_id)
+    if not wq:
+        raise HTTPException(status_code=404, detail="错题记录不存在")
+    row = await error_diagnosis_service.get_latest_diagnosis(db, current_user.id, wq_id)
+    if row is None:
+        row = await error_diagnosis_service.ensure_legacy_diagnosis(db, wq)
+        await db.commit()
+        await db.refresh(row)
+    return error_diagnosis_service.serialize_diagnosis(row)
+
+
+@router.put("/{wq_id}/diagnosis", response_model=ErrorDiagnosisResponse)
+async def confirm_wrong_error_diagnosis(
+    wq_id: int,
+    data: ErrorDiagnosisConfirmRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = await error_diagnosis_service.confirm_diagnosis(
+        db,
+        user_id=current_user.id,
+        wrong_question_id=wq_id,
+        primary_type=data.primary_type,
+        secondary_types=data.secondary_types,
+        diagnosis_id=data.diagnosis_id,
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="错题记录不存在")
+    for pattern in (f"wrong_questions:*:{current_user.id}*", f"stats:*:{current_user.id}*", f"stats:dashboard*:{current_user.id}*"):
+        await cache.delete(pattern)
+    return error_diagnosis_service.serialize_diagnosis(row)
+
+
+@router.post("/{wq_id}/diagnosis/suggest", response_model=ErrorDiagnosisSuggestResponse)
+async def suggest_wrong_error_diagnosis(
+    wq_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row, queued = await error_diagnosis_service.request_ai_suggestion(
+        db, user_id=current_user.id, wrong_question_id=wq_id
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="错题记录不存在")
+    return {"queued": queued, "diagnosis": error_diagnosis_service.serialize_diagnosis(row)}
 
 
 @router.put("/{wq_id}", response_model=WrongQuestionResponse)

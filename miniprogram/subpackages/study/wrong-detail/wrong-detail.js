@@ -7,6 +7,7 @@ const { isTrueFalseType } = require('../utils/answer')
 const adapter = require('../utils/question-runner-adapter')
 const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../utils/ai-analysis-normalizer')
 const { buildAiRichText } = require('../utils/ai-math-render')
+const errorDiagnosis = require('../../../utils/error-diagnosis')
 
 // wx.request cannot hold one request open for the backend's full 150s AI
 // provider budget. Keep each transport attempt safely below the platform's
@@ -205,6 +206,14 @@ Page({
     removeConfirmVisible: false,
     removeSubmitting: false,
 
+    errorDiagnosis: null,
+    diagnosisOptions: errorDiagnosis.TAXONOMY.filter(item => item.type !== 'unknown'),
+    diagnosisSheetVisible: false,
+    diagnosisPrimary: 'unknown',
+    diagnosisSecondaryMap: {},
+    diagnosisSaving: false,
+    diagnosisAiQueuing: false,
+
     // quiz-runner data
     currentQuestion: null,
     wrongQuestions: [],
@@ -319,6 +328,9 @@ Page({
       removeConfirmVisible: false,
       masterSubmitting: false,
       removeSubmitting: false,
+      diagnosisSheetVisible: false,
+      diagnosisSaving: false,
+      diagnosisAiQueuing: false,
     })
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
@@ -367,6 +379,7 @@ Page({
         isCurrentMastered: _isWqMastered(wq),
         masterSubmitting: false,
         removeSubmitting: false,
+        errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
       }
 
       // 仅使用一个“AI 学习建议”区域：AI 分析优先，否则回退题库解析。
@@ -1455,6 +1468,10 @@ Page({
         isCurrentMastered: _isWqMastered(wq),
         masterSubmitting: false,
         removeSubmitting: false,
+        errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
+        diagnosisSheetVisible: false,
+        diagnosisSaving: false,
+        diagnosisAiQueuing: false,
       }
 
       // 切题时沿用相同优先级：AI 分析优先，否则回退题库解析。
@@ -1505,6 +1522,118 @@ Page({
 
       wx.showToast({ title: '加载失败', icon: 'none' })
       this.setData({ showSwitchMask: false, aiRegenerating: false })
+    }
+  },
+
+  openDiagnosisSheet() {
+    const diagnosis = this.data.errorDiagnosis
+    const primary = diagnosis && diagnosis.primaryType && diagnosis.primaryType !== 'unknown'
+      ? diagnosis.primaryType
+      : (diagnosis && diagnosis.aiPrimaryType && diagnosis.aiPrimaryType !== 'unknown' ? diagnosis.aiPrimaryType : 'knowledge_gap')
+    const secondary = diagnosis && diagnosis.secondaryTypes && diagnosis.secondaryTypes.length
+      ? diagnosis.secondaryTypes
+      : (diagnosis && diagnosis.aiSecondaryTypes || [])
+    const secondaryMap = {}
+    secondary.forEach(type => { if (type && type !== primary) secondaryMap[type] = true })
+    this.setData({
+      diagnosisSheetVisible: true,
+      diagnosisPrimary: primary,
+      diagnosisSecondaryMap: secondaryMap,
+    })
+  },
+
+  closeDiagnosisSheet() {
+    if (this.data.diagnosisSaving) return
+    this.setData({ diagnosisSheetVisible: false })
+  },
+
+  selectDiagnosisPrimary(e) {
+    const type = e.currentTarget.dataset.type
+    if (!type) return
+    const secondaryMap = Object.assign({}, this.data.diagnosisSecondaryMap || {})
+    delete secondaryMap[type]
+    this.setData({ diagnosisPrimary: type, diagnosisSecondaryMap: secondaryMap })
+  },
+
+  toggleDiagnosisSecondary(e) {
+    const type = e.currentTarget.dataset.type
+    if (!type || type === this.data.diagnosisPrimary) return
+    const secondaryMap = Object.assign({}, this.data.diagnosisSecondaryMap || {})
+    if (secondaryMap[type]) delete secondaryMap[type]
+    else {
+      if (Object.keys(secondaryMap).length >= 3) {
+        wx.showToast({ title: '次级错因最多选择 3 个', icon: 'none' })
+        return
+      }
+      secondaryMap[type] = true
+    }
+    this.setData({ diagnosisSecondaryMap: secondaryMap })
+  },
+
+  async saveDiagnosis() {
+    const wqId = Number(this._currentWqId || (this.data.wq && this.data.wq.id))
+    if (!wqId || this.data.diagnosisSaving) return
+    const primaryType = this.data.diagnosisPrimary || 'unknown'
+    const secondaryTypes = Object.keys(this.data.diagnosisSecondaryMap || {}).filter(type => type !== primaryType)
+    this.setData({ diagnosisSaving: true })
+    try {
+      const raw = await api.put(`/wrong-questions/${wqId}/diagnosis`, {
+        diagnosis_id: this.data.errorDiagnosis ? Number(this.data.errorDiagnosis.id || 0) || undefined : undefined,
+        primary_type: primaryType,
+        secondary_types: secondaryTypes,
+      })
+      if (!this._alive || wqId !== Number(this._currentWqId)) return
+      const normalized = errorDiagnosis.normalizeDiagnosis(raw)
+      const wq = Object.assign({}, this.data.wq || {}, {
+        error_type: normalized ? normalized.primaryType : primaryType,
+        error_diagnosis: raw,
+      })
+      if (this._wqCache && this._wqCache[wqId]) this._wqCache[wqId] = { data: wq, ts: Date.now() }
+      this.setData({
+        wq,
+        errorDiagnosis: normalized,
+        diagnosisSheetVisible: false,
+        diagnosisSaving: false,
+      })
+      wx.showToast({ title: '错因已记录', icon: 'success' })
+    } catch (e) {
+      this.setData({ diagnosisSaving: false })
+      wx.showToast({ title: api.getErrorMessage(e) || '保存失败', icon: 'none' })
+    }
+  },
+
+  async acceptAiDiagnosis() {
+    const diagnosis = this.data.errorDiagnosis
+    if (!diagnosis || !diagnosis.aiPrimaryType || diagnosis.aiPrimaryType === 'unknown') return
+    const secondaryMap = {}
+    ;(diagnosis.aiSecondaryTypes || []).forEach(type => { secondaryMap[type] = true })
+    this.setData({
+      diagnosisPrimary: diagnosis.aiPrimaryType,
+      diagnosisSecondaryMap: secondaryMap,
+    })
+    await this.saveDiagnosis()
+  },
+
+  async requestDiagnosisSuggestion() {
+    const wqId = Number(this._currentWqId || (this.data.wq && this.data.wq.id))
+    if (!wqId || this.data.diagnosisAiQueuing) return
+    this.setData({ diagnosisAiQueuing: true })
+    try {
+      const response = await api.post(`/wrong-questions/${wqId}/diagnosis/suggest`, {})
+      if (!this._alive || wqId !== Number(this._currentWqId)) return
+      this.setData({ errorDiagnosis: errorDiagnosis.normalizeDiagnosis(response && response.diagnosis) })
+      for (let i = 0; i < 8; i += 1) {
+        await _sleep(1500)
+        if (!this._alive || wqId !== Number(this._currentWqId)) return
+        const raw = await api.get(`/wrong-questions/${wqId}/diagnosis`, {}, { suppressNetworkToast: true }).catch(() => null)
+        const normalized = errorDiagnosis.normalizeDiagnosis(raw)
+        if (normalized) this.setData({ errorDiagnosis: normalized })
+        if (normalized && normalized.aiStatus !== 'pending') break
+      }
+    } catch (e) {
+      wx.showToast({ title: api.getErrorMessage(e) || 'AI 错因建议暂不可用', icon: 'none' })
+    } finally {
+      if (this._alive) this.setData({ diagnosisAiQueuing: false })
     }
   },
 

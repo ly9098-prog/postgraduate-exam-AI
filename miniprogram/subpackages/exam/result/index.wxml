@@ -40,6 +40,14 @@
         <view class="review-top"><text class="review-index">第 {{item.position}} 题 · {{item.subject_name}}</text><text class="status {{item.status}}">{{item.status === 'wrong' ? '答错' : '未答'}}</text></view>
         <text class="stem">{{item.stemPreview}}</text>
         <view class="answers"><text>你的答案：{{item.userAnswerText}}</text><text>正确答案：{{item.correct_answer}}</text></view>
+        <view class="exam-cause-row" wx:if="{{item.status === 'wrong'}}">
+          <view class="exam-cause-copy" data-wqid="{{item.wrong_question_id}}" bindtap="openWrongDetail">
+            <text class="exam-cause-kicker">错因</text>
+            <text class="exam-cause-value">{{item.errorDiagnosisLabel || '暂未分类'}}</text>
+            <text class="exam-cause-ai" wx:if="{{item.errorDiagnosis && !item.errorDiagnosis.userConfirmed && item.errorDiagnosis.effectiveSource === 'ai'}}">AI 建议</text>
+          </view>
+          <button class="exam-cause-action" data-wqid="{{item.wrong_question_id}}" catchtap="quickClassifyWrong">快速标记</button>
+        </view>
         <text class="kp" wx:if="{{item.knowledgeText}}">{{item.knowledgeText}}</text>
         <text class="analysis" wx:if="{{item.analysisPreview}}">{{item.analysisPreview}}</text>
       </view>

@@ -179,6 +179,30 @@ async def _process_answer_projection_task(task: Task) -> None:
     )
 
 
+async def _process_error_diagnosis_task(task: Task) -> None:
+    """Generate a non-blocking AI error-cause suggestion for one wrong event."""
+    from app.core.database import async_session
+    from app.services.error_diagnosis_service import generate_ai_suggestion
+
+    payload = task.payload or {}
+    diagnosis_id = int(payload.get("diagnosis_id") or 0)
+    user_id = int(payload.get("user_id") or 0)
+    classification_version = int(payload.get("classification_version") or 0)
+    if diagnosis_id <= 0 or user_id <= 0 or classification_version <= 0:
+        raise ValueError("invalid error_diagnosis task payload")
+    async with async_session() as db:
+        result = await generate_ai_suggestion(
+            db,
+            user_id=user_id,
+            diagnosis_id=diagnosis_id,
+            expected_classification_version=classification_version,
+        )
+    logger.info(
+        "Error diagnosis task finished: task_id=%s diagnosis_id=%s result=%s",
+        task.task_id, diagnosis_id, result,
+    )
+
+
 # ── task type constants ──
 
 TASK_TYPE_IMPORT_PIPELINE = "import_pipeline"
@@ -190,6 +214,7 @@ TASK_TYPE_PREWARM_ANALYSIS = "prewarm_analysis"
 TASK_TYPE_FORMULA_BATCH = "formula_batch"
 TASK_TYPE_BATCH_IMAGE = "batch_image"
 TASK_TYPE_ANSWER_PROJECTION = "answer_projection"
+TASK_TYPE_ERROR_DIAGNOSIS = "error_diagnosis"
 
 # Current worker version for rolling deployment compatibility.
 # Must be incremented when backward-incompatible task processing changes are made.
@@ -708,6 +733,9 @@ async def _process_task(task: Task) -> None:
         elif task_type == TASK_TYPE_ANSWER_PROJECTION:
             await _process_answer_projection_task(task)
 
+        elif task_type == TASK_TYPE_ERROR_DIAGNOSIS:
+            await _process_error_diagnosis_task(task)
+
         elif task_type == TASK_TYPE_FORMULA_BATCH:
             from sqlalchemy import select
 
@@ -802,6 +830,7 @@ async def run_pipeline_worker(
         TASK_TYPE_BATCH_IMAGE,
         TASK_TYPE_FORMULA_BATCH,
         TASK_TYPE_ANSWER_PROJECTION,
+        TASK_TYPE_ERROR_DIAGNOSIS,
     ]
 
     logger.info("Pipeline worker started: polling every %ss", poll_interval)
@@ -1143,6 +1172,9 @@ async def _process_task_v2(task: Task) -> None:
         elif task_type == TASK_TYPE_ANSWER_PROJECTION:
             await _process_answer_projection_task(task)
 
+        elif task_type == TASK_TYPE_ERROR_DIAGNOSIS:
+            await _process_error_diagnosis_task(task)
+
         elif task_type == TASK_TYPE_FORMULA_BATCH:
             from sqlalchemy import select
 
@@ -1468,6 +1500,7 @@ async def run_dispatcher_v2(
         TASK_TYPE_BATCH_IMAGE,
         TASK_TYPE_FORMULA_BATCH,
         TASK_TYPE_ANSWER_PROJECTION,
+        TASK_TYPE_ERROR_DIAGNOSIS,
     ]
 
     logger.info(
@@ -1808,6 +1841,7 @@ async def run_reaper_loop(
         TASK_TYPE_BATCH_IMAGE,
         TASK_TYPE_FORMULA_BATCH,
         TASK_TYPE_ANSWER_PROJECTION,
+        TASK_TYPE_ERROR_DIAGNOSIS,
         TASK_TYPE_PREWARM_ANALYSIS,
     ]
 
@@ -1853,6 +1887,7 @@ async def run_reaper_loop_v2(
         TASK_TYPE_BATCH_IMAGE,
         TASK_TYPE_FORMULA_BATCH,
         TASK_TYPE_ANSWER_PROJECTION,
+        TASK_TYPE_ERROR_DIAGNOSIS,
         TASK_TYPE_PREWARM_ANALYSIS,
     ]
 

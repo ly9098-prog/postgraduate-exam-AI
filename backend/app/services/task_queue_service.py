@@ -281,6 +281,7 @@ def _get_max_ready(task_type: str) -> int:
         "formula_batch": settings.TASK_QUEUE_MAX_READY_FORMULA,
         "batch_image": settings.TASK_QUEUE_MAX_READY_BATCH_IMAGE,
         "answer_projection": settings.TASK_QUEUE_MAX_READY_ANSWER_PROJECTION,
+        "error_diagnosis": settings.TASK_QUEUE_MAX_READY_AI,
     }
     return mapping.get(task_type, settings.TASK_QUEUE_MAX_READY_DEFAULT)
 

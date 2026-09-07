@@ -1485,3 +1485,6 @@ page {
   from { opacity: .2; transform: translateY(54rpx); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* 408-ERROR quick confirmation */
+.wrong-cause-row{display:flex;align-items:center;justify-content:space-between;gap:18rpx;margin:18rpx 0 2rpx;padding:16rpx 18rpx;border-radius:16rpx;background:#f5f7f5}.wrong-cause-copy{display:flex;align-items:center;gap:10rpx;min-width:0}.wrong-cause-label{font-size:21rpx;color:#829087}.wrong-cause-value{font-size:23rpx;font-weight:650;color:#2d3a32}.wrong-cause-ai{padding:4rpx 8rpx;border-radius:8rpx;background:#eef0ff;color:#5960a8;font-size:18rpx}.wrong-cause-action{margin:0;padding:0 14rpx;height:52rpx;line-height:52rpx;border-radius:14rpx;background:#17221b;color:#fff;font-size:21rpx;white-space:nowrap}.wrong-cause-action::after{border:0}

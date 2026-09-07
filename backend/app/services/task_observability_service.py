@@ -32,10 +32,10 @@ from app.core.time_utils import (
 )
 from app.models.answer_behavior import AnswerBehavior
 from app.models.task_outbox import TaskOutbox
-from app.services.task_observability_rules import evaluate_task_health
 from app.services.practice.projection_reconciliation_service import (
     get_projection_backlog_metrics,
 )
+from app.services.task_observability_rules import evaluate_task_health
 
 logger = logging.getLogger("postgraduate-ai.task-observability")
 
@@ -50,6 +50,7 @@ OBSERVED_TASK_TYPES: tuple[str, ...] = (
     "prewarm_analysis",
     "export_mistakes",
     "answer_projection",
+    "error_diagnosis",
 )
 
 

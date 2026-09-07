@@ -2,6 +2,7 @@ const api = require('../../utils/api')
 const model = require('./dashboard.model')
 const charts = require('./dashboard.charts')
 const { getChinaDate, parseServerUtc } = require('../../utils/china-time')
+const errorDiagnosis = require('../../utils/error-diagnosis')
 
 const DASHBOARD_AI_HTTP_TIMEOUT_MS = 55000
 const DASHBOARD_AI_SUCCESS_COOLDOWN_MS = 60000
@@ -229,6 +230,14 @@ Page({
 
     // Diagnosis insights
     insights: null,
+
+    // 408-ERROR: recent error-cause diagnosis
+    errorDiagnosisStats: null,
+    errorDiagnosisLoading: false,
+    errorDiagnosisSummary: '错因数据积累中',
+    errorDiagnosisTopTypes: [],
+    errorDiagnosisChanges: [],
+    errorDiagnosisTopKnowledge: null,
   },
 
   _alive: false,
@@ -254,6 +263,7 @@ Page({
   _insightsLoading: false,
   _insightsError: null,
   _insightSeq: 0,
+  _errorDiagnosisSeq: 0,
   _insightRetryTimer: null,
   _insightKickoffTimer: null,
 
@@ -299,6 +309,7 @@ Page({
     this._trendSeq++
     this._yearlySeq++
     this._insightSeq++
+    this._errorDiagnosisSeq++
     this._loadPromise = null  // 页面隐藏后使当前加载失效，允许下一次 onShow 发起新请求
     clearTimeout(this._insightRetryTimer)
     this._insightRetryTimer = null
@@ -333,6 +344,7 @@ Page({
     this._trendSeq++
     this._yearlySeq++
     this._insightSeq++
+    this._errorDiagnosisSeq++
     this._loadPromise = null
     clearTimeout(this._insightRetryTimer)
     this._insightRetryTimer = null
@@ -384,6 +396,7 @@ Page({
 
         this._lastLoadAt = Date.now()
         this._processDashboard(res, mode)
+        this.loadErrorDiagnosisStats()
         return res
       } catch (e) {
         console.error('[dashboard] load failed', e)
@@ -407,6 +420,57 @@ Page({
       // A request invalidated by onHide may finish after a new onShow request
       // has already started. Never let the old request clear the new promise.
       if (this._loadPromise === loadPromise) this._loadPromise = null
+    }
+  },
+
+  async loadErrorDiagnosisStats() {
+    if (!this._alive || !this._visible) return
+    const seq = ++this._errorDiagnosisSeq
+    this.setData({ errorDiagnosisLoading: true })
+    try {
+      const raw = await api.get('/wrong-questions/diagnosis/stats', {
+        window_days: this.data.trendDays || 7,
+        product_scope: 'exam408',
+      })
+      if (!this._alive || !this._visible || seq !== this._errorDiagnosisSeq) return
+      const byType = (raw.by_type || []).map(item => ({
+        ...item,
+        label: item.label || errorDiagnosis.labelOf(item.type),
+        percentPct: Math.round(Number(item.percent || 0) * 100),
+      }))
+      const classified = byType.filter(item => item.type !== 'unknown' && Number(item.count || 0) > 0)
+      const topTypes = classified.slice(0, 5)
+      const top = topTypes[0]
+      let summary = '近期暂无错题，继续保持'
+      if (Number(raw.total_errors || 0) > 0 && top) {
+        summary = `最近主要是“${top.label}”，占已记录错误的 ${top.percentPct}%`
+      } else if (Number(raw.total_errors || 0) > 0) {
+        summary = `近 ${raw.window_days || this.data.trendDays} 天有 ${raw.total_errors} 次错误待确认错因`
+      }
+      const changes = (raw.changes || [])
+        .filter(item => item.type !== 'unknown' && Number(item.delta || 0) !== 0)
+        .slice(0, 3)
+        .map(item => ({
+          ...item,
+          label: item.label || errorDiagnosis.labelOf(item.type),
+          deltaText: Number(item.delta || 0) > 0 ? `较上期 +${item.delta}` : `较上期 ${item.delta}`,
+        }))
+      const kp = (raw.by_knowledge_point || [])[0]
+      this.setData({
+        errorDiagnosisStats: raw,
+        errorDiagnosisLoading: false,
+        errorDiagnosisSummary: summary,
+        errorDiagnosisTopTypes: topTypes,
+        errorDiagnosisChanges: changes,
+        errorDiagnosisTopKnowledge: kp ? {
+          name: kp.name,
+          count: kp.count,
+          topLabel: kp.top_label || errorDiagnosis.labelOf(kp.top_type),
+        } : null,
+      })
+    } catch (e) {
+      if (!this._alive || !this._visible || seq !== this._errorDiagnosisSeq) return
+      this.setData({ errorDiagnosisLoading: false })
     }
   },
 

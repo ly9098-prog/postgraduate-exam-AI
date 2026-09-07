@@ -1,8 +1,9 @@
-from app.schemas.base import BaseModel
 from datetime import datetime
 from enum import StrEnum
 
 from pydantic import Field, field_validator
+
+from app.schemas.base import BaseModel
 
 # ── 枚举 ──
 
@@ -65,6 +66,7 @@ class WrongQuestionResponse(BaseModel):
     next_review_at: datetime | None = None
     last_reviewed_at: datetime | None = None
     last_wrong_at: datetime | None = None
+    error_diagnosis: dict | None = None
 
 
 # ── 统计 ──

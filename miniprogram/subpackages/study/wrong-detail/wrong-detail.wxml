@@ -91,6 +91,33 @@
     bind:jump="goWrongQuestion"
   />
 
+  <!-- 错因分类：用户确认优先于 AI 建议 -->
+  <view class="diagnosis-card">
+    <view class="diagnosis-card-head">
+      <view>
+        <text class="diagnosis-kicker">ERROR PATTERN</text>
+        <text class="diagnosis-title">我的错因</text>
+      </view>
+      <text class="diagnosis-source" wx:if="{{errorDiagnosis && errorDiagnosis.userConfirmed}}">已确认</text>
+      <text class="diagnosis-source ai" wx:elif="{{errorDiagnosis && errorDiagnosis.effectiveSource === 'ai'}}">AI 建议</text>
+      <text class="diagnosis-source pending" wx:else>待确认</text>
+    </view>
+    <view class="diagnosis-main">
+      <text class="diagnosis-primary">{{errorDiagnosis ? errorDiagnosis.primaryLabel : '暂未分类'}}</text>
+      <text class="diagnosis-confidence" wx:if="{{errorDiagnosis && errorDiagnosis.effectiveSource === 'ai' && errorDiagnosis.aiConfidence !== null}}">置信度 {{errorDiagnosis.aiConfidence}}%</text>
+    </view>
+    <view class="diagnosis-secondary" wx:if="{{errorDiagnosis && errorDiagnosis.secondaryLabels.length}}">
+      <text class="diagnosis-chip" wx:for="{{errorDiagnosis.secondaryLabels}}" wx:key="*this">{{item}}</text>
+    </view>
+    <text class="diagnosis-reason" wx:if="{{errorDiagnosis && errorDiagnosis.aiReason}}">AI 判断依据：{{errorDiagnosis.aiReason}}</text>
+    <view class="diagnosis-actions">
+      <button class="diagnosis-btn primary" bindtap="openDiagnosisSheet">{{errorDiagnosis && errorDiagnosis.userConfirmed ? '修改错因' : '确认错因'}}</button>
+      <button wx:if="{{errorDiagnosis && !errorDiagnosis.userConfirmed && errorDiagnosis.aiPrimaryType && errorDiagnosis.aiPrimaryType !== 'unknown'}}" class="diagnosis-btn" bindtap="acceptAiDiagnosis">采纳 AI 建议</button>
+      <button wx:elif="{{!errorDiagnosis || errorDiagnosis.aiStatus === 'failed' || errorDiagnosis.aiStatus === 'not_requested'}}" class="diagnosis-btn" loading="{{diagnosisAiQueuing}}" disabled="{{diagnosisAiQueuing}}" bindtap="requestDiagnosisSuggestion">AI 建议</button>
+      <text wx:elif="{{errorDiagnosis && errorDiagnosis.aiStatus === 'pending'}}" class="diagnosis-pending">AI 正在分析，不影响复盘</text>
+    </view>
+  </view>
+
   <!-- AI 分析 -->
   <view class="ai-card {{!aiRequested && !aiCards && !aiFallback ? 'is-idle' : ''}}" id="ai-card" bindtouchstart="onAiSwipeStart" bindtouchend="onAiSwipeEnd" bindtouchcancel="onAiSwipeCancel">
     <view class="ai-card-head" wx:if="{{aiRequested || aiCards || aiFallback}}">
@@ -196,6 +223,28 @@
     <button class="more-action" bindtap="openMoreMenu">
       <text class="more-action-label">更多</text>
     </button>
+  </view>
+</view>
+
+<!-- 错因确认 -->
+<view class="modal-overlay" wx:if="{{diagnosisSheetVisible}}" catchtap="closeDiagnosisSheet" catchtouchmove="noop">
+  <view class="diagnosis-sheet" catchtap="noop">
+    <view class="sheet-handle"></view>
+    <text class="decision-kicker">ERROR CAUSE</text>
+    <text class="decision-title">这次为什么做错？</text>
+    <text class="decision-desc">先选一个主错因，可再补充最多 3 个次级错因。你的确认会覆盖 AI 建议。</text>
+    <text class="diagnosis-sheet-label">主错因</text>
+    <view class="diagnosis-option-grid">
+      <view wx:for="{{diagnosisOptions}}" wx:key="type" data-type="{{item.type}}" bindtap="selectDiagnosisPrimary" class="diagnosis-option {{diagnosisPrimary === item.type ? 'selected' : ''}}">
+        <text class="diagnosis-option-title">{{item.label}}</text>
+        <text class="diagnosis-option-desc">{{item.description}}</text>
+      </view>
+    </view>
+    <text class="diagnosis-sheet-label secondary-label">次级错因（可选）</text>
+    <view class="diagnosis-secondary-options">
+      <text wx:for="{{diagnosisOptions}}" wx:key="type" wx:if="{{item.type !== diagnosisPrimary}}" data-type="{{item.type}}" bindtap="toggleDiagnosisSecondary" class="diagnosis-secondary-option {{diagnosisSecondaryMap[item.type] ? 'selected' : ''}}">{{item.label}}</text>
+    </view>
+    <view class="decision-actions"><button class="decision-secondary" bindtap="closeDiagnosisSheet">取消</button><button class="decision-primary" loading="{{diagnosisSaving}}" disabled="{{diagnosisSaving}}" bindtap="saveDiagnosis">保存错因</button></view>
   </view>
 </view>
 

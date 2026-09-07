@@ -299,6 +299,15 @@
 
             <text class="wrong-title">{{item.title}}</text>
 
+            <view class="wrong-cause-row">
+              <view class="wrong-cause-copy">
+                <text class="wrong-cause-label">错因</text>
+                <text class="wrong-cause-value">{{item.errorDiagnosisLabel || '暂未分类'}}</text>
+                <text wx:if="{{item.errorDiagnosis && !item.errorDiagnosis.userConfirmed && item.errorDiagnosis.effectiveSource === 'ai'}}" class="wrong-cause-ai">AI 建议</text>
+              </view>
+              <button class="wrong-cause-action" data-wqid="{{item.wrongQuestionId}}" catchtap="quickClassifyWrong">快速标记</button>
+            </view>
+
             <view class="answer-summary">
               <view class="answer-inline">
                 <text class="answer-inline-label">我的答案：</text>

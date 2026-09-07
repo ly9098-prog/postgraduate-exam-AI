@@ -3,6 +3,7 @@ const { formatInlineMathText } = require('../utils/math-format');
 const { normalizeAiAnalysisPayload, hasAiAnalysisContent } = require('../utils/ai-analysis-normalizer');
 const api = require('../../../utils/api');
 const { getChinaDate } = require('../../../utils/china-time');
+const errorDiagnosis = require('../../../utils/error-diagnosis');
 
 const ERROR_COLORS = ['#B8FF13', '#78D74D', '#43B968', '#238E58', '#86A83E', '#C9DC73'];
 const RESULT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -1134,7 +1135,13 @@ Page({
       correctAnswer: formatAnswerPreview(result.correct_answer ?? result.correctAnswer ?? question.answer ?? ''),
       analysis: result.analysis ?? question.analysis ?? '',
       knowledgePoints: kpList,
-      knowledgePoint: kpList[0] || '未标注知识点'
+      knowledgePoint: kpList[0] || '未标注知识点',
+      errorDiagnosis: errorDiagnosis.normalizeDiagnosis(result.error_diagnosis ?? result.errorDiagnosis),
+      errorDiagnosisLabel: errorDiagnosis.labelOf(
+        (result.error_diagnosis && result.error_diagnosis.primary_type) ||
+        (result.errorDiagnosis && result.errorDiagnosis.primaryType) ||
+        'unknown'
+      )
     };
   },
 
@@ -1155,8 +1162,51 @@ Page({
       correctAnswer: formatAnswerPreview(item.correctAnswer ?? item.correct_answer ?? item.answer ?? ''),
       analysis: item.analysis ?? '',
       knowledgePoints: kpList,
-      knowledgePoint: item.knowledgePoint || kpList[0] || '未标注知识点'
+      knowledgePoint: item.knowledgePoint || kpList[0] || '未标注知识点',
+      errorDiagnosis: errorDiagnosis.normalizeDiagnosis(item.errorDiagnosis ?? item.error_diagnosis),
+      errorDiagnosisLabel: errorDiagnosis.labelOf(
+        (item.errorDiagnosis && item.errorDiagnosis.primaryType) ||
+        (item.error_diagnosis && item.error_diagnosis.primary_type) ||
+        item.error_type || 'unknown'
+      )
     };
+  },
+
+  quickClassifyWrong(e) {
+    const wqId = Number(e.currentTarget.dataset.wqid || 0);
+    if (!wqId) {
+      wx.showToast({ title: '错题记录尚未就绪，可进入详情后标记', icon: 'none' });
+      return;
+    }
+    const options = errorDiagnosis.QUICK_TYPES;
+    wx.showActionSheet({
+      itemList: options.map(item => item.label),
+      success: async (res) => {
+        const picked = options[Number(res.tapIndex)];
+        if (!picked) return;
+        try {
+          const target = (this.data.wrongReviewItems || []).find(item => Number(item.wrongQuestionId) === wqId)
+            || (this.data.reviewItems || []).find(item => Number(item.wrongQuestionId) === wqId);
+          const raw = await api.put(`/wrong-questions/${wqId}/diagnosis`, {
+            diagnosis_id: target && target.errorDiagnosis ? Number(target.errorDiagnosis.id || 0) || undefined : undefined,
+            primary_type: picked.type,
+            secondary_types: [],
+          });
+          const normalized = errorDiagnosis.normalizeDiagnosis(raw);
+          const update = (list) => (list || []).map(item => item.wrongQuestionId === wqId
+            ? Object.assign({}, item, { errorDiagnosis: normalized, errorDiagnosisLabel: picked.label })
+            : item);
+          this.setData({
+            reviewItems: update(this.data.reviewItems),
+            filteredReviewItems: update(this.data.filteredReviewItems),
+            wrongReviewItems: update(this.data.wrongReviewItems),
+          });
+          wx.showToast({ title: '错因已记录', icon: 'success' });
+        } catch (err) {
+          wx.showToast({ title: api.getErrorMessage(err), icon: 'none' });
+        }
+      }
+    });
   },
 
   buildLocalErrorDistribution(wrongItems) {

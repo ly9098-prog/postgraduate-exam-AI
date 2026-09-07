@@ -14,6 +14,7 @@ from app.models.question_import import QuestionImport
 from app.models.practice_record import PracticeRecord
 from app.models.practice_session import PracticeSession
 from app.models.wrong_question import WrongQuestion
+from app.models.error_diagnosis import WrongQuestionErrorDiagnosis
 from app.models.answer_behavior import AnswerBehavior
 from app.models.exam import ExamAnswer, ExamAttempt, ExamPaper, ExamPaperQuestion
 from app.models.ai_chat import AiChat

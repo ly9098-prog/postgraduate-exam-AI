@@ -243,6 +243,38 @@
       </view>
     </view>
 
+    <!-- P1: Error-cause diagnosis -->
+    <view class="dashboard-section diagnosis-report-section">
+      <view class="section-heading">
+        <view>
+          <text class="section-kicker">ERROR PATTERN</text>
+          <text class="section-title">错因诊断</text>
+        </view>
+        <text class="section-side-note">近 {{errorDiagnosisStats ? errorDiagnosisStats.window_days : trendDays}} 天</text>
+      </view>
+      <view class="error-pattern-card">
+        <text class="error-pattern-summary">{{errorDiagnosisLoading && !errorDiagnosisStats ? '正在分析近期错误模式…' : errorDiagnosisSummary}}</text>
+        <view class="error-pattern-meta" wx:if="{{errorDiagnosisStats}}">
+          <text>{{errorDiagnosisStats.total_errors}} 次错误</text>
+          <text>{{errorDiagnosisStats.confirmed_count}} 次已确认</text>
+          <text wx:if="{{errorDiagnosisStats.unknown_count}}">{{errorDiagnosisStats.unknown_count}} 次待分类</text>
+        </view>
+        <view class="error-pattern-bars" wx:if="{{errorDiagnosisTopTypes.length}}">
+          <view class="error-pattern-row" wx:for="{{errorDiagnosisTopTypes}}" wx:key="type">
+            <view class="error-pattern-row-top"><text>{{item.label}}</text><text>{{item.count}} 次 · {{item.percentPct}}%</text></view>
+            <view class="error-pattern-track"><view class="error-pattern-fill" style="width:{{item.percentPct}}%;"></view></view>
+          </view>
+        </view>
+        <view class="error-pattern-changes" wx:if="{{errorDiagnosisChanges.length}}">
+          <text class="error-pattern-change" wx:for="{{errorDiagnosisChanges}}" wx:key="type">{{item.label}} {{item.deltaText}}</text>
+        </view>
+        <view class="error-pattern-kp" wx:if="{{errorDiagnosisTopKnowledge}}">
+          <text>近期高频知识点：{{errorDiagnosisTopKnowledge.name}}</text>
+          <text>{{errorDiagnosisTopKnowledge.count}} 次 · 主要{{errorDiagnosisTopKnowledge.topLabel}}</text>
+        </view>
+      </view>
+    </view>
+
     <!-- P0: Today plan -->
     <view class="dashboard-section">
       <view class="section-heading">

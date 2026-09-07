@@ -1,6 +1,6 @@
 import asyncio
-import logging
 import hmac
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -18,8 +18,8 @@ from app.api.router import api_router
 from app.core.ai_runtime_guard import AIResourceRejected
 from app.core.config import resolve_effective_process_role, settings
 from app.core.database import async_session, init_db
-from app.core.error_codes import ApiError, ErrorCode
 from app.core.deployment_profile import is_restricted_environment
+from app.core.error_codes import ApiError, ErrorCode
 from app.core.logging_config import setup_logging
 from app.core.ocr_isolation import (
     is_restricted_ocr_environment,
@@ -1744,6 +1744,7 @@ async def metrics_endpoint(request: Request):
         "resume_pipeline", "admin_resume", "batch_image",
         "formula_batch", "prewarm_analysis", "export_mistakes",
         "answer_projection",
+        "error_diagnosis",
     ]
     try:
         from app.services.task_queue_service import task_queue

@@ -1,5 +1,6 @@
 const api = require('../../../utils/api')
 const stemRender = require('../../study/utils/stem-render')
+const errorDiagnosis = require('../../../utils/error-diagnosis')
 
 function percent(value) { return `${Math.round(Number(value || 0) * 100)}%` }
 function durationText(sec) {
@@ -55,6 +56,8 @@ Page({
         userAnswerText: q.selected_answer || '未作答',
         knowledgeText: (q.knowledge_points || []).slice(0, 3).join(' · '),
         analysisPreview: String(q.analysis || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120),
+        errorDiagnosis: errorDiagnosis.normalizeDiagnosis(q.error_diagnosis),
+        errorDiagnosisLabel: errorDiagnosis.labelOf(q.error_diagnosis && q.error_diagnosis.primary_type),
       }))
       this.setData({
         loading: false,
@@ -72,6 +75,44 @@ Page({
     } catch (error) {
       this.setData({ loading: false, errorText: api.getErrorMessage(error) })
     }
+  },
+
+  quickClassifyWrong(e) {
+    const wqId = Number(e.currentTarget.dataset.wqid || 0)
+    if (!wqId) {
+      wx.showToast({ title: '未答题不生成错题记录', icon: 'none' })
+      return
+    }
+    const options = errorDiagnosis.QUICK_TYPES
+    wx.showActionSheet({
+      itemList: options.map(item => item.label),
+      success: async (res) => {
+        const picked = options[Number(res.tapIndex)]
+        if (!picked) return
+        try {
+          const target = (this.data.reviewRows || []).find(item => Number(item.wrong_question_id) === wqId)
+          const raw = await api.put(`/wrong-questions/${wqId}/diagnosis`, {
+            diagnosis_id: target && target.errorDiagnosis ? Number(target.errorDiagnosis.id || 0) || undefined : undefined,
+            primary_type: picked.type,
+            secondary_types: [],
+          })
+          const normalized = errorDiagnosis.normalizeDiagnosis(raw)
+          const reviewRows = (this.data.reviewRows || []).map(item => Number(item.wrong_question_id) === wqId
+            ? Object.assign({}, item, { errorDiagnosis: normalized, errorDiagnosisLabel: picked.label })
+            : item)
+          this.setData({ reviewRows })
+          wx.showToast({ title: '错因已记录', icon: 'success' })
+        } catch (err) {
+          wx.showToast({ title: api.getErrorMessage(err), icon: 'none' })
+        }
+      }
+    })
+  },
+
+  openWrongDetail(e) {
+    const wqId = Number(e.currentTarget.dataset.wqid || 0)
+    if (!wqId) return
+    wx.navigateTo({ url: `/subpackages/study/wrong-detail/wrong-detail?id=${wqId}&source=practice-result` })
   },
 
   goWrongBook() { wx.navigateTo({ url: '/subpackages/study/wrong-book/wrong-book' }) },
