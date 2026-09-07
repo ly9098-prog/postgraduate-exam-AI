@@ -293,7 +293,7 @@ class Settings(BaseSettings):
     # ── Vector Search (pgvector) ──
     VECTOR_ENABLED: bool = False
     VECTOR_MODE: str = "off"  # off | shadow | allowlist | all
-    VECTOR_ALLOWLIST: str = ""  # JSON list: '["exam408-ds","exam408-os"]' or user ids '[1,2,3]'
+    VECTOR_ALLOWLIST: str = ""  # JSON list: '["data_structure","operating_system"]' or user ids '[1,2,3]'
     VECTOR_CACHE_TTL_SEC: int = 300
     VECTOR_TOP_K: int = 100
     VECTOR_SIMILARITY_THRESHOLD: float = 0.15

@@ -73,8 +73,8 @@ async def _resolve_product_subject_ids(
     raw = str(product_scope or "").strip().lower()
     if not raw:
         return None
-    if raw not in {"408", "exam408", "computer"}:
-        raise HTTPException(status_code=400, detail="Unsupported product_scope")
+    if raw != "exam408":
+        raise HTTPException(status_code=400, detail="product_scope must be exam408")
     result = await db.execute(select(Subject))
     return selected_408_subject_ids(result.scalars().all())
 

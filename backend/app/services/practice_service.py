@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.subject_scope import (
+    EXAM408_CORE_CODES,
     EXAM408_DISPLAY_ORDER,
     canonical_408_code,
     select_408_subject_records,
@@ -447,10 +448,9 @@ def _random_sample_query(query, total_count: int, need: int, id_col=None):
 async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
     """返回当前产品可练习的 408 科目树。
 
-    ``subjects.id`` 仍是唯一业务 ID；这里仅做产品范围过滤，不删除或迁移
-    数学/英语/政治等历史科目。若 408 根科目存在但被停用，整个 408 公共
-    入口都会关闭；若是没有根节点的旧库，则仅回退展示可识别的四个 408
-    核心子科目。
+    ``subjects.id`` 是唯一业务 ID；运行时仅接受规范化后的 canonical code。
+    若 408 根科目缺失、重复或被停用，公共入口直接关闭，不再按名称/旧编码
+    进行兼容回退。
     """
     from app.models.admin import Subject
 
@@ -461,7 +461,7 @@ async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
     subjects = select_408_subject_records(all_subjects)
 
     def _to_node(s: Subject) -> dict:
-        product_code = canonical_408_code(s.code, s.name)
+        product_code = canonical_408_code(s.code)
         return {
             "subject_id": s.id,
             "subject_code": s.code,
@@ -535,36 +535,27 @@ def _normalize_true_false_answer(value: str) -> str:
 # reported only when another discipline has several independent signals and a
 # clear lead over the stored subject.  Normal cross-discipline terminology must
 # not make a valid question disappear from practice.
-_408_SUBJECT_ALIASES: dict[str, str] = {
-    "ds": "ds", "data_structure": "ds", "exam408-ds": "ds", "数据结构": "ds",
-    "os": "os", "operating_system": "os", "exam408-os": "os", "操作系统": "os",
-    "co": "co", "computer_organization": "co", "exam408-co": "co",
-    "组成原理": "co", "计算机组成原理": "co",
-    "cn": "cn", "computer_network": "cn", "exam408-cn": "cn",
-    "计网": "cn", "计算机网络": "cn",
-}
-
 _408_CONTENT_ANCHORS: dict[str, tuple[str, ...]] = {
-    "ds": (
+    "data_structure": (
         "二叉树", "二叉排序树", "平衡二叉树", "红黑树", "b树", "b+树",
         "线索二叉树", "哈夫曼树", "链表", "顺序表", "邻接表", "邻接矩阵",
         "最小生成树", "拓扑排序", "关键路径", "散列表", "哈希表", "散列",
         "二分查找", "折半查找", "快速排序", "归并排序", "堆排序", "希尔排序",
         "插入排序", "冒泡排序", "深度优先", "广度优先", "dfs", "bfs",
     ),
-    "os": (
+    "operating_system": (
         "进程", "线程", "死锁", "信号量", "临界区", "管程", "银行家算法",
         "页面置换", "缺页", "页表", "页框", "页号", "虚拟内存", "虚拟页",
         "分段存储", "段表", "段号", "段内地址", "工作集", "驻留集", "抖动",
         "文件系统", "磁盘调度", "时间片", "pv操作",
     ),
-    "co": (
+    "computer_organization": (
         "cpu", "alu", "cache", "高速缓存", "主存", "存储器层次", "指令周期",
         "指令字", "微指令", "微程序", "流水线", "控制器", "运算器", "总线",
         "dma", "中断向量", "寻址方式", "补码", "原码", "浮点数", "ieee754",
         "ieee 754", "机器字长", "存储字长",
     ),
-    "cn": (
+    "computer_network": (
         "tcp", "udp", "ipv4", "ipv6", "ip地址", "子网掩码", "路由表", "路由协议",
         "ospf", "rip", "bgp", "arp", "dns", "http", "以太网", "csma", "mac地址",
         "数据链路层", "网络层", "传输层", "应用层", "拥塞窗口", "三次握手",
@@ -574,11 +565,10 @@ _408_CONTENT_ANCHORS: dict[str, tuple[str, ...]] = {
 
 
 def _canonical_408_subject(code: str | None, name: str | None = None) -> str | None:
-    for raw in (code, name):
-        value = str(raw or "").strip().lower()
-        if value in _408_SUBJECT_ALIASES:
-            return _408_SUBJECT_ALIASES[value]
-    return None
+    # Runtime subject identity is code-only. ``name`` is intentionally ignored so
+    # a stale/incorrect code cannot be masked by a matching display name.
+    value = str(code or "").strip().lower()
+    return value if value in EXAM408_CORE_CODES else None
 
 
 def _question_stem_for_subject_guard(content: dict | None) -> str:

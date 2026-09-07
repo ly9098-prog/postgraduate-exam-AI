@@ -55,7 +55,7 @@ class QuestionNormalizer:
 
     VALID_SUBJECTS = {
         "math2", "math2-calculus", "math2-linalg",
-        "exam408", "exam408-ds", "exam408-os", "exam408-co", "exam408-cn",
+        "exam408", "data_structure", "operating_system", "computer_organization", "computer_network",
         "english",
     }
     CANONICAL_TYPES = CANONICAL_TYPES
@@ -109,7 +109,7 @@ class QuestionNormalizer:
         "论述": "subjective",
         "计算": "subjective",
     }
-    SUBJECT_ALIASES = {
+    SUBJECT_LABEL_MAP = {
         "数学二": "math2",
         "数学": "math2",
         "math2": "math2",
@@ -122,19 +122,15 @@ class QuestionNormalizer:
         "408": "exam408",
         "计算机": "exam408",
         "exam408": "exam408",
-        "数据结构": "exam408-ds",
-        "ds": "exam408-ds",
-        "exam408-ds": "exam408-ds",
-        "操作系统": "exam408-os",
-        "os": "exam408-os",
-        "exam408-os": "exam408-os",
-        "计算机组成": "exam408-co",
-        "计算机组成原理": "exam408-co",
-        "co": "exam408-co",
-        "exam408-co": "exam408-co",
-        "计算机网络": "exam408-cn",
-        "cn": "exam408-cn",
-        "exam408-cn": "exam408-cn",
+        "数据结构": "data_structure",
+        "data_structure": "data_structure",
+        "操作系统": "operating_system",
+        "operating_system": "operating_system",
+        "计算机组成": "computer_organization",
+        "计算机组成原理": "computer_organization",
+        "computer_organization": "computer_organization",
+        "计算机网络": "computer_network",
+        "computer_network": "computer_network",
         "英语": "english",
         "英语二": "english",
         "english": "english",
@@ -283,7 +279,7 @@ class QuestionNormalizer:
 
     def normalize_subject(self, value: Any) -> str:
         subject_code = str(value or "").strip()
-        return self.SUBJECT_ALIASES.get(
+        return self.SUBJECT_LABEL_MAP.get(
             subject_code, subject_code if subject_code in self.VALID_SUBJECTS else ""
         )
 
@@ -1114,22 +1110,22 @@ def _parse_excel(content: bytes, filename: str) -> list[dict]:
 
 
 _PDF_SUBJECT_KEYWORDS = {
-    "exam408-ds": [
+    "data_structure": [
         "数据结构", "二叉树", "栈", "队列", "排序", "查找", "链表", "图论",
         "哈夫曼", "邻接矩阵", "邻接表", "散列", "hash", "深度优先", "广度优先",
         "二分查找", "插入排序", "归并排序", "快速排序", "堆排序",
     ],
-    "exam408-os": [
+    "operating_system": [
         "操作系统", "进程", "线程", "信号量", "死锁", "调度算法",
         "页表", "虚拟内存", "缺页", "tlb", "文件系统", "i/o",
         "互斥", "同步", "管程", "临界区", "时间片", "fcfs", "rr",
     ],
-    "exam408-co": [
+    "computer_organization": [
         "cpu", "存储器", "主存", "指令", "中断", "dma", "cache", "流水线",
         "微指令", "寻址", "补码", "原码", "浮点", "运算器", "控制器",
         "总线", "字长", "定长指令", "条件转移",
     ],
-    "exam408-cn": [
+    "computer_network": [
         "网络层", "tcp", "ip地址", "路由", "码分", "频分", "csma",
         "局域网", "以太网", "传输层", "应用层", "数据链路",
         "拥塞", "三次握手", "udp", "http", "dns", "子网掩码",

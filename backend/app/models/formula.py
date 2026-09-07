@@ -25,7 +25,7 @@ class FormulaCategory(Base):
         ForeignKey("formula_categories.id"), nullable=True, index=True
     )
     exam_scope: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="math2", index=True
+        String(32), nullable=False, default="exam408", index=True
     )
     node_type: Mapped[str] = mapped_column(
         String(16), nullable=False
@@ -68,7 +68,7 @@ class FormulaCard(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     exam_scope: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="math2", index=True
+        String(32), nullable=False, default="exam408", index=True
     )
     category_id: Mapped[int] = mapped_column(
         ForeignKey("formula_categories.id"), nullable=False, index=True

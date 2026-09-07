@@ -10,7 +10,6 @@ from app.core.database import async_session
 from app.core.time_utils import utcnow
 from app.models.question import Question
 from app.models.recommendation_log import RecommendationLog
-from app.models.subject_resolver import resolve_subject_id_from_legacy
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +32,8 @@ async def create_recommendation_logs(
     """批量创建推荐日志。
 
     recommendations: 每项至少包含 question_id，可选 recommend_score / similarity / reason。
-    科目身份统一使用 subject_id；若调用方在每条 recommendation 里传了遗留的
-    ``subject`` 字符串（旧协议兼容边界），本函数通过 subject 表解析成 subject_id。
+    科目身份统一使用 subject_id。调用方未提供 subject_id 时，仅允许根据 question_id
+    的真实归属回填，不再接受字符串 subject/旧编码。
     返回新创建的日志 ID 列表。
     """
     # 必须 commit：get_db 依赖（database.py）的会话在请求结束关闭时不会自动提交，
@@ -42,8 +41,6 @@ async def create_recommendation_logs(
     now = utcnow()
     logs = []
 
-    # 遗留字符串 subject → subject_id 的批量解析缓存（按原始值缓存，含未命中 None）
-    legacy_sid_cache: dict[str, int | None] = {}
     # question_id → subject_id 缓存（subject 全部来源都无法解析时的兜底）
     qid_sid_cache: dict[int, int | None] = {}
 
@@ -53,14 +50,6 @@ async def create_recommendation_logs(
             rec_sid = rec.get("subject_id")
             if isinstance(rec_sid, int):
                 sid = rec_sid
-            else:
-                raw = rec.get("subject")
-                if isinstance(raw, int):
-                    sid = raw
-                elif isinstance(raw, str) and raw:
-                    if raw not in legacy_sid_cache:
-                        legacy_sid_cache[raw] = await resolve_subject_id_from_legacy(db, raw)
-                    sid = legacy_sid_cache[raw]
 
         # 调用方未带 subject 时，按问题归属推导（与导入回填同一优先级）
         if sid is None:

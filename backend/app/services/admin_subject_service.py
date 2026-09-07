@@ -3,7 +3,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
-from app.core.subject_scope import EXAM408_ROOT_CODE, canonical_408_code
+from app.core.subject_scope import (
+    EXAM408_ROOT_CODE,
+    canonical_408_code,
+)
 from app.models.admin import Subject
 from app.models.question import Question
 from app.schemas.admin_subjects import (
@@ -53,13 +56,15 @@ async def create_subject(
     operator: AdminPrincipal,
     request: Request | None = None,
 ) -> Subject:
+    _validate_subject_code(data.code)
+    _validate_product_activation(data.code, data.is_active)
     await _ensure_unique_code(db, data.code)
     parent = await _get_parent(db, data.parent_id)
-    product_code = canonical_408_code(data.code, data.name)
+    product_code = canonical_408_code(data.code)
     if product_code == EXAM408_ROOT_CODE and parent is not None:
         raise SubjectBusinessRuleError("408 根科目必须保持为一级科目")
     if product_code and product_code != EXAM408_ROOT_CODE:
-        if parent is None or canonical_408_code(parent.code, parent.name) != EXAM408_ROOT_CODE:
+        if parent is None or canonical_408_code(parent.code) != EXAM408_ROOT_CODE:
             raise SubjectBusinessRuleError("408 四个核心子科目必须直属 408 根科目")
 
     level = parent.level + 1 if parent else 1
@@ -101,10 +106,11 @@ async def update_subject(
     update_data = data.model_dump(exclude_unset=True)
     confirm_core_disable = bool(update_data.pop("confirm_core_disable", False))
     new_code = update_data.get("code", subject.code)
-    new_name = update_data.get("name", subject.name)
-
-    current_product_code = canonical_408_code(subject.code, subject.name)
-    next_product_code = canonical_408_code(new_code, new_name)
+    _validate_subject_code(new_code)
+    current_product_code = canonical_408_code(subject.code)
+    next_product_code = canonical_408_code(new_code)
+    next_is_active = update_data.get("is_active", subject.is_active)
+    _validate_product_activation(new_code, next_is_active, existing_code=subject.code)
     if current_product_code and next_product_code != current_product_code:
         raise SubjectBusinessRuleError("408 核心科目的产品身份不能改为其他科目")
 
@@ -138,7 +144,7 @@ async def update_subject(
     if current_product_code == EXAM408_ROOT_CODE and parent is not None:
         raise SubjectBusinessRuleError("408 根科目必须保持为一级科目")
     if current_product_code and current_product_code != EXAM408_ROOT_CODE:
-        if parent is None or canonical_408_code(parent.code, parent.name) != EXAM408_ROOT_CODE:
+        if parent is None or canonical_408_code(parent.code) != EXAM408_ROOT_CODE:
             raise SubjectBusinessRuleError("408 四个核心子科目必须直属 408 根科目")
 
     new_level = parent.level + 1 if parent else 1
@@ -177,7 +183,7 @@ async def delete_subject(
     request: Request | None = None,
 ) -> None:
     subject = await get_subject(db, subject_id)
-    if canonical_408_code(subject.code, subject.name):
+    if canonical_408_code(subject.code):
         raise SubjectBusinessRuleError("408 核心科目不能删除；如需临时隐藏，请使用停用")
     child_count = await db.scalar(select(func.count()).select_from(Subject).where(Subject.parent_id == subject.id))
     if child_count:
@@ -300,72 +306,43 @@ def _sync_descendant_paths(subjects: list[Subject], root: Subject) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Subject resolver: legacy string → subject_id (for backward compatibility)
+# Strict subject resolver
 # ---------------------------------------------------------------------------
-
-_SUBJECT_CODE_MAP: dict[str, int] | None = None
 
 
 async def resolve_subject_id(
     db: AsyncSession, subject: str | int | None
 ) -> int | None:
-    """Resolve a legacy subject string or subject_id to a valid subject_id.
+    """Resolve a subject id or an exact canonical ``subjects.code`` value.
 
-    Accepts:
-    - int: used directly as subject_id (validated to exist)
-    - str: matched against subjects.code (exact), then suffix after last '-'
-
-    Returns None if the subject cannot be resolved.
-    Raises ValueError if the subject is explicitly invalid.
+    No suffix, name, or alias fallback is performed. Invalid/stale codes return
+    ``None`` so callers fail visibly instead of masking data-contract drift.
     """
     if subject is None:
         return None
     if isinstance(subject, int):
         subj = await db.get(Subject, subject)
-        if subj:
-            return subject
+        return subject if subj else None
+
+    key = str(subject).strip().lower()
+    if not key:
         return None
-
-    # Build code → id map (cached per call)
-    rows = (await db.execute(select(Subject.id, Subject.code))).all()
-    code_map = {row.code.lower(): row.id for row in rows}
-
-    key = subject.lower().strip()
-    if key in code_map:
-        return code_map[key]
-    if "-" in key:
-        suffix = key.rsplit("-", 1)[1]
-        if suffix in code_map:
-            return code_map[suffix]
-    return None
+    return (await db.execute(
+        select(Subject.id).where(Subject.code == key).limit(1)
+    )).scalar_one_or_none()
 
 
 async def resolve_subject_ids(
     db: AsyncSession, subject: str | int | None,
     include_descendants: bool = True,
 ) -> list[int]:
-    """Resolve to all subject_ids matching the given subject identifier.
-
-    For simple matches behaves like resolve_subject_id (returns 0-1 items).
-    This replaces the old ``Question.subject.like(f"{subject}-%")`` pattern
-    by resolving the subject tree: if subject maps to a parent, all descendant
-    subject_ids are included (unless include_descendants=False).
-
-    Args:
-        db: Database session.
-        subject: Subject code (str) or ID (int).
-        include_descendants: If True (default), include all descendant subject
-            IDs. If False, return only the exact matching subject ID.
-            Default True maintains backward compatibility.
-    """
+    """Resolve a canonical subject and optionally its descendants."""
     sid = await resolve_subject_id(db, subject)
     if sid is None:
         return []
-
     if not include_descendants:
         return [sid]
 
-    # Check if this subject has children → include them all
     all_subjs = (await db.execute(
         select(Subject).order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
     )).scalars().all()
@@ -380,3 +357,38 @@ async def resolve_subject_ids(
         stack.extend(children.get(node.id, []))
 
     return list(descendant_ids)
+
+
+def _validate_subject_code(code: str) -> None:
+    raw = str(code or "").strip()
+    if not raw:
+        raise SubjectBusinessRuleError("科目编码不能为空")
+    if raw != raw.lower() or raw != code:
+        raise SubjectBusinessRuleError("科目编码必须使用小写 canonical code，不能包含首尾空格")
+    if not raw[0].isalpha() or not all(ch.islower() or ch.isdigit() or ch == "_" for ch in raw):
+        raise SubjectBusinessRuleError("科目编码仅允许小写字母、数字和下划线，并且必须以字母开头")
+
+
+def _validate_product_activation(
+    code: str,
+    is_active: bool,
+    *,
+    existing_code: str | None = None,
+) -> None:
+    """Keep the currently active product catalog canonical and 408-only.
+
+    Historical non-408 rows may remain inactive for future expansion, but the
+    current product must never activate a non-canonical subject code.
+    """
+    if not is_active:
+        return
+    if canonical_408_code(code):
+        return
+    if existing_code is not None and code == existing_code:
+        raise SubjectBusinessRuleError(
+            "当前产品仅启用 canonical 408 科目；其他科目请保持停用"
+        )
+    raise SubjectBusinessRuleError(
+        "当前产品仅允许启用 canonical 408 科目：exam408 / data_structure / "
+        "computer_organization / operating_system / computer_network"
+    )

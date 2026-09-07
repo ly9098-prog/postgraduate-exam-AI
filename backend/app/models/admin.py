@@ -5,8 +5,8 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
-    ForeignKey,
     Float,
+    ForeignKey,
     Integer,
     SmallInteger,
     String,
@@ -115,7 +115,6 @@ class AuditLog(Base):
 
 class Subject(Base):
     __tablename__ = "subjects"
-
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("subjects.id"), nullable=True, index=True)
     code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)

@@ -194,7 +194,7 @@ async def generate_drafts(
 ) -> dict:
     """AI 批量生成题目草稿，统一进入 question_imports 暂存区。"""
     if subject_code not in SUBJECT_VALUES:
-        raise ValueError("subject_code 仅支持 math2 / exam408 / english")
+        raise ValueError("subject_code 必须使用已注册的 canonical subject code")
     if question_type not in TYPE_VALUES:
         raise ValueError("question_type 仅支持 choice / fill / subjective")
     count = max(1, min(10, count))

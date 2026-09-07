@@ -53,12 +53,12 @@ class AdminSubjectResponse(BaseModel):
     @computed_field
     @property
     def product_code(self) -> str | None:
-        return canonical_408_code(self.code, self.name)
+        return canonical_408_code(self.code)
 
     @computed_field
     @property
     def product_scope(self) -> str | None:
-        return "408" if self.product_code else None
+        return EXAM408_ROOT_CODE if self.product_code else None
 
     @computed_field
     @property

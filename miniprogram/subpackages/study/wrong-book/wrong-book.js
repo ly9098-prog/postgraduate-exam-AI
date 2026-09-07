@@ -370,7 +370,7 @@ Page({
   async loadStats() {
     const requestSeq = ++this._statsRequestSeq
     try {
-      const stats = await api.get('/wrong-questions/stats', { product_scope: '408' })
+      const stats = await api.get('/wrong-questions/stats', { product_scope: 'exam408' })
       if (this._destroyed || requestSeq !== this._statsRequestSeq) return
       this._aiStatsLoaded = true
       const masteredCount = typeof stats.unmastered === 'number'
@@ -462,7 +462,7 @@ Page({
     this.setData({ loading: true })
 
     try {
-      const params = { page, page_size: 20, product_scope: '408' }
+      const params = { page, page_size: 20, product_scope: 'exam408' }
       if (this.data.selectedSubjectId) params.subject_id = this.data.selectedSubjectId
       if (this.data.selectedErrorType) params.error_type = this.data.selectedErrorType
       if (this.data.selectedTopic) params.topic = this.data.selectedTopic
@@ -512,7 +512,7 @@ Page({
 
   async loadTaskFlow() {
     const requestSeq = ++this._taskFlowRequestSeq
-    const params = { preview_size: 3, product_scope: '408' }
+    const params = { preview_size: 3, product_scope: 'exam408' }
     if (this.data.selectedSubjectId) params.subject_id = this.data.selectedSubjectId
     if (this.data.selectedErrorType) params.error_type = this.data.selectedErrorType
     if (this.data.selectedTopic) params.topic = this.data.selectedTopic

@@ -51,7 +51,7 @@ async def generate_drafts(
         subject_code = subj.code
     elif subject_code:
         if subject_code not in SUBJECT_VALUES:
-            raise ValueError("subject_code 仅支持 math2 / exam408 / english")
+            raise ValueError("subject_code 必须使用已注册的 canonical subject code")
     else:
         raise ValueError("必须提供 subject 或 subject_id")
     question_type = normalizer.normalize_type(question_type)

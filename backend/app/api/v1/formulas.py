@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.subject_scope import EXAM408_FORMULA_SCOPE_ALIASES
+from app.core.subject_scope import EXAM408_FORMULA_SCOPE
 from app.core.time_utils import serialize_utc_datetime
 from app.models.formula import (
     FormulaCard,
@@ -62,12 +62,12 @@ def _build_category_tree(categories: list[FormulaCategory]) -> list[dict]:
 
 
 def _exam_scope_values(exam_scope: str | None) -> tuple[str, ...] | None:
-    raw = str(exam_scope or "").strip()
+    raw = str(exam_scope or "").strip().lower()
     if not raw:
         return None
-    if raw.lower() in {value.lower() for value in EXAM408_FORMULA_SCOPE_ALIASES}:
-        return EXAM408_FORMULA_SCOPE_ALIASES
-    return (raw,)
+    # Formula scope is strict as well: stale aliases must fail to match instead
+    # of silently reading a mixed historical dataset.
+    return (EXAM408_FORMULA_SCOPE,) if raw == EXAM408_FORMULA_SCOPE else (raw,)
 
 
 async def _get_active_categories(

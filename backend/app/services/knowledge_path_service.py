@@ -12,7 +12,6 @@ from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
-from app.models.subject_resolver import resolve_subject_id_from_legacy
 from app.models.user_knowledge_state import UserKnowledgeState
 
 logger = logging.getLogger(__name__)
@@ -46,13 +45,10 @@ def _normalize_edge_weight(weight: float | int | None) -> float:
 async def _resolve_subject_id(
     db: AsyncSession, subject: str | int | None
 ) -> int | None:
-    """Resolve a subject identifier (int id or str code/name/alias) to a subject_id."""
-    if subject is None:
-        return None
-    if isinstance(subject, int):
-        subj = await db.get(Subject, subject)
-        return subj.id if subj else None
-    return await resolve_subject_id_from_legacy(db, subject)
+    """Resolve an id or exact canonical subject code to ``subject_id``."""
+    from app.services.admin_subject_service import resolve_subject_id
+
+    return await resolve_subject_id(db, subject)
 
 
 async def _attach_subject_info(db: AsyncSession, nodes: list[dict]) -> list[dict]:

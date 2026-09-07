@@ -107,16 +107,15 @@ def _build_question_detail_from_dict(
 ) -> QuestionAuditDetail:
     """Build a QuestionAuditDetail from a plain dict (extracted from audit log).
 
-    Backward compatibility notes:
-    - Old logs stored ``subject`` as a string code (e.g. ``"exam408-ds"``).
-      New logs store ``subject_id`` as an integer.  We check both.
+    Subject identity is read only from the canonical snapshot fields. Historical
+    free-form ``subject`` strings are preserved in raw audit detail but are not
+    reinterpreted as current subject identity.
     """
     content = data.get("content")
     content_text = extract_question_content_text(content)
     content_preview = _content_preview(content)
 
-    # Backward compatibility: old logs used "subject" (string code)
-    subject_code = data.get("subject_code") or data.get("subject")
+    subject_code = data.get("subject_code")
 
     return QuestionAuditDetail(
         id=data.get("id") or question_id,

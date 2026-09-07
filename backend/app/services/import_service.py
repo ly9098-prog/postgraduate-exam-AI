@@ -65,10 +65,10 @@ def _raw_to_parsed(raw: dict) -> dict:
         "高等数学": "math2-calculus", "高数": "math2-calculus",
         "线性代数": "math2-linalg", "线代": "math2-linalg",
         "408": "exam408", "计算机": "exam408", "exam408": "exam408",
-        "数据结构": "exam408-ds", "DS": "exam408-ds", "exam408-ds": "exam408-ds",
-        "操作系统": "exam408-os", "OS": "exam408-os", "exam408-os": "exam408-os",
-        "计算机组成": "exam408-co", "组成原理": "exam408-co", "CO": "exam408-co", "exam408-co": "exam408-co",
-        "计算机网络": "exam408-cn", "网络": "exam408-cn", "CN": "exam408-cn", "exam408-cn": "exam408-cn",
+        "数据结构": "data_structure", "data_structure": "data_structure",
+        "操作系统": "operating_system", "operating_system": "operating_system",
+        "计算机组成": "computer_organization", "组成原理": "computer_organization", "computer_organization": "computer_organization",
+        "计算机网络": "computer_network", "网络": "computer_network", "computer_network": "computer_network",
         "英语": "english", "英语二": "english", "english": "english",
     }
     TYPE_MAP = {
@@ -128,7 +128,7 @@ def _raw_to_parsed(raw: dict) -> dict:
     return {
         "subject": subject if subject in (
             "math2", "math2-calculus", "math2-linalg",
-            "exam408", "exam408-ds", "exam408-os", "exam408-co", "exam408-cn",
+            "exam408", "data_structure", "operating_system", "computer_organization", "computer_network",
             "english",
         ) else None,
         "question_type": qtype,
@@ -145,26 +145,26 @@ def _guess_subject(text: str) -> str | None:
     """根据 PDF 文本内容关键词猜测科目（含子科目）"""
     text_lower = text.lower()
     scores: dict[str, int] = {
-        "exam408-ds": 0, "exam408-os": 0, "exam408-co": 0, "exam408-cn": 0,
+        "data_structure": 0, "operating_system": 0, "computer_organization": 0, "computer_network": 0,
         "math2-calculus": 0, "math2-linalg": 0,
         "english": 0,
     }
     keywords = {
-        "exam408-ds": [
+        "data_structure": [
             "数据结构", "链表", "栈", "队列", "二叉树", "红黑树", "b树", "avl",
             "排序", "查找", "图论", "dfs", "bfs", "最短路", "最小生成树",
             "哈希表", "散列", "堆", "优先队列",
         ],
-        "exam408-os": [
+        "operating_system": [
             "操作系统", "进程", "线程", "死锁", "调度", "内存管理", "虚拟内存",
             "分页", "分段", "文件系统", "i/o", "中断", "信号量", "互斥",
             "页面置换", "缺页",
         ],
-        "exam408-co": [
+        "computer_organization": [
             "计算机组成", "指令系统", "cpu", "alu", "cache", "存储器", "dma",
             "总线", "寻址", "流水线", "ieee 754", "浮点", "定点", "补码",
         ],
-        "exam408-cn": [
+        "computer_network": [
             "计算机网络", "tcp", "ip", "http", "udp", "路由", "交换",
             "dns", "nat", "arp", "以太网", "局域网", "csma", "帧",
             "网络层", "传输层", "应用层", "拥塞控制",
@@ -195,8 +195,8 @@ def _guess_subject(text: str) -> str | None:
 
     # 子科目得分不足时，退化到父科目
     parent_map = {
-        "exam408-ds": "exam408", "exam408-os": "exam408",
-        "exam408-co": "exam408", "exam408-cn": "exam408",
+        "data_structure": "exam408", "operating_system": "exam408",
+        "computer_organization": "exam408", "computer_network": "exam408",
         "math2-calculus": "math2", "math2-linalg": "math2",
     }
     return best if scores[best] >= 3 else parent_map.get(best, best)

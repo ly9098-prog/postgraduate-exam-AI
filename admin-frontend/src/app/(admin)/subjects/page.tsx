@@ -32,7 +32,7 @@ function flattenSubjects(items: AdminSubjectNode[], depth = 0): FlatSubject[] {
 
 function scopeLabel(subject: AdminSubjectNode) {
   if (subject.is_product_root) return "408 根科目";
-  if (subject.product_scope === "408") return "408 核心";
+  if (subject.product_scope === "exam408") return "408 核心";
   return "保留科目";
 }
 
@@ -64,10 +64,10 @@ export default function SubjectsPage() {
 
   const flat = useMemo(() => flattenSubjects(query.data?.items || []), [query.data]);
   const root408 = flat.find((item) => item.is_product_root);
-  const core408 = flat.filter((item) => item.product_scope === "408" && !item.is_product_root);
+  const core408 = flat.filter((item) => item.product_scope === "exam408" && !item.is_product_root);
   const activeCoreCount = core408.filter((item) => item.is_active).length;
   const inactiveReservedCount = flat.filter(
-    (item) => item.product_scope !== "408" && !item.is_active,
+    (item) => item.product_scope !== "exam408" && !item.is_active,
   ).length;
 
   function requestToggle(subject: AdminSubjectNode) {
@@ -84,10 +84,10 @@ export default function SubjectsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold text-[var(--color-primary)]">408-BASE</p>
+          <p className="text-sm font-semibold text-[var(--color-primary)]">408-CANONICAL</p>
           <h1 className="font-display text-3xl font-bold text-[var(--ink)]">科目治理</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-text-secondary)]">
-            当前产品只开放 408 根科目及四个核心科目。数学、英语、政治等历史科目保留在数据库中，可在这里启停，但不会作为小程序主学习入口。
+            当前产品只允许启用 canonical 408 根科目及四个核心科目。其他历史科目记录可保留，但统一保持停用；未来扩科时应通过独立迁移重新启用。
           </p>
         </div>
         <Button variant="secondary" onClick={() => query.refetch()} disabled={query.isFetching}>
@@ -153,7 +153,7 @@ export default function SubjectsPage() {
                   <div className="min-w-0 flex-1" style={{ paddingLeft: `${subject.depth * 24}px` }}>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-[var(--ink)]">{subject.name}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${subject.product_scope === "408" ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${subject.product_scope === "exam408" ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
                         {scopeLabel(subject)}
                       </span>
                       {!subject.is_active ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">已停用</span> : null}
@@ -162,7 +162,7 @@ export default function SubjectsPage() {
                   </div>
                   <Toggle
                     checked={subject.is_active}
-                    disabled={!canWrite || mutation.isPending}
+                    disabled={!canWrite || mutation.isPending || subject.product_scope !== "exam408"}
                     onChange={() => requestToggle(subject)}
                   />
                 </div>

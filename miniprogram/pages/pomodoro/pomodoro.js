@@ -9,10 +9,10 @@ const PHASE = { IDLE: 'idle', RUNNING: 'running', BREAK: 'break', CEREMONY: 'cer
 
 const SUBJECT_EMOJI = {
   // New codes
-  'exam408-ds': '📃',
-  'exam408-co': '💻',
-  'exam408-os': '⚙️',
-  'exam408-cn': '🌐',
+  data_structure: '📃',
+  computer_organization: '💻',
+  operating_system: '⚙️',
+  computer_network: '🌐',
   'math2-calculus': '📐',
   'math2-linalg': '📏',
   english: '📖',
@@ -3196,7 +3196,7 @@ Page({
     const remaining = Number.isFinite(totalSec) && Number.isFinite(elapsed)
       ? Math.max(0, totalSec - elapsed) : 0
 
-    // Resolve subject from session (legacy cache may only carry subject_code)
+    // Resolve subject from session (cached session may only carry canonical subject_code)
     const subjectId = session.subject_id || this._lookupSubjectIdByCode(session.subject_code) || null
     const subjectCode = session.subject_code || ''
     const subjectName = session.subject_name || '未分类'

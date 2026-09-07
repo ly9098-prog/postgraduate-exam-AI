@@ -1,22 +1,31 @@
 from __future__ import annotations
-from app.schemas.base import BaseModel
 
 from datetime import datetime
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
+
+from app.schemas.base import BaseModel
 
 # ── Category ──
 
 class FormulaCategoryCreate(BaseModel):
     parent_id: int | None = None
-    exam_scope: str = "math2"
+    exam_scope: str = "exam408"
     node_type: str
     code: str
     name: str
     description: str | None = None
     sort_order: int = 0
     is_active: bool = True
+
+    @field_validator("exam_scope")
+    @classmethod
+    def _validate_exam_scope(cls, value: str) -> str:
+        raw = str(value or "").strip()
+        if raw not in {"math2", "exam408"}:
+            raise ValueError("exam_scope 必须使用 canonical value：math2 / exam408")
+        return raw
 
 
 class FormulaCategoryUpdate(BaseModel):

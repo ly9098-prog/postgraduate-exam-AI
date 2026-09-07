@@ -7,7 +7,7 @@ const READER_SEQUENCE_KEY = 'formula_reader_sequence_v2'
 const SEQUENCE_TTL = 30 * 60 * 1000
 const TRANSITION_OUT_MS = 150
 const TRANSITION_IN_DELAY_MS = 36
-const PRODUCT_EXAM_SCOPE = '408'
+const PRODUCT_EXAM_SCOPE = 'exam408'
 
 function normalizeId(value) {
   if (value === undefined || value === null || value === '') return null

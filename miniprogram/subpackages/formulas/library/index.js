@@ -33,7 +33,7 @@ const LIBRARY_TYPE_FUNCTION_GRAPH = 'function_graph'
 const MAX_GRAPH_FALLBACK_PAGES = 10
 const MAX_FAVORITE_PAGES = 50
 const FAVORITE_PAGE_SIZE = 200
-const PRODUCT_EXAM_SCOPE = '408'
+const PRODUCT_EXAM_SCOPE = 'exam408'
 
 function normalizeCardType(item) {
   return String(

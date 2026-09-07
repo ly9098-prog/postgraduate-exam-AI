@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.client import OpenAICompatibleAPIError, llm
-
 from app.core.admin_security import AdminPrincipal
 from app.core.config import settings
 from app.core.log_context import get_trace_headers
@@ -109,10 +108,10 @@ _DEFAULT_CONFIGS: dict[str, str] = {
         "- math2-calculus（数学二-微积分）\n"
         "- math2-linalg（数学二-线性代数）\n"
         "- exam408（408 统考通用，无法确定子类时使用）\n"
-        "- exam408-ds（408-数据结构）\n"
-        "- exam408-os（408-操作系统）\n"
-        "- exam408-co（408-计算机组成原理）\n"
-        "- exam408-cn（408-计算机网络）\n"
+        "- data_structure（408-数据结构）\n"
+        "- operating_system（408-操作系统）\n"
+        "- computer_organization（408-计算机组成原理）\n"
+        "- computer_network（408-计算机网络）\n"
         "- english（英语）\n\n"
         "有效题型（question_type）值：\n"
         "- single_choice（单选题）\n"
@@ -125,10 +124,10 @@ _DEFAULT_CONFIGS: dict[str, str] = {
         "- 优先根据题干内容推断最具体的子学科，无法确定时使用大类\n"
         "- 数学题干出现极限/导数/积分/微分 → math2-calculus\n"
         "- 数学题干出现矩阵/向量/特征值/行列式/线性 → math2-linalg\n"
-        "- 408 题干出现链表/树/图/排序/查找/算法 → exam408-ds\n"
-        "- 408 题干出现进程/线程/死锁/内存/文件系统 → exam408-os\n"
-        "- 408 题干出现 CPU/指令/流水线/Cache/总线 → exam408-co\n"
-        "- 408 题干出现 TCP/IP/HTTP/DNS/路由/子网 → exam408-cn\n\n"
+        "- 408 题干出现链表/树/图/排序/查找/算法 → data_structure\n"
+        "- 408 题干出现进程/线程/死锁/内存/文件系统 → operating_system\n"
+        "- 408 题干出现 CPU/指令/流水线/Cache/总线 → computer_organization\n"
+        "- 408 题干出现 TCP/IP/HTTP/DNS/路由/子网 → computer_network\n\n"
         "输出 JSON 格式：\n"
         '{"subject": "math2-calculus", '
         '"question_type": "single_choice", '
