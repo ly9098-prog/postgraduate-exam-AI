@@ -1,0 +1,45 @@
+<view class="page">
+  <view class="state" wx:if="{{loading}}">正在读取掌握状态…</view>
+  <view class="state error" wx:elif="{{error}}"><text>{{error}}</text><button bindtap="retry">重试</button></view>
+
+  <block wx:elif="{{detail}}">
+    <view class="hero status-{{detail.status}}">
+      <text class="subject">{{detail.subject_name}}</text>
+      <text class="name">{{detail.name}}</text>
+      <text class="desc" wx:if="{{detail.description}}">{{detail.description}}</text>
+      <view class="hero-row">
+        <view><text class="metric">{{scoreText}}</text><text class="label">掌握度</text></view>
+        <view><text class="metric">{{confidenceText}}</text><text class="label">置信度</text></view>
+        <view><text class="metric">{{accuracyText}}</text><text class="label">正确率</text></view>
+      </view>
+      <view class="status-pill">{{statusText}}</view>
+    </view>
+
+    <view class="card">
+      <view class="card-head"><text class="card-title">练习证据</text><text class="card-note">累计 {{detail.attempt_count}} 次</text></view>
+      <view class="evidence-grid">
+        <view><text class="evidence-num">{{detail.correct_count}}</text><text>答对</text></view>
+        <view><text class="evidence-num">{{detail.wrong_count}}</text><text>答错</text></view>
+        <view><text class="evidence-num">{{detail.recent_wrong_count}}</text><text>近期连续错</text></view>
+        <view><text class="evidence-num">{{detail.trainable_question_count}}</text><text>当前可练</text></view>
+      </view>
+      <view class="recent" wx:if="{{recent.length}}">
+        <text class="recent-title">最近 {{recent.length}} 次表现</text>
+        <view class="recent-dots"><text wx:for="{{recent}}" wx:key="index" class="answer-dot {{item.cls}}">{{item.mark}}</text></view>
+      </view>
+      <view class="insufficient" wx:if="{{detail.status === 'insufficient'}}">当前置信度不足 30%，继续练习后再判断强弱。</view>
+    </view>
+
+    <view class="card" wx:if="{{detail.prerequisites.length || detail.next_nodes.length || detail.related_nodes.length}}">
+      <text class="card-title">知识关联</text>
+      <view class="relation-group" wx:if="{{detail.prerequisites.length}}"><text class="relation-title">前置知识</text><view class="chips"><view class="chip" wx:for="{{detail.prerequisites}}" wx:key="knowledge_point_id" data-id="{{item.knowledge_point_id}}" bindtap="openRelation">{{item.name}}</view></view></view>
+      <view class="relation-group" wx:if="{{detail.next_nodes.length}}"><text class="relation-title">后续知识</text><view class="chips"><view class="chip" wx:for="{{detail.next_nodes}}" wx:key="knowledge_point_id" data-id="{{item.knowledge_point_id}}" bindtap="openRelation">{{item.name}}</view></view></view>
+      <view class="relation-group" wx:if="{{detail.related_nodes.length}}"><text class="relation-title">相关知识</text><view class="chips"><view class="chip" wx:for="{{detail.related_nodes}}" wx:key="knowledge_point_id" data-id="{{item.knowledge_point_id}}" bindtap="openRelation">{{item.name}}</view></view></view>
+    </view>
+
+    <view class="practice-card">
+      <view><text class="practice-title">专项强化</text><text class="practice-desc">直接复用现有刷题 runner，按当前知识点定向训练</text></view>
+      <button class="practice-btn" disabled="{{!detail.practice_route_params.subject_id}}" bindtap="startPractice">{{detail.trainable_question_count > 0 ? '开始练习' : '暂无题目'}}</button>
+    </view>
+  </block>
+</view>

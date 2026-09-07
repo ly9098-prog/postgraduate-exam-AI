@@ -1,0 +1,50 @@
+<view class="page">
+  <view class="hero">
+    <text class="eyebrow">408 MASTERY MAP</text>
+    <text class="title">四科知识掌握地图</text>
+    <text class="subtitle">掌握度综合答题表现与置信度；样本不足时不会用正确率冒充掌握程度。</text>
+    <view class="hero-stats" wx:if="{{!loading && scopeReady}}">
+      <view class="hero-stat"><text class="stat-number">{{observedTotal}}</text><text class="stat-label">已观察知识点</text></view>
+      <view class="hero-divider"></view>
+      <view class="hero-stat"><text class="stat-number">{{weakTotal}}</text><text class="stat-label">明确薄弱</text></view>
+    </view>
+  </view>
+
+  <view class="state-card" wx:if="{{loading}}"><text>正在生成你的 408 知识地图…</text></view>
+  <view class="state-card error" wx:elif="{{error}}">
+    <text>{{error}}</text><button class="retry" bindtap="retry">重新加载</button>
+  </view>
+  <view class="state-card error" wx:elif="{{!scopeReady}}">
+    <text>408 科目范围尚未准备完成，请先检查 canonical 科目配置。</text>
+  </view>
+
+  <view class="subject-list" wx:else>
+    <view class="subject-card" wx:for="{{subjects}}" wx:key="subject_id" data-subject-id="{{item.subject_id}}" bindtap="openSubject" hover-class="card-pressed">
+      <view class="subject-head">
+        <view>
+          <text class="subject-name">{{item.subject_name}}</text>
+          <text class="subject-code">{{item.subject_code}}</text>
+        </view>
+        <view class="score-box">
+          <text class="score">{{item.scoreText}}</text>
+          <text class="status {{item.statusClass}}">{{item.statusText}}</text>
+        </view>
+      </view>
+      <view class="progress"><view class="progress-fill" style="width: {{item.barWidth}}%;"></view></view>
+      <view class="subject-meta"><text>{{item.progressText}}</text><text>覆盖 {{item.coverage}}%</text></view>
+      <view class="subject-foot">
+        <text>{{item.statusHint}}</text>
+        <text class="arrow">查看知识树 ›</text>
+      </view>
+    </view>
+    <view class="empty" wx:if="{{subjects.length === 0}}">暂无可展示的 408 科目数据</view>
+  </view>
+
+  <view class="legend" wx:if="{{!loading && scopeReady}}">
+    <text class="legend-title">状态说明</text>
+    <view class="legend-row"><text>数据不足</text><text>置信度低于 30%，继续观察，不判定强弱</text></view>
+    <view class="legend-row"><text>薄弱</text><text>可靠样本下 mastery ＜ 40</text></view>
+    <view class="legend-row"><text>提升中</text><text>40 ≤ mastery ＜ 70</text></view>
+    <view class="legend-row"><text>良好 / 已掌握</text><text>mastery ≥ 70 / 85</text></view>
+  </view>
+</view>

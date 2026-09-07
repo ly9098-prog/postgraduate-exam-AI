@@ -434,14 +434,14 @@
 
 建议最少包含：
 
-- [ ] `GET /api/v1/exams/papers`
-- [ ] `GET /api/v1/exams/papers/{paper_id}`
-- [ ] `POST /api/v1/exams/papers/{paper_id}/attempts`
-- [ ] `GET /api/v1/exams/attempts/{attempt_id}`
-- [ ] `PUT/PATCH /api/v1/exams/attempts/{attempt_id}/answers/{item_id}`（保存答案/标记）
-- [ ] `POST /api/v1/exams/attempts/{attempt_id}/submit`
-- [ ] `GET /api/v1/exams/attempts/{attempt_id}/result`
-- [ ] `GET /api/v1/exams/history`
+- [x] `GET /api/v1/exams/papers`
+- [x] `GET /api/v1/exams/papers/{paper_id}`
+- [x] `POST /api/v1/exams/papers/{paper_id}/attempts`
+- [x] `GET /api/v1/exams/attempts/{attempt_id}`
+- [x] `PUT/PATCH /api/v1/exams/attempts/{attempt_id}/answers/{item_id}`（保存答案/标记）
+- [x] `POST /api/v1/exams/attempts/{attempt_id}/submit`
+- [x] `GET /api/v1/exams/attempts/{attempt_id}/result`
+- [x] `GET /api/v1/exams/history`
 
 关键要求：
 
@@ -457,18 +457,18 @@
 
 ### 408-EXAM-ADMIN-01：试卷列表
 
-- [ ] 创建 / 编辑 / 发布 / 下架 / 归档。
-- [ ] 年份、类型、状态、题数、总选择题分数筛选。
+- [x] 创建 / 编辑 / 发布 / 下架 / 归档。
+- [x] 年份、类型、状态、题数、总选择题分数筛选。
 
 ### 408-EXAM-ADMIN-02：组卷
 
-- [ ] 从现有题库选题。
-- [ ] V1 强制题型白名单。
-- [ ] 题目拖拽排序（后台可用桌面端交互）。
-- [ ] 设置单题分值。
-- [ ] 显示所属 408 子科目、知识点、年份、来源。
-- [ ] 检测重复题。
-- [ ] 发布前执行完整性校验。
+- [x] 从现有题库选题。
+- [x] V1 强制题型白名单。
+- [x] 题目拖拽排序（后台可用桌面端交互）。
+- [x] 设置单题分值。
+- [x] 显示所属 408 子科目、知识点、年份、来源。
+- [x] 检测重复题。
+- [x] 发布前执行完整性校验。
 
 ### 408-EXAM-ADMIN-03：发布校验
 
@@ -485,8 +485,8 @@
 
 ### 408-EXAM-ADMIN-04：审计
 
-- [ ] 创建、编辑、发布、归档写 audit log。
-- [ ] 已被用户作答的 published paper 修改时必须有明确版本策略。
+- [x] 创建、编辑、发布、归档写 audit log。
+- [x] 已被用户作答的 published paper 修改时必须有明确版本策略。
 
 ## 7.5 微信小程序
 
@@ -550,20 +550,20 @@ subpackages/exam/
 
 ### 408-EXAM-MP-04：历史记录
 
-- [ ] 历史 attempt 列表。
-- [ ] 可重新查看结果。
-- [ ] 历史结果不可因当前题目编辑而改变。
+- [x] 历史 attempt 列表。
+- [x] 可重新查看结果。
+- [x] 历史结果不可因当前题目编辑而改变。
 
 ## 7.6 与现有系统联动
 
 交卷后：
 
-- [ ] 错误选择题进入 `wrong_questions`；
-- [ ] 更新复习调度；
-- [ ] 更新知识点 mastery；
-- [ ] 进入学习统计，但统计中区分 `exam` 和普通 practice；
-- [ ] 智能学习中心可以提示“本次真题暴露的薄弱知识点”；
-- [ ] 错因系统完成后，可对考试错题进一步分类。
+- [x] 错误选择题进入 `wrong_questions`；
+- [x] 更新复习调度；
+- [x] 更新知识点 mastery；
+- [x] 进入学习统计，但统计中区分 `exam` 和普通 practice；
+- [x] 智能学习中心可以提示“本次真题暴露的薄弱知识点”；
+- [x] 错因系统完成后，可对考试错题进一步分类。
 
 ## 7.7 验收标准
 
@@ -616,19 +616,19 @@ subpackages/exam/
 
 #### 408-MAP-BE
 
-- [ ] 梳理 `knowledge/states` 是否已包含前台需要的 mastery、confidence、last_practiced 等字段。
-- [ ] 必要时增加面向 UI 的 tree/summary 聚合接口。
-- [ ] 统一无数据、样本不足、已掌握、薄弱的状态判定。
-- [ ] 不能仅用正确率代表掌握度。
+- [x] 梳理 `knowledge/states` 是否已包含前台需要的 mastery、confidence、last_practiced 等字段。
+- [x] 必要时增加面向 UI 的 tree/summary 聚合接口。
+- [x] 统一无数据、样本不足、已掌握、薄弱的状态判定。
+- [x] 不能仅用正确率代表掌握度。
 
 #### 408-MAP-MP
 
-- [ ] 408 总览。
-- [ ] 四科掌握进度。
-- [ ] 科目知识树。
-- [ ] 薄弱节点突出。
-- [ ] 点击知识点查看已做题数、正确率、mastery、最近表现。
-- [ ] 一键进入该知识点专项训练。
+- [x] 408 总览。
+- [x] 四科掌握进度。
+- [x] 科目知识树。
+- [x] 薄弱节点突出。
+- [x] 点击知识点查看已做题数、正确率、mastery、最近表现。
+- [x] 一键进入该知识点专项训练。
 
 ### 验收标准
 

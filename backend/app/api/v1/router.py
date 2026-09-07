@@ -13,6 +13,7 @@ from app.api.v1.exports import router as exports_router
 from app.api.v1.formulas import router as formulas_router
 from app.api.v1.health import router as health_router
 from app.api.v1.imports import router as imports_router
+from app.api.v1.knowledge_map import router as knowledge_map_router
 from app.api.v1.knowledge_mastery import router as knowledge_mastery_router
 from app.api.v1.knowledge_path import router as knowledge_path_router
 from app.api.v1.knowledge_points import router as knowledge_points_router
@@ -46,6 +47,7 @@ public_api_router.include_router(health_router)
 public_api_router.include_router(pomodoro_router)
 public_api_router.include_router(sync_router)
 public_api_router.include_router(knowledge_mastery_router)
+public_api_router.include_router(knowledge_map_router)
 public_api_router.include_router(knowledge_path_router)
 public_api_router.include_router(study_report_router)
 public_api_router.include_router(study_hub_router)

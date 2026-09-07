@@ -1397,3 +1397,6 @@ page {
   font-size: 17rpx;
   line-height: 1.35;
 }
+
+.mastery-map-link { color: #5E7730; font-weight: 850; }
+.mastery-card-pressed { transform: scale(.985); opacity: .88; }

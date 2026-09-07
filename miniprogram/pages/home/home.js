@@ -1090,6 +1090,12 @@ Page({
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
   goFormulas() { wx.navigateTo({ url: '/subpackages/formulas/library/index' }) },
   goExams() { wx.navigateTo({ url: '/subpackages/exam/paper-list/index' }) },
+  goKnowledgeMap() { wx.navigateTo({ url: '/subpackages/study/knowledge-map/index' }) },
+  goKnowledgeMapSubject(event) {
+    const subjectId = Number(event && event.currentTarget && event.currentTarget.dataset.subjectId)
+    if (!subjectId) return this.goKnowledgeMap()
+    wx.navigateTo({ url: `/subpackages/study/knowledge-subject/index?subject_id=${subjectId}` })
+  },
 
   _clearAnimTimer() {
     if (this._animTimer) {

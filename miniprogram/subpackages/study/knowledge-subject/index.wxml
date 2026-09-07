@@ -1,0 +1,29 @@
+<view class="page">
+  <view class="summary" wx:if="{{subject}}">
+    <text class="eyebrow">SUBJECT MAP</text>
+    <view class="summary-main"><text class="subject-name">{{subject.subject_name}}</text><text class="subject-score">{{subject.mastery_score == null ? '--' : subject.mastery_score + '%'}}</text></view>
+    <text class="summary-note">可靠知识点 {{subject.reliable_knowledge_points}} / {{subject.trainable_knowledge_points}} · 薄弱 {{subject.weak_knowledge_points}}</text>
+  </view>
+
+  <view class="filters" wx:if="{{subject}}">
+    <view class="filter {{filter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="setFilter">全部</view>
+    <view class="filter {{filter === 'weak' ? 'active' : ''}}" data-filter="weak" bindtap="setFilter">需强化</view>
+    <view class="filter {{filter === 'unseen' ? 'active' : ''}}" data-filter="unseen" bindtap="setFilter">待建立</view>
+    <view class="filter {{filter === 'mastered' ? 'active' : ''}}" data-filter="mastered" bindtap="setFilter">较稳定</view>
+  </view>
+
+  <view class="state" wx:if="{{loading}}">正在加载知识树…</view>
+  <view class="state error" wx:elif="{{error}}"><text>{{error}}</text><button bindtap="retry">重试</button></view>
+
+  <view class="tree" wx:else>
+    <view class="node" wx:for="{{visibleNodes}}" wx:key="knowledge_point_id" style="margin-left: {{item.indent}}rpx;" data-id="{{item.knowledge_point_id}}" bindtap="openPoint" hover-class="node-pressed">
+      <view class="node-rail"><view class="dot {{item.statusClass}}"></view><view class="line" wx:if="{{item.child_count > 0}}"></view></view>
+      <view class="node-body">
+        <view class="node-head"><text class="node-name">{{item.name}}</text><text class="node-score">{{item.scoreText}}</text></view>
+        <view class="node-meta"><text class="tag {{item.statusClass}}">{{item.statusText}}</text><text>{{item.attempt_count}} 次 · 正确率 {{item.accuracyText}}</text><text>{{item.trainable_question_count}} 题可练</text></view>
+      </view>
+      <view class="practice" wx:if="{{item.hasPractice}}" catchtap="practicePoint" data-id="{{item.knowledge_point_id}}">练</view>
+    </view>
+    <view class="state" wx:if="{{visibleNodes.length === 0}}">当前筛选下暂无知识点</view>
+  </view>
+</view>

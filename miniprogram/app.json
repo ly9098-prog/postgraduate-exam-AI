@@ -49,7 +49,10 @@
         "wrong-book/wrong-book",
         "wrong-detail/wrong-detail",
         "review-today/review-today",
-        "practice-result/index"
+        "practice-result/index",
+        "knowledge-map/index",
+        "knowledge-subject/index",
+        "knowledge-detail/index"
       ]
     },
     {

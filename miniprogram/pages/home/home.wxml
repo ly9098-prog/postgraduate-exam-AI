@@ -198,10 +198,10 @@
         <text class="section-kicker">408 MASTERY SNAPSHOT</text>
         <text class="section-title">四科掌握概览</text>
       </view>
-      <text class="section-note">基于已练知识点</text>
+      <text class="section-note mastery-map-link" bindtap="goKnowledgeMap">查看知识地图 ›</text>
     </view>
     <view class="mastery-grid">
-      <view wx:for="{{subjectMastery}}" wx:key="subjectId" class="mastery-card">
+      <view wx:for="{{subjectMastery}}" wx:key="subjectId" class="mastery-card" data-subject-id="{{item.subjectId}}" bindtap="goKnowledgeMapSubject" hover-class="mastery-card-pressed">
         <view class="mastery-card-head">
           <text class="mastery-subject">{{item.subjectName}}</text>
           <text class="mastery-score {{item.hasData ? '' : 'is-empty'}}">{{item.scoreText}}</text>
