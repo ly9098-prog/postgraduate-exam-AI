@@ -14,6 +14,7 @@ Page({
     loading: true,
     error: '',
     scopeReady: true,
+    syllabusVersion: null,
     subjects: [],
     observedTotal: 0,
     weakTotal: 0,
@@ -50,6 +51,7 @@ Page({
       this.setData({
         loading: false,
         scopeReady: data.scope_ready !== false,
+        syllabusVersion: data.syllabus_version || null,
         subjects,
         observedTotal: subjects.reduce((sum, item) => sum + (Number(item.observed_knowledge_points) || 0), 0),
         weakTotal: subjects.reduce((sum, item) => sum + (Number(item.weak_knowledge_points) || 0), 0),

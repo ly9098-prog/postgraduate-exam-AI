@@ -5,19 +5,27 @@ Each metric function is independent and returns None when data is insufficient.
 
 import asyncio
 import math
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-from sqlalchemy import Date as SQLDate, case, cast, func, select, text
+from sqlalchemy import Date as SQLDate
+from sqlalchemy import case, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import serialize_utc_datetime, shanghai_date_utc_range, shanghai_today, shanghai_today_boundaries, utcnow
-from app.models.admin import Subject
+from app.core.time_utils import (
+    serialize_utc_datetime,
+    shanghai_date_utc_range,
+    shanghai_today,
+    shanghai_today_boundaries,
+    utcnow,
+)
+from app.models.admin import QuestionVersionKnowledgePoint, Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
-from app.models.admin import QuestionVersionKnowledgePoint
 from app.models.review_scheduler import ReviewSchedule
+from app.models.syllabus import SyllabusKnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.models.wrong_question import WrongQuestion
+
 
 async def _china_date_expr(db: AsyncSession, column):
     bind = await db.connection()
@@ -244,12 +252,16 @@ async def compute_weak_topic_ranking(
     # is later edited or remapped to different knowledge points.
     kp_rows = await db.execute(
         select(
-            KnowledgePoint.name,
+            func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name).label("frozen_name"),
             func.count(WrongQuestion.id).label("wrong_count"),
         )
         .join(
             QuestionVersionKnowledgePoint,
             QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+        )
+        .outerjoin(
+            SyllabusKnowledgePoint,
+            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
         )
         .join(
             WrongQuestion,
@@ -261,7 +273,10 @@ async def compute_weak_topic_ranking(
             WrongQuestion.is_active,
             ~WrongQuestion.mastered,
         )
-        .group_by(KnowledgePoint.id, KnowledgePoint.name)
+        .group_by(
+            KnowledgePoint.id,
+            func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name),
+        )
         .order_by(func.count(WrongQuestion.id).desc(), KnowledgePoint.id.asc())
         .limit(limit)
     )
@@ -341,12 +356,16 @@ async def compute_repeat_wrong_analysis(
     # Top repeat topics are attributed to the revision that was actually wrong.
     topic_rows = await db.execute(
         select(
-            KnowledgePoint.name,
+            func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name).label("frozen_name"),
             func.count(WrongQuestion.id).label("wrong_count"),
         )
         .join(
             QuestionVersionKnowledgePoint,
             QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+        )
+        .outerjoin(
+            SyllabusKnowledgePoint,
+            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
         )
         .join(
             WrongQuestion,
@@ -359,7 +378,10 @@ async def compute_repeat_wrong_analysis(
             ~WrongQuestion.mastered,
             WrongQuestion.review_count >= 1,
         )
-        .group_by(KnowledgePoint.id, KnowledgePoint.name)
+        .group_by(
+            KnowledgePoint.id,
+            func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name),
+        )
         .order_by(func.count(WrongQuestion.id).desc(), KnowledgePoint.id.asc())
         .limit(5)
     )

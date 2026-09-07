@@ -40,6 +40,11 @@ from app.models.recommendation_metrics_daily import (
     RecommendationMetricsDaily,  # noqa: F401
 )
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule  # noqa: F401
+from app.models.syllabus import (  # noqa: F401
+    SyllabusKnowledgePoint,
+    SyllabusKnowledgePointMapping,
+    SyllabusVersion,
+)
 from app.models.tag import Tag  # noqa: F401
 from app.models.task_outbox import TaskOutbox  # noqa: F401
 from app.models.user import User  # noqa: F401

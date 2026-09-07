@@ -24,6 +24,8 @@ from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Sub
 from app.models.knowledge_point import KnowledgePoint
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
+from app.models.syllabus import SyllabusKnowledgePoint
+from app.services import syllabus_service
 
 
 def _canonical_state_payload(question: Question, kp_links: list[tuple[int, int, str, float, str]]) -> dict:
@@ -178,11 +180,15 @@ async def ensure_question_revision(
     await db.flush()
 
     if kp_links:
+        syllabus_memberships = await syllabus_service.active_membership_ids_for_kps(
+            db, [kp_id for kp_id, *_rest in kp_links]
+        )
         db.add_all(
             [
                 QuestionVersionKnowledgePoint(
                     question_version_id=revision.id,
                     knowledge_point_id=kp_id,
+                    syllabus_knowledge_point_id=syllabus_memberships.get(kp_id),
                     position=position,
                     role=role,
                     weight=weight,
@@ -321,14 +327,19 @@ async def load_revision_kp_names(
     ids = list(dict.fromkeys(int(v) for v in revision_ids if v))
     if not ids:
         return {}
+    frozen_name = func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name)
     rows = await db.execute(
         select(
             QuestionVersionKnowledgePoint.question_version_id,
-            KnowledgePoint.name,
+            frozen_name,
         )
         .join(
             KnowledgePoint,
             KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
+        )
+        .outerjoin(
+            SyllabusKnowledgePoint,
+            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
         )
         .where(QuestionVersionKnowledgePoint.question_version_id.in_(ids))
         .order_by(

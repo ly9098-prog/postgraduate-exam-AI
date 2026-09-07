@@ -3,7 +3,7 @@ const api = require('../../../utils/api')
 const STATUS_TEXT = { no_data: '未开始', insufficient: '数据不足', weak: '薄弱', developing: '提升中', good: '良好', mastered: '已掌握' }
 
 Page({
-  data: { loading: true, error: '', detail: null, recent: [], statusText: '' },
+  data: { loading: true, error: '', detail: null, syllabusVersion: null, recent: [], statusText: '' },
 
   onLoad(options) {
     this.knowledgePointId = Number(options && options.knowledge_point_id)
@@ -29,6 +29,7 @@ Page({
         loading: false,
         error: '',
         detail,
+        syllabusVersion: detail.syllabus_version || null,
         recent,
         statusText: STATUS_TEXT[detail.status] || '未开始',
         scoreText: detail.mastery_score == null ? '--' : `${Math.round(Number(detail.mastery_score) || 0)}%`,
@@ -43,12 +44,12 @@ Page({
   startPractice() {
     const d = this.data.detail
     const p = d && d.practice_route_params
-    if (!p || !p.subject_id || !p.knowledge_point) {
+    if (!p || !p.subject_id || !p.knowledge_point_id) {
       wx.showToast({ title: '当前知识点暂无可练题目', icon: 'none' })
       return
     }
     wx.navigateTo({
-      url: `/subpackages/study/practice/practice?subject_id=${p.subject_id}&mode=random&count=${p.count || 10}&knowledge_point=${encodeURIComponent(p.knowledge_point)}&allow_repeat=1&autostart=1&source=knowledge_map`,
+      url: `/subpackages/study/practice/practice?subject_id=${p.subject_id}&mode=random&count=${p.count || 10}&knowledge_point_id=${p.knowledge_point_id}&allow_repeat=1&autostart=1&source=knowledge_map`,
     })
   },
 

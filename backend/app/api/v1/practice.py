@@ -205,6 +205,7 @@ async def get_practice_questions(
     count: int = Query(20, ge=1, le=50),
     mode: PracticeMode = Query("random"),
     knowledge_point: str | None = Query(None),
+    knowledge_point_id: int | None = Query(None, ge=1),
     exclude_answered: bool = Query(False),
     no_repeat_days: int | None = Query(None, ge=1, le=365),
     use_leitner: bool = Query(True),
@@ -244,11 +245,28 @@ async def get_practice_questions(
         )
 
     trace_id = str(get_log_context().get("trace_id") or normalize_trace_id(x_trace_id))
-    kps = (
-        [kp.strip() for kp in knowledge_point.split(",") if kp.strip()]
-        if knowledge_point
-        else None
-    )
+    if knowledge_point and knowledge_point_id is not None:
+        raise HTTPException(status_code=400, detail="knowledge_point 与 knowledge_point_id 不能同时使用")
+    if knowledge_point_id is not None:
+        from sqlalchemy import select
+
+        from app.models.knowledge_point import KnowledgePoint
+
+        point_name = await db.scalar(
+            select(KnowledgePoint.name).where(
+                KnowledgePoint.id == knowledge_point_id,
+                KnowledgePoint.subject_id.in_(scope_subject_ids),
+            )
+        )
+        if point_name is None:
+            raise HTTPException(status_code=404, detail="知识点不存在或不属于当前科目范围")
+        kps = [str(point_name)]
+    else:
+        kps = (
+            [kp.strip() for kp in knowledge_point.split(",") if kp.strip()]
+            if knowledge_point
+            else None
+        )
 
     targeted_question_ids: list[int] = []
     if question_ids:

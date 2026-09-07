@@ -16,6 +16,7 @@ import {
   Network,
   Activity,
   ClipboardCheck,
+  BookOpen,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PermissionKey } from "@/lib/permissions/permissions";
@@ -239,6 +240,14 @@ const knowledgeGraphRoute: AdminRoute = {
   icon: Network,
 };
 
+const syllabusRoute: AdminRoute = {
+  href: "/syllabus",
+  label: "考纲版本",
+  description: "408 考纲与知识点版本",
+  permission: "knowledge:read",
+  icon: BookOpen,
+};
+
 /**
  * Flat route list kept for route matching and permission-aware consumers.
  */
@@ -261,6 +270,7 @@ export const adminRoutes: AdminRoute[] = [
   recommendationMetricsRoute,
   recommendationReportsRoute,
   knowledgeGraphRoute,
+  syllabusRoute,
 ];
 
 /**
@@ -288,9 +298,9 @@ export const adminNavigation: AdminNavigationItem[] = [
     type: "group",
     key: "question-management",
     label: "题目管理",
-    description: "科目、题库、导入与知识图谱",
+    description: "科目、题库、导入、知识图谱与考纲",
     icon: FileQuestion,
-    children: [subjectsRoute, questionsRoute, examsRoute, importsRoute, knowledgeGraphRoute],
+    children: [subjectsRoute, questionsRoute, examsRoute, importsRoute, knowledgeGraphRoute, syllabusRoute],
   },
   {
     type: "group",

@@ -29,7 +29,9 @@ from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
+from app.models.syllabus import SyllabusKnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
+from app.services import syllabus_service
 
 _ANSWERABLE_TYPES = (
     QT_SINGLE_CHOICE,
@@ -184,21 +186,35 @@ def _build_subject_summary(
         "coverage_ratio": round(coverage_ratio, 4),
     }
 
-
 async def get_overview(db: AsyncSession, user_id: int) -> dict:
     root, core_subjects = await _load_core_subjects(db)
     if root is None or len(core_subjects) != len(EXAM408_CORE_CODES):
-        return {"scope": EXAM408_ROOT_CODE, "scope_ready": False, "subjects": []}
+        return {
+            "scope": EXAM408_ROOT_CODE,
+            "syllabus_version": None,
+            "scope_ready": False,
+            "subjects": [],
+        }
 
     subject_ids = [int(subject.id) for subject in core_subjects]
+    syllabus_version, memberships = await syllabus_service.active_memberships(db, subject_ids)
+    if syllabus_version is None:
+        return {
+            "scope": EXAM408_ROOT_CODE,
+            "syllabus_version": None,
+            "scope_ready": False,
+            "subjects": [],
+        }
+
+    active_kp_ids = list(memberships)
     points = list((await db.scalars(
         select(KnowledgePoint)
         .where(
             KnowledgePoint.subject_id.in_(subject_ids),
-            KnowledgePoint.is_active.is_(True),
+            KnowledgePoint.id.in_(active_kp_ids) if active_kp_ids else False,
         )
         .order_by(KnowledgePoint.subject_id.asc(), KnowledgePoint.id.asc())
-    )).all())
+    )).all()) if active_kp_ids else []
     points_by_subject: dict[int, list[KnowledgePoint]] = defaultdict(list)
     for point in points:
         points_by_subject[int(point.subject_id)].append(point)
@@ -214,7 +230,12 @@ async def get_overview(db: AsyncSession, user_id: int) -> dict:
         )
         for subject in core_subjects
     ]
-    return {"scope": EXAM408_ROOT_CODE, "scope_ready": True, "subjects": summaries}
+    return {
+        "scope": EXAM408_ROOT_CODE,
+        "syllabus_version": syllabus_service.active_summary(syllabus_version),
+        "scope_ready": True,
+        "subjects": summaries,
+    }
 
 
 def _edge_source_rank(source: str | None) -> int:
@@ -261,14 +282,28 @@ def _build_parent_map(points: list[KnowledgePoint], edges: list[KnowledgeEdge]) 
     return parent_map
 
 
-def _ordered_tree_rows(points: list[KnowledgePoint], parent_map: dict[int, int]) -> list[tuple[KnowledgePoint, int, int | None, int]]:
+def _ordered_tree_rows(
+    points: list[KnowledgePoint],
+    parent_map: dict[int, int],
+    memberships: dict[int, SyllabusKnowledgePoint] | None = None,
+) -> list[tuple[KnowledgePoint, int, int | None, int]]:
     by_id = {int(point.id): point for point in points}
+    membership_map = memberships or {}
+
+    def sort_key(kp_id: int) -> tuple[int, str, int]:
+        member = membership_map.get(kp_id)
+        return (
+            int(member.sort_order or 0) if member is not None else 0,
+            str(member.name_snapshot) if member is not None else str(by_id[kp_id].name),
+            kp_id,
+        )
+
     children: dict[int | None, list[int]] = defaultdict(list)
     for point in points:
         point_id = int(point.id)
         children[parent_map.get(point_id)].append(point_id)
     for ids in children.values():
-        ids.sort(key=lambda kp_id: (str(by_id[kp_id].name), kp_id))
+        ids.sort(key=sort_key)
 
     rows: list[tuple[KnowledgePoint, int, int | None, int]] = []
     visited: set[int] = set()
@@ -285,7 +320,7 @@ def _ordered_tree_rows(points: list[KnowledgePoint], parent_map: dict[int, int])
     for root_id in children.get(None, []):
         walk(root_id, 0)
     # Defensive fallback for malformed/cyclic legacy graph fragments.
-    for point in sorted(points, key=lambda item: (str(item.name), int(item.id))):
+    for point in sorted(points, key=lambda item: sort_key(int(item.id))):
         if int(point.id) not in visited:
             walk(int(point.id), 0)
     return rows
@@ -299,6 +334,7 @@ def _node_payload(
     parent_id: int | None,
     depth: int,
     child_count: int,
+    syllabus_item: SyllabusKnowledgePoint | None = None,
 ) -> dict:
     attempts = int(state.attempt_count or 0) if state else 0
     correct = int(state.correct_count or 0) if state else 0
@@ -306,11 +342,18 @@ def _node_payload(
     mastery = float(state.mastery_score) if state and state.mastery_score is not None else None
     confidence = float(state.confidence or 0.0) if state else 0.0
     status = _state_status(attempts=attempts, mastery=mastery, confidence=confidence)
+    display_name = str(syllabus_item.name_snapshot) if syllabus_item is not None else str(point.name)
+    description = syllabus_item.description_snapshot if syllabus_item is not None else point.description
+    difficulty_level = (
+        int(syllabus_item.difficulty_level_snapshot or 3)
+        if syllabus_item is not None
+        else int(point.difficulty_level or 3)
+    )
     return {
         "knowledge_point_id": int(point.id),
-        "name": str(point.name),
-        "description": point.description,
-        "difficulty_level": int(point.difficulty_level or 3),
+        "name": display_name,
+        "description": description,
+        "difficulty_level": difficulty_level,
         "parent_id": parent_id,
         "depth": depth,
         "child_count": child_count,
@@ -334,14 +377,18 @@ async def get_subject_map(db: AsyncSession, user_id: int, subject_id: int) -> di
     if subject is None:
         return None
 
+    syllabus_version, memberships = await syllabus_service.active_memberships(db, [int(subject.id)])
+    if syllabus_version is None:
+        return None
+    active_kp_ids = list(memberships)
     points = list((await db.scalars(
         select(KnowledgePoint)
         .where(
             KnowledgePoint.subject_id == subject.id,
-            KnowledgePoint.is_active.is_(True),
+            KnowledgePoint.id.in_(active_kp_ids) if active_kp_ids else False,
         )
         .order_by(KnowledgePoint.id.asc())
-    )).all())
+    )).all()) if active_kp_ids else []
     states = await _load_states(db, user_id, [int(subject.id)])
     trainable_counts = await _load_trainable_counts(db, [int(subject.id)])
     edges = list((await db.scalars(
@@ -352,7 +399,7 @@ async def get_subject_map(db: AsyncSession, user_id: int, subject_id: int) -> di
         )
     )).all())
     parent_map = _build_parent_map(points, edges)
-    ordered = _ordered_tree_rows(points, parent_map)
+    ordered = _ordered_tree_rows(points, parent_map, memberships)
     nodes = [
         _node_payload(
             point,
@@ -361,11 +408,13 @@ async def get_subject_map(db: AsyncSession, user_id: int, subject_id: int) -> di
             parent_id=parent_id,
             depth=depth,
             child_count=child_count,
+            syllabus_item=memberships.get(int(point.id)),
         )
         for point, depth, parent_id, child_count in ordered
     ]
     return {
         "scope": EXAM408_ROOT_CODE,
+        "syllabus_version": syllabus_service.active_summary(syllabus_version),
         "subject": _build_subject_summary(subject, points, states, trainable_counts),
         "nodes": nodes,
     }
@@ -395,7 +444,12 @@ async def _recent_answers(db: AsyncSession, user_id: int, knowledge_point_id: in
     ]
 
 
-async def _relation_payloads(db: AsyncSession, point: KnowledgePoint) -> tuple[list[dict], list[dict], list[dict]]:
+async def _relation_payloads(
+    db: AsyncSession,
+    point: KnowledgePoint,
+    memberships: dict[int, SyllabusKnowledgePoint],
+) -> tuple[list[dict], list[dict], list[dict]]:
+    allowed_ids = set(memberships)
     rows = list((await db.scalars(
         select(KnowledgeEdge).where(
             KnowledgeEdge.subject_id == point.subject_id,
@@ -406,22 +460,11 @@ async def _relation_payloads(db: AsyncSession, point: KnowledgePoint) -> tuple[l
             ),
         )
     )).all())
-    related_ids: set[int] = set()
-    for edge in rows:
-        related_ids.add(int(edge.source_knowledge_point_id))
-        related_ids.add(int(edge.target_knowledge_point_id))
-    related_ids.discard(int(point.id))
-    names = {}
-    if related_ids:
-        names = {
-            int(kp.id): str(kp.name)
-            for kp in (await db.scalars(
-                select(KnowledgePoint).where(
-                    KnowledgePoint.id.in_(related_ids),
-                    KnowledgePoint.is_active.is_(True),
-                )
-            )).all()
-        }
+    names = {
+        kp_id: str(member.name_snapshot)
+        for kp_id, member in memberships.items()
+        if kp_id != int(point.id)
+    }
 
     prerequisites: list[dict] = []
     next_nodes: list[dict] = []
@@ -429,6 +472,8 @@ async def _relation_payloads(db: AsyncSession, point: KnowledgePoint) -> tuple[l
     for edge in rows:
         source_id = int(edge.source_knowledge_point_id)
         target_id = int(edge.target_knowledge_point_id)
+        if source_id not in allowed_ids or target_id not in allowed_ids:
+            continue
         payload = None
         bucket = None
         if edge.relation_type == "prerequisite" and target_id == int(point.id) and source_id in names:
@@ -459,14 +504,16 @@ async def get_point_detail(db: AsyncSession, user_id: int, knowledge_point_id: i
     _root, core_subjects = await _load_core_subjects(db)
     core_map = {int(subject.id): subject for subject in core_subjects}
     point = (await db.execute(
-        select(KnowledgePoint).where(
-            KnowledgePoint.id == knowledge_point_id,
-            KnowledgePoint.is_active.is_(True),
-        )
+        select(KnowledgePoint).where(KnowledgePoint.id == knowledge_point_id)
     )).scalar_one_or_none()
     if point is None or int(point.subject_id) not in core_map:
         return None
     subject = core_map[int(point.subject_id)]
+    syllabus_version, memberships = await syllabus_service.active_memberships(db, [int(subject.id)])
+    syllabus_item = memberships.get(int(point.id))
+    if syllabus_version is None or syllabus_item is None:
+        return None
+
     states = await _load_states(db, user_id, [int(subject.id)])
     trainable = await _load_trainable_counts(db, [int(subject.id)])
     state = states.get(int(point.id))
@@ -477,17 +524,19 @@ async def get_point_detail(db: AsyncSession, user_id: int, knowledge_point_id: i
         parent_id=None,
         depth=0,
         child_count=0,
+        syllabus_item=syllabus_item,
     )
-    prerequisites, next_nodes, related_nodes = await _relation_payloads(db, point)
+    prerequisites, next_nodes, related_nodes = await _relation_payloads(db, point, memberships)
     return {
         "scope": EXAM408_ROOT_CODE,
+        "syllabus_version": syllabus_service.active_summary(syllabus_version),
         "subject_id": int(subject.id),
         "subject_code": str(subject.code),
         "subject_name": str(subject.name),
         "knowledge_point_id": int(point.id),
-        "name": str(point.name),
-        "description": point.description,
-        "difficulty_level": int(point.difficulty_level or 3),
+        "name": node["name"],
+        "description": node["description"],
+        "difficulty_level": node["difficulty_level"],
         "status": node["status"],
         "mastery_score": node["mastery_score"],
         "confidence": node["confidence"],
@@ -507,7 +556,8 @@ async def get_point_detail(db: AsyncSession, user_id: int, knowledge_point_id: i
             "subject_id": int(subject.id),
             "mode": "random",
             "count": min(10, max(1, int(node["trainable_question_count"] or 0))),
-            "knowledge_point": str(point.name),
+            "knowledge_point": node["name"],
+            "knowledge_point_id": int(point.id),
             "allow_repeat": 1,
             "autostart": 1,
             "source": "knowledge_map",

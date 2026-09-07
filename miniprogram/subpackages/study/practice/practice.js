@@ -288,6 +288,7 @@ Page({
     this._systemBackRearmTimer = null
     this._launchPreset = this._parseLaunchPreset(options || {})
     this._launchKnowledgePoint = ''
+    this._launchKnowledgePointId = null
     this._launchQuestionIds = ''
     this._launchAllowRepeat = false
     this._launchSource = ''
@@ -612,6 +613,7 @@ Page({
     const rawCount = Number(options && options.count)
     const count = Number.isFinite(rawCount) ? Math.max(1, Math.min(50, Math.round(rawCount))) : null
     const knowledgePoint = safeDecodeURIComponent(options && options.knowledge_point, '').trim()
+    const knowledgePointId = Number(options && options.knowledge_point_id)
     const rawQuestionIds = String((options && options.question_ids) || '').trim()
     let questionIds = ''
     if (rawQuestionIds) {
@@ -627,6 +629,7 @@ Page({
       mode: allowedModes.has(modeValue) ? modeValue : null,
       count,
       knowledgePoint,
+      knowledgePointId: Number.isInteger(knowledgePointId) && knowledgePointId > 0 ? knowledgePointId : null,
       questionIds,
       allowRepeat: String((options && options.allow_repeat) || '') === '1',
       autostart: String((options && options.autostart) || '') === '1',
@@ -657,6 +660,7 @@ Page({
       : (preset.count || this.data.count || 5)
 
     this._launchKnowledgePoint = preset.questionIds ? '' : preset.knowledgePoint
+    this._launchKnowledgePointId = preset.questionIds ? null : preset.knowledgePointId
     this._launchQuestionIds = preset.questionIds
     this._launchAllowRepeat = Boolean(preset.allowRepeat || preset.questionIds)
     this._launchSource = preset.source
@@ -1354,7 +1358,8 @@ Page({
         if (!this._launchAllowRepeat) params.no_repeat_days = 30
         params.use_leitner = true
       }
-      if (this._launchKnowledgePoint) params.knowledge_point = this._launchKnowledgePoint
+      if (this._launchKnowledgePointId) params.knowledge_point_id = this._launchKnowledgePointId
+      else if (this._launchKnowledgePoint) params.knowledge_point = this._launchKnowledgePoint
       // smart 策略由后端统一解析（默认 scored，并可被实验配置覆盖）。
       // 小程序不强制具体策略，避免绕过后端实验与降级链路。
       const res = await api.get('/practice/questions', params)

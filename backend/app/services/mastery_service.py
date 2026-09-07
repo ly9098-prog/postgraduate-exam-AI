@@ -5,15 +5,16 @@ V3: 增量更新模型。mastery_score 范围 0-100，初始 50（未知状态�
 confidence 随 answer_count 增加，低置信度时不做过强判断。
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.time_utils import utcnow, serialize_utc_datetime
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Subject
 from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
+from app.models.syllabus import SyllabusKnowledgePoint
 from app.models.user_knowledge_state import UserKnowledgeState
 from app.services.admin_subject_service import resolve_subject_ids
 
@@ -367,7 +368,7 @@ async def _fallback_weak_kps(
         select(
             PracticeRecord.is_correct,
             QuestionVersionKnowledgePoint.knowledge_point_id,
-            KnowledgePoint.name,
+            func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name),
         )
         .join(
             QuestionVersionKnowledgePoint,
@@ -376,6 +377,10 @@ async def _fallback_weak_kps(
         .join(
             KnowledgePoint,
             KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
+        )
+        .outerjoin(
+            SyllabusKnowledgePoint,
+            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
         )
         .where(
             PracticeRecord.user_id == user_id,

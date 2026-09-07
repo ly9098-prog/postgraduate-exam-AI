@@ -20,6 +20,7 @@ from app.models.knowledge_point import KnowledgePoint
 from app.models.practice_record import PracticeRecord
 from app.models.question import Question
 from app.models.review_scheduler import ReviewSchedule
+from app.models.syllabus import SyllabusKnowledgePoint
 from app.models.wrong_question import WrongQuestion
 
 logger = logging.getLogger(__name__)
@@ -463,11 +464,16 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     # Aggregate forgotten topics from the immutable revision the user actually
     # got wrong.  Historical attribution must not move when Question's current
     # knowledge-point mapping is later edited.
+    frozen_name = func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name)
     kp_result = await db.execute(
-        select(KnowledgePoint.name, func.count(func.distinct(WrongQuestion.id)))
+        select(frozen_name, func.count(func.distinct(WrongQuestion.id)))
         .join(
             QuestionVersionKnowledgePoint,
             QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+        )
+        .outerjoin(
+            SyllabusKnowledgePoint,
+            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
         )
         .join(
             WrongQuestion,
@@ -479,7 +485,7 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
             WrongQuestion.is_active,
             ~WrongQuestion.mastered,
         )
-        .group_by(KnowledgePoint.id, KnowledgePoint.name)
+        .group_by(KnowledgePoint.id, frozen_name)
         .order_by(func.count(func.distinct(WrongQuestion.id)).desc(), KnowledgePoint.id.asc())
         .limit(8)
     )

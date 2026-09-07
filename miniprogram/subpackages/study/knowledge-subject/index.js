@@ -5,7 +5,7 @@ const STATUS_TEXT = {
 }
 
 Page({
-  data: { loading: true, error: '', subject: null, nodes: [], visibleNodes: [], filter: 'all' },
+  data: { loading: true, error: '', subject: null, syllabusVersion: null, nodes: [], visibleNodes: [], filter: 'all' },
 
   onLoad(options) {
     this.subjectId = Number(options && options.subject_id)
@@ -35,7 +35,7 @@ Page({
         }
       })
       wx.setNavigationBarTitle({ title: `${data.subject.subject_name} · 知识树` })
-      this.setData({ loading: false, subject: data.subject, nodes }, () => this.applyFilter())
+      this.setData({ loading: false, subject: data.subject, syllabusVersion: data.syllabus_version || null, nodes }, () => this.applyFilter())
     } catch (error) {
       this.setData({ loading: false, error: api.getErrorMessage(error) })
     }
@@ -66,7 +66,7 @@ Page({
     if (!item || !item.hasPractice) return
     const count = Math.min(10, Math.max(1, Number(item.trainable_question_count) || 1))
     wx.navigateTo({
-      url: `/subpackages/study/practice/practice?subject_id=${this.subjectId}&mode=random&count=${count}&knowledge_point=${encodeURIComponent(item.name)}&allow_repeat=1&autostart=1&source=knowledge_map`,
+      url: `/subpackages/study/practice/practice?subject_id=${this.subjectId}&mode=random&count=${count}&knowledge_point_id=${item.knowledge_point_id}&allow_repeat=1&autostart=1&source=knowledge_map`,
     })
   },
 

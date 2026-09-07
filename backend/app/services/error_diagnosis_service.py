@@ -14,6 +14,7 @@ from app.core.time_utils import utcnow
 from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Subject
 from app.models.error_diagnosis import WrongQuestionErrorDiagnosis
 from app.models.knowledge_point import KnowledgePoint
+from app.models.syllabus import SyllabusKnowledgePoint
 from app.models.wrong_question import WrongQuestion
 from app.services.question_revision_service import load_revision_kp_names
 
@@ -657,11 +658,15 @@ async def get_stats(
                 select(
                     QuestionVersionKnowledgePoint.question_version_id,
                     KnowledgePoint.id,
-                    KnowledgePoint.name,
+                    func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name),
                 )
                 .join(
                     KnowledgePoint,
                     KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
+                )
+                .outerjoin(
+                    SyllabusKnowledgePoint,
+                    SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
                 )
                 .where(QuestionVersionKnowledgePoint.question_version_id.in_(set(revision_ids)))
             )

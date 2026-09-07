@@ -1433,3 +1433,91 @@ export type AdminExamPaperDetail = AdminExamPaperListItem & {
   items: AdminExamPaperQuestionItem[];
   validation_errors: string[];
 };
+
+
+export type SyllabusVersionStatus = "draft" | "active" | "archived";
+export type SyllabusMappingType =
+  | "unchanged"
+  | "renamed"
+  | "added"
+  | "removed"
+  | "merged"
+  | "split"
+  | "replaced";
+
+export type SyllabusVersionSummary = {
+  id: number;
+  code: string;
+  name: string;
+  effective_year: number;
+  status: SyllabusVersionStatus;
+  description?: string | null;
+  knowledge_point_count: number;
+  activated_at?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SyllabusKnowledgePointItem = {
+  id: number;
+  knowledge_point_id: number;
+  subject_id: number;
+  subject_code: string;
+  subject_name: string;
+  name: string;
+  normalized_name: string;
+  description?: string | null;
+  difficulty_level: number;
+  sort_order: number;
+};
+
+export type SyllabusVersionDetail = SyllabusVersionSummary & {
+  knowledge_points: SyllabusKnowledgePointItem[];
+};
+
+export type SyllabusCatalogItem = {
+  knowledge_point_id: number;
+  subject_id: number;
+  subject_code: string;
+  subject_name: string;
+  name: string;
+  description?: string | null;
+  difficulty_level: number;
+  included: boolean;
+};
+
+export type SyllabusCatalogResponse = {
+  syllabus_version_id: number;
+  items: SyllabusCatalogItem[];
+};
+
+export type SyllabusMappingItem = {
+  id: number;
+  from_syllabus_knowledge_point_id?: number | null;
+  to_syllabus_knowledge_point_id?: number | null;
+  relation_type: SyllabusMappingType;
+  note?: string | null;
+  from_name?: string | null;
+  to_name?: string | null;
+  created_at: string;
+};
+
+export type SyllabusCoverageItem = {
+  syllabus_knowledge_point_id: number;
+  knowledge_point_id: number;
+  subject_id: number;
+  subject_code: string;
+  subject_name: string;
+  name: string;
+  question_count: number;
+  covered: boolean;
+};
+
+export type SyllabusCoverageResponse = {
+  syllabus_version_id: number;
+  syllabus_code: string;
+  total_knowledge_points: number;
+  covered_knowledge_points: number;
+  coverage_ratio: number;
+  items: SyllabusCoverageItem[];
+};

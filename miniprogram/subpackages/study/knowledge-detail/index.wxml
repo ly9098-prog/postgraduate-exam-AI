@@ -5,6 +5,7 @@
   <block wx:elif="{{detail}}">
     <view class="hero status-{{detail.status}}">
       <text class="subject">{{detail.subject_name}}</text>
+      <text class="syllabus" wx:if="{{syllabusVersion}}">{{syllabusVersion.name}} · {{syllabusVersion.effective_year}}</text>
       <text class="name">{{detail.name}}</text>
       <text class="desc" wx:if="{{detail.description}}">{{detail.description}}</text>
       <view class="hero-row">

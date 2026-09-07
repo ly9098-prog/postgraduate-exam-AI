@@ -233,6 +233,14 @@ class QuestionVersionKnowledgePoint(Base):
         nullable=False,
         index=True,
     )
+    # Freeze the syllabus-era semantic snapshot used by this immutable question revision.
+    # Nullable keeps legacy/non-408 revisions compatible.
+    syllabus_knowledge_point_id: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("syllabus_knowledge_points.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="main")
     weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     source: Mapped[str] = mapped_column(String(16), nullable=False, default="imported")
@@ -244,6 +252,7 @@ class QuestionVersionKnowledgePoint(Base):
         lazy="noload",
     )
     knowledge_point = relationship("KnowledgePoint", lazy="noload")
+    syllabus_knowledge_point = relationship("SyllabusKnowledgePoint", lazy="noload")
 
     __table_args__ = (
         UniqueConstraint(

@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field
 
 from app.schemas.base import BaseModel
+from app.schemas.syllabus import ActiveSyllabusSummary
 
 KnowledgeMapStatus = Literal[
     "no_data",
@@ -36,6 +37,7 @@ class KnowledgeMapSubjectSummary(BaseModel):
 
 class KnowledgeMapOverviewResponse(BaseModel):
     scope: str = "exam408"
+    syllabus_version: ActiveSyllabusSummary | None = None
     scope_ready: bool = True
     subjects: list[KnowledgeMapSubjectSummary] = Field(default_factory=list)
 
@@ -62,6 +64,7 @@ class KnowledgeMapNode(BaseModel):
 
 class KnowledgeMapSubjectResponse(BaseModel):
     scope: str = "exam408"
+    syllabus_version: ActiveSyllabusSummary | None = None
     subject: KnowledgeMapSubjectSummary
     nodes: list[KnowledgeMapNode] = Field(default_factory=list)
 
@@ -82,6 +85,7 @@ class KnowledgeMapRecentAnswer(BaseModel):
 
 class KnowledgeMapPointDetailResponse(BaseModel):
     scope: str = "exam408"
+    syllabus_version: ActiveSyllabusSummary | None = None
     subject_id: int
     subject_code: str
     subject_name: str

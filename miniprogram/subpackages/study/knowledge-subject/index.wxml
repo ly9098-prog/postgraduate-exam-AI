@@ -3,6 +3,7 @@
     <text class="eyebrow">SUBJECT MAP</text>
     <view class="summary-main"><text class="subject-name">{{subject.subject_name}}</text><text class="subject-score">{{subject.mastery_score == null ? '--' : subject.mastery_score + '%'}}</text></view>
     <text class="summary-note">可靠知识点 {{subject.reliable_knowledge_points}} / {{subject.trainable_knowledge_points}} · 薄弱 {{subject.weak_knowledge_points}}</text>
+    <text class="syllabus-note" wx:if="{{syllabusVersion}}">考纲：{{syllabusVersion.name}} · {{syllabusVersion.effective_year}}</text>
   </view>
 
   <view class="filters" wx:if="{{subject}}">

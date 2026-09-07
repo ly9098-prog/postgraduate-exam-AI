@@ -42,6 +42,7 @@ from app.models.question import Question
 from app.models.question_import import (
     QuestionImport,  # noqa: F401 — ensures Subject mapper resolves
 )
+from app.models.syllabus import SyllabusKnowledgePoint
 from app.services.admin_subject_service import resolve_subject_ids
 from app.services.knowledge_point_service import (
     kp_any_condition,
@@ -2805,12 +2806,19 @@ async def _compute_weak_knowledge_points(
 
     # 获取最近 30 天的做题记录，带题目的知识点
     result = await db.execute(
-        select(PracticeRecord.is_correct, KnowledgePoint.name)
+        select(
+            PracticeRecord.is_correct,
+            func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name),
+        )
         .join(
             QuestionVersionKnowledgePoint,
             QuestionVersionKnowledgePoint.question_version_id == PracticeRecord.question_version_id,
         )
         .join(KnowledgePoint, KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id)
+        .outerjoin(
+            SyllabusKnowledgePoint,
+            SyllabusKnowledgePoint.id == QuestionVersionKnowledgePoint.syllabus_knowledge_point_id,
+        )
         .where(
             PracticeRecord.user_id == user_id,
             PracticeRecord.answered_at >= cutoff,
