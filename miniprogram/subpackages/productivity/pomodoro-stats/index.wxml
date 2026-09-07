@@ -135,14 +135,35 @@
         </view>
 
         <!-- ===== HISTORY ===== -->
-        <view class="card-section">
-          <view class="section-header">
-            <text class="section-title">最近记录</text>
+        <view class="card-section history-card-section">
+          <view class="section-header history-section-header">
+            <text class="section-title history-section-title">最近记录</text>
           </view>
           <view wx:if="{{!historyReady}}" class="history-placeholder">
-            <view class="history-placeholder-line history-placeholder-line-long"></view>
-            <view class="history-placeholder-line"></view>
-            <view class="history-placeholder-line history-placeholder-line-short"></view>
+            <view class="history-placeholder-row">
+              <view class="history-placeholder-icon"></view>
+              <view class="history-placeholder-copy">
+                <view class="history-placeholder-line history-placeholder-line-long"></view>
+                <view class="history-placeholder-line history-placeholder-line-short"></view>
+              </view>
+              <view class="history-placeholder-status"></view>
+            </view>
+            <view class="history-placeholder-row">
+              <view class="history-placeholder-icon"></view>
+              <view class="history-placeholder-copy">
+                <view class="history-placeholder-line"></view>
+                <view class="history-placeholder-line history-placeholder-line-short"></view>
+              </view>
+              <view class="history-placeholder-status"></view>
+            </view>
+            <view class="history-placeholder-row">
+              <view class="history-placeholder-icon"></view>
+              <view class="history-placeholder-copy">
+                <view class="history-placeholder-line history-placeholder-line-long"></view>
+                <view class="history-placeholder-line history-placeholder-line-short"></view>
+              </view>
+              <view class="history-placeholder-status"></view>
+            </view>
           </view>
           <view wx:elif="{{history.length === 0}}" class="empty-hint">
             <view class="empty-icon"></view>
@@ -159,13 +180,17 @@
           <view class="history-list" wx:elif="{{history.length > 0}}">
             <view class="bleed-hint" wx:if="{{selectedDate === _todayDate && _crossDayBleedIn}}">部分时长来自跨统计日（前一统计日开始）</view>
             <view class="history-item" wx:for="{{history}}" wx:key="record_key">
-              <view class="hist-accent" style="background: {{item._color}};"></view>
+              <view class="hist-icon" aria-hidden="true">
+                <view class="hist-icon-tint" style="background: {{item._color}};"></view>
+                <text class="hist-icon-label" style="color: {{item._color}};" wx:if="{{item.record_type === 'practice'}}">题</text>
+                <text class="hist-icon-label" style="color: {{item._color}};" wx:elif="{{item.preset === 'free'}}">计</text>
+                <text class="hist-icon-label" style="color: {{item._color}};" wx:else>专</text>
+              </view>
               <view class="hist-left">
                 <text class="hist-subject">{{item._subjectLabel}}</text>
                 <text class="hist-meta">{{item._time}} · {{item._duration}}</text>
               </view>
               <view class="hist-right">
-                <view class="hist-status-dot {{item._statusClass}}"></view>
                 <text class="hist-status {{item._statusClass}}">{{item._statusLabel}}</text>
               </view>
             </view>

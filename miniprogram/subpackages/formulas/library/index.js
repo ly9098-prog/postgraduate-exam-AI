@@ -825,7 +825,8 @@ Page({
     }
     wx.navigateTo({
       url: `/subpackages/formulas/reader/index?random=1&` + Object.entries(params)
-        .map(([k, v]) => `${k}=${v}`)
+        // Avoid destructured callback params for the same SWC runtime-helper issue.
+        .map(entry => `${entry[0]}=${entry[1]}`)
         .join('&'),
     })
   },

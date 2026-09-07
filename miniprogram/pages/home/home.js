@@ -559,10 +559,15 @@ Page({
     const requestSeq = ++this._growthSeq
     this._clearAnimTimer()
     try {
-      const [dashRes, growthRes] = await Promise.all([
+      // Avoid array destructuring here. Some WeChat DevTools/SWC builds emit
+      // @swc/runtime/_sliced_to_array, whose transitive _array_with_holes
+      // helper can be omitted from the mini-program package and crash at runtime.
+      const growthResponses = await Promise.all([
         api.get('/stats/dashboard'),
         api.get('/stats/growth').catch(() => null),
       ])
+      const dashRes = growthResponses[0]
+      const growthRes = growthResponses[1]
       if (
         !this._alive ||
         !this._visible ||

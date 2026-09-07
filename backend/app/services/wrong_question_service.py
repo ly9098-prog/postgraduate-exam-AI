@@ -12,7 +12,10 @@ from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.review_scheduler import ReviewRecord, ReviewSchedule
 from app.models.wrong_question import WrongQuestion
 from app.services.admin_subject_service import resolve_subject_ids
-from app.services.knowledge_point_service import load_question_kps, normalize_knowledge_name
+from app.services.knowledge_point_service import (
+    load_question_kps,
+    normalize_knowledge_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +109,10 @@ async def update_wrong(
     await db.refresh(wq)
     if should_rewarm:
         try:
-            from app.services.ai_prewarm_worker import build_prewarm_revision, enqueue_prewarm
+            from app.services.ai_prewarm_worker import (
+                build_prewarm_revision,
+                enqueue_prewarm,
+            )
 
             revision = build_prewarm_revision(
                 review_count=wq.review_count,

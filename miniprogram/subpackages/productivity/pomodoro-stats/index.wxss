@@ -451,8 +451,25 @@ page {
 }
 
 /* ============================================
-   HISTORY
+   HISTORY — 方案一：简约清新列表
    ============================================ */
+.history-card-section {
+  padding: 30rpx 28rpx 10rpx;
+}
+
+.history-section-header {
+  margin-bottom: 4rpx;
+  padding-bottom: 8rpx;
+}
+
+.history-section-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.9);
+}
+
 .empty-hint {
   display: flex;
   flex-direction: column;
@@ -507,121 +524,180 @@ page {
 }
 
 .bleed-hint {
-  font-size: 22rpx;
-  color: rgba(255, 255, 255, 0.25);
-  line-height: 1.6;
-  padding: 2rpx 0 4rpx;
+  margin: 4rpx 0 8rpx;
+  padding: 14rpx 18rpx;
+  border-radius: 14rpx;
+  background: rgba(96, 165, 250, 0.07);
+  border: 1rpx solid rgba(96, 165, 250, 0.1);
+  font-size: 21rpx;
+  color: rgba(191, 219, 254, 0.62);
+  line-height: 1.5;
 }
 
 /* ── History List ── */
 .history-list {
   display: flex;
   flex-direction: column;
-  gap: 14rpx;
+  gap: 0;
 }
 
 .history-item {
+  position: relative;
   display: flex;
   align-items: center;
-  padding: 22rpx 0;
-  background: rgba(255, 255, 255, 0.015);
-  border-radius: 16rpx;
-  position: relative;
+  min-height: 92rpx;
+  padding: 20rpx 0;
+  background: transparent;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
 }
 
-.history-placeholder {
+.history-item:last-child {
+  border-bottom: 0;
+}
+
+.hist-icon {
+  position: relative;
+  width: 68rpx;
+  height: 68rpx;
+  flex-shrink: 0;
   display: flex;
-  flex-direction: column;
-  gap: 18rpx;
-  padding: 20rpx 0 10rpx;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
 }
 
-.history-placeholder-line {
-  width: 74%;
-  height: 20rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.history-placeholder-line-long {
-  width: 92%;
-}
-
-.history-placeholder-line-short {
-  width: 56%;
-}
-
-/* Left accent bar — subject color */
-.hist-accent {
+.hist-icon-tint {
   position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
   left: 0;
-  top: 8rpx;
-  bottom: 8rpx;
-  width: 4rpx;
-  border-radius: 0 4rpx 4rpx 0;
-  opacity: 0.7;
+  border-radius: 50%;
+  opacity: 0.16;
+}
+
+.hist-icon-label {
+  position: relative;
+  z-index: 1;
+  font-size: 25rpx;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .hist-left {
   display: flex;
   flex-direction: column;
-  gap: 4rpx;
-  padding-left: 28rpx;
+  gap: 7rpx;
+  padding-left: 18rpx;
   flex: 1;
   min-width: 0;
 }
 
 .hist-subject {
-  font-size: 26rpx;
-  color: rgba(255, 255, 255, 0.72);
-  font-weight: 500;
+  font-size: 27rpx;
+  line-height: 1.28;
+  color: rgba(255, 255, 255, 0.84);
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .hist-meta {
-  font-size: 20rpx;
-  color: rgba(255, 255, 255, 0.28);
+  font-size: 21rpx;
+  line-height: 1.28;
+  color: rgba(255, 255, 255, 0.34);
 }
 
 .hist-right {
   display: flex;
   align-items: center;
-  gap: 8rpx;
-  padding-right: 28rpx;
+  padding-left: 18rpx;
   flex-shrink: 0;
 }
 
-/* Status dot indicator */
-.hist-status-dot {
-  width: 8rpx;
-  height: 8rpx;
-  border-radius: 50%;
-}
-
-.hist-status-dot.status-done {
-  background: rgba(16, 185, 129, 0.7);
-  box-shadow: 0 0 8rpx rgba(16, 185, 129, 0.25);
-}
-
-.hist-status-dot.status-interrupt {
-  background: rgba(244, 63, 94, 0.5);
-}
-
 .hist-status {
-  font-size: 20rpx;
-  font-weight: 500;
+  min-width: 58rpx;
+  padding: 9rpx 14rpx;
+  border-radius: 12rpx;
+  font-size: 21rpx;
+  font-weight: 650;
+  line-height: 1.2;
+  text-align: center;
+  box-sizing: border-box;
 }
 
-.status-done {
-  color: rgba(16, 185, 129, 0.65);
+.hist-status.status-done {
+  color: #6EE7B7;
+  background: rgba(16, 185, 129, 0.11);
 }
 
-.status-interrupt {
-  color: rgba(244, 63, 94, 0.55);
+.hist-status.status-interrupt {
+  color: #FDA4AF;
+  background: rgba(244, 63, 94, 0.11);
+}
+
+/* ── Loading placeholder aligned with the new row layout ── */
+.history-placeholder {
+  display: flex;
+  flex-direction: column;
+  padding: 4rpx 0 0;
+}
+
+.history-placeholder-row {
+  display: flex;
+  align-items: center;
+  min-height: 92rpx;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+
+.history-placeholder-row:last-child {
+  border-bottom: 0;
+}
+
+.history-placeholder-icon {
+  width: 68rpx;
+  height: 68rpx;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.history-placeholder-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  padding: 0 18rpx;
+}
+
+.history-placeholder-line {
+  width: 64%;
+  height: 18rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.history-placeholder-line-long {
+  width: 82%;
+}
+
+.history-placeholder-line-short {
+  width: 46%;
+  height: 14rpx;
+}
+
+.history-placeholder-status {
+  width: 72rpx;
+  height: 38rpx;
+  flex-shrink: 0;
+  border-radius: 12rpx;
+  background: rgba(255, 255, 255, 0.045);
 }
 
 /* ============================================
@@ -1134,7 +1210,9 @@ page {
 }
 
 .theme-light .bleed-hint {
-  color: rgba(21, 51, 35, 0.5);
+  color: #6E7D73;
+  background: #F3F7EE;
+  border-color: #E2EBDD;
 }
 
 .theme-light .day-start-title {
@@ -1218,22 +1296,43 @@ page {
   color: #849087;
 }
 
-.theme-light .history-item {
-  background: rgba(247, 248, 244, 0.92);
-  border: 1rpx solid #E5E8E1;
-  box-shadow: 0 8rpx 20rpx rgba(21, 51, 35, 0.035);
+.theme-light .history-card-section {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: #E1E6DE;
+  box-shadow: 0 12rpx 30rpx rgba(21, 51, 35, 0.05);
 }
 
-.theme-light .history-placeholder-line {
-  background: rgba(21, 51, 35, 0.075);
+.theme-light .history-section-title {
+  color: #173426;
+}
+
+.theme-light .history-item,
+.theme-light .history-placeholder-row {
+  border-bottom-color: #E9ECE7;
+}
+
+.theme-light .history-placeholder-icon,
+.theme-light .history-placeholder-line,
+.theme-light .history-placeholder-status {
+  background: rgba(21, 51, 35, 0.065);
 }
 
 .theme-light .hist-subject {
-  color: #34483B;
+  color: #26382D;
 }
 
 .theme-light .hist-meta {
-  color: #849087;
+  color: #7E8B82;
+}
+
+.theme-light .hist-status.status-done {
+  color: #2E9B73;
+  background: #EAF6F0;
+}
+
+.theme-light .hist-status.status-interrupt {
+  color: #D95C6B;
+  background: #FCEDEE;
 }
 
 .theme-light .pie-section-subtitle {
