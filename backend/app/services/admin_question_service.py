@@ -623,7 +623,13 @@ async def delete_question_asset_if_orphan(db: AsyncSession, url: str) -> None:
     try:
         key = url_to_storage_key(url)
         report = await AssetReferenceService(db).resolve(key)
-        if report.reference_count > 0:
+        if not report.safe_to_delete:
+            if report.errors:
+                logger.warning(
+                    "question asset deletion retained because reference scan was incomplete url=%s errors=%s",
+                    url,
+                    report.errors,
+                )
             return
         storage = get_question_assets_storage()
         await storage.delete(url)

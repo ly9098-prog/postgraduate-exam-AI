@@ -74,7 +74,9 @@ class AssetReferenceReport:
 
     @property
     def safe_to_delete(self) -> bool:
-        return self.reference_count == 0
+        # Reference discovery is a safety gate. Any scan error means the
+        # absence of references is unproven, so deletion must fail closed.
+        return self.reference_count == 0 and not self.errors
 
     @property
     def reason_codes(self) -> list[str]:
@@ -149,10 +151,10 @@ class AssetReferenceService:
       - image_url fields
       - source_image_name fields
 
-    Note: question_versions is intentionally NOT scanned. Version snapshots are
-    historical records that retain old content URLs by design; counting them as
-    references would make replaced/deleted image cleanup a permanent no-op.
-    Current questions.content/options is the authoritative live-reference source.
+    Historical question versions are retained only when another durable learning
+    fact actually pins them (exam paper item, practice record, wrong question or
+    review fact). This protects historical exam/practice rendering without making
+    every superseded draft revision keep its assets forever.
     """
 
     # Tables and columns to scan for asset URLs
@@ -195,6 +197,15 @@ class AssetReferenceService:
                         f"scan {table}.{col}: {e}"
                     )
 
+        try:
+            report.references.extend(
+                await self._scan_pinned_question_versions(storage_key)
+            )
+        except Exception as e:
+            # Reference-resolution errors are fail-safe: callers see errors and
+            # the deletion state machine must not treat the asset as proven safe.
+            report.errors.append(f"scan pinned question_versions: {e}")
+
         return report
 
     async def _scan_column(
@@ -217,9 +228,11 @@ class AssetReferenceService:
             value = row[1]
 
             if isinstance(value, str):
-                # Direct URL or JSON string
-                urls = _STATIC_ASSET_RE.findall(value)
-                for url in urls:
+                # Direct URL or JSON text. Both local/static and COS URLs are
+                # valid persisted references; missing either family can make a
+                # referenced object look orphaned during cleanup.
+                urls = _STATIC_ASSET_RE.findall(value) + _COS_ASSET_RE.findall(value)
+                for url in dict.fromkeys(urls):
                     if target_key in url or target_key in url_to_storage_key(url):
                         references.append(AssetReference(
                             entity_type=entity_type,
@@ -228,6 +241,20 @@ class AssetReferenceService:
                             json_path=None,
                             asset_url=url,
                             storage_key=url_to_storage_key(url),
+                        ))
+                # ``source_image_name`` can be a storage key/path rather than a
+                # full URL. The generic URL regex branch above would otherwise
+                # never see it because this value is still a string.
+                if column == "source_image_name" and not urls:
+                    candidate_key = url_to_storage_key(value)
+                    if target_key in value or target_key in candidate_key:
+                        references.append(AssetReference(
+                            entity_type=entity_type,
+                            entity_id=entity_id,
+                            field_name=column,
+                            json_path=None,
+                            asset_url=value,
+                            storage_key=candidate_key,
                         ))
             elif isinstance(value, (dict, list)):
                 # Structured JSON
@@ -243,17 +270,83 @@ class AssetReferenceService:
                             asset_url=url,
                             storage_key=url_to_storage_key(url),
                         ))
-            elif column == "source_image_name" and isinstance(value, str):
-                if target_key in value or target_key in url_to_storage_key(value):
-                    references.append(AssetReference(
-                        entity_type=entity_type,
-                        entity_id=entity_id,
-                        field_name=column,
-                        json_path=None,
-                        asset_url=value,
-                        storage_key=url_to_storage_key(value),
-                    ))
 
+        return references
+
+    async def _scan_pinned_question_versions(self, target_key: str) -> list[AssetReference]:
+        """Find asset refs in immutable revisions that still back durable facts.
+
+        A superseded revision with no downstream reference may be cleaned up, but
+        a revision used by a published/draft exam, historical practice, wrong-book
+        entry or review record must keep its media so its frozen semantics remain
+        renderable after the current Question is edited.
+        """
+        raw = await self._db.execute(text("""
+            SELECT DISTINCT qv.id, qv.content, qv.image_url, qv.options
+            FROM question_versions AS qv
+            WHERE (
+                EXISTS (
+                    SELECT 1 FROM exam_paper_questions AS epq
+                    WHERE epq.question_version_id = qv.id
+                )
+                OR EXISTS (
+                    SELECT 1 FROM practice_records AS pr
+                    WHERE pr.question_version_id = qv.id
+                )
+                OR EXISTS (
+                    SELECT 1 FROM wrong_questions AS wq
+                    WHERE wq.question_version_id = qv.id
+                )
+                OR EXISTS (
+                    SELECT 1 FROM review_schedules AS rs
+                    WHERE rs.question_version_id = qv.id
+                )
+                OR EXISTS (
+                    SELECT 1 FROM review_records AS rr
+                    WHERE rr.question_version_id = qv.id
+                )
+            )
+            AND (
+                CAST(qv.content AS TEXT) LIKE :needle
+                OR COALESCE(qv.image_url, '') LIKE :needle
+                OR CAST(qv.options AS TEXT) LIKE :needle
+            )
+        """), {"needle": f"%{target_key}%"})
+        references: list[AssetReference] = []
+        for revision_id, content, image_url, options in raw.fetchall():
+            for field_name, value in (
+                ("content", content),
+                ("image_url", image_url),
+                ("options", options),
+            ):
+                if value is None:
+                    continue
+                if isinstance(value, str):
+                    urls = _STATIC_ASSET_RE.findall(value) + _COS_ASSET_RE.findall(value)
+                    for url in urls:
+                        key = url_to_storage_key(url)
+                        if target_key in url or target_key in key:
+                            references.append(AssetReference(
+                                entity_type="question_version",
+                                entity_id=str(revision_id),
+                                field_name=field_name,
+                                json_path=None,
+                                asset_url=url,
+                                storage_key=key,
+                            ))
+                elif isinstance(value, (dict, list)):
+                    for extracted in extract_asset_urls(value, field_name):
+                        url = extracted["url"]
+                        key = url_to_storage_key(url)
+                        if target_key in url or target_key in key:
+                            references.append(AssetReference(
+                                entity_type="question_version",
+                                entity_id=str(revision_id),
+                                field_name=field_name,
+                                json_path=extracted.get("json_path"),
+                                asset_url=url,
+                                storage_key=key,
+                            ))
         return references
 
     async def resolve_all(self, storage_keys: list[str]) -> dict[str, AssetReferenceReport]:

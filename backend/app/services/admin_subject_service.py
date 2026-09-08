@@ -1,5 +1,6 @@
 from fastapi import Request
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
@@ -43,8 +44,17 @@ async def list_subject_tree(db: AsyncSession, include_inactive: bool = False) ->
     return roots
 
 
-async def get_subject(db: AsyncSession, subject_id: int) -> Subject:
-    subject = await db.get(Subject, subject_id)
+async def get_subject(
+    db: AsyncSession,
+    subject_id: int,
+    *,
+    lock: bool = False,
+) -> Subject:
+    stmt = select(Subject).where(Subject.id == subject_id)
+    bind = db.get_bind()
+    if lock and bind is not None and bind.dialect.name == "postgresql":
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    subject = await db.scalar(stmt)
     if not subject:
         raise ValueError("科目不存在")
     return subject
@@ -80,8 +90,14 @@ async def create_subject(
         sort_order=data.sort_order,
         is_active=data.is_active,
     )
-    db.add(subject)
-    await db.flush()
+    try:
+        # The pre-check improves the error message, while the database unique
+        # constraint remains authoritative under concurrent admin requests.
+        async with db.begin_nested():
+            db.add(subject)
+            await db.flush()
+    except IntegrityError as exc:
+        raise SubjectConflictError("科目编码已存在") from exc
     await write_admin_audit(
         db,
         operator,
@@ -101,7 +117,9 @@ async def update_subject(
     operator: AdminPrincipal,
     request: Request | None = None,
 ) -> Subject:
-    subject = await get_subject(db, subject_id)
+    # Serialize edits to the same taxonomy node so code/path/activation changes
+    # cannot silently overwrite one another.
+    subject = await get_subject(db, subject_id, lock=True)
     before = _subject_state(subject)
     update_data = data.model_dump(exclude_unset=True)
     confirm_core_disable = bool(update_data.pop("confirm_core_disable", False))
@@ -163,6 +181,13 @@ async def update_subject(
     if parent_changed or code_changed:
         _sync_descendant_paths(all_subjects, subject)
 
+    if code_changed:
+        try:
+            async with db.begin_nested():
+                await db.flush()
+        except IntegrityError as exc:
+            raise SubjectConflictError("科目编码已存在") from exc
+
     await write_admin_audit(
         db,
         operator,
@@ -182,7 +207,7 @@ async def delete_subject(
     operator: AdminPrincipal,
     request: Request | None = None,
 ) -> None:
-    subject = await get_subject(db, subject_id)
+    subject = await get_subject(db, subject_id, lock=True)
     if canonical_408_code(subject.code):
         raise SubjectBusinessRuleError("408 核心科目不能删除；如需临时隐藏，请使用停用")
     child_count = await db.scalar(select(func.count()).select_from(Subject).where(Subject.parent_id == subject.id))

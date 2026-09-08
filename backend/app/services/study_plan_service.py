@@ -115,7 +115,7 @@ def _plan_select(db: AsyncSession, user_id: int, *, lock: bool = False):
     stmt = select(StudyPlan).where(StudyPlan.user_id == user_id)
     bind = db.get_bind()
     if lock and bind is not None and bind.dialect.name == "postgresql":
-        stmt = stmt.with_for_update()
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     return stmt
 
 
@@ -658,6 +658,24 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
         all_408_ids=all_408_ids,
         core_408_ids=core_408_ids,
     )
+
+    # Hub/exam aggregation above can take long enough for another device to save
+    # new plan settings. Re-read and lock the plan before materializing today's
+    # snapshot so an older overview request can never overwrite a newer
+    # plan_revision with stale allocation data.
+    latest_plan = await _get_user_plan(db, user_id, lock=True)
+    if latest_plan is None or not latest_plan.is_active:
+        await db.rollback()
+        return {
+            "configured": False,
+            "date": today,
+            "suggested_defaults": {
+                "daily_minutes": 90,
+                "weekly_days": 6,
+                "priority_mode": "balanced",
+            },
+        }
+    plan = latest_plan
     day = await _ensure_day_snapshot(
         db,
         plan=plan,
@@ -666,6 +684,9 @@ async def get_study_plan_overview(db: AsyncSession, user_id: int) -> dict:
         exam_suggestion=exam_suggestion,
         prior_active_days=len(prior_dates),
     )
+    # _ensure_day_snapshot may return an already-current row without committing;
+    # release the plan row lock before the remaining read-only aggregation.
+    await db.commit()
 
     planned = {category: int((day.allocation_json or {}).get(category) or 0) for category in CATEGORIES}
     completed, focus_minutes = await _today_completion(

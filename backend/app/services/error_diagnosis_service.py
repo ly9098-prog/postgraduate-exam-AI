@@ -7,6 +7,7 @@ from datetime import timedelta
 from typing import Iterable
 
 from sqlalchemy import case, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.gateway import chat_with_db_model
@@ -175,13 +176,17 @@ async def get_diagnosis_by_id(
     db: AsyncSession,
     user_id: int,
     diagnosis_id: int,
+    *,
+    lock: bool = False,
 ) -> WrongQuestionErrorDiagnosis | None:
-    return await db.scalar(
-        select(WrongQuestionErrorDiagnosis).where(
-            WrongQuestionErrorDiagnosis.id == diagnosis_id,
-            WrongQuestionErrorDiagnosis.user_id == user_id,
-        )
+    stmt = select(WrongQuestionErrorDiagnosis).where(
+        WrongQuestionErrorDiagnosis.id == diagnosis_id,
+        WrongQuestionErrorDiagnosis.user_id == user_id,
     )
+    bind = db.get_bind()
+    if lock and bind is not None and bind.dialect.name == "postgresql":
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    return await db.scalar(stmt)
 
 
 async def get_latest_diagnosis(
@@ -241,17 +246,21 @@ async def _queue_diagnosis(
     try:
         from app.services.outbox_service import create_outbox
 
-        await create_outbox(
-            db,
-            task_id=f"error_diagnosis:{row.id}:{row.classification_version}:{request_suffix}",
-            task_type=TASK_TYPE_ERROR_DIAGNOSIS,
-            payload={
-                "diagnosis_id": int(row.id),
-                "user_id": int(row.user_id),
-                "classification_version": int(row.classification_version or 1),
-            },
-            schema_version=1,
-        )
+        # Outbox enrichment is optional for the primary answer transaction.
+        # Isolate its flush in a savepoint so a duplicate-key/storage failure
+        # cannot leave the caller's session in a failed transaction state.
+        async with db.begin_nested():
+            await create_outbox(
+                db,
+                task_id=f"error_diagnosis:{row.id}:{row.classification_version}:{request_suffix}",
+                task_type=TASK_TYPE_ERROR_DIAGNOSIS,
+                payload={
+                    "diagnosis_id": int(row.id),
+                    "user_id": int(row.user_id),
+                    "classification_version": int(row.classification_version or 1),
+                },
+                schema_version=1,
+            )
         return True
     except ValueError:
         # A non-terminal task with the same deterministic id is already queued.
@@ -319,8 +328,31 @@ async def record_error_event(
         user_secondary_types=[],
         ai_secondary_types=[],
     )
-    db.add(row)
-    await db.flush()
+    try:
+        # The source record/exam answer is the idempotency key for a diagnosis.
+        # Keep the insert in a savepoint so a concurrent retry that wins the
+        # unique constraint does not poison the caller's primary transaction.
+        async with db.begin_nested():
+            db.add(row)
+            await db.flush()
+    except IntegrityError:
+        existing = None
+        if practice_record_id:
+            existing = await db.scalar(
+                select(WrongQuestionErrorDiagnosis).where(
+                    WrongQuestionErrorDiagnosis.practice_record_id == practice_record_id
+                )
+            )
+        if existing is None and exam_answer_id:
+            existing = await db.scalar(
+                select(WrongQuestionErrorDiagnosis).where(
+                    WrongQuestionErrorDiagnosis.exam_answer_id == exam_answer_id
+                )
+            )
+        if existing is not None:
+            return existing
+        raise
+
     if queue_ai:
         await _queue_diagnosis(db, row)
     return row
@@ -392,6 +424,12 @@ async def request_ai_suggestion(
     if wq is None:
         return None, False
     row = await ensure_legacy_diagnosis(db, wq)
+    # Two manual retries must allocate different classification versions;
+    # otherwise they can generate the same deterministic outbox task id and one
+    # request can fail/lost-update the version counter.
+    locked = await get_diagnosis_by_id(db, user_id, int(row.id), lock=True)
+    if locked is not None:
+        row = locked
     row.ai_status = "pending"
     row.classification_version = int(row.classification_version or 1) + 1
     # Flush before task id construction. Commit here because this endpoint is a
@@ -516,10 +554,18 @@ async def generate_ai_suggestion(
         parsed = _extract_json_object(response.get("content"))
         if parsed is None:
             raise ValueError("invalid_json")
-        if expected_classification_version is not None:
-            await db.refresh(row, attribute_names=["classification_version"])
-            if int(row.classification_version or 1) != int(expected_classification_version):
-                return {"processed": False, "stale": True}
+        # Re-acquire the diagnosis row immediately before applying the AI result.
+        # A manual retry can advance classification_version while the model call
+        # is in flight; the old worker must never overwrite that newer state.
+        current = await get_diagnosis_by_id(db, user_id, diagnosis_id, lock=True)
+        if current is None:
+            return {"processed": False, "missing": True}
+        row = current
+        if (
+            expected_classification_version is not None
+            and int(row.classification_version or 1) != int(expected_classification_version)
+        ):
+            return {"processed": False, "stale": True}
         primary = normalize_error_type(parsed.get("primary_type"))
         secondary = normalize_secondary_types(parsed.get("secondary_types"), primary)
         try:
@@ -544,9 +590,22 @@ async def generate_ai_suggestion(
             user_id,
             exc_info=True,
         )
-        row.ai_status = "failed"
-        row.ai_reason = "AI 分类暂不可用，可直接由用户手动确认错因。"
-        row.ai_model = None
+        # The exception may come from a DB flush/commit, so reset the worker's
+        # dedicated transaction before trying to persist failure state. More
+        # importantly, an older failed worker must not turn a newer manual retry
+        # from pending into failed.
+        await db.rollback()
+        current = await get_diagnosis_by_id(db, user_id, diagnosis_id, lock=True)
+        if current is None:
+            return {"processed": False, "missing": True}
+        if (
+            expected_classification_version is not None
+            and int(current.classification_version or 1) != int(expected_classification_version)
+        ):
+            return {"processed": False, "stale": True}
+        current.ai_status = "failed"
+        current.ai_reason = "AI 分类暂不可用，可直接由用户手动确认错因。"
+        current.ai_model = None
         await db.commit()
         return {"processed": True, "suggested": False, "reason": "ai_failed"}
 

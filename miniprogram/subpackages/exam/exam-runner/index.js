@@ -216,7 +216,7 @@ Page({
   },
 
   selectOption(e) {
-    if (this.data.timeExpired) return
+    if (this.data.timeExpired || this.data.submitting) return
     const itemId = this._currentItemId()
     if (!itemId) return
     const answer = this._answers[itemId] || { used_time: 0 }
@@ -231,7 +231,7 @@ Page({
   },
 
   toggleMark() {
-    if (this.data.timeExpired) return
+    if (this.data.timeExpired || this.data.submitting) return
     const itemId = this._currentItemId()
     if (!itemId) return
     const answer = this._answers[itemId] || { used_time: 0 }
@@ -307,11 +307,15 @@ Page({
   },
 
   async _flushAllPending(options = {}) {
-    const ids = Object.keys(this._pending || {})
-    if (!ids.length) return true
     try {
-      for (const id of ids) await this._syncItem(id)
-      return true
+      // Re-scan after each pass. This matters during lifecycle/network callbacks:
+      // an item can be queued while an earlier item is awaiting its PATCH.
+      // Submission freezes editing, so the loop deterministically converges.
+      while (true) {
+        const ids = Object.keys(this._pending || {})
+        if (!ids.length) return true
+        for (const id of ids) await this._syncItem(id)
+      }
     } catch (error) {
       if (!options.quiet) wx.showToast({ title: '还有答案未同步，请检查网络', icon: 'none' })
       throw error
@@ -348,6 +352,7 @@ Page({
   },
 
   _moveTo(index) {
+    if (this.data.timeExpired || this.data.submitting) return
     const previousItemId = this._currentItemId()
     this._settleCurrentTime({ sync: false })
     if (previousItemId) this._syncItem(previousItemId).catch(() => {})
@@ -358,6 +363,7 @@ Page({
   goQuestion(e) { this._moveTo(e.detail.index) },
 
   requestExit() {
+    if (this.data.submitting) return
     this._settleCurrentTime().catch(() => {})
     wx.showModal({
       title: '暂时退出考试？',
@@ -385,6 +391,10 @@ Page({
       if (!res.confirm) return
     }
 
+    // The countdown can expire while the manual confirmation modal is open.
+    // In that case the auto-submit path may already have started; do not launch
+    // a second client-side flush/submit sequence after the modal resolves.
+    if (this.data.submitting) return
     this.setData({ submitting: true })
     this._clearTimer()
     try {

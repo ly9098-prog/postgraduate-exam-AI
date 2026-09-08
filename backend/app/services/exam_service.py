@@ -288,7 +288,7 @@ async def _get_attempt_for_user(
     stmt = select(ExamAttempt).where(ExamAttempt.id == attempt_id, ExamAttempt.user_id == user_id)
     bind = db.get_bind()
     if lock and bind is not None and bind.dialect.name == "postgresql":
-        stmt = stmt.with_for_update()
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     attempt = await db.scalar(stmt)
     if attempt is None:
         raise ExamNotFoundError("考试记录不存在")
@@ -537,6 +537,16 @@ async def _finalize_attempt(
     *,
     terminal_status: str,
 ) -> dict:
+    # Finalization can be reached from explicit submit *and* lazy expiration on
+    # GET/recovery endpoints. Enforce the serialization invariant here rather
+    # than relying on every caller to remember a row lock. populate_existing on
+    # the lock query is essential when this session loaded the attempt earlier.
+    attempt = await _get_attempt_for_user(
+        db,
+        int(attempt.id),
+        int(attempt.user_id),
+        lock=True,
+    )
     if attempt.status in TERMINAL_ATTEMPT_STATUSES:
         if not isinstance(attempt.result_snapshot, dict):
             raise ExamStateError("考试已结束但结果快照缺失")

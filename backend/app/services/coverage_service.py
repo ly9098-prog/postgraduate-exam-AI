@@ -374,18 +374,20 @@ async def build_coverage_report(
         select(
             QuestionVersionKnowledgePoint.knowledge_point_id,
             ExamPaper.paper_type,
-            func.count(func.distinct(Question.id)),
+            func.count(func.distinct(ExamPaperQuestion.question_id)),
         )
         .select_from(ExamPaperQuestion)
         .join(ExamPaper, ExamPaper.id == ExamPaperQuestion.paper_id)
-        .join(Question, Question.id == ExamPaperQuestion.question_id)
         .join(
             QuestionVersionKnowledgePoint,
             QuestionVersionKnowledgePoint.question_version_id == ExamPaperQuestion.question_version_id,
         )
         .where(
             QuestionVersionKnowledgePoint.knowledge_point_id.in_(kp_ids),
-            *scope_conditions,
+            # Exam coverage is historical paper coverage, not current-bank
+            # availability. The paper item already pins question_version_id, so
+            # mutable Question active/review/current-version state must not make
+            # an already published paper disappear from coverage later.
             ExamPaper.paper_type.in_(("past_exam_choice", "mock_choice")),
             ExamPaper.status != "archived",
         )

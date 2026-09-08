@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.subject_scope import EXAM408_CORE_CODES, EXAM408_ROOT_CODE
@@ -23,6 +24,31 @@ class SyllabusError(ValueError):
 
 
 _MANUAL_MAPPING_TYPES = frozenset({"merged", "split", "replaced"})
+
+
+async def _get_version(
+    db: AsyncSession,
+    version_id: int,
+    *,
+    lock: bool = False,
+) -> SyllabusVersion | None:
+    stmt = select(SyllabusVersion).where(SyllabusVersion.id == version_id)
+    bind = db.get_bind()
+    if lock and bind is not None and bind.dialect.name == "postgresql":
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    return await db.scalar(stmt)
+
+
+async def _lock_syllabus_switch(db: AsyncSession, root_subject_id: int) -> None:
+    """Serialize active-version switches on the stable 408 root row."""
+    bind = db.get_bind()
+    if bind is None or bind.dialect.name != "postgresql":
+        return
+    await db.scalar(
+        select(Subject.id)
+        .where(Subject.id == root_subject_id)
+        .with_for_update()
+    )
 
 async def _root_and_core_subjects(db: AsyncSession) -> tuple[Subject, list[Subject]]:
     rows = list((await db.scalars(select(Subject).where(Subject.code.in_((EXAM408_ROOT_CODE, *EXAM408_CORE_CODES))))).all())
@@ -126,16 +152,24 @@ async def get_version_detail(db: AsyncSession, version_id: int) -> dict | None:
 
 async def create_version(db: AsyncSession, *, code: str, name: str, effective_year: int, description: str | None, admin_id: int | None) -> SyllabusVersion:
     root, _ = await _root_and_core_subjects(db)
-    existing = await db.scalar(select(SyllabusVersion.id).where(func.lower(SyllabusVersion.code) == code.strip().lower()))
+    normalized_code = code.strip().lower()
+    existing = await db.scalar(select(SyllabusVersion.id).where(func.lower(SyllabusVersion.code) == normalized_code))
     if existing:
         raise SyllabusError("考纲版本 code 已存在")
     version = SyllabusVersion(
-        code=code.strip(), name=name.strip(), effective_year=effective_year,
+        code=normalized_code, name=name.strip(), effective_year=effective_year,
         description=(description or "").strip() or None, status="draft", root_subject_id=int(root.id),
         created_by=admin_id, updated_by=admin_id,
     )
-    db.add(version)
-    await db.flush()
+    try:
+        # The pre-check is user-friendly but cannot prevent a concurrent create.
+        # A savepoint converts the database uniqueness race into the same 409 path
+        # without poisoning the outer admin/audit transaction.
+        async with db.begin_nested():
+            db.add(version)
+            await db.flush()
+    except IntegrityError as exc:
+        raise SyllabusError("考纲版本 code 已存在") from exc
 
     # New drafts start from the current active syllabus scope so an administrator
     # edits a delta instead of rebuilding all 408 memberships by hand.  The
@@ -160,7 +194,7 @@ async def create_version(db: AsyncSession, *, code: str, name: str, effective_ye
 
 
 async def update_version(db: AsyncSession, version_id: int, *, values: dict, admin_id: int | None) -> SyllabusVersion:
-    version = await db.get(SyllabusVersion, version_id)
+    version = await _get_version(db, version_id, lock=True)
     if version is None:
         raise SyllabusError("考纲版本不存在")
     if version.status != "draft":
@@ -177,7 +211,7 @@ async def update_version(db: AsyncSession, version_id: int, *, values: dict, adm
 
 
 async def replace_memberships(db: AsyncSession, version_id: int, knowledge_point_ids: list[int], admin_id: int | None) -> dict:
-    version = await db.get(SyllabusVersion, version_id)
+    version = await _get_version(db, version_id, lock=True)
     if version is None:
         raise SyllabusError("考纲版本不存在")
     if version.status != "draft":
@@ -225,7 +259,14 @@ async def get_catalog(db: AsyncSession, version_id: int) -> dict:
         raise SyllabusError("考纲版本不存在")
     _, cores = await _root_and_core_subjects(db)
     core_ids = [int(s.id) for s in cores]
-    included = set((await db.scalars(select(SyllabusKnowledgePoint.knowledge_point_id).where(SyllabusKnowledgePoint.syllabus_version_id == version_id))).all())
+    included_ids = {
+        int(value)
+        for value in (await db.scalars(
+            select(SyllabusKnowledgePoint.knowledge_point_id).where(
+                SyllabusKnowledgePoint.syllabus_version_id == version_id
+            )
+        )).all()
+    }
     rows = await db.execute(
         select(KnowledgePoint, Subject)
         .join(Subject, Subject.id == KnowledgePoint.subject_id)
@@ -238,7 +279,7 @@ async def get_catalog(db: AsyncSession, version_id: int) -> dict:
             "knowledge_point_id": int(kp.id), "subject_id": int(kp.subject_id),
             "subject_code": subject.code, "subject_name": subject.name, "name": kp.name,
             "description": kp.description, "difficulty_level": int(kp.difficulty_level or 3),
-            "included": int(kp.id) in {int(x) for x in included},
+            "included": int(kp.id) in included_ids,
         } for kp, subject in rows.all()],
     }
 
@@ -321,11 +362,14 @@ async def _auto_map_from_previous(db: AsyncSession, previous_id: int | None, tar
 
 
 async def activate_version(db: AsyncSession, version_id: int, admin_id: int | None) -> SyllabusVersion:
-    version = await db.get(SyllabusVersion, version_id)
+    version = await _get_version(db, version_id, lock=True)
     if version is None:
         raise SyllabusError("考纲版本不存在")
     if version.status != "draft":
         raise SyllabusError("只有 draft 考纲可以激活")
+    # Per-version locking prevents edit-vs-activate races. Locking the stable 408
+    # root additionally serializes two administrators activating different drafts.
+    await _lock_syllabus_switch(db, int(version.root_subject_id))
     count = int(await db.scalar(select(func.count()).select_from(SyllabusKnowledgePoint).where(SyllabusKnowledgePoint.syllabus_version_id == version_id)) or 0)
     if count <= 0:
         raise SyllabusError("考纲至少需要包含一个知识点")
@@ -353,7 +397,7 @@ async def activate_version(db: AsyncSession, version_id: int, admin_id: int | No
 
 
 async def archive_version(db: AsyncSession, version_id: int, admin_id: int | None) -> SyllabusVersion:
-    version = await db.get(SyllabusVersion, version_id)
+    version = await _get_version(db, version_id, lock=True)
     if version is None:
         raise SyllabusError("考纲版本不存在")
     if version.status == "active":
@@ -390,9 +434,20 @@ async def add_mapping(
         raise SyllabusError("映射端点不存在")
     if int(old.syllabus_version_id) == int(new.syllabus_version_id):
         raise SyllabusError("跨版本映射不能连接同一考纲版本")
-    target_version = await db.get(SyllabusVersion, int(new.syllabus_version_id))
+    target_version = await _get_version(db, int(new.syllabus_version_id), lock=True)
     if target_version is None or target_version.status != "draft":
         raise SyllabusError("手工映射只能写入 draft 目标考纲")
+    # Membership replacement uses the same version lock. Re-read endpoints after
+    # acquiring it so a concurrent replacement cannot leave us inserting FKs to
+    # members that were deleted while this request was waiting.
+    rows = list((await db.scalars(
+        select(SyllabusKnowledgePoint).where(SyllabusKnowledgePoint.id.in_((from_id, to_id)))
+    )).all())
+    by_id = {int(item.id): item for item in rows}
+    old = by_id.get(int(from_id))
+    new = by_id.get(int(to_id))
+    if old is None or new is None or int(new.syllabus_version_id) != int(target_version.id):
+        raise SyllabusError("映射端点已变化，请刷新后重试")
 
     duplicate = await db.scalar(
         select(SyllabusKnowledgePointMapping.id).where(
@@ -425,34 +480,54 @@ async def delete_mapping(db: AsyncSession, mapping_id: int) -> SyllabusKnowledge
     if item.to_syllabus_knowledge_point_id is None:
         raise SyllabusError("映射目标缺失")
     target_member = await db.get(SyllabusKnowledgePoint, int(item.to_syllabus_knowledge_point_id))
-    target_version = (
-        await db.get(SyllabusVersion, int(target_member.syllabus_version_id))
-        if target_member is not None
-        else None
-    )
+    if target_member is None:
+        raise SyllabusError("映射目标缺失")
+    target_version = await _get_version(db, int(target_member.syllabus_version_id), lock=True)
     if target_version is None or target_version.status != "draft":
         raise SyllabusError("仅 draft 目标考纲的手工映射可删除")
+    # The mapping may have been cascade-deleted by a membership replacement while
+    # this request waited for the version lock. Re-read it before deleting.
+    item = await db.get(SyllabusKnowledgePointMapping, mapping_id, populate_existing=True)
+    if item is None:
+        raise SyllabusError("跨版本映射不存在")
     await db.delete(item)
     await db.flush()
     return item
 
 
 async def list_mappings(db: AsyncSession, version_id: int) -> list[dict]:
-    members = list((await db.scalars(select(SyllabusKnowledgePoint).where(SyllabusKnowledgePoint.syllabus_version_id == version_id))).all())
-    member_ids = {int(x.id) for x in members}
+    member_ids = {
+        int(value)
+        for value in (await db.scalars(
+            select(SyllabusKnowledgePoint.id).where(
+                SyllabusKnowledgePoint.syllabus_version_id == version_id
+            )
+        )).all()
+    }
     if not member_ids:
         return []
-    all_members = {int(x.id): x for x in (await db.scalars(select(SyllabusKnowledgePoint))).all()}
     rows = list((await db.scalars(select(SyllabusKnowledgePointMapping).where(
         (SyllabusKnowledgePointMapping.from_syllabus_knowledge_point_id.in_(member_ids)) |
         (SyllabusKnowledgePointMapping.to_syllabus_knowledge_point_id.in_(member_ids))
     ).order_by(SyllabusKnowledgePointMapping.id.asc()))).all())
+    endpoint_ids = {
+        int(value)
+        for row in rows
+        for value in (row.from_syllabus_knowledge_point_id, row.to_syllabus_knowledge_point_id)
+        if value is not None
+    }
+    endpoint_members = {
+        int(item.id): item
+        for item in (await db.scalars(
+            select(SyllabusKnowledgePoint).where(SyllabusKnowledgePoint.id.in_(endpoint_ids))
+        )).all()
+    } if endpoint_ids else {}
     return [{
         "id": int(row.id), "from_syllabus_knowledge_point_id": int(row.from_syllabus_knowledge_point_id) if row.from_syllabus_knowledge_point_id else None,
         "to_syllabus_knowledge_point_id": int(row.to_syllabus_knowledge_point_id) if row.to_syllabus_knowledge_point_id else None,
         "relation_type": row.relation_type, "note": row.note,
-        "from_name": all_members.get(int(row.from_syllabus_knowledge_point_id)).name_snapshot if row.from_syllabus_knowledge_point_id and int(row.from_syllabus_knowledge_point_id) in all_members else None,
-        "to_name": all_members.get(int(row.to_syllabus_knowledge_point_id)).name_snapshot if row.to_syllabus_knowledge_point_id and int(row.to_syllabus_knowledge_point_id) in all_members else None,
+        "from_name": endpoint_members.get(int(row.from_syllabus_knowledge_point_id)).name_snapshot if row.from_syllabus_knowledge_point_id and int(row.from_syllabus_knowledge_point_id) in endpoint_members else None,
+        "to_name": endpoint_members.get(int(row.to_syllabus_knowledge_point_id)).name_snapshot if row.to_syllabus_knowledge_point_id and int(row.to_syllabus_knowledge_point_id) in endpoint_members else None,
         "created_at": row.created_at,
     } for row in rows]
 
