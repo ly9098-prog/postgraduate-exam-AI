@@ -96,6 +96,8 @@ type FormulaCard = {
   category_id: number;
   exam_scope: string;
   card_type: string;
+  study_card_type: string;
+  template_type: string;
   is_function_graph: boolean;
   summary: string | null;
   formula_blocks: FormulaBlock[];
@@ -166,6 +168,22 @@ const STATUS_LABEL: Record<string, string> = {
   offline: "已下架",
 };
 
+const STUDY_CARD_TYPE_OPTIONS = [
+  { value: "", label: "全部速记类型" },
+  { value: "formula", label: "公式" },
+  { value: "definition", label: "定义" },
+  { value: "complexity", label: "算法复杂度" },
+  { value: "protocol_rule", label: "协议字段 / 规则" },
+  { value: "key_conclusion", label: "高频结论" },
+  { value: "confusable", label: "易混概念" },
+  { value: "trap", label: "典型陷阱" },
+  { value: "comparison", label: "对比卡" },
+];
+
+const STUDY_CARD_TYPE_LABEL: Record<string, string> = Object.fromEntries(
+  STUDY_CARD_TYPE_OPTIONS.filter((item) => item.value).map((item) => [item.value, item.label]),
+);
+
 const LIBRARY_TYPE_OPTIONS = [
   { label: "全部分类", value: "" },
   { label: "纯公式", value: "pure_formula" },
@@ -212,7 +230,7 @@ export default function FormulasPage() {
   const queryClient = useQueryClient();
   const permissions = useAuthStore((state) => state.permissions);
 
-  const [filters, setFilters] = useState({ status: "", category_id: "", q: "", tags: "", library_type: "", graph_status: "" });
+  const [filters, setFilters] = useState({ status: "", category_id: "", q: "", tags: "", library_type: "", study_card_type: "", graph_status: "" });
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -246,8 +264,9 @@ export default function FormulasPage() {
     include_descendants: filters.category_id ? true : undefined,
     q: filters.q || undefined,
     library_type: filters.library_type || undefined,
+    study_card_type: filters.study_card_type || undefined,
     graph_status: filters.graph_status || undefined,
-  }), [page, currentFilterStatus, filters.category_id, filters.q, filters.library_type, filters.graph_status]);
+  }), [page, currentFilterStatus, filters.category_id, filters.q, filters.library_type, filters.study_card_type, filters.graph_status]);
 
   const formulas = useQuery({
     queryKey: ["admin-formulas", queryParams],
@@ -570,7 +589,7 @@ export default function FormulasPage() {
 
   const clearFilters = () => {
     setSearchDraft("");
-    setFilters({ status: "", category_id: "", q: "", tags: "", library_type: "", graph_status: "" });
+    setFilters({ status: "", category_id: "", q: "", tags: "", library_type: "", study_card_type: "", graph_status: "" });
     setPage(1);
     setSelectedIds(new Set());
   };
@@ -584,17 +603,17 @@ export default function FormulasPage() {
             className="font-display text-[28px] font-bold leading-tight tracking-tight text-[var(--ink)]"
             style={{ fontVariationSettings: "'wght' 700" }}
           >
-            公式库管理
+            408 速记卡管理
           </h1>
           <p className="mt-1.5 text-sm leading-relaxed text-[var(--color-text-secondary)]">
-            {canReview ? "分类、列表与详情同屏协作，审核通过后将自动发布" : "分类、列表与详情同屏管理公式卡片"}
+            {canReview ? "统一管理公式、定义、易混点、陷阱与对比卡，审核通过后自动发布" : "分类、列表与详情同屏管理 408 速记卡"}
           </p>
         </div>
         {canWrite && (
           <Link href="/formulas/new">
             <Button variant="primary" size="md">
               <Plus className="h-4 w-4" />
-              新建公式
+              新建速记卡
             </Button>
           </Link>
         )}
@@ -619,12 +638,12 @@ export default function FormulasPage() {
       <Card className="overflow-visible">
         {/* ── Workspace filters ── */}
         <div className="border-b border-[var(--color-border)] bg-white/72 p-4">
-          <div className="grid gap-2 lg:grid-cols-[minmax(260px,1fr)_150px_150px_165px_auto]">
+          <div className="grid gap-2 lg:grid-cols-[minmax(240px,1fr)_140px_150px_170px_155px_auto]">
             <label className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
               <Input
                 className="pl-9 pr-16"
-                placeholder="搜索标题 / 别名 / 公式内容"
+                placeholder="搜索标题 / 别名 / 速记内容"
                 value={searchDraft}
                 onChange={(e) => setSearchDraft(e.target.value)}
               />
@@ -656,6 +675,13 @@ export default function FormulasPage() {
               onChange={(v) => updateFilter("library_type", v)}
               options={LIBRARY_TYPE_OPTIONS}
               placeholder="全部类型"
+              clearable={false}
+            />
+            <CustomSelect
+              value={filters.study_card_type}
+              onChange={(v) => updateFilter("study_card_type", v)}
+              options={STUDY_CARD_TYPE_OPTIONS}
+              placeholder="全部速记类型"
               clearable={false}
             />
             <CustomSelect
@@ -738,7 +764,7 @@ export default function FormulasPage() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-bold text-[var(--ink)]">公式列表</p>
+                  <p className="text-sm font-bold text-[var(--ink)]">速记卡列表</p>
                   {selectedCategory ? (
                     <span className="rounded-md bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-primary-dark)]">
                       {selectedCategory.name} · 含子分类
@@ -823,6 +849,9 @@ export default function FormulasPage() {
                             <span className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_BADGE[card.status] || "bg-gray-50"}`}>
                               {STATUS_LABEL[card.status] || card.status}
                             </span>
+                            <span className="inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                              {STUDY_CARD_TYPE_LABEL[card.study_card_type] || card.study_card_type || "公式"}
+                            </span>
                             {card.is_function_graph ? (
                               <span className="inline-flex rounded-md border border-[var(--color-primary-light)] bg-[var(--color-primary-light)]/60 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-primary-dark)]">函数图像</span>
                             ) : null}
@@ -839,7 +868,7 @@ export default function FormulasPage() {
                           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--color-text-hint)]">
                             {tagNames ? <span className="inline-flex items-center gap-1"><Tag className="h-3 w-3" />{tagNames}</span> : null}
                             <span>#{card.id}</span>
-                            <span>{card.formula_blocks?.length || 0} 个公式块</span>
+                            <span>{card.formula_blocks?.length || 0} 个内容块</span>
                             <span>v{card.version}</span>
                             <span>{formatChinaDate(card.updated_at)}</span>
                           </div>
@@ -856,9 +885,9 @@ export default function FormulasPage() {
                 {!items.length ? (
                   <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-[var(--color-border)] bg-white/60 py-14 text-center animate-fade-in">
                     <Sigma className="h-10 w-10 text-[var(--color-text-hint)]" />
-                    <p className="text-sm font-semibold text-[var(--color-text-secondary)]">{selectedCategory ? `「${selectedCategory.name}」下暂无匹配公式` : "暂无匹配公式"}</p>
+                    <p className="text-sm font-semibold text-[var(--color-text-secondary)]">{selectedCategory ? `「${selectedCategory.name}」下暂无匹配速记卡` : "暂无匹配速记卡"}</p>
                     <p className="max-w-sm text-xs leading-5 text-[var(--color-text-hint)]">
-                      {selectedCategory ? "已同时查询当前分类及其全部子分类。可调整状态、类型、图像状态或搜索关键词。" : "尝试调整搜索关键词或筛选条件。"}
+                      {selectedCategory ? "已同时查询当前分类及其全部子分类。可调整状态、速记类型、图像状态或搜索关键词。" : "尝试调整搜索关键词或筛选条件。"}
                     </p>
                     {hasActiveFilters ? <Button variant="secondary" size="sm" onClick={clearFilters}>清除筛选</Button> : null}
                   </div>

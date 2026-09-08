@@ -35,6 +35,27 @@ const MAX_FAVORITE_PAGES = 50
 const FAVORITE_PAGE_SIZE = 200
 const PRODUCT_EXAM_SCOPE = 'exam408'
 
+const STUDY_CARD_TYPES = [
+  { key: '', name: '全部' },
+  { key: 'formula', name: '公式' },
+  { key: 'definition', name: '定义' },
+  { key: 'complexity', name: '复杂度' },
+  { key: 'protocol_rule', name: '协议规则' },
+  { key: 'key_conclusion', name: '高频结论' },
+  { key: 'confusable', name: '易混' },
+  { key: 'trap', name: '陷阱' },
+  { key: 'comparison', name: '对比' },
+]
+const STUDY_CARD_TYPE_LABEL = STUDY_CARD_TYPES.reduce(function (acc, item) {
+  if (item.key) acc[item.key] = item.name
+  return acc
+}, {})
+
+function getStudyCardTypeLabel(item) {
+  var key = String(item?.study_card_type || item?.studyCardType || 'formula').trim().toLowerCase()
+  return STUDY_CARD_TYPE_LABEL[key] || '速记'
+}
+
 function normalizeCardType(item) {
   return String(
     item?.card_type ||
@@ -77,6 +98,10 @@ Page({
       { key: LIBRARY_TYPE_FUNCTION_GRAPH, name: '函数图像', active: false },
     ],
     activeLibraryType: LIBRARY_TYPE_FORMULA,
+
+    // 408 memory-card semantic type
+    studyTypeTabs: STUDY_CARD_TYPES.map(function (item) { return { ...item, active: !item.key } }),
+    activeStudyCardType: '',
 
     // Catalog tree
     catalog: [],
@@ -187,6 +212,7 @@ Page({
       if (this.data.activeLibraryType && this.data.activeLibraryType !== LIBRARY_TYPE_FORMULA) {
         params.library_type = this.data.activeLibraryType
       }
+      if (this.data.activeStudyCardType) params.study_card_type = this.data.activeStudyCardType
       if (typeof this.data.onlyFavorites !== 'undefined' && this.data.onlyFavorites) {
         params.favorite_only = true
       }
@@ -361,7 +387,8 @@ Page({
       this.data.searchValue ||
       this.data.activeChapterId ||
       (this.data.activeTags || []).length ||
-      this.data.onlyFavorites
+      this.data.onlyFavorites ||
+      this.data.activeStudyCardType
     )
     if (!hasActiveFilters) {
       this.setData({ showMoreSheet: false })
@@ -376,6 +403,8 @@ Page({
       activeTags: [],
       searchValue: '',
       onlyFavorites: false,
+      activeStudyCardType: '',
+      studyTypeTabs: STUDY_CARD_TYPES.map(function (item) { return { ...item, active: !item.key } }),
       page: 1,
       formulas: [],
       total: 0,
@@ -408,6 +437,25 @@ Page({
       showTagPicker: false,
       showSubjectPicker: false,
       showMoreSheet: false,
+    })
+    this.loadCatalog()
+    this.loadFormulas(true)
+  },
+
+  // ── 408 Study Card Type ──
+
+  onStudyCardTypeChange(e) {
+    const type = String(e.currentTarget.dataset.type || '')
+    if (type === this.data.activeStudyCardType) return
+    const studyTypeTabs = (this.data.studyTypeTabs || []).map((tab) => ({ ...tab, active: tab.key === type }))
+    this.setData({
+      studyTypeTabs,
+      activeStudyCardType: type,
+      page: 1,
+      formulas: [],
+      total: 0,
+      hasMore: true,
+      loadError: false,
     })
     this.loadCatalog()
     this.loadFormulas(true)
@@ -548,7 +596,7 @@ Page({
     if (replace) this._replaceRequestVersion = (this._replaceRequestVersion || 0) + 1
     const requestVersion = this._replaceRequestVersion || 0
     const { loading, loadingMore, initialLoading, page, pageSize, activeSubject, activeChapterId,
-            activeTags, searchValue, onlyFavorites, hasMore, activeLibraryType } = this.data
+            activeTags, searchValue, onlyFavorites, hasMore, activeLibraryType, activeStudyCardType } = this.data
     if (loading || loadingMore || (initialLoading && !replace) || !hasMore) return
     const loadingFlag = replace ? 'initialLoading' : 'loadingMore'
     this.setData({ [loadingFlag]: true, loadError: false })
@@ -560,6 +608,7 @@ Page({
         page_size: pageSize,
         library_type: activeLibraryType || LIBRARY_TYPE_FORMULA,
       }
+      if (activeStudyCardType) baseParams.study_card_type = activeStudyCardType
       if (activeChapterId) baseParams.chapter_id = activeChapterId
       if (activeTags.length) {
         const tagCodes = this.data.tags
@@ -659,6 +708,7 @@ Page({
         graphThumbnailUrl,
         graphPreviewUrl: graphImageUrl || graphThumbnailUrl,
         isFunctionGraph,
+        studyCardTypeLabel: getStudyCardTypeLabel(item),
         graphLoadError: false,
         isFavorited: Boolean(item.isFavorited || item.is_favorited || favoriteIds.includes(Number(item.id))),
       }
@@ -813,6 +863,7 @@ Page({
         chapterId: this.data.activeChapterId,
         searchValue: this.data.searchValue,
         libraryType: this.data.activeLibraryType,
+        studyCardType: this.data.activeStudyCardType,
       })
     } catch (_) {}
 
@@ -828,11 +879,12 @@ Page({
   },
 
   goToRandom() {
-    const { activeSubject, activeChapterId, activeTags, activeLibraryType } = this.data
+    const { activeSubject, activeChapterId, activeTags, activeLibraryType, activeStudyCardType } = this.data
     const params = {
       subject_code: activeSubject,
       library_type: activeLibraryType || LIBRARY_TYPE_FORMULA,
     }
+    if (activeStudyCardType) params.study_card_type = activeStudyCardType
     if (activeChapterId) params.chapter_id = activeChapterId
     if (activeTags.length) {
       params.tags = this.data.tags

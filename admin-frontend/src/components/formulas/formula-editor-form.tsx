@@ -57,6 +57,8 @@ type EditorFormData = {
   examples: FormulaExample[];
   sortOrder: number;
   cardType: string;
+  studyCardType: string;
+  templateType: string;
   functionProperties: Record<string, unknown> | null;
 };
 
@@ -83,6 +85,8 @@ type LocalDraft = {
   blocks: FormulaBlock[];
   examples: FormulaExample[];
   cardType: string;
+  studyCardType: string;
+  templateType: string;
   funcExpression: string;
   funcTemplate: string;
   funcDomain: string;
@@ -101,6 +105,27 @@ const TAG_NAMES: Record<string, string> = {
   high_frequency: "高频",
   error_prone: "易错",
   must_memorize: "必背",
+};
+const STUDY_CARD_TYPES = [
+  ["formula", "公式"],
+  ["definition", "定义"],
+  ["complexity", "算法复杂度"],
+  ["protocol_rule", "协议字段 / 规则"],
+  ["key_conclusion", "高频结论"],
+  ["confusable", "易混概念"],
+  ["trap", "典型陷阱"],
+  ["comparison", "对比卡"],
+] as const;
+const TEMPLATE_TYPES = [
+  ["standard", "标准卡"],
+  ["memory", "记忆卡"],
+  ["rule", "规则卡"],
+  ["contrast", "对比卡"],
+  ["trap", "陷阱卡"],
+] as const;
+const DEFAULT_TEMPLATE_BY_STUDY_TYPE: Record<string, string> = {
+  formula: "standard", definition: "memory", complexity: "rule", protocol_rule: "rule",
+  key_conclusion: "memory", confusable: "contrast", trap: "trap", comparison: "contrast",
 };
 const EXAMPLES_MAX = 3;
 const BLOCKS_MAX = 8;
@@ -373,6 +398,8 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
   const [examples, setExamples] = useState<FormulaExample[]>(initialData?.examples ?? []);
   const [sortOrder, setSortOrder] = useState(initialData?.sortOrder ?? 0);
   const [cardType, setCardType] = useState(initialData?.cardType ?? "auto");
+  const [studyCardType, setStudyCardType] = useState(initialData?.studyCardType ?? "formula");
+  const [templateType, setTemplateType] = useState(initialData?.templateType ?? DEFAULT_TEMPLATE_BY_STUDY_TYPE[initialData?.studyCardType ?? "formula"] ?? "standard");
 
   const [funcExpression, setFuncExpression] = useState(
     (initialData?.functionProperties?.function_expression as string) ?? "",
@@ -517,6 +544,8 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
       || blocks.some((block) => block.latex.trim() || block.label?.trim() || block.note?.trim())
       || examples.some((example) => example.question.trim() || example.short_solution.trim() || example.answer.trim() || example.error_tip?.trim())
       || cardType !== "pure_formula"
+      || studyCardType !== "formula"
+      || templateType !== "standard"
       || funcExpression.trim()
       || funcTemplate.trim()
       || funcDomain.trim()
@@ -539,6 +568,8 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
     blocks,
     examples,
     cardType,
+    studyCardType,
+    templateType,
     funcExpression,
     funcTemplate,
     funcDomain,
@@ -563,6 +594,8 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
     blocks,
     examples,
     cardType,
+    studyCardType,
+    templateType,
     funcExpression,
     funcTemplate,
     funcDomain,
@@ -584,6 +617,8 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
     blocks,
     examples,
     cardType,
+    studyCardType,
+    templateType,
     funcExpression,
     funcTemplate,
     funcDomain,
@@ -658,6 +693,8 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
     setBlocks(recoverableDraft.blocks?.length ? recoverableDraft.blocks : [{ latex: "" }]);
     setExamples(recoverableDraft.examples ?? []);
     setCardType(recoverableDraft.cardType ?? "pure_formula");
+    setStudyCardType(recoverableDraft.studyCardType ?? "formula");
+    setTemplateType(recoverableDraft.templateType ?? DEFAULT_TEMPLATE_BY_STUDY_TYPE[recoverableDraft.studyCardType ?? "formula"] ?? "standard");
     setFuncExpression(recoverableDraft.funcExpression ?? "");
     setFuncTemplate(recoverableDraft.funcTemplate ?? "");
     setFuncDomain(recoverableDraft.funcDomain ?? "");
@@ -681,10 +718,10 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
   const validateRequired = useCallback(() => {
     const missingCategory = !categoryId;
     const missingTitle = !title.trim();
-    const missingBlocks = !blocks.some((block) => block.latex.trim());
+    const missingBlocks = studyCardType === "formula" && !blocks.some((block) => block.latex.trim());
 
-    setCategoryError(missingCategory ? "请选择公式分类" : "");
-    setTitleError(missingTitle ? "请填写公式标题" : "");
+    setCategoryError(missingCategory ? "请选择速记卡分类" : "");
+    setTitleError(missingTitle ? "请填写速记卡标题" : "");
     setBlocksError(missingBlocks ? "至少填写一个 LaTeX 公式" : "");
 
     if (missingCategory || missingTitle) {
@@ -699,14 +736,17 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
       return false;
     }
     return true;
-  }, [categoryId, title, blocks]);
+  }, [categoryId, title, blocks, studyCardType]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
       if (!categoryId) throw new Error("请选择分类");
       if (!title.trim()) throw new Error("请填写标题");
       const validBlocks = blocks.filter((block) => block.latex.trim());
-      if (validBlocks.length < 1) throw new Error("至少需要一个公式块（需填写 LaTeX）");
+      if (studyCardType === "formula" && validBlocks.length < 1) throw new Error("公式卡至少需要一个公式块（需填写 LaTeX）");
+      if (studyCardType !== "formula" && !summary.trim() && validBlocks.length < 1 && !secondaryConclusions.trim() && !errorTips.trim()) {
+        throw new Error("非公式速记卡至少填写摘要、核心内容、常见结论或易错提醒之一");
+      }
 
       const tagIds = selectedTags.map((code) => tagMap[code]).filter(Boolean);
       const aliasesList = aliases.split(/[,，、\s]+/).filter(Boolean);
@@ -723,6 +763,8 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
         aliases: aliasesList.length > 0 ? aliasesList : null,
         search_text: [title.trim(), ...aliasesList].join(" "),
         card_type: cardType,
+        study_card_type: studyCardType,
+        template_type: templateType,
         function_properties: cardType === "function_graph" ? buildFunctionProperties() : null,
         summary: summary.trim() || null,
         formula_blocks: validBlocks.map((block) => ({
@@ -758,7 +800,7 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
     },
     onSuccess: async (result: Record<string, unknown> | undefined) => {
       setMessageType("success");
-      setMessage(mode === "create" ? "公式草稿创建成功" : "保存成功");
+      setMessage(mode === "create" ? "速记卡草稿创建成功" : "保存成功");
       const newId = result?.id as number | undefined;
 
       if (mode === "create") {
@@ -872,8 +914,8 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
   const requiredItems = useMemo(() => [
     { label: "选择分类", done: Boolean(categoryId) },
     { label: "填写标题", done: Boolean(title.trim()) },
-    { label: "录入公式", done: blocks.some((block) => Boolean(block.latex.trim())) },
-  ], [categoryId, title, blocks]);
+    { label: studyCardType === "formula" ? "录入公式" : "录入速记内容", done: studyCardType === "formula" ? blocks.some((block) => Boolean(block.latex.trim())) : Boolean(summary.trim() || blocks.some((block) => Boolean(block.latex.trim())) || secondaryConclusions.trim() || errorTips.trim()) },
+  ], [categoryId, title, blocks, studyCardType, summary, secondaryConclusions, errorTips]);
   const completedRequired = requiredItems.filter((item) => item.done).length;
   const completionPercent = Math.round((completedRequired / requiredItems.length) * 100);
   const isPending = createMutation.isPending;
@@ -975,7 +1017,7 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
             <SectionCard
               step="01"
               title="基础信息"
-              description="先确定公式卡片的归属、名称和用途，让后续内容更容易检索与维护。"
+              description="先确定 408 速记卡的归属、内容类型、模板和用途，让后续内容更容易检索与维护。"
             >
               <div className="space-y-4">
                 <div>
@@ -1041,6 +1083,34 @@ export function FormulaEditorForm({ mode, cardId, initialData, onSaveSuccess }: 
                         </button>
                       ))}
                     </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <FieldLabel required>408 速记内容类型</FieldLabel>
+                    <select
+                      value={studyCardType}
+                      onChange={(event) => {
+                        const next = event.target.value;
+                        setStudyCardType(next);
+                        setTemplateType(DEFAULT_TEMPLATE_BY_STUDY_TYPE[next] ?? "standard");
+                      }}
+                      className="h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
+                    >
+                      {STUDY_CARD_TYPES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                    </select>
+                    <p className="mt-1 text-[11px] text-[var(--color-text-hint)]">公式 / 定义 / 复杂度 / 协议规则 / 高频结论 / 易混 / 陷阱 / 对比统一使用 Formula Card 领域。</p>
+                  </div>
+                  <div>
+                    <FieldLabel required>展示模板</FieldLabel>
+                    <select
+                      value={templateType}
+                      onChange={(event) => setTemplateType(event.target.value)}
+                      className="h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none focus:border-[var(--color-primary)]"
+                    >
+                      {TEMPLATE_TYPES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                    </select>
                   </div>
                 </div>
 

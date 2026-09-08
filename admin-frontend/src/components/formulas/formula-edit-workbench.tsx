@@ -71,6 +71,22 @@ const CARD_TYPE_LABEL: Record<string, string> = {
   function_graph: "函数图像",
 };
 
+const STUDY_CARD_TYPE_LABEL: Record<string, string> = {
+  formula: "公式",
+  definition: "定义",
+  complexity: "算法复杂度",
+  protocol_rule: "协议字段 / 规则",
+  key_conclusion: "高频结论",
+  confusable: "易混概念",
+  trap: "典型陷阱",
+  comparison: "对比卡",
+};
+
+const DEFAULT_TEMPLATE_BY_STUDY_TYPE: Record<string, string> = {
+  formula: "standard", definition: "memory", complexity: "rule", protocol_rule: "rule",
+  key_conclusion: "memory", confusable: "contrast", trap: "trap", comparison: "contrast",
+};
+
 const VERSION_ACTION_LABEL: Record<string, string> = {
   create: "创建",
   update: "更新",
@@ -124,6 +140,8 @@ export type FormulaEditWorkbenchData = {
   examples: FormulaExample[] | null;
   sortOrder: number;
   cardType: string;
+  studyCardType: string;
+  templateType: string;
   functionProperties: Record<string, unknown> | null;
   status: string;
   version: number;
@@ -210,6 +228,8 @@ export function FormulaEditWorkbench({ cardId, initialData, onClose, onSaved }: 
   const [summary, setSummary] = useState(initialData.summary || "");
   const [categoryId, setCategoryId] = useState<number | null>(initialData.categoryId);
   const [cardType, setCardType] = useState(initialData.cardType || "auto");
+  const [studyCardType, setStudyCardType] = useState(initialData.studyCardType || "formula");
+  const [templateType, setTemplateType] = useState(initialData.templateType || DEFAULT_TEMPLATE_BY_STUDY_TYPE[initialData.studyCardType || "formula"] || "standard");
   const [sortOrder, setSortOrder] = useState(initialData.sortOrder || 0);
   const [conditions, setConditions] = useState(initialData.conditions || "");
   const [symbolNotes, setSymbolNotes] = useState(initialData.symbolNotes || "");
@@ -321,6 +341,8 @@ export function FormulaEditWorkbench({ cardId, initialData, onClose, onSaved }: 
     summary,
     categoryId,
     cardType,
+    studyCardType,
+    templateType,
     sortOrder,
     conditions,
     symbolNotes,
@@ -336,6 +358,8 @@ export function FormulaEditWorkbench({ cardId, initialData, onClose, onSaved }: 
     summary,
     categoryId,
     cardType,
+    studyCardType,
+    templateType,
     sortOrder,
     conditions,
     symbolNotes,
@@ -468,8 +492,12 @@ export function FormulaEditWorkbench({ cardId, initialData, onClose, onSaved }: 
     mutationFn: async () => {
       if (!categoryId) throw new Error("请选择公式分类");
       if (!title.trim()) throw new Error("请填写公式标题");
-      if (!blocks.length || blocks.some((block) => !block.latex.trim())) {
-        throw new Error("存在未填写内容的公式块，请补全或删除后再保存");
+      const validBlocks = blocks.filter((block) => block.latex.trim());
+      if (studyCardType === "formula" && validBlocks.length < 1) {
+        throw new Error("公式卡至少需要一个公式块");
+      }
+      if (studyCardType !== "formula" && !summary.trim() && validBlocks.length < 1 && !secondaryConclusions.trim() && !errorTips.trim()) {
+        throw new Error("非公式速记卡至少填写摘要、核心内容、常见结论或易错提醒之一");
       }
       if (examples.some((example) => !example.question.trim() || !example.short_solution.trim() || !example.answer.trim())) {
         throw new Error("例题的题目、核心解法和答案需要填写完整");
@@ -486,8 +514,10 @@ export function FormulaEditWorkbench({ cardId, initialData, onClose, onSaved }: 
           aliases: aliasesList.length ? aliasesList : null,
           search_text: [title.trim(), ...aliasesList].join(" "),
           card_type: cardType,
+          study_card_type: studyCardType,
+          template_type: templateType,
           summary: summary.trim() || null,
-          formula_blocks: blocks.map((block) => ({
+          formula_blocks: validBlocks.map((block) => ({
             label: block.label?.trim() || null,
             latex: block.latex.trim(),
             note: block.note?.trim() || null,
@@ -556,9 +586,9 @@ export function FormulaEditWorkbench({ cardId, initialData, onClose, onSaved }: 
   const requiredChecks = useMemo(() => [
     { label: "已选择分类", done: Boolean(categoryId) },
     { label: "已填写标题", done: Boolean(title.trim()) },
-    { label: "所有公式块内容完整", done: blocks.length > 0 && blocks.every((block) => Boolean(block.latex.trim())) },
+    { label: studyCardType === "formula" ? "已录入核心公式" : "已录入速记内容", done: studyCardType === "formula" ? blocks.some((block) => Boolean(block.latex.trim())) : Boolean(summary.trim() || blocks.some((block) => Boolean(block.latex.trim())) || secondaryConclusions.trim() || errorTips.trim()) },
     { label: "例题字段完整", done: examples.length === 0 || examples.every((example) => Boolean(example.question.trim() && example.short_solution.trim() && example.answer.trim())) },
-  ], [categoryId, title, blocks, examples]);
+  ], [categoryId, title, blocks, examples, studyCardType, summary, secondaryConclusions, errorTips]);
 
   const topWorkspaceTabs: Array<{ key: WorkspaceTab; label: string; icon: ReactNode; visible: boolean }> = [
     { key: "block", label: "内容编辑", icon: <FileText className="h-3.5 w-3.5" />, visible: true },
@@ -582,10 +612,10 @@ export function FormulaEditWorkbench({ cardId, initialData, onClose, onSaved }: 
             </button>
             <div className="min-w-0">
               <div className="hidden items-center gap-1 text-[9px] font-medium text-[var(--color-text-hint)] sm:flex">
-                <span>公式库</span><ChevronRight className="h-2.5 w-2.5" /><span>编辑</span><ChevronRight className="h-2.5 w-2.5" /><span>#{cardId}</span>
+                <span>408 速记卡</span><ChevronRight className="h-2.5 w-2.5" /><span>编辑</span><ChevronRight className="h-2.5 w-2.5" /><span>#{cardId}</span>
               </div>
               <div className="flex min-w-0 items-center gap-2 sm:mt-0.5">
-                <h1 className="truncate font-display text-base font-bold text-[var(--ink)] lg:text-lg">{title || "未命名公式"}</h1>
+                <h1 className="truncate font-display text-base font-bold text-[var(--ink)] lg:text-lg">{title || "未命名速记卡"}</h1>
                 <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${STATUS_BADGE[initialData.status] || STATUS_BADGE.draft}`}>
                   {STATUS_LABEL[initialData.status] || initialData.status}
                 </span>
@@ -720,7 +750,7 @@ export function FormulaEditWorkbench({ cardId, initialData, onClose, onSaved }: 
                 <p className="mt-0.5 text-[10px] text-[var(--color-text-hint)]">保持核心字段同屏，减少上下滚动。</p>
               </div>
               <div className="flex items-center gap-1.5 text-[10px] text-[var(--color-text-hint)]">
-                <span>#{cardId}</span><span>·</span><span>v{savedVersion}</span><span>·</span><span>{CARD_TYPE_LABEL[cardType] || cardType}</span>
+                <span>#{cardId}</span><span>·</span><span>v{savedVersion}</span><span>·</span><span>{STUDY_CARD_TYPE_LABEL[studyCardType] || studyCardType}</span><span>·</span><span>{CARD_TYPE_LABEL[cardType] || cardType}</span>
               </div>
             </div>
             <div className="grid gap-3 p-3.5 lg:grid-cols-2">
@@ -734,28 +764,42 @@ export function FormulaEditWorkbench({ cardId, initialData, onClose, onSaved }: 
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">分类 <span className="text-red-500">*</span></label>
-                <FormulaCategoryPicker mode="form" value={categoryId} onChange={setCategoryId} placeholder="选择公式分类" />
+                <FormulaCategoryPicker mode="form" value={categoryId} onChange={setCategoryId} placeholder="选择速记卡分类" />
               </div>
-              <div className="grid grid-cols-[minmax(0,1fr)_100px] gap-2">
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">卡片类型</label>
-                  <select value={cardType} onChange={(event) => setCardType(event.target.value)} className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.12)]">
-                    <option value="auto">自动识别</option>
-                    <option value="pure_formula">纯公式</option>
-                    <option value="function_graph">函数图像</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">排序</label>
-                  <Input type="number" value={sortOrder} onChange={(event) => setSortOrder(Number(event.target.value))} className="h-11" />
-                </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">408 内容类型</label>
+                <select value={studyCardType} onChange={(event) => { const next = event.target.value; setStudyCardType(next); setTemplateType(DEFAULT_TEMPLATE_BY_STUDY_TYPE[next] || "standard"); }} className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white">
+                  {Object.entries(STUDY_CARD_TYPE_LABEL).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">展示模板</label>
+                <select value={templateType} onChange={(event) => setTemplateType(event.target.value)} className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white">
+                  <option value="standard">标准卡</option>
+                  <option value="memory">记忆卡</option>
+                  <option value="rule">规则卡</option>
+                  <option value="contrast">对比卡</option>
+                  <option value="trap">陷阱卡</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">渲染类型</label>
+                <select value={cardType} onChange={(event) => setCardType(event.target.value)} className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white">
+                  <option value="auto">自动识别</option>
+                  <option value="pure_formula">纯公式</option>
+                  <option value="function_graph">函数图像</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-[var(--color-text-secondary)]">排序</label>
+                <Input type="number" value={sortOrder} onChange={(event) => setSortOrder(Number(event.target.value))} className="h-11" />
               </div>
               <div className="lg:col-span-2">
                 <div className="mb-1.5 flex items-center justify-between">
                   <label className="text-xs font-semibold text-[var(--color-text-secondary)]">摘要</label>
                   <span className="text-[10px] text-[var(--color-text-hint)]">{summary.length} 字</span>
                 </div>
-                <CompactTextarea value={summary} onChange={setSummary} placeholder="用一两句话概括该公式卡片的核心内容" rows={2} />
+                <CompactTextarea value={summary} onChange={setSummary} placeholder="用一两句话概括这张 408 速记卡的核心内容" rows={2} />
               </div>
               <div className="lg:col-span-2 border-t border-[var(--color-border-light)] pt-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
@@ -924,7 +968,8 @@ export function FormulaEditWorkbench({ cardId, initialData, onClose, onSaved }: 
                   <div className="space-y-2 text-xs">
                     <div className="flex items-center justify-between gap-3"><span className="text-[var(--color-text-hint)]">状态</span><span className={`rounded-full border px-2 py-0.5 font-semibold ${STATUS_BADGE[initialData.status] || STATUS_BADGE.draft}`}>{STATUS_LABEL[initialData.status] || initialData.status}</span></div>
                     <div className="flex items-start justify-between gap-3"><span className="shrink-0 text-[var(--color-text-hint)]">分类</span><span className="text-right font-medium leading-5 text-[var(--ink)]">{categoryLabel}</span></div>
-                    <div className="flex items-center justify-between gap-3"><span className="text-[var(--color-text-hint)]">类型</span><span className="font-medium text-[var(--ink)]">{CARD_TYPE_LABEL[cardType] || cardType}</span></div>
+                    <div className="flex items-center justify-between gap-3"><span className="text-[var(--color-text-hint)]">内容类型</span><span className="font-medium text-[var(--ink)]">{STUDY_CARD_TYPE_LABEL[studyCardType] || studyCardType}</span></div>
+                    <div className="flex items-center justify-between gap-3"><span className="text-[var(--color-text-hint)]">模板</span><span className="font-medium text-[var(--ink)]">{templateType}</span></div>
                   </div>
                 </div>
 

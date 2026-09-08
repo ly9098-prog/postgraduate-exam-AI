@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_permissions
 from app.core.database import get_db
-from app.core.time_utils import utcnow, serialize_utc_datetime
+from app.core.time_utils import serialize_utc_datetime, utcnow
 from app.models.admin import AuditLog
 from app.models.formula import (
     FormulaCard,
@@ -53,6 +53,7 @@ from app.services.formula_graph_spec_service import (
 from app.services.formula_graph_spec_service import (
     delete_generated_asset as delete_spec_generated_asset,
 )
+from app.services.formula_study_card_service import default_template_for
 from app.services.streaming_upload_handler import stream_to_temp
 
 router = APIRouter(prefix="/api/admin/v1/formulas", tags=["admin-formulas"])
@@ -297,6 +298,8 @@ async def _card_to_dict(db: AsyncSession, card: FormulaCard) -> dict:
         "aliases": card.aliases,
         "search_text": card.search_text,
         "card_type": card.card_type,
+        "study_card_type": card.study_card_type or "formula",
+        "template_type": card.template_type or "standard",
         "summary": card.summary,
         "formula_blocks": card.formula_blocks,
         "conditions": card.conditions,
@@ -421,6 +424,7 @@ async def list_formula_cards(
     include_descendants: bool = Query(False),
     q: str | None = Query(None),
     library_type: str | None = Query(None),
+    study_card_type: str | None = Query(None),
     graph_status: str | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -454,6 +458,12 @@ async def list_formula_cards(
                 cast(FormulaCard.formula_blocks, String).ilike(like),
             )
         )
+
+    if study_card_type and study_card_type != "all":
+        allowed_study_types = {"formula", "definition", "complexity", "protocol_rule", "key_conclusion", "confusable", "trap", "comparison"}
+        if study_card_type not in allowed_study_types:
+            raise HTTPException(status_code=400, detail=f"无效的 study_card_type: '{study_card_type}'")
+        query = query.where(FormulaCard.study_card_type == study_card_type)
 
     if graph_status:
         allowed_graph_statuses = {
@@ -582,6 +592,8 @@ async def create_formula_card(
         aliases=data.aliases,
         search_text=data.search_text,
         card_type=data.card_type,
+        study_card_type=data.study_card_type,
+        template_type=data.template_type or default_template_for(data.study_card_type),
         summary=data.summary,
         formula_blocks=blocks_dicts,
         conditions=data.conditions,
@@ -647,6 +659,9 @@ async def update_formula_card(
 
     if not update_data and tag_ids is None:
         raise HTTPException(status_code=422, detail="No fields to update")
+
+    if "study_card_type" in update_data and "template_type" not in update_data:
+        update_data["template_type"] = default_template_for(update_data["study_card_type"])
 
     # Update formula blocks → recalc content hash
     if "formula_blocks" in update_data and update_data["formula_blocks"] is not None:
@@ -716,6 +731,8 @@ async def update_formula_card(
         "title": card.title,
         "category_id": card.category_id,
         "card_type": card.card_type,
+        "study_card_type": card.study_card_type,
+        "template_type": card.template_type,
         "formula_blocks": card.formula_blocks,
         "conditions": card.conditions,
         "status": card.status,

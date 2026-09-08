@@ -9,6 +9,22 @@ const TRANSITION_OUT_MS = 150
 const TRANSITION_IN_DELAY_MS = 36
 const PRODUCT_EXAM_SCOPE = 'exam408'
 
+const STUDY_CARD_TYPE_LABEL = {
+  formula: '公式',
+  definition: '定义',
+  complexity: '算法复杂度',
+  protocol_rule: '协议字段 / 规则',
+  key_conclusion: '高频结论',
+  confusable: '易混概念',
+  trap: '典型陷阱',
+  comparison: '对比卡',
+}
+
+function studyCardTypeLabel(card) {
+  var key = String(card?.study_card_type || card?.studyCardType || 'formula').trim().toLowerCase()
+  return STUDY_CARD_TYPE_LABEL[key] || '408 速记'
+}
+
 function normalizeId(value) {
   if (value === undefined || value === null || value === '') return null
   const text = String(value)
@@ -78,6 +94,7 @@ Page({
       if (options.chapter_id) params.chapter_id = options.chapter_id
       if (options.tags) params.tags = options.tags
       if (options.library_type) params.library_type = options.library_type
+      if (options.study_card_type) params.study_card_type = options.study_card_type
       this.setData({ randomParams: params })
       this.loadRandomCard({ append: false })
       return
@@ -320,6 +337,7 @@ Page({
       ...card,
       graphImageUrl: resolveGraphImageUrl(card),
       graphThumbnailUrl: resolveGraphThumbnailUrl(card),
+      studyCardTypeLabel: studyCardTypeLabel(card),
       isFavorited: Boolean(card.isFavorited || card.is_favorited || favoriteIds.some((id) => sameId(id, normalizeId(card.id)))),
     }
   },

@@ -1,5 +1,5 @@
 <view class="fr-page">
-  <premium-nav title="公式详情" variant="light" bind:back="goBack" />
+  <premium-nav title="408 速记" variant="light" bind:back="goBack" />
 
   <view class="fr-loading" wx:if="{{loading}}">
     <view class="fr-loading-mark">
@@ -7,8 +7,8 @@
       <view class="fr-loading-line line-two"></view>
       <view class="fr-loading-line line-three"></view>
     </view>
-    <text class="fr-state-title">正在整理公式内容</text>
-    <text class="fr-state-desc">公式、条件与易错点正在加载</text>
+    <text class="fr-state-title">正在整理速记内容</text>
+    <text class="fr-state-desc">核心记忆、边界与易错点正在加载</text>
     <view class="fr-skeleton-card">
       <view class="fr-skeleton-title"></view>
       <view class="fr-skeleton-formula"></view>
@@ -19,19 +19,19 @@
 
   <view class="fr-error" wx:elif="{{loadError}}">
     <view class="fr-error-mark">!</view>
-    <text class="fr-state-title">暂时无法打开这条公式</text>
+    <text class="fr-state-title">暂时无法打开这张速记卡</text>
     <text class="fr-state-desc">{{errorText || '请检查网络后重新加载'}}</text>
     <button class="fr-retry" hover-class="fr-control-pressed" bindtap="retryLoad">重新加载</button>
-    <button class="fr-back-link" hover-class="fr-control-pressed" bindtap="goBack">返回公式库</button>
+    <button class="fr-back-link" hover-class="fr-control-pressed" bindtap="goBack">返回速记卡库</button>
   </view>
 
   <!-- 非加载、非错误但没有有效卡片 -->
   <view class="fr-error" wx:elif="{{!currentCard}}">
     <view class="fr-error-mark">?</view>
-    <text class="fr-state-title">公式内容暂不可用</text>
-    <text class="fr-state-desc">该公式可能存在格式问题或已被移除</text>
+    <text class="fr-state-title">速记内容暂不可用</text>
+    <text class="fr-state-desc">该速记卡可能存在格式问题或已被移除</text>
     <button class="fr-retry" hover-class="fr-control-pressed" bindtap="retryLoad">重新加载</button>
-    <button class="fr-back-link" hover-class="fr-control-pressed" bindtap="goBack">返回公式库</button>
+    <button class="fr-back-link" hover-class="fr-control-pressed" bindtap="goBack">返回速记卡库</button>
   </view>
 
   <scroll-view
@@ -50,8 +50,8 @@
       <view class="fr-transition-stage {{transitionClass}}">
         <view class="fr-reader-meta">
           <view class="fr-reader-copy">
-            <text class="fr-kicker">{{isRandom ? 'RANDOM REVIEW' : 'FORMULA READING'}}</text>
-            <text class="fr-reader-mode">{{isRandom ? '随机背诵模式' : '公式阅读模式'}}</text>
+            <text class="fr-kicker">{{isRandom ? 'RANDOM REVIEW' : '408 MEMORY CARD'}}</text>
+            <text class="fr-reader-mode">{{isRandom ? '随机背诵模式' : (currentCard.studyCardTypeLabel || '速记阅读')}}</text>
           </view>
           <view class="fr-index-pill" wx:if="{{isRandom || sequenceIds.length > 1}}">
             <text>{{isRandom ? currentIndex + 1 : sequenceIndex + 1}}</text>
@@ -81,8 +81,8 @@
         <view class="fr-swipe-note" wx:if="{{isRandom || sequenceIds.length > 1}}">
           <view class="fr-swipe-line"></view>
           <view class="fr-swipe-copy">
-            <text>页面左右滑动切换公式</text>
-            <text class="fr-swipe-sub">长公式区域可独立横向滑动</text>
+            <text>页面左右滑动切换速记卡</text>
+            <text class="fr-swipe-sub">公式区域可独立横向滑动</text>
           </view>
           <view class="fr-swipe-line"></view>
         </view>
@@ -97,7 +97,7 @@
       hover-class="fr-nav-pressed"
       bindtap="goPrev"
       role="button"
-      aria-label="上一条公式"
+      aria-label="上一张速记卡"
     >
       <text class="fr-arrow fr-arrow-left"></text>
     </view>
@@ -110,7 +110,7 @@
       hover-class="fr-nav-pressed"
       bindtap="goNext"
       role="button"
-      aria-label="下一条公式"
+      aria-label="下一张速记卡"
     >
       <text class="fr-arrow fr-arrow-right"></text>
     </view>

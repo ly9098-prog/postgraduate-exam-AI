@@ -84,8 +84,10 @@ class FormulaCardCreate(BaseModel):
     aliases: list[str] | None = None
     search_text: str | None = None
     card_type: str = "auto"
+    study_card_type: str = "formula"
+    template_type: str | None = None
     summary: str | None = None
-    formula_blocks: list[FormulaBlock] = Field(min_length=1, max_length=8)
+    formula_blocks: list[FormulaBlock] = Field(default_factory=list, max_length=8)
     conditions: str | None = None
     symbol_notes: str | None = None
     secondary_conclusions: str | None = None
@@ -99,6 +101,25 @@ class FormulaCardCreate(BaseModel):
     source_title: str | None = None
     source_ref: str | None = None
 
+    @field_validator("study_card_type")
+    @classmethod
+    def _validate_study_card_type(cls, value: str) -> str:
+        normalized = str(value or "formula").strip().lower()
+        allowed = {"formula", "definition", "complexity", "protocol_rule", "key_conclusion", "confusable", "trap", "comparison"}
+        if normalized not in allowed:
+            raise ValueError("study_card_type 不在允许范围")
+        return normalized
+
+    @field_validator("template_type")
+    @classmethod
+    def _validate_template_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip().lower()
+        if normalized not in {"standard", "memory", "rule", "contrast", "trap"}:
+            raise ValueError("template_type 不在允许范围")
+        return normalized
+
 
 class FormulaCardUpdate(BaseModel):
     category_id: int | None = None
@@ -106,8 +127,10 @@ class FormulaCardUpdate(BaseModel):
     aliases: list[str] | None = None
     search_text: str | None = None
     card_type: str | None = None
+    study_card_type: str | None = None
+    template_type: str | None = None
     summary: str | None = None
-    formula_blocks: list[FormulaBlock] | None = None
+    formula_blocks: list[FormulaBlock] | None = Field(None, max_length=8)
     conditions: str | None = None
     symbol_notes: str | None = None
     secondary_conclusions: str | None = None
@@ -117,6 +140,26 @@ class FormulaCardUpdate(BaseModel):
     graph_spec: dict | None = None
     sort_order: int | None = None
     tag_ids: list[int] | None = None
+
+    @field_validator("study_card_type")
+    @classmethod
+    def _validate_study_card_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip().lower()
+        if normalized not in {"formula", "definition", "complexity", "protocol_rule", "key_conclusion", "confusable", "trap", "comparison"}:
+            raise ValueError("study_card_type 不在允许范围")
+        return normalized
+
+    @field_validator("template_type")
+    @classmethod
+    def _validate_template_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip().lower()
+        if normalized not in {"standard", "memory", "rule", "contrast", "trap"}:
+            raise ValueError("template_type 不在允许范围")
+        return normalized
 
 
 # ── Graph Asset ──
@@ -274,6 +317,8 @@ class FormulaCardResponse(BaseModel):
     aliases: list[str] | None
     search_text: str | None
     card_type: str
+    study_card_type: str
+    template_type: str
     is_function_graph: bool
     summary: str | None
     formula_blocks: list[dict[str, Any]]

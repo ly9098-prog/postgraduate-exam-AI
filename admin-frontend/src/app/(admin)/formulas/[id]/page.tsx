@@ -136,6 +136,8 @@ type FormulaCard = {
   rejection_reason: string | null; aliases: string[] | null;
   sort_order: number;
   card_type: string;
+  study_card_type: string;
+  template_type: string;
   is_function_graph: boolean;
   function_properties: Record<string, unknown> | null;
   graph_asset: import("@/lib/api/types").FormulaGraphAsset | null;
@@ -247,6 +249,8 @@ export default function EditFormulaPage() {
           examples: card.examples,
           sortOrder: card.sort_order || 0,
           cardType: card.card_type || "auto",
+          studyCardType: card.study_card_type || "formula",
+          templateType: card.template_type || "standard",
           functionProperties: card.function_properties ?? null,
           status: card.status,
           version: card.version,

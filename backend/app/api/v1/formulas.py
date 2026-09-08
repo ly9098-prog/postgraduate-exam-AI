@@ -25,6 +25,10 @@ from app.services.formula_graph_asset_service import (
     is_function_graph,
     load_graph_assets_map,
 )
+from app.services.formula_study_card_service import (
+    public_card_type_catalog,
+    validate_study_card_type,
+)
 
 router = APIRouter(prefix="/api/v1/formulas", tags=["formulas"])
 
@@ -138,6 +142,8 @@ async def _card_to_response(
         "aliases": card.aliases,
         "search_text": card.search_text,
         "card_type": card.card_type,
+        "study_card_type": card.study_card_type or "formula",
+        "template_type": card.template_type or "standard",
         "is_function_graph": is_function_graph(card, effective_asset=graph_asset),
         "summary": card.summary,
         "formula_blocks": card.formula_blocks,
@@ -183,6 +189,13 @@ def _graph_spec_to_dict(spec: FormulaGraphSpec) -> dict:
 # ── Shared library_type filter ──
 
 
+def _apply_study_card_type_filter(query, study_card_type: str | None):
+    if not study_card_type or study_card_type == "all":
+        return query
+    normalized = validate_study_card_type(study_card_type)
+    return query.where(FormulaCard.study_card_type == normalized)
+
+
 def _apply_library_type_filter(query, library_type: str | None):
     """Apply library_type filter to a FormulaCard query.
 
@@ -221,6 +234,7 @@ def _apply_library_type_filter(query, library_type: str | None):
 @router.get("/catalog")
 async def get_formula_catalog(
     library_type: str | None = Query(None),
+    study_card_type: str | None = Query(None, alias="study_card_type"),
     favorite_only: bool = Query(False, alias="favorite_only"),
     exam_scope: str | None = Query(None, alias="exam_scope"),
     current_user: User | None = Depends(get_current_user),
@@ -252,6 +266,7 @@ async def get_formula_catalog(
 
     if library_type:
         count_query = _apply_library_type_filter(count_query, library_type)
+    count_query = _apply_study_card_type_filter(count_query, study_card_type)
 
     if favorite_only and current_user:
         fav_subq = (
@@ -327,6 +342,14 @@ async def _batch_load_specs(db: AsyncSession, card_ids: list[int]) -> dict[int, 
             specs_by_card[cid] = []
         specs_by_card[cid].append(_graph_spec_to_dict(spec))
     return specs_by_card
+
+
+# ── 408 study-card types ──
+
+@router.get("/card-types")
+async def get_formula_card_types():
+    """Stable content taxonomy for 408 memory/confusable cards."""
+    return public_card_type_catalog()
 
 
 # ── Tags ──
@@ -461,6 +484,7 @@ async def list_formulas(
     q: str | None = Query(None),
     favorite_only: bool = Query(False, alias="favorite_only"),
     library_type: str | None = Query(None),
+    study_card_type: str | None = Query(None, alias="study_card_type"),
     exam_scope: str | None = Query(None, alias="exam_scope"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -481,6 +505,7 @@ async def list_formulas(
         base_query = base_query.where(FormulaCard.exam_scope.in_(scope_values))
 
     base_query = _apply_library_type_filter(base_query, library_type)
+    base_query = _apply_study_card_type_filter(base_query, study_card_type)
     base_query = _apply_list_filters(base_query, subject_code, chapter_id, category_id, tags, q)
 
     # Favorite only
@@ -553,6 +578,7 @@ async def list_favorite_formulas(
     tags: str | None = Query(None),
     q: str | None = Query(None),
     library_type: str | None = Query(None),
+    study_card_type: str | None = Query(None, alias="study_card_type"),
     exam_scope: str | None = Query(None, alias="exam_scope"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
@@ -578,6 +604,7 @@ async def list_favorite_formulas(
         base_query = base_query.where(FormulaCard.exam_scope.in_(scope_values))
 
     base_query = _apply_library_type_filter(base_query, library_type)
+    base_query = _apply_study_card_type_filter(base_query, study_card_type)
 
     # Reuse shared filter logic via _apply_list_filters
     base_query = _apply_list_filters(base_query, subject_code, chapter_id, category_id, tags, q)
@@ -619,6 +646,7 @@ async def get_random_formula(
     tags: str | None = Query(None),
     exclude_ids: str | None = Query(None, alias="exclude_ids"),
     library_type: str | None = Query(None),
+    study_card_type: str | None = Query(None, alias="study_card_type"),
     exam_scope: str | None = Query(None, alias="exam_scope"),
     current_user: User | None = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -636,6 +664,7 @@ async def get_random_formula(
         base_query = base_query.where(FormulaCard.exam_scope.in_(scope_values))
 
     base_query = _apply_library_type_filter(base_query, library_type)
+    base_query = _apply_study_card_type_filter(base_query, study_card_type)
 
     # Apply same filters as list
     if subject_code:
@@ -711,6 +740,7 @@ async def get_random_formula(
             category_id=category_id,
             tags=tags if tags else None,
             library_type=library_type,
+            study_card_type=study_card_type,
             exam_scope=exam_scope,
             exclude_ids=None,
             current_user=current_user,

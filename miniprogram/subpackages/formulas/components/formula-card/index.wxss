@@ -675,3 +675,12 @@
   vertical-align: middle;
   white-space: nowrap;
 }
+
+/* 408 semantic card templates */
+.fc-tag-study { background:#EAF5D5; color:#315E3A; }
+.template-contrast .fc-header { border-bottom-color:#CAD9C4; }
+.template-contrast .fc-reading-section { background:linear-gradient(135deg,#F7FAF3,#EEF5E8); }
+.template-trap .fc-header { border-bottom-color:#E9CFC8; }
+.template-trap .fc-error-collapse { border-color:#E7BDB4; background:#FFF8F6; }
+.template-rule .fc-reading-section.conditions { background:#F4F7EF; }
+.template-memory .fc-reading-section { background:#F8FAF4; }

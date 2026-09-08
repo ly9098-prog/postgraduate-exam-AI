@@ -78,7 +78,13 @@ class FormulaCard(Base):
     search_text: Mapped[str | None] = mapped_column(String(512), nullable=True)
     card_type: Mapped[str] = mapped_column(
         String(32), nullable=False, default="pure_formula"
-    )  # auto | pure_formula | function_graph
+    )  # rendering type: auto | pure_formula | function_graph
+    study_card_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="formula", server_default="formula"
+    )  # formula | definition | complexity | protocol_rule | key_conclusion | confusable | trap | comparison
+    template_type: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="standard", server_default="standard", index=True
+    )  # standard | memory | rule | contrast | trap
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     formula_blocks: Mapped[list] = mapped_column(JSON, nullable=False)
     conditions: Mapped[str | None] = mapped_column(Text, nullable=True)

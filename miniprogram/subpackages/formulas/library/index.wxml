@@ -1,11 +1,11 @@
 <view class="fl-page">
-  <premium-nav title="公式库" variant="light" bind:back="goBack" />
+  <premium-nav title="408 速记卡" variant="light" bind:back="goBack" />
 
   <view class="fl-content">
     <view class="fl-compact-head">
       <view class="fl-compact-copy">
-        <text class="fl-compact-title">公式库</text>
-        <text class="fl-compact-note">{{activeLibraryType === 'function_graph' ? '函数图像速查' : '重点公式速查'}}</text>
+        <text class="fl-compact-title">408 速记卡</text>
+        <text class="fl-compact-note">{{activeLibraryType === 'function_graph' ? '函数图像速查' : '公式 · 定义 · 易混点 · 陷阱'}}</text>
       </view>
       <view class="fl-head-actions">
         <view class="fl-compact-total" wx:if="{{!initialLoading && !loadError}}">
@@ -49,7 +49,7 @@
       <view class="fl-search-icon"></view>
       <input
         class="fl-search-input"
-        placeholder="{{activeLibraryType === 'function_graph' ? '搜索函数图像名称或关键词' : '搜索公式名称或关键词'}}"
+        placeholder="{{activeLibraryType === 'function_graph' ? '搜索函数图像名称或关键词' : '搜索速记卡名称或关键词'}}"
         placeholder-class="fl-search-placeholder"
         value="{{searchValue}}"
         bindinput="onSearchInput"
@@ -78,6 +78,23 @@
         <text class="line-icon icon-chevron-right fl-quick-arrow"></text>
       </view>
     </view>
+
+    <view class="fl-study-type-head">
+      <text class="fl-study-type-title">内容类型</text>
+      <text class="fl-study-type-note">按 408 记忆用途筛选</text>
+    </view>
+    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="fl-study-type-scroll">
+      <view class="fl-study-type-row">
+        <view
+          class="fl-study-type-chip {{item.active ? 'active' : ''}}"
+          wx:for="{{studyTypeTabs}}"
+          wx:key="key"
+          data-type="{{item.key}}"
+          hover-class="fl-pressed"
+          bindtap="onStudyCardTypeChange"
+        >{{item.name}}</view>
+      </view>
+    </scroll-view>
 
     <view class="fl-section-head">
       <view>
@@ -122,19 +139,19 @@
     </view>
 
     <view class="fl-list-head" wx:if="{{!initialLoading && !loadError}}">
-      <text class="fl-list-title">{{activeLibraryType === 'function_graph' ? '函数图像' : '公式列表'}}</text>
+      <text class="fl-list-title">{{activeLibraryType === 'function_graph' ? '函数图像' : '速记卡列表'}}</text>
       <text class="fl-list-meta">{{formulas.length}} / {{total || formulas.length || 0}}</text>
     </view>
 
     <view class="fl-loading" wx:if="{{initialLoading}}">
       <view class="fl-loading-ring"></view>
-      <text class="fl-state-title">{{activeLibraryType === 'function_graph' ? '正在整理函数图像' : '正在整理公式'}}</text>
+      <text class="fl-state-title">{{activeLibraryType === 'function_graph' ? '正在整理函数图像' : '正在整理 408 速记卡'}}</text>
       <text class="fl-state-desc">请稍候</text>
     </view>
 
     <view class="fl-empty" wx:if="{{!initialLoading && loadError}}">
       <view class="fl-state-icon fl-state-error"><text class="line-icon icon-exclamation"></text></view>
-      <text class="fl-state-title">{{activeLibraryType === 'function_graph' ? '函数图像加载失败' : '公式加载失败'}}</text>
+      <text class="fl-state-title">{{activeLibraryType === 'function_graph' ? '函数图像加载失败' : '速记卡加载失败'}}</text>
       <text class="fl-state-desc">{{loadErrorMessage || '请检查网络后重试'}}</text>
       <view class="fl-reload-btn" hover-class="fl-pressed" bindtap="reload">重新加载</view>
     </view>
@@ -157,7 +174,8 @@
               user-select="{{true}}"
             />
             <text class="fl-card-title" wx:else>{{item.title}}</text>
-            <view class="fl-card-tags" wx:if="{{item.tags && item.tags.length || item.isFunctionGraph}}">
+            <view class="fl-card-tags" wx:if="{{item.tags && item.tags.length || item.isFunctionGraph || item.studyCardTypeLabel}}">
+              <text class="fl-card-tag tag-study-type">{{item.studyCardTypeLabel}}</text>
               <text
                 class="fl-card-tag tag-function-graph"
                 wx:if="{{item.isFunctionGraph}}"
@@ -213,7 +231,7 @@
         </view>
 
         <view class="fl-card-foot">
-          <text class="fl-card-hint">{{activeLibraryType === 'function_graph' ? '查看大图、适用条件与完整解析' : '查看适用条件、易错点与例题'}}</text>
+          <text class="fl-card-hint">{{activeLibraryType === 'function_graph' ? '查看大图、适用条件与完整解析' : '查看核心记忆、易混点与考试陷阱'}}</text>
           <text class="line-icon icon-chevron-right fl-card-arrow"></text>
         </view>
       </view>
@@ -226,8 +244,8 @@
 
     <view class="fl-empty" wx:if="{{!initialLoading && !loadError && formulas.length === 0}}">
       <view class="fl-state-icon"><text class="line-icon {{activeLibraryType === 'function_graph' ? 'icon-review' : 'icon-book'}}"></text></view>
-      <text class="fl-state-title">{{searchValue ? (activeLibraryType === 'function_graph' ? '没有匹配的函数图像' : '没有匹配的公式') : (activeLibraryType === 'function_graph' ? '暂无函数图像' : '暂无公式数据')}}</text>
-      <text class="fl-state-desc">{{searchValue ? '换一个关键词或清除筛选试试' : (activeLibraryType === 'function_graph' ? '当前筛选下尚未录入函数图像' : '当前科目尚未录入公式')}}</text>
+      <text class="fl-state-title">{{searchValue ? (activeLibraryType === 'function_graph' ? '没有匹配的函数图像' : '没有匹配的速记卡') : (activeLibraryType === 'function_graph' ? '暂无函数图像' : '暂无速记卡数据')}}</text>
+      <text class="fl-state-desc">{{searchValue ? '换一个关键词或清除筛选试试' : (activeLibraryType === 'function_graph' ? '当前筛选下尚未录入函数图像' : '当前科目尚未录入对应速记卡')}}</text>
     </view>
   </view>
 

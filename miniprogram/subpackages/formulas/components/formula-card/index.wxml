@@ -1,12 +1,12 @@
-<view class="formula-card-wrap">
+<view class="formula-card-wrap template-{{card.template_type || 'standard'}} study-{{card.study_card_type || 'formula'}}">
   <view class="fc-header">
-    <text class="fc-kicker">FORMULA NOTE</text>
+    <text class="fc-kicker">408 MEMORY NOTE · {{card.studyCardTypeLabel || '速记'}}</text>
     <rich-text
       class="fc-title fc-title-rich"
       nodes="{{content.titleNodes}}"
       user-select="{{true}}"
     />
-    <view class="fc-tags" wx:if="{{card.tags && card.tags.length}}">
+    <view class="fc-tags"><text class="fc-tag fc-tag-study">{{card.studyCardTypeLabel || '速记'}}</text>
       <text class="fc-tag {{'fc-tag-' + tag.code}}" wx:for="{{card.tags}}" wx:key="id">{{tag.name}}</text>
     </view>
   </view>
@@ -101,7 +101,7 @@
     <view class="fc-section-index">01</view>
     <view class="fc-section-copy">
       <text class="fc-section-kicker">SUMMARY</text>
-      <text class="fc-section-title">摘要</text>
+      <text class="fc-section-title">{{card.study_card_type === 'formula' ? '摘要' : '核心记忆'}}</text>
       <rich-text class="fc-rich-text" nodes="{{content.summaryNodes}}" user-select="{{true}}" />
     </view>
   </view>
@@ -110,7 +110,7 @@
     <view class="fc-section-index">02</view>
     <view class="fc-section-copy">
       <text class="fc-section-kicker">CONDITIONS</text>
-      <text class="fc-section-title">适用条件</text>
+      <text class="fc-section-title">{{card.study_card_type === 'protocol_rule' ? '规则边界' : '适用条件'}}</text>
       <rich-text class="fc-rich-text" nodes="{{content.conditionsNodes}}" user-select="{{true}}" />
     </view>
   </view>
@@ -134,7 +134,7 @@
     <view class="fc-collapse-header" hover-class="fc-pressed" bindtap="toggleSection" data-key="showSecondary">
       <view>
         <text class="fc-collapse-kicker">CONCLUSIONS</text>
-        <text class="fc-collapse-title">常见结论</text>
+        <text class="fc-collapse-title">{{card.template_type === 'contrast' ? '对比要点' : '常见结论'}}</text>
       </view>
       <view class="fc-collapse-arrow {{showSecondary ? 'expanded' : ''}}"></view>
     </view>
@@ -149,7 +149,7 @@
     <view class="fc-collapse-header" hover-class="fc-pressed" bindtap="toggleSection" data-key="showErrorTips">
       <view>
         <text class="fc-collapse-kicker danger">ERROR ALERT</text>
-        <text class="fc-collapse-title">易错提醒</text>
+        <text class="fc-collapse-title">{{card.template_type === 'trap' || card.study_card_type === 'trap' ? '考试陷阱' : '易错提醒'}}</text>
       </view>
       <view class="fc-collapse-arrow {{showErrorTips ? 'expanded' : ''}}"></view>
     </view>
