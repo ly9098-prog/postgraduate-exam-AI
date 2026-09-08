@@ -3,47 +3,77 @@
     <view class="hero-orbit orbit-one"></view>
     <view class="hero-orbit orbit-two"></view>
     <view class="hero-note">知其然，更知其所以然</view>
+
     <text class="eyebrow">MASTERY MAP</text>
     <text class="title">四科知识掌握地图</text>
     <text class="subtitle">掌握度综合答题表现与置信度；样本不足时不会用正确率冒充掌握程度。</text>
-    <view class="hero-meta-row">
-      <view class="syllabus-chip" wx:if="{{syllabusVersion}}">
-        <text>当前知识体系</text><view class="chip-divider"></view><text class="syllabus-name">{{syllabusVersion.effective_year}}</text>
-      </view>
-      <view class="hero-observation" wx:if="{{!loading && scopeReady && (observedTotal > 0 || weakTotal > 0)}}">
-        <text>{{observedTotal}} 已观察</text><view class="observation-dot"></view><text>{{weakTotal}} 薄弱</text>
+
+    <view class="hero-meta-row" wx:if="{{syllabusVersion}}">
+      <view class="syllabus-chip">
+        <text class="meta-label">当前考纲</text>
+        <text class="meta-strong">408</text>
+        <view class="chip-divider"></view>
+        <text class="meta-label">当前知识体系版本</text>
+        <text class="meta-dot">·</text>
+        <text class="meta-strong">{{syllabusVersion.effective_year}}</text>
       </view>
     </view>
   </view>
 
-  <view class="state-card" wx:if="{{loading}}"><view class="state-pulse"></view><text>正在生成你的知识地图…</text></view>
-  <view class="state-card error" wx:elif="{{error}}"><text>{{error}}</text><button class="retry" bindtap="retry">重新加载</button></view>
-  <view class="state-card error" wx:elif="{{!scopeReady}}"><text>科目范围尚未准备完成，请先检查科目配置。</text></view>
+  <view class="state-card" wx:if="{{loading}}">
+    <view class="state-pulse"></view>
+    <text>正在生成你的知识地图…</text>
+  </view>
+  <view class="state-card error" wx:elif="{{error}}">
+    <text>{{error}}</text>
+    <button class="retry" bindtap="retry">重新加载</button>
+  </view>
+  <view class="state-card error" wx:elif="{{!scopeReady}}">
+    <text>科目范围尚未准备完成，请先检查科目配置。</text>
+  </view>
 
   <view class="subject-grid" wx:else>
-    <view class="subject-card {{item.score == null ? 'no-data' : 'has-data'}}" wx:for="{{subjects}}" wx:key="subject_id" data-subject-id="{{item.subject_id}}" bindtap="openSubject" hover-class="card-pressed">
-      <view class="subject-card-top">
-        <view class="subject-icon {{item.iconClass}}">
-          <view class="subject-icon-shape one"></view><view class="subject-icon-shape two"></view><view class="subject-icon-shape three"></view>
-          <text class="subject-icon-fallback">{{item.mark}}</text>
-        </view>
+    <view
+      class="subject-card {{item.score == null ? 'no-data' : 'has-data'}}"
+      wx:for="{{subjects}}"
+      wx:key="subject_id"
+      data-subject-id="{{item.subject_id}}"
+      bindtap="openSubject"
+      hover-class="card-pressed"
+    >
+      <view class="subject-icon-wrap">
+        <image class="subject-icon-image" src="{{item.iconPath}}" mode="aspectFit"></image>
       </view>
-      <view class="subject-name-row">
-        <text class="subject-name">{{item.subject_name}}</text>
-        <text class="score {{item.score == null ? 'is-empty' : ''}}">{{item.scoreText}}</text>
-      </view>
+
+      <text class="subject-name">{{item.subject_name}}</text>
       <text class="subject-code">{{item.subject_code}}</text>
-      <view class="progress" wx:if="{{item.score != null}}"><view class="progress-fill" style="width: {{item.barWidth}}%;"></view></view>
-      <text class="subject-progress-text">{{item.progressText}}</text>
+
+      <view class="subject-mastery">
+        <text class="score {{item.score == null ? 'is-empty' : ''}}">{{item.scoreText}}</text>
+        <view class="progress">
+          <view class="progress-dot"></view>
+          <view class="progress-fill" style="width: {{item.barWidth}}%;"></view>
+        </view>
+        <text class="subject-progress-text">{{item.progressText}}</text>
+      </view>
+
       <view class="subject-foot">
         <text class="status {{item.statusClass}}">{{item.statusText}}</text>
         <view class="subject-foot-arrow">→</view>
       </view>
     </view>
+
     <view class="empty" wx:if="{{subjects.length === 0}}">暂无可展示的科目数据</view>
   </view>
 
   <view class="map-footer" wx:if="{{!loading && scopeReady && subjects.length}}">
-    <view class="footer-line"></view><view class="mountain"><view class="peak p1"></view><view class="peak p2"></view><view class="peak p3"></view></view><text>STUDY MAKES PROGRESS</text><view class="footer-line"></view>
+    <view class="footer-line"></view>
+    <view class="mountain">
+      <view class="peak p1"></view>
+      <view class="peak p2"></view>
+      <view class="peak p3"></view>
+    </view>
+    <text>STUDY MAKES PROGRESS</text>
+    <view class="footer-line"></view>
   </view>
 </view>

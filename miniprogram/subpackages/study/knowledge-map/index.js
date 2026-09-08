@@ -28,6 +28,17 @@ function subjectIconClass(name, code) {
   return 'generic'
 }
 
+
+function subjectIconPath(iconClass) {
+  const icons = {
+    data: '/assets/icons/knowledge-map/data-structure.png',
+    chip: '/assets/icons/knowledge-map/computer-organization.png',
+    network: '/assets/icons/knowledge-map/computer-network.png',
+    code: '/assets/icons/knowledge-map/operating-system.png',
+  }
+  return icons[iconClass] || '/assets/icons/knowledge-map/data-structure.png'
+}
+
 const STATUS_META = {
   no_data: { text: '未开始', hint: '完成相关练习后生成掌握度' },
   insufficient: { text: '数据不足', hint: '继续练习，达到可靠样本后展示' },
@@ -81,8 +92,9 @@ Page({
           orderText: String(index + 1).padStart(2, '0'),
           mark: subjectMark(item.subject_name, item.subject_code),
           iconClass: subjectIconClass(item.subject_name, item.subject_code),
+          iconPath: subjectIconPath(subjectIconClass(item.subject_name, item.subject_code)),
           score,
-          scoreText: score == null ? '--' : `${score}%`,
+          scoreText: score == null ? '0%' : `${score}%`,
           barWidth: score == null ? 0 : score,
           coverage,
           statusText: meta.text,
