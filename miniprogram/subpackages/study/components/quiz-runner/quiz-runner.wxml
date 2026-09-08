@@ -347,7 +347,7 @@
         bindtap="onSubmit"
       >
         <text class="runner-final-submit-label">{{submitText}}</text>
-        <view class="runner-final-submit-arrow"><text>›</text></view>
+        <view class="runner-final-submit-arrow"><text class="runner-final-submit-arrow-text">›</text></view>
       </view>
 
       <view
@@ -399,7 +399,7 @@
       </view>
 
       <button
-        class="runner-btn-submit runner-sheet-submit"
+        class="runner-btn-submit runner-sheet-submit {{submitting || submitDisabled ? 'runner-btn-submit-disabled' : ''}}"
         wx:if="{{showSubmitButton}}"
         hover-class="runner-btn-submit-pressed"
         bindtap="onSubmit"

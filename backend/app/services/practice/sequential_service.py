@@ -25,9 +25,7 @@ from app.models.practice_record import PracticeRecord
 from app.models.practice_session import PracticeSession
 from app.models.question import Question
 from app.services.knowledge_point_service import kp_exact_conditions
-from app.services.question_revision_service import (
-    latest_question_revision_scope_condition,
-)
+from app.services.question_revision_service import latest_question_revision_scope_condition
 
 logger = logging.getLogger(__name__)
 

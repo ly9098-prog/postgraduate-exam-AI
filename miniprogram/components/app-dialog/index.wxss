@@ -181,7 +181,7 @@
   color: #10251A;
 }
 
-.sc-confirm-arrow text { transform: translateY(-2rpx); }
+.sc-confirm-arrow-text { transform: translateY(-2rpx); }
 .sc-btn-cancel-pressed { background: #EBF0E9; transform: scale(0.985); }
 .sc-btn-confirm-pressed { opacity: 0.86; transform: scale(0.985); }
 

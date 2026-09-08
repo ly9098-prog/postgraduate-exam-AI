@@ -25,10 +25,7 @@ from app.schemas.admin_questions import (
 )
 from app.services.admin_audit_service import write_admin_audit
 from app.services.knowledge_point_service import load_question_kps
-from app.utils.question_content import (
-    normalize_segment_type,
-    reconcile_student_stem_fields,
-)
+from app.utils.question_content import normalize_segment_type, reconcile_student_stem_fields
 
 logger = logging.getLogger(__name__)
 

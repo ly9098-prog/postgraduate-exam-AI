@@ -7,10 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
-from app.core.subject_scope import (
-    is_study_subject_enabled,
-    select_study_subject_records,
-)
+from app.core.subject_scope import is_study_subject_enabled, select_study_subject_records
 from app.core.time_utils import (
     current_study_day,
     minute_to_time_text,

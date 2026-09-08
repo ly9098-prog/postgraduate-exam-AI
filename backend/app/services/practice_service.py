@@ -20,9 +20,9 @@ from app.core.subject_scope import (
     EXAM408_CORE_CODES,
     EXAM408_DISPLAY_ORDER,
     canonical_408_code,
-    is_study_subject_enabled,
     select_study_subject_records,
     selected_study_subject_ids,
+    is_study_subject_enabled,
     study_subject_display_name,
 )
 from app.core.time_utils import (

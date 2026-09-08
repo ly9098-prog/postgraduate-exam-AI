@@ -1,6 +1,20 @@
 const api = require('../../../utils/api')
 const auth = require('../../../utils/auth')
 const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../utils/formula-graph')
+const { parseServerUtc, getChinaWallParts } = require('../../../utils/china-time')
+
+function formulaNowMs() {
+  const synced = api && typeof api.now === 'function' ? Number(api.now()) : NaN
+  return Number.isFinite(synced) ? synced : Date.now()
+}
+
+function formatChinaDateTime(value) {
+  const ms = typeof value === 'number' ? value : parseServerUtc(value)
+  if (!Number.isFinite(ms)) return ''
+  const p = getChinaWallParts(ms)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${p.year}-${pad(p.month)}-${pad(p.day)} ${pad(p.hour)}:${pad(p.minute)}`
+}
 
 const MAX_RANDOM_HISTORY = 24
 const READER_SEQUENCE_KEY = 'formula_reader_sequence_v2'
@@ -74,7 +88,7 @@ Page({
       try {
         const cached = wx.getStorageSync(READER_SEQUENCE_KEY) || {}
         const cachedIds = normalizeSequence(cached.ids)
-        const fresh = Date.now() - Number(cached.savedAt || 0) < SEQUENCE_TTL
+        const fresh = formulaNowMs() - Number(cached.savedAt || 0) < SEQUENCE_TTL
         if (fresh && cachedIds.some((id) => sameId(id, formulaId))) sequenceIds = cachedIds
       } catch (_) {}
     }
@@ -337,6 +351,9 @@ Page({
       graphImageUrl: resolveGraphImageUrl(card),
       graphThumbnailUrl: resolveGraphThumbnailUrl(card),
       studyCardTypeLabel: studyCardTypeLabel(card),
+      publishedAtChina: formatChinaDateTime(card.published_at || card.publishedAt),
+      createdAtChina: formatChinaDateTime(card.created_at || card.createdAt),
+      updatedAtChina: formatChinaDateTime(card.updated_at || card.updatedAt),
       isFavorited: Boolean(card.isFavorited || card.is_favorited || favoriteIds.some((id) => sameId(id, normalizeId(card.id)))),
     }
   },

@@ -712,7 +712,7 @@
 }
 
 .runner-btn-submit::after { border: none; }
-.runner-btn-submit[disabled] { opacity: 0.48; }
+.runner-btn-submit-disabled { opacity: 0.48; }
 .runner-btn-submit-pressed { transform: scale(0.99); opacity: 0.88; }
 
 .runner-submit-main {
@@ -1120,7 +1120,7 @@
   flex-shrink: 0;
 }
 
-.runner-final-submit-arrow text { transform: translateY(-2rpx); }
+.runner-final-submit-arrow-text { transform: translateY(-2rpx); }
 
 @media (max-width: 360px) {
   .runner-custom-navigation .runner-hero-nav { padding-right: 170rpx; }

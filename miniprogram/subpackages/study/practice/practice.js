@@ -1034,7 +1034,9 @@ Page({
   },
 
   closeSubjectSheet() {
-    this._hideSubjectSheet(() => this._flushPendingRecentSubject())
+    // “最近使用”只记录真正开始过的科目；仅在选择器里点选后关闭
+    // 不应改变下次进入刷题配置时的默认科目。
+    this._hideSubjectSheet()
   },
 
   _handleSubjectOptionTap(subjectId, source) {
@@ -1076,7 +1078,7 @@ Page({
     }
 
     // 只切换选中态，不立刻重排 recentSubjects，避免卡片节点重建导致频闪。
-    // 弹层关闭或开始练习时，再更新最近使用顺序。
+    // 真正开始练习时再更新最近使用顺序。
     this._queueRememberSubject(id, subjectName)
     this.setData(patch)
   },

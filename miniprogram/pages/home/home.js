@@ -1051,11 +1051,11 @@ Page({
   },
 
   startPrimaryTask() {
-    if (this.data.studyHubAvailable && this.data.hubPrimaryTask) {
-      this.openHubTaskByData(this.data.hubPrimaryTask)
-      return
-    }
-    if (this.data.primaryTaskType === 'review') {
+    // 首页主卡片是“进入刷题配置”的通用入口。不要把学习中心的推荐
+    // subject/mode 强行灌进配置页，否则会覆盖用户最近使用科目，并让
+    // “默认随机”失效。复习任务仍保持原路由；其它明确的任务入口继续
+    // 通过 openHubTaskByData 保留自己的定向参数。
+    if (this.data.primaryTaskType === 'review' || (this.data.hubPrimaryTask && this.data.hubPrimaryTask.route === 'review_today')) {
       this.goReview()
       return
     }

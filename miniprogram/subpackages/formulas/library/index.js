@@ -4,6 +4,20 @@ const formulaContent = require('../utils/formula-content')
 const Parser = require('../utils/mp-html-parser')
 const LatexPlugin = require('../utils/katex/index')
 const { resolveGraphImageUrl, resolveGraphThumbnailUrl } = require('../utils/formula-graph')
+const { parseServerUtc, getChinaWallParts } = require('../../../utils/china-time')
+
+function formulaNowMs() {
+  const synced = api && typeof api.now === 'function' ? Number(api.now()) : NaN
+  return Number.isFinite(synced) ? synced : Date.now()
+}
+
+function formatChinaDateTime(value) {
+  const ms = typeof value === 'number' ? value : parseServerUtc(value)
+  if (!Number.isFinite(ms)) return ''
+  const p = getChinaWallParts(ms)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${p.year}-${pad(p.month)}-${pad(p.day)} ${pad(p.hour)}:${pad(p.minute)}`
+}
 
 function renderFormulaTitleNodes(title) {
   const source = formulaContent.normalizeMixedContent(title)
@@ -754,6 +768,11 @@ Page({
         graphPreviewUrl: graphImageUrl || graphThumbnailUrl,
         isFunctionGraph,
         studyCardTypeLabel: getStudyCardTypeLabel(item),
+        // 速记业务时间统一按 Asia/Shanghai 展示；服务端无时区历史值
+        // 由 china-time 按 UTC 解析，避免跟随开发者工具/手机本地时区。
+        publishedAtChina: formatChinaDateTime(item.published_at || item.publishedAt),
+        createdAtChina: formatChinaDateTime(item.created_at || item.createdAt),
+        updatedAtChina: formatChinaDateTime(item.updated_at || item.updatedAt),
         graphLoadError: false,
         isFavorited: Boolean(item.isFavorited || item.is_favorited || favoriteIds.includes(Number(item.id))),
       }
@@ -902,7 +921,7 @@ Page({
       wx.setStorageSync(READER_SEQUENCE_KEY, {
         ids: sequenceIds,
         index: sequenceIndex,
-        savedAt: Date.now(),
+        savedAt: formulaNowMs(),
         subjectCode: this.data.activeSubject,
         chapterId: this.data.activeChapterId,
         searchValue: this.data.searchValue,
