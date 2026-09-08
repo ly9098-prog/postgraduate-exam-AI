@@ -21,3 +21,7 @@ page { background: #F3F4F1; color: #14261F; }
 .retry { color:#173B31; font-weight:700; }
 .card-pressed,.soft-pressed { opacity:.72; transform:scale(.99); }
 .safe-bottom { height:60rpx; }
+
+.paper-card-suggested { border-color:#C9DA8F; box-shadow:0 10rpx 30rpx rgba(95,121,54,.10); }
+.paper-type-row { display:flex; align-items:center; gap:12rpx; flex-wrap:wrap; }
+.paper-suggested { padding:5rpx 10rpx; border-radius:999rpx; background:#E9F4BE; color:#47612F; font-size:18rpx; font-weight:800; }

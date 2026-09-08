@@ -51,6 +51,14 @@ Page({
     hubSecondaryTask: null,
     hubTasks: [],
     subjectMastery: [],
+    studyPlanConfigured: false,
+    planDaysRemaining: 0,
+    planPhaseLabel: '',
+    planTargetDateText: '',
+    planTodayText: '尚未设置长期计划',
+    planWeeklyText: '',
+    planProgressPercent: 0,
+    planPrimaryText: '设置目标日期后生成每日配比',
 
     expText: '0 / 50 EXP',
     nextLevelText: '距离 Lv2 还差 50 题',
@@ -575,10 +583,15 @@ Page({
           console.warn('加载 408 智能学习中心失败，回退基础首页', error)
           return null
         }),
+        api.get('/study-plan/overview').catch((error) => {
+          console.warn('加载 408 长期学习计划失败', error)
+          return null
+        }),
       ])
       const dashRes = growthResponses[0]
       const growthRes = growthResponses[1]
       const hubRes = growthResponses[2]
+      const planRes = growthResponses[3]
       if (
         !this._alive ||
         !this._visible ||
@@ -589,7 +602,7 @@ Page({
       const overview = (dashRes && dashRes.overview) || {}
       const growth = growthRes || null
       this._lastGrowth = growth
-      const snapshot = this.buildGrowthSnapshot(overview, growth, hubRes)
+      const snapshot = this.buildGrowthSnapshot(overview, growth, hubRes, planRes)
       this._hasGrowthSnapshot = true
       this.setData(snapshot, () => {
         if (this._alive && this._visible && requestSeq === this._growthSeq) {
@@ -674,6 +687,7 @@ Page({
       todayGoalTotal,
       ...this.getPrimaryTaskSnapshot(0, todayGoalTotal, 0),
       ...this.getHubDisplaySnapshot(null),
+      ...this.getStudyPlanDisplaySnapshot(null),
       expText: levelMeta.expText,
       nextLevelText: levelMeta.nextLevelText,
       dailyBoostText: this.getDailyBoostText(0, todayGoalTotal, 0),
@@ -683,9 +697,10 @@ Page({
     }
   },
 
-  buildGrowthSnapshot(overview, growth, hub) {
+  buildGrowthSnapshot(overview, growth, hub, plan) {
     this._lastOverview = overview || {}
     this._lastHub = hub || null
+    this._lastPlan = plan || null
     const streakDays = this.toNonNegativeInt(overview.consecutive_days)
     const hubTodayQuestions = hub && hub.scope_ready !== false ? hub.today_question_count : null
     const todayGoalDone = this.toNonNegativeInt(hubTodayQuestions != null ? hubTodayQuestions : overview.today_questions)
@@ -695,6 +710,7 @@ Page({
     const todayGoalTotal = this.getStoredTodayGoal()
     const levelProgress = Math.min(100, Math.round((todayGoalDone / todayGoalTotal) * 100))
     const hubDisplay = this.getHubDisplaySnapshot(hub)
+    const planDisplay = this.getStudyPlanDisplaySnapshot(plan)
     const taskSnapshot = hubDisplay.studyHubAvailable
       ? this.getHubPrimaryTaskSnapshot(hub, todayGoalDone, todayGoalTotal)
       : this.getPrimaryTaskSnapshot(todayGoalDone, todayGoalTotal, dueReviewCount)
@@ -709,6 +725,7 @@ Page({
         todayGoalTotal,
         ...taskSnapshot,
         ...hubDisplay,
+        ...planDisplay,
         expText: `${growth.exp_current || 0} / ${growth.exp_to_next || 0} EXP`,
         nextLevelText: growth.level_progress_pct >= 100
           ? '已满级，继续保持题感'
@@ -729,12 +746,46 @@ Page({
       todayGoalTotal,
       ...taskSnapshot,
       ...hubDisplay,
+      ...planDisplay,
       expText: levelMeta.expText,
       nextLevelText: levelMeta.nextLevelText,
       dailyBoostText: this.getDailyBoostText(todayGoalDone, todayGoalTotal, streakDays),
       badgeList: this.getBadgeList(streakDays, totalQuestions, levelProgress),
       badgeTitle: this.getBadgeTitle(streakDays, levelProgress),
       missionText: this.getMissionText(todayGoalDone, todayGoalTotal, dueReviewCount),
+    }
+  },
+
+  getStudyPlanDisplaySnapshot(plan) {
+    if (!plan || !plan.configured || !plan.plan) {
+      return {
+        studyPlanConfigured: false,
+        planDaysRemaining: 0,
+        planPhaseLabel: '',
+        planTargetDateText: '',
+        planTodayText: '尚未设置长期计划',
+        planWeeklyText: '',
+        planProgressPercent: 0,
+        planPrimaryText: '设置目标日期后，自动组织复习、弱项、新题与真题选择题',
+      }
+    }
+    const countdown = plan.countdown || {}
+    const weekly = plan.weekly || {}
+    const today = plan.today || {}
+    const allocations = Array.isArray(today.allocations) ? today.allocations : []
+    const primary = allocations.find(item => item && item.category === today.primary_category) || null
+    const targetDate = String(countdown.target_date || plan.plan.target_date || '')
+    return {
+      studyPlanConfigured: true,
+      planDaysRemaining: this.toNonNegativeInt(countdown.days_remaining),
+      planPhaseLabel: String(countdown.phase_label || ''),
+      planTargetDateText: targetDate,
+      planTodayText: today.is_rest_day
+        ? '本周目标已达成，今天建议轻量复盘'
+        : `今日 ${this.toNonNegativeInt(today.completed_minutes)} / ${this.toNonNegativeInt(today.target_minutes)} 分钟`,
+      planWeeklyText: `本周 ${this.toNonNegativeInt(weekly.active_days)} / ${this.toNonNegativeInt(weekly.target_days)} 天`,
+      planProgressPercent: Math.max(0, Math.min(100, this.toNonNegativeInt(today.completion_percent))),
+      planPrimaryText: primary && primary.title ? String(primary.title) : '今天的计划已完成或暂无强制任务',
     }
   },
 
@@ -888,7 +939,7 @@ Page({
       _animStreakDays: 0,
       _animGoalDone: 0,
       _animLevelProgress: 0,
-      ...this.buildGrowthSnapshot(this._lastOverview || {}, this._lastGrowth, this._lastHub),
+      ...this.buildGrowthSnapshot(this._lastOverview || {}, this._lastGrowth, this._lastHub, this._lastPlan),
       showGoalPicker: false,
     })
     this._animateNumbers()
@@ -1090,6 +1141,7 @@ Page({
   goPomodoro() { wx.navigateTo({ url: '/pages/pomodoro/pomodoro' }) },
   goFormulas() { wx.navigateTo({ url: '/subpackages/formulas/library/index' }) },
   goExams() { wx.navigateTo({ url: '/subpackages/exam/paper-list/index' }) },
+  goStudyPlan() { wx.navigateTo({ url: '/subpackages/study/study-plan/index' }) },
   goKnowledgeMap() { wx.navigateTo({ url: '/subpackages/study/knowledge-map/index' }) },
   goKnowledgeMapSubject(event) {
     const subjectId = Number(event && event.currentTarget && event.currentTarget.dataset.subjectId)

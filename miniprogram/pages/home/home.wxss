@@ -1400,3 +1400,50 @@ page {
 
 .mastery-map-link { color: #5E7730; font-weight: 850; }
 .mastery-card-pressed { transform: scale(.985); opacity: .88; }
+
+/* Long-range 408 plan */
+.plan-strip {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  margin: 24rpx 24rpx 0;
+  padding: 26rpx 26rpx 24rpx;
+  border: 1rpx solid #DCE1D7;
+  border-radius: 30rpx;
+  background: rgba(255, 255, 255, .68);
+  box-shadow: 0 14rpx 38rpx rgba(24, 53, 40, .06);
+}
+.plan-strip-main { flex: 1; min-width: 0; }
+.plan-strip-topline, .plan-strip-countdown-row, .plan-strip-progress-row {
+  display: flex;
+  align-items: center;
+}
+.plan-strip-topline { justify-content: space-between; }
+.plan-strip-kicker {
+  font-size: 17rpx;
+  font-weight: 950;
+  letter-spacing: 2.2rpx;
+  color: #758078;
+}
+.plan-strip-link { font-size: 19rpx; font-weight: 850; color: #56645B; }
+.plan-strip-countdown-row { margin-top: 12rpx; }
+.plan-strip-days { font-size: 48rpx; line-height: 1; font-weight: 950; color: #173426; letter-spacing: -2rpx; }
+.plan-strip-days-unit { margin-left: 8rpx; font-size: 20rpx; font-weight: 850; color: #647168; }
+.plan-strip-phase {
+  margin-left: 14rpx;
+  padding: 6rpx 10rpx;
+  border-radius: 99rpx;
+  background: #E6EDCF;
+  color: #425638;
+  font-size: 17rpx;
+  font-weight: 900;
+}
+.plan-strip-primary, .plan-strip-empty-title, .plan-strip-empty-desc { display: block; }
+.plan-strip-primary { margin-top: 10rpx; font-size: 23rpx; font-weight: 900; color: #223229; }
+.plan-strip-progress-row { justify-content: space-between; margin-top: 14rpx; color: #7A867D; font-size: 18rpx; font-weight: 750; }
+.plan-strip-track { height: 8rpx; margin-top: 9rpx; overflow: hidden; border-radius: 99rpx; background: #E4E8E0; }
+.plan-strip-fill { height: 100%; border-radius: inherit; background: #173426; }
+.plan-strip-empty-title { margin-top: 13rpx; font-size: 24rpx; line-height: 1.4; font-weight: 950; color: #223229; }
+.plan-strip-empty-desc { margin-top: 8rpx; font-size: 20rpx; line-height: 1.5; color: #78847C; }
+.plan-strip-arrow { flex-shrink: 0; font-size: 34rpx; color: #173426; font-weight: 900; }
+.plan-strip-pressed { transform: scale(.99); opacity: .82; }

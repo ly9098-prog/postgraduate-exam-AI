@@ -106,6 +106,34 @@
     </view>
   </view>
 
+  <!-- Long-range 408 plan / countdown -->
+  <view class="plan-strip page-enter delay-two" bindtap="goStudyPlan" hover-class="plan-strip-pressed">
+    <view class="plan-strip-main">
+      <view class="plan-strip-topline">
+        <text class="plan-strip-kicker">408 LONG-RANGE PLAN</text>
+        <text class="plan-strip-link">{{studyPlanConfigured ? '调整计划' : '设置计划'}} ›</text>
+      </view>
+      <block wx:if="{{studyPlanConfigured}}">
+        <view class="plan-strip-countdown-row">
+          <text class="plan-strip-days">{{planDaysRemaining}}</text>
+          <text class="plan-strip-days-unit">天后目标日</text>
+          <text class="plan-strip-phase">{{planPhaseLabel}}</text>
+        </view>
+        <text class="plan-strip-primary">{{planPrimaryText}}</text>
+        <view class="plan-strip-progress-row">
+          <text>{{planTodayText}}</text>
+          <text>{{planWeeklyText}}</text>
+        </view>
+        <view class="plan-strip-track"><view class="plan-strip-fill" style="width: {{planProgressPercent}}%;"></view></view>
+      </block>
+      <block wx:else>
+        <text class="plan-strip-empty-title">设置目标日期，让今天的任务服务于长期节奏</text>
+        <text class="plan-strip-empty-desc">按每日时长和每周学习天数，动态分配复习 / 弱项 / 新题 / 真题选择题。</text>
+      </block>
+    </view>
+    <view class="plan-strip-arrow">→</view>
+  </view>
+
   <!-- Smart Study Hub tasks -->
   <view class="content-section page-enter delay-two">
     <view class="section-heading">

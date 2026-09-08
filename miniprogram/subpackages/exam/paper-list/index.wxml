@@ -20,10 +20,10 @@
   </view>
 
   <view class="paper-list" wx:else>
-    <view class="paper-card" wx:for="{{papers}}" wx:key="id" data-id="{{item.id}}" bindtap="openPaper" hover-class="card-pressed">
+    <view class="paper-card {{item.isSuggested ? 'paper-card-suggested' : ''}}" wx:for="{{papers}}" wx:key="id" data-id="{{item.id}}" bindtap="openPaper" hover-class="card-pressed">
       <view class="paper-head">
         <view>
-          <text class="paper-type">{{item.typeLabel}}</text>
+          <view class="paper-type-row"><text class="paper-type">{{item.typeLabel}}</text><text class="paper-suggested" wx:if="{{item.isSuggested}}">今日计划推荐</text></view>
           <text class="paper-title">{{item.title}}</text>
         </view>
         <view class="paper-year" wx:if="{{item.year}}">{{item.year}}</view>

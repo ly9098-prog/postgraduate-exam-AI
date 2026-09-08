@@ -15,9 +15,12 @@ Page({
     errorText: '',
     papers: [],
     startingId: 0,
+    suggestedPaperId: 0,
   },
 
-  onLoad() {
+  onLoad(options = {}) {
+    const suggestedPaperId = Number(options.suggested_paper_id) || 0
+    this.setData({ suggestedPaperId })
     this.loadPapers()
   },
 
@@ -36,6 +39,7 @@ Page({
         scoreText: Number(item.total_choice_score || 0).toFixed(0),
         bestScoreText: item.best_choice_score == null ? '' : Number(item.best_choice_score).toFixed(1),
         canResume: item.latest_attempt_status === 'in_progress' && !!item.latest_attempt_id,
+        isSuggested: Number(item.id) === Number(this.data.suggestedPaperId),
       }))
       this._loadedOnce = true
       this.setData({ papers, loading: false, errorText: '' })

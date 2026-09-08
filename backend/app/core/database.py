@@ -559,6 +559,10 @@ async def init_db():
         ReviewRecord,
         ReviewSchedule,
     )
+    from app.models.study_plan import (  # noqa: F401 — registered for create_all
+        StudyPlan,
+        StudyPlanDay,
+    )
     from app.models.tag import Tag  # noqa: F401 — Subject relationship target
     from app.models.user_knowledge_state import UserKnowledgeState  # noqa: F401
     from app.models.wrong_question import (

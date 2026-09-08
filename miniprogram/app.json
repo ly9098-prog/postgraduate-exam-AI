@@ -52,7 +52,8 @@
         "practice-result/index",
         "knowledge-map/index",
         "knowledge-subject/index",
-        "knowledge-detail/index"
+        "knowledge-detail/index",
+        "study-plan/index"
       ]
     },
     {
