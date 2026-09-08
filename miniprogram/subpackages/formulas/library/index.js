@@ -33,7 +33,46 @@ const LIBRARY_TYPE_FUNCTION_GRAPH = 'function_graph'
 const MAX_GRAPH_FALLBACK_PAGES = 10
 const MAX_FAVORITE_PAGES = 50
 const FAVORITE_PAGE_SIZE = 200
-const PRODUCT_EXAM_SCOPE = 'exam408'
+
+const BASE_FORMULA_SUBJECTS = [
+  { code: 'math2_high_math', name: '高等数学' },
+  { code: 'math2_linear_algebra', name: '线性代数' },
+  { code: 'exam408', name: '计算机综合' },
+]
+const DEFAULT_FORMULA_SUBJECT = 'math2_high_math'
+const EXAM408_FORMULA_SUBJECT = 'exam408'
+const HIDDEN_FORMULA_SUBJECT_CODES = new Set(['elementary_math'])
+
+function isVisibleFormulaSubject(subject) {
+  const code = String(subject && (subject.code || subject.subject_code || subject.key) || '').trim().toLowerCase()
+  const name = String(subject && (subject.name || subject.title || subject.label || subject.subject_name) || '').trim()
+  return !HIDDEN_FORMULA_SUBJECT_CODES.has(code) && name !== '初等数学'
+}
+
+function mergeFormulaSubjects(catalog, activeCode) {
+  const merged = []
+  const seen = Object.create(null)
+  BASE_FORMULA_SUBJECTS.forEach(function (subject) {
+    merged.push({
+      code: subject.code,
+      name: subject.name,
+      active: subject.code === activeCode,
+    })
+    seen[subject.code] = true
+  })
+  ;(catalog || []).forEach(function (subject) {
+    if (!isVisibleFormulaSubject(subject)) return
+    const code = String(subject && subject.code || '').trim()
+    if (!code || seen[code]) return
+    merged.push({
+      code,
+      name: subject.name || code,
+      active: code === activeCode,
+    })
+    seen[code] = true
+  })
+  return merged
+}
 
 const STUDY_CARD_TYPES = [
   { key: '', name: '全部' },
@@ -88,9 +127,11 @@ function filterFormulaItemsByLibraryType(items, libraryType) {
 Page({
   data: {
     // Subject tabs
-    subjects: [],
-    activeSubject: '',
-    activeSubjectName: '408',
+    subjects: BASE_FORMULA_SUBJECTS.map(function (subject) {
+      return { ...subject, active: subject.code === DEFAULT_FORMULA_SUBJECT }
+    }),
+    activeSubject: DEFAULT_FORMULA_SUBJECT,
+    activeSubjectName: '高等数学',
 
     // Content type tabs
     libraryTabs: [
@@ -99,7 +140,7 @@ Page({
     ],
     activeLibraryType: LIBRARY_TYPE_FORMULA,
 
-    // 408 memory-card semantic type
+    // Memory-card semantic type
     studyTypeTabs: STUDY_CARD_TYPES.map(function (item) { return { ...item, active: !item.key } }),
     activeStudyCardType: '',
 
@@ -207,12 +248,12 @@ Page({
     if (!this._pageAlive) return
     const requestVersion = ++this._catalogRequestVersion
     try {
-      var params = { exam_scope: PRODUCT_EXAM_SCOPE }
+      var params = {}
       // Pass library_type so the catalog can show accurate available_count
       if (this.data.activeLibraryType && this.data.activeLibraryType !== LIBRARY_TYPE_FORMULA) {
         params.library_type = this.data.activeLibraryType
       }
-      if (this.data.activeStudyCardType) params.study_card_type = this.data.activeStudyCardType
+      if (this.data.activeSubject === EXAM408_FORMULA_SUBJECT && this.data.activeStudyCardType) params.study_card_type = this.data.activeStudyCardType
       if (typeof this.data.onlyFavorites !== 'undefined' && this.data.onlyFavorites) {
         params.favorite_only = true
       }
@@ -223,21 +264,20 @@ Page({
       const data = await api.request('GET', url)
       if (!this._pageAlive || requestVersion !== this._catalogRequestVersion) return
       const catalog = this.normalizeCatalog(data?.items || [])
-      const currentCode = this.data.activeSubject
-      const currentSubject = catalog.find((subject) => subject.code === currentCode)
-      const activeCatalogSubject = currentSubject || catalog[0] || null
-      const activeSubject = activeCatalogSubject ? activeCatalogSubject.code : ''
-      const subjects = catalog.map((subject) => ({
-        code: subject.code,
-        name: subject.name,
-        active: subject.code === activeSubject,
-      }))
+      const currentCode = this.data.activeSubject || DEFAULT_FORMULA_SUBJECT
+      const allCodes = BASE_FORMULA_SUBJECTS.map(function (subject) { return subject.code })
+        .concat(catalog.map(function (subject) { return subject.code }))
+      const activeSubject = allCodes.indexOf(currentCode) >= 0
+        ? currentCode
+        : DEFAULT_FORMULA_SUBJECT
+      const subjects = mergeFormulaSubjects(catalog, activeSubject)
+      const activeMeta = subjects.find(function (subject) { return subject.code === activeSubject })
       const subjectChanged = activeSubject !== currentCode
       this.setData({
         catalog,
         subjects,
         activeSubject,
-        activeSubjectName: activeCatalogSubject ? activeCatalogSubject.name : '408',
+        activeSubjectName: activeMeta ? activeMeta.name : '高等数学',
       }, () => {
         this.updateChapters()
         if (subjectChanged) this.loadFormulas(true)
@@ -250,7 +290,7 @@ Page({
 
 
   normalizeCatalog(items = []) {
-    return (items || []).map((subject, subjectIndex) => {
+    return (items || []).filter(isVisibleFormulaSubject).map((subject, subjectIndex) => {
       const rawChildren = subject.children || subject.chapters || subject.items || []
       const children = (rawChildren || [])
         .map((chapter, chapterIndex) => ({
@@ -338,6 +378,7 @@ Page({
     const subjects = this.data.subjects.map(s => ({
       ...s, active: s.code === code,
     }))
+    const keepStudyType = code === EXAM408_FORMULA_SUBJECT
     this.setData({
       subjects,
       activeSubject: code,
@@ -347,6 +388,10 @@ Page({
       searchValue: '',
       onlyFavorites: false,
       favoriteIds: [],
+      activeStudyCardType: keepStudyType ? this.data.activeStudyCardType : '',
+      studyTypeTabs: keepStudyType
+        ? this.data.studyTypeTabs
+        : STUDY_CARD_TYPES.map(function (item) { return { ...item, active: !item.key } }),
       page: 1,
       formulas: [],
       hasMore: true,
@@ -442,9 +487,10 @@ Page({
     this.loadFormulas(true)
   },
 
-  // ── 408 Study Card Type ──
+  // ── Study Card Type ──
 
   onStudyCardTypeChange(e) {
+    if (this.data.activeSubject !== EXAM408_FORMULA_SUBJECT) return
     const type = String(e.currentTarget.dataset.type || '')
     if (type === this.data.activeStudyCardType) return
     const studyTypeTabs = (this.data.studyTypeTabs || []).map((tab) => ({ ...tab, active: tab.key === type }))
@@ -603,12 +649,11 @@ Page({
 
     try {
       const baseParams = {
-        exam_scope: PRODUCT_EXAM_SCOPE,
         subject_code: activeSubject,
         page_size: pageSize,
         library_type: activeLibraryType || LIBRARY_TYPE_FORMULA,
       }
-      if (activeStudyCardType) baseParams.study_card_type = activeStudyCardType
+      if (activeSubject === EXAM408_FORMULA_SUBJECT && activeStudyCardType) baseParams.study_card_type = activeStudyCardType
       if (activeChapterId) baseParams.chapter_id = activeChapterId
       if (activeTags.length) {
         const tagCodes = this.data.tags
@@ -738,7 +783,6 @@ Page({
         const data = await api.request('GET', '/formulas/favorites/list', {
           page,
           page_size: FAVORITE_PAGE_SIZE,
-          exam_scope: PRODUCT_EXAM_SCOPE,
         })
         if (!this._pageAlive || requestVersion !== this._favoriteRequestVersion) return
 
@@ -884,7 +928,7 @@ Page({
       subject_code: activeSubject,
       library_type: activeLibraryType || LIBRARY_TYPE_FORMULA,
     }
-    if (activeStudyCardType) params.study_card_type = activeStudyCardType
+    if (activeSubject === EXAM408_FORMULA_SUBJECT && activeStudyCardType) params.study_card_type = activeStudyCardType
     if (activeChapterId) params.chapter_id = activeChapterId
     if (activeTags.length) {
       params.tags = this.data.tags

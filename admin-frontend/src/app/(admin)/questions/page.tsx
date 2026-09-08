@@ -34,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { MathFormula } from "@/components/ui/math-formula";
 import { QuestionContentRenderer } from "@/components/question-content-renderer";
 import { StructuredTableEditor } from "@/components/structured-table-editor";
-import { QuestionOptions } from "@/components/question-options";
+import { MultiBlankQuestionOptions, QuestionOptions } from "@/components/question-options";
 import { QuestionImageField } from "@/components/questions/question-image-field";
 import { QuestionAnalysis } from "@/components/questions/question-analysis";
 import { QuestionAnalysisEditor } from "@/components/questions/question-analysis-editor";
@@ -46,8 +46,12 @@ import {
 } from "@/components/questions/question-version-picker";
 import { useAuthStore } from "@/lib/auth/auth-store";
 import {
-  resolveQuestionOptions,
+  normalizeBlankOptionGroups,
   normalizeQuestionOptions,
+  resolveBlankOptionGroupsValue,
+  resolveQuestionBlankOptionGroups,
+  resolveQuestionOptions,
+  updateBlankOptionGroupText,
 } from "@/lib/question-options";
 import { hasPermission } from "@/lib/permissions/permissions";
 import { apiRequest, apiRequestBlob, toQuery } from "@/lib/api/client";
@@ -424,7 +428,10 @@ function buildQuestionEditPatch(
   const structuredContentChanged =
     JSON.stringify(nonStemContentSegments(form.content)) !==
     JSON.stringify(nonStemContentSegments(question.content));
-  if (stemChanged || structuredContentChanged) {
+  const blankOptionGroupsChanged =
+    JSON.stringify(resolveBlankOptionGroupsValue(form.content) ?? null) !==
+    JSON.stringify(resolveBlankOptionGroupsValue(question.content) ?? null);
+  if (stemChanged || structuredContentChanged || blankOptionGroupsChanged) {
     patch.content = stemChanged
       ? updateStemInContent(form.content, editorStem)
       : contentRecord(form.content);
@@ -472,6 +479,11 @@ function renderVersionValue(label: string, value: unknown, emphasized = false) {
   }
 
   if (label === "选项") {
+    const blankGroups = normalizeBlankOptionGroups(value);
+    if (blankGroups.length > 0) {
+      return <MultiBlankQuestionOptions groups={blankGroups} />;
+    }
+
     const options = normalizeQuestionOptions(value as QuestionOptionsValue | undefined);
     if (options.length === 0) return <span className="text-xs text-slate-400">—</span>;
     return (
@@ -562,6 +574,19 @@ function isMultiChoice(questionType: string): boolean {
   return canonicalizeQuestionType(questionType) === "multiple_choice";
 }
 
+function isMultiBlankChoice(questionType: string): boolean {
+  return canonicalizeQuestionType(questionType) === "multi_blank_choice";
+}
+
+function blankOptionGroupsStorageField(
+  content: unknown,
+): "blank_option_groups" | "blank_groups" {
+  const record = contentRecord(content);
+  if (record.blank_option_groups != null) return "blank_option_groups";
+  if (record.blank_groups != null) return "blank_groups";
+  return "blank_option_groups";
+}
+
 function normalizedChoiceAnswerKeys(answer: string | null | undefined): string[] {
   const seen = new Set<string>();
   return String(answer ?? "")
@@ -572,6 +597,87 @@ function normalizedChoiceAnswerKeys(answer: string | null | undefined): string[]
       seen.add(key);
       return true;
     });
+}
+
+function parseMultiBlankChoiceAnswer(
+  answer: string | null | undefined,
+): Array<{ blankId: string; optionKey: string }> {
+  return String(answer ?? "")
+    .split(/[;；]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const separatorIndex = entry.search(/[:：]/);
+      if (separatorIndex < 0) return null;
+
+      const blankId = entry.slice(0, separatorIndex).trim();
+      const optionKey = entry.slice(separatorIndex + 1).trim();
+      if (!blankId || !optionKey) return null;
+
+      return { blankId, optionKey };
+    })
+    .filter((item): item is { blankId: string; optionKey: string } => item !== null);
+}
+
+function updateMultiBlankChoiceAnswer(
+  answer: string | null | undefined,
+  blankIds: string[],
+  targetBlankId: string,
+  optionKey: string,
+): string {
+  const parsed = parseMultiBlankChoiceAnswer(answer);
+  const values = new Map(parsed.map((item) => [item.blankId, item.optionKey]));
+  const nextOptionKey = optionKey.trim();
+
+  if (nextOptionKey) values.set(targetBlankId, nextOptionKey);
+  else values.delete(targetBlankId);
+
+  const orderedIds: string[] = [];
+  const seen = new Set<string>();
+  for (const id of [...blankIds, ...parsed.map((item) => item.blankId)]) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    orderedIds.push(id);
+  }
+
+  return orderedIds
+    .map((blankId) => {
+      const value = values.get(blankId)?.trim();
+      return value ? `${blankId}:${value}` : "";
+    })
+    .filter(Boolean)
+    .join(";");
+}
+
+function QuestionAnswerDisplay({
+  questionType,
+  answer,
+}: {
+  questionType: string;
+  answer: string | null | undefined;
+}) {
+  if (isMultiBlankChoice(questionType)) {
+    const items = parseMultiBlankChoiceAnswer(answer);
+    if (items.length > 0) {
+      return (
+        <div className="space-y-1">
+          {items.map((item, index) => (
+            <div
+              key={`${item.blankId}-${index}`}
+              className="grid grid-cols-[auto_1fr] items-center gap-x-3 leading-6"
+            >
+              <span>{item.blankId}</span>
+              <span>
+                <MathFormula text={item.optionKey} />
+              </span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+  }
+
+  return <MathFormula text={answer || "—"} />;
 }
 
 function comparableOptionState(options: QuestionOptionsValue | undefined): string {
@@ -2378,16 +2484,25 @@ export default function QuestionsPage() {
                     <section className="rounded-xl border border-slate-200 bg-white p-4">
                       <p className="font-semibold text-[var(--ink)]">选项</p>
                       <div className="mt-3">
-                        <QuestionOptions
-                          options={normalizeQuestionOptions(resolveQuestionOptions(selectedQuestion))}
-                        />
+                        {isMultiBlankChoice(selectedQuestion.question_type) ? (
+                          <MultiBlankQuestionOptions
+                            groups={resolveQuestionBlankOptionGroups(selectedQuestion)}
+                          />
+                        ) : (
+                          <QuestionOptions
+                            options={normalizeQuestionOptions(resolveQuestionOptions(selectedQuestion))}
+                          />
+                        )}
                       </div>
                     </section>
 
                     <section className="rounded-xl border border-slate-200 bg-white p-4">
                       <p className="font-semibold text-slate-950">答案</p>
                       <div className="mt-2 inline-flex min-h-9 items-center rounded-md bg-slate-50 px-2.5 py-1.5 text-sm font-semibold leading-6 text-slate-800">
-                        <MathFormula text={selectedQuestion.answer || "—"} />
+                        <QuestionAnswerDisplay
+                          questionType={selectedQuestion.question_type}
+                          answer={selectedQuestion.answer}
+                        />
                       </div>
                     </section>
 
@@ -2838,8 +2953,96 @@ export default function QuestionsPage() {
 
                   {/* Options inline editor */}
                   {(() => {
-                    const optList = optionsToKeyValueList(editForm.options);
                     const qtype = canonicalizeQuestionType(editForm.question_type ?? "");
+
+                    if (qtype === "multi_blank_choice") {
+                      const groups = normalizeBlankOptionGroups(
+                        resolveBlankOptionGroupsValue(editForm.content),
+                      );
+                      const totalOptions = groups.reduce(
+                        (sum, group) => sum + group.options.length,
+                        0,
+                      );
+
+                      return (
+                        <section className="border-b border-slate-200 py-5">
+                          <div className="mb-4 flex items-end justify-between gap-4">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-950">选项</p>
+                              <p className="mt-1 text-[11px] text-slate-400">
+                                按空位编辑分组选项；保存后写回题目的分组选项数据
+                              </p>
+                            </div>
+                            <span className="text-[11px] tabular-nums text-slate-400">
+                              {groups.length} 个空位 · {totalOptions} 个选项
+                            </span>
+                          </div>
+
+                          {groups.length === 0 ? (
+                            <p className="mb-3 text-sm text-[var(--color-text-hint)]">
+                              暂无可编辑的分组选项
+                            </p>
+                          ) : (
+                            <div className="space-y-3">
+                              {groups.map((group) => (
+                                <div
+                                  key={group.id}
+                                  className="overflow-hidden rounded-lg border border-slate-200 bg-white"
+                                >
+                                  <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-3 py-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="flex h-7 min-w-7 items-center justify-center rounded-md bg-slate-900 px-1.5 text-[11px] font-semibold text-white">
+                                        {group.id}
+                                      </span>
+                                      <span className="text-xs font-medium text-slate-600">该空选项</span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400">
+                                      {group.options.length} 项
+                                    </span>
+                                  </div>
+                                  {group.options.map((opt) => (
+                                    <div
+                                      key={`${group.id}-${opt.key}`}
+                                      className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0"
+                                    >
+                                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-[11px] font-semibold text-slate-600">
+                                        {opt.key}
+                                      </span>
+                                      <input
+                                        className="h-9 min-w-0 flex-1 border-0 bg-transparent px-1 text-sm text-slate-800 outline-none placeholder:text-slate-300 focus:ring-0"
+                                        value={opt.text ?? ""}
+                                        onChange={(e) => {
+                                          const nextText = e.target.value;
+                                          setEditForm((current) => {
+                                            const currentContent = contentRecord(current.content);
+                                            const field = blankOptionGroupsStorageField(currentContent);
+                                            const rawGroups = resolveBlankOptionGroupsValue(currentContent);
+                                            return {
+                                              ...current,
+                                              content: {
+                                                ...currentContent,
+                                                [field]: updateBlankOptionGroupText(
+                                                  rawGroups,
+                                                  group.id,
+                                                  opt.key,
+                                                  nextText,
+                                                ),
+                                              },
+                                            };
+                                          });
+                                        }}
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </section>
+                      );
+                    }
+
+                    const optList = optionsToKeyValueList(editForm.options);
                     const isChoiceType = qtype === "single_choice" || qtype === "multiple_choice";
                     return (
                       <section className="border-b border-slate-200 py-5">
@@ -2908,8 +3111,72 @@ export default function QuestionsPage() {
                     );
                   })()}
 
-                  {/* Answer quick-select */}
-                  {optionsToKeyValueList(editForm.options).length > 0 ? (
+                  {/* Answer editor */}
+                  {isMultiBlankChoice(editForm.question_type ?? "") ? (
+                    (() => {
+                      const groups = normalizeBlankOptionGroups(
+                        resolveBlankOptionGroupsValue(editForm.content),
+                      );
+                      const parsedAnswer = parseMultiBlankChoiceAnswer(editForm.answer);
+                      const parsedAnswerMap = new Map(
+                        parsedAnswer.map((item) => [item.blankId, item.optionKey]),
+                      );
+                      const blankIds =
+                        groups.length > 0
+                          ? groups.map((group) => group.id)
+                          : parsedAnswer.map((item) => item.blankId);
+
+                      return (
+                        <section className="border-b border-slate-200 py-5">
+                          <div className="mb-4">
+                            <p className="text-sm font-semibold text-slate-950">答案</p>
+                            <p className="mt-1 text-[11px] text-slate-400">
+                              按空位分别编辑答案；保存时自动写回多空答案格式
+                            </p>
+                          </div>
+
+                          {blankIds.length > 0 ? (
+                            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                              {blankIds.map((blankId, index) => (
+                                <div
+                                  key={`${blankId}-${index}`}
+                                  className="flex items-center gap-4 border-b border-slate-100 px-4 py-3 last:border-b-0"
+                                >
+                                  <span className="w-8 shrink-0 text-sm font-medium text-slate-900">
+                                    {blankId}
+                                  </span>
+                                  <Input
+                                    value={parsedAnswerMap.get(blankId) ?? ""}
+                                    aria-label={`${blankId} 答案`}
+                                    className="h-9 max-w-32 border-slate-200 bg-slate-50/60 text-center shadow-none focus:bg-white"
+                                    onChange={(e) =>
+                                      setEditForm({
+                                        ...editForm,
+                                        answer: updateMultiBlankChoiceAnswer(
+                                          editForm.answer,
+                                          blankIds,
+                                          blankId,
+                                          e.target.value,
+                                        ),
+                                      })
+                                    }
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <Input
+                              value={editForm.answer ?? ""}
+                              className="border-slate-200 bg-slate-50/60 shadow-none focus:bg-white"
+                              onChange={(e) =>
+                                setEditForm({ ...editForm, answer: e.target.value })
+                              }
+                            />
+                          )}
+                        </section>
+                      );
+                    })()
+                  ) : optionsToKeyValueList(editForm.options).length > 0 ? (
                     <section className="border-b border-slate-200 py-5">
                       <div className="mb-4">
                         <p className="text-sm font-semibold text-slate-950">答案</p>
@@ -2979,13 +3246,13 @@ export default function QuestionsPage() {
                     <section className="border-b border-slate-200 py-5">
                       <p className="mb-3 text-sm font-semibold text-slate-950">答案</p>
                       <div>
-                      <Input
-                        value={editForm.answer ?? ""}
-                        className="border-slate-200 bg-slate-50/60 shadow-none focus:bg-white"
-                        onChange={(e) =>
-                          setEditForm({ ...editForm, answer: e.target.value })
-                        }
-                      />
+                        <Input
+                          value={editForm.answer ?? ""}
+                          className="border-slate-200 bg-slate-50/60 shadow-none focus:bg-white"
+                          onChange={(e) =>
+                            setEditForm({ ...editForm, answer: e.target.value })
+                          }
+                        />
                       </div>
                     </section>
                   )}
@@ -3109,11 +3376,17 @@ export default function QuestionsPage() {
                       选项
                     </p>
                     <div className="mt-3">
-                      <QuestionOptions
-                        options={normalizeQuestionOptions(
-                          resolveQuestionOptions(selectedQuestion),
-                        )}
-                      />
+                      {isMultiBlankChoice(selectedQuestion.question_type) ? (
+                        <MultiBlankQuestionOptions
+                          groups={resolveQuestionBlankOptionGroups(selectedQuestion)}
+                        />
+                      ) : (
+                        <QuestionOptions
+                          options={normalizeQuestionOptions(
+                            resolveQuestionOptions(selectedQuestion),
+                          )}
+                        />
+                      )}
                     </div>
                   </section>
 
@@ -3122,7 +3395,10 @@ export default function QuestionsPage() {
                       答案
                     </p>
                     <div className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[15px] font-semibold leading-6 text-slate-800">
-                      <MathFormula text={selectedQuestion.answer || "—"} />
+                      <QuestionAnswerDisplay
+                        questionType={selectedQuestion.question_type}
+                        answer={selectedQuestion.answer}
+                      />
                     </div>
                   </section>
 
@@ -3243,8 +3519,12 @@ export default function QuestionsPage() {
                                   )}
                                   {renderDiff(
                                     "选项",
-                                    baseVersionData.options ?? null,
-                                    compareVersionData.options ?? null,
+                                    isMultiBlankChoice(selectedQuestion.question_type)
+                                      ? resolveBlankOptionGroupsValue(baseVersionData.content)
+                                      : (baseVersionData.options ?? null),
+                                    isMultiBlankChoice(selectedQuestion.question_type)
+                                      ? resolveBlankOptionGroupsValue(compareVersionData.content)
+                                      : (compareVersionData.options ?? null),
                                     baseVersionLabel,
                                     compareVersionLabel,
                                   )}

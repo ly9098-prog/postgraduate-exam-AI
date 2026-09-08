@@ -7,6 +7,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
+from app.core.subject_scope import (
+    is_study_subject_enabled,
+    select_study_subject_records,
+)
 from app.core.time_utils import (
     current_study_day,
     minute_to_time_text,
@@ -297,14 +301,11 @@ async def start_session(
     subj = await db.get(Subject, subject_id)
     if subj is None:
         raise ValueError(f"科目不存在: subject_id={subject_id}")
-    if not subj.is_active:
+    if not is_study_subject_enabled(subj):
         raise ValueError(f"科目不可用: {subj.name}")
-    child_count = await db.scalar(
-        select(func.count(Subject.id)).where(
-            Subject.parent_id == subject_id,
-            Subject.is_active.is_(True),
-        )
-    )
+    all_subjects = list((await db.execute(select(Subject))).scalars().all())
+    enabled_ids = {item.id for item in select_study_subject_records(all_subjects)}
+    child_count = sum(1 for item in all_subjects if item.parent_id == subject_id and item.id in enabled_ids)
     if child_count and child_count > 0:
         raise ValueError(f"请选择具体子科目，不能选择父级科目: {subj.name}")
 
@@ -988,7 +989,7 @@ def _resolve_subject(session) -> tuple[int | None, str, str]:
     no duplicate 未分类 slices are produced.
     """
     ref = session.subject_ref
-    if session.subject_id is not None and ref is not None and ref.is_active:
+    if session.subject_id is not None and ref is not None and is_study_subject_enabled(ref):
         return session.subject_id, ref.code or "", ref.name or ""
     return None, "", "未分类"
 

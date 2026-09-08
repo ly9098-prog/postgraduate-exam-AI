@@ -431,17 +431,15 @@ Page({
 
     const submission = pending.submission
     if (pending.status === 'submitted' && pending.resultUrl) {
-      const res = await new Promise(resolve => {
-        wx.showModal({
-          title: '上次练习已交卷',
-          content: '检测到上次练习已提交成功，但结果页尚未确认打开。是否继续查看结果？',
-          confirmText: '查看结果',
-          cancelText: '稍后处理',
-          success: resolve,
-          fail: () => resolve({ confirm: false }),
-        })
+      const confirmed = await this._showSubmitConfirm({
+        scenario: 'info',
+        title: '上次练习已交卷',
+        message: '结果页尚未确认打开，是否继续查看？',
+        confirmText: '查看结果',
+        cancelText: '稍后处理',
+        hideEyebrow: true,
       })
-      if (res && res.confirm && this._pageAlive) {
+      if (confirmed && this._pageAlive) {
         this._practiceSession.submissionSnapshot = submission
         this._practiceSession.requestId = submission.requestId || ''
         this._pendingResultUrl = pending.resultUrl
@@ -454,38 +452,34 @@ Page({
     }
 
     if (pending.status === 'blocked' || submission.retryBlocked) {
-      const res = await new Promise(resolve => {
-        wx.showModal({
-          title: '上次交卷无法继续确认',
-          content: '服务器已明确拒绝该提交，继续重试不会成功。可清除本地待确认状态后重新开始练习。',
-          confirmText: '清除状态',
-          cancelText: '暂不处理',
-          success: resolve,
-          fail: () => resolve({ confirm: false }),
-        })
+      const confirmed = await this._showSubmitConfirm({
+        scenario: 'danger',
+        title: '上次交卷无法继续确认',
+        message: '该提交已被服务器拒绝。清除本地状态后即可重新开始。',
+        confirmText: '清除状态',
+        cancelText: '暂不处理',
+        hideEyebrow: true,
       })
-      if (res && res.confirm) this._clearPendingSubmission(submission.requestId)
+      if (confirmed) this._clearPendingSubmission(submission.requestId)
       return false
     }
 
-    const res = await new Promise(resolve => {
-      wx.showModal({
-        title: '发现待确认交卷',
-        content: '上次交卷可能已被服务器保存。继续确认会复用原答案和 request_id，不会重复计入记录。',
-        confirmText: '继续确认',
-        cancelText: '稍后处理',
-        success: resolve,
-        fail: () => resolve({ confirm: false }),
-      })
+    const confirmed = await this._showSubmitConfirm({
+      scenario: 'info',
+      title: '发现待确认交卷',
+      message: '可继续确认上次交卷，不会重复计入答题记录。',
+      confirmText: '继续确认',
+      cancelText: '稍后处理',
+      hideEyebrow: true,
     })
-    if (!res || !res.confirm || !this._pageAlive) return false
+    if (!confirmed || !this._pageAlive) return false
 
     this._resetSession()
     this._practiceSession.submissionSnapshot = submission
     this._practiceSession.requestId = submission.requestId || ''
     this._practiceSession.traceId = submission.traceId || ''
     this.setData({ started: true, submitted: false, submitting: false })
-    this._setPracticeUnloadGuard(true, '本次交卷状态尚未确认。退出不会撤销服务器上可能已经保存的结果。')
+    this._setPracticeUnloadGuard(true, '交卷仍在确认中。')
     await this.doSubmit(true)
     if (!this.data.submitted && this._pageAlive) {
       // A recovery request can still fail due to network/5xx. Return to the
@@ -512,11 +506,13 @@ Page({
         submission.keepPendingUntilResult = false
       } catch (storageError) {
         console.warn('结果缓存与待确认快照均不可持久化', storageError)
-        wx.showModal({
-          title: '已交卷，但无法保存复盘数据',
-          content: '服务器已保存本次成绩，但当前设备存储异常。请先不要关闭小程序，清理可用存储后再次点击“交卷复盘”。',
+        this._showSubmitConfirm({
+          scenario: 'info',
+          title: '复盘数据暂未保存',
+          message: '成绩已保存。请保持当前页面，释放设备存储后再次打开复盘。',
           showCancel: false,
           confirmText: '知道了',
+          hideEyebrow: true,
         })
         return
       }
@@ -541,13 +537,15 @@ Page({
         if (!this._pageAlive) return
         this.setData({ submitting: false, submitted: true })
         this._setPracticeUnloadGuard(false)
-        wx.showModal({
-          title: '已交卷，结果页打开失败',
-          content: submission && submission.pendingPersisted
-            ? '本次练习已经提交成功，不会再次交卷。请再次点击底部“交卷复盘”按钮重新打开结果页；待确认状态已保存，可稍后恢复。'
-            : '本次练习已经提交成功，不会再次交卷。当前恢复快照未能写入设备，请保持本页并再次点击“交卷复盘”。',
+        this._showSubmitConfirm({
+          scenario: 'info',
+          title: '结果页打开失败',
+          message: submission && submission.pendingPersisted
+            ? '成绩已保存，可稍后再次打开复盘。'
+            : '成绩已保存，请保持当前页面后再次打开复盘。',
           showCancel: false,
           confirmText: '知道了',
+          hideEyebrow: true,
         })
       },
     })
@@ -1660,6 +1658,7 @@ Page({
     const questionId = String(q.id == null ? '' : q.id)
     const cacheKey = [
       questionId || 'anonymous',
+      String(q.question_version_id || q.question_version || 'version-unknown'),
       session.safeModeActive ? 'safe' : 'normal',
       config.enableMathImage ? 'math-image' : 'math-native',
     ].join(':')
@@ -1829,7 +1828,7 @@ Page({
         optionKeys,
         blankGroupCount: (viewModelResult.answerState.blankOptionGroups || []).length,
         renderMode: (currentQuestion._renderModel || {}).mode,
-        sourceLen: ((q.content && (q.content.stem || q.content.text)) || '').length,
+        sourceLen: ((q.content && (q.content.text || q.content.stem)) || '').length,
       })
     }
     this._practiceSession.optionKeys = optionKeys
@@ -1873,11 +1872,11 @@ Page({
       try {
         await this._showSubmitConfirm({
           scenario: 'info',
-          eyebrow: 'SUBMITTING',
-          title: '正在确认交卷',
-          message: '成绩正在提交并生成复盘结果，完成前请保持当前页面。',
+          title: '正在交卷',
+          message: '提交完成前请保持当前页面。',
           confirmText: '知道了',
           hideCancel: true,
+          hideEyebrow: true,
         })
       } finally {
         this._exitConfirmInFlight = false
@@ -1898,15 +1897,15 @@ Page({
     try {
       confirmed = await this._showSubmitConfirm({
         scenario: 'danger',
-        eyebrow: hasPendingSubmit ? 'SUBMISSION PENDING' : 'EXIT PRACTICE',
-        title: retryBlocked ? '退出本组练习？' : (hasPendingSubmit ? '退出待确认交卷？' : '退出本组练习？'),
+        title: '退出练习？',
         message: retryBlocked
-          ? '服务器已明确拒绝本次提交，本地待确认状态会保留到你清除或重新进入处理。'
+          ? '本次提交未通过，退出后可重新开始。'
           : (hasPendingSubmit
-            ? '本次交卷状态尚未确认。退出不会撤销服务器上可能已经保存的结果；待确认提交会保留，可下次继续确认。'
-            : '退出后，本组尚未提交的练习不会计入结果。'),
-        confirmText: hasPendingSubmit ? '退出页面' : '退出练习',
-        cancelText: retryBlocked ? '返回查看' : (hasPendingSubmit ? '继续确认' : '继续作答'),
+            ? '交卷仍在确认中，退出后可下次继续确认。'
+            : '本组练习尚未提交，确定退出吗？'),
+        confirmText: '退出',
+        cancelText: hasPendingSubmit && !retryBlocked ? '继续确认' : '继续作答',
+        hideEyebrow: true,
       })
     } finally {
       this._exitConfirmInFlight = false
@@ -1922,21 +1921,18 @@ Page({
     }
     this._resetSession()
     this._pendingResultUrl = ''
-    this.setData({
-      started: false,
-      loading: false,
-      submitting: false,
-      submitted: false,
-      questions: [],
-      currentQuestion: null,
-      currentAnswerState: null,
-      currentIndex: 0,
-      totalQuestions: 0,
-      answeredCount: 0,
-      progressPercent: 0,
-      elapsedText: '00:00',
-      feedbackVisible: false,
-    })
+    // Leaving an active answering session should leave the practice page, not
+    // fall back to its setup shell.  This naturally returns Home when Home was
+    // the caller while still respecting other legitimate entry points.
+    const pages = getCurrentPages()
+    if (pages && pages.length > 1) {
+      wx.navigateBack({
+        delta: 1,
+        fail: () => wx.reLaunch({ url: '/pages/home/home' }),
+      })
+      return
+    }
+    wx.reLaunch({ url: '/pages/home/home' })
   },
 
   _isSubmissionLocked() {
@@ -2284,11 +2280,13 @@ Page({
       return
     }
     if (submission && submission.retryBlocked) {
-      wx.showModal({
+      await this._showSubmitConfirm({
+        scenario: 'danger',
         title: '本次提交无法继续重试',
-        content: '服务器已明确拒绝该提交，继续使用相同内容重试不会成功。请退出本组练习后重新开始。',
+        message: '请退出本组练习后重新开始。',
         showCancel: false,
         confirmText: '知道了',
+        hideEyebrow: true,
       })
       return
     }
@@ -2377,9 +2375,11 @@ Page({
         status: 'completed',
       }
       const recoveryQuestions = questions.map(function(q) {
-        const stem = (q && q.content && (q.content.stem || q.content.text)) || (q && q.stem) || ''
+        const stem = (q && q.content && (q.content.text || q.content.stem)) || (q && q.stem) || ''
         return {
           id: q && q.id,
+          question_version_id: q && q.question_version_id,
+          question_version: q && q.question_version,
           subject_id: q && q.subject_id,
           subject_code: (q && q.subject_code) || '',
           subject_name: (q && q.subject_name) || '',
@@ -2394,11 +2394,13 @@ Page({
       }).filter(function(q) { return !!q.id })
 
       if (!this._practiceSession.batchToken) {
-        wx.showModal({
+        await this._showSubmitConfirm({
+          scenario: 'info',
           title: '练习批次已失效',
-          content: '当前题目缺少服务器签发的提交凭据，请返回重新获取题目。',
+          message: '请返回后重新获取本组题目。',
           showCancel: false,
           confirmText: '知道了',
+          hideEyebrow: true,
         })
         return
       }
@@ -2429,7 +2431,7 @@ Page({
       submission.pendingPersisted = this._persistPendingSubmission(submission, 'pending', '')
       this._setPracticeUnloadGuard(
         true,
-        '本次交卷状态尚未确认。退出不会撤销服务器上可能已经保存的结果。',
+        '交卷仍在确认中。',
       )
     } else {
       this._clearTimer()
@@ -2470,7 +2472,7 @@ Page({
         submission.pendingPersisted = this._persistPendingSubmission(submission, 'blocked', '') || submission.pendingPersisted
         // 仍处于刷题页且用户需要显式确认退出；不能因服务端确定性拒绝而让
         // 系统侧滑/Back 绕过自定义退出提示。
-        this._setPracticeUnloadGuard(true, '本次提交已被服务器拒绝，请确认退出后重新开始。')
+        this._setPracticeUnloadGuard(true, '本次提交未通过。')
         let rejectTitle = '交卷内容未通过校验'
         let rejectContent = '服务器已明确拒绝本次提交，继续重试相同内容不会成功。请退出后重新开始。'
         if (errorCode === 'PRACTICE_SUBMISSION_CONFLICT') {
@@ -2483,26 +2485,30 @@ Page({
           rejectTitle = '练习批次已失效'
           rejectContent = '本次题目批次已过期或与提交内容不一致。为避免串题，请退出后重新获取题目。'
         }
-        wx.showModal({
+        await this._showSubmitConfirm({
+          scenario: 'danger',
           title: rejectTitle,
-          content: rejectContent,
+          message: rejectContent,
           showCancel: false,
           confirmText: '知道了',
+          hideEyebrow: true,
         })
       } else {
         const persisted = this._persistPendingSubmission(submission, 'pending', '')
         submission.pendingPersisted = persisted || submission.pendingPersisted
         this._setPracticeUnloadGuard(
           true,
-          '本次交卷状态尚未确认。退出不会撤销服务器上可能已经保存的结果。',
+          '交卷仍在确认中。',
         )
-        wx.showModal({
+        await this._showSubmitConfirm({
+          scenario: 'info',
           title: '交卷结果未确认',
-          content: submission.pendingPersisted
-            ? '已保存本次交卷快照。请重试确认；即使小程序被关闭，下次进入也可使用同一 request_id 恢复，不会重复计入答题记录。'
-            : '当前设备未能保存恢复快照。当前页面内仍可使用同一 request_id 重试，但请勿关闭小程序，否则无法保证恢复本次交卷状态。',
+          message: submission.pendingPersisted
+            ? '已保存交卷进度，可稍后继续确认。'
+            : '暂未保存交卷进度，请保持当前页面并重试。',
           showCancel: false,
           confirmText: '知道了',
+          hideEyebrow: true,
         })
       }
       return
@@ -2555,7 +2561,9 @@ Page({
       if (qq && qq.id) {
         lightQuestions.push({
           id: qq.id,
-          stem: (qq.content && (qq.content.stem || qq.content.text)) || qq.stem || '',
+          question_version_id: qq.question_version_id || null,
+          question_version: qq.question_version || null,
+          stem: (qq.content && (qq.content.text || qq.content.stem)) || qq.stem || '',
           options: qq.options || null,
           question_type: qq.question_type || '',
         })

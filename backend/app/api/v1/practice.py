@@ -2,7 +2,7 @@ import hashlib
 import logging
 import re
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import cache
@@ -32,7 +32,10 @@ from app.services.question_revision_service import (
     load_revision_kp_names,
     load_revision_views,
 )
-from app.utils.question_content import strip_student_segment_metadata
+from app.utils.question_content import (
+    reconcile_student_stem_fields,
+    strip_student_segment_metadata,
+)
 
 # Regex: lines ending with a trailing operator (OCR-split code expressions)
 _CODE_OP_SPLIT_RE = re.compile(
@@ -135,9 +138,10 @@ def _sanitize_question_content(content: dict | None) -> dict | None:
         if field in sanitized:
             sanitized[field] = _sanitize_text_field(sanitized[field])
 
-    # Prefer stem over text when both exist — stem has better code formatting
-    if "text" in sanitized and "stem" in sanitized and sanitized.get("stem"):
-        sanitized["text"] = sanitized["stem"]
+    # Historical revisions can contain a freshly edited ``text`` alongside a
+    # stale ``stem``. Reconcile them before the payload reaches renderers so the
+    # newest revision cannot look like an older question version.
+    sanitized = reconcile_student_stem_fields(sanitized)
 
     # Strip admin-only fields that should never reach student clients
     sanitized.pop("source_snapshot_url", None)
@@ -200,6 +204,7 @@ async def get_practice_subjects(
 
 @router.get("/questions", response_model=PracticeQuestionsResponse)
 async def get_practice_questions(
+    response: Response,
     subject_id: int = Query(...),
     include_children: bool = Query(True),
     count: int = Query(20, ge=1, le=50),
@@ -218,6 +223,11 @@ async def get_practice_questions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Personalized practice batches contain a signed immutable-revision token.
+    # Never let a WebView/proxy reuse an older GET response after a question edit.
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+
     # 解析 subject_id → (subject_code, subject_name)
     resolved = await svc.resolve_subject_id_to_code(db, subject_id)
     if resolved is None:
@@ -421,8 +431,14 @@ async def get_practice_questions(
     # 候选查询大多按 questions.subject_id 过滤，但响应内容来自 QuestionVersion。
     # 两者若因历史修复/并发编辑短暂不一致，旧逻辑仍可能把其他学科的 revision
     # 发给客户端。签发 batch token 前做最后一次不可变版本校验。
+    latest_revision_ids = await svc.load_latest_question_revision_ids(
+        db, [int(question.id) for question in questions]
+    )
     questions = await svc.filter_questions_to_revision_scope(
-        db, questions, scope_subject_ids,
+        db,
+        questions,
+        scope_subject_ids,
+        revision_ids=latest_revision_ids,
     )
     scope_set = set(scope_subject_ids)
     # Preserve ranking/order while guaranteeing a qid appears at most once.  A
@@ -488,6 +504,7 @@ async def get_practice_questions(
         subject_id=subject_id,
         mode=mode,
         questions=questions,
+        revision_ids=latest_revision_ids,
         recommendation_request_id=request_id,
     )
     revision_views = await load_revision_views(db, issued_revisions.values())
@@ -515,6 +532,8 @@ async def get_practice_questions(
         questions=[
             PracticeQuestion(
                 id=revision.question_id,
+                question_version_id=revision.question_version_id,
+                question_version=revision.version,
                 subject_id=revision.subject_id,
                 subject_code=revision.subject_ref.code if revision.subject_ref else "",
                 subject_name=revision.subject_ref.name if revision.subject_ref else "",

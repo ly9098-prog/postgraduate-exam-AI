@@ -3,6 +3,7 @@
   "navigationBarTitleText": "选择题考试结果",
   "backgroundColor": "#F3F4F1",
   "usingComponents": {
-    "premium-nav": "/components/premium-nav/premium-nav"
+    "premium-nav": "/components/premium-nav/premium-nav",
+    "app-dialog": "/components/app-dialog/index"
   }
 }

@@ -17,8 +17,9 @@ import json
 from types import SimpleNamespace
 from typing import Iterable
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.admin import QuestionVersion, QuestionVersionKnowledgePoint, Subject
 from app.models.knowledge_point import KnowledgePoint
@@ -136,23 +137,38 @@ async def ensure_question_revision(
     kp_links = await load_question_kp_link_ids(db, int(question.id))
     state_hash = compute_question_state_hash(question, kp_links)
 
+    latest = await db.scalar(
+        select(QuestionVersion)
+        .where(QuestionVersion.question_id == question.id)
+        .order_by(QuestionVersion.version.desc(), QuestionVersion.id.desc())
+        .limit(1)
+    )
+    current = None
     if question.current_version_id:
         current = await db.get(QuestionVersion, int(question.current_version_id))
-        if (
-            current is not None
-            and int(current.question_id) == int(question.id)
-            and current.state_hash == state_hash
-        ):
-            return current
 
-    next_version = int(
-        await db.scalar(
-            select(func.max(QuestionVersion.version)).where(
-                QuestionVersion.question_id == question.id
-            )
-        )
-        or 0
-    ) + 1
+    # ``current_version_id`` is a projection pointer, not a separate branch of
+    # history.  If it ever falls behind the newest immutable revision (for
+    # example after a manual repair), never keep returning an older version just
+    # because its state hash happens to equal the mutable projection.  Re-point
+    # to the newest matching revision, or append a new monotonic revision when
+    # the projection represents an older state.
+    if latest is not None and latest.state_hash == state_hash:
+        if int(question.current_version_id or 0) != int(latest.id):
+            question.current_version_id = int(latest.id)
+            await db.flush()
+        return latest
+
+    if (
+        current is not None
+        and int(current.question_id) == int(question.id)
+        and current.state_hash == state_hash
+        and latest is not None
+        and int(latest.id) == int(current.id)
+    ):
+        return current
+
+    next_version = int(latest.version if latest is not None else 0) + 1
 
     revision = QuestionVersion(
         question_id=int(question.id),
@@ -200,6 +216,80 @@ async def ensure_question_revision(
     question.current_version_id = int(revision.id)
     await db.flush()
     return revision
+
+
+def latest_question_revision_scope_condition(
+    subject_ids: Iterable[int],
+    answerable_question_types: Iterable[str],
+):
+    """SQL condition binding a Question to its newest immutable revision.
+
+    Practice used to join through ``Question.current_version_id``.  A stale
+    pointer then made the student endpoint serve an older snapshot even when a
+    newer ``question_versions.version`` already existed.  The version history is
+    monotonic per question, so student-facing candidate queries should resolve
+    the newest revision directly and only use the mutable row as a projection
+    consistency check.
+    """
+    ids = [int(sid) for sid in dict.fromkeys(subject_ids or []) if sid is not None]
+    types = [str(value) for value in dict.fromkeys(answerable_question_types or []) if value]
+    if not ids or not types:
+        return Question.id == -1
+
+    qv_rank = aliased(QuestionVersion)
+    latest_version_number = (
+        select(func.max(qv_rank.version))
+        .where(qv_rank.question_id == Question.id)
+        .correlate(Question)
+        .scalar_subquery()
+    )
+    return select(QuestionVersion.id).where(
+        QuestionVersion.question_id == Question.id,
+        QuestionVersion.version == latest_version_number,
+        QuestionVersion.subject_id == Question.subject_id,
+        QuestionVersion.subject_id.in_(ids),
+        QuestionVersion.question_type == Question.question_type,
+        QuestionVersion.question_type.in_(types),
+        QuestionVersion.is_active.is_(True),
+        Question.is_active.is_(True),
+        Question.review_status == "approved",
+    ).exists()
+
+
+async def load_latest_question_revision_ids(
+    db: AsyncSession,
+    question_ids: Iterable[int],
+) -> dict[int, int]:
+    """Return ``question_id -> newest QuestionVersion.id`` for a batch.
+
+    This deliberately does not trust ``questions.current_version_id``.  It is a
+    read-only resolver, so GET /practice/questions can issue the newest immutable
+    version without mutating data or relying on transaction commit side effects.
+    """
+    ids = list(dict.fromkeys(int(qid) for qid in question_ids if qid))
+    if not ids:
+        return {}
+
+    latest = (
+        select(
+            QuestionVersion.question_id.label("question_id"),
+            func.max(QuestionVersion.version).label("version"),
+        )
+        .where(QuestionVersion.question_id.in_(ids))
+        .group_by(QuestionVersion.question_id)
+        .subquery()
+    )
+    rows = await db.execute(
+        select(QuestionVersion.question_id, QuestionVersion.id)
+        .join(
+            latest,
+            and_(
+                latest.c.question_id == QuestionVersion.question_id,
+                latest.c.version == QuestionVersion.version,
+            ),
+        )
+    )
+    return {int(question_id): int(version_id) for question_id, version_id in rows.all()}
 
 
 async def require_current_question_revisions(

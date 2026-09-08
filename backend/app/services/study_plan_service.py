@@ -155,7 +155,7 @@ async def _load_exam_suggestion(db: AsyncSession, user_id: int) -> dict | None:
     estimated_minutes = _ceil_minutes(duration_sec) if duration_sec > 0 else max(15, _ceil_minutes(question_count * 90))
     return {
         "paper_id": int(paper["id"]),
-        "title": str(paper.get("title") or "408 选择题套卷"),
+        "title": str(paper.get("title") or "选择题套卷"),
         "year": paper.get("year"),
         "question_count": question_count,
         "estimated_minutes": estimated_minutes,
@@ -517,17 +517,17 @@ def _build_allocation_views(
                 else "掌握状态暂未识别出可训练弱项，这部分时间会动态转给新题或真题。"
             )
         elif category == "new":
-            title = str(task.get("title")) if task else "继续 408 新题推进"
+            title = str(task.get("title")) if task else "继续新题推进"
             reason = str(task.get("reason")) if task else "用新题持续扩展知识边界并刷新推荐状态。"
         else:
-            title = exam_suggestion["title"] if exam_suggestion else "暂无可用 408 选择题套卷"
+            title = exam_suggestion["title"] if exam_suggestion else "暂无可用选择题套卷"
             if exam_suggestion:
                 reason = (
                     f"建议套卷约 {exam_suggestion['question_count']} 题 / "
                     f"{exam_suggestion['estimated_minutes']} 分钟；交卷后成绩会继续进入学习诊断。"
                 )
             else:
-                reason = "当前没有已发布且可用的 408 选择题真题/模拟卷，这部分时间会自动转给其他任务。"
+                reason = "当前没有已发布且可用的选择题真题/模拟卷，这部分时间会自动转给其他任务。"
 
         if adjusted_minutes > 0 and available:
             reason = f"动态调整后今天建议投入约 {adjusted_minutes} 分钟。{reason}"

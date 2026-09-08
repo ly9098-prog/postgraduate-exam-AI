@@ -1,10 +1,10 @@
 <view class="fl-page">
-  <premium-nav title="408 速记卡" variant="light" bind:back="goBack" />
+  <premium-nav title="速记卡" variant="light" bind:back="goBack" />
 
   <view class="fl-content">
     <view class="fl-compact-head">
       <view class="fl-compact-copy">
-        <text class="fl-compact-title">408 速记卡</text>
+        <text class="fl-compact-title">速记卡</text>
         <text class="fl-compact-note">{{activeLibraryType === 'function_graph' ? '函数图像速查' : '公式 · 定义 · 易混点 · 陷阱'}}</text>
       </view>
       <view class="fl-head-actions">
@@ -79,11 +79,11 @@
       </view>
     </view>
 
-    <view class="fl-study-type-head">
+    <view class="fl-study-type-head" wx:if="{{activeSubject === 'exam408' && activeLibraryType !== 'function_graph'}}">
       <text class="fl-study-type-title">内容类型</text>
-      <text class="fl-study-type-note">按 408 记忆用途筛选</text>
+      <text class="fl-study-type-note">按记忆用途筛选</text>
     </view>
-    <scroll-view scroll-x enhanced show-scrollbar="{{false}}" class="fl-study-type-scroll">
+    <scroll-view wx:if="{{activeSubject === 'exam408' && activeLibraryType !== 'function_graph'}}" scroll-x enhanced show-scrollbar="{{false}}" class="fl-study-type-scroll">
       <view class="fl-study-type-row">
         <view
           class="fl-study-type-chip {{item.active ? 'active' : ''}}"
@@ -145,7 +145,7 @@
 
     <view class="fl-loading" wx:if="{{initialLoading}}">
       <view class="fl-loading-ring"></view>
-      <text class="fl-state-title">{{activeLibraryType === 'function_graph' ? '正在整理函数图像' : '正在整理 408 速记卡'}}</text>
+      <text class="fl-state-title">{{activeLibraryType === 'function_graph' ? '正在整理函数图像' : '正在整理速记卡'}}</text>
       <text class="fl-state-desc">请稍候</text>
     </view>
 
@@ -174,8 +174,8 @@
               user-select="{{true}}"
             />
             <text class="fl-card-title" wx:else>{{item.title}}</text>
-            <view class="fl-card-tags" wx:if="{{item.tags && item.tags.length || item.isFunctionGraph || item.studyCardTypeLabel}}">
-              <text class="fl-card-tag tag-study-type">{{item.studyCardTypeLabel}}</text>
+            <view class="fl-card-tags" wx:if="{{item.tags && item.tags.length || item.isFunctionGraph || (activeSubject === 'exam408' && item.studyCardTypeLabel)}}">
+              <text class="fl-card-tag tag-study-type" wx:if="{{activeSubject === 'exam408'}}">{{item.studyCardTypeLabel}}</text>
               <text
                 class="fl-card-tag tag-function-graph"
                 wx:if="{{item.isFunctionGraph}}"

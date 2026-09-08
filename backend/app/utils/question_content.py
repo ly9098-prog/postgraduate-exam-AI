@@ -2,12 +2,56 @@
 
 from __future__ import annotations
 
+import re
+
 
 def normalize_segment_type(segment: object) -> str:
     """Return a tolerant, canonical segment type for historical payloads."""
     if not isinstance(segment, dict):
         return ""
     return str(segment.get("type") or "").strip().lower()
+
+
+def reconcile_student_stem_fields(content: dict) -> dict:
+    """Return a copy whose ``text``/``stem`` fields cannot disagree visibly.
+
+    ``content.text`` is the canonical authoring/import field in the current
+    backend.  Older records may also contain ``content.stem`` and some historical
+    editors only updated ``text``.  Student renderers used to prefer ``stem``, so
+    those records displayed an older-looking question even though the newest
+    immutable revision was being returned.
+
+    When the two values only differ by whitespace/line breaks, keep the richer
+    formatting (usually ``stem`` for code).  When their actual text differs,
+    prefer ``text`` and mirror it to ``stem`` so all student render paths see the
+    same current wording.
+    """
+    out = dict(content)
+    text = out.get("text")
+    stem = out.get("stem")
+    text_value = text if isinstance(text, str) and text.strip() else None
+    stem_value = stem if isinstance(stem, str) and stem.strip() else None
+
+    if text_value is None and stem_value is None:
+        return out
+    if text_value is None:
+        canonical = stem_value
+    elif stem_value is None:
+        canonical = text_value
+    elif text_value == stem_value:
+        canonical = text_value
+    else:
+        compact_text = re.sub(r"\s+", "", text_value)
+        compact_stem = re.sub(r"\s+", "", stem_value)
+        if compact_text == compact_stem:
+            canonical = stem_value if stem_value.count("\n") > text_value.count("\n") else text_value
+        else:
+            canonical = text_value
+
+    if canonical is not None:
+        out["text"] = canonical
+        out["stem"] = canonical
+    return out
 
 
 def strip_student_segment_metadata(content: dict) -> dict:

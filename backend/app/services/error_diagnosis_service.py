@@ -293,7 +293,7 @@ async def record_error_event(
     user_answer: str | None,
     occurred_at=None,
     exam_answer_id: int | None = None,
-    queue_ai: bool = True,
+    queue_ai: bool = False,
 ) -> WrongQuestionErrorDiagnosis:
     if practice_record_id:
         existing = await db.scalar(

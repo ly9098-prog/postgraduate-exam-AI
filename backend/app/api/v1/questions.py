@@ -12,7 +12,10 @@ from app.schemas.question import (
 )
 from app.services import question_service as svc
 from app.services.knowledge_point_service import load_question_kps
-from app.utils.question_content import strip_student_segment_metadata
+from app.utils.question_content import (
+    reconcile_student_stem_fields,
+    strip_student_segment_metadata,
+)
 
 router = APIRouter(prefix="/api/v1/questions")
 
@@ -21,7 +24,7 @@ def _sanitize_content(content: dict | None) -> dict | None:
     """Strip admin-only fields from question content before returning to students."""
     if not isinstance(content, dict):
         return content
-    sanitized = dict(content)
+    sanitized = reconcile_student_stem_fields(content)
     sanitized.pop("source_snapshot_url", None)
     sanitized.pop("source_snapshot_full_page", None)
     sanitized.pop("visual_regions", None)

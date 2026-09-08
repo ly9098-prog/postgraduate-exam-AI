@@ -1,6 +1,10 @@
 const api = require('../../../utils/api')
 const view = require('../utils/exam-runner-view')
 
+function cleanUiLabel(value, fallback = '') {
+  return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
+}
+
 function pad2(n) { return String(Math.max(0, Number(n) || 0)).padStart(2, '0') }
 function formatClock(sec) {
   sec = Math.max(0, Math.floor(Number(sec) || 0))
@@ -11,6 +15,7 @@ function formatClock(sec) {
 }
 
 const EXAM_CACHE_SCHEMA_VERSION = 2
+const EXAM_CACHE_MIGRATION_MARK = 'exam_cache_migration_mark_v2'
 function cacheKey(attemptId) { return `exam_attempt_pending_v2:${attemptId}` }
 function legacyCacheKey(attemptId) { return `exam_attempt_pending_v1:${attemptId}` }
 
@@ -143,7 +148,7 @@ Page({
     })
     const index = this._findResumeIndex(questions)
     this.setData({
-      paperTitle: payload.paper_title || '408 选择题考试',
+      paperTitle: cleanUiLabel(payload.paper_title, '选择题考试'),
       questions,
       totalCount: questions.length,
       currentIndex: index,
@@ -372,16 +377,24 @@ Page({
   goNext(e) { this._moveTo(e.detail.index) },
   goQuestion(e) { this._moveTo(e.detail.index) },
 
-  requestExit() {
+  _showAppDialog(opts) {
+    const dialog = this.selectComponent('#appDialog')
+    if (!dialog || typeof dialog.show !== 'function') return Promise.resolve(false)
+    return dialog.show(opts || {})
+  },
+
+  async requestExit() {
     if (this.data.submitting) return
     this._settleCurrentTime().catch(() => {})
-    wx.showModal({
+    const confirmed = await this._showAppDialog({
+      scenario: 'all-done',
       title: '暂时退出考试？',
-      content: '已同步的答案会保留，下次可从当前试卷继续作答。未联网同步的答案也会暂存在本机。',
+      message: '已同步的答案会保留，下次可继续作答。',
       confirmText: '退出',
       cancelText: '继续作答',
-      success: (res) => { if (res.confirm) wx.navigateBack({ delta: 1 }) },
+      hideEyebrow: true,
     })
+    if (confirmed) wx.navigateBack({ delta: 1 })
   },
 
   async submitExam(options = {}) {
@@ -390,15 +403,15 @@ Page({
     if (!auto) {
       const unanswered = Math.max(0, this.data.totalCount - this.data.answeredCount)
       const marked = (this.data.questions || []).filter((q) => q._marked).length
-      const res = await new Promise((resolve) => wx.showModal({
+      const confirmed = await this._showAppDialog({
+        scenario: unanswered ? 'unanswered' : 'all-done',
         title: '确认交卷',
-        content: `${unanswered ? `还有 ${unanswered} 题未作答。` : '所有题目均已作答。'}${marked ? `\n另有 ${marked} 题标记为待检查。` : ''}\n\n交卷后答案不可修改。`,
+        message: `${unanswered ? `还有 ${unanswered} 题未作答。` : '所有题目均已作答。'}${marked ? `\n另有 ${marked} 题待检查。` : ''}\n交卷后不可修改。`,
         confirmText: '确认交卷',
         cancelText: '继续检查',
-        success: resolve,
-        fail: () => resolve({ confirm: false }),
-      }))
-      if (!res.confirm) return
+        hideEyebrow: true,
+      })
+      if (!confirmed) return
     }
 
     // The countdown can expire while the manual confirmation modal is open.

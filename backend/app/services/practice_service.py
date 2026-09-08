@@ -8,6 +8,7 @@ import time
 from datetime import date, datetime, timedelta
 from uuid import uuid4
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import Date as SQLDate
 from sqlalchemy import and_, case, cast, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
@@ -19,8 +20,10 @@ from app.core.subject_scope import (
     EXAM408_CORE_CODES,
     EXAM408_DISPLAY_ORDER,
     canonical_408_code,
-    select_408_subject_records,
-    selected_408_subject_ids,
+    is_study_subject_enabled,
+    select_study_subject_records,
+    selected_study_subject_ids,
+    study_subject_display_name,
 )
 from app.core.time_utils import (
     normalize_to_naive_utc,
@@ -65,6 +68,10 @@ from app.services.practice.smart_scoring import (
     _build_smart_recommendation_reason,
     _pick_graph_target_kps,
     calculate_smart_score,
+)
+from app.services.question_revision_service import (
+    latest_question_revision_scope_condition,
+    load_latest_question_revision_ids,
 )
 from app.utils.answer_normalizer import (
     extract_multi_blank_slot_ids,
@@ -127,13 +134,17 @@ def create_practice_batch_token(
     subject_id: int,
     mode: str,
     questions: list[Question],
+    revision_ids: dict[int, int],
     recommendation_request_id: str | None = None,
 ) -> tuple[str | None, dict[int, int], str | None]:
     """Create a signed batch bound to immutable QuestionVersion ids.
 
-    ``Question.current_version_id`` is the only revision source.  The token does
-    not embed answers or mutable fingerprints, and submission never re-resolves
-    against the current ``questions`` row.
+    ``revision_ids`` must come from the newest immutable revision resolver; do
+    not fall back to ``Question.current_version_id`` because that projection
+    pointer is precisely the field that can lag behind revision history.  The
+    token does not embed answers or mutable
+    fingerprints, and submission never re-resolves against the mutable
+    ``questions`` row.
     """
     if not questions:
         return None, {}, None
@@ -149,10 +160,10 @@ def create_practice_batch_token(
             # is intentionally rejected by the submit-side duplicate guard.  Fail
             # closed here so future callers can never create an un-submittable batch.
             raise PracticeBatchTokenError("练习批次包含重复题目")
-        version_id = getattr(question, "current_version_id", None)
+        version_id = revision_ids.get(question_id)
         if not version_id:
             raise RuntimeError(
-                f"题目 {question.id} 缺少 current_version_id，题目版本数据不完整"
+                f"题目 {question.id} 缺少可用 question_version，题目版本数据不完整"
             )
         revisions[question_id] = int(version_id)
 
@@ -460,15 +471,16 @@ async def get_practice_subject_tree(db: AsyncSession) -> list[dict]:
         select(Subject).order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
     )
     all_subjects = list(result.scalars().all())
-    subjects = select_408_subject_records(all_subjects)
+    subjects = select_study_subject_records(all_subjects)
 
     def _to_node(s: Subject) -> dict:
-        product_code = canonical_408_code(s.code)
+        product_code = canonical_408_code(s.code) or str(s.code or "").strip().lower()
+        display_name = study_subject_display_name(s.name)
         return {
             "subject_id": s.id,
             "subject_code": s.code,
-            "subject_name": s.name,
-            "display_name": s.name,
+            "subject_name": display_name,
+            "display_name": display_name,
             "product_code": product_code,
             "parent_id": s.parent_id,
             "level": s.level,
@@ -509,11 +521,11 @@ async def resolve_subject_id_to_code(db: AsyncSession, subject_id: int) -> tuple
 
     all_result = await db.execute(select(Subject))
     all_subjects = list(all_result.scalars().all())
-    allowed_ids = selected_408_subject_ids(all_subjects)
+    allowed_ids = selected_study_subject_ids(all_subjects)
     if subject_id not in allowed_ids:
         return None
     subj = next((item for item in all_subjects if item.id == subject_id), None)
-    if subj is None or not subj.is_active:
+    if subj is None or not is_study_subject_enabled(subj):
         return None
     return (subj.code, subj.name)
 
@@ -628,7 +640,7 @@ def _detect_408_subject_mismatch(
 
 
 def _practice_revision_scope_condition(subject_ids: list[int]):
-    """Require the mutable question and its current immutable revision to agree.
+    """Require the mutable question and its newest immutable revision to agree.
 
     Practice responses are serialized from ``QuestionVersion`` while candidate
     queries run against ``Question``.  If those two rows temporarily disagree
@@ -637,33 +649,17 @@ def _practice_revision_scope_condition(subject_ids: list[int]):
     still belongs to another 408 discipline.  Bind every practice candidate to
     a current revision in the same requested scope so such rows are never issued.
     """
-    ids = [int(sid) for sid in dict.fromkeys(subject_ids or []) if sid is not None]
-    if not ids:
-        # Keep the condition false without relying on dialect-specific IN ().
-        return Question.id == -1
-    return select(QuestionVersion.id).where(
-        QuestionVersion.id == Question.current_version_id,
-        QuestionVersion.question_id == Question.id,
-        QuestionVersion.subject_id == Question.subject_id,
-        QuestionVersion.subject_id.in_(ids),
-        # Keep the mutable projection and immutable issued revision aligned.
-        # More importantly, never issue a revision the current runner has no
-        # answer control for (fill_blank / subjective).
-        QuestionVersion.question_type == Question.question_type,
-        QuestionVersion.question_type.in_(PRACTICE_ANSWERABLE_QUESTION_TYPES),
-        Question.is_active.is_(True),
-        # Admin publishing treats review approval as a prerequisite for active
-        # questions.  Keep the practice path defensive against historical/imported
-        # rows that may have inconsistent is_active/review_status combinations.
-        Question.review_status == "approved",
-        QuestionVersion.is_active.is_(True),
-    ).exists()
+    return latest_question_revision_scope_condition(
+        subject_ids,
+        PRACTICE_ANSWERABLE_QUESTION_TYPES,
+    )
 
 
 async def filter_questions_to_revision_scope(
     db: AsyncSession,
     questions: list[Question],
     subject_ids: list[int],
+    revision_ids: dict[int, int] | None = None,
 ) -> list[Question]:
     """Final defense-in-depth check before a practice batch is signed.
 
@@ -675,10 +671,10 @@ async def filter_questions_to_revision_scope(
     if not questions:
         return []
     scope = {int(sid) for sid in subject_ids or []}
-    version_ids = {
-        int(q.current_version_id) for q in questions
-        if getattr(q, "current_version_id", None)
-    }
+    resolved_revision_ids = revision_ids or await load_latest_question_revision_ids(
+        db, [int(q.id) for q in questions]
+    )
+    version_ids = {int(version_id) for version_id in resolved_revision_ids.values() if version_id}
     if not scope or not version_ids:
         if questions:
             logger.error(
@@ -721,7 +717,7 @@ async def filter_questions_to_revision_scope(
     for question in questions:
         qid = int(question.id)
         q_subject_id = int(question.subject_id) if question.subject_id is not None else None
-        version_id = int(question.current_version_id) if question.current_version_id else None
+        version_id = resolved_revision_ids.get(qid)
         revision = revisions.get(version_id) if version_id else None
         revision_subject_id = (
             int(revision.subject_id)
@@ -759,7 +755,12 @@ async def filter_questions_to_revision_scope(
             rejected.append({
                 "question_id": qid,
                 "question_subject_id": q_subject_id,
-                "current_version_id": version_id,
+                "current_version_id": (
+                    int(question.current_version_id)
+                    if getattr(question, "current_version_id", None)
+                    else None
+                ),
+                "issued_latest_version_id": version_id,
                 "revision_subject_id": revision_subject_id,
                 "question_type": q_question_type,
                 "revision_question_type": revision_question_type,
@@ -829,16 +830,15 @@ async def resolve_practice_subject_scope(
     from app.models.admin import Subject
 
     subj = await db.get(Subject, subject_id)
-    if subj is None or not subj.is_active:
+    if subj is None or not is_study_subject_enabled(subj):
         return False, []
 
-    # 获取全部启用科目以构建树
+    # 获取当前学生端可用科目以构建树。额外开放的四个科目即使曾被旧迁移
+    # 标记为 inactive，也应在学生端继续可练习。
     all_result = await db.execute(
-        select(Subject)
-        .where(Subject.is_active)
-        .order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
+        select(Subject).order_by(Subject.level.asc(), Subject.sort_order.asc(), Subject.id.asc())
     )
-    all_subjects = list(all_result.scalars().all())
+    all_subjects = select_study_subject_records(all_result.scalars().all())
 
     # 检查是否有启用子科目
     children_by_parent: dict[int | None, list[Subject]] = {}
@@ -860,7 +860,7 @@ async def resolve_practice_subject_scope(
         seen.add(node.id)
         result.append(node)
         for child in children_by_parent.get(node.id, []):
-            if child.is_active:
+            if is_study_subject_enabled(child):
                 stack.append(child)
 
     # 按 sort_order, id 排序
@@ -3164,7 +3164,7 @@ async def batch_submit_answers(
                 source_context="practice",
                 user_answer=record.user_answer,
                 occurred_at=record.answered_at or now,
-                queue_ai=True,
+                queue_ai=False,
             )
             prewarm_wrong_questions.append(wrong)
             wrong_question_ids[int(q.id)] = int(wrong.id)
@@ -3202,12 +3202,15 @@ async def batch_submit_answers(
             "wrong_question_id": None,
         }
 
-    response_payload = {
+    response_payload = jsonable_encoder({
         "results": [response_by_question[qid] for qid in issued_order],
         "total_correct": total_correct,
         "total_wrong": total_wrong,
         "total_skipped": len(skipped_questions),
-    }
+    })
+    # submission_response is a SQL JSON column and is also the source used for
+    # idempotent replay.  Nested diagnostics may contain datetime values, so
+    # normalize the entire payload once before both persistence and response.
     session_obj.submission_response = response_payload
     await db.commit()
 

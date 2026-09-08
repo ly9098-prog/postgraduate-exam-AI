@@ -1,4 +1,5 @@
 <view class="page">
+  <app-dialog id="appDialog" />
   <scroll-view
     class="page-scroll"
     scroll-y="{{!reviewDialogVisible}}"
@@ -475,7 +476,7 @@
       </scroll-view>
 
       <view class="review-dialog-footer review-dialog-footer-ai" catchtouchmove="noop">
-        <view class="review-dialog-ai" bindtap="open408TeacherFromReview">问 408 AI 老师</view>
+        <view class="review-dialog-ai" bindtap="open408TeacherFromReview">问 AI 老师</view>
         <view
           class="review-dialog-confirm"
           hover-class="review-dialog-confirm-pressed"
@@ -487,12 +488,12 @@
   </view>
 </view>
 
-<!-- 普通练习复盘的 408 专项 AI 老师 -->
+<!-- 普通练习复盘的专项 AI 老师 -->
 <view class="teacher-modal-mask" wx:if="{{teacherSheetVisible}}" catchtouchmove="noop">
   <view class="teacher-modal-backdrop" bindtap="close408Teacher"></view>
   <view class="teacher-sheet" catchtap="stopPropagation">
     <view class="teacher-sheet-head">
-      <view><text class="teacher-kicker">408 AI TEACHER</text><text class="teacher-sheet-title">{{teacherResult ? teacherResult.title : '408 专项 AI 老师'}}</text></view>
+      <view><text class="teacher-kicker">AI TEACHER</text><text class="teacher-sheet-title">{{teacherResult ? teacherResult.title : '专项 AI 老师'}}</text></view>
       <text class="teacher-sheet-close" bindtap="close408Teacher">×</text>
     </view>
     <view wx:if="{{!teacherLoading && !teacherErrorText && !teacherResult}}" class="teacher-action-panel">
@@ -522,11 +523,13 @@
         <text class="teacher-practice-answer">答案：{{teacherResult.practiceQuestion.answer}}</text>
         <text wx:if="{{teacherResult.practiceQuestion.analysis}}" class="teacher-practice-analysis">{{teacherResult.practiceQuestion.analysis}}</text>
       </view>
-      <text class="teacher-footnote">{{teacherResult.fromFallback ? '当前使用题库解析兜底；AI 生成暂不可用。' : '内容由 408 专项 AI 老师生成，仅用于本题复盘。'}}</text>
+      <text class="teacher-footnote">{{teacherResult.fromFallback ? '当前使用题库解析兜底；AI 生成暂不可用。' : '内容由专项 AI 老师生成，仅用于本题复盘。'}}</text>
       <view class="teacher-feedback-row">
         <text class="teacher-feedback-label">这次讲解有帮助吗？</text>
-        <button class="teacher-feedback-btn {{teacherFeedbackSent === 'helpful' ? 'selected' : ''}}" data-type="helpful" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">有帮助</button>
-        <button class="teacher-feedback-btn {{teacherFeedbackSent === 'inaccurate' ? 'selected' : ''}}" data-type="inaccurate" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">不准确</button>
+        <view class="teacher-feedback-actions">
+          <button class="teacher-feedback-btn {{teacherFeedbackSent === 'helpful' ? 'selected' : ''}}" data-type="helpful" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">有帮助</button>
+          <button class="teacher-feedback-btn {{teacherFeedbackSent === 'inaccurate' ? 'selected' : ''}}" data-type="inaccurate" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">不准确</button>
+        </view>
       </view>
       <view class="teacher-scroll-space"></view>
     </scroll-view>

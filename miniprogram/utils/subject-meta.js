@@ -6,13 +6,13 @@
  */
 
 const SUBJECT_META = {
-  exam408: { name: '408', shortName: '408' },
+  exam408: { name: '计算机综合', shortName: '计算机' },
   data_structure: { name: '数据结构', shortName: '数据结构' },
   computer_organization: { name: '计算机组成原理', shortName: '计组' },
   operating_system: { name: '操作系统', shortName: '操作系统' },
   computer_network: { name: '计算机网络', shortName: '网络' },
 
-  // 非 408 科目仅保留展示定义；当前产品入口不会暴露这些科目。
+  // 其他考研科目展示定义。
   math: { name: '数学', shortName: '数学' },
   advanced_math: { name: '高等数学', shortName: '高数' },
   linear_algebra: { name: '线性代数', shortName: '线代' },

@@ -1,6 +1,7 @@
 <view class="plan-page">
+  <app-dialog id="appDialog" />
   <view class="hero">
-    <text class="hero-kicker">408 LONG-RANGE PLAN</text>
+    <text class="hero-kicker">LONG-RANGE PLAN</text>
     <text class="hero-title">把每天的学习，连成一条备考节奏</text>
     <text class="hero-subtitle">计划只负责组织复习、弱项、新题和选择题套卷；你的真实完成记录仍来自现有学习流程。</text>
   </view>
@@ -109,7 +110,7 @@
         </picker>
       </view>
 
-      <button class="save-button" loading="{{saving}}" disabled="{{saving}}" bindtap="savePlan">{{configured ? '保存并重新计算今天' : '创建 408 学习计划'}}</button>
+      <button class="save-button" loading="{{saving}}" disabled="{{saving}}" bindtap="savePlan">{{configured ? '保存并重新计算今天' : '创建学习计划'}}</button>
       <view wx:if="{{configured}}" class="pause-link" bindtap="deletePlan">暂停长期计划</view>
     </view>
 

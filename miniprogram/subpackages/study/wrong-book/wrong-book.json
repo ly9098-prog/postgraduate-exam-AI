@@ -5,7 +5,8 @@
   "usingComponents": {
     "loading-lottie": "/subpackages/study/components/loading-lottie/loading-lottie",
     "premium-nav": "/components/premium-nav/premium-nav",
-    "submit-confirm": "/subpackages/study/components/submit-confirm/submit-confirm"
+    "submit-confirm": "/subpackages/study/components/submit-confirm/submit-confirm",
+    "app-dialog": "/components/app-dialog/index"
   },
   "navigationStyle": "custom"
 }

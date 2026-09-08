@@ -35,7 +35,10 @@ from app.services import error_diagnosis_service
 from app.services import wrong_question_service as svc
 from app.services.knowledge_point_service import load_question_kps
 from app.services.pdf_text_normalizer import deduplicate_repeated_text
-from app.utils.question_content import strip_student_segment_metadata
+from app.utils.question_content import (
+    reconcile_student_stem_fields,
+    strip_student_segment_metadata,
+)
 
 # Regex: lines ending with a trailing operator (OCR-split code expressions)
 _CODE_OP_SPLIT_RE = re.compile(
@@ -124,9 +127,7 @@ def _sanitize_content(content: dict | str | None) -> dict | None:
         if field in sanitized:
             sanitized[field] = _sanitize_text_field(sanitized[field])
 
-    # Prefer stem over text when both exist — stem has better code formatting
-    if "text" in sanitized and "stem" in sanitized and sanitized.get("stem"):
-        sanitized["text"] = sanitized["stem"]
+    sanitized = reconcile_student_stem_fields(sanitized)
 
     # Strip admin-only fields
     sanitized.pop("source_snapshot_url", None)

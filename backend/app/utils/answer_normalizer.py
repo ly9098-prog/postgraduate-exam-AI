@@ -146,7 +146,7 @@ def extract_multi_blank_slot_ids(content: dict | None, options: object | None = 
             if group_like:
                 return [key for key in keys if key]
 
-    stem = content.get("stem") or content.get("text") or ""
+    stem = content.get("text") or content.get("stem") or ""
     return extract_blank_slots(str(stem))
 
 

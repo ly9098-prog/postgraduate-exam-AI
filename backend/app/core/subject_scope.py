@@ -145,3 +145,91 @@ def selected_408_subject_ids(records: Iterable[Any]) -> set[int]:
         for record in select_408_subject_records(records)
         if (rid := _record_id(record)) is not None
     }
+
+
+# Additional study subjects that should be available in the student-facing
+# selectors alongside the computer-science catalog.  Historical databases may
+# still use older canonical codes for these rows, so matching intentionally
+# accepts the known code variants and the stable Chinese display names.
+EXTRA_STUDY_SUBJECT_CODES: frozenset[str] = frozenset({
+    "advanced_math", "math2-calculus",
+    "linear_algebra", "math2-linalg",
+    "english",
+    "politics", "pol",
+})
+EXTRA_STUDY_PARENT_CODES: frozenset[str] = frozenset({"math", "math2"})
+EXTRA_STUDY_SUBJECT_NAMES: frozenset[str] = frozenset({
+    "高等数学", "高数", "线性代数", "线代", "英语", "政治",
+})
+
+
+def _raw_record_code(record: Any) -> str:
+    return str(_record_attr(record, "code", _record_attr(record, "subject_code", "")) or "").strip().lower()
+
+
+def _raw_record_name(record: Any) -> str:
+    return str(_record_attr(record, "name", _record_attr(record, "subject_name", _record_attr(record, "display_name", ""))) or "").strip()
+
+
+def is_extra_study_subject(record: Any) -> bool:
+    return _raw_record_code(record) in EXTRA_STUDY_SUBJECT_CODES or _raw_record_name(record) in EXTRA_STUDY_SUBJECT_NAMES
+
+
+def is_extra_study_parent(record: Any) -> bool:
+    return _raw_record_code(record) in EXTRA_STUDY_PARENT_CODES
+
+
+def is_study_subject_enabled(record: Any) -> bool:
+    """Return whether a subject is available to student-facing study flows.
+
+    The computer-science catalog still honors ``is_active``.  The four
+    explicitly re-enabled subjects are treated as available even on databases
+    where the previous product-scope migration marked them inactive.
+    """
+    if canonical_408_code(_raw_record_code(record)):
+        return _record_active(record)
+    return is_extra_study_subject(record) or is_extra_study_parent(record)
+
+
+def select_study_subject_records(records: Iterable[Any]) -> list[Any]:
+    """Select the computer-science tree plus 高数/线代/英语/政治.
+
+    Ancestors of the requested math leaves are retained so the UI can preserve
+    its existing tree grouping.  Extra subjects are intentionally selectable
+    even if an earlier migration marked them inactive.
+    """
+    items = list(records)
+    selected_ids = {
+        rid
+        for record in select_408_subject_records(items)
+        if (rid := _record_id(record)) is not None
+    }
+
+    by_id = {rid: record for record in items if (rid := _record_id(record)) is not None}
+    for record in items:
+        if not is_extra_study_subject(record):
+            continue
+        rid = _record_id(record)
+        if rid is None:
+            continue
+        selected_ids.add(rid)
+        parent_id = _record_parent_id(record)
+        while parent_id is not None and parent_id in by_id:
+            selected_ids.add(parent_id)
+            parent_id = _record_parent_id(by_id[parent_id])
+
+    return [record for record in items if _record_id(record) in selected_ids and is_study_subject_enabled(record)]
+
+
+def selected_study_subject_ids(records: Iterable[Any]) -> set[int]:
+    return {
+        rid
+        for record in select_study_subject_records(records)
+        if (rid := _record_id(record)) is not None
+    }
+
+
+def study_subject_display_name(value: str | None) -> str:
+    """Remove the old product number from subject labels shown in the mini app."""
+    text = str(value or "").replace("408", "").strip()
+    return text or "计算机综合"

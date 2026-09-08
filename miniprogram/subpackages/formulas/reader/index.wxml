@@ -1,5 +1,5 @@
 <view class="fr-page">
-  <premium-nav title="408 速记" variant="light" bind:back="goBack" />
+  <premium-nav title="速记" variant="light" bind:back="goBack" />
 
   <view class="fr-loading" wx:if="{{loading}}">
     <view class="fr-loading-mark">
@@ -50,7 +50,7 @@
       <view class="fr-transition-stage {{transitionClass}}">
         <view class="fr-reader-meta">
           <view class="fr-reader-copy">
-            <text class="fr-kicker">{{isRandom ? 'RANDOM REVIEW' : '408 MEMORY CARD'}}</text>
+            <text class="fr-kicker">{{isRandom ? 'RANDOM REVIEW' : 'MEMORY CARD'}}</text>
             <text class="fr-reader-mode">{{isRandom ? '随机背诵模式' : (currentCard.studyCardTypeLabel || '速记阅读')}}</text>
           </view>
           <view class="fr-index-pill" wx:if="{{isRandom || sequenceIds.length > 1}}">

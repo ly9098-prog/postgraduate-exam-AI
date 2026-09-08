@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.question import Question
 from app.services.admin_subject_service import resolve_subject_ids
+from app.utils.question_content import reconcile_student_stem_fields
 
 
 async def create(
@@ -22,6 +23,8 @@ async def create(
     source: str | None = None,
     year: int | None = None,
 ) -> Question:
+    if isinstance(content, dict):
+        content = reconcile_student_stem_fields(content)
     q = Question(
         subject_id=subject_id,
         question_type=question_type,

@@ -5,6 +5,7 @@
   "backgroundColorBottom": "#EFF1EC",
   "navigationStyle": "custom",
   "usingComponents": {
-    "premium-nav": "/components/premium-nav/premium-nav"
+    "premium-nav": "/components/premium-nav/premium-nav",
+    "app-dialog": "/components/app-dialog/index"
   }
 }

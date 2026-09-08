@@ -21,6 +21,10 @@ from app.schemas.question_publish import (
     PublishDetailItem,
     PublishResponse,
 )
+from app.utils.question_content import (
+    extract_image_urls_from_content,
+    reconcile_student_stem_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -397,8 +401,9 @@ async def publish_single_question(db: AsyncSession, qi: QuestionImport) -> dict:
             "render_mode": "segments",
             "segments": qi_content.get("segments"),
         }
+    if isinstance(q_fields.get("content"), dict):
+        q_fields["content"] = reconcile_student_stem_fields(q_fields["content"])
 
-    from app.utils.question_content import extract_image_urls_from_content
     image_urls = extract_image_urls_from_content(qi_content)
 
     # Preserve source snapshot metadata for admin audit/review

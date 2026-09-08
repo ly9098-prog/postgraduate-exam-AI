@@ -434,6 +434,33 @@ function _hasCodeSegments(segments) {
   })
 }
 
+function _segmentsHaveComparableStemPayload(segments) {
+  if (!Array.isArray(segments)) return false
+  return segments.some(function (segment) {
+    if (!segment || typeof segment !== 'object') return false
+    var type = String(segment.type || '').trim().toLowerCase()
+    if (type === 'text') return String(segment.text || '').trim().length > 0
+    if (type === 'code') return String(segment.code != null ? segment.code : (segment.text || '')).trim().length > 0
+    if (type === 'table' || type === 'table_markdown') return true
+    if (type === 'math_image') return String(segment.alt || '').trim().length > 0
+    return false
+  })
+}
+
+function _segmentsAgreeWithCanonicalStem(segments, cleanedStem, options, optionKeys) {
+  // Image-only segment payloads intentionally coexist with the canonical text,
+  // so they are not evidence of a stale stem snapshot.  When segments contain
+  // their own text/code/table/math representation, however, make sure it still
+  // describes the same stem before allowing SEGMENTS mode to override text.
+  if (!_segmentsHaveComparableStemPayload(segments)) return true
+  var segmentText = _repairFalseNumberMarkerBreaks(_segmentsToText(segments))
+  var cleanedSegmentText = _cleanStemText(segmentText, options, optionKeys)
+  var canonicalComparable = String(cleanedStem || '').replace(/\s+/g, '')
+  var segmentComparable = String(cleanedSegmentText || '').replace(/\s+/g, '')
+  if (!canonicalComparable || !segmentComparable) return canonicalComparable === segmentComparable
+  return canonicalComparable === segmentComparable
+}
+
 function _textToSegments(text) {
   if (!text) return []
   var lines = String(text).split('\n')
@@ -1042,10 +1069,12 @@ function buildRenderModel(q, options, cfg) {
   var content = q && q.content
   var optionKeys = options ? Object.keys(options) : []
 
-  // Extract raw stem text — prefer stem over text (stem has better code formatting)
+  // ``text`` is the current authoring field. Student APIs reconcile text/stem,
+  // but prefer text here as a compatibility guard for older backends where an
+  // edited text could coexist with a stale stem.
   var stemText = typeof content === 'string'
     ? content
-    : ((content && (content.stem || content.text)) || '')
+    : ((content && (content.text || content.stem)) || '')
   var sourceStemText = stemText || (content && _segmentsToText(content.segments)) || ''
   sourceStemText = _repairFalseNumberMarkerBreaks(sourceStemText)
   var cleanedStem = _cleanStemText(sourceStemText, options, optionKeys)
@@ -1053,8 +1082,12 @@ function buildRenderModel(q, options, cfg) {
 
   var mode, richTextNodes, html, segments, rawText, blocks
 
-  // Priority 1: SEGMENTS (math-question with pre-rendered formula images)
-  if (content && content.render_mode === 'segments' && (effectiveConfig.enableMathImage || tableStructure.hasTableSegments(content.segments) || _hasCodeSegments(content.segments))) {
+  // Priority 1: SEGMENTS (math-question with pre-rendered formula images).
+  // A historical edit can leave content.text on the newest wording while the
+  // structured segments still contain an older wording.  In that case segments
+  // are not authoritative: fall through and render the canonical text instead.
+  var segmentsAgreeWithStem = !content || _segmentsAgreeWithCanonicalStem(content.segments, cleanedStem, options, optionKeys)
+  if (content && content.render_mode === 'segments' && segmentsAgreeWithStem && (effectiveConfig.enableMathImage || tableStructure.hasTableSegments(content.segments) || _hasCodeSegments(content.segments))) {
     mode = RENDER_MODE.SEGMENTS
     // Use API segments if available (includes text, image, math_image, table_image, code_image)
     segments = (content.segments && content.segments.length > 0)

@@ -50,7 +50,7 @@ def get_actions() -> dict[str, Any]:
 
 def _stem_text(content: object) -> str:
     if isinstance(content, dict):
-        value = content.get("stem") or content.get("text") or ""
+        value = content.get("text") or content.get("stem") or ""
         if value:
             return str(value)
         segments = content.get("segments")
@@ -115,6 +115,73 @@ def _clean_points(value: object, *, max_items: int = 5, item_limit: int = 500) -
     return result
 
 
+def _analysis_text_points(value: object, *, max_items: int = 5, item_limit: int = 800) -> list[str]:
+    if isinstance(value, list):
+        result: list[str] = []
+        for raw in value:
+            if isinstance(raw, dict):
+                preferred = raw.get("text") or raw.get("content") or raw.get("point") or raw.get("description")
+                text = _clean_str(preferred, item_limit) if preferred else ""
+            else:
+                text = _clean_str(raw, item_limit)
+            if text:
+                result.append(text)
+            if len(result) >= max_items:
+                break
+        return result
+    if isinstance(value, dict):
+        preferred = (
+            value.get("text") or value.get("content") or value.get("summary")
+            or value.get("description") or value.get("reason")
+        )
+        if preferred:
+            return [_clean_str(preferred, item_limit)]
+        result: list[str] = []
+        for raw in value.values():
+            if isinstance(raw, (str, int, float, bool)):
+                text = _clean_str(raw, item_limit)
+                if text:
+                    result.append(text)
+            if len(result) >= max_items:
+                break
+        return result
+    text = _clean_str(value, item_limit)
+    return [text] if text else []
+
+
+def _structured_analysis_sections(value: object) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        parsed = value
+    else:
+        parsed = _parse_json_object(value)
+    if not parsed:
+        return []
+
+    groups = (
+        (("mistake_diagnosis", "mistakeDiagnosis", "error_analysis", "diagnosis", "错因诊断"), "错因诊断"),
+        (("knowledge_patch", "knowledgePatch", "knowledge_weakness", "knowledgeGap", "知识补漏", "补漏重点"), "知识补漏"),
+        (("review_task", "reviewTask", "review_plan", "suggestion", "复练任务", "复习建议"), "复练建议"),
+        (("analysis", "explanation", "solution", "answer_analysis", "题目解析", "解析"), "题目解析"),
+    )
+    sections: list[dict[str, Any]] = []
+    for keys, heading in groups:
+        raw_value = None
+        for key in keys:
+            if key in parsed and parsed.get(key) not in (None, ""):
+                raw_value = parsed.get(key)
+                break
+        points = _analysis_text_points(raw_value)
+        if points:
+            sections.append({"heading": heading, "points": points})
+
+    if not sections:
+        for key, raw_value in list(parsed.items())[:4]:
+            points = _analysis_text_points(raw_value)
+            if points:
+                sections.append({"heading": _clean_str(key, 120).replace("_", " "), "points": points})
+    return sections[:8]
+
+
 def _normalize_generated_question(value: object, action: str) -> dict[str, Any] | None:
     if action not in {"similar_question", "harder_question"}:
         return None
@@ -149,14 +216,43 @@ def _normalize_generated_question(value: object, action: str) -> dict[str, Any] 
 
 def _normalize_ai_payload(value: dict[str, Any], action: str) -> dict[str, Any]:
     sections: list[dict[str, Any]] = []
+    summary_sections = _structured_analysis_sections(value.get("summary"))
+    sections.extend(summary_sections)
+
     for raw in value.get("sections") or []:
         if not isinstance(raw, dict):
             continue
-        points = _clean_points(raw.get("points"))
         heading = _clean_str(raw.get("heading"), 120)
+        points: list[str] = []
+        for point in raw.get("points") or []:
+            nested = _structured_analysis_sections(point)
+            if nested:
+                sections.extend(nested)
+                continue
+            text = _clean_str(point, 500)
+            if text:
+                points.append(text)
+            if len(points) >= 5:
+                break
         if heading or points:
-            sections.append({"heading": heading, "points": points})
-        if len(sections) >= 4:
+            if points:
+                sections.append({"heading": heading, "points": points})
+        if len(sections) >= 8:
+            break
+
+    deduped_sections: list[dict[str, Any]] = []
+    seen: set[tuple[str, tuple[str, ...]]] = set()
+    for section in sections:
+        heading = _clean_str(section.get("heading"), 120)
+        points = _analysis_text_points(section.get("points"), max_items=5, item_limit=500)
+        if not points:
+            continue
+        key = (heading, tuple(points))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped_sections.append({"heading": heading, "points": points})
+        if len(deduped_sections) >= 8:
             break
 
     knowledge_points: list[dict[str, str]] = []
@@ -182,10 +278,15 @@ def _normalize_ai_payload(value: dict[str, Any], action: str) -> dict[str, Any]:
         "label": _clean_str(next_raw.get("label"), 128),
         "params": next_raw.get("params") if isinstance(next_raw.get("params"), dict) else {},
     }
+    summary = _clean_str(value.get("summary"), 1200)
+    if summary_sections:
+        summary = _clean_str(summary_sections[0].get("points", [""])[0], 1200)
+    elif _parse_json_object(summary):
+        summary = deduped_sections[0]["points"][0] if deduped_sections else ""
     return {
         "title": _clean_str(value.get("title"), 160),
-        "summary": _clean_str(value.get("summary"), 1200),
-        "sections": sections,
+        "summary": summary,
+        "sections": deduped_sections,
         "knowledge_points": knowledge_points,
         "practice_question": _normalize_generated_question(value.get("practice_question"), action),
         "next_action": next_action,
@@ -361,7 +462,7 @@ async def _resolve_revision_and_diagnosis(
         version_id = current_version_id
 
     if version_id is None:
-        raise AITeacher408AccessError("题目尚未冻结历史版本，暂不能用于 408 AI 复盘")
+        raise AITeacher408AccessError("题目尚未冻结历史版本，暂不能用于 AI 复盘")
 
     revision = await db.scalar(
         select(QuestionVersion).where(
@@ -373,7 +474,7 @@ async def _resolve_revision_and_diagnosis(
         raise AITeacher408AccessError("题目历史版本不存在")
     effective_subject_id = int(revision.subject_id or question.subject_id)
     if effective_subject_id not in allowed_subject_ids:
-        raise AITeacher408AccessError("题目历史版本不属于当前启用的 408 范围")
+        raise AITeacher408AccessError("题目历史版本不属于当前启用的计算机专业课范围")
     return question, revision, diagnosis
 
 
@@ -558,8 +659,12 @@ def _fallback_payload(
     summary = ""
     sections: list[dict[str, Any]] = []
     if revision.analysis:
-        summary = str(revision.analysis)[:1200]
-        sections = [{"heading": "题库解析", "points": [summary]}]
+        sections = _structured_analysis_sections(revision.analysis)
+        if sections:
+            summary = _clean_str(sections[0].get("points", [""])[0], 1200)
+        else:
+            summary = _clean_str(revision.analysis, 1200)
+            sections = [{"heading": "题库解析", "points": [summary]}] if summary else []
     else:
         summary = reason
     return {
@@ -587,7 +692,7 @@ async def run_teacher_action(
     user_answer: str | None = None,
 ) -> dict[str, Any]:
     if action not in ACTION_DEFINITIONS:
-        raise AITeacher408AccessError("不支持的 408 AI 固定动作")
+        raise AITeacher408AccessError("不支持的 AI 固定动作")
 
     exam_context = await _resolve_exam_context(
         db,
@@ -718,7 +823,7 @@ async def run_teacher_action(
             action=action,
             revision=revision,
             knowledge_context=knowledge_context,
-            reason="408 AI 老师暂不可用，可先查看题库解析。",
+            reason="AI 老师暂不可用，可先查看题库解析。",
         )
         return {**base, **fallback, "tokens_used": 0, "from_fallback": True}
 

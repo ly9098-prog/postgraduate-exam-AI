@@ -21,6 +21,7 @@ Component({
     cancelText: '取消',
     eyebrow: '',
     hideCancel: false,
+    hideEyebrow: false,
   },
   methods: {
     show(opts) {
@@ -33,7 +34,8 @@ Component({
         confirmText: opts.confirmText || '确定提交',
         cancelText: opts.cancelText || '取消',
         eyebrow: opts.eyebrow || '',
-        hideCancel: !!opts.hideCancel,
+        hideCancel: opts.showCancel === false || !!opts.hideCancel,
+        hideEyebrow: !!opts.hideEyebrow,
       })
       return new Promise(function (resolve) {
         this._confirmResolve = resolve

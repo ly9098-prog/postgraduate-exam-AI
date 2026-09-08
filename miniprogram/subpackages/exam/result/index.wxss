@@ -13,3 +13,9 @@ page{background:#F3F4F1;color:#14261F}.page{min-height:100vh}.state{margin:120rp
 .teacher-feedback-btn::after { border: 0; }
 .teacher-feedback-btn.selected { background: #151a12; color: #fff; }
 .teacher-action-panel{padding:8rpx 0 10rpx}.teacher-action-title{display:block;margin-bottom:14rpx;font-size:22rpx;font-weight:800;color:#445149}.teacher-action-choice{margin:12rpx 0 0!important;padding:0 20rpx!important;height:68rpx;line-height:68rpx;border-radius:18rpx;background:#F1F4EF;color:#214333;text-align:left;font-size:22rpx;font-weight:750}.teacher-action-choice::after{border:0}
+
+/* v5: keep AI result feedback readable and allow request-safe dismissal. */
+.teacher-feedback-row { display: block; }
+.teacher-feedback-label { display: block; width: 100%; margin-bottom: 14rpx; line-height: 1.4; }
+.teacher-feedback-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 14rpx; width: 100%; }
+.teacher-feedback-btn { width: 100%; min-width: 0; }

@@ -5,6 +5,10 @@ function minutes(sec) {
   return value > 0 ? Math.max(1, Math.round(value / 60)) : 0
 }
 
+function cleanUiLabel(value, fallback = '') {
+  return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
+}
+
 function typeLabel(type) {
   return type === 'past_exam_choice' ? '真题选择题' : '选择题模拟卷'
 }
@@ -34,6 +38,8 @@ Page({
       const rows = await api.get('/exams/papers')
       const papers = (Array.isArray(rows) ? rows : []).map((item) => ({
         ...item,
+        title: cleanUiLabel(item.title, '选择题套卷'),
+        source: cleanUiLabel(item.source, 'MemoGrad'),
         typeLabel: typeLabel(item.paper_type),
         durationMinutes: minutes(item.duration_sec),
         scoreText: Number(item.total_choice_score || 0).toFixed(0),
@@ -48,6 +54,12 @@ Page({
     }
   },
 
+  _showAppDialog(opts) {
+    const dialog = this.selectComponent('#appDialog')
+    if (!dialog || typeof dialog.show !== 'function') return Promise.resolve(false)
+    return dialog.show(opts || {})
+  },
+
   async openPaper(e) {
     const id = Number(e.currentTarget.dataset.id)
     const paper = this.data.papers.find((item) => Number(item.id) === id)
@@ -57,17 +69,15 @@ Page({
       return
     }
 
-    const detail = await new Promise((resolve) => {
-      wx.showModal({
-        title: paper.typeLabel,
-        content: `${paper.title}\n\n本功能仅覆盖 408 选择题部分，共 ${paper.question_count} 题、${paper.scoreText} 分。${paper.durationMinutes ? `限时 ${paper.durationMinutes} 分钟。` : ''}\n\n选择题得分不会被表述为完整 408 总成绩。`,
-        confirmText: '开始作答',
-        cancelText: '稍后再做',
-        success: resolve,
-        fail: () => resolve({ confirm: false }),
-      })
+    const confirmed = await this._showAppDialog({
+      scenario: 'all-done',
+      title: paper.typeLabel,
+      message: `${paper.title}\n共 ${paper.question_count} 题、${paper.scoreText} 分。${paper.durationMinutes ? `限时 ${paper.durationMinutes} 分钟。` : ''}`,
+      confirmText: '开始作答',
+      cancelText: '稍后再做',
+      hideEyebrow: true,
     })
-    if (!detail.confirm) return
+    if (!confirmed) return
 
     this.setData({ startingId: id })
     try {

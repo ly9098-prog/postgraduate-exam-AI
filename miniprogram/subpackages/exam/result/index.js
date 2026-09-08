@@ -12,7 +12,7 @@ function durationText(sec) {
 }
 function previewStem(q) {
   const content = q && q.content || {}
-  let text = content.stem || content.text || ''
+  let text = content.text || content.stem || ''
   if (!text && Array.isArray(content.segments)) text = stemRender.segmentsToText(content.segments)
   text = stemRender.toPlainInlineMathText(String(text || '')) || String(text || '').replace(/<[^>]+>/g, ' ')
   text = text.replace(/\s+/g, ' ').trim()
@@ -38,10 +38,17 @@ Page({
   },
 
   onLoad(options) {
+    this._teacherRequestSeq = 0
+    this._pageAlive = true
     const attemptId = Number(options && options.attempt_id)
     this.setData({ attemptId })
     if (!attemptId) this.setData({ loading: false, errorText: '缺少考试记录 ID' })
     else this.loadResult()
+  },
+
+  onUnload() {
+    this._pageAlive = false
+    this._teacherRequestSeq++
   },
 
   async loadResult() {
@@ -106,6 +113,8 @@ Page({
 
   async run408Teacher(target, action) {
     if (this.data.teacherLoading || !target) return
+    const requestSeq = ++this._teacherRequestSeq
+    const targetItemId = Number(target.item_id || 0)
     this.setData({
       teacherLoading: true,
       teacherResult: null,
@@ -125,10 +134,13 @@ Page({
       const diagnosisId = Number(diagnosis.id || 0)
       if (diagnosisId > 0) payload.diagnosis_id = diagnosisId
       const raw = await api.post('/ai/408-teacher', payload, { timeout: 55000 })
+      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive || !this.data.teacherSheetVisible) return
+      if (Number((this.data.teacherTarget || {}).item_id || 0) !== targetItemId) return
       const normalized = aiTeacher408.normalizeResult(raw)
       if (!normalized) throw new Error('AI 返回格式异常')
       this.setData({ teacherLoading: false, teacherResult: normalized })
     } catch (error) {
+      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive || !this.data.teacherSheetVisible) return
       this.setData({
         teacherLoading: false,
         teacherErrorText: aiTeacher408.errorMessage(error, api),
@@ -137,8 +149,8 @@ Page({
   },
 
   close408Teacher() {
-    if (this.data.teacherLoading) return
-    this.setData({ teacherSheetVisible: false, teacherResult: null, teacherErrorText: '', teacherTarget: null })
+    this._teacherRequestSeq++
+    this.setData({ teacherSheetVisible: false, teacherLoading: false, teacherResult: null, teacherErrorText: '', teacherTarget: null })
   },
 
   async feedback408Teacher(e) {
@@ -156,36 +168,38 @@ Page({
     }
   },
 
-  quickClassifyWrong(e) {
+  _showAppOptions(opts) {
+    const dialog = this.selectComponent('#appDialog')
+    if (!dialog || typeof dialog.showOptions !== 'function') return Promise.resolve(-1)
+    return dialog.showOptions(opts || {})
+  },
+
+  async quickClassifyWrong(e) {
     const wqId = Number(e.currentTarget.dataset.wqid || 0)
     if (!wqId) {
       wx.showToast({ title: '未答题不生成错题记录', icon: 'none' })
       return
     }
     const options = errorDiagnosis.QUICK_TYPES
-    wx.showActionSheet({
-      itemList: options.map(item => item.label),
-      success: async (res) => {
-        const picked = options[Number(res.tapIndex)]
-        if (!picked) return
-        try {
-          const target = (this.data.reviewRows || []).find(item => Number(item.wrong_question_id) === wqId)
-          const raw = await api.put(`/wrong-questions/${wqId}/diagnosis`, {
-            diagnosis_id: target && target.errorDiagnosis ? Number(target.errorDiagnosis.id || 0) || undefined : undefined,
-            primary_type: picked.type,
-            secondary_types: [],
-          })
-          const normalized = errorDiagnosis.normalizeDiagnosis(raw)
-          const reviewRows = (this.data.reviewRows || []).map(item => Number(item.wrong_question_id) === wqId
-            ? Object.assign({}, item, { errorDiagnosis: normalized, errorDiagnosisLabel: picked.label })
-            : item)
-          this.setData({ reviewRows })
-          wx.showToast({ title: '错因已记录', icon: 'success' })
-        } catch (err) {
-          wx.showToast({ title: api.getErrorMessage(err), icon: 'none' })
-        }
-      }
-    })
+    const index = await this._showAppOptions({ title: '快速标记错因', items: options.map(item => item.label) })
+    const picked = options[index]
+    if (!picked) return
+    try {
+      const target = (this.data.reviewRows || []).find(item => Number(item.wrong_question_id) === wqId)
+      const raw = await api.put(`/wrong-questions/${wqId}/diagnosis`, {
+        diagnosis_id: target && target.errorDiagnosis ? Number(target.errorDiagnosis.id || 0) || undefined : undefined,
+        primary_type: picked.type,
+        secondary_types: [],
+      })
+      const normalized = errorDiagnosis.normalizeDiagnosis(raw)
+      const reviewRows = (this.data.reviewRows || []).map(item => Number(item.wrong_question_id) === wqId
+        ? Object.assign({}, item, { errorDiagnosis: normalized, errorDiagnosisLabel: picked.label })
+        : item)
+      this.setData({ reviewRows })
+      wx.showToast({ title: '错因已记录', icon: 'success' })
+    } catch (err) {
+      wx.showToast({ title: api.getErrorMessage(err), icon: 'none' })
+    }
   },
 
   openWrongDetail(e) {

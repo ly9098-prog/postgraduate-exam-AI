@@ -41,9 +41,9 @@ Page({
     remainingCount: TODAY_GOAL_TOTAL,
     primaryTaskType: 'practice',
     primaryTaskKicker: 'TODAY PLAN · 优先级 01',
-    primaryTaskTitle: `完成今日 ${TODAY_GOAL_TOTAL} 道 408 练习`,
-    primaryTaskDesc: '先完成一组 408 练习建立节奏，之后再根据结果安排复习。',
-    primaryTaskAction: '开始 408 练习',
+    primaryTaskTitle: `完成今日 ${TODAY_GOAL_TOTAL} 道练习`,
+    primaryTaskDesc: '先完成一组练习建立节奏，之后再根据结果安排复习。',
+    primaryTaskAction: '开始练习',
     secondaryTaskAction: '查看复习计划',
     studyHubAvailable: false,
     studyHubFallback: false,
@@ -65,7 +65,7 @@ Page({
     dailyBoostText: '完成今日目标后，可点亮坚持徽章',
     badgeList: [],
     badgeTitle: '今日待点亮',
-    missionText: '完成一组 408 练习，点亮今日目标',
+    missionText: '完成一组练习，点亮今日目标',
   },
 
   /* 实例状态 — 不通过 setData 写入 */
@@ -580,11 +580,11 @@ Page({
         api.get('/stats/dashboard'),
         api.get('/stats/growth').catch(() => null),
         api.get('/study-hub/overview').catch((error) => {
-          console.warn('加载 408 智能学习中心失败，回退基础首页', error)
+          console.warn('加载智能学习中心失败，回退基础首页', error)
           return null
         }),
         api.get('/study-plan/overview').catch((error) => {
-          console.warn('加载 408 长期学习计划失败', error)
+          console.warn('加载长期学习计划失败', error)
           return null
         }),
       ])
@@ -693,7 +693,7 @@ Page({
       dailyBoostText: this.getDailyBoostText(0, todayGoalTotal, 0),
       badgeList: this.getBadgeList(0, 0, 0),
       badgeTitle: '今日待点亮',
-      missionText: '完成一组 408 练习，点亮今日目标',
+      missionText: '完成一组练习，点亮今日目标',
     }
   },
 
@@ -825,7 +825,7 @@ Page({
           priorityText: String(index + 2).padStart(2, '0'),
           eyebrow: meta.eyebrow,
           icon: meta.icon,
-          title: task.title || '继续 408 学习',
+          title: task.title || '继续学习',
           reason: task.reason || '',
           actionLabel: task.action_label || '开始',
           metaText: q > 0 ? `约 ${q} 题 · ${m || 1} 分钟` : '按当前学习状态推荐',
@@ -874,7 +874,7 @@ Page({
       remainingCount,
       primaryTaskType: task.task_type || 'practice',
       primaryTaskKicker: `SMART STUDY · 优先级 ${String(priority).padStart(2, '0')}`,
-      primaryTaskTitle: task.title || '继续 408 今日学习',
+      primaryTaskTitle: task.title || '继续今日学习',
       primaryTaskDesc: task.reason || '根据当前学习状态安排下一项任务。',
       primaryTaskAction: task.action_label || '开始学习',
       secondaryTaskAction: secondary ? (secondary.action_label || '下一项任务') : '查看学习报告',
@@ -890,8 +890,8 @@ Page({
         remainingCount,
         primaryTaskType: 'review',
         primaryTaskKicker: 'MEMORY FIRST · 优先级 01',
-        primaryTaskTitle: `先复习 ${dueReviewCount} 道 408 到期错题`,
-        primaryTaskDesc: '这些 408 错题已进入复习窗口。先巩固记忆，再开始新练习，效率会更高。',
+        primaryTaskTitle: `先复习 ${dueReviewCount} 道到期错题`,
+        primaryTaskDesc: '这些错题已进入复习窗口。先巩固记忆，再开始新练习，效率会更高。',
         primaryTaskAction: '开始今日复习',
         secondaryTaskAction: '先做新题',
       }
@@ -903,9 +903,9 @@ Page({
         remainingCount,
         primaryTaskType: 'practice',
         primaryTaskKicker: 'TODAY PLAN · 优先级 01',
-        primaryTaskTitle: `完成剩余 ${remainingCount} 道 408 练习`,
-        primaryTaskDesc: `今天已完成 ${todayGoalDone} 道 408 练习。保持稳定节奏即可，不必一次全部做完。`,
-        primaryTaskAction: '开始 408 练习',
+        primaryTaskTitle: `完成剩余 ${remainingCount} 道练习`,
+        primaryTaskDesc: `今天已完成 ${todayGoalDone} 道练习。保持稳定节奏即可，不必一次全部做完。`,
+        primaryTaskAction: '开始练习',
         secondaryTaskAction: '查看复习计划',
       }
     }
@@ -915,8 +915,8 @@ Page({
       remainingCount,
       primaryTaskType: 'complete',
       primaryTaskKicker: 'TODAY COMPLETE · 今日已完成',
-      primaryTaskTitle: '今天的 408 核心任务已完成',
-      primaryTaskDesc: '节奏已经守住。可以用少量 408 新题保持手感，也可以安心结束今天的学习。',
+      primaryTaskTitle: '今天的核心任务已完成',
+      primaryTaskDesc: '节奏已经守住。可以用少量新题保持手感，也可以安心结束今天的学习。',
       primaryTaskAction: '再练一组',
       secondaryTaskAction: '查看复习记录',
     }
@@ -1099,7 +1099,11 @@ Page({
       return
     }
     if (task.route !== 'practice') return
-    const params = task.route_params && typeof task.route_params === 'object' ? task.route_params : {}
+    const routeParams = task.route_params && typeof task.route_params === 'object' ? task.route_params : {}
+    // Home is the configuration entry: recommendation parameters may preselect
+    // subject/mode/count, but the user must still see and confirm the setup page.
+    // Other entry points can keep using autostart when they explicitly request it.
+    const params = { ...routeParams, autostart: 0, source: 'home' }
     const query = Object.keys(params)
       .filter(key => params[key] !== undefined && params[key] !== null && params[key] !== '')
       .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)

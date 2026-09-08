@@ -10,6 +10,168 @@ export type NormalizedQuestionOption = {
   imageUrl?: string;
 };
 
+/** Normalized option group used by multi_blank_choice questions. */
+export type NormalizedBlankOptionGroup = {
+  id: string;
+  options: NormalizedQuestionOption[];
+};
+
+const BLANK_OPTION_GROUP_FIELDS = ["blank_option_groups", "blank_groups"] as const;
+
+/** Return the raw grouped-option value from question content, including the legacy alias. */
+export function resolveBlankOptionGroupsValue(content: unknown): unknown {
+  if (!content || typeof content !== "object" || Array.isArray(content)) return null;
+  const record = content as Record<string, unknown>;
+  for (const field of BLANK_OPTION_GROUP_FIELDS) {
+    if (record[field] != null) return record[field];
+  }
+  return null;
+}
+
+/** Resolve multi-blank option groups from a question. */
+export function resolveQuestionBlankOptionGroups(
+  question: AdminQuestion | Record<string, unknown> | null | undefined,
+): NormalizedBlankOptionGroup[] {
+  if (!question) return [];
+
+  const direct = (question as Record<string, unknown>).blank_option_groups;
+  const directGroups = normalizeBlankOptionGroups(direct);
+  if (directGroups.length > 0) return directGroups;
+
+  return normalizeBlankOptionGroups(resolveBlankOptionGroupsValue(question.content));
+}
+
+/**
+ * Normalize content.blank_option_groups into a stable display/edit shape.
+ * Supports array and record-style option containers while preserving empty text.
+ */
+export function normalizeBlankOptionGroups(raw: unknown): NormalizedBlankOptionGroup[] {
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((group): NormalizedBlankOptionGroup | null => {
+      if (!group || typeof group !== "object" || Array.isArray(group)) return null;
+      const record = group as Record<string, unknown>;
+      const id = String(record.id ?? record.marker ?? "").trim();
+      if (!id) return null;
+
+      const options = normalizeBlankGroupOptions(record.options);
+      if (options.length === 0) return null;
+      return { id, options };
+    })
+    .filter((group): group is NormalizedBlankOptionGroup => group !== null);
+}
+
+function normalizeBlankGroupOptions(raw: unknown): NormalizedQuestionOption[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item, index): NormalizedQuestionOption | null => {
+        const fallbackKey = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[index] ?? String(index + 1);
+        if (item == null) return null;
+        if (typeof item !== "object" || Array.isArray(item)) {
+          return { key: fallbackKey, text: String(item) };
+        }
+
+        const record = item as Record<string, unknown>;
+        const rawKey = String(record.key ?? record.label ?? record.name ?? fallbackKey).trim();
+        const key = stripBlankGroupPrefix(rawKey).toUpperCase();
+        if (!key) return null;
+        const text = extractText(record) ?? "";
+        const imageUrl = extractImageUrl(record);
+        return { key, text, imageUrl };
+      })
+      .filter((option): option is NormalizedQuestionOption => option !== null);
+  }
+
+  if (raw && typeof raw === "object") {
+    return Object.entries(raw as Record<string, unknown>)
+      .map(([storageKey, value]): NormalizedQuestionOption | null => {
+        const key = stripBlankGroupPrefix(storageKey).toUpperCase();
+        if (!key) return null;
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          const record = value as Record<string, unknown>;
+          const childKey = stripBlankGroupPrefix(
+            String(record.key ?? record.label ?? record.name ?? key),
+          ).toUpperCase();
+          return {
+            key: childKey || key,
+            text: extractText(record) ?? "",
+            imageUrl: extractImageUrl(record),
+          };
+        }
+        return { key, text: value == null ? "" : String(value) };
+      })
+      .filter((option): option is NormalizedQuestionOption => option !== null);
+  }
+
+  return [];
+}
+
+function stripBlankGroupPrefix(key: string): string {
+  return key.trim().replace(/^[①-⑳]/, "").replace(/^\d+(?=[A-Za-z])/, "");
+}
+
+/** Update one grouped option's text without discarding unrelated fields such as segments/images. */
+export function updateBlankOptionGroupText(
+  rawGroups: unknown,
+  groupId: string,
+  optionKey: string,
+  text: string,
+): unknown {
+  if (!Array.isArray(rawGroups)) return rawGroups;
+  const wantedGroup = String(groupId).trim();
+  const wantedKey = stripBlankGroupPrefix(optionKey).toUpperCase();
+
+  return rawGroups.map((group) => {
+    if (!group || typeof group !== "object" || Array.isArray(group)) return group;
+    const groupRecord = group as Record<string, unknown>;
+    const currentId = String(groupRecord.id ?? groupRecord.marker ?? "").trim();
+    if (currentId !== wantedGroup) return group;
+
+    const rawOptions = groupRecord.options;
+    if (Array.isArray(rawOptions)) {
+      const nextOptions = rawOptions.map((option, index) => {
+        const fallbackKey = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[index] ?? String(index + 1);
+        if (!option || typeof option !== "object" || Array.isArray(option)) {
+          return fallbackKey.toUpperCase() === wantedKey ? text : option;
+        }
+        const optionRecord = option as Record<string, unknown>;
+        const key = stripBlankGroupPrefix(
+          String(optionRecord.key ?? optionRecord.label ?? optionRecord.name ?? fallbackKey),
+        ).toUpperCase();
+        return key === wantedKey ? { ...optionRecord, text } : option;
+      });
+      return { ...groupRecord, options: nextOptions };
+    }
+
+    if (rawOptions && typeof rawOptions === "object") {
+      const optionsRecord = rawOptions as Record<string, unknown>;
+      const storageKey = Object.keys(optionsRecord).find(
+        (candidate) => stripBlankGroupPrefix(candidate).toUpperCase() === wantedKey,
+      );
+      if (!storageKey) return group;
+      const previous = optionsRecord[storageKey];
+      const nextValue =
+        previous && typeof previous === "object" && !Array.isArray(previous)
+          ? { ...(previous as Record<string, unknown>), text }
+          : text;
+      return {
+        ...groupRecord,
+        options: { ...optionsRecord, [storageKey]: nextValue },
+      };
+    }
+
+    return group;
+  });
+}
+
+/** True when every blank uses the same keys/text/images. */
+export function haveIdenticalBlankOptionSets(groups: NormalizedBlankOptionGroup[]): boolean {
+  if (groups.length < 2) return false;
+  const first = JSON.stringify(groups[0].options);
+  return groups.slice(1).every((group) => JSON.stringify(group.options) === first);
+}
+
 const OPTION_KEYS = new Set(["key", "label", "name"]);
 const OPTION_TEXT_KEYS = new Set([
   "text",

@@ -21,11 +21,13 @@ from app.features.question_type import (
     QT_SINGLE_CHOICE,
     QT_TRUE_FALSE,
 )
-from app.models.admin import QuestionVersion
 from app.models.practice_record import PracticeRecord
 from app.models.practice_session import PracticeSession
 from app.models.question import Question
 from app.services.knowledge_point_service import kp_exact_conditions
+from app.services.question_revision_service import (
+    latest_question_revision_scope_condition,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,20 +82,15 @@ async def get_sequential_practice_questions(
     if len(subject_ids) != 1 or subject_ids[0] != subject_id:
         raise ValueError("顺序练习仅支持单一具体科目")
 
-    current_revision_matches_subject = select(QuestionVersion.id).where(
-        QuestionVersion.id == Question.current_version_id,
-        QuestionVersion.question_id == Question.id,
-        QuestionVersion.subject_id == Question.subject_id,
-        QuestionVersion.subject_id == subject_id,
-        QuestionVersion.question_type == Question.question_type,
-        QuestionVersion.question_type.in_(SEQUENTIAL_ANSWERABLE_QUESTION_TYPES),
-        QuestionVersion.is_active.is_(True),
-    ).exists()
+    latest_revision_matches_subject = latest_question_revision_scope_condition(
+        [subject_id],
+        SEQUENTIAL_ANSWERABLE_QUESTION_TYPES,
+    )
     conditions = [
         Question.is_active,
         Question.review_status == "approved",
         Question.subject_id == subject_id,
-        current_revision_matches_subject,
+        latest_revision_matches_subject,
     ]
     if knowledge_points:
         conditions.extend(kp_exact_conditions(knowledge_points))

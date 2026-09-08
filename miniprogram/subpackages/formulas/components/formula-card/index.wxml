@@ -1,6 +1,6 @@
 <view class="formula-card-wrap template-{{card.template_type || 'standard'}} study-{{card.study_card_type || 'formula'}}">
   <view class="fc-header">
-    <text class="fc-kicker">408 MEMORY NOTE · {{card.studyCardTypeLabel || '速记'}}</text>
+    <text class="fc-kicker">MEMORY NOTE · {{card.studyCardTypeLabel || '速记'}}</text>
     <rich-text
       class="fc-title fc-title-rich"
       nodes="{{content.titleNodes}}"

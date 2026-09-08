@@ -1,13 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { BookOpenCheck, Plus, RefreshCw } from "lucide-react";
+import { Archive, ChevronRight, ClipboardCheck, History, Plus, RefreshCw } from "lucide-react";
+
+import {
+  EmptyState,
+  FieldLabel,
+  ManagementNotice,
+  ManagementPage,
+  ManagementPageHeader,
+  ManagementPanel,
+  MetricCard,
+  MetricStrip,
+  StatusBadge,
+} from "@/components/admin/management-ui";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { CustomSelect } from "@/components/ui/custom-select";
+import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/api/client";
 import type {
   AdminExamPaperDetail,
@@ -22,10 +33,15 @@ const typeOptions = [
   { label: "模拟卷 · 选择题", value: "mock_choice" },
 ];
 
-function statusLabel(status: string) {
-  if (status === "published") return "已发布";
-  if (status === "archived") return "已归档";
-  return "草稿";
+function statusMeta(status: AdminExamPaperListItem["status"]) {
+  if (status === "published") return { label: "已发布", tone: "success" as const };
+  if (status === "archived") return { label: "已归档", tone: "neutral" as const };
+  return { label: "草稿", tone: "warning" as const };
+}
+
+function paperKindLabel(paper: AdminExamPaperListItem) {
+  if (paper.paper_type === "past_exam_choice") return `${paper.year ?? "年份未设置"} 真题`;
+  return paper.year ? `${paper.year} 模拟卷` : "模拟卷";
 }
 
 export default function ExamPapersPage() {
@@ -60,81 +76,150 @@ export default function ExamPapersPage() {
     },
   });
 
-  const papers = query.data || [];
+  const papers = query.data ?? [];
+  const summary = useMemo(() => ({
+    total: papers.length,
+    draft: papers.filter((paper) => paper.status === "draft").length,
+    published: papers.filter((paper) => paper.status === "published").length,
+    attempts: papers.reduce((total, paper) => total + paper.attempt_count, 0),
+  }), [papers]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-sm font-semibold text-[var(--color-primary)]">408-EXAM · CHOICE ONLY</p>
-          <h1 className="font-display text-3xl font-bold text-[var(--ink)]">408 选择题试卷</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-text-secondary)]">
-            真题与模拟卷只管理 single_choice。已发布试卷固定题目版本，历史成绩不会随题库后续编辑改变。
-          </p>
-        </div>
-        <Button variant="secondary" onClick={() => query.refetch()} disabled={query.isFetching}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`} />刷新
-        </Button>
-      </div>
+    <ManagementPage>
+      <ManagementPageHeader
+        icon={<ClipboardCheck className="h-5 w-5" />}
+        title="试卷管理"
+        description="集中维护历年真题与模拟卷的题序、分值和发布状态。已发布试卷固定题目版本，题库后续编辑不会影响历史作答。"
+        meta={
+          <>
+            <StatusBadge tone="accent">仅支持单选题</StatusBadge>
+            <span>发布后冻结题序与题目版本</span>
+          </>
+        }
+        actions={
+          <Button variant="secondary" onClick={() => query.refetch()} disabled={query.isFetching}>
+            <RefreshCw className={`h-4 w-4 ${query.isFetching ? "animate-spin" : ""}`} />
+            刷新
+          </Button>
+        }
+      />
+
+      <MetricStrip className="sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard icon={<ClipboardCheck className="h-4 w-4" />} label="全部试卷" value={summary.total} hint="包含草稿、已发布与已归档" />
+        <MetricCard icon={<Plus className="h-4 w-4" />} label="待整理草稿" value={summary.draft} hint="仍可调整题目和基础信息" tone={summary.draft > 0 ? "warning" : "default"} />
+        <MetricCard icon={<Archive className="h-4 w-4" />} label="已发布" value={summary.published} hint="题目版本已冻结" tone="success" />
+        <MetricCard icon={<History className="h-4 w-4" />} label="历史作答" value={summary.attempts} hint="所有试卷累计作答次数" tone="accent" />
+      </MetricStrip>
 
       {canWrite ? (
-        <Card>
-          <CardHeader>
-            <h2 className="font-display text-xl font-bold text-[var(--ink)]">新建选择题卷</h2>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-5">
-            <div className="md:col-span-2">
-              <label className="mb-2 block text-xs font-semibold text-[var(--color-text-secondary)]">试卷名称</label>
-              <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：2025 年 408 真题 · 选择题" />
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-semibold text-[var(--color-text-secondary)]">类型</label>
-              <CustomSelect value={paperType} options={typeOptions} onChange={(value) => setPaperType(value as AdminExamPaperType)} />
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-semibold text-[var(--color-text-secondary)]">年份</label>
+        <ManagementPanel
+          variant="quiet"
+          title="新建试卷"
+          description="先建立草稿，再进入组卷页补充题目、分值和来源信息。"
+          icon={<Plus className="h-4 w-4" />}
+        >
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(260px,2fr)_minmax(180px,1fr)_140px_160px_auto] xl:items-end">
+            <label>
+              <FieldLabel>试卷名称</FieldLabel>
+              <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：2025 年真题选择题" />
+            </label>
+            <label>
+              <FieldLabel>类型</FieldLabel>
+              <CustomSelect value={paperType} options={typeOptions} onChange={(value) => setPaperType(value as AdminExamPaperType)} clearable={false} />
+            </label>
+            <label>
+              <FieldLabel>年份</FieldLabel>
               <Input value={year} onChange={(event) => setYear(event.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="2025" />
-            </div>
-            <div>
-              <label className="mb-2 block text-xs font-semibold text-[var(--color-text-secondary)]">建议时长（分钟）</label>
+            </label>
+            <label>
+              <FieldLabel>建议时长（分钟）</FieldLabel>
               <Input value={durationMin} onChange={(event) => setDurationMin(event.target.value.replace(/\D/g, ""))} placeholder="75" />
-            </div>
-            <div className="md:col-span-5 flex justify-end">
-              <Button
-                onClick={() => createMutation.mutate()}
-                disabled={!title.trim() || createMutation.isPending || (paperType === "past_exam_choice" && year.length !== 4)}
-              >
-                <Plus className="mr-2 h-4 w-4" />创建并组卷
-              </Button>
-            </div>
-            {createMutation.isError ? <p className="md:col-span-5 text-sm text-red-600">创建失败，请检查名称、年份和时长。</p> : null}
-          </CardContent>
-        </Card>
+            </label>
+            <Button
+              className="w-full xl:w-auto"
+              onClick={() => createMutation.mutate()}
+              disabled={!title.trim() || createMutation.isPending || (paperType === "past_exam_choice" && year.length !== 4)}
+            >
+              <Plus className="h-4 w-4" />
+              创建草稿
+            </Button>
+          </div>
+          {createMutation.isError ? <ManagementNotice className="mt-3" tone="danger">创建失败，请检查名称、年份和时长后重试。</ManagementNotice> : null}
+        </ManagementPanel>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {papers.map((paper) => (
-          <Card key={paper.id} className="cursor-pointer transition hover:-translate-y-0.5" onClick={() => router.push(`/exams/${paper.id}`)}>
-            <CardContent className="flex gap-4">
-              <div className="rounded-2xl bg-blue-50 p-3 text-blue-700"><BookOpenCheck className="h-6 w-6" /></div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="truncate font-display text-lg font-bold text-[var(--ink)]">{paper.title}</h2>
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">{statusLabel(paper.status)}</span>
+      <ManagementPanel
+        variant="focus"
+        title="试卷列表"
+        description={query.isLoading ? "正在读取试卷数据" : `共 ${papers.length} 份试卷，点击任意一行进入组卷详情。`}
+        contentClassName="p-0"
+      >
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[920px] text-sm">
+            <thead className="bg-[#f4f7f9] text-left text-xs font-medium text-[var(--color-text-secondary)]">
+              <tr>
+                <th className="px-5 py-3">试卷</th>
+                <th className="px-4 py-3">类型</th>
+                <th className="px-4 py-3 text-right">题目 / 分值</th>
+                <th className="px-4 py-3 text-right">建议时长</th>
+                <th className="px-4 py-3 text-right">历史作答</th>
+                <th className="px-4 py-3">状态</th>
+                <th className="w-12 px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {papers.map((paper) => {
+                const status = statusMeta(paper.status);
+                return (
+                  <tr
+                    key={paper.id}
+                    tabIndex={0}
+                    role="button"
+                    onClick={() => router.push(`/exams/${paper.id}`)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") router.push(`/exams/${paper.id}`);
+                    }}
+                    className="border-t border-[var(--color-border-light)] transition-colors hover:bg-[rgba(74,111,138,0.035)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]"
+                  >
+                    <td className="px-5 py-4">
+                      <p className="max-w-[460px] truncate font-semibold text-[var(--ink)]">{paper.title}</p>
+                      <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">版本 v{paper.version}{paper.source ? ` · ${paper.source}` : ""}</p>
+                    </td>
+                    <td className="px-4 py-4 text-[var(--color-text-secondary)]">{paperKindLabel(paper)}</td>
+                    <td className="px-4 py-4 text-right tabular-nums"><span className="font-semibold text-[var(--ink)]">{paper.question_count}</span><span className="text-[var(--color-text-tertiary)]"> / {paper.total_choice_score} 分</span></td>
+                    <td className="px-4 py-4 text-right tabular-nums text-[var(--color-text-secondary)]">{paper.duration_sec ? `${Math.round(paper.duration_sec / 60)} 分钟` : "不限时"}</td>
+                    <td className="px-4 py-4 text-right tabular-nums text-[var(--color-text-secondary)]">{paper.attempt_count}</td>
+                    <td className="px-4 py-4"><StatusBadge tone={status.tone}>{status.label}</StatusBadge></td>
+                    <td className="px-4 py-4 text-[var(--color-text-tertiary)]"><ChevronRight className="h-4 w-4" /></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="divide-y divide-[var(--color-border-light)] md:hidden">
+          {papers.map((paper) => {
+            const status = statusMeta(paper.status);
+            return (
+              <button key={paper.id} className="flex w-full items-start gap-3 px-4 py-4 text-left hover:bg-[rgba(74,111,138,0.035)]" onClick={() => router.push(`/exams/${paper.id}`)}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-semibold text-[var(--ink)]">{paper.title}</p>
+                    <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--color-text-secondary)]">{paperKindLabel(paper)} · {paper.question_count} 题 · {paper.total_choice_score} 分</p>
+                  <p className="mt-2 text-[11px] text-[var(--color-text-tertiary)]">v{paper.version} · 历史作答 {paper.attempt_count} 次</p>
                 </div>
-                <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-                  {paper.paper_type === "past_exam_choice" ? `${paper.year || "—"} 真题` : "模拟卷"} · {paper.question_count} 题 · 选择题总分 {paper.total_choice_score} · {paper.duration_sec ? `${Math.round(paper.duration_sec / 60)} 分钟` : "不限时"}
-                </p>
-                <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">历史考试记录 {paper.attempt_count} 次 · 试卷版本 v{paper.version}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-[var(--color-text-tertiary)]" />
+              </button>
+            );
+          })}
+        </div>
 
-      {!query.isLoading && papers.length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-sm text-[var(--color-text-secondary)]">还没有选择题试卷，先创建一份草稿。</CardContent></Card>
-      ) : null}
-    </div>
+        {!query.isLoading && papers.length === 0 ? <EmptyState>还没有试卷。创建一份草稿后即可开始组卷。</EmptyState> : null}
+        {query.isLoading ? <EmptyState>正在加载试卷列表...</EmptyState> : null}
+      </ManagementPanel>
+    </ManagementPage>
   );
 }

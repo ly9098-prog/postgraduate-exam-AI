@@ -1,4 +1,5 @@
 <view class="page">
+  <app-dialog id="appDialog" />
   <premium-nav title="选择题考试结果" variant="light" bind:back="goBack" />
   <view class="state" wx:if="{{loading}}">正在生成选择题复盘…</view>
   <view class="state error" wx:elif="{{errorText}}" bindtap="loadResult">{{errorText}} · 点击重试</view>
@@ -8,7 +9,7 @@
       <text class="kicker">CHOICE SECTION SCORE</text>
       <view class="score-line"><text class="score-main">{{result.scoreText}}</text><text class="score-total">/ {{result.totalScoreText}}</text></view>
       <text class="score-label">选择题部分得分</text>
-      <text class="score-note">该成绩仅统计本套选择题，不代表完整 408 总成绩。</text>
+      <text class="score-note">该成绩仅统计本套选择题，仅代表本套选择题部分得分。</text>
       <view class="hero-metrics">
         <view><text class="metric-value">{{result.correct_count}}</text><text class="metric-label">答对</text></view>
         <view><text class="metric-value">{{result.wrong_count}}</text><text class="metric-label">答错</text></view>
@@ -50,7 +51,7 @@
         </view>
         <text class="kp" wx:if="{{item.knowledgeText}}">{{item.knowledgeText}}</text>
         <text class="analysis" wx:if="{{item.analysisPreview}}">{{item.analysisPreview}}</text>
-        <button class="exam-teacher-btn" data-itemid="{{item.item_id}}" catchtap="open408Teacher">问 408 AI 老师</button>
+        <button class="exam-teacher-btn" data-itemid="{{item.item_id}}" catchtap="open408Teacher">问 AI 老师</button>
       </view>
       <button class="wrong-btn" wx:if="{{reviewRows.length}}" bindtap="goWrongBook">进入错题本继续复习</button>
     </view>
@@ -63,12 +64,12 @@
   <view class="safe-bottom"></view>
 </view>
 
-<!-- 交卷后 408 专项 AI 老师 -->
+<!-- 交卷后专项 AI 老师 -->
 <view class="teacher-modal-mask" wx:if="{{teacherSheetVisible}}" catchtouchmove="noop">
   <view class="teacher-modal-backdrop" bindtap="close408Teacher"></view>
   <view class="teacher-sheet" catchtap="noop">
     <view class="teacher-sheet-head">
-      <view><text class="teacher-kicker">408 AI TEACHER</text><text class="teacher-sheet-title">{{teacherResult ? teacherResult.title : '408 专项 AI 老师'}}</text></view>
+      <view><text class="teacher-kicker">AI TEACHER</text><text class="teacher-sheet-title">{{teacherResult ? teacherResult.title : '专项 AI 老师'}}</text></view>
       <text class="teacher-sheet-close" bindtap="close408Teacher">×</text>
     </view>
     <view wx:if="{{!teacherLoading && !teacherErrorText && !teacherResult}}" class="teacher-action-panel">
@@ -101,8 +102,10 @@
       <text class="teacher-footnote">{{teacherResult.fromFallback ? '当前使用题库解析兜底；AI 生成暂不可用。' : '考试已结束，当前 AI 讲解使用本次试卷固定题目版本。'}}</text>
       <view class="teacher-feedback-row">
         <text class="teacher-feedback-label">这次讲解有帮助吗？</text>
-        <button class="teacher-feedback-btn {{teacherFeedbackSent === 'helpful' ? 'selected' : ''}}" data-type="helpful" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">有帮助</button>
-        <button class="teacher-feedback-btn {{teacherFeedbackSent === 'inaccurate' ? 'selected' : ''}}" data-type="inaccurate" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">不准确</button>
+        <view class="teacher-feedback-actions">
+          <button class="teacher-feedback-btn {{teacherFeedbackSent === 'helpful' ? 'selected' : ''}}" data-type="helpful" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">有帮助</button>
+          <button class="teacher-feedback-btn {{teacherFeedbackSent === 'inaccurate' ? 'selected' : ''}}" data-type="inaccurate" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">不准确</button>
+        </view>
       </view>
       <view class="teacher-scroll-space"></view>
     </scroll-view>

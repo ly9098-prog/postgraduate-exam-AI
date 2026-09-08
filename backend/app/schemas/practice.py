@@ -12,6 +12,8 @@ PracticeMode = Literal["random", "smart", "similar", "sequential"]
 class PracticeQuestion(BaseModel):
     """刷题用题目（不含答案）"""
     id: int
+    question_version_id: int
+    question_version: int
     subject_id: int
     subject_code: str = ""
     subject_name: str = ""

@@ -44,7 +44,7 @@
         <view class="hero-head">
           <text class="hero-eyebrow">PRACTICE 01</text>
           <view class="hero-subject-action" hover-class="soft-pressed" bindtap="openSubjectSheet">
-            <text class="hero-subject">{{selectedSubjectName || '选择 408 科目'}}</text>
+            <text class="hero-subject">{{selectedSubjectName || '选择科目'}}</text>
             <text class="hero-subject-arrow">›</text>
           </view>
         </view>
@@ -78,7 +78,7 @@
           hover-class="{{!selectedSubjectId ? 'none' : 'hero-start-pressed'}}"
           bindtap="startPractice"
         >
-          <text>{{selectedSubjectId ? '开始本组练习' : '请先选择 408 科目'}}</text>
+          <text>{{selectedSubjectId ? '开始本组练习' : '请先选择科目'}}</text>
           <view class="hero-start-arrow"><text>›</text></view>
         </button>
 
@@ -158,7 +158,7 @@
             <text class="surface-kicker">RECENT SUBJECTS</text>
           </view>
           <view class="surface-action" hover-class="soft-pressed" bindtap="openSubjectSheet">
-            <text>408 科目</text><text>›</text>
+            <text>科目</text><text>›</text>
           </view>
         </view>
         <scroll-view scroll-x enhanced enable-flex bounces="{{false}}" show-scrollbar="{{false}}" class="recent-scroll">
@@ -214,7 +214,7 @@
         <view class="sheet-handle"></view>
         <view class="sheet-header">
           <view>
-            <text class="sheet-title">选择 408 科目</text>
+            <text class="sheet-title">选择科目</text>
             <text class="sheet-kicker">SELECT SUBJECT</text>
           </view>
           <view class="sheet-close" hover-class="soft-pressed" catchtap="closeSubjectSheet"><text class="line-icon icon-close"></text></view>

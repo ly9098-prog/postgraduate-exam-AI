@@ -55,6 +55,7 @@ Component({
     showMarkButton: { type: Boolean, value: false },
     markedForReview: { type: Boolean, value: false },
     showSubmitButton: { type: Boolean, value: true },
+    showNavigation: { type: Boolean, value: true },
     showBackButton: { type: Boolean, value: false },
     customNavigation: { type: Boolean, value: false },
 
@@ -160,7 +161,7 @@ Component({
         var fallbackText = ''
         if (unknownMode) {
           // Fall back to plain text
-          fallbackText = q.content && (q.content.stem || q.content.text) || ''
+          fallbackText = q.content && (q.content.text || q.content.stem) || ''
           if (!fallbackText) fallbackText = '该题内容暂时无法显示'
         }
 

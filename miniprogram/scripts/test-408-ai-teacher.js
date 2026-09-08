@@ -36,7 +36,7 @@ assert(service.includes('KnowledgeEdge'), '408 AI 必须接入知识图谱邻居
 assert(service.includes('check_token_limit'), '408 AI 必须复用 token budget')
 assert(service.includes('record_token_usage'), '408 AI 必须记录 AI usage')
 assert(service.includes('owned_practice_record_id'), '历史 question_version_id 必须校验属于当前用户练习事实')
-assert(service.indexOf('await record_token_usage(') < service.indexOf('parsed = _parse_json_object'), 'provider 成功后应先记 usage，再解析结构化输出')
+assert(service.indexOf('await record_token_usage(') < service.indexOf('parsed = _parse_json_object(result.get("content"))'), 'provider 成功后应先记 usage，再解析结构化输出')
 assert(aiRoute.includes('@router.post("/feedback")'), '408 AI 必须保留 AI feedback 入口')
 assert(service.includes('ExamAttempt.status == "in_progress"'), '408 AI 必须拦截进行中考试')
 assert((aiRoute.match(/assert_ai_answer_access_allowed/g) || []).length >= 2, '旧 explain / analyze-mistake 端点必须同时受考试防泄题保护')
@@ -78,7 +78,7 @@ surfaces.forEach(surface => {
 })
 
 const examWxml = fs.readFileSync(path.join(miniRoot, 'subpackages/exam/result/index.wxml'), 'utf8')
-assert(examWxml.includes('交卷后 408 专项 AI 老师'), '考试 AI 入口必须明确位于交卷后结果页')
+assert(examWxml.includes('交卷后专项 AI 老师'), '考试 AI 入口必须明确位于交卷后结果页')
 
 const practiceJs = fs.readFileSync(path.join(miniRoot, 'subpackages/study/practice-result/index.js'), 'utf8')
 const practiceWxml = fs.readFileSync(path.join(miniRoot, 'subpackages/study/practice-result/index.wxml'), 'utf8')
@@ -88,5 +88,19 @@ assert(examJs.includes('teacherActions: aiTeacher408.ACTIONS'), '考试结果页
 assert(practiceWxml.includes('select408TeacherAction'), '普通练习结果页缺少自定义动作选择处理')
 assert(examWxml.includes('select408TeacherAction'), '考试结果页缺少自定义动作选择处理')
 assert(typeof helper.submitFeedback === 'function', '408 AI helper 必须复用现有 feedback 能力')
+
+const structuredFallback = helper.normalizeResult({
+  action: 'explain_correct',
+  summary: JSON.stringify({
+    mistake_diagnosis: '先辨析核心概念。',
+    knowledge_patch: '补齐相关规则。',
+    review_task: '再做两道同类题。',
+  }),
+  sections: [],
+  knowledge_points: [],
+})
+assert(structuredFallback, '结构化题库解析应可被前端规范化')
+assert(!structuredFallback.summary.includes('{'), '专项 AI UI 不得回显 JSON 源码')
+assert(structuredFallback.sections.some(item => item.heading === '错因诊断'), '结构化题库解析应渲染为人类可读分区')
 
 console.log('408 AI teacher regression passed')

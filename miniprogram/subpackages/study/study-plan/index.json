@@ -1,7 +1,10 @@
 {
-  "navigationBarTitleText": "408 学习计划",
+  "navigationBarTitleText": "学习计划",
   "navigationBarBackgroundColor": "#F4F4EE",
   "navigationBarTextStyle": "black",
   "backgroundColor": "#F4F4EE",
-  "enablePullDownRefresh": true
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "app-dialog": "/components/app-dialog/index"
+  }
 }

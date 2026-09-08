@@ -430,7 +430,6 @@ Page({
     try {
       const raw = await api.get('/wrong-questions/diagnosis/stats', {
         window_days: this.data.trendDays || 7,
-        product_scope: 'exam408',
       })
       if (!this._alive || !this._visible || seq !== this._errorDiagnosisSeq) return
       const byType = (raw.by_type || []).map(item => ({
@@ -860,23 +859,23 @@ Page({
     this.setData({ llmAnalysis: null, llmAnalysisError: null, llmAnalysisGeneratedAt: null })
   },
 
-  onLlmFeedback() {
-    var self = this
-    var types = ['内容有误', '建议不准确', '其他问题']
-    wx.showActionSheet({
-      itemList: types,
-      success: function (res) {
-        var feedbackType = types[res.tapIndex] || '其他问题'
-        api.post('/ai/feedback', {
-          source: 'dashboard',
-          feedback_type: feedbackType,
-        }).then(function () {
-          wx.showToast({ title: '反馈已提交，感谢您的帮助', icon: 'success' })
-        }).catch(function () {
-          wx.showToast({ title: '反馈提交失败，请稍后重试', icon: 'none' })
-        })
-      },
-    })
+  _showAppOptions(opts) {
+    const dialog = this.selectComponent('#appDialog')
+    if (!dialog || typeof dialog.showOptions !== 'function') return Promise.resolve(-1)
+    return dialog.showOptions(opts || {})
+  },
+
+  async onLlmFeedback() {
+    const types = ['内容有误', '建议不准确', '其他问题']
+    const index = await this._showAppOptions({ title: '反馈这次分析', items: types })
+    if (index < 0) return
+    const feedbackType = types[index] || '其他问题'
+    try {
+      await api.post('/ai/feedback', { source: 'dashboard', feedback_type: feedbackType })
+      wx.showToast({ title: '反馈已提交，感谢您的帮助', icon: 'success' })
+    } catch (_) {
+      wx.showToast({ title: '反馈提交失败，请稍后重试', icon: 'none' })
+    }
   },
 
   // ── Navigation ──

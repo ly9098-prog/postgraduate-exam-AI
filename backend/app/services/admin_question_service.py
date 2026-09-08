@@ -25,7 +25,10 @@ from app.schemas.admin_questions import (
 )
 from app.services.admin_audit_service import write_admin_audit
 from app.services.knowledge_point_service import load_question_kps
-from app.utils.question_content import normalize_segment_type
+from app.utils.question_content import (
+    normalize_segment_type,
+    reconcile_student_stem_fields,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -303,6 +306,10 @@ async def update_admin_question(
 
     update_data = data.model_dump(exclude_unset=True)
     edit_reason = update_data.pop("edit_reason", None)
+    if isinstance(update_data.get("content"), dict):
+        # Store one canonical student-visible stem. This prevents future
+        # revisions from carrying a newly edited ``text`` plus an old ``stem``.
+        update_data["content"] = reconcile_student_stem_fields(update_data["content"])
 
     # 操作发生时的当前知识点（版本快照与审计必须保存操作时值）
     kp_map = await load_question_kps(db, [question.id])
@@ -432,8 +439,8 @@ def ensure_content_segments(content: dict[str, Any], stem_text: str | None = Non
     segments = content.get("segments")
     if isinstance(segments, list) and segments:
         return content
-    stem = stem_text or content.get("stem") or content.get("text") or ""
-    out = dict(content)
+    out = reconcile_student_stem_fields(content)
+    stem = stem_text or out.get("text") or out.get("stem") or ""
     out["render_mode"] = "segments"
     out["segments"] = [{"type": "text", "text": stem}]
     return out

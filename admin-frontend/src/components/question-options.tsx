@@ -1,7 +1,11 @@
 "use client";
 
 import { MathFormula } from "@/components/ui/math-formula";
-import type { NormalizedQuestionOption } from "@/lib/question-options";
+import {
+  haveIdenticalBlankOptionSets,
+  type NormalizedBlankOptionGroup,
+  type NormalizedQuestionOption,
+} from "@/lib/question-options";
 
 interface QuestionOptionsProps {
   options: NormalizedQuestionOption[];
@@ -52,6 +56,60 @@ export function QuestionOptions({ options, className = "" }: QuestionOptionsProp
               />
             ) : null}
           </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+interface MultiBlankQuestionOptionsProps {
+  groups: NormalizedBlankOptionGroup[];
+  className?: string;
+}
+
+/**
+ * Group-aware option preview for multi_blank_choice questions.
+ * Identical groups are collapsed into one shared option list; otherwise each
+ * blank keeps its own option block so differences remain visible.
+ */
+export function MultiBlankQuestionOptions({
+  groups,
+  className = "",
+}: MultiBlankQuestionOptionsProps) {
+  if (groups.length === 0) {
+    return <p className="text-sm text-[var(--color-text-hint)]">—</p>;
+  }
+
+  if (haveIdenticalBlankOptionSets(groups)) {
+    return (
+      <div className={className}>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-[var(--color-text-hint)]">
+            {groups.map((group) => group.id).join("、")} 共用选项
+          </span>
+        </div>
+        <QuestionOptions options={groups[0].options} />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`space-y-4 ${className}`}>
+      {groups.map((group) => (
+        <div
+          key={group.id}
+          className="rounded-lg border border-[var(--color-border)]/70 bg-[var(--color-bg-input)]/20 p-3"
+        >
+          <div className="mb-3 flex items-center gap-2">
+            <span className="flex h-6 min-w-6 items-center justify-center rounded-md bg-[var(--color-primary-light)] px-1.5 text-[11px] font-bold text-[var(--color-primary-dark)]">
+              {group.id}
+            </span>
+            <span className="text-xs font-medium text-[var(--color-text-hint)]">
+              该空选项
+            </span>
+          </div>
+          <QuestionOptions options={group.options} />
         </div>
       ))}
     </div>

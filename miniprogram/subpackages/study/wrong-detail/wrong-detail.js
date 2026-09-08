@@ -214,6 +214,7 @@ Page({
     diagnosisSecondaryMap: {},
     diagnosisSaving: false,
     diagnosisAiQueuing: false,
+    diagnosisAiEnabled: false,
 
     teacherActions: aiTeacher408.ACTIONS,
     teacherLoadingAction: '',
@@ -240,6 +241,8 @@ Page({
   _aiSwipeStart: null,
   _contentTransitionStartedAt: 0,
   _contentTransitionDirection: '',
+  _teacherRequestSeq: 0,
+  _diagnosisAiRequestSeq: 0,
 
   onLoad(options) {
     setRenderGuardPage('wrong-detail')
@@ -252,6 +255,8 @@ Page({
     this._aiSwipeStart = null
     this._contentTransitionStartedAt = 0
     this._contentTransitionDirection = ''
+    this._teacherRequestSeq = 0
+    this._diagnosisAiRequestSeq = 0
     // 页面实例级缓存仅用于状态同步/弱网兜底；前台切题始终向服务端校验最新题库内容
     this._wqCache = {}
     this._switchMaskTimer = null
@@ -294,6 +299,8 @@ Page({
   onUnload() {
     this._alive = false
     this._aiRequestId++
+    this._teacherRequestSeq++
+    this._diagnosisAiRequestSeq++
     if (this._switchMaskTimer) {
       clearTimeout(this._switchMaskTimer)
       this._switchMaskTimer = null
@@ -339,7 +346,10 @@ Page({
       diagnosisSheetVisible: false,
       diagnosisSaving: false,
       diagnosisAiQueuing: false,
+      diagnosisAiEnabled: false,
     })
+    this._diagnosisAiRequestSeq++
+    this._teacherRequestSeq++
     try {
       const wq = await api.get(`/wrong-questions/${wqId}`)
       if (loadSeq !== this._aiRequestId || !this._alive) return
@@ -364,6 +374,8 @@ Page({
       }
 
       this._currentWqId = wqId
+      this._diagnosisAiRequestSeq++
+      this._teacherRequestSeq++
       this._errorTypeLabelText = raw.errorTypeLabelText
       this._aiGenerationMarker = _generationMarker(wq)
       this._aiResult = null
@@ -388,6 +400,7 @@ Page({
         masterSubmitting: false,
         removeSubmitting: false,
         errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
+        diagnosisAiEnabled: false,
         teacherLoadingAction: '',
         teacherResult: null,
         teacherSheetVisible: false,
@@ -531,6 +544,8 @@ Page({
       diagnosis.question_version_id || diagnosis.questionVersionId || wq.question_version_id || wq.questionVersionId || 0
     )
     const diagnosisId = Number(diagnosis.id || 0)
+    const requestSeq = ++this._teacherRequestSeq
+    const sourceWqId = String(wq.id || '')
     this.setData({
       teacherLoadingAction: action,
       teacherErrorText: '',
@@ -544,12 +559,13 @@ Page({
       if (diagnosisId > 0) payload.diagnosis_id = diagnosisId
       if (wq.wrong_answer) payload.user_answer = String(wq.wrong_answer)
       const raw = await api.post('/ai/408-teacher', payload, { timeout: AI_REQUEST_TIMEOUT_MS })
+      if (requestSeq !== this._teacherRequestSeq || !this._alive || !this.data.teacherSheetVisible) return
+      if (String((this.data.wq && this.data.wq.id) || '') !== sourceWqId) return
       const normalized = aiTeacher408.normalizeResult(raw)
       if (!normalized) throw new Error('AI 返回格式异常')
-      if (!this._alive || String((this.data.wq && this.data.wq.id) || '') !== String(wq.id || '')) return
       this.setData({ teacherLoadingAction: '', teacherResult: normalized })
     } catch (error) {
-      if (!this._alive) return
+      if (requestSeq !== this._teacherRequestSeq || !this._alive || !this.data.teacherSheetVisible) return
       this.setData({
         teacherLoadingAction: '',
         teacherErrorText: aiTeacher408.errorMessage(error, api),
@@ -558,8 +574,13 @@ Page({
   },
 
   close408TeacherSheet() {
-    if (this.data.teacherLoadingAction) return
-    this.setData({ teacherSheetVisible: false, teacherErrorText: '', teacherResult: null })
+    this._teacherRequestSeq++
+    this.setData({
+      teacherSheetVisible: false,
+      teacherLoadingAction: '',
+      teacherErrorText: '',
+      teacherResult: null,
+    })
   },
 
   async feedback408Teacher(e) {
@@ -1549,6 +1570,7 @@ Page({
         diagnosisSheetVisible: false,
         diagnosisSaving: false,
         diagnosisAiQueuing: false,
+        diagnosisAiEnabled: false,
         teacherLoadingAction: '',
         teacherResult: null,
         teacherSheetVisible: false,
@@ -1611,10 +1633,10 @@ Page({
     const diagnosis = this.data.errorDiagnosis
     const primary = diagnosis && diagnosis.primaryType && diagnosis.primaryType !== 'unknown'
       ? diagnosis.primaryType
-      : (diagnosis && diagnosis.aiPrimaryType && diagnosis.aiPrimaryType !== 'unknown' ? diagnosis.aiPrimaryType : 'knowledge_gap')
+      : (this.data.diagnosisAiEnabled && diagnosis && diagnosis.aiPrimaryType && diagnosis.aiPrimaryType !== 'unknown' ? diagnosis.aiPrimaryType : 'knowledge_gap')
     const secondary = diagnosis && diagnosis.secondaryTypes && diagnosis.secondaryTypes.length
       ? diagnosis.secondaryTypes
-      : (diagnosis && diagnosis.aiSecondaryTypes || [])
+      : (this.data.diagnosisAiEnabled && diagnosis && diagnosis.aiSecondaryTypes || [])
     const secondaryMap = {}
     secondary.forEach(type => { if (type && type !== primary) secondaryMap[type] = true })
     this.setData({
@@ -1696,26 +1718,44 @@ Page({
     await this.saveDiagnosis()
   },
 
+  enableDiagnosisAi() {
+    if (this.data.diagnosisAiEnabled) return
+    this.setData({ diagnosisAiEnabled: true })
+    const diagnosis = this.data.errorDiagnosis
+    if (!diagnosis || diagnosis.aiStatus === 'not_requested' || diagnosis.aiStatus === 'failed' || diagnosis.aiStatus === 'pending') {
+      this.requestDiagnosisSuggestion()
+    }
+  },
+
+  disableDiagnosisAi() {
+    this._diagnosisAiRequestSeq++
+    this.setData({ diagnosisAiEnabled: false, diagnosisAiQueuing: false })
+  },
+
   async requestDiagnosisSuggestion() {
     const wqId = Number(this._currentWqId || (this.data.wq && this.data.wq.id))
-    if (!wqId || this.data.diagnosisAiQueuing) return
+    if (!wqId || !this.data.diagnosisAiEnabled || this.data.diagnosisAiQueuing) return
+    const requestSeq = ++this._diagnosisAiRequestSeq
     this.setData({ diagnosisAiQueuing: true })
     try {
       const response = await api.post(`/wrong-questions/${wqId}/diagnosis/suggest`, {})
-      if (!this._alive || wqId !== Number(this._currentWqId)) return
+      if (requestSeq !== this._diagnosisAiRequestSeq || !this._alive || !this.data.diagnosisAiEnabled || wqId !== Number(this._currentWqId)) return
       this.setData({ errorDiagnosis: errorDiagnosis.normalizeDiagnosis(response && response.diagnosis) })
       for (let i = 0; i < 8; i += 1) {
         await _sleep(1500)
-        if (!this._alive || wqId !== Number(this._currentWqId)) return
+        if (requestSeq !== this._diagnosisAiRequestSeq || !this._alive || !this.data.diagnosisAiEnabled || wqId !== Number(this._currentWqId)) return
         const raw = await api.get(`/wrong-questions/${wqId}/diagnosis`, {}, { suppressNetworkToast: true }).catch(() => null)
+        if (requestSeq !== this._diagnosisAiRequestSeq || !this.data.diagnosisAiEnabled) return
         const normalized = errorDiagnosis.normalizeDiagnosis(raw)
         if (normalized) this.setData({ errorDiagnosis: normalized })
         if (normalized && normalized.aiStatus !== 'pending') break
       }
     } catch (e) {
-      wx.showToast({ title: api.getErrorMessage(e) || 'AI 错因建议暂不可用', icon: 'none' })
+      if (requestSeq === this._diagnosisAiRequestSeq && this.data.diagnosisAiEnabled) {
+        wx.showToast({ title: api.getErrorMessage(e) || 'AI 错因建议暂不可用', icon: 'none' })
+      }
     } finally {
-      if (this._alive) this.setData({ diagnosisAiQueuing: false })
+      if (requestSeq === this._diagnosisAiRequestSeq && this._alive) this.setData({ diagnosisAiQueuing: false })
     }
   },
 

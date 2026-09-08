@@ -1,5 +1,6 @@
 <premium-nav title="错题本" variant="light" bind:back="goBack" />
 <submit-confirm id="actionConfirm" />
+<app-dialog id="appDialog" />
 <view class="page {{batchMode ? 'page-batch-padding' : ''}}" bindtouchstart="onPageInteraction">
   <!-- 顶部视图切换与编辑模式 -->
   <view class="topbar {{batchMode ? 'topbar-editing' : ''}}">

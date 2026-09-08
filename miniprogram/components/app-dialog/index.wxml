@@ -1,0 +1,30 @@
+<view class="sc-overlay {{visible ? 'sc-visible' : ''}}" catchtap="onMaskTap" catchtouchmove="noop">
+  <view class="sc-card scenario-{{scenario}} {{mode === 'options' ? 'sc-card-options' : ''}}" catchtap="noop">
+    <view class="sc-top-accent"></view>
+
+    <block wx:if="{{mode !== 'options'}}">
+      <view class="sc-icon-circle">
+        <text class="sc-icon-line line-icon {{scenario === 'all-done' ? 'icon-check' : 'icon-exclamation'}}"></text>
+      </view>
+      <text class="sc-eyebrow" wx:if="{{!hideEyebrow}}">{{eyebrow || (scenario === 'unanswered' ? 'UNFINISHED' : scenario === 'danger' ? 'NOTICE' : scenario === 'info' ? 'NOTICE' : 'CONFIRM')}}</text>
+    </block>
+
+    <text class="sc-title">{{title}}</text>
+    <text class="sc-msg" wx:if="{{message}}">{{message}}</text>
+
+    <block wx:if="{{mode === 'options'}}">
+      <view class="sc-option-list">
+        <button wx:for="{{items}}" wx:key="index" class="sc-option {{item.danger ? 'danger' : ''}}" data-index="{{item.index}}" bindtap="onOption">{{item.label}}</button>
+      </view>
+      <button class="sc-option-cancel" bindtap="onCancel">{{cancelText}}</button>
+    </block>
+
+    <view class="sc-actions" wx:else>
+      <button class="sc-btn sc-btn-cancel" wx:if="{{!hideCancel}}" hover-class="sc-btn-cancel-pressed" bindtap="onCancel">{{cancelText}}</button>
+      <button class="sc-btn sc-btn-confirm" hover-class="sc-btn-confirm-pressed" bindtap="onConfirm">
+        <text>{{confirmText}}</text>
+        <view class="sc-confirm-arrow"><text>›</text></view>
+      </button>
+    </view>
+  </view>
+</view>

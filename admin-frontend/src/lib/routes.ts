@@ -121,7 +121,7 @@ const adminUsersRoute: AdminRoute = {
 const subjectsRoute: AdminRoute = {
   href: "/subjects",
   label: "科目治理",
-  description: "408 范围与启停",
+  description: "科目范围与启停",
   permission: "subject:read",
   icon: ListTree,
 };
@@ -136,7 +136,7 @@ const questionsRoute: AdminRoute = {
 
 const examsRoute: AdminRoute = {
   href: "/exams",
-  label: "408 试卷",
+  label: "试卷管理",
   description: "真题选择题与模拟卷",
   permission: "question:read",
   icon: ClipboardCheck,
@@ -243,7 +243,7 @@ const knowledgeGraphRoute: AdminRoute = {
 const syllabusRoute: AdminRoute = {
   href: "/syllabus",
   label: "考纲版本",
-  description: "408 考纲与知识点版本",
+  description: "考纲与知识点版本",
   permission: "knowledge:read",
   icon: BookOpen,
 };
@@ -251,7 +251,7 @@ const syllabusRoute: AdminRoute = {
 const coverageRoute: AdminRoute = {
   href: "/coverage",
   label: "题库覆盖",
-  description: "408 覆盖率与质量治理",
+  description: "覆盖率与质量治理",
   permission: "knowledge:read",
   icon: BarChart3,
 };

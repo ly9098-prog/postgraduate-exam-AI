@@ -599,7 +599,7 @@ async def _finalize_attempt(
                     source_context="exam",
                     user_answer=selected,
                     occurred_at=answer.answered_at or now,
-                    queue_ai=True,
+                    queue_ai=False,
                 )
                 error_diagnosis_payload = error_diagnosis_service.serialize_diagnosis(diagnosis)
             await _create_projection_event(

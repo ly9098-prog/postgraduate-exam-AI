@@ -6,7 +6,7 @@
       <text class="sc-icon-line line-icon {{scenario === 'all-done' ? 'icon-check' : 'icon-exclamation'}}"></text>
     </view>
 
-    <text class="sc-eyebrow">{{eyebrow || (scenario === 'unanswered' ? 'UNFINISHED' : scenario === 'danger' ? 'IRREVERSIBLE' : scenario === 'info' ? 'NOTICE' : 'SUBMIT PAPER')}}</text>
+    <text class="sc-eyebrow" wx:if="{{!hideEyebrow}}">{{eyebrow || (scenario === 'unanswered' ? 'UNFINISHED' : scenario === 'danger' ? 'IRREVERSIBLE' : scenario === 'info' ? 'NOTICE' : 'SUBMIT PAPER')}}</text>
     <text class="sc-title">{{title}}</text>
     <text class="sc-msg">{{message}}</text>
 

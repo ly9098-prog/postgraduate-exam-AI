@@ -467,9 +467,10 @@ async def get_forgetting_trends(db: AsyncSession, user_id: int) -> dict:
     frozen_name = func.coalesce(SyllabusKnowledgePoint.name_snapshot, KnowledgePoint.name)
     kp_result = await db.execute(
         select(frozen_name, func.count(func.distinct(WrongQuestion.id)))
+        .select_from(QuestionVersionKnowledgePoint)
         .join(
-            QuestionVersionKnowledgePoint,
-            QuestionVersionKnowledgePoint.knowledge_point_id == KnowledgePoint.id,
+            KnowledgePoint,
+            KnowledgePoint.id == QuestionVersionKnowledgePoint.knowledge_point_id,
         )
         .outerjoin(
             SyllabusKnowledgePoint,

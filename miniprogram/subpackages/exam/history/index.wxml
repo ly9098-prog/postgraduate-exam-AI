@@ -1,7 +1,7 @@
 <view class="page">
   <premium-nav title="考试历史" variant="light" bind:back="goBack" />
   <view class="header">
-    <text class="kicker">408 EXAM HISTORY</text>
+    <text class="kicker">EXAM HISTORY</text>
     <text class="title">每一次成绩都只统计选择题部分</text>
   </view>
   <view class="state" wx:if="{{loading}}">正在读取考试记录…</view>

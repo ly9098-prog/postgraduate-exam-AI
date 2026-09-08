@@ -864,19 +864,26 @@ Page({
     })
   },
 
-  openBatchMore() {
+  _showAppOptions(opts) {
+    const dialog = this.selectComponent('#appDialog')
+    if (!dialog || typeof dialog.showOptions !== 'function') return Promise.resolve(-1)
+    return dialog.showOptions(opts || {})
+  },
+
+  async openBatchMore() {
     if (!this.data.selectedCount) {
       wx.showToast({ title: '请先选择错题', icon: 'none' })
       return
     }
-    wx.showActionSheet({
-      alertText: `将作用于已选择的 ${this.data.selectedCount} 道错题`,
-      itemList: ['移出错题本', '永久删除'],
-      success: ({ tapIndex }) => {
-        const action = tapIndex === 0 ? 'remove_from_book' : 'delete'
-        this.onBatchAction({ currentTarget: { dataset: { action } } })
-      },
+    const index = await this._showAppOptions({
+      title: '批量处理',
+      message: `将作用于已选择的 ${this.data.selectedCount} 道错题`,
+      items: ['移出错题本', '永久删除'],
+      dangerIndexes: [1],
     })
+    if (index < 0) return
+    const action = index === 0 ? 'remove_from_book' : 'delete'
+    this.onBatchAction({ currentTarget: { dataset: { action } } })
   },
 
   closeBatchMore() {},
@@ -1472,22 +1479,17 @@ Page({
     this.ensureAiDiagnosis({ force: true })
   },
 
-  onAiFeedback() {
-    var types = ['分析不准确', '遗漏薄弱点', '建议不合理', '其他问题']
-    wx.showActionSheet({
-      itemList: types,
-      success: function (res) {
-        var feedbackType = types[res.tapIndex] || '其他问题'
-        api.post('/ai/feedback', {
-          source: 'wrong_book',
-          feedback_type: feedbackType,
-        }).then(function () {
-          wx.showToast({ title: '反馈已提交，感谢您的帮助', icon: 'success' })
-        }).catch(function () {
-          wx.showToast({ title: '反馈提交失败，请稍后重试', icon: 'none' })
-        })
-      },
-    })
+  async onAiFeedback() {
+    const types = ['分析不准确', '遗漏薄弱点', '建议不合理', '其他问题']
+    const index = await this._showAppOptions({ title: '反馈这次分析', items: types })
+    if (index < 0) return
+    const feedbackType = types[index] || '其他问题'
+    try {
+      await api.post('/ai/feedback', { source: 'wrong_book', feedback_type: feedbackType })
+      wx.showToast({ title: '反馈已提交，感谢您的帮助', icon: 'success' })
+    } catch (_) {
+      wx.showToast({ title: '反馈提交失败，请稍后重试', icon: 'none' })
+    }
   },
 
   // ════════════════════════════════════════════
@@ -1532,7 +1534,7 @@ Page({
     const rawContent = item.content
     const contentText = typeof rawContent === 'string'
       ? rawContent
-      : (rawContent && (rawContent.stem || rawContent.text)) || ''
+      : (rawContent && (rawContent.text || rawContent.stem)) || ''
     const cleanText = this._toCleanText(contentText)
     const hasImage = Array.isArray(item.image_url) ? item.image_url.length > 0 : !!item.image_url
 

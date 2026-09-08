@@ -174,6 +174,12 @@ Page({
     this.setData({ priorityIndex: clampIndex(e.detail.value, PRIORITY_OPTIONS) })
   },
 
+  _showAppDialog(opts) {
+    const dialog = this.selectComponent('#appDialog')
+    if (!dialog || typeof dialog.show !== 'function') return Promise.resolve(false)
+    return dialog.show(opts || {})
+  },
+
   async savePlan() {
     if (this.data.saving) return
     if (!this.data.targetDate) {
@@ -198,27 +204,28 @@ Page({
     }
   },
 
-  deletePlan() {
+  async deletePlan() {
     if (!this.data.configured || this.data.saving) return
-    wx.showModal({
+    const confirmed = await this._showAppDialog({
+      scenario: 'unanswered',
       title: '暂停学习计划？',
-      content: '已有刷题、复习和考试记录不会删除；之后可以重新设置目标日期继续使用。',
+      message: '已有学习记录会保留，之后可随时重新设置计划。',
       confirmText: '暂停计划',
-      success: async res => {
-        if (!res.confirm) return
-        this.setData({ saving: true })
-        try {
-          await api.del('/study-plan')
-          wx.showToast({ title: '计划已暂停', icon: 'success' })
-          this.setData({ targetDate: '', targetDateText: '请选择目标日期' })
-          await this.loadOverview()
-        } catch (error) {
-          wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
-        } finally {
-          this.setData({ saving: false })
-        }
-      },
+      cancelText: '继续使用',
+      hideEyebrow: true,
     })
+    if (!confirmed) return
+    this.setData({ saving: true })
+    try {
+      await api.del('/study-plan')
+      wx.showToast({ title: '计划已暂停', icon: 'success' })
+      this.setData({ targetDate: '', targetDateText: '请选择目标日期' })
+      await this.loadOverview()
+    } catch (error) {
+      wx.showToast({ title: api.getErrorMessage(error), icon: 'none' })
+    } finally {
+      this.setData({ saving: false })
+    }
   },
 
   openAllocation(e) {

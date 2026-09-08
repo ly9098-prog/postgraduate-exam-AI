@@ -4,5 +4,8 @@
   "backgroundColor": "#F3F4F1",
   "backgroundColorTop": "#10251A",
   "backgroundColorBottom": "#F3F4F1",
-  "disableScroll": true
+  "disableScroll": true,
+  "usingComponents": {
+    "app-dialog": "/components/app-dialog/index"
+  }
 }

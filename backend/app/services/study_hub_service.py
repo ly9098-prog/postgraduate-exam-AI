@@ -418,8 +418,8 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
             "key": "scope-not-ready",
             "task_type": "smart_practice",
             "priority": 1,
-            "title": "408 科目配置需要检查",
-            "reason": "未找到完整的 canonical 408 科目树，请先完成科目治理后再开始智能学习。",
+            "title": "科目配置需要检查",
+            "reason": "未找到完整的计算机专业课科目树，请先完成科目治理后再开始智能学习。",
             "action_label": "查看刷题入口",
             "route": "practice",
             "route_params": {},
@@ -584,13 +584,13 @@ async def get_study_hub_overview(db: AsyncSession, user_id: int) -> dict:
         "key": "practice:fallback" if is_new_user else "practice:smart",
         "task_type": "smart_practice",
         "priority": 0,
-        "title": "完成第一组 408 练习" if is_new_user else "继续 408 智能新题",
+        "title": "完成第一组练习" if is_new_user else "继续智能新题",
         "reason": (
             "当前学习数据还不足，先完成一组四科练习建立个性化推荐基线。"
             if is_new_user
             else "结合当前知识状态与近期表现继续推进新题，避免只在旧错题里循环。"
         ),
-        "action_label": "开始 408 练习" if is_new_user else "开始智能练习",
+        "action_label": "开始练习" if is_new_user else "开始智能练习",
         "route": "practice",
         "route_params": _practice_params(
             subject_id=root_id,

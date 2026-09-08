@@ -4,7 +4,6 @@
  */
 
 const { getSubjectName } = require('../../utils/subject-meta')
-const { is408Subject } = require('../../utils/subject-scope')
 
 /** Subject palette (stable per index hash) */
 const SUBJECT_COLORS = ['#4F7FFF', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4']
@@ -174,9 +173,7 @@ function buildTrends(tr) {
  */
 function buildSubjects(sa, enrichedMap) {
   if (!sa || !sa.items || !sa.items.length) return null
-  const scopedItems = sa.items.filter(is408Subject)
-  if (!scopedItems.length) return null
-  const items = scopedItems.map((s, i) => {
+  const items = sa.items.map((s, i) => {
     const acc = s.accuracy || 0
     const subjectId = s.subject_id != null ? s.subject_id : (s.id != null ? s.id : null)
     const subjectCode = s.subject_code || ''
@@ -221,17 +218,25 @@ function buildSubjects(sa, enrichedMap) {
     if (a.accuracy !== b.accuracy) return a.accuracy - b.accuracy
     return b.wrongCount - a.wrongCount
   })
-  const strongestItem = items.slice().sort((a, b) => b.accuracy - a.accuracy || b.totalQuestions - a.totalQuestions)[0] || null
-  const weakestItem = itemsByWeak[0] || null
-  const strongestLabel = strongestItem ? strongestItem.label : null
-  const weakestLabel = weakestItem ? weakestItem.label : null
+  const strongestLabel = typeof sa.strongest === 'string'
+    ? sa.strongest
+    : (sa.strongest && (sa.strongest.subject_name || sa.strongest.subject)
+        ? (sa.strongest.subject_name || subjectLabel(sa.strongest.subject))
+        : null)
+  const weakestLabel = typeof sa.weakest === 'string'
+    ? sa.weakest
+    : (sa.weakest && (sa.weakest.subject_name || sa.weakest.subject)
+        ? (sa.weakest.subject_name || subjectLabel(sa.weakest.subject))
+        : null)
   return {
     items,
     itemsByWeak,
     focusItem: itemsByWeak[0] || null,
     strongest: strongestLabel,
     weakest: weakestLabel,
-    totalQuestions: items.reduce((sum, item) => sum + item.totalQuestions, 0),
+    totalQuestions: sa.total_questions != null
+      ? sa.total_questions
+      : (sa.totalQuestions != null ? sa.totalQuestions : items.reduce((sum, item) => sum + item.totalQuestions, 0)),
   }
 }
 
@@ -392,9 +397,7 @@ function buildWeeklyConsistency(wc) {
 
 function buildWeakTopics(wt) {
   if (!wt || !wt.data_available || !wt.items || !wt.items.length) return null
-  const scopedItems = wt.items.filter(is408Subject)
-  if (!scopedItems.length) return null
-  const items = scopedItems.map((t, i) => ({
+  const items = wt.items.map((t, i) => ({
     knowledgePointId: t.knowledge_point_id,
     name: t.name,
     subject: t.subject || '',
@@ -452,7 +455,7 @@ function buildSpeedAccuracy(sa) {
     avgTimeWrongSec: sa.avg_time_wrong_sec || 0,
     fastWrongCount: sa.fast_wrong_count || 0,
     slowWrongCount: sa.slow_wrong_count || 0,
-    bySubject: (sa.by_subject || []).filter(is408Subject).map(s => ({
+    bySubject: (sa.by_subject || []).map(s => ({
       subject: s.subject_code || s.subject || '',
       subjectLabel: s.subject_name || s.subject_code || s.subject_label || s.subject || '',
       avgTimeCorrectSec: s.avg_time_correct_sec || 0,
@@ -481,7 +484,7 @@ function buildInputOutput(io) {
   return {
     dataAvailable: true,
     globalAvgTimeSec: io.global_avg_time_sec || 0,
-    items: (io.items || []).filter(is408Subject).map(i => ({
+    items: (io.items || []).map(i => ({
       subject: i.subject_code || i.subject || '',
       subjectLabel: i.subject_name || i.subject_code || i.subject_label || i.subject || '',
       totalQuestions: i.total_questions || 0,

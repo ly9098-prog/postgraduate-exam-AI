@@ -7,7 +7,6 @@ const READER_SEQUENCE_KEY = 'formula_reader_sequence_v2'
 const SEQUENCE_TTL = 30 * 60 * 1000
 const TRANSITION_OUT_MS = 150
 const TRANSITION_IN_DELAY_MS = 36
-const PRODUCT_EXAM_SCOPE = 'exam408'
 
 const STUDY_CARD_TYPE_LABEL = {
   formula: '公式',
@@ -22,7 +21,7 @@ const STUDY_CARD_TYPE_LABEL = {
 
 function studyCardTypeLabel(card) {
   var key = String(card?.study_card_type || card?.studyCardType || 'formula').trim().toLowerCase()
-  return STUDY_CARD_TYPE_LABEL[key] || '408 速记'
+  return STUDY_CARD_TYPE_LABEL[key] || '速记'
 }
 
 function normalizeId(value) {
@@ -89,7 +88,7 @@ Page({
     this.setData({ formulaId, isRandom, sequenceIds, sequenceIndex }, () => this.syncNavigationState())
 
     if (isRandom) {
-      const params = { exam_scope: PRODUCT_EXAM_SCOPE }
+      const params = {}
       if (options.subject_code) params.subject_code = options.subject_code
       if (options.chapter_id) params.chapter_id = options.chapter_id
       if (options.tags) params.tags = options.tags
@@ -139,7 +138,7 @@ Page({
   },
 
   async fetchCard(formulaId) {
-    const data = await api.request('GET', `/formulas/${formulaId}`, { exam_scope: PRODUCT_EXAM_SCOPE })
+    const data = await api.request('GET', `/formulas/${formulaId}`)
     return this.enrichCard(data || {})
   },
 
@@ -244,7 +243,7 @@ Page({
       return
     }
 
-    const params = { page: 1, page_size: 100, exam_scope: PRODUCT_EXAM_SCOPE }
+    const params = { page: 1, page_size: 100 }
     const subjectCode = card.subject_code || card.subjectCode || (card.subject && card.subject.code)
     const chapterId = card.chapter_id || card.chapterId || (card.chapter && card.chapter.id)
     if (subjectCode) params.subject_code = subjectCode
@@ -266,7 +265,7 @@ Page({
     this.setData({ [loadingKey]: true, loadError: false, errorText: '' })
 
     try {
-      const params = { exam_scope: PRODUCT_EXAM_SCOPE, ...this.data.randomParams }
+      const params = { ...this.data.randomParams }
       if (this._excludeIds && this._excludeIds.length > 0) {
         params.exclude_ids = this._excludeIds.slice(-50).join(',')
       }
@@ -320,7 +319,7 @@ Page({
     if (Array.isArray(this._favoriteIds)) return this._favoriteIds
 
     try {
-      const data = await api.request('GET', '/formulas/favorites/list', { page: 1, page_size: 200, exam_scope: PRODUCT_EXAM_SCOPE })
+      const data = await api.request('GET', '/formulas/favorites/list', { page: 1, page_size: 200 })
       this._favoriteIds = (data && data.items ? data.items : [])
         .map((item) => normalizeId(item.id))
         .filter((id) => id !== null)

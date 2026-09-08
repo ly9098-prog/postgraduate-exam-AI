@@ -1,5 +1,9 @@
 const api = require('../../../utils/api')
 
+function cleanUiLabel(value, fallback = '') {
+  return String(value || fallback).replace(/408/g, '').replace(/\s{2,}/g, ' ').trim()
+}
+
 function fmtTime(value) {
   if (!value) return '—'
   const date = new Date(value)
@@ -22,6 +26,7 @@ Page({
         errorText: '',
         rows: (Array.isArray(data) ? data : []).map((item) => ({
           ...item,
+          paper_title: cleanUiLabel(item.paper_title, '选择题考试'),
           startedText: fmtTime(item.started_at),
           scoreText: Number(item.choice_score || 0).toFixed(1),
           totalScoreText: Number(item.total_choice_score || 0).toFixed(1),

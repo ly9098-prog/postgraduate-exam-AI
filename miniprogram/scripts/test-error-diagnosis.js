@@ -58,6 +58,13 @@ for (const rel of [
 
 const dashboard = source('pages/dashboard/dashboard.js')
 assert.ok(dashboard.includes('/wrong-questions/diagnosis/stats'))
-assert.ok(dashboard.includes("product_scope: 'exam408'"))
+assert.ok(!dashboard.includes("product_scope: 'exam408'"), '学习报告错因统计不应再硬编码单一产品范围')
 
-console.log('408-ERROR miniprogram regression checks passed')
+const wrongDetail = source('subpackages/study/wrong-detail/wrong-detail.js')
+assert.ok(wrongDetail.includes('diagnosisAiEnabled: false'), '错因 AI 默认应关闭')
+assert.ok(wrongDetail.includes('enableDiagnosisAi()'), '错因 AI 应提供手动开启')
+assert.ok(wrongDetail.includes('disableDiagnosisAi()'), '错因 AI 应提供手动关闭')
+const backendPractice = fs.readFileSync(path.resolve(__dirname, '..', '..', 'backend/app/services/practice_service.py'), 'utf8')
+assert.ok(backendPractice.includes('queue_ai=False'), '新错题不应默认排队 AI 错因分析')
+
+console.log('error-diagnosis miniprogram regression checks passed')

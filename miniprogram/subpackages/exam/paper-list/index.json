@@ -1,8 +1,9 @@
 {
   "navigationStyle": "custom",
-  "navigationBarTitleText": "408 选择题套卷",
+  "navigationBarTitleText": "选择题套卷",
   "backgroundColor": "#F3F4F1",
   "usingComponents": {
-    "premium-nav": "/components/premium-nav/premium-nav"
+    "premium-nav": "/components/premium-nav/premium-nav",
+    "app-dialog": "/components/app-dialog/index"
   }
 }

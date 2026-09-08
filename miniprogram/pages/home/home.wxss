@@ -1299,32 +1299,6 @@ page {
   letter-spacing: 0;
 }
 
-.hub-quick-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 16rpx;
-  min-height: 66rpx;
-  border: 1rpx solid #E0E4DD;
-  border-radius: 22rpx;
-  background: rgba(255, 255, 255, .52);
-}
-
-.hub-quick-item {
-  flex: 1;
-  padding: 18rpx 8rpx;
-  text-align: center;
-  color: #526057;
-  font-size: 21rpx;
-  font-weight: 800;
-}
-
-.hub-quick-divider {
-  width: 1rpx;
-  height: 28rpx;
-  background: #DDE2DA;
-}
-
 .mastery-section {
   margin-top: 44rpx;
 }

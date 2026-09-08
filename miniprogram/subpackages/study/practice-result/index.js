@@ -457,8 +457,8 @@ function getQuestionTitle(question) {
   if (!question) return '';
   const content = question.content || {};
   return formatMathPreviewText(
-    content.stem ||
     content.text ||
+    content.stem ||
     question.stem ||
     question.text ||
     question.title ||
@@ -674,6 +674,7 @@ Page({
     this._navigationLocked = false;
     this._sessionPayload = null;
     this._dashboardLoadId = 0;
+    this._teacherRequestSeq = 0;
 
     this.measureSafeNavigation();
     this.bindEventChannel();
@@ -700,6 +701,7 @@ Page({
   onUnload() {
     this._pageAlive = false;
     this._dashboardLoadId++;
+    this._teacherRequestSeq++;
   },
 
   onShow() {
@@ -1184,279 +1186,43 @@ Page({
     };
   },
 
-  quickClassifyWrong(e) {
+  _showAppOptions(opts) {
+    const dialog = this.selectComponent('#appDialog');
+    if (!dialog || typeof dialog.showOptions !== 'function') return Promise.resolve(-1);
+    return dialog.showOptions(opts || {});
+  },
+
+  async quickClassifyWrong(e) {
     const wqId = Number(e.currentTarget.dataset.wqid || 0);
     if (!wqId) {
       wx.showToast({ title: '错题记录尚未就绪，可进入详情后标记', icon: 'none' });
       return;
     }
     const options = errorDiagnosis.QUICK_TYPES;
-    wx.showActionSheet({
-      itemList: options.map(item => item.label),
-      success: async (res) => {
-        const picked = options[Number(res.tapIndex)];
-        if (!picked) return;
-        try {
-          const target = (this.data.wrongReviewItems || []).find(item => Number(item.wrongQuestionId) === wqId)
-            || (this.data.reviewItems || []).find(item => Number(item.wrongQuestionId) === wqId);
-          const raw = await api.put(`/wrong-questions/${wqId}/diagnosis`, {
-            diagnosis_id: target && target.errorDiagnosis ? Number(target.errorDiagnosis.id || 0) || undefined : undefined,
-            primary_type: picked.type,
-            secondary_types: [],
-          });
-          const normalized = errorDiagnosis.normalizeDiagnosis(raw);
-          const update = (list) => (list || []).map(item => item.wrongQuestionId === wqId
-            ? Object.assign({}, item, { errorDiagnosis: normalized, errorDiagnosisLabel: picked.label })
-            : item);
-          this.setData({
-            reviewItems: update(this.data.reviewItems),
-            filteredReviewItems: update(this.data.filteredReviewItems),
-            wrongReviewItems: update(this.data.wrongReviewItems),
-          });
-          wx.showToast({ title: '错因已记录', icon: 'success' });
-        } catch (err) {
-          wx.showToast({ title: api.getErrorMessage(err), icon: 'none' });
-        }
-      }
-    });
-  },
-
-  buildLocalErrorDistribution(wrongItems) {
-    if (!wrongItems.length) return [];
-    const map = {};
-    wrongItems.forEach(item => {
-      const label = item.knowledgePoint || '其他';
-      map[label] = (map[label] || 0) + 1;
-    });
-
-    const sorted = Object.keys(map)
-      .map(label => ({ label, count: map[label] }))
-      .sort((a, b) => b.count - a.count);
-
-    let display = sorted.slice(0, 4);
-    if (sorted.length > 4) {
-      const rest = sorted.slice(4).reduce((sum, item) => sum + item.count, 0);
-      display.push({ label: '其他', count: rest });
-    }
-
-    const total = display.reduce((sum, item) => sum + item.count, 0);
-    return display.map((item, index) => ({
-      ...item,
-      percent: total ? Math.round(item.count / total * 100) : 0,
-      color: ERROR_COLORS[index % ERROR_COLORS.length]
-    }));
-  },
-
-  getResultTip(accuracy, wrongCount, skippedCount, partialCount, totalCount) {
-    if (wrongCount === 0 && skippedCount === 0 && partialCount === 0 && Number(totalCount) > 0) return '本组表现稳定，可以继续挑战更高难度。';
-    if (wrongCount === 0 && (skippedCount > 0 || partialCount > 0)) {
-      const parts = [];
-      if (partialCount > 0) parts.push(`${partialCount} 题未完成`);
-      if (skippedCount > 0) parts.push(`${skippedCount} 题跳过`);
-      return `本组有 ${parts.join('、')}，建议补看答案与解析后再继续。`;
-    }
-    if (accuracy >= 80) return '整体掌握较好，建议快速复盘错题后继续练习。';
-    if (accuracy >= 60) return '基础已掌握，优先复盘错题对应知识点。';
-    return '本组错题较多，建议先定位错误原因，再进行同类题巩固。';
-  },
-
-  async loadDashboardData() {
-    if (!this._pageAlive) return;
-    const loadId = ++this._dashboardLoadId;
-    await Promise.allSettled([
-      this.loadTrends(loadId),
-      this.loadGrowth(loadId)
-    ]);
-
-  },
-
-  _isDashboardLoadCurrent(loadId) {
-    return this._pageAlive && loadId === this._dashboardLoadId;
-  },
-
-  async loadTrends(loadId = this._dashboardLoadId) {
-    if (!this._isDashboardLoadCurrent(loadId)) return;
-    this.setData({ trendLoading: true });
+    const index = await this._showAppOptions({ title: '快速标记错因', items: options.map(item => item.label) });
+    const picked = options[index];
+    if (!picked) return;
     try {
-      const raw = await this.requestApi('/api/v1/stats/trends', { days: 7 });
-      if (!this._isDashboardLoadCurrent(loadId)) return;
-      const list = Array.isArray(raw)
-        ? raw
-        : Array.isArray(raw && raw.items)
-          ? raw.items
-          : Array.isArray(raw && raw.data)
-            ? raw.data
-            : [];
-
-      if (list.length) {
-        const trendData = list.slice(-7).map(item => ({
-          date: item.date || '',
-          accuracy: normalizePercent(item.accuracy),
-          questions: Number(item.questions ?? item.answer_count ?? item.answered ?? 0) || 0
-        }));
-
-        const nonEmpty = trendData.filter(item => item.questions > 0);
-        let trendSummary = '近 7 天';
-        if (nonEmpty.length >= 2) {
-          const first = nonEmpty[0].accuracy;
-          const last = nonEmpty[nonEmpty.length - 1].accuracy;
-          const diff = last - first;
-          trendSummary = diff > 0 ? `提升 ${diff}%` : diff < 0 ? `下降 ${Math.abs(diff)}%` : '表现稳定';
-        } else if (nonEmpty.length === 1) {
-          trendSummary = `当前 ${nonEmpty[0].accuracy}%`;
-        } else {
-          trendSummary = '暂无作答记录';
-        }
-
-        const plot = buildTrendPlot(trendData);
-        this.setData({
-          trendData,
-          trendPoints: plot.points,
-          trendSegments: plot.segments,
-          trendLastPoint: plot.lastPoint,
-          trendAreaStyle: plot.areaStyle,
-          trendSummary,
-          trendAvailable: true
-        });
-      } else {
-        this.setData({
-          trendData: [],
-          trendPoints: [],
-          trendSegments: [],
-          trendLastPoint: null,
-          trendAreaStyle: '',
-          trendSummary: '暂无历史数据',
-          trendAvailable: false
-        });
-      }
-    } catch (e) {
-      if (!this._isDashboardLoadCurrent(loadId)) return;
-      this.setData({
-        trendData: [],
-        trendPoints: [],
-        trendSegments: [],
-        trendLastPoint: null,
-        trendAreaStyle: '',
-        trendSummary: '趋势暂不可用',
-        trendAvailable: false
+      const target = (this.data.wrongReviewItems || []).find(item => Number(item.wrongQuestionId) === wqId)
+        || (this.data.reviewItems || []).find(item => Number(item.wrongQuestionId) === wqId);
+      const raw = await api.put(`/wrong-questions/${wqId}/diagnosis`, {
+        diagnosis_id: target && target.errorDiagnosis ? Number(target.errorDiagnosis.id || 0) || undefined : undefined,
+        primary_type: picked.type,
+        secondary_types: [],
       });
-    } finally {
-      if (!this._isDashboardLoadCurrent(loadId)) return;
-      this.setData({ trendLoading: false });
+      const normalized = errorDiagnosis.normalizeDiagnosis(raw);
+      const update = (list) => (list || []).map(item => item.wrongQuestionId === wqId
+        ? Object.assign({}, item, { errorDiagnosis: normalized, errorDiagnosisLabel: picked.label })
+        : item);
+      this.setData({
+        reviewItems: update(this.data.reviewItems),
+        filteredReviewItems: update(this.data.filteredReviewItems),
+        wrongReviewItems: update(this.data.wrongReviewItems),
+      });
+      wx.showToast({ title: '错因已记录', icon: 'success' });
+    } catch (err) {
+      wx.showToast({ title: api.getErrorMessage(err), icon: 'none' });
     }
-  },
-
-  async loadGrowth(loadId = this._dashboardLoadId) {
-    if (!this._isDashboardLoadCurrent(loadId)) return;
-    let resolved = null;
-
-    // 1. 优先使用练习提交结果里已经携带的成长数据，避免页面首屏闪 0。
-    const embedded = normalizeGrowthProfile(
-      this._sessionPayload && (
-        this._sessionPayload.growth ||
-        this._sessionPayload.growth_profile ||
-        this._sessionPayload.growthProfile ||
-        (this._sessionPayload.stats && this._sessionPayload.stats.growth)
-      )
-    );
-    if (embedded) resolved = embedded;
-
-    // 2. 后端独立成长接口是最完整的数据源。
-    try {
-      const raw = await this.requestApi('/api/v1/stats/growth');
-      if (!this._isDashboardLoadCurrent(loadId)) return;
-      const growth = normalizeGrowthProfile(raw);
-      if (growth) resolved = growth;
-    } catch (e) {}
-
-    // 3. 若独立接口不可用，兼容后端聚合看板接口。
-    if (!resolved || (resolved.total_exp === 0 && this.data.totalCount > 0)) {
-      try {
-        const dashboard = await this.requestApi('/api/v1/stats/dashboard-v2', {
-          trend_days: 7,
-          include_yearly_summary: false,
-          include_growth: true,
-          include_adaptive: false
-        });
-        if (!this._isDashboardLoadCurrent(loadId)) return;
-        const growth = normalizeGrowthProfile(dashboard && dashboard.growth);
-        if (growth && (growth.total_exp > 0 || !resolved)) resolved = growth;
-      } catch (e) {}
-    }
-
-    // 不再用“本次题数 × 固定值”或本地公式伪造累计等级。权威成长接口
-    // 都不可用时，结果页明确显示暂不可用，避免用户看到错误的 Lv1/Lv2。
-    if (!resolved || !this._isDashboardLoadCurrent(loadId)) {
-      if (this._isDashboardLoadCurrent(loadId)) this.setData({ growthAvailable: false });
-      return;
-    }
-
-    const unlockedBadgeCount = (resolved.badges || []).filter(item => item && item.unlocked).length;
-    this.setData({
-      growth: resolved,
-      growthAvailable: true,
-      unlockedBadgeCount
-    });
-  },
-
-  async loadBehavior(loadId = this._dashboardLoadId) {
-    if (!this._isDashboardLoadCurrent(loadId)) return;
-    try {
-      const raw = await this.requestApi('/api/v1/stats/behavior');
-      if (!this._isDashboardLoadCurrent(loadId)) return;
-      const dist = raw && Array.isArray(raw.error_type_distribution)
-        ? raw.error_type_distribution
-        : [];
-      if (!dist.length) return;
-
-      const normalized = dist
-        .filter(item => item && Number(item.count) > 0)
-        .sort((a, b) => Number(b.count) - Number(a.count))
-        .slice(0, 5);
-
-      const total = normalized.reduce((sum, item) => sum + Number(item.count || 0), 0);
-      const errorDistribution = normalized.map((item, index) => ({
-        label: this.formatErrorType(item.type),
-        count: Number(item.count) || 0,
-        percent: total ? Math.round(Number(item.count || 0) / total * 100) : 0,
-        color: ERROR_COLORS[index % ERROR_COLORS.length]
-      }));
-
-      if (errorDistribution.length) {
-        this.setData({
-          errorDistribution,
-          errorDonutGradient: buildErrorDonutGradient(errorDistribution),
-          errorDonutSvg: buildErrorDonutSvg(errorDistribution)
-        });
-      }
-    } catch (e) {}
-  },
-
-  formatErrorType(type) {
-    const map = {
-      concept: '知识概念',
-      calculation: '计算失误',
-      careless: '粗心审题',
-      memory: '记忆偏差',
-      logic: '逻辑推理',
-      unknown: '其他',
-      null: '其他',
-      '': '其他'
-    };
-    return map[String(type)] || String(type || '其他');
-  },
-
-  requestApi(path, data = {}) {
-    // This page previously bypassed the shared API client with a raw wx.request,
-    // which broke auth refresh, correlation headers, and safe error handling.
-    const normalizedPath = String(path || '').replace(/^\/api\/v1(?=\/|$)/, '') || '/'
-    return api.get(normalizedPath, data)
-  },
-
-  switchTab(e) {
-    const key = e.currentTarget.dataset.key;
-    if (!key || key === this.data.activeTab) return;
-    this.setData({ activeTab: key });
   },
 
   switchQuestionFilter(e) {
@@ -1519,12 +1285,8 @@ Page({
   open408TeacherFromReview() {
     const dialog = this.data.reviewDialog || {};
     if (!dialog.questionId) return;
-    this.setData({
-      teacherSheetVisible: true,
-      teacherResult: null,
-      teacherErrorText: '',
-      teacherLoading: false
-    });
+    const action = dialog.status === 'correct' ? 'explain_correct' : 'core_concept';
+    this.run408TeacherFromReview(action);
   },
 
   select408TeacherAction(e) {
@@ -1536,6 +1298,8 @@ Page({
     if (this.data.teacherLoading) return;
     const dialog = this.data.reviewDialog || {};
     if (!dialog.questionId) return;
+    const requestSeq = ++this._teacherRequestSeq;
+    const questionId = Number(dialog.questionId);
     this.setData({
       teacherLoading: true,
       teacherResult: null,
@@ -1545,19 +1309,20 @@ Page({
     });
     try {
       const payload = {
-        question_id: Number(dialog.questionId),
+        question_id: questionId,
         action: action
       };
       if (Number(dialog.questionVersionId) > 0) payload.question_version_id = Number(dialog.questionVersionId);
       if (Number(dialog.diagnosisId) > 0) payload.diagnosis_id = Number(dialog.diagnosisId);
       if (dialog.userAnswer && dialog.userAnswer !== '未作答') payload.user_answer = String(dialog.userAnswer);
       const raw = await api.post('/ai/408-teacher', payload, { timeout: 55000 });
+      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive || !this.data.teacherSheetVisible) return;
+      if (Number((this.data.reviewDialog || {}).questionId) !== questionId) return;
       const normalized = aiTeacher408.normalizeResult(raw);
       if (!normalized) throw new Error('AI 返回格式异常');
-      if (!this._pageAlive) return;
       this.setData({ teacherLoading: false, teacherResult: normalized });
     } catch (error) {
-      if (!this._pageAlive) return;
+      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive || !this.data.teacherSheetVisible) return;
       this.setData({
         teacherLoading: false,
         teacherErrorText: aiTeacher408.errorMessage(error, api)
@@ -1566,8 +1331,8 @@ Page({
   },
 
   close408Teacher() {
-    if (this.data.teacherLoading) return;
-    this.setData({ teacherSheetVisible: false, teacherResult: null, teacherErrorText: '' });
+    this._teacherRequestSeq++;
+    this.setData({ teacherSheetVisible: false, teacherLoading: false, teacherResult: null, teacherErrorText: '' });
   },
 
   async feedback408Teacher(e) {

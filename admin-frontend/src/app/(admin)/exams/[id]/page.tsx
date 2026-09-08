@@ -4,21 +4,36 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
   CheckCircle2,
+  ClipboardCheck,
+  History,
+  ListOrdered,
   Plus,
+  Sigma,
+  Timer,
   Save,
   Search,
   Trash2,
 } from "lucide-react";
+
+import {
+  EmptyState,
+  FieldLabel,
+  ManagementNotice,
+  ManagementPage,
+  ManagementPageHeader,
+  ManagementPanel,
+  MetricCard,
+  MetricStrip,
+  StatusBadge,
+} from "@/components/admin/management-ui";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Input } from "@/components/ui/input";
 import { CustomSelect } from "@/components/ui/custom-select";
+import { Input } from "@/components/ui/input";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import type {
   AdminExamPaperDetail,
@@ -34,6 +49,7 @@ const typeOptions = [
   { label: "历年真题 · 选择题", value: "past_exam_choice" },
   { label: "模拟卷 · 选择题", value: "mock_choice" },
 ];
+
 const CORE_408 = new Set([
   "data_structure",
   "computer_organization",
@@ -85,6 +101,12 @@ function toDraftItem(item: AdminExamPaperQuestionItem): DraftItem {
     question_version_id: item.question_version_id,
     version_is_current: item.version_is_current,
   };
+}
+
+function statusMeta(status: AdminExamPaperDetail["status"]) {
+  if (status === "published") return { label: "已发布", tone: "success" as const, summary: "题序与题目版本已冻结" };
+  if (status === "archived") return { label: "已归档", tone: "neutral" as const, summary: "不再出现在前台试卷列表" };
+  return { label: "草稿", tone: "warning" as const, summary: "可继续编辑题目与基础信息" };
 }
 
 export default function ExamPaperDetailPage() {
@@ -191,7 +213,7 @@ export default function ExamPaperDetailPage() {
       {
         question_id: question.id,
         score: "2",
-        subject_name: question.subject_name || "408",
+        subject_name: question.subject_name || "未归类",
         subject_code: question.subject_code || "",
         content: question.content,
         year: question.year,
@@ -214,87 +236,192 @@ export default function ExamPaperDetailPage() {
   if (paperQuery.isLoading) return <div className="py-16 text-center text-sm text-[var(--color-text-secondary)]">正在加载试卷...</div>;
   if (!paper) return <div className="py-16 text-center text-sm text-red-600">试卷不存在或加载失败。</div>;
 
+  const status = statusMeta(paper.status);
+  const draftScore = items.reduce((total, item) => total + (Number(item.score) || 0), 0);
+  const hasStaleVersion = items.some((item) => item.version_is_current === false);
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <Button variant="secondary" onClick={() => router.push("/exams")}><ArrowLeft className="h-4 w-4" /></Button>
-          <div>
-            <p className="text-sm font-semibold text-[var(--color-primary)]">408-EXAM · v{paper.version}</p>
-            <h1 className="font-display text-3xl font-bold text-[var(--ink)]">{paper.title}</h1>
-            <p className="mt-2 text-sm text-[var(--color-text-secondary)]">
-              {paper.question_count} 题 · 选择题总分 {paper.total_choice_score} · {paper.attempt_count} 次历史作答 · {paper.status === "draft" ? "草稿可编辑" : paper.status === "published" ? "已发布，题目版本已冻结" : "已归档"}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          {paper.status === "draft" && canWrite ? <Button onClick={() => setConfirmAction("publish")} disabled={paper.validation_errors.length > 0 || stateMutation.isPending}><CheckCircle2 className="mr-2 h-4 w-4" />发布</Button> : null}
-          {paper.status !== "archived" && canWrite ? <Button variant="secondary" onClick={() => setConfirmAction("archive")} disabled={stateMutation.isPending}>归档</Button> : null}
-        </div>
-      </div>
+    <ManagementPage>
+      <ManagementPageHeader
+        icon={<ClipboardCheck className="h-5 w-5" />}
+        title={paper.title}
+        description={status.summary}
+        meta={
+          <>
+            <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+            <span>版本 v{paper.version}</span>
+            <span>试卷 ID #{paper.id}</span>
+            {paper.source ? <span>{paper.source}</span> : null}
+          </>
+        }
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => router.push("/exams")}>
+              <ArrowLeft className="h-4 w-4" />
+              返回列表
+            </Button>
+            {paper.status === "draft" && canWrite ? (
+              <Button onClick={() => setConfirmAction("publish")} disabled={paper.validation_errors.length > 0 || stateMutation.isPending}>
+                <CheckCircle2 className="h-4 w-4" />
+                发布
+              </Button>
+            ) : null}
+            {paper.status !== "archived" && canWrite ? (
+              <Button variant="secondary" onClick={() => setConfirmAction("archive")} disabled={stateMutation.isPending}>
+                归档
+              </Button>
+            ) : null}
+          </>
+        }
+      />
+
+      <MetricStrip className="sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard icon={<ListOrdered className="h-4 w-4" />} label="当前题目" value={items.length} hint={isDraft ? "保存组卷后写入固定题序" : "已按发布版本冻结"} />
+        <MetricCard icon={<Sigma className="h-4 w-4" />} label="选择题总分" value={`${draftScore} 分`} hint={isDraft ? `已保存 ${paper.total_choice_score} 分` : "发布时固定"} tone="accent" />
+        <MetricCard icon={<History className="h-4 w-4" />} label="历史作答" value={paper.attempt_count} hint="已产生的考试记录" />
+        <MetricCard icon={<Timer className="h-4 w-4" />} label="建议时长" value={paper.duration_sec ? `${Math.round(paper.duration_sec / 60)} 分` : "不限时"} hint={hasStaleVersion ? "题库存在新版本，已固定版本不受影响" : "题目版本状态正常"} tone={hasStaleVersion ? "warning" : "default"} />
+      </MetricStrip>
 
       {paper.validation_errors.length > 0 ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <div className="flex gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-semibold">发布前还有 {paper.validation_errors.length} 项需要处理</p><ul className="mt-2 list-disc space-y-1 pl-5">{paper.validation_errors.map((error) => <li key={error}>{error}</li>)}</ul></div></div>
-        </div>
+        <ManagementNotice tone="warning" title={`发布前还有 ${paper.validation_errors.length} 项需要处理`}>
+          <ul className="space-y-1 text-xs leading-5">
+            {paper.validation_errors.map((error) => <li key={error}>• {error}</li>)}
+          </ul>
+        </ManagementNotice>
       ) : null}
 
-      <Card>
-        <CardHeader><h2 className="font-display text-xl font-bold text-[var(--ink)]">试卷信息</h2></CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-5">
-          <div className="md:col-span-2"><label className="mb-2 block text-xs font-semibold text-[var(--color-text-secondary)]">名称</label><Input value={title} disabled={!isDraft || !canWrite} onChange={(e) => setTitle(e.target.value)} /></div>
-          <div><label className="mb-2 block text-xs font-semibold text-[var(--color-text-secondary)]">类型</label><CustomSelect value={paperType} disabled={!isDraft || !canWrite} options={typeOptions} onChange={(value) => setPaperType(value as AdminExamPaperType)} /></div>
-          <div><label className="mb-2 block text-xs font-semibold text-[var(--color-text-secondary)]">年份</label><Input value={year} disabled={!isDraft || !canWrite} onChange={(e) => setYear(e.target.value.replace(/\D/g, "").slice(0, 4))} /></div>
-          <div><label className="mb-2 block text-xs font-semibold text-[var(--color-text-secondary)]">建议时长（分钟）</label><Input value={durationMin} disabled={!isDraft || !canWrite} onChange={(e) => setDurationMin(e.target.value.replace(/\D/g, ""))} /></div>
-          <div className="md:col-span-4"><label className="mb-2 block text-xs font-semibold text-[var(--color-text-secondary)]">来源</label><Input value={source} disabled={!isDraft || !canWrite} onChange={(e) => setSource(e.target.value)} placeholder="例如：全国硕士研究生招生考试" /></div>
-          {isDraft && canWrite ? <div className="flex items-end justify-end"><Button onClick={() => metaMutation.mutate()} disabled={!title.trim() || metaMutation.isPending}><Save className="mr-2 h-4 w-4" />保存信息</Button></div> : null}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div><h2 className="font-display text-xl font-bold text-[var(--ink)]">固定题序</h2><p className="mt-1 text-sm text-[var(--color-text-secondary)]">保存组卷时固定当前 QuestionVersion；发布后不可直接替换。</p></div>
-            {isDraft && canWrite ? <Button onClick={() => itemsMutation.mutate()} disabled={!items.length || itemsMutation.isPending || items.some((item) => Number(item.score) <= 0)}><Save className="mr-2 h-4 w-4" />保存组卷</Button> : null}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {items.map((item, index) => (
-            <div key={`${item.question_id}-${index}`} className="rounded-2xl border border-[var(--color-border)] p-4">
-              <div className="flex gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 font-bold text-blue-700">{index + 1}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-text-secondary)]"><span className="font-semibold text-[var(--ink)]">{item.subject_name}</span><span>Q#{item.question_id}</span>{item.year ? <span>{item.year}</span> : null}{item.source ? <span>{item.source}</span> : null}{item.version_is_current === false ? <span className="font-semibold text-amber-700">题库已产生新版本</span> : null}</div>
-                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-[var(--ink)]">{stemFromContent(item.content) || "（题干包含结构化内容/图片）"}</p>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.75fr)] xl:items-start">
+        <ManagementPanel
+          variant="focus"
+          title="固定题序"
+          description="草稿阶段可调整题序与分值。保存组卷时会固定当前 QuestionVersion，发布后不再直接替换。"
+          actions={isDraft && canWrite ? (
+            <Button onClick={() => itemsMutation.mutate()} disabled={!items.length || itemsMutation.isPending || items.some((item) => Number(item.score) <= 0)}>
+              <Save className="h-4 w-4" />
+              保存组卷
+            </Button>
+          ) : undefined}
+          contentClassName="p-0"
+        >
+          <div className="divide-y divide-[var(--color-border-light)]">
+            {items.map((item, index) => (
+              <div key={`${item.question_id}-${index}`} className="group flex gap-3 px-4 py-4 transition-colors hover:bg-[rgba(74,111,138,0.025)] sm:px-5">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-primary-light)] text-xs font-bold tabular-nums text-[var(--color-primary-dark)]">
+                  {index + 1}
                 </div>
-                <div className="w-24 shrink-0"><label className="mb-1 block text-xs text-[var(--color-text-secondary)]">分值</label><Input value={item.score} disabled={!isDraft || !canWrite} onChange={(e) => setItems((current) => current.map((entry, i) => i === index ? { ...entry, score: e.target.value.replace(/[^\d.]/g, "") } : entry))} /></div>
-                {isDraft && canWrite ? <div className="flex shrink-0 flex-col gap-1"><Button variant="secondary" onClick={() => moveItem(index, -1)} disabled={index === 0}><ArrowUp className="h-4 w-4" /></Button><Button variant="secondary" onClick={() => moveItem(index, 1)} disabled={index === items.length - 1}><ArrowDown className="h-4 w-4" /></Button><Button variant="secondary" onClick={() => setItems((current) => current.filter((_, i) => i !== index))}><Trash2 className="h-4 w-4" /></Button></div> : null}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--color-text-tertiary)]">
+                    <span className="font-semibold text-[var(--color-text-secondary)]">{item.subject_name}</span>
+                    <span>Q#{item.question_id}</span>
+                    {item.year ? <span>{item.year}</span> : null}
+                    {item.version_is_current === false ? <StatusBadge tone="warning">题库已有新版本</StatusBadge> : null}
+                  </div>
+                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-[var(--ink)]">{stemFromContent(item.content) || "题干包含结构化内容或图片"}</p>
+                  {item.source ? <p className="mt-1 truncate text-[11px] text-[var(--color-text-tertiary)]">来源：{item.source}</p> : null}
+                </div>
+                <div className="flex shrink-0 items-start gap-2">
+                  <label className="w-20">
+                    <FieldLabel>分值</FieldLabel>
+                    <Input
+                      className="text-center tabular-nums"
+                      value={item.score}
+                      disabled={!isDraft || !canWrite}
+                      onChange={(event) => setItems((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, score: event.target.value.replace(/[^\d.]/g, "") } : entry))}
+                    />
+                  </label>
+                  {isDraft && canWrite ? (
+                    <div className="flex flex-col gap-1 pt-[22px]">
+                      <Button className="h-8 w-8 px-0" size="sm" variant="ghost" onClick={() => moveItem(index, -1)} disabled={index === 0} aria-label="上移题目">
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button className="h-8 w-8 px-0" size="sm" variant="ghost" onClick={() => moveItem(index, 1)} disabled={index === items.length - 1} aria-label="下移题目">
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
+                      <Button className="h-8 w-8 px-0 text-red-600 hover:bg-red-50 hover:text-red-700" size="sm" variant="ghost" onClick={() => setItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label="移除题目">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
+            ))}
+          </div>
+          {!items.length ? <EmptyState>还没有题目。草稿阶段可从下方题库中添加单选题。</EmptyState> : null}
+        </ManagementPanel>
+
+        <ManagementPanel variant="quiet" title="试卷信息" description={isDraft ? "基础信息可在草稿阶段修改。" : "当前试卷已锁定为只读。"}>
+          <div className="space-y-4">
+            <label>
+              <FieldLabel>名称</FieldLabel>
+              <Input value={title} disabled={!isDraft || !canWrite} onChange={(event) => setTitle(event.target.value)} />
+            </label>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <label>
+                <FieldLabel>类型</FieldLabel>
+                <CustomSelect value={paperType} disabled={!isDraft || !canWrite} options={typeOptions} onChange={(value) => setPaperType(value as AdminExamPaperType)} clearable={false} />
+              </label>
+              <label>
+                <FieldLabel>年份</FieldLabel>
+                <Input value={year} disabled={!isDraft || !canWrite} onChange={(event) => setYear(event.target.value.replace(/\D/g, "").slice(0, 4))} />
+              </label>
             </div>
-          ))}
-          {!items.length ? <div className="py-10 text-center text-sm text-[var(--color-text-secondary)]">还没有题目。V1 只允许 single_choice。</div> : null}
-        </CardContent>
-      </Card>
+            <label>
+              <FieldLabel>建议时长（分钟）</FieldLabel>
+              <Input value={durationMin} disabled={!isDraft || !canWrite} onChange={(event) => setDurationMin(event.target.value.replace(/\D/g, ""))} />
+            </label>
+            <label>
+              <FieldLabel>来源</FieldLabel>
+              <Input value={source} disabled={!isDraft || !canWrite} onChange={(event) => setSource(event.target.value)} placeholder="例如：全国硕士研究生招生考试" />
+            </label>
+            {isDraft && canWrite ? (
+              <Button className="w-full" onClick={() => metaMutation.mutate()} disabled={!title.trim() || metaMutation.isPending}>
+                <Save className="h-4 w-4" />
+                保存信息
+              </Button>
+            ) : null}
+          </div>
+        </ManagementPanel>
+      </div>
 
       {isDraft && canWrite ? (
-        <Card>
-          <CardHeader><h2 className="font-display text-xl font-bold text-[var(--ink)]">从 408 题库添加单选题</h2></CardHeader>
-          <CardContent className="space-y-4">
-            <div className="relative max-w-xl"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" /><Input className="pl-9" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="按题干关键词搜索（最多显示 100 条）" /></div>
-            <div className="grid gap-3 xl:grid-cols-2">
-              {candidates.map((question) => (
-                <div key={question.id} className="flex gap-3 rounded-2xl border border-[var(--color-border)] p-4">
-                  <div className="min-w-0 flex-1"><div className="flex flex-wrap gap-2 text-xs text-[var(--color-text-secondary)]"><span className="font-semibold text-[var(--ink)]">{question.subject_name}</span><span>Q#{question.id}</span>{question.year ? <span>{question.year}</span> : null}</div><p className="mt-2 line-clamp-3 text-sm leading-6">{stemFromContent(question.content) || "（结构化题干）"}</p></div>
-                  <Button variant="secondary" onClick={() => addCandidate(question)}><Plus className="h-4 w-4" /></Button>
+        <ManagementPanel
+          variant="quiet"
+          title="从题库添加单选题"
+          description="仅展示已审核、已启用且属于核心科目的单选题，最多加载 100 条。"
+          icon={<Plus className="h-4 w-4" />}
+          actions={
+            <label className="relative block w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
+              <Input className="pl-9" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索题干关键词" />
+            </label>
+          }
+          contentClassName="p-0"
+        >
+          <div className="grid md:grid-cols-2">
+            {candidates.map((question) => (
+              <div key={question.id} className="flex gap-3 border-b border-[var(--color-border-light)] px-4 py-4 md:odd:border-r md:px-5">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap gap-2 text-[11px] text-[var(--color-text-tertiary)]">
+                    <span className="font-semibold text-[var(--color-text-secondary)]">{question.subject_name}</span>
+                    <span>Q#{question.id}</span>
+                    {question.year ? <span>{question.year}</span> : null}
+                  </div>
+                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-[var(--ink)]">{stemFromContent(question.content) || "结构化题干"}</p>
                 </div>
-              ))}
-            </div>
-            {!candidateQuery.isLoading && candidates.length === 0 ? <p className="py-6 text-center text-sm text-[var(--color-text-secondary)]">没有更多符合条件的 408 单选题。</p> : null}
-          </CardContent>
-        </Card>
+                <Button className="h-9 w-9 shrink-0 px-0" variant="secondary" onClick={() => addCandidate(question)} aria-label={`添加题目 ${question.id}`}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+          {!candidateQuery.isLoading && candidates.length === 0 ? <EmptyState>没有更多符合条件的单选题。</EmptyState> : null}
+          {candidateQuery.isLoading ? <EmptyState>正在加载可选题目...</EmptyState> : null}
+        </ManagementPanel>
       ) : null}
 
-      {(metaMutation.isError || itemsMutation.isError || stateMutation.isError) ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">操作失败，请检查发布校验或刷新后重试。</div> : null}
+      {(metaMutation.isError || itemsMutation.isError || stateMutation.isError) ? (
+        <ManagementNotice tone="danger" title="操作未完成">请检查发布校验，或刷新数据后重试。</ManagementNotice>
+      ) : null}
 
       <ConfirmDialog
         open={Boolean(confirmAction)}
@@ -306,6 +433,6 @@ export default function ExamPaperDetailPage() {
         onCancel={() => setConfirmAction(null)}
         onConfirm={() => confirmAction && stateMutation.mutate(confirmAction)}
       />
-    </div>
+    </ManagementPage>
   );
 }

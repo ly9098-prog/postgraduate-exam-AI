@@ -24,7 +24,7 @@ ACTION_DEFINITIONS: dict[str, dict[str, str]] = {
     "core_concept": {
         "label": "这道题真正考什么？",
         "description": "提炼核心考点、命题方式与识别信号。",
-        "instruction": "提炼本题真正考查的 408 核心知识、题干识别信号和最短解题路径。",
+        "instruction": "提炼本题真正考查的核心知识、题干识别信号和最短解题路径。",
     },
     "similar_question": {
         "label": "给我一道同类题",
@@ -34,7 +34,7 @@ ACTION_DEFINITIONS: dict[str, dict[str, str]] = {
     "harder_question": {
         "label": "给我一道更难的题",
         "description": "生成一道同知识点但更强调综合判断的单选题。",
-        "instruction": "生成一道同知识点、难度提高一级的单选题；增加条件组合或易混边界，但不得超出给定 408 上下文凭空引入冷门结论。",
+        "instruction": "生成一道同知识点、难度提高一级的单选题；增加条件组合或易混边界，但不得超出给定学习上下文凭空引入冷门结论。",
     },
     "connect_knowledge": {
         "label": "帮我串联相关知识点",
@@ -42,9 +42,9 @@ ACTION_DEFINITIONS: dict[str, dict[str, str]] = {
         "instruction": "结合提供的知识图谱邻居，说明当前知识点与前置、相关、后续知识的连接；图谱没有证据时不要编造关系。",
     },
     "high_frequency_traps": {
-        "label": "总结 408 高频陷阱",
+        "label": "总结高频陷阱",
         "description": "总结与本题知识点直接相关的高频易错边界。",
-        "instruction": "只总结与当前题目和给定知识点直接相关的 408 高频陷阱、易混边界和检查动作；不要扩成通用备考文章。",
+        "instruction": "只总结与当前题目和给定知识点直接相关的高频陷阱、易混边界和检查动作；不要扩成通用备考文章。",
     },
 }
 
@@ -67,7 +67,7 @@ def _bounded_json(value: Any, max_chars: int) -> str:
 def build_408_teacher_prompt(*, action: str, context: dict[str, Any]) -> list[dict[str, str]]:
     meta = ACTION_DEFINITIONS[action]
     system = (
-        "你是 MemoGrad 的 408 专项 AI 老师，只服务计算机学科专业基础综合（408）学习。"
+        "你是 MemoGrad 的专项 AI 老师，只服务计算机专业课学习。"
         "你不是自由聊天机器人；本次只能完成指定固定动作。"
         "必须优先依据题目固定版本、官方题库解析、知识点、用户当前掌握状态、近期同知识点错误、已确认错因和知识图谱关系。"
         "不得引用其他用户数据。没有证据时明确说明证据不足，不要杜撰知识图谱关系、用户弱点或题库事实。"
@@ -80,7 +80,7 @@ def build_408_teacher_prompt(*, action: str, context: dict[str, Any]) -> list[di
         "。similar_question/harder_question 时 practice_question 必须为："
         '{"stem":"","options":{"A":"","B":"","C":"","D":""},"answer":"A",'
         '"analysis":"","difficulty_delta":0或1}；其他动作应为 null。'
-        "sections 最多 4 组，每组 points 最多 5 条；语言简洁、面向考研 408 复盘。"
+        "sections 最多 4 组，每组 points 最多 5 条；语言简洁、面向考研专业课复盘。"
     )
     user = (
         f"固定动作={action}\n动作说明={meta['instruction']}\n"
