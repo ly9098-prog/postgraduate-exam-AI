@@ -188,6 +188,7 @@ class ExamAnswer(Base):
         CheckConstraint("used_time >= 0", name="ck_exam_answers_used_time_nonnegative"),
         CheckConstraint("score IS NULL OR score >= 0", name="ck_exam_answers_score_nonnegative"),
         Index("ix_exam_answers_attempt_item", "attempt_id", "exam_paper_question_id"),
+        Index("ix_exam_answers_revision", "id", "answer_revision"),
     )
 
     id: Mapped[int] = mapped_column(
@@ -219,6 +220,7 @@ class ExamAnswer(Base):
         index=True,
     )
     selected_answer: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    answer_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     score: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     used_time: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

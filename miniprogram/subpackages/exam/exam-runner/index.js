@@ -10,7 +10,9 @@ function formatClock(sec) {
   return h > 0 ? `${pad2(h)}:${pad2(m)}:${pad2(s)}` : `${pad2(m)}:${pad2(s)}`
 }
 
-function cacheKey(attemptId) { return `exam_attempt_pending_v1:${attemptId}` }
+const EXAM_CACHE_SCHEMA_VERSION = 2
+function cacheKey(attemptId) { return `exam_attempt_pending_v2:${attemptId}` }
+function legacyCacheKey(attemptId) { return `exam_attempt_pending_v1:${attemptId}` }
 
 Page({
   data: {
@@ -71,7 +73,15 @@ Page({
 
   _loadPending(attemptId) {
     try {
-      const raw = wx.getStorageSync(cacheKey(attemptId))
+      let raw = wx.getStorageSync(cacheKey(attemptId))
+      if ((!raw || typeof raw !== 'object') && wx.getStorageSync) {
+        const legacy = wx.getStorageSync(legacyCacheKey(attemptId))
+        if (legacy && typeof legacy === 'object') {
+          raw = Object.assign({ schema_version: 1 }, legacy)
+          wx.setStorageSync(cacheKey(attemptId), Object.assign({}, raw, { schema_version: EXAM_CACHE_SCHEMA_VERSION }))
+          wx.removeStorageSync(legacyCacheKey(attemptId))
+        }
+      }
       return raw && typeof raw === 'object' ? raw : Object.create(null)
     } catch (_) {
       return Object.create(null)
@@ -81,7 +91,7 @@ Page({
   _persistPending() {
     try {
       const keys = Object.keys(this._pending || {})
-      if (keys.length) wx.setStorageSync(cacheKey(this.data.attemptId), this._pending)
+      if (keys.length) wx.setStorageSync(cacheKey(this.data.attemptId), Object.assign({}, this._pending, { schema_version: EXAM_CACHE_SCHEMA_VERSION }))
       else wx.removeStorageSync(cacheKey(this.data.attemptId))
     } catch (_) {}
   },

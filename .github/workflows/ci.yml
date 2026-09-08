@@ -331,3 +331,55 @@ jobs:
         # exceed 35 minutes when the configured package mirror is slow.
         run: docker compose --progress=plain -f deploy/docker-compose.prod.yml --env-file backend/.env.ci build app
         timeout-minutes: 90
+
+
+  migration-cycle:
+    name: Migration upgrade/downgrade cycle
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install migration dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[test]"
+
+      - name: Prepare migration database
+        env:
+          DATABASE_URL: sqlite:///migration-ci.db
+        run: |
+          rm -f migration-ci.db
+
+      - name: Validate migration heads
+        env:
+          DATABASE_URL: sqlite:///migration-ci.db
+        run: |
+          heads=$(alembic heads | wc -l)
+          if [ "$heads" -ne 1 ]; then
+            echo "Expected exactly one Alembic head, found:"
+            alembic heads
+            exit 1
+          fi
+
+      - name: Upgrade to latest revision
+        env:
+          DATABASE_URL: sqlite:///migration-ci.db
+        run: |
+          alembic upgrade head
+
+      - name: Downgrade one revision and upgrade again
+        env:
+          DATABASE_URL: sqlite:///migration-ci.db
+        run: |
+          alembic downgrade -1
+          alembic upgrade head

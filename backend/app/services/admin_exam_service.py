@@ -105,7 +105,7 @@ async def list_exam_papers(
 async def _get_paper(db: AsyncSession, paper_id: int, *, lock: bool = False) -> ExamPaper:
     stmt = select(ExamPaper).where(ExamPaper.id == paper_id)
     if lock and db.get_bind() is not None and db.get_bind().dialect.name == "postgresql":
-        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+        stmt = stmt.with_for_update()
     paper = await db.scalar(stmt)
     if paper is None:
         raise ExamPaperNotFoundError("试卷不存在")
@@ -139,8 +139,6 @@ async def _load_paper_items(db: AsyncSession, paper_id: int) -> list[dict]:
             "source": revision.source,
             "difficulty": int(revision.difficulty or 3),
             "review_status": question.review_status,
-            "question_is_active": bool(question.is_active),
-            "revision_is_active": bool(revision.is_active),
             "is_active": bool(question.is_active and revision.is_active),
             "current_version_id": int(question.current_version_id) if question.current_version_id else None,
             "version_is_current": int(question.current_version_id or 0) == int(item.question_version_id),
@@ -162,24 +160,23 @@ async def validate_exam_paper(db: AsyncSession, paper_id: int) -> list[str]:
     qids = [int(item["question_id"]) for item in items]
     if len(qids) != len(set(qids)):
         errors.append("试卷存在重复题目")
-    require_current_publish_state = paper.status == "draft"
     for item in items:
         prefix = f"第 {item['position']} 题"
         if item["question_type"] != QT_SINGLE_CHOICE:
             errors.append(f"{prefix} 不是 single_choice，V1 仅允许单选题")
         if not item["options"] or not isinstance(item["options"], dict) or len(item["options"]) < 2:
             errors.append(f"{prefix} 缺少有效选项")
-        if require_current_publish_state:
-            # Draft validation answers "can this paper be published now?" and
-            # therefore must inspect the mutable current Question projection.
-            if not item["is_active"] or item["review_status"] != "approved":
-                errors.append(f"{prefix} 当前不是 approved + active 可发布题目")
-            if not item["version_is_current"]:
-                errors.append(f"{prefix} 已产生新题目版本，请重新保存组卷后再发布")
-        elif not item["revision_is_active"]:
-            # Published/archived papers are historical artifacts. Do not let a
-            # later Question edit/deactivation invalidate the pinned version.
-            errors.append(f"{prefix} 固定题目版本已被标记为 inactive")
+        # Draft papers are validated against current publishability.
+        # Published/archived papers are historical snapshots and must not fail
+        # only because the source question was later disabled or reviewed again.
+        if paper.status == "draft" and (not item["is_active"] or item["review_status"] != "approved"):
+            errors.append(f"{prefix} 当前不是 approved + active 可发布题目")
+        # Draft validation protects against accidentally publishing against a
+        # superseded mutable question projection. Published/archived papers are
+        # historical snapshots and must continue to validate against their
+        # frozen question_version_id rather than the current Question pointer.
+        if paper.status == "draft" and not item["version_is_current"]:
+            errors.append(f"{prefix} 已产生新题目版本，请重新保存组卷后再发布")
         if canonical_408_code(item["subject_code"]) not in EXAM408_CORE_CODES:
             errors.append(f"{prefix} 不属于 canonical 408 四科")
         if _money(item["score"]) <= 0:

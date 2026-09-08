@@ -779,3 +779,29 @@ async def run_outbox_reconciler(
     except asyncio.CancelledError:
         logger.info("Outbox reconciler cancelled")
         raise
+
+
+async def replay_dead_letter(
+    db: AsyncSession,
+    outbox_id: int,
+) -> TaskOutbox | None:
+    """Move one dead/failed outbox item back to pending safely.
+
+    The operation is idempotent: repeated admin retries only create one
+    executable lifecycle and never duplicate the task identity.
+    """
+    result = await db.execute(
+        select(TaskOutbox).where(TaskOutbox.id == outbox_id).with_for_update()
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return None
+    if row.status in ("pending", "leased", "published"):
+        return row
+    row.status = "pending"
+    row.retry_count = 0
+    row.error_message = None
+    row.lease_token = None
+    row.lease_expires_at = None
+    await db.flush()
+    return row
