@@ -257,6 +257,10 @@ Page({
     this._contentTransitionDirection = ''
     this._teacherRequestSeq = 0
     this._diagnosisAiRequestSeq = 0
+    this._teacherCache = Object.create(null)
+    this._teacherInflight = Object.create(null)
+    this._teacherFeedbackCache = Object.create(null)
+    this._activeTeacherCacheKey = ''
     // 页面实例级缓存仅用于状态同步/弱网兜底；前台切题始终向服务端校验最新题库内容
     this._wqCache = {}
     this._switchMaskTimer = null
@@ -320,6 +324,10 @@ Page({
     this._clearMasterUndo()
     // 清空页面实例缓存，防止跨页面串用
     this._wqCache = null
+    this._teacherCache = null
+    this._teacherInflight = null
+    this._teacherFeedbackCache = null
+    this._activeTeacherCacheKey = ''
     this._aiGenerationMarker = ''
     resetRenderGuard()
   },
@@ -530,9 +538,26 @@ Page({
     this.loadAiAnalysis(wqId)
   },
 
+  _teacherCacheKeyForWrong(wq, diagnosis, action) {
+    const item = wq || {}
+    const d = diagnosis || {}
+    return [
+      Number(item.id || 0),
+      Number(item.question_id || item.questionId || 0),
+      Number(d.question_version_id || d.questionVersionId || item.question_version_id || item.questionVersionId || 0),
+      Number(d.id || 0),
+      String(action || ''),
+      String(item.wrong_answer || ''),
+    ].join('|')
+  },
+
   async run408TeacherAction(e) {
     const action = String(e.currentTarget.dataset.action || '')
-    if (!action || this.data.teacherLoadingAction) return
+    if (!action) return
+    if (this.data.teacherLoadingAction) {
+      this.setData({ teacherSheetVisible: true })
+      return
+    }
     const wq = this.data.wq || {}
     const diagnosis = this.data.errorDiagnosis || {}
     const questionId = Number(wq.question_id || wq.questionId || 0)
@@ -544,8 +569,34 @@ Page({
       diagnosis.question_version_id || diagnosis.questionVersionId || wq.question_version_id || wq.questionVersionId || 0
     )
     const diagnosisId = Number(diagnosis.id || 0)
+    const cacheKey = this._teacherCacheKeyForWrong(wq, diagnosis, action)
+    const cached = this._teacherCache && this._teacherCache[cacheKey]
+    this._activeTeacherCacheKey = cacheKey
+    if (cached) {
+      this.setData({
+        teacherLoadingAction: '',
+        teacherErrorText: '',
+        teacherResult: cached,
+        teacherSheetVisible: true,
+        teacherFeedbackSent: (this._teacherFeedbackCache && this._teacherFeedbackCache[cacheKey]) || '',
+      })
+      return
+    }
+
     const requestSeq = ++this._teacherRequestSeq
     const sourceWqId = String(wq.id || '')
+    const payload = { question_id: questionId, action: action }
+    if (versionId > 0) payload.question_version_id = versionId
+    if (diagnosisId > 0) payload.diagnosis_id = diagnosisId
+    if (wq.wrong_answer) payload.user_answer = String(wq.wrong_answer)
+
+    if (!this._teacherInflight) this._teacherInflight = Object.create(null)
+    let requestPromise = this._teacherInflight[cacheKey]
+    if (!requestPromise) {
+      requestPromise = api.post('/ai/408-teacher', payload, { timeout: AI_REQUEST_TIMEOUT_MS })
+      this._teacherInflight[cacheKey] = requestPromise
+    }
+
     this.setData({
       teacherLoadingAction: action,
       teacherErrorText: '',
@@ -554,33 +605,35 @@ Page({
       teacherFeedbackSent: '',
     })
     try {
-      const payload = { question_id: questionId, action: action }
-      if (versionId > 0) payload.question_version_id = versionId
-      if (diagnosisId > 0) payload.diagnosis_id = diagnosisId
-      if (wq.wrong_answer) payload.user_answer = String(wq.wrong_answer)
-      const raw = await api.post('/ai/408-teacher', payload, { timeout: AI_REQUEST_TIMEOUT_MS })
-      if (requestSeq !== this._teacherRequestSeq || !this._alive || !this.data.teacherSheetVisible) return
-      if (String((this.data.wq && this.data.wq.id) || '') !== sourceWqId) return
+      const raw = await requestPromise
       const normalized = aiTeacher408.normalizeResult(raw)
       if (!normalized) throw new Error('AI 返回格式异常')
+      if (!this._teacherCache) this._teacherCache = Object.create(null)
+      this._teacherCache[cacheKey] = normalized
+
+      if (requestSeq !== this._teacherRequestSeq || !this._alive) return
+      if (String((this.data.wq && this.data.wq.id) || '') !== sourceWqId) {
+        this.setData({ teacherLoadingAction: '' })
+        return
+      }
+      this._activeTeacherCacheKey = cacheKey
       this.setData({ teacherLoadingAction: '', teacherResult: normalized })
     } catch (error) {
-      if (requestSeq !== this._teacherRequestSeq || !this._alive || !this.data.teacherSheetVisible) return
+      if (requestSeq !== this._teacherRequestSeq || !this._alive) return
       this.setData({
         teacherLoadingAction: '',
         teacherErrorText: aiTeacher408.errorMessage(error, api),
       })
+    } finally {
+      if (this._teacherInflight && this._teacherInflight[cacheKey] === requestPromise) {
+        delete this._teacherInflight[cacheKey]
+      }
     }
   },
 
   close408TeacherSheet() {
-    this._teacherRequestSeq++
-    this.setData({
-      teacherSheetVisible: false,
-      teacherLoadingAction: '',
-      teacherErrorText: '',
-      teacherResult: null,
-    })
+    // 收起不取消正在生成的内容：后台完成后缓存结果，再打开不会重复请求。
+    this.setData({ teacherSheetVisible: false })
   },
 
   async feedback408Teacher(e) {
@@ -595,6 +648,10 @@ Page({
         feedbackType: type,
         result: this.data.teacherResult,
       })
+      if (this._activeTeacherCacheKey) {
+        if (!this._teacherFeedbackCache) this._teacherFeedbackCache = Object.create(null)
+        this._teacherFeedbackCache[this._activeTeacherCacheKey] = type
+      }
       this.setData({ teacherFeedbackSent: type })
       wx.showToast({ title: '反馈已记录', icon: 'success' })
     } catch (error) {

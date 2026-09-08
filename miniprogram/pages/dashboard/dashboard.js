@@ -236,6 +236,8 @@ Page({
     errorDiagnosisLoading: false,
     errorDiagnosisSummary: '错因数据积累中',
     errorDiagnosisTopTypes: [],
+    errorDiagnosisPrimary: null,
+    errorDiagnosisPrimaryChange: null,
     errorDiagnosisChanges: [],
     errorDiagnosisTopKnowledge: null,
   },
@@ -455,11 +457,14 @@ Page({
           deltaText: Number(item.delta || 0) > 0 ? `较上期 +${item.delta}` : `较上期 ${item.delta}`,
         }))
       const kp = (raw.by_knowledge_point || [])[0]
+      const primaryChange = top ? changes.find(item => item.type === top.type) || changes[0] || null : changes[0] || null
       this.setData({
         errorDiagnosisStats: raw,
         errorDiagnosisLoading: false,
         errorDiagnosisSummary: summary,
         errorDiagnosisTopTypes: topTypes,
+        errorDiagnosisPrimary: top || null,
+        errorDiagnosisPrimaryChange: primaryChange,
         errorDiagnosisChanges: changes,
         errorDiagnosisTopKnowledge: kp ? {
           name: kp.name,

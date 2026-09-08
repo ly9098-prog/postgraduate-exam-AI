@@ -1421,3 +1421,191 @@ page {
 .plan-strip-empty-desc { margin-top: 8rpx; font-size: 20rpx; line-height: 1.5; color: #78847C; }
 .plan-strip-arrow { flex-shrink: 0; font-size: 34rpx; color: #173426; font-weight: 900; }
 .plan-strip-pressed { transform: scale(.99); opacity: .82; }
+
+/* v7: Scheme 3 — dynamic mastery snapshot */
+.mastery-section { margin-top: 46rpx; }
+.mastery-grid-tech { gap: 16rpx; }
+.mastery-card-tech {
+  position: relative;
+  overflow: hidden;
+  min-height: 230rpx;
+  padding: 20rpx 20rpx 18rpx;
+  border: 1rpx solid #DDE4DA;
+  border-radius: 24rpx;
+  background: linear-gradient(155deg, rgba(255,255,255,.94) 0%, rgba(248,250,245,.92) 100%);
+  box-shadow: 0 12rpx 28rpx rgba(21, 54, 38, .055);
+  box-sizing: border-box;
+}
+.mastery-card-tech::after {
+  content: '';
+  position: absolute;
+  right: -36rpx;
+  top: -50rpx;
+  width: 126rpx;
+  height: 126rpx;
+  border: 1rpx solid rgba(77, 119, 71, .08);
+  border-radius: 50%;
+  box-shadow: 0 0 0 20rpx rgba(77,119,71,.025);
+  pointer-events: none;
+}
+.mastery-corner-cut {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 42rpx;
+  height: 42rpx;
+  background: linear-gradient(135deg, transparent 49%, #95B47B 50%);
+  opacity: .68;
+}
+.mastery-card-tech .mastery-card-head {
+  position: relative;
+  z-index: 1;
+  align-items: center;
+}
+.mastery-mark {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #D7E2D0;
+  background: #EFF5EA;
+  color: #3E6740;
+  font-size: 21rpx;
+  font-weight: 900;
+}
+.mastery-order {
+  color: #B3BCB3;
+  font-size: 22rpx;
+  font-weight: 760;
+  letter-spacing: 1rpx;
+}
+.mastery-card-tech .mastery-subject {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: 18rpx;
+  overflow: hidden;
+  color: #1B2D22;
+  font-size: 24rpx;
+  font-weight: 900;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mastery-score-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-top: 11rpx;
+}
+.mastery-status {
+  color: #7A887E;
+  font-size: 18rpx;
+  font-weight: 650;
+}
+.mastery-card-tech .mastery-score {
+  color: #234E35;
+  font-size: 27rpx;
+  font-weight: 950;
+}
+.mastery-track-tech {
+  position: relative;
+  z-index: 1;
+  height: 12rpx;
+  margin-top: 15rpx;
+  overflow: hidden;
+  border: 1rpx solid #D9E0D7;
+  border-radius: 4rpx;
+  background: #E9EDE7;
+  box-sizing: border-box;
+}
+.mastery-fill-tech {
+  position: relative;
+  min-width: 0;
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(120deg, rgba(255,255,255,.18) 0 8rpx, rgba(255,255,255,0) 8rpx 16rpx),
+    linear-gradient(90deg, #557D4B 0%, #7FAF5D 100%);
+}
+.mastery-track-cap {
+  position: absolute;
+  top: 2rpx;
+  right: 4rpx;
+  width: 14rpx;
+  height: 6rpx;
+  border-radius: 999rpx;
+  background: rgba(63, 96, 58, .14);
+}
+.mastery-foot-tech {
+  position: relative;
+  z-index: 1;
+  margin-top: 13rpx;
+  color: #859087;
+  font-size: 17rpx;
+}
+.mastery-open-hint {
+  color: #55734F;
+  font-weight: 800;
+}
+.mastery-card-pressed {
+  transform: scale(.985);
+  opacity: .9;
+}
+
+@media (max-width: 360px) {
+  .mastery-card-tech { min-height: 218rpx; padding: 18rpx; }
+  .mastery-card-tech .mastery-subject { font-size: 22rpx; }
+  .mastery-mark { width: 44rpx; height: 44rpx; }
+}
+
+
+/* v8: reference-matched Scheme 3 mastery cards */
+.mastery-section { margin-top: 48rpx; }
+.mastery-heading { margin-bottom: 22rpx; }
+.mastery-map-link { color:#75827B; font-weight:650; }
+.mastery-grid-tech { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18rpx; padding:4rpx 0 2rpx; }
+.mastery-card-tech {
+  position:relative;
+  overflow:hidden;
+  min-height:264rpx;
+  padding:22rpx 20rpx 20rpx;
+  border:1rpx solid #DDE5DC;
+  border-radius:29rpx;
+  background:linear-gradient(156deg,rgba(255,255,253,.98),rgba(249,251,247,.94));
+  box-shadow:0 14rpx 34rpx rgba(27,55,40,.065);
+  box-sizing:border-box;
+}
+.mastery-card-tech::after { content:''; position:absolute; right:-60rpx; bottom:-64rpx; width:150rpx; height:150rpx; border-radius:50%; background:rgba(147,177,125,.035); pointer-events:none; }
+.mastery-card-tech .mastery-card-head { display:flex; align-items:center; justify-content:space-between; gap:12rpx; }
+.mastery-icon { position:relative; width:54rpx; height:54rpx; flex:0 0 auto; border-radius:50%; display:flex; align-items:center; justify-content:center; overflow:hidden; background:linear-gradient(150deg,#355E42,#5D8653); box-shadow:inset 0 1rpx 0 rgba(255,255,255,.18); }
+.mastery-icon-fallback { color:#F5F8F1; font-size:20rpx; font-weight:850; }
+.mastery-icon-shape { display:none; position:absolute; box-sizing:border-box; }
+.mastery-icon.data .mastery-icon-fallback,.mastery-icon.chip .mastery-icon-fallback,.mastery-icon.code .mastery-icon-fallback,.mastery-icon.network .mastery-icon-fallback { display:none; }
+.mastery-icon.data .mastery-icon-shape { display:block; left:15rpx; width:24rpx; height:8rpx; border:2rpx solid #F3F7EF; border-radius:50%; }
+.mastery-icon.data .one{top:13rpx}.mastery-icon.data .two{top:22rpx}.mastery-icon.data .three{top:31rpx}
+.mastery-icon.chip .one { display:block; inset:15rpx; border:3rpx solid #F3F7EF; border-radius:5rpx; }
+.mastery-icon.chip .two { display:block; left:25rpx; top:19rpx; width:4rpx; height:16rpx; border-radius:999rpx; background:#F3F7EF; }
+.mastery-icon.code .one,.mastery-icon.code .two { display:block; top:18rpx; width:15rpx; height:15rpx; border-top:3rpx solid #F3F7EF; border-left:3rpx solid #F3F7EF; }
+.mastery-icon.code .one{left:12rpx;transform:rotate(-45deg)}.mastery-icon.code .two{right:12rpx;transform:rotate(135deg)}
+.mastery-icon.network .one,.mastery-icon.network .two,.mastery-icon.network .three { display:block; width:8rpx; height:8rpx; border-radius:50%; background:#F3F7EF; }
+.mastery-icon.network .one{left:23rpx;top:11rpx}.mastery-icon.network .two{left:12rpx;bottom:12rpx}.mastery-icon.network .three{right:12rpx;bottom:12rpx}
+.mastery-icon.network::before,.mastery-icon.network::after{content:'';position:absolute;top:23rpx;width:19rpx;height:2rpx;background:#F3F7EF}.mastery-icon.network::before{left:14rpx;transform:rotate(-52deg)}.mastery-icon.network::after{right:14rpx;transform:rotate(52deg)}
+.mastery-more { display:flex; gap:5rpx; padding:12rpx 2rpx 12rpx 12rpx; }
+.mastery-more view { width:5rpx; height:5rpx; border-radius:50%; background:#7D8E84; }
+.mastery-title-row { display:flex; align-items:flex-end; justify-content:space-between; gap:10rpx; margin-top:24rpx; }
+.mastery-card-tech .mastery-subject { min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#1A2C22; font-size:25rpx; font-weight:900; line-height:1.25; }
+.mastery-card-tech .mastery-score { flex:0 0 auto; color:#1A2B21; font-size:22rpx; font-weight:900; }
+.mastery-card-tech .mastery-score.is-empty { color:#9AA39D; }
+.mastery-track-tech { position:relative; height:18rpx; margin-top:20rpx; overflow:hidden; border:0; border-radius:2rpx 999rpx 999rpx 2rpx; background:#E6EBE7; }
+.mastery-fill-tech { position:relative; height:100%; min-width:0; border-radius:2rpx 999rpx 999rpx 2rpx; background:repeating-linear-gradient(118deg,rgba(255,255,255,.30) 0 8rpx,rgba(255,255,255,.02) 8rpx 15rpx),linear-gradient(90deg,#477646,#6E9C57); }
+.mastery-fill-tech::after { content:''; position:absolute; top:0; right:-10rpx; width:20rpx; height:18rpx; background:#6E9C57; transform:skewX(-28deg); }
+.mastery-track-cap { position:absolute; right:7rpx; top:6rpx; width:12rpx; height:6rpx; border-radius:999rpx; background:rgba(45,77,49,.12); }
+.mastery-foot-tech { display:flex; align-items:center; justify-content:space-between; gap:10rpx; margin-top:22rpx; color:#69786F; font-size:18rpx; }
+.mastery-foot-tech .mastery-status { color:#65746A; font-weight:650; }
+.mastery-card-pressed { transform:translateY(2rpx) scale(.988); opacity:.9; }
+@media (max-width:360px){.mastery-grid-tech{gap:12rpx}.mastery-card-tech{min-height:244rpx;padding:18rpx 16rpx}.mastery-card-tech .mastery-subject{font-size:22rpx}.mastery-foot-tech{font-size:16rpx}.mastery-icon{width:50rpx;height:50rpx}}

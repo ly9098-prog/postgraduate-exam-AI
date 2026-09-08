@@ -132,14 +132,6 @@ async def update_subject(
     if current_product_code and next_product_code != current_product_code:
         raise SubjectBusinessRuleError("408 核心科目的产品身份不能改为其他科目")
 
-    if (
-        current_product_code == EXAM408_ROOT_CODE
-        and update_data.get("is_active") is False
-        and subject.is_active
-        and not confirm_core_disable
-    ):
-        raise SubjectBusinessRuleError("停用 408 根科目会隐藏全部 408 学习入口，请确认后重试")
-
     if new_code != subject.code:
         await _ensure_unique_code(db, new_code, subject.id)
         q_count = await _question_count_for_subject(db, subject.id)
@@ -147,6 +139,23 @@ async def update_subject(
             raise ValueError("已有题目使用该科目，不能修改编码")
 
     all_subjects = await _list_all_subjects(db)
+
+    # Keep the taxonomy reachable in both directions:
+    # - enabling a child may auto-enable its inactive ancestors;
+    # - disabling a parent is only allowed after every descendant is disabled.
+    if update_data.get("is_active") is False and subject.is_active:
+        active_descendants = _active_descendants(all_subjects, subject.id)
+        if active_descendants:
+            preview = "、".join(item.name for item in active_descendants[:3])
+            if len(active_descendants) > 3:
+                preview = f"{preview} 等 {len(active_descendants)} 个科目"
+            raise SubjectBusinessRuleError(
+                f"请先停用全部子科目后再停用父科目；当前仍启用：{preview}"
+            )
+
+        if current_product_code == EXAM408_ROOT_CODE and not confirm_core_disable:
+            raise SubjectBusinessRuleError("停用 408 根科目会隐藏全部 408 学习入口，请确认后重试")
+
     parent_changed = "parent_id" in update_data and update_data["parent_id"] != subject.parent_id
     code_changed = new_code != subject.code
     if parent_changed:
@@ -181,12 +190,44 @@ async def update_subject(
     if parent_changed or code_changed:
         _sync_descendant_paths(all_subjects, subject)
 
+    # A visible child under an inactive parent would be unreachable from the
+    # taxonomy tree.  When a node is explicitly enabled, automatically enable
+    # every inactive ancestor in the same transaction so the hierarchy remains
+    # navigable and internally consistent.
+    auto_enabled_ancestors: list[tuple[Subject, dict]] = []
+    should_repair_ancestor_state = subject.is_active and (
+        update_data.get("is_active") is True or parent_changed
+    )
+    if should_repair_ancestor_state:
+        for ancestor in _ancestor_chain(all_subjects, subject):
+            if ancestor.is_active:
+                continue
+            ancestor_before = _subject_state(ancestor)
+            ancestor.is_active = True
+            auto_enabled_ancestors.append((ancestor, ancestor_before))
+
     if code_changed:
         try:
             async with db.begin_nested():
                 await db.flush()
         except IntegrityError as exc:
             raise SubjectConflictError("科目编码已存在") from exc
+
+    for ancestor, ancestor_before in auto_enabled_ancestors:
+        await write_admin_audit(
+            db,
+            operator,
+            "subject.update",
+            "subject",
+            ancestor.id,
+            detail={
+                "before": ancestor_before,
+                "after": _subject_state(ancestor),
+                "reason": "auto_enabled_by_descendant",
+                "trigger_subject_id": subject.id,
+            },
+            request=request,
+        )
 
     await write_admin_audit(
         db,
@@ -195,7 +236,11 @@ async def update_subject(
         "subject",
         subject.id,
         severity="important" if parent_changed or code_changed else "normal",
-        detail={"before": before, "after": _subject_state(subject)},
+        detail={
+            "before": before,
+            "after": _subject_state(subject),
+            "auto_enabled_ancestor_ids": [ancestor.id for ancestor, _ in auto_enabled_ancestors],
+        },
         request=request,
     )
     return subject
@@ -297,6 +342,25 @@ def _children_by_parent(subjects: list[Subject]) -> dict[int | None, list[Subjec
     return children
 
 
+def _ancestor_chain(subjects: list[Subject], subject: Subject) -> list[Subject]:
+    by_id = {item.id: item for item in subjects}
+    ancestors: list[Subject] = []
+    seen = {subject.id}
+    parent_id = subject.parent_id
+
+    while parent_id is not None:
+        if parent_id in seen:
+            raise SubjectBusinessRuleError("科目层级存在循环引用")
+        parent = by_id.get(parent_id)
+        if parent is None:
+            raise SubjectBusinessRuleError("父级科目不存在")
+        ancestors.append(parent)
+        seen.add(parent.id)
+        parent_id = parent.parent_id
+
+    return ancestors
+
+
 def _is_descendant(subjects: list[Subject], root_id: int, candidate_id: int) -> bool:
     children = _children_by_parent(subjects)
     stack = list(children.get(root_id, []))
@@ -306,6 +370,21 @@ def _is_descendant(subjects: list[Subject], root_id: int, candidate_id: int) -> 
             return True
         stack.extend(children.get(item.id, []))
     return False
+
+
+def _active_descendants(subjects: list[Subject], root_id: int) -> list[Subject]:
+    children = _children_by_parent(subjects)
+    active: list[Subject] = []
+    stack = list(children.get(root_id, []))
+
+    while stack:
+        item = stack.pop()
+        if item.is_active:
+            active.append(item)
+        stack.extend(children.get(item.id, []))
+
+    active.sort(key=lambda item: (item.level, item.sort_order, item.id))
+    return active
 
 
 def _subtree_depth(subjects: list[Subject], root_id: int) -> int:
@@ -400,20 +479,12 @@ def _validate_product_activation(
     *,
     existing_code: str | None = None,
 ) -> None:
-    """Keep the currently active product catalog canonical and 408-only.
+    """Allow administrators to activate any valid subject.
 
-    Historical non-408 rows may remain inactive for future expansion, but the
-    current product must never activate a non-canonical subject code.
+    Product scope is still derived from the canonical subject code, but
+    activation itself is no longer limited to the original core catalog.
+    This keeps historical/extension subjects manageable from the subject
+    governance page without changing their product-scope identity.
     """
-    if not is_active:
-        return
-    if canonical_408_code(code):
-        return
-    if existing_code is not None and code == existing_code:
-        raise SubjectBusinessRuleError(
-            "当前产品仅启用 canonical 408 科目；其他科目请保持停用"
-        )
-    raise SubjectBusinessRuleError(
-        "当前产品仅允许启用 canonical 408 科目：exam408 / data_structure / "
-        "computer_organization / operating_system / computer_network"
-    )
+    _ = (code, is_active, existing_code)
+    return

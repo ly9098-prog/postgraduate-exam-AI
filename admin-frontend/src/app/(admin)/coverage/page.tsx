@@ -13,6 +13,8 @@ import {
   Import,
   Search,
   ShieldAlert,
+  RotateCcw,
+  ArrowUpRight,
 } from "lucide-react";
 
 import {
@@ -25,6 +27,7 @@ import {
   MetricCard,
   MetricStrip,
   StatusBadge,
+  ManagementProgress,
 } from "@/components/admin/management-ui";
 import { Button } from "@/components/ui/button";
 import { CustomSelect } from "@/components/ui/custom-select";
@@ -163,6 +166,27 @@ export default function CoveragePage() {
     ? summary.missing_analysis_questions + summary.image_reference_anomaly_questions + summary.duplicate_suspect_questions
     : 0;
   const lowCoverageCount = summary ? summary.insufficient_knowledge_points + summary.imbalanced_knowledge_points : 0;
+  const healthyRate = summary?.total_knowledge_points
+    ? Math.round((summary.healthy_knowledge_points / summary.total_knowledge_points) * 100)
+    : 0;
+  const mappedRate = summary?.total_questions
+    ? Math.round((summary.mapped_questions / summary.total_questions) * 100)
+    : 0;
+  const statusCounts = useMemo(() => {
+    const counts: Record<CoverageStatus, number> = { empty: 0, insufficient: 0, imbalanced: 0, healthy: 0 };
+    for (const item of reportQuery.data?.items ?? []) counts[item.status] += 1;
+    return counts;
+  }, [reportQuery.data?.items]);
+  const hasLocalFilters = Boolean(keyword.trim() || status);
+  const hasScopeFilters = Boolean(subjectId || yearFrom || yearTo || minQuestions !== 10 || minQuestionsInput !== "10");
+
+  const resetScope = () => {
+    setSubjectId("");
+    setMinQuestionsInput("10");
+    setMinQuestions(10);
+    setYearFrom("");
+    setYearTo("");
+  };
 
   return (
     <ManagementPage>
@@ -179,8 +203,19 @@ export default function CoveragePage() {
         ) : <span>选择考纲版本后生成覆盖报告</span>}
       />
 
-      <ManagementPanel variant="quiet" title="治理范围" description="切换考纲、科目、题量阈值与年份范围，报告会自动重新计算。" icon={<Filter className="h-4 w-4" />}>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.25fr_1fr_180px_150px_150px]">
+      <ManagementPanel
+        variant="quiet"
+        title="治理范围"
+        description="切换考纲、科目、题量阈值与年份范围，报告会自动重新计算。"
+        icon={<Filter className="h-4 w-4" />}
+        actions={hasScopeFilters ? (
+          <Button variant="ghost" size="sm" onClick={resetScope} className="text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--mgmt-steel)] hover:text-[var(--ink)]">
+            <RotateCcw className="h-3.5 w-3.5" />
+            重置范围
+          </Button>
+        ) : <StatusBadge tone="neutral">默认范围</StatusBadge>}
+      >
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.25fr_1fr_220px_150px_150px]">
           <label>
             <FieldLabel>考纲版本</FieldLabel>
             <CustomSelect
@@ -205,9 +240,9 @@ export default function CoveragePage() {
           </label>
           <label>
             <FieldLabel>题量不足阈值</FieldLabel>
-            <div className="flex gap-2">
-              <Input inputMode="numeric" value={minQuestionsInput} onChange={(event) => setMinQuestionsInput(event.target.value.replace(/\D/g, "").slice(0, 3))} onBlur={applyMinQuestions} />
-              <Button variant="secondary" onClick={applyMinQuestions}>应用</Button>
+            <div className="flex min-w-0 gap-2.5">
+              <Input className="min-w-0" inputMode="numeric" value={minQuestionsInput} onChange={(event) => setMinQuestionsInput(event.target.value.replace(/\D/g, "").slice(0, 3))} onBlur={applyMinQuestions} />
+              <Button variant="secondary" onClick={applyMinQuestions} className="px-3.5">应用</Button>
             </div>
           </label>
           <label>
@@ -229,11 +264,32 @@ export default function CoveragePage() {
       {summary ? (
         <>
           <MetricStrip className="sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard icon={<BookOpen className="h-4 w-4" />} label="考纲知识点" value={summary.total_knowledge_points} hint={`良好 ${summary.healthy_knowledge_points}，无题 ${summary.empty_knowledge_points}`} tone={summary.empty_knowledge_points > 0 ? "warning" : "success"} />
-            <MetricCard icon={<BarChart3 className="h-4 w-4" />} label="低覆盖 / 失衡" value={lowCoverageCount} hint={`不足 ${summary.insufficient_knowledge_points}，结构失衡 ${summary.imbalanced_knowledge_points}`} tone={lowCoverageCount > 0 ? "warning" : "success"} />
-            <MetricCard icon={<FileQuestion className="h-4 w-4" />} label="未映射题目" value={summary.unmapped_questions} hint={`有效题目 ${summary.total_questions}，已映射 ${summary.mapped_questions}`} tone={summary.unmapped_questions > 0 ? "warning" : "success"} />
-            <MetricCard icon={<ShieldAlert className="h-4 w-4" />} label="内容质量问题" value={qualityIssueCount} hint={`缺解析 ${summary.missing_analysis_questions}，图片引用 ${summary.image_reference_anomaly_questions}，重复疑似 ${summary.duplicate_suspect_questions}`} tone={qualityIssueCount > 0 ? "warning" : "success"} />
+            <MetricCard icon={<BookOpen className="h-4 w-4" />} label="健康覆盖率" value={`${healthyRate}%`} hint={`良好 ${summary.healthy_knowledge_points} / ${summary.total_knowledge_points} 个知识点`} tone={healthyRate >= 90 ? "success" : healthyRate >= 70 ? "accent" : "warning"} progress={healthyRate} />
+            <MetricCard icon={<BarChart3 className="h-4 w-4" />} label="低覆盖 / 失衡" value={lowCoverageCount} hint={`不足 ${summary.insufficient_knowledge_points} · 结构失衡 ${summary.imbalanced_knowledge_points}`} tone={lowCoverageCount > 0 ? "warning" : "success"} />
+            <MetricCard icon={<FileQuestion className="h-4 w-4" />} label="题目映射率" value={`${mappedRate}%`} hint={`已映射 ${summary.mapped_questions} / ${summary.total_questions} 道有效题目`} tone={summary.unmapped_questions > 0 ? "warning" : "success"} progress={mappedRate} />
+            <MetricCard icon={<ShieldAlert className="h-4 w-4" />} label="内容质量问题" value={qualityIssueCount} hint={`缺解析 ${summary.missing_analysis_questions} · 图片引用 ${summary.image_reference_anomaly_questions} · 重复疑似 ${summary.duplicate_suspect_questions}`} tone={qualityIssueCount > 0 ? "warning" : "success"} />
           </MetricStrip>
+
+          <div className="grid gap-3 rounded-[16px] border border-[var(--mgmt-line)] bg-[rgba(255,254,250,0.72)] px-5 py-4 sm:grid-cols-2 xl:grid-cols-4">
+            {([
+              ["健康", statusCounts.healthy, "success" as const],
+              ["题量不足", statusCounts.insufficient, "warning" as const],
+              ["结构失衡", statusCounts.imbalanced, "warning" as const],
+              ["无题", statusCounts.empty, "danger" as const],
+            ] as Array<[string, number, "success" | "warning" | "danger"]>).map(([label, count, tone]) => {
+              const amount = Number(count);
+              const total = summary.total_knowledge_points || 1;
+              return (
+                <div key={String(label)} className="min-w-0">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <StatusBadge tone={tone}>{String(label)}</StatusBadge>
+                    <span className="text-xs font-semibold tabular-nums text-[var(--color-text-secondary)]">{amount}</span>
+                  </div>
+                  <ManagementProgress value={amount} max={total} tone={tone === "success" ? "success" : tone === "danger" ? "warning" : "warning"} />
+                </div>
+              );
+            })}
+          </div>
 
           <ManagementPanel variant="quiet" title="完整性诊断" description="次级结构问题集中展示，不与覆盖率主指标争夺视觉层级。" contentClassName="p-0">
             <div className="grid divide-y divide-[var(--color-border-light)] sm:grid-cols-2 sm:divide-y-0 xl:grid-cols-4 xl:divide-x">
@@ -262,7 +318,7 @@ export default function CoveragePage() {
         title="知识点覆盖矩阵"
         description="真题与模拟题计数来自试卷固定的题目版本快照，题库后续知识点编辑不会反向改变历史统计。"
         actions={
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row sm:items-center">
             <label className="relative block w-full sm:w-60">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-hint)]" />
               <Input className="pl-9" placeholder="搜索知识点" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
@@ -280,6 +336,12 @@ export default function CoveragePage() {
               ]}
               placeholder="全部状态"
             />
+            {hasLocalFilters ? (
+              <Button variant="ghost" size="sm" className="h-10 px-3 text-[var(--color-text-secondary)] hover:bg-[var(--mgmt-steel)]" onClick={() => { setKeyword(""); setStatus(""); }}>
+                <RotateCcw className="h-3.5 w-3.5" />
+                清除
+              </Button>
+            ) : null}
           </div>
         }
         contentClassName="p-0"
@@ -302,8 +364,8 @@ export default function CoveragePage() {
             </thead>
             <tbody>
               {filteredItems.map((item: CoverageMatrixItem) => (
-                <tr key={item.syllabus_knowledge_point_id} className="border-b border-[var(--color-border-light)] align-top transition-colors hover:bg-[rgba(74,111,138,0.025)]">
-                  <td className="sticky left-0 z-[1] bg-[var(--mgmt-paper)] px-5 py-4">
+                <tr key={item.syllabus_knowledge_point_id} className="group border-b border-[var(--color-border-light)] align-top transition-colors duration-200 hover:bg-[rgba(74,111,138,0.035)]">
+                  <td className="sticky left-0 z-[1] border-r border-[rgba(221,229,234,0.72)] bg-[var(--mgmt-paper)] px-5 py-4 shadow-[10px_0_18px_-18px_rgba(31,49,61,0.35)] transition-colors duration-200 group-hover:bg-[#fbfcfc]">
                     <p className="font-semibold text-[var(--ink)]">{item.name}</p>
                     <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">{item.subject_name} · KP #{item.knowledge_point_id}</p>
                     <p className="mt-1 max-w-lg text-[11px] leading-5 text-[var(--color-text-tertiary)]">年份 {item.years.length ? item.years.slice(0, 6).join("/") : "暂无"} · 题型 {Object.entries(item.question_type_counts).map(([type, count]) => `${type}:${count}`).join(" / ") || "暂无"}</p>
@@ -320,14 +382,19 @@ export default function CoveragePage() {
                   <td className="px-3 py-4"><StatusBadge tone={coverageTone(item.status)}>{STATUS_LABEL[item.status]}</StatusBadge></td>
                   <td className="px-5 py-4">
                     <div className="flex justify-end gap-2">
-                      <Link href={questionBankHref(item.knowledge_point_id)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-3 text-xs font-semibold text-[var(--ink)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"><FileQuestion className="h-3.5 w-3.5" />看题库</Link>
-                      <Link href="/imports/text-import" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--color-primary-dark)] bg-[var(--color-primary)] px-3 text-xs font-semibold text-white transition hover:bg-[var(--color-primary-dark)]"><Import className="h-3.5 w-3.5" />去导题</Link>
+                      <Link href={questionBankHref(item.knowledge_point_id)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-3 text-xs font-semibold text-[var(--ink)] transition-[border-color,background-color,transform] duration-200 hover:-translate-y-px hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(74,111,138,0.25)] active:translate-y-0 motion-reduce:transform-none"><FileQuestion className="h-3.5 w-3.5" />看题库</Link>
+                      <Link href="/imports/text-import" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--color-primary-dark)] bg-[var(--color-primary)] px-3 text-xs font-semibold text-white shadow-[0_5px_14px_rgba(74,111,138,0.14)] transition-[background-color,transform,box-shadow] duration-200 hover:-translate-y-px hover:bg-[var(--color-primary-dark)] hover:shadow-[0_7px_18px_rgba(74,111,138,0.20)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(74,111,138,0.28)] active:translate-y-0 motion-reduce:transform-none"><Import className="h-3.5 w-3.5" />去导题</Link>
                     </div>
                   </td>
                 </tr>
               ))}
               {!reportQuery.isLoading && filteredItems.length === 0 ? <tr><td colSpan={10}><EmptyState>当前筛选没有知识点。</EmptyState></td></tr> : null}
-              {reportQuery.isLoading ? <tr><td colSpan={10}><EmptyState>正在计算覆盖率...</EmptyState></td></tr> : null}
+              {reportQuery.isLoading ? Array.from({ length: 5 }).map((_, index) => (
+                <tr key={`loading-${index}`} className="border-b border-[var(--color-border-light)]">
+                  <td className="sticky left-0 bg-[var(--mgmt-paper)] px-5 py-5"><div className="mgmt-skeleton h-4 w-48 rounded-full" /><div className="mgmt-skeleton mt-2 h-2.5 w-32 rounded-full" /></td>
+                  {Array.from({ length: 9 }).map((__, cell) => <td key={cell} className="px-3 py-5"><div className="mgmt-skeleton ml-auto h-3 w-10 rounded-full" /></td>)}
+                </tr>
+              )) : null}
             </tbody>
           </table>
         </div>
@@ -354,7 +421,7 @@ export default function CoveragePage() {
             </thead>
             <tbody>
               {(reportQuery.data?.exam_years ?? []).map((item) => (
-                <tr key={item.year} className="border-t border-[var(--color-border-light)] align-top">
+                <tr key={item.year} className="group border-t border-[var(--color-border-light)] align-top transition-colors duration-200 hover:bg-[rgba(74,111,138,0.025)]">
                   <td className="px-5 py-4 font-semibold tabular-nums text-[var(--ink)]">{item.year}</td>
                   <td className="px-4 py-4"><StatusBadge tone={examStatusTone(item.status)}>{EXAM_STATUS_LABEL[item.status]}</StatusBadge></td>
                   <td className="px-4 py-4">
@@ -371,8 +438,8 @@ export default function CoveragePage() {
                     </div>
                   </td>
                   <td className="px-5 py-4 text-right">
-                    <Link href={item.paper_id ? `/exams/${item.paper_id}` : "/exams"} className="text-sm font-semibold text-[var(--color-primary-dark)] hover:underline">
-                      {item.paper_id ? "查看试卷" : "去建卷"}
+                    <Link href={item.paper_id ? `/exams/${item.paper_id}` : "/exams"} className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-primary-dark)] transition-[color,transform] hover:translate-x-0.5 hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(74,111,138,0.25)] motion-reduce:transform-none">
+                      {item.paper_id ? "查看试卷" : "去建卷"}<ArrowUpRight className="h-3.5 w-3.5" />
                     </Link>
                   </td>
                 </tr>
@@ -402,7 +469,7 @@ export default function CoveragePage() {
                       <p className="mt-0.5 text-[11px] text-[var(--color-text-tertiary)]">样本 {values.length}</p>
                     </div>
                     <div className="flex min-h-7 flex-wrap gap-1.5">
-                      {values.slice(0, 12).map((id) => <Link key={id} href={questionIdHref(id)} className="rounded-md border border-[var(--color-border-light)] bg-white px-2 py-1 text-[11px] font-semibold text-[var(--color-primary-dark)] hover:bg-[var(--color-primary-light)]">#{id}</Link>)}
+                      {values.slice(0, 12).map((id) => <Link key={id} href={questionIdHref(id)} className="rounded-md border border-[var(--color-border-light)] bg-white px-2 py-1 text-[11px] font-semibold text-[var(--color-primary-dark)] transition-[border-color,background-color,transform] hover:-translate-y-px hover:border-[rgba(74,111,138,0.28)] hover:bg-[var(--color-primary-light)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(74,111,138,0.22)] motion-reduce:transform-none">#{id}</Link>)}
                       {values.length === 0 ? <StatusBadge tone="success">无样本</StatusBadge> : null}
                     </div>
                   </div>
@@ -440,8 +507,8 @@ export default function CoveragePage() {
               </div>
             ) : <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-2.5 text-sm text-emerald-700">当前范围没有知识图谱质量警告。</div>}
             <div className="flex flex-wrap gap-2 border-t border-[var(--color-border-light)] pt-4">
-              <Link href="/knowledge-graph" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"><Filter className="h-4 w-4" />进入知识图谱治理</Link>
-              <Link href="/syllabus" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"><BookOpen className="h-4 w-4" />考纲版本</Link>
+              <Link href="/knowledge-graph" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"><Filter className="h-4 w-4" />进入知识图谱治理<ArrowUpRight className="h-3.5 w-3.5" /></Link>
+              <Link href="/syllabus" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"><BookOpen className="h-4 w-4" />考纲版本<ArrowUpRight className="h-3.5 w-3.5" /></Link>
             </div>
           </div>
         </ManagementPanel>

@@ -1506,3 +1506,292 @@ page {
 .teacher-feedback-label { display: block; width: 100%; margin-bottom: 14rpx; line-height: 1.4; }
 .teacher-feedback-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 14rpx; width: 100%; }
 .teacher-feedback-btn { width: 100%; min-width: 0; }
+
+/* v7: batch error-cause workflow */
+.wrong-section-head {
+  align-items: flex-start;
+  gap: 20rpx;
+}
+.batch-mode-toggle {
+  flex: 0 0 auto;
+  width: auto !important;
+  min-width: 0;
+  height: 58rpx;
+  margin: 0 !important;
+  padding: 0 20rpx !important;
+  border: 1rpx solid #D8DED8;
+  border-radius: 999rpx;
+  background: #F7F8F5;
+  color: #405047;
+  font-size: 21rpx;
+  font-weight: 760;
+  line-height: 58rpx;
+  box-sizing: border-box;
+}
+.batch-mode-toggle::after,
+.batch-select-all::after,
+.batch-apply::after { border: 0; }
+.batch-mode-toggle.active {
+  border-color: #173B2C;
+  background: #173B2C;
+  color: #FFFFFF;
+}
+.batch-diagnosis-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12rpx;
+  margin: 18rpx 0 10rpx;
+  padding: 18rpx 18rpx 18rpx 20rpx;
+  border: 1rpx solid #DDE6D8;
+  border-radius: 20rpx;
+  background: #F3F7EF;
+}
+.batch-diagnosis-copy { min-width: 0; }
+.batch-diagnosis-count {
+  display: block;
+  color: #173B2C;
+  font-size: 23rpx;
+  font-weight: 820;
+}
+.batch-diagnosis-hint {
+  display: block;
+  margin-top: 3rpx;
+  color: #859087;
+  font-size: 18rpx;
+  line-height: 1.35;
+}
+.batch-select-all,
+.batch-apply {
+  width: auto !important;
+  min-width: 0;
+  height: 56rpx;
+  margin: 0 !important;
+  padding: 0 18rpx !important;
+  border-radius: 15rpx;
+  line-height: 56rpx;
+  font-size: 20rpx;
+  font-weight: 760;
+  box-sizing: border-box;
+}
+.batch-select-all { background: transparent; color: #526159; }
+.batch-apply { background: #173B2C; color: #FFFFFF; }
+.batch-apply[disabled] { background: #D9DFD9 !important; color: #94A097 !important; opacity: 1 !important; }
+.batch-check {
+  flex: 0 0 auto;
+  width: 38rpx;
+  height: 38rpx;
+  border: 2rpx solid #C9D1CA;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #FFFFFF;
+  box-sizing: border-box;
+}
+.batch-check.selected {
+  border-color: #173B2C;
+  background: #173B2C;
+}
+.batch-check-mark {
+  width: 12rpx;
+  height: 7rpx;
+  border-left: 3rpx solid transparent;
+  border-bottom: 3rpx solid transparent;
+  transform: rotate(-45deg) translateY(-1rpx);
+}
+.batch-check.selected .batch-check-mark {
+  border-left-color: #C7F33B;
+  border-bottom-color: #C7F33B;
+}
+.wrong-list.batch-mode .wrong-row {
+  border-color: #DDE5D9;
+  background: #FCFDF9;
+}
+.wrong-cause-detail {
+  flex: 0 0 auto;
+  color: #6B786F;
+  font-size: 20rpx;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.wrong-cause-detail.selected-hint { color: #52733A; }
+
+/* v7: AI teacher reading hierarchy — conclusion, evidence, action */
+.teacher-sheet {
+  max-height: 88vh;
+  padding-left: 30rpx;
+  padding-right: 30rpx;
+  background: #FBFCF8;
+}
+.teacher-sheet-head {
+  padding-bottom: 20rpx;
+  border-bottom: 1rpx solid #E5E9E2;
+}
+.teacher-sheet-scroll {
+  max-height: 70vh;
+  padding-top: 18rpx;
+}
+.teacher-summary-card {
+  padding: 22rpx 24rpx;
+  border: 1rpx solid #DDE8D7;
+  border-radius: 22rpx;
+  background: #F0F6EC;
+}
+.teacher-summary-label {
+  display: block;
+  margin-bottom: 8rpx;
+  color: #608048;
+  font-size: 18rpx;
+  font-weight: 820;
+  letter-spacing: 1rpx;
+}
+.teacher-summary {
+  display: block;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #243B30;
+  font-size: 25rpx;
+  font-weight: 650;
+  line-height: 1.72;
+}
+.teacher-result-section {
+  margin-top: 18rpx;
+  padding: 24rpx;
+  border-color: #E2E7E0;
+  border-radius: 22rpx;
+  box-shadow: 0 8rpx 24rpx rgba(23, 50, 36, .035);
+}
+.teacher-section-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+.teacher-section-rule {
+  flex: 0 0 auto;
+  width: 6rpx;
+  height: 28rpx;
+  border-radius: 999rpx;
+  background: #87B35A;
+}
+.teacher-result-heading {
+  margin: 0;
+  color: #1B3529;
+  font-size: 24rpx;
+  font-weight: 850;
+  line-height: 1.35;
+}
+.teacher-point-list { display: flex; flex-direction: column; gap: 14rpx; }
+.teacher-result-point {
+  display: flex;
+  align-items: flex-start;
+  gap: 13rpx;
+  margin: 0;
+}
+.teacher-point-dot {
+  flex: 0 0 auto;
+  width: 8rpx;
+  height: 8rpx;
+  margin-top: 15rpx;
+  border-radius: 50%;
+  background: #84A867;
+}
+.teacher-point-text {
+  min-width: 0;
+  color: #46544C;
+  font-size: 23rpx;
+  line-height: 1.78;
+  word-break: break-word;
+}
+.teacher-kp-row {
+  padding: 16rpx 0;
+  border-top-color: #E9EEE7;
+}
+.teacher-kp-name { font-size: 23rpx; }
+.teacher-kp-note {
+  margin-top: 7rpx;
+  color: #68756D;
+  font-size: 21rpx;
+  line-height: 1.62;
+}
+.teacher-kp-note.mastery { color: #748B5F; }
+.teacher-practice-card { background: #FEFFFC; }
+.teacher-practice-stem {
+  color: #273A31;
+  font-size: 23rpx;
+  line-height: 1.76;
+}
+.teacher-practice-option {
+  align-items: flex-start;
+  background: #F5F7F2;
+  line-height: 1.62;
+}
+.teacher-practice-option-text { min-width: 0; }
+.teacher-practice-answer-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+.teacher-practice-answer-label {
+  padding: 5rpx 10rpx;
+  border-radius: 8rpx;
+  background: #E5F2DA;
+  color: #50703B;
+  font-size: 18rpx;
+  font-weight: 800;
+}
+.teacher-practice-answer { margin: 0; font-size: 22rpx; }
+.teacher-practice-analysis {
+  margin-top: 12rpx;
+  padding-top: 12rpx;
+  border-top: 1rpx solid #E8ECE6;
+  color: #5F6C64;
+  font-size: 21rpx;
+  line-height: 1.7;
+}
+.teacher-feedback-row {
+  margin-top: 20rpx;
+  padding: 20rpx;
+  border: 1rpx solid #E3E7E1;
+  border-radius: 20rpx;
+  background: #FFFFFF;
+}
+.teacher-feedback-copy { min-width: 0; }
+.teacher-feedback-label {
+  margin: 0;
+  color: #30443A;
+  font-size: 22rpx;
+  font-weight: 760;
+}
+.teacher-feedback-hint {
+  display: block;
+  margin-top: 5rpx;
+  color: #929B94;
+  font-size: 18rpx;
+  line-height: 1.4;
+}
+.teacher-feedback-actions { margin-top: 14rpx; }
+.teacher-feedback-btn {
+  height: 58rpx;
+  line-height: 58rpx;
+  border: 1rpx solid #E0E5DF;
+  background: #F8F9F6;
+  color: #4E5D54;
+}
+.teacher-feedback-btn.selected {
+  border-color: #173B2C;
+  background: #173B2C;
+  color: #FFFFFF;
+}
+
+@media (max-width: 360px) {
+  .batch-diagnosis-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .batch-diagnosis-copy { grid-column: 1 / -1; }
+  .teacher-sheet { padding-left: 24rpx; padding-right: 24rpx; }
+  .teacher-result-section { padding: 20rpx; }
+}

@@ -273,14 +273,24 @@
     <!-- 错题分析 -->
     <block wx:elif="{{activeTab === 'wrong'}}">
       <view class="section-card wrong-list-card">
-        <view class="section-head">
+        <view class="section-head wrong-section-head">
           <view>
             <text class="section-title">错题复盘</text>
             <text class="section-desc">共 {{wrongCount}} 道需要重点关注</text>
           </view>
+          <button wx:if="{{batchSelectableCount > 0}}" class="batch-mode-toggle {{batchDiagnosisMode ? 'active' : ''}}" disabled="{{batchDiagnosisSaving}}" bindtap="toggleBatchDiagnosisMode">{{batchDiagnosisMode ? '完成' : '批量标记错因'}}</button>
         </view>
 
-        <view wx:if="{{wrongReviewItems.length}}" class="wrong-list">
+        <view wx:if="{{batchDiagnosisMode && wrongReviewItems.length}}" class="batch-diagnosis-toolbar">
+          <view class="batch-diagnosis-copy">
+            <text class="batch-diagnosis-count">已选 {{batchSelectedCount}} 题</text>
+            <text class="batch-diagnosis-hint">一次设置相同主错因</text>
+          </view>
+          <button class="batch-select-all" disabled="{{batchDiagnosisSaving}}" bindtap="toggleSelectAllWrong">{{batchSelectedCount == batchSelectableCount ? '取消全选' : '全选'}}</button>
+          <button class="batch-apply" loading="{{batchDiagnosisSaving}}" disabled="{{batchDiagnosisSaving || batchSelectedCount === 0}}" bindtap="applyBatchDiagnosis">设置错因</button>
+        </view>
+
+        <view wx:if="{{wrongReviewItems.length}}" class="wrong-list {{batchDiagnosisMode ? 'batch-mode' : ''}}">
           <view
             wx:for="{{wrongReviewItems}}"
             wx:key="questionId"
@@ -288,10 +298,13 @@
             hover-class="result-row-pressed"
             hover-stay-time="80"
             data-wqid="{{item.wrongQuestionId}}"
-            bindtap="openWrongDetail"
+            bindtap="onWrongRowTap"
           >
             <view class="wrong-row-top">
               <view class="wrong-index-wrap">
+                <view wx:if="{{batchDiagnosisMode}}" class="batch-check {{batchSelectedMap[item.wrongQuestionId] ? 'selected' : ''}}" data-wqid="{{item.wrongQuestionId}}" catchtap="toggleBatchWrong">
+                  <view class="batch-check-mark"></view>
+                </view>
                 <text class="wrong-index">{{item.displayIndex}}</text>
                 <text class="wrong-tag">错误</text>
               </view>
@@ -306,7 +319,8 @@
                 <text class="wrong-cause-value">{{item.errorDiagnosisLabel || '暂未分类'}}</text>
                 <text wx:if="{{item.errorDiagnosis && !item.errorDiagnosis.userConfirmed && item.errorDiagnosis.effectiveSource === 'ai'}}" class="wrong-cause-ai">AI 建议</text>
               </view>
-              <button class="wrong-cause-action" data-wqid="{{item.wrongQuestionId}}" catchtap="quickClassifyWrong">快速标记</button>
+              <text wx:if="{{!batchDiagnosisMode}}" class="wrong-cause-detail">查看详情 ›</text>
+              <text wx:else class="wrong-cause-detail selected-hint">{{batchSelectedMap[item.wrongQuestionId] ? '已选择' : '点按选择'}}</text>
             </view>
 
             <view class="answer-summary">
@@ -503,29 +517,43 @@
     <view wx:elif="{{teacherLoading}}" class="teacher-sheet-loading"><view class="teacher-spinner"></view><text>正在结合本题与学习状态生成…</text></view>
     <view wx:elif="{{teacherErrorText}}" class="teacher-sheet-error">{{teacherErrorText}}</view>
     <scroll-view wx:elif="{{teacherResult}}" class="teacher-sheet-scroll" scroll-y enhanced show-scrollbar="{{false}}">
-      <text wx:if="{{teacherResult.summary}}" class="teacher-summary">{{teacherResult.summary}}</text>
-      <view wx:for="{{teacherResult.sections}}" wx:key="key" class="teacher-result-section">
-        <text class="teacher-result-heading">{{item.heading}}</text>
-        <text wx:for="{{item.points}}" wx:for-item="point" wx:key="*this" class="teacher-result-point">• {{point}}</text>
+      <view wx:if="{{teacherResult.summary}}" class="teacher-summary-card">
+        <text class="teacher-summary-label">先看结论</text>
+        <text class="teacher-summary">{{teacherResult.summary}}</text>
       </view>
-      <view wx:if="{{teacherResult.knowledgePoints.length}}" class="teacher-result-section">
-        <text class="teacher-result-heading">知识点串联</text>
+      <view wx:for="{{teacherResult.sections}}" wx:key="key" class="teacher-result-section">
+        <view class="teacher-section-head">
+          <view class="teacher-section-rule"></view>
+          <text class="teacher-result-heading">{{item.heading}}</text>
+        </view>
+        <view class="teacher-point-list">
+          <view wx:for="{{item.points}}" wx:for-item="point" wx:key="*this" class="teacher-result-point">
+            <view class="teacher-point-dot"></view>
+            <text class="teacher-point-text" selectable="true">{{point}}</text>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{teacherResult.knowledgePoints.length}}" class="teacher-result-section teacher-knowledge-section">
+        <view class="teacher-section-head"><view class="teacher-section-rule"></view><text class="teacher-result-heading">知识点串联</text></view>
         <view wx:for="{{teacherResult.knowledgePoints}}" wx:key="key" class="teacher-kp-row">
           <text class="teacher-kp-name">{{item.name}}</text>
           <text wx:if="{{item.relation}}" class="teacher-kp-note">{{item.relation}}</text>
-          <text wx:if="{{item.masteryHint}}" class="teacher-kp-note">{{item.masteryHint}}</text>
+          <text wx:if="{{item.masteryHint}}" class="teacher-kp-note mastery">{{item.masteryHint}}</text>
         </view>
       </view>
-      <view wx:if="{{teacherResult.practiceQuestion}}" class="teacher-result-section">
-        <text class="teacher-result-heading">练一题</text>
+      <view wx:if="{{teacherResult.practiceQuestion}}" class="teacher-result-section teacher-practice-card">
+        <view class="teacher-section-head"><view class="teacher-section-rule"></view><text class="teacher-result-heading">立即检验</text></view>
         <text class="teacher-practice-stem">{{teacherResult.practiceQuestion.stem}}</text>
-        <view wx:for="{{teacherResult.practiceQuestion.options}}" wx:key="key" class="teacher-practice-option"><text class="teacher-practice-key">{{item.key}}</text><text>{{item.text}}</text></view>
-        <text class="teacher-practice-answer">答案：{{teacherResult.practiceQuestion.answer}}</text>
+        <view wx:for="{{teacherResult.practiceQuestion.options}}" wx:key="key" class="teacher-practice-option"><text class="teacher-practice-key">{{item.key}}</text><text class="teacher-practice-option-text">{{item.text}}</text></view>
+        <view class="teacher-practice-answer-row"><text class="teacher-practice-answer-label">答案</text><text class="teacher-practice-answer">{{teacherResult.practiceQuestion.answer}}</text></view>
         <text wx:if="{{teacherResult.practiceQuestion.analysis}}" class="teacher-practice-analysis">{{teacherResult.practiceQuestion.analysis}}</text>
       </view>
       <text class="teacher-footnote">{{teacherResult.fromFallback ? '当前使用题库解析兜底；AI 生成暂不可用。' : '内容由专项 AI 老师生成，仅用于本题复盘。'}}</text>
       <view class="teacher-feedback-row">
-        <text class="teacher-feedback-label">这次讲解有帮助吗？</text>
+        <view class="teacher-feedback-copy">
+          <text class="teacher-feedback-label">这次讲解有帮助吗？</text>
+          <text class="teacher-feedback-hint">你的反馈会用于改善后续讲解</text>
+        </view>
         <view class="teacher-feedback-actions">
           <button class="teacher-feedback-btn {{teacherFeedbackSent === 'helpful' ? 'selected' : ''}}" data-type="helpful" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">有帮助</button>
           <button class="teacher-feedback-btn {{teacherFeedbackSent === 'inaccurate' ? 'selected' : ''}}" data-type="inaccurate" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">不准确</button>

@@ -475,3 +475,52 @@ a {
   background: rgba(74, 111, 138, 0.55);
   background-clip: padding-box;
 }
+
+/* ── Management workspace motion & loading ── */
+@keyframes mgmt-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mgmt-page-enter > * {
+  opacity: 0;
+  animation: mgmt-enter 380ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.mgmt-page-enter > *:nth-child(1) { animation-delay: 0ms; }
+.mgmt-page-enter > *:nth-child(2) { animation-delay: 45ms; }
+.mgmt-page-enter > *:nth-child(3) { animation-delay: 80ms; }
+.mgmt-page-enter > *:nth-child(4) { animation-delay: 110ms; }
+.mgmt-page-enter > *:nth-child(5) { animation-delay: 135ms; }
+.mgmt-page-enter > *:nth-child(6) { animation-delay: 155ms; }
+.mgmt-page-enter > *:nth-child(n + 7) { animation-delay: 170ms; }
+
+@keyframes mgmt-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.mgmt-skeleton {
+  background: linear-gradient(90deg, rgba(113,129,141,0.08) 20%, rgba(113,129,141,0.16) 50%, rgba(113,129,141,0.08) 80%);
+  background-size: 220% 100%;
+  animation: mgmt-shimmer 1.35s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mgmt-page-enter > * {
+    opacity: 1;
+    animation: none;
+    transform: none;
+  }
+
+  .mgmt-skeleton {
+    animation: none;
+    background: rgba(113,129,141,0.10);
+  }
+}

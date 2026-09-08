@@ -625,6 +625,11 @@ Page({
     reviewItems: [],
     filteredReviewItems: [],
     wrongReviewItems: [],
+    batchDiagnosisMode: false,
+    batchSelectedMap: {},
+    batchSelectedCount: 0,
+    batchSelectableCount: 0,
+    batchDiagnosisSaving: false,
     errorDistribution: [],
 
     trendData: [],
@@ -675,6 +680,10 @@ Page({
     this._sessionPayload = null;
     this._dashboardLoadId = 0;
     this._teacherRequestSeq = 0;
+    this._teacherCache = Object.create(null);
+    this._teacherInflight = Object.create(null);
+    this._teacherFeedbackCache = Object.create(null);
+    this._activeTeacherCacheKey = '';
 
     this.measureSafeNavigation();
     this.bindEventChannel();
@@ -702,6 +711,7 @@ Page({
     this._pageAlive = false;
     this._dashboardLoadId++;
     this._teacherRequestSeq++;
+    this._teacherInflight = null;
   },
 
   onShow() {
@@ -1101,6 +1111,11 @@ Page({
       filteredReviewItems: reviewItems,
       questionListHeightRpx: getQuestionListHeightRpx(reviewItems.length),
       wrongReviewItems,
+      batchDiagnosisMode: false,
+      batchSelectedMap: {},
+      batchSelectedCount: 0,
+      batchSelectableCount: wrongReviewItems.filter(item => Number(item.wrongQuestionId) > 0).length,
+      batchDiagnosisSaving: false,
       errorDistribution: localErrorDistribution,
       errorDonutGradient: buildErrorDonutGradient(localErrorDistribution),
       errorDonutSvg: buildErrorDonutSvg(localErrorDistribution)
@@ -1192,37 +1207,114 @@ Page({
     return dialog.showOptions(opts || {});
   },
 
-  async quickClassifyWrong(e) {
+  onWrongRowTap(e) {
+    if (this.data.batchDiagnosisMode) this.toggleBatchWrong(e);
+    else this.openWrongDetail(e);
+  },
+
+  toggleBatchDiagnosisMode() {
+    if (this.data.batchDiagnosisSaving) return;
+    const next = !this.data.batchDiagnosisMode;
+    this.setData({
+      batchDiagnosisMode: next,
+      batchSelectedMap: {},
+      batchSelectedCount: 0,
+    });
+  },
+
+  toggleBatchWrong(e) {
+    if (!this.data.batchDiagnosisMode || this.data.batchDiagnosisSaving) return;
     const wqId = Number(e.currentTarget.dataset.wqid || 0);
-    if (!wqId) {
-      wx.showToast({ title: '错题记录尚未就绪，可进入详情后标记', icon: 'none' });
+    if (!wqId) return;
+    const selected = Object.assign({}, this.data.batchSelectedMap || {});
+    if (selected[wqId]) delete selected[wqId];
+    else selected[wqId] = true;
+    this.setData({
+      batchSelectedMap: selected,
+      batchSelectedCount: Object.keys(selected).length,
+    });
+  },
+
+  toggleSelectAllWrong() {
+    if (!this.data.batchDiagnosisMode || this.data.batchDiagnosisSaving) return;
+    const rows = (this.data.wrongReviewItems || []).filter(item => Number(item.wrongQuestionId) > 0);
+    const allSelected = rows.length > 0 && rows.every(item => (this.data.batchSelectedMap || {})[Number(item.wrongQuestionId)]);
+    const selected = {};
+    if (!allSelected) rows.forEach(item => { selected[Number(item.wrongQuestionId)] = true; });
+    this.setData({
+      batchSelectedMap: selected,
+      batchSelectedCount: Object.keys(selected).length,
+    });
+  },
+
+  async applyBatchDiagnosis() {
+    if (this.data.batchDiagnosisSaving) return;
+    const selectedIds = Object.keys(this.data.batchSelectedMap || {})
+      .filter(key => this.data.batchSelectedMap[key])
+      .map(Number)
+      .filter(id => Number.isFinite(id) && id > 0);
+    if (!selectedIds.length) {
+      wx.showToast({ title: '请先选择错题', icon: 'none' });
       return;
     }
+
     const options = errorDiagnosis.QUICK_TYPES;
-    const index = await this._showAppOptions({ title: '快速标记错因', items: options.map(item => item.label) });
+    const index = await this._showAppOptions({
+      title: `为 ${selectedIds.length} 道错题设置错因`,
+      items: options.map(item => item.label),
+    });
     const picked = options[index];
     if (!picked) return;
-    try {
-      const target = (this.data.wrongReviewItems || []).find(item => Number(item.wrongQuestionId) === wqId)
-        || (this.data.reviewItems || []).find(item => Number(item.wrongQuestionId) === wqId);
-      const raw = await api.put(`/wrong-questions/${wqId}/diagnosis`, {
-        diagnosis_id: target && target.errorDiagnosis ? Number(target.errorDiagnosis.id || 0) || undefined : undefined,
-        primary_type: picked.type,
-        secondary_types: [],
+
+    const byId = {};
+    ;(this.data.wrongReviewItems || []).forEach(item => {
+      const id = Number(item.wrongQuestionId || 0);
+      if (id > 0) byId[id] = item;
+    });
+
+    this.setData({ batchDiagnosisSaving: true });
+    const results = await Promise.all(selectedIds.map(async (wqId) => {
+      const target = byId[wqId] || null;
+      try {
+        const raw = await api.put(`/wrong-questions/${wqId}/diagnosis`, {
+          diagnosis_id: target && target.errorDiagnosis ? Number(target.errorDiagnosis.id || 0) || undefined : undefined,
+          primary_type: picked.type,
+          secondary_types: [],
+        });
+        return { wqId, ok: true, diagnosis: errorDiagnosis.normalizeDiagnosis(raw) };
+      } catch (error) {
+        return { wqId, ok: false, error };
+      }
+    }));
+
+    if (!this._pageAlive) return;
+    const succeeded = results.filter(item => item.ok);
+    const successMap = {};
+    succeeded.forEach(item => { successMap[item.wqId] = item.diagnosis; });
+    const update = (list) => (list || []).map(item => {
+      const id = Number(item.wrongQuestionId || 0);
+      if (!successMap[id]) return item;
+      return Object.assign({}, item, {
+        errorDiagnosis: successMap[id],
+        errorDiagnosisLabel: picked.label,
       });
-      const normalized = errorDiagnosis.normalizeDiagnosis(raw);
-      const update = (list) => (list || []).map(item => item.wrongQuestionId === wqId
-        ? Object.assign({}, item, { errorDiagnosis: normalized, errorDiagnosisLabel: picked.label })
-        : item);
-      this.setData({
-        reviewItems: update(this.data.reviewItems),
-        filteredReviewItems: update(this.data.filteredReviewItems),
-        wrongReviewItems: update(this.data.wrongReviewItems),
-      });
-      wx.showToast({ title: '错因已记录', icon: 'success' });
-    } catch (err) {
-      wx.showToast({ title: api.getErrorMessage(err), icon: 'none' });
-    }
+    });
+
+    const failedCount = results.length - succeeded.length;
+    this.setData({
+      reviewItems: update(this.data.reviewItems),
+      filteredReviewItems: update(this.data.filteredReviewItems),
+      wrongReviewItems: update(this.data.wrongReviewItems),
+      batchDiagnosisSaving: false,
+      batchDiagnosisMode: failedCount > 0,
+      batchSelectedMap: failedCount > 0
+        ? results.reduce((map, item) => { if (!item.ok) map[item.wqId] = true; return map; }, {})
+        : {},
+      batchSelectedCount: failedCount,
+    });
+
+    if (!failedCount) wx.showToast({ title: `已标记 ${succeeded.length} 题`, icon: 'success' });
+    else wx.showToast({ title: `成功 ${succeeded.length} 题，${failedCount} 题失败`, icon: 'none' });
   },
 
   buildLocalErrorDistribution(wrongItems) {
@@ -1501,8 +1593,15 @@ Page({
         : (target.status === 'skipped' ? '跳过题复盘' : '题目复盘');
       const analysisView = buildReviewAnalysisView(target.analysis);
 
+      this._teacherRequestSeq++;
+      this._activeTeacherCacheKey = '';
       this.setData({
         reviewDialogVisible: true,
+        teacherSheetVisible: false,
+        teacherLoading: false,
+        teacherResult: null,
+        teacherErrorText: '',
+        teacherFeedbackSent: '',
         reviewDialog: {
           title,
           questionTitle: target.title || '',
@@ -1520,6 +1619,17 @@ Page({
     }
   },
 
+  _teacherCacheKey(dialog, action) {
+    const d = dialog || {};
+    return [
+      Number(d.questionId || 0),
+      Number(d.questionVersionId || 0),
+      Number(d.diagnosisId || 0),
+      String(action || ''),
+      String(d.userAnswer || ''),
+    ].join('|');
+  },
+
   open408TeacherFromReview() {
     const dialog = this.data.reviewDialog || {};
     if (!dialog.questionId) return;
@@ -1533,11 +1643,43 @@ Page({
   },
 
   async run408TeacherFromReview(action) {
-    if (this.data.teacherLoading) return;
+    if (this.data.teacherLoading) {
+      this.setData({ teacherSheetVisible: true });
+      return;
+    }
     const dialog = this.data.reviewDialog || {};
     if (!dialog.questionId) return;
+    const cacheKey = this._teacherCacheKey(dialog, action);
+    const cached = this._teacherCache && this._teacherCache[cacheKey];
+    this._activeTeacherCacheKey = cacheKey;
+    if (cached) {
+      this.setData({
+        teacherLoading: false,
+        teacherResult: cached,
+        teacherErrorText: '',
+        teacherSheetVisible: true,
+        teacherFeedbackSent: (this._teacherFeedbackCache && this._teacherFeedbackCache[cacheKey]) || ''
+      });
+      return;
+    }
+
     const requestSeq = ++this._teacherRequestSeq;
     const questionId = Number(dialog.questionId);
+    const payload = {
+      question_id: questionId,
+      action: action
+    };
+    if (Number(dialog.questionVersionId) > 0) payload.question_version_id = Number(dialog.questionVersionId);
+    if (Number(dialog.diagnosisId) > 0) payload.diagnosis_id = Number(dialog.diagnosisId);
+    if (dialog.userAnswer && dialog.userAnswer !== '未作答') payload.user_answer = String(dialog.userAnswer);
+
+    if (!this._teacherInflight) this._teacherInflight = Object.create(null);
+    let requestPromise = this._teacherInflight[cacheKey];
+    if (!requestPromise) {
+      requestPromise = api.post('/ai/408-teacher', payload, { timeout: 55000 });
+      this._teacherInflight[cacheKey] = requestPromise;
+    }
+
     this.setData({
       teacherLoading: true,
       teacherResult: null,
@@ -1546,31 +1688,36 @@ Page({
       teacherFeedbackSent: ''
     });
     try {
-      const payload = {
-        question_id: questionId,
-        action: action
-      };
-      if (Number(dialog.questionVersionId) > 0) payload.question_version_id = Number(dialog.questionVersionId);
-      if (Number(dialog.diagnosisId) > 0) payload.diagnosis_id = Number(dialog.diagnosisId);
-      if (dialog.userAnswer && dialog.userAnswer !== '未作答') payload.user_answer = String(dialog.userAnswer);
-      const raw = await api.post('/ai/408-teacher', payload, { timeout: 55000 });
-      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive || !this.data.teacherSheetVisible) return;
-      if (Number((this.data.reviewDialog || {}).questionId) !== questionId) return;
+      const raw = await requestPromise;
       const normalized = aiTeacher408.normalizeResult(raw);
       if (!normalized) throw new Error('AI 返回格式异常');
+      if (!this._teacherCache) this._teacherCache = Object.create(null);
+      this._teacherCache[cacheKey] = normalized;
+
+      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive) return;
+      if (Number((this.data.reviewDialog || {}).questionId) !== questionId) {
+        this.setData({ teacherLoading: false });
+        return;
+      }
+      this._activeTeacherCacheKey = cacheKey;
       this.setData({ teacherLoading: false, teacherResult: normalized });
     } catch (error) {
-      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive || !this.data.teacherSheetVisible) return;
+      if (requestSeq !== this._teacherRequestSeq || !this._pageAlive) return;
       this.setData({
         teacherLoading: false,
         teacherErrorText: aiTeacher408.errorMessage(error, api)
       });
+    } finally {
+      if (this._teacherInflight && this._teacherInflight[cacheKey] === requestPromise) {
+        delete this._teacherInflight[cacheKey];
+      }
     }
   },
 
   close408Teacher() {
-    this._teacherRequestSeq++;
-    this.setData({ teacherSheetVisible: false, teacherLoading: false, teacherResult: null, teacherErrorText: '' });
+    // 收起仅隐藏视图，不取消正在进行的请求。请求完成后仍会写入内存缓存，
+    // 再次展开相同题目与操作时直接复用，避免重复调用 AI 接口。
+    this.setData({ teacherSheetVisible: false });
   },
 
   async feedback408Teacher(e) {
@@ -1581,6 +1728,10 @@ Page({
     if (!type || !questionId) return;
     try {
       await aiTeacher408.submitFeedback(api, { questionId, feedbackType: type, result: this.data.teacherResult });
+      if (this._activeTeacherCacheKey) {
+        if (!this._teacherFeedbackCache) this._teacherFeedbackCache = Object.create(null);
+        this._teacherFeedbackCache[this._activeTeacherCacheKey] = type;
+      }
       this.setData({ teacherFeedbackSent: type });
       wx.showToast({ title: '反馈已记录', icon: 'success' });
     } catch (error) {

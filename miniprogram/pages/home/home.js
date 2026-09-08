@@ -7,6 +7,34 @@ const TODAY_GOAL_TOTAL = 30
 const TODAY_GOAL_KEY = 'home_today_goal_total'
 const GOAL_OPTIONS = [10, 20, 30, 50]
 
+
+function getMasteryMark(name, code) {
+  const text = `${String(name || '')} ${String(code || '')}`.toLowerCase()
+  if (text.includes('数据结构') || text.includes('data_structure')) return '数'
+  if (text.includes('组成') || text.includes('organization')) return '组'
+  if (text.includes('操作系统') || text.includes('operating')) return '系'
+  if (text.includes('网络') || text.includes('network')) return '网'
+  if (text.includes('高等数学') || text.includes('calculus')) return '高'
+  if (text.includes('线性代数') || text.includes('linear')) return '线'
+  if (text.includes('英语') || text.includes('english')) return '英'
+  if (text.includes('政治') || text.includes('politic')) return '政'
+  const clean = String(name || '').trim()
+  return clean ? clean.slice(0, 1) : '科'
+}
+
+function getMasteryIconClass(name, code) {
+  const text = `${String(name || '')} ${String(code || '')}`.toLowerCase()
+  if (text.includes('数据结构') || text.includes('data_structure')) return 'data'
+  if (text.includes('组成') || text.includes('organization')) return 'chip'
+  if (text.includes('操作系统') || text.includes('operating')) return 'code'
+  if (text.includes('网络') || text.includes('network')) return 'network'
+  if (text.includes('高等数学') || text.includes('calculus')) return 'math'
+  if (text.includes('线性代数') || text.includes('linear')) return 'matrix'
+  if (text.includes('英语') || text.includes('english')) return 'language'
+  if (text.includes('政治') || text.includes('politic')) return 'civic'
+  return 'generic'
+}
+
 Page({
   data: {
     user: {},
@@ -834,19 +862,24 @@ Page({
         }
       })
 
-    const subjectMastery = (Array.isArray(hub.subject_mastery) ? hub.subject_mastery : []).map(item => {
+    const subjectMastery = (Array.isArray(hub.subject_mastery) ? hub.subject_mastery : []).map((item, index) => {
       const hasData = !!(item && item.data_available && item.mastery_score != null)
       const score = hasData ? Math.max(0, Math.min(100, Math.round(Number(item.mastery_score) || 0))) : 0
+      const subjectName = String(item.subject_name || '')
+      const subjectCode = String(item.subject_code || '')
       return {
         subjectId: Number(item.subject_id),
-        subjectCode: String(item.subject_code || ''),
-        subjectName: String(item.subject_name || ''),
+        subjectCode,
+        subjectName,
+        orderText: String(index + 1).padStart(2, '0'),
+        mark: getMasteryMark(subjectName, subjectCode),
+        iconClass: getMasteryIconClass(subjectName, subjectCode),
         hasData,
         score,
         scoreText: hasData ? `${score}%` : '--',
         barWidth: hasData ? score : 0,
         attemptCount: this.toNonNegativeInt(item.attempt_count),
-        statusText: hasData ? '综合掌握' : '数据不足',
+        statusText: hasData ? (score >= 85 ? '已掌握' : (score >= 70 ? '状态良好' : (score >= 40 ? '提升中' : '掌握不足'))) : '数据不足',
       }
     })
 

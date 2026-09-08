@@ -1,5 +1,33 @@
 const api = require('../../../utils/api')
 
+
+function subjectMark(name, code) {
+  const text = `${String(name || '')} ${String(code || '')}`.toLowerCase()
+  if (text.includes('数据结构') || text.includes('data_structure')) return '数'
+  if (text.includes('组成') || text.includes('organization')) return '组'
+  if (text.includes('操作系统') || text.includes('operating')) return '系'
+  if (text.includes('网络') || text.includes('network')) return '网'
+  if (text.includes('高等数学') || text.includes('calculus')) return '高'
+  if (text.includes('线性代数') || text.includes('linear')) return '线'
+  if (text.includes('英语') || text.includes('english')) return '英'
+  if (text.includes('政治') || text.includes('politic')) return '政'
+  const clean = String(name || '').trim()
+  return clean ? clean.slice(0, 1) : '科'
+}
+
+function subjectIconClass(name, code) {
+  const text = `${String(name || '')} ${String(code || '')}`.toLowerCase()
+  if (text.includes('数据结构') || text.includes('data_structure')) return 'data'
+  if (text.includes('组成') || text.includes('organization')) return 'chip'
+  if (text.includes('操作系统') || text.includes('operating')) return 'code'
+  if (text.includes('网络') || text.includes('network')) return 'network'
+  if (text.includes('高等数学') || text.includes('calculus')) return 'math'
+  if (text.includes('线性代数') || text.includes('linear')) return 'matrix'
+  if (text.includes('英语') || text.includes('english')) return 'language'
+  if (text.includes('政治') || text.includes('politic')) return 'civic'
+  return 'generic'
+}
+
 const STATUS_META = {
   no_data: { text: '未开始', hint: '完成相关练习后生成掌握度' },
   insufficient: { text: '数据不足', hint: '继续练习，达到可靠样本后展示' },
@@ -32,12 +60,17 @@ Page({
     this.setData({ loading: true, error: '' })
     try {
       const data = await api.get('/knowledge-map/overview')
-      const subjects = (Array.isArray(data.subjects) ? data.subjects : []).map((item) => {
+      const subjects = (Array.isArray(data.subjects) ? data.subjects : []).map((item, index) => {
         const meta = STATUS_META[item.status] || STATUS_META.no_data
         const score = item.mastery_score == null ? null : Math.max(0, Math.min(100, Math.round(Number(item.mastery_score) || 0)))
         const coverage = Math.max(0, Math.min(100, Math.round((Number(item.coverage_ratio) || 0) * 100)))
+        const reliable = Number(item.reliable_knowledge_points) || 0
+        const trainable = Number(item.trainable_knowledge_points) || 0
         return {
           ...item,
+          orderText: String(index + 1).padStart(2, '0'),
+          mark: subjectMark(item.subject_name, item.subject_code),
+          iconClass: subjectIconClass(item.subject_name, item.subject_code),
           score,
           scoreText: score == null ? '--' : `${score}%`,
           barWidth: score == null ? 0 : score,
@@ -45,7 +78,9 @@ Page({
           statusText: meta.text,
           statusHint: meta.hint,
           statusClass: `status-${item.status || 'no_data'}`,
-          progressText: `${Number(item.reliable_knowledge_points) || 0}/${Number(item.trainable_knowledge_points) || 0} 个知识点数据可靠`,
+          reliableCount: reliable,
+          trainableCount: trainable,
+          progressText: `${reliable}/${trainable} 个知识点`,
         }
       })
       this.setData({

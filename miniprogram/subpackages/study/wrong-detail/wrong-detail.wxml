@@ -93,36 +93,52 @@
     bind:jump="goWrongQuestion"
   />
 
-  <!-- 错因分类：AI 默认关闭，用户可按需开启 -->
+  <!-- 我的错因：Scheme 1 / 清爽极简 -->
   <view class="diagnosis-card">
+    <view class="diagnosis-card-topline">
+      <text class="diagnosis-kicker">ERROR PATTERN</text>
+      <view class="diagnosis-more-dots"><view></view><view></view><view></view></view>
+    </view>
     <view class="diagnosis-card-head">
       <view class="diagnosis-head-copy">
-        <text class="diagnosis-kicker">ERROR PATTERN</text>
         <text class="diagnosis-title">我的错因</text>
+        <view class="diagnosis-status-pill {{errorDiagnosis && errorDiagnosis.userConfirmed ? 'confirmed' : ''}}">
+          <view class="diagnosis-status-check">{{errorDiagnosis && errorDiagnosis.userConfirmed ? '✓' : '·'}}</view>
+          <text>{{errorDiagnosis && errorDiagnosis.userConfirmed ? '已确认' : '待确认'}}</text>
+        </view>
       </view>
-      <button wx:if="{{diagnosisAiEnabled}}" class="diagnosis-ai-toggle enabled" bindtap="disableDiagnosisAi">关闭 AI</button>
-      <button wx:else class="diagnosis-ai-toggle" bindtap="enableDiagnosisAi">开启 AI</button>
+      <view class="diagnosis-illustration">
+        <view class="diagnosis-paper"><view class="paper-eye left"></view><view class="paper-eye right"></view><view class="paper-mouth"></view></view>
+        <view class="diagnosis-x">×</view>
+      </view>
     </view>
-    <view class="diagnosis-status-row">
-      <text class="diagnosis-source" wx:if="{{errorDiagnosis && errorDiagnosis.userConfirmed}}">已确认</text>
-      <text class="diagnosis-source ai" wx:elif="{{diagnosisAiEnabled && errorDiagnosis && errorDiagnosis.effectiveSource === 'ai'}}">AI 建议</text>
-      <text class="diagnosis-source pending" wx:else>手动记录</text>
-      <text class="diagnosis-helper">{{diagnosisAiEnabled ? 'AI 仅在开启时分析' : 'AI 建议默认关闭'}}</text>
+
+    <view class="diagnosis-main-block">
+      <text class="diagnosis-primary">{{errorDiagnosis && errorDiagnosis.userConfirmed ? errorDiagnosis.primaryLabel : (diagnosisAiEnabled && errorDiagnosis && errorDiagnosis.aiPrimaryType && errorDiagnosis.aiPrimaryType !== 'unknown' ? errorDiagnosis.aiPrimaryLabel : '暂未分类')}}</text>
+      <view class="diagnosis-secondary" wx:if="{{errorDiagnosis && errorDiagnosis.secondaryLabels.length && errorDiagnosis.userConfirmed}}">
+        <text class="diagnosis-chip" wx:for="{{errorDiagnosis.secondaryLabels}}" wx:key="*this">{{item}}</text>
+      </view>
     </view>
-    <view class="diagnosis-main">
-      <text class="diagnosis-primary">{{errorDiagnosis && errorDiagnosis.userConfirmed ? errorDiagnosis.primaryLabel : (diagnosisAiEnabled && errorDiagnosis ? errorDiagnosis.primaryLabel : '暂未分类')}}</text>
-      <text class="diagnosis-confidence" wx:if="{{diagnosisAiEnabled && errorDiagnosis && errorDiagnosis.effectiveSource === 'ai' && errorDiagnosis.aiConfidence !== null}}">置信度 {{errorDiagnosis.aiConfidence}}%</text>
+
+    <view class="diagnosis-rule"></view>
+
+    <view class="diagnosis-ai-control">
+      <view class="diagnosis-ai-copy">
+        <text class="diagnosis-ai-line">AI 建议 · {{diagnosisAiEnabled ? '已开启' : '默认关闭'}}</text>
+        <text class="diagnosis-ai-desc" wx:if="{{diagnosisAiEnabled}}">仅在你需要时分析，不影响手动记录</text>
+      </view>
+      <button wx:if="{{diagnosisAiEnabled}}" class="diagnosis-ai-toggle enabled" bindtap="disableDiagnosisAi">关闭</button>
+      <button wx:else class="diagnosis-ai-toggle" bindtap="enableDiagnosisAi">开启</button>
     </view>
-    <view class="diagnosis-secondary" wx:if="{{errorDiagnosis && errorDiagnosis.secondaryLabels.length && (errorDiagnosis.userConfirmed || diagnosisAiEnabled)}}">
-      <text class="diagnosis-chip" wx:for="{{errorDiagnosis.secondaryLabels}}" wx:key="*this">{{item}}</text>
+
+    <view class="diagnosis-ai-suggestion" wx:if="{{diagnosisAiEnabled && errorDiagnosis && !errorDiagnosis.userConfirmed && errorDiagnosis.aiPrimaryType && errorDiagnosis.aiPrimaryType !== 'unknown'}}">
+      <view class="diagnosis-ai-suggestion-copy"><text class="diagnosis-ai-suggestion-label">AI 建议错因</text><text class="diagnosis-ai-suggestion-value">{{errorDiagnosis.aiPrimaryLabel}}</text><text class="diagnosis-ai-suggestion-reason" wx:if="{{errorDiagnosis.aiReason}}">{{errorDiagnosis.aiReason}}</text></view>
+      <button class="diagnosis-ai-accept" bindtap="acceptAiDiagnosis">采纳</button>
     </view>
-    <text class="diagnosis-reason" wx:if="{{diagnosisAiEnabled && errorDiagnosis && errorDiagnosis.aiReason}}">AI 判断依据：{{errorDiagnosis.aiReason}}</text>
-    <view class="diagnosis-actions">
-      <button class="diagnosis-btn primary" bindtap="openDiagnosisSheet">{{errorDiagnosis && errorDiagnosis.userConfirmed ? '修改错因' : '确认错因'}}</button>
-      <button wx:if="{{diagnosisAiEnabled && errorDiagnosis && !errorDiagnosis.userConfirmed && errorDiagnosis.aiPrimaryType && errorDiagnosis.aiPrimaryType !== 'unknown'}}" class="diagnosis-btn" bindtap="acceptAiDiagnosis">采纳 AI 建议</button>
-      <button wx:elif="{{diagnosisAiEnabled && (!errorDiagnosis || errorDiagnosis.aiStatus === 'failed' || errorDiagnosis.aiStatus === 'not_requested')}}" class="diagnosis-btn" loading="{{diagnosisAiQueuing}}" disabled="{{diagnosisAiQueuing}}" bindtap="requestDiagnosisSuggestion">重新分析</button>
-      <text wx:elif="{{diagnosisAiEnabled && errorDiagnosis && errorDiagnosis.aiStatus === 'pending'}}" class="diagnosis-pending">AI 正在分析…</text>
-    </view>
+    <view class="diagnosis-ai-state" wx:elif="{{diagnosisAiEnabled && errorDiagnosis && errorDiagnosis.aiStatus === 'pending'}}"><view class="diagnosis-ai-state-dot"></view><text>AI 正在分析本题错因</text></view>
+    <view class="diagnosis-ai-state failed" wx:elif="{{diagnosisAiEnabled && (!errorDiagnosis || errorDiagnosis.aiStatus === 'failed' || errorDiagnosis.aiStatus === 'not_requested')}}"><text>暂未生成建议</text><text class="diagnosis-ai-retry" bindtap="requestDiagnosisSuggestion">重新分析</text></view>
+
+    <button class="diagnosis-edit-btn" bindtap="openDiagnosisSheet"><text>{{errorDiagnosis && errorDiagnosis.userConfirmed ? '修改错因' : '记录错因'}}</text><text class="diagnosis-edit-arrow">→</text></button>
   </view>
 
   <!-- AI 分析 -->
@@ -275,31 +291,41 @@
       <text>{{teacherErrorText}}</text>
     </view>
     <scroll-view wx:elif="{{teacherResult}}" class="teacher-sheet-scroll" scroll-y enhanced show-scrollbar="{{false}}">
-      <text wx:if="{{teacherResult.summary}}" class="teacher-summary">{{teacherResult.summary}}</text>
-      <view wx:for="{{teacherResult.sections}}" wx:key="key" class="teacher-result-section">
-        <text class="teacher-result-heading">{{item.heading}}</text>
-        <text wx:for="{{item.points}}" wx:for-item="point" wx:key="*this" class="teacher-result-point">• {{point}}</text>
+      <view wx:if="{{teacherResult.summary}}" class="teacher-summary-card">
+        <text class="teacher-summary-label">先看结论</text>
+        <text class="teacher-summary" selectable="true">{{teacherResult.summary}}</text>
       </view>
-      <view wx:if="{{teacherResult.knowledgePoints.length}}" class="teacher-kp-wrap">
-        <text class="teacher-result-heading">知识点串联</text>
+      <view wx:for="{{teacherResult.sections}}" wx:key="key" class="teacher-result-section">
+        <view class="teacher-section-head"><view class="teacher-section-rule"></view><text class="teacher-result-heading">{{item.heading}}</text></view>
+        <view class="teacher-point-list">
+          <view wx:for="{{item.points}}" wx:for-item="point" wx:key="*this" class="teacher-result-point">
+            <view class="teacher-point-dot"></view><text class="teacher-point-text" selectable="true">{{point}}</text>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{teacherResult.knowledgePoints.length}}" class="teacher-result-section teacher-kp-wrap">
+        <view class="teacher-section-head"><view class="teacher-section-rule"></view><text class="teacher-result-heading">知识点串联</text></view>
         <view wx:for="{{teacherResult.knowledgePoints}}" wx:key="key" class="teacher-kp-row">
           <text class="teacher-kp-name">{{item.name}}</text>
           <text wx:if="{{item.relation}}" class="teacher-kp-relation">{{item.relation}}</text>
           <text wx:if="{{item.masteryHint}}" class="teacher-kp-hint">{{item.masteryHint}}</text>
         </view>
       </view>
-      <view wx:if="{{teacherResult.practiceQuestion}}" class="teacher-practice-card">
-        <text class="teacher-result-heading">练一题</text>
-        <text class="teacher-practice-stem">{{teacherResult.practiceQuestion.stem}}</text>
+      <view wx:if="{{teacherResult.practiceQuestion}}" class="teacher-result-section teacher-practice-card">
+        <view class="teacher-section-head"><view class="teacher-section-rule"></view><text class="teacher-result-heading">立即检验</text></view>
+        <text class="teacher-practice-stem" selectable="true">{{teacherResult.practiceQuestion.stem}}</text>
         <view wx:for="{{teacherResult.practiceQuestion.options}}" wx:key="key" class="teacher-practice-option">
-          <text class="teacher-practice-key">{{item.key}}</text><text>{{item.text}}</text>
+          <text class="teacher-practice-key">{{item.key}}</text><text class="teacher-practice-option-text">{{item.text}}</text>
         </view>
-        <text class="teacher-practice-answer">答案：{{teacherResult.practiceQuestion.answer}}</text>
-        <text wx:if="{{teacherResult.practiceQuestion.analysis}}" class="teacher-practice-analysis">{{teacherResult.practiceQuestion.analysis}}</text>
+        <view class="teacher-practice-answer-row"><text class="teacher-practice-answer-label">答案</text><text class="teacher-practice-answer">{{teacherResult.practiceQuestion.answer}}</text></view>
+        <text wx:if="{{teacherResult.practiceQuestion.analysis}}" class="teacher-practice-analysis" selectable="true">{{teacherResult.practiceQuestion.analysis}}</text>
       </view>
       <text class="teacher-footnote">{{teacherResult.fromFallback ? '当前使用题库解析兜底；AI 生成暂不可用。' : '内容由专项 AI 老师生成，仅用于学习复盘。'}}</text>
       <view class="teacher-feedback-row">
-        <text class="teacher-feedback-label">这次讲解有帮助吗？</text>
+        <view class="teacher-feedback-copy">
+          <text class="teacher-feedback-label">这次讲解有帮助吗？</text>
+          <text class="teacher-feedback-hint">你的反馈会用于改善后续讲解</text>
+        </view>
         <view class="teacher-feedback-actions">
           <button class="teacher-feedback-btn {{teacherFeedbackSent === 'helpful' ? 'selected' : ''}}" data-type="helpful" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">有帮助</button>
           <button class="teacher-feedback-btn {{teacherFeedbackSent === 'inaccurate' ? 'selected' : ''}}" data-type="inaccurate" disabled="{{teacherFeedbackSent}}" bindtap="feedback408Teacher">不准确</button>
@@ -312,24 +338,30 @@
 
 <!-- 错因确认 -->
 <view class="modal-overlay" wx:if="{{diagnosisSheetVisible}}" catchtap="closeDiagnosisSheet" catchtouchmove="noop">
-  <scroll-view class="diagnosis-sheet" scroll-y enhanced bounces="{{false}}" show-scrollbar="{{false}}" catchtap="noop">
+  <view class="diagnosis-sheet-shell" catchtap="noop">
     <view class="sheet-handle"></view>
-    <text class="decision-kicker">ERROR CAUSE</text>
-    <text class="decision-title">这次为什么做错？</text>
-    <text class="decision-desc">先选一个主错因，可再补充最多 3 个次级错因。你的确认会覆盖 AI 建议。</text>
-    <text class="diagnosis-sheet-label">主错因</text>
-    <view class="diagnosis-option-grid">
-      <view wx:for="{{diagnosisOptions}}" wx:key="type" data-type="{{item.type}}" bindtap="selectDiagnosisPrimary" class="diagnosis-option {{diagnosisPrimary === item.type ? 'selected' : ''}}">
-        <text class="diagnosis-option-title">{{item.label}}</text>
-        <text class="diagnosis-option-desc">{{item.description}}</text>
+    <scroll-view class="diagnosis-sheet-scroll" scroll-y enhanced bounces="{{false}}" show-scrollbar="{{false}}">
+      <text class="decision-kicker">ERROR CAUSE</text>
+      <text class="decision-title">这次为什么做错？</text>
+      <text class="decision-desc">选择一个主错因，可再补充最多 3 个次级错因。</text>
+      <text class="diagnosis-sheet-label">主错因</text>
+      <view class="diagnosis-option-grid">
+        <view wx:for="{{diagnosisOptions}}" wx:key="type" data-type="{{item.type}}" bindtap="selectDiagnosisPrimary" class="diagnosis-option {{diagnosisPrimary === item.type ? 'selected' : ''}}">
+          <text class="diagnosis-option-title">{{item.label}}</text>
+          <text class="diagnosis-option-desc">{{item.description}}</text>
+        </view>
       </view>
+      <text class="diagnosis-sheet-label secondary-label">次级错因（可选）</text>
+      <view class="diagnosis-secondary-options">
+        <text wx:for="{{diagnosisOptions}}" wx:key="type" wx:if="{{item.type !== diagnosisPrimary}}" data-type="{{item.type}}" bindtap="toggleDiagnosisSecondary" class="diagnosis-secondary-option {{diagnosisSecondaryMap[item.type] ? 'selected' : ''}}">{{item.label}}</text>
+      </view>
+      <view class="diagnosis-sheet-scroll-space"></view>
+    </scroll-view>
+    <view class="diagnosis-sheet-footer">
+      <button class="decision-secondary" bindtap="closeDiagnosisSheet">取消</button>
+      <button class="decision-primary" loading="{{diagnosisSaving}}" disabled="{{diagnosisSaving}}" bindtap="saveDiagnosis">保存错因</button>
     </view>
-    <text class="diagnosis-sheet-label secondary-label">次级错因（可选）</text>
-    <view class="diagnosis-secondary-options">
-      <text wx:for="{{diagnosisOptions}}" wx:key="type" wx:if="{{item.type !== diagnosisPrimary}}" data-type="{{item.type}}" bindtap="toggleDiagnosisSecondary" class="diagnosis-secondary-option {{diagnosisSecondaryMap[item.type] ? 'selected' : ''}}">{{item.label}}</text>
-    </view>
-    <view class="decision-actions"><button class="decision-secondary" bindtap="closeDiagnosisSheet">取消</button><button class="decision-primary" loading="{{diagnosisSaving}}" disabled="{{diagnosisSaving}}" bindtap="saveDiagnosis">保存错因</button></view>
-  </scroll-view>
+  </view>
 </view>
 
 <!-- 已掌握确认 -->
