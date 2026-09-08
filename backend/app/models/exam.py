@@ -41,6 +41,7 @@ class ExamPaper(Base):
             name="ck_exam_papers_duration_positive",
         ),
         Index("ix_exam_papers_status_active_year", "status", "is_active", "year"),
+        Index("ix_exam_papers_coverage_type_year_status", "paper_type", "year", "status", "is_active"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

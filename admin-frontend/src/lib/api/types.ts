@@ -1521,3 +1521,91 @@ export type SyllabusCoverageResponse = {
   coverage_ratio: number;
   items: SyllabusCoverageItem[];
 };
+
+export type CoverageStatus = "empty" | "insufficient" | "imbalanced" | "healthy";
+export type ExamYearCoverageStatus = "missing" | "draft" | "invalid" | "complete" | "archived";
+
+export type CoverageSyllabusSummary = {
+  id: number;
+  code: string;
+  name: string;
+  effective_year: number;
+};
+
+export type CoverageMatrixItem = {
+  syllabus_knowledge_point_id: number;
+  knowledge_point_id: number;
+  subject_id: number;
+  subject_code: string;
+  subject_name: string;
+  name: string;
+  total_question_count: number;
+  past_exam_choice_count: number;
+  mock_choice_count: number;
+  difficulty_easy_count: number;
+  difficulty_medium_count: number;
+  difficulty_hard_count: number;
+  question_type_counts: Record<string, number>;
+  years: number[];
+  sources: string[];
+  missing_analysis_count: number;
+  duplicate_suspect_count: number;
+  status: CoverageStatus;
+  issues: string[];
+};
+
+export type CoverageSummary = {
+  min_questions: number;
+  total_knowledge_points: number;
+  healthy_knowledge_points: number;
+  empty_knowledge_points: number;
+  insufficient_knowledge_points: number;
+  imbalanced_knowledge_points: number;
+  total_questions: number;
+  mapped_questions: number;
+  unmapped_questions: number;
+  missing_analysis_questions: number;
+  image_reference_anomaly_questions: number;
+  duplicate_suspect_questions: number;
+  unversioned_questions: number;
+  syllabus_snapshot_missing_questions: number;
+};
+
+export type CoverageQualityIssues = {
+  unmapped_question_ids: number[];
+  missing_analysis_question_ids: number[];
+  image_reference_anomaly_question_ids: number[];
+  unversioned_question_ids: number[];
+  syllabus_snapshot_missing_question_ids: number[];
+  duplicate_groups: Array<{ question_hash: string; question_ids: number[] }>;
+};
+
+export type ExamYearCoverageItem = {
+  year: number;
+  status: ExamYearCoverageStatus;
+  paper_id?: number | null;
+  paper_title?: string | null;
+  paper_status?: string | null;
+  paper_version?: number | null;
+  question_count: number;
+  total_choice_score: number;
+  missing_analysis_count: number;
+  missing_knowledge_point_count: number;
+  validation_errors: string[];
+  quality_warnings: string[];
+};
+
+export type CoverageReportResponse = {
+  syllabus: CoverageSyllabusSummary;
+  summary: CoverageSummary;
+  items: CoverageMatrixItem[];
+  exam_years: ExamYearCoverageItem[];
+  quality_issues: CoverageQualityIssues;
+  knowledge_graph_quality: {
+    summary?: Record<string, number>;
+    warnings?: string[];
+    isolated_knowledge_points?: Array<Record<string, unknown>>;
+    low_question_count_points?: Array<Record<string, unknown>>;
+    cycles?: number[][];
+  };
+};

@@ -248,6 +248,14 @@ const syllabusRoute: AdminRoute = {
   icon: BookOpen,
 };
 
+const coverageRoute: AdminRoute = {
+  href: "/coverage",
+  label: "题库覆盖",
+  description: "408 覆盖率与质量治理",
+  permission: "knowledge:read",
+  icon: BarChart3,
+};
+
 /**
  * Flat route list kept for route matching and permission-aware consumers.
  */
@@ -271,6 +279,7 @@ export const adminRoutes: AdminRoute[] = [
   recommendationReportsRoute,
   knowledgeGraphRoute,
   syllabusRoute,
+  coverageRoute,
 ];
 
 /**
@@ -298,9 +307,9 @@ export const adminNavigation: AdminNavigationItem[] = [
     type: "group",
     key: "question-management",
     label: "题目管理",
-    description: "科目、题库、导入、知识图谱与考纲",
+    description: "科目、题库、导入、知识图谱、考纲与覆盖率",
     icon: FileQuestion,
-    children: [subjectsRoute, questionsRoute, examsRoute, importsRoute, knowledgeGraphRoute, syllabusRoute],
+    children: [subjectsRoute, questionsRoute, examsRoute, importsRoute, knowledgeGraphRoute, syllabusRoute, coverageRoute],
   },
   {
     type: "group",

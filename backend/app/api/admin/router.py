@@ -7,6 +7,7 @@ from app.api.v1.admin_ai_settings import router as admin_ai_settings_router
 from app.api.v1.admin_app_users import router as admin_app_users_router
 from app.api.v1.admin_audit_logs import router as admin_audit_logs_router
 from app.api.v1.admin_auth import router as admin_auth_router
+from app.api.v1.admin_coverage import router as admin_coverage_router
 from app.api.v1.admin_dashboard import router as admin_dashboard_router
 from app.api.v1.admin_exams import router as admin_exams_router
 from app.api.v1.admin_formulas import router as admin_formulas_router
@@ -32,6 +33,7 @@ admin_api_router.include_router(admin_ai_settings_router)
 admin_api_router.include_router(admin_app_users_router)
 admin_api_router.include_router(admin_audit_logs_router)
 admin_api_router.include_router(admin_dashboard_router)
+admin_api_router.include_router(admin_coverage_router)
 admin_api_router.include_router(admin_exams_router)
 admin_api_router.include_router(admin_health_router)
 admin_api_router.include_router(admin_imports_router)

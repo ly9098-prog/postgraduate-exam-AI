@@ -22,8 +22,8 @@ from app.core.time_utils import shanghai_now, to_shanghai
 from app.models.question import Question
 from app.schemas.admin_questions import AdminQuestionExportRequest
 from app.services.admin_question_service import list_admin_questions
-from app.services.knowledge_point_service import load_question_kps
 from app.services.export.docx_exporter import DocxContext, DocxExporter
+from app.services.knowledge_point_service import load_question_kps
 from app.utils.question_content import extract_image_urls_from_content
 
 _MAX_EXPORT_QUESTIONS = 5000
@@ -277,6 +277,7 @@ async def _resolve_questions(
         year=request.year,
         import_batch_id=request.import_batch_id,
         difficulty=request.difficulty,
+        knowledge_point_id=request.knowledge_point_id,
     )
     if total == 0:
         raise ValueError("没有可导出的题目")

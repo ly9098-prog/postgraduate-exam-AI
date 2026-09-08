@@ -1,4 +1,3 @@
-from app.schemas.base import BaseModel
 import re
 from datetime import datetime
 from typing import Any, Literal
@@ -10,6 +9,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+
+from app.schemas.base import BaseModel
 
 _IMAGE_TARGET_RE = re.compile(r"option:[A-Z]")
 
@@ -151,6 +152,7 @@ class AdminQuestionExportRequest(BaseModel):
     year: int | None = None
     import_batch_id: str | None = Field(default=None, max_length=64)
     difficulty: int | None = Field(default=None, ge=1, le=5)
+    knowledge_point_id: int | None = Field(default=None, ge=1)
 
     @field_validator("question_type")
     @classmethod

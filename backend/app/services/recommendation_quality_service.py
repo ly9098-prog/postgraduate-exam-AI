@@ -160,6 +160,7 @@ async def build_recommendation_quality_report(
 async def build_knowledge_quality_report(
     db: AsyncSession,
     subject_id: int | None = None,
+    knowledge_point_ids: list[int] | None = None,
 ) -> dict:
     """生成知识图谱质量报告。
 
@@ -176,6 +177,17 @@ async def build_knowledge_quality_report(
     kp_conditions = [KnowledgePoint.is_active == True]  # noqa: E712
     if subject_id:
         kp_conditions.append(KnowledgePoint.subject_id == subject_id)
+    if knowledge_point_ids is not None:
+        normalized_kp_ids = list(dict.fromkeys(int(item) for item in knowledge_point_ids))
+        if not normalized_kp_ids:
+            return {
+                "summary": {"total_knowledge_points": 0},
+                "warnings": ["指定范围没有任何活跃知识点"],
+                "isolated_knowledge_points": [],
+                "low_question_count_points": [],
+                "cycles": [],
+            }
+        kp_conditions.append(KnowledgePoint.id.in_(normalized_kp_ids))
 
     # 1. 获取所有知识点
     kp_result = await db.execute(
@@ -183,6 +195,14 @@ async def build_knowledge_quality_report(
     )
     all_kps = kp_result.scalars().all()
     kp_ids = {kp.id for kp in all_kps}
+    edge_scope = [KnowledgeEdge.is_active == True]  # noqa: E712
+    if subject_id:
+        edge_scope.append(KnowledgeEdge.subject_id == subject_id)
+    if knowledge_point_ids is not None:
+        edge_scope.extend([
+            KnowledgeEdge.source_knowledge_point_id.in_(kp_ids),
+            KnowledgeEdge.target_knowledge_point_id.in_(kp_ids),
+        ])
 
     # 批量加载知识点科目标签（单次查询，避免 N+1）
     from app.models.admin import Subject
@@ -245,10 +265,7 @@ async def build_knowledge_quality_report(
         select(
             KnowledgeEdge.source_knowledge_point_id,
             KnowledgeEdge.target_knowledge_point_id,
-        ).where(
-            KnowledgeEdge.subject_id == subject_id if subject_id else True,
-            KnowledgeEdge.is_active == True,  # noqa: E712
-        )
+        ).where(*edge_scope)
     )
     connected_kp_ids = set()
     for row in edge_result.all():
@@ -273,8 +290,7 @@ async def build_knowledge_quality_report(
     # 4. 低 confidence 边
     low_conf_result = await db.execute(
         select(func.count(KnowledgeEdge.id)).where(
-            KnowledgeEdge.subject_id == subject_id if subject_id else True,
-            KnowledgeEdge.is_active == True,  # noqa: E712
+            *edge_scope,
             KnowledgeEdge.confidence < 0.3,
         )
     )
@@ -282,10 +298,7 @@ async def build_knowledge_quality_report(
 
     # 5. 总边数
     total_edge_result = await db.execute(
-        select(func.count(KnowledgeEdge.id)).where(
-            KnowledgeEdge.subject_id == subject_id if subject_id else True,
-            KnowledgeEdge.is_active == True,  # noqa: E712
-        )
+        select(func.count(KnowledgeEdge.id)).where(*edge_scope)
     )
     total_edges = total_edge_result.scalar() or 0
 
@@ -297,9 +310,8 @@ async def build_knowledge_quality_report(
                 KnowledgeEdge.source_knowledge_point_id,
                 KnowledgeEdge.target_knowledge_point_id,
             ).where(
-                KnowledgeEdge.subject_id == subject_id if subject_id else True,
+                *edge_scope,
                 KnowledgeEdge.relation_type == "prerequisite",
-                KnowledgeEdge.is_active == True,  # noqa: E712
             )
         )
         prereq_edges = {(row[0], row[1]) for row in cycle_result.all()}

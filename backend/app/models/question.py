@@ -3,11 +3,12 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
-    BigInteger,
     SmallInteger,
     String,
     Text,
@@ -21,6 +22,9 @@ from app.features.question_type import QT_SINGLE_CHOICE
 
 class Question(Base):
     __tablename__ = "questions"
+    __table_args__ = (
+        Index("ix_questions_coverage_scope", "subject_id", "review_status", "is_active"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     subject_id: Mapped[int] = mapped_column(

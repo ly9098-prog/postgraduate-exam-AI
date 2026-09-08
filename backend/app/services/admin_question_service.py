@@ -6,7 +6,12 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import AdminPrincipal
-from app.models.admin import AdminUser, QuestionVersion, QuestionVersionKnowledgePoint, Subject
+from app.models.admin import (
+    AdminUser,
+    QuestionVersion,
+    QuestionVersionKnowledgePoint,
+    Subject,
+)
 from app.models.knowledge_point import KnowledgePoint
 from app.models.question import Question
 from app.models.question_import import QuestionImport
@@ -154,6 +159,7 @@ async def list_admin_questions(
     year: int | None = None,
     import_batch_id: str | None = None,
     difficulty: int | None = None,
+    knowledge_point_id: int | None = None,
 ) -> tuple[list[Question], int]:
     conditions = []
     if subject_id is not None:
@@ -234,6 +240,14 @@ async def list_admin_questions(
             )
     if difficulty is not None:
         conditions.append(Question.difficulty == difficulty)
+    if knowledge_point_id is not None:
+        conditions.append(
+            Question.id.in_(
+                select(QuestionKnowledgePoint.question_id).where(
+                    QuestionKnowledgePoint.knowledge_point_id == knowledge_point_id
+                )
+            )
+        )
 
     query = select(Question)
     count_query = select(func.count()).select_from(Question)

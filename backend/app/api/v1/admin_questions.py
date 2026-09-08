@@ -34,6 +34,7 @@ from app.schemas.admin_questions import (
 )
 from app.schemas.common import paginated_response
 from app.schemas.vector import EmbeddingBackfillRequest
+from app.services.admin_question_export_service import build_admin_question_export
 from app.services.admin_question_service import (
     batch_delete_admin_questions,
     delete_question_asset_if_orphan,
@@ -51,11 +52,13 @@ from app.services.admin_question_service import (
     upsert_option_image,
     upsert_stem_image,
 )
-from app.services.admin_question_export_service import build_admin_question_export
 from app.services.knowledge_point_service import load_question_kps
 from app.services.storage_backend import compress_image, get_question_assets_storage
 from app.services.streaming_upload_handler import stream_to_temp
-from app.utils.question_content import extract_image_urls_from_content, normalize_segment_type
+from app.utils.question_content import (
+    extract_image_urls_from_content,
+    normalize_segment_type,
+)
 
 router = APIRouter(prefix="/api/admin/v1/questions", tags=["admin-questions"])
 
@@ -256,6 +259,7 @@ async def list_questions(
     year: int | None = None,
     import_batch_id: str | None = None,
     difficulty: int | None = Query(None, ge=1, le=5),
+    knowledge_point_id: int | None = Query(None, ge=1),
     _=Depends(require_permissions("question:read")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -271,6 +275,7 @@ async def list_questions(
         year,
         import_batch_id,
         difficulty,
+        knowledge_point_id,
     )
     kp_map = await load_question_kps(db, [q.id for q in questions])
     return paginated_response(

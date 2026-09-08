@@ -771,10 +771,28 @@ export default function QuestionsPage() {
     year: "",
     difficulty: "",
     import_batch_id: "",
+    knowledge_point_id: "",
   });
   const [keywordInput, setKeywordInput] = useState(filters.keyword);
   const [searchDebouncing, setSearchDebouncing] = useState(false);
   const [importBatchInput, setImportBatchInput] = useState(filters.import_batch_id);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const patch = {
+      subject_id: params.get("subject_id") ?? "",
+      is_active: params.has("is_active") ? (params.get("is_active") ?? "") : "true",
+      question_type: params.get("question_type") ?? "",
+      keyword: params.get("keyword") ?? "",
+      year: params.get("year") ?? "",
+      difficulty: params.get("difficulty") ?? "",
+      import_batch_id: params.get("import_batch_id") ?? "",
+      knowledge_point_id: params.get("knowledge_point_id") ?? "",
+    };
+    if (!Object.values(patch).some(Boolean) && patch.is_active === "true") return;
+    setFilters(patch);
+    setKeywordInput(patch.keyword);
+    setImportBatchInput(patch.import_batch_id);
+  }, []);
   const [subjectOptions, setSubjectOptions] = useState<
     Array<{ id: number; code: string; name: string }>
   >([]);
@@ -844,6 +862,7 @@ export default function QuestionsPage() {
       year: filters.year,
       difficulty: filters.difficulty ? Number(filters.difficulty) : undefined,
       import_batch_id: filters.import_batch_id || undefined,
+      knowledge_point_id: filters.knowledge_point_id ? Number(filters.knowledge_point_id) : undefined,
     }),
     [page, pageSize, filters],
   );
@@ -1042,7 +1061,8 @@ export default function QuestionsPage() {
       filters.is_active !== "true" ||
       filters.keyword ||
       filters.difficulty ||
-      filters.import_batch_id,
+      filters.import_batch_id ||
+      filters.knowledge_point_id,
   );
   const allChecked =
     items.length > 0 && items.every((item) => selectedIds.has(item.id));
@@ -1339,6 +1359,7 @@ export default function QuestionsPage() {
       year: "",
       difficulty: "",
       import_batch_id: "",
+      knowledge_point_id: "",
     });
     setPage(1);
     setSelectedIds(new Set());
@@ -1363,6 +1384,7 @@ export default function QuestionsPage() {
       year: "",
       difficulty: "",
       import_batch_id: "",
+      knowledge_point_id: "",
       ...patch,
     };
     setFilters(next);
@@ -1497,6 +1519,7 @@ export default function QuestionsPage() {
             ? Number(filters.difficulty)
             : undefined,
           import_batch_id: filters.import_batch_id || undefined,
+          knowledge_point_id: filters.knowledge_point_id ? Number(filters.knowledge_point_id) : undefined,
         }),
       });
       const url = URL.createObjectURL(response.blob);
@@ -1847,6 +1870,14 @@ export default function QuestionsPage() {
               </div>
             </div>
 
+            {filters.knowledge_point_id ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-blue-100 bg-blue-50/70 px-4 py-2 text-sm text-blue-800">
+                <span className="font-semibold">覆盖率跳转筛选</span>
+                <span>知识点 #{filters.knowledge_point_id}</span>
+                <button type="button" className="rounded-lg px-2 py-1 text-xs font-semibold hover:bg-blue-100" onClick={() => updateFilter("knowledge_point_id", "")}>清除</button>
+              </div>
+            ) : null}
+
             <div className="rounded-[1.35rem] border border-[var(--color-border)] bg-white/90 px-5 py-3 shadow-[0_8px_24px_rgba(40,60,90,0.05)]">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1.16fr_1fr_1fr_0.92fr_1fr_auto] xl:items-center">
                 <div className="flex h-11 min-w-0 items-center rounded-2xl border border-[var(--color-border)] bg-white px-3 shadow-sm">
@@ -2102,7 +2133,7 @@ export default function QuestionsPage() {
               ) : null}
 
               <div
-                key={`${filters.subject_id}-${filters.question_type}-${filters.is_active}-${filters.year}-${filters.difficulty}-${filters.keyword}-${filters.import_batch_id}-${page}-${pageSize}`}
+                key={`${filters.subject_id}-${filters.question_type}-${filters.is_active}-${filters.year}-${filters.difficulty}-${filters.keyword}-${filters.import_batch_id}-${filters.knowledge_point_id}-${page}-${pageSize}`}
                 className="stagger-enter space-y-2.5"
               >
               {items.map((question) => {
