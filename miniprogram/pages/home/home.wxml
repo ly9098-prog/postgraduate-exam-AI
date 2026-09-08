@@ -217,13 +217,12 @@
         <text class="section-kicker">MASTERY SNAPSHOT</text>
         <text class="section-title">四科掌握概览</text>
       </view>
-      <text class="section-note mastery-map-link" bindtap="goKnowledgeMap">知识地图 ›</text>
     </view>
 
     <view class="mastery-grid mastery-grid-tech">
-      <view wx:for="{{subjectMastery}}" wx:key="subjectCode" class="mastery-card mastery-card-tech {{item.hasData ? 'has-data' : 'no-data'}}" data-subject-id="{{item.subjectId}}" bindtap="goKnowledgeMapSubject" hover-class="mastery-card-pressed">
+      <view wx:for="{{subjectMastery}}" wx:key="subjectCode" class="mastery-card mastery-card-tech {{item.hasData ? 'has-data' : 'no-data'}}" data-subject-id="{{item.subjectId}}" bindtap="openMasterySubject" hover-class="mastery-card-pressed">
         <view class="mastery-card-head">
-          <view class="mastery-icon">
+          <view class="mastery-icon mastery-icon-{{item.iconClass}}">
             <image wx:if="{{item.iconSrc}}" class="mastery-icon-image" src="{{item.iconSrc}}" mode="aspectFit" />
             <text wx:else class="mastery-icon-fallback">{{item.mark}}</text>
           </view>

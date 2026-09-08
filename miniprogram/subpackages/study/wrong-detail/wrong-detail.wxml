@@ -93,12 +93,13 @@
     bind:jump="goWrongQuestion"
   />
 
-  <!-- 我的错因：Scheme 1 / 清爽极简 -->
+  <!-- 我的错因：参考图 · 清爽极简 -->
   <view class="diagnosis-card {{errorDiagnosis && errorDiagnosis.userConfirmed ? 'is-confirmed' : 'is-pending'}}">
     <view class="diagnosis-card-topline">
       <text class="diagnosis-kicker">ERROR PATTERN</text>
       <view class="diagnosis-more-dots"><view></view><view></view><view></view></view>
     </view>
+
     <view class="diagnosis-card-head">
       <view class="diagnosis-head-copy">
         <text class="diagnosis-title">我的错因</text>
@@ -107,11 +108,7 @@
           <text>{{errorDiagnosis && errorDiagnosis.userConfirmed ? '已确认' : '待确认'}}</text>
         </view>
       </view>
-      <view class="diagnosis-illustration">
-        <view class="diagnosis-ray ray-one"></view><view class="diagnosis-ray ray-two"></view><view class="diagnosis-ray ray-three"></view>
-        <view class="diagnosis-paper"><view class="paper-eye left"></view><view class="paper-eye right"></view><view class="paper-mouth"></view></view>
-        <view class="diagnosis-x">×</view>
-      </view>
+      <image class="diagnosis-illustration-img" src="/assets/icons/error-cause-paper.png" mode="aspectFit" />
     </view>
 
     <view class="diagnosis-main-block">
@@ -124,22 +121,29 @@
     <view class="diagnosis-rule"></view>
 
     <view class="diagnosis-ai-control">
-      <view class="diagnosis-ai-copy">
-        <text class="diagnosis-ai-line">AI 建议 · {{diagnosisAiEnabled ? '已开启' : '默认关闭'}}</text>
-        <text class="diagnosis-ai-desc" wx:if="{{diagnosisAiEnabled}}">仅在你需要时分析，不影响手动记录</text>
-      </view>
-      <button wx:if="{{diagnosisAiEnabled}}" class="diagnosis-ai-toggle enabled" bindtap="disableDiagnosisAi">关闭</button>
-      <button wx:else class="diagnosis-ai-toggle" bindtap="enableDiagnosisAi">开启</button>
+      <button wx:if="{{diagnosisAiEnabled}}" class="diagnosis-ai-inline-action enabled" bindtap="disableDiagnosisAi">AI 建议已开启 · 关闭</button>
+      <button wx:else class="diagnosis-ai-inline-action" bindtap="enableDiagnosisAi">AI 建议默认关闭</button>
     </view>
 
     <view class="diagnosis-ai-suggestion" wx:if="{{diagnosisAiEnabled && errorDiagnosis && !errorDiagnosis.userConfirmed && errorDiagnosis.aiPrimaryType && errorDiagnosis.aiPrimaryType !== 'unknown'}}">
-      <view class="diagnosis-ai-suggestion-copy"><text class="diagnosis-ai-suggestion-label">AI 建议错因</text><text class="diagnosis-ai-suggestion-value">{{errorDiagnosis.aiPrimaryLabel}}</text><text class="diagnosis-ai-suggestion-reason" wx:if="{{errorDiagnosis.aiReason}}">{{errorDiagnosis.aiReason}}</text></view>
+      <view class="diagnosis-ai-suggestion-copy">
+        <text class="diagnosis-ai-suggestion-label">AI 建议错因</text>
+        <text class="diagnosis-ai-suggestion-value">{{errorDiagnosis.aiPrimaryLabel}}</text>
+        <text class="diagnosis-ai-suggestion-reason" wx:if="{{errorDiagnosis.aiReason}}">{{errorDiagnosis.aiReason}}</text>
+      </view>
       <button class="diagnosis-ai-accept" bindtap="acceptAiDiagnosis">采纳</button>
     </view>
-    <view class="diagnosis-ai-state" wx:elif="{{diagnosisAiEnabled && errorDiagnosis && errorDiagnosis.aiStatus === 'pending'}}"><view class="diagnosis-ai-state-dot"></view><text>AI 正在分析本题错因</text></view>
-    <view class="diagnosis-ai-state failed" wx:elif="{{diagnosisAiEnabled && (!errorDiagnosis || errorDiagnosis.aiStatus === 'failed' || errorDiagnosis.aiStatus === 'not_requested')}}"><text>暂未生成建议</text><text class="diagnosis-ai-retry" bindtap="requestDiagnosisSuggestion">重新分析</text></view>
+    <view class="diagnosis-ai-state" wx:elif="{{diagnosisAiEnabled && errorDiagnosis && errorDiagnosis.aiStatus === 'pending'}}">
+      <view class="diagnosis-ai-state-dot"></view><text>AI 正在分析本题错因</text>
+    </view>
+    <view class="diagnosis-ai-state failed" wx:elif="{{diagnosisAiEnabled && (!errorDiagnosis || errorDiagnosis.aiStatus === 'failed' || errorDiagnosis.aiStatus === 'not_requested')}}">
+      <text>暂未生成建议</text><text class="diagnosis-ai-retry" bindtap="requestDiagnosisSuggestion">重新分析</text>
+    </view>
 
-    <button class="diagnosis-edit-btn" bindtap="openDiagnosisSheet"><text>{{errorDiagnosis && errorDiagnosis.userConfirmed ? '修改错因' : '记录错因'}}</text><text class="diagnosis-edit-arrow">→</text></button>
+    <button class="diagnosis-edit-btn" bindtap="openDiagnosisSheet">
+      <text>{{errorDiagnosis && errorDiagnosis.userConfirmed ? '修改错误' : '记录错因'}}</text>
+      <text class="diagnosis-edit-arrow">→</text>
+    </button>
   </view>
 
   <!-- AI 分析 -->

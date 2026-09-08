@@ -1596,3 +1596,405 @@ button::after { border: none; }
   .diagnosis-primary { font-size: 38rpx; }
   .diagnosis-edit-btn { height: 84rpx; line-height: 84rpx; margin-top: 36rpx !important; }
 }
+
+/* v22 · 我的错因：按参考图重新定标（最终覆盖） */
+.diagnosis-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 860rpx;
+  margin: 32rpx 30rpx 0;
+  padding: 80rpx 56rpx 68rpx;
+  overflow: hidden;
+  box-sizing: border-box;
+  border: 1rpx solid #DCE5DC;
+  border-radius: 38rpx;
+  background:
+    radial-gradient(circle at 92% 20%, rgba(199, 218, 188, .12) 0, rgba(199, 218, 188, .045) 18%, transparent 38%),
+    linear-gradient(155deg, #FFFFFC 0%, #FBFCF7 100%);
+  box-shadow: 0 18rpx 46rpx rgba(31, 56, 42, .055);
+}
+.diagnosis-card::after {
+  content: none;
+}
+.diagnosis-card-topline {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30rpx;
+}
+.diagnosis-kicker {
+  display: block;
+  color: #819188;
+  font-size: 22rpx;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 4.2rpx;
+}
+.diagnosis-more-dots {
+  position: absolute;
+  top: -28rpx;
+  right: -4rpx;
+  display: flex;
+  align-items: center;
+  gap: 9rpx;
+  padding: 0;
+}
+.diagnosis-more-dots view {
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background: #869C8B;
+}
+.diagnosis-card-head {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin-top: 17rpx;
+}
+.diagnosis-head-copy {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  flex: 1;
+}
+.diagnosis-title {
+  display: block;
+  margin: 0;
+  color: #112B20;
+  font-size: 56rpx;
+  font-weight: 900;
+  line-height: 1.12;
+  letter-spacing: -1.2rpx;
+}
+.diagnosis-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 12rpx;
+  min-height: 72rpx;
+  margin-top: 29rpx;
+  padding: 0 25rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: #EFF2EE;
+  color: #7D8981;
+  font-size: 29rpx;
+  font-weight: 760;
+  line-height: 1;
+}
+.diagnosis-status-pill.confirmed {
+  background: #E9F6D8;
+  color: #2E692F;
+}
+.diagnosis-status-check {
+  width: 38rpx;
+  height: 38rpx;
+  flex: 0 0 38rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #AAB5AD;
+  color: #FFFFFF;
+  font-size: 25rpx;
+  font-weight: 900;
+  line-height: 38rpx;
+  box-sizing: border-box;
+}
+.diagnosis-status-pill.confirmed .diagnosis-status-check {
+  background: #347439;
+}
+.diagnosis-illustration-img {
+  position: absolute;
+  z-index: 1;
+  top: 5rpx;
+  right: -22rpx;
+  width: 214rpx;
+  height: 188rpx;
+  opacity: .9;
+}
+.diagnosis-main-block {
+  position: relative;
+  z-index: 2;
+  margin-top: 87rpx;
+}
+.diagnosis-primary {
+  display: block;
+  margin: 0;
+  color: #153126;
+  font-size: 53rpx;
+  font-weight: 900;
+  line-height: 1.22;
+  letter-spacing: -1rpx;
+}
+.diagnosis-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 18rpx;
+}
+.diagnosis-chip {
+  padding: 9rpx 15rpx;
+  border-radius: 999rpx;
+  background: #F0F4EE;
+  color: #617068;
+  font-size: 20rpx;
+}
+.diagnosis-rule {
+  width: 100%;
+  height: 1rpx;
+  margin: 37rpx 0 25rpx;
+  background: #DEE5DE;
+}
+.diagnosis-ai-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 52rpx;
+}
+.diagnosis-ai-inline-action,
+.diagnosis-ai-inline-action.enabled {
+  width: auto !important;
+  min-width: 0;
+  min-height: 52rpx;
+  height: 52rpx;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #83928B;
+  font-size: 25rpx;
+  font-weight: 520;
+  line-height: 52rpx;
+  text-align: right;
+  box-shadow: none;
+}
+.diagnosis-ai-inline-action.enabled {
+  color: #57715F;
+}
+.diagnosis-ai-inline-action::after {
+  border: 0;
+}
+.diagnosis-ai-suggestion {
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+  margin-top: 18rpx;
+  padding: 18rpx 18rpx 18rpx 20rpx;
+  border: 1rpx solid #DCE8D8;
+  border-radius: 18rpx;
+  background: #F3F8F0;
+}
+.diagnosis-ai-suggestion-copy {
+  flex: 1;
+  min-width: 0;
+}
+.diagnosis-ai-suggestion-label {
+  display: block;
+  color: #7A897C;
+  font-size: 18rpx;
+}
+.diagnosis-ai-suggestion-value {
+  display: block;
+  margin-top: 5rpx;
+  color: #284735;
+  font-size: 23rpx;
+  font-weight: 820;
+}
+.diagnosis-ai-suggestion-reason {
+  display: block;
+  margin-top: 7rpx;
+  color: #68766C;
+  font-size: 19rpx;
+  line-height: 1.55;
+}
+.diagnosis-ai-state {
+  margin-top: 18rpx;
+}
+.diagnosis-edit-btn {
+  width: 100% !important;
+  height: 108rpx;
+  min-height: 108rpx;
+  margin: auto 0 0 !important;
+  padding: 0 48rpx !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 30rpx;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 34rpx;
+  background: linear-gradient(145deg, #173A2B 0%, #0D2D20 72%, #0B291D 100%);
+  color: #FFFFFF;
+  font-size: 34rpx;
+  font-weight: 800;
+  line-height: 108rpx;
+  box-shadow: 0 18rpx 40rpx rgba(14, 48, 33, .14);
+}
+.diagnosis-edit-btn::after {
+  border: 0;
+}
+.diagnosis-edit-arrow {
+  display: inline-block;
+  color: #E4F1E1;
+  font-size: 42rpx;
+  font-weight: 400;
+  line-height: 1;
+  transform: translateY(-1rpx);
+}
+.diagnosis-card.is-confirmed .diagnosis-primary {
+  color: #122E22;
+}
+
+@media (max-width: 360px) {
+  .diagnosis-card {
+    min-height: 820rpx;
+    margin-left: 24rpx;
+    margin-right: 24rpx;
+    padding: 70rpx 44rpx 56rpx;
+    border-radius: 34rpx;
+  }
+  .diagnosis-title { font-size: 51rpx; }
+  .diagnosis-kicker { font-size: 20rpx; }
+  .diagnosis-status-pill { min-height: 66rpx; padding: 0 21rpx; font-size: 26rpx; }
+  .diagnosis-status-check { width: 35rpx; height: 35rpx; flex-basis: 35rpx; font-size: 23rpx; }
+  .diagnosis-illustration-img { width: 190rpx; height: 168rpx; right: -23rpx; }
+  .diagnosis-main-block { margin-top: 78rpx; }
+  .diagnosis-primary { font-size: 47rpx; }
+  .diagnosis-ai-inline-action,
+  .diagnosis-ai-inline-action.enabled { font-size: 23rpx; }
+  .diagnosis-edit-btn { height: 100rpx; min-height: 100rpx; border-radius: 31rpx; font-size: 31rpx; line-height: 100rpx; }
+}
+
+/* v23 · 我的错因：页面比例统一 / 紧凑版（最终覆盖） */
+.diagnosis-card {
+  min-height: 620rpx;
+  margin: 24rpx 24rpx 0;
+  padding: 42rpx 36rpx 34rpx;
+  border-radius: 26rpx;
+  box-shadow: 0 12rpx 30rpx rgba(31, 56, 42, .045);
+}
+.diagnosis-card-topline {
+  min-height: 24rpx;
+}
+.diagnosis-kicker {
+  font-size: 18rpx;
+  letter-spacing: 3rpx;
+}
+.diagnosis-more-dots {
+  top: -9rpx;
+  right: -1rpx;
+  gap: 7rpx;
+}
+.diagnosis-more-dots view {
+  width: 7rpx;
+  height: 7rpx;
+}
+.diagnosis-card-head {
+  margin-top: 12rpx;
+  gap: 14rpx;
+}
+.diagnosis-title {
+  font-size: 42rpx;
+  line-height: 1.12;
+  letter-spacing: -.6rpx;
+}
+.diagnosis-status-pill {
+  min-height: 50rpx;
+  margin-top: 18rpx;
+  padding: 0 17rpx;
+  gap: 9rpx;
+  font-size: 22rpx;
+}
+.diagnosis-status-check {
+  width: 28rpx;
+  height: 28rpx;
+  flex: 0 0 28rpx;
+  font-size: 18rpx;
+  line-height: 28rpx;
+}
+.diagnosis-illustration-img {
+  top: 0;
+  right: -8rpx;
+  width: 154rpx;
+  height: 136rpx;
+  opacity: .82;
+}
+.diagnosis-main-block {
+  margin-top: 44rpx;
+}
+.diagnosis-primary {
+  font-size: 39rpx;
+  line-height: 1.22;
+  letter-spacing: -.5rpx;
+}
+.diagnosis-secondary {
+  margin-top: 12rpx;
+  gap: 8rpx;
+}
+.diagnosis-chip {
+  padding: 7rpx 12rpx;
+  font-size: 18rpx;
+}
+.diagnosis-rule {
+  margin: 26rpx 0 16rpx;
+}
+.diagnosis-ai-control {
+  min-height: 40rpx;
+}
+.diagnosis-ai-inline-action,
+.diagnosis-ai-inline-action.enabled {
+  height: 40rpx;
+  min-height: 40rpx;
+  font-size: 21rpx;
+  line-height: 40rpx;
+}
+.diagnosis-ai-suggestion {
+  margin-top: 12rpx;
+  padding: 14rpx 15rpx;
+  border-radius: 15rpx;
+}
+.diagnosis-ai-suggestion-label { font-size: 17rpx; }
+.diagnosis-ai-suggestion-value { font-size: 21rpx; }
+.diagnosis-ai-suggestion-reason { font-size: 18rpx; }
+.diagnosis-ai-state { margin-top: 12rpx; }
+.diagnosis-edit-btn {
+  height: 78rpx;
+  min-height: 78rpx;
+  margin-top: 28rpx !important;
+  padding: 0 32rpx !important;
+  gap: 20rpx;
+  border-radius: 20rpx;
+  font-size: 26rpx;
+  line-height: 78rpx;
+  box-shadow: 0 10rpx 24rpx rgba(14, 48, 33, .11);
+}
+.diagnosis-edit-arrow {
+  font-size: 31rpx;
+}
+
+@media (max-width: 360px) {
+  .diagnosis-card {
+    min-height: 590rpx;
+    margin-left: 20rpx;
+    margin-right: 20rpx;
+    padding: 38rpx 30rpx 30rpx;
+    border-radius: 24rpx;
+  }
+  .diagnosis-title { font-size: 39rpx; }
+  .diagnosis-kicker { font-size: 17rpx; }
+  .diagnosis-status-pill { min-height: 46rpx; margin-top: 16rpx; padding: 0 15rpx; font-size: 20rpx; }
+  .diagnosis-status-check { width: 26rpx; height: 26rpx; flex-basis: 26rpx; font-size: 17rpx; line-height: 26rpx; }
+  .diagnosis-illustration-img { width: 140rpx; height: 124rpx; right: -8rpx; transform: none; }
+  .diagnosis-main-block { margin-top: 38rpx; }
+  .diagnosis-primary { font-size: 36rpx; }
+  .diagnosis-ai-inline-action,
+  .diagnosis-ai-inline-action.enabled { font-size: 20rpx; }
+  .diagnosis-edit-btn { height: 74rpx; min-height: 74rpx; border-radius: 19rpx; font-size: 24rpx; line-height: 74rpx; margin-top: 24rpx !important; }
+}
