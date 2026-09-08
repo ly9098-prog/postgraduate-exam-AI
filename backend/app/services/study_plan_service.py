@@ -111,6 +111,23 @@ def _ceil_minutes(seconds: int | float | None) -> int:
     return (value + 59) // 60 if value else 0
 
 
+def _plan_select(db: AsyncSession, user_id: int, *, lock: bool = False):
+    stmt = select(StudyPlan).where(StudyPlan.user_id == user_id)
+    bind = db.get_bind()
+    if lock and bind is not None and bind.dialect.name == "postgresql":
+        stmt = stmt.with_for_update()
+    return stmt
+
+
+async def _get_user_plan(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    lock: bool = False,
+) -> StudyPlan | None:
+    return await db.scalar(_plan_select(db, user_id, lock=lock))
+
+
 async def _load_scope_ids(db: AsyncSession) -> tuple[list[int], list[int]]:
     rows = (await db.execute(
         select(Subject.id, Subject.code).where(Subject.code.in_(EXAM408_ALL_CODES))
@@ -356,12 +373,14 @@ async def _ensure_day_snapshot(
     exam_suggestion: dict | None,
     prior_active_days: int,
 ) -> StudyPlanDay:
-    row = await db.scalar(
-        select(StudyPlanDay).where(
-            StudyPlanDay.plan_id == int(plan.id),
-            StudyPlanDay.plan_date == today,
-        )
+    day_stmt = select(StudyPlanDay).where(
+        StudyPlanDay.plan_id == int(plan.id),
+        StudyPlanDay.plan_date == today,
     )
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name == "postgresql":
+        day_stmt = day_stmt.with_for_update()
+    row = await db.scalar(day_stmt)
     if row is not None and int(row.plan_revision) == int(plan.revision):
         return row
 
@@ -546,9 +565,13 @@ async def upsert_study_plan(
     if data.target_date < today:
         raise ValueError("目标日期不能早于今天")
 
-    plan = await db.scalar(select(StudyPlan).where(StudyPlan.user_id == user_id))
+    # Serialize updates for an existing plan so revision increments cannot be
+    # lost when two devices save settings at nearly the same time. PostgreSQL
+    # uses a row lock; SQLite still relies on the unique user constraint below.
+    plan = await _get_user_plan(db, user_id, lock=True)
+    created = False
     if plan is None:
-        plan = StudyPlan(
+        candidate = StudyPlan(
             user_id=user_id,
             target_date=data.target_date,
             daily_minutes=int(data.daily_minutes),
@@ -557,8 +580,20 @@ async def upsert_study_plan(
             revision=1,
             is_active=True,
         )
-        db.add(plan)
-    else:
+        try:
+            # A savepoint keeps the outer request transaction usable if another
+            # device wins the first-create race on uq_study_plans_user.
+            async with db.begin_nested():
+                db.add(candidate)
+                await db.flush()
+            plan = candidate
+            created = True
+        except IntegrityError:
+            plan = await _get_user_plan(db, user_id, lock=True)
+            if plan is None:
+                raise
+
+    if not created:
         changed = any((
             plan.target_date != data.target_date,
             int(plan.daily_minutes) != int(data.daily_minutes),
@@ -580,7 +615,7 @@ async def upsert_study_plan(
 
 
 async def deactivate_study_plan(db: AsyncSession, user_id: int) -> None:
-    plan = await db.scalar(select(StudyPlan).where(StudyPlan.user_id == user_id))
+    plan = await _get_user_plan(db, user_id, lock=True)
     if plan is None or not plan.is_active:
         return
     plan.is_active = False

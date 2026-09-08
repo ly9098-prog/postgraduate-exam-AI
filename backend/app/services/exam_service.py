@@ -13,6 +13,7 @@ from app.core.subject_scope import EXAM408_CORE_CODES
 from app.core.time_utils import normalize_to_naive_utc, utcnow
 from app.features.question_type import QT_SINGLE_CHOICE
 from app.models.admin import QuestionVersion, Subject
+from app.models.error_diagnosis import WrongQuestionErrorDiagnosis
 from app.models.exam import ExamAnswer, ExamAttempt, ExamPaper, ExamPaperQuestion
 from app.models.practice_record import PracticeRecord
 from app.services.practice.answer_projection_contract import (
@@ -36,6 +37,19 @@ TERMINAL_ATTEMPT_STATUSES = {"submitted", "expired"}
 
 def _money(value: Any) -> float:
     return round(float(value or 0), 2)
+
+
+def _json_safe_snapshot(value: Any) -> Any:
+    """Normalize nested values before persisting them into a JSON column."""
+    if isinstance(value, datetime):
+        return normalize_to_naive_utc(value).isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {str(key): _json_safe_snapshot(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_snapshot(item) for item in value]
+    return value
 
 
 def _elapsed_seconds(started_at: datetime, now: datetime | None = None) -> int:
@@ -69,6 +83,67 @@ def _student_options(options: dict | None) -> dict:
         else:
             clean[str(key)] = value
     return clean
+
+
+async def _refresh_result_diagnoses(
+    db: AsyncSession,
+    user_id: int,
+    snapshot: dict,
+) -> dict:
+    """Overlay mutable diagnosis state onto an immutable exam result snapshot.
+
+    Scores/question versions stay frozen in ``result_snapshot``. Error diagnosis is
+    intentionally mutable (AI suggestion and learner confirmation may finish after
+    submission), so returning the embedded submission-time copy forever would make
+    history pages stale. Refresh by the exact diagnosis ids captured at submission
+    rather than by wrong-question id, which could point at a later wrong occurrence.
+    """
+    result = dict(snapshot)
+    raw_questions = snapshot.get("questions")
+    if not isinstance(raw_questions, list):
+        return result
+
+    questions: list[dict] = []
+    diagnosis_ids: set[int] = set()
+    for raw in raw_questions:
+        if not isinstance(raw, dict):
+            continue
+        question = dict(raw)
+        diagnosis = question.get("error_diagnosis")
+        if isinstance(diagnosis, dict):
+            try:
+                diagnosis_id = int(diagnosis.get("id") or 0)
+            except (TypeError, ValueError):
+                diagnosis_id = 0
+            if diagnosis_id > 0:
+                diagnosis_ids.add(diagnosis_id)
+        questions.append(question)
+
+    if diagnosis_ids:
+        rows = list((await db.scalars(
+            select(WrongQuestionErrorDiagnosis).where(
+                WrongQuestionErrorDiagnosis.user_id == user_id,
+                WrongQuestionErrorDiagnosis.id.in_(diagnosis_ids),
+            )
+        )).all())
+        by_id = {int(row.id): row for row in rows}
+        if by_id:
+            from app.services import error_diagnosis_service
+
+            for question in questions:
+                diagnosis = question.get("error_diagnosis")
+                if not isinstance(diagnosis, dict):
+                    continue
+                try:
+                    diagnosis_id = int(diagnosis.get("id") or 0)
+                except (TypeError, ValueError):
+                    continue
+                row = by_id.get(diagnosis_id)
+                if row is not None:
+                    question["error_diagnosis"] = error_diagnosis_service.serialize_diagnosis(row)
+
+    result["questions"] = questions
+    return result
 
 
 async def _load_paper_with_summary(db: AsyncSession, paper_id: int) -> tuple[ExamPaper, int, float]:
@@ -303,7 +378,9 @@ async def start_attempt(db: AsyncSession, paper_id: int, user_id: int, request_i
         winner = await db.scalar(
             select(ExamAttempt).where(ExamAttempt.user_id == user_id, ExamAttempt.request_id == request_id)
         )
-        if winner is not None and int(winner.paper_id) == int(paper_id):
+        if winner is not None:
+            if int(winner.paper_id) != int(paper_id):
+                raise ExamStateError("request_id 已用于其他试卷")
             return await get_attempt_view(db, int(winner.id), user_id)
         winner = await db.scalar(
             select(ExamAttempt)
@@ -666,7 +743,9 @@ async def _finalize_attempt(
     attempt.answered_count = int(answered_count)
     attempt.correct_count = int(total_correct)
     attempt.score = earned_total
-    attempt.result_snapshot = result
+    # Diagnosis payloads contain datetime fields. Persist a JSON-safe deep copy
+    # so a wrong answer cannot make the entire submission fail at JSON encoding.
+    attempt.result_snapshot = _json_safe_snapshot(result)
     await db.commit()
 
     if wrong_for_prewarm:
@@ -692,11 +771,14 @@ async def submit_attempt(db: AsyncSession, attempt_id: int, user_id: int) -> dic
     if attempt.status in TERMINAL_ATTEMPT_STATUSES:
         if not isinstance(attempt.result_snapshot, dict):
             raise ExamStateError("考试结果快照缺失")
-        return dict(attempt.result_snapshot)
+        return await _refresh_result_diagnoses(db, user_id, attempt.result_snapshot)
     await _ensure_attempt_not_expired(db, attempt)
     if attempt.status in TERMINAL_ATTEMPT_STATUSES:
-        return dict(attempt.result_snapshot or {})
-    return await _finalize_attempt(db, attempt, terminal_status="submitted")
+        if not isinstance(attempt.result_snapshot, dict):
+            raise ExamStateError("考试结果快照缺失")
+        return await _refresh_result_diagnoses(db, user_id, attempt.result_snapshot)
+    result = await _finalize_attempt(db, attempt, terminal_status="submitted")
+    return await _refresh_result_diagnoses(db, user_id, result)
 
 
 async def get_attempt_result(db: AsyncSession, attempt_id: int, user_id: int) -> dict:
@@ -706,7 +788,7 @@ async def get_attempt_result(db: AsyncSession, attempt_id: int, user_id: int) ->
         raise ExamStateError("考试尚未交卷")
     if not isinstance(attempt.result_snapshot, dict):
         raise ExamStateError("考试结果快照缺失")
-    return dict(attempt.result_snapshot)
+    return await _refresh_result_diagnoses(db, user_id, attempt.result_snapshot)
 
 
 async def list_exam_history(db: AsyncSession, user_id: int, limit: int = 50) -> list[dict]:

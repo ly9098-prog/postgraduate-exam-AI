@@ -45,11 +45,26 @@ Page({
     this._answers = Object.create(null)
     this._pending = this._loadPending(attemptId)
     this._syncing = Object.create(null)
+    this._attemptLoaded = false
+    this._reconnectSyncing = false
+    this._networkStatusHandler = (res) => {
+      if (res && res.isConnected) this._recoverPendingAfterReconnect().catch(() => {})
+    }
+    if (wx.onNetworkStatusChange) wx.onNetworkStatusChange(this._networkStatusHandler)
     this.loadAttempt()
+  },
+
+  onShow() {
+    if (this._pageAlive && this._attemptLoaded) this._recoverPendingAfterReconnect().catch(() => {})
   },
 
   onUnload() {
     this._pageAlive = false
+    this._attemptLoaded = false
+    if (this._networkStatusHandler && wx.offNetworkStatusChange) {
+      wx.offNetworkStatusChange(this._networkStatusHandler)
+    }
+    this._networkStatusHandler = null
     this._clearTimer()
     this._settleCurrentTime({ sync: true })
   },
@@ -76,10 +91,13 @@ Page({
     try {
       const payload = await api.get(`/exams/attempts/${this.data.attemptId}`)
       if (payload.status !== 'in_progress') {
+        this._pending = Object.create(null)
+        this._persistPending()
         wx.redirectTo({ url: `/subpackages/exam/result/index?attempt_id=${payload.id}` })
         return
       }
       this._hydrate(payload)
+      this._attemptLoaded = true
       this.setData({ loading: false })
       this._startTimer(payload.remaining_sec)
       this._flushAllPending({ quiet: true }).catch(() => {})
@@ -279,6 +297,7 @@ Page({
             this._persistPending()
           }
         } catch (error) {
+          if (await this._resolveTerminalSyncConflict(error)) return
           throw error
         }
       }
@@ -296,6 +315,35 @@ Page({
     } catch (error) {
       if (!options.quiet) wx.showToast({ title: '还有答案未同步，请检查网络', icon: 'none' })
       throw error
+    }
+  },
+
+  async _resolveTerminalSyncConflict(error) {
+    if (!error || Number(error.statusCode) !== 409) return false
+    try {
+      const payload = await api.get(`/exams/attempts/${this.data.attemptId}`)
+      if (!payload || payload.status === 'in_progress') return false
+      this._pending = Object.create(null)
+      this._persistPending()
+      if (this._pageAlive && !this.data.submitting) {
+        wx.redirectTo({ url: `/subpackages/exam/result/index?attempt_id=${this.data.attemptId}` })
+      }
+      return true
+    } catch (_) {
+      return false
+    }
+  },
+
+  async _recoverPendingAfterReconnect() {
+    if (!this._pageAlive || !this._attemptLoaded || this._reconnectSyncing) return
+    this._reconnectSyncing = true
+    try {
+      await this._flushAllPending({ quiet: true })
+      if (this.data.timeExpired && !this.data.submitting) await this.submitExam({ auto: true })
+    } catch (_) {
+      // 保留 pending，等待下一次网络恢复或用户操作再次同步。
+    } finally {
+      this._reconnectSyncing = false
     }
   },
 
