@@ -10,7 +10,7 @@
       <view class="syllabus-chip" wx:if="{{syllabusVersion}}">
         <text>当前知识体系</text><view class="chip-divider"></view><text class="syllabus-name">{{syllabusVersion.effective_year}}</text>
       </view>
-      <view class="hero-observation" wx:if="{{!loading && scopeReady}}">
+      <view class="hero-observation" wx:if="{{!loading && scopeReady && (observedTotal > 0 || weakTotal > 0)}}">
         <text>{{observedTotal}} 已观察</text><view class="observation-dot"></view><text>{{weakTotal}} 薄弱</text>
       </view>
     </view>
@@ -21,20 +21,24 @@
   <view class="state-card error" wx:elif="{{!scopeReady}}"><text>科目范围尚未准备完成，请先检查科目配置。</text></view>
 
   <view class="subject-grid" wx:else>
-    <view class="subject-card" wx:for="{{subjects}}" wx:key="subject_id" data-subject-id="{{item.subject_id}}" bindtap="openSubject" hover-class="card-pressed">
+    <view class="subject-card {{item.score == null ? 'no-data' : 'has-data'}}" wx:for="{{subjects}}" wx:key="subject_id" data-subject-id="{{item.subject_id}}" bindtap="openSubject" hover-class="card-pressed">
       <view class="subject-card-top">
         <view class="subject-icon {{item.iconClass}}">
           <view class="subject-icon-shape one"></view><view class="subject-icon-shape two"></view><view class="subject-icon-shape three"></view>
           <text class="subject-icon-fallback">{{item.mark}}</text>
         </view>
-        <view class="subject-mini-arrow"><text>›</text></view>
       </view>
-      <text class="subject-name">{{item.subject_name}}</text>
+      <view class="subject-name-row">
+        <text class="subject-name">{{item.subject_name}}</text>
+        <text class="score {{item.score == null ? 'is-empty' : ''}}">{{item.scoreText}}</text>
+      </view>
       <text class="subject-code">{{item.subject_code}}</text>
-      <view class="subject-score-row"><text class="status {{item.statusClass}}">{{item.statusText}}</text><text class="score">{{item.scoreText}}</text></view>
-      <view class="progress"><view class="progress-fill" style="width: {{item.barWidth}}%;"></view></view>
+      <view class="progress" wx:if="{{item.score != null}}"><view class="progress-fill" style="width: {{item.barWidth}}%;"></view></view>
       <text class="subject-progress-text">{{item.progressText}}</text>
-      <view class="subject-foot"><text>{{item.statusHint}}</text><view class="subject-foot-arrow">→</view></view>
+      <view class="subject-foot">
+        <text class="status {{item.statusClass}}">{{item.statusText}}</text>
+        <view class="subject-foot-arrow">→</view>
+      </view>
     </view>
     <view class="empty" wx:if="{{subjects.length === 0}}">暂无可展示的科目数据</view>
   </view>

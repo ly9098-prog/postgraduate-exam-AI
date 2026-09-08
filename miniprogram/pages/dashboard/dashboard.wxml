@@ -294,56 +294,72 @@
       </view>
     </view>
 
-    <!-- P1: Error-cause diagnosis · Scheme 3 / tactile card -->
+    <!-- P1: Error-cause diagnosis · Scheme 2 / data-visualization card -->
     <view class="dashboard-section diagnosis-report-section">
-      <view class="error-pattern-card">
-        <view class="error-pattern-wave wave-back"></view>
-        <view class="error-pattern-wave wave-front"></view>
-        <view class="error-pattern-target"><view></view></view>
+      <view class="error-pattern-card {{errorDiagnosisPrimary ? 'has-pattern' : 'is-empty-pattern'}}">
+        <view class="error-pattern-ambient"></view>
 
-        <view class="error-pattern-title-row">
-          <view>
-            <text class="error-pattern-eyebrow">ERROR PATTERN</text>
-            <text class="error-pattern-title">错因诊断</text>
-          </view>
-          <text class="error-pattern-window">近 {{errorDiagnosisStats ? errorDiagnosisStats.window_days : trendDays}} 天</text>
+        <view class="error-pattern-bars" aria-hidden="true">
+          <view class="bar bar-a"></view>
+          <view class="bar bar-b"></view>
+          <view class="bar bar-c"></view>
         </view>
 
-        <view class="error-pattern-summary-panel">
-          <view class="error-pattern-accent"></view>
-          <text class="error-pattern-summary">{{errorDiagnosisLoading && !errorDiagnosisStats ? '正在分析近期错误模式…' : errorDiagnosisSummary}}</text>
-          <view class="error-pattern-meta" wx:if="{{errorDiagnosisStats}}">
-            <view class="error-pattern-meta-item"><text class="meta-value">{{errorDiagnosisStats.total_errors}}</text><text class="meta-label">次错误</text></view>
-            <view class="error-pattern-meta-divider"></view>
-            <view class="error-pattern-meta-item"><text class="meta-value">{{errorDiagnosisStats.confirmed_count}}</text><text class="meta-label">次已确认</text></view>
-            <view class="error-pattern-meta-divider" wx:if="{{errorDiagnosisStats.unknown_count}}"></view>
-            <view class="error-pattern-meta-item" wx:if="{{errorDiagnosisStats.unknown_count}}"><text class="meta-value">{{errorDiagnosisStats.unknown_count}}</text><text class="meta-label">次待分类</text></view>
+        <view class="error-pattern-content">
+          <view class="error-pattern-title-row">
+            <view class="error-pattern-title-copy">
+              <text class="error-pattern-eyebrow">ERROR PATTERN</text>
+              <text class="error-pattern-title">错误诊断</text>
+            </view>
+            <text class="error-pattern-window">近 {{errorDiagnosisStats ? errorDiagnosisStats.window_days : trendDays}} 天</text>
           </view>
-        </view>
 
-        <view class="error-pattern-focus-card" wx:if="{{errorDiagnosisPrimary}}">
-          <view class="error-pattern-primary-head">
-            <view class="error-pattern-symbol"><view class="symbol-layer one"></view><view class="symbol-layer two"></view><view class="symbol-layer three"></view></view>
-            <text class="error-pattern-primary-label">{{errorDiagnosisPrimary.label}}</text>
-            <text class="error-pattern-primary-count">{{errorDiagnosisPrimary.count}} 次 · {{errorDiagnosisPrimary.percentPct}}%</text>
+          <view class="error-pattern-summary-panel">
+            <text class="error-pattern-summary">{{errorDiagnosisLoading && !errorDiagnosisStats ? '正在分析近期错误模式…' : errorDiagnosisSummary}}</text>
+            <view class="error-pattern-meta" wx:if="{{errorDiagnosisStats}}">
+              <view class="error-pattern-meta-item"><text class="meta-value">{{errorDiagnosisStats.total_errors}}</text><text class="meta-label">次错误</text></view>
+              <view class="error-pattern-meta-divider"></view>
+              <view class="error-pattern-meta-item"><text class="meta-value">{{errorDiagnosisStats.confirmed_count}}</text><text class="meta-label">次已确认</text></view>
+              <view class="error-pattern-meta-divider" wx:if="{{errorDiagnosisStats.unknown_count}}"></view>
+              <view class="error-pattern-meta-item" wx:if="{{errorDiagnosisStats.unknown_count}}"><text class="meta-value">{{errorDiagnosisStats.unknown_count}}</text><text class="meta-label">次待分类</text></view>
+            </view>
           </view>
-          <view class="error-pattern-track">
-            <view class="error-pattern-fill" style="width:{{errorDiagnosisPrimary.percentPct}}%;"></view>
-            <text class="error-pattern-track-value">{{errorDiagnosisPrimary.percentPct}}%</text>
-          </view>
-          <view class="error-pattern-change" wx:if="{{errorDiagnosisPrimaryChange}}">
-            <view class="change-arrow">↗</view>
-            <text>{{errorDiagnosisPrimaryChange.label}} {{errorDiagnosisPrimaryChange.deltaText}}</text>
-          </view>
-          <view class="error-pattern-kp" wx:if="{{errorDiagnosisTopKnowledge}}">
-            <view class="error-pattern-kp-mark"></view>
-            <text class="error-pattern-kp-label">近期高频知识点：</text>
-            <text class="error-pattern-kp-name">{{errorDiagnosisTopKnowledge.name}}</text>
-            <text class="error-pattern-kp-meta">{{errorDiagnosisTopKnowledge.count}} 次 · 主要{{errorDiagnosisTopKnowledge.topLabel}}</text>
-          </view>
-        </view>
 
-        <view class="error-pattern-empty" wx:elif="{{!errorDiagnosisLoading}}">近期暂无已分类错因，完成错题复盘后会在这里形成趋势。</view>
+          <view class="error-pattern-focus-card" wx:if="{{errorDiagnosisPrimary}}">
+            <view class="error-pattern-primary-head">
+              <view class="error-pattern-symbol">
+                <view class="book-left"></view>
+                <view class="book-right"></view>
+                <view class="book-spine"></view>
+              </view>
+              <text class="error-pattern-primary-label">{{errorDiagnosisPrimary.label}}</text>
+              <text class="error-pattern-primary-count">{{errorDiagnosisPrimary.count}} 次 · {{errorDiagnosisPrimary.percentPct}}%</text>
+            </view>
+
+            <view class="error-pattern-progress-row">
+              <view class="error-pattern-track">
+                <view class="error-pattern-fill" style="width:{{errorDiagnosisPrimary.percentPct}}%;"></view>
+              </view>
+              <text class="error-pattern-track-value">{{errorDiagnosisPrimary.percentPct}}%</text>
+            </view>
+
+            <view class="error-pattern-change" wx:if="{{errorDiagnosisPrimaryChange}}">
+              <view class="change-arrow">↗</view>
+              <text>{{errorDiagnosisPrimaryChange.label}} {{errorDiagnosisPrimaryChange.deltaText}}</text>
+            </view>
+
+            <view class="error-pattern-kp" wx:if="{{errorDiagnosisTopKnowledge}}">
+              <view class="error-pattern-kp-mark"><view class="kp-dot"></view></view>
+              <view class="error-pattern-kp-copy">
+                <text class="error-pattern-kp-label">近期高频知识点：</text>
+                <text class="error-pattern-kp-name">{{errorDiagnosisTopKnowledge.name}}</text>
+              </view>
+              <text class="error-pattern-kp-meta">{{errorDiagnosisTopKnowledge.count}} 次 · 主要{{errorDiagnosisTopKnowledge.topLabel}}</text>
+            </view>
+          </view>
+
+          <view class="error-pattern-empty" wx:elif="{{!errorDiagnosisLoading}}">近期暂无已分类错因，完成错题复盘后会在这里形成趋势。</view>
+        </view>
       </view>
     </view>
 

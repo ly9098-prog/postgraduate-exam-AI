@@ -60,7 +60,17 @@ Page({
     this.setData({ loading: true, error: '' })
     try {
       const data = await api.get('/knowledge-map/overview')
-      const subjects = (Array.isArray(data.subjects) ? data.subjects : []).map((item, index) => {
+      const subjectPriority = item => {
+        const key = `${String(item && item.subject_name || '')} ${String(item && item.subject_code || '')}`.toLowerCase()
+        if (key.includes('数据结构') || key.includes('data_structure')) return 10
+        if (key.includes('组成') || key.includes('organization')) return 20
+        if (key.includes('网络') || key.includes('network')) return 30
+        if (key.includes('操作系统') || key.includes('operating')) return 40
+        return 100
+      }
+      const rawSubjects = Array.isArray(data.subjects) ? data.subjects.slice() : []
+      rawSubjects.sort((a, b) => subjectPriority(a) - subjectPriority(b))
+      const subjects = rawSubjects.map((item, index) => {
         const meta = STATUS_META[item.status] || STATUS_META.no_data
         const score = item.mastery_score == null ? null : Math.max(0, Math.min(100, Math.round(Number(item.mastery_score) || 0)))
         const coverage = Math.max(0, Math.min(100, Math.round((Number(item.coverage_ratio) || 0) * 100)))

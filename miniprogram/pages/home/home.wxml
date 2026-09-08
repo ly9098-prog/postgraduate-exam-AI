@@ -210,35 +210,57 @@
 
   </view>
 
-  <!-- Four-subject mastery snapshot · Scheme 3 -->
-  <view class="content-section mastery-section page-enter delay-three" wx:if="{{studyHubAvailable && subjectMastery.length > 0}}">
+  <!-- Four-subject mastery snapshot · reference card layout -->
+  <view class="content-section mastery-section page-enter delay-three" wx:if="{{subjectMastery.length > 0}}">
     <view class="section-heading compact-heading mastery-heading">
-      <view>
+      <view class="mastery-heading-copy">
         <text class="section-kicker">MASTERY SNAPSHOT</text>
         <text class="section-title">四科掌握概览</text>
       </view>
       <text class="section-note mastery-map-link" bindtap="goKnowledgeMap">知识地图 ›</text>
     </view>
+
     <view class="mastery-grid mastery-grid-tech">
-      <view wx:for="{{subjectMastery}}" wx:key="subjectId" class="mastery-card mastery-card-tech" data-subject-id="{{item.subjectId}}" bindtap="goKnowledgeMapSubject" hover-class="mastery-card-pressed">
+      <view wx:for="{{subjectMastery}}" wx:key="subjectCode" class="mastery-card mastery-card-tech {{item.hasData ? 'has-data' : 'no-data'}}" data-subject-id="{{item.subjectId}}" bindtap="goKnowledgeMapSubject" hover-class="mastery-card-pressed">
         <view class="mastery-card-head">
-          <view class="mastery-icon {{item.iconClass}}">
-            <view class="mastery-icon-shape one"></view><view class="mastery-icon-shape two"></view><view class="mastery-icon-shape three"></view>
-            <text class="mastery-icon-fallback">{{item.mark}}</text>
+          <view class="mastery-icon">
+            <image wx:if="{{item.iconSrc}}" class="mastery-icon-image" src="{{item.iconSrc}}" mode="aspectFit" />
+            <text wx:else class="mastery-icon-fallback">{{item.mark}}</text>
           </view>
-          <view class="mastery-more"><view></view><view></view><view></view></view>
+          <view class="mastery-more" aria-hidden="true"><view></view><view></view><view></view></view>
         </view>
+
         <view class="mastery-title-row">
           <text class="mastery-subject">{{item.subjectName}}</text>
           <text class="mastery-score {{item.hasData ? '' : 'is-empty'}}">{{item.scoreText}}</text>
         </view>
+
         <view class="mastery-track mastery-track-tech">
-          <view class="mastery-fill mastery-fill-tech" style="width: {{item.barWidth}}%;"></view>
-          <view class="mastery-track-cap"></view>
+          <!-- Reference rail: independent hexagonal rail + independent hexagonal fill.
+               Do not skew the entire rail; both ends use fixed chamfers like the design. -->
+          <view class="mastery-hex-rail">
+            <view
+              wx:if="{{item.hasData && item.score > 0}}"
+              class="mastery-hex-fill {{item.score >= 99 ? 'is-full' : ''}}"
+              style="width: {{item.barWidth}}%;"
+            >
+              <view class="mastery-hex-gradient"></view>
+              <view class="mastery-hex-stripes" aria-hidden="true">
+                <view class="mastery-hex-stripe stripe-one"></view>
+                <view class="mastery-hex-stripe stripe-two"></view>
+                <view class="mastery-hex-stripe stripe-three"></view>
+                <view class="mastery-hex-stripe stripe-four"></view>
+                <view class="mastery-hex-stripe stripe-five"></view>
+              </view>
+              <view class="mastery-hex-toplight" aria-hidden="true"></view>
+              <view class="mastery-hex-bottomshade" aria-hidden="true"></view>
+            </view>
+          </view>
         </view>
+
         <view class="mastery-foot mastery-foot-tech">
           <text class="mastery-status">{{item.statusText}}</text>
-          <text>{{item.attemptCount > 0 ? item.attemptCount + ' 次练习' : '等待首组练习'}}</text>
+          <text class="mastery-sample-copy">{{item.questionStatText}}</text>
         </view>
       </view>
     </view>

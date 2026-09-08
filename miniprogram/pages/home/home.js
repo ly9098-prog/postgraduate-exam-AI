@@ -35,6 +35,34 @@ function getMasteryIconClass(name, code) {
   return 'generic'
 }
 
+function getMasteryIconSrc(iconClass) {
+  const icons = {
+    data: '/assets/icons/home-mastery/data-structure.svg',
+    chip: '/assets/icons/home-mastery/computer-organization.svg',
+    code: '/assets/icons/home-mastery/operating-system.svg',
+    network: '/assets/icons/home-mastery/computer-network.svg',
+  }
+  return icons[String(iconClass || '')] || ''
+}
+
+const HOME_MASTERY_SUBJECTS = [
+  { key: 'data', code: 'data_structure', name: '数据结构' },
+  { key: 'chip', code: 'computer_organization', name: '计算机组成原理' },
+  { key: 'code', code: 'operating_system', name: '操作系统' },
+  { key: 'network', code: 'computer_network', name: '计算机网络' },
+]
+
+function getMasterySubjectKey(name, code) {
+  const rawCode = String(code || '').trim().toLowerCase()
+  const rawName = String(name || '').trim().toLowerCase()
+  const text = `${rawName} ${rawCode}`
+  if (rawCode === 'data_structure' || text.includes('数据结构')) return 'data'
+  if (rawCode === 'computer_organization' || text.includes('组成原理') || text.includes('计组')) return 'chip'
+  if (rawCode === 'operating_system' || text.includes('操作系统')) return 'code'
+  if (rawCode === 'computer_network' || text.includes('计算机网络') || text.includes('计网')) return 'network'
+  return getMasteryIconClass(name, code)
+}
+
 Page({
   data: {
     user: {},
@@ -105,6 +133,7 @@ Page({
   _profileSaveSeq: 0,
   _hasGrowthSnapshot: false,
   _growthTargets: { streakDays: 0, todayGoalDone: 0, levelProgress: 0 },
+  _lastDashboardSubjectStats: [],
   _animTimer: null,
   _profileAutoSaveTimer: null,
   _profileSavedHintTimer: null,
@@ -628,9 +657,10 @@ Page({
       ) return
 
       const overview = (dashRes && dashRes.overview) || {}
+      const dashboardSubjectStats = (dashRes && Array.isArray(dashRes.subject_stats)) ? dashRes.subject_stats : []
       const growth = growthRes || null
       this._lastGrowth = growth
-      const snapshot = this.buildGrowthSnapshot(overview, growth, hubRes, planRes)
+      const snapshot = this.buildGrowthSnapshot(overview, growth, hubRes, planRes, dashboardSubjectStats)
       this._hasGrowthSnapshot = true
       this.setData(snapshot, () => {
         if (this._alive && this._visible && requestSeq === this._growthSeq) {
@@ -725,10 +755,14 @@ Page({
     }
   },
 
-  buildGrowthSnapshot(overview, growth, hub, plan) {
+  buildGrowthSnapshot(overview, growth, hub, plan, dashboardSubjectStats = null) {
     this._lastOverview = overview || {}
     this._lastHub = hub || null
     this._lastPlan = plan || null
+    if (Array.isArray(dashboardSubjectStats)) this._lastDashboardSubjectStats = dashboardSubjectStats
+    const effectiveSubjectStats = Array.isArray(dashboardSubjectStats)
+      ? dashboardSubjectStats
+      : (Array.isArray(this._lastDashboardSubjectStats) ? this._lastDashboardSubjectStats : [])
     const streakDays = this.toNonNegativeInt(overview.consecutive_days)
     const hubTodayQuestions = hub && hub.scope_ready !== false ? hub.today_question_count : null
     const todayGoalDone = this.toNonNegativeInt(hubTodayQuestions != null ? hubTodayQuestions : overview.today_questions)
@@ -737,7 +771,7 @@ Page({
     const dueReviewCount = this.toNonNegativeInt(hubReviewRemaining != null ? hubReviewRemaining : overview.due_review_count)
     const todayGoalTotal = this.getStoredTodayGoal()
     const levelProgress = Math.min(100, Math.round((todayGoalDone / todayGoalTotal) * 100))
-    const hubDisplay = this.getHubDisplaySnapshot(hub)
+    const hubDisplay = this.getHubDisplaySnapshot(hub, effectiveSubjectStats)
     const planDisplay = this.getStudyPlanDisplaySnapshot(plan)
     const taskSnapshot = hubDisplay.studyHubAvailable
       ? this.getHubPrimaryTaskSnapshot(hub, todayGoalDone, todayGoalTotal)
@@ -817,7 +851,92 @@ Page({
     }
   },
 
-  getHubDisplaySnapshot(hub) {
+  buildSubjectMastery(hubSubjectMastery = [], dashboardSubjectStats = []) {
+    const hubByKey = {}
+    const statsByKey = {}
+
+    ;(Array.isArray(hubSubjectMastery) ? hubSubjectMastery : []).forEach((item) => {
+      if (!item) return
+      const key = getMasterySubjectKey(item.subject_name, item.subject_code)
+      if (HOME_MASTERY_SUBJECTS.some(meta => meta.key === key) && !hubByKey[key]) hubByKey[key] = item
+    })
+
+    ;(Array.isArray(dashboardSubjectStats) ? dashboardSubjectStats : []).forEach((item) => {
+      if (!item) return
+      const key = getMasterySubjectKey(item.subject_name, item.subject_code)
+      if (HOME_MASTERY_SUBJECTS.some(meta => meta.key === key) && !statsByKey[key]) statsByKey[key] = item
+    })
+
+    return HOME_MASTERY_SUBJECTS.map((meta, index) => {
+      const hubItem = hubByKey[meta.key] || null
+      const statsItem = statsByKey[meta.key] || null
+      const hubAttempts = this.toNonNegativeInt(hubItem && hubItem.attempt_count)
+      const statsAttempts = this.toNonNegativeInt(statsItem && statsItem.total_questions)
+      const rawHubScore = hubItem && hubItem.mastery_score
+      const hubScoreNumber = rawHubScore == null ? NaN : Number(rawHubScore)
+      const hubHasData = !!(
+        hubItem &&
+        Number.isFinite(hubScoreNumber) &&
+        (hubItem.data_available !== false || hubAttempts > 0)
+      )
+      const statsAccuracy = Number(statsItem && statsItem.accuracy)
+      const statsHasData = !!(statsItem && statsAttempts > 0 && Number.isFinite(statsAccuracy))
+
+      let score = 0
+      let attemptCount = 0
+      let correctCount = 0
+      let hasData = false
+
+      if (hubHasData) {
+        hasData = true
+        score = Math.max(0, Math.min(100, Math.round(hubScoreNumber)))
+        attemptCount = hubAttempts || statsAttempts
+        const hubAccuracy = Number(hubItem && hubItem.accuracy)
+        if (attemptCount > 0 && Number.isFinite(hubAccuracy)) {
+          correctCount = Math.max(0, Math.min(attemptCount, Math.round(attemptCount * hubAccuracy)))
+        } else if (statsItem && statsAttempts === attemptCount) {
+          correctCount = Math.max(0, Math.min(attemptCount, this.toNonNegativeInt(statsItem.correct_count)))
+        }
+      } else if (statsHasData) {
+        // Study Hub 暂无可用掌握度时，使用 dashboard.subject_stats 的
+        // 真实练习统计兜底，避免已有练习记录却渲染为 0/0。
+        hasData = true
+        score = Math.max(0, Math.min(100, Math.round(statsAccuracy * 100)))
+        attemptCount = statsAttempts
+        correctCount = Math.max(0, Math.min(attemptCount, this.toNonNegativeInt(statsItem.correct_count)))
+      }
+
+      const sourceItem = hubItem || statsItem || {}
+      const subjectName = String(sourceItem.subject_name || meta.name)
+      const subjectCode = String(sourceItem.subject_code || meta.code)
+      const subjectId = Number(sourceItem.subject_id) || 0
+      const iconClass = meta.key
+
+      return {
+        subjectId,
+        subjectCode,
+        subjectName,
+        orderText: String(index + 1).padStart(2, '0'),
+        mark: getMasteryMark(subjectName, subjectCode),
+        iconClass,
+        iconSrc: getMasteryIconSrc(iconClass),
+        hasData,
+        score,
+        scoreText: hasData ? `${score}%` : '--',
+        barWidth: hasData ? score : 0,
+        attemptCount,
+        correctCount,
+        questionStatText: hasData ? `${correctCount}/${attemptCount} 题` : '0/0 题',
+        statusText: hasData ? (score >= 85 ? '已掌握' : '掌握不足') : '数据不足',
+      }
+    })
+  },
+
+  getHubDisplaySnapshot(hub, dashboardSubjectStats = []) {
+    const subjectMastery = this.buildSubjectMastery(
+      hub && Array.isArray(hub.subject_mastery) ? hub.subject_mastery : [],
+      dashboardSubjectStats,
+    )
     const available = !!(hub && hub.scope_ready !== false && hub.primary_task)
     if (!available) {
       return {
@@ -826,7 +945,7 @@ Page({
         hubPrimaryTask: null,
         hubSecondaryTask: null,
         hubTasks: [],
-        subjectMastery: [],
+        subjectMastery,
       }
     }
 
@@ -861,27 +980,6 @@ Page({
           routeParams: task.route_params || {},
         }
       })
-
-    const subjectMastery = (Array.isArray(hub.subject_mastery) ? hub.subject_mastery : []).map((item, index) => {
-      const hasData = !!(item && item.data_available && item.mastery_score != null)
-      const score = hasData ? Math.max(0, Math.min(100, Math.round(Number(item.mastery_score) || 0))) : 0
-      const subjectName = String(item.subject_name || '')
-      const subjectCode = String(item.subject_code || '')
-      return {
-        subjectId: Number(item.subject_id),
-        subjectCode,
-        subjectName,
-        orderText: String(index + 1).padStart(2, '0'),
-        mark: getMasteryMark(subjectName, subjectCode),
-        iconClass: getMasteryIconClass(subjectName, subjectCode),
-        hasData,
-        score,
-        scoreText: hasData ? `${score}%` : '--',
-        barWidth: hasData ? score : 0,
-        attemptCount: this.toNonNegativeInt(item.attempt_count),
-        statusText: hasData ? (score >= 85 ? '已掌握' : (score >= 70 ? '状态良好' : (score >= 40 ? '提升中' : '掌握不足'))) : '数据不足',
-      }
-    })
 
     return {
       studyHubAvailable: true,

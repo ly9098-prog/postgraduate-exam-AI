@@ -94,7 +94,7 @@
   />
 
   <!-- 我的错因：Scheme 1 / 清爽极简 -->
-  <view class="diagnosis-card">
+  <view class="diagnosis-card {{errorDiagnosis && errorDiagnosis.userConfirmed ? 'is-confirmed' : 'is-pending'}}">
     <view class="diagnosis-card-topline">
       <text class="diagnosis-kicker">ERROR PATTERN</text>
       <view class="diagnosis-more-dots"><view></view><view></view><view></view></view>
@@ -108,6 +108,7 @@
         </view>
       </view>
       <view class="diagnosis-illustration">
+        <view class="diagnosis-ray ray-one"></view><view class="diagnosis-ray ray-two"></view><view class="diagnosis-ray ray-three"></view>
         <view class="diagnosis-paper"><view class="paper-eye left"></view><view class="paper-eye right"></view><view class="paper-mouth"></view></view>
         <view class="diagnosis-x">×</view>
       </view>
