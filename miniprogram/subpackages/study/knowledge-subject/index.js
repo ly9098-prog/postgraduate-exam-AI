@@ -14,8 +14,13 @@ const RECENT_THEME_LIMIT = 5
 const SEARCH_DEBOUNCE_MS = 280
 const THEME_SHEET_SELECT_DELAY_MS = 96
 const THEME_SHEET_CLOSE_MS = 236
-const THEME_TRANSITION_MS = 240
-const LABEL_SWITCH_OUT_MS = 34
+const THEME_TRANSITION_MS = 180
+const LABEL_SWITCH_OUT_MS = 72
+const SELECTION_SWITCH_OUT_MS = 82
+const SELECTION_SWITCH_IN_MS = 220
+const RETURN_REFRESH_DELAY_MS = 260
+const VIEW_STATE_VERSION = 1
+const VIEW_STATE_MAX_AGE_MS = 30 * 60 * 1000
 const CAMERA_FRAME_MS = 16
 const PAN_THRESHOLD = 5
 const INERTIA_MIN_SPEED = 0.025
@@ -127,19 +132,28 @@ Page({
     filter: 'all', query: '', searchFocused: false, searchPending: false, searchResultCount: 0, activeGroupKey: '', activeGroupName: '',
     groupChips: [], quickGroupChips: [], themeGroupCount: 0, themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '', themeSheetGroups: [],
     scene: { nodes: [], edges: [], page: 0, pageCount: 1, focused: false },
-    pageEntered: false, sceneAnimating: false, themeSwitching: false, themeSwitchPhase: '', graphInteracting: false,
+    pageEntered: false, sceneAnimating: false, themeSwitching: false, themeSwitchPhase: '', selectionSwitching: false, selectionSwitchPhase: '', graphInteracting: false,
     stageStyle: '', zoomText: '100%', zoomInDisabled: false, zoomOutDisabled: true, selectedPoint: null,
     indexNodes: [], indexCount: 0, hasMore: false,
+    practiceLaunching: false, practiceLaunchingId: 0,
   },
 
   onLoad(options) {
     this.subjectId = Number(options && options.subject_id)
+    this._viewStateStorageKey = Number.isInteger(this.subjectId) && this.subjectId > 0
+      ? `knowledgeSubjectViewState:${this.subjectId}`
+      : ''
+    this._pendingReturnState = null
+    this._returnRefreshTimer = null
+    this._practiceLaunchFeedbackTimer = null
+    this._practiceNavigationPending = false
+    this._detailNavigationPending = false
     let width = 375
     try {
       const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
       width = Number(info.windowWidth) || width
     } catch (error) { /* 使用默认宽度，布局挂载后按实际容器尺寸校准。 */ }
-    this._frame = { left: 0, top: 0, width: width * 702 / 750, height: width * 700 / 750 }
+    this._frame = { left: 0, top: 0, width: width * 702 / 750, height: width * 860 / 750 }
     this._camera = fitCamera(this._frame)
     this.setCamera(this._camera)
     if (!Number.isInteger(this.subjectId) || this.subjectId <= 0) {
@@ -151,12 +165,39 @@ Page({
       const stored = wx.getStorageSync(this._recentGroupStorageKey)
       this._recentGroupKeys = Array.isArray(stored) ? stored.map(item => String(item || '')).filter(Boolean).slice(0, RECENT_THEME_LIMIT) : []
     } catch (error) { this._recentGroupKeys = [] }
-    return this.loadMap()
+
+    const persistedState = String((options && options.restore_state) || '') === '1'
+      ? this._readViewState(true)
+      : null
+    if (persistedState) this._primeViewState(persistedState)
+    return this.loadMap(true, { preserveViewState: persistedState })
   },
 
-  onReady() { this.measureViewport(true) },
-  onShow() { if (this._loadedOnce) this.loadMap(false) },
+  onReady() { this.measureViewport(!this._pendingInitialViewState) },
+  onShow() {
+    this._practiceNavigationPending = false
+    this._detailNavigationPending = false
+    if (this._practiceLaunchFeedbackTimer) {
+      clearTimeout(this._practiceLaunchFeedbackTimer)
+      this._practiceLaunchFeedbackTimer = null
+    }
+    if (!this._loadedOnce) return
+
+    const restoreState = this._pendingReturnState || this._captureViewState()
+    this._pendingReturnState = null
+    if (this.data.practiceLaunching || this.data.practiceLaunchingId) {
+      this.setData({ practiceLaunching: false, practiceLaunchingId: 0 })
+    }
+    this._restoreScrollPosition(restoreState)
+
+    clearTimeout(this._returnRefreshTimer)
+    this._returnRefreshTimer = setTimeout(() => {
+      this._returnRefreshTimer = null
+      if (!this._unloaded) this.loadMap(false, { preserveViewState: restoreState })
+    }, RETURN_REFRESH_DELAY_MS)
+  },
   onPageScroll(event) { this._scrollTop = Number(event.scrollTop) || 0 },
+  onHide() { clearTimeout(this._returnRefreshTimer) },
   onResize() { this.measureViewport(true) },
   onUnload() {
     this._unloaded = true
@@ -170,10 +211,94 @@ Page({
     clearTimeout(this._themeSheetSelectTimer)
     clearTimeout(this._themeTransitionTimer)
     clearTimeout(this._labelSwitchTimer)
+    clearTimeout(this._selectionSwitchTimer)
+    clearTimeout(this._selectionSettleTimer)
+    clearTimeout(this._returnRefreshTimer)
+    clearTimeout(this._practiceLaunchFeedbackTimer)
+    this._practiceLaunchFeedbackTimer = null
+    this._practiceNavigationPending = false
+    this._detailNavigationPending = false
   },
-  onPullDownRefresh() { return this.loadMap(false).finally(() => wx.stopPullDownRefresh()) },
+  onPullDownRefresh() { return this.loadMap(false, { preserveViewState: this._captureViewState() }).finally(() => wx.stopPullDownRefresh()) },
 
-  async loadMap(showLoading = true) {
+  _captureViewState() {
+    if (!Number.isInteger(this.subjectId) || this.subjectId <= 0) return null
+    const camera = this._camera && Number.isFinite(Number(this._camera.scale))
+      ? { x: Number(this._camera.x) || 0, y: Number(this._camera.y) || 0, scale: Number(this._camera.scale) || 1 }
+      : null
+    return {
+      version: VIEW_STATE_VERSION,
+      subjectId: this.subjectId,
+      savedAt: Date.now(),
+      filter: String(this.data.filter || 'all'),
+      query: String(this.data.query || ''),
+      activeGroupKey: String(this.data.activeGroupKey || ''),
+      graphPage: Math.max(0, Number(this._graphPage) || 0),
+      selectedId: Math.max(0, Number(this._selectedId) || Number(this.data.selectedPoint && this.data.selectedPoint.knowledge_point_id) || 0),
+      indexLimit: Math.max(INITIAL_INDEX_LIMIT, Number(this._indexLimit) || INITIAL_INDEX_LIMIT),
+      scrollTop: Math.max(0, Number(this._scrollTop) || 0),
+      camera,
+    }
+  },
+
+  _persistViewState(state) {
+    const snapshot = state || this._captureViewState()
+    if (!snapshot || !this._viewStateStorageKey) return
+    try { wx.setStorageSync(this._viewStateStorageKey, snapshot) } catch (error) { /* 存储空间不足时仅放弃跨页面栈恢复。 */ }
+  },
+
+  _readViewState(consume = false) {
+    if (!this._viewStateStorageKey) return null
+    try {
+      const state = wx.getStorageSync(this._viewStateStorageKey)
+      if (consume) wx.removeStorageSync(this._viewStateStorageKey)
+      if (!state || Number(state.version) !== VIEW_STATE_VERSION || Number(state.subjectId) !== this.subjectId) return null
+      if (Date.now() - Number(state.savedAt || 0) > VIEW_STATE_MAX_AGE_MS) return null
+      return state
+    } catch (error) {
+      return null
+    }
+  },
+
+  _viewStateDataPatch(state) {
+    if (!state) return {}
+    const filter = FILTERS.some(item => item.id === state.filter) ? state.filter : 'all'
+    return {
+      filter,
+      query: String(state.query || '').slice(0, 80),
+      activeGroupKey: String(state.activeGroupKey || ''),
+      searchPending: false,
+      searchFocused: false,
+      themeSheetOpen: false,
+      themeSheetClosing: false,
+      themeSheetPendingKey: '__idle__',
+      themeQuery: '',
+    }
+  },
+
+  _primeViewState(state) {
+    if (!state) return
+    this._pendingInitialViewState = state
+    this._graphPage = Math.max(0, Number(state.graphPage) || 0)
+    this._selectedId = Math.max(0, Number(state.selectedId) || 0)
+    this._indexLimit = Math.max(INITIAL_INDEX_LIMIT, Number(state.indexLimit) || INITIAL_INDEX_LIMIT)
+    this._scrollTop = Math.max(0, Number(state.scrollTop) || 0)
+    if (state.camera && this._frame) {
+      const candidate = { x: Number(state.camera.x) || 0, y: Number(state.camera.y) || 0, scale: Number(state.camera.scale) || 1 }
+      this._camera = clampCamera(candidate, this._frame)
+    }
+    this.setData({ ...this._viewStateDataPatch(state), ...this.cameraPayload(true) })
+  },
+
+  _restoreScrollPosition(state) {
+    const scrollTop = state ? Math.max(0, Number(state.scrollTop) || 0) : 0
+    if (!scrollTop || typeof wx.pageScrollTo !== 'function') return
+    const restore = () => wx.pageScrollTo({ scrollTop, duration: 0 })
+    if (typeof wx.nextTick === 'function') wx.nextTick(restore)
+    else setTimeout(restore, 0)
+  },
+
+  async loadMap(showLoading = true, options = {}) {
     if (!Number.isInteger(this.subjectId) || this.subjectId <= 0) return
     const requestId = (this._requestId || 0) + 1
     this._requestId = requestId
@@ -212,14 +337,31 @@ Page({
       const syllabus = data.syllabus_version
       const filters = FILTERS.map(item => ({ id: item.id, label: item.label, count: item.statuses ? this._nodes.filter(node => item.statuses.includes(node.status)).length : this._nodes.length }))
       const firstLoad = !this._loadedOnce
+      const preserveViewState = options && options.preserveViewState
+      if (preserveViewState) {
+        this._graphPage = Math.max(0, Number(preserveViewState.graphPage) || 0)
+        this._selectedId = Math.max(0, Number(preserveViewState.selectedId) || 0)
+        this._indexLimit = Math.max(INITIAL_INDEX_LIMIT, Number(preserveViewState.indexLimit) || INITIAL_INDEX_LIMIT)
+        if (preserveViewState.camera && this._frame) {
+          this._camera = clampCamera({
+            x: Number(preserveViewState.camera.x) || 0,
+            y: Number(preserveViewState.camera.y) || 0,
+            scale: Number(preserveViewState.camera.scale) || 1,
+          }, this._frame)
+        }
+      }
       this._loadedOnce = true
       wx.setNavigationBarTitle({ title: `${data.subject.subject_name} · 知识图谱` })
       this.setData({
         loading: false, error: '', refreshError: '', subject: data.subject, filters,
         syllabusText: syllabus ? [syllabus.name, syllabus.effective_year].filter(Boolean).join(' · ') : '',
         stats: { total, reliable, weak, coverage: coverage == null ? 0 : coverage },
-      }, () => this.applyView(firstLoad, firstLoad, () => {
+        ...(preserveViewState ? this._viewStateDataPatch(preserveViewState) : {}),
+        ...(preserveViewState ? this.cameraPayload(true) : {}),
+      }, () => this.applyView(firstLoad && !preserveViewState, firstLoad && !preserveViewState, () => {
         if (firstLoad) this.enterPage()
+        if (preserveViewState) this._restoreScrollPosition(preserveViewState)
+        this._pendingInitialViewState = null
       }))
     } catch (error) {
       if (this._unloaded || requestId !== this._requestId) return
@@ -244,16 +386,23 @@ Page({
     if (!this.data.subject) return
     const config = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
     const query = normalizeSearchText(this.data.query)
-    this._filteredGroups = (this._groups || []).map(group => ({
-      ...group,
-      nodes: group.nodes.reduce((result, node) => {
-        if (config.statuses && !config.statuses.includes(node.status)) return result
-        const searchMatch = pointSearchMatch(node, query)
-        if (!searchMatch.matched) return result
-        result.push(node)
-        return result
-      }, []),
-    }))
+    this._filteredGroups = (this._groups || []).map((group, groupIndex) => {
+      const groupIconKind = themeIconKind(group, groupIndex)
+      const groupIconSrc = themeIconSrc(groupIconKind)
+      return {
+        ...group,
+        iconKind: groupIconKind,
+        iconSrc: groupIconSrc,
+        nodes: group.nodes.reduce((result, node, nodeIndex) => {
+          if (config.statuses && !config.statuses.includes(node.status)) return result
+          const searchMatch = pointSearchMatch(node, query)
+          if (!searchMatch.matched) return result
+          const nodeIconKind = themeIconKind({ name: node.name, key: node.knowledge_point_id }, nodeIndex)
+          result.push({ ...node, iconKind: nodeIconKind, iconSrc: themeIconSrc(nodeIconKind) })
+          return result
+        }, []),
+      }
+    })
     const availableGroups = this._filteredGroups.filter(group => group.nodes.length)
     const activeGroupKey = availableGroups.some(group => group.key === this.data.activeGroupKey) ? this.data.activeGroupKey : ''
     const groups = activeGroupKey ? availableGroups.filter(group => group.key === activeGroupKey) : availableGroups
@@ -312,12 +461,16 @@ Page({
     clearTimeout(this._labelSwitchTimer)
     clearTimeout(this._themeTransitionTimer)
     clearTimeout(this._sceneAnimationTimer)
-    const startPayload = { ...dataChanges, sceneAnimating: false, themeSwitching: true, themeSwitchPhase: 'leaving' }
+    clearTimeout(this._selectionSwitchTimer)
+    clearTimeout(this._selectionSettleTimer)
+    const startPayload = { ...dataChanges, sceneAnimating: false, themeSwitching: true, themeSwitchPhase: 'leaving', selectionSwitching: false, selectionSwitchPhase: '' }
     this.setData(startPayload, () => {
       this._labelSwitchTimer = setTimeout(() => {
         this._labelSwitchTimer = null
         if (this._unloaded) return
-        this.applyView(true, false, () => {
+        // 主题切换时保留当前相机视角，避免节点重建与相机复位同时发生造成抖动。
+        // 内容本身只做轻量淡入淡出，不再对单个节点做位移/缩放动画。
+        this.applyView(false, false, () => {
           if (this._unloaded) return
           this.setData({ themeSwitchPhase: 'entering' }, () => {
             this._themeTransitionTimer = setTimeout(() => {
@@ -454,10 +607,39 @@ Page({
     const { kind, id, key } = event.currentTarget.dataset
     if (kind === 'core') this.showOverview()
     else if (kind === 'group') this.openGroup(String(key))
-    else if (kind === 'point' && this._nodeById.has(Number(id))) {
-      this._selectedId = Number(id)
-      this.applyView(false)
+    else if (kind === 'point' && this._nodeById.has(Number(id))) this.selectGraphPoint(Number(id))
+  },
+  selectGraphPoint(id) {
+    const nextId = Number(id)
+    if (!nextId || !this._nodeById || !this._nodeById.has(nextId) || nextId === Number(this._selectedId)) return
+    clearTimeout(this._selectionSwitchTimer)
+    clearTimeout(this._selectionSettleTimer)
+
+    const commitSelection = () => {
+      if (this._unloaded) return
+      this._selectedId = nextId
+      this.applyView(false, false, () => {
+        if (this._unloaded) return
+        this.setData({ selectionSwitching: true, selectionSwitchPhase: 'entering' }, () => {
+          this._selectionSettleTimer = setTimeout(() => {
+            this._selectionSettleTimer = null
+            if (!this._unloaded) this.setData({ selectionSwitching: false, selectionSwitchPhase: '' })
+          }, SELECTION_SWITCH_IN_MS)
+        })
+      })
     }
+
+    if (!this.data.selectedPoint) {
+      this.setData({ selectionSwitching: true, selectionSwitchPhase: 'entering' }, commitSelection)
+      return
+    }
+
+    this.setData({ selectionSwitching: true, selectionSwitchPhase: 'leaving' }, () => {
+      this._selectionSwitchTimer = setTimeout(() => {
+        this._selectionSwitchTimer = null
+        commitSelection()
+      }, SELECTION_SWITCH_OUT_MS)
+    })
   },
   locatePoint(event) {
     const point = this._nodeById.get(Number(event.currentTarget.dataset.id))
@@ -474,14 +656,67 @@ Page({
   loadMore() { this._indexLimit = (this._indexLimit || INITIAL_INDEX_LIMIT) + INITIAL_INDEX_LIMIT; this.applyView(false) },
   openPoint(event) {
     const id = Number(event.currentTarget.dataset.id)
-    if (!id) return
-    wx.navigateTo({ url: `/subpackages/study/knowledge-detail/index?knowledge_point_id=${id}` })
+    if (!id || this._detailNavigationPending || this._practiceNavigationPending) return
+
+    const state = this._captureViewState()
+    this._pendingReturnState = state
+    this._persistViewState(state)
+
+    // 详情入口使用实例锁而不是 setData 锁：既能阻止快速连点叠出两个
+    // knowledge-detail 页面，又不会为了禁用按钮先重绘一次当前卡片。
+    this._detailNavigationPending = true
+    wx.navigateTo({
+      url: `/subpackages/study/knowledge-detail/index?knowledge_point_id=${id}`,
+      fail: () => {
+        this._detailNavigationPending = false
+        if (!this._unloaded) wx.showToast({ title: '知识详情打开失败，请重试', icon: 'none' })
+      },
+    })
   },
   practicePoint(event) {
     const item = this._nodeById && this._nodeById.get(Number(event.currentTarget.dataset.id))
-    if (!item || !item.hasPractice) return
+    if (!item || !item.hasPractice || this._practiceNavigationPending || this.data.practiceLaunching) return
+
+    const state = this._captureViewState()
+    this._pendingReturnState = state
+    this._persistViewState(state)
+
     const count = Math.min(10, Math.max(1, Math.floor(item.trainable_question_count)))
-    wx.navigateTo({ url: `/subpackages/study/practice/practice?subject_id=${this.subjectId}&mode=random&count=${count}&knowledge_point_id=${item.knowledge_point_id}&allow_repeat=1&autostart=1&source=knowledge_map` })
+    const returnTo = encodeURIComponent(`/subpackages/study/knowledge-subject/index?subject_id=${this.subjectId}&restore_state=1`)
+    const subjectName = encodeURIComponent(String((this.data.subject && this.data.subject.subject_name) || item.groupName || '专项练习'))
+    const url = `/subpackages/study/practice/practice?subject_id=${this.subjectId}&subject_name=${subjectName}&mode=random&count=${count}&knowledge_point_id=${item.knowledge_point_id}&include_children=1&allow_repeat=1&autostart=1&source=knowledge_map&return_to=${returnTo}`
+
+    // 快速导航时不抢先重绘当前知识点卡片，避免源页按钮先闪一下再进入练习。
+    // 实例锁即时生效；只有导航超过阈值时才显示“正在进入”反馈。
+    this._practiceNavigationPending = true
+    if (this._practiceLaunchFeedbackTimer) clearTimeout(this._practiceLaunchFeedbackTimer)
+    this._practiceLaunchFeedbackTimer = setTimeout(() => {
+      this._practiceLaunchFeedbackTimer = null
+      if (!this._unloaded && this._practiceNavigationPending) {
+        this.setData({ practiceLaunching: true, practiceLaunchingId: Number(item.knowledge_point_id) })
+      }
+    }, 140)
+
+    wx.navigateTo({
+      url,
+      success: () => {
+        if (this._practiceLaunchFeedbackTimer) {
+          clearTimeout(this._practiceLaunchFeedbackTimer)
+          this._practiceLaunchFeedbackTimer = null
+        }
+      },
+      fail: () => {
+        if (this._practiceLaunchFeedbackTimer) {
+          clearTimeout(this._practiceLaunchFeedbackTimer)
+          this._practiceLaunchFeedbackTimer = null
+        }
+        this._practiceNavigationPending = false
+        if (!this._unloaded && (this.data.practiceLaunching || this.data.practiceLaunchingId)) {
+          this.setData({ practiceLaunching: false, practiceLaunchingId: 0 })
+        }
+        wx.showToast({ title: '练习页打开失败，请重试', icon: 'none' })
+      },
+    })
   },
   retry() { return this.loadMap() },
 

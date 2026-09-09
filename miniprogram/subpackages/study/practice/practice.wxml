@@ -28,7 +28,7 @@
   </view>
 
   <!-- ==================== 设置页 ==================== -->
-  <view class="setup" wx:if="{{!started}}">
+  <view class="setup" wx:if="{{entryResolved && !started && !launchingPreset}}">
     <premium-nav title="刷题" variant="light" bind:back="goBack" />
 
     <view class="setup-error-card" wx:if="{{errorText}}">
@@ -350,9 +350,14 @@
 
   </view>
 
-  <!-- 加载 -->
-  <view class="loading-wrap" wx:if="{{started && loading}}">
-    <loading-lottie text="{{selectedMode==='sequential' ? '正在读取顺序进度...' : '正在生成挑战题组...'}}" size="large" />
+  <!-- 首屏/题组加载：初始仅保留稳定底色，路由解析后再挂载轻量 CSS loading。 -->
+  <view class="loading-wrap {{!entryResolved || launchingPreset ? 'launch-loading' : ''}}" wx:if="{{!entryResolved || launchingPreset || (started && loading)}}">
+    <loading-lottie
+      wx:if="{{entryResolved}}"
+      text="{{launchingPreset ? '正在进入专项练习...' : (selectedMode==='sequential' ? '正在读取顺序进度...' : '正在生成挑战题组...')}}"
+      size="large"
+      enable-lottie="{{false}}"
+    />
   </view>
 
 </view>

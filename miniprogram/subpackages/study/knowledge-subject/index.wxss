@@ -320,6 +320,9 @@ page { min-height: 100%; background: #EFF5EA; color: #1E3325; font-family: -appl
 .point-detail { flex: 1; border: 1rpx solid #C9D5C7; background: #EFF3EB; color: #536A55; }
 .point-practice { flex: 1.15; background: #163A29; color: #F0F5ED; box-shadow: 0 8rpx 18rpx rgba(22,58,41,.14); }
 .point-practice[disabled] { background: #E2E8DF; color: #8D9B8C; box-shadow: none; }
+.point-practice.point-practice-launching { background: #234A36; color: #F4F8F2; opacity: .94; }
+.point-practice-spinner { width: 22rpx; height: 22rpx; box-sizing: border-box; margin-right: 10rpx; border: 3rpx solid rgba(244,248,242,.28); border-top-color: #F4F8F2; border-radius: 50%; animation: point-practice-spin .68s linear infinite; }
+@keyframes point-practice-spin { to { transform: rotate(360deg); } }
 
 .knowledge-index { margin-top: 40rpx; }
 .index-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 14rpx; padding: 0 5rpx 16rpx; }
@@ -1450,4 +1453,724 @@ page { min-height: 100%; background: #EFF5EA; color: #1E3325; font-family: -appl
   .theme-quick-name { font-size: 18rpx; }
   .atlas-tools { margin-bottom: 14rpx; }
   .theme-sheet { height: 34vh; max-height: 34vh; padding-left: 16rpx; padding-right: 16rpx; }
+}
+
+/* v10：半屏主题选择 + 稳定的图谱主题切换 + 细节收口。 */
+
+/* 快捷主题卡片的尾部留白加大，避免箭头贴边；窄屏仍保持两列稳定。 */
+.theme-quick-chip {
+  grid-template-columns: 58rpx minmax(0, 1fr) 10rpx;
+  column-gap: 11rpx;
+  padding-left: 12rpx;
+  padding-right: 21rpx;
+}
+.theme-card-arrow {
+  justify-self: end;
+  margin-right: 1rpx;
+}
+
+/* 选择主题：约半屏高度。滚动内容直接延伸到底部，不再预留大块 safe-area 空白。 */
+.theme-sheet {
+  height: 50vh;
+  min-height: 50vh;
+  max-height: 50vh;
+  padding: 8rpx 20rpx 0;
+  border-radius: 28rpx 28rpx 0 0;
+}
+.theme-sheet-scroll {
+  flex: 1 1 0;
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin-top: 7rpx;
+  padding-bottom: 0;
+}
+.theme-sheet-list {
+  padding: 0 0 8rpx;
+}
+.theme-sheet-safe {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* 弹层列表同样统一箭头安全距离，避免尾部图标贴卡片边线。 */
+.theme-sheet-featured,
+.theme-sheet-item {
+  padding-right: 17rpx;
+}
+.theme-sheet-item-arrow {
+  margin-left: 2rpx;
+  margin-right: 2rpx;
+}
+
+/* 主题切换不再让节点逐个“弹入”或整体位移。
+   只对图谱内容做短促淡出/淡入，避免节点振动、相机跳动与视觉抖动。 */
+.atlas-shell.theme-switch-leaving,
+.point-card.theme-switch-leaving,
+.knowledge-index.theme-switch-leaving {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+.atlas-shell.theme-switch-entering,
+.point-card.theme-switch-entering,
+.knowledge-index.theme-switch-entering {
+  animation: none;
+  transform: none;
+}
+.theme-switch-entering .atlas-node,
+.theme-switch-entering .atlas-edge {
+  animation: none !important;
+}
+
+.atlas-shell.theme-switch-leaving .atlas-viewport,
+.atlas-shell.theme-switch-leaving .atlas-panel-head,
+.atlas-shell.theme-switch-leaving .atlas-controls,
+.atlas-shell.theme-switch-leaving .atlas-panel-foot,
+.point-card.theme-switch-leaving,
+.knowledge-index.theme-switch-leaving {
+  opacity: .90;
+  transition: opacity 72ms ease-out;
+}
+.atlas-shell.theme-switch-entering .atlas-viewport,
+.atlas-shell.theme-switch-entering .atlas-panel-head,
+.atlas-shell.theme-switch-entering .atlas-controls,
+.atlas-shell.theme-switch-entering .atlas-panel-foot,
+.point-card.theme-switch-entering,
+.knowledge-index.theme-switch-entering {
+  opacity: 1;
+  animation: theme-content-fade-in 180ms cubic-bezier(.2,.82,.28,1) both;
+}
+@keyframes theme-content-fade-in {
+  from { opacity: .90; }
+  to { opacity: 1; }
+}
+
+/* 节点自身保留状态变化的过渡，但取消切换主题时会放大位移感的 transform tween。 */
+.theme-content-switching .atlas-node {
+  transition: opacity .16s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+.theme-content-switching .atlas-stage {
+  transition: none;
+}
+
+/* 轻微加强模块间节拍，避免筛选模块与图谱模块边框黏连。 */
+.atlas-tools { margin-bottom: 18rpx; }
+
+@media (max-width: 360px) {
+  .theme-quick-chip {
+    grid-template-columns: 44rpx minmax(0,1fr) 9rpx;
+    padding-left: 9rpx;
+    padding-right: 17rpx;
+  }
+  .theme-sheet {
+    height: 50vh;
+    min-height: 50vh;
+    max-height: 50vh;
+    padding-left: 16rpx;
+    padding-right: 16rpx;
+    padding-bottom: 0;
+  }
+  .theme-sheet-featured,
+  .theme-sheet-item { padding-right: 14rpx; }
+}
+
+/* v8 参考稿重构：卡片融合型知识图谱。保留筛选/索引能力，仅替换图谱主体视觉与节点交互。 */
+.graph-card {
+  margin-top: 18rpx;
+  border: 1rpx solid #D5E4CE;
+  border-radius: 30rpx;
+  background: rgba(250, 253, 247, .97);
+  box-shadow: 0 22rpx 52rpx rgba(67, 96, 55, .09), inset 0 1rpx 0 rgba(255,255,255,.96);
+}
+.graph-card-head {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 30rpx 28rpx 20rpx;
+}
+.graph-card-title-wrap { display: flex; min-width: 0; align-items: flex-start; gap: 15rpx; }
+.graph-card-copy { min-width: 0; }
+.graph-card-title {
+  display: block;
+  color: #214B33;
+  font-size: 34rpx;
+  font-weight: 780;
+  line-height: 1.25;
+  letter-spacing: -.6rpx;
+}
+.graph-card-subtitle {
+  display: block;
+  max-width: 430rpx;
+  margin-top: 8rpx;
+  color: #718070;
+  font-size: 19rpx;
+  line-height: 1.5;
+}
+.graph-spark {
+  position: relative;
+  width: 24rpx;
+  height: 28rpx;
+  flex-shrink: 0;
+  margin-top: 5rpx;
+}
+.graph-spark view { position: absolute; left: 50%; top: 50%; width: 3rpx; height: 25rpx; border-radius: 999rpx; background: #6B9A51; transform-origin: center; }
+.graph-spark view:nth-child(1) { transform: translate(-50%,-50%) rotate(0deg); }
+.graph-spark view:nth-child(2) { transform: translate(-50%,-50%) rotate(45deg); }
+.graph-spark view:nth-child(3) { transform: translate(-50%,-50%) rotate(90deg); }
+.graph-spark view:nth-child(4) { transform: translate(-50%,-50%) rotate(135deg); }
+.graph-count {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8rpx;
+  padding-top: 5rpx;
+  color: #657665;
+  font-size: 18rpx;
+  white-space: nowrap;
+}
+.graph-count-dot { width: 11rpx; height: 11rpx; border-radius: 50%; background: #73A45C; box-shadow: inset 0 0 0 3rpx rgba(255,255,255,.68); }
+
+.graph-canvas.atlas-viewport {
+  position: relative;
+  height: 760rpx;
+  overflow: hidden;
+  touch-action: auto;
+  background:
+    radial-gradient(circle at 50% 49%, rgba(198, 224, 176, .28) 0, rgba(230, 240, 221, .18) 28%, transparent 54%),
+    linear-gradient(180deg, #F9FCF6 0%, #F3F8EE 100%);
+  background-size: auto;
+}
+.graph-canvas.atlas-viewport::before {
+  content: '';
+  position: absolute;
+  inset: 18rpx;
+  border: 1rpx solid rgba(213, 229, 205, .65);
+  border-radius: 25rpx;
+  pointer-events: none;
+}
+.graph-canvas .atlas-stage {
+  width: 800px;
+  height: 760px;
+  transition: transform .22s cubic-bezier(.16,1,.3,1);
+}
+
+.graph-canvas .atlas-edge {
+  z-index: 1;
+  height: 0;
+  border-top: 1.5px solid rgba(115, 158, 83, .50);
+  opacity: .8;
+}
+.graph-canvas .atlas-edge::after {
+  top: -2.5px;
+  right: -1px;
+  width: 4px;
+  height: 4px;
+  background: #91B96F;
+}
+.graph-canvas .atlas-edge.edge-hierarchy { border-top-style: solid; }
+.graph-canvas .atlas-edge.edge-membership { border-top-style: solid; }
+.graph-canvas .atlas-edge.edge-active { border-top-color: #4E8A5E; opacity: 1; }
+
+.graph-canvas .atlas-node {
+  z-index: 2;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: transform .18s cubic-bezier(.16,1,.3,1), border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+.graph-canvas .atlas-node-group,
+.graph-canvas .atlas-node-point {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 14px;
+  border: 1px solid rgba(190, 211, 179, .82);
+  border-radius: 22px;
+  background: rgba(255, 255, 252, .94);
+  color: #294833;
+  box-shadow: 0 13px 28px rgba(72, 102, 59, .09), inset 0 1px 0 rgba(255,255,255,.98);
+}
+.graph-canvas .atlas-node-group::before,
+.graph-canvas .atlas-node-point::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: 21px;
+  background: linear-gradient(145deg, rgba(255,255,255,.58), transparent 56%);
+  pointer-events: none;
+}
+.graph-canvas .atlas-node-point.node-selected {
+  z-index: 4;
+  border-color: #7EAF69;
+  background: #F0F8EB;
+  color: #1F432E;
+  box-shadow: 0 0 0 4px rgba(126,175,105,.10), 0 14px 30px rgba(63, 98, 52, .13);
+  transform: translateY(-2px);
+}
+.graph-canvas .atlas-node-point.tone-weak { border-color: #DECDB5; background: #FFF9F0; }
+.graph-canvas .atlas-node-point.tone-stable { border-color: #BCD5AF; background: #F7FBF3; }
+.graph-node-pressed { transform: scale(.975) !important; }
+
+.graph-node-icon {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(199, 219, 190, .84);
+  border-radius: 15px;
+  background: linear-gradient(145deg, #F9FCF6, #EEF6E8);
+  box-shadow: 0 5px 12px rgba(81, 112, 65, .06);
+}
+.graph-node-icon image { width: 30px; height: 30px; }
+.graph-node-copy { position: relative; z-index: 1; flex: 1; min-width: 0; }
+.graph-node-label {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #294833;
+  font-size: 18px;
+  font-weight: 680;
+  line-height: 22px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.graph-node-caption {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: #82917F;
+  font-size: 11.5px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-node-state {
+  position: relative;
+  z-index: 1;
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #A8B5A4;
+}
+.atlas-node-point.tone-weak .graph-node-state { background: #C38B59; }
+.atlas-node-point.tone-stable .graph-node-state { background: #69A05D; }
+.atlas-node-point.node-selected .graph-node-state { box-shadow: 0 0 0 4px rgba(105,160,93,.13); }
+
+.graph-canvas .atlas-node-core {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  border: 1.5px solid rgba(126, 171, 91, .76);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 22%, rgba(255,255,255,.96) 0, rgba(237,248,221,.95) 24%, rgba(205,231,177,.95) 68%, rgba(184,217,149,.94) 100%);
+  color: #244A31;
+  box-shadow: 0 18px 38px rgba(76, 110, 55, .16), inset 0 1px 2px rgba(255,255,255,.95), 0 0 0 10px rgba(187, 218, 158, .09);
+}
+.graph-canvas .atlas-node-core::after {
+  inset: 11px;
+  border: 1px solid rgba(91, 139, 69, .18);
+}
+.core-orbit {
+  position: absolute;
+  inset: -15px;
+  border: 1px solid rgba(125, 169, 91, .16);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.core-icon-wrap {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 5px;
+}
+.core-icon { width: 31px; height: 31px; }
+.graph-canvas .core-label {
+  position: relative;
+  z-index: 1;
+  display: -webkit-box;
+  width: 100%;
+  max-height: 50px;
+  overflow: hidden;
+  color: #244A31;
+  text-align: center;
+  font-size: 21px;
+  font-weight: 760;
+  line-height: 25px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.graph-canvas .core-caption {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: 5px;
+  color: #74916B;
+  font-size: 10.5px;
+  line-height: 14px;
+  letter-spacing: .6px;
+}
+
+.graph-leaf { position: absolute; z-index: 0; width: 98rpx; height: 126rpx; pointer-events: none; opacity: .56; }
+.graph-leaf-top { left: -12rpx; top: -22rpx; transform: rotate(19deg); }
+.graph-leaf-bottom { right: -11rpx; bottom: -20rpx; transform: rotate(198deg); }
+.graph-leaf view {
+  position: absolute;
+  width: 30rpx;
+  height: 62rpx;
+  border-radius: 100% 0 100% 0;
+  background: linear-gradient(145deg, #B8D998, #82B662);
+  transform-origin: bottom center;
+}
+.graph-leaf view:nth-child(1) { left: 27rpx; bottom: 12rpx; transform: rotate(-28deg); }
+.graph-leaf view:nth-child(2) { left: 46rpx; bottom: 34rpx; transform: rotate(12deg) scale(.86); }
+.graph-leaf view:nth-child(3) { left: 11rpx; bottom: 42rpx; transform: rotate(-58deg) scale(.72); }
+
+.graph-empty.atlas-empty { background: transparent; }
+
+.graph-card-foot {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  min-height: 84rpx;
+  padding: 14rpx 20rpx 18rpx;
+  border-top: 1rpx solid rgba(213, 228, 206, .78);
+  background: rgba(250, 253, 247, .96);
+}
+.graph-scope {
+  display: flex;
+  min-width: 0;
+  max-width: 64%;
+  height: 54rpx;
+  align-items: center;
+  gap: 9rpx;
+  padding: 0 14rpx;
+  margin: 0 !important;
+  border: 1rpx solid #DAE7D4;
+  border-radius: 999rpx;
+  background: #F5F9F2;
+  color: #536B57;
+  font-size: 18rpx;
+  line-height: 54rpx;
+  text-align: left;
+}
+.graph-scope image { width: 24rpx; height: 24rpx; flex-shrink: 0; }
+.graph-scope text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-scope[disabled] { opacity: 1; color: #637763; }
+.graph-pagination { display: flex; flex-shrink: 0; align-items: center; gap: 10rpx; }
+.graph-page-btn {
+  width: 48rpx;
+  height: 48rpx;
+  padding: 0;
+  margin: 0 !important;
+  border-radius: 50%;
+  background: transparent;
+  color: #506B55;
+  font-size: 30rpx;
+  line-height: 44rpx;
+  font-weight: 400;
+}
+.graph-page-btn[disabled] { color: #B3BFB1; }
+.graph-range { min-width: 70rpx; color: #778777; text-align: center; font-family: 'DIN Alternate', sans-serif; font-size: 17rpx; }
+
+.scene-animating .graph-canvas .atlas-node { animation: graph-card-node-in .34s cubic-bezier(.16,1,.3,1) both; }
+.scene-animating .graph-canvas .atlas-edge { animation: graph-card-edge-in .28s ease-out both; }
+@keyframes graph-card-node-in { from { opacity: .2; transform: translateY(5px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes graph-card-edge-in { from { opacity: 0; } to { opacity: .8; } }
+
+@media (max-width: 350px) {
+  .graph-card-head { padding-left: 22rpx; padding-right: 22rpx; }
+  .graph-card-title { font-size: 31rpx; }
+  .graph-count { font-size: 16rpx; }
+  .graph-scope { max-width: 58%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-canvas .atlas-node, .graph-canvas .atlas-stage { transition: none; }
+  .scene-animating .graph-canvas .atlas-node, .scene-animating .graph-canvas .atlas-edge { animation: none; }
+}
+
+/* v9：继续对齐参考稿。重点修复底部分页越界、触摸高亮，并让节点切换与关联内容有克制的连续过渡。 */
+.graph-card {
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+.graph-canvas.atlas-viewport {
+  height: 860rpx;
+  -webkit-tap-highlight-color: transparent;
+}
+.graph-canvas .atlas-stage {
+  height: 920px;
+}
+.graph-canvas .atlas-edge {
+  transition: opacity 180ms ease, border-color 220ms ease;
+}
+.graph-canvas .atlas-edge::after {
+  transition: background 220ms ease, transform 220ms cubic-bezier(.16,1,.3,1);
+}
+.graph-canvas .atlas-edge.edge-active::after {
+  transform: scale(1.45);
+}
+
+/* 微信小程序 WXSS 不支持通配后代选择器（如 .atlas-node *）。
+ * 仅对真实交互容器及其明确子层关闭 WebView 默认高亮，既避免蓝色矩形，也保证 WXSS 可编译。 */
+.graph-canvas .atlas-node,
+.graph-node-icon,
+.graph-node-copy,
+.graph-node-label,
+.graph-node-caption,
+.graph-node-state,
+.core-orbit,
+.core-icon-wrap,
+.core-icon,
+.core-label,
+.core-caption,
+.graph-card-foot,
+.graph-footer-bar,
+.graph-scope,
+.graph-pagination,
+.graph-page-btn,
+.graph-range,
+.index-row,
+.index-rank,
+.index-dot,
+.index-row-copy,
+.index-tree-guide,
+.index-node-name,
+.index-meta-row,
+.index-node-meta,
+.index-locate,
+.locate-crosshair {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  outline: none;
+}
+.graph-canvas .atlas-node {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.graph-node-pressed {
+  transform: translate3d(0, 1px, 0) scale(.982) !important;
+  opacity: .96;
+}
+
+/* 中心节点改为更接近参考稿的软质半透明“知识核”，避免正圆过于机械。 */
+.graph-canvas .atlas-node-core {
+  border-width: 1px;
+  border-color: rgba(139, 184, 102, .62);
+  border-radius: 43% 57% 49% 51% / 47% 44% 56% 53%;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,255,255,.98) 0, rgba(248,253,239,.96) 21%, transparent 44%),
+    radial-gradient(circle at 50% 58%, rgba(217,239,190,.96) 0, rgba(201,231,167,.94) 54%, rgba(186,220,150,.91) 100%);
+  box-shadow:
+    0 20px 42px rgba(78, 112, 57, .14),
+    0 0 0 10px rgba(226, 242, 210, .54),
+    0 0 0 18px rgba(210, 233, 190, .17),
+    inset 0 1px 2px rgba(255,255,255,.98);
+}
+.graph-canvas .atlas-node-core::before {
+  content: '';
+  position: absolute;
+  inset: 9px 7px 7px 10px;
+  border-radius: 48% 52% 45% 55% / 52% 46% 54% 48%;
+  background: linear-gradient(145deg, rgba(255,255,255,.46), rgba(255,255,255,0) 48%);
+  pointer-events: none;
+}
+.graph-canvas .atlas-node-core::after {
+  inset: 13px;
+  border-color: rgba(88, 137, 66, .15);
+  border-radius: 47% 53% 52% 48% / 45% 50% 50% 55%;
+}
+.core-orbit {
+  inset: -19px;
+  border-color: rgba(133, 174, 100, .13);
+}
+.graph-canvas .core-icon-wrap { margin-bottom: 7px; }
+.graph-canvas .core-label { font-size: 20px; line-height: 24px; }
+.graph-canvas .core-caption { margin-top: 7px; color: #7B9871; }
+
+/* 参考稿的底部是一条完整胶囊，不让左右按钮或当前范围挤出卡片。 */
+.graph-card-foot {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 0 18rpx 18rpx;
+  border-top: 0;
+  background: linear-gradient(180deg, #F3F8EE 0%, #F0F6EA 100%);
+}
+.graph-footer-bar {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 72rpx;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  overflow: hidden;
+  border: 1rpx solid rgba(211, 226, 204, .9);
+  border-radius: 999rpx;
+  background: rgba(255,255,252,.93);
+  box-shadow: 0 9rpx 22rpx rgba(70, 99, 58, .055), inset 0 1rpx 0 rgba(255,255,255,.98);
+}
+.graph-scope {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  height: 70rpx;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  padding: 0 18rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #536A57;
+  font-size: 18rpx;
+  line-height: 70rpx;
+  text-align: left;
+}
+.graph-scope text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-pagination {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  height: 70rpx;
+  align-items: center;
+  gap: 2rpx;
+  padding-right: 7rpx;
+}
+.graph-page-btn {
+  display: flex;
+  width: 56rpx;
+  min-width: 56rpx;
+  height: 56rpx;
+  flex: 0 0 56rpx;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #49684F;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 30rpx;
+  font-weight: 430;
+  line-height: 1;
+  transition: transform 150ms cubic-bezier(.16,1,.3,1), background 150ms ease, color 150ms ease;
+}
+.graph-page-btn[disabled] {
+  color: #BEC8BC;
+  opacity: .68;
+}
+.graph-page-pressed {
+  background: #ECF3E7;
+  transform: scale(.90);
+}
+.graph-page-btn[disabled] {
+  background: transparent;
+  transform: none;
+}
+.graph-range {
+  min-width: 94rpx;
+  padding: 0 4rpx;
+  color: #778777;
+  text-align: center;
+  font-size: 17rpx;
+  line-height: 70rpx;
+  font-variant-numeric: tabular-nums;
+}
+.graph-footer-pressed { opacity: .78; }
+
+/* 节点切换：旧详情先轻退，新内容再落位；图谱连线与选中态使用属性过渡，不做大幅位移。 */
+.point-card.selection-switching,
+.knowledge-index.selection-switching {
+  will-change: opacity, transform;
+}
+.point-card.selection-leaving {
+  opacity: .72;
+  transform: translate3d(0, 4rpx, 0) scale(.998);
+  transition: opacity 82ms ease-out, transform 82ms ease-out;
+}
+.point-card.selection-entering {
+  animation: point-related-enter 220ms cubic-bezier(.16,1,.3,1) both;
+}
+.knowledge-index.selection-leaving .index-row-selected {
+  opacity: .72;
+  transform: translate3d(3rpx,0,0);
+}
+.knowledge-index.selection-entering .index-row-selected {
+  animation: index-selection-enter 230ms cubic-bezier(.16,1,.3,1) both;
+}
+.index-row {
+  transition: background 200ms ease, transform 200ms cubic-bezier(.16,1,.3,1), opacity 180ms ease;
+}
+.index-row.index-row-selected {
+  background: linear-gradient(90deg, rgba(226,238,215,.96), rgba(238,246,231,.82));
+  box-shadow: inset 3rpx 0 0 rgba(110, 153, 81, .45);
+}
+.graph-canvas .atlas-node-point.node-selected {
+  transition: transform 220ms cubic-bezier(.16,1,.3,1), border-color 200ms ease, background 200ms ease, box-shadow 220ms ease, color 200ms ease;
+}
+@keyframes point-related-enter {
+  from { opacity: .76; transform: translate3d(0, 5rpx, 0) scale(.998); }
+  to { opacity: 1; transform: translate3d(0,0,0) scale(1); }
+}
+@keyframes index-selection-enter {
+  from { opacity: .72; transform: translate3d(5rpx,0,0); }
+  to { opacity: 1; transform: translate3d(0,0,0); }
+}
+
+@media (max-width: 350px) {
+  .graph-card-foot { padding-left: 14rpx; padding-right: 14rpx; }
+  .graph-scope { padding-left: 15rpx; font-size: 17rpx; }
+  .graph-range { min-width: 82rpx; font-size: 16rpx; }
+  .graph-page-btn { width: 52rpx; min-width: 52rpx; flex-basis: 52rpx; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-canvas .atlas-edge,
+  .graph-canvas .atlas-edge::after,
+  .graph-page-btn,
+  .index-row,
+  .graph-canvas .atlas-node-point.node-selected,
+  .point-card.selection-leaving {
+    transition: none;
+  }
+  .point-card.selection-entering,
+  .knowledge-index.selection-entering .index-row-selected {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .point-practice-spinner { animation-duration: 1.2s; }
 }

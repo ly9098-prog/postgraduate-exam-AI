@@ -1,46 +1,232 @@
-<view class="page">
-  <view class="state" wx:if="{{loading}}">正在读取掌握状态…</view>
-  <view class="state error" wx:elif="{{error}}"><text>{{error}}</text><button bindtap="retry">重试</button></view>
+<view class="detail-page">
+  <view class="detail-state" wx:if="{{loading}}">
+    <view class="state-skeleton state-skeleton-short"></view>
+    <view class="state-skeleton state-skeleton-title"></view>
+    <view class="state-skeleton state-skeleton-body"></view>
+    <view class="state-skeleton state-skeleton-card"></view>
+  </view>
 
-  <block wx:elif="{{detail}}">
-    <view class="hero status-{{detail.status}}">
-      <text class="subject">{{detail.subject_name}}</text>
-      <text class="syllabus" wx:if="{{syllabusVersion}}">{{syllabusVersion.name}} · {{syllabusVersion.effective_year}}</text>
-      <text class="name">{{detail.name}}</text>
-      <text class="desc" wx:if="{{detail.description}}">{{detail.description}}</text>
-      <view class="hero-row">
-        <view><text class="metric">{{scoreText}}</text><text class="label">掌握度</text></view>
-        <view><text class="metric">{{confidenceText}}</text><text class="label">置信度</text></view>
-        <view><text class="metric">{{accuracyText}}</text><text class="label">正确率</text></view>
+  <view class="detail-state detail-error" wx:elif="{{error}}">
+    <view class="error-mark">!</view>
+    <text class="error-title">知识点暂时无法加载</text>
+    <text class="error-copy">{{error}}</text>
+    <button class="retry-button" bindtap="retry">重新加载</button>
+  </view>
+
+  <view wx:elif="{{detail}}" class="detail-content detail-content-{{contentPhase}}">
+    <view class="detail-hero">
+      <view class="hero-meta-row">
+        <view class="subject-pill">
+          <text>{{detail.subject_name}}</text>
+        </view>
+        <text class="syllabus-year" wx:if="{{syllabusVersion}}">{{syllabusVersion.effective_year}}</text>
       </view>
-      <view class="status-pill">{{statusText}}</view>
+
+      <view class="hero-title-row">
+        <view class="hero-copy">
+          <text class="knowledge-name">{{detail.name}}</text>
+          <text class="knowledge-desc" wx:if="{{detail.description}}">{{detail.description}}</text>
+        </view>
+        <view class="knowledge-visual" aria-hidden="true">
+          <view class="visual-shadow"></view>
+          <view class="visual-layer visual-layer-top"></view>
+          <view class="visual-layer visual-layer-mid"></view>
+          <view class="visual-layer visual-layer-bottom"></view>
+        </view>
+      </view>
+
+      <view class="metric-strip">
+        <view class="metric-item">
+          <text class="metric-value">{{scoreText}}</text>
+          <text class="metric-label">掌握度</text>
+        </view>
+        <view class="metric-divider"></view>
+        <view class="metric-item">
+          <text class="metric-value">{{accuracyText}}</text>
+          <text class="metric-label">正确率</text>
+        </view>
+        <view class="metric-divider"></view>
+        <view class="metric-item">
+          <text class="metric-value">{{confidenceText}}</text>
+          <text class="metric-label">置信度</text>
+        </view>
+      </view>
     </view>
 
-    <view class="card">
-      <view class="card-head"><text class="card-title">练习证据</text><text class="card-note">累计 {{detail.attempt_count}} 次</text></view>
+    <view class="evidence-card surface-card">
+      <view class="section-head">
+        <text class="section-title">练习证据</text>
+        <text class="section-note">共 {{detail.attempt_count}} 次</text>
+      </view>
       <view class="evidence-grid">
-        <view><text class="evidence-num">{{detail.correct_count}}</text><text>答对</text></view>
-        <view><text class="evidence-num">{{detail.wrong_count}}</text><text>答错</text></view>
-        <view><text class="evidence-num">{{detail.recent_wrong_count}}</text><text>近期连续错</text></view>
-        <view><text class="evidence-num">{{detail.trainable_question_count}}</text><text>当前可练</text></view>
+        <view class="evidence-item">
+          <text class="evidence-value">{{detail.correct_count}}</text>
+          <text class="evidence-label">答对</text>
+        </view>
+        <view class="evidence-item">
+          <text class="evidence-value">{{detail.wrong_count}}</text>
+          <text class="evidence-label">答错</text>
+        </view>
+        <view class="evidence-item">
+          <text class="evidence-value">{{detail.recent_wrong_count}}</text>
+          <text class="evidence-label">近期连续错</text>
+        </view>
+        <view class="evidence-item">
+          <text class="evidence-value evidence-accent">{{detail.trainable_question_count}}</text>
+          <text class="evidence-label">当前可练</text>
+        </view>
       </view>
-      <view class="recent" wx:if="{{recent.length}}">
-        <text class="recent-title">最近 {{recent.length}} 次表现</text>
-        <view class="recent-dots"><text wx:for="{{recent}}" wx:key="index" class="answer-dot {{item.cls}}">{{item.mark}}</text></view>
+
+      <view class="recent-performance" wx:if="{{recent.length}}">
+        <view class="recent-copy">
+          <text>最近 {{recent.length}} 次表现</text>
+          <text>由近到远</text>
+        </view>
+        <view class="recent-dots">
+          <text wx:for="{{recent}}" wx:key="index" class="answer-dot {{item.cls}}">{{item.mark}}</text>
+        </view>
       </view>
-      <view class="insufficient" wx:if="{{detail.status === 'insufficient'}}">当前置信度不足 30%，继续练习后再判断强弱。</view>
+
+      <view class="confidence-hint" wx:if="{{detail.status === 'insufficient'}}">
+        <view class="hint-icon">i</view>
+        <text>当前证据还不足，继续完成几次练习后会得到更稳定的判断。</text>
+      </view>
     </view>
 
-    <view class="card" wx:if="{{detail.prerequisites.length || detail.next_nodes.length || detail.related_nodes.length}}">
-      <text class="card-title">知识关联</text>
-      <view class="relation-group" wx:if="{{detail.prerequisites.length}}"><text class="relation-title">前置知识</text><view class="chips"><view class="chip" wx:for="{{detail.prerequisites}}" wx:key="knowledge_point_id" data-id="{{item.knowledge_point_id}}" bindtap="openRelation">{{item.name}}</view></view></view>
-      <view class="relation-group" wx:if="{{detail.next_nodes.length}}"><text class="relation-title">后续知识</text><view class="chips"><view class="chip" wx:for="{{detail.next_nodes}}" wx:key="knowledge_point_id" data-id="{{item.knowledge_point_id}}" bindtap="openRelation">{{item.name}}</view></view></view>
-      <view class="relation-group" wx:if="{{detail.related_nodes.length}}"><text class="relation-title">相关知识</text><view class="chips"><view class="chip" wx:for="{{detail.related_nodes}}" wx:key="knowledge_point_id" data-id="{{item.knowledge_point_id}}" bindtap="openRelation">{{item.name}}</view></view></view>
+    <view class="relation-card surface-card">
+      <view class="section-head relation-head">
+        <view class="relation-title-wrap">
+          <image src="/assets/icons/knowledge-subject/relation.png" mode="aspectFit" aria-hidden="true" />
+          <text class="section-title">知识关联</text>
+        </view>
+        <text class="section-note" wx:if="{{relationCount}}">共 {{relationCount}} 个</text>
+      </view>
+
+      <view wx:if="{{relationCount}}" class="relation-groups">
+        <view class="relation-group" wx:if="{{detail.prerequisites.length}}">
+          <view class="relation-group-head">
+            <view class="relation-group-title">
+              <view class="relation-group-mark relation-group-mark-prerequisite"></view>
+              <text class="relation-label">前置知识</text>
+            </view>
+            <text class="relation-group-count">{{detail.prerequisites.length}} 个</text>
+          </view>
+          <view class="relation-list">
+            <view
+              wx:for="{{detail.prerequisites}}"
+              wx:key="knowledge_point_id"
+              class="relation-chip relation-chip-prerequisite {{relationSwitchingId == item.knowledge_point_id ? 'relation-chip-loading' : ''}}"
+              data-id="{{item.knowledge_point_id}}"
+              bindtouchstart="prefetchRelation"
+              bindtap="openRelation"
+              hover-class="relation-chip-pressed"
+              hover-stay-time="80"
+              aria-role="button"
+              aria-label="打开前置知识{{item.name}}"
+            >
+              <view class="relation-chip-icon-wrap">
+                <image class="relation-chip-icon" src="/assets/icons/knowledge-subject/tree.png" mode="aspectFit" aria-hidden="true" />
+              </view>
+              <text class="relation-chip-name">{{item.name}}</text>
+              <view wx:if="{{relationSwitchingId == item.knowledge_point_id}}" class="chip-spinner" aria-hidden="true"></view>
+              <text wx:else class="chip-arrow" aria-hidden="true">›</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="relation-group relation-group-divided" wx:if="{{detail.next_nodes.length}}">
+          <view class="relation-group-head">
+            <view class="relation-group-title">
+              <view class="relation-group-mark relation-group-mark-next"></view>
+              <text class="relation-label">后续知识</text>
+            </view>
+            <text class="relation-group-count">{{detail.next_nodes.length}} 个</text>
+          </view>
+          <view class="relation-list">
+            <view
+              wx:for="{{detail.next_nodes}}"
+              wx:key="knowledge_point_id"
+              class="relation-chip relation-chip-next {{relationSwitchingId == item.knowledge_point_id ? 'relation-chip-loading' : ''}}"
+              data-id="{{item.knowledge_point_id}}"
+              bindtouchstart="prefetchRelation"
+              bindtap="openRelation"
+              hover-class="relation-chip-pressed"
+              hover-stay-time="80"
+              aria-role="button"
+              aria-label="打开后续知识{{item.name}}"
+            >
+              <view class="relation-chip-icon-wrap">
+                <image class="relation-chip-icon" src="/assets/icons/knowledge-subject/nodes.png" mode="aspectFit" aria-hidden="true" />
+              </view>
+              <text class="relation-chip-name">{{item.name}}</text>
+              <view wx:if="{{relationSwitchingId == item.knowledge_point_id}}" class="chip-spinner" aria-hidden="true"></view>
+              <text wx:else class="chip-arrow" aria-hidden="true">›</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="relation-group relation-group-divided" wx:if="{{detail.related_nodes.length}}">
+          <view class="relation-group-head">
+            <view class="relation-group-title">
+              <view class="relation-group-mark relation-group-mark-related"></view>
+              <text class="relation-label">相关知识</text>
+            </view>
+            <text class="relation-group-count">{{detail.related_nodes.length}} 个</text>
+          </view>
+          <view class="relation-list">
+            <view
+              wx:for="{{detail.related_nodes}}"
+              wx:key="knowledge_point_id"
+              class="relation-chip relation-chip-related {{relationSwitchingId == item.knowledge_point_id ? 'relation-chip-loading' : ''}}"
+              data-id="{{item.knowledge_point_id}}"
+              bindtouchstart="prefetchRelation"
+              bindtap="openRelation"
+              hover-class="relation-chip-pressed"
+              hover-stay-time="80"
+              aria-role="button"
+              aria-label="打开相关知识{{item.name}}"
+            >
+              <view class="relation-chip-icon-wrap">
+                <image class="relation-chip-icon" src="/assets/icons/knowledge-subject/relation.png" mode="aspectFit" aria-hidden="true" />
+              </view>
+              <text class="relation-chip-name">{{item.name}}</text>
+              <view wx:if="{{relationSwitchingId == item.knowledge_point_id}}" class="chip-spinner" aria-hidden="true"></view>
+              <text wx:else class="chip-arrow" aria-hidden="true">›</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="relation-empty" wx:else>
+        <view class="relation-empty-mark"></view>
+        <text>当前知识点暂无直接关联，可从知识图谱继续探索。</text>
+      </view>
     </view>
 
-    <view class="practice-card">
-      <view><text class="practice-title">专项强化</text><text class="practice-desc">直接复用现有刷题 runner，按当前知识点定向训练</text></view>
-      <button class="practice-btn" disabled="{{!detail.practice_route_params.subject_id}}" bindtap="startPractice">{{detail.trainable_question_count > 0 ? '开始练习' : '暂无题目'}}</button>
+    <view
+      class="practice-entry {{practiceDisabled ? 'practice-entry-disabled' : ''}} {{practiceLaunching ? 'practice-entry-launching' : ''}}"
+      bindtap="startPractice"
+      hover-class="{{practiceDisabled || practiceLaunching ? 'none' : 'practice-entry-pressed'}}"
+      hover-stay-time="80"
+      aria-role="button"
+      aria-disabled="{{practiceDisabled || practiceLaunching}}"
+    >
+      <view class="practice-target" aria-hidden="true">
+        <image class="practice-target-icon" src="/assets/icons/knowledge-detail/practice-target.svg" mode="aspectFit" />
+      </view>
+      <view class="practice-copy">
+        <text class="practice-title">专项强化</text>
+        <text class="practice-desc">{{practiceDisabled ? '当前知识点暂无可练题目' : (practiceLaunching ? '正在准备专项题组…' : '聚焦高频考点，提升解题能力')}}</text>
+      </view>
+      <view class="practice-arrow" aria-hidden="true">
+        <view wx:if="{{practiceLaunching}}" class="practice-launch-spinner"></view>
+        <image wx:else class="practice-arrow-icon" src="/assets/icons/knowledge-detail/practice-arrow.svg" mode="aspectFit" />
+      </view>
     </view>
-  </block>
+
+    <view class="page-wave" aria-hidden="true">
+      <view class="wave-one"></view>
+      <view class="wave-two"></view>
+    </view>
+  </view>
 </view>

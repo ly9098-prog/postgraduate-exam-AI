@@ -1,6 +1,7 @@
 {
   "navigationBarTitleText": "知识点详情",
-  "navigationBarBackgroundColor": "#F5F8FF",
+  "navigationBarBackgroundColor": "#FBFDF9",
   "navigationBarTextStyle": "black",
-  "backgroundColor": "#F5F8FF"
+  "backgroundColor": "#F6FAF3",
+  "backgroundTextStyle": "dark"
 }

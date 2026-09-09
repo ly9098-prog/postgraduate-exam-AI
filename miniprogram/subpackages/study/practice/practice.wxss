@@ -1489,6 +1489,15 @@ page {
   min-height: 60vh;
 }
 
+.loading-wrap.launch-loading {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 0 0 8vh;
+  background: radial-gradient(circle at 78% 18%, rgba(183, 216, 169, .18), transparent 34%), #F3F4F1;
+  /* 微信已经执行页面 push 过渡；这里不再叠加整屏 opacity 动画，
+     避免双重淡入在 WebView 首帧表现为亮度闪烁。 */
+}
+
 @media (prefers-reduced-motion: reduce) {
   .page { opacity: 1 !important; }
   .hero-orbit,
@@ -1620,4 +1629,8 @@ page {
   width: 100%;
   height: 100%;
   min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-wrap.launch-loading { animation: none; }
 }

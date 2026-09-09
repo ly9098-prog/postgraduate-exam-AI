@@ -5,6 +5,7 @@ const api = require('../../../utils/api');
 const { getChinaDate } = require('../../../utils/china-time');
 const errorDiagnosis = require('../../../utils/error-diagnosis');
 const aiTeacher408 = require('../../../utils/ai-teacher-408');
+const { safeDecodeURIComponent } = require('../../../utils/route-params');
 
 const ERROR_COLORS = ['#B8FF13', '#78D74D', '#43B968', '#238E58', '#86A83E', '#C9DC73'];
 const RESULT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -24,6 +25,14 @@ const DEFAULT_GROWTH = {
   daily_boost: '',
   badges: []
 };
+
+
+function normalizePracticeReturnRoute(value) {
+  const route = safeDecodeURIComponent(value, '').trim().slice(0, 512);
+  if (!route) return '';
+  if (!/^\/subpackages\/study\/knowledge-(?:detail|subject)\/index(?:\?.*)?$/.test(route)) return '';
+  return route;
+}
 
 function clamp(value, min, max) {
   const n = Number(value);
@@ -676,6 +685,9 @@ Page({
 
   onLoad(options) {
     this._pageAlive = true;
+    this._returnTo = normalizePracticeReturnRoute((options || {}).return_to);
+    this._launchSource = String((options || {}).source || '').trim().slice(0, 32);
+    this._launchSubjectId = Number((options || {}).subject_id) || 0;
     this._navigationLocked = false;
     this._sessionPayload = null;
     this._dashboardLoadId = 0;
@@ -1803,14 +1815,81 @@ Page({
 
 
   handleBack() {
-    const pages = getCurrentPages ? getCurrentPages() : [];
-    if (pages.length > 1) {
-      wx.navigateBack({ delta: 1 });
-    } else {
-      wx.reLaunch({ url: '/pages/home/home' });
-    }
-  },
+    if (this._navigationLocked) return;
+    this._navigationLocked = true;
 
+    const originalReturnTo = this._returnTo || '';
+    const fromKnowledgeDetail = this._launchSource === 'knowledge_map' &&
+      /^\/subpackages\/study\/knowledge-detail\/index(?:\?.*)?$/.test(originalReturnTo);
+
+    // 从知识详情页完成专项强化后，结果页的一次“返回”直接回知识图谱。
+    // 取消练习仍由 practice 页回到详情；只有“完成 -> 结果页”采用这条快捷回退。
+    const preferredReturnTo = fromKnowledgeDetail && this._launchSubjectId
+      ? `/subpackages/study/knowledge-subject/index?subject_id=${this._launchSubjectId}&restore_state=1`
+      : originalReturnTo;
+    const targetPath = String(preferredReturnTo || '').split('?')[0].replace(/^\//, '');
+
+    const fallback = () => {
+      this._navigationLocked = false;
+      if (preferredReturnTo) {
+        wx.redirectTo({
+          url: preferredReturnTo,
+          fail: () => wx.reLaunch({ url: '/pages/home/home' })
+        });
+        return;
+      }
+      wx.reLaunch({ url: '/pages/home/home' });
+    };
+
+    const findTargetIndex = (pages) => {
+      if (!targetPath || !Array.isArray(pages) || pages.length < 2) return -1;
+      for (let i = pages.length - 2; i >= 0; i -= 1) {
+        const page = pages[i] || {};
+        const route = String(page.route || '').replace(/^\//, '');
+        if (route !== targetPath) continue;
+        if (targetPath === 'subpackages/study/knowledge-subject/index' && this._launchSubjectId) {
+          const pageSubjectId = Number(page.subjectId || (page.options && page.options.subject_id)) || 0;
+          if (pageSubjectId && pageSubjectId !== this._launchSubjectId) continue;
+        }
+        return i;
+      }
+      return -1;
+    };
+
+    const navigateExisting = (attempt = 0) => {
+      const pages = getCurrentPages ? getCurrentPages() : [];
+      const targetIndex = findTargetIndex(pages);
+
+      if (targetIndex < 0) {
+        if (pages.length > 1 && !preferredReturnTo) {
+          wx.navigateBack({
+            delta: 1,
+            fail: fallback
+          });
+          return;
+        }
+        fallback();
+        return;
+      }
+
+      const delta = Math.max(1, pages.length - 1 - targetIndex);
+      wx.navigateBack({
+        delta,
+        fail: () => {
+          // 原目标仍在页面栈时不要 redirectTo 同一路由，否则会把失败的回退
+          // 变成新的重复页面。短延时重试，仍失败则留在结果页让用户再次操作。
+          if (attempt < 2) {
+            setTimeout(() => navigateExisting(attempt + 1), attempt === 0 ? 48 : 120);
+            return;
+          }
+          this._navigationLocked = false;
+          if (this._pageAlive) wx.showToast({ title: '返回失败，请再试一次', icon: 'none' });
+        }
+      });
+    };
+
+    navigateExisting(0);
+  },
 
 
 });

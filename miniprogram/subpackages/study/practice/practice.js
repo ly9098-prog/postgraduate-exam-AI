@@ -13,6 +13,13 @@ const PRACTICE_PENDING_SUBMISSION_TTL_MS = 24 * 60 * 60 * 1000
 const SUBJECT_DOUBLE_TAP_INTERVAL = 320
 const PRACTICE_ANSWERABLE_TYPES = new Set(['single_choice', 'multiple_choice', 'true_false', 'multi_blank_choice'])
 
+function _normalizePracticeReturnRoute(value) {
+  const route = safeDecodeURIComponent(value, '').trim().slice(0, 512)
+  if (!route) return ''
+  if (!/^\/subpackages\/study\/knowledge-(?:detail|subject)\/index(?:\?.*)?$/.test(route)) return ''
+  return route
+}
+
 let _practicePerformanceClock = null
 function _monotonicNow() {
   try {
@@ -237,6 +244,8 @@ Page({
     navBarHeight: 44,
     started: false,
     loading: false,
+    launchingPreset: false,
+    entryResolved: false,
     submitting: false,
 
     // 系统返回手势/Android Back 的“假页”守卫。page-container 会先消费
@@ -286,12 +295,27 @@ Page({
     this._systemBackPromptQueued = false
     this._systemBackRearming = false
     this._systemBackRearmTimer = null
+    this._returnNavigationLocked = false
     this._launchPreset = this._parseLaunchPreset(options || {})
+    this._fastLaunchEligible = Boolean(
+      this._launchPreset &&
+      this._launchPreset.source === 'knowledge_map' &&
+      this._launchPreset.autostart &&
+      this._launchPreset.subjectId &&
+      this._launchPreset.knowledgePointId
+    )
+    // 首次模板渲染只保留稳定背景壳；路由解析后再决定设置页/专项加载态，
+    // 避免 setup 页先挂载一帧再被 autostart loading 替换。
+    this.setData({
+      entryResolved: true,
+      launchingPreset: Boolean(this._fastLaunchEligible),
+    })
     this._launchKnowledgePoint = ''
     this._launchKnowledgePointId = null
     this._launchQuestionIds = ''
     this._launchAllowRepeat = false
     this._launchSource = ''
+    this._launchReturnTo = ''
     this._resetSession()
     this._pendingResultUrl = ''
     this._submittedResultPayload = null
@@ -580,27 +604,63 @@ Page({
     if (config.DEV) console.log('[LAYER6_ONREADY]', Date.now())
     this.setData({ enableMathImage: config.enableMathImage || false })
     const recoveryHandled = await this._offerPendingSubmissionRecovery()
-    if (!recoveryHandled && this._pageAlive) this.loadPracticeSubjects()
+    if (recoveryHandled || !this._pageAlive) {
+      if (this.data.launchingPreset) this.setData({ launchingPreset: false })
+      return
+    }
+
+    // 知识图谱的专项入口已经携带完整的 subject / knowledge point 参数。
+    // 首屏直接进入拉题，科目树改为后台并行补齐，避免“先请求科目树 -> 再请求题目”的串行等待。
+    if (this._fastLaunchEligible) {
+      const applied = await this._applyFastLaunchPreset()
+      if (applied && this._pageAlive) {
+        // 首题请求优先占用网络；科目树只在题组已经进入可用态后后台补齐。
+        await this.startPractice()
+        if (this._pageAlive) {
+          this.loadPracticeSubjects({ skipAutostart: true, preserveSelection: true, silent: true }).catch(() => {})
+        }
+        return
+      }
+    }
+
+    if (this.data.launchingPreset) this.setData({ launchingPreset: false })
+    this.loadPracticeSubjects()
   },
 
   /* ==================== 设置阶段 ==================== */
 
-  async loadPracticeSubjects() {
+  async loadPracticeSubjects(options = {}) {
     const requestSeq = ++this._subjectsRequestSeq
     try {
       const res = await api.get('/practice/subjects')
       if (!this._pageAlive || requestSeq !== this._subjectsRequestSeq) return
       const subjectTree = this.normalizeSubjectTree(filter408SubjectTree(res || []))
       this.setData({ subjectTree })
-      this.initDefaultSubject(subjectTree)
-      const presetApplied = await this._applyLaunchPreset(subjectTree)
-      if (presetApplied && this._launchPreset && this._launchPreset.autostart && this._pageAlive) {
-        await this.startPractice()
+
+      if (options.preserveSelection && this.data.selectedSubjectId) {
+        const available = this._flattenSelectableSubjects(subjectTree || [])
+        const target = available.find(item => Number(item.subject_id) === Number(this.data.selectedSubjectId))
+        if (target) {
+          this.setData({
+            selectedSubjectName: this.data.selectedSubjectName || target.display_name,
+            selectedSubjectHasChildren: Boolean(target.has_children),
+            expandedSubjectId: target.parent_subject_id || target.subject_id,
+          })
+        }
+      } else {
+        this.initDefaultSubject(subjectTree)
+      }
+
+      if (!options.skipAutostart) {
+        const presetApplied = await this._applyLaunchPreset(subjectTree)
+        if (presetApplied && this._launchPreset && this._launchPreset.autostart && this._pageAlive) {
+          await this.startPractice()
+        }
       }
     } catch (e) {
       if (!this._pageAlive || requestSeq !== this._subjectsRequestSeq) return
       console.error('加载科目树失败', e)
-      wx.showToast({ title: '加载科目失败', icon: 'none' })
+      if (!options.silent) wx.showToast({ title: '加载科目失败', icon: 'none' })
     }
   },
 
@@ -632,7 +692,48 @@ Page({
       allowRepeat: String((options && options.allow_repeat) || '') === '1',
       autostart: String((options && options.autostart) || '') === '1',
       source: String((options && options.source) || '').trim().slice(0, 32),
+      subjectName: safeDecodeURIComponent(options && options.subject_name, '').trim().slice(0, 80),
+      includeChildren: String((options && options.include_children) || '') === '1',
+      returnTo: _normalizePracticeReturnRoute(options && options.return_to),
     }
+  },
+
+  async _applyFastLaunchPreset() {
+    const preset = this._launchPreset
+    if (!preset || !preset.subjectId || !preset.autostart) return false
+
+    const mode = preset.questionIds ? 'random' : (preset.mode || 'random')
+    const count = preset.questionIds
+      ? preset.questionIds.split(',').length
+      : (preset.count || this.data.count || 5)
+
+    this._launchKnowledgePoint = preset.questionIds ? '' : preset.knowledgePoint
+    this._launchKnowledgePointId = preset.questionIds ? null : preset.knowledgePointId
+    this._launchQuestionIds = preset.questionIds
+    this._launchAllowRepeat = Boolean(preset.allowRepeat || preset.questionIds)
+    this._launchSource = preset.source
+    this._launchReturnTo = preset.returnTo || ''
+
+    // knowledge-point deep link 可以安全允许下级科目：最终仍由 knowledge_point_id 精确约束。
+    // 这样无需等待科目树即可发起首个题组请求；科目树稍后只用于补齐名称/范围校验。
+    const includeChildren = Boolean(preset.includeChildren || preset.knowledgePointId)
+    const subjectName = preset.subjectName || this.data.selectedSubjectName || '专项练习'
+
+    await new Promise(resolve => {
+      this.setData({
+        selectedSubjectId: Number(preset.subjectId),
+        selectedSubjectName: subjectName,
+        selectedSubjectHasChildren: includeChildren,
+        expandedSubjectId: Number(preset.subjectId),
+        selectedMode: mode,
+        count,
+      }, () => {
+        this._updateComputedFields()
+        resolve()
+      })
+    })
+    this._queueRememberSubject(Number(preset.subjectId), subjectName)
+    return true
   },
 
   async _applyLaunchPreset(subjectTree) {
@@ -662,6 +763,7 @@ Page({
     this._launchQuestionIds = preset.questionIds
     this._launchAllowRepeat = Boolean(preset.allowRepeat || preset.questionIds)
     this._launchSource = preset.source
+    this._launchReturnTo = preset.returnTo || ''
 
     await new Promise((resolve) => {
       this.setData({
@@ -1095,13 +1197,147 @@ Page({
     this._handleSubjectOptionTap(subjectId, 'recent')
   },
 
-  goBack() {
-    const pages = getCurrentPages()
-    if (pages && pages.length > 1) {
-      wx.navigateBack({ delta: 1 })
+  _findLaunchReturnStackIndex(pages, returnTo) {
+    if (!Array.isArray(pages) || pages.length < 2 || !returnTo) return -1
+    const targetPath = String(returnTo).split('?')[0].replace(/^\//, '')
+    if (!targetPath) return -1
+
+    let expectedSubjectId = 0
+    let expectedPointId = 0
+    const query = String(returnTo).split('?')[1] || ''
+    query.split('&').forEach((part) => {
+      const pair = String(part || '').split('=')
+      const key = pair[0]
+      const value = Number(safeDecodeURIComponent(pair.slice(1).join('='), ''))
+      if (key === 'subject_id' && Number.isInteger(value) && value > 0) expectedSubjectId = value
+      if (key === 'knowledge_point_id' && Number.isInteger(value) && value > 0) expectedPointId = value
+    })
+
+    const matchesIdentity = (page) => {
+      if (!page) return false
+      const route = String(page.route || '').replace(/^\//, '')
+      if (route !== targetPath) return false
+
+      if (targetPath === 'subpackages/study/knowledge-subject/index' && expectedSubjectId) {
+        const pageSubjectId = Number(page.subjectId || (page.options && page.options.subject_id)) || 0
+        return !pageSubjectId || pageSubjectId === expectedSubjectId
+      }
+
+      if (targetPath === 'subpackages/study/knowledge-detail/index' && expectedPointId) {
+        // knowledge-detail 会在同一 Page 实例内切换关联知识点，page.options 可能仍是
+        // 最初的 id，因此实例上的 knowledgePointId 优先级更高。
+        const currentPointId = Number(page.knowledgePointId || (page.options && page.options.knowledge_point_id)) || 0
+        return !currentPointId || currentPointId === expectedPointId
+      }
+
+      return true
+    }
+
+    let nearest = -1
+    for (let i = pages.length - 2; i >= 0; i -= 1) {
+      if (matchesIdentity(pages[i])) {
+        nearest = i
+        break
+      }
+    }
+    if (nearest < 0) return -1
+
+    // 只折叠紧邻的同身份重复页。它们通常来自历史版本 redirectTo 兜底或快速连点，
+    // 正常业务不会从详情页再次 navigateTo 同一详情页。这样返回练习时可顺手修复
+    // 已存在的 [subject, detail, detail, practice] 页面栈。
+    let targetIndex = nearest
+    for (let i = nearest - 1; i >= 0; i -= 1) {
+      if (!matchesIdentity(pages[i])) break
+      targetIndex = i
+    }
+    return targetIndex
+  },
+
+  _navigateBackToLaunchTarget(returnTo, attempt = 0) {
+    if (!this._pageAlive) return
+    const pages = getCurrentPages ? getCurrentPages() : []
+    const targetIndex = this._findLaunchReturnStackIndex(pages, returnTo)
+
+    if (targetIndex < 0) {
+      this._returnNavigationLocked = false
+      // 仅当原入口确实已经不在页面栈（如冷启动恢复）时才重建 return_to。
+      // 入口仍在栈内时绝不 redirectTo 同一路由，避免制造重复详情页。
+      if (returnTo) {
+        wx.redirectTo({
+          url: returnTo,
+          fail: () => wx.reLaunch({ url: '/pages/home/home' }),
+        })
+        return
+      }
+      if (pages.length > 1) {
+        wx.navigateBack({
+          delta: 1,
+          fail: () => wx.reLaunch({ url: '/pages/home/home' }),
+        })
+        return
+      }
+      wx.reLaunch({ url: '/pages/home/home' })
       return
     }
-    wx.reLaunch({ url: '/pages/home/home' })
+
+    const delta = Math.max(1, pages.length - 1 - targetIndex)
+    const retryDelays = [44, 96, 180]
+    let retryQueued = false
+    const retry = () => {
+      if (retryQueued || !this._pageAlive) return
+      retryQueued = true
+      if (attempt >= retryDelays.length) {
+        this._returnNavigationLocked = false
+        wx.showToast({ title: '返回失败，请再试一次', icon: 'none' })
+        return
+      }
+      setTimeout(() => {
+        if (!this._pageAlive) return
+        this._returnNavigationLocked = true
+        this._navigateBackToLaunchTarget(returnTo, attempt + 1)
+      }, retryDelays[attempt])
+    }
+
+    wx.navigateBack({
+      delta,
+      success: () => {
+        // 极少数真机上透明 page-container 会消费第一次 navigateBack，但仍回调
+        // success。真正离开本页会触发 onUnload；若 64ms 后练习页仍是栈顶，则
+        // 继续回退到同一个已有页面，而不是 redirectTo 新建一层详情页。
+        setTimeout(() => {
+          if (!this._pageAlive) return
+          const currentPages = getCurrentPages ? getCurrentPages() : []
+          const current = currentPages[currentPages.length - 1] || {}
+          const currentRoute = String(current.route || '').replace(/^\//, '')
+          if (currentRoute === 'subpackages/study/practice/practice') retry()
+        }, 64)
+      },
+      fail: retry,
+    })
+  },
+
+  _returnToLaunchOrigin() {
+    if (this._returnNavigationLocked) return
+    this._returnNavigationLocked = true
+    const returnTo = this._launchReturnTo || (this._launchPreset && this._launchPreset.returnTo) || ''
+
+    // 明确退出后先让透明 page-container 完成一次真实卸载，再开始页面回退。
+    // 单纯 nextTick 在部分 Android WebView 上仍可能与组件离场落在同一帧。
+    const navigate = () => {
+      const run = () => setTimeout(() => this._navigateBackToLaunchTarget(returnTo, 0), 20)
+      if (typeof wx.nextTick === 'function') wx.nextTick(run)
+      else run()
+    }
+
+    if (this.data.practiceExitGuardVisible) {
+      this.setData({ practiceExitGuardVisible: false }, navigate)
+    } else {
+      navigate()
+    }
+  },
+
+  goBack() {
+    this._returnToLaunchOrigin()
   },
 
   /**
@@ -1172,6 +1408,9 @@ Page({
     this._practiceSession.traceId = traceId
     this.setData({
       traceId,
+      // fast launch 保留 launchingPreset=true，直到首题 ready 后与 loading=false 同批收口；
+      // started/loading 同批提交，避免 quiz-runner 短暂挂载空首题造成真机闪屏。
+      loading: true,
       renderCount: 0,
       started: true,
       currentIndex: 0,
@@ -1315,13 +1554,15 @@ Page({
 
   async _loadQuestions() {
     const loadSeq = ++this._questionsRequestSeq
-    this.setData({ loading: true })
+    // startPractice 已原子打开 loading；这里只兼容其它内部调用路径。
+    if (!this.data.loading) this.setData({ loading: true })
     try {
       const subjectId = this.data.selectedSubjectId
       if (!subjectId) {
         this._clearTimer()
         this._setPracticeUnloadGuard(false)
         this.setData({
+          launchingPreset: false,
           loading: false,
           started: false,
           questions: [],
@@ -1398,6 +1639,7 @@ Page({
         this._clearTimer()
         this._setPracticeUnloadGuard(false)
         this.setData({
+          launchingPreset: false,
           loading: false,
           started: false,
           questions: [],
@@ -1426,6 +1668,7 @@ Page({
         this._clearTimer()
         this._setPracticeUnloadGuard(false)
         this.setData({
+          launchingPreset: false,
           loading: false,
           started: false,
           questions: [],
@@ -1462,6 +1705,7 @@ Page({
         this._clearTimer()
         this._setPracticeUnloadGuard(false)
         this.setData({
+          launchingPreset: false,
           loading: false,
           started: false,
           questions: [],
@@ -1493,6 +1737,7 @@ Page({
         this._clearTimer()
         this._setPracticeUnloadGuard(false)
         this.setData({
+          launchingPreset: false,
           loading: false,
           started: false,
           questions: [],
@@ -1578,6 +1823,7 @@ Page({
           this._clearTimer()
           this._setPracticeUnloadGuard(false)
           this.setData({
+            launchingPreset: false,
             loading: false,
             started: false,
             questions: [],
@@ -1596,6 +1842,7 @@ Page({
         currentIndex: firstIndex,
         currentQuestion: firstQuestion,
         currentAnswerState: viewModelResult ? viewModelResult.answerState : null,
+        launchingPreset: false,
         loading: false,
       })
       if (questions.length > 0 && firstQuestion) {
@@ -1617,7 +1864,7 @@ Page({
         const name = this.data.selectedSubjectName || String(subjectId)
         this._clearTimer()
         this._setPracticeUnloadGuard(false)
-        this.setData({ started: false, loading: false, questions: [], totalQuestions: 0, currentQuestion: null, currentAnswerState: null })
+        this.setData({ started: false, launchingPreset: false, loading: false, questions: [], totalQuestions: 0, currentQuestion: null, currentAnswerState: null })
         await this._showSubmitConfirm({
           scenario: 'info',
           eyebrow: 'NO QUESTIONS',
@@ -1633,6 +1880,7 @@ Page({
       this._clearTimer()
       this._setPracticeUnloadGuard(false)
       this.setData({
+        launchingPreset: false,
         loading: false,
         started: false,
         questions: [],
@@ -1923,18 +2171,8 @@ Page({
     }
     this._resetSession()
     this._pendingResultUrl = ''
-    // Leaving an active answering session should leave the practice page, not
-    // fall back to its setup shell.  This naturally returns Home when Home was
-    // the caller while still respecting other legitimate entry points.
-    const pages = getCurrentPages()
-    if (pages && pages.length > 1) {
-      wx.navigateBack({
-        delta: 1,
-        fail: () => wx.reLaunch({ url: '/pages/home/home' }),
-      })
-      return
-    }
-    wx.reLaunch({ url: '/pages/home/home' })
+    // 返回进入练习前的页面。知识图谱入口同时携带 return_to，页面栈异常时也能精确恢复。
+    this._returnToLaunchOrigin()
   },
 
   _isSubmissionLocked() {
@@ -2616,6 +2854,8 @@ Page({
       `&_ck=${cacheKey}`,
       `&_rid=${encodeURIComponent(submission.requestId || '')}`,
       `&_recover=${resultCacheStored ? '0' : '1'}`,
+      `&source=${encodeURIComponent(this._launchSource || '')}`,
+      `&return_to=${encodeURIComponent(this._launchReturnTo || '')}`,
     ].join('')
 
     submission.keepPendingUntilResult = !resultCacheStored
