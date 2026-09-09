@@ -30,6 +30,13 @@ class PracticeSession(Base):
     __table_args__ = (
         Index("ix_practice_sessions_user_started", "user_id", "started_at"),
         Index("ix_practice_sessions_user_finished", "user_id", "finished_at"),
+        Index(
+            "ix_practice_sessions_user_scope_finished",
+            "user_id",
+            "scope_type",
+            "scope_root_knowledge_point_id",
+            "finished_at",
+        ),
         # 幂等：同一用户同一 request_id 只允许一条 session。
         Index(
             "ux_practice_sessions_user_request",
@@ -64,6 +71,15 @@ class PracticeSession(Base):
     # future answer-history cleanup remain recoverable.
     submission_payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     submission_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Durable semantic scope of the issued batch. ``mode`` below still describes
+    # the selection algorithm (random/smart/etc.); scope_type describes user intent
+    # such as a single knowledge point or an entire knowledge chapter.  The root id
+    # intentionally has no FK: historical sessions remain auditable even if a
+    # knowledge-point row is retired or physically removed in a future migration.
+    scope_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    scope_root_knowledge_point_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    scope_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     mode: Mapped[str] = mapped_column(String(16), nullable=False, default="random")
 

@@ -312,6 +312,7 @@ Page({
     })
     this._launchKnowledgePoint = ''
     this._launchKnowledgePointId = null
+    this._launchIncludeDescendants = false
     this._launchQuestionIds = ''
     this._launchAllowRepeat = false
     this._launchSource = ''
@@ -369,6 +370,7 @@ Page({
       recommendationRequestId: '',
       batchToken: '',
       batchMode: '',
+      knowledgeScope: null,
       submissionSnapshot: null,
       backgroundMs: 0,
       _backgroundStartedMonoMs: null,
@@ -694,6 +696,7 @@ Page({
       source: String((options && options.source) || '').trim().slice(0, 32),
       subjectName: safeDecodeURIComponent(options && options.subject_name, '').trim().slice(0, 80),
       includeChildren: String((options && options.include_children) || '') === '1',
+      includeDescendants: String((options && options.include_descendants) || '') === '1',
       returnTo: _normalizePracticeReturnRoute(options && options.return_to),
     }
   },
@@ -709,13 +712,14 @@ Page({
 
     this._launchKnowledgePoint = preset.questionIds ? '' : preset.knowledgePoint
     this._launchKnowledgePointId = preset.questionIds ? null : preset.knowledgePointId
+    this._launchIncludeDescendants = Boolean(!preset.questionIds && preset.includeDescendants && preset.knowledgePointId)
     this._launchQuestionIds = preset.questionIds
     this._launchAllowRepeat = Boolean(preset.allowRepeat || preset.questionIds)
     this._launchSource = preset.source
     this._launchReturnTo = preset.returnTo || ''
 
-    // knowledge-point deep link 可以安全允许下级科目：最终仍由 knowledge_point_id 精确约束。
-    // 这样无需等待科目树即可发起首个题组请求；科目树稍后只用于补齐名称/范围校验。
+    // knowledge-point deep link 可以安全允许下级科目：最终仍由 knowledge_point_id
+    // （以及可选 include_descendants）限定知识范围。这样无需等待科目树即可发起首个题组请求。
     const includeChildren = Boolean(preset.includeChildren || preset.knowledgePointId)
     const subjectName = preset.subjectName || this.data.selectedSubjectName || '专项练习'
 
@@ -760,6 +764,7 @@ Page({
 
     this._launchKnowledgePoint = preset.questionIds ? '' : preset.knowledgePoint
     this._launchKnowledgePointId = preset.questionIds ? null : preset.knowledgePointId
+    this._launchIncludeDescendants = Boolean(!preset.questionIds && preset.includeDescendants && preset.knowledgePointId)
     this._launchQuestionIds = preset.questionIds
     this._launchAllowRepeat = Boolean(preset.allowRepeat || preset.questionIds)
     this._launchSource = preset.source
@@ -1599,12 +1604,49 @@ Page({
         if (!this._launchAllowRepeat) params.no_repeat_days = 30
         params.use_leitner = true
       }
-      if (this._launchKnowledgePointId) params.knowledge_point_id = this._launchKnowledgePointId
-      else if (this._launchKnowledgePoint) params.knowledge_point = this._launchKnowledgePoint
+      if (this._launchKnowledgePointId) {
+        params.knowledge_point_id = this._launchKnowledgePointId
+        if (this._launchIncludeDescendants) params.include_descendants = true
+      } else if (this._launchKnowledgePoint) {
+        params.knowledge_point = this._launchKnowledgePoint
+      }
       // smart 策略由后端统一解析（默认 scored，并可被实验配置覆盖）。
       // 小程序不强制具体策略，避免绕过后端实验与降级链路。
       const res = await api.get('/practice/questions', params)
       if (!this._pageAlive || loadSeq !== this._questionsRequestSeq) return
+
+      if (this._launchIncludeDescendants) {
+        const scope = res && res.knowledge_scope
+        const rootId = Number(scope && scope.root_knowledge_point_id)
+        const scopeSize = Number(scope && scope.knowledge_point_count)
+        if (!scope || rootId !== Number(this._launchKnowledgePointId) ||
+          scope.include_descendants !== true || !Number.isInteger(scopeSize) || scopeSize < 1) {
+          console.error('[PRACTICE_KNOWLEDGE_SCOPE_MISMATCH]', {
+            requestedRootId: this._launchKnowledgePointId,
+            requestedIncludeDescendants: true,
+            receivedScope: scope || null,
+            traceId: res && (res.trace_id || this._practiceSession.traceId),
+          })
+          this._clearTimer()
+          this._setPracticeUnloadGuard(false)
+          this.setData({
+            launchingPreset: false,
+            loading: false,
+            started: false,
+            questions: [],
+            totalQuestions: 0,
+            currentQuestion: null,
+            currentAnswerState: null,
+            errorText: '章节专项范围校验失败，请更新后端服务后重试。',
+          })
+          wx.showToast({ title: '章节专项暂不可用', icon: 'none' })
+          return
+        }
+      }
+
+      this._practiceSession.knowledgeScope = res && res.knowledge_scope
+        ? Object.assign({}, res.knowledge_scope)
+        : null
 
       // 服务端 batch 最终按不可变 QuestionVersion 下发。历史修复或并发编辑若造成
       // Question.subject_id 与 current revision.subject_id 短暂不一致，旧版本服务端可能
@@ -2662,6 +2704,9 @@ Page({
         answeredFlags: Object.assign({}, answeredFlags),
         recoveryQuestions,
         batchToken: this._practiceSession.batchToken || '',
+        knowledgeScope: this._practiceSession.knowledgeScope
+          ? Object.assign({}, this._practiceSession.knowledgeScope)
+          : null,
         retryBlocked: false,
         serverAccepted: false,
         pendingPersisted: false,
@@ -2828,6 +2873,8 @@ Page({
       results: storedResults,
       questions: lightQuestions,
       comboCount,
+      knowledge_session: submitResult.knowledge_session || submission.knowledgeScope || null,
+      request_id: submission.requestId || '',
       _cacheKey: cacheKey,
       _userId: userId,
       _createdAt: cacheCreatedAt,

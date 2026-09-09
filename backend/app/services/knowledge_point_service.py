@@ -1,7 +1,5 @@
 """知识点服务 — 规范化管理知识点 + 题目映射（关联表为唯一事实源）。"""
 import logging
-import re
-import unicodedata
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -13,93 +11,40 @@ from app.models.question import Question
 from app.models.question_knowledge_point import QuestionKnowledgePoint
 from app.models.tag import Tag
 
+from app.services.knowledge_point_resolution import (
+    build_resolution_indexes as _build_resolution_indexes,
+    normalize_knowledge_name,
+    normalize_kp_input,
+    resolve_from_indexes as _resolve_from_indexes,
+)
+
+
 logger = logging.getLogger(__name__)
 
-# ── 全角→半角映射 ──────────────────────────────────────────────
 
-_FULLWIDTH_MAP = {
-    "（": "(", "）": ")", "【": "[", "】": "]",
-    "｛": "{", "｝": "}", "，": ",", "。": ".",
-    "；": ";", "：": ":", "！": "!", "？": "?",
-    "＋": "+", "－": "-", "＊": "*", "／": "/",
-    "＝": "=", "＜": "<", "＞": ">",
-    "０": "0", "１": "1", "２": "2", "３": "3", "４": "4",
-    "５": "5", "６": "6", "７": "7", "８": "8", "９": "9",
-}
+async def _load_subject_knowledge_points(
+    db: AsyncSession, subject_id: int
+) -> list[KnowledgePoint]:
+    result = await db.execute(
+        select(KnowledgePoint).where(KnowledgePoint.subject_id == subject_id)
+    )
+    return list(result.scalars().all())
 
 
-def normalize_knowledge_name(name: str) -> str:
-    """规范化知识点名称：去空格、合并多空格、英文小写、全角→半角。"""
-    if not name:
-        return ""
-    # 全角→半角（ASCII 部分）
-    s = "".join(_FULLWIDTH_MAP.get(ch, ch) for ch in name)
-    # Unicode NFKC 归一化（全角字母 → 半角）
-    s = unicodedata.normalize("NFKC", s)
-    # 去首尾空格
-    s = s.strip()
-    # 多空格合并
-    s = re.sub(r"\s+", " ", s)
-    # 英文转小写，中文保持原样
-    s = s.lower()
-    return s
-
-
-def normalize_kp_input(kp_names) -> list[tuple[str, str]]:
-    """trim → normalize → 按 normalized 去重（保留首次 display 与顺序）。
-
-    返回 [(display, normalized), ...] 保持输入顺序。空/纯空白输入跳过。
-    """
-    out: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for raw in kp_names or []:
-        if raw is None:
-            continue
-        display = str(raw).strip()
-        if not display:
-            continue
-        norm = normalize_knowledge_name(display)
-        if not norm or norm in seen:
-            continue
-        seen.add(norm)
-        out.append((display, norm))
-    return out
-
-
-async def get_or_create_knowledge_point(
+async def _create_canonical_knowledge_point(
     db: AsyncSession,
     subject_id: int,
-    name: str,
+    display: str,
+    normalized: str,
 ) -> KnowledgePoint:
-    """按 subject_id + normalized_name 查找或创建知识点（并发安全）。
-
-    用 savepoint 捕获唯一键竞争：并发创建相同 (subject_id, normalized_name) 时，
-    落败方回滚 savepoint 后 re-select，不会污染外层事务。
-    """
-    normalized = normalize_knowledge_name(name)
-    if not normalized:
-        raise ValueError("知识点名称不能为空")
-
-    async def _find() -> KnowledgePoint | None:
-        result = await db.execute(
-            select(KnowledgePoint).where(
-                KnowledgePoint.subject_id == subject_id,
-                KnowledgePoint.normalized_name == normalized,
-            )
-        )
-        return result.scalar_one_or_none()
-
-    kp = await _find()
-    if kp:
-        return kp
-
-    # 并发插入落败：savepoint 已回滚，重查已提交的那条；若 winner 尚未可见则
-    # 重试（极罕见）。多次失败给出可诊断错误而非裸 IntegrityError。
+    """Create a new canonical point with savepoint-based uniqueness protection."""
     for _attempt in range(3):
         new_kp = KnowledgePoint(
             subject_id=subject_id,
-            name=name.strip(),
+            name=display,
             normalized_name=normalized,
+            aliases=[],
+            is_active=True,
         )
         try:
             async with db.begin_nested():
@@ -107,12 +52,110 @@ async def get_or_create_knowledge_point(
                 await db.flush()
             return new_kp
         except IntegrityError:
-            kp = await _find()
-            if kp is not None:
-                return kp
+            # A concurrent writer may have created either the canonical name or
+            # an alias target. Re-resolve the entire subject rather than merely
+            # re-selecting normalized_name so alias governance still applies.
+            points = await _load_subject_knowledge_points(db, subject_id)
+            active_names, active_aliases, inactive_terms = _build_resolution_indexes(points)
+            resolved = _resolve_from_indexes(
+                normalized,
+                active_names,
+                active_aliases,
+                inactive_terms,
+                block_inactive=True,
+            )
+            if resolved is not None:
+                return resolved
     raise RuntimeError(
         f"并发创建知识点失败：subject_id={subject_id}, normalized={normalized}"
     )
+
+
+async def resolve_knowledge_points(
+    db: AsyncSession,
+    subject_id: int,
+    names,
+    *,
+    create_if_missing: bool = False,
+) -> list[KnowledgePoint]:
+    """Resolve user/AI/import names to active canonical KnowledgePoint rows.
+
+    Resolution order for each input is deterministic:
+    1. active canonical ``normalized_name`` exact match;
+    2. active canonical ``aliases`` exact match after normalization;
+    3. if the term belongs only to inactive data, writes are blocked;
+    4. only when ``create_if_missing=True`` may a genuinely new canonical row be created.
+
+    Multiple input spellings resolving to the same canonical point are collapsed
+    while preserving first occurrence.  This prevents e.g. ``Catalan数`` and
+    ``卡特兰数`` from creating duplicate question mappings in one import payload.
+    """
+    entries = normalize_kp_input(names)
+    if not entries:
+        return []
+    if not subject_id:
+        raise ValueError("subject_id 不能为空")
+
+    points = await _load_subject_knowledge_points(db, int(subject_id))
+    active_names, active_aliases, inactive_terms = _build_resolution_indexes(points)
+
+    resolved_points: list[KnowledgePoint] = []
+    seen_ids: set[int] = set()
+    for display, normalized in entries:
+        point = _resolve_from_indexes(
+            normalized,
+            active_names,
+            active_aliases,
+            inactive_terms,
+            block_inactive=create_if_missing,
+        )
+        if point is None and create_if_missing:
+            point = await _create_canonical_knowledge_point(
+                db, int(subject_id), display, normalized
+            )
+            # Make the just-created point visible to later entries in this same
+            # payload without another catalog query.
+            active_names[normalized] = point
+        if point is None:
+            continue
+
+        point_id = int(point.id)
+        if point_id in seen_ids:
+            continue
+        seen_ids.add(point_id)
+        resolved_points.append(point)
+
+    return resolved_points
+
+
+async def resolve_knowledge_point(
+    db: AsyncSession,
+    subject_id: int,
+    name: str,
+    *,
+    create_if_missing: bool = False,
+) -> KnowledgePoint | None:
+    """Resolve one name/alias to its active canonical knowledge point."""
+    points = await resolve_knowledge_points(
+        db, subject_id, [name], create_if_missing=create_if_missing
+    )
+    return points[0] if points else None
+
+
+async def get_or_create_knowledge_point(
+    db: AsyncSession,
+    subject_id: int,
+    name: str,
+) -> KnowledgePoint:
+    """Compatibility wrapper: resolve aliases first, create only if truly new."""
+    point = await resolve_knowledge_point(
+        db, subject_id, name, create_if_missing=True
+    )
+    if point is None:  # Defensive; create_if_missing=True should always resolve.
+        raise RuntimeError(
+            f"知识点解析失败：subject_id={subject_id}, name={name!r}"
+        )
+    return point
 
 
 async def _load_mappings(db: AsyncSession, question_id: int) -> list[QuestionKnowledgePoint]:
@@ -170,10 +213,14 @@ async def sync_question_knowledge_points(
         logger.warning("sync_question_knowledge_points: qid=%d has no subject, skip", question.id)
         return {"changed": False, "created": 0, "updated": 0, "deleted": 0, "total": 0}
 
-    kp_entries: list[tuple[int, int]] = []
-    for position, (display, _norm) in enumerate(entries):
-        kp = await get_or_create_knowledge_point(db, subject_id, display)
-        kp_entries.append((kp.id, position))
+    resolved_points = await resolve_knowledge_points(
+        db, subject_id, [display for display, _norm in entries], create_if_missing=True
+    )
+    # Position belongs to canonical distinct points, not raw aliases.  If one
+    # payload contains both “Catalan数” and “卡特兰数”, they become one mapping.
+    kp_entries: list[tuple[int, int]] = [
+        (int(kp.id), position) for position, kp in enumerate(resolved_points)
+    ]
 
     target_kp_ids = {kp_id for kp_id, _position in kp_entries}
     created = updated = deleted = 0
@@ -316,6 +363,30 @@ def kp_any_condition(names):
         .where(
             KnowledgePoint.subject_id == Question.subject_id,
             KnowledgePoint.normalized_name.in_(norms),
+        )
+    )
+
+
+def kp_id_any_condition(knowledge_point_ids):
+    """按 canonical knowledge_point_id 做 OR 过滤。
+
+    章节专项练习会把父节点解析成 ``父节点 + 全部后代`` ID 集合，
+    这里直接匹配关联表而不是再次走名称解析，避免 alias/重命名造成歧义。
+    """
+    ids = list(dict.fromkeys(
+        int(value) for value in (knowledge_point_ids or [])
+        if value is not None and int(value) > 0
+    ))
+    if not ids:
+        return None
+    return Question.id.in_(
+        select(QuestionKnowledgePoint.question_id)
+        .join(KnowledgePoint, KnowledgePoint.id == QuestionKnowledgePoint.knowledge_point_id)
+        .join(Question, Question.id == QuestionKnowledgePoint.question_id)
+        .where(
+            KnowledgePoint.subject_id == Question.subject_id,
+            KnowledgePoint.is_active.is_(True),
+            QuestionKnowledgePoint.knowledge_point_id.in_(ids),
         )
     )
 

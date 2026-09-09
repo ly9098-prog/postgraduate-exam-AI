@@ -1795,3 +1795,227 @@ page {
   .teacher-sheet { padding-left: 24rpx; padding-right: 24rpx; }
   .teacher-result-section { padding: 20rpx; }
 }
+
+/* Stage 5: knowledge-practice closed-loop summary */
+.knowledge-impact-card {
+  overflow: hidden;
+}
+
+.knowledge-impact-head {
+  align-items: flex-start;
+}
+
+.knowledge-impact-badge {
+  flex: 0 0 auto;
+}
+
+.knowledge-impact-loading {
+  min-height: 112rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18rpx;
+  color: #718078;
+  font-size: 22rpx;
+}
+
+.knowledge-impact-spinner {
+  width: 28rpx;
+  height: 28rpx;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 3rpx solid #DCE4DD;
+  border-top-color: #245C43;
+  animation: knowledge-impact-spin .8s linear infinite;
+}
+
+@keyframes knowledge-impact-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.chapter-impact {
+  margin-top: 26rpx;
+  padding: 24rpx;
+  border-radius: 24rpx;
+  background: #F5F8F4;
+  border: 1rpx solid #E1E9E2;
+}
+
+.chapter-impact-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.chapter-impact-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chapter-impact-name {
+  color: #173C2B;
+  font-size: 28rpx;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.chapter-impact-label {
+  margin-top: 7rpx;
+  color: #7A8880;
+  font-size: 20rpx;
+}
+
+.chapter-impact-score,
+.knowledge-change-score {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.chapter-before,
+.knowledge-change-before {
+  color: #87928C;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.chapter-arrow,
+.knowledge-change-arrow {
+  color: #A5AEA9;
+  font-size: 21rpx;
+}
+
+.chapter-after,
+.knowledge-change-after {
+  color: #173C2B;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.chapter-delta,
+.knowledge-change-delta {
+  min-width: 54rpx;
+  padding: 5rpx 9rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  text-align: center;
+  color: #66746C;
+  background: #E8EDE9;
+  font-size: 18rpx;
+  font-weight: 800;
+}
+
+.chapter-delta.positive,
+.knowledge-change-delta.positive {
+  color: #1E6A48;
+  background: #DFF3E5;
+}
+
+.chapter-delta.negative,
+.knowledge-change-delta.negative {
+  color: #A04A43;
+  background: #F7E5E2;
+}
+
+.chapter-impact-metrics {
+  margin-top: 22rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid #E1E8E2;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.chapter-metric {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.chapter-metric-value {
+  color: #223C30;
+  font-size: 22rpx;
+  line-height: 1.25;
+  font-weight: 800;
+}
+
+.chapter-metric-label {
+  margin-top: 7rpx;
+  color: #8A958F;
+  font-size: 18rpx;
+  text-align: center;
+}
+
+.knowledge-change-list {
+  margin-top: 26rpx;
+}
+
+.knowledge-change-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8rpx;
+}
+
+.knowledge-change-title {
+  color: #24372E;
+  font-size: 23rpx;
+  font-weight: 800;
+}
+
+.knowledge-change-count {
+  color: #8B9690;
+  font-size: 19rpx;
+}
+
+.knowledge-change-row {
+  min-height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  border-bottom: 1rpx solid #EEF1EE;
+}
+
+.knowledge-change-row:last-child {
+  border-bottom: 0;
+}
+
+.knowledge-change-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.knowledge-change-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #20372B;
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.knowledge-change-meta {
+  margin-top: 7rpx;
+  color: #8B9690;
+  font-size: 18rpx;
+}
+
+.knowledge-change-score .knowledge-change-after {
+  font-size: 23rpx;
+}
+
+.knowledge-impact-note {
+  display: block;
+  margin-top: 18rpx;
+  color: #89948E;
+  font-size: 19rpx;
+  line-height: 1.55;
+}

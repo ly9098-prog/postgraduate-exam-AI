@@ -657,6 +657,15 @@ Page({
     growthAvailable: false,
     unlockedBadgeCount: 0,
 
+    knowledgeImpactVisible: false,
+    knowledgeImpactLoading: false,
+    knowledgeImpactProcessing: false,
+    knowledgeImpactTitle: '',
+    knowledgeImpactScopeText: '',
+    knowledgeImpactHint: '',
+    knowledgeImpactChapter: null,
+    knowledgeImpactPoints: [],
+
     reviewDialogVisible: false,
     reviewDialog: {
       title: '',
@@ -688,6 +697,8 @@ Page({
     this._returnTo = normalizePracticeReturnRoute((options || {}).return_to);
     this._launchSource = String((options || {}).source || '').trim().slice(0, 32);
     this._launchSubjectId = Number((options || {}).subject_id) || 0;
+    this._practiceRequestId = safeDecodeURIComponent((options || {})._rid, '').trim().slice(0, 128);
+    this._knowledgeImpactPollTimer = null;
     this._navigationLocked = false;
     this._sessionPayload = null;
     this._dashboardLoadId = 0;
@@ -717,6 +728,7 @@ Page({
       this.recoverSubmittedResult(options || {});
     }
     this.loadDashboardData();
+    this.loadKnowledgeImpact();
   },
 
   onUnload() {
@@ -724,6 +736,10 @@ Page({
     this._dashboardLoadId++;
     this._teacherRequestSeq++;
     this._teacherInflight = null;
+    if (this._knowledgeImpactPollTimer) {
+      clearTimeout(this._knowledgeImpactPollTimer);
+      this._knowledgeImpactPollTimer = null;
+    }
   },
 
   onShow() {
@@ -930,6 +946,8 @@ Page({
         image_url: q.image_url || null,
       })),
       comboCount: Number(submission.comboCount) || 0,
+      knowledge_session: submitResult.knowledge_session || submission.knowledgeScope || null,
+      request_id: submission.requestId || '',
       _cacheKey: cacheKey,
       _userId: this._getCurrentUserId(),
       _createdAt: Date.now(),
@@ -980,6 +998,20 @@ Page({
       ? payload.data
       : (payload || {});
     this._sessionPayload = source;
+
+    const embeddedKnowledgeSession = source.knowledge_session || source.knowledgeSession || null;
+    if (embeddedKnowledgeSession && typeof embeddedKnowledgeSession === 'object') {
+      const embeddedRootName = String(embeddedKnowledgeSession.root_name || embeddedKnowledgeSession.rootName || '').trim();
+      const embeddedCount = Math.max(1, Number(embeddedKnowledgeSession.knowledge_point_count || embeddedKnowledgeSession.knowledgePointCount) || 1);
+      this.setData({
+        knowledgeImpactVisible: true,
+        knowledgeImpactLoading: true,
+        knowledgeImpactProcessing: true,
+        knowledgeImpactTitle: embeddedRootName ? `${embeddedRootName}${embeddedKnowledgeSession.include_descendants ? '章节专项' : '专项练习'}` : '知识掌握变化',
+        knowledgeImpactScopeText: embeddedKnowledgeSession.include_descendants ? `范围 ${embeddedCount} 个知识点` : '单知识点专项',
+        knowledgeImpactHint: '正在同步本次练习对知识掌握度的影响…',
+      });
+    }
 
     const results = Array.isArray(source.results)
       ? source.results
@@ -1132,6 +1164,159 @@ Page({
       errorDonutGradient: buildErrorDonutGradient(localErrorDistribution),
       errorDonutSvg: buildErrorDonutSvg(localErrorDistribution)
     });
+  },
+
+  _knowledgeStatusText(status) {
+    const map = {
+      no_data: '待建立',
+      insufficient: '证据不足',
+      weak: '需强化',
+      developing: '发展中',
+      good: '较稳定',
+      mastered: '已掌握'
+    };
+    return map[String(status || '')] || '学习中';
+  },
+
+  _masteryText(value) {
+    if (value === null || value === undefined || value === '') return '待建立';
+    const number = Number(value);
+    return Number.isFinite(number) ? `${Math.round(number)}%` : '待建立';
+  },
+
+  _deltaText(before, after, delta) {
+    const hasBefore = before !== null && before !== undefined && before !== '';
+    const hasAfter = after !== null && after !== undefined && after !== '';
+    const hasDelta = delta !== null && delta !== undefined && delta !== '';
+    const beforeNumber = hasBefore ? Number(before) : NaN;
+    const afterNumber = hasAfter ? Number(after) : NaN;
+    const deltaNumber = hasDelta ? Number(delta) : NaN;
+    if (!Number.isFinite(beforeNumber) && Number.isFinite(afterNumber)) return '新建立';
+    if (!Number.isFinite(deltaNumber)) return '';
+    if (Math.abs(deltaNumber) < 0.05) return '持平';
+    return `${deltaNumber > 0 ? '+' : ''}${Math.round(deltaNumber * 10) / 10}`;
+  },
+
+  _applyKnowledgeImpact(summary) {
+    if (!summary || typeof summary !== 'object') return;
+    const scope = summary.scope || {};
+    const chapter = summary.chapter && typeof summary.chapter === 'object' ? summary.chapter : null;
+    const rootName = String(scope.root_name || (chapter && chapter.root_name) || '').trim();
+    const scopeCount = Math.max(1, Number(scope.knowledge_point_count) || 1);
+    const touchedCount = Math.max(0, Number(summary.touched_knowledge_point_count) || 0);
+    const includeDescendants = scope.include_descendants === true;
+    const rawPoints = Array.isArray(summary.points) ? summary.points : [];
+    const points = rawPoints.slice(0, 8).map(item => {
+      const questionCount = Math.max(0, Number(item.question_count) || 0);
+      const correctCount = Math.max(0, Number(item.correct_count) || 0);
+      const wrongCount = Math.max(0, Number(item.wrong_count) || 0);
+      const accuracy = questionCount ? Math.round(correctCount / questionCount * 100) : 0;
+      return {
+        knowledgePointId: Number(item.knowledge_point_id) || 0,
+        name: String(item.name || '知识点'),
+        questionCount,
+        correctCount,
+        wrongCount,
+        accuracy,
+        beforeText: this._masteryText(item.mastery_before),
+        afterText: this._masteryText(item.mastery_after),
+        deltaText: this._deltaText(item.mastery_before, item.mastery_after, item.mastery_delta),
+        deltaPositive: Number(item.mastery_delta) > 0,
+        deltaNegative: Number(item.mastery_delta) < 0,
+        statusText: this._knowledgeStatusText(item.status_after),
+      };
+    });
+
+    let chapterView = null;
+    if (chapter) {
+      const coverageBefore = Math.round(Math.max(0, Math.min(1, Number(chapter.coverage_before) || 0)) * 100);
+      const coverageAfter = Math.round(Math.max(0, Math.min(1, Number(chapter.coverage_after) || 0)) * 100);
+      chapterView = {
+        name: String(chapter.root_name || rootName || '本次专项'),
+        beforeText: this._masteryText(chapter.mastery_before),
+        afterText: this._masteryText(chapter.mastery_after),
+        deltaText: this._deltaText(chapter.mastery_before, chapter.mastery_after, chapter.mastery_delta),
+        deltaPositive: Number(chapter.mastery_delta) > 0,
+        deltaNegative: Number(chapter.mastery_delta) < 0,
+        coverageBefore,
+        coverageAfter,
+        weakBefore: Math.max(0, Number(chapter.weak_before) || 0),
+        weakAfter: Math.max(0, Number(chapter.weak_after) || 0),
+        reliableBefore: Math.max(0, Number(chapter.reliable_before) || 0),
+        reliableAfter: Math.max(0, Number(chapter.reliable_after) || 0),
+        trainableCount: Math.max(0, Number(chapter.trainable_knowledge_points) || 0),
+      };
+    }
+
+    this.setData({
+      knowledgeImpactVisible: true,
+      knowledgeImpactLoading: false,
+      knowledgeImpactProcessing: false,
+      knowledgeImpactTitle: rootName ? `${rootName}${includeDescendants ? '章节专项' : '专项练习'}` : '知识掌握变化',
+      knowledgeImpactScopeText: includeDescendants
+        ? `本次触达 ${touchedCount} / ${scopeCount} 个范围知识点`
+        : (touchedCount ? '已更新该知识点学习证据' : '本次未产生知识掌握证据'),
+      knowledgeImpactHint: points.length
+        ? '掌握度由实际作答的知识点更新，章节数值由当前子树实时聚合。'
+        : '本次没有实际作答题，因此知识掌握度未发生变化。',
+      knowledgeImpactChapter: chapterView,
+      knowledgeImpactPoints: points,
+    });
+  },
+
+  async loadKnowledgeImpact(attempt = 0) {
+    const requestId = String(this._practiceRequestId || '').trim();
+    if (!requestId || !this._pageAlive) return;
+    try {
+      const summary = await api.get('/practice/session/knowledge-summary', { request_id: requestId });
+      if (!this._pageAlive) return;
+      if (!summary || summary.status === 'unavailable') {
+        this.setData({ knowledgeImpactVisible: false, knowledgeImpactLoading: false, knowledgeImpactProcessing: false });
+        return;
+      }
+      if (summary.status === 'processing') {
+        const scope = summary.scope || {};
+        const rootName = String(scope.root_name || '').trim();
+        this.setData({
+          knowledgeImpactVisible: true,
+          knowledgeImpactLoading: true,
+          knowledgeImpactProcessing: true,
+          knowledgeImpactTitle: rootName ? `${rootName}${scope.include_descendants ? '章节专项' : '专项练习'}` : '知识掌握变化',
+          knowledgeImpactScopeText: `正在结算 ${Math.max(1, Number(summary.projection_pending_count) || 1)} 条学习证据`,
+          knowledgeImpactHint: '答题结果已保存，掌握度更新正在后台完成。',
+        });
+        if (attempt < 7) {
+          const delay = Math.min(2200, 350 + attempt * 260);
+          if (this._knowledgeImpactPollTimer) clearTimeout(this._knowledgeImpactPollTimer);
+          this._knowledgeImpactPollTimer = setTimeout(() => {
+            this._knowledgeImpactPollTimer = null;
+            this.loadKnowledgeImpact(attempt + 1);
+          }, delay);
+        } else {
+          this.setData({
+            knowledgeImpactLoading: false,
+            knowledgeImpactHint: '知识掌握度仍在后台同步，返回知识图谱后会自动刷新最新状态。',
+          });
+        }
+        return;
+      }
+      this._applyKnowledgeImpact(summary);
+    } catch (error) {
+      if (!this._pageAlive) return;
+      const statusCode = Number(error && error.statusCode) || 0;
+      if (statusCode === 404) {
+        this.setData({ knowledgeImpactVisible: false, knowledgeImpactLoading: false, knowledgeImpactProcessing: false });
+        return;
+      }
+      console.warn('加载本次知识掌握变化失败', error);
+      if (this.data.knowledgeImpactVisible) {
+        this.setData({
+          knowledgeImpactLoading: false,
+          knowledgeImpactProcessing: false,
+          knowledgeImpactHint: '本次掌握度变化暂未加载，返回知识图谱后会刷新最新状态。',
+        });
+      }
+    }
   },
 
   buildReviewItem(question, result, answer, index) {

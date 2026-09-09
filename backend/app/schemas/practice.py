@@ -40,6 +40,13 @@ class SequentialPracticeProgress(BaseModel):
     next_question_id: int | None = None
 
 
+class PracticeKnowledgeScope(BaseModel):
+    root_knowledge_point_id: int
+    root_name: str
+    include_descendants: bool = False
+    knowledge_point_count: int = 1
+
+
 class PracticeQuestionsResponse(BaseModel):
     questions: list[PracticeQuestion]
     total: int
@@ -47,6 +54,7 @@ class PracticeQuestionsResponse(BaseModel):
     trace_id: str | None = None
     request_id: str | None = None
     sequential_progress: SequentialPracticeProgress | None = None
+    knowledge_scope: PracticeKnowledgeScope | None = None
     batch_token: str | None = None
     submission_request_id: str | None = None
 
@@ -102,9 +110,79 @@ class BatchSubmitRequest(BaseModel):
     answers: list[AnswerSubmit] = Field(default_factory=list, max_length=50)
     skipped_question_ids: list[int] = Field(default_factory=list, max_length=50)
     # Every submission is bound to a server-issued immutable question batch.
-    batch_token: str = Field(min_length=16, max_length=8192)
+    batch_token: str = Field(min_length=16, max_length=16384)
     session: PracticeSessionMeta
 
+
+
+
+class PracticeKnowledgeSession(BaseModel):
+    practice_mode: Literal["knowledge_chapter", "knowledge_point"]
+    root_knowledge_point_id: int
+    root_name: str
+    include_descendants: bool = False
+    knowledge_point_count: int = 1
+
+
+
+
+class PracticeSessionScopeSnapshot(BaseModel):
+    practice_mode: Literal["knowledge_chapter", "knowledge_point"]
+    subject_id: int | None = None
+    syllabus_version_id: int | None = None
+    root_knowledge_point_id: int
+    root_name: str
+    include_descendants: bool = False
+    resolved_knowledge_point_ids: list[int] = Field(default_factory=list)
+    served_knowledge_point_ids: list[int] = Field(default_factory=list)
+    resolved_knowledge_point_count: int = 1
+    served_knowledge_point_count: int = 0
+    resolved_ids_complete: bool = False
+    served_ids_complete: bool = False
+
+
+class PracticeSessionScopeResponse(BaseModel):
+    request_id: str
+    scope: PracticeSessionScopeSnapshot | None = None
+
+
+class PracticeKnowledgePointChange(BaseModel):
+    knowledge_point_id: int
+    name: str
+    question_count: int = 0
+    correct_count: int = 0
+    wrong_count: int = 0
+    mastery_before: float | None = None
+    mastery_after: float | None = None
+    mastery_delta: float | None = None
+    confidence_after: float = 0.0
+    status_after: str = "no_data"
+
+
+class PracticeChapterProgress(BaseModel):
+    root_knowledge_point_id: int
+    root_name: str
+    mastery_before: float | None = None
+    mastery_after: float | None = None
+    mastery_delta: float | None = None
+    coverage_before: float = 0.0
+    coverage_after: float = 0.0
+    weak_before: int = 0
+    weak_after: int = 0
+    reliable_before: int = 0
+    reliable_after: int = 0
+    trainable_knowledge_points: int = 0
+
+
+class PracticeKnowledgeSummaryResponse(BaseModel):
+    request_id: str
+    status: Literal["processing", "ready", "unavailable"]
+    practice_mode: Literal["knowledge_chapter", "knowledge_point", "general"] = "general"
+    projection_pending_count: int = 0
+    scope: PracticeKnowledgeScope | None = None
+    chapter: PracticeChapterProgress | None = None
+    touched_knowledge_point_count: int = 0
+    points: list[PracticeKnowledgePointChange] = Field(default_factory=list)
 
 class BatchSubmitResponse(BaseModel):
     results: list[AnswerResult]
@@ -112,6 +190,7 @@ class BatchSubmitResponse(BaseModel):
     total_wrong: int
     total_skipped: int = 0
     trace_id: str | None = None
+    knowledge_session: PracticeKnowledgeSession | None = None
 
 
 # --- GET /practice/stats ---

@@ -21,6 +21,8 @@ from app.schemas.practice import (
     PracticeMode,
     PracticeQuestion,
     PracticeQuestionsResponse,
+    PracticeKnowledgeSummaryResponse,
+    PracticeSessionScopeResponse,
     PracticeRecordItem,
     PracticeStatsResponse,
     SequentialPracticeResetRequest,
@@ -211,6 +213,7 @@ async def get_practice_questions(
     mode: PracticeMode = Query("random"),
     knowledge_point: str | None = Query(None),
     knowledge_point_id: int | None = Query(None, ge=1),
+    include_descendants: bool = Query(False),
     exclude_answered: bool = Query(False),
     no_repeat_days: int | None = Query(None, ge=1, le=365),
     use_leitner: bool = Query(True),
@@ -257,20 +260,26 @@ async def get_practice_questions(
     trace_id = str(get_log_context().get("trace_id") or normalize_trace_id(x_trace_id))
     if knowledge_point and knowledge_point_id is not None:
         raise HTTPException(status_code=400, detail="knowledge_point 与 knowledge_point_id 不能同时使用")
+    if include_descendants and knowledge_point_id is None:
+        raise HTTPException(status_code=400, detail="include_descendants 需要 knowledge_point_id")
+    if include_descendants and mode != "random":
+        raise HTTPException(status_code=400, detail="章节专项练习当前仅支持 random 模式")
+
+    knowledge_scope: dict | None = None
+    knowledge_point_ids: list[int] | None = None
     if knowledge_point_id is not None:
-        from sqlalchemy import select
-
-        from app.models.knowledge_point import KnowledgePoint
-
-        point_name = await db.scalar(
-            select(KnowledgePoint.name).where(
-                KnowledgePoint.id == knowledge_point_id,
-                KnowledgePoint.subject_id.in_(scope_subject_ids),
-            )
+        knowledge_scope = await svc.resolve_practice_knowledge_scope(
+            db,
+            knowledge_point_id=knowledge_point_id,
+            subject_ids=scope_subject_ids,
+            include_descendants=include_descendants,
         )
-        if point_name is None:
-            raise HTTPException(status_code=404, detail="知识点不存在或不属于当前科目范围")
-        kps = [str(point_name)]
+        if knowledge_scope is None:
+            raise HTTPException(status_code=404, detail="知识点不存在、不属于当前科目范围或不在当前大纲")
+        knowledge_point_ids = list(knowledge_scope["knowledge_point_ids"])
+        # 非章节模式保留历史名称过滤契约（sequential/similar fallback 仍会使用）；
+        # random 同时携带 canonical ID，名称只是兼容约束。
+        kps = [str(knowledge_scope["root_name"])] if not include_descendants else None
     else:
         kps = (
             [kp.strip() for kp in knowledge_point.split(",") if kp.strip()]
@@ -291,7 +300,7 @@ async def get_practice_questions(
             raise HTTPException(status_code=400, detail="question_ids 必须为正整数")
         if len(set(targeted_question_ids)) != len(targeted_question_ids):
             raise HTTPException(status_code=400, detail="question_ids 不允许重复")
-        if source_question_id or kps:
+        if source_question_id or kps or knowledge_point_ids:
             raise HTTPException(status_code=400, detail="定向题目不可与 source_question_id/knowledge_point 混用")
         if mode != "random":
             raise HTTPException(status_code=400, detail="定向题目仅支持 random runner")
@@ -406,12 +415,27 @@ async def get_practice_questions(
 
     else:
         # random
-        if len(scope_subject_ids) > 1:
+        if include_descendants and knowledge_point_ids:
+            # 章节专项：先按 active syllabus 的 parent 子树限定题池，再在已通过
+            # 普通 practice/Leitner 守卫的候选中按薄弱/待建立知识点优先选题。
+            questions = await svc.get_knowledge_scope_practice_questions(
+                db=db,
+                user_id=current_user.id,
+                subject_code=subject_for_query,
+                subject_ids=scope_subject_ids,
+                knowledge_point_ids=knowledge_point_ids,
+                count=count,
+                exclude_answered=exclude_answered,
+                no_repeat_days=no_repeat_days,
+                use_leitner=use_leitner,
+            )
+        elif len(scope_subject_ids) > 1:
             # 父级科目聚合随机
             questions = await svc.get_aggregated_random_questions(
                 db=db, user_id=current_user.id, subject_code=subject_for_query,
                 subject_ids=scope_subject_ids, count=random_candidate_count,
-                knowledge_points=kps,
+                knowledge_points=(kps if not knowledge_point_ids else None),
+                knowledge_point_ids=knowledge_point_ids,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
@@ -422,7 +446,9 @@ async def get_practice_questions(
             questions = await svc.get_practice_questions(
                 db=db, user_id=current_user.id, subject_code=subject_for_query,
                 subject_ids=scope_subject_ids,
-                count=random_candidate_count, mode=mode, knowledge_points=kps,
+                count=random_candidate_count, mode=mode,
+                knowledge_points=(kps if not knowledge_point_ids else None),
+                knowledge_point_ids=knowledge_point_ids,
                 exclude_answered=exclude_answered,
                 no_repeat_days=no_repeat_days,
                 use_leitner=use_leitner,
@@ -490,15 +516,27 @@ async def get_practice_questions(
     subject_distribution = dict(Counter(q.subject_id for q in questions))
     logger.info(
         "[PRACTICE_SCOPE] subject_id=%s subject_code=%s include_children=%s "
-        "has_children=%s scope=%s scope_ids=%s mode=%s count=%d "
-        "result_count=%d subject_distribution=%s",
-        subject_id, subject_code, include_children,
-        has_enabled_children, scope_desc, scope_subject_ids,
+        "include_descendants=%s knowledge_scope_size=%d has_children=%s "
+        "scope=%s scope_ids=%s mode=%s count=%d result_count=%d subject_distribution=%s",
+        subject_id, subject_code, include_children, include_descendants,
+        len(knowledge_point_ids or []), has_enabled_children, scope_desc, scope_subject_ids,
         mode, count, len(questions), subject_distribution,
     )
     # Freeze the response from the exact immutable revisions signed into the
     # batch. A mutable Question/KP edit committed between candidate selection and
     # response serialization can therefore never create a mixed-version payload.
+    # For knowledge-scoped practice, snapshot the user's pre-practice state in the
+    # signed token so the result page can later show an exact before/after impact
+    # without introducing a second chapter-mastery persistence table.
+    from app.services.practice.knowledge_session_summary import build_issue_knowledge_context
+
+    knowledge_context = await build_issue_knowledge_context(
+        db,
+        user_id=current_user.id,
+        knowledge_scope=knowledge_scope,
+        questions=questions,
+        revision_ids=latest_revision_ids,
+    )
     batch_token, issued_revisions, submission_request_id = svc.create_practice_batch_token(
         user_id=current_user.id,
         subject_id=subject_id,
@@ -506,6 +544,7 @@ async def get_practice_questions(
         questions=questions,
         revision_ids=latest_revision_ids,
         recommendation_request_id=request_id,
+        knowledge_context=knowledge_context,
     )
     revision_views = await load_revision_views(db, issued_revisions.values())
     revision_kps = await load_revision_kp_names(db, issued_revisions.values())
@@ -558,6 +597,15 @@ async def get_practice_questions(
         trace_id=trace_id,
         request_id=request_id,
         sequential_progress=sequential_progress,
+        knowledge_scope=(
+            {
+                "root_knowledge_point_id": int(knowledge_scope["root_id"]),
+                "root_name": str(knowledge_scope["root_name"]),
+                "include_descendants": bool(knowledge_scope["include_descendants"]),
+                "knowledge_point_count": len(knowledge_scope["knowledge_point_ids"]),
+            }
+            if knowledge_scope is not None else None
+        ),
         batch_token=batch_token,
         submission_request_id=submission_request_id,
     )
@@ -701,7 +749,50 @@ async def batch_submit(
         total_wrong=result["total_wrong"],
         total_skipped=result.get("total_skipped", 0),
         trace_id=trace_id,
+        knowledge_session=result.get("knowledge_session"),
     )
+
+
+@router.get("/session/scope", response_model=PracticeSessionScopeResponse)
+async def get_practice_session_scope_snapshot(
+    request_id: str = Query(..., min_length=1, max_length=128),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the immutable semantic scope persisted for a completed batch."""
+    from app.services.practice.session_scope import get_practice_session_scope
+
+    found, scope = await get_practice_session_scope(
+        db,
+        user_id=current_user.id,
+        request_id=request_id,
+    )
+    if not found:
+        raise HTTPException(status_code=404, detail="练习会话不存在")
+    return PracticeSessionScopeResponse(request_id=request_id, scope=scope)
+
+
+@router.get("/session/knowledge-summary", response_model=PracticeKnowledgeSummaryResponse)
+async def get_practice_session_knowledge_summary(
+    request_id: str = Query(..., min_length=1, max_length=128),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return post-projection knowledge impact for one completed practice session.
+
+    The endpoint deliberately reports ``processing`` while answer-projection outbox
+    tasks are pending, so the result UI never presents stale mastery values as final.
+    """
+    from app.services.practice.knowledge_session_summary import get_session_knowledge_summary
+
+    summary = await get_session_knowledge_summary(
+        db,
+        user_id=current_user.id,
+        request_id=request_id,
+    )
+    if summary is None:
+        raise HTTPException(status_code=404, detail="练习会话不存在")
+    return PracticeKnowledgeSummaryResponse(**summary)
 
 
 @router.get("/stats", response_model=PracticeStatsResponse)

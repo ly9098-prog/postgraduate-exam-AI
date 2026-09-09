@@ -750,11 +750,20 @@ async def get_point_detail(db: AsyncSession, user_id: int, knowledge_point_id: i
         "practice_route_params": {
             "subject_id": int(subject.id),
             "mode": "random",
-            "count": min(10, max(1, int(node["trainable_question_count"] or 0))),
+            "count": (
+                10
+                if int(node["direct_child_count"] or 0) > 0
+                else min(10, max(1, int(node["trainable_question_count"] or 0)))
+            ),
             "knowledge_point": node["name"],
             "knowledge_point_id": int(point.id),
+            "include_descendants": 1 if int(node["direct_child_count"] or 0) > 0 else 0,
             "allow_repeat": 1,
             "autostart": 1,
             "source": "knowledge_map",
-        } if int(node["trainable_question_count"] or 0) > 0 else {},
+        } if (
+            int(node["subtree_trainable_knowledge_points"] or 0) > 0
+            if int(node["direct_child_count"] or 0) > 0
+            else int(node["trainable_question_count"] or 0) > 0
+        ) else {},
     }

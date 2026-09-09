@@ -50,10 +50,15 @@ from app.services.admin_subject_service import resolve_subject_ids
 from app.services.knowledge_point_service import (
     kp_any_condition,
     kp_exact_conditions,
+    kp_id_any_condition,
     load_question_kps,
 )
 from app.services.practice.answer_projection_contract import (
     ANSWER_PROJECTION_TASK_SCHEMA_VERSION,
+)
+from app.services.practice.chapter_scope import (
+    bucket_targets as _chapter_bucket_targets,
+    knowledge_bucket as _chapter_knowledge_bucket,
 )
 from app.services.practice.recommendation_pipeline import (
     merge_recommendation_results,
@@ -136,6 +141,7 @@ def create_practice_batch_token(
     questions: list[Question],
     revision_ids: dict[int, int],
     recommendation_request_id: str | None = None,
+    knowledge_context: dict | None = None,
 ) -> tuple[str | None, dict[int, int], str | None]:
     """Create a signed batch bound to immutable QuestionVersion ids.
 
@@ -181,6 +187,10 @@ def create_practice_batch_token(
         # Preserve issued order. Each pair is [question_id, immutable revision_id].
         "questions": [[int(q.id), revisions[int(q.id)]] for q in questions],
     }
+    if knowledge_context:
+        # Signed snapshot used only for post-practice knowledge impact reporting.
+        # It does not change grading or question scope during submission.
+        payload["knowledge_context"] = knowledge_context
     body = _urlsafe_b64encode(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     )
@@ -868,6 +878,227 @@ async def resolve_practice_subject_scope(
     return has_enabled_children, [s.id for s in result]
 
 
+
+async def resolve_practice_knowledge_scope(
+    db: AsyncSession,
+    *,
+    knowledge_point_id: int,
+    subject_ids: list[int],
+    include_descendants: bool = False,
+) -> dict | None:
+    """Resolve a practice knowledge scope against the active syllabus hierarchy.
+
+    ``knowledge_point_id`` is canonical and must be active, belong to the requested
+    subject scope, and be present in the active syllabus.  When descendants are
+    requested, only active-syllabus nodes reachable through active ``parent`` edges
+    are returned.  The root itself is always included so parent nodes that own
+    questions directly remain trainable.
+    """
+    from collections import defaultdict, deque
+
+    from app.models.knowledge_edge import KnowledgeEdge
+    from app.services import syllabus_service
+
+    normalized_subject_ids = list(dict.fromkeys(int(value) for value in subject_ids if int(value) > 0))
+    if not normalized_subject_ids:
+        return None
+
+    point = (await db.execute(
+        select(KnowledgePoint).where(
+            KnowledgePoint.id == int(knowledge_point_id),
+            KnowledgePoint.subject_id.in_(normalized_subject_ids),
+            KnowledgePoint.is_active.is_(True),
+        )
+    )).scalar_one_or_none()
+    if point is None:
+        return None
+
+    syllabus_version, memberships = await syllabus_service.active_memberships(
+        db, [int(point.subject_id)]
+    )
+    if syllabus_version is None or int(point.id) not in memberships:
+        return None
+
+    if not include_descendants:
+        return {
+            "root_id": int(point.id),
+            "root_name": str(point.name),
+            "subject_id": int(point.subject_id),
+            "syllabus_version_id": int(syllabus_version.id),
+            "knowledge_point_ids": [int(point.id)],
+            "include_descendants": False,
+        }
+
+    allowed_ids = set(int(kp_id) for kp_id in memberships)
+    active_rows = await db.execute(
+        select(KnowledgePoint.id).where(
+            KnowledgePoint.subject_id == int(point.subject_id),
+            KnowledgePoint.id.in_(allowed_ids),
+            KnowledgePoint.is_active.is_(True),
+        )
+    )
+    active_ids = {int(value) for value in active_rows.scalars().all()}
+    if int(point.id) not in active_ids:
+        return None
+
+    edge_rows = await db.execute(
+        select(
+            KnowledgeEdge.source_knowledge_point_id,
+            KnowledgeEdge.target_knowledge_point_id,
+        ).where(
+            KnowledgeEdge.subject_id == int(point.subject_id),
+            KnowledgeEdge.relation_type == "parent",
+            KnowledgeEdge.is_active.is_(True),
+            KnowledgeEdge.source_knowledge_point_id.in_(active_ids),
+            KnowledgeEdge.target_knowledge_point_id.in_(active_ids),
+        )
+    )
+    children: dict[int, list[int]] = defaultdict(list)
+    for parent_id, child_id in edge_rows.all():
+        children[int(parent_id)].append(int(child_id))
+
+    # Preserve syllabus order in each level so diagnostics and future client
+    # surfaces receive a stable scope even though the SQL edge table has no order.
+    sort_key = lambda kp_id: (
+        int(memberships[kp_id].sort_order or 0) if kp_id in memberships else 0,
+        kp_id,
+    )
+    for child_ids in children.values():
+        child_ids.sort(key=sort_key)
+
+    ordered_ids: list[int] = []
+    queue = deque([int(point.id)])
+    seen: set[int] = set()
+    while queue:
+        current = queue.popleft()
+        if current in seen:
+            continue
+        seen.add(current)
+        ordered_ids.append(current)
+        queue.extend(children.get(current, ()))
+
+    return {
+        "root_id": int(point.id),
+        "root_name": str(point.name),
+        "subject_id": int(point.subject_id),
+        "syllabus_version_id": int(syllabus_version.id),
+        "knowledge_point_ids": ordered_ids,
+        "include_descendants": True,
+    }
+
+
+
+async def get_knowledge_scope_practice_questions(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    subject_code: str,
+    subject_ids: list[int],
+    knowledge_point_ids: list[int],
+    count: int,
+    exclude_answered: bool = False,
+    no_repeat_days: int | None = None,
+    use_leitner: bool = True,
+) -> list[Question]:
+    """Build a chapter batch biased toward weak and not-yet-established nodes.
+
+    Candidate eligibility still uses the normal practice/Leitner pipeline.  The
+    chapter layer only re-ranks an over-fetched, already-valid candidate pool so
+    it cannot bypass review windows, immutable revision guards, or subject scope.
+    A question linked to several target KPs is assigned to its highest-priority
+    bucket and is returned at most once.
+    """
+    from collections import defaultdict
+
+    from app.models.question_knowledge_point import QuestionKnowledgePoint
+    from app.models.user_knowledge_state import UserKnowledgeState
+
+    target_ids = list(dict.fromkeys(int(value) for value in knowledge_point_ids if int(value) > 0))
+    if not target_ids or count <= 0:
+        return []
+
+    candidate_count = min(100, max(int(count) * 5, 50))
+    candidates = await get_practice_questions(
+        db=db,
+        user_id=user_id,
+        subject_code=subject_code,
+        count=candidate_count,
+        mode="random",
+        knowledge_point_ids=target_ids,
+        exclude_answered=exclude_answered,
+        no_repeat_days=no_repeat_days,
+        use_leitner=use_leitner,
+        subject_ids=subject_ids,
+    )
+    if len(candidates) <= count:
+        return candidates
+
+    candidate_ids = [int(question.id) for question in candidates]
+    state_rows = await db.execute(
+        select(UserKnowledgeState).where(
+            UserKnowledgeState.user_id == user_id,
+            UserKnowledgeState.knowledge_point_id.in_(target_ids),
+        )
+    )
+    states = {int(state.knowledge_point_id): state for state in state_rows.scalars().all()}
+
+    mapping_rows = await db.execute(
+        select(
+            QuestionKnowledgePoint.question_id,
+            QuestionKnowledgePoint.knowledge_point_id,
+        ).where(
+            QuestionKnowledgePoint.question_id.in_(candidate_ids),
+            QuestionKnowledgePoint.knowledge_point_id.in_(target_ids),
+        )
+    )
+    q_to_kps: dict[int, list[int]] = defaultdict(list)
+    for question_id, kp_id in mapping_rows.all():
+        q_to_kps[int(question_id)].append(int(kp_id))
+
+    bucket_rank = {"weak": 0, "unobserved": 1, "developing": 2, "stable": 3}
+    buckets: dict[str, list[Question]] = {name: [] for name in bucket_rank}
+    for question in candidates:
+        kp_ids = q_to_kps.get(int(question.id), [])
+        labels = [_chapter_knowledge_bucket(states.get(kp_id)) for kp_id in kp_ids]
+        bucket = min(labels, key=lambda name: bucket_rank[name]) if labels else "unobserved"
+        buckets[bucket].append(question)
+
+    # Preserve the candidate order produced by the Leitner/fallback pipeline.
+    # Its SQL sampling already supplies randomness where appropriate; reshuffling
+    # here would incorrectly let relaxed-repeat candidates jump ahead of fresh/due ones.
+    targets = _chapter_bucket_targets(count)
+    selected: list[Question] = []
+    selected_ids: set[int] = set()
+    for bucket in ("weak", "unobserved", "developing", "stable"):
+        for question in buckets[bucket][:targets[bucket]]:
+            if int(question.id) in selected_ids:
+                continue
+            selected.append(question)
+            selected_ids.add(int(question.id))
+
+    # Sparse buckets are common for new users. Fill the remaining capacity in
+    # priority order instead of returning a short batch.
+    if len(selected) < count:
+        for bucket in ("weak", "unobserved", "developing", "stable"):
+            for question in buckets[bucket]:
+                if int(question.id) in selected_ids:
+                    continue
+                selected.append(question)
+                selected_ids.add(int(question.id))
+                if len(selected) >= count:
+                    break
+            if len(selected) >= count:
+                break
+
+    logger.info(
+        "[KNOWLEDGE_SCOPE_PRACTICE] root_scope_size=%d requested=%d candidates=%d "
+        "bucket_sizes=%s target_mix=%s returned=%d",
+        len(target_ids), count, len(candidates),
+        {name: len(values) for name, values in buckets.items()},
+        targets, len(selected[:count]),
+    )
+    return selected[:count]
+
 def _round_robin_merge(
     buckets: list[list[object]],
     count: int,
@@ -963,6 +1194,7 @@ async def get_aggregated_random_questions(
     subject_ids: list[int],
     count: int = 20,
     knowledge_points: list[str] | None = None,
+    knowledge_point_ids: list[int] | None = None,
     exclude_answered: bool = False,
     no_repeat_days: int | None = None,
     use_leitner: bool = True,
@@ -984,6 +1216,10 @@ async def get_aggregated_random_questions(
         ]
         if knowledge_points:
             conds.extend(kp_exact_conditions(knowledge_points))
+        if knowledge_point_ids:
+            kp_id_condition = kp_id_any_condition(knowledge_point_ids)
+            if kp_id_condition is not None:
+                conds.append(kp_id_condition)
 
         if use_leitner:
             candidates = await _get_questions_with_leitner(
@@ -1159,6 +1395,7 @@ async def get_practice_questions(
     count: int = 20,
     mode: str = "random",
     knowledge_points: list[str] | None = None,
+    knowledge_point_ids: list[int] | None = None,
     exclude_answered: bool = False,
     no_repeat_days: int | None = None,
     use_leitner: bool = True,
@@ -1183,6 +1420,10 @@ async def get_practice_questions(
 
     if knowledge_points:
         base_conditions.extend(kp_exact_conditions(knowledge_points))
+    if knowledge_point_ids:
+        kp_id_condition = kp_id_any_condition(knowledge_point_ids)
+        if kp_id_condition is not None:
+            base_conditions.append(kp_id_condition)
 
     # ── 顺序模式：严格题库进度，不参与 Leitner / no-repeat 调度 ──
     if mode == SEQUENTIAL_MODE:
@@ -3096,9 +3337,25 @@ async def batch_submit_answers(
     if sum(answered_used_times) > max_allowed_answer_time:
         raise ValueError("answers.used_time 合计不得明显超过本次练习总时长")
 
+    from app.services.practice.session_scope import build_practice_session_scope
+
+    scope_snapshot = build_practice_session_scope(
+        batch_payload.get("knowledge_context"),
+        fallback_subject_id=int(session_values.get("subject_id") or 0),
+    )
+    if scope_snapshot is not None:
+        signed_scope_subject_id = int(scope_snapshot.get("subject_id") or 0)
+        if signed_scope_subject_id and signed_scope_subject_id != int(session_values.get("subject_id") or 0):
+            raise PracticeBatchTokenError("知识练习范围与练习科目不一致")
+
     session_obj = PracticeSession(
         **session_values,
         submission_payload_hash=payload_hash,
+        scope_type=(str(scope_snapshot["practice_mode"]) if scope_snapshot is not None else None),
+        scope_root_knowledge_point_id=(
+            int(scope_snapshot["root_knowledge_point_id"]) if scope_snapshot is not None else None
+        ),
+        scope_snapshot=scope_snapshot,
     )
     try:
         async with db.begin_nested():
@@ -3202,11 +3459,14 @@ async def batch_submit_answers(
             "wrong_question_id": None,
         }
 
+    from app.services.practice.knowledge_session_summary import persisted_knowledge_session
+
     response_payload = jsonable_encoder({
         "results": [response_by_question[qid] for qid in issued_order],
         "total_correct": total_correct,
         "total_wrong": total_wrong,
         "total_skipped": len(skipped_questions),
+        "knowledge_session": persisted_knowledge_session(batch_payload.get("knowledge_context")),
     })
     # submission_response is a SQL JSON column and is also the source used for
     # idempotent replay.  Nested diagnostics may contain datetime values, so
