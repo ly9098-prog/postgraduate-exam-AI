@@ -278,8 +278,16 @@ def upgrade() -> None:
         sa.CheckConstraint("relation_type IN ('unchanged','renamed','added','removed','merged','split','replaced')", name="ck_syllabus_kp_mapping_type"),
         sa.CheckConstraint("from_syllabus_knowledge_point_id IS NOT NULL OR to_syllabus_knowledge_point_id IS NOT NULL", name="ck_syllabus_kp_mapping_endpoint"),
     )
-    op.create_index("ix_syllabus_knowledge_point_mappings_from_syllabus_knowledge_point_id", "syllabus_knowledge_point_mappings", ["from_syllabus_knowledge_point_id"])
-    op.create_index("ix_syllabus_knowledge_point_mappings_to_syllabus_knowledge_point_id", "syllabus_knowledge_point_mappings", ["to_syllabus_knowledge_point_id"])
+    op.create_index(
+        "ix_syllabus_kp_mappings_from_kp_id",
+        "syllabus_knowledge_point_mappings",
+        ["from_syllabus_knowledge_point_id"],
+    )
+    op.create_index(
+        "ix_syllabus_kp_mappings_to_kp_id",
+        "syllabus_knowledge_point_mappings",
+        ["to_syllabus_knowledge_point_id"],
+    )
 
     _seed_permission(op.get_bind())
     _seed_baseline(op.get_bind())
@@ -313,6 +321,8 @@ def downgrade() -> None:
     # created it.  Leaving an unused RBAC permission is safer than deleting
     # pre-existing authorization data.
 
+    op.drop_index("ix_syllabus_kp_mappings_to_kp_id", table_name="syllabus_knowledge_point_mappings")
+    op.drop_index("ix_syllabus_kp_mappings_from_kp_id", table_name="syllabus_knowledge_point_mappings")
     op.drop_table("syllabus_knowledge_point_mappings")
     op.drop_table("syllabus_knowledge_points")
     op.drop_index("uq_syllabus_versions_one_active", table_name="syllabus_versions")
