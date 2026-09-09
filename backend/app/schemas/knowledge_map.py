@@ -42,6 +42,12 @@ class KnowledgeMapOverviewResponse(BaseModel):
     subjects: list[KnowledgeMapSubjectSummary] = Field(default_factory=list)
 
 
+class KnowledgeMapHierarchyRef(BaseModel):
+    knowledge_point_id: int
+    name: str
+    depth: int = 0
+
+
 class KnowledgeMapNode(BaseModel):
     knowledge_point_id: int
     name: str
@@ -51,7 +57,21 @@ class KnowledgeMapNode(BaseModel):
     parent_id: int | None = None
     depth: int = 0
     child_count: int = 0
+    direct_child_count: int = 0
+    has_children: bool = False
+    is_leaf: bool = True
+    descendant_count: int = 0
+    ancestor_ids: list[int] = Field(default_factory=list)
     trainable_question_count: int = 0
+    subtree_total_knowledge_points: int = 1
+    subtree_trainable_knowledge_points: int = 0
+    subtree_observed_knowledge_points: int = 0
+    subtree_reliable_knowledge_points: int = 0
+    subtree_weak_knowledge_points: int = 0
+    subtree_coverage_ratio: float = 0.0
+    subtree_status: KnowledgeMapStatus = "no_data"
+    subtree_mastery_score: float | None = None
+    subtree_confidence: float = 0.0
     status: KnowledgeMapStatus
     mastery_score: float | None = None
     confidence: float = 0.0
@@ -67,6 +87,10 @@ class KnowledgeMapSubjectResponse(BaseModel):
     scope: str = "exam408"
     syllabus_version: ActiveSyllabusSummary | None = None
     subject: KnowledgeMapSubjectSummary
+    root_count: int = 0
+    max_depth: int = 0
+    parented_knowledge_points: int = 0
+    parent_coverage_ratio: float = 0.0
     nodes: list[KnowledgeMapNode] = Field(default_factory=list)
 
 
@@ -105,6 +129,19 @@ class KnowledgeMapPointDetailResponse(BaseModel):
     last_practiced_at: str | None = None
     last_wrong_at: str | None = None
     trainable_question_count: int = 0
+    parent_id: int | None = None
+    ancestors: list[KnowledgeMapHierarchyRef] = Field(default_factory=list)
+    direct_children: list[KnowledgeMapHierarchyRef] = Field(default_factory=list)
+    descendant_count: int = 0
+    subtree_total_knowledge_points: int = 1
+    subtree_trainable_knowledge_points: int = 0
+    subtree_observed_knowledge_points: int = 0
+    subtree_reliable_knowledge_points: int = 0
+    subtree_weak_knowledge_points: int = 0
+    subtree_coverage_ratio: float = 0.0
+    subtree_status: KnowledgeMapStatus = "no_data"
+    subtree_mastery_score: float | None = None
+    subtree_confidence: float = 0.0
     recent_answers: list[KnowledgeMapRecentAnswer] = Field(default_factory=list)
     prerequisites: list[KnowledgeMapRelation] = Field(default_factory=list)
     next_nodes: list[KnowledgeMapRelation] = Field(default_factory=list)

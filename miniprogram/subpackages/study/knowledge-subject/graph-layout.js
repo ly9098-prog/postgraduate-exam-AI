@@ -39,17 +39,57 @@ function edge(from, to, kind, active) {
   }
 }
 
+function directChildren(group, parentId) {
+  if (!group || !Array.isArray(group.nodes)) return []
+  return group.nodes.filter(node => Number(node.parentId || node.parent_id) === Number(parentId))
+}
+
+function nodeMap(group) {
+  return new Map((group && Array.isArray(group.nodes) ? group.nodes : []).map(node => [Number(node.knowledge_point_id), node]))
+}
+
+function breadcrumbItems(subject, group, focusNode) {
+  const items = [{ key: 'subject', label: String(subject.subject_name || '全科'), groupKey: '', focusNodeId: 0, current: !focusNode }]
+  if (!group || !focusNode) return items
+  const byId = nodeMap(group)
+  const pathIds = Array.isArray(focusNode.pathIds) && focusNode.pathIds.length
+    ? focusNode.pathIds
+    : [focusNode.knowledge_point_id]
+  pathIds.forEach((id) => {
+    const node = byId.get(Number(id))
+    if (!node) return
+    items.push({
+      key: `node:${node.knowledge_point_id}`,
+      label: String(node.name || '未命名知识点'),
+      groupKey: String(group.key),
+      focusNodeId: Number(node.knowledge_point_id),
+      current: Number(node.knowledge_point_id) === Number(focusNode.knowledge_point_id),
+    })
+  })
+  return items
+}
+
 function buildScene(groups, subject, options = {}) {
-  const focused = options.groupKey ? groups.find(group => String(group.key) === String(options.groupKey)) : null
-  const candidates = focused ? focused.nodes : groups.filter(group => group.nodes.length)
-  const size = focused ? POINTS_PER_PAGE : GROUPS_PER_PAGE
+  const groupKey = String(options.groupKey || '')
+  const focusedGroup = groupKey ? groups.find(group => String(group.key) === groupKey) : null
+  let focusNode = null
+  if (focusedGroup) {
+    const byId = nodeMap(focusedGroup)
+    const requestedId = Number(options.focusNodeId) || Number(focusedGroup.rootId) || 0
+    focusNode = byId.get(requestedId) || byId.get(Number(focusedGroup.rootId)) || focusedGroup.rootNode || focusedGroup.nodes[0] || null
+  }
+
+  const candidates = focusNode ? directChildren(focusedGroup, focusNode.knowledge_point_id) : groups.filter(group => group.nodes.length)
+  const size = focusNode ? POINTS_PER_PAGE : GROUPS_PER_PAGE
   const pageCount = Math.max(1, Math.ceil(candidates.length / size))
   const page = Math.max(0, Math.min(pageCount - 1, Number(options.page) || 0))
   const slice = candidates.slice(page * size, (page + 1) * size)
   const selectedId = Number(options.selectedId) || 0
-  const core = box('core', 'core', focused ? focused.name : subject.subject_name, 400, 460, 204, 204, {
-    caption: focused ? `${focused.nodes.length} 个知识点` : '学科知识中心',
-    groupKey: '',
+  const visibleDirectChildren = focusNode ? candidates.length : 0
+  const core = box('core', 'core', focusNode ? focusNode.name : subject.subject_name, 400, 460, 204, 204, {
+    caption: focusNode ? (focusNode.parentId ? '返回上一级' : '返回全科') : 'Knowledge Map',
+    groupKey: focusNode ? String(focusedGroup.key) : '',
+    pointId: focusNode ? Number(focusNode.knowledge_point_id) : 0,
     tone: 'core',
     iconSrc: '/assets/icons/knowledge-subject/layers.png',
   })
@@ -58,55 +98,72 @@ function buildScene(groups, subject, options = {}) {
   const edges = []
   const pointIds = []
 
-  slice.forEach((item, index) => {
+  slice.forEach((entry, index) => {
     const position = CARD_POSITIONS[index]
     if (!position) return
-    if (focused) {
-      const pointId = Number(item.knowledge_point_id)
-      const selected = pointId === selectedId
-      const node = box(`point:${pointId}`, 'point', item.name, position[0], position[1], 226, 112, {
-        pointId,
-        groupKey: focused.key,
-        tone: item.tone,
-        selected,
-        pathActive: selected,
-        caption: item.statusText,
-        iconSrc: item.iconSrc || focused.iconSrc || '/assets/icons/knowledge-subject/nodes.png',
-      })
-      nodes.push(node)
-      pointIds.push(pointId)
-      edges.push(edge(core, node, 'hierarchy', selected))
-      return
-    }
 
-    const group = item
-    const node = box(`group:${group.key}`, 'group', group.name, position[0], position[1], 226, 112, {
+    let item = entry
+    let group = focusedGroup
+    let edgeKind = 'hierarchy'
+    if (!focusNode) {
+      group = entry
+      item = entry.rootNode || entry.nodes[0]
+      edgeKind = 'membership'
+    }
+    if (!item) return
+
+    const pointId = Number(item.knowledge_point_id)
+    const visibleChildren = directChildren(group, pointId)
+    const expandable = Boolean(item.hasChildren)
+    const selected = !expandable && pointId === selectedId
+    const kind = expandable ? 'group' : 'point'
+    const node = box(`${kind}:${pointId}`, kind, item.name, position[0], position[1], 226, 112, {
+      pointId,
       groupKey: String(group.key),
-      caption: `${group.nodes.length} 个知识点`,
-      number: group.number,
-      selected: false,
-      pathActive: false,
-      tone: group.tone,
-      iconSrc: group.iconSrc || '/assets/icons/knowledge-subject/nodes.png',
+      tone: item.tone,
+      selected,
+      pathActive: expandable || selected,
+      expandable,
+      caption: expandable
+        ? `${visibleChildren.length}${visibleChildren.length === Number(item.childCount || 0) ? '' : ` / ${Number(item.childCount || 0)}`} 个直接子节点${item.contextOnly ? ' · 路径' : ''}`
+        : `${item.contextOnly ? '路径 · ' : ''}${item.statusText || '未开始'}${Number(item.trainable_question_count) > 0 ? ` · ${Number(item.trainable_question_count)}题` : ''}`,
+      iconSrc: item.iconSrc || group.iconSrc || '/assets/icons/knowledge-subject/nodes.png',
     })
     nodes.push(node)
-    edges.push(edge(core, node, 'membership', false))
+    if (!expandable) pointIds.push(pointId)
+    edges.push(edge(core, node, edgeKind, selected))
   })
 
   nodes.forEach((node, index) => { node.motionDelay = Math.min(220, 30 + index * 20) })
   edges.forEach((item, index) => { item.motionDelay = Math.min(180, 25 + index * 14) })
 
+  const matchTotal = groups.reduce((total, group) => total + Number(group.matchCount == null ? group.nodes.length : group.matchCount), 0)
+  const rangeText = candidates.length
+    ? (pageCount > 1
+      ? `${page * size + 1}-${Math.min((page + 1) * size, candidates.length)} / ${candidates.length}`
+      : `${candidates.length} ${focusNode ? '个子节点' : '个主题'}`)
+    : `0 ${focusNode ? '个子节点' : '个主题'}`
+
   return {
-    nodes: candidates.length ? nodes : [],
+    nodes: candidates.length || focusNode ? nodes : [],
     edges,
     pointIds,
     page,
     pageCount,
     total: candidates.length,
-    rangeText: candidates.length ? `${page * size + 1}-${Math.min((page + 1) * size, candidates.length)} / ${candidates.length}` : '0 / 0',
-    focused: Boolean(focused),
-    title: focused ? focused.name : '全科知识图谱',
-    hint: focused ? '点击知识点查看掌握状态与专项练习' : '连接主题展开，定位到具体知识点',
+    matchTotal,
+    rangeText,
+    focused: Boolean(focusNode),
+    focusNodeId: focusNode ? Number(focusNode.knowledge_point_id) : 0,
+    parentFocusId: focusNode ? Number(focusNode.parentId) || 0 : 0,
+    groupKey: focusNode ? String(focusedGroup.key) : '',
+    title: focusNode ? focusNode.name : '全科知识图谱',
+    hint: focusNode
+      ? `${visibleDirectChildren} 个直接子节点 · 逐层展开知识结构`
+      : '从一级主题进入，再逐层定位具体知识点',
+    countText: focusNode ? `${visibleDirectChildren} 个直接子节点` : `共 ${matchTotal} 个知识点`,
+    scopeText: focusNode ? `${focusNode.name} · 当前层级` : '全科知识图谱',
+    breadcrumbs: breadcrumbItems(subject, focusedGroup, focusNode),
   }
 }
 

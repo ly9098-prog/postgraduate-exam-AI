@@ -102,20 +102,31 @@
             <text class="graph-card-subtitle">{{scene.hint}}</text>
           </view>
         </view>
-        <view class="graph-count"><text>共 {{scene.focused ? scene.total : searchResultCount}} 个知识点</text><view class="graph-count-dot"></view></view>
+        <view class="graph-count"><text>{{scene.countText}}</text><view class="graph-count-dot"></view></view>
       </view>
+
+      <scroll-view class="graph-breadcrumb-scroll" scroll-x enhanced show-scrollbar="{{false}}" wx:if="{{scene.breadcrumbs.length}}">
+        <view class="graph-breadcrumbs">
+          <block wx:for="{{scene.breadcrumbs}}" wx:key="key">
+            <view class="graph-breadcrumb {{item.current ? 'breadcrumb-current' : ''}}" data-key="{{item.groupKey}}" data-id="{{item.focusNodeId}}" bindtap="onGraphBreadcrumbTap" hover-class="breadcrumb-pressed" aria-role="button" aria-label="进入{{item.label}}层级">
+              <text>{{item.label}}</text>
+            </view>
+            <text class="graph-breadcrumb-separator" wx:if="{{!item.current}}">›</text>
+          </block>
+        </view>
+      </scroll-view>
 
       <view id="atlas-viewport" class="atlas-viewport graph-canvas">
         <view class="graph-leaf graph-leaf-top" aria-hidden="true"><view></view><view></view><view></view></view>
         <view class="graph-leaf graph-leaf-bottom" aria-hidden="true"><view></view><view></view><view></view></view>
         <view class="atlas-stage" style="{{stageStyle}}" wx:if="{{scene.nodes.length}}">
           <view wx:for="{{scene.edges}}" wx:key="id" class="atlas-edge edge-{{item.kind}} {{item.active ? 'edge-active' : ''}}" style="{{item.style}}animation-delay: {{item.motionDelay}}ms;" aria-hidden="true"></view>
-          <view wx:for="{{scene.nodes}}" wx:key="id" class="atlas-node atlas-node-{{item.kind}} tone-{{item.tone}} {{item.pathActive ? 'node-path' : ''}} {{item.selected ? 'node-selected' : ''}}" style="{{item.style}}animation-delay: {{item.motionDelay}}ms;" data-kind="{{item.kind}}" data-key="{{item.groupKey}}" data-id="{{item.pointId}}" bindtap="onGraphNodeTap" hover-class="graph-node-pressed" hover-start-time="18" hover-stay-time="72" hover-stop-propagation="true" aria-role="button" aria-label="{{item.label}}，{{item.kind === 'group' ? '展开主题' : (item.kind === 'core' ? (scene.focused ? '返回全科知识图谱' : '学科中心') : item.caption)}}">
+          <view wx:for="{{scene.nodes}}" wx:key="id" class="atlas-node atlas-node-{{item.kind}} tone-{{item.tone}} {{item.pathActive ? 'node-path' : ''}} {{item.selected ? 'node-selected' : ''}}" style="{{item.style}}animation-delay: {{item.motionDelay}}ms;" data-kind="{{item.kind}}" data-key="{{item.groupKey}}" data-id="{{item.pointId}}" bindtap="onGraphNodeTap" hover-class="graph-node-pressed" hover-start-time="18" hover-stay-time="72" hover-stop-propagation="true" aria-role="button" aria-label="{{item.label}}，{{item.kind === 'group' ? '展开下一级' : (item.kind === 'core' ? item.caption : item.caption)}}">
             <block wx:if="{{item.kind === 'core'}}">
               <view class="core-orbit" aria-hidden="true"></view>
               <view class="core-icon-wrap" aria-hidden="true"><image class="core-icon" src="{{item.iconSrc}}" mode="aspectFit" /></view>
               <text class="core-label">{{item.label}}</text>
-              <text class="core-caption">{{scene.focused ? '返回全科' : 'Knowledge Map'}}</text>
+              <text class="core-caption">{{item.caption}}</text>
             </block>
             <block wx:else>
               <view class="graph-node-icon" aria-hidden="true"><image src="{{item.iconSrc}}" mode="aspectFit" /></view>
@@ -123,7 +134,7 @@
                 <text class="graph-node-label">{{item.label}}</text>
                 <text class="graph-node-caption">{{item.caption}}</text>
               </view>
-              <view class="graph-node-state" wx:if="{{item.kind === 'point'}}" aria-hidden="true"></view>
+              <view class="graph-node-branch-arrow" wx:if="{{item.kind === 'group'}}" aria-hidden="true"></view><view class="graph-node-state" wx:else aria-hidden="true"></view>
             </block>
           </view>
         </view>
@@ -137,8 +148,8 @@
 
       <view class="graph-card-foot">
         <view class="graph-footer-bar">
-          <button class="graph-scope" bindtap="showOverview" hover-class="graph-footer-pressed" hover-start-time="18" hover-stay-time="72" aria-label="{{scene.focused ? '返回全科知识图谱' : '当前为全科知识图谱'}}">
-            <text>{{scene.focused ? scene.title : '全科知识图谱'}}</text>
+          <button class="graph-scope" bindtap="showOverview" hover-class="graph-footer-pressed" hover-start-time="18" hover-stay-time="72" aria-label="返回全科知识图谱">
+            <text>{{scene.scopeText}}</text>
           </button>
           <view class="graph-pagination">
             <button class="graph-page-btn" disabled="{{scene.page === 0}}" data-step="-1" bindtap="changeGraphPage" hover-class="graph-page-pressed" hover-start-time="18" hover-stay-time="72" aria-label="上一页">‹</button>
@@ -151,15 +162,32 @@
 
     <view class="point-card {{themeSwitching ? 'theme-content-switching' : ''}} theme-switch-{{themeSwitchPhase}} {{selectionSwitching ? 'selection-switching' : ''}} selection-{{selectionSwitchPhase}}" wx:if="{{selectedPoint}}">
       <view class="point-card-top"><view class="point-card-kicker"><view class="selected-beacon"></view><text>当前知识点</text></view><text class="point-status tone-{{selectedPoint.tone}}">{{selectedPoint.statusText}}</text></view>
-      <view class="point-card-heading"><view class="point-card-copy"><text class="point-card-name">{{selectedPoint.name}}</text><view class="point-card-subline"><text class="point-card-theme">{{selectedPoint.groupName}}</text></view></view><view class="point-mastery"><text class="point-mastery-value {{!selectedPoint.hasScore ? 'score-empty' : ''}}">{{selectedPoint.scoreText}}</text><text class="point-mastery-label">掌握度</text></view></view>
+      <view class="point-card-heading"><view class="point-card-copy"><text class="point-card-name">{{selectedPoint.name}}</text><view class="point-card-subline"><text class="point-card-theme">{{selectedPoint.pathText || selectedPoint.groupName}}</text><text class="point-match-alias" wx:if="{{selectedPoint.matchedAlias}}">匹配别名：{{selectedPoint.matchedAlias}}</text></view></view><view class="point-mastery"><text class="point-mastery-value {{!selectedPoint.hasScore ? 'score-empty' : ''}}">{{selectedPoint.scoreText}}</text><text class="point-mastery-label">掌握度</text></view></view>
       <view class="point-facts"><view><text class="fact-value">{{selectedPoint.attempt_count}}</text><text class="fact-label">练习次数</text></view><view><text class="fact-value">{{selectedPoint.accuracyText}}</text><text class="fact-label">正确率</text></view><view><text class="fact-value">{{selectedPoint.trainable_question_count}}</text><text class="fact-label">可练题量</text></view></view>
       <view class="point-actions"><button class="point-detail" disabled="{{practiceLaunching}}" data-id="{{selectedPoint.knowledge_point_id}}" bindtap="openPoint" hover-class="atlas-pressed">查看详情</button><button class="point-practice {{practiceLaunchingId === selectedPoint.knowledge_point_id ? 'point-practice-launching' : ''}}" disabled="{{!selectedPoint.hasPractice || practiceLaunching}}" data-id="{{selectedPoint.knowledge_point_id}}" bindtap="practicePoint" hover-class="atlas-pressed"><view wx:if="{{practiceLaunchingId === selectedPoint.knowledge_point_id}}" class="point-practice-spinner" aria-hidden="true"></view><text>{{!selectedPoint.hasPractice ? '暂无可练题目' : (practiceLaunchingId === selectedPoint.knowledge_point_id ? '正在进入…' : '开始练习')}}</text></button></view>
     </view>
 
     <view class="knowledge-index {{themeSwitching ? 'theme-content-switching' : ''}} theme-switch-{{themeSwitchPhase}} {{selectionSwitching ? 'selection-switching' : ''}} selection-{{selectionSwitchPhase}}" wx:if="{{indexCount}}">
       <view class="index-heading"><text class="index-title">知识索引 <text>{{indexCount}}</text></text><view class="status-key"><view class="status-key-dot tone-unseen"></view><text>待建立</text><view class="status-key-dot tone-weak"></view><text>需强化</text><view class="status-key-dot tone-stable"></view><text>较稳定</text></view></view>
-      <view class="index-list"><view wx:for="{{indexNodes}}" wx:key="knowledge_point_id" class="index-row {{selectedPoint.knowledge_point_id === item.knowledge_point_id ? 'index-row-selected' : ''}}" data-id="{{item.knowledge_point_id}}" bindtap="locatePoint" hover-class="index-pressed" aria-role="button" aria-label="在图谱中定位{{item.name}}"><text class="index-rank">{{index + 1}}</text><view class="index-dot tone-{{item.tone}}"></view><view class="index-row-copy {{item.depth ? 'index-row-child' : ''}}" style="padding-left: {{item.indent}}rpx;"><view wx:if="{{item.depth}}" class="index-tree-guide" aria-hidden="true"></view><text class="index-node-name">{{item.name}}</text><view class="index-meta-row"><text class="index-node-meta">{{item.statusText}} · {{item.trainable_question_count}} 题可练</text></view></view><view class="index-locate"><view class="locate-crosshair" aria-hidden="true"></view><text>定位</text></view></view></view>
-      <button wx:if="{{hasMore}}" class="index-more" bindtap="loadMore" hover-class="atlas-pressed">展开更多知识点 <text>{{indexNodes.length}} / {{indexCount}}</text></button>
+      <view class="index-list">
+        <view wx:for="{{indexNodes}}" wx:key="knowledge_point_id" class="index-row {{selectedPoint && selectedPoint.knowledge_point_id === item.knowledge_point_id ? 'index-row-selected' : ''}} {{item.contextOnly ? 'index-row-context' : ''}}" data-id="{{item.knowledge_point_id}}" bindtap="handleIndexRowTap" hover-class="index-pressed" aria-role="button" aria-label="{{item.indexAriaAction}}{{item.name}}">
+          <view class="index-tree-control" aria-hidden="true">
+            <view class="index-chevron {{item.indexExpanded ? 'index-chevron-open' : ''}}" wx:if="{{item.indexExpandable}}"></view>
+            <view class="index-parent-node" wx:elif="{{item.hasChildren}}"></view>
+            <view class="index-leaf-node tone-{{item.tone}}" wx:else></view>
+          </view>
+          <view class="index-row-copy {{item.depth ? 'index-row-child' : ''}}" style="padding-left: {{item.indent}}rpx;">
+            <view wx:if="{{item.depth}}" class="index-tree-guide" aria-hidden="true"></view>
+            <text class="index-node-name">{{item.name}}</text>
+            <view class="index-meta-row"><text class="index-node-meta">{{item.indexMetaText}}</text><text class="index-alias-match" wx:if="{{item.matchedAlias}}">别名：{{item.matchedAlias}}</text></view>
+          </view>
+          <view class="index-locate {{item.indexExpandable ? 'index-expand-action' : ''}}">
+            <view class="locate-crosshair" wx:if="{{!item.hasChildren}}" aria-hidden="true"></view>
+            <text>{{item.indexActionText}}</text>
+          </view>
+        </view>
+      </view>
+      <button wx:if="{{hasMore}}" class="index-more" bindtap="loadMore" hover-class="atlas-pressed">加载更多目录项 <text>{{indexNodes.length}} / {{indexDisplayCount}}</text></button>
     </view>
 
     <view class="theme-sheet-layer {{themeSheetClosing ? 'theme-sheet-closing' : ''}}" wx:if="{{themeSheetOpen}}">

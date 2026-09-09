@@ -5,106 +5,143 @@ const toId = (value) => {
   return Number.isInteger(id) && id > 0 ? id : null
 }
 
-const safeDepth = value => Math.max(0, Math.min(8, Math.floor(Number(value) || 0)))
-
 function groupTone(nodes) {
   if (nodes.some(node => node.tone === 'weak')) return 'weak'
   if (nodes.some(node => node.tone === 'stable')) return 'stable'
   return 'unseen'
 }
 
-function normalizeNode(node, rootDepth) {
-  const depth = Math.max(0, safeDepth(node.depth) - rootDepth - 1)
-  return {
-    ...node,
-    parentId: toId(node.parent_id),
-    depth,
-    indent: Math.min(depth, 4) * 20,
-  }
+function buildParentMap(nodes, byId, orderById) {
+  const parentById = new Map()
+  nodes.forEach((node) => {
+    const id = node.knowledge_point_id
+    const parentId = toId(node.parent_id)
+    parentById.set(id, parentId && parentId !== id && byId.has(parentId) ? parentId : null)
+  })
+
+  // 后端异常数据可能出现循环 parent。这里确定性地断开循环中最早出现节点的父边，
+  // 保证索引和图谱始终能生成一棵可遍历的树/森林。
+  const completed = new Set()
+  nodes.forEach((start) => {
+    const startId = start.knowledge_point_id
+    if (completed.has(startId)) return
+    const path = []
+    const pathIndex = new Map()
+    let cursorId = startId
+    while (cursorId && !completed.has(cursorId)) {
+      if (pathIndex.has(cursorId)) {
+        const cycle = path.slice(pathIndex.get(cursorId))
+        const breakId = cycle.reduce((best, id) => (
+          orderById.get(id) < orderById.get(best) ? id : best
+        ), cycle[0])
+        parentById.set(breakId, null)
+        break
+      }
+      pathIndex.set(cursorId, path.length)
+      path.push(cursorId)
+      cursorId = parentById.get(cursorId)
+    }
+    path.forEach(id => completed.add(id))
+  })
+
+  return parentById
 }
 
-function buildFlatGroup(nodes, subject) {
-  const name = String((subject && subject.subject_name) || DEFAULT_GROUP_NAME)
-  const normalized = nodes.map(node => ({
-    ...node,
-    parentId: null,
-    depth: 0,
-    indent: 0,
-  }))
-  return [{ key: 'all', name, number: '01', tone: groupTone(normalized), nodes: normalized }]
-}
-
-/**
- * 把后端的前序树节点整理为“一级主题 + 内部知识点”。
- * 输入异常时也会稳定降级：孤儿节点成为自己的根，循环链按首个可见节点分组。
- */
 function buildKnowledgeGroups(input, subject) {
   const source = Array.isArray(input) ? input.filter(Boolean) : []
   if (!source.length) return []
 
   const nodes = []
   const byId = new Map()
-  source.forEach((item) => {
+  const orderById = new Map()
+  source.forEach((item, index) => {
     const id = toId(item.knowledge_point_id)
     if (!id || byId.has(id)) return
     const node = { ...item, knowledge_point_id: id }
     nodes.push(node)
     byId.set(id, node)
+    orderById.set(id, index)
   })
   if (!nodes.length) return []
 
-  const hasHierarchy = nodes.some(node => {
-    const parentId = toId(node.parent_id)
-    return parentId && parentId !== node.knowledge_point_id && byId.has(parentId)
+  const parentById = buildParentMap(nodes, byId, orderById)
+  const childrenById = new Map(nodes.map(node => [node.knowledge_point_id, []]))
+  nodes.forEach((node) => {
+    const parentId = parentById.get(node.knowledge_point_id)
+    if (parentId && childrenById.has(parentId)) childrenById.get(parentId).push(node.knowledge_point_id)
   })
-  if (!hasHierarchy) return buildFlatGroup(nodes, subject)
+  childrenById.forEach(children => children.sort((a, b) => orderById.get(a) - orderById.get(b)))
 
-  const rootCache = new Map()
-  const resolveRoot = (node) => {
-    if (rootCache.has(node.knowledge_point_id)) return rootCache.get(node.knowledge_point_id)
-    const path = []
-    const seen = new Set()
-    let cursor = node
-    while (cursor && !seen.has(cursor.knowledge_point_id)) {
-      if (rootCache.has(cursor.knowledge_point_id)) {
-        cursor = rootCache.get(cursor.knowledge_point_id)
-        break
-      }
-      path.push(cursor)
-      seen.add(cursor.knowledge_point_id)
-      const parentId = toId(cursor.parent_id)
-      const parent = parentId && parentId !== cursor.knowledge_point_id ? byId.get(parentId) : null
-      if (!parent) break
-      cursor = parent
-    }
-    const root = cursor || node
-    path.forEach(item => rootCache.set(item.knowledge_point_id, root))
-    return root
+  const descendantCountCache = new Map()
+  const descendantCount = (id) => {
+    if (descendantCountCache.has(id)) return descendantCountCache.get(id)
+    const count = (childrenById.get(id) || []).reduce((total, childId) => total + 1 + descendantCount(childId), 0)
+    descendantCountCache.set(id, count)
+    return count
   }
 
-  const groupsByRoot = new Map()
-  nodes.forEach((node) => {
-    const root = resolveRoot(node)
-    if (!groupsByRoot.has(root.knowledge_point_id)) {
-      groupsByRoot.set(root.knowledge_point_id, { root, descendants: [] })
-    }
-    if (node.knowledge_point_id !== root.knowledge_point_id) {
-      groupsByRoot.get(root.knowledge_point_id).descendants.push(node)
-    }
-  })
+  const roots = nodes
+    .filter(node => !parentById.get(node.knowledge_point_id))
+    .sort((a, b) => orderById.get(a.knowledge_point_id) - orderById.get(b.knowledge_point_id))
 
-  return Array.from(groupsByRoot.values()).map((entry, index) => {
-    // 单节点主题仍保留一个可点选节点，避免丢失练习入口。
-    const children = entry.descendants.length ? entry.descendants : [entry.root]
-    const normalized = children.map(node => normalizeNode(node, safeDepth(entry.root.depth)))
+  const decorateSubtree = (root) => {
+    const result = []
+    const walk = (id, depth, pathIds) => {
+      const raw = byId.get(id)
+      if (!raw) return
+      const children = childrenById.get(id) || []
+      const parentId = parentById.get(id)
+      const nextPath = pathIds.concat(id)
+      result.push({
+        ...raw,
+        parent_id: parentId,
+        parentId,
+        rootId: root.knowledge_point_id,
+        depth,
+        indent: Math.min(depth, 5) * 20,
+        childCount: children.length,
+        descendantCount: descendantCount(id),
+        hasChildren: children.length > 0,
+        isLeaf: children.length === 0,
+        pathIds: nextPath,
+      })
+      children.forEach(childId => walk(childId, depth + 1, nextPath))
+    }
+    walk(root.knowledge_point_id, 0, [])
+    return result
+  }
+
+  const groups = roots.map((root, sourceIndex) => {
+    const normalized = decorateSubtree(root)
+    const rootNode = normalized[0]
     return {
-      key: String(entry.root.knowledge_point_id),
-      name: String(entry.root.name || `${DEFAULT_GROUP_NAME}${index + 1}`),
-      number: String(index + 1).padStart(2, '0'),
+      key: String(root.knowledge_point_id),
+      rootId: root.knowledge_point_id,
+      rootNode,
+      name: String(root.name || `${DEFAULT_GROUP_NAME}${sourceIndex + 1}`),
       tone: groupTone(normalized),
+      nodeCount: normalized.length,
+      descendantCount: Math.max(0, normalized.length - 1),
+      directChildCount: rootNode ? rootNode.childCount : 0,
+      sourceIndex,
       nodes: normalized,
     }
   })
+
+  // 数据尚未完全补齐 parent 时，优先把真正拥有层级的根主题放到前面，
+  // 避免首页被大量孤立叶节点占满；同类主题仍保持原始大纲顺序。
+  groups.sort((a, b) => {
+    const aStructured = a.descendantCount > 0 ? 1 : 0
+    const bStructured = b.descendantCount > 0 ? 1 : 0
+    if (aStructured !== bStructured) return bStructured - aStructured
+    if (aStructured && a.nodeCount !== b.nodeCount) return b.nodeCount - a.nodeCount
+    return a.sourceIndex - b.sourceIndex
+  })
+
+  return groups.map((group, index) => ({
+    ...group,
+    number: String(index + 1).padStart(2, '0'),
+  }))
 }
 
 module.exports = { buildKnowledgeGroups }

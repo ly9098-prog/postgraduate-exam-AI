@@ -19,7 +19,7 @@ const LABEL_SWITCH_OUT_MS = 72
 const SELECTION_SWITCH_OUT_MS = 82
 const SELECTION_SWITCH_IN_MS = 220
 const RETURN_REFRESH_DELAY_MS = 260
-const VIEW_STATE_VERSION = 1
+const VIEW_STATE_VERSION = 2
 const VIEW_STATE_MAX_AGE_MS = 30 * 60 * 1000
 const CAMERA_FRAME_MS = 16
 const PAN_THRESHOLD = 5
@@ -30,16 +30,23 @@ const nonnegative = value => Math.max(0, Number(value) || 0)
 const normalizeSearchText = value => String(value || '').trim().toLowerCase()
 const compactSearchText = value => normalizeSearchText(value).replace(SEARCH_SEPARATOR_RE, '')
 const searchTokens = value => normalizeSearchText(value).split(SEARCH_SEPARATOR_RE).filter(Boolean)
+const textSearchMatch = (value, rawQuery, compactQuery, tokens) => {
+  const raw = normalizeSearchText(value)
+  if (!raw) return false
+  const compact = compactSearchText(raw)
+  return raw.includes(rawQuery)
+    || Boolean(compactQuery && compact.includes(compactQuery))
+    || Boolean(tokens.length > 1 && tokens.every(token => raw.includes(token) || compact.includes(compactSearchText(token))))
+}
 const pointSearchMatch = (node, query) => {
   const rawQuery = normalizeSearchText(query)
   if (!rawQuery) return { matched: true, alias: '' }
   const compactQuery = compactSearchText(rawQuery)
   const tokens = searchTokens(rawQuery)
-  const raw = normalizeSearchText(node && node.name)
-  if (!raw) return { matched: false, alias: '' }
-  const compact = compactSearchText(raw)
-  const matched = raw.includes(rawQuery) || (compactQuery && compact.includes(compactQuery)) || (tokens.length > 1 && tokens.every(token => raw.includes(token) || compact.includes(compactSearchText(token))))
-  return { matched: Boolean(matched), alias: '' }
+  if (textSearchMatch(node && node.name, rawQuery, compactQuery, tokens)) return { matched: true, alias: '' }
+  const aliases = Array.isArray(node && node.aliases) ? node.aliases : []
+  const alias = aliases.find(value => textSearchMatch(value, rawQuery, compactQuery, tokens)) || ''
+  return { matched: Boolean(alias), alias: String(alias || '') }
 }
 const THEME_ICON_ASSETS = {
   overview: '/assets/icons/knowledge-subject/overview.png',
@@ -83,31 +90,20 @@ const themeSearchMatch = (group, query) => {
     return raw.includes(rawQuery) || (compactQuery && compact.includes(compactQuery))
   })
 }
-const QUICK_THEME_PRIORITY = [
-  /b树|b-tree|btree|b tree|tree/i,
-  /元素移动|移动|move|transfer|swap/i,
-  /入栈出栈序列|入栈|出栈|stack push|stack pop|stack/i,
-  /catalan/i,
-  /c语言标识符|c语言|标识符|identifier|code/i,
-]
-const buildQuickGroupChips = (chips, activeKey) => {
+const buildQuickGroupChips = (chips, activeKey, recentKeys = []) => {
   const source = Array.isArray(chips) ? chips : []
-  const picked = []
-  const used = new Set()
-  QUICK_THEME_PRIORITY.forEach((pattern) => {
-    const hit = source.find(item => !used.has(String(item.key)) && pattern.test(String(item.name || '')))
-    if (!hit) return
-    picked.push(hit)
-    used.add(String(hit.key))
+  const recentRank = new Map((Array.isArray(recentKeys) ? recentKeys : []).map((key, index) => [String(key), index]))
+  const ranked = source.slice().sort((a, b) => {
+    const aRecent = recentRank.has(String(a.key)) ? recentRank.get(String(a.key)) : Number.MAX_SAFE_INTEGER
+    const bRecent = recentRank.has(String(b.key)) ? recentRank.get(String(b.key)) : Number.MAX_SAFE_INTEGER
+    if (aRecent !== bRecent && (aRecent !== Number.MAX_SAFE_INTEGER || bRecent !== Number.MAX_SAFE_INTEGER)) return aRecent - bRecent
+    const aStructured = Number(a.descendantCount) > 0 ? 1 : 0
+    const bStructured = Number(b.descendantCount) > 0 ? 1 : 0
+    if (aStructured !== bStructured) return bStructured - aStructured
+    if (aStructured && Number(a.descendantCount) !== Number(b.descendantCount)) return Number(b.descendantCount) - Number(a.descendantCount)
+    return Number(a.orderIndex || 0) - Number(b.orderIndex || 0)
   })
-  source.forEach((item) => {
-    if (picked.length >= QUICK_THEME_LIMIT) return
-    const key = String(item.key)
-    if (used.has(key)) return
-    picked.push(item)
-    used.add(key)
-  })
-  const result = picked.slice(0, QUICK_THEME_LIMIT)
+  const result = ranked.slice(0, QUICK_THEME_LIMIT)
   const normalizedActive = String(activeKey || '')
   if (!normalizedActive || result.some(item => String(item.key) === normalizedActive)) return result
   const activeItem = source.find(item => String(item.key) === normalizedActive)
@@ -116,6 +112,7 @@ const buildQuickGroupChips = (chips, activeKey) => {
   else if (result.length) result[result.length - 1] = activeItem
   return result
 }
+
 const percent = value => value == null || !Number.isFinite(Number(value)) ? null : Math.max(0, Math.min(100, Math.round(Number(value))))
 const accuracyPercent = (value) => {
   const number = Number(value)
@@ -134,7 +131,7 @@ Page({
     scene: { nodes: [], edges: [], page: 0, pageCount: 1, focused: false },
     pageEntered: false, sceneAnimating: false, themeSwitching: false, themeSwitchPhase: '', selectionSwitching: false, selectionSwitchPhase: '', graphInteracting: false,
     stageStyle: '', zoomText: '100%', zoomInDisabled: false, zoomOutDisabled: true, selectedPoint: null,
-    indexNodes: [], indexCount: 0, hasMore: false,
+    indexNodes: [], indexCount: 0, indexDisplayCount: 0, hasMore: false,
     practiceLaunching: false, practiceLaunchingId: 0,
   },
 
@@ -148,6 +145,8 @@ Page({
     this._practiceLaunchFeedbackTimer = null
     this._practiceNavigationPending = false
     this._detailNavigationPending = false
+    this._focusNodeId = 0
+    this._expandedNodeIds = new Set()
     let width = 375
     try {
       const info = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync()
@@ -233,8 +232,10 @@ Page({
       filter: String(this.data.filter || 'all'),
       query: String(this.data.query || ''),
       activeGroupKey: String(this.data.activeGroupKey || ''),
+      focusNodeId: Math.max(0, Number(this._focusNodeId) || 0),
       graphPage: Math.max(0, Number(this._graphPage) || 0),
       selectedId: Math.max(0, Number(this._selectedId) || Number(this.data.selectedPoint && this.data.selectedPoint.knowledge_point_id) || 0),
+      expandedNodeIds: Array.from(this._expandedNodeIds || []).map(Number).filter(id => Number.isInteger(id) && id > 0).slice(0, 160),
       indexLimit: Math.max(INITIAL_INDEX_LIMIT, Number(this._indexLimit) || INITIAL_INDEX_LIMIT),
       scrollTop: Math.max(0, Number(this._scrollTop) || 0),
       camera,
@@ -279,8 +280,10 @@ Page({
   _primeViewState(state) {
     if (!state) return
     this._pendingInitialViewState = state
+    this._focusNodeId = Math.max(0, Number(state.focusNodeId) || 0)
     this._graphPage = Math.max(0, Number(state.graphPage) || 0)
     this._selectedId = Math.max(0, Number(state.selectedId) || 0)
+    this._expandedNodeIds = new Set((Array.isArray(state.expandedNodeIds) ? state.expandedNodeIds : []).map(Number).filter(id => Number.isInteger(id) && id > 0))
     this._indexLimit = Math.max(INITIAL_INDEX_LIMIT, Number(state.indexLimit) || INITIAL_INDEX_LIMIT)
     this._scrollTop = Math.max(0, Number(state.scrollTop) || 0)
     if (state.camera && this._frame) {
@@ -326,7 +329,20 @@ Page({
       })
       this._groups = buildKnowledgeGroups(this._nodes, data.subject)
       this._nodeById = new Map()
-      this._groups.forEach(group => group.nodes.forEach(node => this._nodeById.set(Number(node.knowledge_point_id), { ...node, groupKey: group.key, groupName: group.name })))
+      this._groups.forEach(group => group.nodes.forEach((node) => {
+        const pathNames = (Array.isArray(node.pathIds) ? node.pathIds : [])
+          .map(id => group.nodes.find(item => Number(item.knowledge_point_id) === Number(id)))
+          .filter(Boolean)
+          .map(item => item.name)
+        this._nodeById.set(Number(node.knowledge_point_id), {
+          ...node,
+          groupKey: group.key,
+          groupName: group.name,
+          pathText: pathNames.join(' > ') || group.name,
+        })
+      }))
+      const validNodeIds = new Set(this._nodeById.keys())
+      this._expandedNodeIds = new Set(Array.from(this._expandedNodeIds || []).filter(id => validNodeIds.has(Number(id))))
       const total = nonnegative(data.subject.trainable_knowledge_points == null ? this._nodes.filter(node => node.hasPractice).length : data.subject.trainable_knowledge_points)
       const reliable = nonnegative(data.subject.reliable_knowledge_points)
       const weak = nonnegative(data.subject.weak_knowledge_points)
@@ -339,8 +355,12 @@ Page({
       const firstLoad = !this._loadedOnce
       const preserveViewState = options && options.preserveViewState
       if (preserveViewState) {
+        this._focusNodeId = Math.max(0, Number(preserveViewState.focusNodeId) || 0)
         this._graphPage = Math.max(0, Number(preserveViewState.graphPage) || 0)
         this._selectedId = Math.max(0, Number(preserveViewState.selectedId) || 0)
+        this._expandedNodeIds = new Set((Array.isArray(preserveViewState.expandedNodeIds) ? preserveViewState.expandedNodeIds : [])
+          .map(Number)
+          .filter(id => Number.isInteger(id) && id > 0 && validNodeIds.has(id)))
         this._indexLimit = Math.max(INITIAL_INDEX_LIMIT, Number(preserveViewState.indexLimit) || INITIAL_INDEX_LIMIT)
         if (preserveViewState.camera && this._frame) {
           this._camera = clampCamera({
@@ -386,53 +406,191 @@ Page({
     if (!this.data.subject) return
     const config = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
     const query = normalizeSearchText(this.data.query)
+    const forceOpenTree = Boolean(query) || config.id !== 'all'
+
     this._filteredGroups = (this._groups || []).map((group, groupIndex) => {
       const groupIconKind = themeIconKind(group, groupIndex)
       const groupIconSrc = themeIconSrc(groupIconKind)
+      const fullById = new Map(group.nodes.map(node => [Number(node.knowledge_point_id), node]))
+      const matchedIds = new Set()
+      const matchedAliases = new Map()
+
+      group.nodes.forEach((node) => {
+        if (config.statuses && !config.statuses.includes(node.status)) return
+        const searchMatch = pointSearchMatch(node, query)
+        if (!searchMatch.matched) return
+        const id = Number(node.knowledge_point_id)
+        matchedIds.add(id)
+        if (searchMatch.alias) matchedAliases.set(id, searchMatch.alias)
+      })
+
+      const visibleIds = new Set(matchedIds)
+      if (forceOpenTree) {
+        matchedIds.forEach((id) => {
+          let cursor = fullById.get(Number(id))
+          const seen = new Set()
+          while (cursor && cursor.parentId && !seen.has(Number(cursor.parentId))) {
+            const parentId = Number(cursor.parentId)
+            seen.add(parentId)
+            if (!fullById.has(parentId)) break
+            visibleIds.add(parentId)
+            cursor = fullById.get(parentId)
+          }
+        })
+      }
+
+      let filteredNodes = group.nodes.reduce((result, node, nodeIndex) => {
+        const id = Number(node.knowledge_point_id)
+        if (!visibleIds.has(id)) return result
+        const nodeIconKind = themeIconKind({ name: node.name, key: node.knowledge_point_id }, nodeIndex)
+        result.push({
+          ...node,
+          groupKey: String(group.key),
+          groupName: group.name,
+          iconKind: nodeIconKind,
+          iconSrc: themeIconSrc(nodeIconKind),
+          matched: matchedIds.has(id),
+          contextOnly: !matchedIds.has(id),
+          matchedAlias: matchedAliases.get(id) || '',
+        })
+        return result
+      }, [])
+
+      const visibleChildCount = new Map()
+      filteredNodes.forEach((node) => {
+        const parentId = Number(node.parentId)
+        if (!parentId) return
+        visibleChildCount.set(parentId, (visibleChildCount.get(parentId) || 0) + 1)
+      })
+      filteredNodes = filteredNodes.map(node => ({ ...node, visibleChildCount: visibleChildCount.get(Number(node.knowledge_point_id)) || 0 }))
+
       return {
         ...group,
         iconKind: groupIconKind,
         iconSrc: groupIconSrc,
-        nodes: group.nodes.reduce((result, node, nodeIndex) => {
-          if (config.statuses && !config.statuses.includes(node.status)) return result
-          const searchMatch = pointSearchMatch(node, query)
-          if (!searchMatch.matched) return result
-          const nodeIconKind = themeIconKind({ name: node.name, key: node.knowledge_point_id }, nodeIndex)
-          result.push({ ...node, iconKind: nodeIconKind, iconSrc: themeIconSrc(nodeIconKind) })
-          return result
-        }, []),
+        matchCount: matchedIds.size,
+        nodes: filteredNodes,
+        rootNode: filteredNodes.find(node => Number(node.knowledge_point_id) === Number(group.rootId)) || null,
       }
     })
-    const availableGroups = this._filteredGroups.filter(group => group.nodes.length)
-    const activeGroupKey = availableGroups.some(group => group.key === this.data.activeGroupKey) ? this.data.activeGroupKey : ''
-    const groups = activeGroupKey ? availableGroups.filter(group => group.key === activeGroupKey) : availableGroups
-    this._visibleNodes = groups.reduce((result, group) => result.concat(group.nodes), [])
-    let scene = buildScene(availableGroups, this.data.subject, { groupKey: activeGroupKey, page: this._graphPage || 0, selectedId: this._selectedId })
+
+    const availableGroups = this._filteredGroups.filter(group => group.matchCount > 0 && group.nodes.length)
+    let activeGroupKey = availableGroups.some(group => String(group.key) === String(this.data.activeGroupKey)) ? String(this.data.activeGroupKey) : ''
+    let activeFilteredGroup = activeGroupKey ? availableGroups.find(group => String(group.key) === activeGroupKey) : null
+    let focusNodeId = 0
+    if (activeFilteredGroup) {
+      focusNodeId = Number(this._focusNodeId) || Number(activeFilteredGroup.rootId) || 0
+      if (!activeFilteredGroup.nodes.some(node => Number(node.knowledge_point_id) === focusNodeId)) {
+        focusNodeId = Number(activeFilteredGroup.rootId) || 0
+      }
+      const focusBase = this._nodeById && this._nodeById.get(focusNodeId)
+      ;(focusBase && Array.isArray(focusBase.pathIds) ? focusBase.pathIds : []).forEach(id => this._expandedNodeIds.add(Number(id)))
+    } else {
+      activeGroupKey = ''
+      this._focusNodeId = 0
+    }
+    this._focusNodeId = focusNodeId
+
+    const scopedGroups = activeFilteredGroup ? [activeFilteredGroup] : availableGroups
+    this._visibleNodes = scopedGroups.reduce((result, group) => result.concat(group.nodes), [])
+
+    let scene = buildScene(availableGroups, this.data.subject, {
+      groupKey: activeGroupKey,
+      focusNodeId,
+      page: this._graphPage || 0,
+      selectedId: this._selectedId,
+    })
+    this._focusNodeId = Number(scene.focusNodeId) || 0
+
     if (!scene.pointIds.some(id => Number(id) === Number(this._selectedId))) {
-      this._selectedId = scene.pointIds.length ? Number(scene.pointIds[0]) : 0
-      scene = buildScene(availableGroups, this.data.subject, { groupKey: activeGroupKey, page: scene.page, selectedId: this._selectedId })
+      this._selectedId = scene.focused && scene.pointIds.length ? Number(scene.pointIds[0]) : 0
+      scene = buildScene(availableGroups, this.data.subject, {
+        groupKey: activeGroupKey,
+        focusNodeId: this._focusNodeId,
+        page: scene.page,
+        selectedId: this._selectedId,
+      })
     }
     this._graphPage = scene.page
+
     const limit = this._indexLimit || INITIAL_INDEX_LIMIT
+    const indexRows = []
+    scopedGroups.forEach((group) => {
+      const byParent = new Map()
+      group.nodes.forEach((node) => {
+        const parentId = Number(node.parentId) || 0
+        if (!byParent.has(parentId)) byParent.set(parentId, [])
+        byParent.get(parentId).push(node)
+      })
+      const root = group.nodes.find(node => Number(node.knowledge_point_id) === Number(group.rootId))
+      if (!root) return
+      const walk = (node) => {
+        const id = Number(node.knowledge_point_id)
+        const children = byParent.get(id) || []
+        const indexExpandable = children.length > 0
+        const indexForcedOpen = indexExpandable && forceOpenTree
+        const indexExpanded = indexExpandable && (indexForcedOpen || this._expandedNodeIds.has(id))
+        let indexMetaText = `${node.statusText} · ${node.trainable_question_count} 题可练`
+        if (node.contextOnly) indexMetaText = `路径 · ${children.length || node.visibleChildCount || 1} 个匹配分支`
+        else if (node.hasChildren) indexMetaText = `${node.childCount} 个子节点 · ${node.descendantCount} 个下级知识点`
+        const indexActionText = indexForcedOpen
+          ? (node.contextOnly ? '路径' : '查看')
+          : (indexExpandable ? (indexExpanded ? '收起' : '展开') : (node.hasChildren ? '父级' : '定位'))
+        indexRows.push({
+          ...node,
+          indexExpandable,
+          indexForcedOpen,
+          indexExpanded,
+          indexMetaText,
+          indexActionText,
+          indexAriaAction: indexForcedOpen ? '在图谱中查看' : (indexExpandable ? (indexExpanded ? '收起' : '展开') : (node.hasChildren ? '父级路径' : '在图谱中定位')),
+        })
+        if (indexExpanded) children.forEach(walk)
+      }
+      walk(root)
+    })
+
     const visibleById = new Map(this._visibleNodes.map(node => [Number(node.knowledge_point_id), node]))
-    const selectedBase = this._nodeById.get(this._selectedId) || null
     const selectedVisible = visibleById.get(Number(this._selectedId)) || null
+    const selectedBase = this._nodeById && this._nodeById.get(Number(this._selectedId))
     const filteredByKey = new Map((this._filteredGroups || []).map(group => [String(group.key), group]))
     const groupChips = (this._groups || []).map((group, index) => {
       const filteredGroup = filteredByKey.get(String(group.key))
       const iconKind = themeIconKind(group, index)
-      return { key: String(group.key), name: group.name, count: filteredGroup ? filteredGroup.nodes.length : 0, number: group.number, orderText: formatThemeOrder(group, index), iconKind, iconSrc: themeIconSrc(iconKind) }
+      return {
+        key: String(group.key),
+        name: group.name,
+        count: filteredGroup ? filteredGroup.matchCount : 0,
+        number: group.number,
+        orderText: formatThemeOrder(group, index),
+        iconKind,
+        iconSrc: themeIconSrc(iconKind),
+        nodeCount: Number(group.nodeCount || group.nodes.length || 0),
+        descendantCount: Number(group.descendantCount || 0),
+        directChildCount: Number(group.directChildCount || 0),
+        orderIndex: index,
+      }
     })
-    const quickGroupChips = buildQuickGroupChips(groupChips, activeGroupKey)
+    const quickGroupChips = buildQuickGroupChips(groupChips, activeGroupKey, this._recentGroupKeys)
     const themeSheetGroups = groupChips.filter(group => themeSearchMatch(group, this.data.themeQuery))
     const activeGroup = groupChips.find(group => group.key === activeGroupKey)
+    const indexCount = scopedGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0)
+    const searchResultCount = availableGroups.reduce((count, group) => count + Number(group.matchCount || 0), 0)
     const payload = {
-      activeGroupKey, activeGroupName: activeGroup ? activeGroup.name : '', scene,
-      groupChips, quickGroupChips, themeGroupCount: groupChips.length, themeSheetGroups,
+      activeGroupKey,
+      activeGroupName: activeGroup ? activeGroup.name : '',
+      scene,
+      groupChips,
+      quickGroupChips,
+      themeGroupCount: groupChips.length,
+      themeSheetGroups,
       searchPending: false,
-      searchResultCount: availableGroups.reduce((count, group) => count + group.nodes.length, 0),
-      selectedPoint: selectedBase,
-      indexNodes: this._visibleNodes.slice(0, limit), indexCount: this._visibleNodes.length, hasMore: this._visibleNodes.length > limit,
+      searchResultCount,
+      selectedPoint: selectedBase && selectedVisible ? { ...selectedBase, matchedAlias: selectedVisible.matchedAlias || '' } : null,
+      indexNodes: indexRows.slice(0, limit),
+      indexCount,
+      indexDisplayCount: indexRows.length,
+      hasMore: indexRows.length > limit,
     }
     if (animateScene) payload.sceneAnimating = true
     if (resetCamera && this._frame) {
@@ -545,14 +703,27 @@ Page({
   },
   openGroup(key) {
     const normalized = String(key || '')
-    if (normalized && !(this._filteredGroups || []).some(group => String(group.key) === normalized && group.nodes.length)) return
-    if (normalized === this.data.activeGroupKey) return
+    const targetGroup = normalized
+      ? (this._filteredGroups || []).find(group => String(group.key) === normalized && group.matchCount > 0 && group.nodes.length)
+      : null
+    if (normalized && !targetGroup) return
+    if (targetGroup && targetGroup.rootNode && !targetGroup.rootNode.hasChildren) {
+      this.locatePointById(Number(targetGroup.rootId))
+      return
+    }
+    const targetFocusId = targetGroup ? Number(targetGroup.rootId) || 0 : 0
+    if (normalized === this.data.activeGroupKey && Number(this._focusNodeId) === targetFocusId) return
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
+    this._focusNodeId = targetFocusId
+    if (targetFocusId) this._expandedNodeIds.add(targetFocusId)
     if (normalized) this.rememberGroup(normalized)
-    const quickGroupChips = buildQuickGroupChips(this.data.groupChips, normalized)
+    const quickGroupChips = buildQuickGroupChips(this.data.groupChips, normalized, this._recentGroupKeys)
     this.transitionLabelView({ activeGroupKey: normalized, quickGroupChips })
   },
-  showOverview() { this.openGroup('') },
+  showOverview() {
+    this._focusNodeId = 0
+    this.openGroup('')
+  },
   openThemeSheet() {
     const groups = Array.isArray(this.data.groupChips) ? this.data.groupChips : []
     clearTimeout(this._themeSheetCloseTimer)
@@ -602,12 +773,45 @@ Page({
     this._graphPage = next; this._selectedId = 0
     this.applyView(true)
   },
+  navigateToFocus(groupKey, focusNodeId) {
+    const normalizedGroupKey = String(groupKey || '')
+    const nextFocusId = Math.max(0, Number(focusNodeId) || 0)
+    if (!normalizedGroupKey || !nextFocusId) {
+      this._focusNodeId = 0
+      this.openGroup('')
+      return
+    }
+    const group = (this._filteredGroups || []).find(item => String(item.key) === normalizedGroupKey && item.matchCount > 0)
+    const node = group && group.nodes.find(item => Number(item.knowledge_point_id) === nextFocusId)
+    if (!group || !node) return
+    if (String(this.data.activeGroupKey) === normalizedGroupKey && Number(this._focusNodeId) === nextFocusId) return
+    this._graphPage = 0
+    this._selectedId = 0
+    this._focusNodeId = nextFocusId
+    const base = this._nodeById && this._nodeById.get(nextFocusId)
+    ;(base && Array.isArray(base.pathIds) ? base.pathIds : [nextFocusId]).forEach(id => this._expandedNodeIds.add(Number(id)))
+    const quickGroupChips = buildQuickGroupChips(this.data.groupChips, normalizedGroupKey, this._recentGroupKeys)
+    this.transitionLabelView({ activeGroupKey: normalizedGroupKey, quickGroupChips })
+  },
+  onGraphBreadcrumbTap(event) {
+    const focusNodeId = Number(event.currentTarget.dataset.id) || 0
+    const groupKey = String(event.currentTarget.dataset.key || '')
+    if (!focusNodeId) this.showOverview()
+    else this.navigateToFocus(groupKey, focusNodeId)
+  },
   onGraphNodeTap(event) {
     if (Date.now() < (this._suppressTapUntil || 0)) return
     const { kind, id, key } = event.currentTarget.dataset
-    if (kind === 'core') this.showOverview()
-    else if (kind === 'group') this.openGroup(String(key))
-    else if (kind === 'point' && this._nodeById.has(Number(id))) this.selectGraphPoint(Number(id))
+    if (kind === 'core') {
+      if (!this.data.scene.focused) return
+      const parentFocusId = Number(this.data.scene.parentFocusId) || 0
+      if (parentFocusId) this.navigateToFocus(String(this.data.scene.groupKey || key || ''), parentFocusId)
+      else this.showOverview()
+    } else if (kind === 'group') {
+      this.navigateToFocus(String(key || ''), Number(id))
+    } else if (kind === 'point' && this._nodeById.has(Number(id))) {
+      this.selectGraphPoint(Number(id))
+    }
   },
   selectGraphPoint(id) {
     const nextId = Number(id)
@@ -641,18 +845,59 @@ Page({
       }, SELECTION_SWITCH_OUT_MS)
     })
   },
-  locatePoint(event) {
-    const point = this._nodeById.get(Number(event.currentTarget.dataset.id))
+  handleIndexRowTap(event) {
+    const id = Number(event.currentTarget.dataset.id)
+    const node = this._nodeById && this._nodeById.get(id)
+    if (!node) return
+    const group = (this._filteredGroups || []).find(item => String(item.key) === String(node.groupKey))
+    const filteredNode = group && group.nodes.find(item => Number(item.knowledge_point_id) === id)
+    const visibleChildren = group ? group.nodes.filter(item => Number(item.parentId) === id) : []
+    if (visibleChildren.length) {
+      const forceOpenTree = Boolean(normalizeSearchText(this.data.query)) || this.data.filter !== 'all'
+      if (forceOpenTree) {
+        this.navigateToFocus(String(node.groupKey), id)
+        return
+      }
+      if (this._expandedNodeIds.has(id)) this._expandedNodeIds.delete(id)
+      else this._expandedNodeIds.add(id)
+      this._indexLimit = Math.max(INITIAL_INDEX_LIMIT, Number(this._indexLimit) || INITIAL_INDEX_LIMIT)
+      this.applyView(false, false)
+      return
+    }
+    // 搜索/状态筛选下，父节点可能保留为上下文但子项被过滤掉；此时不把父节点伪装成叶子节点。
+    if ((filteredNode && filteredNode.hasChildren) || node.hasChildren) return
+    this.locatePointById(id)
+  },
+  locatePoint(event) { this.locatePointById(Number(event.currentTarget.dataset.id)) },
+  locatePointById(id) {
+    const point = this._nodeById && this._nodeById.get(Number(id))
     if (!point) return
-    const group = (this._filteredGroups || []).find(item => item.key === point.groupKey)
-    const index = group ? group.nodes.findIndex(item => Number(item.knowledge_point_id) === Number(point.knowledge_point_id)) : -1
-    if (index < 0) return
+    const group = (this._filteredGroups || []).find(item => String(item.key) === String(point.groupKey))
+    if (!group) return
+
     this._selectedId = Number(point.knowledge_point_id)
-    this._graphPage = Math.floor(index / POINTS_PER_PAGE)
-    this._indexLimit = Math.max(INITIAL_INDEX_LIMIT, index + 1)
-    this.setData({ activeGroupKey: point.groupKey }, () => this.applyView(true))
+    this._indexLimit = Math.max(INITIAL_INDEX_LIMIT, Number(this._indexLimit) || INITIAL_INDEX_LIMIT)
+    ;(Array.isArray(point.pathIds) ? point.pathIds : []).forEach(pathId => this._expandedNodeIds.add(Number(pathId)))
+
+    const parentId = Number(point.parentId) || 0
+    if (parentId) {
+      const siblings = group.nodes.filter(item => Number(item.parentId) === parentId)
+      const index = siblings.findIndex(item => Number(item.knowledge_point_id) === Number(point.knowledge_point_id))
+      if (index < 0) return
+      this._focusNodeId = parentId
+      this._graphPage = Math.floor(index / POINTS_PER_PAGE)
+      this.setData({ activeGroupKey: String(point.groupKey) }, () => this.applyView(true))
+    } else {
+      const availableGroups = (this._filteredGroups || []).filter(item => item.matchCount > 0 && item.nodes.length)
+      const groupIndex = availableGroups.findIndex(item => String(item.key) === String(point.groupKey))
+      if (groupIndex < 0) return
+      this._focusNodeId = 0
+      this._graphPage = Math.floor(groupIndex / POINTS_PER_PAGE)
+      this.setData({ activeGroupKey: '' }, () => this.applyView(true))
+    }
     wx.pageScrollTo({ selector: '#atlas-shell', duration: 220 })
   },
+
   loadMore() { this._indexLimit = (this._indexLimit || INITIAL_INDEX_LIMIT) + INITIAL_INDEX_LIMIT; this.applyView(false) },
   openPoint(event) {
     const id = Number(event.currentTarget.dataset.id)

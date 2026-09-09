@@ -326,6 +326,112 @@ def _ordered_tree_rows(
     return rows
 
 
+def _build_hierarchy_metadata(
+    points: list[KnowledgePoint],
+    parent_map: dict[int, int],
+    states: dict[int, UserKnowledgeState],
+    trainable_counts: dict[int, int],
+) -> dict[int, dict]:
+    point_ids = {int(point.id) for point in points}
+    children: dict[int, list[int]] = defaultdict(list)
+    for child_id, parent_id in parent_map.items():
+        if child_id in point_ids and parent_id in point_ids:
+            children[parent_id].append(child_id)
+
+    subtree_cache: dict[int, tuple[int, ...]] = {}
+
+    def subtree_ids(kp_id: int) -> tuple[int, ...]:
+        cached = subtree_cache.get(kp_id)
+        if cached is not None:
+            return cached
+        collected = [kp_id]
+        for child_id in children.get(kp_id, []):
+            collected.extend(subtree_ids(child_id))
+        result = tuple(dict.fromkeys(collected))
+        subtree_cache[kp_id] = result
+        return result
+
+    def ancestor_ids(kp_id: int) -> list[int]:
+        chain: list[int] = []
+        cursor = parent_map.get(kp_id)
+        seen: set[int] = set()
+        while cursor is not None and cursor not in seen:
+            seen.add(cursor)
+            chain.append(cursor)
+            cursor = parent_map.get(cursor)
+        chain.reverse()
+        return chain
+
+    metadata: dict[int, dict] = {}
+    for point in points:
+        kp_id = int(point.id)
+        subtree = subtree_ids(kp_id)
+        observed_ids: list[int] = []
+        reliable_ids: list[int] = []
+        weak_ids: list[int] = []
+        for node_id in subtree:
+            state = states.get(node_id)
+            if state is None or int(state.attempt_count or 0) <= 0:
+                continue
+            observed_ids.append(node_id)
+            confidence = float(state.confidence or 0.0)
+            mastery = state.mastery_score
+            if confidence < _MIN_RELIABLE_CONFIDENCE or mastery is None:
+                continue
+            reliable_ids.append(node_id)
+            if float(mastery) < _WEAK_THRESHOLD:
+                weak_ids.append(node_id)
+
+        trainable_ids = [node_id for node_id in subtree if trainable_counts.get(node_id, 0) > 0]
+        trainable_set = set(trainable_ids)
+        reliable_trainable_ids = [node_id for node_id in reliable_ids if node_id in trainable_set]
+        required_reliable = min(3, len(trainable_ids)) if trainable_ids else 0
+        subtree_status = "no_data" if not observed_ids else "insufficient"
+        subtree_mastery: float | None = None
+        subtree_confidence = 0.0
+
+        aggregation_ids = reliable_trainable_ids if trainable_ids else reliable_ids
+        if aggregation_ids and len(aggregation_ids) >= max(1, required_reliable):
+            weighted_rows: list[tuple[float, float]] = []
+            for node_id in aggregation_ids:
+                state = states[node_id]
+                confidence = float(state.confidence or 0.0)
+                question_weight = max(1, int(trainable_counts.get(node_id, 0)))
+                weight = confidence * question_weight
+                weighted_rows.append((float(state.mastery_score), weight))
+            total_weight = sum(weight for _mastery, weight in weighted_rows)
+            if total_weight > 0:
+                subtree_mastery = sum(mastery * weight for mastery, weight in weighted_rows) / total_weight
+                subtree_confidence = sum(
+                    float(states[node_id].confidence or 0.0) for node_id in aggregation_ids
+                ) / len(aggregation_ids)
+                subtree_status = _state_status(
+                    attempts=sum(int(states[node_id].attempt_count or 0) for node_id in observed_ids),
+                    mastery=subtree_mastery,
+                    confidence=max(subtree_confidence, _MIN_RELIABLE_CONFIDENCE),
+                )
+
+        metadata[kp_id] = {
+            "ancestor_ids": ancestor_ids(kp_id),
+            "descendant_count": max(0, len(subtree) - 1),
+            "direct_child_count": len(children.get(kp_id, [])),
+            "has_children": bool(children.get(kp_id)),
+            "is_leaf": not bool(children.get(kp_id)),
+            "subtree_total_knowledge_points": len(subtree),
+            "subtree_trainable_knowledge_points": len(trainable_ids),
+            "subtree_observed_knowledge_points": len(observed_ids),
+            "subtree_reliable_knowledge_points": len(reliable_ids),
+            "subtree_weak_knowledge_points": len(weak_ids),
+            "subtree_coverage_ratio": round(
+                len(reliable_trainable_ids) / len(trainable_ids), 4
+            ) if trainable_ids else 0.0,
+            "subtree_status": subtree_status,
+            "subtree_mastery_score": round(subtree_mastery, 1) if subtree_mastery is not None else None,
+            "subtree_confidence": round(subtree_confidence, 3),
+        }
+    return metadata
+
+
 def _node_payload(
     point: KnowledgePoint,
     *,
@@ -334,6 +440,7 @@ def _node_payload(
     parent_id: int | None,
     depth: int,
     child_count: int,
+    hierarchy_meta: dict | None = None,
     syllabus_item: SyllabusKnowledgePoint | None = None,
 ) -> dict:
     attempts = int(state.attempt_count or 0) if state else 0
@@ -354,6 +461,8 @@ def _node_payload(
         if syllabus_item is not None
         else int(point.difficulty_level or 3)
     )
+    meta = hierarchy_meta or {}
+    direct_child_count = int(meta.get("direct_child_count", child_count) or 0)
     return {
         "knowledge_point_id": int(point.id),
         "name": display_name,
@@ -362,8 +471,22 @@ def _node_payload(
         "difficulty_level": difficulty_level,
         "parent_id": parent_id,
         "depth": depth,
-        "child_count": child_count,
+        "child_count": direct_child_count,
+        "direct_child_count": direct_child_count,
+        "has_children": bool(meta.get("has_children", direct_child_count > 0)),
+        "is_leaf": bool(meta.get("is_leaf", direct_child_count <= 0)),
+        "descendant_count": int(meta.get("descendant_count", direct_child_count) or 0),
+        "ancestor_ids": list(meta.get("ancestor_ids", [])),
         "trainable_question_count": int(trainable_question_count or 0),
+        "subtree_total_knowledge_points": int(meta.get("subtree_total_knowledge_points", 1) or 1),
+        "subtree_trainable_knowledge_points": int(meta.get("subtree_trainable_knowledge_points", 0) or 0),
+        "subtree_observed_knowledge_points": int(meta.get("subtree_observed_knowledge_points", 0) or 0),
+        "subtree_reliable_knowledge_points": int(meta.get("subtree_reliable_knowledge_points", 0) or 0),
+        "subtree_weak_knowledge_points": int(meta.get("subtree_weak_knowledge_points", 0) or 0),
+        "subtree_coverage_ratio": float(meta.get("subtree_coverage_ratio", 0.0) or 0.0),
+        "subtree_status": str(meta.get("subtree_status", "no_data")),
+        "subtree_mastery_score": meta.get("subtree_mastery_score"),
+        "subtree_confidence": float(meta.get("subtree_confidence", 0.0) or 0.0),
         "status": status,
         "mastery_score": round(mastery, 1) if status not in {"no_data", "insufficient"} and mastery is not None else None,
         "confidence": round(confidence, 3),
@@ -405,6 +528,7 @@ async def get_subject_map(db: AsyncSession, user_id: int, subject_id: int) -> di
         )
     )).all())
     parent_map = _build_parent_map(points, edges)
+    hierarchy_meta = _build_hierarchy_metadata(points, parent_map, states, trainable_counts)
     ordered = _ordered_tree_rows(points, parent_map, memberships)
     nodes = [
         _node_payload(
@@ -414,6 +538,7 @@ async def get_subject_map(db: AsyncSession, user_id: int, subject_id: int) -> di
             parent_id=parent_id,
             depth=depth,
             child_count=child_count,
+            hierarchy_meta=hierarchy_meta.get(int(point.id)),
             syllabus_item=memberships.get(int(point.id)),
         )
         for point, depth, parent_id, child_count in ordered
@@ -422,6 +547,10 @@ async def get_subject_map(db: AsyncSession, user_id: int, subject_id: int) -> di
         "scope": EXAM408_ROOT_CODE,
         "syllabus_version": syllabus_service.active_summary(syllabus_version),
         "subject": _build_subject_summary(subject, points, states, trainable_counts),
+        "root_count": sum(1 for point in points if int(point.id) not in parent_map),
+        "max_depth": max((int(node["depth"]) for node in nodes), default=0),
+        "parented_knowledge_points": len(parent_map),
+        "parent_coverage_ratio": round(len(parent_map) / len(points), 4) if points else 0.0,
         "nodes": nodes,
     }
 
@@ -522,16 +651,63 @@ async def get_point_detail(db: AsyncSession, user_id: int, knowledge_point_id: i
 
     states = await _load_states(db, user_id, [int(subject.id)])
     trainable = await _load_trainable_counts(db, [int(subject.id)])
+    tree_points = list((await db.scalars(
+        select(KnowledgePoint).where(
+            KnowledgePoint.subject_id == subject.id,
+            KnowledgePoint.id.in_(list(memberships)) if memberships else False,
+        )
+    )).all()) if memberships else []
+    tree_edges = list((await db.scalars(
+        select(KnowledgeEdge).where(
+            KnowledgeEdge.subject_id == subject.id,
+            KnowledgeEdge.is_active.is_(True),
+            KnowledgeEdge.relation_type == "parent",
+        )
+    )).all())
+    parent_map = _build_parent_map(tree_points, tree_edges)
+    hierarchy_meta = _build_hierarchy_metadata(tree_points, parent_map, states, trainable)
+    point_meta = hierarchy_meta.get(int(point.id), {})
+    point_depth = len(point_meta.get("ancestor_ids", []))
     state = states.get(int(point.id))
     node = _node_payload(
         point,
         state=state,
         trainable_question_count=trainable.get(int(point.id), 0),
-        parent_id=None,
-        depth=0,
-        child_count=0,
+        parent_id=parent_map.get(int(point.id)),
+        depth=point_depth,
+        child_count=int(point_meta.get("direct_child_count", 0) or 0),
+        hierarchy_meta=point_meta,
         syllabus_item=syllabus_item,
     )
+    by_id = {int(item.id): item for item in tree_points}
+    child_ids = sorted(
+        [child_id for child_id, parent_id in parent_map.items() if parent_id == int(point.id)],
+        key=lambda child_id: (
+            int(memberships[child_id].sort_order or 0) if child_id in memberships else 0,
+            str(memberships[child_id].name_snapshot) if child_id in memberships else str(by_id[child_id].name),
+            child_id,
+        ),
+    )
+    ancestors = [
+        {
+            "knowledge_point_id": ancestor_id,
+            "name": str(memberships[ancestor_id].name_snapshot)
+            if ancestor_id in memberships else str(by_id[ancestor_id].name),
+            "depth": depth,
+        }
+        for depth, ancestor_id in enumerate(point_meta.get("ancestor_ids", []))
+        if ancestor_id in by_id
+    ]
+    direct_children = [
+        {
+            "knowledge_point_id": child_id,
+            "name": str(memberships[child_id].name_snapshot)
+            if child_id in memberships else str(by_id[child_id].name),
+            "depth": point_depth + 1,
+        }
+        for child_id in child_ids
+        if child_id in by_id
+    ]
     prerequisites, next_nodes, related_nodes = await _relation_payloads(db, point, memberships)
     return {
         "scope": EXAM408_ROOT_CODE,
@@ -554,6 +730,19 @@ async def get_point_detail(db: AsyncSession, user_id: int, knowledge_point_id: i
         "last_practiced_at": node["last_practiced_at"],
         "last_wrong_at": serialize_utc_datetime(state.last_wrong_at) if state and state.last_wrong_at else None,
         "trainable_question_count": node["trainable_question_count"],
+        "parent_id": node["parent_id"],
+        "ancestors": ancestors,
+        "direct_children": direct_children,
+        "descendant_count": node["descendant_count"],
+        "subtree_total_knowledge_points": node["subtree_total_knowledge_points"],
+        "subtree_trainable_knowledge_points": node["subtree_trainable_knowledge_points"],
+        "subtree_observed_knowledge_points": node["subtree_observed_knowledge_points"],
+        "subtree_reliable_knowledge_points": node["subtree_reliable_knowledge_points"],
+        "subtree_weak_knowledge_points": node["subtree_weak_knowledge_points"],
+        "subtree_coverage_ratio": node["subtree_coverage_ratio"],
+        "subtree_status": node["subtree_status"],
+        "subtree_mastery_score": node["subtree_mastery_score"],
+        "subtree_confidence": node["subtree_confidence"],
         "recent_answers": await _recent_answers(db, user_id, int(point.id)),
         "prerequisites": prerequisites,
         "next_nodes": next_nodes,
