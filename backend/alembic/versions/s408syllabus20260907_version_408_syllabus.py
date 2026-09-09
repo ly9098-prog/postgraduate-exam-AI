@@ -302,7 +302,7 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         )
     op.create_index(
-        "ix_question_version_knowledge_points_syllabus_knowledge_point_id",
+        "ix_qvkp_syllabus_kp_id",
         "question_version_knowledge_points",
         ["syllabus_knowledge_point_id"],
     )
@@ -310,7 +310,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_question_version_knowledge_points_syllabus_knowledge_point_id", table_name="question_version_knowledge_points")
+    op.drop_index("ix_qvkp_syllabus_kp_id", table_name="question_version_knowledge_points")
     with op.batch_alter_table("question_version_knowledge_points") as batch:
         batch.drop_constraint("fk_qvkp_syllabus_knowledge_point", type_="foreignkey")
         batch.drop_column("syllabus_knowledge_point_id")
