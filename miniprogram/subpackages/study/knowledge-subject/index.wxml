@@ -1,30 +1,134 @@
-<view class="page">
-  <view class="summary" wx:if="{{subject}}">
-    <text class="eyebrow">SUBJECT MAP</text>
-    <view class="summary-main"><text class="subject-name">{{subject.subject_name}}</text><text class="subject-score">{{subject.mastery_score == null ? '--' : subject.mastery_score + '%'}}</text></view>
-    <text class="summary-note">可靠知识点 {{subject.reliable_knowledge_points}} / {{subject.trainable_knowledge_points}} · 薄弱 {{subject.weak_knowledge_points}}</text>
-    <text class="syllabus-note" wx:if="{{syllabusVersion}}">考纲：{{syllabusVersion.name}} · {{syllabusVersion.effective_year}}</text>
-  </view>
-
-  <view class="filters" wx:if="{{subject}}">
-    <view class="filter {{filter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="setFilter">全部</view>
-    <view class="filter {{filter === 'weak' ? 'active' : ''}}" data-filter="weak" bindtap="setFilter">需强化</view>
-    <view class="filter {{filter === 'unseen' ? 'active' : ''}}" data-filter="unseen" bindtap="setFilter">待建立</view>
-    <view class="filter {{filter === 'mastered' ? 'active' : ''}}" data-filter="mastered" bindtap="setFilter">较稳定</view>
-  </view>
-
-  <view class="state" wx:if="{{loading}}">正在加载知识树…</view>
-  <view class="state error" wx:elif="{{error}}"><text>{{error}}</text><button bindtap="retry">重试</button></view>
-
-  <view class="tree" wx:else>
-    <view class="node" wx:for="{{visibleNodes}}" wx:key="knowledge_point_id" style="margin-left: {{item.indent}}rpx;" data-id="{{item.knowledge_point_id}}" bindtap="openPoint" hover-class="node-pressed">
-      <view class="node-rail"><view class="dot {{item.statusClass}}"></view><view class="line" wx:if="{{item.child_count > 0}}"></view></view>
-      <view class="node-body">
-        <view class="node-head"><text class="node-name">{{item.name}}</text><text class="node-score">{{item.scoreText}}</text></view>
-        <view class="node-meta"><text class="tag {{item.statusClass}}">{{item.statusText}}</text><text>{{item.attempt_count}} 次 · 正确率 {{item.accuracyText}}</text><text>{{item.trainable_question_count}} 题可练</text></view>
-      </view>
-      <view class="practice" wx:if="{{item.hasPractice}}" catchtap="practicePoint" data-id="{{item.knowledge_point_id}}">练</view>
+<view class="atlas-page {{pageEntered ? 'page-entered' : ''}}">
+  <view class="atlas-loading" wx:if="{{loading}}">
+    <view class="loading-copy">
+      <view class="skeleton-line skeleton-label"></view>
+      <view class="skeleton-line skeleton-title"></view>
+      <view class="skeleton-line skeleton-subtitle"></view>
     </view>
-    <view class="state" wx:if="{{visibleNodes.length === 0}}">当前筛选下暂无知识点</view>
+    <view class="loading-metrics">
+      <view wx:for="{{loadingMetrics}}" wx:key="*this" class="loading-metric">
+        <view class="skeleton-line skeleton-number"></view>
+        <view class="skeleton-line skeleton-caption"></view>
+      </view>
+    </view>
+    <view class="loading-atlas" aria-hidden="true">
+      <view class="loading-orbit loading-orbit-outer"></view>
+      <view class="loading-orbit loading-orbit-inner"></view>
+      <view class="loading-core"></view>
+      <view class="loading-node"></view><view class="loading-node"></view><view class="loading-node"></view><view class="loading-node"></view>
+    </view>
+    <text class="loading-note">正在整理知识层级</text>
   </view>
+
+  <view class="page-state error-state" wx:elif="{{error}}">
+    <view class="error-orbit" aria-hidden="true"><view class="error-core">!</view></view>
+    <text class="state-title">知识图谱未能加载</text>
+    <text class="state-note">{{error}}</text>
+    <button class="state-action" bindtap="retry" hover-class="atlas-pressed">重新加载</button>
+  </view>
+
+  <block wx:elif="{{subject}}">
+    <view class="subject-hero page-reveal reveal-hero">
+      <view class="hero-topline">
+        <view class="hero-context"><view class="hero-mark" aria-hidden="true"><view></view><view></view><view></view></view><text>408 知识结构</text></view>
+        <text class="intro-syllabus" wx:if="{{syllabusText}}">{{syllabusText}}</text>
+      </view>
+      <view class="hero-main">
+        <view class="hero-copy"><text class="intro-title">{{subject.subject_name}}</text><text class="hero-description">从知识关系中定位下一步练习</text></view>
+        <view class="coverage-readout"><text class="coverage-number">{{stats.coverage}}<text>%</text></text><text class="coverage-label">可靠覆盖</text><view class="coverage-rule"><view style="width: {{stats.coverage}}%;"></view></view></view>
+      </view>
+      <view class="metric-rail">
+        <view class="subject-metric"><text class="metric-value">{{stats.total}}</text><text class="metric-label">可练节点</text></view>
+        <view class="subject-metric"><text class="metric-value">{{stats.reliable}}</text><text class="metric-label">可靠节点</text></view>
+        <view class="subject-metric"><text class="metric-value metric-warm">{{stats.weak}}</text><text class="metric-label">待强化</text></view>
+      </view>
+    </view>
+
+    <view class="refresh-notice" wx:if="{{refreshError}}"><text>更新失败，当前仍显示上次数据</text><button bindtap="retry">重试</button></view>
+
+    <view class="atlas-tools page-reveal reveal-tools">
+      <view class="atlas-search {{searchFocused ? 'search-focused' : ''}} {{query ? 'search-has-value' : ''}}">
+        <view class="search-symbol" aria-hidden="true"></view>
+        <input class="search-input" placeholder="搜索名称、英文名或别名" placeholder-class="search-placeholder" value="{{query}}" bindinput="searchPoints" bindconfirm="submitSearch" bindfocus="focusSearch" bindblur="blurSearch" maxlength="80" confirm-type="search" cursor-spacing="18" aria-label="搜索知识点名称、英文名或别名" />
+        <view class="search-clear" wx:if="{{query}}" bindtap="clearSearch" hover-class="search-clear-pressed" aria-role="button" aria-label="清空搜索"><view class="clear-symbol" aria-hidden="true"></view></view>
+      </view>
+      <view class="search-meta">
+        <view class="search-scope"><view class="scope-spark" aria-hidden="true"></view><text>支持名称 / 英文名 / 别名</text></view>
+        <text class="search-result" wx:if="{{query}}">{{searchResultCount}} 个结果</text>
+      </view>
+      <view class="filter-grid">
+        <button wx:for="{{filters}}" wx:key="id" class="atlas-filter {{filter === item.id ? 'filter-active' : ''}}" data-filter="{{item.id}}" bindtap="setFilter" hover-class="atlas-pressed" aria-label="{{item.label}}，{{item.count}}个知识点{{filter === item.id ? '，已选中' : ''}}"><view class="filter-dot filter-dot-{{item.id}}" aria-hidden="true"></view><text>{{item.label}}</text><text class="filter-count">{{item.count}}</text></button>
+      </view>
+    </view>
+
+    <view class="theme-section page-reveal reveal-themes" wx:if="{{groupChips.length}}">
+      <view class="theme-section-head">
+        <view class="theme-section-title"><view class="theme-rail" aria-hidden="true"></view><view><text>主题范围</text><text class="theme-section-subtitle">快捷选择常用主题</text></view></view>
+        <button class="theme-more" bindtap="openThemeSheet" hover-class="atlas-pressed" aria-label="查看全部{{themeGroupCount}}个主题"><text>更多</text><text class="theme-more-count">{{themeGroupCount}}</text><view class="theme-more-arrow" aria-hidden="true"></view></button>
+      </view>
+      <view class="theme-quick-grid">
+        <button class="theme-quick-chip theme-quick-overview {{!activeGroupKey ? 'theme-active' : ''}}" data-key="" bindtap="chooseGroup" hover-class="atlas-pressed" aria-label="全部主题，{{searchResultCount}}个知识点{{!activeGroupKey ? '，已选中' : ''}}"><view class="theme-overview-mark" aria-hidden="true"><view></view><view></view><view></view></view><text class="theme-quick-name">全部主题</text><text class="theme-count">{{searchResultCount}}</text></button>
+        <button wx:for="{{quickGroupChips}}" wx:key="key" class="theme-quick-chip {{activeGroupKey === item.key ? 'theme-active' : ''}}" data-key="{{item.key}}" bindtap="chooseGroup" hover-class="atlas-pressed" aria-label="{{item.name}}，{{item.count}}个知识点{{activeGroupKey === item.key ? '，已选中' : ''}}"><text class="theme-quick-name">{{item.name}}</text><text class="theme-count">{{item.count}}</text></button>
+      </view>
+      <view class="theme-active-summary" wx:if="{{activeGroupKey}}"><view class="theme-active-copy"><text>当前范围</text><text class="theme-active-name">{{activeGroupName}}</text></view><button class="theme-clear" bindtap="showOverview" hover-class="atlas-pressed">清除</button></view>
+    </view>
+
+    <view id="atlas-shell" class="atlas-shell page-reveal reveal-graph {{sceneAnimating ? 'scene-animating' : ''}} {{graphInteracting ? 'graph-interacting' : ''}}">
+      <view class="atlas-panel-head">
+        <view class="atlas-heading-copy"><view class="atlas-heading-row"><text class="atlas-heading">{{scene.title}}</text><text class="atlas-node-total">{{scene.total}}</text></view><text class="atlas-description">{{scene.hint}}</text></view>
+        <button class="atlas-reset" bindtap="resetView" hover-class="atlas-pressed" aria-label="复位图谱视图"><view class="reset-symbol" aria-hidden="true"></view><text>复位视图</text></button>
+      </view>
+      <view id="atlas-viewport" class="atlas-viewport" bindtouchstart="startGraphTouch" catchtouchmove="moveGraphTouch" bindtouchend="endGraphTouch" bindtouchcancel="endGraphTouch">
+        <view class="atlas-ambient" aria-hidden="true"></view>
+        <view class="atlas-scan" aria-hidden="true"></view>
+        <view class="gesture-tip" aria-hidden="true"><view class="gesture-tip-dot"></view><text>拖动探索</text></view>
+        <view class="atlas-stage" style="{{stageStyle}}" wx:if="{{scene.nodes.length}}">
+          <view class="atlas-orbit orbit-outer" aria-hidden="true"></view>
+          <view class="atlas-orbit orbit-inner" aria-hidden="true"></view>
+          <view wx:for="{{scene.edges}}" wx:key="id" class="atlas-edge edge-{{item.kind}} {{item.active ? 'edge-active' : ''}}" style="{{item.style}}animation-delay: {{item.motionDelay}}ms;" aria-hidden="true"></view>
+          <view wx:for="{{scene.nodes}}" wx:key="id" class="atlas-node atlas-node-{{item.kind}} tone-{{item.tone}} {{item.pathActive ? 'node-path' : ''}} {{item.selected ? 'node-selected' : ''}}" style="{{item.style}}animation-delay: {{item.motionDelay}}ms;" data-kind="{{item.kind}}" data-key="{{item.groupKey}}" data-id="{{item.pointId}}" bindtap="onGraphNodeTap" aria-role="button" aria-label="{{item.label}}，{{item.kind === 'group' ? '展开主题' : (item.kind === 'core' ? '返回全科总览' : item.caption)}}">
+            <block wx:if="{{item.kind === 'core'}}"><view class="core-mark" aria-hidden="true"><view></view><view></view><view></view></view><text class="core-label">{{item.label}}</text><text class="core-caption">{{scene.focused ? '返回全科' : '学科中心'}}</text></block>
+            <block wx:elif="{{item.kind === 'group'}}"><view class="hub-topline"><text class="hub-number">{{item.number}}</text><text class="hub-count">{{item.caption}}</text></view><text class="hub-label">{{item.label}}</text></block>
+            <block wx:else><view class="point-beacon" aria-hidden="true"></view><view class="graph-point-copy"><text class="graph-point-label">{{item.label}}</text><text class="graph-point-caption">{{item.caption}}</text></view></block>
+          </view>
+        </view>
+        <view class="atlas-empty" wx:else><view class="empty-orbit" aria-hidden="true"></view><text class="atlas-empty-title">{{filters[0].count ? '没有匹配的知识点' : '本科目暂无知识点'}}</text><text class="atlas-empty-note">{{filters[0].count ? '更换关键词、主题或掌握状态后再试' : '知识点就绪后会在这里建立关系'}}</text><button wx:if="{{filters[0].count}}" class="empty-reset" bindtap="resetFilters">查看全部知识点</button></view>
+      </view>
+      <view class="atlas-controls">
+        <view class="zoom-controls"><button class="graph-control" disabled="{{zoomOutDisabled}}" data-step="-1" bindtap="zoomGraph" aria-label="缩小图谱">−</button><text class="zoom-value">{{zoomText}}</text><button class="graph-control" disabled="{{zoomInDisabled}}" data-step="1" bindtap="zoomGraph" aria-label="放大图谱">＋</button></view>
+        <view class="graph-pagination" wx:if="{{scene.pageCount > 1}}"><button class="graph-control graph-prev" disabled="{{scene.page === 0}}" data-step="-1" bindtap="changeGraphPage" aria-label="上一页图谱">‹</button><text class="graph-range">{{scene.focused ? '节点' : '主题'}} {{scene.rangeText}}</text><button class="graph-control graph-next" disabled="{{scene.page + 1 >= scene.pageCount}}" data-step="1" bindtap="changeGraphPage" aria-label="下一页图谱">›</button></view>
+      </view>
+      <view class="atlas-panel-foot"><view class="edge-key"><view class="key-line"></view><text>层级</text><view class="key-line key-dashed"></view><text>归属</text></view><text>双指缩放 · 惯性拖动</text></view>
+    </view>
+
+    <view class="point-card" wx:if="{{selectedPoint}}">
+      <view class="point-card-top"><view class="point-card-kicker"><view class="selected-beacon"></view><text>当前知识点</text></view><text class="point-status tone-{{selectedPoint.tone}}">{{selectedPoint.statusText}}</text></view>
+      <view class="point-card-heading"><view class="point-card-copy"><text class="point-card-name">{{selectedPoint.name}}</text><view class="point-card-subline"><text class="point-card-theme">{{selectedPoint.groupName}}</text><text class="point-match-alias" wx:if="{{query && selectedPoint.searchMatchedAlias}}">别名 · {{selectedPoint.searchMatchedAlias}}</text></view></view><view class="point-mastery"><text class="point-mastery-value {{!selectedPoint.hasScore ? 'score-empty' : ''}}">{{selectedPoint.scoreText}}</text><text class="point-mastery-label">掌握度</text></view></view>
+      <view class="point-facts"><view><text class="fact-value">{{selectedPoint.attempt_count}}</text><text class="fact-label">练习次数</text></view><view><text class="fact-value">{{selectedPoint.accuracyText}}</text><text class="fact-label">正确率</text></view><view><text class="fact-value">{{selectedPoint.trainable_question_count}}</text><text class="fact-label">可练题量</text></view></view>
+      <view class="point-actions"><button class="point-detail" data-id="{{selectedPoint.knowledge_point_id}}" bindtap="openPoint" hover-class="atlas-pressed">查看详情</button><button class="point-practice" disabled="{{!selectedPoint.hasPractice}}" data-id="{{selectedPoint.knowledge_point_id}}" bindtap="practicePoint" hover-class="atlas-pressed">{{selectedPoint.hasPractice ? '开始练习' : '暂无可练题目'}}</button></view>
+    </view>
+
+    <view class="knowledge-index" wx:if="{{indexCount}}">
+      <view class="index-heading"><text class="index-title">知识索引 <text>{{indexCount}}</text></text><view class="status-key"><view class="status-key-dot tone-unseen"></view><text>待建立</text><view class="status-key-dot tone-weak"></view><text>需强化</text><view class="status-key-dot tone-stable"></view><text>较稳定</text></view></view>
+      <view class="index-list"><view wx:for="{{indexNodes}}" wx:key="knowledge_point_id" class="index-row {{selectedPoint.knowledge_point_id === item.knowledge_point_id ? 'index-row-selected' : ''}}" data-id="{{item.knowledge_point_id}}" bindtap="locatePoint" hover-class="index-pressed" aria-role="button" aria-label="在图谱中定位{{item.name}}"><text class="index-rank">{{index + 1}}</text><view class="index-dot tone-{{item.tone}}"></view><view class="index-row-copy {{item.depth ? 'index-row-child' : ''}}" style="padding-left: {{item.indent}}rpx;"><view wx:if="{{item.depth}}" class="index-tree-guide" aria-hidden="true"></view><text class="index-node-name">{{item.name}}</text><view class="index-meta-row"><text class="index-node-meta">{{item.statusText}} · {{item.trainable_question_count}} 题可练</text><text class="index-alias-match" wx:if="{{query && item.searchMatchedAlias}}">别名 {{item.searchMatchedAlias}}</text></view></view><view class="index-locate"><view class="locate-crosshair" aria-hidden="true"></view><text>定位</text></view></view></view>
+      <button wx:if="{{hasMore}}" class="index-more" bindtap="loadMore" hover-class="atlas-pressed">展开更多知识点 <text>{{indexNodes.length}} / {{indexCount}}</text></button>
+    </view>
+
+    <view class="theme-sheet-layer" wx:if="{{themeSheetOpen}}">
+      <view class="theme-sheet-mask" bindtap="closeThemeSheet" catchtouchmove="preventBackgroundScroll" aria-hidden="true"></view>
+      <view class="theme-sheet" catchtap="stopThemeSheetTap">
+        <view class="theme-sheet-handle" aria-hidden="true"></view>
+        <view class="theme-sheet-head"><view><text class="theme-sheet-title">选择主题</text><text class="theme-sheet-caption">共 {{themeGroupCount}} 个可用主题</text></view><view class="theme-sheet-close" bindtap="closeThemeSheet" hover-class="search-clear-pressed" aria-role="button" aria-label="关闭主题选择"><view class="clear-symbol"></view></view></view>
+        <view class="theme-sheet-search"><view class="search-symbol" aria-hidden="true"></view><input value="{{themeQuery}}" placeholder="搜索主题名称" placeholder-class="search-placeholder" bindinput="searchThemes" confirm-type="search" cursor-spacing="18" aria-label="搜索主题名称" /><view class="theme-search-clear" wx:if="{{themeQuery}}" bindtap="clearThemeSearch" hover-class="search-clear-pressed" aria-role="button" aria-label="清空主题搜索"><view class="clear-symbol"></view></view></view>
+        <scroll-view class="theme-sheet-scroll" scroll-y enhanced show-scrollbar="{{false}}">
+          <view class="theme-sheet-grid">
+            <button wx:if="{{!themeQuery}}" class="theme-sheet-chip theme-sheet-overview {{!activeGroupKey ? 'theme-sheet-active' : ''}}" data-key="" bindtap="chooseThemeFromSheet" hover-class="atlas-pressed"><view class="theme-sheet-chip-copy"><text class="theme-sheet-chip-name">全部主题</text><text class="theme-sheet-chip-note">查看当前筛选下全部知识点</text></view><text class="theme-sheet-chip-count">{{searchResultCount}}</text></button>
+            <button wx:for="{{themeSheetGroups}}" wx:key="key" class="theme-sheet-chip {{activeGroupKey === item.key ? 'theme-sheet-active' : ''}}" data-key="{{item.key}}" bindtap="chooseThemeFromSheet" hover-class="atlas-pressed"><view class="theme-sheet-chip-copy"><text class="theme-sheet-chip-name">{{item.name}}</text><text class="theme-sheet-chip-note">主题 {{item.number}}</text></view><text class="theme-sheet-chip-count">{{item.count}}</text></button>
+          </view>
+          <view class="theme-sheet-empty" wx:if="{{themeQuery && !themeSheetGroups.length}}"><view class="theme-empty-icon" aria-hidden="true"></view><text>没有匹配的主题</text><text>换个关键词试试</text></view>
+          <view class="theme-sheet-safe"></view>
+        </scroll-view>
+      </view>
+    </view>
+  </block>
 </view>

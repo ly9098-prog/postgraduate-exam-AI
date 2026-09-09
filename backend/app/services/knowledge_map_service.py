@@ -343,6 +343,11 @@ def _node_payload(
     confidence = float(state.confidence or 0.0) if state else 0.0
     status = _state_status(attempts=attempts, mastery=mastery, confidence=confidence)
     display_name = str(syllabus_item.name_snapshot) if syllabus_item is not None else str(point.name)
+    aliases = [
+        str(alias).strip()
+        for alias in (point.aliases or [])
+        if alias is not None and str(alias).strip()
+    ] if isinstance(point.aliases, (list, tuple)) else []
     description = syllabus_item.description_snapshot if syllabus_item is not None else point.description
     difficulty_level = (
         int(syllabus_item.difficulty_level_snapshot or 3)
@@ -352,6 +357,7 @@ def _node_payload(
     return {
         "knowledge_point_id": int(point.id),
         "name": display_name,
+        "aliases": aliases,
         "description": description,
         "difficulty_level": difficulty_level,
         "parent_id": parent_id,

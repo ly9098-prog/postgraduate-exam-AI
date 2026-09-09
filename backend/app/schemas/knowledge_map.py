@@ -45,6 +45,7 @@ class KnowledgeMapOverviewResponse(BaseModel):
 class KnowledgeMapNode(BaseModel):
     knowledge_point_id: int
     name: str
+    aliases: list[str] = Field(default_factory=list)
     description: str | None = None
     difficulty_level: int = 3
     parent_id: int | None = None

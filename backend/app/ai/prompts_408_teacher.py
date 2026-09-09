@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-PROMPT_VERSION = "408-teacher-v1"
+PROMPT_VERSION = "408-teacher-v2"
 
 ACTION_DEFINITIONS: dict[str, dict[str, str]] = {
     "explain_correct": {
@@ -17,9 +17,9 @@ ACTION_DEFINITIONS: dict[str, dict[str, str]] = {
         "instruction": "围绕正确选项，解释它为什么成立；明确关键条件与推理链。",
     },
     "explain_options": {
-        "label": "为什么 A/B/C/D 错？",
-        "description": "逐项说明各选项成立或不成立的原因。",
-        "instruction": "逐项分析所有选项；对错误项指出具体错在概念、条件、边界或推理哪一步。",
+        "label": "逐项讲解 A/B/C/D",
+        "description": "说明正确项成立依据，并逐项指出错误项的问题。",
+        "instruction": "逐项分析所有选项；先说明正确项成立的关键条件，再指出每个错误项具体错在概念、条件、边界或推理哪一步。",
     },
     "core_concept": {
         "label": "这道题真正考什么？",
@@ -72,6 +72,10 @@ def build_408_teacher_prompt(*, action: str, context: dict[str, Any]) -> list[di
         "必须优先依据题目固定版本、官方题库解析、知识点、用户当前掌握状态、近期同知识点错误、已确认错因和知识图谱关系。"
         "不得引用其他用户数据。没有证据时明确说明证据不足，不要杜撰知识图谱关系、用户弱点或题库事实。"
         "个性化建议要根据 mastery/confidence/近期错因调整：低 mastery 时先补基础，高 mastery 但反复错时强调边界、审题或推理。"
+        "本能力是完整错题复盘之后的按需深入讲解，不得重新输出通用的‘错因诊断、知识补漏、复练建议’三段式报告。"
+        "只完成本次 fixed action：讲解类动作的 sections 标题必须紧扣所选动作；"
+        "similar_question/harder_question 只生成题目和必要说明；connect_knowledge 重点填写 knowledge_points；"
+        "除生成题动作外 practice_question 必须为 null。"
         "输出严格 JSON，不要 markdown，不要额外字段。schema："
         '{"title":"","summary":"","sections":[{"heading":"","points":[""]}],'
         '"knowledge_points":[{"name":"","relation":"","mastery_hint":""}],'

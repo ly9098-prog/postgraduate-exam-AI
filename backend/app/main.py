@@ -234,34 +234,72 @@ async def lifespan(app: FastAPI):
     # IntegrityError handler in the create_export endpoint.
     try:
         from app.core.database import engine as _db_engine
-        _sync_engine = _db_engine.sync_engine
-        _dialect = _sync_engine.dialect.name
+        _dialect = _db_engine.dialect.name
         if _dialect == "sqlite":
             from sqlalchemy import inspect as _sa_inspect
-            _inspector = _sa_inspect(_sync_engine)
-            _ix_list = _inspector.get_indexes("export_tasks")
-            # SQLite may expose the UNIQUE constraint as a unique index
-            _has_unique_ix = any(
-                _ix.get("column_names", []) == ["idempotency_key"] and _ix.get("unique")
-                for _ix in _ix_list
-            )
-            if _has_unique_ix:
-                # Recreate table without the UNIQUE constraint using Alembic batch mode
+
+            def _repair_export_idempotency_index(sync_conn) -> bool:
+                """Inspect/repair SQLite through AsyncConnection.run_sync."""
+                _inspector = _sa_inspect(sync_conn)
+                if "export_tasks" not in _inspector.get_table_names():
+                    return False
+                _ix_list = _inspector.get_indexes("export_tasks")
+                _unique_constraints = _inspector.get_unique_constraints("export_tasks")
+                _unique_indexes = [
+                    _ix for _ix in _ix_list
+                    if _ix.get("column_names", []) == ["idempotency_key"]
+                    and _ix.get("unique")
+                ]
+                _matching_constraints = [
+                    _constraint for _constraint in _unique_constraints
+                    if _constraint.get("column_names", []) == ["idempotency_key"]
+                ]
+                _has_plain_index = any(
+                    _ix.get("column_names", []) == ["idempotency_key"]
+                    and not _ix.get("unique")
+                    for _ix in _ix_list
+                )
+                if not _unique_indexes and not _matching_constraints:
+                    return False
+
+                # Alembic batch mode recreates SQLite tables when a table-level
+                # UNIQUE constraint cannot be removed with DROP INDEX.
                 from alembic.runtime.migration import MigrationContext
 
                 from alembic import op
-                _conn = _sync_engine.connect()
-                _ctx = MigrationContext.configure(_conn)
+
+                _ctx = MigrationContext.configure(sync_conn)
                 _op = op.Operations(_ctx)
-                with _op.batch_alter_table("export_tasks") as _batch:
-                    # Drop all unique indexes on idempotency_key
-                    for _ix in _ix_list:
-                        if _ix.get("column_names", []) == ["idempotency_key"]:
-                            _batch.drop_index(_ix["name"])
-                    # Recreate non-unique index
-                    _batch.create_index("ix_export_tasks_idempotency_key", ["idempotency_key"])
-                _conn.commit()
-                _conn.close()
+                # Naming convention gives SQLite's unnamed column-level UNIQUE
+                # constraint a deterministic reflected name in batch mode.
+                naming_convention = {
+                    "uq": "uq_%(table_name)s_%(column_0_name)s",
+                }
+                with _op.batch_alter_table(
+                    "export_tasks", naming_convention=naming_convention
+                ) as _batch:
+                    for _constraint in _matching_constraints:
+                        _batch.drop_constraint(
+                            _constraint.get("name")
+                            or "uq_export_tasks_idempotency_key",
+                            type_="unique",
+                        )
+                    for _ix in _unique_indexes:
+                        _batch.drop_index(_ix["name"])
+                    if not _has_plain_index:
+                        _batch.create_index(
+                            "ix_export_tasks_idempotency_key", ["idempotency_key"]
+                        )
+                return True
+
+            # Never drive AsyncEngine.sync_engine directly from the event loop:
+            # aiosqlite requires the greenlet adapter and synchronous drivers
+            # would otherwise block startup.
+            async with _db_engine.begin() as _conn:
+                _sqlite_index_repaired = await _conn.run_sync(
+                    _repair_export_idempotency_index
+                )
+            if _sqlite_index_repaired:
                 logger.info("Fixed residual UNIQUE constraint on export_tasks.idempotency_key (SQLite)")
         elif _dialect == "postgresql":
             # PostgreSQL: drop the UNIQUE constraint if it exists and replace with index

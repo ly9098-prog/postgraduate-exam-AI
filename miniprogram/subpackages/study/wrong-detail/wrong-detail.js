@@ -15,8 +15,7 @@ const aiTeacher408 = require('../../../utils/ai-teacher-408')
 // ~60s ceiling, then recover through persisted-result polling. The backend may
 // continue the original generation and a recovery task is queued as a backup.
 const AI_REQUEST_TIMEOUT_MS = 55000
-const AI_CACHE_POLL_INTERVAL_MS = 3000
-const AI_CACHE_POLL_ATTEMPTS = 60
+const AI_CACHE_POLL_ATTEMPTS = 44
 const QUESTION_SWITCH_OUT_MS = 150
 const QUESTION_SWITCH_IN_MS = 170
 const QUESTION_SWITCH_WATCHDOG_MS = 35000
@@ -24,6 +23,14 @@ const QUESTION_SWITCH_ANIM_WATCHDOG_MS = 5000
 
 function _sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// Keep recovery responsive early, then back off so a slow 150s provider call
+// does not turn one page into 60 status requests. 43 waits still cover ~180s.
+function _aiPollDelayMs(attempt) {
+  if (attempt <= 5) return 2000
+  if (attempt <= 15) return 3000
+  return 5000
 }
 
 function _isTimeoutError(err) {
@@ -194,6 +201,7 @@ Page({
     aiRegenerating: false,
     aiSkeletonVisible: false,
     aiInlineNotice: '',
+    aiReviewExpanded: false,
     contentTransitionClass: '',
     showSwitchMask: false,
     renderTraces: [],
@@ -216,12 +224,18 @@ Page({
     diagnosisAiQueuing: false,
     diagnosisAiEnabled: false,
 
-    teacherActions: aiTeacher408.ACTIONS,
+    teacherPrimaryActions: aiTeacher408.PRIMARY_ACTIONS,
+    teacherMoreActions: aiTeacher408.MORE_ACTIONS,
+    teacherActionsExpanded: false,
     teacherLoadingAction: '',
+    teacherLastAction: '',
     teacherResult: null,
     teacherSheetVisible: false,
     teacherErrorText: '',
     teacherFeedbackSent: '',
+
+    // 底部悬浮操作：用户无操作 3 秒后渐隐，触摸/滚动时立即恢复。
+    bottomActionsVisible: true,
 
     // quiz-runner data
     currentQuestion: null,
@@ -243,6 +257,8 @@ Page({
   _contentTransitionDirection: '',
   _teacherRequestSeq: 0,
   _diagnosisAiRequestSeq: 0,
+  _bottomActionsTimer: null,
+  _bottomActionsLastActiveAt: 0,
 
   onLoad(options) {
     setRenderGuardPage('wrong-detail')
@@ -269,6 +285,8 @@ Page({
     this._masterUndoTimer = null
     this._masterAdvanceTimer = null
     this._removeBackTimer = null
+    this._bottomActionsTimer = null
+    this._bottomActionsLastActiveAt = 0
     this._masterUndoInFlight = false
     this._pendingMasterUndo = null
     const currentId = Number(options.id)
@@ -298,6 +316,54 @@ Page({
       totalQuestions: questionIds.length,
     })
     this.loadData(currentId)
+    this._showBottomActions()
+  },
+
+  onShow() {
+    if (this._alive && this.data.wq) this._showBottomActions()
+  },
+
+  onHide() {
+    this._clearBottomActionsTimer()
+  },
+
+  onPageScroll() {
+    // 惯性滚动期间也会持续刷新计时；真正停止操作 3 秒后才隐藏。
+    this._showBottomActions()
+  },
+
+  onPageInteraction() {
+    this._showBottomActions()
+  },
+
+  _clearBottomActionsTimer() {
+    if (!this._bottomActionsTimer) return
+    clearTimeout(this._bottomActionsTimer)
+    this._bottomActionsTimer = null
+  },
+
+  _scheduleBottomActionsAutoHide() {
+    if (!this._alive || this._bottomActionsTimer) return
+    const tick = () => {
+      this._bottomActionsTimer = null
+      if (!this._alive) return
+      const idleFor = Date.now() - Number(this._bottomActionsLastActiveAt || 0)
+      const wait = Math.max(0, 3000 - idleFor)
+      if (wait > 0) {
+        this._bottomActionsTimer = setTimeout(tick, wait)
+        return
+      }
+      if (this.data.bottomActionsVisible) this.setData({ bottomActionsVisible: false })
+    }
+    this._bottomActionsTimer = setTimeout(tick, 3000)
+  },
+
+  _showBottomActions() {
+    if (!this._alive) return
+    this._bottomActionsLastActiveAt = Date.now()
+    if (!this.data.bottomActionsVisible) this.setData({ bottomActionsVisible: true })
+    // 滚动事件可能高频触发，只刷新时间戳，不反复 clear/setTimeout。
+    this._scheduleBottomActionsAutoHide()
   },
 
   onUnload() {
@@ -321,6 +387,7 @@ Page({
       clearTimeout(this._removeBackTimer)
       this._removeBackTimer = null
     }
+    this._clearBottomActionsTimer()
     this._clearMasterUndo()
     // 清空页面实例缓存，防止跨页面串用
     this._wqCache = null
@@ -404,19 +471,22 @@ Page({
         aiFallback: false,
         aiErrorText: '',
         aiRetryable: true,
+        aiReviewExpanded: false,
         isCurrentMastered: _isWqMastered(wq),
         masterSubmitting: false,
         removeSubmitting: false,
         errorDiagnosis: errorDiagnosis.normalizeDiagnosis(wq.error_diagnosis),
         diagnosisAiEnabled: false,
         teacherLoadingAction: '',
+        teacherLastAction: '',
         teacherResult: null,
         teacherSheetVisible: false,
         teacherErrorText: '',
         teacherFeedbackSent: '',
+        teacherActionsExpanded: false,
       }
 
-      // 仅使用一个“AI 学习建议”区域：AI 分析优先，否则回退题库解析。
+      // 仅使用一个“AI 复盘”区域：AI 分析优先，否则回退题库解析。
       var preferredAnalysis = _resolvePreferredAnalysis(wq)
       if (preferredAnalysis) {
         var preferredNormalized = preferredAnalysis.normalized
@@ -538,6 +608,16 @@ Page({
     this.loadAiAnalysis(wqId)
   },
 
+  toggleAiReview() {
+    if (!this.data.aiCards || this.data.aiRegenerating) return
+    this.setData({ aiReviewExpanded: !this.data.aiReviewExpanded })
+  },
+
+  toggleTeacherActions() {
+    if (this.data.teacherLoadingAction) return
+    this.setData({ teacherActionsExpanded: !this.data.teacherActionsExpanded })
+  },
+
   _teacherCacheKeyForWrong(wq, diagnosis, action) {
     const item = wq || {}
     const d = diagnosis || {}
@@ -554,6 +634,10 @@ Page({
   async run408TeacherAction(e) {
     const action = String(e.currentTarget.dataset.action || '')
     if (!action) return
+    if (this.data.aiLoading || this.data.aiRegenerating) {
+      wx.showToast({ title: 'AI 复盘生成中，请稍后', icon: 'none' })
+      return
+    }
     if (this.data.teacherLoadingAction) {
       this.setData({ teacherSheetVisible: true })
       return
@@ -575,6 +659,7 @@ Page({
     if (cached) {
       this.setData({
         teacherLoadingAction: '',
+        teacherLastAction: action,
         teacherErrorText: '',
         teacherResult: cached,
         teacherSheetVisible: true,
@@ -599,6 +684,7 @@ Page({
 
     this.setData({
       teacherLoadingAction: action,
+      teacherLastAction: action,
       teacherErrorText: '',
       teacherResult: null,
       teacherSheetVisible: true,
@@ -672,7 +758,7 @@ Page({
     const requireNewGeneration = !!pollOptions.requireNewGeneration
     for (var attempt = 0; attempt < AI_CACHE_POLL_ATTEMPTS; attempt++) {
       if (!this._isCurrentAiRequest(requestId, wqId)) return null
-      if (attempt > 0) await _sleep(AI_CACHE_POLL_INTERVAL_MS)
+      if (attempt > 0) await _sleep(_aiPollDelayMs(attempt))
       if (!this._isCurrentAiRequest(requestId, wqId)) return null
 
       try {
@@ -720,6 +806,7 @@ Page({
     this.setData({
       wq: latestWq,
       aiCards: _normalizeAiResult(recovered.normalized),
+      aiReviewExpanded: false,
       aiFallback: false,
       aiFromCache: !applyOptions.fromRegeneration,
       aiFromQuestionAnalysis: false,
@@ -783,6 +870,7 @@ Page({
       this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
       this.setData({
         aiCards: _normalizeAiResult(normalized),
+        aiReviewExpanded: false,
         aiFallback: false,
         aiFromCache: !!(result && result.from_cache),
         aiFromQuestionAnalysis: false,
@@ -916,6 +1004,7 @@ Page({
       this._syncWqCacheAi(wqId, normalized, this._aiGenerationMarker)
       this.setData({
         aiCards: _normalizeAiResult(normalized),
+        aiReviewExpanded: false,
         aiFallback: false,
         aiFromCache: !!(result && result.from_cache),
         aiFromQuestionAnalysis: false,
@@ -1350,7 +1439,7 @@ Page({
     }
   },
 
-  // ---- AI 学习建议区域左右滑动切题（切题动画由题目+AI整体容器统一承担） ----
+  // ---- AI 复盘区域左右滑动切题（切题动画由题目+AI整体容器统一承担） ----
   onAiSwipeStart(e) {
     if (this._switching) return
     const touch = e && e.touches && e.touches[0]
@@ -1620,6 +1709,7 @@ Page({
         aiFallback: false,
         aiErrorText: '',
         aiRetryable: true,
+        aiReviewExpanded: false,
         isCurrentMastered: _isWqMastered(wq),
         masterSubmitting: false,
         removeSubmitting: false,
@@ -1629,10 +1719,12 @@ Page({
         diagnosisAiQueuing: false,
         diagnosisAiEnabled: false,
         teacherLoadingAction: '',
+        teacherLastAction: '',
         teacherResult: null,
         teacherSheetVisible: false,
         teacherErrorText: '',
         teacherFeedbackSent: '',
+        teacherActionsExpanded: false,
       }
 
       // 切题时沿用相同优先级：AI 分析优先，否则回退题库解析。
@@ -1646,7 +1738,7 @@ Page({
         nextData.aiFallback = false
         nextData.aiErrorText = ''
       }
-      // 题目区域与 AI 学习建议由同一个父容器统一退出/进入，
+      // 题目区域与 AI 复盘由同一个父容器统一退出/进入，
       // quiz-runner 内部动画已关闭，避免两个区域各自计时造成不同步。
       await this._waitForContentSwitchOut(switchDirection, animMs)
       if (!this._alive || navigationSeq !== this._navigationSeq) return

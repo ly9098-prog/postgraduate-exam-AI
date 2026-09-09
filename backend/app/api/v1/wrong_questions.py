@@ -1,7 +1,7 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -236,38 +236,87 @@ async def _load_current_question_view(db: AsyncSession, wq: WrongQuestion):
     return question, kp_map.get(int(question.id), [])
 
 
+async def _load_wrong_detail_view(
+    db: AsyncSession, user_id: int, wq_id: int
+) -> tuple[WrongQuestion | None, Question | None, list]:
+    """Load the wrong row and current question projection in one round trip.
+
+    The detail endpoint previously queried ``wrong_questions`` and ``questions``
+    serially before any enrichment work. This join preserves the same ownership
+    and active-row semantics while removing one latency-sensitive DB hop.
+    Knowledge-point names remain a separate batched lookup.
+    """
+    row = (
+        await db.execute(
+            select(WrongQuestion, Question)
+            .outerjoin(Question, Question.id == WrongQuestion.question_id)
+            .options(joinedload(Question.subject_ref))
+            .where(
+                WrongQuestion.id == wq_id,
+                WrongQuestion.user_id == user_id,
+                WrongQuestion.is_active,
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        return None, None, []
+
+    wq, question = row
+    if question is None:
+        return wq, None, []
+    kp_map = await load_question_kps(db, [int(question.id)])
+    return wq, question, kp_map.get(int(question.id), [])
+
+
 async def _enrich_single_wq_extra(
     db: AsyncSession, user_id: int, wq: WrongQuestion
 ) -> dict:
-    """Compute enrichment fields for a single WrongQuestion (detail endpoints)."""
-    review_record_count = int((
-        await db.scalar(
-            select(func.count(ReviewRecord.id)).where(
-                ReviewRecord.question_id == wq.question_id,
-                ReviewRecord.question_version_id == wq.question_version_id,
-                ReviewRecord.user_id == user_id,
+    """Compute detail enrichment in one database round trip.
+
+    The wrong-detail screen is latency-sensitive and this data used to be read
+    with two serial queries. Aggregate schedule fields so the query still
+    returns one row when no active schedule exists, while the scalar count keeps
+    the review-record lookup index friendly.
+    """
+    review_record_count_subquery = (
+        select(func.count(ReviewRecord.id))
+        .where(
+            ReviewRecord.question_id == wq.question_id,
+            ReviewRecord.question_version_id == wq.question_version_id,
+            ReviewRecord.user_id == user_id,
+        )
+        .scalar_subquery()
+    )
+    detail = (
+        await db.execute(
+            select(
+                review_record_count_subquery.label("review_record_count"),
+                func.max(ReviewSchedule.repetitions).label("repetitions"),
+                func.max(
+                    case((ReviewSchedule.mastered, 1), else_=0)
+                ).label("schedule_mastered"),
+                func.max(ReviewSchedule.next_review_at).label("next_review_at"),
+                func.max(ReviewSchedule.last_reviewed_at).label("last_reviewed_at"),
+            ).where(
+                ReviewSchedule.question_id == wq.question_id,
+                ReviewSchedule.question_version_id == wq.question_version_id,
+                ReviewSchedule.user_id == user_id,
+                ReviewSchedule.is_active,
             )
         )
-    ) or 0)
-
-    schedule = await db.scalar(
-        select(ReviewSchedule).where(
-            ReviewSchedule.question_id == wq.question_id,
-            ReviewSchedule.question_version_id == wq.question_version_id,
-            ReviewSchedule.user_id == user_id,
-            ReviewSchedule.is_active,
-        )
-    )
+    ).one()
     from app.services.review_scheduler import review_mastery_percent
 
-    is_mastered = bool(wq.mastered or (schedule and schedule.mastered))
+    review_record_count = int(detail.review_record_count or 0)
+    repetitions = int(detail.repetitions or 0)
+    is_mastered = bool(wq.mastered or detail.schedule_mastered)
     mastery_percent = 1.0 if is_mastered else round(
-        review_mastery_percent(schedule.repetitions if schedule else 0) / 100, 4
+        review_mastery_percent(repetitions) / 100, 4
     )
     return {
         "review_record_count": review_record_count,
-        "next_review_at": schedule.next_review_at if schedule and not schedule.mastered else None,
-        "last_reviewed_at": schedule.last_reviewed_at if schedule else None,
+        "next_review_at": detail.next_review_at if not is_mastered else None,
+        "last_reviewed_at": detail.last_reviewed_at,
         "mastery_percent": mastery_percent,
     }
 
@@ -373,11 +422,12 @@ async def get_wrong(
     current_user: User = Depends(get_current_user),
 ):
     """获取单条错题详情（含关联题目信息）"""
-    wq = await svc.get_by_id(db, current_user.id, wq_id)
+    wq, question, knowledge_points = await _load_wrong_detail_view(
+        db, current_user.id, wq_id
+    )
     if not wq:
         raise HTTPException(status_code=404, detail="错题记录不存在")
 
-    question, knowledge_points = await _load_current_question_view(db, wq)
     extra = await _enrich_single_wq_extra(db, current_user.id, wq)
     diagnosis = await error_diagnosis_service.get_latest_diagnosis(
         db, current_user.id, wq.id

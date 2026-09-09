@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.exam import ExamAttempt, ExamPaperQuestion
 from app.models.user import User
 from app.models.wrong_question import WrongQuestion
 from app.schemas.ai import (
@@ -52,24 +53,37 @@ async def _get_wrong_question_for_answer_ai(
     user_id: int,
     wrong_question_id: int,
 ) -> WrongQuestion:
-    wq = await db.scalar(
-        select(WrongQuestion).where(
-            WrongQuestion.id == wrong_question_id,
-            WrongQuestion.user_id == user_id,
+    # This helper is hit repeatedly by the mini-program's long-running AI status
+    # polling. Resolve ownership and the active-exam answer-leak guard in one SQL
+    # round trip instead of issuing a second query for every poll.
+    active_exam_exists = (
+        select(ExamPaperQuestion.id)
+        .join(ExamAttempt, ExamAttempt.paper_id == ExamPaperQuestion.paper_id)
+        .where(
+            ExamAttempt.user_id == user_id,
+            ExamAttempt.status == "in_progress",
+            ExamPaperQuestion.question_id == WrongQuestion.question_id,
         )
+        .correlate(WrongQuestion)
+        .exists()
     )
-    if wq is None:
-        raise HTTPException(status_code=404, detail="错题记录不存在")
-    try:
-        await ai_teacher_408_service.assert_ai_answer_access_allowed(
-            db,
-            user_id=user_id,
-            question_id=int(wq.question_id),
+    row = (
+        await db.execute(
+            select(WrongQuestion, active_exam_exists.label("ai_blocked")).where(
+                WrongQuestion.id == wrong_question_id,
+                WrongQuestion.user_id == user_id,
+            )
         )
-    except ai_teacher_408_service.AIExamInProgressError as e:
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="错题记录不存在")
+
+    wq, ai_blocked = row
+    if bool(ai_blocked):
+        message = "考试进行中禁止调用会泄露答案或解析的 AI 能力，请交卷后再使用。"
         raise HTTPException(
             status_code=409,
-            detail={"code": "exam_in_progress_ai_blocked", "message": str(e)},
+            detail={"code": "exam_in_progress_ai_blocked", "message": message},
         )
     return wq
 

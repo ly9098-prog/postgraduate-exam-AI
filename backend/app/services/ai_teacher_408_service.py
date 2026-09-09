@@ -656,25 +656,28 @@ def _fallback_payload(
 ) -> dict[str, Any]:
     meta = ACTION_DEFINITIONS[action]
     kp_names = [str(item.get("name")) for item in knowledge_context.get("knowledge_points", []) if item.get("name")]
-    summary = ""
-    sections: list[dict[str, Any]] = []
-    if revision.analysis:
-        sections = _structured_analysis_sections(revision.analysis)
-        if sections:
-            summary = _clean_str(sections[0].get("points", [""])[0], 1200)
+    # 降级内容也必须遵守动作边界：不能因为专项动作失败，就把完整的
+    # “错因/补漏/复练”报告再次塞回弹层。只有讲解类动作可引用一段题库
+    # 解析；生成题与陷阱总结在没有可靠生成结果时明确告知不可用。
+    explanation_actions = {"explain_correct", "explain_options", "core_concept"}
+    summary = reason
+    if action in explanation_actions and revision.analysis:
+        structured = _structured_analysis_sections(revision.analysis)
+        preferred = next((item for item in structured if item.get("heading") == "题目解析"), None)
+        if preferred is None and structured:
+            preferred = structured[0]
+        if preferred and preferred.get("points"):
+            summary = _clean_str(preferred["points"][0], 1200)
         else:
-            summary = _clean_str(revision.analysis, 1200)
-            sections = [{"heading": "题库解析", "points": [summary]}] if summary else []
-    else:
-        summary = reason
+            summary = _clean_str(revision.analysis, 1200) or reason
     return {
         "title": meta["label"],
         "summary": summary,
-        "sections": sections,
+        "sections": [],
         "knowledge_points": [
             {"name": name, "relation": "本题知识点", "mastery_hint": ""}
             for name in kp_names[:6]
-        ],
+        ] if action == "connect_knowledge" else [],
         "practice_question": None,
         "next_action": {"type": "none", "label": "", "params": {}},
     }

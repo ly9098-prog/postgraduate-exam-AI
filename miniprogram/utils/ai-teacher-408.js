@@ -1,12 +1,21 @@
+const ICON_ROOT = '/assets/icons/wrong-detail/'
+
 const ACTIONS = [
-  { action: 'explain_correct', label: '正确选项为什么对', shortLabel: '正确项为什么对' },
-  { action: 'explain_options', label: '为什么 A/B/C/D 错', shortLabel: '逐项排除' },
-  { action: 'core_concept', label: '这道题真正考什么', shortLabel: '真正考点' },
-  { action: 'similar_question', label: '给我一道同类题', shortLabel: '同类题' },
-  { action: 'harder_question', label: '给我一道更难的题', shortLabel: '更难一题' },
-  { action: 'connect_knowledge', label: '帮我串联相关知识点', shortLabel: '知识串联' },
-  { action: 'high_frequency_traps', label: '总结这个知识点的高频陷阱', shortLabel: '高频陷阱' },
+  { action: 'explain_correct', label: '正确选项为什么对', shortLabel: '只讲正确项', icon: `${ICON_ROOT}circle-check.svg` },
+  { action: 'explain_options', label: '逐项讲解 A/B/C/D', shortLabel: '逐项讲解', icon: `${ICON_ROOT}list-details.svg` },
+  { action: 'core_concept', label: '这道题真正考什么', shortLabel: '真正考点', icon: `${ICON_ROOT}target.svg` },
+  { action: 'similar_question', label: '给我一道同类题', shortLabel: '同类题', icon: `${ICON_ROOT}file-text.svg` },
+  { action: 'harder_question', label: '给我一道更难的题', shortLabel: '更难一题', icon: `${ICON_ROOT}trending-up.svg` },
+  { action: 'connect_knowledge', label: '帮我串联相关知识点', shortLabel: '知识串联', icon: `${ICON_ROOT}network.svg` },
+  { action: 'high_frequency_traps', label: '总结这个知识点的高频陷阱', shortLabel: '高频陷阱', icon: `${ICON_ROOT}triangle-alert.svg` },
 ]
+
+// 错题详情首屏只展示高频、互补的四个动作；完整七动作仍保持兼容，
+// 供“更多”以及练习/考试结果页继续复用。
+const PRIMARY_ACTION_KEYS = ['explain_options', 'core_concept', 'similar_question', 'connect_knowledge']
+const PRIMARY_ACTION_SET = new Set(PRIMARY_ACTION_KEYS)
+const PRIMARY_ACTIONS = PRIMARY_ACTION_KEYS.map(key => ACTIONS.find(item => item.action === key)).filter(Boolean)
+const MORE_ACTIONS = ACTIONS.filter(item => !PRIMARY_ACTION_SET.has(item.action))
 
 const ACTION_BY_KEY = ACTIONS.reduce((map, item) => {
   map[item.action] = item
@@ -216,6 +225,8 @@ async function submitFeedback(api, options) {
 
 module.exports = {
   ACTIONS,
+  PRIMARY_ACTIONS,
+  MORE_ACTIONS,
   ACTION_BY_KEY,
   normalizeResult,
   errorMessage,

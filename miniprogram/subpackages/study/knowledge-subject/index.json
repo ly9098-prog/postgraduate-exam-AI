@@ -1,10 +1,10 @@
 {
   "navigationBarTitleText": "知识图谱",
-  "navigationBarBackgroundColor": "#F4F4EE",
+  "navigationBarBackgroundColor": "#F8FAF4",
   "navigationBarTextStyle": "black",
-  "backgroundColor": "#F4F4EE",
-  "backgroundColorTop": "#F4F4EE",
-  "backgroundColorBottom": "#F1F2EC",
+  "backgroundColor": "#EFF5EA",
+  "backgroundColorTop": "#F8FAF4",
+  "backgroundColorBottom": "#EAF2E4",
   "backgroundTextStyle": "dark",
   "enablePullDownRefresh": true
 }
