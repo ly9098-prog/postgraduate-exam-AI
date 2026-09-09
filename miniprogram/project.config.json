@@ -93,8 +93,8 @@
     },
     "swc": false,
     "disableSWC": true,
-    "ignoreUploadUnusedFiles": true,
-    "ignoreDevUnusedFiles": true
+    "ignoreUploadUnusedFiles": false,
+    "ignoreDevUnusedFiles": false
   },
   "compileType": "miniprogram",
   "libVersion": "3.6.6",

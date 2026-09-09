@@ -396,7 +396,6 @@ button::after { border: none; }
 .ai-section.knowledge .ai-section-index,
 .ai-section.task .ai-section-index { color: #FFFFFF; }
 .ai-section-copy { min-width: 0; }
-.ai-result-state.is-collapsed .ai-section-copy { min-height: 0; }
 .ai-section-body { position: relative; min-width: 0; }
 .ai-section-body.is-clamped { max-height: 128rpx; overflow: hidden; }
 .ai-section-body.is-clamped::after {
@@ -1749,7 +1748,9 @@ button::after { border: none; }
   background: #FFFEFA;
 }
 
-.ai-deep-actions { display: flex; flex-wrap: wrap;
+.ai-deep-actions {
+  display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   margin-top: 26rpx;
 }
@@ -1757,15 +1758,15 @@ button::after { border: none; }
   margin-top: 16rpx;
 }
 .ai-deep-action {
-  flex: 0 0 auto;
-  width: auto;
-  max-width: 100%;
-  height: 58rpx;
-  min-height: 58rpx;
-  margin: 0 0 12rpx;
-  padding: 0 14rpx;
-  gap: 8rpx;
-  border-radius: 999rpx;
+  flex: 0 0 48.4%;
+  width: 48.4%;
+  max-width: 48.4%;
+  height: 114rpx;
+  min-height: 114rpx;
+  margin: 0 0 18rpx;
+  padding: 0 22rpx;
+  gap: 15rpx;
+  border-radius: 18rpx;
   border-color: #DCE4DE;
   background: #FBFCF8;
   box-shadow: none;
@@ -1873,14 +1874,14 @@ button::after { border: none; }
     flex-basis: 108rpx;
   }
   .ai-deep-action {
-    flex-basis: auto;
-    width: auto;
-    max-width: 100%;
-    height: 54rpx;
-    min-height: 54rpx;
-    padding-left: 13rpx;
-    padding-right: 13rpx;
-    gap: 8rpx;
+    flex-basis: 48.7%;
+    width: 48.7%;
+    max-width: 48.7%;
+    height: 108rpx;
+    min-height: 108rpx;
+    padding-left: 18rpx;
+    padding-right: 18rpx;
+    gap: 12rpx;
   }
   .ai-deep-action-icon {
     width: 34rpx;
@@ -1888,4 +1889,346 @@ button::after { border: none; }
     flex-basis: 34rpx;
   }
   .ai-deep-action-label { font-size: 20rpx; }
+}
+
+/* ===== UI polish v4: tighter grid, larger text, and closer reference proportions ===== */
+.ai-expand-btn {
+  min-height: 78rpx;
+  line-height: 78rpx;
+  font-size: 23rpx;
+}
+.ai-result-tools {
+  min-height: 86rpx;
+  padding-top: 20rpx;
+}
+.ai-hint-row {
+  gap: 14rpx;
+}
+.ai-hint {
+  font-size: 19rpx;
+  line-height: 1.58;
+  color: #89958F;
+}
+.ai-regenerate-link {
+  min-width: 164rpx;
+  font-size: 22rpx;
+  font-weight: 770;
+}
+.ai-deep-dive {
+  margin-top: 28rpx;
+  padding-top: 30rpx;
+  padding-bottom: 78rpx;
+}
+.ai-deep-title {
+  font-size: 32rpx;
+  line-height: 1.26;
+}
+.ai-deep-desc {
+  margin-top: 5rpx;
+  font-size: 20rpx;
+}
+.ai-deep-more {
+  width: 118rpx !important;
+  min-width: 118rpx !important;
+  max-width: 118rpx !important;
+  flex-basis: 118rpx;
+  height: 60rpx;
+  min-height: 60rpx;
+  line-height: 60rpx;
+  font-size: 22rpx;
+}
+.ai-deep-more-arrow-icon {
+  width: 19rpx;
+  height: 19rpx;
+  flex-basis: 19rpx;
+}
+.ai-deep-actions {
+  margin-top: 24rpx;
+}
+.ai-deep-action {
+  flex-basis: 48.8%;
+  width: 48.8%;
+  max-width: 48.8%;
+  height: 110rpx;
+  min-height: 110rpx;
+  margin-bottom: 16rpx;
+  padding-left: 24rpx;
+  padding-right: 24rpx;
+  gap: 16rpx;
+}
+.ai-deep-action-icon {
+  width: 40rpx;
+  height: 40rpx;
+  flex-basis: 40rpx;
+}
+.ai-deep-action-label {
+  font-size: 23rpx;
+  font-weight: 760;
+}
+.ai-deep-action-arrow-icon {
+  width: 17rpx;
+  height: 17rpx;
+  flex-basis: 17rpx;
+}
+.ai-deep-extra.is-expanded {
+  max-height: 540rpx;
+  margin-top: 18rpx;
+  padding-top: 16rpx;
+}
+.ai-deep-extra .ai-deep-actions {
+  margin-top: 14rpx;
+}
+.ai-deep-extra-label {
+  font-size: 18rpx;
+}
+
+@media (max-width: 360px) {
+  .ai-hint { font-size: 18rpx; }
+  .ai-deep-more {
+    width: 110rpx !important;
+    min-width: 110rpx !important;
+    max-width: 110rpx !important;
+    flex-basis: 110rpx;
+  }
+  .ai-deep-action {
+    flex-basis: 48.9%;
+    width: 48.9%;
+    max-width: 48.9%;
+    height: 104rpx;
+    min-height: 104rpx;
+    padding-left: 20rpx;
+    padding-right: 20rpx;
+  }
+  .ai-deep-action-label { font-size: 21rpx; }
+}
+
+/* ===== UI fidelity v5: stable grid + native-size rhythm + clean tap states ===== */
+/* Avoid the large translucent rectangle produced by the generic control hover state. */
+.ai-expand-pressed {
+  background: transparent !important;
+  opacity: .70;
+  transform: scale(.992);
+}
+.ai-more-pressed {
+  background: #FFFEFA !important;
+  opacity: .76;
+  transform: scale(.97);
+}
+.ai-expand-btn,
+.ai-deep-more {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Bring the AI card back into the same visual scale as the question/diagnosis blocks. */
+.ai-card {
+  margin: 22rpx 24rpx 0;
+  padding: 32rpx 32rpx 30rpx;
+  border-radius: 26rpx;
+  box-shadow: 0 12rpx 34rpx rgba(32, 62, 45, .075);
+}
+.ai-brand {
+  gap: 20rpx;
+}
+.ai-brand-icon {
+  width: 70rpx;
+  height: 70rpx;
+  flex-basis: 70rpx;
+}
+.ai-brand-icon-image {
+  width: 38rpx;
+  height: 38rpx;
+}
+.ai-title {
+  font-size: 32rpx;
+  line-height: 1.2;
+}
+.ai-subtitle {
+  margin-top: 5rpx;
+  font-size: 20rpx;
+}
+.ai-mark {
+  width: 106rpx;
+  min-width: 106rpx;
+  height: 46rpx;
+  font-size: 19rpx;
+}
+.ai-result-state {
+  margin-top: 28rpx;
+}
+.ai-section {
+  padding: 28rpx 0 30rpx 86rpx;
+}
+.ai-section-index {
+  top: 27rpx;
+  width: 54rpx;
+  height: 54rpx;
+  font-size: 19rpx;
+}
+.ai-section-title {
+  margin-bottom: 8rpx;
+  font-size: 27rpx;
+}
+.ai-text,
+.ai-rich-text {
+  font-size: 22rpx;
+  line-height: 1.72;
+}
+.ai-section-body.is-clamped {
+  max-height: 154rpx;
+}
+.ai-expand-btn {
+  min-height: 68rpx;
+  line-height: 68rpx;
+  font-size: 21rpx;
+  transition: opacity .14s ease, transform .14s ease;
+}
+.ai-result-tools {
+  min-height: 78rpx;
+  padding-top: 16rpx;
+}
+.ai-hint {
+  font-size: 18rpx;
+  line-height: 1.5;
+}
+.ai-history-icon-image {
+  width: 27rpx;
+  height: 27rpx;
+  flex-basis: 27rpx;
+}
+.ai-regenerate-link {
+  min-width: 150rpx;
+  min-height: 52rpx;
+  line-height: 52rpx;
+  font-size: 20rpx;
+}
+.ai-refresh-icon-image {
+  width: 25rpx;
+  height: 25rpx;
+  flex-basis: 25rpx;
+}
+
+.ai-deep-dive {
+  margin-top: 25rpx;
+  padding-top: 27rpx;
+  padding-bottom: 68rpx;
+}
+.ai-deep-dive.has-review {
+  margin-top: 25rpx;
+}
+.ai-deep-head {
+  align-items: center;
+}
+.ai-deep-title {
+  font-size: 29rpx;
+  line-height: 1.25;
+}
+.ai-deep-desc {
+  margin-top: 4rpx;
+  font-size: 19rpx;
+}
+.ai-deep-more {
+  width: 112rpx !important;
+  min-width: 112rpx !important;
+  max-width: 112rpx !important;
+  flex-basis: 112rpx;
+  height: 54rpx;
+  min-height: 54rpx;
+  line-height: 54rpx;
+  padding: 0 12rpx !important;
+  font-size: 20rpx;
+  transition: opacity .14s ease, transform .14s ease, border-color .14s ease;
+}
+.ai-deep-more-arrow-icon {
+  width: 18rpx;
+  height: 18rpx;
+  flex-basis: 18rpx;
+}
+
+/* WeChat button sizing is more reliable here with an explicit CSS Grid than flex-basis. */
+.ai-deep-actions {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 14rpx;
+  row-gap: 14rpx;
+  width: 100%;
+  margin-top: 22rpx;
+  align-items: stretch;
+}
+.ai-deep-action {
+  display: flex;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: 106rpx;
+  min-height: 106rpx;
+  margin: 0 !important;
+  padding: 0 20rpx !important;
+  gap: 13rpx;
+  border-radius: 17rpx;
+  box-sizing: border-box;
+}
+.ai-deep-action-icon {
+  width: 38rpx;
+  height: 38rpx;
+  flex: 0 0 38rpx;
+}
+.ai-deep-action-label {
+  font-size: 22rpx;
+  font-weight: 750;
+}
+.ai-deep-action-arrow-icon {
+  width: 16rpx;
+  height: 16rpx;
+  flex: 0 0 16rpx;
+}
+.ai-deep-action-pressed {
+  border-color: #B8C9BC !important;
+  background: #F2F6F2 !important;
+  transform: scale(.985);
+}
+.ai-deep-extra.is-expanded {
+  max-height: 510rpx;
+  margin-top: 16rpx;
+  padding-top: 15rpx;
+}
+.ai-deep-extra .ai-deep-actions {
+  margin-top: 13rpx;
+}
+.ai-deep-extra-label {
+  font-size: 17rpx;
+}
+
+.ai-card-decoration {
+  width: 306rpx;
+  height: 154rpx;
+}
+.ai-card-wave {
+  width: 294rpx;
+  height: 58rpx;
+}
+
+@media (max-width: 360px) {
+  .ai-card {
+    margin-left: 20rpx;
+    margin-right: 20rpx;
+    padding-left: 26rpx;
+    padding-right: 26rpx;
+  }
+  .ai-section {
+    padding-left: 80rpx;
+  }
+  .ai-deep-actions {
+    column-gap: 12rpx;
+    row-gap: 12rpx;
+  }
+  .ai-deep-action {
+    height: 102rpx;
+    min-height: 102rpx;
+    padding-left: 17rpx !important;
+    padding-right: 17rpx !important;
+    gap: 11rpx;
+  }
+  .ai-deep-action-label {
+    font-size: 20rpx;
+  }
 }

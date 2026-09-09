@@ -34,7 +34,7 @@
   <button class="error-secondary" bindtap="goBack">返回错题本</button>
 </view>
 
-<view class="page" wx:elif="{{!loading && wq}}" bindtouchstart="onPageInteraction">
+<view class="page" wx:elif="{{!loading && wq}}">
   <view wx:if="{{showSwitchMask}}" class="switch-mask">
     <view class="switch-pill"><view class="switch-dot"></view><text>正在切换题目</text></view>
   </view>
@@ -197,7 +197,7 @@
         </view>
       </view>
 
-      <button wx:if="{{aiCards.mistakeDiagnosis.raw || aiCards.knowledgePatch.raw || aiCards.reviewTask.raw}}" class="ai-expand-btn" hover-class="ai-control-pressed" hover-stay-time="90" disabled="{{aiRegenerating}}" bindtap="toggleAiReview" aria-label="{{aiReviewExpanded ? '收起完整复盘' : '查看完整复盘'}}"><text>{{aiReviewExpanded ? '收起详情' : '查看完整复盘'}}</text><image class="ai-expand-arrow-icon {{aiReviewExpanded ? 'is-up' : ''}}" src="/assets/icons/wrong-detail/chevron-down.svg" mode="aspectFit" aria-hidden="true" /></button>
+      <button wx:if="{{aiCards.mistakeDiagnosis.raw || aiCards.knowledgePatch.raw || aiCards.reviewTask.raw}}" class="ai-expand-btn" hover-class="ai-expand-pressed" hover-stay-time="70" disabled="{{aiRegenerating}}" bindtap="toggleAiReview" aria-label="{{aiReviewExpanded ? '收起完整复盘' : '查看完整复盘'}}"><text>{{aiReviewExpanded ? '收起详情' : '查看完整复盘'}}</text><image class="ai-expand-arrow-icon {{aiReviewExpanded ? 'is-up' : ''}}" src="/assets/icons/wrong-detail/chevron-down.svg" mode="aspectFit" aria-hidden="true" /></button>
       <text wx:if="{{aiInlineNotice}}" class="ai-inline-notice">{{aiInlineNotice}}</text>
       <view class="ai-result-tools">
         <view class="ai-hint-row">
@@ -234,7 +234,7 @@
           <text class="ai-deep-title">{{aiCards && !aiFallback ? '继续追问' : '直接提问'}}</text>
           <text class="ai-deep-desc">选择一个方向，获取针对性讲解</text>
         </view>
-        <button class="ai-deep-more" hover-class="ai-control-pressed" hover-stay-time="90" disabled="{{teacherLoadingAction || aiLoading || aiRegenerating}}" bindtap="toggleTeacherActions" aria-label="{{teacherActionsExpanded ? '收起更多追问方向' : '查看更多追问方向'}}"><text>{{teacherActionsExpanded ? '收起' : '更多'}}</text><image class="ai-deep-more-arrow-icon {{teacherActionsExpanded ? 'is-up' : ''}}" src="/assets/icons/wrong-detail/chevron-down.svg" mode="aspectFit" aria-hidden="true" /></button>
+        <button class="ai-deep-more" hover-class="ai-more-pressed" hover-stay-time="70" disabled="{{teacherLoadingAction || aiLoading || aiRegenerating}}" bindtap="toggleTeacherActions" aria-label="{{teacherActionsExpanded ? '收起更多追问方向' : '查看更多追问方向'}}"><text>{{teacherActionsExpanded ? '收起' : '更多'}}</text><image class="ai-deep-more-arrow-icon {{teacherActionsExpanded ? 'is-up' : ''}}" src="/assets/icons/wrong-detail/chevron-down.svg" mode="aspectFit" aria-hidden="true" /></button>
       </view>
       <view class="ai-deep-actions">
         <button wx:for="{{teacherPrimaryActions}}" wx:key="action" class="ai-deep-action {{teacherLoadingAction === item.action ? 'is-loading' : ''}}" data-action="{{item.action}}" hover-class="ai-deep-action-pressed" hover-stay-time="100" disabled="{{teacherLoadingAction || aiLoading || aiRegenerating}}" bindtap="run408TeacherAction" aria-label="{{item.label}}"><view wx:if="{{teacherLoadingAction === item.action}}" class="ai-action-loading-spinner" aria-hidden="true"></view><image wx:else class="ai-deep-action-icon" src="{{item.icon}}" mode="aspectFit" /><text class="ai-deep-action-label">{{teacherLoadingAction === item.action ? '正在生成' : item.shortLabel}}</text><image class="ai-deep-action-arrow-icon" src="/assets/icons/wrong-detail/chevron-right.svg" mode="aspectFit" aria-hidden="true" /></button>

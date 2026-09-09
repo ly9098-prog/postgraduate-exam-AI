@@ -11,7 +11,10 @@ const FILTERS = [
 const INITIAL_INDEX_LIMIT = 12
 const QUICK_THEME_LIMIT = 5
 const RECENT_THEME_LIMIT = 5
-const SEARCH_DEBOUNCE_MS = 180
+const SEARCH_DEBOUNCE_MS = 280
+const THEME_SHEET_SELECT_DELAY_MS = 70
+const THEME_SHEET_CLOSE_MS = 210
+const THEME_TRANSITION_MS = 360
 const CAMERA_FRAME_MS = 16
 const PAN_THRESHOLD = 5
 const INERTIA_MIN_SPEED = 0.025
@@ -77,10 +80,10 @@ Page({
     loadingMetrics: [1, 2, 3],
     stats: { total: 0, reliable: 0, weak: 0, coverage: 0 },
     filters: FILTERS.map(item => ({ id: item.id, label: item.label, count: 0 })),
-    filter: 'all', query: '', searchFocused: false, searchResultCount: 0, activeGroupKey: '', activeGroupName: '',
-    groupChips: [], quickGroupChips: [], themeGroupCount: 0, themeSheetOpen: false, themeQuery: '', themeSheetGroups: [],
+    filter: 'all', query: '', searchFocused: false, searchPending: false, searchResultCount: 0, activeGroupKey: '', activeGroupName: '',
+    groupChips: [], quickGroupChips: [], themeGroupCount: 0, themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '', themeSheetGroups: [],
     scene: { nodes: [], edges: [], page: 0, pageCount: 1, focused: false },
-    pageEntered: false, sceneAnimating: false, graphInteracting: false,
+    pageEntered: false, sceneAnimating: false, themeSwitching: false, graphInteracting: false,
     stageStyle: '', zoomText: '100%', zoomInDisabled: false, zoomOutDisabled: true, selectedPoint: null,
     indexNodes: [], indexCount: 0, hasMore: false,
   },
@@ -119,6 +122,9 @@ Page({
     clearTimeout(this._searchTimer)
     clearTimeout(this._entryTimer)
     clearTimeout(this._sceneAnimationTimer)
+    clearTimeout(this._themeSheetCloseTimer)
+    clearTimeout(this._themeSheetSelectTimer)
+    clearTimeout(this._themeTransitionTimer)
   },
   onPullDownRefresh() { return this.loadMap(false).finally(() => wx.stopPullDownRefresh()) },
 
@@ -189,7 +195,7 @@ Page({
     else reveal()
   },
 
-  applyView(resetCamera = false, animateScene = resetCamera, callback) {
+  applyView(resetCamera = false, animateScene = resetCamera, callback, themeTransition = false) {
     if (!this.data.subject) return
     const config = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
     const query = normalizeSearchText(this.data.query)
@@ -224,11 +230,13 @@ Page({
     const payload = {
       activeGroupKey, activeGroupName: activeGroup ? activeGroup.name : '', scene,
       groupChips, quickGroupChips, themeGroupCount: groupChips.length, themeSheetGroups,
+      searchPending: false,
       searchResultCount: availableGroups.reduce((count, group) => count + group.nodes.length, 0),
       selectedPoint: selectedVisible ? { ...selectedBase, searchMatchedAlias: selectedVisible.searchMatchedAlias || '' } : selectedBase,
       indexNodes: this._visibleNodes.slice(0, limit), indexCount: this._visibleNodes.length, hasMore: this._visibleNodes.length > limit,
     }
     if (animateScene) payload.sceneAnimating = true
+    if (themeTransition) payload.themeSwitching = true
     const commit = () => this.setData(payload, () => {
       if (resetCamera) this.resetView()
       const next = () => { if (!this._unloaded) this.measureViewport(resetCamera) }
@@ -241,6 +249,13 @@ Page({
           if (!this._unloaded) this.setData({ sceneAnimating: false })
         }, 820)
       }
+      if (themeTransition) {
+        clearTimeout(this._themeTransitionTimer)
+        this._themeTransitionTimer = setTimeout(() => {
+          this._themeTransitionTimer = null
+          if (!this._unloaded) this.setData({ themeSwitching: false })
+        }, THEME_TRANSITION_MS)
+      }
       if (typeof callback === 'function') callback()
     })
     if (animateScene && this.data.sceneAnimating) this.setData({ sceneAnimating: false }, commit)
@@ -252,13 +267,26 @@ Page({
     if (!FILTERS.some(item => item.id === filter) || filter === this.data.filter) return
     clearTimeout(this._searchTimer)
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
-    this.setData({ filter, themeSheetOpen: false, themeQuery: '' }, () => this.applyView(true))
+    this.setData({ filter, searchPending: false, themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' }, () => this.applyView(true))
   },
   searchPoints(event) {
     const query = String(event.detail.value || '')
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
     clearTimeout(this._searchTimer)
-    this.setData({ query, activeGroupKey: '', themeSheetOpen: false, themeQuery: '' })
+    const normalizedQuery = normalizeSearchText(query)
+    this.setData({
+      query,
+      searchPending: Boolean(normalizedQuery),
+      activeGroupKey: '',
+      themeSheetOpen: false,
+      themeSheetClosing: false,
+      themeSheetPendingKey: '__idle__',
+      themeQuery: '',
+    })
+    if (!normalizedQuery) {
+      this.applyView(true, false)
+      return
+    }
     this._searchTimer = setTimeout(() => {
       this._searchTimer = null
       if (!this._unloaded) this.applyView(true, false)
@@ -270,19 +298,19 @@ Page({
     clearTimeout(this._searchTimer)
     this._searchTimer = null
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
-    this.setData({ query: String(event.detail.value || ''), activeGroupKey: '', themeSheetOpen: false, themeQuery: '' }, () => this.applyView(true, false))
+    this.setData({ query: String(event.detail.value || ''), searchPending: false, activeGroupKey: '', themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' }, () => this.applyView(true, false))
   },
   clearSearch() {
     clearTimeout(this._searchTimer)
     this._searchTimer = null
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
-    this.setData({ query: '', activeGroupKey: '', themeSheetOpen: false, themeQuery: '' }, () => this.applyView(true, false))
+    this.setData({ query: '', searchPending: false, activeGroupKey: '', themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' }, () => this.applyView(true, false))
   },
   resetFilters() {
     clearTimeout(this._searchTimer)
     this._searchTimer = null
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
-    this.setData({ filter: 'all', query: '', activeGroupKey: '', themeSheetOpen: false, themeQuery: '' }, () => this.applyView(true))
+    this.setData({ filter: 'all', query: '', searchPending: false, activeGroupKey: '', themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' }, () => this.applyView(true))
   },
   chooseGroup(event) { this.openGroup(String(event.currentTarget.dataset.key || '')) },
   rememberGroup(key) {
@@ -300,25 +328,50 @@ Page({
     if (normalized === this.data.activeGroupKey) return
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
     if (normalized) this.rememberGroup(normalized)
-    this.setData({ activeGroupKey: normalized }, () => this.applyView(true))
+    clearTimeout(this._themeTransitionTimer)
+    this.setData({ activeGroupKey: normalized, themeSwitching: false }, () => this.applyView(true, true, null, true))
   },
   showOverview() { this.openGroup('') },
   openThemeSheet() {
     const groups = Array.isArray(this.data.groupChips) ? this.data.groupChips : []
-    this.setData({ themeSheetOpen: true, themeQuery: '', themeSheetGroups: groups })
+    clearTimeout(this._themeSheetCloseTimer)
+    clearTimeout(this._themeSheetSelectTimer)
+    this.setData({ themeSheetOpen: true, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '', themeSheetGroups: groups })
   },
-  closeThemeSheet() { if (this.data.themeSheetOpen) this.setData({ themeSheetOpen: false, themeQuery: '' }) },
+  finishThemeSheetClose(nextGroupKey) {
+    clearTimeout(this._themeSheetCloseTimer)
+    this._themeSheetCloseTimer = setTimeout(() => {
+      this._themeSheetCloseTimer = null
+      if (this._unloaded) return
+      this.setData({ themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' }, () => {
+        if (nextGroupKey !== undefined) this.openGroup(nextGroupKey)
+      })
+    }, THEME_SHEET_CLOSE_MS)
+  },
+  closeThemeSheet() {
+    if (!this.data.themeSheetOpen || this.data.themeSheetClosing) return
+    clearTimeout(this._themeSheetSelectTimer)
+    this.setData({ themeSheetClosing: true, themeSheetPendingKey: '__idle__' }, () => this.finishThemeSheetClose())
+  },
   searchThemes(event) {
     const themeQuery = String(event.detail.value || '')
     const themeSheetGroups = (Array.isArray(this.data.groupChips) ? this.data.groupChips : []).filter(group => themeSearchMatch(group, themeQuery))
-    this.setData({ themeQuery, themeSheetGroups })
+    this.setData({ themeQuery, themeSheetGroups, themeSheetPendingKey: '__idle__' })
   },
   clearThemeSearch() {
-    this.setData({ themeQuery: '', themeSheetGroups: Array.isArray(this.data.groupChips) ? this.data.groupChips : [] })
+    this.setData({ themeQuery: '', themeSheetPendingKey: '__idle__', themeSheetGroups: Array.isArray(this.data.groupChips) ? this.data.groupChips : [] })
   },
   chooseThemeFromSheet(event) {
+    if (this.data.themeSheetClosing) return
     const key = String(event.currentTarget.dataset.key || '')
-    this.setData({ themeSheetOpen: false, themeQuery: '' }, () => this.openGroup(key))
+    clearTimeout(this._themeSheetSelectTimer)
+    this.setData({ themeSheetPendingKey: key }, () => {
+      this._themeSheetSelectTimer = setTimeout(() => {
+        this._themeSheetSelectTimer = null
+        if (this._unloaded || !this.data.themeSheetOpen) return
+        this.setData({ themeSheetClosing: true }, () => this.finishThemeSheetClose(key))
+      }, THEME_SHEET_SELECT_DELAY_MS)
+    })
   },
   stopThemeSheetTap() {},
   preventBackgroundScroll() {},
