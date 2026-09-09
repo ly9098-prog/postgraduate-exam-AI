@@ -12,9 +12,10 @@ const INITIAL_INDEX_LIMIT = 12
 const QUICK_THEME_LIMIT = 5
 const RECENT_THEME_LIMIT = 5
 const SEARCH_DEBOUNCE_MS = 280
-const THEME_SHEET_SELECT_DELAY_MS = 70
-const THEME_SHEET_CLOSE_MS = 210
-const THEME_TRANSITION_MS = 360
+const THEME_SHEET_SELECT_DELAY_MS = 96
+const THEME_SHEET_CLOSE_MS = 236
+const THEME_TRANSITION_MS = 240
+const LABEL_SWITCH_OUT_MS = 34
 const CAMERA_FRAME_MS = 16
 const PAN_THRESHOLD = 5
 const INERTIA_MIN_SPEED = 0.025
@@ -29,15 +30,41 @@ const pointSearchMatch = (node, query) => {
   if (!rawQuery) return { matched: true, alias: '' }
   const compactQuery = compactSearchText(rawQuery)
   const tokens = searchTokens(rawQuery)
-  const matches = value => {
-    const raw = normalizeSearchText(value)
-    if (!raw) return false
-    const compact = compactSearchText(raw)
-    return raw.includes(rawQuery) || (compactQuery && compact.includes(compactQuery)) || (tokens.length > 1 && tokens.every(token => raw.includes(token) || compact.includes(compactSearchText(token))))
-  }
-  if (matches(node.name)) return { matched: true, alias: '' }
-  const alias = (Array.isArray(node.aliases) ? node.aliases : []).find(matches)
-  return { matched: Boolean(alias), alias: alias ? String(alias) : '' }
+  const raw = normalizeSearchText(node && node.name)
+  if (!raw) return { matched: false, alias: '' }
+  const compact = compactSearchText(raw)
+  const matched = raw.includes(rawQuery) || (compactQuery && compact.includes(compactQuery)) || (tokens.length > 1 && tokens.every(token => raw.includes(token) || compact.includes(compactSearchText(token))))
+  return { matched: Boolean(matched), alias: '' }
+}
+const THEME_ICON_ASSETS = {
+  overview: '/assets/icons/knowledge-subject/overview.png',
+  tree: '/assets/icons/knowledge-subject/tree.png',
+  nodes: '/assets/icons/knowledge-subject/nodes.png',
+  relation: '/assets/icons/knowledge-subject/relation.png',
+  move: '/assets/icons/knowledge-subject/move.png',
+  chip: '/assets/icons/knowledge-subject/chip.png',
+  queue: '/assets/icons/knowledge-subject/queue.png',
+  layers: '/assets/icons/knowledge-subject/layers.png',
+  code: '/assets/icons/knowledge-subject/code.png',
+}
+const themeIconSrc = kind => THEME_ICON_ASSETS[kind] || THEME_ICON_ASSETS.nodes
+
+const themeIconKind = (group, index = 0) => {
+  const text = `${group && group.name ? group.name : ''} ${group && group.key ? group.key : ''}`.toLowerCase()
+  if (/b树|b-tree|btree|二叉|tree|树|avl/.test(text)) return 'tree'
+  if (/catalan|图|graph|网络|拓扑|huffman/.test(text)) return 'nodes'
+  if (/关系|共享|关联|relation|path|关键路径/.test(text)) return 'relation'
+  if (/元素移动|移动|move|transfer|swap/.test(text)) return 'move'
+  if (/内存|分配|memory|alloc|页|cache/.test(text)) return 'chip'
+  if (/队列|queue|循环队列|广度/.test(text)) return 'queue'
+  if (/入栈|出栈|栈|stack|序列|操作/.test(text)) return 'layers'
+  if (/c语言|字符|标识符|code|string|kmp|search|查找|binary/.test(text)) return 'code'
+  return ['nodes', 'tree', 'move', 'layers', 'code', 'relation', 'chip', 'queue'][index % 8]
+}
+const formatThemeOrder = (group, index = 0) => {
+  const value = group && group.number != null ? String(group.number) : String(index + 1)
+  const digits = value.replace(/\D+/g, '')
+  return (digits || String(index + 1)).padStart(2, '0')
 }
 const themeSearchMatch = (group, query) => {
   const rawQuery = normalizeSearchText(query)
@@ -51,21 +78,38 @@ const themeSearchMatch = (group, query) => {
     return raw.includes(rawQuery) || (compactQuery && compact.includes(compactQuery))
   })
 }
-const buildQuickGroupChips = (chips, activeKey, recentKeys) => {
+const QUICK_THEME_PRIORITY = [
+  /b树|b-tree|btree|b tree|tree/i,
+  /元素移动|移动|move|transfer|swap/i,
+  /入栈出栈序列|入栈|出栈|stack push|stack pop|stack/i,
+  /catalan/i,
+  /c语言标识符|c语言|标识符|identifier|code/i,
+]
+const buildQuickGroupChips = (chips, activeKey) => {
   const source = Array.isArray(chips) ? chips : []
-  const byKey = new Map(source.map(item => [String(item.key), item]))
-  const result = []
-  const seen = new Set()
-  const add = key => {
-    const normalized = String(key || '')
-    if (!normalized || seen.has(normalized) || !byKey.has(normalized)) return
-    seen.add(normalized)
-    result.push(byKey.get(normalized))
-  }
-  add(activeKey)
-  ;(Array.isArray(recentKeys) ? recentKeys : []).forEach(add)
-  source.forEach(item => add(item.key))
-  return result.slice(0, QUICK_THEME_LIMIT)
+  const picked = []
+  const used = new Set()
+  QUICK_THEME_PRIORITY.forEach((pattern) => {
+    const hit = source.find(item => !used.has(String(item.key)) && pattern.test(String(item.name || '')))
+    if (!hit) return
+    picked.push(hit)
+    used.add(String(hit.key))
+  })
+  source.forEach((item) => {
+    if (picked.length >= QUICK_THEME_LIMIT) return
+    const key = String(item.key)
+    if (used.has(key)) return
+    picked.push(item)
+    used.add(key)
+  })
+  const result = picked.slice(0, QUICK_THEME_LIMIT)
+  const normalizedActive = String(activeKey || '')
+  if (!normalizedActive || result.some(item => String(item.key) === normalizedActive)) return result
+  const activeItem = source.find(item => String(item.key) === normalizedActive)
+  if (!activeItem) return result
+  if (result.length < QUICK_THEME_LIMIT) result.push(activeItem)
+  else if (result.length) result[result.length - 1] = activeItem
+  return result
 }
 const percent = value => value == null || !Number.isFinite(Number(value)) ? null : Math.max(0, Math.min(100, Math.round(Number(value))))
 const accuracyPercent = (value) => {
@@ -83,7 +127,7 @@ Page({
     filter: 'all', query: '', searchFocused: false, searchPending: false, searchResultCount: 0, activeGroupKey: '', activeGroupName: '',
     groupChips: [], quickGroupChips: [], themeGroupCount: 0, themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '', themeSheetGroups: [],
     scene: { nodes: [], edges: [], page: 0, pageCount: 1, focused: false },
-    pageEntered: false, sceneAnimating: false, themeSwitching: false, graphInteracting: false,
+    pageEntered: false, sceneAnimating: false, themeSwitching: false, themeSwitchPhase: '', graphInteracting: false,
     stageStyle: '', zoomText: '100%', zoomInDisabled: false, zoomOutDisabled: true, selectedPoint: null,
     indexNodes: [], indexCount: 0, hasMore: false,
   },
@@ -125,6 +169,7 @@ Page({
     clearTimeout(this._themeSheetCloseTimer)
     clearTimeout(this._themeSheetSelectTimer)
     clearTimeout(this._themeTransitionTimer)
+    clearTimeout(this._labelSwitchTimer)
   },
   onPullDownRefresh() { return this.loadMap(false).finally(() => wx.stopPullDownRefresh()) },
 
@@ -195,7 +240,7 @@ Page({
     else reveal()
   },
 
-  applyView(resetCamera = false, animateScene = resetCamera, callback, themeTransition = false) {
+  applyView(resetCamera = false, animateScene = resetCamera, callback) {
     if (!this.data.subject) return
     const config = FILTERS.find(item => item.id === this.data.filter) || FILTERS[0]
     const query = normalizeSearchText(this.data.query)
@@ -205,7 +250,7 @@ Page({
         if (config.statuses && !config.statuses.includes(node.status)) return result
         const searchMatch = pointSearchMatch(node, query)
         if (!searchMatch.matched) return result
-        result.push({ ...node, searchMatchedAlias: searchMatch.alias })
+        result.push(node)
         return result
       }, []),
     }))
@@ -223,8 +268,13 @@ Page({
     const visibleById = new Map(this._visibleNodes.map(node => [Number(node.knowledge_point_id), node]))
     const selectedBase = this._nodeById.get(this._selectedId) || null
     const selectedVisible = visibleById.get(Number(this._selectedId)) || null
-    const groupChips = availableGroups.map(group => ({ key: String(group.key), name: group.name, count: group.nodes.length, number: group.number }))
-    const quickGroupChips = buildQuickGroupChips(groupChips, activeGroupKey, this._recentGroupKeys)
+    const filteredByKey = new Map((this._filteredGroups || []).map(group => [String(group.key), group]))
+    const groupChips = (this._groups || []).map((group, index) => {
+      const filteredGroup = filteredByKey.get(String(group.key))
+      const iconKind = themeIconKind(group, index)
+      return { key: String(group.key), name: group.name, count: filteredGroup ? filteredGroup.nodes.length : 0, number: group.number, orderText: formatThemeOrder(group, index), iconKind, iconSrc: themeIconSrc(iconKind) }
+    })
+    const quickGroupChips = buildQuickGroupChips(groupChips, activeGroupKey)
     const themeSheetGroups = groupChips.filter(group => themeSearchMatch(group, this.data.themeQuery))
     const activeGroup = groupChips.find(group => group.key === activeGroupKey)
     const payload = {
@@ -232,14 +282,17 @@ Page({
       groupChips, quickGroupChips, themeGroupCount: groupChips.length, themeSheetGroups,
       searchPending: false,
       searchResultCount: availableGroups.reduce((count, group) => count + group.nodes.length, 0),
-      selectedPoint: selectedVisible ? { ...selectedBase, searchMatchedAlias: selectedVisible.searchMatchedAlias || '' } : selectedBase,
+      selectedPoint: selectedBase,
       indexNodes: this._visibleNodes.slice(0, limit), indexCount: this._visibleNodes.length, hasMore: this._visibleNodes.length > limit,
     }
     if (animateScene) payload.sceneAnimating = true
-    if (themeTransition) payload.themeSwitching = true
+    if (resetCamera && this._frame) {
+      this.stopCameraInertia()
+      this._camera = fitCamera(this._frame)
+      Object.assign(payload, this.cameraPayload(true, { graphInteracting: false }))
+    }
     const commit = () => this.setData(payload, () => {
-      if (resetCamera) this.resetView()
-      const next = () => { if (!this._unloaded) this.measureViewport(resetCamera) }
+      const next = () => { if (!this._unloaded) this.measureViewport(false) }
       if (wx.nextTick) wx.nextTick(next)
       else next()
       if (animateScene) {
@@ -249,17 +302,32 @@ Page({
           if (!this._unloaded) this.setData({ sceneAnimating: false })
         }, 820)
       }
-      if (themeTransition) {
-        clearTimeout(this._themeTransitionTimer)
-        this._themeTransitionTimer = setTimeout(() => {
-          this._themeTransitionTimer = null
-          if (!this._unloaded) this.setData({ themeSwitching: false })
-        }, THEME_TRANSITION_MS)
-      }
       if (typeof callback === 'function') callback()
     })
     if (animateScene && this.data.sceneAnimating) this.setData({ sceneAnimating: false }, commit)
     else commit()
+  },
+
+  transitionLabelView(dataChanges = {}) {
+    clearTimeout(this._labelSwitchTimer)
+    clearTimeout(this._themeTransitionTimer)
+    clearTimeout(this._sceneAnimationTimer)
+    const startPayload = { ...dataChanges, sceneAnimating: false, themeSwitching: true, themeSwitchPhase: 'leaving' }
+    this.setData(startPayload, () => {
+      this._labelSwitchTimer = setTimeout(() => {
+        this._labelSwitchTimer = null
+        if (this._unloaded) return
+        this.applyView(true, false, () => {
+          if (this._unloaded) return
+          this.setData({ themeSwitchPhase: 'entering' }, () => {
+            this._themeTransitionTimer = setTimeout(() => {
+              this._themeTransitionTimer = null
+              if (!this._unloaded) this.setData({ themeSwitching: false, themeSwitchPhase: '' })
+            }, THEME_TRANSITION_MS)
+          })
+        })
+      }, LABEL_SWITCH_OUT_MS)
+    })
   },
 
   setFilter(event) {
@@ -267,7 +335,7 @@ Page({
     if (!FILTERS.some(item => item.id === filter) || filter === this.data.filter) return
     clearTimeout(this._searchTimer)
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
-    this.setData({ filter, searchPending: false, themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' }, () => this.applyView(true))
+    this.transitionLabelView({ filter, searchPending: false, themeSheetOpen: false, themeSheetClosing: false, themeSheetPendingKey: '__idle__', themeQuery: '' })
   },
   searchPoints(event) {
     const query = String(event.detail.value || '')
@@ -328,8 +396,8 @@ Page({
     if (normalized === this.data.activeGroupKey) return
     this._graphPage = 0; this._indexLimit = INITIAL_INDEX_LIMIT; this._selectedId = 0
     if (normalized) this.rememberGroup(normalized)
-    clearTimeout(this._themeTransitionTimer)
-    this.setData({ activeGroupKey: normalized, themeSwitching: false }, () => this.applyView(true, true, null, true))
+    const quickGroupChips = buildQuickGroupChips(this.data.groupChips, normalized)
+    this.transitionLabelView({ activeGroupKey: normalized, quickGroupChips })
   },
   showOverview() { this.openGroup('') },
   openThemeSheet() {
