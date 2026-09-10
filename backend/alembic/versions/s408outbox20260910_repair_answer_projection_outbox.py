@@ -106,28 +106,24 @@ def upgrade() -> None:
         if not _is_safe_current_payload(row["payload"]):
             continue
 
+        # A live lease belongs to a dispatcher that may already have loaded the
+        # old v1 envelope into memory. Do not mutate *any* contract state under
+        # that owner during a rolling deploy. It will either finish and leave a
+        # recoverable failure, or expire and become eligible for the runtime
+        # repair path.
+        if row["status"] == "leased" and not bool(row["lease_reclaimable"]):
+            continue
+
         values: dict[str, Any] = {"schema_version": _CURRENT_SCHEMA_VERSION}
         error = str(row["error_message"] or "").lower()
         has_schema_error = "unsupported answer_projection schema_version=" in error
-        if has_schema_error and (
-            row["status"] in {"failed", "pending"}
-            or (row["status"] == "leased" and bool(row["lease_reclaimable"]))
-        ):
+        if has_schema_error:
             values.update({
                 "status": "pending",
                 "retry_count": 0,
                 "error_message": None,
                 "lease_token": None,
                 "lease_expires_at": None,
-            })
-        elif has_schema_error and row["status"] == "leased":
-            # Do not steal a live lease during a rolling deploy.  The payload is
-            # already proven compatible and its envelope is upgraded above, so
-            # reset only the exhausted retry counter/error.  If the live owner
-            # disappears, the row remains claimable as soon as its lease expires.
-            values.update({
-                "retry_count": 0,
-                "error_message": None,
             })
 
         bind.execute(

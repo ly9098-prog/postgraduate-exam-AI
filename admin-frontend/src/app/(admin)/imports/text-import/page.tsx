@@ -11,11 +11,11 @@ import {
   Trash2,
   AlertTriangle,
 } from "lucide-react";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { apiRequest } from "@/lib/api/client";
+import { ImportMetric, ImportPanelHeader, ImportWorkspaceHeader } from "../components/import-workspace";
 import { getQuestionTypeLabel, QUESTION_TYPE_OPTIONS, canonicalizeQuestionType, formatUnknownType } from "@/lib/question-types";
 
 type ParsedOption = { key: string; text: string };
@@ -181,50 +181,43 @@ export default function TextImportPage() {
   const hasValidQuestions = (parseResult?.valid_count ?? 0) > 0;
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-6 items-start xl:grid-cols-[1fr_1fr]">
-        {/* ===== Left: Input ===== */}
-        <Card className="min-w-0">
-          <CardHeader>
-            <h3 className="font-display text-xl font-bold text-[var(--ink)]">
-              输入文本
-            </h3>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <label className="text-sm font-semibold text-[var(--ink)]">
-                  题目文本
-                </label>
-                <span className="font-mono text-xs text-[var(--color-text-hint)]">
-                  {charCount} 字
-                </span>
-              </div>
+    <div className="space-y-6 pb-4">
+      <ImportWorkspaceHeader
+        icon={FileText}
+        title="文本导入"
+        description="粘贴结构化或自然语言题目，先解析校验，再把有效题目送入审核队列。编辑与异常信息集中在同一工作台内，减少上下文切换。"
+        meta={
+          <div className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--color-border)] bg-white/70 px-3 text-xs text-[var(--color-text-secondary)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-primary)]" aria-hidden="true" />
+            解析后确认入库
+          </div>
+        }
+      />
+
+      {globalError ? (
+        <div role="alert" className="flex items-start gap-3 rounded-2xl border border-[rgba(196,77,77,0.28)] bg-[var(--color-danger-light)] px-4 py-3.5 text-sm text-[var(--color-danger)] import-feedback-in">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="font-semibold">操作未完成</p>
+            <p className="mt-0.5 text-xs leading-5">{globalError}</p>
+          </div>
+        </div>
+      ) : null}
+
+      <section className="overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[rgba(254,252,249,0.82)] shadow-[var(--shadow-card)] import-enter" style={{ animationDelay: "55ms" }}>
+        <div className="grid min-h-[620px] xl:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
+          <div className="min-w-0 border-b border-[var(--color-border-light)] xl:border-b-0 xl:border-r">
+            <ImportPanelHeader
+              title="原始文本"
+              description="支持标签格式与无标签题目；修改文本会清空当前解析结果。"
+              trailing={<span className="font-mono text-[11px] tabular-nums text-[var(--color-text-hint)]">{charCount.toLocaleString()} 字</span>}
+            />
+            <div className="flex h-[calc(100%-4rem)] min-h-[555px] flex-col p-4 sm:p-5">
+              <label htmlFor="question-import-text" className="sr-only">题目文本</label>
               <textarea
-                className="min-h-[420px] w-full resize-y rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] p-4 font-mono text-sm leading-relaxed outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)]"
-                placeholder={`支持格式示例：
-
-【题目】
-操作系统采用时间片轮转调度算法的主要目的是（）。
-
-【选项】
-A. 提高系统吞吐量
-B. 提高CPU利用率
-C. 保证响应时间
-D. 减少进程切换
-
-【答案】
-C
-
-【解析】
-时间片轮转属于分时系统调度算法。
-
-====================
-
-【题目】
-第二题...
-...
-`}
+                id="question-import-text"
+                className="min-h-[430px] flex-1 resize-y rounded-xl border border-[var(--color-border)] bg-[rgba(239,235,229,0.62)] px-4 py-3.5 font-mono text-[13px] leading-6 text-[var(--ink)] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[var(--color-text-hint)] focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.12)]"
+                placeholder={`【题目】\n操作系统采用时间片轮转调度算法的主要目的是（）。\n\n【选项】\nA. 提高系统吞吐量\nB. 提高CPU利用率\nC. 保证响应时间\nD. 减少进程切换\n\n【答案】\nC\n\n【解析】\n时间片轮转属于分时系统调度算法。`}
                 value={text}
                 onChange={(e) => {
                   setText(e.target.value);
@@ -234,246 +227,159 @@ C
                   setEditForm(null);
                 }}
               />
-            </div>
 
-            <Button
-              className="w-full h-12"
-              onClick={handleParse}
-              disabled={parseMutation.isPending || !text.trim()}
-            >
-              {parseMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowRight className="h-4 w-4" />
-              )}
-              {parseMutation.isPending ? "解析中..." : "解析文本"}
-            </Button>
-
-            {globalError ? (
-              <div className="flex items-start gap-2 rounded-2xl border border-[var(--color-danger)] bg-red-50/70 px-4 py-3 text-sm text-[var(--color-danger)]">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{globalError}</span>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs leading-5 text-[var(--color-text-hint)]">
+                  可识别 【题目】/【选项】/【答案】/【解析】，多题可直接连续粘贴。
+                </p>
+                <Button
+                  className="h-11 min-w-32 import-interactive group"
+                  onClick={handleParse}
+                  disabled={parseMutation.isPending || !text.trim()}
+                >
+                  {parseMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5 motion-reduce:transform-none" aria-hidden="true" />}
+                  {parseMutation.isPending ? "解析中" : "解析文本"}
+                </Button>
               </div>
-            ) : null}
-          </CardContent>
-        </Card>
+            </div>
+          </div>
 
-        {/* ===== Right: Results ===== */}
-        <div className="flex flex-col gap-4 min-w-0">
-          {parseResult ? (
-            <>
-              {/* Stats bar */}
-              <Card className="shrink-0">
-                <CardContent className="py-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 text-sm">
-                      <span className="text-[var(--color-text-secondary)]">
-                        解析结果
-                      </span>
-                      <span className="font-semibold text-[var(--ink)]">
-                        {parseResult.raw_count} 题
-                      </span>
-                      <span className="text-green-600">
-                        {parseResult.valid_count} 有效
-                      </span>
-                      {parseResult.raw_count - parseResult.valid_count > 0 ? (
-                        <span className="text-red-500">
-                          {parseResult.raw_count - parseResult.valid_count} 无效
-                        </span>
-                      ) : null}
-                    </div>
+          <div className="min-w-0 bg-white/30">
+            {parseResult ? (
+              <div className="flex min-h-[620px] flex-col import-panel-swap">
+                <ImportPanelHeader
+                  title="解析结果"
+                  description="先处理无效项与警告，再确认导入。"
+                  trailing={
                     <Button
-                      variant="primary"
+                      className="h-11"
                       disabled={!hasValidQuestions || importMutation.isPending}
                       onClick={handleImport}
                     >
-                      {importMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-4 w-4" />
-                      )}
-                      {importMutation.isPending ? "导入中..." : "确认导入"}
+                      {importMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
+                      {importMutation.isPending ? "导入中" : "确认导入"}
                     </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                  }
+                />
 
-              {/* Warnings */}
-              {parseResult.warnings.length > 0 ? (
-                <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-700">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <ul className="list-inside list-disc space-y-1">
-                    {parseResult.warnings.map((w, i) => (
-                      <li key={i}>{w}</li>
-                    ))}
-                  </ul>
+                <div className="grid grid-cols-3 divide-x divide-[var(--color-border-light)] border-b border-[var(--color-border-light)] bg-white/55" aria-live="polite">
+                  <ImportMetric label="识别题目" value={parseResult.raw_count} />
+                  <ImportMetric label="有效" value={parseResult.valid_count} tone="success" />
+                  <ImportMetric label="需处理" value={Math.max(0, parseResult.raw_count - parseResult.valid_count)} tone={parseResult.raw_count - parseResult.valid_count > 0 ? "danger" : "neutral"} />
                 </div>
-              ) : null}
 
-              {/* Import result */}
-              {importStatus ? (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2.5 rounded-2xl border border-green-200 bg-green-50/70 px-4 py-3 text-sm">
-                    <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                {parseResult.warnings.length > 0 ? (
+                  <div role="status" className="mx-4 mt-4 flex items-start gap-2.5 rounded-xl border border-[rgba(196,154,107,0.35)] bg-[var(--color-warning-light)] px-3.5 py-3 text-xs leading-5 text-[var(--color-text-primary)] sm:mx-5 import-feedback-in">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <div className="space-y-1">
+                      {parseResult.warnings.map((w, i) => <p key={i}>{w}</p>)}
+                    </div>
+                  </div>
+                ) : null}
+
+                {importStatus ? (
+                  <div role="status" className="mx-4 mt-4 flex items-start gap-2.5 rounded-xl border border-[rgba(91,140,91,0.3)] bg-[var(--color-success-light)] px-3.5 py-3 text-xs leading-5 text-[var(--color-success)] sm:mx-5 import-feedback-in">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                     <div>
-                      <span className="font-semibold text-green-700">导入完成</span>
-                      <span className="ml-2 text-green-600">
-                        批次 {importStatus.batch_id}：成功 {importStatus.succeeded}
-                        题{importStatus.duplicates_filtered > 0 ? (
-                          <span className="text-amber-600">，过滤重复 {importStatus.duplicates_filtered} 题</span>
-                        ) : null}
-                        {importStatus.failed > 0 ? (
-                          <span className="text-red-500">，失败 {importStatus.failed} 题</span>
-                        ) : null}
-                      </span>
+                      <p className="font-semibold">导入完成 · 批次 {importStatus.batch_id}</p>
+                      <p className="mt-0.5">
+                        成功 {importStatus.succeeded} 题
+                        {importStatus.duplicates_filtered > 0 ? ` · 过滤重复 ${importStatus.duplicates_filtered} 题` : ""}
+                        {importStatus.failed > 0 ? ` · 失败 ${importStatus.failed} 题` : ""}
+                      </p>
                     </div>
                   </div>
-                  {importStatus.duplicates_filtered > 0 ? (
-                    <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-700">
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                      <span>已自动过滤 {importStatus.duplicates_filtered} 道题库中已存在的题目，不重复导入。</span>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
+                ) : null}
 
-              {/* Question list + edit panel */}
-              <div className="flex flex-col gap-3">
-                {/* Compact question cards — scrollable to keep right column bounded */}
-                <div className="space-y-2 overflow-y-auto max-h-[55vh]">
-                  {parseResult.questions.map((q, index) => (
-                    <Card key={index}>
-                      <CardContent className="px-4 py-3">
-                        <div className="space-y-1.5">
-                          {/* Header row */}
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                              <span className="shrink-0 text-sm font-semibold text-[var(--ink)]">
-                                题 {index + 1}
-                              </span>
-                              <StatusBadge tone={q.is_valid ? "success" : "danger"}>
-                                {q.is_valid ? "有效" : "无效"}
-                              </StatusBadge>
-                              <span className="text-[10px] text-[var(--color-text-hint)]">
-                                {typeLabel(q.question_type)}
-                              </span>
+                <div className="min-h-0 flex-1 p-4 sm:p-5">
+                  <div className="max-h-[440px] overflow-y-auto rounded-xl border border-[var(--color-border-light)] bg-white/65">
+                    {parseResult.questions.map((q, index) => (
+                      <article key={index} className="group border-b border-[var(--color-border-light)] px-4 py-3.5 last:border-b-0 hover:bg-[rgba(74,111,138,0.035)] import-list-item import-interactive" style={{ animationDelay: `${Math.min(index, 8) * 28}ms` }}>
+                        <div className="flex items-start gap-3">
+                          <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${q.is_valid ? "bg-[var(--color-success)]" : "bg-[var(--color-danger)]"}`} aria-hidden="true" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="text-xs font-semibold text-[var(--ink)]">题目 {index + 1}</span>
+                              <StatusBadge tone={q.is_valid ? "success" : "danger"}>{q.is_valid ? "有效" : "无效"}</StatusBadge>
+                              <span className="text-[11px] text-[var(--color-text-hint)]">{typeLabel(q.question_type)}</span>
                               {q.subject_id ? (
-                                <span className="rounded-full bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-primary-dark)]">
+                                <span className="rounded-full border border-[rgba(74,111,138,0.18)] bg-[var(--color-primary-light)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary-dark)]">
                                   {subjectOptions.find((s) => s.id === q.subject_id)?.name || `#${q.subject_id}`}
                                 </span>
                               ) : null}
                             </div>
-                            <div className="flex shrink-0 gap-0.5">
-                              <Button variant="ghost" className="h-7 w-7 p-0" onClick={() => startEdit(index)}>
-                                <Edit3 className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button variant="ghost" className="h-7 w-7 p-0" onClick={() => handleDelete(index)}>
-                                <Trash2 className="h-3.5 w-3.5 text-[var(--color-danger)]" />
-                              </Button>
+                            <p className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--color-text-secondary)]" title={q.stem}>{q.stem || "—"}</p>
+
+                            {q.options.length > 0 ? (
+                              <div className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+                                {q.options.slice(0, 4).map((opt) => (
+                                  <p key={opt.key} className="min-w-0 truncate text-[11px] text-[var(--color-text-hint)]">
+                                    <span className="mr-1 font-semibold text-[var(--color-text-secondary)]">{opt.key}.</span>{opt.text}
+                                  </p>
+                                ))}
+                              </div>
+                            ) : null}
+
+                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--color-text-hint)]">
+                              <span>答案 <strong className="font-semibold text-[var(--color-text-secondary)]">{renderAnswer(q.answer)}</strong></span>
+                              {q.analysis ? <span className="min-w-0 max-w-[46ch] truncate" title={q.analysis}>解析 {q.analysis}</span> : null}
+                              {q.warnings.length > 0 ? <span className="text-[var(--color-text-primary)]">{q.warnings.length} 条警告</span> : null}
+                              {q.errors.length > 0 ? <span className="text-[var(--color-danger)]">{q.errors.length} 个错误</span> : null}
                             </div>
                           </div>
 
-                          {/* Stem — single line truncated */}
-                          <p className="truncate text-xs text-[var(--color-text-secondary)]" title={q.stem}>
-                            {q.stem || "—"}
-                          </p>
-
-                          {/* Options inline — wrap naturally */}
-                          {q.options.length > 0 ? (
-                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--color-text-hint)]">
-                              {q.options.map((opt) => (
-                                <span key={opt.key} className="truncate max-w-[30%]">
-                                  <span className="font-semibold text-[var(--color-text-secondary)]">{opt.key}.</span>{" "}
-                                  {opt.text}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
-
-                          {/* Answer + analysis + warnings — nowrap for key-value, wrap for content */}
-                          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-[var(--color-text-hint)]">
-                            <span className="whitespace-nowrap">
-                              答案：<span className="font-semibold text-[var(--color-text-secondary)]">{renderAnswer(q.answer)}</span>
-                            </span>
-                            {q.analysis ? (
-                              <span className="min-w-0 truncate" title={q.analysis}>
-                                解析：<span className="text-[var(--color-text-secondary)]">{q.analysis}</span>
-                              </span>
-                            ) : null}
-                            {q.warnings.length > 0 ? (
-                              <span className="shrink-0 text-amber-500" title={q.warnings.join("；")}>
-                                ⚠ {q.warnings.length}
-                              </span>
-                            ) : null}
-                            {q.errors.length > 0 ? (
-                              <span className="shrink-0 text-red-400" title={q.errors.join("、")}>
-                                ✗ {q.errors.length}
-                              </span>
-                            ) : null}
+                          <div className="flex shrink-0 gap-1">
+                            <Button variant="ghost" className="h-11 w-11 p-0 import-interactive" aria-label={`编辑题目 ${index + 1}`} title="编辑题目" onClick={() => startEdit(index)}>
+                              <Edit3 className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                            <Button variant="ghost" className="h-11 w-11 p-0 import-interactive" aria-label={`删除题目 ${index + 1}`} title="删除题目" onClick={() => handleDelete(index)}>
+                              <Trash2 className="h-4 w-4 text-[var(--color-danger)]" aria-hidden="true" />
+                            </Button>
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
+                      </article>
+                    ))}
+                  </div>
 
-                {/* Edit panel — always below the question list, never inline */}
-                {editingIndex !== null && editForm ? (
-                  <Card className="shrink-0 border-[var(--color-primary)]">
-                    <CardContent className="py-4">
-                      <div className="space-y-4">
-                        {/* Header */}
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-display text-lg font-bold text-[var(--ink)]">
-                            编辑 题目 {editingIndex + 1}
-                          </h4>
+                  {editingIndex !== null && editForm ? (
+                    <section className="mt-4 overflow-hidden rounded-xl border border-[rgba(74,111,138,0.32)] bg-white import-panel-swap">
+                      <ImportPanelHeader
+                        title={`编辑题目 ${editingIndex + 1}`}
+                        description="保存后会重新标记为有效，并清空当前错误与警告。"
+                        trailing={
                           <div className="flex gap-2">
-                            <Button variant="ghost" onClick={() => { setEditingIndex(null); setEditForm(null); }}>
-                              取消
-                            </Button>
-                            <Button onClick={saveEdit}>
-                              <CheckCircle2 className="h-4 w-4" />
-                              保存
-                            </Button>
+                            <Button variant="ghost" className="h-11 import-interactive" onClick={() => { setEditingIndex(null); setEditForm(null); }}>取消</Button>
+                            <Button className="h-11 import-interactive" onClick={saveEdit}><CheckCircle2 className="h-4 w-4" aria-hidden="true" />保存</Button>
                           </div>
-                        </div>
-
-                        {/* Subject & Type */}
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <label className="block space-y-1">
-                            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</span>
-                            <select className="h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]" value={editForm.subject_id ?? ""} onChange={(e) => setEditForm({ ...editForm, subject_id: e.target.value ? Number(e.target.value) : null })}>
-                              <option value="">未指定</option>
-                              {subjectOptions.map((s) => (
-                                <option key={s.id} value={String(s.id)}>{s.name}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <div className="block space-y-1">
-                            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">题型</span>
-                            <CustomSelect
-                              value={editForm.question_type ?? ""}
-                              onChange={(v) => setEditForm({ ...editForm, question_type: v || null })}
-                              options={canonicalizeQuestionType(editForm.question_type) || !editForm.question_type
-                                ? QUESTION_TYPE_OPTIONS
-                                : [...QUESTION_TYPE_OPTIONS, { value: editForm.question_type!, label: formatUnknownType(editForm.question_type!), disabled: true }]
-                              }
-                              placeholder="选择题型"
-                              clearable={false}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Stem */}
-                        <label className="block space-y-1">
-                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">题干</span>
-                          <textarea className="mt-1 min-h-[80px] w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm outline-none transition focus:border-[var(--color-primary)]" value={editForm.stem} onChange={(e) => setEditForm({ ...editForm, stem: e.target.value })} />
+                        }
+                      />
+                      <div className="grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+                        <label className="space-y-1.5">
+                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</span>
+                          <select className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.12)]" value={editForm.subject_id ?? ""} onChange={(e) => setEditForm({ ...editForm, subject_id: e.target.value ? Number(e.target.value) : null })}>
+                            <option value="">未指定</option>
+                            {subjectOptions.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+                          </select>
                         </label>
-
-                        {/* Options */}
-                        <label className="block space-y-1">
-                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">选项 <span className="text-[10px] text-[var(--color-text-hint)]">(每行一个，格式 A. xxx)</span></span>
-                          <textarea className="mt-1 min-h-[60px] w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm font-mono outline-none transition focus:border-[var(--color-primary)]" value={editForm.options.map((o) => `${o.key}. ${o.text}`).join("\n")} onChange={(e) => {
+                        <div className="space-y-1.5">
+                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">题型</span>
+                          <CustomSelect
+                            value={editForm.question_type ?? ""}
+                            onChange={(v) => setEditForm({ ...editForm, question_type: v || null })}
+                            options={canonicalizeQuestionType(editForm.question_type) || !editForm.question_type
+                              ? QUESTION_TYPE_OPTIONS
+                              : [...QUESTION_TYPE_OPTIONS, { value: editForm.question_type!, label: formatUnknownType(editForm.question_type!), disabled: true }]}
+                            placeholder="选择题型"
+                            clearable={false}
+                          />
+                        </div>
+                        <label className="space-y-1.5 sm:col-span-2">
+                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">题干</span>
+                          <textarea className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.12)]" value={editForm.stem} onChange={(e) => setEditForm({ ...editForm, stem: e.target.value })} />
+                        </label>
+                        <label className="space-y-1.5 sm:col-span-2">
+                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">选项 <span className="font-normal text-[var(--color-text-hint)]">每行一个，例如 A. 选项内容</span></span>
+                          <textarea className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2.5 font-mono text-sm leading-6 outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.12)]" value={editForm.options.map((o) => `${o.key}. ${o.text}`).join("\n")} onChange={(e) => {
                             const lines = e.target.value.split("\n");
                             const opts: ParsedOption[] = [];
                             for (const line of lines) {
@@ -483,41 +389,39 @@ C
                             setEditForm({ ...editForm, options: opts });
                           }} />
                         </label>
-
-                        {/* Answer */}
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <label className="block space-y-1">
-                            <span className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</span>
-                            <input className="mt-1 h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)]" value={typeof editForm.answer === "boolean" ? (editForm.answer ? "正确" : "错误") : Array.isArray(editForm.answer) ? editForm.answer.join(",") : String(editForm.answer ?? "")} onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })} />
-                          </label>
-                        </div>
-
-                        {/* Analysis */}
-                        <label className="block space-y-1">
+                        <label className="space-y-1.5">
+                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">答案</span>
+                          <input className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.12)]" value={typeof editForm.answer === "boolean" ? (editForm.answer ? "正确" : "错误") : Array.isArray(editForm.answer) ? editForm.answer.join(",") : String(editForm.answer ?? "")} onChange={(e) => setEditForm({ ...editForm, answer: e.target.value })} />
+                        </label>
+                        <label className="space-y-1.5 sm:col-span-2">
                           <span className="text-xs font-semibold text-[var(--color-text-secondary)]">解析</span>
-                          <textarea className="mt-1 min-h-[60px] w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2 text-sm outline-none transition focus:border-[var(--color-primary)]" value={editForm.analysis ?? ""} onChange={(e) => setEditForm({ ...editForm, analysis: e.target.value })} />
+                          <textarea className="min-h-24 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.12)]" value={editForm.analysis ?? ""} onChange={(e) => setEditForm({ ...editForm, analysis: e.target.value })} />
                         </label>
                       </div>
-                    </CardContent>
-                  </Card>
-                ) : null}
+                    </section>
+                  ) : null}
+                </div>
               </div>
-            </>
-          ) : (
-            <Card>
-              <CardContent className="flex flex-col items-center py-16 text-center">
-                <FileText className="h-12 w-12 text-[var(--color-text-hint)]" />
-                <p className="mt-4 text-sm text-[var(--color-text-secondary)]">
-                  在左侧粘贴题目文本并点击&ldquo;解析文本&rdquo;
-                </p>
-                <p className="mt-1 text-xs text-[var(--color-text-hint)]">
-                  支持标签格式（【题目】/【选项】/【答案】/【解析】）和无标签格式
-                </p>
-              </CardContent>
-            </Card>
-          )}
+            ) : (
+              <div className="flex min-h-[620px] flex-col import-panel-swap">
+                <ImportPanelHeader title="解析结果" description="结果将在这里按有效性、题型与异常信息分组呈现。" />
+                <div className="flex flex-1 items-center justify-center px-6 py-14">
+                  <div className="max-w-sm text-center import-panel-swap">
+                    <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] text-[var(--color-primary-dark)] import-soft-pop">
+                      <FileText className="h-6 w-6" strokeWidth={1.6} aria-hidden="true" />
+                    </div>
+                    <p className="mt-4 text-sm font-semibold text-[var(--ink)]">等待解析内容</p>
+                    <p className="mt-1.5 text-xs leading-5 text-[var(--color-text-hint)]">粘贴题目后执行解析。解析完成后可逐题编辑、删除，并仅导入有效题目。</p>
+                    <div className="mt-5 grid grid-cols-3 divide-x divide-[var(--color-border-light)] border-y border-[var(--color-border-light)] py-2.5 text-[11px] text-[var(--color-text-secondary)]">
+                      <span>识别</span><span>校验</span><span>入库</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

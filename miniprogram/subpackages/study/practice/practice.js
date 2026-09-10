@@ -376,6 +376,7 @@ Page({
       submissionSnapshot: null,
       backgroundMs: 0,
       _backgroundStartedMonoMs: null,
+      _timingPauseActive: false,
       optionKeys: [],
       questionRenderCache: Object.create(null),
       exitGuardActive: false,
@@ -387,7 +388,14 @@ Page({
   _getCurrentUserId() {
     try {
       const user = wx.getStorageSync('user')
-      return user && user.id ? String(user.id) : ''
+      if (!user || typeof user !== 'object') return ''
+      const candidates = [user.id, user.user_id, user.openid]
+      for (const candidate of candidates) {
+        if (candidate === undefined || candidate === null) continue
+        const value = String(candidate).trim()
+        if (value) return value
+      }
+      return ''
     } catch (_) {
       return ''
     }
@@ -584,6 +592,10 @@ Page({
     // 页面级 onHide 在微信切后台与本页被覆盖时都会触发，因此不需要额外的
     // app 级监听；first onShow（onLoad 之后）时 activeStartedMonoMs 仍为 0，不会误扣。
     const s = this._practiceSession
+    // 自定义确认框的整个可见周期由 _showSubmitConfirmPaused 一次性计入
+    // backgroundMs。确认框期间再按 onHide/onShow 结算会重复扣除后台时长，
+    // 并可能在弹窗尚未关闭时误启动当前题计时。
+    if (s && s._timingPauseActive) return
     if (s && s.activeStartedMonoMs && s._backgroundStartedMonoMs !== null) {
       s.backgroundMs = (s.backgroundMs || 0) + (_monotonicNow() - s._backgroundStartedMonoMs)
       s._backgroundStartedMonoMs = null
@@ -594,8 +606,10 @@ Page({
   },
 
   onHide() {
-    // 记录离开时间点；onShow 回来时结算 backgroundMs。
+    // 记录离开时间点；onShow 回来时结算 backgroundMs。确认框暂停期间由
+    // _showSubmitConfirmPaused 独占计时，避免同一段后台时间被扣除两次。
     const s = this._practiceSession
+    if (s && s._timingPauseActive) return
     if (s && s.activeStartedMonoMs && s._backgroundStartedMonoMs === null) {
       if (this.data.started && !this.data.loading && !this.data.submitting && !s.submissionSnapshot) {
         this._settleQuestionTime(true)
@@ -2193,7 +2207,10 @@ Page({
     this._exitConfirmInFlight = true
     let confirmed = false
     try {
-      confirmed = await this._showSubmitConfirm({
+      const showExitConfirm = hasPendingSubmit
+        ? this._showSubmitConfirm.bind(this)
+        : this._showSubmitConfirmPaused.bind(this)
+      confirmed = await showExitConfirm({
         scenario: 'danger',
         title: '退出练习？',
         message: retryBlocked
@@ -2210,6 +2227,11 @@ Page({
     }
     if (!confirmed) return
     if (!this._pageAlive) return
+    // A deterministic 4xx rejection can never become publishable by retrying
+    // the same immutable submission. Once the user explicitly exits, remove
+    // that blocked snapshot so the next start does not immediately surface a
+    // stale recovery dialog. Transient/unknown submissions remain persisted.
+    if (retryBlocked && submission) this._clearPendingSubmission(submission.requestId)
     this._setPracticeUnloadGuard(false)
     this._questionsRequestSeq++
     this._clearTimer()
@@ -2537,12 +2559,13 @@ Page({
   },
 
   async _showSubmitConfirmPaused(opts) {
-    // Confirmation/review time is not learning time.  Pause both the per-question
-    // timer and the session clock while the user is reading the submit dialog.
-    // If they cancel, resume from a fresh monotonic timestamp so the dialog itself
-    // is never charged to the current question or duration_sec.
+    // Confirmation/review time is not learning time. Pause both the per-question
+    // timer and the session clock while the user is reading the dialog. This
+    // pause owns the *entire* dialog interval, including any app background time,
+    // so onHide/onShow must not account for that same interval again.
     const session = this._practiceSession
     const pauseStartedMonoMs = _monotonicNow()
+    if (session) session._timingPauseActive = true
     this._settleQuestionTime(true)
     this._clearTimer()
     let confirmed = false
@@ -2550,9 +2573,16 @@ Page({
       confirmed = await this._showSubmitConfirm(opts)
     } finally {
       const pausedMs = Math.max(0, _monotonicNow() - pauseStartedMonoMs)
-      if (session) session.backgroundMs = (session.backgroundMs || 0) + pausedMs
+      if (session) {
+        session.backgroundMs = (session.backgroundMs || 0) + pausedMs
+        session._timingPauseActive = false
+      }
     }
-    if (!confirmed && this._pageAlive && this.data.started && !this.data.submitted) {
+    if (
+      !confirmed && this._pageAlive && this._practiceSession === session &&
+      this.data.started && !this.data.submitted && !this.data.submitting &&
+      session && !session.submissionSnapshot
+    ) {
       session.currentQuestionStartedMonoMs = _monotonicNow()
       this._startTimer()
     }

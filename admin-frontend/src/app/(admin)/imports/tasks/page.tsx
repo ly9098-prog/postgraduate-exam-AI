@@ -1,15 +1,16 @@
 "use client";
 
-import { useId, useEffect, useRef, useState } from "react";
+import { useId, useEffect, useRef, useState, type DragEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, FileBox, FileText, FileUp, RefreshCw } from "lucide-react";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { AlertCircle, Check, CheckCircle2, ChevronDown, FileBox, FileText, FileUp, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/status-badge";
 import { apiRequest, toQuery } from "@/lib/api/client";
 import type { ImportPipelineStatusResponse, ImportPipelineUploadResponse } from "@/lib/api/types";
-import { parseProgressPercent, validatePageStart, validatePageEnd } from "@/lib/import-utils";
+import { parseProgressPercent } from "@/lib/import-utils";
+import { cn } from "@/lib/utils";
+import { ImportMetric, ImportPanelHeader, ImportProgressBar, ImportWorkspaceHeader } from "../components/import-workspace";
 
 function renderJson(value: unknown) {
   if (value === undefined || value === null || value === "") return "—";
@@ -90,9 +91,16 @@ function CustomSelect({ value, onChange, options, placeholder = "请选择", dis
         setOpen(false);
       }
     };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
 
     document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, [open]);
 
   return (
@@ -102,7 +110,7 @@ function CustomSelect({ value, onChange, options, placeholder = "请选择", dis
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`${className} inline-flex items-center outline-none transition focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)] disabled:cursor-not-allowed disabled:opacity-60`}
+        className={`${className} inline-flex items-center outline-none import-interactive focus:border-[var(--color-primary)] focus:bg-white focus:ring-4 focus:ring-[rgba(91,123,154,0.14)] disabled:cursor-not-allowed disabled:opacity-60`}
         onClick={() => {
           if (!disabled) setOpen((current) => !current);
         }}
@@ -110,13 +118,13 @@ function CustomSelect({ value, onChange, options, placeholder = "请选择", dis
         <span className={`min-w-0 flex-1 truncate text-left ${selectedOption ? "text-[var(--ink)]" : "text-[var(--color-text-hint)]"}`}>
           {selectedOption?.label || placeholder}
         </span>
-        <span className={`ml-2 text-[10px] text-[var(--color-text-hint)] transition ${open ? "rotate-180" : ""}`}>▼</span>
+        <ChevronDown className={`ml-2 h-4 w-4 shrink-0 text-[var(--color-text-hint)] import-chevron ${open ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
 
       {open ? (
         <div
           role="listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-auto rounded-xl border border-[var(--color-border)] bg-white py-1 text-sm shadow-[var(--shadow-floating)]"
+          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-auto rounded-xl import-popover border border-[var(--color-border)] bg-white py-1 text-sm shadow-[var(--shadow-floating)]"
         >
           {options.map((option) => {
             const active = option.value === value;
@@ -126,7 +134,7 @@ function CustomSelect({ value, onChange, options, placeholder = "请选择", dis
                 type="button"
                 role="option"
                 aria-selected={active}
-                className={`flex w-full items-center px-3 py-2 text-left text-sm transition ${
+                className={`flex min-h-11 w-full items-center px-3 py-2 text-left text-sm import-interactive ${
                   active
                     ? "bg-[var(--color-primary-light)] font-semibold text-[var(--color-primary-dark)]"
                     : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)] hover:text-[var(--ink)]"
@@ -137,7 +145,7 @@ function CustomSelect({ value, onChange, options, placeholder = "请选择", dis
                 }}
               >
                 <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                {active ? <span className="ml-2 text-xs text-[var(--color-primary)]">✓</span> : null}
+                {active ? <Check className="ml-2 h-3.5 w-3.5 text-[var(--color-primary)]" aria-hidden="true" /> : null}
               </button>
             );
           })}
@@ -150,6 +158,7 @@ function CustomSelect({ value, onChange, options, placeholder = "请选择", dis
 export default function ImportTasksPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("upload");
   const [file, setFile] = useState<File | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const [subjectId, setSubjectId] = useState("");
   const [subjectOptions, setSubjectOptions] = useState<Array<{id: number; code: string; name: string}>>([]);
   useEffect(() => {
@@ -176,6 +185,22 @@ export default function ImportTasksPage() {
   const fileInputId = useId();
   const queryClient = useQueryClient();
   const wasNotTerminal = useRef(true);
+
+  const handleFileDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (!isPipelineRunning) setDragActive(true);
+  };
+  const handleFileDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragActive(false);
+  };
+  const handleFileDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragActive(false);
+    if (isPipelineRunning) return;
+    const dropped = event.dataTransfer.files?.[0];
+    if (dropped) setFile(dropped);
+  };
 
   const statusQuery = useQuery({
     queryKey: ["import-pipeline", pipelineId],
@@ -233,6 +258,8 @@ export default function ImportTasksPage() {
   }, [status, queryClient, setActiveTab]);
 
   const stages = getStageStatuses(status, isPipelineRunning);
+  const lastReachedStage = stages.reduce((last, stage, index) => stage.s !== "pending" ? index : last, 0);
+  const stageRailProgress = stages.length > 1 ? (lastReachedStage / (stages.length - 1)) * 100 : 0;
 
   const tabs: { key: TabKey; label: string; desc: string; badge?: string }[] = [
     { key: "upload", label: "上传", desc: "选择文件与配置" },
@@ -241,483 +268,370 @@ export default function ImportTasksPage() {
   ];
 
   return (
-    <div className="space-y-6">
-      {/* ── Message Banner ── */}
+    <div className="space-y-6 pb-4">
+      <ImportWorkspaceHeader
+        icon={FileUp}
+        title="导入任务"
+        description="用于 PDF、文档、表格与单文件图片的完整导入管线。先配置来源与解析策略，再实时跟踪 OCR、AI 解析和质量检查。"
+        meta={
+          pipelineId ? (
+            <div className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--color-border)] bg-white/70 px-3 text-xs text-[var(--color-text-secondary)]">
+              <span className={cn("h-1.5 w-1.5 rounded-full", isPipelineRunning ? "import-status-active bg-[var(--color-warning)]" : status && ["failed", "error"].includes(status.status) ? "bg-[var(--color-danger)]" : "bg-[var(--color-success)]")} aria-hidden="true" />
+              {isPipelineRunning ? "任务处理中" : status ? (["failed", "error"].includes(status.status) ? "任务失败" : "任务完成") : "任务已提交"}
+            </div>
+          ) : (
+            <div className="inline-flex h-9 items-center rounded-full border border-[var(--color-border)] bg-white/70 px-3 text-xs text-[var(--color-text-secondary)]">支持 PDF / 图片 / TXT / Excel</div>
+          )
+        }
+      />
+
       {message && !isPipelineRunning ? (
-        <div className="flex items-center gap-2.5 rounded-2xl border border-[var(--color-border)] bg-white/80 px-4 py-3 text-sm text-[var(--color-text-secondary)] shadow-[var(--shadow-crisp)]">
-          {uploadMutation.isSuccess ? <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" /> : <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />}
-          {message}
+        <div role={uploadMutation.isError ? "alert" : "status"} className={cn(
+          "flex items-start gap-3 rounded-2xl border px-4 py-3.5 text-sm import-feedback-in",
+          uploadMutation.isError
+            ? "border-[rgba(196,77,77,0.28)] bg-[var(--color-danger-light)] text-[var(--color-danger)]"
+            : "border-[rgba(91,140,91,0.28)] bg-[var(--color-success-light)] text-[var(--color-success)]",
+        )}>
+          {uploadMutation.isError ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
+          <span className="leading-5">{message}</span>
         </div>
       ) : null}
 
-      {/* ── Tab Bar ── */}
-      <div className="flex items-end gap-0 border-b-2 border-[var(--color-border)]">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`relative -mb-0.5 flex items-center gap-2 px-6 pb-3 pt-2 text-sm transition-colors ${
-              activeTab === tab.key
-                ? "border-b-2 border-[var(--color-primary)] font-bold text-[var(--ink)]"
-                : "border-b-2 border-transparent text-[var(--color-text-hint)] hover:text-[var(--color-text-secondary)]"
-            }`}
-          >
-            <span>{tab.label}</span>
-            <span className="hidden text-xs font-normal sm:inline">{tab.desc}</span>
-            {tab.badge ? (
-              <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${
-                tab.badge === "处理中" ? "bg-amber-50 text-amber-700" : "bg-green-50 text-green-700"
-              }`}>{tab.badge}</span>
-            ) : null}
-          </button>
-        ))}
-      </div>
+      <nav aria-label="导入任务步骤" className="grid grid-cols-3 overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[rgba(239,235,229,0.42)] p-1.5 import-enter" style={{ animationDelay: "45ms" }}>
+        {tabs.map((tab) => {
+          const active = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              aria-current={active ? "step" : undefined}
+              className={cn(
+                "relative flex min-h-14 min-w-0 items-center justify-center gap-2 rounded-xl px-3 text-left import-interactive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]",
+                active ? "bg-white text-[var(--ink)] shadow-[0_2px_10px_rgba(27,39,51,0.06)]" : "text-[var(--color-text-hint)] hover:bg-white/55 hover:text-[var(--color-text-secondary)]",
+              )}
+            >
+              <span className="min-w-0">
+                <span className="block text-xs font-semibold sm:text-sm">{tab.label}</span>
+                <span className="mt-0.5 hidden text-[10px] font-normal text-[var(--color-text-hint)] sm:block">{tab.desc}</span>
+              </span>
+              {tab.badge ? (
+                <span className={cn(
+                  "shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold",
+                  tab.badge === "处理中"
+                    ? "border-[rgba(196,154,107,0.3)] bg-[var(--color-warning-light)] text-[var(--color-text-primary)]"
+                    : "border-[rgba(91,140,91,0.25)] bg-[var(--color-success-light)] text-[var(--color-success)]",
+                )}>{tab.badge}</span>
+              ) : null}
+              <span aria-hidden="true" className={cn("absolute bottom-1.5 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full bg-[var(--color-primary)] transition-[transform,opacity] duration-200", active ? "scale-x-100 opacity-100" : "scale-x-50 opacity-0")} />
+            </button>
+          );
+        })}
+      </nav>
 
-      {/* ═══════════════════════════════════════════════════
-          TAB: Upload
-          ═══════════════════════════════════════════════════ */}
       {activeTab === "upload" ? (
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Left: File Selection */}
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-1">
-                <h3 className="font-display text-2xl font-bold text-[var(--ink)]">文件选择</h3>
-                <p className="text-sm text-[var(--color-text-secondary)]">支持 PDF、图片、TXT、Excel</p>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <label htmlFor={fileInputId}>
-                <div className={`paper-texture relative flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-10 transition-all duration-200 ${
+        <section className="overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[rgba(254,252,249,0.82)] shadow-[var(--shadow-card)] import-panel-swap">
+          <ImportPanelHeader title="新建导入任务" description="上传来源与解析配置在同一工作台完成；任务运行期间配置将锁定。" />
+          <div className="grid lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+            <div className="border-b border-[var(--color-border-light)] p-4 sm:p-5 lg:border-b-0 lg:border-r">
+              <label htmlFor={fileInputId} className="block">
+                <div
+                  onDragOver={handleFileDragOver}
+                  onDragLeave={handleFileDragLeave}
+                  onDrop={handleFileDrop}
+                  className={cn(
+                  "relative flex min-h-[260px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-6 py-8 text-center transition-[border-color,background-color,box-shadow] import-interactive",
+                  (dragActive || file) && "import-drop-active",
                   isPipelineRunning
-                    ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50"
-                    : file
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]"
-                      : "border-[var(--color-border)] bg-white/60 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]"
-                }`}>
-                  <div className={`mb-4 flex h-16 w-16 items-center justify-center rounded-2xl transition-all duration-200 ${file ? "bg-white shadow-sm scale-105" : "bg-[var(--color-primary-light)]"}`}>
-                    <FileBox className={`h-8 w-8 ${file ? "text-[var(--color-primary-dark)]" : "text-[var(--color-primary)]"}`} />
+                    ? "cursor-not-allowed border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-60"
+                    : dragActive || file
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] shadow-[inset_0_0_0_1px_rgba(74,111,138,0.08)]"
+                      : "border-[var(--color-border)] bg-white/60 hover:border-[var(--color-primary)] hover:bg-white",
+                )}>
+                  <div className="grid h-14 w-14 place-items-center rounded-2xl border border-[rgba(74,111,138,0.16)] bg-white/80 text-[var(--color-primary-dark)] import-drop-icon">
+                    <FileBox className="h-6 w-6" strokeWidth={1.6} aria-hidden="true" />
                   </div>
                   {file ? (
-                    <div className="text-center">
-                      <p className="text-sm font-semibold text-[var(--ink)]">{file.name}</p>
+                    <div className="mt-4 max-w-full import-feedback-in">
+                      <p className="max-w-md truncate text-sm font-semibold text-[var(--ink)]" title={file.name}>{file.name}</p>
                       <p className="mt-1 text-xs text-[var(--color-text-hint)]">{(file.size / 1024 / 1024).toFixed(1)} MB · 已就绪</p>
                     </div>
                   ) : (
-                    <div className="text-center">
-                      <p className="text-sm font-semibold text-[var(--ink)]">点击选择文件</p>
-                      <p className="mt-1 text-xs text-[var(--color-text-hint)]">PDF、JPG、PNG、WebP、TXT、Excel</p>
+                    <div className="mt-4">
+                      <p className="text-sm font-semibold text-[var(--ink)]">选择导入文件</p>
+                      <p className="mt-1.5 text-xs leading-5 text-[var(--color-text-hint)]">PDF、JPG、PNG、WebP、TXT、XLSX、XLS</p>
                     </div>
                   )}
-                  <input id={fileInputId} type="file" accept=".pdf,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.webp" disabled={isPipelineRunning} className="absolute inset-0 cursor-pointer opacity-0" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+                  <input id={fileInputId} type="file" accept=".pdf,.txt,.xlsx,.xls,.jpg,.jpeg,.png,.webp" disabled={isPipelineRunning} className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
                 </div>
               </label>
-              <div className="space-y-1">
-                <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">科目</span>
+
+              <div className="mt-4 space-y-1.5">
+                <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</span>
                 <CustomSelect
                   value={subjectId}
                   onChange={setSubjectId}
                   placeholder="选择科目（可选）"
                   disabled={isPipelineRunning}
-                  options={[
-                    { value: "", label: "选择科目（可选）" },
-                    ...subjectOptions.map((subject) => ({ value: String(subject.id), label: subject.name })),
-                  ]}
-                  className="h-10 w-full justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+                  options={[{ value: "", label: "未指定科目" }, ...subjectOptions.map((subject) => ({ value: String(subject.id), label: subject.name }))]}
+                  className="h-11 w-full justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
                 />
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          {/* Right: Config */}
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-1">
-                <h3 className="font-display text-2xl font-bold text-[var(--ink)]">导入配置</h3>
-                <p className="text-sm text-[var(--color-text-secondary)]">调整参数以控制导入行为</p>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1">
-                  <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">导入模式</span>
+            <div className="flex flex-col p-4 sm:p-5">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-1.5">
+                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">导入模式</span>
                   <CustomSelect
                     value={importMode}
                     onChange={setImportMode}
                     disabled={isPipelineRunning}
                     options={[
-                      { value: "auto", label: "auto（自动检测）" },
-                      { value: "book", label: "book（教辅）" },
-                      { value: "exam", label: "exam（试卷）" },
+                      { value: "auto", label: "自动检测" },
+                      { value: "book", label: "教辅模式" },
+                      { value: "exam", label: "试卷模式" },
                     ]}
-                    className="h-10 w-full justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
+                    className="h-11 w-full justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-input)] px-3 text-sm"
                   />
                 </label>
-                <label className="space-y-1">
-                  <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">置信度阈值</span>
-                  <Input type="number" step="0.1" min="0" max="1" disabled={isPipelineRunning} value={confidenceThreshold} onChange={(event) => setConfidenceThreshold(event.target.value)} />
-                  {confidenceError ? <p className="mt-0.5 text-[10px] text-red-500">{confidenceError}</p> : null}
+                <label className="space-y-1.5">
+                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">置信度阈值</span>
+                  <Input type="number" step="0.1" min="0" max="1" disabled={isPipelineRunning} value={confidenceThreshold} onChange={(event) => setConfidenceThreshold(event.target.value)} className="h-11" aria-invalid={Boolean(confidenceError)} aria-describedby={confidenceError ? "confidence-error" : undefined} />
+                  {confidenceError ? <p id="confidence-error" className="text-[11px] text-[var(--color-danger)]">{confidenceError}</p> : <p className="text-[11px] text-[var(--color-text-hint)]">0–1，越高越保守</p>}
                 </label>
               </div>
+
               {isPdfFile ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="space-y-1">
-                    <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">起始页</span>
-                    <Input type="number" min="1" placeholder="留空从第1页" disabled={isPipelineRunning} value={pageStart} onChange={(event) => setPageStart(event.target.value)} />
-                    {pageStartError ? <p className="mt-0.5 text-[10px] text-red-500">{pageStartError}</p> : null}
+                <div className="mt-4 grid gap-4 rounded-xl border border-[var(--color-border-light)] bg-white/55 p-4 sm:grid-cols-2 import-panel-swap">
+                  <label className="space-y-1.5">
+                    <span className="text-xs font-semibold text-[var(--color-text-secondary)]">起始页</span>
+                    <Input type="number" min="1" placeholder="默认第 1 页" disabled={isPipelineRunning} value={pageStart} onChange={(event) => setPageStart(event.target.value)} className="h-11" aria-invalid={Boolean(pageStartError || pageRangeError)} />
+                    {pageStartError ? <p className="text-[11px] text-[var(--color-danger)]">{pageStartError}</p> : null}
                   </label>
-                  <label className="space-y-1">
-                    <span className="text-[11px] font-medium text-[var(--color-text-secondary)]">结束页</span>
-                    <Input type="number" min="1" placeholder="留空到最后" disabled={isPipelineRunning} value={pageEnd} onChange={(event) => setPageEnd(event.target.value)} />
-                    {pageEndError ? <p className="mt-0.5 text-[10px] text-red-500">{pageEndError}</p> : null}
+                  <label className="space-y-1.5">
+                    <span className="text-xs font-semibold text-[var(--color-text-secondary)]">结束页</span>
+                    <Input type="number" min="1" placeholder="默认最后一页" disabled={isPipelineRunning} value={pageEnd} onChange={(event) => setPageEnd(event.target.value)} className="h-11" aria-invalid={Boolean(pageEndError || pageRangeError)} />
+                    {pageEndError ? <p className="text-[11px] text-[var(--color-danger)]">{pageEndError}</p> : null}
                   </label>
-                  {pageRangeError ? <p className="col-span-2 -mt-2 text-[10px] text-red-500">{pageRangeError}</p> : null}
+                  {pageRangeError ? <p className="sm:col-span-2 text-[11px] text-[var(--color-danger)]">{pageRangeError}</p> : null}
                 </div>
               ) : null}
-              <label className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 text-sm text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] ${
-                enableAiRepair ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]" : "border-[var(--color-border)] bg-white/50"
-              }`}>
-                <input type="checkbox" checked={enableAiRepair} onChange={(event) => setEnableAiRepair(event.target.checked)} disabled={isPipelineRunning} className="h-4 w-4 rounded border-[var(--color-border)] text-[var(--color-primary)] accent-[var(--color-primary)]" />
-                <div>
-                  <span className="text-xs font-semibold text-[var(--ink)]">AI 修复</span>
-                  <p className="text-[10px] text-[var(--color-text-hint)]">自动校正 OCR 偏差</p>
-                </div>
+
+              <label className={cn(
+                "mt-4 flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-3 import-interactive",
+                enableAiRepair ? "border-[rgba(74,111,138,0.3)] bg-[var(--color-primary-light)]" : "border-[var(--color-border)] bg-white/55 hover:border-[var(--color-primary)]",
+              )}>
+                <input type="checkbox" checked={enableAiRepair} onChange={(event) => setEnableAiRepair(event.target.checked)} disabled={isPipelineRunning} className="h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
+                <span>
+                  <span className="block text-xs font-semibold text-[var(--ink)]">启用 AI 修复</span>
+                  <span className="mt-0.5 block text-[11px] leading-5 text-[var(--color-text-hint)]">自动校正 OCR 偏差与结构异常</span>
+                </span>
               </label>
 
-
-              {/* Submit */}
-              <div className="flex items-center justify-end gap-4 border-t border-[var(--color-border)] pt-4">
-                <Button disabled={!file || uploadMutation.isPending || isPipelineRunning} onClick={() => uploadMutation.mutate()} className="h-10 px-6 text-sm">
-                  <FileUp className="h-4 w-4" />
-                  {uploadMutation.isPending ? "上传中..." : isPipelineRunning ? "解析中..." : "开始导入"}
+              <div className="mt-auto flex items-center justify-between gap-4 border-t border-[var(--color-border-light)] pt-5">
+                <p className="text-[11px] leading-5 text-[var(--color-text-hint)]">提交后自动切换至进度页，完成后可查看质量报告。</p>
+                <Button
+                  disabled={!file || uploadMutation.isPending || isPipelineRunning}
+                  onClick={() => uploadMutation.mutate()}
+                  className="h-11 min-w-32 import-interactive group"
+                >
+                  <FileUp className="h-4 w-4 transition-transform duration-200 group-hover:-translate-y-0.5 motion-reduce:transform-none" aria-hidden="true" />
+                  {uploadMutation.isPending ? "上传中" : isPipelineRunning ? "解析中" : "开始导入"}
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </div>
+        </section>
       ) : null}
 
-      {/* ═══════════════════════════════════════════════════
-          TAB: Progress
-          ═══════════════════════════════════════════════════ */}
       {activeTab === "progress" ? (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <h3 className="font-display text-2xl font-bold text-[var(--ink)]">管线状态</h3>
-              <p className="mt-0.5 text-sm text-[var(--color-text-secondary)]">实时追踪导入管线进度</p>
-            </div>
-            {pipelineId ? (
-              <Button variant="secondary" disabled={!pipelineId || statusQuery.isFetching} onClick={() => statusQuery.refetch()} className="shrink-0">
-                <RefreshCw className={`h-3.5 w-3.5 ${statusQuery.isFetching ? "animate-spin" : ""}`} />
+        <section className="overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[rgba(254,252,249,0.82)] shadow-[var(--shadow-card)] import-panel-swap">
+          <ImportPanelHeader
+            title="管线状态"
+            description="跟踪上传、OCR、AI 解析和质量检查；运行中每 2.5 秒自动刷新。"
+            trailing={pipelineId ? (
+              <Button variant="secondary" disabled={statusQuery.isFetching} onClick={() => statusQuery.refetch()} className="h-11 w-11 p-0" aria-label="刷新导入进度" title="刷新进度">
+                <RefreshCw className={cn("h-4 w-4", statusQuery.isFetching && "animate-spin motion-reduce:animate-none")} aria-hidden="true" />
               </Button>
             ) : null}
-          </CardHeader>
-          <CardContent>
-            {/* No pipeline */}
-            {!pipelineId ? (
-              <div className="flex flex-col items-center py-16 text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--color-bg-input)]">
-                  <FileUp className="h-7 w-7 text-[var(--color-text-hint)]" />
-                </div>
-                <p className="text-sm font-semibold text-[var(--color-text-secondary)]">暂无导入任务</p>
-                <p className="mt-1.5 max-w-xs text-xs leading-relaxed text-[var(--color-text-hint)]">
-                  在「上传」标签页选择文件并提交后，进度将在此处实时显示。
-                </p>
-                <Button variant="secondary" className="mt-4" onClick={() => setActiveTab("upload")}>
-                  前往上传
-                </Button>
+          />
+
+          {!pipelineId ? (
+            <div className="flex min-h-[430px] items-center justify-center px-6 py-14">
+              <div className="max-w-sm text-center import-panel-swap">
+                <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] text-[var(--color-primary-dark)] import-soft-pop"><FileUp className="h-6 w-6" strokeWidth={1.6} aria-hidden="true" /></div>
+                <p className="mt-4 text-sm font-semibold text-[var(--ink)]">暂无导入任务</p>
+                <p className="mt-1.5 text-xs leading-5 text-[var(--color-text-hint)]">先在上传页选择文件并提交，任务状态会在这里持续更新。</p>
+                <Button variant="secondary" className="mt-5 h-11 import-interactive" onClick={() => setActiveTab("upload")}>前往上传</Button>
               </div>
-            ) : null}
+            </div>
+          ) : null}
 
-            {/* Fetching first time */}
-            {pipelineId && !status && !statusQuery.isError ? (
-              <div className="flex items-center gap-3 rounded-2xl border border-[var(--color-border)] bg-white/70 px-4 py-6 text-sm text-[var(--color-text-secondary)]">
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                正在获取导入进度...
-              </div>
-            ) : null}
+          {pipelineId && !status && !statusQuery.isError ? (
+            <div className="flex min-h-[320px] items-center justify-center gap-3 px-6 py-14 text-sm text-[var(--color-text-secondary)]">
+              <RefreshCw className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />正在获取导入进度
+            </div>
+          ) : null}
 
-            {/* Active pipeline */}
-            {status ? (
-              <div className="space-y-6">
-                {/* Stage Bar */}
-                <div className="rounded-2xl border border-[var(--color-border-light)] bg-white/60 p-6 backdrop-blur-sm">
-                  <div className="flex items-start justify-between">
-                    {stages.map((stg, i) => (
-                      <div key={stg.name} className="flex flex-1 flex-col items-center gap-3 relative">
-                        {/* Connector line to next stage */}
-                        {i < stages.length - 1 && (
-                          <div className="stage-connector">
-                            <div className={`fill ${stg.s === "done" ? "w-full bg-[var(--color-success)]" : stg.s === "active" ? "w-1/3 bg-[var(--color-warning)]" : "w-0 bg-[var(--color-border)]"}`} />
-                          </div>
-                        )}
-                        <div className={`relative flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition-all duration-500 ease-out ${
-                          stg.s === "done" ? "bg-[var(--color-success)] text-white shadow-[0_0_0_4px_rgba(91,140,91,0.15)] stage-circle-done"
-                            : stg.s === "active" ? "bg-[var(--color-warning)] text-white shadow-[0_0_0_4px_rgba(196,154,107,0.2)] stage-circle-active"
-                              : stg.s === "failed" ? "bg-[var(--color-danger)] text-white"
-                                : "bg-white text-[var(--color-text-hint)] border-2 border-[var(--color-border)]"
-                        }`}>
-                          {stg.s === "done" ? (
-                            <CheckCircle2 className="h-5 w-5" />
-                          ) : stg.s === "failed" ? (
-                            <span className="text-lg font-bold">!</span>
-                          ) : (
-                            <span className="text-sm font-bold">{i + 1}</span>
-                          )}
-                        </div>
-                        <span className={`text-[11px] font-semibold text-center leading-tight px-1 ${
-                          stg.s === "active" ? "text-[var(--color-warning)]"
-                            : stg.s === "done" ? "text-[var(--color-success)]"
-                              : stg.s === "failed" ? "text-[var(--color-danger)]"
-                                : "text-[var(--color-text-hint)]"
-                        }`}>{stg.name}</span>
-                      </div>
-                    ))}
+          {status ? (
+            <div className="import-panel-swap">
+              <div className="border-b border-[var(--color-border-light)] px-4 py-6 sm:px-6">
+                <div className="relative grid grid-cols-4 gap-2">
+                  <div className="absolute left-[12.5%] right-[12.5%] top-5 h-px overflow-hidden bg-[var(--color-border)]" aria-hidden="true">
+                    <span className="absolute inset-0 origin-left bg-[var(--color-primary)] import-progress-fill" style={{ transform: `scaleX(${stageRailProgress / 100})` }} />
                   </div>
-                </div>
-
-                {/* Status + Progress */}
-                <div className="flex flex-wrap items-center gap-3">
-                  {isPipelineRunning ? (
-                    <span className="animate-rise-in flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 transition-all duration-300">
-                      <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-                      处理中
-                    </span>
-                  ) : (
-                    <span className={`animate-rise-in flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
-                      ["failed", "error"].includes(status.status) ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"
-                    }`}>
-                      <span className={`inline-block h-2 w-2 rounded-full transition-colors duration-300 ${
-                        ["failed", "error"].includes(status.status) ? "bg-red-500" : "bg-green-500"
-                      }`} />
-                      {status.status === "completed" || status.status === "success" || status.status === "finished" ? "已完成" : "失败"}
-                    </span>
-                  )}
-                  {status.current_stage ? <span className="animate-rise-in rounded-full bg-[var(--color-bg-input)] px-2.5 py-0.5 text-[10px] font-medium text-[var(--color-text-secondary)] transition-all duration-300">{status.current_stage}</span> : null}
-                  {pipelineId ? <span className="ml-auto font-mono text-[10px] text-[var(--color-text-hint)]">{pipelineId}</span> : null}
-                </div>
-
-                {/* Progress bar */}
-                {isPipelineRunning ? (
-                  <div className="metric-card space-y-2">
-                    <div className="flex items-center justify-between text-xs text-[var(--color-text-hint)]">
-                      <span>解析进度</span>
-                      <span className="font-bold text-[var(--ink)]">{status.ocr_progress || "0%"}</span>
-                    </div>
-                    <div className="overflow-hidden rounded-full bg-[var(--color-bg-input)]">
-                      <div className="h-2.5 rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-1000 ease-out" style={{ width: `${parseProgressPercent(status.ocr_progress)}%` }} />
-                    </div>
-                  </div>
-                ) : null}
-
-                {/* Pipeline summary cards */}
-                <div className="stagger-enter grid grid-cols-3 gap-3 lg:grid-cols-6">
-                  {progressItems.map(([label, value]) => (
-                    <div key={String(label)} className="metric-card !p-3">
-                      <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--color-text-hint)]">{label}</p>
-                      <div className="mt-1.5 truncate text-sm font-semibold text-[var(--ink)]">
-                        {label === "当前状态" ? <StatusBadge tone={statusTone(String(value || ""))}>{String(value || "—")}</StatusBadge> : String(value || "—")}
+                  {stages.map((stg, i) => (
+                    <div key={stg.name} className="relative z-10 flex min-w-0 flex-col items-center text-center">
+                      <div className={cn(
+                        "grid h-10 w-10 place-items-center rounded-full border-2 bg-white text-xs font-semibold import-interactive",
+                        stg.s === "done" && "border-[var(--color-success)] bg-[var(--color-success)] text-white",
+                        stg.s === "active" && "border-[var(--color-warning)] bg-[var(--color-warning)] text-white import-status-active",
+                        stg.s === "failed" && "border-[var(--color-danger)] bg-[var(--color-danger)] text-white",
+                        stg.s === "pending" && "border-[var(--color-border)] text-[var(--color-text-hint)]",
+                      )}>
+                        {stg.s === "done" ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : stg.s === "failed" ? <AlertCircle className="h-4 w-4" aria-hidden="true" /> : i + 1}
                       </div>
+                      <span className={cn(
+                        "mt-2 text-[10px] font-semibold sm:text-[11px]",
+                        stg.s === "done" ? "text-[var(--color-success)]" : stg.s === "active" ? "text-[var(--color-text-primary)]" : stg.s === "failed" ? "text-[var(--color-danger)]" : "text-[var(--color-text-hint)]",
+                      )}>{stg.name}</span>
                     </div>
                   ))}
                 </div>
+              </div>
 
-                {/* Page Range Info */}
-                {status.page_range ? (
-                  <div className="rounded-xl border border-[var(--color-border)] bg-white/70 p-4">
-                    <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-[var(--color-text-hint)]">页码范围</p>
-                    <div className="mt-2 flex flex-wrap gap-4 text-sm">
-                      <span>有效范围: <strong>{status.page_range.effective_start} - {status.page_range.effective_end}</strong></span>
-                      <span>总页数: <strong>{status.page_range.total_pages}</strong></span>
-                      <span>选中页数: <strong>{status.page_range.selected_page_count}</strong></span>
-                      {status.page_range.requested_start != null ? <span>请求起始: <strong>{status.page_range.requested_start}</strong></span> : null}
-                      {status.page_range.requested_end != null ? <span>请求结束: <strong>{status.page_range.requested_end}</strong></span> : null}
+              <div className="grid grid-cols-2 divide-x divide-y divide-[var(--color-border-light)] border-b border-[var(--color-border-light)] bg-white/55 sm:grid-cols-3 xl:grid-cols-6 xl:divide-y-0">
+                {progressItems.map(([label, value]) => (
+                  <ImportMetric
+                    key={String(label)}
+                    label={String(label)}
+                    value={label === "当前状态" ? <StatusBadge tone={statusTone(String(value || ""))}>{String(value || "—")}</StatusBadge> : String(value || "—")}
+                    tone={label === "题目数量" ? "primary" : "neutral"}
+                  />
+                ))}
+              </div>
+
+              <div className="space-y-5 p-4 sm:p-5">
+                <div className="rounded-xl border border-[var(--color-border-light)] bg-white/60 px-4 py-3.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className={cn("h-1.5 w-1.5 rounded-full", isPipelineRunning ? "import-status-active bg-[var(--color-warning)]" : ["failed", "error"].includes(status.status) ? "bg-[var(--color-danger)]" : "bg-[var(--color-success)]")} aria-hidden="true" />
+                      <span className="font-semibold text-[var(--color-text-secondary)]">{status.current_stage || "等待阶段信息"}</span>
                     </div>
+                    <span className="font-mono text-[10px] text-[var(--color-text-hint)]">{pipelineId}</span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-xs">
+                    <span className="text-[var(--color-text-hint)]">解析进度</span>
+                    <span className="font-mono font-semibold tabular-nums text-[var(--ink)]">{status.ocr_progress || "0%"}</span>
+                  </div>
+                  <ImportProgressBar
+                    value={parseProgressPercent(status.ocr_progress)}
+                    label="解析进度"
+                    active={isPipelineRunning}
+                    tone={["failed", "error"].includes(status.status) ? "danger" : isTerminalStatus(status.status) ? "success" : "primary"}
+                    className="mt-2"
+                  />
+                </div>
+
+                {status.page_range ? (
+                  <div className="grid gap-3 rounded-xl border border-[var(--color-border-light)] bg-white/60 p-4 sm:grid-cols-3 import-panel-swap">
+                    <div><p className="text-[10px] font-medium text-[var(--color-text-hint)]">有效范围</p><p className="mt-1 text-sm font-semibold text-[var(--ink)]">{status.page_range.effective_start} – {status.page_range.effective_end}</p></div>
+                    <div><p className="text-[10px] font-medium text-[var(--color-text-hint)]">总页数</p><p className="mt-1 text-sm font-semibold text-[var(--ink)]">{status.page_range.total_pages}</p></div>
+                    <div><p className="text-[10px] font-medium text-[var(--color-text-hint)]">选中页数</p><p className="mt-1 text-sm font-semibold text-[var(--ink)]">{status.page_range.selected_page_count}</p></div>
                   </div>
                 ) : null}
 
-                {/* Stats & Errors */}
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <details className="group rounded-xl border border-[var(--color-border)] bg-white/70">
-                    <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-xs font-semibold text-[var(--ink)]">
-                      <span className="flex items-center gap-2">
-                        <span>统计</span>
-                        {status.stats && Object.keys(status.stats).length > 0 ? <span className="rounded-full bg-[var(--color-primary-light)] px-1.5 py-0.5 text-[9px] font-medium text-[var(--color-primary-dark)]">{Object.keys(status.stats).length}</span> : null}
-                      </span>
-                      <span className="text-[9px] text-[var(--color-text-hint)] transition group-open:rotate-180">▼</span>
+                  <details className="group overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-white/60">
+                    <summary className="flex min-h-12 cursor-pointer items-center justify-between px-4 text-xs font-semibold text-[var(--ink)] import-interactive hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]">
+                      <span>统计数据</span><ChevronDown className="h-4 w-4 text-[var(--color-text-hint)] import-chevron group-open:rotate-180" aria-hidden="true" />
                     </summary>
-                    <pre className="max-h-48 overflow-auto border-t border-[var(--color-border)] px-4 py-3 whitespace-pre-wrap text-[10px] text-[var(--color-text-secondary)]">{renderJson(status.stats)}</pre>
+                    <pre className="max-h-48 overflow-auto border-t import-details-body border-[var(--color-border-light)] px-4 py-3 whitespace-pre-wrap text-[10px] leading-5 text-[var(--color-text-secondary)]">{renderJson(status.stats)}</pre>
                   </details>
-                  <details className="group rounded-xl border border-[var(--color-border)] bg-white/70">
-                    <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-xs font-semibold text-[var(--ink)]">
-                      <span className="flex items-center gap-2">
-                        <span>错误日志</span>
-                        {Array.isArray(status.errors) && status.errors.length > 0 ? <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-medium text-red-600">{status.errors.length}</span> : null}
-                      </span>
-                      <span className="text-[9px] text-[var(--color-text-hint)] transition group-open:rotate-180">▼</span>
+                  <details className="group overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-white/60">
+                    <summary className="flex min-h-12 cursor-pointer items-center justify-between px-4 text-xs font-semibold text-[var(--ink)] import-interactive hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]">
+                      <span className="flex items-center gap-2">错误日志{Array.isArray(status.errors) && status.errors.length > 0 ? <span className="rounded-full bg-[var(--color-danger-light)] px-2 py-0.5 text-[9px] text-[var(--color-danger)]">{status.errors.length}</span> : null}</span>
+                      <ChevronDown className="h-4 w-4 text-[var(--color-text-hint)] import-chevron group-open:rotate-180" aria-hidden="true" />
                     </summary>
-                    {Array.isArray(status.errors) && status.errors.length > 0 ? (
-                      <pre className="max-h-48 overflow-auto border-t border-[var(--color-border)] px-4 py-3 whitespace-pre-wrap text-[10px] text-red-600">{status.errors.map((e) => `• ${e}`).join("\n")}</pre>
-                    ) : (
-                      <p className="border-t border-[var(--color-border)] px-4 py-3 text-[10px] text-[var(--color-text-hint)]">暂无错误</p>
-                    )}
+                    {Array.isArray(status.errors) && status.errors.length > 0 ? <pre className="max-h-48 overflow-auto border-t import-details-body border-[var(--color-border-light)] px-4 py-3 whitespace-pre-wrap text-[10px] leading-5 text-[var(--color-danger)]">{status.errors.map((e) => `• ${e}`).join("\n")}</pre> : <p className="border-t border-[var(--color-border-light)] px-4 py-3 text-[11px] import-details-body text-[var(--color-text-hint)]">暂无错误</p>}
                   </details>
                 </div>
 
-                {/* Quick actions */}
                 {status.batch_id ? (
-                  <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
-                    <a className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white/70 px-4 text-xs font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]" href={`/imports/review?batch_id=${encodeURIComponent(status.batch_id)}`}>
-                      <FileText className="h-3.5 w-3.5" />
-                      待审核
-                    </a>
-                    <Button variant="secondary" className="h-9" onClick={() => setActiveTab("quality")}>
-                      查看质量报告
-                    </Button>
+                  <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border-light)] pt-4">
+                    <a className="inline-flex h-11 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 text-xs font-semibold text-[var(--color-text-secondary)] import-interactive hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2" href={`/imports/review?batch_id=${encodeURIComponent(status.batch_id)}`}><FileText className="h-4 w-4" aria-hidden="true" />待审核</a>
+                    <Button variant="secondary" className="h-11 import-interactive" onClick={() => setActiveTab("quality")}>质量报告</Button>
                   </div>
                 ) : null}
               </div>
-            ) : null}
+            </div>
+          ) : null}
 
-            {/* Fetch error */}
-            {statusQuery.isError ? (
-              <div className="flex items-center gap-2.5 rounded-2xl border border-[var(--color-danger)] bg-red-50/70 px-4 py-3 text-xs text-[var(--color-danger)]">
-                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                无法获取导入进度，请刷新重试。
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
+          {statusQuery.isError ? (
+            <div role="alert" className="m-4 flex items-start gap-2.5 rounded-xl border border-[rgba(196,77,77,0.28)] import-feedback-in bg-[var(--color-danger-light)] px-4 py-3 text-xs leading-5 text-[var(--color-danger)] sm:m-5"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />无法获取导入进度，请刷新重试。</div>
+          ) : null}
+        </section>
       ) : null}
 
-      {/* ═══════════════════════════════════════════════════
-          TAB: Quality
-          ═══════════════════════════════════════════════════ */}
       {activeTab === "quality" ? (
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col gap-1">
-              <h3 className="font-display text-2xl font-bold text-[var(--ink)]">质量报告</h3>
-              <p className="text-sm text-[var(--color-text-secondary)]">
-                {status?.quality_report ? `批次 ${status.batch_id || "—"} · 共 ${status.quality_report.total_questions ?? "—"} 题` : "导入完成后将在此处展示质量分析"}
-              </p>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {/* No quality report yet */}
-            {!status?.quality_report ? (
-              <div className="flex flex-col items-center py-16 text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--color-bg-input)]">
-                  <FileText className="h-7 w-7 text-[var(--color-text-hint)]" />
-                </div>
-                <p className="text-sm font-semibold text-[var(--color-text-secondary)]">暂无质量报告</p>
-                <p className="mt-1.5 max-w-xs text-xs leading-relaxed text-[var(--color-text-hint)]">
-                  {pipelineId ? "导入任务完成后将自动生成质量分析报告。" : "提交导入任务后，质量报告将在此处展示。"}
-                </p>
-                {!pipelineId ? (
-                  <Button variant="secondary" className="mt-4" onClick={() => setActiveTab("upload")}>
-                    前往上传
-                  </Button>
-                ) : null}
+        <section className="overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[rgba(254,252,249,0.82)] shadow-[var(--shadow-card)] import-panel-swap">
+          <ImportPanelHeader
+            title="质量报告"
+            description={status?.quality_report ? `批次 ${status.batch_id || "—"} · 共 ${status.quality_report.total_questions ?? "—"} 题` : "导入完成后自动汇总风险、结构与性能指标。"}
+          />
+
+          {!status?.quality_report ? (
+            <div className="flex min-h-[430px] items-center justify-center px-6 py-14">
+              <div className="max-w-sm text-center import-panel-swap">
+                <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] text-[var(--color-primary-dark)] import-soft-pop"><FileText className="h-6 w-6" strokeWidth={1.6} aria-hidden="true" /></div>
+                <p className="mt-4 text-sm font-semibold text-[var(--ink)]">暂无质量报告</p>
+                <p className="mt-1.5 text-xs leading-5 text-[var(--color-text-hint)]">{pipelineId ? "任务完成后会在这里生成质量分析。" : "先提交导入任务，完成后即可查看风险与质量指标。"}</p>
+                {!pipelineId ? <Button variant="secondary" className="mt-5 h-11 import-interactive" onClick={() => setActiveTab("upload")}>前往上传</Button> : null}
               </div>
-            ) : null}
+            </div>
+          ) : null}
 
-            {/* Quality Report Content */}
-            {status?.quality_report ? (
-              <div className="space-y-6">
-                {/* Main stats */}
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <div className="metric-card text-center">
-                    <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--color-text-hint)]">总题数</p>
-                    <p className="mt-2 font-display text-4xl font-bold text-[var(--ink)]">{status.quality_report.total_questions}</p>
-                  </div>
-                  {status.quality_report.low_risk !== undefined ? (
-                    <div className="metric-card text-center border-green-200/60 bg-green-50/50">
-                      <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-green-600">低风险</p>
-                      <p className="mt-2 font-display text-4xl font-bold text-green-700">{status.quality_report.low_risk}</p>
-                    </div>
-                  ) : null}
-                  {status.quality_report.medium_risk !== undefined ? (
-                    <div className="metric-card text-center border-amber-200/60 bg-amber-50/50">
-                      <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-amber-600">需检查</p>
-                      <p className="mt-2 font-display text-4xl font-bold text-amber-700">{status.quality_report.medium_risk}</p>
-                    </div>
-                  ) : null}
-                  {status.quality_report.high_risk !== undefined ? (
-                    <div className="metric-card text-center border-red-200/60 bg-red-50/50">
-                      <p className="font-mono text-[9px] uppercase tracking-[0.2em] text-red-600">高风险</p>
-                      <p className="mt-2 font-display text-4xl font-bold text-red-700">{status.quality_report.high_risk}</p>
-                    </div>
-                  ) : null}
+          {status?.quality_report ? (
+            <div className="import-panel-swap">
+              <div className="grid grid-cols-2 divide-x divide-y divide-[var(--color-border-light)] border-b border-[var(--color-border-light)] bg-white/55 sm:grid-cols-4 sm:divide-y-0">
+                <ImportMetric label="总题数" value={status.quality_report.total_questions} />
+                <ImportMetric label="低风险" value={status.quality_report.low_risk ?? "—"} tone="success" />
+                <ImportMetric label="需检查" value={status.quality_report.medium_risk ?? "—"} tone="warning" />
+                <ImportMetric label="高风险" value={status.quality_report.high_risk ?? "—"} tone="danger" />
+              </div>
+
+              <div className="space-y-5 p-4 sm:p-5">
+                <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-[var(--color-border-light)] sm:grid-cols-4 import-panel-swap">
+                  {status.quality_report.ai_answer_count !== undefined ? <div className="bg-white/80 p-4"><p className="text-[10px] font-medium text-[var(--color-text-hint)]">AI 答案</p><p className="mt-1.5 text-lg font-semibold tabular-nums text-[var(--ink)]">{status.quality_report.ai_answer_count}</p></div> : null}
+                  {status.quality_report.math_image_count !== undefined ? <div className="bg-white/80 p-4"><p className="text-[10px] font-medium text-[var(--color-text-hint)]">公式截图</p><p className="mt-1.5 text-lg font-semibold tabular-nums text-[var(--ink)]">{status.quality_report.math_image_count}</p></div> : null}
+                  {status.quality_report.table_markdown_count !== undefined ? <div className="bg-white/80 p-4"><p className="text-[10px] font-medium text-[var(--color-text-hint)]">表格</p><p className="mt-1.5 text-lg font-semibold tabular-nums text-[var(--ink)]">{status.quality_report.table_markdown_count}</p></div> : null}
+                  {status.quality_report.estimated_manual_check_rate !== undefined ? <div className="bg-white/80 p-4"><p className="text-[10px] font-medium text-[var(--color-text-hint)]">人工检查率</p><p className={cn("mt-1.5 text-lg font-semibold tabular-nums", status.quality_report.estimated_manual_check_rate > 0.4 ? "text-[var(--color-text-primary)]" : "text-[var(--ink)]")}>{(status.quality_report.estimated_manual_check_rate * 100).toFixed(0)}%</p></div> : null}
                 </div>
 
-                {/* Secondary stats */}
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {status.quality_report.ai_answer_count !== undefined ? (
-                    <div className="rounded-xl bg-purple-50/70 p-3.5 text-center">
-                      <p className="text-[9px] uppercase tracking-wider text-purple-600">AI 答案</p>
-                      <p className="mt-1 font-display text-xl font-bold text-purple-700">{status.quality_report.ai_answer_count}</p>
-                    </div>
-                  ) : null}
-                  {status.quality_report.math_image_count !== undefined ? (
-                    <div className="rounded-xl bg-blue-50/70 p-3.5 text-center">
-                      <p className="text-[9px] uppercase tracking-wider text-blue-600">公式截图</p>
-                      <p className="mt-1 font-display text-xl font-bold text-blue-700">{status.quality_report.math_image_count}</p>
-                    </div>
-                  ) : null}
-                  {status.quality_report.table_markdown_count !== undefined ? (
-                    <div className="rounded-xl bg-cyan-50/70 p-3.5 text-center">
-                      <p className="text-[9px] uppercase tracking-wider text-cyan-600">表格</p>
-                      <p className="mt-1 font-display text-xl font-bold text-cyan-700">{status.quality_report.table_markdown_count}</p>
-                    </div>
-                  ) : null}
-                  {status.quality_report.estimated_manual_check_rate !== undefined ? (
-                    <div className="rounded-xl bg-[var(--color-bg-input)] p-3.5 text-center">
-                      <p className="text-[9px] uppercase tracking-wider text-[var(--color-text-hint)]">人工检查率</p>
-                      <p className={`mt-1 font-display text-xl font-bold ${(status.quality_report.estimated_manual_check_rate > 0.4) ? "text-amber-700" : "text-[var(--ink)]"}`}>
-                        {(status.quality_report.estimated_manual_check_rate * 100).toFixed(0)}%
-                      </p>
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* Performance Summary */}
                 {status.quality_report.performance_summary ? (
-                  <details className="group rounded-2xl border border-[var(--color-border)] bg-white/70">
-                    <summary className="flex cursor-pointer items-center justify-between px-5 py-4 text-sm font-semibold text-[var(--ink)]">
-                      <span>性能概览</span>
-                      <span className="text-[10px] text-[var(--color-text-hint)] transition group-open:rotate-180">▼</span>
-                    </summary>
-                    <div className="grid grid-cols-2 gap-x-8 gap-y-3 border-t border-[var(--color-border)] px-5 py-4 text-xs text-[var(--color-text-secondary)] sm:grid-cols-3">
-                      <div className="flex justify-between"><span>总耗时</span><span className="font-semibold text-[var(--ink)]">{(status.quality_report.performance_summary.total_duration_ms / 1000).toFixed(1)}s</span></div>
-                      <div className="flex justify-between"><span>AI 调用</span><span className="font-semibold text-[var(--ink)]">{status.quality_report.performance_summary.total_ai_calls} 次</span></div>
-                      <div className="flex justify-between"><span>Token 用量</span><span className="font-semibold text-[var(--ink)]">{status.quality_report.performance_summary.total_tokens_used}</span></div>
-                      <div className="flex justify-between"><span>OCR 缓存命中率</span><span className="font-semibold text-[var(--ink)]">{(status.quality_report.performance_summary.cache_hit_rate * 100).toFixed(0)}%</span></div>
-                      <div className="flex justify-between"><span>最慢阶段</span><span className="font-semibold text-[var(--ink)]">{status.quality_report.performance_summary.slowest_stage} ({(status.quality_report.performance_summary.slowest_duration_ms / 1000).toFixed(1)}s)</span></div>
+                  <details className="group overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-white/60">
+                    <summary className="flex min-h-12 cursor-pointer items-center justify-between px-4 text-xs font-semibold text-[var(--ink)] import-interactive hover:bg-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]"><span>性能概览</span><ChevronDown className="h-4 w-4 text-[var(--color-text-hint)] import-chevron group-open:rotate-180" aria-hidden="true" /></summary>
+                    <div className="grid gap-px border-t border-[var(--color-border-light)] bg-[var(--color-border-light)] sm:grid-cols-3 import-details-body">
+                      <div className="bg-white/80 p-4 text-xs"><span className="text-[var(--color-text-hint)]">总耗时</span><strong className="ml-2 text-[var(--ink)]">{(status.quality_report.performance_summary.total_duration_ms / 1000).toFixed(1)}s</strong></div>
+                      <div className="bg-white/80 p-4 text-xs"><span className="text-[var(--color-text-hint)]">AI 调用</span><strong className="ml-2 text-[var(--ink)]">{status.quality_report.performance_summary.total_ai_calls} 次</strong></div>
+                      <div className="bg-white/80 p-4 text-xs"><span className="text-[var(--color-text-hint)]">Token</span><strong className="ml-2 text-[var(--ink)]">{status.quality_report.performance_summary.total_tokens_used}</strong></div>
+                      <div className="bg-white/80 p-4 text-xs"><span className="text-[var(--color-text-hint)]">OCR 缓存命中</span><strong className="ml-2 text-[var(--ink)]">{(status.quality_report.performance_summary.cache_hit_rate * 100).toFixed(0)}%</strong></div>
+                      <div className="bg-white/80 p-4 text-xs sm:col-span-2"><span className="text-[var(--color-text-hint)]">最慢阶段</span><strong className="ml-2 text-[var(--ink)]">{status.quality_report.performance_summary.slowest_stage} · {(status.quality_report.performance_summary.slowest_duration_ms / 1000).toFixed(1)}s</strong></div>
                     </div>
                   </details>
                 ) : null}
 
-                {/* Actions */}
-                <div className="flex flex-wrap gap-3 border-t border-[var(--color-border)] pt-4">
-                  {status.batch_id ? (
-                    <>
-                      <a className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-light)] px-4 text-xs font-semibold text-[var(--color-danger)] transition hover:bg-red-100" href={`/imports/review?batch_id=${encodeURIComponent(status.batch_id)}&risk_filter=high`}>
-                        <AlertCircle className="h-3.5 w-3.5" />
-                        查看高风险题
-                      </a>
-                      <a className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white/70 px-4 text-xs font-semibold text-[var(--color-text-secondary)] transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)]" href={`/imports/review?batch_id=${encodeURIComponent(status.batch_id)}`}>
-                        <FileText className="h-3.5 w-3.5" />
-                        进入审核区
-                      </a>
-                    </>
-                  ) : null}
-                </div>
+                {status.batch_id ? (
+                  <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-border-light)] pt-4">
+                    <a className="inline-flex h-11 items-center gap-2 rounded-xl border border-[rgba(196,77,77,0.28)] bg-[var(--color-danger-light)] px-4 text-xs font-semibold text-[var(--color-danger)] import-interactive hover:border-[var(--color-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-danger)] focus-visible:ring-offset-2" href={`/imports/review?batch_id=${encodeURIComponent(status.batch_id)}&risk_filter=high`}><AlertCircle className="h-4 w-4" aria-hidden="true" />查看高风险题</a>
+                    <a className="inline-flex h-11 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 text-xs font-semibold text-[var(--color-text-secondary)] import-interactive hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2" href={`/imports/review?batch_id=${encodeURIComponent(status.batch_id)}`}><FileText className="h-4 w-4" aria-hidden="true" />进入审核区</a>
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </CardContent>
-        </Card>
+            </div>
+          ) : null}
+        </section>
       ) : null}
     </div>
   );

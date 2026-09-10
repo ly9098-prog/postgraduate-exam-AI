@@ -7,7 +7,7 @@ Architecture (Redis data model):
 - ``taskq:dead:{type}`` — List of task_ids (dead-letter, LRIM to 1000).
 - ``taskq:task:{task_id}`` — Hash of task payload/metadata (TTL 7d in dead, 24h after complete).
 - ``taskq:heartbeat:{task_id}`` — String = owner_token, TTL = lease_sec.
-- ``taskq:idempotent:{task_id}`` — String, TTL = 24h (idempotency guard).
+- ``taskq:idempotent:{task_id}`` — String, TTL = 8d (idempotency guard).
 
 Atomic operations via Lua scripts. All operations carry an owner_token
 that prevents stale workers from modifying tasks claimed by another owner.
@@ -100,7 +100,7 @@ _REAPER_INTERVAL_SEC = 60
 _LOCAL_TASK_MAX = 100           # bounded local fallback (dev only)
 _DEAD_MAX = 1000                # max dead-letter entries
 _CORRUPT_MAX = 100              # max corrupt entries
-_IDEMPOTENT_TTL = 86400 * 7      # 7d — matches dead hash TTL, ensures idempotency outlives all terminal states
+_IDEMPOTENT_TTL = 86400 * 8      # 8d — deliberately outlives 7d Outbox/dead retention boundary
 _COMPLETED_TTL = 86400            # 24h retention for completed task hashes
 _DEAD_HASH_TTL = 86400 * 7        # 7d retention for dead task hashes
 _FENCING_TOMBSTONE_TTL = 86400 * 7  # 7d — covers max task time + lease + retry window + late writes
@@ -1661,7 +1661,8 @@ class DurableTaskQueue:
         """Mark a task as completed.
 
         Atomic Lua with owner fencing: verifies owner_token, ZREM from
-        processing, sets completed status, DEL heartbeat/idempotent.
+        processing, sets completed status, and deletes the heartbeat. The
+        idempotency guard is intentionally preserved until its TTL expires.
 
         Returns True on success. Returns False if owner mismatch (fencing
         rejection) — caller should not retry as the task was re-assigned.
@@ -2150,6 +2151,7 @@ class DurableTaskQueue:
 
         if not self._redis_enabled:
             return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
+        client = None
         try:
             client = await self._get_script_client()
             if client is None:
@@ -2177,8 +2179,6 @@ class DurableTaskQueue:
                     str(max_ready),
                 )
 
-            await client.aclose()
-
             if result == "__duplicate__":
                 logger.info("v2 Duplicate task: task_id=%s", tid)
                 queue_metrics["duplicate_enqueue_prevented"] += 1
@@ -2198,6 +2198,15 @@ class DurableTaskQueue:
             # not emit one ERROR per enqueue attempt here.
             logger.debug("v2 Enqueue Redis unavailable: %s", e)
             return EnqueueResult(accepted=False, task_id=None, reason="redis_unavailable", retry_after=30)
+        finally:
+            # Redis failures can occur while loading/evaluating scripts. Always
+            # release the wrapper back to the shared pool so an outage cannot
+            # gradually exhaust dispatcher connections.
+            if client is not None:
+                try:
+                    await client.aclose()
+                except Exception:
+                    pass
 
     async def dequeue_v2(
         self,
@@ -3113,24 +3122,20 @@ class DurableTaskQueue:
         """
         if not self._redis_enabled:
             raise QueueHealthError("Redis is not configured")
+        client = None
         try:
             client = await self._get_script_client()
             if client is None:
                 raise QueueHealthError("Cannot obtain Redis client")
-            exists = await client.exists(_v2_task_hash_key(task_id))
-            if not exists:
-                await client.aclose()
+            if not await client.exists(_v2_task_hash_key(task_id)):
                 return None
             raw = await client.hgetall(_v2_task_hash_key(task_id))
-            await client.aclose()
             if not raw:
                 return None
-            # Parse "data" field from JSON
             result: dict = {"task_id": task_id}
             for k, v in raw.items():
                 if k == "data":
                     try:
-                        import json
                         result[k] = json.loads(v)
                     except (json.JSONDecodeError, TypeError):
                         result[k] = v
@@ -3139,6 +3144,44 @@ class DurableTaskQueue:
             return result
         except redis_exc.RedisError as e:
             raise QueueHealthError(f"Redis error fetching task {task_id}: {e}") from e
+        finally:
+            # ``_get_script_client`` returns a wrapper backed by the shared pool;
+            # closing it returns its connection even when EXISTS/HGETALL raised.
+            if client is not None:
+                try:
+                    await client.aclose()
+                except Exception:
+                    pass
+
+
+    async def has_idempotency_v2(self, task_id: str) -> bool:
+        """Return whether Redis still remembers an accepted v2 task id.
+
+        Completed task hashes intentionally expire sooner than the v2
+        idempotency guard.  The outbox reconciler uses this tombstone to
+        distinguish normal task-hash expiry from actual Redis data loss.
+
+        Raises:
+            QueueHealthError: Redis is unreachable.
+        """
+        if not self._redis_enabled:
+            raise QueueHealthError("Redis is not configured")
+        client = None
+        try:
+            client = await self._get_script_client()
+            if client is None:
+                raise QueueHealthError("Cannot obtain Redis client")
+            return bool(await client.exists(_v2_idempotent_key(task_id)))
+        except redis_exc.RedisError as e:
+            raise QueueHealthError(
+                f"Redis error fetching idempotency guard {task_id}: {e}"
+            ) from e
+        finally:
+            if client is not None:
+                try:
+                    await client.aclose()
+                except Exception:
+                    pass
 
     # ══════════════════════════════════════════════════════════════════════════
     # v1 → v2 Drain / Migration

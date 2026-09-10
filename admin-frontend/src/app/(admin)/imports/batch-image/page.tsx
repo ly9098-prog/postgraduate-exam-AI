@@ -1,11 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type DragEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, Check, CheckCircle2, ChevronDown, ClipboardCheck, Images, RefreshCw, Trash2, UploadCloud, X } from "lucide-react";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { AlertCircle, Check, CheckCircle2, ChevronDown, ClipboardCheck, Images, RefreshCw, UploadCloud, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { apiRequest, getApiAccessToken, toQuery } from "@/lib/api/client";
 import { connectSSE } from "@/lib/api/sse";
@@ -13,6 +11,7 @@ import type { BatchImageJobStatusResponse, BatchImageUploadResponse, BatchImageR
 import { AiModelConfigBanner } from "@/components/ai-model-config-banner";
 import { useImportConfig } from "../hooks/useImportConfig";
 import { OcrModeSelector } from "../components/ocr-mode-selector";
+import { ImportMetric, ImportPanelHeader, ImportProgressBar, ImportWorkspaceHeader } from "../components/import-workspace";
 
 const MAX_FILES = (() => {
   const n = Number(process.env.NEXT_PUBLIC_BATCH_IMAGE_MAX_FILES);
@@ -364,8 +363,18 @@ export default function BatchImagePage() {
         setSubjectSelectOpen(false);
       }
     }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setSelectOpen(false);
+        setSubjectSelectOpen(false);
+      }
+    }
     document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
 
   // ── Computed aggregate values ────────────────────────────────
@@ -410,20 +419,20 @@ export default function BatchImagePage() {
   }, [addFiles, isJobActive]);
 
   const onDragOver = useCallback(
-    (event: React.DragEvent) => {
+    (event: DragEvent) => {
       event.preventDefault();
       if (!isJobActive) setDragActive(true);
     },
     [isJobActive],
   );
 
-  const onDragLeave = useCallback((event: React.DragEvent) => {
+  const onDragLeave = useCallback((event: DragEvent) => {
     event.preventDefault();
     setDragActive(false);
   }, []);
 
   const onDrop = useCallback(
-    (event: React.DragEvent) => {
+    (event: DragEvent) => {
       event.preventDefault();
       setDragActive(false);
       if (isJobActive) return;
@@ -435,389 +444,344 @@ export default function BatchImagePage() {
   // ── Render ───────────────────────────────────────────────────
 
   const renderStatusBadge = (task: ImageTask) => {
-    const base = "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-all duration-300 animate-rise-in";
+    const base = "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold";
     if (task.status === "failed") {
-      return <span className={`${base} bg-red-50 text-red-700`}>失败</span>;
+      return <span className={`${base} border-[rgba(196,77,77,0.25)] bg-[var(--color-danger-light)] text-[var(--color-danger)]`}>失败</span>;
     }
     if (task.status === "succeeded") {
-      return <span className={`${base} bg-green-50 text-green-700`}>成功 · {task.questionCount}题</span>;
+      return <span className={`${base} border-[rgba(91,140,91,0.25)] bg-[var(--color-success-light)] text-[var(--color-success)]`}>成功 · {task.questionCount} 题</span>;
     }
     if (task.status === "processing") {
       return (
-        <span className={`${base} bg-amber-50 text-amber-700`}>
-          <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500 align-middle" />
+        <span className={`${base} border-[rgba(196,154,107,0.3)] bg-[var(--color-warning-light)] text-[var(--color-text-primary)]`}>
+          <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-warning)] import-status-active" aria-hidden="true" />
           识别中
         </span>
       );
     }
     if (task.status === "uploading") {
-      return <span className={`${base} bg-blue-50 text-blue-700`}>上传中</span>;
+      return <span className={`${base} border-[rgba(74,111,138,0.24)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]`}>上传中</span>;
     }
-    return (
-      <span className={`${base} bg-[var(--color-bg-input)] text-[var(--color-text-secondary)]`}>
-        等待中
-      </span>
-    );
+    return <span className={`${base} border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)]`}>等待中</span>;
   };
 
   const concurrencyOptions = [
-    { value: "1", label: "1", tag: "最稳", tagClass: "bg-amber-50 text-amber-700" },
-    { value: "2", label: "2", tag: "推荐", tagClass: "bg-green-50 text-green-700" },
-    { value: "3", label: "3", tag: null, tagClass: "" },
-    { value: "4", label: "4", tag: "上限", tagClass: "bg-blue-50 text-blue-700" },
+    { value: "1", label: "1", tag: "稳定" },
+    { value: "2", label: "2", tag: "推荐" },
+    { value: "3", label: "3", tag: null },
+    { value: "4", label: "4", tag: "上限" },
   ];
 
+  const phaseLabel = queuePhase === "done"
+    ? failedCount > 0 && succeededCount === 0 ? "全部失败" : "已完成"
+    : queuePhase === "uploading" ? "上传中" : queuePhase === "polling" ? "识别中" : "待提交";
+
+  const phaseTone = queuePhase === "done"
+    ? failedCount > 0 && succeededCount === 0 ? "danger" : "success"
+    : queuePhase === "idle" ? "neutral" : "warning";
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-4">
+      <ImportWorkspaceHeader
+        icon={Images}
+        title="批量图片导题"
+        description="面向连续截图与扫描题目的批处理工作台。集中配置 OCR、科目与并发数，并在同一视图追踪每张图片的识别状态与事件轨迹。"
+        meta={
+          <div className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--color-border)] bg-white/70 px-3 text-xs text-[var(--color-text-secondary)]">
+            <span className="font-mono tabular-nums">0–{MAX_FILES}</span>
+            <span className="text-[var(--color-text-hint)]">张 / 批</span>
+          </div>
+        }
+      />
+
       <AiModelConfigBanner />
 
       {message ? (
         <div
-          className={`animate-rise-in flex items-center gap-2.5 rounded-2xl border px-4 py-3 text-sm shadow-[var(--shadow-crisp)] ${
+          role={message.type === "error" ? "alert" : "status"}
+          className={cn(
+            "flex items-start gap-3 rounded-2xl border px-4 py-3.5 text-sm import-feedback-in",
             message.type === "error"
-              ? "border-amber-200 bg-amber-50/80 text-amber-800"
+              ? "border-[rgba(196,77,77,0.28)] bg-[var(--color-danger-light)] text-[var(--color-danger)]"
               : message.type === "success"
-                ? "border-green-200 bg-green-50/80 text-green-800"
-                : "border-[var(--color-border)] bg-white/80 text-[var(--color-text-secondary)]"
-          }`}
-        >
-          {message.type === "error" ? (
-            <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
-          ) : message.type === "success" ? (
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
-          ) : (
-            <AlertCircle className="h-4 w-4 shrink-0 text-blue-500" />
+                ? "border-[rgba(91,140,91,0.28)] bg-[var(--color-success-light)] text-[var(--color-success)]"
+                : "border-[rgba(74,111,138,0.22)] bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]",
           )}
-          {message.text}
+        >
+          {message.type === "success" ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
+          <span className="leading-5">{message.text}</span>
         </div>
       ) : null}
 
-      <Card className="overflow-hidden">
-        <CardHeader className="!pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-display text-xl font-bold text-[var(--ink)]">批量导题</h3>
-              <p className="mt-0.5 text-xs text-[var(--color-text-secondary)]">OCR → AI 解析 → 待审核</p>
-            </div>
-            {queuePhase !== "idle" && imageTasks.length > 0 && (
+      <section className="overflow-hidden rounded-2xl border border-[var(--color-border-light)] bg-[rgba(254,252,249,0.82)] shadow-[var(--shadow-card)] import-enter" style={{ animationDelay: "55ms" }}>
+        <ImportPanelHeader
+          title="识别工作台"
+          description="文件选择、识别参数与任务进度保持在一个操作上下文中。"
+          trailing={
+            <span className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold",
+              phaseTone === "success" && "border-[rgba(91,140,91,0.25)] bg-[var(--color-success-light)] text-[var(--color-success)]",
+              phaseTone === "danger" && "border-[rgba(196,77,77,0.25)] bg-[var(--color-danger-light)] text-[var(--color-danger)]",
+              phaseTone === "warning" && "border-[rgba(196,154,107,0.3)] bg-[var(--color-warning-light)] text-[var(--color-text-primary)]",
+              phaseTone === "neutral" && "border-[var(--color-border)] bg-white/70 text-[var(--color-text-secondary)]",
+            )}>
               <span className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold",
-                queuePhase === "done"
-                  ? failedCount > 0 && succeededCount === 0 ? "bg-[var(--color-danger-light)] text-[var(--color-danger)]" : "bg-[var(--color-success-light)] text-[var(--color-success)]"
-                  : "bg-[var(--color-warning-light)] text-[var(--color-warning)]",
-              )}>
-                <span className={cn(
-                  "inline-block h-1.5 w-1.5 rounded-full",
-                  queuePhase === "done"
-                    ? failedCount > 0 && succeededCount === 0 ? "bg-[var(--color-danger)]" : "bg-[var(--color-success)]"
-                    : "animate-pulse bg-[var(--color-warning)]",
-                )} />
-                {queuePhase === "done" ? (failedCount > 0 && succeededCount === 0 ? "全部失败" : "已完成") : queuePhase === "uploading" ? "上传中" : "识别中"}
-              </span>
-            )}
-          </div>
-        </CardHeader>
+                "h-1.5 w-1.5 rounded-full",
+                phaseTone === "success" && "bg-[var(--color-success)]",
+                phaseTone === "danger" && "bg-[var(--color-danger)]",
+                phaseTone === "warning" && "import-status-active bg-[var(--color-warning)]",
+                phaseTone === "neutral" && "bg-[var(--color-text-hint)]",
+              )} aria-hidden="true" />
+              {phaseLabel}
+            </span>
+          }
+        />
 
-        <div className="flex min-h-[460px]">
-          {/* ── Left Sidebar: Config ── */}
-          <div className="flex w-[240px] shrink-0 flex-col gap-3 border-r border-[var(--color-border)] bg-[var(--color-bg-input)]/30 p-3.5">
-            {/* Compact dropzone */}
-            <label htmlFor={fileInputId}>
+        <div className="grid min-h-[590px] lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="flex min-w-0 flex-col gap-5 border-b border-[var(--color-border-light)] bg-[rgba(239,235,229,0.25)] p-4 sm:p-5 lg:border-b-0 lg:border-r">
+            <label htmlFor={fileInputId} className="block">
               <div
                 onDragOver={onDragOver}
                 onDragLeave={onDragLeave}
                 onDrop={onDrop}
                 className={cn(
-                  "relative flex cursor-pointer flex-col items-center rounded-xl border-2 border-dashed p-4 text-center transition",
+                  "relative flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-4 py-5 text-center transition-[border-color,background-color,box-shadow] import-interactive",
+                  (dragActive || files.length > 0) && "import-drop-active",
                   isJobActive
-                    ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50"
+                    ? "cursor-not-allowed border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-60"
                     : dragActive || files.length > 0
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary-light)]"
-                      : "border-[var(--color-border)] bg-white/50 hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)]",
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] shadow-[inset_0_0_0_1px_rgba(74,111,138,0.08)]"
+                      : "border-[var(--color-border)] bg-white/60 hover:border-[var(--color-primary)] hover:bg-white",
                 )}
               >
-                <Images className={cn("mb-1 h-6 w-6", files.length > 0 ? "text-[var(--color-primary-dark)]" : "text-[var(--color-text-hint)]")} />
-                {files.length > 0 ? (
-                  <p className="text-xs font-semibold text-[var(--ink)]">{files.length} 张图片</p>
-                ) : (
-                  <p className="text-xs font-semibold text-[var(--ink)]">选择图片</p>
-                )}
-                <p className="mt-0.5 text-[10px] text-[var(--color-text-hint)]">拖拽 · 粘贴 · 点击</p>
+                <div className="grid h-11 w-11 place-items-center rounded-xl border border-[rgba(74,111,138,0.16)] bg-white/80 text-[var(--color-primary-dark)] import-drop-icon">
+                  <Images className="h-5 w-5" strokeWidth={1.7} aria-hidden="true" />
+                </div>
+                <p className="mt-3 text-sm font-semibold text-[var(--ink)]">{files.length > 0 ? `${files.length} 张图片已就绪` : "添加题目图片"}</p>
+                <p className="mt-1 text-xs leading-5 text-[var(--color-text-hint)]">拖拽、粘贴或点击选择 JPG / PNG / WebP</p>
                 <input
                   id={fileInputId}
                   type="file"
                   multiple
                   accept={ACCEPT}
                   disabled={isJobActive}
-                  className="absolute inset-0 cursor-pointer opacity-0"
+                  className="absolute inset-0 cursor-pointer opacity-0 disabled:cursor-not-allowed"
                   onChange={(event) => { addFiles(event.target.files); event.target.value = ""; }}
                 />
               </div>
             </label>
 
-            {/* File list (compact) */}
-            {files.length > 0 && queuePhase === "idle" && (
+            {files.length > 0 && queuePhase === "idle" ? (
               <div>
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-hint)]">待上传</span>
-                  <button type="button" disabled={isJobActive} onClick={clearFiles}
-                    className="text-[10px] font-semibold text-[var(--color-text-hint)] transition hover:text-[var(--color-danger)] disabled:opacity-40">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold text-[var(--color-text-secondary)]">待上传文件</span>
+                  <button type="button" disabled={isJobActive} onClick={clearFiles} className="min-h-11 rounded-lg px-2 text-xs font-semibold text-[var(--color-text-hint)] import-interactive hover:bg-white hover:text-[var(--color-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] disabled:opacity-40">
                     清空
                   </button>
                 </div>
-                <div className="flex max-h-[100px] flex-col gap-0.5 overflow-auto">
+                <div className="max-h-32 overflow-y-auto rounded-xl border border-[var(--color-border-light)] bg-white/55">
                   {files.map((file, index) => (
-                    <div key={`${file.name}_${file.size}_${index}`} className="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[10px] text-[var(--color-text-secondary)] hover:bg-white/60">
-                      <span className="max-w-[150px] truncate" title={file.name}>{file.name}</span>
-                      <button type="button" disabled={isJobActive} onClick={() => removeFile(index)}
-                        className="ml-auto shrink-0 text-[var(--color-text-hint)] transition hover:text-[var(--color-danger)] disabled:opacity-40">
-                        <X className="h-2.5 w-2.5" />
+                    <div key={`${file.name}_${file.size}_${index}`} className="flex min-h-11 items-center gap-2 border-b border-[var(--color-border-light)] px-3 last:border-b-0 import-list-item" style={{ animationDelay: `${Math.min(index, 8) * 24}ms` }}>
+                      <span className="min-w-0 flex-1 truncate text-[11px] text-[var(--color-text-secondary)]" title={file.name}>{file.name}</span>
+                      <button
+                        type="button"
+                        disabled={isJobActive}
+                        onClick={() => removeFile(index)}
+                        className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-[var(--color-text-hint)] import-interactive hover:bg-[var(--color-danger-light)] hover:text-[var(--color-danger)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] disabled:opacity-40"
+                        aria-label={`移除 ${file.name}`}
+                        title="移除文件"
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
                     </div>
                   ))}
                 </div>
               </div>
-            )}
+            ) : null}
 
-            {/* Config fields */}
-            <div className="flex flex-col gap-2">
-              <div className="space-y-0.5">
-                <span className="text-[10px] font-semibold text-[var(--color-text-hint)]">科目</span>
+            <div className="space-y-4 border-t border-[var(--color-border-light)] pt-4">
+              <div className="space-y-1.5">
+                <span className="text-xs font-semibold text-[var(--color-text-secondary)]">科目</span>
                 <div className="relative" ref={subjectSelectRef}>
                   <button
                     type="button"
                     disabled={isJobActive}
+                    aria-haspopup="listbox"
+                    aria-expanded={subjectSelectOpen}
                     onClick={() => setSubjectSelectOpen((prev) => !prev)}
                     className={cn(
-                      "flex h-8 w-full items-center justify-between gap-2 rounded-lg border px-2 text-[11px] outline-none transition-all",
-                      isJobActive ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50 cursor-not-allowed"
-                        : subjectSelectOpen ? "border-[var(--color-primary)] bg-white ring-2 ring-[rgba(91,123,154,0.14)]"
-                          : "border-[var(--color-border)] bg-white hover:border-[var(--color-primary)]",
+                      "flex h-11 w-full items-center justify-between gap-2 rounded-xl border px-3 text-sm outline-none transition-[border-color,background-color,box-shadow]",
+                      isJobActive ? "cursor-not-allowed border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-60"
+                        : subjectSelectOpen ? "border-[var(--color-primary)] bg-white ring-4 ring-[rgba(91,123,154,0.12)]"
+                          : "border-[var(--color-border)] bg-white/75 hover:border-[var(--color-primary)]",
                     )}
                   >
                     <span className={cn("truncate", subjectId ? "font-semibold text-[var(--ink)]" : "text-[var(--color-text-hint)]")}>
                       {subjectId ? (subjectOptions.find((s) => String(s.id) === subjectId)?.name || subjectId) : "选择科目（可选）"}
                     </span>
-                    <ChevronDown className={cn("h-3 w-3 shrink-0 text-[var(--color-text-hint)] transition-transform", subjectSelectOpen && "rotate-180")} />
+                    <ChevronDown className={cn("h-4 w-4 shrink-0 text-[var(--color-text-hint)] import-chevron", subjectSelectOpen && "rotate-180")} aria-hidden="true" />
                   </button>
-                  {subjectSelectOpen && (
-                    <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-[200px] overflow-y-auto surface-card rounded-lg p-0.5 animate-drop-in">
-                      <button
-                        type="button"
-                        onClick={() => { setSubjectId(""); setSubjectSelectOpen(false); }}
-                        className={cn(
-                          "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] transition-all",
-                          !subjectId ? "bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] font-semibold" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]",
-                        )}
-                      >
-                        选择科目（可选）
-                        {!subjectId && <Check className="h-3 w-3 text-[var(--color-primary-dark)]" />}
+                  {subjectSelectOpen ? (
+                    <div role="listbox" className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 import-popover overflow-y-auto rounded-xl border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-floating)]">
+                      <button type="button" role="option" aria-selected={!subjectId} onClick={() => { setSubjectId(""); setSubjectSelectOpen(false); }} className={cn("flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-3 text-left text-xs import-interactive", !subjectId ? "bg-[var(--color-primary-light)] font-semibold text-[var(--color-primary-dark)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]")}>
+                        未指定科目
+                        {!subjectId ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
                       </button>
                       {subjectOptions.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => { setSubjectId(String(s.id)); setSubjectSelectOpen(false); }}
-                          className={cn(
-                            "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] transition-all",
-                            subjectId === String(s.id) ? "bg-[var(--color-primary-light)] text-[var(--color-primary-dark)] font-semibold" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]",
-                          )}
-                        >
-                          {s.name}
-                          {subjectId === String(s.id) && <Check className="h-3 w-3 text-[var(--color-primary-dark)]" />}
+                        <button key={s.id} type="button" role="option" aria-selected={subjectId === String(s.id)} onClick={() => { setSubjectId(String(s.id)); setSubjectSelectOpen(false); }} className={cn("flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-3 text-left text-xs import-interactive", subjectId === String(s.id) ? "bg-[var(--color-primary-light)] font-semibold text-[var(--color-primary-dark)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]")}>
+                          <span className="truncate">{s.name}</span>
+                          {subjectId === String(s.id) ? <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : null}
                         </button>
                       ))}
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
-              <div className="space-y-0.5">
-                <span className="text-[10px] font-semibold text-[var(--color-text-hint)]">并发数</span>
+
+              <div className="space-y-1.5">
+                <span className="text-xs font-semibold text-[var(--color-text-secondary)]">并发数</span>
                 <div className="relative" ref={selectRef}>
                   <button
                     type="button"
                     disabled={isJobActive}
+                    aria-haspopup="listbox"
+                    aria-expanded={selectOpen}
                     onClick={() => setSelectOpen((prev) => !prev)}
                     className={cn(
-                      "flex h-8 w-full items-center justify-between gap-2 rounded-lg border px-2 text-[11px] outline-none transition-all",
-                      isJobActive ? "border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-50 cursor-not-allowed"
-                        : selectOpen ? "border-[var(--color-primary)] bg-white ring-2 ring-[rgba(91,123,154,0.14)]"
-                          : "border-[var(--color-border)] bg-white hover:border-[var(--color-primary)]",
+                      "flex h-11 w-full items-center justify-between gap-2 rounded-xl border px-3 text-sm outline-none transition-[border-color,background-color,box-shadow]",
+                      isJobActive ? "cursor-not-allowed border-[var(--color-border)] bg-[var(--color-bg-input)] opacity-60"
+                        : selectOpen ? "border-[var(--color-primary)] bg-white ring-4 ring-[rgba(91,123,154,0.12)]"
+                          : "border-[var(--color-border)] bg-white/75 hover:border-[var(--color-primary)]",
                     )}
                   >
-                    <span className="flex items-center gap-1.5">
-                      <span className="font-semibold text-[var(--ink)]">{concurrency}</span>
-                      {(() => {
-                        const opt = concurrencyOptions.find((o) => o.value === concurrency);
-                        return opt?.tag ? (
-                          <span className={cn("text-[9px] font-semibold leading-none rounded px-1 py-0.5", opt.tagClass)}>{opt.tag}</span>
-                        ) : null;
-                      })()}
+                    <span className="flex items-center gap-2">
+                      <strong className="text-[var(--ink)]">{concurrency}</strong>
+                      {concurrencyOptions.find((o) => o.value === concurrency)?.tag ? <span className="rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-primary-dark)]">{concurrencyOptions.find((o) => o.value === concurrency)?.tag}</span> : null}
                     </span>
-                    <ChevronDown className={cn("h-3 w-3 text-[var(--color-text-hint)] transition-transform", selectOpen && "rotate-180")} />
+                    <ChevronDown className={cn("h-4 w-4 text-[var(--color-text-hint)] import-chevron", selectOpen && "rotate-180")} aria-hidden="true" />
                   </button>
-                  {selectOpen && (
-                    <div className="absolute left-0 right-0 top-full z-50 mt-1 surface-card overflow-hidden rounded-lg p-0.5 animate-drop-in">
+                  {selectOpen ? (
+                    <div role="listbox" className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden import-popover rounded-xl border border-[var(--color-border-light)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-floating)]">
                       {concurrencyOptions.map((opt) => (
-                        <button key={opt.value} type="button"
-                          onClick={() => { setConcurrency(opt.value); setSelectOpen(false); }}
-                          className={cn(
-                            "flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] transition-all",
-                            concurrency === opt.value ? "bg-[var(--color-primary-light)] text-[var(--color-primary-dark)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]",
-                          )}
-                        >
-                          <span className="flex items-center gap-1.5">
-                            <span className={cn("font-semibold", concurrency === opt.value ? "text-[var(--color-primary-dark)]" : "text-[var(--ink)]")}>{opt.label}</span>
-                            {opt.tag && <span className={cn("text-[9px] font-semibold leading-none rounded px-1 py-0.5", opt.tagClass)}>{opt.tag}</span>}
-                          </span>
-                          {concurrency === opt.value && <Check className="h-3 w-3 text-[var(--color-primary-dark)]" />}
+                        <button key={opt.value} type="button" role="option" aria-selected={concurrency === opt.value} onClick={() => { setConcurrency(opt.value); setSelectOpen(false); }} className={cn("flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-3 text-xs import-interactive", concurrency === opt.value ? "bg-[var(--color-primary-light)] font-semibold text-[var(--color-primary-dark)]" : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]")}>
+                          <span className="flex items-center gap-2"><strong>{opt.label}</strong>{opt.tag ? <span className="text-[10px] text-[var(--color-text-hint)]">{opt.tag}</span> : null}</span>
+                          {concurrency === opt.value ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
                         </button>
                       ))}
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
-            </div>
 
-            <div className="border-t border-[var(--color-border)]/60 pt-2">
               <OcrModeSelector value={ocrMode} onChange={setOcrMode} disabled={isJobActive} />
             </div>
 
-            {/* Submit / Reset */}
-            <div className="mt-auto border-t border-[var(--color-border)]/60 pt-3">
+            <div className="mt-auto border-t border-[var(--color-border-light)] pt-4">
               {queuePhase === "done" ? (
-                <Button onClick={resetQueue} className="h-9 w-full text-xs" variant="secondary">
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  重新导入
+                <Button onClick={resetQueue} className="h-11 w-full import-interactive" variant="secondary">
+                  <RefreshCw className="h-4 w-4" aria-hidden="true" />重新导入
                 </Button>
               ) : (
                 <div className="flex gap-2">
-                  {queuePhase === "polling" && (
-                    <Button onClick={resetQueue} variant="secondary" className="h-9 px-3 text-xs">
-                      <X className="h-3.5 w-3.5" />
+                  {queuePhase === "polling" ? (
+                    <Button onClick={resetQueue} variant="secondary" className="h-11 w-11 p-0 import-interactive" aria-label="停止并重置任务" title="停止并重置">
+                      <X className="h-4 w-4" aria-hidden="true" />
                     </Button>
-                  )}
-                  <Button
-                    disabled={files.length === 0 || queuePhase !== "idle"}
-                    onClick={() => { if (queuePhase === "idle") startQueue(); }}
-                    className="h-9 flex-1 text-xs"
-                  >
-                    <UploadCloud className="h-3.5 w-3.5" />
-                    {queuePhase === "uploading" ? "上传中..." : queuePhase === "polling" ? "识别中..." : `开始导入${files.length > 0 ? `（${files.length}）` : ""}`}
+                  ) : null}
+                  <Button disabled={files.length === 0 || queuePhase !== "idle"} onClick={() => { if (queuePhase === "idle") startQueue(); }} className="h-11 flex-1 import-interactive group">
+                    <UploadCloud className="h-4 w-4 transition-transform duration-200 group-hover:-translate-y-0.5 motion-reduce:transform-none" aria-hidden="true" />
+                    {queuePhase === "uploading" ? "上传中" : queuePhase === "polling" ? "识别中" : files.length > 0 ? `开始导入 · ${files.length}` : "开始导入"}
                   </Button>
                 </div>
               )}
             </div>
-          </div>
+          </aside>
 
-          {/* ── Right: Progress Dashboard ── */}
-          <div className="flex-1 p-5">
-            {/* Empty state */}
+          <div className="min-w-0 bg-white/30">
             {queuePhase === "idle" && imageTasks.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center text-center">
-                <Images className="mb-3 h-10 w-10 text-[var(--color-text-hint)]" />
-                <p className="text-sm font-semibold text-[var(--color-text-secondary)]">等待任务提交</p>
-                <p className="mt-1 max-w-xs text-xs leading-relaxed text-[var(--color-text-hint)]">
-                  选择图片并点击「开始导入」，此处将显示实时进度
-                </p>
+              <div className="flex min-h-[590px] items-center justify-center px-6 py-14 import-panel-swap">
+                <div className="max-w-md text-center">
+                  <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-input)] text-[var(--color-primary-dark)] import-soft-pop">
+                    <UploadCloud className="h-6 w-6" strokeWidth={1.6} aria-hidden="true" />
+                  </div>
+                  <p className="mt-4 text-sm font-semibold text-[var(--ink)]">等待批量任务</p>
+                  <p className="mt-1.5 text-xs leading-5 text-[var(--color-text-hint)]">添加图片并设置识别参数后开始导入。提交后，这里会实时显示总体进度、单图状态与处理轨迹。</p>
+                  <div className="mt-5 grid grid-cols-3 divide-x divide-[var(--color-border-light)] border-y border-[var(--color-border-light)] py-2.5 text-[11px] text-[var(--color-text-secondary)]">
+                    <span>上传</span><span>OCR / AI</span><span>待审核</span>
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="space-y-4">
-                {/* Stats row */}
-                <div className="grid grid-cols-5 gap-2">
-                  {[
-                    { label: "总数", value: totalImages, color: "var(--ink)" },
-                    { label: "上传", value: uploadingCount, color: "#3a6a9a", show: uploadingCount > 0 },
-                    { label: "识别", value: processingCount, color: "#b87a30", show: processingCount > 0 },
-                    { label: "成功", value: succeededCount, color: "#3a7a5a", show: succeededCount > 0 },
-                    { label: "题目", value: totalQuestions, color: "var(--color-primary-dark)", show: totalQuestions > 0 },
-                  ].filter(s => s.show !== false).map((s) => (
-                    <div key={s.label} className="rounded-lg border border-[var(--color-border)] bg-white p-2.5 text-center">
-                      <span className="font-display text-xl font-bold tabular-nums" style={{ color: s.color }}>{s.value}</span>
-                      <p className="mt-0.5 text-[9px] text-[var(--color-text-hint)]">{s.label}</p>
-                    </div>
-                  ))}
-                  {failedCount > 0 && (
-                    <div className="rounded-lg border border-[var(--color-danger)]/20 bg-[var(--color-danger-light)] p-2.5 text-center">
-                      <span className="font-display text-xl font-bold tabular-nums text-[var(--color-danger)]">{failedCount}</span>
-                      <p className="mt-0.5 text-[9px] text-[var(--color-text-hint)]">失败</p>
-                    </div>
-                  )}
+              <div className="p-4 sm:p-5 import-panel-swap">
+                <div className="grid grid-cols-2 divide-x divide-y divide-[var(--color-border-light)] overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-white/60 sm:grid-cols-3 xl:grid-cols-6 xl:divide-y-0">
+                  <ImportMetric label="总图片" value={totalImages} />
+                  <ImportMetric label="上传中" value={uploadingCount} tone={uploadingCount > 0 ? "primary" : "neutral"} />
+                  <ImportMetric label="识别中" value={processingCount} tone={processingCount > 0 ? "warning" : "neutral"} />
+                  <ImportMetric label="成功" value={succeededCount} tone={succeededCount > 0 ? "success" : "neutral"} />
+                  <ImportMetric label="失败" value={failedCount} tone={failedCount > 0 ? "danger" : "neutral"} />
+                  <ImportMetric label="识别题目" value={totalQuestions} tone={totalQuestions > 0 ? "primary" : "neutral"} />
                 </div>
 
-                {/* Progress bar */}
-                <div>
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="text-[11px] text-[var(--color-text-secondary)]">总体进度</span>
-                    <span className="text-[11px] font-semibold tabular-nums text-[var(--ink)]">{progressPct}%</span>
+                <div className="mt-5 rounded-xl border border-[var(--color-border-light)] bg-white/60 px-4 py-3.5">
+                  <div className="flex items-center justify-between gap-4 text-xs">
+                    <span className="font-semibold text-[var(--color-text-secondary)]">总体进度</span>
+                    <span className="font-mono font-semibold tabular-nums text-[var(--ink)]">{progressPct}%</span>
                   </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-[var(--color-bg-input)]">
-                    <div className="h-full rounded-full bg-gradient-to-r from-[var(--color-primary)] to-[#7b9bbb] transition-all duration-700" style={{ width: `${progressPct}%` }} />
-                  </div>
+                  <ImportProgressBar
+                    value={progressPct}
+                    label="总体进度"
+                    active={queuePhase === "uploading" || queuePhase === "polling"}
+                    tone={queuePhase === "done" && failedCount === totalImages && totalImages > 0 ? "danger" : queuePhase === "done" ? "success" : "primary"}
+                    className="mt-2.5"
+                  />
                 </div>
 
-                {/* Task list */}
-                <div>
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-hint)]">任务明细</span>
-                  <div className="mt-2 space-y-1">
+                <section className="mt-5 overflow-hidden rounded-xl border border-[var(--color-border-light)] bg-white/65">
+                  <ImportPanelHeader title="任务明细" description={`${imageTasks.length} 个图片任务 · 按提交顺序展示`} />
+                  <div className="max-h-[430px] overflow-y-auto">
                     {imageTasks.map((task) => (
-                      <div key={task.id} className={cn(
-                        "rounded-lg border bg-white transition-all hover:border-[var(--color-primary)]/30 hover:shadow-sm",
-                        task.status === "failed" ? "border-[var(--color-danger)]/20" : "border-[var(--color-border)]",
-                      )}>
-                        <div className="flex items-center gap-2 px-3 py-2 text-xs">
-                          <span className="w-6 shrink-0 font-mono text-[10px] text-[var(--color-text-hint)]">#{task.seq}</span>
-                          <span className="min-w-0 flex-1 truncate text-[var(--ink)]" title={task.file.name}>{task.file.name}</span>
+                      <article key={task.id} className={cn("border-b border-[var(--color-border-light)] last:border-b-0 import-list-item import-interactive hover:bg-white/55", task.status === "failed" && "bg-[rgba(196,77,77,0.025)]")} style={{ animationDelay: `${Math.min(task.seq - 1, 8) * 26}ms` }}>
+                        <div className="flex min-h-14 items-center gap-3 px-4 py-2.5">
+                          <span className="w-7 shrink-0 font-mono text-[10px] tabular-nums text-[var(--color-text-hint)]">#{task.seq}</span>
+                          <div className="min-w-0 flex-1">
+                            <span className="block truncate text-xs font-medium text-[var(--ink)]" title={task.file.name}>{task.file.name}</span>
+                            {(task.status === "uploading" || task.status === "processing" || task.status === "pending") ? (
+                              <ImportProgressBar value={taskProgress(task)} label={`图片 ${task.seq} 处理进度`} active className="mt-1.5 h-1" />
+                            ) : null}
+                          </div>
                           {renderStatusBadge(task)}
                         </div>
-                        {/* Trace event log — visible when events exist */}
-                        {task.traceEvents.length > 0 && (
-                          <div className="animate-rise-in border-t border-[var(--color-border)]/50 bg-[var(--color-bg-input)]/30 px-3 py-1.5">
-                            <div className="space-y-0.5">
+                        {task.traceEvents.length > 0 ? (
+                          <div className="border-t border-[var(--color-border-light)] bg-[rgba(239,235,229,0.24)] px-4 py-2.5 import-panel-swap">
+                            <div className="space-y-1.5">
                               {task.traceEvents.map((ev, idx) => (
-                                <div key={idx} className="trace-enter flex items-center gap-1.5 text-[10px] leading-relaxed" style={{ animationDelay: `${idx * 60}ms` }}>
-                                  <span className={cn(
-                                    "shrink-0 rounded px-1 py-px font-medium transition-colors duration-200",
-                                    ev.step === "ocr" ? "bg-blue-50 text-blue-600"
-                                      : ev.step === "pipeline" ? "bg-purple-50 text-purple-600"
-                                        : ev.step === "done" ? "bg-green-50 text-green-600"
-                                          : ev.step === "error" ? "bg-red-50 text-red-600"
-                                            : ev.step === "config" ? "bg-amber-50 text-amber-600"
-                                              : "bg-[var(--color-bg-input)] text-[var(--color-text-hint)]",
-                                  )}>{ev.step}</span>
-                                  <span className={cn(
-                                    "shrink-0 transition-colors duration-200",
-                                    ev.status === "success" ? "text-green-500" : ev.status === "failed" ? "text-red-500" : ev.status === "running" ? "text-amber-500" : "text-[var(--color-text-hint)]",
-                                  )}>
-                                    {ev.status === "success" ? "✓" : ev.status === "failed" ? "✕" : ev.status === "running" ? "…" : "·"}
-                                  </span>
+                                <div key={idx} className="grid grid-cols-[52px_10px_minmax(0,1fr)_auto] items-center gap-2 text-[10px] leading-5">
+                                  <span className="truncate font-mono text-[var(--color-text-hint)]">{ev.step}</span>
+                                  <span className={cn("h-1.5 w-1.5 rounded-full", ev.status === "success" ? "bg-[var(--color-success)]" : ev.status === "failed" ? "bg-[var(--color-danger)]" : ev.status === "running" ? "import-status-active bg-[var(--color-warning)]" : "bg-[var(--color-text-hint)]")} aria-hidden="true" />
                                   <span className="min-w-0 truncate text-[var(--color-text-secondary)]" title={ev.message}>{ev.message}</span>
-                                  {ev.duration_ms != null && ev.duration_ms > 0 && (
-                                    <span className="shrink-0 tabular-nums text-[var(--color-text-hint)]">{ev.duration_ms}ms</span>
-                                  )}
+                                  {ev.duration_ms != null && ev.duration_ms > 0 ? <span className="font-mono tabular-nums text-[var(--color-text-hint)]">{ev.duration_ms}ms</span> : null}
                                 </div>
                               ))}
                             </div>
                           </div>
-                        )}
-                      </div>
+                        ) : null}
+                      </article>
                     ))}
                   </div>
-                </div>
+                </section>
 
-                {/* Quick link to review */}
-                {queuePhase === "done" && succeededCount > 0 && (
-                  <a className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white/70 px-3 text-[11px] font-semibold text-[var(--color-text-secondary)] transition-all hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] active:scale-95"
-                    href="/imports/review">
-                    <ClipboardCheck className="h-3.5 w-3.5" />
-                    前往待审核
-                  </a>
-                )}
+                {queuePhase === "done" && succeededCount > 0 ? (
+                  <div className="mt-4 flex justify-end">
+                    <a className="inline-flex h-11 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 text-xs font-semibold text-[var(--color-text-secondary)] import-interactive hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] hover:text-[var(--color-primary-dark)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-2" href="/imports/review">
+                      <ClipboardCheck className="h-4 w-4" aria-hidden="true" />前往待审核
+                    </a>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
         </div>
-      </Card>
+      </section>
     </div>
   );
 }

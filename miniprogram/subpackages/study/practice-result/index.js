@@ -710,13 +710,16 @@ Page({
 
     this.measureSafeNavigation();
     this.bindEventChannel();
-    const optionPayload = this.readPayloadFromOptions(options || {});
+    const rawOptionPayload = this.readPayloadFromOptions(options || {});
+    const optionPayload = rawOptionPayload && this._isPayloadRequestValid(rawOptionPayload, this._practiceRequestId)
+      ? rawOptionPayload
+      : null;
     const cachePayload = optionPayload ? null : this.readPayloadFromCache(options || {});
     const primaryPayload = optionPayload || cachePayload;
     const summaryPayload = primaryPayload ? null : this.readSummaryFromOptions(options || {});
     this.applyPracticePayload(primaryPayload || summaryPayload || {});
 
-    const requestId = String((options || {})._rid || '');
+    const requestId = String(this._practiceRequestId || '').trim();
     if (primaryPayload && this._hasDetailedPracticePayload(primaryPayload)) {
       // The result page is the acknowledgement boundary for the persisted
       // idempotent submission snapshot. Navigation success alone is not enough.
@@ -779,8 +782,16 @@ Page({
 
       eventNames.forEach(name => {
         channel.on(name, payload => {
-          if (payload && typeof payload === 'object') {
+          if (payload && typeof payload === 'object' &&
+              this._isPayloadRequestValid(payload, this._practiceRequestId)) {
             this.applyPracticePayload(payload);
+            // EventChannel is a legacy/alternate result-delivery path. Apply
+            // the same acknowledgement rule as route/cache payloads so a fully
+            // rendered canonical result cannot leave a stale pending snapshot
+            // that prompts for recovery on the next practice start.
+            if (this._practiceRequestId && this._hasDetailedPracticePayload(payload)) {
+              this._clearPendingSubmission(this._practiceRequestId);
+            }
           }
         });
       });
@@ -792,10 +803,13 @@ Page({
       ? payload.data
       : payload;
     if (!source || typeof source !== 'object') return false;
+    // Questions alone are only display metadata and do not prove that the
+    // canonical grading response reached this page. Keep the persisted
+    // idempotent submission until at least one per-question result is present,
+    // otherwise a partial/stale payload could erase the only recovery path.
     return (Array.isArray(source.results) && source.results.length > 0) ||
       (Array.isArray(source.submitResults) && source.submitResults.length > 0) ||
-      (Array.isArray(source.resultList) && source.resultList.length > 0) ||
-      (Array.isArray(source.questions) && source.questions.length > 0);
+      (Array.isArray(source.resultList) && source.resultList.length > 0);
   },
 
   readPayloadFromOptions(options) {
@@ -832,17 +846,38 @@ Page({
   _getCurrentUserId() {
     try {
       const user = wx.getStorageSync('user');
-      const id = user && (user.id ?? user.user_id ?? user.openid);
-      return id === undefined || id === null ? '' : String(id);
+      if (!user || typeof user !== 'object') return '';
+      const candidates = [user.id, user.user_id, user.openid];
+      for (const candidate of candidates) {
+        if (candidate === undefined || candidate === null) continue;
+        const value = String(candidate).trim();
+        if (value) return value;
+      }
+      return '';
     } catch (_) {
       return '';
     }
   },
 
-  _isResultCacheValid(value, expectedCacheKey) {
+  _isPayloadRequestValid(value, expectedRequestId) {
+    if (!value || typeof value !== 'object') return false;
+    const source = value.data && typeof value.data === 'object' ? value.data : value;
+    const expected = String(expectedRequestId || '').trim();
+    if (!expected) return true;
+    const actual = String(
+      source.request_id || source.requestId || value.request_id || value.requestId || ''
+    ).trim();
+    // A route carrying _rid is a submission-specific result page. Detailed
+    // payloads without that same request id are stale/ambiguous and must be
+    // recovered through the idempotent submission path instead of rendered.
+    return !!actual && actual === expected;
+  },
+
+  _isResultCacheValid(value, expectedCacheKey, expectedRequestId) {
     if (!value || typeof value !== 'object') return false;
 
     if (expectedCacheKey && String(value._cacheKey || '') !== expectedCacheKey) return false;
+    if (!this._isPayloadRequestValid(value, expectedRequestId)) return false;
 
     const currentUserId = this._getCurrentUserId();
     const cachedUserId = value._userId === undefined || value._userId === null ? '' : String(value._userId);
@@ -859,6 +894,7 @@ Page({
 
   readPayloadFromCache(options) {
     const expectedCacheKey = options && options._ck ? String(options._ck) : '';
+    const expectedRequestId = safeDecodeURIComponent((options || {})._rid, '').trim().slice(0, 128);
     const keys = [
       'practiceResult',
       'practice_result',
@@ -868,9 +904,9 @@ Page({
     for (const key of keys) {
       try {
         const value = wx.getStorageSync(key);
-        if (value && typeof value === 'object' && this._isResultCacheValid(value, expectedCacheKey)) return value;
+        if (value && typeof value === 'object' && this._isResultCacheValid(value, expectedCacheKey, expectedRequestId)) return value;
         const parsed = safeDecodeJson(value);
-        if (parsed && this._isResultCacheValid(parsed, expectedCacheKey)) return parsed;
+        if (parsed && this._isResultCacheValid(parsed, expectedCacheKey, expectedRequestId)) return parsed;
       } catch (e) {}
     }
     return null;
@@ -955,7 +991,7 @@ Page({
   },
 
   async recoverSubmittedResult(options) {
-    const requestId = String((options || {})._rid || '');
+    const requestId = String(this._practiceRequestId || safeDecodeURIComponent((options || {})._rid, '')).trim();
     const pending = this._readPendingSubmissionForRecovery(requestId);
     if (!pending || !pending.submission || !this._pageAlive) {
       wx.showToast({ title: '详细复盘数据暂无法恢复', icon: 'none' });
