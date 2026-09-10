@@ -3758,3 +3758,367 @@ page {
     flex: 0 0 214rpx;
   }
 }
+
+/* Round 4.3 — unify the whole Home page with the top card's fresh mint-green system. */
+page {
+  background: #F2F7F1;
+  background-color: #F2F7F1;
+  color: #132018;
+}
+
+.home-page {
+  background:
+    radial-gradient(circle at 100% 8%, rgba(80, 216, 101, .075), transparent 420rpx),
+    radial-gradient(circle at 0% 44%, rgba(108, 222, 125, .045), transparent 520rpx),
+    linear-gradient(180deg, #F7FAF6 0%, #F1F7F1 54%, #EEF5EF 100%);
+}
+
+/* Navigation adopts the same white / mint / dark-green language as the hero. */
+.brand-mark {
+  border: 1rpx solid #CEE8D1;
+  background: linear-gradient(145deg, #F8FFF8, #E8F8E9);
+  box-shadow: 0 8rpx 22rpx rgba(57, 137, 70, .10);
+}
+
+.brand-mark-line {
+  background: #38C95A;
+}
+
+.brand-mark-line.line-two {
+  background: #64D978;
+}
+
+.brand-mark-dot {
+  background: #39D05C;
+  box-shadow: 0 0 0 6rpx rgba(57, 208, 92, .12);
+}
+
+.brand-name {
+  color: #13231A;
+}
+
+.brand-caption {
+  color: #6F9076;
+}
+
+.profile-chip {
+  border-color: #D0E8D3;
+  background: rgba(255, 255, 255, .88);
+  box-shadow: 0 7rpx 20rpx rgba(56, 117, 66, .055);
+}
+
+.profile-avatar {
+  background: #E8F8E9;
+  color: #1B6B31;
+}
+
+.profile-level {
+  color: #45644D;
+}
+
+/* Greeting keeps the editorial hierarchy but removes the old olive cast. */
+.editorial-date {
+  color: #729578;
+}
+
+.editorial-title {
+  color: #101B14;
+}
+
+.editorial-rule {
+  background: linear-gradient(90deg, #BBDDBF 0%, rgba(187, 221, 191, 0) 100%);
+}
+
+.editorial-subtitle {
+  color: #6D7D70;
+}
+
+/* Shared section typography. */
+.section-kicker,
+.mastery-heading .section-kicker {
+  color: #6D9975;
+}
+
+.section-title,
+.mastery-heading .section-title {
+  color: #14231A;
+}
+
+.section-note,
+.mastery-map-link {
+  color: #7A897C;
+}
+
+.section-quick-action {
+  min-height: 54rpx;
+  padding: 0 14rpx;
+  border: 1rpx solid #D2E9D5;
+  background: rgba(255, 255, 255, .76);
+  color: #2F7140;
+  box-shadow: 0 7rpx 18rpx rgba(55, 126, 65, .045);
+}
+
+.section-quick-action-pressed {
+  background: #EAF8EB;
+}
+
+.section-quick-arrow {
+  color: #52B865;
+}
+
+/* Today's study list: turn the former mixed-color stack into one coherent card family. */
+.route-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.route-card,
+.route-review,
+.route-practice,
+.route-wrong,
+.route-exam,
+.hub-task-review,
+.hub-task-weakness,
+.hub-task-hard_questions,
+.hub-task-knowledge_path,
+.hub-task-smart_practice,
+.wrongbook-tool-card {
+  border: 1rpx solid #D6E9D8;
+  border-radius: 30rpx;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(80, 214, 100, .055), transparent 180rpx),
+    linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(247, 253, 247, .97));
+  box-shadow: 0 12rpx 28rpx rgba(49, 102, 57, .055);
+}
+
+.route-card + .route-card {
+  border-top: 1rpx solid #D6E9D8;
+}
+
+.route-card::after {
+  content: '';
+  position: absolute;
+  right: -42rpx;
+  top: -48rpx;
+  width: 126rpx;
+  height: 126rpx;
+  border-radius: 50%;
+  border: 1rpx solid rgba(78, 199, 94, .055);
+  pointer-events: none;
+}
+
+.route-index,
+.route-practice .route-index,
+.route-wrong .route-index,
+.route-exam .route-index {
+  border: 1rpx solid #D1EBD5;
+  background: linear-gradient(145deg, #F4FFF5, #E6F7E8);
+  color: #25723A;
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, .9);
+}
+
+.route-icon-image {
+  opacity: .92;
+}
+
+.route-eyebrow {
+  color: #719379;
+}
+
+.route-title {
+  color: #15251B;
+}
+
+.route-desc {
+  color: #718075;
+}
+
+.route-arrow {
+  border-color: #CBE5CF;
+  background: #F7FFF8;
+  color: #34AF50;
+}
+
+.card-pressed {
+  background-color: #EDF9EE;
+}
+
+.hub-task-meta {
+  color: #6F8D75;
+}
+
+.hub-task-completed {
+  opacity: .92;
+  border-color: #BFE2C4;
+  background: linear-gradient(145deg, #F9FFF9, #ECF9ED);
+}
+
+.hub-task-completed .route-title {
+  color: #376443;
+}
+
+.hub-task-completed .route-desc,
+.hub-task-completed .hub-task-meta {
+  color: #78907C;
+}
+
+/* Four-subject mastery cards use the same white-mint surface and bright progress accent. */
+.mastery-card-tech {
+  border-color: #D3E8D6;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(73, 207, 94, .055), transparent 150rpx),
+    linear-gradient(145deg, #FFFFFF 0%, #F8FDF8 64%, #F3FAF4 100%);
+  box-shadow:
+    0 12rpx 28rpx rgba(47, 101, 56, .06),
+    inset 0 1rpx 0 rgba(255, 255, 255, .96);
+}
+
+.mastery-card-tech::before {
+  background: linear-gradient(128deg, rgba(255,255,255,.88), transparent 46%, rgba(72, 203, 92, .022));
+}
+
+.mastery-card-tech .mastery-subject {
+  color: #16271C;
+}
+
+.mastery-card-tech .mastery-score {
+  color: #244C30;
+}
+
+.mastery-more view {
+  background: #79A982;
+}
+
+.mastery-hex-rail {
+  background: linear-gradient(180deg, #EAF1EA 0%, #E2EBE3 100%);
+}
+
+.mastery-hex-fill {
+  background: #43C95C;
+}
+
+.mastery-hex-gradient {
+  background: linear-gradient(90deg, #32BD50 0%, #48CF61 48%, #66DA76 100%);
+}
+
+.mastery-hex-stripe {
+  background: linear-gradient(90deg,
+    rgba(232,255,234,.54) 0%,
+    rgba(203,245,207,.45) 70%,
+    rgba(159,227,167,.30) 100%);
+  box-shadow:
+    inset 2rpx 0 0 rgba(247,255,248,.26),
+    inset -2rpx 0 0 rgba(35,132,51,.07);
+}
+
+.mastery-hex-bottomshade {
+  background: rgba(31, 125, 47, .10);
+}
+
+.mastery-foot-tech,
+.mastery-foot-tech .mastery-status,
+.mastery-sample-copy {
+  color: #748478;
+}
+
+/* Tool dock becomes a lighter sibling of the hero instead of a beige utility panel. */
+.tool-panel {
+  padding: 12rpx;
+  border-color: #D2E7D5;
+  background: linear-gradient(145deg, rgba(255,255,255,.98), rgba(247,253,247,.96));
+  box-shadow: 0 12rpx 30rpx rgba(49, 103, 58, .055);
+}
+
+.tool-item {
+  border-radius: 24rpx;
+}
+
+.tool-pressed {
+  background: #EAF8EB;
+}
+
+.tool-divider {
+  background: #DCEADE;
+}
+
+.tool-icon {
+  border: 1rpx solid #D1EAD5;
+  background: linear-gradient(145deg, #F3FFF4, #E4F6E7);
+  color: #1E6D34;
+}
+
+.chart-icon .bar,
+.chart-icon .bar-a {
+  background: #20773A;
+}
+
+.chart-icon .bar-b {
+  background: #3CC657;
+}
+
+.chart-icon .bar-c {
+  background: #64DB77;
+}
+
+.clock-icon::before {
+  border-color: #23763A;
+}
+
+.clock-hand {
+  background: #42C95C;
+}
+
+.tool-title {
+  color: #17271D;
+}
+
+.tool-desc {
+  color: #7A897D;
+}
+
+/* Closing note echoes the hero's soft green card treatment. */
+.growth-note {
+  margin: 36rpx 24rpx 0;
+  padding: 24rpx 26rpx;
+  border: 1rpx solid #D4E9D7;
+  border-radius: 28rpx;
+  background: linear-gradient(145deg, rgba(255,255,255,.90), rgba(240,250,241,.94));
+  box-shadow: 0 10rpx 26rpx rgba(49, 103, 58, .045);
+}
+
+.growth-note-line {
+  width: 6rpx;
+  height: 66rpx;
+  background: linear-gradient(180deg, #39C955, #6BDC7A);
+}
+
+.growth-note-label {
+  color: #6D9875;
+}
+
+.growth-note-text {
+  color: #56695B;
+}
+
+@media (max-width: 360px) {
+  .route-stack {
+    gap: 12rpx;
+  }
+
+  .route-card {
+    border-radius: 26rpx;
+  }
+
+  .growth-note {
+    margin-left: 20rpx;
+    margin-right: 20rpx;
+    padding-left: 22rpx;
+    padding-right: 22rpx;
+  }
+}
